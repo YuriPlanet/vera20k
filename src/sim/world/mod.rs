@@ -3721,7 +3721,12 @@ impl Simulation {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn bomb_defuse_for_test(&mut self, carrier: u64) {
-        Self::bomb_defuse(&mut self.substrate, &mut self.bombs, carrier);
+        Self::bomb_defuse(
+            &mut self.substrate,
+            &mut self.bombs,
+            &mut self.sound_events,
+            carrier,
+        );
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -3732,6 +3737,7 @@ impl Simulation {
             &self.houses,
             &self.resolved_terrain,
             &mut self.bombs,
+            &mut self.sound_events,
             rules,
         );
     }
@@ -6290,7 +6296,12 @@ impl Simulation {
                 .object_type(entity.type_ref(), rules)
                 .is_some_and(|object| object.can_be_occupied)
         {
-            Self::bomb_defuse(&mut self.substrate, &mut self.bombs, stable_id);
+            Self::bomb_defuse(
+                &mut self.substrate,
+                &mut self.bombs,
+                &mut self.sound_events,
+                stable_id,
+            );
         }
         if category == EntityCategory::Structure {
             //448260: gap removal precedes ordinary sight release and owner

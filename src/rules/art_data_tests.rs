@@ -1009,6 +1009,7 @@ fn scenario_anim_theater_replaces_only_the_shape_and_retries_the_stored_id() {
                 skip_root_color_add_and_mode: false,
             },
             &Default::default(),
+            &crate::rules::sound_ini::SoundRegistry::default(),
         )
         .unwrap();
     let mut rules = RuleSet::from_processed_rules(&processed).unwrap();

@@ -3608,19 +3608,12 @@ impl GeneralRules {
             .wrapping_shl(5);
         let condition_yellow_native = audio_visual.read_double("ConditionYellow", 0.5);
         let condition_red_native = audio_visual.read_double("ConditionRed", defaults.condition_red);
-        // The bomb sounds (Rules+0x20C/+0x210) come from the same pass.
-        let audio_visual_sound = |key: &str| {
-            audio_visual
-                .read_name(key, 0x80)
-                .filter(|name| !name.eq_ignore_ascii_case("none"))
-                .map(str::to_owned)
-        };
-        let bomb_ticking_sound = audio_visual_sound("BombTickingSound");
-        let bomb_attach_sound = audio_visual_sound("BombAttachSound");
+        // Fixed-catalog IDs are read by the retained native Process owner;
+        // this scalar projection alone has no catalog or sound-name reader.
+        let bomb_ticking_sound = defaults.bomb_ticking_sound.clone();
+        let bomb_attach_sound = defaults.bomb_attach_sound.clone();
         let ally_reveal = audio_visual.read_bool("AllyReveal", defaults.ally_reveal);
-        let psychic_reveal_activate_sound = audio_visual
-            .read_name("PsychicRevealActivateSound", 0x80)
-            .map(str::to_owned);
+        let psychic_reveal_activate_sound = defaults.psychic_reveal_activate_sound.clone();
         // RulesProcess668F36 reaches ReadCombatDamage66BBB0 independently of
         // ReadGeneral too; it gates on its own section only.
         let psychic_reveal_radius = ini
@@ -5759,160 +5752,160 @@ impl RuleSet {
         // processed section already owns the reached Rules pass history.
         self.general.gui_open_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "GUIOpenSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "GUIOpenSound", None));
         self.general.gui_close_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "GUICloseSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "GUICloseSound", None));
         self.general.disk_laser_charge_up = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "DiskLaserChargeUp"));
+            .and_then(|section| sounds.read_rules_reference(section, "DiskLaserChargeUp", None));
         self.general.create_unit_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "CreateUnitSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "CreateUnitSound", None));
         self.general.create_infantry_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "CreateInfantrySound"));
+            .and_then(|section| sounds.read_rules_reference(section, "CreateInfantrySound", None));
         self.general.create_aircraft_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "CreateAircraftSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "CreateAircraftSound", None));
         // Original66A763..66A973, in native read order for these bound fields. Use the same fixed
         // registry and history-aware reader as every other bound Voc ID.
         self.general.game_closed_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "GameClosed"));
+            .and_then(|section| sounds.read_rules_reference(section, "GameClosed", None));
         self.general.incoming_message_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "IncomingMessage"));
+            .and_then(|section| sounds.read_rules_reference(section, "IncomingMessage", None));
         self.general.message_char_typed_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "MessageCharTyped"));
+            .and_then(|section| sounds.read_rules_reference(section, "MessageCharTyped", None));
         self.general.system_error_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "SystemError"));
+            .and_then(|section| sounds.read_rules_reference(section, "SystemError", None));
         self.general.options_changed_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "OptionsChanged"));
+            .and_then(|section| sounds.read_rules_reference(section, "OptionsChanged", None));
         self.general.game_forming_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "GameForming"));
+            .and_then(|section| sounds.read_rules_reference(section, "GameForming", None));
         self.general.player_left_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "PlayerLeft"));
+            .and_then(|section| sounds.read_rules_reference(section, "PlayerLeft", None));
         self.general.player_joined_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "PlayerJoined"));
+            .and_then(|section| sounds.read_rules_reference(section, "PlayerJoined", None));
         self.general.airstrike_abort_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "AirstrikeAbortSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "AirstrikeAbortSound", None));
         self.general.airstrike_attack_voice = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "AirstrikeAttackVoice"));
+            .and_then(|section| sounds.read_rules_reference(section, "AirstrikeAttackVoice", None));
         self.general.leave_bio_reactor_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "LeaveBioReactorSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "LeaveBioReactorSound", None));
         self.general.enter_bio_reactor_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "EnterBioReactorSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "EnterBioReactorSound", None));
         self.general.enter_grinder_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "EnterGrinderSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "EnterGrinderSound", None));
         self.general.sinking_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "SinkingSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "SinkingSound", None));
         self.general.score_anim_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "ScoreAnimSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "ScoreAnimSound", None));
         self.general.construction_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "Construction"));
-        self.general.building_abandoned_sound = ini
-            .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "BuildingAbandonedSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "Construction", None));
+        self.general.building_abandoned_sound = ini.section("AudioVisual").and_then(|section| {
+            sounds.read_rules_reference(section, "BuildingAbandonedSound", None)
+        });
         self.general.building_damage_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "BuildingDamageSound"));
-        self.general.building_repaired_sound = ini
-            .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "BuildingRepairedSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "BuildingDamageSound", None));
+        self.general.building_repaired_sound = ini.section("AudioVisual").and_then(|section| {
+            sounds.read_rules_reference(section, "BuildingRepairedSound", None)
+        });
         self.general.spy_plane_camera = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "SpyPlaneCamera"));
+            .and_then(|section| sounds.read_rules_reference(section, "SpyPlaneCamera", None));
         self.general.stop_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "StopSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "StopSound", None));
         self.general.guard_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "GuardSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "GuardSound", None));
         // Original66AAC0..66AB53: fixed process catalog, exact keys and
         // current-ID retention across the existing processed read history.
         self.general.radar_on = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "RadarOn"));
+            .and_then(|section| sounds.read_rules_reference(section, "RadarOn", None));
         self.general.radar_off = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "RadarOff"));
+            .and_then(|section| sounds.read_rules_reference(section, "RadarOff", None));
         self.general.movie_on = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "MovieOn"));
+            .and_then(|section| sounds.read_rules_reference(section, "MovieOn", None));
         self.general.movie_off = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "MovieOff"));
+            .and_then(|section| sounds.read_rules_reference(section, "MovieOff", None));
         // Original66A4EF..66A582 shares the retained fixed-catalog reader.
-        self.general.spy_sat_activation_sound = ini
-            .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "SpySatActivationSound"));
-        self.general.spy_sat_deactivation_sound = ini
-            .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "SpySatDeactivationSound"));
+        self.general.spy_sat_activation_sound = ini.section("AudioVisual").and_then(|section| {
+            sounds.read_rules_reference(section, "SpySatActivationSound", None)
+        });
+        self.general.spy_sat_deactivation_sound = ini.section("AudioVisual").and_then(|section| {
+            sounds.read_rules_reference(section, "SpySatDeactivationSound", None)
+        });
         self.general.voice_ifv_repair = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "VoiceIFVRepair"));
+            .and_then(|section| sounds.read_rules_reference(section, "VoiceIFVRepair", None));
         // Original ReadAudioVisual order: Start6696C0, End66970A, Add669B25.
         // The processed section owns pass history; the fixed catalog owns IDs.
-        self.general.start_planning_mode_sound = ini
-            .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "StartPlanningModeSound"));
+        self.general.start_planning_mode_sound = ini.section("AudioVisual").and_then(|section| {
+            sounds.read_rules_reference(section, "StartPlanningModeSound", None)
+        });
         self.general.end_planning_mode_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "EndPlanningModeSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "EndPlanningModeSound", None));
         self.general.add_planning_mode_command_sound =
             ini.section("AudioVisual").and_then(|section| {
-                sounds.read_rules_reference(section, "AddPlanningModeCommandSound")
+                sounds.read_rules_reference(section, "AddPlanningModeCommandSound", None)
             });
         // Original669BA8, after Add669B25 in the same AudioVisual pass.
         self.general.place_beacon_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "PlaceBeaconSound"));
-        self.general.time_warp_out_sound = ini
-            .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "LetsDoTheTimeWarpOutAgain"));
-        self.general.time_warp_in_sound = ini
-            .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "LetsDoTheTimeWarpInAgain"));
+            .and_then(|section| sounds.read_rules_reference(section, "PlaceBeaconSound", None));
+        self.general.time_warp_out_sound = ini.section("AudioVisual").and_then(|section| {
+            sounds.read_rules_reference(section, "LetsDoTheTimeWarpOutAgain", None)
+        });
+        self.general.time_warp_in_sound = ini.section("AudioVisual").and_then(|section| {
+            sounds.read_rules_reference(section, "LetsDoTheTimeWarpInAgain", None)
+        });
         self.general.cheer_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "CheerSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "CheerSound", None));
         self.general.scatter_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "ScatterSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "ScatterSound", None));
         self.general.scold_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "ScoldSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "ScoldSound", None));
         // RulesClass::ReadAudioVisual66AD24..66AD56: ReadString128 then
         // VocFind7514D0; unknown later passes retain the previous resolved ID.
         self.general.generic_click_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "GenericClick"));
+            .and_then(|section| sounds.read_rules_reference(section, "GenericClick", None));
         // Original RulesClass::ReadAudioVisual669CE2..669D68 resolves
         // +228/+22C through ReadString128/VocFind7514D0, independently of
         // ReadGeneral. Reuse the fixed-catalog/pass-history owner, including
         // invalid later reads retaining their previous IDs (ctor66596A/70=-1).
         self.general.upgrade_veteran_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "UpgradeVeteranSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "UpgradeVeteranSound", None));
         self.general.upgrade_elite_sound = ini
             .section("AudioVisual")
-            .and_then(|section| sounds.read_rules_reference(section, "UpgradeEliteSound"));
+            .and_then(|section| sounds.read_rules_reference(section, "UpgradeEliteSound", None));
         // WeaponTypeClass::ReadINI @ `0x00772080` calls
         // CCINIClass::ReadSoundList @ `0x00525430` for Report/DownReport at
         // `0x00772394`/`0x0077241A`; use its shared catalog/list owner.
@@ -5937,10 +5930,10 @@ impl RuleSet {
             }
             // Original6CEB74..6CEBD8 keeps each current Voc ID when
             // ReadString128 or FindIndex7514D0 finds no replacement.
-            sw.special_sound =
-                section.and_then(|section| sounds.read_rules_reference(section, "SpecialSound"));
-            sw.start_sound =
-                section.and_then(|section| sounds.read_rules_reference(section, "StartSound"));
+            sw.special_sound = section
+                .and_then(|section| sounds.read_rules_reference(section, "SpecialSound", None));
+            sw.start_sound = section
+                .and_then(|section| sounds.read_rules_reference(section, "StartSound", None));
             #[cfg(feature = "ares")]
             if let Some(delivery) = sw.unit_delivery.as_mut() {
                 // Ares NullableIdx<VocClass>: unknown retains the previous
@@ -5976,21 +5969,22 @@ impl RuleSet {
             });
             if object.category == crate::rules::object_type::ObjectCategory::Building {
                 object.buildup_sound = section
-                    .and_then(|section| sounds.read_rules_reference(section, "BuildupSound"));
+                    .and_then(|section| sounds.read_rules_reference(section, "BuildupSound", None));
                 // BuildingType46088F/4608DD read WorkingSound (+0xE80) and
                 // NotWorkingSound (+0xE84) the same way.
                 object.working_sound = section
-                    .and_then(|section| sounds.read_rules_reference(section, "WorkingSound"));
-                object.not_working_sound = section
-                    .and_then(|section| sounds.read_rules_reference(section, "NotWorkingSound"));
+                    .and_then(|section| sounds.read_rules_reference(section, "WorkingSound", None));
+                object.not_working_sound = section.and_then(|section| {
+                    sounds.read_rules_reference(section, "NotWorkingSound", None)
+                });
             }
-            object.sinking_sound =
-                section.and_then(|section| sounds.read_rules_reference(section, "SinkingSound"));
-            object.voice_sinking =
-                section.and_then(|section| sounds.read_rules_reference(section, "VoiceSinking"));
+            object.sinking_sound = section
+                .and_then(|section| sounds.read_rules_reference(section, "SinkingSound", None));
+            object.voice_sinking = section
+                .and_then(|section| sounds.read_rules_reference(section, "VoiceSinking", None));
             // TechnoType712FEC reads VoiceFalling (+0x54C) the same way.
-            object.voice_falling =
-                section.and_then(|section| sounds.read_rules_reference(section, "VoiceFalling"));
+            object.voice_falling = section
+                .and_then(|section| sounds.read_rules_reference(section, "VoiceFalling", None));
             // InfantryType524193 reads VoiceComment (+0xE88) through
             // ReadSoundList525430; no other type class reads the key.
             if object.category == crate::rules::object_type::ObjectCategory::Infantry {
@@ -6001,25 +5995,28 @@ impl RuleSet {
             // TechnoType7133BA reads TurretRotateSound (+0x560) through
             // ReadString128 and Voc7514D0 for every techno type; the key is not
             // category-gated even though only buildings consume it.
-            object.turret_rotate_sound = section
-                .and_then(|section| sounds.read_rules_reference(section, "TurretRotateSound"));
+            object.turret_rotate_sound = section.and_then(|section| {
+                sounds.read_rules_reference(section, "TurretRotateSound", None)
+            });
             // TechnoType7138D1/71390D read ActivateSound (+0x5A8) and
             // DeactivateSound (+0x5AC) the same way, for every techno type.
-            object.activate_sound =
-                section.and_then(|section| sounds.read_rules_reference(section, "ActivateSound"));
-            object.deactivate_sound =
-                section.and_then(|section| sounds.read_rules_reference(section, "DeactivateSound"));
+            object.activate_sound = section
+                .and_then(|section| sounds.read_rules_reference(section, "ActivateSound", None));
+            object.deactivate_sound = section
+                .and_then(|section| sounds.read_rules_reference(section, "DeactivateSound", None));
             // ObjectType5F93C1 reads AmbientSound (+0x1F4) the same way, for
             // every object type.
-            object.ambient_sound =
-                section.and_then(|section| sounds.read_rules_reference(section, "AmbientSound"));
+            object.ambient_sound = section
+                .and_then(|section| sounds.read_rules_reference(section, "AmbientSound", None));
             if object.category == crate::rules::object_type::ObjectCategory::Infantry {
                 // Infantry52440B then524447: missing/empty/unregistered names
                 // keep the prior signed ID across the existing processed passes.
-                object.enter_water_sound = section
-                    .and_then(|section| sounds.read_rules_reference(section, "EnterWaterSound"));
-                object.leave_water_sound = section
-                    .and_then(|section| sounds.read_rules_reference(section, "LeaveWaterSound"));
+                object.enter_water_sound = section.and_then(|section| {
+                    sounds.read_rules_reference(section, "EnterWaterSound", None)
+                });
+                object.leave_water_sound = section.and_then(|section| {
+                    sounds.read_rules_reference(section, "LeaveWaterSound", None)
+                });
                 // ReadSequenceData (`0x0052403F`) resolves each pair through
                 // VocClass::FindByName (`0x007514D0`, first _strcmpi match).
                 object.bind_sequence_sounds(|name| sounds.get(name).map(|entry| entry.id.clone()));
@@ -6101,9 +6098,17 @@ impl RuleSet {
         for (index, name) in sound_names.iter().enumerate() {
             catalog.push_str(&format!("{index}={name}\n"));
         }
-        let processed = RulesLayerStack::new(ini.clone()).process()?;
-        let mut rules = Self::from_processed_rules(&processed)?;
         let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(&catalog));
+        let processed = RulesLayerStack::new(ini.clone())
+            .process_with_fixed_art_and_registry_state_recovering(
+                &IniFile::empty(),
+                Default::default(),
+                crate::rules::native_processing::RulesProcessContext::Ordinary,
+                &crate::rules::sound_ini::EvaRegistry::default(),
+                &sounds,
+            )
+            .map_err(|failure| failure.into_parts().0)?;
+        let mut rules = Self::from_processed_rules(&processed)?;
         rules.bind_type_sound_references(processed.ini(), &sounds);
         rules.bind_terrain_type_sound_references(&processed, &sounds);
         Ok(rules)
@@ -6130,6 +6135,10 @@ impl RuleSet {
         general.attack_cursor_on_disguise = processed.attack_cursor_on_disguise();
         general.tree_strength = processed.tree_strength();
         general.threat_coefficient_defaults = processed.threat_coefficient_defaults();
+        general.bomb_ticking_sound = processed.bomb_ticking_sound().map(str::to_owned);
+        general.bomb_attach_sound = processed.bomb_attach_sound().map(str::to_owned);
+        general.psychic_reveal_activate_sound =
+            processed.psychic_reveal_activate_sound().map(str::to_owned);
         let (_, color_indexes) = processed.color_add_state();
         general.laser_target_color = color_indexes.laser_target_color();
         general.iron_curtain_color = color_indexes.iron_curtain_color();
@@ -7448,6 +7457,12 @@ impl RuleSet {
         // The separately saved global89EA40 table can differ for identical
         // current INI text after earlier Process passes or a load.
         self.terrain_rules.hash(&mut hasher);
+        // ReadAudioVisual669A60/669A99/669FC3 can retain different fixed
+        // sound references for identical current INI text after a reset/load.
+        b"global-sound-references-v1".hash(&mut hasher);
+        self.general.bomb_ticking_sound.hash(&mut hasher);
+        self.general.bomb_attach_sound.hash(&mut hasher);
+        self.general.psychic_reveal_activate_sound.hash(&mut hasher);
         // ReadINI71551E..715720 can retain different weights for identical
         // current text. Include the projected bits and process-resident defaults.
         b"threat-coefficients-v1".hash(&mut hasher);
@@ -11115,6 +11130,7 @@ mod tests {
                     &IniFile::empty(),
                     None,
                     &crate::rules::sound_ini::EvaRegistry::default(),
+                    &crate::rules::sound_ini::SoundRegistry::default(),
                 )
                 .unwrap()
                 .into_registry_state_discarding_events();
@@ -11332,10 +11348,15 @@ SpawnCount=3
         assert!(!off.ally_reveal);
         // Both readers run whether or not [General] exists (`0x00668F36`,
         // `0x00668F56`), and so does the case's activate sound.
-        let alone = GeneralRules::from_ini(&IniFile::from_str(
-            "[CombatDamage]\nPsychicRevealRadius=7\n[AudioVisual]\nAllyReveal=no\n\
+        let alone = RuleSet::from_ini_with_sounds_for_test(
+            &IniFile::from_str(
+                "[CombatDamage]\nPsychicRevealRadius=7\n[AudioVisual]\nAllyReveal=no\n\
              PsychicRevealActivateSound=PsychicRevealActivate\n",
-        ));
+            ),
+            &["PsychicRevealActivate"],
+        )
+        .unwrap()
+        .general;
         assert_eq!((alone.psychic_reveal_radius, alone.ally_reveal), (7, false));
         assert_eq!(
             alone.psychic_reveal_activate_sound.as_deref(),
@@ -13386,8 +13407,9 @@ BuildingGarrisonedSound=BuildingGarrisoned
     /// `0x006CDCA8`), the nuke siren despite the name.
     #[test]
     fn superweapon_activate_sounds_parse_their_stock_values() {
-        let stock = GeneralRules::from_ini(&IniFile::from_str(
-            "[General]
+        let stock = RuleSet::from_ini_with_sounds_for_test(
+            &IniFile::from_str(
+                "[General]
 FlightLevel=500
 [AudioVisual]
              PsychicDominatorActivateSound=PsychicDominatorActivate
@@ -13396,7 +13418,17 @@ FlightLevel=500
              DigSound=NukeSiren		; HACK: Nuke siren here
              StormSound=WeatherIntro
 ",
-        ));
+            ),
+            &[
+                "PsychicDominatorActivate",
+                "GeneticMutatorActivate",
+                "PsychicRevealActivate",
+                "NukeSiren",
+                "WeatherIntro",
+            ],
+        )
+        .unwrap()
+        .general;
         assert_eq!(
             stock.psychic_dominator_activate_sound.as_deref(),
             Some("PsychicDominatorActivate")

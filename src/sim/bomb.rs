@@ -43,8 +43,8 @@
 //!   cursor. Each bomb here keeps the answer for every house (`seen_by`); the
 //!   app reads the local player's.
 //! - The ticking loop (`BombTickingSound=`, same UpdateAll) plays at the
-//!   carrier for every player while it is out of limbo; the app drives it
-//!   under `ticking_sound_owner`.
+//!   carrier for every player while it is out of limbo. The bomb keeps the
+//!   sound selected at attach; the app drives it under `ticking_sound_owner`.
 //!
 //! Scenario draws: none of its own; the blast's receivers and anim draw in
 //! their owners.
@@ -122,7 +122,7 @@ impl Default for BombList {
 }
 
 /// One armed bomb (`BombClass`), held by its carrier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Bomb {
     /// `+0x24`: the Infantry that planted it, until its pointer expires.
     planter: Option<u64>,
@@ -132,6 +132,11 @@ pub struct Bomb {
     start_frame: i32,
     /// `+0x38`: `start_frame + IvanTimedDelay`.
     end_frame: i32,
+    /// `+0x50`: `BombClass`'s constructor (`0x0043860F`) and the inlined
+    /// constructor in `BombListClass::Attach` (`0x00438EFD`) copy the current
+    /// Rules `BombTickingSound`. `BombClass::Load @ 0x00438B40` retains it.
+    #[serde(default)]
+    ticking_sound: Option<String>,
     /// The houses whose player sees it, bit `n` for
     /// `Houses::order()[n]`: native's per-client BombVisible
     /// (the carrier's `+0x68`) for every house at once. Written only by
@@ -142,7 +147,8 @@ pub struct Bomb {
 
 impl Hash for Bomb {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        // `seen_by` is presentation on its own cadence, which a load restarts.
+        // `BombClass::CRC @ 0x00438A90` omits the retained sound. `seen_by`
+        // is presentation on its own cadence, which a load restarts.
         self.planter.hash(state);
         self.planter_house.hash(state);
         self.start_frame.hash(state);
@@ -257,7 +263,7 @@ impl Simulation {
                 .entities
                 .iter_sorted()
                 .filter_map(|(carrier_id, entity)| {
-                    entity.bomb.map(|bomb| BombRecordObservation {
+                    entity.bomb.as_ref().map(|bomb| BombRecordObservation {
                         carrier_id,
                         planter_id: bomb.planter,
                         planter_house: self.interner.resolve(bomb.planter_house).to_owned(),
@@ -295,7 +301,7 @@ impl Simulation {
         self.substrate
             .entities
             .get(carrier)
-            .and_then(|entity| entity.bomb)
+            .and_then(|entity| entity.bomb.as_ref())
             .is_some_and(|bomb| bomb.seen_by & house_bit(&self.houses.order(), house) != 0)
     }
 
@@ -307,20 +313,52 @@ impl Simulation {
             .then(|| Self::movement_sound_world(entity))
     }
 
+    /// The cue captured by this bomb at attach. `BombListClass::UpdateAll`
+    /// reads the retained `+0x50` at `0x00438C7C`, including after a load.
+    pub fn bomb_ticking_sound(&self, carrier: u64) -> Option<&str> {
+        self.substrate
+            .entities
+            .get(carrier)?
+            .bomb
+            .as_ref()?
+            .ticking_sound
+            .as_deref()
+    }
+
     /// `BombListClass::UpdateAll @ 0x00438BF0`, once per frame from
     /// `LogicClass::PerTickUpdate` (`0x0055B4E1`), after ore growth and before
     /// the Teams and the object vector. Its first pass purges spent records,
     /// which VERA drops as they go off or are defused; its second drives the
-    /// ticking loop, which the app derives from the carriers. What is left is
-    /// the BombVisible refresh (`0x00438D04..0x00438E4C`).
+    /// ticking loop, which the app derives from the carriers, and hard-stops
+    /// it in limbo. Then comes BombVisible (`0x00438D04..0x00438E4C`).
     pub(crate) fn bomb_list_update(
         interner: &StringInterner,
         substrate: &mut ObjectSubstrate,
         houses: &Houses,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         bombs: &mut BombList,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
         rules: &RuleSet,
     ) {
+        // 0x00438C7C..0x00438C99: a valid retained cue in limbo calls
+        // VocHandle::StopAndClear405D40 before the visibility countdown.
+        for &carrier in &bombs.carriers {
+            let Some(entity) = substrate.entities.get(carrier) else {
+                continue;
+            };
+            if entity.lifecycle.in_limbo()
+                && entity
+                    .bomb
+                    .as_ref()
+                    .is_some_and(|bomb| bomb.ticking_sound.is_some())
+            {
+                sound_events.emit(SimSoundEvent::AnimationStopped {
+                    anim_id: ticking_sound_owner(carrier),
+                    stop_sound_id: None,
+                    world: Self::movement_sound_world(entity),
+                });
+            }
+        }
         if bombs.visibility_countdown > 0 {
             bombs.visibility_countdown -= 1;
             return;
@@ -358,7 +396,7 @@ impl Simulation {
             let Some(entity) = substrate.entities.get(carrier) else {
                 continue;
             };
-            let Some(bomb) = entity.bomb else {
+            let Some(bomb) = entity.bomb.as_ref() else {
                 continue;
             };
             let center = object_get_coords(entity, resolved_terrain.as_ref());
@@ -431,13 +469,26 @@ impl Simulation {
             resolved_terrain.as_ref(),
         );
         let start_frame = session.binary_frame() as i32;
+        // `BombListClass::Attach`'s inlined constructor (`0x00438EFD`):
+        // capture the bound cue only after the attach gates admit the bomb.
+        // Keep presentation names outside the gameplay interner so a sound
+        // change cannot shift IDs allocated for later gameplay state.
+        let ticking_sound = rules.general.bomb_ticking_sound.clone();
+        let end_frame = start_frame.wrapping_add(rules.combat_damage.ivan_timed_delay);
         let bomb = Bomb {
             planter: Some(planter),
             planter_house,
             start_frame,
-            end_frame: start_frame.wrapping_add(rules.combat_damage.ivan_timed_delay),
+            end_frame,
+            ticking_sound,
             seen_by: 0,
         };
+        // Native Attach438E70 constructs a fresh BombClass/VocHandle. The
+        // app reuses the carrier key, so retire any previous bomb's binding
+        // before installing the new one, including a silent replacement.
+        sound_events.emit(SimSoundEvent::ObjectSoundDetached {
+            owner: ticking_sound_owner(target),
+        });
         if let Some(carrier) = substrate.entities.get_mut(target) {
             carrier.bomb = Some(bomb);
         }
@@ -447,7 +498,7 @@ impl Simulation {
         log::info!(
             "BOMB {target} planted by {planter} ({}), fuse {start_frame}..{}",
             interner.resolve(planter_house),
-            bomb.end_frame,
+            end_frame,
         );
         // 0x00438FD7..0x0043901D: BombAttachSound at the target, only for the
         // player who owns the planter (+0x21C).
@@ -464,12 +515,21 @@ impl Simulation {
         }
     }
 
-    /// `BombClass::Defuse @ 0x004389B0`: the carrier's bomb is gone, silently.
-    pub(crate) fn bomb_defuse(substrate: &mut ObjectSubstrate, bombs: &mut BombList, carrier: u64) {
+    /// `BombClass::Defuse @ 0x004389B0`: remove the bomb and detach its cue
+    /// through VocHandle405FD0 (`0x004389D6`), leaving the current clip's tail.
+    pub(crate) fn bomb_defuse(
+        substrate: &mut ObjectSubstrate,
+        bombs: &mut BombList,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
+        carrier: u64,
+    ) {
         if bombs.carriers.remove(&carrier)
             && let Some(entity) = substrate.entities.get_mut(carrier)
         {
             entity.bomb = None;
+            sound_events.emit(SimSoundEvent::ObjectSoundDetached {
+                owner: ticking_sound_owner(carrier),
+            });
         }
     }
 
@@ -501,6 +561,7 @@ impl Simulation {
         substrate: &mut ObjectSubstrate,
         resolved_terrain: &Option<ResolvedTerrainGrid>,
         bombs: &mut BombList,
+        sound_events: &mut FrameChannel<SimSoundEvent>,
         carrier: u64,
         rules: &RuleSet,
     ) -> Option<BombBlast> {
@@ -510,6 +571,11 @@ impl Simulation {
         let entity = substrate.entities.get(carrier)?;
         if entity.lifecycle.in_limbo() {
             log::info!("BOMB {carrier} went off in limbo, silently");
+            // The limbo branch joins Detonate's VocHandle405FD0 tail
+            // (0x00438759 -> 0x00438989..0x00438995).
+            sound_events.emit(SimSoundEvent::ObjectSoundDetached {
+                owner: ticking_sound_owner(carrier),
+            });
             return None;
         }
         log::info!(
@@ -544,6 +610,7 @@ impl Simulation {
         };
         let expired = entity
             .bomb
+            .as_ref()
             .is_some_and(|bomb| bomb.expired(self.session.binary_frame() as i32));
         if !expired || entity.lifecycle.in_limbo() {
             return false;
@@ -554,12 +621,16 @@ impl Simulation {
             &mut self.substrate,
             &self.resolved_terrain,
             &mut self.bombs,
+            &mut self.sound_events,
             carrier,
             rules,
         ) else {
             return false;
         };
         let Some(warhead) = ivan_warhead(rules) else {
+            self.sound_events.emit(SimSoundEvent::ObjectSoundDetached {
+                owner: ticking_sound_owner(carrier),
+            });
             return false;
         };
         let origin = blast.origin(&mut self.interner, warhead);
@@ -577,6 +648,7 @@ impl Simulation {
         receipt.bridge_state_changed
             | self.bomb_blast_tail(
                 &blast,
+                carrier,
                 warhead,
                 rules,
                 overlay_registry,
@@ -602,10 +674,16 @@ impl Simulation {
             &mut self.substrate,
             &self.resolved_terrain,
             &mut self.bombs,
+            &mut self.sound_events,
             carrier,
             rules,
         )?;
-        let warhead = ivan_warhead(rules)?;
+        let Some(warhead) = ivan_warhead(rules) else {
+            self.sound_events.emit(SimSoundEvent::ObjectSoundDetached {
+                owner: ticking_sound_owner(carrier),
+            });
+            return None;
+        };
         let origin = blast.origin(&mut self.interner, warhead);
         let (mut effects, pings, crit_active, _area_result) = apply_area_damage_in_run(
             self,
@@ -620,6 +698,7 @@ impl Simulation {
         );
         effects.bridge_state_changed |= self.bomb_blast_tail(
             &blast,
+            carrier,
             warhead,
             rules,
             overlay_registry,
@@ -632,12 +711,14 @@ impl Simulation {
     /// `BombClass::Detonate` after its Apply_area_damage (`0x004387A3`): the
     /// IvanWarhead's explosion anim at the carrier's Location, chosen by that
     /// cell's current land (`0x0043880A..0x00438852`), then a
-    /// `BridgeRepairHut=` carrier's bridge (`0x0043896A`/`0x00438982`).
+    /// `BridgeRepairHut=` carrier's bridge (`0x0043896A`/`0x00438982`), then
+    /// detach the cue (`0x00438995`, VocHandle405FD0).
     /// Returns whether a bridge changed.
     #[allow(clippy::too_many_arguments)]
     fn bomb_blast_tail(
         &mut self,
         blast: &BombBlast,
+        carrier: u64,
         warhead: &WarheadType,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
@@ -657,16 +738,22 @@ impl Simulation {
         ) {
             crate::sim::world::damage_consequences::admit_explosion_effect(self, rules, effect);
         }
-        if !blast.bridge_hut {
-            return false;
-        }
-        let (rx, ry, ..) = crate::sim::combat::projectile_impact_cell(blast.location);
-        crate::sim::world::bridge_orchestrator::dispatch_bridge_collapse_from_hut_with_overlay_registry(
-            self,
-            rules,
-            (rx, ry),
-            overlay_registry,
-         frame_effects,)
+        let bridge_changed = if blast.bridge_hut {
+            let (rx, ry, ..) = crate::sim::combat::projectile_impact_cell(blast.location);
+            crate::sim::world::bridge_orchestrator::dispatch_bridge_collapse_from_hut_with_overlay_registry(
+                self,
+                rules,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            )
+        } else {
+            false
+        };
+        self.sound_events.emit(SimSoundEvent::ObjectSoundDetached {
+            owner: ticking_sound_owner(carrier),
+        });
+        bridge_changed
     }
 }
 

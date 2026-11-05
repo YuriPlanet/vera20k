@@ -3534,16 +3534,16 @@ impl ObjectType {
             sounds.read_rules_sound_list(section, "VoiceAttack")
         });
         self.voice_enter =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceEnter"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceEnter", None));
         self.voice_capture =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceCapture"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceCapture", None));
         self.voice_attack_overrides = [
             "VoicePrimaryWeaponAttack",
             "VoicePrimaryEliteWeaponAttack",
             "VoiceSecondaryWeaponAttack",
             "VoiceSecondaryEliteWeaponAttack",
         ]
-        .map(|key| section.and_then(|section| sounds.read_rules_reference(section, key)));
+        .map(|key| section.and_then(|section| sounds.read_rules_reference(section, key, None)));
     }
 
     pub fn voice_deploy(&self) -> Option<&str> {
@@ -3562,11 +3562,11 @@ impl ObjectType {
         sounds: &SoundRegistry,
     ) {
         self.voice_harvest =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceHarvest"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceHarvest", None));
         self.voice_deploy =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceDeploy"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceDeploy", None));
         self.voice_undeploy =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceUndeploy"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceUndeploy", None));
     }
 
     pub fn damage_sound(&self) -> Option<&str> {
@@ -3593,9 +3593,9 @@ impl ObjectType {
         sounds: &SoundRegistry,
     ) {
         self.create_sound =
-            section.and_then(|section| sounds.read_rules_reference(section, "CreateSound"));
+            section.and_then(|section| sounds.read_rules_reference(section, "CreateSound", None));
         self.damage_sound =
-            section.and_then(|section| sounds.read_rules_reference(section, "DamageSound"));
+            section.and_then(|section| sounds.read_rules_reference(section, "DamageSound", None));
         #[cfg(feature = "ares")]
         for (slot, key) in ["Promote.VeteranSound", "Promote.EliteSound"]
             .into_iter()

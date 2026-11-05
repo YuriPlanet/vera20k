@@ -935,6 +935,12 @@ impl App {
                 return false;
             }
         };
+        if let Some(owner) = native_rules.as_deref_mut() {
+            owner.prepare_random_map_sound_references(
+                mode_rules.as_ref(),
+                map_storage_decision.reinitialize,
+            );
+        }
         let terrain_rules = native_rules
             .as_deref_mut()
             .map(|owner| {

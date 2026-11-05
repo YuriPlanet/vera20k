@@ -2953,7 +2953,12 @@ fn run_special_detonation_arm(
         SpecialDetonationAction::BombDisarm => {
             // 0x004699C4..0x004699FE: a bombed Object target is defused.
             if let Some(id) = object {
-                Simulation::bomb_defuse(&mut world.substrate, &mut world.bombs, id);
+                Simulation::bomb_defuse(
+                    &mut world.substrate,
+                    &mut world.bombs,
+                    &mut world.sound_events,
+                    id,
+                );
             }
         }
         SpecialDetonationAction::NukeMaker => nuke_maker(world, rules, detonation),

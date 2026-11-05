@@ -1939,6 +1939,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             .get(id)
                             .unwrap()
                             .bomb
+                            .as_ref()
                             .unwrap()
                             .clock_frame(
                                 frame as i32,

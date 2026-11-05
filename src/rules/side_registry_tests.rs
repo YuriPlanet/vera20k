@@ -155,6 +155,7 @@ fn setup_processor(controls: &Value, row: &Value) -> RulesPassProcessor {
             &art,
             &crate::rules::sound_ini::EvaRegistry::default(),
             false,
+            &crate::rules::sound_ini::SoundRegistry::default(),
         )
         .unwrap();
     processor
@@ -163,6 +164,7 @@ fn setup_processor(controls: &Value, row: &Value) -> RulesPassProcessor {
             &art,
             &crate::rules::sound_ini::EvaRegistry::default(),
             false,
+            &crate::rules::sound_ini::SoundRegistry::default(),
         )
         .unwrap();
     assert_registry(&processor.families, &row["before"], "direct reader setup");
