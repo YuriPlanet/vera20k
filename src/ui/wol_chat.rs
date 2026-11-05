@@ -12,6 +12,7 @@
 //! `g_MuteSWLaunches` label is wrong), and the connection nodes
 //! `[0xA8DA78]`; it refuses pages only from a match.
 
+use crate::ui::wol_account::NAME_LIMIT;
 use crate::ui::wol_options::WolPreferences;
 use crate::util::native_string::wcs_starts_with_ignore_case;
 
@@ -142,13 +143,14 @@ fn parse_page_or_reply(
 ) -> Option<WolChatLine> {
     if !commands.page.is_empty() && wcs_starts_with_ignore_case(line, &commands.page) {
         let rest = skip_spaces(&line[commands.page.len()..]);
-        // 0078A78C..A7B6: at most 11 name units are copied; 0078A7E0 then
-        // accepts at most 10 (`cmp ebp, 0xa; jle`).
-        let (name, rest) = take_word(rest, 11);
+        // 0078A78C..A7B6 copy at most 11 name units and 0078A7E0 accepts
+        // at most 10 (`cmp ebp, 0xa; jle`). VERA deviation: the lobby's
+        // names run to 24 units, so 25 are copied and 24 accepted.
+        let (name, rest) = take_word(rest, NAME_LIMIT + 1);
         let text = skip_spaces(rest);
         return Some(if name.is_empty() {
             WolChatLine::Notice("TXT_NO_NAME_SPECIFIED")
-        } else if name.len() > 10 {
+        } else if name.len() > NAME_LIMIT {
             WolChatLine::Notice("TXT_NAME_TOO_LONG")
         } else if text.is_empty() {
             WolChatLine::Notice("TXT_CANT_SEND_BLANK_PAGE")
@@ -553,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn page_takes_a_name_of_at_most_ten_units_and_needs_text() {
+    fn page_takes_a_vera_name_of_at_most_24_units_and_needs_text() {
         let c = commands();
         assert_eq!(
             parse(&w("/PAGE  bob   hi there"), &c, false),
@@ -562,15 +564,16 @@ mod tests {
                 text: w("hi there")
             }
         );
+        let longest = "Commander_Tanya_of_Allie";
         assert_eq!(
-            parse(&w("/page abcdefghij x"), &c, false),
+            parse(&w(&format!("/page {longest} x")), &c, false),
             WolChatLine::Page {
-                name: w("abcdefghij"),
+                name: w(longest),
                 text: w("x")
             }
         );
         assert_eq!(
-            parse(&w("/page abcdefghijk x"), &c, false),
+            parse(&w(&format!("/page {longest}s x")), &c, false),
             WolChatLine::Notice("TXT_NAME_TOO_LONG")
         );
         assert_eq!(

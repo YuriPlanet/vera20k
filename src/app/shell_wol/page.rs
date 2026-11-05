@@ -667,6 +667,7 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
         })
         .unwrap_or_default();
         apply(state, actions);
+        scroll_to_caret(state);
         return;
     }
     let action = state
@@ -682,6 +683,27 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
             }
         });
     apply_received(state, action);
+}
+
+/// `0xCF`'s focused NewEdit keeps its caret in view: `0x00623880` paints
+/// from the first visible unit. Widths are the popups' retail pixels.
+fn scroll_to_caret(state: &mut AppState) {
+    let layout = page_layout(state);
+    let font = &state.renderer.bit_font;
+    let Some(page) = state
+        .frontend
+        .wol
+        .as_mut()
+        .and_then(|visit| visit.page_dialog.as_deref_mut())
+    else {
+        return;
+    };
+    let (edit, rect) = match page.focus {
+        Some(NAME) => (&mut page.name, layout.name),
+        Some(TEXT) => (&mut page.text, layout.text),
+        _ => return,
+    };
+    edit.scroll_to_caret((rect.w - 3).max(0) as u32, |text| font.text_width(text));
 }
 
 /// The transcripts' scrollbar repeats.
