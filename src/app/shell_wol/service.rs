@@ -125,9 +125,6 @@ pub(crate) enum WolServiceRequest {
     /// VERA online: Remember password was unticked for the remembered
     /// account; this computer forgets its sign-in, here and at the lobby.
     ForgetSignIn,
-    /// VERA online: the lobby deleted this account with its remembered
-    /// sign-ins; this computer forgets its own sign-in of it.
-    AccountDeleted { name: String },
     /// Forget Account: API+0x94(slot, "", "", 1).
     ForgetCredential { slot: u32 },
     /// Remember after a login: `0x00789500(nickname, password, changed,

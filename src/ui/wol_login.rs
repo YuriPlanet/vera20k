@@ -274,9 +274,6 @@ pub(crate) enum WolLoginAction {
     /// VERA online: Remember password was unticked for the remembered
     /// account, which this computer forgets at once.
     ForgetSignIn,
-    /// VERA online: the lobby deleted this account; a sign-in this computer
-    /// remembers for it goes too.
-    AccountDeleted(String),
     /// Forget Account found the nickname in the combo: API+0x94 clears the
     /// slot, after AutoLogin/LastValid were cleared when they matched.
     Forget { slot: u32, nickname: String },
@@ -628,14 +625,10 @@ impl WolLoginState {
     }
 
     /// VERA online: the lobby deleted the typed account. Its popup says so
-    /// until closed, and the page drops the remembered placeholder.
-    pub(crate) fn account_deleted(
-        &mut self,
-        name: String,
-        globals: &mut WolAccountGlobals,
-    ) -> WolLoginAction {
+    /// until closed, and the page drops the remembered placeholder; the
+    /// service forgets the sign-in itself.
+    pub(crate) fn account_deleted(&mut self, globals: &mut WolAccountGlobals) {
         self.forget_placeholder(globals);
-        WolLoginAction::AccountDeleted(name)
     }
 
     /// VERA online: a confirmed account or a new password signs in at once,

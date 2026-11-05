@@ -193,8 +193,8 @@ pub(crate) enum AccountFormAction {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AccountDone {
     SignIn(AccountSignIn),
-    /// This account is deleted; the form stays open to say so.
-    Deleted(String),
+    /// The account is deleted; the form stays open to say so.
+    Deleted,
 }
 
 /// A finished form: sign in to this account with this password.
@@ -549,7 +549,7 @@ impl WolAccountForm {
                     "{} is deleted, with its email, password and ranked games.",
                     self.name
                 );
-                Some(AccountDone::Deleted(self.name.clone()))
+                Some(AccountDone::Deleted)
             }
             FormKind::Deleted => None,
         }
@@ -679,10 +679,7 @@ mod tests {
             (FormKind::Delete, "Wrong password.")
         );
         form.activate(FORM_OK);
-        assert_eq!(
-            form.answered(Ok(())),
-            Some(AccountDone::Deleted("Tanya".into()))
-        );
+        assert_eq!(form.answered(Ok(())), Some(AccountDone::Deleted));
         assert!(form.fields.is_empty() && form.ok_enabled());
         // No field takes the keys; OK closes.
         form.insert_text("x");

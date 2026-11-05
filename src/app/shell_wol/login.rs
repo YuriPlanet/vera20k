@@ -153,9 +153,6 @@ fn dispatch(state: &mut AppState, action: WolLoginAction) {
             service::request(state, WolServiceRequest::Account(request));
         }
         WolLoginAction::ForgetSignIn => service::request(state, WolServiceRequest::ForgetSignIn),
-        WolLoginAction::AccountDeleted(name) => {
-            service::request(state, WolServiceRequest::AccountDeleted { name });
-        }
     }
 }
 
@@ -172,13 +169,16 @@ fn form_action(state: &mut AppState, action: AccountFormAction) {
 
 /// The lobby answered the account popup: a refusal shows in it, a sent code
 /// moves it on, a confirmed account or new password signs in, and a deleted
-/// account is forgotten here.
+/// account's popup says so.
 pub(super) fn account_answered(state: &mut AppState, answer: Result<(), String>) {
     let action = with_login(state, |login, globals, _| {
         let form = login.account.as_mut().filter(|form| form.busy)?;
         match form.answered(answer)? {
             AccountDone::SignIn(sign_in) => login.sign_in(sign_in, globals),
-            AccountDone::Deleted(name) => Some(login.account_deleted(name, globals)),
+            AccountDone::Deleted => {
+                login.account_deleted(globals);
+                None
+            }
         }
     })
     .flatten();
