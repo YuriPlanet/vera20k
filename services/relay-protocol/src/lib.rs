@@ -21,6 +21,8 @@ use zeroize::Zeroize;
 
 mod journal;
 mod link;
+#[cfg(any(test, feature = "test-support"))]
+pub mod netsim;
 mod sequenced;
 pub use link::{ClientLinkStats, HopFeedback, LinkState, OrderingGap, ReaderLinkStats, RecvWindow};
 pub use sequenced::federation::{MAX_FEDERATED_RELAYS, sign_federation_roster};
