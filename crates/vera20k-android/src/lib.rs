@@ -62,11 +62,15 @@ fn android_main(app: AndroidApp) {
     let log_path = vera20k::entry::init_logging();
     vera20k::entry::log_banner(log_path.as_deref());
 
-    // An activity recreation reaches this point a second time. Report it and
-    // let the activity finish rather than building a second event loop.
+    // Android can start a second activity in this same, still-cached process
+    // after the player exits to the launcher and taps the icon again. A second
+    // winit event loop is impossible (winit keeps process-wide state) and the
+    // guard says so, but returning would leave the new activity on its splash
+    // for ever. End the process instead, so that tap is a cold start.
     if !claim_event_loop() {
-        log::error!("android_main called again; the activity finishes here");
-        return;
+        log::error!("android_main called again; ending this process for a cold relaunch");
+        log::logger().flush();
+        std::process::exit(0);
     }
 
     let event_loop: winit::event_loop::EventLoop<()> = match winit::event_loop::EventLoop::builder()
@@ -95,6 +99,12 @@ fn android_main(app: AndroidApp) {
         Err(error) => log::error!("VERA20k stopped: {error:#}"),
     }
     log::logger().flush();
+
+    // One process runs one game. Exiting here (rather than returning and letting
+    // Android cache the process) is what makes the launcher's next tap start
+    // from a clean slate: the event loop above cannot be rebuilt, so a cached
+    // process would serve the new activity nothing but its splash.
+    std::process::exit(0);
 }
 
 /// Claims this process's single event loop.
