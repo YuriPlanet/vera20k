@@ -562,7 +562,11 @@ impl Simulation {
         let actor_type = actor.type_ref();
         let complete = if doing != -1 {
             let stage = actor.native_stage().value();
-            let sequences = self.interner.animation_sequence(actor.type_ref(), rules);
+            let sequences = self.interner.animation_sequence_in_category(
+                actor.type_ref(),
+                crate::rules::object_type::ObjectCategory::Infantry,
+                rules,
+            );
             let count = match sequences.and_then(|set| set.infantry_action(doing)) {
                 Some(record) => record.frames_per_facing,
                 None => action_kind(doing)
@@ -596,7 +600,11 @@ impl Simulation {
                     // the body to its record's facing hint first.
                     if let Some(facing) = self
                         .interner
-                        .animation_sequence(actor_type, rules)
+                        .animation_sequence_in_category(
+                            actor_type,
+                            crate::rules::object_type::ObjectCategory::Infantry,
+                            rules,
+                        )
                         .and_then(|set| set.infantry_action(action))
                         .and_then(|record| {
                             crate::rules::infantry_sequence::completion_facing(record.facing_hint)
@@ -678,14 +686,6 @@ impl Simulation {
     /// frame's stage step passed (`+0xFC`) and the stage modulo the record's
     /// count (at least 1) is its frame. It runs after UnInit too while the
     /// infantryman's state remains.
-    ///
-    /// Residual: native fills a record's count and sounds from one
-    /// `Sequence=` read per pass. The sounds here come from that per-pass
-    /// read; the count comes from the animation catalog, which resolves the
-    /// final pass's image with VERA's ART fallbacks. A map pass that
-    /// re-images an infantry type, or an image with no ART section, can make
-    /// the two name different sequences and a sound play on the wrong frame.
-    /// No retail type does either.
     fn infantry_sequence_sounds(&mut self, id: u64, rules: &RuleSet) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
@@ -696,7 +696,11 @@ impl Simulation {
         if doing == -1 || !actor.native_stage().changed() {
             return;
         }
-        let Some(object) = self.interner.object_type(actor.type_ref(), rules) else {
+        let Some(object) = self.interner.object_type_in_category(
+            actor.type_ref(),
+            crate::rules::object_type::ObjectCategory::Infantry,
+            rules,
+        ) else {
             return;
         };
         let mut sounds = object.sequence_sounds(doing).peekable();
@@ -705,7 +709,11 @@ impl Simulation {
         }
         let count = self
             .interner
-            .animation_sequence(actor.type_ref(), rules)
+            .animation_sequence_in_category(
+                actor.type_ref(),
+                crate::rules::object_type::ObjectCategory::Infantry,
+                rules,
+            )
             .and_then(|set| set.infantry_action(doing))
             .map_or(0, |record| record.frames_per_facing);
         let frame = actor.native_stage().value() % count.max(1);
@@ -736,7 +744,12 @@ impl Simulation {
             return;
         };
         let crashable = self
-            .object_type(actor.type_ref(), rules)
+            .interner
+            .object_type_in_category(
+                actor.type_ref(),
+                crate::rules::object_type::ObjectCategory::Infantry,
+                rules,
+            )
             .is_some_and(|object| object.crashable);
         if !crashable {
             return;
@@ -850,7 +863,11 @@ impl Simulation {
             .ok_or("the recovery's infantryman disappeared")?;
         if self
             .interner
-            .object_type(actor.type_ref(), rules)
+            .object_type_in_category(
+                actor.type_ref(),
+                crate::rules::object_type::ObjectCategory::Infantry,
+                rules,
+            )
             .is_some_and(|object| object.infiltrate)
             || actor.mission.effective().known() == Some(crate::sim::mission::MissionType::Enter)
         {
@@ -944,7 +961,12 @@ impl Simulation {
         );
         let requested = if moving_now {
             let jumpjet_type = self
-                .object_type(actor.type_ref(), rules)
+                .interner
+                .object_type_in_category(
+                    actor.type_ref(),
+                    crate::rules::object_type::ObjectCategory::Infantry,
+                    rules,
+                )
                 .is_some_and(|object| object.jumpjet);
             if jumpjet_type && uses_jumpjet_locomotor(actor) {
                 let firing = actor.mission_leaf.foot_firing_sequence_latch() != 0;
@@ -1155,7 +1177,11 @@ impl DoActionType {
         type_ref: crate::sim::intern::InternedId,
         rules: &RuleSet,
     ) -> Option<Self> {
-        let handle = interner.type_handle(type_ref, rules)?;
+        let handle = interner.type_handle_in_category(
+            type_ref,
+            crate::rules::object_type::ObjectCategory::Infantry,
+            rules,
+        )?;
         let object = rules.object_by_handle(handle);
         Some(Self {
             handle,

@@ -217,7 +217,13 @@ pub(crate) fn dispatch_foot_mission(
                     .substrate
                     .entities
                     .get(id)
-                    .and_then(|actor| sim.object_type(actor.type_ref(), rules))
+                    .and_then(|actor| {
+                        sim.interner.object_type_in_category(
+                            actor.type_ref(),
+                            crate::rules::object_type::ObjectCategory::Infantry,
+                            rules,
+                        )
+                    })
                     .is_some_and(|object| object.undeploy_delay < 0) =>
         {
             let _ = sim.infantry_do_action(
@@ -231,8 +237,19 @@ pub(crate) fn dispatch_foot_mission(
                 .substrate
                 .entities
                 .get(id)
-                .and_then(|actor| sim.object_type(actor.type_ref(), rules))
-                .and_then(|object| rules.animation_sequence(&object.id))
+                .and_then(|actor| {
+                    sim.interner.object_type_in_category(
+                        actor.type_ref(),
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        rules,
+                    )
+                })
+                .and_then(|object| {
+                    rules.animation_sequence_in_category(
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        &object.id,
+                    )
+                })
                 .and_then(|set| set.infantry_action(31))
                 .map_or(0, |record| record.frames_per_facing);
             MissionHandlerEvaluation::cadence(count)
@@ -443,7 +460,13 @@ pub(crate) fn dispatch_foot_mission(
                 .substrate
                 .entities
                 .get(id)
-                .and_then(|actor| sim.object_type(actor.type_ref(), rules))
+                .and_then(|actor| {
+                    sim.interner.object_type_in_category(
+                        actor.type_ref(),
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        rules,
+                    )
+                })
                 .is_some_and(|object| {
                     object.undeploy_delay >= 0 || (object.deploy_fire && object.immune_to_radiation)
                 }) =>
@@ -453,13 +476,22 @@ pub(crate) fn dispatch_foot_mission(
                 .substrate
                 .entities
                 .get(id)
-                .and_then(|actor| sim.object_type(actor.type_ref(), rules))
+                .and_then(|actor| {
+                    sim.interner.object_type_in_category(
+                        actor.type_ref(),
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        rules,
+                    )
+                })
                 .expect("deployed shim type resolved");
             if object.undeploy_delay >= 0 {
                 //521355..52137D: unforced Undeploy31, then raw Count31.
                 let _ = sim.infantry_do_action(id, 31, false, rules, ctx.effects);
                 let count = rules
-                    .animation_sequence(&object.id)
+                    .animation_sequence_in_category(
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        &object.id,
+                    )
                     .and_then(|set| set.infantry_action(31))
                     .map_or(0, |record| record.frames_per_facing);
                 MissionHandlerEvaluation::cadence(count)
@@ -539,7 +571,10 @@ pub(crate) fn dispatch_foot_mission(
                 if fired {
                     let _ = sim.infantry_do_action(id, 29, false, rules, ctx.effects);
                     let count = rules
-                        .animation_sequence(&object.id)
+                        .animation_sequence_in_category(
+                            crate::rules::object_type::ObjectCategory::Infantry,
+                            &object.id,
+                        )
                         .and_then(|set| set.infantry_action(29))
                         .map_or(0, |record| record.frames_per_facing);
                     MissionHandlerEvaluation::cadence(count)
@@ -954,7 +989,11 @@ fn infantry_automatic_guard_delay(
     let Some(house) = sim.houses.get(&actor.owner()) else {
         return -1;
     };
-    let Some(object) = sim.object_type(actor.type_ref(), rules) else {
+    let Some(object) = sim.interner.object_type_in_category(
+        actor.type_ref(),
+        crate::rules::object_type::ObjectCategory::Infantry,
+        rules,
+    ) else {
         return -1;
     };
     if house.is_controlled_by_human(sim.session.game_mode_nonzero())
@@ -1004,7 +1043,10 @@ fn infantry_automatic_guard_delay(
         //521631..521659 returns raw signed Count27 even when DoAction refuses.
         let _ = sim.infantry_do_action(id, 27, false, rules, effects);
         return rules
-            .animation_sequence(&object.id)
+            .animation_sequence_in_category(
+                crate::rules::object_type::ObjectCategory::Infantry,
+                &object.id,
+            )
             .and_then(|set| set.infantry_action(27))
             .map_or(0, |record| record.frames_per_facing);
     }
@@ -2842,7 +2884,13 @@ fn infantry_deployed_attack_reacquire(
             .substrate
             .entities
             .get(id)
-            .and_then(|actor| sim.object_type(actor.type_ref(), rules))
+            .and_then(|actor| {
+                sim.interner.object_type_in_category(
+                    actor.type_ref(),
+                    crate::rules::object_type::ObjectCategory::Infantry,
+                    rules,
+                )
+            })
             .is_some_and(|object| object.jumpjet)
     {
         return None;

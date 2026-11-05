@@ -540,7 +540,12 @@ fn process_native_rules_cold_start_inner(
         RulesTypeFamily::Building,
     );
     let after_building_master = processor.native_type_construction_events.len();
-    processor.process_techno_family(RulesTypeFamily::Building, selected_rules_root, fixed_art);
+    processor.process_techno_family(
+        RulesTypeFamily::Building,
+        selected_rules_root,
+        fixed_art,
+        fixed_sounds,
+    );
     let after_building_bodies = processor.native_type_construction_events.len();
     let (_, trace, _) = processor.finish();
     Ok((
@@ -1039,6 +1044,16 @@ impl ProcessedRulesLayers {
         }
         for (&family, members) in &registry.families {
             for member in members {
+                if (family == RulesTypeFamily::Infantry) != member.infantry_sequence_bank.is_some()
+                    || member
+                        .infantry_sequence_bank
+                        .as_ref()
+                        .is_some_and(|bank| !bank.valid_saved_state())
+                {
+                    return Err(RulesError::InvalidSavedState(
+                        "invalid InfantryType sequence bank",
+                    ));
+                }
                 member.object_image.validate_saved_state()?;
                 if let Some(terrain) = &member.terrain_type_read_state {
                     terrain.validate_saved_state()?;
@@ -1465,22 +1480,21 @@ impl ProcessedRulesLayers {
             .map(|member| (member.native_stored_id.as_str(), member.infantry_art))
     }
 
-    /// Each InfantryType's sequence sound pairs from every reached pass, in
-    /// read order ([`crate::rules::infantry_sequence::read_sequence_sounds`]).
-    pub(crate) fn infantry_sequence_sound_reads(
+    /// Each native InfantryType's retained ReadSequenceData523D00 bank.
+    pub(crate) fn infantry_sequence_banks(
         &self,
-    ) -> impl Iterator<Item = (&str, &[crate::rules::infantry_sequence::SequenceSoundRead])> {
+    ) -> impl Iterator<Item = (&str, &crate::rules::infantry_sequence::InfantrySequenceBank)> {
         self.native_type_construction_trace
             .registry_state()
             .families
             .get(&RulesTypeFamily::Infantry)
             .into_iter()
             .flatten()
-            .map(|member| {
-                (
+            .filter_map(|member| {
+                Some((
                     member.native_stored_id.as_str(),
-                    member.infantry_sequence_sound_reads.as_slice(),
-                )
+                    member.infantry_sequence_bank.as_ref()?,
+                ))
             })
     }
 
@@ -4580,10 +4594,9 @@ struct ProcessedType {
     /// reads of every reached ReadINI pass (`0x005246A1..0x0052472D`).
     #[serde(default)]
     infantry_art: InfantryArt,
-    /// Every reached InfantryType ReadINI pass ends in ReadSequenceData
-    /// (`0x0052473A`), whose sound pairs append without a reset.
-    #[serde(default)]
-    infantry_sequence_sound_reads: Vec<crate::rules::infantry_sequence::SequenceSoundRead>,
+    /// Ctor52392C initializes the whole bank; each reached InfantryType
+    /// ReadINI52473A updates its timing and fixed-catalog sound slots together.
+    infantry_sequence_bank: Option<crate::rules::infantry_sequence::InfantrySequenceBank>,
     recoil: crate::rules::recoil::RecoilConfig,
     airstrike: crate::rules::airstrike::AirstrikeSettings,
     /// TechnoType constructor711134 and current-default ReadInt7147B4.
@@ -5147,7 +5160,7 @@ impl ProcessedType {
             infantry_pips: InfantryPips::default(),
             infantry_infiltration: InfantryInfiltration::default(),
             infantry_art: InfantryArt::default(),
-            infantry_sequence_sound_reads: Vec::new(),
+            infantry_sequence_bank: None,
             recoil: crate::rules::recoil::RecoilConfig::default(),
             airstrike: crate::rules::airstrike::AirstrikeSettings::default(),
             radial_fire_segments: 0,
@@ -5251,6 +5264,9 @@ fn find_or_construct_type(
     let native_stored_id = abstract_type_stored_id(incoming);
     let index = members.len();
     members.push(ProcessedType::new(native_stored_id.clone()));
+    if family == RulesTypeFamily::Infantry {
+        members[index].infantry_sequence_bank = Some(Default::default());
+    }
     #[cfg(feature = "ares")]
     if family == RulesTypeFamily::Side {
         members[index].ares_side = Some(AresSideState::default());
@@ -5533,7 +5549,7 @@ impl RulesPassProcessor {
         // so a same-pass `InsigniaType=` resolves against it.
         #[cfg(feature = "phobos")]
         self.allocate_insignia_types(pass);
-        self.process_type_data(pass, fixed_art, fixed_eva, primary_rules);
+        self.process_type_data(pass, fixed_art, fixed_eva, primary_rules, fixed_sounds);
         // RulesExt LoadAfterTypeData: installed679CAF ->1002C9B0 ->1002AAF0
         // ->1002A800 reads HSBuilding at1002A8DD with the BuildingType
         // pointer-vector reader10010850, which finds and never allocates.
@@ -6444,6 +6460,7 @@ impl RulesPassProcessor {
         fixed_art: &IniFile,
         _fixed_eva: &EvaRegistry,
         primary_rules: bool,
+        fixed_sounds: &SoundRegistry,
     ) {
         // Ares ReadTypeData679A10 hook1002EFC0 sweeps every Side before
         // Country bodies. It does not require [Sides] or a Side section.
@@ -6532,10 +6549,10 @@ impl RulesPassProcessor {
         self.process_house_family(pass, primary_rules);
         self.process_super_weapon_family(pass, _fixed_eva);
         self.process_anim_family(fixed_art);
-        self.process_techno_family(RulesTypeFamily::Building, pass, fixed_art);
-        self.process_techno_family(RulesTypeFamily::Aircraft, pass, fixed_art);
-        self.process_techno_family(RulesTypeFamily::Vehicle, pass, fixed_art);
-        self.process_techno_family(RulesTypeFamily::Infantry, pass, fixed_art);
+        self.process_techno_family(RulesTypeFamily::Building, pass, fixed_art, fixed_sounds);
+        self.process_techno_family(RulesTypeFamily::Aircraft, pass, fixed_art, fixed_sounds);
+        self.process_techno_family(RulesTypeFamily::Vehicle, pass, fixed_art, fixed_sounds);
+        self.process_techno_family(RulesTypeFamily::Infantry, pass, fixed_art, fixed_sounds);
         self.process_weapon_family(pass);
         self.process_bullet_family(pass, fixed_art);
         self.process_warhead_family(pass);
@@ -7181,6 +7198,7 @@ impl RulesPassProcessor {
         family: RulesTypeFamily,
         pass: &IniFile,
         fixed_art: &IniFile,
+        fixed_sounds: &SoundRegistry,
     ) {
         let mut index = 0;
         while index < self.family_len(family) {
@@ -7618,12 +7636,11 @@ impl RulesPassProcessor {
                         self.family_mut(family)[index]
                             .infantry_art
                             .read_pass(fixed_art.section_or_empty(&image));
-                        let reads = crate::rules::infantry_sequence::read_sequence_sounds(
-                            fixed_art, &image,
-                        );
                         self.family_mut(family)[index]
-                            .infantry_sequence_sound_reads
-                            .extend(reads);
+                            .infantry_sequence_bank
+                            .as_mut()
+                            .expect("InfantryType constructor owns a sequence bank")
+                            .read_pass(fixed_art, &image, fixed_sounds);
                     }
                     _ => unreachable!("only Techno families enter the Techno reader"),
                 }

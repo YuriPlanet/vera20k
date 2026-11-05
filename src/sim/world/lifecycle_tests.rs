@@ -4057,9 +4057,6 @@ fn infantry_target_expiry_clears_firing_action_before_target() {
     let art = IniFile::from_str(crate::rules::retail_ini_fixture::GI_ART_EXCERPT);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     // Original 51B20E drops the firing latch before its unforced Ready
     // request. FireUp (4) admits it; Die2 (12) refuses and retains its stage.
     // The corresponding class-target receipts pin this ordering without RNG.

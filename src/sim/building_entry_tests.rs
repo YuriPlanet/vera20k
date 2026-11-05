@@ -2808,16 +2808,13 @@ fn retail_all01_script64_conscript_admits_a_map_civilian_garrison() {
             .ini
     });
     let mut owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
-    let (mut rules, _, fixed_art, _) = owner
+    let (rules, _, _, _) = owner
         .load_scenario(
             NativeScenarioRulesPrefix::Campaign(named.as_ref()),
             &map.ini,
         )
         .unwrap()
         .into_parts();
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&fixed_art),
-    );
     assert!(rules.object("E2").expect("retail Conscript").occupier);
     let civilian = map
         .entities

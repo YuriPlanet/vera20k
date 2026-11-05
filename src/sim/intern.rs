@@ -127,6 +127,26 @@ impl StringInterner {
         self.types.handle(self, id, rules)
     }
 
+    pub fn type_handle_in_category(
+        &self,
+        id: InternedId,
+        category: crate::rules::object_type::ObjectCategory,
+        rules: &RuleSet,
+    ) -> Option<TypeHandle> {
+        self.types.handle_in_category(self, id, category, rules)
+    }
+
+    /// Native class methods hold the concrete Type pointer (Infantry51D707,
+    /// 518DCF), not the broad name winner from another class's registry.
+    pub fn animation_sequence_in_category<'r>(
+        &self,
+        id: InternedId,
+        category: crate::rules::object_type::ObjectCategory,
+        rules: &'r RuleSet,
+    ) -> Option<&'r crate::rules::animation_sequence::SequenceSet> {
+        rules.animation_sequence_by_handle(self.type_handle_in_category(id, category, rules)?)
+    }
+
     /// The sequences of the object type `id` names in `rules`, as
     /// `rules.animation_sequence(self.resolve(id))` answers, the same way.
     #[inline]

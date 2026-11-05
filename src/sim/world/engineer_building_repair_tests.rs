@@ -173,9 +173,6 @@ impl Fixture {
             &IniFile::from_str(&extra),
             &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(&sounds)),
         );
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         // The native packet also carries constructor inputs for other
         // buildings and debris. This bounded fixture installs only GAPOWR's
         // normal/damaged ART, so bind its native SHP counts alone.

@@ -548,9 +548,6 @@ fn animation_boundary_fixture() -> (Simulation, RuleSet) {
     let mut rules =
         RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).expect("animation fixture rules");
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let id = sim
         .spawn_object("E1", "Americans", 4, 4, 0, &rules)
         .expect("living infantry");
@@ -980,9 +977,6 @@ fn advance_tick_finishes_dying_infantry_from_rules_catalog() {
     let mut rules =
         RuleSet::from_ini_with_fixed_art_for_test(&ini, &art_ini).expect("dying infantry rules");
     rules.install_art_data(ArtRegistry::from_ini(&art_ini));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini),
-    );
     let mut sim = Simulation::new();
     sim.hash_state_every(std::num::NonZeroU64::MIN);
     let id = sim
@@ -3311,9 +3305,6 @@ fn walking_combat_test_rules() -> RuleSet {
          FireUp=164,6,6\nFireProne=212,6,6\nDie1=56,15,0\n",
     );
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     rules
 }
 

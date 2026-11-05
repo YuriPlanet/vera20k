@@ -87,7 +87,6 @@ fn bound_saved_world(
     );
     init_helpers::bind_rules_asset_closure(
         &mut rules,
-        &fixed_art,
         &overlay_registry,
         &roots,
         &[],
@@ -1036,6 +1035,58 @@ fn retail_saved_resources_prepare_cold() {
         "uncommitted candidate cannot warm the process cache"
     );
     assert!(cold_owner.saved_scenario_rules().is_none());
+}
+
+#[test]
+fn saved_infantry_sequence_bank_survives_image_without_sequence() {
+    let Some(mut save) = incoming_save("TEMPERATE", "[SLAV]\nImage=MONEY\n") else {
+        return;
+    };
+    let clock = || LOAD_CLOCK_MS;
+    let frontend = frontend_main();
+    let cache = TileVariantSelectorCache::default();
+    let view = SavedGamePreparationView {
+        repository: &save.repository,
+        current_simulation: None,
+        frontend_main: &frontend,
+        rules_owner: &save.owner,
+        tile_cache: &cache,
+        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
+        load_clock: &clock,
+    };
+    let prepared = save
+        .assets
+        .prepare_saved_load(|assets| {
+            PreparedSavedGame::prepare_resources(&save.bytes, &view, assets)
+        })
+        .expect("saved InfantryType bank survives resource preparation");
+    let rules = &prepared.resources.rules;
+    assert_eq!(rules.object("SLAV").unwrap().image, "MONEY");
+    assert!(rules.art().get("MONEY").unwrap().sequence.is_none());
+    // ReadSequenceData523D2D preserves the bank when this map image has no
+    // Sequence. InfantryTypeLoad524B10 restores that bank; the two resource
+    // binding passes above must not replace it with the final image's defaults.
+    // These are the retail [SlaveSequence] FireUp and FireUpSounds inputs.
+    let fire_up = rules
+        .animation_sequence("SLAV")
+        .unwrap()
+        .infantry_action(4)
+        .unwrap();
+    assert_eq!(
+        (
+            fire_up.start_frame,
+            fire_up.frames_per_facing,
+            fire_up.facings
+        ),
+        (164, 8, 8)
+    );
+    let sounds: Vec<_> = rules
+        .object("SLAV")
+        .unwrap()
+        .sequence_sounds(4)
+        .map(|sound| (sound.frame, sound.sound_id.as_str()))
+        .collect();
+    assert_eq!(sounds, [(2, "SlaveAttack")]);
 }
 
 #[test]

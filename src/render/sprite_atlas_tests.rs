@@ -473,9 +473,6 @@ fn deploy_targets_get_the_same_keys_as_placed_structures() {
     // Fixed ART supplies native processed reader inputs; the runtime metadata
     // registry is installed separately, as in production map loading.
     rules.install_art_data(art.clone());
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini),
-    );
     assert_eq!(
         rules
             .animation_sequence("E1")
@@ -1057,9 +1054,6 @@ fn raw_infantry_atlas_rules(sequence_rows: &str) -> (RuleSet, ArtRegistry) {
     // Processing with fixed ART does not install RuleSet's metadata registry.
     // Bind the same image/Sequence owner used by the source loader first.
     rules.install_art_data(art.clone());
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini),
-    );
     assert_eq!(
         rules
             .art()

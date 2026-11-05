@@ -538,7 +538,12 @@ impl Simulation {
             .get(id)
             .ok_or("Infantry Unload receiver retired")?;
         let object = self
-            .object_type(actor.type_ref(), rules)
+            .interner
+            .object_type_in_category(
+                actor.type_ref(),
+                crate::rules::object_type::ObjectCategory::Infantry,
+                rules,
+            )
             .ok_or("Infantry Unload requires the type")?;
         let doing = actor
             .mission_leaf
@@ -566,7 +571,10 @@ impl Simulation {
                 //5F3E50→410A40 compares native literal82557C "DESO".
                 if object.id.eq_ignore_ascii_case("DESO") {
                     delay = rules
-                        .animation_sequence(&object.id)
+                        .animation_sequence_in_category(
+                            crate::rules::object_type::ObjectCategory::Infantry,
+                            &object.id,
+                        )
                         .and_then(|set| set.infantry_action(27))
                         .ok_or("DESO Unload requires its native Deploy sequence record")?
                         .frames_per_facing

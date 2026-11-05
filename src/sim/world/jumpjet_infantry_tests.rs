@@ -956,10 +956,6 @@ fn rocketeer_rules_armed(armed: bool) -> crate::rules::ruleset::RuleSet {
     )
     .unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    let registry = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art);
-    rules.replace_animation_sequences_for_test(
-        crate::rules::animation_sequence::build_animation_sequence_catalog(&rules, Some(&registry)),
-    );
     rules
 }
 

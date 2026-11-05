@@ -1940,9 +1940,6 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
     registry.bind_anim_frame_count_for_test("WARPAWAY", 20);
     registry.bind_anim_frame_count_for_test("CHRONOSK", 3);
     rules.install_art_data(registry);
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let mut sim = sim(21);
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
     let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 16, 16);

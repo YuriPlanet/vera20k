@@ -55,9 +55,6 @@ fn fixture_with_art(extra: &str, art: Option<&IniFile>) -> (Simulation, RuleSet)
     };
     if let Some(art) = art {
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(art));
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(art),
-        );
         assert_eq!(
             rules
                 .animation_sequence("E1")

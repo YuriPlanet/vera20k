@@ -1780,7 +1780,12 @@ fn insert_new_object_keys(
                     ShpImageKind::Object,
                 );
                 let actions = rules
-                    .and_then(|rules| rules.animation_sequence(type_str))
+                    .and_then(|rules| {
+                        rules.animation_sequence_in_category(
+                            crate::rules::object_type::ObjectCategory::Infantry,
+                            type_str,
+                        )
+                    })
                     .and_then(|set| set.infantry_actions());
                 let frames = match (source.as_ref(), actions) {
                     (Some(source), Some(actions)) => {

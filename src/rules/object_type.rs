@@ -2004,10 +2004,8 @@ pub struct ObjectType {
     /// Immutable projection of the retained InfantryType Pip/OccupyPip state.
     infantry_pips: InfantryPips,
 
-    /// ReadSequenceData's sound pairs from every reached rules pass,
-    /// projected from the native type registry; bound by
-    /// [`Self::bind_sequence_sounds`].
-    sequence_sound_reads: Vec<crate::rules::infantry_sequence::SequenceSoundRead>,
+    /// Immutable projection of the type's retained ReadSequenceData523D00 bank.
+    infantry_sequence_bank: Option<crate::rules::infantry_sequence::InfantrySequenceBank>,
 
     /// The bound record sounds: at most two per DoType (record `+0x10`).
     sequence_sounds: Vec<crate::rules::infantry_sequence::SequenceSound>,
@@ -3395,17 +3393,26 @@ impl ObjectType {
         ] = art.discharge_frames;
     }
 
-    pub(crate) fn project_sequence_sound_reads(
+    pub(crate) fn project_infantry_sequence_bank(
         &mut self,
-        reads: &[crate::rules::infantry_sequence::SequenceSoundRead],
+        bank: &crate::rules::infantry_sequence::InfantrySequenceBank,
     ) {
-        self.sequence_sound_reads = reads.to_vec();
+        self.infantry_sequence_bank = Some(bank.clone());
     }
 
-    /// Resolve the projected pairs through `find` (VocClass::FindByName).
-    pub(crate) fn bind_sequence_sounds(&mut self, find: impl FnMut(&str) -> Option<String>) {
-        self.sequence_sounds =
-            crate::rules::infantry_sequence::bind_sequence_sounds(&self.sequence_sound_reads, find);
+    pub(crate) fn infantry_sequence_bank(
+        &self,
+    ) -> Option<&crate::rules::infantry_sequence::InfantrySequenceBank> {
+        self.infantry_sequence_bank.as_ref()
+    }
+
+    /// Derive presentation names from saved Voc ordinals, without rereading ART.
+    pub(crate) fn bind_sequence_sounds(&mut self, sounds: &crate::rules::sound_ini::SoundRegistry) {
+        self.sequence_sounds = self
+            .infantry_sequence_bank
+            .as_ref()
+            .map(|bank| bank.bound_sounds(sounds))
+            .unwrap_or_default();
     }
 
     /// The sounds of DoType `action`'s record, in slot order.
@@ -4795,7 +4802,7 @@ impl ObjectType {
             elite_occupy_weapon: None,
             // Constructor values; only the ordered Process owner reads them.
             infantry_pips: InfantryPips::default(),
-            sequence_sound_reads: Vec::new(),
+            infantry_sequence_bank: (category == ObjectCategory::Infantry).then(Default::default),
             sequence_sounds: Vec::new(),
             pip_scale: section
                 .read_name("PipScale", 0x20)

@@ -846,9 +846,6 @@ fn anytown_destination_dependencies() -> Option<(
         .expect("AnyTown/Battle production Rules layers")
         .into_parts();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let overlays =
         crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&processed, Some(&art));
     let terrain = ResolvedTerrainGrid::build(

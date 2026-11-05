@@ -199,9 +199,6 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
     let art = IniFile::from_bytes(&art_bytes).unwrap();
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     assert_eq!(rules.general.ai_auto_deploy_frame_delay, [15, 25, 100]);
     for name in ["E1", "GGI"] {
         let object = rules.object(name).unwrap();
