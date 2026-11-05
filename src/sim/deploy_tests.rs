@@ -43,7 +43,13 @@ const MCV_ART: &str = "[GACNST]\nFoundation=4x3\n\
     [GAWEAP]\nFoundation=3x2\n[GAAIRC]\nFoundation=2x2\n[GATECH]\nFoundation=2x2\n";
 
 fn make_mcv_rules() -> RuleSet {
-    let text = "\
+    make_mcv_rules_with_yard("")
+}
+
+/// [`make_mcv_rules`] with `yard_keys` added to `[GACNST]`.
+fn make_mcv_rules_with_yard(yard_keys: &str) -> RuleSet {
+    let text = format!(
+        "\
 [InfantryTypes]
 
 [VehicleTypes]
@@ -77,7 +83,7 @@ Strength=1000
 Armor=wood
 ConstructionYard=yes
 UndeploysInto=AMCV
-
+{yard_keys}
 [GAPOWR]
 Name=Power Plant
 Strength=750
@@ -90,8 +96,9 @@ Armor=wood
 
 [Clear]
 Buildable=yes
-";
-    let ini: IniFile = IniFile::from_str(text);
+"
+    );
+    let ini: IniFile = IniFile::from_str(&text);
     RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::from_str(MCV_ART))
         .expect("MCV test ruleset parse")
 }
@@ -308,6 +315,65 @@ fn deploy_then_undeploy_returns_the_mcv_to_its_original_cell() {
             "deploy/undeploy must round-trip; drifting here compounds every cycle"
         );
     }
+}
+
+/// A lit yard outside a campaign. Its Unlimbo skips the light block
+/// (`0x00440D4D..0x00440D54`), so its light first comes on as it opens
+/// (`0x004466D5..0x0044676C`), centred on its GetCoords (`0x00447AC0`, the
+/// middle of the 4x3 foundation). Undeploying turns the light off
+/// (`0x00449F1E`) before the yard's UnInit.
+#[test]
+fn a_lit_yard_lights_as_it_opens_and_goes_dark_as_it_undeploys() {
+    use crate::sim::light_sources::LightingEvent;
+    let mut rules = make_mcv_rules_with_yard("LightIntensity=0.5\nLightVisibility=2000\n");
+    rules.set_buildup_control_for_test("GACNST", [0, 29, 1]);
+    let mut sim = deploy_sim(&rules);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    add_house(&mut sim, "Americans", true);
+    let mcv = sim
+        .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
+        .expect("spawn MCV");
+    assert!(sim.deploy_mcv(
+        mcv,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default()
+    ));
+    sim.flush_pending_delete();
+    let yard = deployed_type(&sim, "GACNST").stable_id();
+    assert!(sim.entities().get(yard).unwrap().building_up());
+    assert!(!sim.lighting_sources.buildings().contains_key(&yard));
+
+    tick_n(&mut sim, &rules, 60);
+    let entity = sim.entities().get(yard).unwrap();
+    assert!(entity.building_art.actually_placed());
+    let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+    let light = &sim.lighting_sources.buildings()[&yard];
+    assert!(light.active);
+    assert_eq!((light.center_x, light.center_y), (x + 3 * 128, y + 2 * 128));
+
+    sim.lighting_sources.discard_pending();
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::UndeployBuilding { entity_id: yard },
+        Some(&rules),
+    ));
+    tick_n(&mut sim, &rules, 40);
+    sim.flush_pending_delete();
+    assert!(sim.entities().get(yard).is_none());
+    let yard_light: Vec<_> = sim
+        .lighting_sources
+        .pending()
+        .iter()
+        .filter_map(|event| match event {
+            LightingEvent::Building { id, source } if *id == yard => {
+                Some(source.as_ref().map(|light| light.active))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(yard_light, [Some(false), None]);
 }
 
 /// A computer house's MCV deploys into a yard that builds up before it opens:

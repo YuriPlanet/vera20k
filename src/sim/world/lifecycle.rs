@@ -1690,6 +1690,7 @@ impl Simulation {
         // Residual (invisible): native marks at 0x00440C34, before
         // 0x00440D07..0x00440D2D above; only House AI reads the marks.
         self.mark_building_base_reservation_with_arg(stable_id, false, context);
+        self.light_building_at_unlimbo(stable_id, context.rules());
         self.discover_building_owner_after_unlimbo(stable_id, context);
         self.construct_spotlight(stable_id, context.rules());
         // Unlimbo44119C clears this object's retained primary before
@@ -1767,6 +1768,34 @@ impl Simulation {
             && let Some(entity) = substrate.entities.get_mut(stable_id)
         {
             entity.ai_sell_repair.make_repairable();
+        }
+    }
+
+    /// `BuildingClass::Unlimbo 0x00440D25..0x00440D6C`: only a campaign
+    /// building the player has discovered (`+0x41B`), or whose Unlimbo cell's
+    /// ground is not open to the player (`Cell+0x12C & 0x10`), is lit here
+    /// ([`Self::light_building`]). Any other takes DiscoveredBy(PlayerPtr)
+    /// (`0x00440D61`), which the CellPUT discovery has already made (see
+    /// [`Self::discover_cell_put_object`]), and is lit when it opens.
+    fn light_building_at_unlimbo(&mut self, id: u64, rules: &RuleSet) {
+        if self.session.game_mode_nonzero() {
+            return;
+        }
+        let Some(entity) = self
+            .substrate
+            .entities
+            .get(id)
+            .filter(|entity| entity.category() == EntityCategory::Structure)
+        else {
+            return;
+        };
+        let (rx, ry) = (entity.position.rx(), entity.position.ry());
+        let open = self
+            .session
+            .current_house()
+            .is_some_and(|player| self.fog.is_ground_open(player, rx, ry));
+        if entity.discovery.discovered_by_current_house() || !open {
+            self.light_building(id, rules);
         }
     }
 

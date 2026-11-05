@@ -86,8 +86,6 @@ fn overlay_sample_flushes_prior_sources_and_survives_later_relight() {
     let source = LightingEvent::Building {
         id: 900,
         source: Some(PointLight {
-            rx: cell.0,
-            ry: cell.1,
             center_x: i32::from(cell.0) * 256 + 128,
             center_y: i32::from(cell.1) * 256 + 128,
             radius_leptons: 512,
