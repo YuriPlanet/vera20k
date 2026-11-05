@@ -1,16 +1,17 @@
 //! Ordinary radar animation and its displayed pixel history.
 //!
-//! `RadarPresentation` owns the frame/timer and retained pixels; the GPU
-//! adapter uploads its result. Internal minimap updates remain independent.
+//! `RadarPresentation` owns the frame/timer and records, in order, what
+//! native paints into the retained housing surface and when that surface is
+//! shown; [`RadarAnimState`] replays the paints on the GPU. Internal minimap
+//! updates remain independent.
 //!
 //! Native `652960` starts offline at frame 0 with a zero-duration timer.
 //! `656BE0` changes direction without resetting that timer. `653100` advances
 //! once per draw when four `timeGetTime() >> 4` buckets have elapsed, resets
 //! from the current bucket, and clamps at frames 0/32 in that same draw.
 
-use super::surface::RadarSurface;
-use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
-use crate::render::gpu::GpuContext;
+use crate::render::batch::{BatchRenderer, BatchTexture, CameraUniform, SpriteInstance};
+use crate::render::shroud_buffer::InstanceUpload;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RadarAnimPhase {
@@ -127,38 +128,67 @@ impl RadarAnimation {
     }
 }
 
+/// One paint into the retained housing surface, the radar's rectangle of
+/// `SidebarSurface` (allocated and cleared at `533FD0`), or the copy of it
+/// the sidebar shows.
+enum RadarPaint {
+    /// A new surface: opaque black.
+    Clear,
+    /// Frame `n`'s pixels; `4912B0` skips source index 0, transparent here.
+    Frame(usize),
+    /// A movie frame along the top, centred in the surface's width.
+    Movie {
+        picture: BatchTexture,
+        size: [u32; 2],
+    },
+    /// The online draw (`656EC0`) kept for a later loss: frame 32, then the
+    /// minimap's picture through `map_quads` and the solid `solid_quads`, as
+    /// the sidebar draws them from `origin`.
+    Online {
+        map_quads: Vec<SpriteInstance>,
+        solid_quads: Vec<SpriteInstance>,
+        origin: [f32; 2],
+    },
+    /// Show the surface as it now stands.
+    Show,
+}
+
+/// Whether `frames` are housing frames for a `width`x`height` surface: the
+/// ordinary endpoints are 0 and 32.
+fn valid_frames(frames: &[Vec<u8>], width: u32, height: u32) -> bool {
+    let Some(byte_count) = width.checked_mul(height).and_then(|n| n.checked_mul(4)) else {
+        return false;
+    };
+    frames.len() >= 33
+        && byte_count != 0
+        && frames
+            .iter()
+            .all(|frame| frame.len() == byte_count as usize)
+}
+
 /// One owner for the displayed radar history, independent of GPU allocation.
 /// Native 653100 paints into SidebarSurface; 656EC0 writes online content into
 /// the same backing and suppresses those stores during transitions.
 pub(in crate::render) struct RadarPresentation {
     animation: RadarAnimation,
-    pub(in crate::render) surface: RadarSurface,
-    needs_upload: bool,
-    frames_rgba: Vec<Vec<u8>>,
+    /// The surface's size, which the frames share.
+    size: [u32; 2],
+    /// Paints since the last replay, in order.
+    paints: Vec<RadarPaint>,
+    /// Show the surface at the next draw, even if no frame is due.
+    needs_show: bool,
     movie: Option<MovieStage>,
     pending_radar: bool,
     movie_pause_latch: bool,
 }
 impl RadarPresentation {
-    pub(in crate::render) fn new(
-        frames_rgba: Vec<Vec<u8>>,
-        width: u32,
-        height: u32,
-    ) -> Option<Self> {
-        let byte_count = width.checked_mul(height)?.checked_mul(4)? as usize;
-        if frames_rgba.len() < 33
-            || byte_count == 0
-            || frames_rgba.iter().any(|frame| frame.len() != byte_count)
-        {
-            return None;
-        }
-        let mut surface = RadarSurface::new(width, height);
-        surface.paint_frame(&frames_rgba[0]);
-        Some(Self {
+    pub(in crate::render) fn new(frames: &[Vec<u8>], width: u32, height: u32) -> Option<Self> {
+        valid_frames(frames, width, height).then(|| Self {
             animation: RadarAnimation::default(),
-            surface,
-            needs_upload: false,
-            frames_rgba,
+            size: [width, height],
+            // A new surface shows frame 0 from the start.
+            paints: vec![RadarPaint::Clear, RadarPaint::Frame(0), RadarPaint::Show],
+            needs_show: false,
             movie: None,
             pending_radar: false,
             movie_pause_latch: false,
@@ -167,25 +197,22 @@ impl RadarPresentation {
     /// Source installation is separate from animation timing (652E90).
     /// Paint the selected current frame as a forced source redraw; source0
     /// skips retain prior pixels, exactly as any other 4912B0 frame store.
-    pub(super) fn replace_frames(&mut self, frames: Vec<Vec<u8>>, width: u32, height: u32) -> bool {
-        let Some(byte_count) = width.checked_mul(height).and_then(|n| n.checked_mul(4)) else {
-            return false;
-        };
-        if frames.len() < 33
-            || byte_count == 0
-            || frames.iter().any(|f| f.len() != byte_count as usize)
-        {
+    pub(super) fn replace_frames(&mut self, frames: &[Vec<u8>], width: u32, height: u32) -> bool {
+        if !valid_frames(frames, width, height) {
             return false;
         }
-        if self.surface.dimensions() != [width, height] {
+        let frame = RadarPaint::Frame(self.animation.frame);
+        if self.size != [width, height] {
             // VERA fallback for non-stock dimensional changes; no native
-            // cross-size retained-history equivalence is asserted.
-            self.surface = RadarSurface::new(width, height);
+            // cross-size retained-history equivalence is asserted. The new
+            // surface is shown as soon as it exists.
+            self.size = [width, height];
+            self.paints
+                .extend([RadarPaint::Clear, frame, RadarPaint::Show]);
+        } else {
+            self.paints.push(frame);
         }
-        self.frames_rgba = frames;
-        self.surface
-            .paint_frame(&self.frames_rgba[self.animation.frame]);
-        self.needs_upload = true;
+        self.needs_show = true;
         true
     }
     pub(in crate::render) fn set_has_radar(
@@ -204,9 +231,11 @@ impl RadarPresentation {
         }
         // 656DF0/656BE0 do not clear/dirty the native surface. A loss before
         // the next due draw must expose the last displayed map, not frame32.
-        self.needs_upload |= !has_radar && self.animation.phase == RadarAnimPhase::Online;
+        self.needs_show |= !has_radar && self.animation.phase == RadarAnimPhase::Online;
         self.animation.set_has_radar(has_radar)
     }
+    /// Advance the housing, painting the frame it reaches; returns whether
+    /// the surface is shown.
     pub(in crate::render) fn advance_draw(&mut self, wall_ms: u64) -> bool {
         let old_phase = self.animation.phase;
         let changed = self.animation.advance_draw(wall_ms);
@@ -216,11 +245,14 @@ impl RadarPresentation {
         // dirty/event gates pass (65715C..6571C9,6575F3). If none pass, its final
         // online image is unchanged; this base is not a native store event.
         if changed || old_phase != self.animation.phase {
-            self.surface
-                .paint_frame(&self.frames_rgba[self.animation.frame]);
-            self.needs_upload = true;
+            self.paints.push(RadarPaint::Frame(self.animation.frame));
+            self.needs_show = true;
         }
-        std::mem::take(&mut self.needs_upload)
+        let show = std::mem::take(&mut self.needs_show);
+        if show {
+            self.paints.push(RadarPaint::Show);
+        }
+        show
     }
     pub(in crate::render) fn phase(&self) -> RadarAnimPhase {
         self.animation.phase
@@ -232,13 +264,13 @@ impl RadarPresentation {
             RadarAnimPhase::Offline | RadarAnimPhase::Online
         )
     }
-    /// One `653100` draw: whether to upload, and whether the housing
-    /// finished opening or closing in it, where native ends the radar's
-    /// sound loop (`0x00653267` at frame 0, `0x0065328C` at frame 32).
-    fn draw(&mut self, wall_ms: u64) -> (bool, bool) {
+    /// One `653100` draw: whether the housing finished opening or closing in
+    /// it, where native ends the radar's sound loop (`0x00653267` at frame 0,
+    /// `0x0065328C` at frame 32).
+    fn draw(&mut self, wall_ms: u64) -> bool {
         let moving = self.housing_moving();
-        let upload = self.advance_draw(wall_ms);
-        (upload, moving && !self.housing_moving())
+        self.advance_draw(wall_ms);
+        moving && !self.housing_moving()
     }
     fn admit_movie(&mut self) -> bool {
         if self.movie.is_some() {
@@ -293,89 +325,139 @@ impl RadarPresentation {
             }
         }
     }
+    /// Native movie copies into retained SidebarSurface. Use the stock 140x110
+    /// aperture centered in its168x110 backing. Full native origin/final-paint
+    /// driver equivalence is not established; no battlefield shader involved.
+    fn paint_movie(&mut self, picture: &BatchTexture, size: [u32; 2]) {
+        // Painting the same picture again stores the same pixels.
+        if let [
+            ..,
+            RadarPaint::Movie {
+                picture: last,
+                size: last_size,
+            },
+            RadarPaint::Show,
+        ] = self.paints.as_slice()
+            && last.view == picture.view
+            && *last_size == size
+        {
+            return;
+        }
+        self.paints.push(RadarPaint::Movie {
+            picture: picture.clone(),
+            size,
+        });
+        self.paints.push(RadarPaint::Show);
+    }
     /// Save the actual online content before the next availability change.
     /// Internal minimap updates continue while closed; they cannot replace this
     /// displayed backing until online again (`656EF2..6F0D`, `657578`).
+    /// Returns whether it was kept.
     pub fn retain_online_content(
         &mut self,
-        source: &[u8],
-        source_size: [u32; 2],
         map_quads: &[SpriteInstance],
         solid_quads: impl Iterator<Item = SpriteInstance>,
         origin: [f32; 2],
-    ) {
+    ) -> bool {
         if self.animation.phase != RadarAnimPhase::Online || self.movie.is_some() {
-            return;
+            return false;
         }
         // Snapshot the currently displayed online draw, whose stock housing
         // endpoint is opaque. Do not accumulate trails from old viewport quads.
-        self.surface.paint_frame(&self.frames_rgba[32]);
-        for quad in map_quads {
-            self.surface.paint_quad(quad, origin, source, source_size);
-        }
-        for quad in solid_quads {
-            self.surface.paint_solid(&quad, origin);
-        }
+        self.paints.push(RadarPaint::Online {
+            map_quads: map_quads.to_vec(),
+            solid_quads: solid_quads.collect(),
+            origin,
+        });
+        true
     }
 }
 
-/// GPU adapter for the one retained radar presentation owner.
+/// One step of a replay: a draw of `count` quads from `first`, or a surface
+/// operation.
+enum ReplayStep {
+    Clear,
+    Show,
+    Draw {
+        texture: BatchTexture,
+        /// Index into the replay's cameras: 0 is the surface's own.
+        camera: usize,
+        first: u32,
+        count: u32,
+    },
+}
+
+/// A quad of `size` pixels at `position`, sampling its whole picture.
+fn picture_quad(position: [f32; 2], size: [f32; 2]) -> SpriteInstance {
+    SpriteInstance {
+        position,
+        size,
+        uv_size: [1.0; 2],
+        tint: [1.0; 3],
+        alpha: 1.0,
+        ..Default::default()
+    }
+}
+
+/// The GPU side of the one retained radar presentation owner: the housing
+/// frames, the surface its paints are replayed into, and the copy of that
+/// surface the sidebar draws.
 pub struct RadarAnimState {
     presentation: RadarPresentation,
-    texture: BatchTexture,
-    texture_raw: wgpu::Texture,
+    frames: Vec<BatchTexture>,
+    surface: BatchTexture,
+    displayed: BatchTexture,
+    depth: wgpu::TextureView,
+    /// The surface's own camera, then one per online paint in a replay.
+    cameras: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
+    quads: InstanceUpload,
+    /// The minimap's picture and white texture, which the online paints draw.
+    online: Option<(BatchTexture, BatchTexture)>,
     pub width: u32,
     pub height: u32,
 }
 impl RadarAnimState {
     /// Literal ordinary native endpoints are 0 and 32; malformed frames are
-    /// rejected before constructing the texture.
+    /// rejected before constructing the textures.
     pub fn new(
-        gpu: &GpuContext,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
         batch: &BatchRenderer,
         frames_rgba: Vec<Vec<u8>>,
         width: u32,
         height: u32,
     ) -> Option<Self> {
-        let presentation = RadarPresentation::new(frames_rgba, width, height)?;
-        let (texture_raw, texture) = batch.create_updatable_texture(
-            &gpu.device,
-            &gpu.queue,
-            &presentation.surface.rgba,
-            width,
-            height,
-            wgpu::FilterMode::Nearest,
-        );
+        let presentation = RadarPresentation::new(&frames_rgba, width, height)?;
+        let (surface, displayed, depth) = housing_targets(device, batch, width, height);
         Some(Self {
             presentation,
-            texture,
-            texture_raw,
+            frames: frame_textures(device, queue, batch, &frames_rgba, width, height),
+            surface,
+            displayed,
+            depth,
+            cameras: Vec::new(),
+            quads: InstanceUpload::default(),
+            online: None,
             width,
             height,
         })
     }
     pub fn replace_frames(
         &mut self,
-        gpu: &GpuContext,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
         batch: &BatchRenderer,
         frames: Vec<Vec<u8>>,
         width: u32,
         height: u32,
     ) -> bool {
-        if !self.presentation.replace_frames(frames, width, height) {
+        if !self.presentation.replace_frames(&frames, width, height) {
             return false;
         }
+        self.frames = frame_textures(device, queue, batch, &frames, width, height);
         if [width, height] != [self.width, self.height] {
-            let (raw, texture) = batch.create_updatable_texture(
-                &gpu.device,
-                &gpu.queue,
-                &self.presentation.surface.rgba,
-                width,
-                height,
-                wgpu::FilterMode::Nearest,
-            );
-            self.texture_raw = raw;
-            self.texture = texture;
+            (self.surface, self.displayed, self.depth) =
+                housing_targets(device, batch, width, height);
             self.width = width;
             self.height = height;
         }
@@ -391,28 +473,25 @@ impl RadarAnimState {
     }
     /// Native 653100 samples wall time once per draw, independent of game speed.
     /// Returns whether the housing finished opening or closing in this draw.
-    pub fn tick(&mut self, gpu: &GpuContext, wall_ms: u64) -> bool {
-        let (upload, settled) = self.presentation.draw(wall_ms);
-        if upload {
-            self.upload_frame(gpu);
-        }
-        settled
+    pub fn tick(&mut self, wall_ms: u64) -> bool {
+        self.presentation.draw(wall_ms)
     }
+    /// Keep the online draw: the minimap's `map` picture through `map_quads`,
+    /// then `white` tinted through the solid quads, as drawn from `origin`.
     pub fn retain_online_content(
         &mut self,
-        source: &[u8],
-        source_size: [u32; 2],
+        map: &BatchTexture,
+        white: &BatchTexture,
         map_quads: &[SpriteInstance],
         solid_quads: impl Iterator<Item = SpriteInstance>,
         origin: [f32; 2],
     ) {
-        self.presentation.retain_online_content(
-            source,
-            source_size,
-            map_quads,
-            solid_quads,
-            origin,
-        );
+        if self
+            .presentation
+            .retain_online_content(map_quads, solid_quads, origin)
+        {
+            self.online = Some((map.clone(), white.clone()));
+        }
     }
     pub fn is_minimap_visible(&self) -> bool {
         self.phase() == RadarAnimPhase::Online && self.presentation.movie.is_none()
@@ -450,42 +529,229 @@ impl RadarAnimState {
         self.presentation.movie_pause_latch = false;
         suspended
     }
-    /// Native movie copies into retained SidebarSurface. Use the stock 140x110
-    /// aperture centered in its168x110 backing. Full native origin/final-paint
-    /// driver equivalence is not established; no battlefield shader involved.
-    pub fn paint_movie(&mut self, gpu: &GpuContext, frame: &[u8], size: [u32; 2]) {
-        self.presentation.surface.paint_movie(frame, size);
-        self.upload_frame(gpu);
+    /// Paint the movie's current `picture`, `size` pixels, and show it.
+    pub fn paint_movie(&mut self, picture: &BatchTexture, size: [u32; 2]) {
+        self.presentation.paint_movie(picture, size);
     }
     pub fn phase(&self) -> RadarAnimPhase {
         self.presentation.phase()
     }
+    /// The surface as last shown.
     pub fn texture(&self) -> &BatchTexture {
-        &self.texture
+        &self.displayed
     }
-    /// Upload the current frame's RGBA data to the GPU texture.
-    fn upload_frame(&self, gpu: &GpuContext) {
-        let rgba: &[u8] = &self.presentation.surface.rgba;
-        gpu.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.texture_raw,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            rgba,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(self.width * 4),
-                rows_per_image: Some(self.height),
-            },
-            wgpu::Extent3d {
-                width: self.width,
-                height: self.height,
-                depth_or_array_layers: 1,
-            },
-        );
+    /// Replay the paints since the last replay into the surface, copying it
+    /// to the shown texture at each show. Encode it before the sidebar draws
+    /// [`Self::texture`], and after the minimap's composition, which the
+    /// online paints sample.
+    pub fn encode_paints(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        let paints = std::mem::take(&mut self.presentation.paints);
+        if paints.is_empty() {
+            return;
+        }
+        // Every draw's quads go up together; each draw reads its own range.
+        let size = [self.width as f32, self.height as f32];
+        let mut quads = Vec::new();
+        let mut steps = Vec::new();
+        let mut origins = vec![[0.0; 2]];
+        let mut draw = |steps: &mut Vec<ReplayStep>,
+                        texture: &BatchTexture,
+                        camera: usize,
+                        new: &[SpriteInstance]| {
+            if !new.is_empty() {
+                steps.push(ReplayStep::Draw {
+                    texture: texture.clone(),
+                    camera,
+                    first: quads.len() as u32,
+                    count: new.len() as u32,
+                });
+                quads.extend_from_slice(new);
+            }
+        };
+        for paint in paints {
+            match paint {
+                RadarPaint::Clear => steps.push(ReplayStep::Clear),
+                RadarPaint::Show => steps.push(ReplayStep::Show),
+                RadarPaint::Frame(frame) => {
+                    draw(
+                        &mut steps,
+                        &self.frames[frame],
+                        0,
+                        &[picture_quad([0.0; 2], size)],
+                    );
+                }
+                RadarPaint::Movie {
+                    picture,
+                    size: movie,
+                } => {
+                    let left = self.width.saturating_sub(movie[0]) / 2;
+                    let quad = picture_quad([left as f32, 0.0], movie.map(|v| v as f32));
+                    draw(&mut steps, &picture, 0, &[quad]);
+                }
+                RadarPaint::Online {
+                    map_quads,
+                    solid_quads,
+                    origin,
+                } => {
+                    draw(
+                        &mut steps,
+                        &self.frames[32],
+                        0,
+                        &[picture_quad([0.0; 2], size)],
+                    );
+                    if let Some((map, white)) = &self.online {
+                        origins.push(origin);
+                        let camera = origins.len() - 1;
+                        draw(&mut steps, map, camera, &map_quads);
+                        draw(&mut steps, white, camera, &solid_quads);
+                    }
+                }
+            }
+        }
+        while self.cameras.len() < origins.len() {
+            self.cameras.push(batch.create_ui_camera(device));
+        }
+        let ui = batch.ui_camera_uniform();
+        for ((buffer, _), origin) in self.cameras.iter().zip(&origins) {
+            let camera = CameraUniform {
+                screen_size: size,
+                camera_pos: *origin,
+                zoom: 1.0,
+                ..ui
+            };
+            queue.write_buffer(buffer, 0, bytemuck::bytes_of(&camera));
+        }
+        if !quads.is_empty() {
+            self.quads.write(
+                device,
+                queue,
+                "Radar housing quads",
+                bytemuck::cast_slice(&quads),
+            );
+        }
+        let mut segments = steps
+            .split(|step| matches!(step, ReplayStep::Show))
+            .peekable();
+        while let Some(segment) = segments.next() {
+            self.encode_segment(batch, encoder, segment);
+            if segments.peek().is_some() {
+                encoder.copy_texture_to_texture(
+                    self.surface.view.texture().as_image_copy(),
+                    self.displayed.view.texture().as_image_copy(),
+                    wgpu::Extent3d {
+                        width: self.width,
+                        height: self.height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
     }
+    /// One render pass over the surface for steps between shows. A clear
+    /// discards whatever came before it.
+    fn encode_segment(
+        &self,
+        batch: &BatchRenderer,
+        encoder: &mut wgpu::CommandEncoder,
+        segment: &[ReplayStep],
+    ) {
+        let (load, steps) = match segment
+            .iter()
+            .rposition(|step| matches!(step, ReplayStep::Clear))
+        {
+            Some(clear) => (
+                wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                &segment[clear + 1..],
+            ),
+            None if segment.is_empty() => return,
+            None => (wgpu::LoadOp::Load, segment),
+        };
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Radar housing"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &self.surface.view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            // The direct stores neither test nor write it.
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &self.depth,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(crate::render::native_z::STORED_DEPTH_CLEAR),
+                    store: wgpu::StoreOp::Discard,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        let Some(quads) = self.quads.buffer() else {
+            return;
+        };
+        for step in steps {
+            if let ReplayStep::Draw {
+                texture,
+                camera,
+                first,
+                count,
+            } = step
+            {
+                batch.draw_passthrough_range_bound(
+                    &mut pass,
+                    texture,
+                    quads,
+                    &self.cameras[*camera].1,
+                    *first,
+                    *count,
+                );
+            }
+        }
+    }
+}
+
+/// The housing frames' textures; only frames 0..=32 are drawn.
+fn frame_textures(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    batch: &BatchRenderer,
+    frames: &[Vec<u8>],
+    width: u32,
+    height: u32,
+) -> Vec<BatchTexture> {
+    frames
+        .iter()
+        .take(33)
+        .map(|frame| batch.create_texture_on_device(device, queue, frame, width, height, None))
+        .collect()
+}
+
+/// The surface, the texture shown from it, and the depth the batch pipelines
+/// need beside them.
+fn housing_targets(
+    device: &wgpu::Device,
+    batch: &BatchRenderer,
+    width: u32,
+    height: u32,
+) -> (BatchTexture, BatchTexture, wgpu::TextureView) {
+    let format = batch.target_format();
+    let (_, depth) =
+        crate::render::scaled_copy::create_depth_target(device, "Radar housing", (width, height));
+    (
+        batch.create_render_target_texture(device, width, height, format),
+        batch.create_render_target_texture(device, width, height, format),
+        depth,
+    )
 }
 
 #[cfg(test)]
@@ -519,7 +785,7 @@ mod tests {
             assert!(a.advance_draw(1_728));
             assert_eq!((a.frame, a.phase), (32, RadarAnimPhase::Online));
         }
-        let mut radar = RadarPresentation::new(housing(), 2, 1).unwrap();
+        let mut radar = RadarPresentation::new(&housing(), 2, 1).unwrap();
         let _ = radar.set_has_radar(true);
         radar.animation.phase = RadarAnimPhase::Online;
         radar.animation.frame = 32;
@@ -562,16 +828,16 @@ mod tests {
             (RadarAnimPhase::MovieOpening, 31),
             (RadarAnimPhase::Closing, 1),
         ] {
-            let mut radar = RadarPresentation::new(housing(), 2, 1).unwrap();
+            let mut radar = RadarPresentation::new(&housing(), 2, 1).unwrap();
             radar.animation = RadarAnimation {
                 phase,
                 frame,
                 last_bucket: 100,
                 duration: 4,
             };
-            assert!(!radar.draw(1_663).1, "not due");
-            assert!(radar.draw(1_664).1, "{phase:?} settles");
-            assert!(!radar.draw(1_728).1, "settled housing stays");
+            assert!(!radar.draw(1_663), "not due");
+            assert!(radar.draw(1_664), "{phase:?} settles");
+            assert!(!radar.draw(1_728), "settled housing stays");
         }
     }
     /// Native656DF0 suppresses equal availability before direction admission;
@@ -579,7 +845,7 @@ mod tests {
     #[test]
     fn ordinary_availability_emits_only_admitted_direction_cues() {
         use RadarAvailabilityCue::{Off, On};
-        let mut radar = RadarPresentation::new(housing(), 2, 1).unwrap();
+        let mut radar = RadarPresentation::new(&housing(), 2, 1).unwrap();
         assert_eq!(radar.set_has_radar(false), None);
         assert_eq!(radar.set_has_radar(true), Some(On));
         assert_eq!(radar.set_has_radar(true), None);
@@ -612,7 +878,7 @@ mod tests {
         let mut compared = 0;
         for row in native["rows"].as_array().unwrap() {
             let initial = &row["initial"]["radar"];
-            let mut radar = RadarPresentation::new(housing(), 2, 1).unwrap();
+            let mut radar = RadarPresentation::new(&housing(), 2, 1).unwrap();
             radar.pending_radar = initial["available"].as_bool().unwrap();
             radar.animation.phase = phase(initial["phase"].as_i64().unwrap());
             radar.animation.frame = initial["frame"].as_u64().unwrap() as usize;
@@ -663,44 +929,59 @@ mod tests {
         assert_eq!(compared, 20);
     }
 
-    fn online_snapshot(radar: &mut RadarPresentation, rgb: [u8; 3]) {
-        let q = SpriteInstance {
-            position: [0.; 2],
+    /// The paints since the last look, by kind.
+    #[derive(Debug, PartialEq)]
+    enum Painted {
+        Clear,
+        Frame(usize),
+        Online,
+        Show,
+    }
+    fn painted(radar: &mut RadarPresentation) -> Vec<Painted> {
+        std::mem::take(&mut radar.paints)
+            .into_iter()
+            .map(|paint| match paint {
+                RadarPaint::Clear => Painted::Clear,
+                RadarPaint::Frame(frame) => Painted::Frame(frame),
+                RadarPaint::Online { .. } => Painted::Online,
+                RadarPaint::Show => Painted::Show,
+                RadarPaint::Movie { .. } => panic!("no movie plays here"),
+            })
+            .collect()
+    }
+    fn online_snapshot(radar: &mut RadarPresentation) {
+        let map = SpriteInstance {
             size: [2., 1.],
             uv_size: [1.; 2],
             tint: [1.; 3],
             alpha: 1.,
             ..Default::default()
         };
-        radar.retain_online_content(
-            &[rgb[0], rgb[1], rgb[2], 255].repeat(2),
-            [2, 1],
-            &[q],
-            std::iter::empty(),
-            [0.; 2],
-        );
+        radar.retain_online_content(&[map], std::iter::empty(), [0.; 2]);
     }
+    /// The GPU replay's pixels: `sidebar_gpu_tests`.
     #[test]
     fn production_radar_owner_keeps_predue_map_and_rebuilds_online_base() {
-        let frames = housing();
-        let mut radar = RadarPresentation::new(frames.clone(), 2, 1).unwrap();
+        use Painted::{Frame, Online, Show};
+        let mut radar = RadarPresentation::new(&housing(), 2, 1).unwrap();
+        assert_eq!(painted(&mut radar), [Painted::Clear, Frame(0), Show]);
         let _ = radar.set_has_radar(true);
         for frame in 1..=32 {
             assert!(radar.advance_draw((frame - 1) * 64));
-            assert_eq!(radar.surface.rgba, frames[frame as usize]);
+            assert_eq!(painted(&mut radar), [Frame(frame as usize), Show]);
         }
         assert_eq!(radar.phase(), RadarAnimPhase::Online);
-        online_snapshot(&mut radar, [20, 40, 60]);
-        let displayed = radar.surface.rgba.clone();
+        online_snapshot(&mut radar);
         let _ = radar.set_has_radar(false);
         assert!(
             radar.advance_draw(2032),
-            "upload the retained map before timer is due"
+            "show the retained map before timer is due"
         );
-        assert_eq!(radar.surface.rgba, displayed);
-        online_snapshot(&mut radar, [80, 90, 100]);
+        assert_eq!(painted(&mut radar), [Online, Show]);
+        online_snapshot(&mut radar);
         assert_eq!(
-            radar.surface.rgba, displayed,
+            painted(&mut radar),
+            [],
             "internal map changes cannot overwrite closing backing"
         );
         let _ = radar.set_has_radar(true);
@@ -711,17 +992,18 @@ mod tests {
         );
         assert_eq!(radar.phase(), RadarAnimPhase::Online);
         assert_eq!(
-            radar.surface.rgba, frames[32],
+            painted(&mut radar),
+            [Frame(32), Show],
             "old viewport lines cannot survive behind a new online draw"
         );
-        online_snapshot(&mut radar, [100, 120, 140]);
+        online_snapshot(&mut radar);
         let _ = radar.set_has_radar(false);
         assert!(radar.advance_draw(2112));
-        assert_eq!(radar.surface.rgba, frames[31]);
+        assert_eq!(painted(&mut radar), [Online, Frame(31), Show]);
         assert_eq!(radar.phase(), RadarAnimPhase::Closing);
         for frame in (0..31).rev() {
             assert!(radar.advance_draw(2112 + (31 - frame) as u64 * 64));
-            assert_eq!(radar.surface.rgba, frames[frame]);
+            assert_eq!(painted(&mut radar), [Frame(frame), Show]);
         }
         assert_eq!(radar.phase(), RadarAnimPhase::Offline);
     }
@@ -730,22 +1012,22 @@ mod tests {
         // Source installation at 652E90 does not reset the animation fields.
         // The development owner switch forces a source redraw; this regression
         // exercises that VERA interaction, not an invented native owner switch.
-        let mut radar = RadarPresentation::new(housing(), 2, 1).unwrap();
+        let mut radar = RadarPresentation::new(&housing(), 2, 1).unwrap();
         let _ = radar.set_has_radar(true);
         assert!(radar.advance_draw(1000));
         assert_eq!(radar.animation.frame, 1);
-        let previous = radar.surface.rgba.clone();
-        let mut replacement = vec![[60, 120, 180, 255].repeat(2); 33];
-        replacement[1][3] = 0;
-        assert!(radar.replace_frames(replacement.clone(), 2, 1));
+        painted(&mut radar);
+        let replacement = vec![[60, 120, 180, 255].repeat(2); 33];
+        assert!(radar.replace_frames(&replacement, 2, 1));
         assert_eq!(radar.phase(), RadarAnimPhase::Opening);
         assert_eq!(radar.animation.frame, 1);
-        assert_eq!(&radar.surface.rgba[..4], &previous[..4]);
-        assert_eq!(&radar.surface.rgba[4..], &replacement[1][4..]);
+        // Painted over the old surface, whose pixels its skips keep.
+        assert_eq!(painted(&mut radar), [Painted::Frame(1)]);
         assert!(
             radar.advance_draw(1016),
-            "upload the replaced source before timer is due"
+            "show the replaced source before timer is due"
         );
+        assert_eq!(painted(&mut radar), [Painted::Show]);
         assert_eq!(radar.animation.frame, 1);
         assert!(!radar.advance_draw(1040));
         assert!(
@@ -753,10 +1035,9 @@ mod tests {
             "retain original 16ms bucket alignment"
         );
         assert_eq!(radar.animation.frame, 2);
-        assert_eq!(radar.surface.rgba, replacement[2]);
-        let before_invalid = radar.surface.rgba.clone();
-        assert!(!radar.replace_frames(vec![vec![0; 8]; 32], 2, 1));
-        assert_eq!(radar.surface.rgba, before_invalid);
+        assert_eq!(painted(&mut radar), [Painted::Frame(2), Painted::Show]);
+        assert!(!radar.replace_frames(&vec![vec![0; 8]; 32], 2, 1));
+        assert_eq!(painted(&mut radar), []);
         assert_eq!(radar.animation.frame, 2);
         let _ = radar.set_has_radar(false);
         assert!(!radar.advance_draw(1072));

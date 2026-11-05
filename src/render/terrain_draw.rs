@@ -1287,6 +1287,10 @@ mod webgl_shader_tests {
                 "shroud compose",
                 crate::render::shroud_buffer::compose_shader_source().to_string(),
             ),
+            (
+                "radar compose",
+                crate::render::radar::compose::shader_source(),
+            ),
         ]
     }
 

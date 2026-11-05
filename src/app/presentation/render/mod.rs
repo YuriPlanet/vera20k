@@ -182,7 +182,7 @@ pub(crate) fn render_game(
         .match_presentation
         .radar_anim
         .as_mut()
-        .is_some_and(|radar| radar.tick(&state.renderer.gpu, times.radar_ms));
+        .is_some_and(|radar| radar.tick(times.radar_ms));
     if housing_settled {
         crate::app::radar_movie::end_radar_sound_loop(state);
     }

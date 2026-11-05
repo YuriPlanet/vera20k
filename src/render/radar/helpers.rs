@@ -11,7 +11,7 @@ use crate::rules::house_colors::{HouseColorIndex, HouseColorRamps, NO_REMAP};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::bridge_state::{ordinary, ramp_repair::Family};
 use crate::sim::intern::InternedId;
-use crate::sim::vision::{FogState, OwnerVisibility};
+use crate::sim::vision::FogState;
 use std::collections::HashMap;
 
 use super::geometry::{RADAR_APERTURE_HEIGHT, RADAR_APERTURE_WIDTH};
@@ -187,18 +187,6 @@ pub(crate) fn minimap_overlay_datum(
             has_tiberium_type,
         },
     }
-}
-
-/// One generated-primary terrain pixel plus the exact cell gamemd queries for
-/// shroud/fog when `RenderCellPixel @ 0x00655C50` refreshes that pixel.
-#[derive(Clone, Copy)]
-pub(super) struct RadarSurfacePixel {
-    pub rx: u16,
-    pub ry: u16,
-    pub px: u32,
-    pub py: u32,
-    pub packed_rgb565: u16,
-    pub color: [u8; 4],
 }
 
 /// Compute the minimap color for a terrain cell.
@@ -485,53 +473,6 @@ pub fn default_minimap_rect(screen_h: f32) -> (f32, f32, f32, f32) {
     let mm_x = MINIMAP_MARGIN;
     let mm_y = screen_h - mm_h - MINIMAP_MARGIN;
     (mm_x, mm_y, mm_w, mm_h)
-}
-
-/// One cell's shroud and fog for a generated-primary pixel, in the order
-/// `RenderCellPixel @ 0x00655C50` tests them: a hostile gap generator's cover
-/// first (black wins over half-bright), then a friendly one's fog, then
-/// whether the viewer has revealed the cell.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum CellVisibility {
-    GapCovered,
-    GapFog,
-    Revealed,
-    Shrouded,
-}
-
-impl CellVisibility {
-    /// The cell in `viewer`'s plane; a viewer without one has revealed nothing.
-    pub fn of(viewer: Option<&OwnerVisibility>, rx: u16, ry: u16) -> Self {
-        let Some(viewer) = viewer else {
-            return Self::Shrouded;
-        };
-        if viewer.is_gap_covered(rx, ry) {
-            Self::GapCovered
-        } else if viewer.is_gap_fog(rx, ry) {
-            Self::GapFog
-        } else if viewer.is_revealed(rx, ry) {
-            Self::Revealed
-        } else {
-            Self::Shrouded
-        }
-    }
-
-    /// The pixel's colour over the shroud fill, or none where the fill stays.
-    pub fn color(self, packed_rgb565: u16, color: [u8; 4]) -> Option<[u8; 4]> {
-        match self {
-            Self::GapCovered => Some(COLOR_SHROUD),
-            Self::GapFog => Some(super::terrain::half_bright_rgb565(packed_rgb565)),
-            Self::Revealed => Some(color),
-            Self::Shrouded => None,
-        }
-    }
-}
-
-pub(super) fn surface_visibility_color(
-    viewer: Option<&OwnerVisibility>,
-    pixel: &RadarSurfacePixel,
-) -> Option<[u8; 4]> {
-    CellVisibility::of(viewer, pixel.rx, pixel.ry).color(pixel.packed_rgb565, pixel.color)
 }
 
 #[cfg(test)]
