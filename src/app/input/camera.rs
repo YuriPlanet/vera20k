@@ -2013,6 +2013,11 @@ fn clamp_camera_point_for_state(
     sw: f32,
     sh: f32,
 ) -> (f32, f32) {
+    // VERA-only: a map picture puts the camera where a map's own preview
+    // shows, which can reach rows past the playable area's edges.
+    if state.platform.capture_presentation.map_picture {
+        return point;
+    }
     let (frame_w, frame_h) = (sw.max(0.0) as u32, sh.max(0.0) as u32);
     let (viewport_w, viewport_h) = state.sidebar_frame_for(frame_w, frame_h).tactical_size();
     let viewport = (viewport_w as f32, viewport_h as f32);

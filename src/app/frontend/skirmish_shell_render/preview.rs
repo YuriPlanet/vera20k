@@ -24,6 +24,9 @@ use super::{
 pub(crate) struct SkirmishPreviewTexture {
     pub selected_map_idx: usize,
     pub texture: BatchTexture,
+    /// The size the preview box fits: the texture's own, or for VERA's
+    /// picture of the map the size of the map's own preview whose place it
+    /// shows, so both fill the same rectangle.
     pub width: u32,
     pub height: u32,
     /// Set when the texture holds a random-map setup preview rather than a
@@ -480,6 +483,24 @@ pub(super) fn ensure_map_preview_texture(
         return;
     }
     let hd_setting = state.hd_map_previews();
+    let ra2_dir = state
+        .platform
+        .game_config
+        .as_ref()
+        .map(|config| config.paths.ra2_dir.as_path())
+        .or_else(|| {
+            state
+                .process_assets
+                .manager()
+                .map(|assets| assets.ra2_dir())
+        });
+    let decoded = selected_entry
+        .as_ref()
+        .and_then(|entry| {
+            decode_preview_for_map_entry(entry, ra2_dir, state.process_assets.manager())
+        })
+        // An online library row has no file: its catalog header holds it.
+        .or_else(|| crate::app::map_library::online_preview(state, selected_map_idx));
     // VERA's own picture of the map, once one is kept, shrunk here by area to
     // the size the box shows it at: it is up to four times that size, and the
     // GPU's linear filter, which reads four texels, would alias the shrink.
@@ -494,7 +515,17 @@ pub(super) fn ensure_map_preview_texture(
             state.renderer.gpu.device.limits().max_texture_dimension_2d,
         )
     {
-        let fitted = aspect_fit_rect(preview_box, picture.width, picture.height);
+        // The picture shows the place of the map's own preview in that
+        // preview's shape (`map_picture::placement`), so fitted by the
+        // preview's size it fills the very rectangle the preview did and the
+        // map stays put as one replaces the other. A picture of another
+        // shape found no such place.
+        let own = decoded
+            .as_ref()
+            .map(|own| (own.width, own.height))
+            .filter(|&own| same_shape(own, (picture.width, picture.height)));
+        let (fit_w, fit_h) = own.unwrap_or((picture.width, picture.height));
+        let fitted = aspect_fit_rect(preview_box, fit_w, fit_h);
         let (width, height, rgba) =
             if fitted.w > 0 && fitted.h > 0 && (fitted.w as u32) < picture.width {
                 let (width, height) = (fitted.w as u32, fitted.h as u32);
@@ -520,8 +551,8 @@ pub(super) fn ensure_map_preview_texture(
         state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
             selected_map_idx,
             texture,
-            width,
-            height,
+            width: fit_w,
+            height: fit_h,
             setup_preview_generation: None,
             received_preview: None,
             hd_setting,
@@ -529,25 +560,6 @@ pub(super) fn ensure_map_preview_texture(
         });
         return;
     }
-
-    let ra2_dir = state
-        .platform
-        .game_config
-        .as_ref()
-        .map(|config| config.paths.ra2_dir.as_path())
-        .or_else(|| {
-            state
-                .process_assets
-                .manager()
-                .map(|assets| assets.ra2_dir())
-        });
-    let decoded = selected_entry
-        .as_ref()
-        .and_then(|entry| {
-            decode_preview_for_map_entry(entry, ra2_dir, state.process_assets.manager())
-        })
-        // An online library row has no file: its catalog header holds it.
-        .or_else(|| crate::app::map_library::online_preview(state, selected_map_idx));
 
     let Some(decoded) = decoded.as_ref() else {
         state.frontend.skirmish_preview_texture = None;
@@ -589,6 +601,13 @@ pub(super) fn should_draw_start_marker_overlays(
     fitted_preview_rect.is_some()
         && !projected_start_positions.is_empty()
         && !preview_has_baked_start_markers
+}
+
+/// Whether `picture` has `own`'s proportions, each side rounded to within a
+/// pixel.
+fn same_shape(own: (u32, u32), picture: (u32, u32)) -> bool {
+    let cross = |a: u32, b: u32| u64::from(a) * u64::from(b);
+    cross(own.0, picture.1).abs_diff(cross(own.1, picture.0)) <= u64::from(own.0) + u64::from(own.1)
 }
 
 pub(super) fn aspect_fit_rect(dst: RectPx, src_w: u32, src_h: u32) -> RectPx {
@@ -644,6 +663,20 @@ mod tests {
         assert!(!preview_fits_texture(1, 1024, 4096, 1023));
         assert!(!preview_fits_texture(1024, 1, 4095, 1024));
         assert!(!preview_fits_texture(0, 1, 0, 1024));
+    }
+
+    #[test]
+    fn hd_picture_of_the_preview_place_fits_the_preview_rectangle() {
+        // A 160 x 81 preview's place drawn at most 576 wide is 576 x 292,
+        // which fitted by its own size ends a pixel lower than the preview.
+        let preview_box = RectPx::new(0, 0, 144, 112);
+        assert!(same_shape((160, 81), (576, 292)));
+        assert_ne!(
+            aspect_fit_rect(preview_box, 576, 292),
+            aspect_fit_rect(preview_box, 160, 81)
+        );
+        // A picture of [Header]'s square rectangle found no place.
+        assert!(!same_shape((160, 81), (448, 448)));
     }
 
     #[test]

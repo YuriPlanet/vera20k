@@ -5,12 +5,14 @@
 //!
 //! The first time a map is shown, the menus start a hidden run of this
 //! executable (`--map-picture`, [`session`]) that loads the map as a quiet
-//! Battle, draws its battlefield across `[Header]`'s preview rectangle and
-//! writes a PNG to `MapPreviews/<build>/<sha256>.png` in the settings folder
-//! ([`pictures`]). The picture is kept by the map's SHA-256, so every map
-//! with the same bytes, under any name, shares it; each build and game
-//! folder keeps its own ([`generation_folder`]). Covering `[Header]`'s
-//! rectangle keeps the setup screens' start markers on their starts.
+//! Battle, draws its battlefield where the map's own preview shows it
+//! ([`placement`]) and writes a PNG to `MapPreviews/<build>/<sha256>.png` in
+//! the settings folder ([`pictures`]). The picture is kept by the map's
+//! SHA-256, so every map with the same bytes, under any name, shares it; each
+//! build and game folder keeps its own ([`generation_folder`]). Showing the
+//! preview's place in the preview's shape lets the menus fit the picture in
+//! the very rectangle the preview filled, so the map and its start markers
+//! stay put when the picture replaces it.
 //!
 //! The run is a separate process because loading a map changes process-wide
 //! tables a live game must not see, and it keeps the menus responsive.
@@ -22,6 +24,7 @@ use anyhow::{Context, Result, bail, ensure};
 
 pub(crate) mod canvas;
 mod pictures;
+mod placement;
 pub(crate) mod session;
 
 pub(crate) use pictures::{MapPictures, picture_for_map, poll, stop_for_exit};
@@ -36,7 +39,7 @@ const GENERATION_LEN: usize = 16;
 
 /// One hidden run's job: `vera20k --map-picture <map> --sha256 <hex> --output
 /// <png>`, and for tools/map_render.py `--area view`, `--max-size <w>x<h>` and
-/// `--markers <json>`.
+/// with `--area view` `--markers <json>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MapPictureRequest {
     /// The map as the menus name it, or a path, found the way a game finds it.
@@ -56,22 +59,23 @@ pub struct MapPictureRequest {
 /// The world rectangle a picture shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PictureArea {
-    /// `[Header]`'s preview rectangle, as the setup screens' preview box
-    /// shows a map, its start markers on their starts; on a map without one,
-    /// all the camera can show.
-    Header,
+    /// Where the map's own preview shows the map ([`placement`]), in the
+    /// preview's shape; when it matches no place, `[Header]`'s preview
+    /// rectangle, over which the setup screens place the start markers, or
+    /// on a map without one all the camera can show.
+    Preview,
     /// All the camera can show (`--area view`).
     View,
 }
 
 impl MapPictureRequest {
-    /// The menus' request: `[Header]`'s rectangle at their largest size.
+    /// The menus' request: the preview's place at their largest size.
     fn for_menus(map: String, sha256: String, output: PathBuf) -> Self {
         Self {
             map,
             sha256,
             output,
-            area: PictureArea::Header,
+            area: PictureArea::Preview,
             max_size: canvas::MAX_PICTURE,
             markers: None,
         }
@@ -139,10 +143,15 @@ pub(crate) fn parse_args(args: Vec<OsString>) -> Result<MapPictureRequest> {
         "--sha256 is not a SHA-256"
     );
     let area = match area.as_ref().map(|area| area.to_str()) {
-        None | Some(Some("header")) => PictureArea::Header,
+        None | Some(Some("preview")) => PictureArea::Preview,
         Some(Some("view")) => PictureArea::View,
-        Some(_) => bail!("--area is header or view"),
+        Some(_) => bail!("--area is preview or view"),
     };
+    // The markers' JSON describes the whole drawing, which only a view keeps.
+    ensure!(
+        markers.is_none() || area == PictureArea::View,
+        "--markers needs --area view"
+    );
     let max_size = match max_size {
         None => canvas::MAX_PICTURE,
         Some(size) => size
@@ -274,6 +283,11 @@ mod tests {
             ..menus
         };
         assert_eq!(parse_args(tool.args()).unwrap(), tool);
+        let preview_markers = MapPictureRequest {
+            area: PictureArea::Preview,
+            ..tool
+        };
+        assert!(parse_args(preview_markers.args()).is_err());
 
         let mut bad = args;
         bad[3] = "not-a-digest".into();
@@ -282,17 +296,18 @@ mod tests {
 
     #[test]
     fn each_build_and_game_folder_keeps_its_own_pictures() {
-        let pictures = std::env::temp_dir().join(format!(
-            "vera20k-map-pictures-{}",
-            std::process::id()
-        ));
+        let pictures =
+            std::env::temp_dir().join(format!("vera20k-map-pictures-{}", std::process::id()));
         let older_build = pictures.join("0123456789abcdef");
         let not_ours = pictures.join("Notes");
         std::fs::create_dir_all(&older_build).unwrap();
         std::fs::create_dir_all(&not_ours).unwrap();
         let folder = generation_folder(&pictures, Path::new("/games/yr"));
         assert_eq!(folder.parent(), Some(pictures.as_path()));
-        assert_ne!(folder, generation_folder(&pictures, Path::new("/games/modded")));
+        assert_ne!(
+            folder,
+            generation_folder(&pictures, Path::new("/games/modded"))
+        );
         assert!(!older_build.exists(), "another build's pictures stayed");
         assert!(not_ours.exists());
         std::fs::remove_dir_all(&pictures).unwrap();

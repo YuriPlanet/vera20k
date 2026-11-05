@@ -1,6 +1,7 @@
 //! A map picture's geometry and pixels, apart from the renderer: the world
 //! rectangle the picture shows, the camera positions whose frames cover it,
-//! and the whole-factor shrink of those frames into the picture.
+//! the whole-factor shrink of those frames into the picture, and the part of
+//! it written out.
 
 use crate::map::preview::PreviewSourceBounds;
 
@@ -17,6 +18,37 @@ pub(crate) struct WorldRect {
     pub(crate) h: u32,
 }
 
+/// A world rectangle with fractional edges, in VERA world pixels at zoom 1:
+/// where a map's own preview sits (`super::placement`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Place {
+    pub(crate) x: f64,
+    pub(crate) y: f64,
+    pub(crate) w: f64,
+    pub(crate) h: f64,
+}
+
+impl Place {
+    pub(crate) fn right(self) -> f64 {
+        self.x + self.w
+    }
+
+    pub(crate) fn bottom(self) -> f64 {
+        self.y + self.h
+    }
+}
+
+impl From<WorldRect> for Place {
+    fn from(rect: WorldRect) -> Self {
+        Self {
+            x: f64::from(rect.x),
+            y: f64::from(rect.y),
+            w: f64::from(rect.w),
+            h: f64::from(rect.h),
+        }
+    }
+}
+
 impl WorldRect {
     /// `[Header]`'s preview rectangle, over which `DrawStartPositions
     /// 0x00640710` places the start markers
@@ -24,7 +56,8 @@ impl WorldRect {
     /// projection's screen x / 60 and y / 30 (`loading::composition::
     /// project_cell`), whose screen point is the world point moved 15360 px
     /// east and up by the world's row bias. A picture of exactly this
-    /// rectangle keeps the markers on their starts.
+    /// rectangle keeps the markers on their starts; the menus draw it when a
+    /// map's own preview matches no place (`super::placement`).
     pub(crate) fn of_preview_bounds(bounds: &PreviewSourceBounds) -> Option<Self> {
         let bias = crate::util::lepton::absolute_leptons_to_screen(0, 0, 0);
         let x = i64::from(bounds.origin_x) * 60 - 15_360 + bias.0 as i64;
@@ -70,6 +103,30 @@ impl WorldRect {
             h: (bottom - i64::from(y)) as u32,
         })
     }
+
+    /// The smallest rectangle covering both.
+    pub(crate) fn union(self, other: Self) -> Self {
+        let x = self.x.min(other.x);
+        let y = self.y.min(other.y);
+        Self {
+            x,
+            y,
+            w: (self.right().max(other.right()) - i64::from(x)) as u32,
+            h: (self.bottom().max(other.bottom()) - i64::from(y)) as u32,
+        }
+    }
+
+    /// The whole world pixels `place` touches, if they fit.
+    pub(crate) fn covering(place: Place) -> Option<Self> {
+        let (x, y) = (place.x.floor(), place.y.floor());
+        let (right, bottom) = (place.right().ceil(), place.bottom().ceil());
+        Some(Self {
+            x: i32::try_from(x as i64).ok()?,
+            y: i32::try_from(y as i64).ok()?,
+            w: u32::try_from((right - x) as i64).ok()?.max(1),
+            h: u32::try_from((bottom - y) as i64).ok()?.max(1),
+        })
+    }
 }
 
 /// One frame of the picture: the camera's top-left to ask for, and the world
@@ -80,18 +137,15 @@ pub(crate) struct Tile {
     pub(crate) fills: WorldRect,
 }
 
-/// The frames that cover `wanted` (inside the camera's `view` area) with a
-/// battlefield of `visible` pixels, rows of columns. Each camera position is
-/// inside the clamp's limits, so `clamp_camera_to_playable_area` keeps it,
-/// except on an axis the battlefield covers whole, where the clamp centres
-/// the one position. Neighbouring frames fill the gaps between their
-/// positions, so no world pixel is counted twice.
-pub(crate) fn tiles(wanted: WorldRect, view: WorldRect, visible: (u32, u32)) -> Vec<Tile> {
-    let Some(wanted) = wanted.intersect(view) else {
-        return Vec::new();
-    };
-    let columns = axis(wanted.x, wanted.w, view.x, view.w, visible.0.max(1) as i64);
-    let rows = axis(wanted.y, wanted.h, view.y, view.h, visible.1.max(1) as i64);
+/// The frames that cover `wanted` with a battlefield of `visible` pixels,
+/// rows of columns. A map picture's camera goes where it is put, past the
+/// playable area's edges too (`clamp_camera_point_for_state`): a map's own
+/// preview can show rows the tactical view never scrolls to. Neighbouring
+/// frames fill the gaps between their positions, so no world pixel is
+/// counted twice.
+pub(crate) fn tiles(wanted: WorldRect, visible: (u32, u32)) -> Vec<Tile> {
+    let columns = axis(wanted.x, wanted.w, visible.0.max(1) as i64);
+    let rows = axis(wanted.y, wanted.h, visible.1.max(1) as i64);
     let mut out = Vec::with_capacity(columns.len() * rows.len());
     for &(camera_y, fill_y, fill_h) in &rows {
         for &(camera_x, fill_x, fill_w) in &columns {
@@ -110,17 +164,13 @@ pub(crate) fn tiles(wanted: WorldRect, view: WorldRect, visible: (u32, u32)) -> 
 }
 
 /// One axis of [`tiles`]: (camera position, first filled pixel, filled length).
-fn axis(start: i32, length: u32, low: i32, extent: u32, visible: i64) -> Vec<(i32, i32, u32)> {
+fn axis(start: i32, length: u32, visible: i64) -> Vec<(i32, i32, u32)> {
     let (start, end) = (i64::from(start), i64::from(start) + i64::from(length));
-    let (low, extent) = (i64::from(low), i64::from(extent));
-    if extent <= visible {
-        // The clamp centres this axis, and that one frame shows all of it.
-        return vec![(low as i32, start as i32, length)];
-    }
-    let high = low + extent - visible;
-    let mut position = start.clamp(low, high);
+    // The last frame ends at the wanted edge rather than past it.
+    let high = (end - visible).max(start);
+    let mut position = start;
     let mut positions = vec![position];
-    while position + visible < end && position < high {
+    while position + visible < end {
         position = (position + visible).min(high);
         positions.push(position);
     }
@@ -215,25 +265,84 @@ impl Canvas {
         }
     }
 
-    /// The world rectangle the picture shows, from its top-left pixel.
-    pub(crate) fn area(&self) -> WorldRect {
-        self.area
-    }
-
-    /// The world pixels across each picture pixel.
-    pub(crate) fn factor(&self) -> u32 {
-        self.factor
-    }
-
-    /// The finished picture: its size and packed RGB.
-    pub(crate) fn finish(self) -> (u32, u32, Vec<u8>) {
-        let area = self.factor * self.factor;
+    /// The finished picture.
+    pub(crate) fn finish(self) -> Picture {
+        let block = self.factor * self.factor;
         let rgb = self
             .sums
             .iter()
-            .map(|sum| ((sum + area / 2) / area) as u8)
+            .map(|sum| ((sum + block / 2) / block) as u8)
             .collect();
-        (self.width, self.height, rgb)
+        Picture {
+            area: self.area,
+            factor: self.factor,
+            width: self.width,
+            height: self.height,
+            rgb,
+        }
+    }
+}
+
+/// A finished picture: `width` x `height` packed RGB pixels whose top-left
+/// one starts at `area`'s top-left, each `factor` world pixels across.
+pub(crate) struct Picture {
+    pub(crate) area: WorldRect,
+    pub(crate) factor: u32,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) rgb: Vec<u8>,
+}
+
+impl Picture {
+    /// The part showing `place`, as packed RGB of the largest size that fits
+    /// `largest` with `shape`'s proportions (the part's own when None),
+    /// never more pixels than the part has: the whole pixels the place
+    /// covers, resized by area. None when the place shows none of them.
+    pub(crate) fn part(
+        &self,
+        place: Place,
+        shape: Option<(u32, u32)>,
+        largest: (u32, u32),
+    ) -> Option<(u32, u32, Vec<u8>)> {
+        let edge = |world: f64, origin: i32, pixels: u32| {
+            let at = ((world - f64::from(origin)) / f64::from(self.factor)).round();
+            at.clamp(0.0, f64::from(pixels)) as usize
+        };
+        let (left, right) = (
+            edge(place.x, self.area.x, self.width),
+            edge(place.right(), self.area.x, self.width),
+        );
+        let (top, bottom) = (
+            edge(place.y, self.area.y, self.height),
+            edge(place.bottom(), self.area.y, self.height),
+        );
+        let (columns, rows) = (right.checked_sub(left)?, bottom.checked_sub(top)?);
+        if columns == 0 || rows == 0 {
+            return None;
+        }
+        let row_bytes = self.width as usize * 3;
+        let mut rgba = Vec::with_capacity(columns * rows * 4);
+        for row in self.rgb.chunks_exact(row_bytes).skip(top).take(rows) {
+            for pixel in row[left * 3..right * 3].chunks_exact(3) {
+                rgba.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]);
+            }
+        }
+        let (shape_w, shape_h) = shape.unwrap_or((columns as u32, rows as u32));
+        let bound = (
+            largest.0.min(columns as u32).max(1),
+            largest.1.min(rows as u32).max(1),
+        );
+        let scale = (f64::from(bound.0) / f64::from(shape_w.max(1)))
+            .min(f64::from(bound.1) / f64::from(shape_h.max(1)));
+        let width = ((f64::from(shape_w) * scale).round() as u32).clamp(1, bound.0);
+        let height = ((f64::from(shape_h) * scale).round() as u32).clamp(1, bound.1);
+        let rgba =
+            crate::render::area_scale::scale(&rgba, columns, rows, width as usize, height as usize);
+        let rgb = rgba
+            .chunks_exact(4)
+            .flat_map(|pixel| [pixel[0], pixel[1], pixel[2]])
+            .collect();
+        Some((width, height, rgb))
     }
 }
 
@@ -283,21 +392,55 @@ mod tests {
     }
 
     #[test]
-    fn tiles_cover_the_wanted_part_of_the_view_once_inside_the_clamp() {
-        let view = rect(0, 0, 100, 50);
-        // The wanted rectangle reaches past the view's bottom: only the view
-        // can be drawn, and the clamp keeps every position at most 60, 0.
-        let tiles = tiles(rect(5, 10, 95, 60), view, (40, 60));
+    fn tiles_cover_the_wanted_rectangle_once_ending_at_its_edges() {
+        // 95 columns take three 40-wide frames, the last ending at the
+        // rectangle's right edge; 60 rows fit one frame.
+        let tiles = tiles(rect(5, 10, 95, 60), (40, 60));
         let cameras: Vec<_> = tiles.iter().map(|tile| tile.camera).collect();
-        assert_eq!(cameras, [(5, 0), (45, 0), (60, 0)]);
+        assert_eq!(cameras, [(5, 10), (45, 10), (60, 10)]);
         let fills: Vec<_> = tiles.iter().map(|tile| tile.fills).collect();
         assert_eq!(
             fills,
             [
-                rect(5, 10, 40, 40),
-                rect(45, 10, 15, 40),
-                rect(60, 10, 40, 40)
+                rect(5, 10, 40, 60),
+                rect(45, 10, 15, 60),
+                rect(60, 10, 40, 60)
             ]
+        );
+    }
+
+    #[test]
+    fn part_takes_the_covered_pixels_in_the_asked_shape() {
+        // A 4 x 2 picture of world (100, 50) at 10 world pixels a pixel.
+        let rgb: Vec<u8> = [0, 255, 0, 0, 255, 255, 255, 255]
+            .iter()
+            .flat_map(|&value| [value; 3])
+            .collect();
+        let picture = Picture {
+            area: rect(100, 50, 40, 20),
+            factor: 10,
+            width: 4,
+            height: 2,
+            rgb,
+        };
+        // World x 114..134 and y 49..57 round to pixels 1 and 2 of the top row.
+        let place = Place {
+            x: 114.0,
+            y: 49.0,
+            w: 20.0,
+            h: 8.0,
+        };
+        assert_eq!(
+            picture.part(place, None, MAX_PICTURE),
+            Some((2, 1, vec![255, 255, 255, 0, 0, 0]))
+        );
+        // A 1:2 shape takes no more pixels than the 4 x 2 part has.
+        let whole = Place::from(rect(100, 50, 40, 20));
+        let (width, height, _) = picture.part(whole, Some((1, 2)), MAX_PICTURE).unwrap();
+        assert_eq!((width, height), (1, 2));
+        assert_eq!(
+            picture.part(Place { x: 200.0, ..whole }, None, MAX_PICTURE),
+            None
         );
     }
 
@@ -317,9 +460,9 @@ mod tests {
         ]
         .concat();
         canvas.add(rect(10, 20, 4, 2), (9, 20), &frame, 4, (3, 1));
-        let (width, height, rgb) = canvas.finish();
-        assert_eq!((width, height), (4, 2));
-        assert_eq!(&rgb[..6], &[30, 20, 10, 60, 50, 40]);
-        assert!(rgb[6..].iter().all(|&channel| channel == 0));
+        let picture = canvas.finish();
+        assert_eq!((picture.width, picture.height), (4, 2));
+        assert_eq!(&picture.rgb[..6], &[30, 20, 10, 60, 50, 40]);
+        assert!(picture.rgb[6..].iter().all(|&channel| channel == 0));
     }
 }

@@ -2,17 +2,21 @@
 //! `RA2_QUICKPLAY` sandbox does (a Battle with one house and no starting
 //! forces), with the shroud and fog off, never advances it, and moves the
 //! camera across the picture's rectangle, keeping one production frame at
-//! each place. The frames' battlefields are shrunk into the picture
-//! ([`super::canvas`]), which is written as a PNG, with the start markers'
-//! JSON when asked ([`write_markers`]). Nothing here touches simulation
-//! state; the process ends with the picture.
+//! each place. The frames' battlefields are shrunk into a picture
+//! ([`super::canvas`]). The menus keep the part showing the place of the
+//! map's own preview ([`super::placement`]); `--area view` keeps all of it,
+//! with the start markers' JSON when asked ([`write_markers`]). Either is
+//! written as a PNG. Nothing here touches simulation state; the process ends
+//! with the picture.
 
 use anyhow::{Context, Result, bail, ensure};
 
-use super::canvas::{Canvas, Tile, WorldRect, tiles};
-use super::{MapPictureRequest, PictureArea};
+use super::canvas::{Canvas, Picture, Place, Tile, WorldRect, tiles};
+use super::{MapPictureRequest, PictureArea, placement};
 use crate::app::AppState;
 use crate::app::presentation::render::GameRenderOutput;
+use crate::map::map_file::MapHeader;
+use crate::map::preview::DecodedPreview;
 use crate::ui::game_screen::GameScreen;
 use crate::util::time::{Duration, Instant};
 
@@ -32,6 +36,10 @@ struct Plan {
     canvas: Canvas,
     /// The battlefield's size in each frame (`tactical_viewport_size`).
     battlefield: (u32, u32),
+    /// Where the map's own preview may sit ([`placement::candidates`]).
+    candidates: Vec<Place>,
+    /// What the menus' picture shows when the preview sits at none of them.
+    fallback: WorldRect,
 }
 
 /// A map-picture run's state across the event loop's pumps.
@@ -40,6 +48,9 @@ pub(crate) struct MapPictureSession {
     started_at: Instant,
     /// `[Header]`'s preview rectangle, when the map has one.
     header: Option<WorldRect>,
+    /// For the menus' picture, the map's `[Map]` rectangles and its own
+    /// preview, when it has one.
+    own: Option<(MapHeader, DecodedPreview)>,
     settle_frames: u32,
     plan: Option<Plan>,
     next_tile: usize,
@@ -53,6 +64,7 @@ impl MapPictureSession {
             request,
             started_at: Instant::now(),
             header: None,
+            own: None,
             settle_frames: 0,
             plan: None,
             next_tile: 0,
@@ -94,6 +106,15 @@ impl MapPictureSession {
             crate::map::scenario_menu::preview_source_bounds_from_verified_source(&loaded.ini)
                 .as_ref()
                 .and_then(WorldRect::of_preview_bounds);
+        if self.request.area == PictureArea::Preview {
+            let preview = crate::map::preview::decode_preview_image_from_ini(&loaded.ini)
+                .inspect_err(|error| log::warn!("{}'s own preview: {error}", self.request.map))
+                .ok()
+                .flatten();
+            self.own = crate::map::map_file::parse_header(&loaded.ini)
+                .ok()
+                .zip(preview);
+        }
 
         let mut session = crate::app::initialize::quickplay_launch_session(
             self.request.map.clone(),
@@ -152,38 +173,84 @@ impl MapPictureSession {
             &mut state.match_state.input,
             (camera.0 as f32, camera.1 as f32),
         );
+        // Only the zoom: a map picture's camera stays where it is put.
         crate::app::input::camera::clamp_camera_to_playable_area(state, width, height);
         Ok(())
     }
 
-    /// The frames that cover the asked area: `[Header]`'s rectangle, or all
-    /// the camera can show.
+    /// The frames that cover the asked area: all the camera can show, or for
+    /// the menus every place the map's own preview may sit and `[Header]`'s
+    /// rectangle, drawn at twice the picture's size so the part kept is as
+    /// sharp as a picture of it alone.
     fn plan(&self, state: &AppState) -> Result<Plan> {
         let view = crate::app::input::camera::tactical_view_area(state)
             .and_then(WorldRect::of_view_area)
             .context("the loaded map has no visible area")?;
-        let area = match self.request.area {
-            PictureArea::Header => self.header.unwrap_or(view),
-            PictureArea::View => view,
+        let (fallback, candidates) = match (self.request.area, &self.own) {
+            (PictureArea::View, _) => (view, Vec::new()),
+            (PictureArea::Preview, None) => (self.header.unwrap_or(view), Vec::new()),
+            (PictureArea::Preview, Some((map, preview))) => (
+                self.header.unwrap_or(view),
+                placement::candidates(map, view, (preview.width, preview.height)),
+            ),
+        };
+        let (largest_w, largest_h) = self.request.max_size;
+        let (area, largest) = match placement::search_area(&candidates) {
+            Some(search) => (
+                search.union(fallback),
+                (largest_w.saturating_mul(2), largest_h.saturating_mul(2)),
+            ),
+            None => (fallback, self.request.max_size),
         };
         let battlefield = crate::app::input::camera::tactical_viewport_size(state);
-        let tiles = tiles(area, view, battlefield);
-        ensure!(
-            !tiles.is_empty(),
-            "[Header]'s preview rectangle is outside the visible map"
-        );
-        let canvas =
-            Canvas::new(area, self.request.max_size).context("the picture's area is empty")?;
+        let tiles = tiles(area, battlefield);
+        let canvas = Canvas::new(area, largest).context("the picture's area is empty")?;
         log::info!(
-            "Drawing {} in {} frames: {area:?}, visible {view:?}",
+            "Drawing {} in {} frames: {area:?}, visible {view:?}, {} places for its own preview",
             self.request.map,
-            tiles.len()
+            tiles.len(),
+            candidates.len()
         );
         Ok(Plan {
             tiles,
             canvas,
             battlefield,
+            candidates,
+            fallback,
         })
+    }
+
+    /// The part of `picture` the menus show: the place where the map's own
+    /// preview sits, in the preview's shape, so the picture replaces the
+    /// preview without the map moving; else `fallback`.
+    fn preview_part(
+        &self,
+        picture: &Picture,
+        candidates: &[Place],
+        fallback: WorldRect,
+    ) -> Result<(u32, u32, Vec<u8>)> {
+        let max_size = self.request.max_size;
+        let found = self.own.as_ref().and_then(|(_, preview)| {
+            let (place, score) = placement::locate(preview, picture, candidates)?;
+            Some((place, score, (preview.width, preview.height)))
+        });
+        let part = match found {
+            Some((place, score, shape)) => {
+                log::info!(
+                    "{}'s own preview shows {place:?} (match {score:.2})",
+                    self.request.map
+                );
+                picture.part(place, Some(shape), max_size)
+            }
+            None => {
+                log::info!(
+                    "{}'s own preview matches no place; showing {fallback:?}",
+                    self.request.map
+                );
+                picture.part(Place::from(fallback), None, max_size)
+            }
+        };
+        part.context("the picture shows nothing of its place")
     }
 
     /// Keep this frame once it has settled at its place and draws whole.
@@ -247,9 +314,18 @@ impl MapPictureSession {
         if self.next_tile < plan.tiles.len() {
             return Ok(false);
         }
-        let canvas = self.plan.take().expect("planned").canvas;
-        let (area, factor) = (canvas.area(), canvas.factor());
-        let (width, height, rgb) = canvas.finish();
+        let Plan {
+            canvas,
+            candidates,
+            fallback,
+            ..
+        } = self.plan.take().expect("planned");
+        let picture = canvas.finish();
+        let (area, factor) = (picture.area, picture.factor);
+        let (width, height, rgb) = match self.request.area {
+            PictureArea::View => (picture.width, picture.height, picture.rgb),
+            PictureArea::Preview => self.preview_part(&picture, &candidates, fallback)?,
+        };
         super::write_png(&self.request.output, width, height, &rgb)?;
         if let Some(path) = &self.request.markers {
             write_markers(path, state, area, factor)?;
@@ -288,8 +364,8 @@ impl MapPictureSession {
     }
 }
 
-/// Write `path` as JSON for tools/map_render.py: the picture's world `area`,
-/// the world pixels across each of its pixels (`factor`), and each
+/// Write `path` as JSON for tools/map_render.py: the whole picture's world
+/// `area`, the world pixels across each of its pixels (`factor`), and each
 /// multiplayer start waypoint with the mark the skirmish preview draws for a
 /// start (`DrawStartPositions 0x00640710`): its 1-based number, the world
 /// pixel at its cell's centre on the terrain, and the marker picture with
