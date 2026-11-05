@@ -4356,7 +4356,9 @@ impl ObjectType {
                 .map(str::to_owned),
             voice_feedback: Vec::new(),
             voice_special_attack: Vec::new(),
-            crush_sound: section.read_name("CrushSound", 0x80).map(str::to_owned),
+            // ObjectTypeCtor5F713A; ProcessedType projects the retained
+            // fixed-Voc binding from inherited ReadINI5F938B..5F93D5.
+            crush_sound: None,
             deploy_sound: section.read_name("DeploySound", 0x80).map(str::to_owned),
             buildup_sound: None,
             working_sound: None,

@@ -6825,8 +6825,9 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
          [ROBO]\nCrusher=yes\nLocomotor={4A582742-9839-11D1-B709-00A024DDAFD1}\n\
          [BFRT]\nCrusher=yes\nMovementZone=CrusherAll\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
     );
-    let rules = RuleSet::from_ini(&ini).expect("rules parse");
-    let registry = OverlayTypeRegistry::from_ini(&ini, None);
+    let rules = RuleSet::from_ini_with_sounds_for_test(&ini, &["WallCrushBlack"])
+        .expect("rules and fixed sound catalog parse");
+    let registry = rules.overlay_registry().clone();
     assert_eq!(
         registry.flags(3).and_then(|f| f.crush_sound.as_deref()),
         Some("WallCrushBlack")

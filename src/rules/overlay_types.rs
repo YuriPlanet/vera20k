@@ -352,12 +352,13 @@ impl OverlayTypeRegistry {
         processed: &crate::rules::native_processing::ProcessedRulesLayers,
     ) -> Self {
         let mut registry = Self::from_projected_ini(processed.ini(), processed.terrain_rules());
-        for (index, (_, damage_levels, explodes, cell_anim, image)) in
+        for (index, (_, damage_levels, explodes, cell_anim, image, crush_sound)) in
             processed.overlay_type_states().enumerate()
         {
             registry.flags[index].damage_levels = damage_levels;
             registry.flags[index].explodes = explodes;
             registry.flags[index].cell_anim = cell_anim.map(str::to_ascii_uppercase);
+            registry.flags[index].crush_sound = crush_sound.map(str::to_owned);
             registry.images.push(image.clone());
         }
         assert_eq!(registry.names.len(), registry.images.len());
@@ -441,10 +442,8 @@ impl OverlayTypeRegistry {
                     // The retained reader below supplies this, never flattened text.
                     explodes: false,
                     wall: type_section.read_bool("Wall", false),
-                    // ObjectType ReadString 0x80 (`0x005F93A8`).
-                    crush_sound: type_section
-                        .read_name("CrushSound", 0x80)
-                        .map(str::to_string),
+                    // Project the retained ObjectType+1F0 binding above.
+                    crush_sound: None,
                     draw_flat: type_section.read_bool("DrawFlat", true),
                     armor_is_wood: type_section
                         .read_name("Armor", 0x80)
@@ -522,6 +521,7 @@ impl OverlayTypeRegistry {
         self.images.hash(state);
         for flags in &self.flags {
             flags.damage_levels.hash(state);
+            flags.crush_sound.hash(state);
         }
         if self.flags.iter().any(|flags| flags.explodes) {
             b"overlay-explodes-v1".hash(state);
