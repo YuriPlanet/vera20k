@@ -507,7 +507,8 @@ pub(crate) fn drain_common_step(sim: &mut Simulation, stable_id: u64, rules: &Ru
             .is_some_and(|obj| obj.resource_destination)
     {
         let delay = rules.general.drain_money_frame_delay;
-        // Native divides by the raw dword; a zero delay would fault there.
+        // Safety deviation: native IDIV faults on zero and i32::MIN / -1.
+        // Keep invalid overrides non-fatal with a zero skip and wrapping remainder.
         if delay != 0
             && (sim.session.binary_frame() as i32).wrapping_rem(delay) == 0
             && let Some(drainer_owner) = sim
@@ -595,19 +596,24 @@ mod tests {
     /// first Attack dispatch drops the target on the fog-visibility retarget
     /// (`combat::resolve_attacker_fire`) before any shot is resolved.
     fn rules() -> RuleSet {
-        rules_with_refinery_foundation("2x2")
+        rules_with_refinery_foundation("2x2", 30, 30)
     }
 
-    fn rules_with_refinery_foundation(foundation: &str) -> RuleSet {
+    fn rules_with_refinery_foundation(
+        foundation: &str,
+        drain_delay: i32,
+        drain_amount: i32,
+    ) -> RuleSet {
         // Retail `[DISKRAY]` art (ARTMD.INI), five frames bound.
         let art_text = format!(
             "[CAOILD]\nFoundation=2x2\n[CAOILDP]\nFoundation=2x2\n[GAPOWR]\nFoundation=2x2\n\
              [NAREFN]\nFoundation={foundation}\n\
              [DISKRAY]\nLoopCount=-1\nRate=200\nLoopStart=0\nLoopEnd=4\n"
         );
-        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(
-            "[General]\nDrainMoneyFrameDelay=30\nDrainMoneyAmount=30\n\n\
-             [CombatDamage]\nDrainAnimationType=DISKRAY\n\n\
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&format!(
+            "[General]\n\
+             [CombatDamage]\nDrainMoneyFrameDelay={drain_delay}\nDrainMoneyAmount={drain_amount}\n\
+             DrainAnimationType=DISKRAY\n\n\
              [InfantryTypes]\n[AircraftTypes]\n\
              [VehicleTypes]\n0=DISK\n\
              [BuildingTypes]\n0=CAOILD\n1=CAOILDP\n2=GAPOWR\n3=NAREFN\n\n\
@@ -619,14 +625,14 @@ mod tests {
              [GAPOWR]\nStrength=750\nArmor=wood\nPower=100\nDrainable=yes\n\n\
              [NAREFN]\nStrength=1000\nArmor=wood\n\
              ResourceDestination=yes\nDrainable=yes\n\n\
-             [DISK]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\nStrength=500\nArmor=heavy\nSpeed=6\n\
+             [DISK]\nLocomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\nStrength=500\nArmor=heavy\nSpeed=6\n\
              Sight=9\nPrimary=DiskLaser\nSecondary=DiskDrain\n\n\
              [DiskLaser]\nDamage=90\nROF=80\nRange=7\nProjectile=Invisible\nWarhead=DiskWH\n\n\
              [DiskDrain]\nDamage=1\nBurst=1\nROF=50\nRange=1.5\nProjectile=Invisible\nWarhead=AntiB\n\
              DrainWeapon=yes\nOmniFire=yes\n\n\
              [DiskWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\n\
              [AntiB]\nVerses=0%,0%,0%,0%,0%,0%,100%,100%,100%,100%,100%\n",
-        ), &IniFile::from_str(&art_text))
+        )), &IniFile::from_str(&art_text))
         .expect("credit-income test rules parse");
         let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(&art_text));
         art.bind_anim_frame_count_for_test("DISKRAY", 5);
@@ -714,7 +720,7 @@ mod tests {
     /// stock GAREFN/NAREFN instead use rectangular 4x3 foundations.
     #[test]
     fn cell_building_query_disc_refuses_an_authored_refinery_foundation_hole() {
-        let rules = rules_with_refinery_foundation("3x3Refinery");
+        let rules = rules_with_refinery_foundation("3x3Refinery", 30, 30);
         let mut sim = Simulation::new();
         let refinery = sim
             .spawn_object("NAREFN", "Americans", 20, 20, 0, &rules)
@@ -958,11 +964,11 @@ mod tests {
     /// on every `DrainMoneyFrameDelay`-th frame and the drainer's house gains
     /// the same amount; a poor victim is drained only to zero.
     #[test]
-    fn disc_drain_thirty_per_thirty_frames_capped_at_available() {
-        let rules = rules();
+    fn disc_drain_uses_loaded_cadence_and_amount_capped_at_available() {
+        let rules = rules_with_refinery_foundation("2x2", 17, 13);
         let mut sim = Simulation::with_seed(0x0011_0903);
         let yuri = house(&mut sim, "YuriCountry", false, 500);
-        let americans = house(&mut sim, "Americans", true, 75);
+        let americans = house(&mut sim, "Americans", true, 31);
         base(&mut sim, &rules, "YuriCountry", 40, 40);
         base(&mut sim, &rules, "Americans", 44, 44);
         let refinery = sim
@@ -997,25 +1003,28 @@ mod tests {
             Some(disk)
         );
 
-        // 75 available: 30, 30, then 15, then nothing.
-        let mut transfers: Vec<i32> = Vec::new();
-        let mut victim_last = 75;
-        for _ in 0..150 {
+        // The common AI reads the global frame before advance_tick increments it.
+        sim.session.set_binary_frame_for_test(1);
+        // 31 available: 13 at frame17, 13 at34, then5 at51.
+        let mut transfers = Vec::new();
+        let mut victim_last = 31;
+        for _ in 0..68 {
+            let frame = sim.session.binary_frame();
             run_ticks(&mut sim, &rules, 1);
             let now = credits(&sim, americans);
             if now != victim_last {
-                transfers.push(victim_last - now);
+                transfers.push((frame, victim_last - now));
                 victim_last = now;
             }
             assert_eq!(
                 credits(&sim, americans) + credits(&sim, yuri),
-                575,
+                531,
                 "money is moved, never created or destroyed"
             );
         }
-        assert_eq!(transfers, vec![30, 30, 15]);
+        assert_eq!(transfers, vec![(17, 13), (34, 13), (51, 5)]);
         assert_eq!(credits(&sim, americans), 0);
-        assert_eq!(credits(&sim, yuri), 575);
+        assert_eq!(credits(&sim, yuri), 531);
         // The link survives an empty wallet (native keeps calling with 0).
         assert_eq!(
             sim.substrate.entities.get(disk).unwrap().drain.target,

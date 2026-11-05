@@ -1745,15 +1745,20 @@ pub struct GeneralRules {
     /// `0x006AF748`). ReadRange at `0x00670300`; constructor `0x1000`
     /// (`0x00667656`). Retail `14` is 3584.
     pub slave_miner_slave_scan: i32,
-    /// `[General] DrainMoneyFrameDelay=` (`Rules+0x314`, stock 30). The drained
+    /// `[CombatDamage] DrainMoneyFrameDelay=` (`Rules+0x314`, stock 30).
+    /// RulesClass::Constructor665650 writes100 at665AC8; ReadCombatDamage
+    /// 66C973..66C98C retains the current signed value through ReadInt5276D0.
+    /// The drained
     /// object's `TechnoClass::AI_Update @ 0x006FA167..0x006FA17B` transfers
     /// money only on frames where `g_CurrentFrameCounter % delay == 0`
-    /// (signed `IDIV`, remainder test). Constructor default UNCHECKED.
+    /// (signed `IDIV`, remainder test).
     pub drain_money_frame_delay: i32,
-    /// `[General] DrainMoneyAmount=` (`Rules+0x318`, stock 30). Per transfer
+    /// `[CombatDamage] DrainMoneyAmount=` (`Rules+0x318`, stock 30).
+    /// Constructor665AD2 writes0; ReadCombatDamage66C992..66C9AC retains it.
+    /// Per transfer
     /// `min(amount, Available_Money(victim))` moves from the victim's wallet
     /// (`Spend_Money @ 0x004F9790`) to the drainer's (`Add_Credits @
-    /// 0x004F9950`) at `0x006FA183..0x006FA1C0`. Constructor default UNCHECKED.
+    /// 0x004F9950`) at `0x006FA183..0x006FA1C0`.
     pub drain_money_amount: i32,
     /// `Rules+0x1788`, `[General] SlaveMinerLongScan=` in leptons: how far a
     /// slave miner looks for a field. ReadRange at `0x0067031F`; constructor
@@ -2866,8 +2871,8 @@ impl Default for GeneralRules {
             buildup_time: f64::from_bits(0x3FA9_9999_9999_999A),
             slave_miner_short_scan: 0x500,
             slave_miner_slave_scan: 0x1000,
-            drain_money_frame_delay: 30,
-            drain_money_amount: 30,
+            drain_money_frame_delay: 100,
+            drain_money_amount: 0,
             slave_miner_long_scan: 0x5000,
             slave_miner_scan_correction: 0x300,
             slave_miner_kick_frame_delay: 0x7FFF_FFFF,
@@ -4170,8 +4175,9 @@ impl GeneralRules {
             buildup_time: general.read_double("BuildupTime", f64::from_bits(0x3FA9_9999_9999_999A)),
             slave_miner_short_scan: general.read_range("SlaveMinerShortScan", 0x500),
             slave_miner_slave_scan: general.read_range("SlaveMinerSlaveScan", 0x1000),
-            drain_money_frame_delay: general.read_int("DrainMoneyFrameDelay", 30),
-            drain_money_amount: general.read_int("DrainMoneyAmount", 30),
+            // Published from the retained CombatDamage pass owner below.
+            drain_money_frame_delay: defaults.drain_money_frame_delay,
+            drain_money_amount: defaults.drain_money_amount,
             slave_miner_long_scan: general.read_range("SlaveMinerLongScan", 0x5000),
             slave_miner_scan_correction: general.read_range("SlaveMinerScanCorrection", 0x300),
             slave_miner_kick_frame_delay: general.read_int("SlaveMinerKickFrameDelay", 0x7FFF_FFFF),
@@ -6116,6 +6122,8 @@ impl RuleSet {
         let mut building_ids: Vec<String> = Vec::new();
         let production: ProductionRules = ProductionRules::from_ini(ini);
         let mut general: GeneralRules = GeneralRules::from_ini(ini);
+        (general.drain_money_frame_delay, general.drain_money_amount) =
+            processed.drain_money_controls();
         general.tree_strength = processed.tree_strength();
         general.threat_coefficient_defaults = processed.threat_coefficient_defaults();
         let (_, color_indexes) = processed.color_add_state();
@@ -7430,6 +7438,10 @@ impl RuleSet {
             b"ai-hate-delays-v1".hash(&mut hasher);
             self.general.ai_hate_delays.hash(&mut hasher);
         }
+        // Identical current text can inherit different CombatDamage values.
+        b"drain-money-controls-v1".hash(&mut hasher);
+        self.general.drain_money_frame_delay.hash(&mut hasher);
+        self.general.drain_money_amount.hash(&mut hasher);
         // ReadINI71551E..715720 can retain different weights for identical
         // current text. Include the projected bits and process-resident defaults.
         b"threat-coefficients-v1".hash(&mut hasher);
