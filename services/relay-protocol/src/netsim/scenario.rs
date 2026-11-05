@@ -72,6 +72,39 @@ pub struct Scenario {
     /// §5.4). Only appendix A and judgments that must start good use it.
     #[serde(default)]
     pub preset_measured_good: bool,
+    /// Datagrams with a random tag sent to the relay on a client's current
+    /// session (compaction spec §6.4), from other addresses or the client's
+    /// own.
+    #[serde(default)]
+    pub forgeries: Vec<Forgery>,
+    /// The client's address changes, as a NAT rebinding does (compaction
+    /// spec §6.2 "换地址").
+    #[serde(default)]
+    pub rebinds: Vec<ClientAt>,
+    /// Keep every datagram's bytes in the trace, for byte comparisons.
+    #[serde(default)]
+    pub keep_wire_bytes: bool,
+}
+
+/// `per_second` forged CONTROL datagrams over `[from_ms, to_ms)` carrying
+/// `client`'s current session, a random sequence and a random 4-byte tag,
+/// spread over `addresses` attacker addresses, or sent from the client's
+/// own address when `spoof_client`.
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Forgery {
+    pub client: u8,
+    pub from_ms: u64,
+    pub to_ms: u64,
+    pub per_second: u32,
+    #[serde(default = "default_addresses")]
+    pub addresses: u8,
+    #[serde(default)]
+    pub spoof_client: bool,
+}
+
+fn default_addresses() -> u8 {
+    1
 }
 
 /// `periodic`: every client serves every 16 ms with its own phase, as the
@@ -282,7 +315,11 @@ impl Scenario {
             .iter()
             .chain(&scenario.leaves)
             .chain(&scenario.renewals)
+            .chain(&scenario.rebinds)
             .all(|at| named(at.client))
+            || !scenario.forgeries.iter().all(|forgery| {
+                named(forgery.client) && forgery.per_second > 0 && forgery.addresses > 0
+            })
             || !scenario.restoring.iter().all(|window| named(window.client))
             || scenario
                 .start_offsets_ms
@@ -290,7 +327,7 @@ impl Scenario {
                 .is_some_and(|offsets| offsets.len() != usize::from(scenario.players))
         {
             return Err(
-                "commands, leaves, renewals, restoring and start_offsets_ms must name players"
+                "commands, leaves, renewals, rebinds, forgeries, restoring and start_offsets_ms must name players"
                     .into(),
             );
         }

@@ -26,6 +26,8 @@ pub struct ClientLog {
     pub repair_pulls: Vec<u64>,
     /// (time µs, batch id) of each batch sealed.
     pub seals: Vec<(u64, u64)>,
+    /// (batch id, plaintext) of each batch sealed.
+    pub plaintexts: Vec<(u64, Vec<u8>)>,
 }
 
 /// A datagram a client sends.

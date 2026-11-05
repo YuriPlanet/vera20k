@@ -227,6 +227,7 @@ impl AdaptiveClient {
             match self.session.seal_ordering_batch(&bytes) {
                 Ok(id) => {
                     self.log.seals.push((at_us, id));
+                    self.log.plaintexts.push((id, bytes));
                     let issued = self.queued.drain(..take).collect();
                     self.batch_issues.insert(id, issued);
                 }

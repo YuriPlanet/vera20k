@@ -2,6 +2,8 @@
 //! datagram with its fate, and the production observation interfaces
 //! (`link_stats`, `reader_link_stats`) whenever they change.
 
+use std::net::SocketAddrV4;
+
 use super::inspect::{Datagram, Detail, PackRecord, Uplink};
 use super::reader::Record;
 use super::scenario::Direction;
@@ -33,6 +35,8 @@ pub struct WireRecord {
     pub origin: Origin,
     /// Whole datagram bytes, envelope and MAC, no IP/UDP header.
     pub len: usize,
+    /// The datagram itself when the scenario keeps wire bytes.
+    pub bytes: Option<Vec<u8>>,
     pub parsed: Result<Datagram, String>,
     /// Uplink: `process_at`'s outcome for the first copy, `Ok` or the error.
     pub relay_result: Option<Result<(), String>>,
@@ -50,6 +54,9 @@ impl WireRecord {
     }
     pub fn hop_seq(&self) -> u64 {
         self.parsed.as_ref().map_or(0, |d| d.hop_seq)
+    }
+    pub fn payload_len(&self) -> usize {
+        self.parsed.as_ref().map_or(0, |d| d.payload_len)
     }
     pub fn uplink(&self) -> Option<&Uplink> {
         match &self.parsed.as_ref().ok()?.detail {
@@ -85,6 +92,30 @@ pub struct Trace {
     pub executed: Vec<Vec<(u64, u64)>>,
     /// Per client, at the end: every record read, in order.
     pub streams: Vec<Vec<Record>>,
+    /// Per client, at the end: (batch id, plaintext) of each sealed batch.
+    pub plaintexts: Vec<Vec<(u64, Vec<u8>)>>,
+    /// Per client, at the end: each hop's packet key.
+    pub hop_keys: Vec<Vec<[u8; 32]>>,
+    /// Per client: its address, then one more per rebind.
+    pub endpoints: Vec<Vec<SocketAddrV4>>,
+    /// Relay datagrams to an address no client holds: (time µs, address).
+    pub misrouted: Vec<(u64, SocketAddrV4)>,
+    /// Every forged datagram and the relay's answer to it.
+    pub forged: Vec<Forged>,
+    /// The relay's canonical records in sequence order, when an interface
+    /// reads them (`Simulation::relay_history`).
+    pub relay_history: Option<Vec<Vec<u8>>>,
+}
+
+/// One datagram of a scenario forgery (compaction spec §6.4).
+#[derive(Debug, Clone)]
+pub struct Forged {
+    pub forgery: usize,
+    pub at_us: u64,
+    pub endpoint: SocketAddrV4,
+    pub result: Result<(), String>,
+    /// Datagrams the relay sent in reply.
+    pub replies: usize,
 }
 
 impl Trace {

@@ -16,7 +16,7 @@ use super::trace::{Origin, Trace, WireRecord};
 use super::*;
 use crate::LinkState;
 
-type Check = Result<(), String>;
+pub(super) type Check = Result<(), String>;
 
 fn run(json: &str) -> (Report, Trace) {
     Simulation::new(Scenario::from_json(json).expect("scenario")).run_traced()
@@ -125,7 +125,7 @@ fn copies_since(trace: &Trace, client: usize, from_us: u64) -> u64 {
 /// PUSH set (§3.2 flags bit0, "对局开始后始终置 1") unless the client left;
 /// a PROBE carries no batch and no checksum (§6.3 row 5, §6.6); and one
 /// service sends at most one UPLINK, heartbeat included (§6.3).
-fn check_wire(trace: &Trace) -> Check {
+pub(super) fn check_wire(trace: &Trace) -> Check {
     for record in &trace.wire {
         let datagram = record.parsed.as_ref().map_err(|error| {
             format!(
@@ -194,7 +194,7 @@ fn check_wire(trace: &Trace) -> Check {
 /// (§6.6), carries the unacknowledged batches from `accepted_through + 1`,
 /// all of them up to four (the batches here are small, so all fit); a
 /// heartbeat keeps the previous UPLINK's checksum segment (§6.6).
-fn check_batch_segments(trace: &Trace) -> Check {
+pub(super) fn check_batch_segments(trace: &Trace) -> Check {
     for client in 0..trace.seals.len() {
         let mut previous: Option<&Uplink> = None;
         for record in uplinks(trace, client) {
@@ -763,7 +763,7 @@ fn j06_retransmissions_cover_only_unacknowledged_uncovered_records() {
 /// The relay's window counts datagrams it authenticated: those it
 /// accepted or refused as a replay; others are unjudged. `echo_delay` is
 /// the time from `up_high`'s arrival to the encoding, ±1 ms (§3.3).
-fn check_bitmaps(trace: &Trace, clients: usize) -> Check {
+pub(super) fn check_bitmaps(trace: &Trace, clients: usize) -> Check {
     for client in 0..clients {
         let down: Vec<&WireRecord> = trace.of(client, Direction::Down).collect();
         let up: Vec<&WireRecord> = trace.of(client, Direction::Up).collect();
@@ -1476,7 +1476,7 @@ fn j13_a_restoring_reader_gets_no_new_records_pushed() {
 /// batches in order from 1; every batch sealed and every command issued
 /// three seconds before the end reached every client and ran; nobody
 /// stalled; no DESYNC record without a checksum fault.
-fn check_consistency(report: &Report, trace: &Trace, end_us: u64) -> Check {
+pub(super) fn check_consistency(report: &Report, trace: &Trace, end_us: u64) -> Check {
     ensure(report.stream_consistent, || "streams differ".into())?;
     ensure(report.desync_records == 0, || "a DESYNC record".into())?;
     ensure(report.stalled_clients == 0, || {
