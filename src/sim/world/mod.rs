@@ -7745,7 +7745,10 @@ impl Simulation {
     /// three gates. All three build `AnimClass(Wake, Location, 0, 1, 0x600,
     /// 0, 0)` at the unit's exact `Location` (`+0x9C`), not the cell centre,
     /// so each wake stays where the hull was and the trail forms behind it as
-    /// the unit advances.
+    /// the unit advances. The Location keeps its Z: the Anim's Unlimbo
+    /// (`0x005F4EC0`) stores it through `AnimTypeClass` vt+0x6C (`0x0041CF80`,
+    /// unchanged) and `SetLocation` (`0x005F6940`), so a Hover's wake starts
+    /// at its hovering hull, not on the water below.
     pub(crate) fn spawn_wakes_for_frame(&mut self, rules: &RuleSet) {
         if !self.session.binary_frame().is_multiple_of(10)
             && !self.session.binary_frame().is_multiple_of(8)
@@ -7756,7 +7759,7 @@ impl Simulation {
         let terrain = self.resolved_terrain.as_ref();
         let rules_context =
             crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses);
-        let wake_positions: Vec<(u16, u16, SimFixed, SimFixed, u8)> = self
+        let wake_positions: Vec<crate::sim::anim_class::AnimWorldCoord> = self
             .substrate
             .entities
             .keys_sorted()
@@ -7778,14 +7781,13 @@ impl Simulation {
         // its art `YSortAdjust=-288`, so it sorts under the hull instead of
         // over it.
         let wake_name = self.interner.intern(&rules.general.wake.name);
-        for (rx, ry, sub_x, sub_y, z) in wake_positions {
+        for world in wake_positions {
+            let (rx, ry, sub_x, sub_y, level) = world.to_cell_sub_z();
             let descriptor = AnimClassSpawnDescriptor {
                 loop_count: 1,
                 draw_flags: WAKE_DRAW_FLAGS,
-                ..AnimClassSpawnDescriptor::new(wake_name, rx, ry, sub_x, sub_y, z)
+                ..AnimClassSpawnDescriptor::new(wake_name, rx, ry, sub_x, sub_y, level)
             };
-            let world =
-                crate::sim::anim_class::AnimWorldCoord::from_cell_sub_z(rx, ry, sub_x, sub_y, z);
             if let Err(error) = self.spawn_anim_at_world(rules, descriptor, world) {
                 log::debug!(
                     "wake [{}] did not construct: {error}",
@@ -7989,15 +7991,15 @@ const WAKE_DRAW_FLAGS: u32 = 0x600;
 /// frame and not for an `Underwater=` type (`underwater`, TechnoType+0xD69 at
 /// `0x0069FE6E`). Each asks its own `Is_Moving_Now` first, then wants the
 /// owner off a bridge (`+0x8C`) on a cell whose `CellClass+0xEC` mirror is
-/// Water. The wake is anchored at the exact leptons. A Jumpjet or Fly flier
-/// over water leaves none.
+/// Water. The wake is anchored at the unit's Location, a Hover's altitude
+/// included. A Jumpjet or Fly flier over water leaves none.
 pub(crate) fn wake_anchor_for(
     entity: &crate::sim::game_entity::GameEntity,
     rules: crate::sim::movement::SpeedRules<'_>,
     underwater: bool,
     terrain: Option<&ResolvedTerrainGrid>,
     binary_frame: u32,
-) -> Option<(u16, u16, SimFixed, SimFixed, u8)> {
+) -> Option<crate::sim::anim_class::AnimWorldCoord> {
     // Foot4DA81A bypasses the locomotor (and its movement-wake producer)
     // while sinking. Unit AI owns that hull's separate jittered wake.
     if entity.sinking.is_active() {
@@ -8025,13 +8027,7 @@ pub(crate) fn wake_anchor_for(
     if cell.land_type != crate::rules::terrain_rules::LandType::Water.as_index() {
         return None;
     }
-    Some((
-        entity.position.rx(),
-        entity.position.ry(),
-        entity.position.sub_x(),
-        entity.position.sub_y(),
-        entity.position.z(),
-    ))
+    Some(crate::sim::movement::ground_pose::object_location(entity, terrain).into())
 }
 
 #[cfg(test)]

@@ -226,15 +226,16 @@ pub enum SpeedType {
     Track,
     /// Wheeled vehicles. Slower on rough terrain than Track.
     Wheel,
-    /// Jumpjet hover movement type.
+    /// Hover vehicles (LCRF, ROBO, SAPC, YHVR) and many fliers, such as
+    /// JUMPJET and ZEP. Crosses land and water.
     Hover,
     /// Aircraft. Ignores terrain entirely.
     Winged,
-    /// Hover units. Can cross water and land.
+    /// Ships and other naval units. Water only.
     Float,
     /// Amphibious units. Can traverse both land and water.
     Amphibious,
-    /// Hover that can go on beaches (specific to certain hover units).
+    /// Like Float, plus beach cells. No retail type uses it.
     FloatBeach,
     /// Original48DFF0 returns -1 for a nonempty unknown name. Keep this
     /// distinct from Track; native invalid-index gameplay is not established.
