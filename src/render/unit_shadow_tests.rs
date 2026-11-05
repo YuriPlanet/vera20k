@@ -171,7 +171,7 @@ fn jumpjet_native_masks_keep_ground_flight_and_frame_payloads_separate() {
     }
     let mut atlas =
         super::super::pack_sprites_on_device(&gpu.device, &gpu.queue, &batch, &cached).unwrap();
-    atlas.rendered_cache = cached;
+    atlas.set_rendered_cache(cached);
     let expected = |case: &serde_json::Value| {
         let r = &case["rect"];
         let [x, y, w, h] = [2, 3, 4, 5].map(|i| r[i].as_u64().unwrap() as usize);
@@ -348,7 +348,7 @@ fn shadow_first_fill_hits_and_atlas_growth_keep_payloads() {
     let body_key = cache[0].key.clone();
     let mut atlas =
         super::super::pack_sprites_on_device(&gpu.device, &gpu.queue, &batch, &cache).unwrap();
-    atlas.rendered_cache = cache;
+    atlas.set_rendered_cache(cache);
     let body = *atlas.get(&body_key).unwrap();
     assert!(atlas.prepare_native_shadow(&gpu.queue, &shadow_key, 0, [(body, [0., 0.])]));
     let expected = vec![
@@ -386,4 +386,57 @@ fn shadow_first_fill_hits_and_atlas_growth_keep_payloads() {
         "20k stable shadow cache-hit CPU lookup: {:?}; no mask reads/uploads",
         start.elapsed()
     );
+}
+
+/// Shadow composition finds a part's source by its atlas placement and a
+/// template by key, through the index `set_rendered_cache` builds, without
+/// walking every resident sprite; an unknown rectangle stamps nothing.
+#[test]
+fn shadow_sources_are_found_by_placement_and_key() {
+    let key = |layer| UnitSpriteKey {
+        type_id: "indexed".into(),
+        turret_index: 0,
+        facing: 0,
+        layer,
+        frame: 0,
+        slope_type: 0,
+        barrel_pitch: 0,
+    };
+    let sprite = |layer, pixels: Vec<u8>| CachedUnitSprite {
+        key: key(layer),
+        pixels,
+        width: 2,
+        height: 2,
+        offset_x: 0.,
+        offset_y: 0.,
+        native_draw_bounds: Some([0, 0, 2, 2]),
+        shadow_center: None,
+        pool_bytes: 0,
+    };
+    let entry = |page, x: f32| UnitSpriteEntry {
+        uv_origin: [x, 0.],
+        uv_size: [0.25, 0.25],
+        pixel_size: [2., 2.],
+        offset_x: 0.,
+        offset_y: 0.,
+        native_draw_bounds: Some([0, 0, 2, 2]),
+        page,
+    };
+    let entries = std::collections::HashMap::from([
+        (key(VxlLayer::Body), entry(0, 0.)),
+        (key(VxlLayer::Shadow), entry(0, 0.5)),
+    ]);
+    let mut atlas = UnitAtlas::from_test_entries(entries.clone());
+    atlas.set_rendered_cache(vec![
+        sprite(VxlLayer::Body, vec![7, 0, 0, 7]),
+        sprite(VxlLayer::Shadow, vec![0, 9, 9, 0]),
+    ]);
+
+    let mut body = vec![0u8; 65536];
+    assert!(atlas.stamp_shadow_part(&mut body, &entries[&key(VxlLayer::Shadow)], [10, 20]));
+    let stamped = [20 * 256 + 10, 20 * 256 + 11, 21 * 256 + 10, 21 * 256 + 11].map(|i| body[i]);
+    assert_eq!(stamped, [0, 1, 1, 0]);
+    assert!(!atlas.stamp_shadow_part(&mut body, &entry(1, 0.5), [0, 0]));
+    let template = atlas.rendered_by_key(&key(VxlLayer::Body)).unwrap();
+    assert_eq!(template.pixels, [7, 0, 0, 7]);
 }

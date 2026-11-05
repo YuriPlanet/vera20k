@@ -102,11 +102,7 @@ impl UnitAtlas {
         part: &UnitSpriteEntry,
         point: [i32; 2],
     ) -> bool {
-        let Some(source) = self.rendered_cache.iter().find(|s| {
-            self.entries.get(&s.key).is_some_and(|e| {
-                e.page == part.page && e.uv_origin == part.uv_origin && e.uv_size == part.uv_size
-            })
-        }) else {
+        let Some(source) = self.rendered_by_place(part) else {
             return false;
         };
         composite_mask_part(body, &source.pixels, source.width, source.height, point);
@@ -125,7 +121,7 @@ impl UnitAtlas {
         self.entries
             .get(key)
             .filter(|e| e.native_draw_bounds.is_some())?;
-        let template = self.rendered_cache.iter().find(|s| &s.key == key)?;
+        let template = self.rendered_by_key(key)?;
         let mut body = vec![0u8; 65536];
         if !stamp(&mut body) {
             return None;

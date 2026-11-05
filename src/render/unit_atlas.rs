@@ -196,6 +196,13 @@ pub struct UnitAtlas {
     /// Palette indices of every resident sprite; native shadow masks are
     /// composed from them.
     rendered_cache: Vec<CachedUnitSprite>,
+    /// Each resident sprite's index in `rendered_cache`, by key and by atlas
+    /// placement, so shadow composition ([`Self::stamp_shadow_part`],
+    /// [`Self::masked_shadow`]) finds its source without walking every
+    /// sprite. The cache is the truth: it only grows, through
+    /// [`Self::append_sprites`], or is replaced whole by
+    /// [`Self::set_rendered_cache`], and both keep this index.
+    rendered_index: RenderedIndex,
     /// How many sprites the last build or refresh rendered.
     pub rendered: u32,
     /// First eligible composed-body mask for each supported shadow key, with
@@ -415,6 +422,7 @@ impl UnitAtlas {
             entries,
             frame_counts: BTreeMap::new(),
             rendered_cache: Vec::new(),
+            rendered_index: RenderedIndex::default(),
             rendered: 0,
             shadow_masks: Default::default(),
             pool_bytes: HashMap::new(),
@@ -473,10 +481,13 @@ impl UnitAtlas {
             let page_size = [texture.width, texture.height];
             for (origin, sprite) in group.sprites {
                 let entry = unit_entry(&sprite, origin, group.page, page_size);
-                self.entries.insert(sprite.key.clone(), entry);
+                if let Some(old) = self.entries.insert(sprite.key.clone(), entry) {
+                    self.rendered_index.by_place.remove(&sprite_place(&old));
+                }
                 self.pool_bytes
                     .insert(sprite.key.clone(), sprite.pool_bytes);
                 self.rendered_cache.push(sprite);
+                self.index_rendered(self.rendered_cache.len() - 1);
             }
         }
         for sprite in unplaced {
@@ -487,6 +498,66 @@ impl UnitAtlas {
                 sprite.height,
             );
         }
+    }
+}
+
+/// [`UnitAtlas::rendered_index`]: the first resident sprite of each key, and
+/// of each placement its key's entry currently names.
+#[derive(Default)]
+struct RenderedIndex {
+    by_key: HashMap<UnitSpriteKey, usize>,
+    by_place: HashMap<SpritePlace, usize>,
+}
+
+/// An atlas rectangle: page, UV origin and UV size, compared bit for bit.
+type SpritePlace = (usize, [u32; 2], [u32; 2]);
+
+fn sprite_place(entry: &UnitSpriteEntry) -> SpritePlace {
+    (
+        entry.page,
+        entry.uv_origin.map(f32::to_bits),
+        entry.uv_size.map(f32::to_bits),
+    )
+}
+
+impl UnitAtlas {
+    /// Replace the resident sprites' pixels whole and index them.
+    fn set_rendered_cache(&mut self, rendered: Vec<CachedUnitSprite>) {
+        self.rendered_cache = rendered;
+        self.rendered_index = RenderedIndex::default();
+        for index in 0..self.rendered_cache.len() {
+            self.index_rendered(index);
+        }
+    }
+
+    /// Index `rendered_cache[index]` under its key and its key's placement,
+    /// keeping the first sprite of each, as a walk in cache order finds it.
+    fn index_rendered(&mut self, index: usize) {
+        let key = &self.rendered_cache[index].key;
+        let first = *self
+            .rendered_index
+            .by_key
+            .entry(key.clone())
+            .or_insert(index);
+        if let Some(entry) = self.entries.get(key) {
+            self.rendered_index
+                .by_place
+                .entry(sprite_place(entry))
+                .or_insert(first);
+        }
+    }
+
+    /// The first resident sprite with `key`.
+    fn rendered_by_key(&self, key: &UnitSpriteKey) -> Option<&CachedUnitSprite> {
+        let index = *self.rendered_index.by_key.get(key)?;
+        Some(&self.rendered_cache[index])
+    }
+
+    /// The first resident sprite whose key's entry is placed at `part`'s
+    /// page and UV rectangle.
+    fn rendered_by_place(&self, part: &UnitSpriteEntry) -> Option<&CachedUnitSprite> {
+        let index = *self.rendered_index.by_place.get(&sprite_place(part))?;
+        Some(&self.rendered_cache[index])
     }
 }
 
@@ -1116,7 +1187,7 @@ impl UnitAtlasUpload {
                         .iter()
                         .map(|sprite| (sprite.key.clone(), sprite.pool_bytes))
                         .collect();
-                    packed.rendered_cache = rendered;
+                    packed.set_rendered_cache(rendered);
                     atlas.insert(packed)
                 }
                 Err(err) => {
