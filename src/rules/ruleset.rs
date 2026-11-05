@@ -10643,6 +10643,16 @@ impl RuleSet {
         self.animation_sequence_by_handle(self.type_handle(type_id)?)
     }
 
+    /// Select a concrete class's retained bank, including duplicate names in
+    /// another registry. Native Infantry51D707/518DCF uses that Type pointer.
+    pub fn animation_sequence_in_category(
+        &self,
+        category: ObjectCategory,
+        type_id: &str,
+    ) -> Option<&crate::rules::animation_sequence::SequenceSet> {
+        self.animation_sequence_by_handle(self.type_handle_in_category(category, type_id)?)
+    }
+
     /// The sequences of the object `handle` names, as
     /// [`Self::animation_sequence`] answers for its name.
     pub fn animation_sequence_by_handle(

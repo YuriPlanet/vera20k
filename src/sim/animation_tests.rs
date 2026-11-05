@@ -980,7 +980,7 @@ fn layered_slave_sequence_keeps_runtime_frames_and_sound_in_one_bank() {
     let stock = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(&root, &art, &["SlaveAttack"])
         .unwrap();
     let stock_walk = *stock
-        .animation_sequence("SLAV")
+        .animation_sequence_in_category(crate::rules::object_type::ObjectCategory::Infantry, "SLAV")
         .unwrap()
         .infantry_action(3)
         .unwrap();
@@ -998,12 +998,12 @@ fn layered_slave_sequence_keeps_runtime_frames_and_sound_in_one_bank() {
     let (rules, _, _, _) = owner
         .load_scenario(
             NativeScenarioRulesPrefix::Campaign(None),
-            &IniFile::from_str("[SLAV]\nImage=PARTIALSLAV\n"),
+            &IniFile::from_str("[BuildingTypes]\nSEQUENCEPROBE=SLAV\n[SLAV]\nImage=PARTIALSLAV\n"),
         )
         .unwrap()
         .into_parts();
     let walk = rules
-        .animation_sequence("SLAV")
+        .animation_sequence_in_category(crate::rules::object_type::ObjectCategory::Infantry, "SLAV")
         .unwrap()
         .infantry_action(3)
         .unwrap();
@@ -1017,9 +1017,16 @@ fn layered_slave_sequence_keeps_runtime_frames_and_sound_in_one_bank() {
         .register(crate::sim::house_state::HouseState::new(
             house, 0, None, true, 0, 10,
         ));
+    assert_eq!(
+        rules.object("SLAV").unwrap().category,
+        crate::rules::object_type::ObjectCategory::Building
+    );
+    let infantry = rules
+        .object_in_category(crate::rules::object_type::ObjectCategory::Infantry, "SLAV")
+        .unwrap();
     let id = sim
-        .construct_object_limbo_at_height(
-            "SLAV",
+        .construct_resolved_object_limbo_at_height(
+            infantry,
             "Americans",
             10,
             10,

@@ -797,7 +797,13 @@ pub(crate) fn shp_visitor<'a>(
             ) && let Some(body_entry) = entry
                 && let Some(shadow) = embedded_shp_shadow_piece(
                     atlas,
-                    rules.and_then(|rules| sim.interner().object_type(entity.type_ref(), rules)),
+                    rules.and_then(|rules| {
+                        sim.interner().object_type_in_category(
+                            entity.type_ref(),
+                            entity.category().into(),
+                            rules,
+                        )
+                    }),
                     entity,
                     cells.as_ref(),
                     &body_key,
@@ -2123,7 +2129,8 @@ fn resolve_object_shp_frame_with_facing(
     } else {
         type_id
     };
-    let sequence_set = rules.and_then(|rules| rules.animation_sequence(type_id));
+    let sequence_set = rules
+        .and_then(|rules| rules.animation_sequence_in_category(entity.category().into(), type_id));
     if entity.category() == EntityCategory::Unit
         && entity.animation.as_ref().is_none_or(|anim_state| {
             matches!(
@@ -2166,7 +2173,11 @@ fn resolve_object_shp_frame_with_facing(
         let facing = rules
             .and_then(|rules| {
                 let sim = &runtime?.simulation;
-                sim.interner().object_type(entity.type_ref(), rules)
+                sim.interner().object_type_in_category(
+                    entity.type_ref(),
+                    crate::rules::object_type::ObjectCategory::Infantry,
+                    rules,
+                )
             })
             .filter(|object| object.jumpjet && !object.jumpjet_turn)
             .filter(|_| {
@@ -2203,6 +2214,63 @@ fn resolve_object_shp_frame_with_facing(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn infantry_draw_selects_the_visual_types_bank_despite_a_building_name_collision() {
+        use crate::map::entities::EntityCategory;
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+        use crate::sim::game_entity::GameEntity;
+
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[InfantryTypes]\n0=SHARED\n1=DISGUISE\n[BuildingTypes]\n0=SHARED\n\
+                 [SHARED]\nStrength=100\n[DISGUISE]\nStrength=100\n",
+            ),
+            &IniFile::from_str(
+                "[SHARED]\nSequence=OwnSequence\n[OwnSequence]\nReady=24,1,0\n\
+                 [DISGUISE]\nSequence=DisguiseSequence\n[DisguiseSequence]\nReady=42,1,0\n",
+            ),
+        )
+        .unwrap();
+        let entity = GameEntity::test_default_of_category(
+            1,
+            "SHARED",
+            "Americans",
+            0,
+            0,
+            EntityCategory::Infantry,
+        );
+        assert_eq!(entity.infantry_sprite_pose(), Some((-1, 0)));
+        assert_eq!(
+            rules.object("SHARED").unwrap().category,
+            crate::rules::object_type::ObjectCategory::Building
+        );
+        assert_eq!(
+            super::resolve_object_shp_frame_with_facing(
+                None,
+                Some(&rules),
+                "SHARED",
+                &entity,
+                0,
+                None,
+            ),
+            Some(24)
+        );
+        // SelectDrawFrame518DCF..518DFC can substitute the disguise's Type;
+        // the draw caller still owns that visual identity.
+        assert_eq!(
+            super::resolve_object_shp_frame_with_facing(
+                None,
+                Some(&rules),
+                "DISGUISE",
+                &entity,
+                0,
+                None,
+            ),
+            Some(42)
+        );
+    }
+
     #[test]
     fn original_health_ratio_corpus_matches_requested_building_art_transition() {
         for row in crate::sim::health_ratio_fixture::rows() {

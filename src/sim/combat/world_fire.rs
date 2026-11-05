@@ -138,15 +138,19 @@ fn admit_attacker_fire<'r>(
         Some(super::BuildingShot::Mission { weapon, .. }) => Some(weapon),
         _ => None,
     };
-    let obj = match world.interner.object_type(snap.type_id, rules) {
-        Some(o) => o,
-        None => {
-            if delayed_building_slot.is_none() {
-                out.remove_attack.push(snap.stable_id);
+    let obj =
+        match world
+            .interner
+            .object_type_in_category(snap.type_id, snap.category.into(), rules)
+        {
+            Some(o) => o,
+            None => {
+                if delayed_building_slot.is_none() {
+                    out.remove_attack.push(snap.stable_id);
+                }
+                return None;
             }
-            return None;
-        }
-    };
+        };
 
     // Stock Sonic weapons occupy index 0, and native FireAt tests that
     // WeaponType before resolving the target. Preserve that whole-call gate
@@ -258,7 +262,10 @@ fn admit_attacker_fire<'r>(
     };
 
     let infantry_fire = snap.category == EntityCategory::Infantry;
-    let sequences = world.interner.animation_sequence(snap.type_id, rules);
+    let sequences =
+        world
+            .interner
+            .animation_sequence_in_category(snap.type_id, snap.category.into(), rules);
     let firing_at_entry = infantry_fire
         && world
             .substrate
