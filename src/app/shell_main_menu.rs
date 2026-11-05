@@ -435,7 +435,11 @@ holding ra2md.mix and ra2.mix with the rest of the game, then start VERA20K agai
             let game_files = game_files.map_or_else(
                 || "No game installation configured".to_owned(),
                 |path| {
-                    if executable_dir.as_deref() == Some(std::path::Path::new(&path)) {
+                    // Android only, like the import wizard it belongs to: the
+                    // desktop card keeps printing whatever path it resolved.
+                    if cfg!(target_os = "android")
+                        && executable_dir.as_deref() == Some(std::path::Path::new(&path))
+                    {
                         "No game installation configured".to_owned()
                     } else {
                         path.display().to_string()
@@ -1102,7 +1106,9 @@ impl App {
             .game_config
             .as_ref()
             .map(|config| config.paths.ra2_dir.clone());
-        let (title, text) = if state.frontend.asset_import.is_open() {
+        let (title, text) = if crate::ui::asset_import::AVAILABLE
+            && state.frontend.asset_import.is_open()
+        {
             let game_files_text = game_files.as_deref().map_or_else(
                 || "No game installation configured".to_owned(),
                 |path| path.display().to_string(),

@@ -16,6 +16,15 @@
 
 use std::path::PathBuf;
 
+/// Whether this build offers the import wizard.
+///
+/// Android only. The desktop builds keep the startup card exactly as it was
+/// before this dialog existed — a single Quit — because a packaged desktop
+/// launch already has a native folder chooser. Every gate on this dialog (the
+/// card's button, the body swap) uses this constant, so the desktop card cannot
+/// drift one branch at a time.
+pub(crate) const AVAILABLE: bool = cfg!(target_os = "android");
+
 /// Where the import flow stands.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) enum ImportStep {

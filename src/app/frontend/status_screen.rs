@@ -133,7 +133,10 @@ impl Buttons {
     fn for_shell_error(state: &AppState) -> Self {
         use crate::ui::asset_import::ImportStep;
         match state.frontend.asset_import.step() {
-            ImportStep::Closed if state.process_assets.manager().is_none() => {
+            ImportStep::Closed
+                if crate::ui::asset_import::AVAILABLE
+                    && state.process_assets.manager().is_none() =>
+            {
                 Self([Some(Action::ImportAssets), Some(Action::Quit)])
             }
             ImportStep::Closed => Self::QUIT,
