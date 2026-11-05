@@ -115,6 +115,26 @@ fn apply_fx(color: vec4f, _flags: u32, params: vec4f) -> vec4f {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
+    return shade(input, tactical_a_at(input.position.xy));
+}
+
+// DSurface4C0750's dashed stores (rally passes, psychic detection dashes)
+// keep or skip each pixel by the live tactical A: FX_SURFACE_A_NONZERO
+// (256) stores where it is nonzero, FX_SURFACE_A_ZERO (512) where it is zero,
+// and neither stores everywhere. The stored color reads no palette row.
+@fragment
+fn fs_surface_store(input: VertexOutput) -> @location(0) vec4f {
+    var store = input;
+    store.fx_flags = input.fx_flags & ~768u;
+    let color = shade(store, 127u);
+    let a = tactical_a_at(input.position.xy);
+    if ((input.fx_flags & 256u) != 0u && a == 0u) || ((input.fx_flags & 512u) != 0u && a != 0u) {
+        discard;
+    }
+    return color;
+}
+
+fn shade(input: VertexOutput, a: u32) -> vec4f {
     let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
     var color: vec4f = textureSample(t_sprite, s_sprite, input.uv);
     if (input.source_palette != 0u) {
@@ -128,7 +148,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     // Map lighting happens before the shared DrawState effect branch, matching
     // the voxel fragment path. Alpha 1.0 = opaque; no draw state changes order.
     return apply_fx(
-        vec4f(resolve_palette(color.rgb, input.tint, opaque_palette(input.palette_light, color.a * input.alpha, input.fx_flags), index, tactical_a_at(input.position.xy)), color.a * input.alpha),
+        vec4f(resolve_palette(color.rgb, input.tint, opaque_palette(input.palette_light, color.a * input.alpha, input.fx_flags), index, a), color.a * input.alpha),
         input.fx_flags,
         input.fx_params,
     );

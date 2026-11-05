@@ -21,10 +21,10 @@ fn spotlight_brightening_uses_original_clipped_three_axis_visits_without_alpha()
                 zoom: 1.,
             },
             [clip[2] as u32, clip[3] as u32],
-            &mut |_| panic!("original4BBCA0 never samples A"),
             &mut |ops| {
                 for &(point, op) in ops {
-                    assert_eq!((op.mode, op.strength, op.alpha), (8, 75, 127));
+                    // Mode 8 is the GPU's one store that never reads A.
+                    assert_eq!((op.mode, op.strength), (8, 75));
                     visits.push([point[0], point[1], op.z as i32]);
                 }
             },
@@ -121,7 +121,6 @@ fn production_spotlight_brightening_pixels_match_original() {
                     zoom: 1.,
                 },
                 |_| true,
-                |_| panic!("original4BBCA0 must not read A"),
             );
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
             clear(

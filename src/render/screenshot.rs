@@ -162,7 +162,7 @@ impl PresentedFrameCache {
         upscale: Option<&crate::render::upscale_pass::UpscalePass>,
         screen_presentation: &mut crate::render::screen_presentation::ScreenPresentationPass,
         central_rect_px: [u32; 4],
-    ) -> Result<Option<crate::render::frame_readback::PendingBgra8Readback>> {
+    ) -> Result<Option<crate::render::frame_readback::PendingTextureReadback>> {
         let mut state = self.state.borrow_mut();
         if !requested || state.slots.presented().is_none() {
             return Ok(None);
@@ -193,7 +193,7 @@ impl PresentedFrameCache {
                 central_rect_px,
                 state.presented_screen_shake_offset,
             );
-            return crate::render::frame_readback::PendingBgra8Readback::encode(
+            return crate::render::frame_readback::PendingTextureReadback::encode(
                 device,
                 encoder,
                 target,
@@ -206,7 +206,7 @@ impl PresentedFrameCache {
         }
 
         if state.width == client_width && state.height == client_height {
-            return crate::render::frame_readback::PendingBgra8Readback::encode(
+            return crate::render::frame_readback::PendingTextureReadback::encode(
                 device,
                 encoder,
                 state
@@ -233,7 +233,7 @@ impl PresentedFrameCache {
             (client_width, client_height),
             upscale,
         )?;
-        crate::render::frame_readback::PendingBgra8Readback::encode(
+        crate::render::frame_readback::PendingTextureReadback::encode(
             device,
             encoder,
             target,

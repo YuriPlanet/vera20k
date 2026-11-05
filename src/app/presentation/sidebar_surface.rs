@@ -525,7 +525,7 @@ mod tests {
             });
             surface.composite(&mut pass);
         }
-        let readback = crate::render::frame_readback::PendingBgra8Readback::encode(
+        let readback = crate::render::frame_readback::PendingTextureReadback::encode(
             &gpu.device,
             &mut encoder,
             &color,
@@ -711,7 +711,7 @@ mod tests {
             &depth_view,
         );
         let read = |encoder: &mut wgpu::CommandEncoder, texture: &wgpu::Texture, (w, h)| {
-            crate::render::frame_readback::PendingBgra8Readback::encode(
+            crate::render::frame_readback::PendingTextureReadback::encode(
                 &gpu.device,
                 encoder,
                 texture,

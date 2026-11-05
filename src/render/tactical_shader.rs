@@ -9,11 +9,19 @@ pub(crate) fn source(body: &str) -> String {
     ))
 }
 
+/// The binding-free A source ABI and fog lift, for readers that bind the
+/// plane their own way (surface lines).
+pub(crate) const A_SOURCE: &str = include_str!("tactical_a_source.wgsl");
+
 /// World source blitters use the shared Camera + A binding. Packed destination
 /// resolve and LineTrail keep their own binding/operation classes and include
 /// only palette math and stored-Z helpers through `source` above.
 pub(crate) fn world_source(body: &str) -> String {
-    source(&format!("{}\n{}", include_str!("tactical_a.wgsl"), body))
+    source(&format!(
+        "{A_SOURCE}\n{}\n{}",
+        include_str!("tactical_a.wgsl"),
+        body
+    ))
 }
 
 /// The source page an SHP-family blitter reads, RGBA or palette-indexed.

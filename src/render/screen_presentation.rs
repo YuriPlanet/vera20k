@@ -222,7 +222,7 @@ fn copy_rect(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::render::frame_readback::PendingBgra8Readback;
+    use crate::render::frame_readback::PendingTextureReadback;
     use crate::render::gpu::block_on;
     use std::time::Duration;
     use wgpu::util::DeviceExt;
@@ -285,8 +285,8 @@ mod tests {
             &self,
             encoder: &mut wgpu::CommandEncoder,
             texture: &wgpu::Texture,
-        ) -> PendingBgra8Readback {
-            PendingBgra8Readback::encode(&self.device, encoder, texture, FORMAT, WIDTH, HEIGHT)
+        ) -> PendingTextureReadback {
+            PendingTextureReadback::encode(&self.device, encoder, texture, FORMAT, WIDTH, HEIGHT)
                 .expect("encode output readback")
         }
     }

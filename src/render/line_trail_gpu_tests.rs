@@ -78,6 +78,13 @@ fn production_line_trail_matches_original_full_line_pixels() {
                 z_origin_y: input["z_origin_y"].as_i64().unwrap() as i32,
                 zoom: 1.,
             };
+            terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |[x, y]| {
+                if input["alpha"] == "mixed" {
+                    [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize]
+                } else {
+                    input["alpha"].as_u64().unwrap() as u16
+                }
+            });
             terrain.begin_surface_lines();
             let prepared_lines = terrain.prepare_surface_lines(
                 &gpu.device,
@@ -89,13 +96,6 @@ fn production_line_trail_matches_original_full_line_pixels() {
                 &[],
                 viewport,
                 |_| true,
-                |[x, y]| {
-                    if input["alpha"] == "mixed" {
-                        [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize]
-                    } else {
-                        input["alpha"].as_u64().unwrap() as u16
-                    }
-                },
             );
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
             clear(&mut encoder, &cv, &dv, old_z, wgpu::LoadOp::Load);
@@ -187,6 +187,9 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
                 terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
                 terrain.surface_lines.test_operation_limit = forced_chunk;
                 let segments = overlapping_segments(row);
+                terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |_| {
+                    row["input"]["alpha"].as_u64().unwrap() as u16
+                });
                 terrain.begin_surface_lines();
                 let prepared_lines = terrain.prepare_surface_lines(
                     &gpu.device,
@@ -198,7 +201,6 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
                     &[],
                     ordered_viewport(row),
                     |_| true,
-                    |_| row["input"]["alpha"].as_u64().unwrap() as u16,
                 );
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
                 clear(
@@ -246,8 +248,8 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
 #[ignore = "requires quiet GPU; run in release; bounded preparation/completed submission timing, not FPS"]
 fn line_trail_native_fixture_submission_timings() {
     use crate::render::tactical_compat::{
-        SparkPointCommand, SparkPointPlanes, SparkPointPreparation, TacticalPointViewport,
-        TacticalRect, prepare_spark_point, welding_tests as fixture,
+        SparkPointCommand, SparkPointPreparation, TacticalPointViewport, TacticalRect,
+        prepare_spark_point, welding_tests as fixture,
     };
     use std::time::Instant;
     let native: Value = serde_json::from_str(crate::test_fixture::text(
@@ -271,6 +273,7 @@ fn line_trail_native_fixture_submission_timings() {
                        alpha: u16| {
             let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
             let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+            terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |_| alpha);
             let mut lights = crate::render::combat_light::CombatLightRenderer::new_with_device(
                 &gpu.device,
                 &gpu.queue,
@@ -293,14 +296,7 @@ fn line_trail_native_fixture_submission_timings() {
                 let point_prepared = if let Some((commands, colors, viewport)) = spark {
                     prepared_points.clear();
                     for &command in commands {
-                        match prepare_spark_point(
-                            command,
-                            colors,
-                            viewport,
-                            SparkPointPlanes::Deferred,
-                        )
-                        .unwrap()
-                        {
+                        match prepare_spark_point(command, colors, viewport).unwrap() {
                             SparkPointPreparation::Ready { point, .. } => {
                                 prepared_points.push(SurfaceDraw::Point(point));
                             }
@@ -348,7 +344,6 @@ fn line_trail_native_fixture_submission_timings() {
                     radials,
                     viewport,
                     |_| true,
-                    |_| alpha,
                 );
                 let prepared = prepare_begin.elapsed().as_secs_f64() * 1000.;
                 chunks = prepared_lines.end - prepared_lines.start;
@@ -458,7 +453,7 @@ fn line_trail_native_fixture_submission_timings() {
                         z_origin_y: 0,
                         zoom: 1.,
                     },
-                    0x100,
+                    255,
                 );
             }
         }

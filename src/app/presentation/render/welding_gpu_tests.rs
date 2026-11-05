@@ -11,7 +11,7 @@ use crate::app::presentation::detail::DetailState;
 use crate::render::combat_light::CombatLightRenderer;
 use crate::render::surface_line::{SurfaceDraw, SurfaceLineViewport};
 use crate::render::tactical_compat::{
-    SparkPointPlanes, SparkPointPreparation, prepare_spark_point, welding_tests as fixture,
+    SparkPointPreparation, prepare_spark_point, welding_tests as fixture,
 };
 use crate::render::tactical_draw_plan::SpriteEncoding;
 use crate::render::terrain_draw::TerrainDrawRenderer;
@@ -298,6 +298,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
                 &dv,
                 batch.camera_uniform(),
             );
+            terrain.bind_surface_line_a(&gpu.device, Some(&a));
             terrain.begin_surface_lines();
             for layer in &mut layers {
                 layer.line_batches = layer
@@ -319,17 +320,6 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
                                 zoom: 1.,
                             },
                             |_| false,
-                            |[x, y]| {
-                                u16::from(
-                                    a.sample_world(
-                                        x as f32 + view_camera[0].floor(),
-                                        y as f32 + view_camera[1].floor(),
-                                        view_camera[0],
-                                        view_camera[1],
-                                    )
-                                    .unwrap(),
-                                )
-                            },
                         )
                     })
                     .collect();
@@ -502,7 +492,6 @@ fn retained_welding_system_then_particles_matches_original_shared_destination() 
                     fixture::command(point, draw, index),
                     &colors,
                     fixture::viewport(particles),
-                    SparkPointPlanes::Deferred,
                 )
                 .unwrap()
                 {
@@ -551,6 +540,9 @@ fn retained_welding_system_then_particles_matches_original_shared_destination() 
             );
             let a = fixture::plane(particles, "a");
             let z = fixture::plane(particles, "z");
+            terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |[x, y]| {
+                a[(y as u32 * size[0] + x as u32) as usize]
+            });
             terrain.begin_surface_lines();
             for layer in &mut layers {
                 layer.line_batches = layer
@@ -572,7 +564,6 @@ fn retained_welding_system_then_particles_matches_original_shared_destination() 
                                 zoom: 1.,
                             },
                             |_| false,
-                            |[x, y]| a[(y as u32 * size[0] + x as u32) as usize],
                         )
                     })
                     .collect();
