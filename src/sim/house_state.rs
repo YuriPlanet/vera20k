@@ -220,6 +220,12 @@ pub(crate) const fn strategy_timer_at_construction() -> CdTimer {
     CdTimer::started(0, 0)
 }
 
+/// HouseClass::Constructor004F5BAE..004F5BBA starts the enemy-search
+/// countdown at the construction frame,0, with no delay.
+pub(crate) const fn enemy_search_timer_at_construction() -> CdTimer {
+    CdTimer::started(0, 0)
+}
+
 /// [`HouseState::eva_funds_timer`]'s constructor value
 /// (`HouseClass::Constructor 0x004F5D2F`, the duration from `0x004F5CD0 MOV
 /// EAX,1`): started at the construction frame, 0, for one frame.
@@ -823,6 +829,11 @@ pub struct HouseState {
     /// (`0x004F5B9D..0x004F5BA8`). Persisted and hashed (schema v234).
     #[serde(default = "strategy_timer_at_construction")]
     strategy_timer: CdTimer,
+    /// House+5640/+5648. Post_Map_Init00686A12..00686A2B starts it once;
+    /// AI_Building_Strategy004FD50F..004FD538 only reads it. HouseSave504080
+    /// preserves it in the raw House payload; snapshots and hashes do too.
+    #[serde(default = "enemy_search_timer_at_construction")]
+    enemy_search_timer: CdTimer,
     /// The team timer and `RatioAITriggerTeam=` (`HouseClass+0x5798`/`+0x57A0`,
     /// `+0x565C`), owned by `sim::ai_team_creation`. Persisted and hashed
     /// (schema v238).
@@ -1100,6 +1111,19 @@ impl HouseState {
     /// restarts at this frame with the delay `AI_Building_Strategy` returned.
     pub(crate) fn restart_strategy_timer(&mut self, frame: i32, delay: i32) {
         self.strategy_timer.start(frame, delay);
+    }
+
+    /// ScenarioClass::Post_Map_Init006869EA..00686A2B: only IsHuman and
+    /// MultiplayPassive gate this one-time start; PlayerControl does not.
+    pub(crate) fn initialize_enemy_search_timer(
+        &mut self,
+        frame: i32,
+        general: &crate::rules::ruleset::GeneralRules,
+    ) {
+        if !self.is_human() && !self.multiplay_passive() {
+            self.enemy_search_timer
+                .start(frame, self.difficulty_value(general.ai_hate_delays()));
+        }
     }
 
     /// House+577A, stored after SpySat's map callback (`509069/509017`).
@@ -1561,6 +1585,10 @@ impl HouseState {
 
     pub const fn strategy_timer(&self) -> &CdTimer {
         &self.strategy_timer
+    }
+
+    pub(crate) const fn enemy_search_timer(&self) -> &CdTimer {
+        &self.enemy_search_timer
     }
 
     pub const fn team_creation(&self) -> &crate::sim::ai_team_creation::HouseTeamCreation {
@@ -2687,6 +2715,7 @@ impl HouseState {
             economy: Economy::new(credits),
             strategy_emergency: HouseStrategyEmergencyState::default(),
             strategy_timer: strategy_timer_at_construction(),
+            enemy_search_timer: enemy_search_timer_at_construction(),
             team_creation: Default::default(),
             ai_activation: HouseAiActivationLatches::default(),
             ai_production: Default::default(),
