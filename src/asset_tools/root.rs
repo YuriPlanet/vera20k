@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
+use crate::assets::asset_manager::{ArchiveFamily, AssetManager, MediaArchiveMode};
 use crate::util::config::GameConfig;
 
 /// Where the retail root came from, for diagnostics.
@@ -62,13 +62,33 @@ fn check(dir: PathBuf, source: RootSource) -> Result<(PathBuf, RootSource), Stri
 /// tooling-only widening of the search set, so results found only that way are
 /// not what the game would resolve.
 pub fn open_manager(ra2_dir: &Path, all_mixes: bool) -> Result<AssetManager, String> {
+    open_family_manager(ra2_dir, all_mixes, ArchiveFamily::Yr)
+}
+
+/// Archive verbs given an explicit `--ini-profile` mount that profile's
+/// archive family, so an MO install opens without its YR MD media.
+pub fn open_profile_manager(
+    ra2_dir: &Path,
+    all_mixes: bool,
+    profile: crate::util::ini_roots::IniProfile,
+) -> Result<AssetManager, String> {
+    open_family_manager(ra2_dir, all_mixes, ArchiveFamily::for_ini_profile(profile))
+}
+
+fn open_family_manager(
+    ra2_dir: &Path,
+    all_mixes: bool,
+    family: ArchiveFamily,
+) -> Result<AssetManager, String> {
     let mut manager =
-        AssetManager::new(ra2_dir, MediaArchiveMode::STOCK_DIGITAL).map_err(|err| {
-            format!(
-                "could not mount archives under {}: {err}",
-                ra2_dir.display()
-            )
-        })?;
+        AssetManager::with_mod(ra2_dir, None, MediaArchiveMode::STOCK_DIGITAL, family).map_err(
+            |err| {
+                format!(
+                    "could not mount archives under {}: {err}",
+                    ra2_dir.display()
+                )
+            },
+        )?;
 
     if all_mixes {
         manager
@@ -79,7 +99,8 @@ pub fn open_manager(ra2_dir: &Path, all_mixes: bool) -> Result<AssetManager, Str
     Ok(manager)
 }
 
-/// Only INI commands use host INI policy; ordinary archive tools stay retail.
+/// Only INI commands read host INI policy; archive tools stay retail unless
+/// given an explicit `--ini-profile`.
 /// An explicit CLI request replaces the entire config, never individual fields.
 pub fn open_ini_manager(
     root: &Path,
@@ -95,9 +116,14 @@ pub fn open_ini_manager(
         }
     };
     config.validate()?;
-    open_manager(root, all_mixes)?
-        .with_ini_roots(&config)
-        .map_err(|error| error.to_string())
+    // INI commands mount the archives the game mounts for this profile.
+    open_family_manager(
+        root,
+        all_mixes,
+        ArchiveFamily::for_ini_profile(config.profile),
+    )?
+    .with_ini_roots(&config)
+    .map_err(|error| error.to_string())
 }
 
 /// INI expansion may be audited against a MOD/source directory that lacks

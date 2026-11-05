@@ -153,8 +153,12 @@ impl ProcessAssets {
         &self,
         root: &std::path::Path,
     ) -> anyhow::Result<AssetManager> {
-        let assets =
-            AssetManager::with_mod(root, self.mod_dir.as_deref(), self.media_archive_mode)?;
+        let assets = AssetManager::with_mod(
+            root,
+            self.mod_dir.as_deref(),
+            self.media_archive_mode,
+            crate::assets::asset_manager::ArchiveFamily::for_ini_profile(self.ini_config.profile),
+        )?;
         Ok(if let Some(roots) = &self.selected_ini_roots {
             assets.with_selected_ini_roots(roots.clone())
         } else {

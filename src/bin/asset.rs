@@ -62,6 +62,8 @@ fn run(cli: Cli) -> Result<(), ErrorReport> {
         Verb::IniGet { .. } | Verb::IniType { .. } | Verb::IniRoots
     ) {
         root::open_ini_manager(&ra2_dir, cli.all_mixes, cli.ini_roots.as_ref())
+    } else if let Some(config) = &cli.ini_roots {
+        root::open_profile_manager(&ra2_dir, cli.all_mixes, config.profile)
     } else {
         root::open_manager(&ra2_dir, cli.all_mixes)
     };

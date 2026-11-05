@@ -133,3 +133,49 @@ fn inspection_reports_optional_corruption_and_both_cd_media_boundaries() {
         ]
     );
 }
+
+#[test]
+fn mo_family_mounts_spawner_renamed_archives_and_their_ini_roots() {
+    // MO installs keep 5-byte MD movie/theme stubs beside the MO archives.
+    let directory = audio_test_install("mo-family");
+    std::fs::write(directory.path().join("movmd03.mix"), b"stub!").unwrap();
+    directory.write_mix("expandmd01.mix", "unrelated.bin", b"fixture");
+    for name in ["mapsmo03.mix", "multimo.mix", "movmo03.mix"] {
+        directory.write_mix(name, "unrelated.bin", b"fixture");
+    }
+    std::fs::write(
+        directory.path().join("expandmo99.mix"),
+        crate::map::source::test_support::make_new_format_mix_bytes(&[
+            ("rulesmo.ini", b"[General]"),
+            ("artmo.ini", b"[General]"),
+            ("aimo.ini", b"[General]"),
+        ]),
+    )
+    .unwrap();
+
+    let config = crate::util::ini_roots::IniRootConfig {
+        profile: crate::util::ini_roots::IniProfile::Mo,
+        ..Default::default()
+    };
+    let assets = AssetManager::with_mod(
+        directory.path(),
+        None,
+        MediaArchiveMode::STOCK_DIGITAL,
+        ArchiveFamily::for_ini_profile(config.profile),
+    )
+    .unwrap()
+    .with_ini_roots(&config)
+    .unwrap();
+    for name in [
+        "expandmo99.mix",
+        "mapsmo03.mix",
+        "multimo.mix",
+        "movmo03.mix",
+    ] {
+        assert!(assets.archive(name).is_some(), "{name}");
+    }
+    for name in ["expandmd01.mix", "mapsmd03.mix", "multimd.mix"] {
+        assert!(assets.archive(name).is_none(), "{name}");
+    }
+    assert_eq!(assets.ini_roots().rules(), "rulesmo.ini");
+}
