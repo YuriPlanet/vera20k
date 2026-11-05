@@ -22,7 +22,7 @@ use crate::rules::insignia_type::InsigniaTypeCatalog;
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::phobos_radiation::RadiationTypeCatalog;
 use crate::rules::phobos_shields::ShieldTypeCatalog;
-use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
+use crate::rules::sound_ini::{EvaRegistry, GlobalSoundReferences, SoundRegistry};
 
 use crate::rules::missile_spawn::{MissileFamily, MissileSpawnRules};
 use crate::rules::object_image::{ImageTheater, ObjectImageKind, ObjectImageState};
@@ -792,6 +792,11 @@ impl ProcessedRulesLayers {
 
     pub(crate) fn native_registry_state(&self) -> &NativeRulesRegistryState {
         self.native_type_construction_trace.registry_state()
+    }
+
+    pub(crate) fn install_global_sounds(&mut self, sounds: GlobalSoundReferences) {
+        self.native_type_construction_trace
+            .install_global_sounds(sounds);
     }
 
     /// Restore the inherited image calls of Terrain, Bullet and TechnoTypes
@@ -2346,20 +2351,20 @@ impl ProcessedRulesLayers {
     /// Rules fields survive TypeReset6686C0 and Rules Save674730/Load675210.
     pub(crate) fn bomb_ticking_sound(&self) -> Option<&str> {
         self.native_registry_state()
-            .rules_bomb_ticking_sound
-            .as_deref()
+            .rules_global_sounds
+            .bomb_ticking()
     }
 
     pub(crate) fn bomb_attach_sound(&self) -> Option<&str> {
         self.native_registry_state()
-            .rules_bomb_attach_sound
-            .as_deref()
+            .rules_global_sounds
+            .bomb_attach()
     }
 
     pub(crate) fn psychic_reveal_activate_sound(&self) -> Option<&str> {
         self.native_registry_state()
-            .rules_psychic_reveal_activate_sound
-            .as_deref()
+            .rules_global_sounds
+            .psychic_reveal()
     }
 
     /// Final Difficulty readers after the ordered Process passes. Keeping the
@@ -2771,6 +2776,10 @@ impl NativeTypeConstructionTrace {
 
     pub(crate) fn registry_state(&self) -> &NativeRulesRegistryState {
         &self.registry_state
+    }
+
+    pub(crate) fn install_global_sounds(&mut self, sounds: GlobalSoundReferences) {
+        self.registry_state.install_global_sounds(sounds);
     }
 
     pub(crate) fn into_parts(
@@ -3527,9 +3536,7 @@ pub(crate) struct NativeRulesRegistryState {
     #[serde(default = "crate::rules::ruleset::default_fog_rate")]
     rules_fog_rate: NativeF64Bits,
     // Ctor665946/66594C/6659AC=-1; fixed Voc IDs represented by canonical names.
-    rules_bomb_ticking_sound: Option<String>,
-    rules_bomb_attach_sound: Option<String>,
-    rules_psychic_reveal_activate_sound: Option<String>,
+    rules_global_sounds: GlobalSoundReferences,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
     rules_gravity: i32,
     rules_tree_strength: i32,
@@ -3625,9 +3632,7 @@ impl Default for NativeRulesRegistryState {
             rules_shroud_grow: general.shroud_grow,
             rules_shroud_rate: general.shroud_rate,
             rules_fog_rate: general.fog_rate,
-            rules_bomb_ticking_sound: None,
-            rules_bomb_attach_sound: None,
-            rules_psychic_reveal_activate_sound: None,
+            rules_global_sounds: GlobalSoundReferences::default(),
             rules_difficulty_rows: general.difficulty_rows,
             rules_gravity: general.gravity,
             rules_tree_strength: general.tree_strength,
@@ -3685,6 +3690,14 @@ impl Default for NativeRulesRegistryState {
 }
 
 impl NativeRulesRegistryState {
+    pub(crate) fn global_sounds(&self) -> &GlobalSoundReferences {
+        &self.rules_global_sounds
+    }
+
+    pub(crate) fn install_global_sounds(&mut self, sounds: GlobalSoundReferences) {
+        self.rules_global_sounds = sounds;
+    }
+
     /// Read one presentation HSV from the retained paired Colors registry.
     /// Native66D3A0 appends kind1 then kind53 for each entry; Ares loading
     /// stores a kind1 ordinal. A negative index is no override: the loading
@@ -4051,9 +4064,7 @@ impl NativeRulesRegistryState {
             rules_shroud_grow: self.rules_shroud_grow,
             rules_shroud_rate: self.rules_shroud_rate,
             rules_fog_rate: self.rules_fog_rate,
-            rules_bomb_ticking_sound: self.rules_bomb_ticking_sound,
-            rules_bomb_attach_sound: self.rules_bomb_attach_sound,
-            rules_psychic_reveal_activate_sound: self.rules_psychic_reveal_activate_sound,
+            rules_global_sounds: self.rules_global_sounds,
             rules_difficulty_rows: self.rules_difficulty_rows,
             rules_gravity: self.rules_gravity,
             rules_tree_strength: self.rules_tree_strength,
@@ -5173,9 +5184,7 @@ struct RulesPassProcessor {
     rules_shroud_rate: NativeF64Bits,
     rules_fog_rate: NativeF64Bits,
     // Ctor665946/66594C/6659AC=-1; fixed Voc IDs represented by canonical names.
-    rules_bomb_ticking_sound: Option<String>,
-    rules_bomb_attach_sound: Option<String>,
-    rules_psychic_reveal_activate_sound: Option<String>,
+    rules_global_sounds: GlobalSoundReferences,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
     rules_gravity: i32,
     rules_tree_strength: i32,
@@ -5257,9 +5266,7 @@ impl RulesPassProcessor {
             rules_shroud_grow: registry_state.rules_shroud_grow,
             rules_shroud_rate: registry_state.rules_shroud_rate,
             rules_fog_rate: registry_state.rules_fog_rate,
-            rules_bomb_ticking_sound: registry_state.rules_bomb_ticking_sound,
-            rules_bomb_attach_sound: registry_state.rules_bomb_attach_sound,
-            rules_psychic_reveal_activate_sound: registry_state.rules_psychic_reveal_activate_sound,
+            rules_global_sounds: registry_state.rules_global_sounds,
             rules_difficulty_rows: registry_state.rules_difficulty_rows,
             rules_gravity: registry_state.rules_gravity,
             rules_tree_strength: registry_state.rules_tree_strength,
@@ -8417,24 +8424,7 @@ impl RulesPassProcessor {
         // Original 66920D..669258 reads these first, including the cold
         // startup's same AudioVisual call before any complete Process.
         self.rules_detail = self.rules_detail.read_pass(section);
-        // ReadAudioVisual669A60..669AD8 /669FC3..669FF0 reads these fixed
-        // Voc IDs with the current ID as default. Missing/unknown retains it;
-        // even a registered "none" is a real cue. Ctor665946/66594C/6659AC=-1.
-        self.rules_bomb_ticking_sound = fixed_sounds.read_rules_reference(
-            section,
-            "BombTickingSound",
-            self.rules_bomb_ticking_sound.take(),
-        );
-        self.rules_bomb_attach_sound = fixed_sounds.read_rules_reference(
-            section,
-            "BombAttachSound",
-            self.rules_bomb_attach_sound.take(),
-        );
-        self.rules_psychic_reveal_activate_sound = fixed_sounds.read_rules_reference(
-            section,
-            "PsychicRevealActivateSound",
-            self.rules_psychic_reveal_activate_sound.take(),
-        );
+        self.rules_global_sounds.read_pass(pass, fixed_sounds);
         // gamemd.exe ReadAudioVisual66A68E/66A693: current byte default.
         self.rules_shroud_grow = section.read_bool("ShroudGrow", self.rules_shroud_grow);
         // AudioVisual66B385..66B39E: ReadRange474620, current +14BC default.
@@ -8641,9 +8631,7 @@ impl RulesPassProcessor {
                     rules_shroud_grow: self.rules_shroud_grow,
                     rules_shroud_rate: self.rules_shroud_rate,
                     rules_fog_rate: self.rules_fog_rate,
-                    rules_bomb_ticking_sound: self.rules_bomb_ticking_sound,
-                    rules_bomb_attach_sound: self.rules_bomb_attach_sound,
-                    rules_psychic_reveal_activate_sound: self.rules_psychic_reveal_activate_sound,
+                    rules_global_sounds: self.rules_global_sounds,
                     rules_difficulty_rows: self.rules_difficulty_rows,
                     rules_gravity: self.rules_gravity,
                     rules_tree_strength: self.rules_tree_strength,

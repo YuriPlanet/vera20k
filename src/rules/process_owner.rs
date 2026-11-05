@@ -144,6 +144,16 @@ enum NativeRulesRegistryOwner {
 }
 
 impl NativeRulesRegistryOwner {
+    fn install_global_sounds(&mut self, sounds: crate::rules::sound_ini::GlobalSoundReferences) {
+        match self {
+            Self::BeforeReset(trace) => trace.install_global_sounds(sounds),
+            Self::Live(state) => state.install_global_sounds(sounds),
+            Self::Scenario(processed) => processed.install_global_sounds(sounds),
+            #[cfg(feature = "ares")]
+            Self::PreparedNonCampaign { trace, .. } => trace.install_global_sounds(sounds),
+        }
+    }
+
     fn registry_state(&self) -> &NativeRulesRegistryState {
         match self {
             Self::BeforeReset(trace) => trace.registry_state(),
@@ -810,6 +820,35 @@ impl NativeRulesProcessOwner {
             .map_err(|failure| failure.into_parts().0)
     }
 
+    /// RMG InitMap599650 reaches Reset6686C0 at59A0F0 only on a cache miss.
+    /// Root668A27, LANG668B05 and the committed mode668BAA update the same
+    /// global sound fields even when the player cancels the generated map.
+    /// Other preview domains retain their existing ownership here.
+    pub fn prepare_random_map_sound_references(
+        &mut self,
+        mode_rules_override: Option<&IniFile>,
+        reinitialize: bool,
+    ) {
+        if !reinitialize {
+            return;
+        }
+        let mut sounds = self
+            .registry
+            .as_ref()
+            .expect("Rules transition reentered")
+            .registry_state()
+            .global_sounds()
+            .clone();
+        let (layers, _) = self.random_map_reset_layers(mode_rules_override);
+        for (_, pass) in layers.iter_passes() {
+            sounds.read_pass(pass, &self.sources.fixed_sounds);
+        }
+        self.registry
+            .as_mut()
+            .expect("Rules transition reentered")
+            .install_global_sounds(sounds);
+    }
+
     /// RMG InitMapFromSyntheticINI599650 calls ResetTypeRegistriesAndReloadRules
     /// 6686C0 at59A0F0: root, LANG, then committed Session mode668B8E..668BAA.
     /// Preview does not Process the synthetic map
@@ -820,6 +859,39 @@ impl NativeRulesProcessOwner {
         mode_rules_override: Option<&IniFile>,
         theater_name: &str,
     ) -> Result<ProcessedRulesLayers, RulesError> {
+        let (layers, skip_root_color_add_and_mode) =
+            self.random_map_reset_layers(mode_rules_override);
+        layers
+            .process_with_fixed_art_and_registry_state_recovering(
+                &self.sources.fixed_art,
+                NativeRulesRegistryState::default(),
+                RulesProcessContext::ScenarioReset {
+                    theater: crate::rules::object_image::ImageTheater::from_name(theater_name),
+                    skip_root_color_add_and_mode,
+                },
+                &self.sources.fixed_eva,
+                &self.sources.fixed_sounds,
+            )
+            .map(|mut processed| {
+                // Drawing or dependency inspection is read-only. Project the
+                // binding selected by actual generation, including a cache hit.
+                let sounds = self
+                    .registry
+                    .as_ref()
+                    .expect("Rules transition reentered")
+                    .registry_state()
+                    .global_sounds()
+                    .clone();
+                processed.install_global_sounds(sounds);
+                processed
+            })
+            .map_err(|failure| failure.into_parts().0)
+    }
+
+    fn random_map_reset_layers(
+        &self,
+        mode_rules_override: Option<&IniFile>,
+    ) -> (RulesLayerStack, bool) {
         let langrule = self.read_langrule_for_process();
         let skip_root_color_add_and_mode = matches!(
             langrule,
@@ -836,18 +908,7 @@ impl NativeRulesProcessOwner {
         if !skip_root_color_add_and_mode && let Some(mode) = mode_rules_override {
             layers.push(RulesLayerKind::GameMode, self.personalized_layer(mode));
         }
-        layers
-            .process_with_fixed_art_and_registry_state_recovering(
-                &self.sources.fixed_art,
-                NativeRulesRegistryState::default(),
-                RulesProcessContext::ScenarioReset {
-                    theater: crate::rules::object_image::ImageTheater::from_name(theater_name),
-                    skip_root_color_add_and_mode,
-                },
-                &self.sources.fixed_eva,
-                &self.sources.fixed_sounds,
-            )
-            .map_err(|failure| failure.into_parts().0)
+        (layers, skip_root_color_add_and_mode)
     }
 
     /// Run ordinary Full_Init's pre-reset E_multi exactly once, before Draw.
@@ -1212,6 +1273,64 @@ mod tests {
     use crate::map::source::test_support::TestDirectory;
     use crate::rules::native_processing::RulesLayerStack;
     use crate::rules::retail_sources::RetailRulesSources;
+
+    #[test]
+    fn rmg_sound_reads_survive_cancel_and_skip_cached_preview() {
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            IniFile::from_str("[AudioVisual]\nBombTickingSound=Unknown\n"),
+            None,
+            IniFile::empty(),
+            Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
+                "[SoundList]\n0=Earlier\n1=Preview\n",
+            ))),
+            Arc::default(),
+        )
+        .unwrap();
+        owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::Campaign(None),
+                &IniFile::from_str("[AudioVisual]\nBombTickingSound=Earlier\n"),
+            )
+            .unwrap();
+        let mode = IniFile::from_str(
+            "[AudioVisual]\nBombTickingSound=Preview\nBombAttachSound=Preview\nPsychicRevealActivateSound=Preview\n",
+        );
+        owner.prepare_random_map_sound_references(Some(&mode), true);
+        let changed = IniFile::from_str(
+            "[AudioVisual]\nBombTickingSound=Earlier\nBombAttachSound=Earlier\nPsychicRevealActivateSound=Earlier\n",
+        );
+        owner.prepare_random_map_sound_references(Some(&changed), false);
+        // A redraw/inspection cannot reread the new mode or lose the cached IDs.
+        let projected = owner
+            .random_map_preview_projection(Some(&changed), "TEMPERATE")
+            .unwrap();
+        assert_eq!(projected.bomb_ticking_sound(), Some("Preview"));
+        assert_eq!(projected.bomb_attach_sound(), Some("Preview"));
+        assert_eq!(projected.psychic_reveal_activate_sound(), Some("Preview"));
+        // Cancellation retires the preview, not the process-wide scalar fields.
+        let saved =
+            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+        owner.install_saved_scenario_rules(crate::util::save_codec::deserialize(&saved).unwrap());
+        let loaded = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
+            .unwrap();
+        assert_eq!(
+            loaded.rules.general.bomb_ticking_sound.as_deref(),
+            Some("Preview")
+        );
+        assert_eq!(
+            loaded.rules.general.bomb_attach_sound.as_deref(),
+            Some("Preview")
+        );
+        assert_eq!(
+            loaded
+                .rules
+                .general
+                .psychic_reveal_activate_sound
+                .as_deref(),
+            Some("Preview")
+        );
+    }
 
     #[test]
     fn global_sound_bindings_survive_invalid_layers_reset_and_save() {

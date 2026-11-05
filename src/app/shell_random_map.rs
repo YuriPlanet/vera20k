@@ -907,8 +907,7 @@ impl App {
             )
             .map(|mode| mode.override_file.clone())
         };
-        let (manager, native_rules, _) = state.process_assets.manager_and_rules_with_tile_cache();
-        let Some(asset_manager) = manager else {
+        let Some(asset_manager) = state.process_assets.manager() else {
             return false;
         };
         let mode_rules = match crate::rules::retail_sources::select_mode_ini(
@@ -921,6 +920,18 @@ impl App {
                 return false;
             }
         };
+        let map_storage_decision = state
+            .frontend
+            .random_map_retention
+            .map_storage_decision(options);
+        if let (Some(owner), _, _) = state.process_assets.native_rules_mut_with_tile_cache() {
+            owner.prepare_random_map_sound_references(
+                mode_rules.as_ref(),
+                map_storage_decision.reinitialize,
+            );
+        }
+        let (manager, native_rules, _) = state.process_assets.manager_and_rules_with_tile_cache();
+        let asset_manager = manager.expect("the resident manager was checked above");
         let Some(PreparedRandomMapGeneration {
             theater,
             terrain_rules,
@@ -940,10 +951,6 @@ impl App {
         };
         let options = options.clone();
         let shared_cell_dummy = state.process_assets.shared_cell_dummy.clone();
-        let map_storage_decision = state
-            .frontend
-            .random_map_retention
-            .map_storage_decision(&options);
         // Generation stays single-threaded and seed-driven; the thread changes
         // only where it runs, never the order it consumes its RNG in.
         match spawn_random_map_generation_worker(
