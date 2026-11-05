@@ -523,6 +523,10 @@ mod tests {
     use crate::util::lepton;
 
     fn drop_test_rules() -> RuleSet {
+        drop_test_rules_with_art(&IniFile::empty())
+    }
+
+    fn drop_test_rules_with_art(art: &IniFile) -> RuleSet {
         let ini = IniFile::from_str(
             "[InfantryTypes]\n\
              0=E1\n\
@@ -544,7 +548,7 @@ mod tests {
              Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
              InfDeath=1\n",
         );
-        RuleSet::from_ini(&ini).expect("drop test rules should parse")
+        RuleSet::from_ini_with_fixed_art_for_test(&ini, art).expect("drop test rules should parse")
     }
 
     /// A playfield holding every cell the drops below use: the coordinate
@@ -885,9 +889,6 @@ mod tests {
         use crate::rules::art_data::ArtRegistry;
         use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
         let mut sim = Simulation::new();
-        let mut rules = drop_test_rules();
-        rules.general.parachute_shp = Some("PARACH".to_string());
-        rules.general.infantry_death_anims[3] = Some("S_BANG34".to_string());
         // An E1 sequence with Paradrop frames, as retail's GI has: without them
         // Do_Action refuses the drop's Paradrop (`0x0051D70F`).
         let art_ini = IniFile::from_str(
@@ -897,17 +898,13 @@ mod tests {
              [E1Sequence]\nReady=0,1,1\nGuard=0,1,1\nWalk=8,6,6\nDie1=134,15,0\n\
              Die2=149,15,0\nParadrop=418,1,0\n",
         );
+        let mut rules = drop_test_rules_with_art(&art_ini);
+        rules.general.parachute_shp = Some("PARACH".to_string());
+        rules.general.infantry_death_anims[3] = Some("S_BANG34".to_string());
         let mut art = ArtRegistry::from_ini(&art_ini);
         art.bind_anim_frame_count_for_test("PARACH", 9);
         art.bind_anim_frame_count_for_test("S_BANG34", 9);
         rules.install_art_fixture(art);
-        let sequences = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini);
-        rules.replace_animation_sequences_for_test(
-            crate::rules::animation_sequence::build_animation_sequence_catalog(
-                &rules,
-                Some(&sequences),
-            ),
-        );
         let (aircraft_id, passenger_id) = (
             sim.substrate.allocate_stable_id(),
             sim.substrate.allocate_stable_id(),

@@ -678,14 +678,6 @@ impl Simulation {
     /// frame's stage step passed (`+0xFC`) and the stage modulo the record's
     /// count (at least 1) is its frame. It runs after UnInit too while the
     /// infantryman's state remains.
-    ///
-    /// Residual: native fills a record's count and sounds from one
-    /// `Sequence=` read per pass. The sounds here come from that per-pass
-    /// read; the count comes from the animation catalog, which resolves the
-    /// final pass's image with VERA's ART fallbacks. A map pass that
-    /// re-images an infantry type, or an image with no ART section, can make
-    /// the two name different sequences and a sound play on the wrong frame.
-    /// No retail type does either.
     fn infantry_sequence_sounds(&mut self, id: u64, rules: &RuleSet) {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;

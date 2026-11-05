@@ -350,6 +350,7 @@ impl NativeRulesProcessOwner {
             &fixed_art,
             startup_langrule.as_ref(),
             &fixed_eva,
+            &fixed_sounds,
         )?;
         Ok(Self {
             sources: NativeRulesSourceSnapshot {
@@ -804,6 +805,7 @@ impl NativeRulesProcessOwner {
                 NativeRulesRegistryState::default(),
                 RulesProcessContext::Ordinary,
                 &self.sources.fixed_eva,
+                &self.sources.fixed_sounds,
             )
             .map_err(|failure| failure.into_parts().0)
     }
@@ -843,6 +845,7 @@ impl NativeRulesProcessOwner {
                     skip_root_color_add_and_mode,
                 },
                 &self.sources.fixed_eva,
+                &self.sources.fixed_sounds,
             )
             .map_err(|failure| failure.into_parts().0)
     }
@@ -1031,6 +1034,7 @@ impl NativeRulesProcessOwner {
                     named.as_ref(),
                     &self.sources.fixed_art,
                     &self.sources.fixed_eva,
+                    &self.sources.fixed_sounds,
                 ) {
                     Ok(trace) => trace,
                     Err(failure) => {
@@ -1077,6 +1081,7 @@ impl NativeRulesProcessOwner {
                     },
                     &self.sources.fixed_eva,
                     after_map,
+                    &self.sources.fixed_sounds,
                 )
                 .map(|(processed, result)| (processed, Some(result))),
             (None, None) => layers
@@ -1090,6 +1095,7 @@ impl NativeRulesProcessOwner {
                         skip_root_color_add_and_mode,
                     },
                     &self.sources.fixed_eva,
+                    &self.sources.fixed_sounds,
                 )
                 .map(|processed| (processed, None)),
             _ => unreachable!("TMCJ4F Rules and its post-map callback are admitted together"),

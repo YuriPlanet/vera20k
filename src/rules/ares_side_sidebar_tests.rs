@@ -174,6 +174,7 @@ fn ares_side_sidebar_waits_for_full_type_pass_and_preserves_failed_process_state
             trace.into_registry_state_discarding_events(),
             RulesProcessContext::Ordinary,
             &crate::rules::sound_ini::EvaRegistry::default(),
+            &crate::rules::sound_ini::SoundRegistry::default(),
         )
         .unwrap_err();
     let (_, failed) = failure.into_parts();

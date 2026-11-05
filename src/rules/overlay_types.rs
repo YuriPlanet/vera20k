@@ -335,6 +335,7 @@ impl OverlayTypeRegistry {
                     skip_root_color_add_and_mode: false,
                 },
                 &crate::rules::sound_ini::EvaRegistry::default(),
+                &crate::rules::sound_ini::SoundRegistry::default(),
             )
             .unwrap_or_else(|failure| {
                 panic!(

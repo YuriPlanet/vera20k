@@ -2046,8 +2046,6 @@ impl MapLoadInitial {
             )
             .expect("retail generated-map rules");
         rules.install_art_data(ArtRegistry::from_ini(&art_ini));
-        let infantry_sequences =
-            crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini);
         let overlay_registry = rules.overlay_registry().clone();
         // Stage the one Simulation before terrain Fill, as the match load does:
         // the prefix cursors, Fill and every later load constructor mutate the
@@ -2172,7 +2170,6 @@ impl MapLoadInitial {
             theater_ext,
             crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
         );
-        rules.bind_animation_sequences(&infantry_sequences);
         drop(variant_draw);
         // The native-id reservations the match load makes at this point: the
         // `[Tubes]` rows, then the launch branch's post-load particle system.
@@ -3268,7 +3265,6 @@ fn load_map_first_step(
                                 .extend(team_ai_registry.script_anim_class_roots(&rules));
                             crate::app::loading::init_helpers::bind_rules_asset_closure(
                                 &mut rules,
-                                &fixed_art_ini,
                                 &overlay_registry,
                                 &roots,
                                 &authored_anim_roots,

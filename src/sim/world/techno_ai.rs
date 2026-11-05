@@ -2687,20 +2687,20 @@ mod tests {
     #[test]
     fn a_dead_medic_lets_go_of_an_enemy_on_its_corpse_visit() {
         let art = IniFile::from_str(crate::rules::retail_ini_fixture::GI_ART_EXCERPT);
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[InfantryTypes]\n0=MEDIC\n1=E1\n[VehicleTypes]\n0=TANK\n\
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[InfantryTypes]\n0=MEDIC\n1=E1\n[VehicleTypes]\n0=TANK\n\
              [AircraftTypes]\n[BuildingTypes]\n\
              [MEDIC]\nImage=GI\nStrength=100\nPrimary=Heal\n\
              [E1]\nImage=GI\nStrength=100\nPrimary=Gun\n\
              [TANK]\nStrength=300\nPrimary=Gun\n\
              [WeaponTypes]\n0=Heal\n1=Gun\n\
              [Heal]\nDamage=-50\nRange=2\n[Gun]\nDamage=60\nRange=5\n",
-        ))
+            ),
+            &art,
+        )
         .unwrap();
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         let mut sim = Simulation::new();
         let ours = sim.interner.intern("Americans");
         let theirs = sim.interner.intern("Russians");

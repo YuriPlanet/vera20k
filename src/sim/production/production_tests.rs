@@ -282,9 +282,6 @@ fn naval_rules_with_infantry(infantry: &str, sections: &str) -> RuleSet {
         .expect("naval production rules and ART should parse");
     if !infantry.is_empty() {
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
     }
     rules
 }

@@ -367,7 +367,6 @@ pub(crate) fn bind_rules_art_metadata(
 /// bind join that closure.
 pub(crate) fn bind_rules_asset_closure(
     rules: &mut RuleSet,
-    fixed_art: &IniFile,
     overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
     roots: &[String],
     authored_anim_roots: &[String],
@@ -387,8 +386,6 @@ pub(crate) fn bind_rules_asset_closure(
     rules.bind_building_rubble_assets(assets, theater_ext, theater_name);
     rules.bind_terrain_assets(assets, theater_ext, terrain_phase);
     rules.bind_alpha_images(overlay_registry, assets);
-    let sequences = crate::rules::infantry_sequence::parse_infantry_sequence_registry(fixed_art);
-    rules.bind_animation_sequences(&sequences);
     Ok(())
 }
 

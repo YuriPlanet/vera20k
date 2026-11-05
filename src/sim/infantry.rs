@@ -937,9 +937,6 @@ mod tests {
             "supplied native Crawls input: {}",
             input["name"]
         );
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         let mut sim = Simulation::with_seed(31);
         sim.session.set_binary_frame_for_test(100);
         sim.session.set_game_mode(
@@ -1286,9 +1283,6 @@ mod tests {
         let mut rules =
             RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art).unwrap()).unwrap();
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         Some(rules)
     }
 

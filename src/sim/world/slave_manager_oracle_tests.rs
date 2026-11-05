@@ -196,6 +196,9 @@ pub(super) fn row_scene_edited(
             ));
         }
         art.merge(&IniFile::from_str("[YAREFN]\nFoundation=2x2\n"));
+        art.merge(&IniFile::from_str(&format!(
+            "[SLAV]\nSequence=SlavSequence\n{SLAVE_SEQUENCE}"
+        )));
         edit(text, art);
     });
     // The oracle's Rules+0x1780.. (ReadRange leptons), KickFrameDelay and
@@ -212,15 +215,6 @@ pub(super) fn row_scene_edited(
     general.slave_miner_scan_correction = ranges[3] * 256;
     general.slave_miner_kick_frame_delay = input["kick_delay"].as_i64().unwrap_or(150) as i32;
     general.approach_target_reset_multiplier = input["approach_reset"].as_i64().unwrap_or(1) as i32;
-    let sequences = crate::rules::infantry_sequence::parse_infantry_sequence_registry(
-        &IniFile::from_str(SLAVE_SEQUENCE),
-    );
-    let mut catalog = scene.rules.animation_sequences().clone();
-    catalog.insert(
-        "SLAV".to_string(),
-        crate::rules::infantry_sequence::build_sequence_set(&sequences["SLAVSEQUENCE"]),
-    );
-    scene.rules.replace_animation_sequences_for_test(catalog);
     let rules = &scene.rules;
     let sim = &mut scene.sim;
     let frame = sim.session.binary_frame();
