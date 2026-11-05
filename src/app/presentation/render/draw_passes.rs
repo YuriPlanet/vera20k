@@ -76,6 +76,7 @@ fn draw_sidebar_surface(
     encoder: &mut wgpu::CommandEncoder,
     data: &DrawPassData<'_>,
 ) {
+    encode_radar_pictures(state, encoder);
     let side_index = crate::app::presentation::sidebar_render::current_sidebar_side(state);
     let presentation = &state.match_state.match_presentation;
     let chrome = presentation
@@ -245,6 +246,26 @@ fn draw_sidebar_surface(
         chrome_texture(data.smooth_command_bar),
         "command_bar",
     );
+}
+
+/// The radar's pictures for this frame: the minimap's composition
+/// (`RadarClass::Update @ 0x00656EC0`), then the housing's paints
+/// (`RadarClass::Draw @ 0x00653100`), whose retained online draw samples it.
+/// Every frame encodes them, sidebar drawn or not, so neither waits a frame.
+fn encode_radar_pictures(state: &mut AppState, encoder: &mut wgpu::CommandEncoder) {
+    let renderer = &state.renderer;
+    let presentation = &mut state.match_state.match_presentation;
+    if let Some(minimap) = presentation.minimap.as_mut() {
+        minimap.encode_composition(&renderer.gpu.device, encoder);
+    }
+    if let Some(radar) = presentation.radar_anim.as_mut() {
+        radar.encode_paints(
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
+            encoder,
+        );
+    }
 }
 
 /// Create the main render pass and dispatch all draw calls in the correct order.

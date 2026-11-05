@@ -290,12 +290,17 @@ struct CellRun {
 
 /// A vertex buffer that grows to the largest upload.
 #[derive(Default)]
-struct InstanceUpload {
+pub(crate) struct InstanceUpload {
     buffer: Option<wgpu::Buffer>,
 }
 
 impl InstanceUpload {
-    fn write(
+    /// The buffer of the last write, if any.
+    pub(crate) fn buffer(&self) -> Option<&wgpu::Buffer> {
+        self.buffer.as_ref()
+    }
+
+    pub(crate) fn write(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -350,7 +355,7 @@ struct Compositor {
 const CELL_STRIDE: u64 = std::mem::size_of::<CellInstance>() as u64;
 const GLOW_STRIDE: u64 = std::mem::size_of::<GlowInstance>() as u64;
 
-fn layout_entry(binding: u32, ty: wgpu::BindingType) -> wgpu::BindGroupLayoutEntry {
+pub(crate) fn layout_entry(binding: u32, ty: wgpu::BindingType) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
@@ -359,7 +364,7 @@ fn layout_entry(binding: u32, ty: wgpu::BindingType) -> wgpu::BindGroupLayoutEnt
     }
 }
 
-fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+pub(crate) fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
     layout_entry(
         binding,
         wgpu::BindingType::Buffer {
@@ -370,7 +375,10 @@ fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
     )
 }
 
-fn texture_entry(binding: u32, sample_type: wgpu::TextureSampleType) -> wgpu::BindGroupLayoutEntry {
+pub(crate) fn texture_entry(
+    binding: u32,
+    sample_type: wgpu::TextureSampleType,
+) -> wgpu::BindGroupLayoutEntry {
     layout_entry(
         binding,
         wgpu::BindingType::Texture {

@@ -853,6 +853,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
             let (radar_dirty_cells, radar_dirty_generation) = view.radar_terrain_dirty();
             Ok::<_, std::convert::Infallible>(
                 minimap.update_unit_dots(
+                    &state.renderer.gpu.device,
                     &state.renderer.gpu.queue,
                     view.entities(),
                     view.logic_order(),
@@ -1369,10 +1370,9 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         presentation.radar_anim.as_mut(),
         presentation.minimap.as_ref(),
     ) {
-        let (rgba, size) = mm.composed_rgba();
         radar.retain_online_content(
-            rgba,
-            size,
+            mm.native_map_texture(),
+            mm.white_texture(),
             &minimap,
             viewport_rect.iter().chain(&content_boundary).copied(),
             origin,

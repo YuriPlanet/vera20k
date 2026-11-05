@@ -71,16 +71,18 @@ use crate::sim::movement::ground_pose;
 use crate::sim::pathfinding::PathGrid;
 
 /// Bit flag: cell has been seen at least once (persists across ticks).
-const FLAG_REVEALED: u8 = 0x01;
+/// [`OwnerVisibility::cells_raw`] readers such as the radar's GPU
+/// composition test this, [`FLAG_GAP_COVERED`] and [`FLAG_GAP_FOG`].
+pub const FLAG_REVEALED: u8 = 0x01;
 /// Bit flag: cell is currently in line of sight (rebuilt each tick).
 const FLAG_VISIBLE: u8 = 0x02;
 /// Bit flag: cell is covered by an enemy gap generator (rebuilt each tick).
 /// Entities on gap-covered cells are hidden from the local player; terrain
 /// renders black (treated as unrevealed).
-const FLAG_GAP_COVERED: u8 = 0x04;
+pub const FLAG_GAP_COVERED: u8 = 0x04;
 /// Cell+13C's positive signed count, consumed by the radar's half-bright fog.
 /// CreateGap/DestroyGap update it; ordinary frame projection preserves it.
-const FLAG_GAP_FOG: u8 = 0x08;
+pub const FLAG_GAP_FOG: u8 = 0x08;
 // Native70AF50/70B1D0 contribute/remove sustained sight via MapCell4A9CA0.
 // Fire4876F0 and Psychic6CD773/6CD79C do not leave that contribution alive.
 const FLAG_SUSTAINED_SIGHT: u8 = 0x10;

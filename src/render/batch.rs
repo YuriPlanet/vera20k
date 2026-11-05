@@ -261,7 +261,8 @@ fn source_index_texture_on_device(
 
 /// A GPU texture prepared for batch rendering.
 ///
-/// Created via `BatchRenderer::create_texture()`.
+/// Created via `BatchRenderer::create_texture()`. A clone shares the texture.
+#[derive(Clone)]
 pub struct BatchTexture {
     /// Bind group containing texture view + sampler.
     pub bind_group: wgpu::BindGroup,
@@ -509,6 +510,8 @@ pub struct BatchRenderer {
     ui_camera_bind_group: wgpu::BindGroup,
     /// Neutral A, for the camera groups that sample no shroud.
     neutral_a: (wgpu::TextureView, wgpu::Buffer),
+    /// The colour format every pipeline here draws into.
+    surface_format: wgpu::TextureFormat,
 }
 
 impl BatchRenderer {
@@ -1214,7 +1217,48 @@ impl BatchRenderer {
             ui_camera_buffer,
             ui_camera_bind_group,
             neutral_a: (neutral_a, neutral_a_uniform),
+            surface_format,
         }
+    }
+
+    /// The colour format every pipeline here draws into.
+    pub(crate) const fn target_format(&self) -> wgpu::TextureFormat {
+        self.surface_format
+    }
+
+    /// A blank `format` texture that GPU passes draw into and the batch
+    /// pipelines sample with nearest filtering.
+    pub(crate) fn create_render_target_texture(
+        &self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+        format: wgpu::TextureFormat,
+    ) -> BatchTexture {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Batch Render Target"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.batch_texture(
+            device,
+            &texture,
+            &self.default_source_indices,
+            width,
+            height,
+        )
     }
 
     /// Create a single-channel R8Uint atlas texture from byte data.

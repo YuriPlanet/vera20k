@@ -379,8 +379,9 @@ fn retail_modal_backgrounds_use_ui_palette_for_every_theme_and_size() {
     }
 }
 
+/// The housing's GPU replay of each history, read back.
 #[test]
-#[ignore = "requires the configured original stock retail archives"]
+#[ignore = "requires the configured original stock retail archives and a wgpu adapter"]
 fn retail_radar_histories_match_original_4912b0_stores() {
     use crate::util::sha256::sha256_hex;
     use serde::Deserialize;
@@ -409,6 +410,12 @@ fn retail_radar_histories_match_original_4912b0_stores() {
     ))
     .unwrap();
     let assets = AssetManager::new(&retail_ra2_dir(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
+    let batch = crate::render::batch::BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    );
     for c in packet.cases {
         let archive = assets.archive(&c.archive).unwrap();
         let raw = archive.get_by_name(&c.name).unwrap();
@@ -440,9 +447,15 @@ fn retail_radar_histories_match_original_4912b0_stores() {
             "closing overwrites minimap before first zero frame"
         );
         for seq in c.sequences {
-            let mut radar =
-                crate::render::radar::anim::RadarPresentation::new(frames.clone(), 168, 110)
-                    .unwrap();
+            let mut radar = crate::render::radar::anim::RadarAnimState::new(
+                &gpu.device,
+                &gpu.queue,
+                &batch,
+                frames.clone(),
+                168,
+                110,
+            )
+            .unwrap();
             for (step, (&frame, expected)) in
                 seq.frames.iter().zip(&seq.output_rgb565_sha256).enumerate()
             {
@@ -456,11 +469,13 @@ fn retail_radar_histories_match_original_4912b0_stores() {
                         "one native draw per history step"
                     );
                     let _ = radar.set_has_radar(frame > previous);
-                    assert!(radar.advance_draw((step as u64 - 1) * 64));
+                    radar.tick((step as u64 - 1) * 64);
                 }
-                let bytes: Vec<u8> = radar
-                    .surface
-                    .rgba
+                let mut encoder = gpu.device.create_command_encoder(&Default::default());
+                radar.encode_paints(&gpu.device, &gpu.queue, &batch, &mut encoder);
+                let read = gpu.read(&mut encoder, radar.texture().view.texture());
+                let shown = gpu.finish(encoder, &[read], [168, 110]).remove(0);
+                let bytes: Vec<u8> = shown
                     .as_chunks::<4>()
                     .0
                     .iter()
