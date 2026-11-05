@@ -119,7 +119,7 @@ Clients send everything but Ready (request 0), Pull (2), Leave (3) and Pause
 (`services/relay/adaptive-transport/spec.md` holds the full rules):
 
 ```
-[8][flags][recv_next u64][down_high u64][down_bits u64][srtt_ms u16][base_ms u16][link]
+[8][flags][recv_next u64][down_high u64][down_bits u64][srtt_ms u16][base_ms u16][rttvar_ms u16][link]
 [checksum_count 0..2]{[frame u32][checksum u32]} [pace u8][fps u16][tick µs u32 if flags bit1]
 [batch_count 0..4][first_batch_id u64 if any]{[len u16][opaque]}
 ```
@@ -127,7 +127,8 @@ Clients send everything but Ready (request 0), Pull (2), Leave (3) and Pause
 Flags: bit0 PUSH subscribes or renews push, bit1 PACE, bit2 PROBE asks for a
 Status, bit3 RESTORING keeps the subscription without new records; `link` is
 the client's uplink state (0 good, 1 lossy, 2 congested, 3 offline) with bit2
-DELAYED. Any other length, count or reserved bit is malformed and dropped. The
+DELAYED and bit3 JITTERY; srtt, base and rttvar are whole milliseconds, 0
+before the first sample. Any other length, count or reserved bit is malformed and dropped. The
 relay merges `recv_next` into the reader's acknowledged watermark (it never
 moves back), judges its downlink loss from `down_high`/`down_bits` against the
 hop's send log, then takes the batches in ID order: an ID below the last
@@ -147,10 +148,19 @@ end. ACK, `[2][accepted through u64][frame u32]`, and Status, 32 bytes as
 before, both end in the relay's window for the hop and the delay since its
 newest datagram, `[up_high u64][up_bits u64][echo delay ms u16]`: the client
 measures its RTT and uplink loss from them. Each side judges its own sends
-three behind the newest feedback and folds the loss every 32 judged packets;
-a direction is offline after 1000 ms (client) or 1500 ms (relay) of silence,
-congested while DELAYED or (uplink) 2 s after a Backpressure, lossy from 30‰
-until 10‰, severe from 150‰ until 100‰.
+three behind the newest feedback, once per feedback: a missing send counts as
+lost only if it went srtt + 4 rttvar before the feedback arrived (the relay
+uses the reader's reported srtt and rttvar, 100 / 50 ms before a report), and
+the loss folds every 32 judged packets. A direction is offline after 1000 ms
+(client) or 1500 ms (relay) of silence; congested while DELAYED (srtt - 2
+rttvar at least base + max(base, 100)) or (uplink) 2 s after a Backpressure,
+and for 10 s after that last held; lossy from 5‰ until 2‰ with no loss for
+20 s, severe from 150‰ until 100‰. Each direction starts lossy (the uplink
+at the start, a reader's downlink at its subscription) until its first fold
+decides, and a renewed hop keeps the measured loss, the state and both
+holds. The client also reports JITTERY when the arrival jitter of new-turn
+packs, RFC 3550 smoothed, reaches max(10, turn_ms / 4) ms over 16 samples,
+until half that.
 
 History entries travel packed: consecutive entries fill one datagram up to the
 681-byte server payload as `[12][base seq LE u64][count]`, then per entry
@@ -166,9 +176,10 @@ authenticated output budgets as replies. Per reader, in order: a status
 heartbeat every 250 ms or when the start or active sources change; the
 retransmission of what lost packs still owe; new packs, whose free space first
 carries the unacknowledged records of the reader's K newest packs (K 1 good, 2
-lossy, 3 severe, at most 2 congested) without ever adding a pack; then, from a
-relay-wide 8192 a second, the entries of a lossy reader once more 8 ms after
-they were first sent, and a tail probe of its newest pack after a PTO without
+good and JITTERY, 2 lossy, 3 severe, at most 2 congested) without ever adding a
+pack; then, from a relay-wide 8192 a second, the entries of a lossy, or good
+and JITTERY, reader once more 8 ms after they were first sent (never while
+congested), and a tail probe of its newest pack after a PTO without
 acknowledgement progress. An offline reader gets nothing and restarts from its
 watermark when it is heard again. Clients repair gaps first by an UPLINK, then
 by the existing Pull after a grace of about an RTT plus a turn: a reply is a

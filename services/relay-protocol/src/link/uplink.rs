@@ -256,10 +256,18 @@ impl ClientSession {
         now_ms: u64,
         out: &mut Vec<u8>,
     ) -> Result<(), RelayError> {
+        // Copies of acknowledged batches go first, so the copy found
+        // below is the one booked after the send.
+        let ordering = self.ordering.as_mut().expect("ordering");
+        let accepted = ordering.accepted_through;
+        ordering
+            .link
+            .schedule
+            .copies
+            .retain(|copies| copies.batch > accepted);
         let ordering = self.ordering.as_ref().expect("ordering");
         let link = &ordering.link;
         let schedule = &link.schedule;
-        let accepted = ordering.accepted_through;
         let served = copy
             .then(|| {
                 schedule
@@ -330,8 +338,7 @@ impl ClientSession {
         }
         // The copy served: its next one 16 ms on; any other copy due now
         // waits as long, so copies stay 16 ms apart (§6.3).
-        schedule.copies.retain(|copies| copies.batch > accepted);
-        if let Some(index) = served.filter(|&index| index < schedule.copies.len()) {
+        if let Some(index) = served {
             if kind == Kind::Copy {
                 link.copies += 1;
             }
