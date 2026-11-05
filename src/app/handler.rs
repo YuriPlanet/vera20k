@@ -1173,6 +1173,11 @@ impl ApplicationHandler for App {
                         return;
                     }
                 };
+                if matches!(screen, ScreenPage::NetworkSetup | ScreenPage::Skirmish)
+                    && crate::app::frontend::preview_zoom::key(state, &event)
+                {
+                    return;
+                }
                 if screen == ScreenPage::CoopScore {
                     crate::app::input::coop_score::key(state, &event);
                     return;
@@ -1502,6 +1507,16 @@ impl ApplicationHandler for App {
                     }
                     _ => {}
                 }
+                // Nothing under VERA's enlarged map preview follows the
+                // pointer; only the cursor over it moves.
+                if matches!(
+                    layer,
+                    InputLayer::Screen(ScreenPage::NetworkSetup | ScreenPage::Skirmish)
+                ) && crate::app::frontend::preview_zoom::is_open(state)
+                {
+                    state.platform.window.request_redraw();
+                    return;
+                }
                 // Shared tooltip service: every move restarts the show delay
                 // and hides a visible tip (study S1).
                 crate::app::input::tooltips::on_mouse_move(state);
@@ -1621,6 +1636,11 @@ impl ApplicationHandler for App {
                 };
                 let left = button == MouseButton::Left;
                 let pressed = btn_state.is_pressed();
+                if matches!(screen, ScreenPage::NetworkSetup | ScreenPage::Skirmish)
+                    && crate::app::frontend::preview_zoom::mouse(state, pressed)
+                {
+                    return;
+                }
                 match screen {
                     // Play_Movie reads and ignores mouse buttons; Show_Credits
                     // queues them as ordinary Keyboard entries.
@@ -1753,6 +1773,11 @@ impl ApplicationHandler for App {
                 };
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 if screen == ScreenPage::MainMenu && crate::app::updater::notes::wheel(state, lines)
+                {
+                    return;
+                }
+                if matches!(screen, ScreenPage::NetworkSetup | ScreenPage::Skirmish)
+                    && crate::app::frontend::preview_zoom::is_open(state)
                 {
                     return;
                 }

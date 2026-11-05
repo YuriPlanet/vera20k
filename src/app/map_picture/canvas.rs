@@ -5,9 +5,37 @@
 
 use crate::map::preview::PreviewSourceBounds;
 
-/// The menus' largest picture: four times their 144 x 112 preview box, so a
-/// 4K window shows it at about its own size and smaller ones shrink it.
-pub(crate) const MAX_PICTURE: (u32, u32) = (576, 448);
+/// The menus' largest picture: eight times their 144 x 112 preview box, so
+/// the enlarged preview (`frontend::preview_zoom`) shows it at about its own
+/// size on a 1080p window; the box shrinks it.
+pub(crate) const MAX_PICTURE: (u32, u32) = (1152, 896);
+
+/// A field resource the menus' pictures mark, as map library previews do,
+/// so the fields show at preview size: ore yellow, gems purple.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Resource {
+    Ore,
+    Gems,
+}
+
+impl Resource {
+    fn colour(self) -> [u8; 3] {
+        match self {
+            Self::Ore => [255, 238, 0],
+            Self::Gems => [192, 48, 224],
+        }
+    }
+}
+
+/// One ore or gem cell: its centre on the terrain in world pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Field {
+    pub(crate) centre: (f32, f32),
+    pub(crate) resource: Resource,
+}
+
+/// A cell's diamond reaches this far from its centre, in world pixels.
+const CELL_HALF: (f32, f32) = (30.0, 15.0);
 
 /// A rectangle of VERA world pixels at zoom 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -294,6 +322,40 @@ pub(crate) struct Picture {
 }
 
 impl Picture {
+    /// Tint each pixel whose centre lies on a field's cell, the 60 x 30
+    /// diamond around its centre: three fifths the resource's colour, two
+    /// the ground's, so the ground's shading still shows through.
+    pub(crate) fn mark_fields(&mut self, fields: &[Field]) {
+        let factor = self.factor as f32;
+        let (half_w, half_h) = (CELL_HALF.0 / factor, CELL_HALF.1 / factor);
+        // A pixel on the edge two cells share takes one mark, not two.
+        let mut marks = vec![None; self.width as usize * self.height as usize];
+        for field in fields {
+            let x = (field.centre.0 - self.area.x as f32) / factor;
+            let y = (field.centre.1 - self.area.y as f32) / factor;
+            let columns = (x - half_w).floor().max(0.0) as u32
+                ..((x + half_w).ceil().max(0.0) as u32).min(self.width);
+            let rows = (y - half_h).floor().max(0.0) as u32
+                ..((y + half_h).ceil().max(0.0) as u32).min(self.height);
+            for row in rows {
+                let dy = (row as f32 + 0.5 - y).abs() / half_h;
+                for column in columns.clone() {
+                    if (column as f32 + 0.5 - x).abs() / half_w + dy <= 1.0 {
+                        marks[row as usize * self.width as usize + column as usize] =
+                            Some(field.resource);
+                    }
+                }
+            }
+        }
+        for (pixel, mark) in self.rgb.chunks_exact_mut(3).zip(marks) {
+            if let Some(resource) = mark {
+                for (channel, colour) in pixel.iter_mut().zip(resource.colour()) {
+                    *channel = ((2 * u16::from(*channel) + 3 * u16::from(colour) + 2) / 5) as u8;
+                }
+            }
+        }
+    }
+
     /// The part showing `place`, as packed RGB of the largest size that fits
     /// `largest` with `shape`'s proportions (the part's own when None),
     /// never more pixels than the part has: the whole pixels the place
@@ -445,11 +507,40 @@ mod tests {
     }
 
     #[test]
+    fn fields_tint_their_cell_diamonds_once_over_the_ground() {
+        // A grey 12 x 6 picture of world (0, 0) at 10 world pixels a pixel:
+        // a cell's diamond is 6 x 3 pixels around its centre.
+        let mut picture = Picture {
+            area: rect(0, 0, 120, 60),
+            factor: 10,
+            width: 12,
+            height: 6,
+            rgb: vec![100; 12 * 6 * 3],
+        };
+        let ore = Field {
+            centre: (60.0, 30.0),
+            resource: Resource::Ore,
+        };
+        let gems = Field {
+            centre: (15.0, 15.0),
+            resource: Resource::Gems,
+        };
+        // The same cell twice still takes one mark.
+        picture.mark_fields(&[ore, ore, gems]);
+        let pixel = |x: usize, y: usize| &picture.rgb[(y * 12 + x) * 3..][..3];
+        assert_eq!(pixel(6, 3), [193, 183, 40]);
+        assert_eq!(pixel(7, 2), [193, 183, 40], "inside, near its right point");
+        assert_eq!(pixel(8, 3), [100, 100, 100], "past its right point");
+        assert_eq!(pixel(6, 4), [100, 100, 100], "below its lower point");
+        assert_eq!(pixel(1, 1), [155, 69, 174]);
+    }
+
+    #[test]
     fn canvas_averages_whole_blocks_and_leaves_the_unreached_part_black() {
         let mut canvas = Canvas::new(rect(10, 20, 4, 2), MAX_PICTURE).unwrap();
         assert_eq!((canvas.width, canvas.height, canvas.factor), (4, 2, 1));
-        let big = Canvas::new(rect(0, 0, 2304, 900), MAX_PICTURE).unwrap();
-        assert_eq!((big.width, big.height, big.factor), (576, 225, 4));
+        let big = Canvas::new(rect(0, 0, 4608, 900), MAX_PICTURE).unwrap();
+        assert_eq!((big.width, big.height, big.factor), (1152, 225, 4));
 
         // A 3 x 1 battlefield in a 4-pixel-wide frame, showing world 9..12, 20.
         let frame = [

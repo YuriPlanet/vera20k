@@ -1147,6 +1147,7 @@ impl App {
                 random_map_generation: None,
                 random_map_retention: RandomMapGenerationRetention::default(),
                 skirmish_preview_texture: None,
+                preview_zoom: None,
                 loading_screen_atlas: None,
                 loading_progress:
                     crate::app::loading::pump::LoadingProgressState::standard_skirmish(),

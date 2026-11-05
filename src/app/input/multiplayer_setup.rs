@@ -46,6 +46,20 @@ pub(crate) fn update_geometry(state: &mut AppState) {
     );
 }
 
+/// Whether the room's map thumbnail shows a picture with nothing over it: no
+/// combo list, Game Options or missing-map offer.
+fn preview_box_shows(state: &AppState, view: &SetupView, layout: &MultiplayerSetupLayout) -> bool {
+    !view.preview_hidden
+        && !view.options_open
+        && !view.map_offer_open
+        && state.frontend.skirmish_preview_texture.is_some()
+        && state
+            .frontend
+            .multiplayer_setup
+            .as_ref()
+            .is_some_and(|ui| ui.popup_geometry(view, layout).is_none())
+}
+
 fn notice_active(state: &AppState) -> bool {
     state
         .frontend
@@ -229,8 +243,14 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
     };
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
-    let help = layout
-        .control_at(&view, x, y)
+    let over = layout.control_at(&view, x, y);
+    // `0x468` is no control the room's hit test finds; VERA's enlarged preview
+    // gives the box its thumbnail help and the hint.
+    let over_preview = over.is_none()
+        && layout.map_preview.contains(x, y)
+        && preview_box_shows(state, &view, &layout);
+    let help = over
+        .or(over_preview.then_some(MAP_PREVIEW))
         .and_then(|id| tooltip_key(view.dialog, id))
         .and_then(|key| {
             state
@@ -241,6 +261,11 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
                 .map(str::to_owned)
         })
         .unwrap_or_default();
+    let help = if over_preview {
+        crate::app::frontend::preview_zoom::box_help(state, help)
+    } else {
+        help
+    };
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
         return;
     };
@@ -316,6 +341,13 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
     let over = layout
         .control_at(&view, x, y)
         .filter(|id| view.enabled(*id));
+    if pressed
+        && over.is_none()
+        && preview_box_shows(state, &view, &layout)
+        && crate::app::frontend::preview_zoom::press_on_box(state, layout.map_preview)
+    {
+        return;
+    }
     let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
         return;
     };

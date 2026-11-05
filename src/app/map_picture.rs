@@ -6,7 +6,8 @@
 //! The first time a map is shown, the menus start a hidden run of this
 //! executable (`--map-picture`, [`session`]) that loads the map as a quiet
 //! Battle, draws its battlefield where the map's own preview shows it
-//! ([`placement`]) and writes a PNG to `MapPreviews/<build>/<sha256>.png` in
+//! ([`placement`]), marks its ore yellow and its gems purple as map library
+//! previews do, and writes a PNG to `MapPreviews/<build>/<sha256>.png` in
 //! the settings folder ([`pictures`]). The picture is kept by the map's
 //! SHA-256, so every map with the same bytes, under any name, shares it; each
 //! build and game folder keeps its own ([`generation_folder`]). Showing the

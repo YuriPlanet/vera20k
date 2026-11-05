@@ -71,6 +71,8 @@ pub(crate) const STARTS: [u16; 8] = [0x6A3, 0x6A4, 0x6A5, 0x6A6, 0x6A7, 0x6A8, 0
 pub(crate) const PAGE: u16 = 0x5C2;
 pub(crate) const EMOTE: u16 = 0x3ED;
 pub(crate) const PING_ICONS: u16 = 0x754;
+/// The map thumbnail.
+pub(crate) const MAP_PREVIEW: u16 = 0x468;
 /// C9's "Preview unavailable" static over the map thumbnail `0x468`.
 pub(crate) const NO_PREVIEW: u16 = 0x71F;
 
@@ -1067,7 +1069,7 @@ pub(crate) fn tooltip_key(dialog: SetupDialog, control: u16) -> Option<String> {
             ACCEPT => "ButtonAccept",
             CHOOSE_MAP => "ButtonChooseMap",
             BACK => "ButtonBack",
-            0x468 => "MapThumbnail",
+            MAP_PREVIEW => "MapThumbnail",
             0x5A8 => "LabelScenario",
             0x6D2..=0x6D9 => "PictureAcceptance",
             0x6DA..=0x6E1 => "PictureFlag",
