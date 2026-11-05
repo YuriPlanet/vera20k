@@ -305,6 +305,9 @@ pub struct ClientSession {
     ordering: Option<sequenced::ClientOrdering>,
     // The lobby's relay roster of a federated match, sent with each CONFIRM.
     federation: Option<Vec<u8>>,
+    hop: link::HopLink,
+    // The `now_ms` of the timed call in progress (spec §4.2, §4.4).
+    clock_ms: u64,
 }
 
 impl fmt::Debug for ClientSession {
@@ -349,6 +352,8 @@ impl ClientSession {
             ready: false,
             ordering: None,
             federation: None,
+            hop: link::HopLink::default(),
+            clock_ms: 0,
         })
     }
 
@@ -406,13 +411,13 @@ impl ClientSession {
         self.ready = false;
     }
 
-    pub fn probe(&mut self, out: &mut Vec<u8>) -> Result<(), RelayError> {
+    pub(crate) fn probe(&mut self, out: &mut Vec<u8>) -> Result<(), RelayError> {
         self.encode(if self.ready { PING } else { HELLO }, BROADCAST, &[], out)?;
         self.probe = Some(self.sent);
         Ok(())
     }
 
-    pub fn confirm(&mut self, cookie: &[u8], out: &mut Vec<u8>) -> Result<(), RelayError> {
+    pub(crate) fn confirm(&mut self, cookie: &[u8], out: &mut Vec<u8>) -> Result<(), RelayError> {
         if cookie.len() != COOKIE_LEN {
             return Err(RelayError::Malformed);
         }
@@ -421,7 +426,7 @@ impl ClientSession {
         self.encode(CONFIRM, BROADCAST, &payload, out)
     }
 
-    pub fn data(
+    pub(crate) fn data(
         &mut self,
         target: u8,
         payload: &[u8],
@@ -485,10 +490,13 @@ impl ClientSession {
         out.extend_from_slice(payload);
         let tag = self.key.mac(CLIENT_DOMAIN, out).finalize().into_bytes();
         out.extend_from_slice(&tag);
+        if kind != HELLO {
+            self.hop_sent(self.sent);
+        }
         Ok(())
     }
 
-    pub fn receive<'a>(&mut self, bytes: &'a [u8]) -> Result<ServerEvent<'a>, RelayError> {
+    pub(crate) fn receive<'a>(&mut self, bytes: &'a [u8]) -> Result<ServerEvent<'a>, RelayError> {
         if bytes.len() < SERVER_HEADER + MAC_LEN || &bytes[..4] != SERVER_MAGIC {
             return Err(RelayError::Malformed);
         }
@@ -512,10 +520,15 @@ impl ClientSession {
             CHALLENGE if length == COOKIE_LEN && self.probe == Some(sequence) => {
                 self.probe = None;
                 self.ready = false;
+                // The relay drops the subscription of a new path, so its
+                // first UPLINK goes at once again (spec §4.7, §6.0).
+                self.hop.uplinks = 0;
+                self.hop.first_pack = false;
                 Ok(ServerEvent::Challenge(payload))
             }
             READY if payload.is_empty() && bytes[45] == self.ticket.source => {
                 self.received.accept(sequence)?;
+                self.hop_heard(sequence);
                 self.ready = true;
                 Ok(ServerEvent::Ready)
             }
@@ -523,6 +536,7 @@ impl ClientSession {
                 // Hop authentication protects the ordering authority; batch
                 // contents additionally authenticate under the match-only key.
                 self.received.accept(sequence)?;
+                self.hop_heard(sequence);
                 if payload.first() == Some(&sequenced::PACK_EVENT) {
                     return Ok(ServerEvent::OrderingPack(
                         self.receive_ordering_pack(payload)?,
@@ -567,6 +581,7 @@ impl ClientSession {
                     )
                     .map_err(|_| RelayError::Authentication)?;
                 self.received.accept(sequence)?;
+                self.hop_heard(sequence);
                 Ok(ServerEvent::Payload {
                     source: bytes[45],
                     bytes: plaintext,
@@ -773,7 +788,7 @@ struct Peer {
     sent: u64,
     last_seen: u64,
     push: Option<sequenced::PushSubscription>,
-    push_control_sequence: u64,
+    link: link::ReaderLink,
 }
 
 #[derive(Default)]
@@ -822,6 +837,24 @@ pub struct OrderingCounts {
     pub pull_replies: u64,
     /// Matches this relay ended with a DESYNC record.
     pub desyncs: u64,
+    /// Reader downlink (spec §10.2). Pushed datagrams and their bytes by
+    /// send-log kind: 0 status, 1 new pack, 2 repeat, 3 retransmission,
+    /// 4 tail probe.
+    pub push_packets: [u64; 5],
+    pub push_bytes: [u64; 5],
+    /// Old records piggybacked in new packs.
+    pub piggybacked_records: u64,
+    /// Downlink datagrams judged lost.
+    pub down_lost_packets: u64,
+    /// Records retransmitted for them.
+    pub retransmitted_records: u64,
+    /// Subscribed readers seen by push passes in each state (by
+    /// `LinkState::index`), and the passes: their ratio is the average
+    /// number of readers in that state.
+    pub reader_states: [u64; 4],
+    pub reader_passes: u64,
+    /// About one new pack per new stream head an offline reader missed.
+    pub offline_unsent_packets: u64,
 }
 
 /// Bound storage and packet rate; untrusted data never creates a room until
@@ -977,6 +1010,7 @@ impl RelayServer {
             };
         }
         room.peers[index].received.accept(message.sequence)?;
+        room.peers[index].link.heard(message.sequence, now_millis);
         let admission = self
             .admissions
             .get_mut(&message.ticket.player)
@@ -1051,6 +1085,8 @@ impl RelayServer {
                 READY,
                 message.ticket.source,
                 &[],
+                now_millis,
+                link::SEND_OTHER,
             )?]);
         }
         let mut output = Vec::with_capacity(recipients);
@@ -1064,6 +1100,8 @@ impl RelayServer {
                     DATA,
                     message.ticket.source,
                     message.payload,
+                    now_millis,
+                    link::SEND_OTHER,
                 )?);
             }
         }
@@ -1260,24 +1298,39 @@ impl RelayServer {
                 if message.ticket.expires <= peer.ticket.expires {
                     return Err(RelayError::Authentication);
                 }
-                *peer = new_peer(message, source, now);
+                *peer = new_peer(message, source, now, now_ms);
             }
             if message.sequence <= peer.received.maximum && peer.endpoint != source {
                 return Err(RelayError::Replay);
             }
             peer.received.accept(message.sequence)?;
+            peer.link.heard(message.sequence, now_ms);
             if peer.endpoint != source {
                 // A confirmed new path must opt in before receiving history.
                 peer.push = None;
-                peer.push_control_sequence = 0;
             }
             peer.endpoint = source;
             peer.last_seen = now;
-            server_packet(peer, READY, message.ticket.source, &[])?
+            server_packet(
+                peer,
+                READY,
+                message.ticket.source,
+                &[],
+                now_ms,
+                link::SEND_OTHER,
+            )?
         } else {
-            let mut peer = new_peer(message, source, now);
+            let mut peer = new_peer(message, source, now, now_ms);
             peer.received.accept(message.sequence)?;
-            let reply = server_packet(&mut peer, READY, message.ticket.source, &[])?;
+            peer.link.heard(message.sequence, now_ms);
+            let reply = server_packet(
+                &mut peer,
+                READY,
+                message.ticket.source,
+                &[],
+                now_ms,
+                link::SEND_OTHER,
+            )?;
             room.peers.push(peer);
             reply
         };
@@ -1367,7 +1420,7 @@ impl RelayServer {
     }
 }
 
-fn new_peer(message: &Incoming<'_>, endpoint: SocketAddrV4, now: u64) -> Peer {
+fn new_peer(message: &Incoming<'_>, endpoint: SocketAddrV4, now: u64, now_ms: u64) -> Peer {
     Peer {
         ticket: message.ticket,
         key: message.key.clone(),
@@ -1376,23 +1429,32 @@ fn new_peer(message: &Incoming<'_>, endpoint: SocketAddrV4, now: u64) -> Peer {
         sent: 0,
         last_seen: now,
         push: None,
-        push_control_sequence: 0,
+        link: link::ReaderLink::new(now_ms),
     }
 }
 
+/// One datagram on `peer`'s hop, logged at `now_ms` as `send_kind`
+/// (spec §4.2; `link::SEND_*`).
 fn server_packet(
     peer: &mut Peer,
     kind: u8,
     source: u8,
     payload: &[u8],
+    now_ms: u64,
+    send_kind: u8,
 ) -> Result<ForwardDatagram, RelayError> {
     peer.sent = peer
         .sent
         .checked_add(1)
         .ok_or(RelayError::CounterExhausted)?;
+    let bytes = encode_server(&peer.ticket, &peer.key, kind, peer.sent, source, payload);
+    let pack =
+        (kind == CONTROL && payload.first() == Some(&sequenced::PACK_EVENT)).then_some(payload);
+    peer.link
+        .record_send(peer.sent, pack, send_kind, bytes.len(), now_ms);
     Ok(ForwardDatagram {
         endpoint: peer.endpoint,
-        bytes: encode_server(&peer.ticket, &peer.key, kind, peer.sent, source, payload),
+        bytes,
     })
 }
 

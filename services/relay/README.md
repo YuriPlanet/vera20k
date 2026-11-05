@@ -55,7 +55,7 @@ the Relay compatibility workflow (`tools/relay_compat.py`) plays the latest
 stable release's and the newest dev build's client code against it, including a
 player the relay removes for silence.
 
-Clients from v0.2.4 read a Status, PushState, PauseStatus, Ready, Ack or Error
+Clients from v0.2.4 read a Status, PauseStatus, Ready, Ack or Error
 longer than they know by its known prefix, and an unknown error code as an
 unknown reply. A canonical entry must keep its exact layout, because members
 that read it differently would desync. A client that cannot read the record at
@@ -66,7 +66,9 @@ only after clients that read it have shipped. A new error code counts as
 unreadable too, so one the relay repeats while a client's cursor waits ends that
 client's match the same way. The turn-based transport (packed entries, turns,
 relay checksums; below) replaced the one-entry datagrams outright: clients and
-relays from before it cannot play together.
+relays from before it cannot play together. So did the adaptive transport
+(UPLINK, below): its relay and clients ship together, and the lobby's lowest
+admitted version rises with it.
 
 Install the executable as `/usr/local/bin/vera20k-relay`, create the unprivileged
 `vera20k-relay` user, and install `vera20k-relay.service`. Allow UDP port 5000 in
@@ -89,7 +91,12 @@ only once the silence limits below pass.
 The service journal reports aggregate traffic and rejection counts once a minute,
 with the ordering push datagrams and their bytes as `pushed` and `pushed_bytes`
 the Pull requests answered as `pull_replies`, and the matches it ended with a
-desync record as `desyncs`.
+desync record as `desyncs`. The reader downlink adds `push_packets` and
+`push_bytes` by kind (status, new pack, repeat, retransmission, tail probe),
+`piggybacked_records`, `down_lost` datagrams and the `retransmitted_records`
+for them, `readers_avg` (subscribed readers per state: good, lossy, congested,
+offline) and `offline_unsent`, about one new pack per head an offline reader
+missed.
 These counts contain no player, endpoint, room identity, ticket or packet contents.
 Use them to distinguish rate limits, expired grants and authentication failures
 from packet loss and client timeouts.
@@ -105,14 +112,45 @@ from the last rate change, or from the start; the final frame and the last
 departures still seal at once. Input joins the open frame after the sealed head,
 the first frame of the next turn. A turn's frames reach the players together
 when its last frame is due, so clients play them a turn's span behind receipt,
-evenly, and count a backlog only beyond a whole turn. New clients opt in
-to server-pushed updates through ordering request4 and its authenticated
-`PushState` acknowledgement. Older clients continue pulling the same history.
-The subscription is bound to the confirmed hop and expires after3seconds without
-a receive watermark; renewing or rebinding a hop requires a fresh subscription.
-Control-envelope ordering prevents a delayed enable from undoing a newer disable.
-Retries are idempotent; modified batch retries and source impersonation fail
+evenly, and count a backlog only beyond a whole turn.
+
+Clients send everything but Ready (request 0), Pull (2), Leave (3) and Pause
+(5) in one control request, UPLINK (8), scheduled by the client session
+(`services/relay/adaptive-transport/spec.md` holds the full rules):
+
+```
+[8][flags][recv_next u64][down_high u64][down_bits u64][srtt_ms u16][base_ms u16][link]
+[checksum_count 0..2]{[frame u32][checksum u32]} [pace u8][fps u16][tick µs u32 if flags bit1]
+[batch_count 0..4][first_batch_id u64 if any]{[len u16][opaque]}
+```
+
+Flags: bit0 PUSH subscribes or renews push, bit1 PACE, bit2 PROBE asks for a
+Status, bit3 RESTORING keeps the subscription without new records; `link` is
+the client's uplink state (0 good, 1 lossy, 2 congested, 3 offline) with bit2
+DELAYED. Any other length, count or reserved bit is malformed and dropped. The
+relay merges `recv_next` into the reader's acknowledged watermark (it never
+moves back), judges its downlink loss from `down_high`/`down_bits` against the
+hop's send log, then takes the batches in ID order: an ID below the last
+accepted is skipped, the last one again must be identical (else ModifiedRetry),
+the next is accepted under the usual frame and journal limits (else
+Backpressure), a later one is a BatchGap; before the start NotStarted, after
+leaving Inactive. An UPLINK with batches and no error gets one ACK, duplicates
+included; an error gets only the error; a probe without batches gets a Status;
+anything else no reply. The subscription is bound to the confirmed hop and
+expires after 3 seconds without an UPLINK; renewing or rebinding a hop starts
+unsubscribed, and the client's first UPLINK there subscribes again. Retries are
+idempotent; modified batch retries and source impersonation fail
 authentication.
+
+Every datagram's envelope sequence feeds a 64-bit receive window at the other
+end. ACK, `[2][accepted through u64][frame u32]`, and Status, 32 bytes as
+before, both end in the relay's window for the hop and the delay since its
+newest datagram, `[up_high u64][up_bits u64][echo delay ms u16]`: the client
+measures its RTT and uplink loss from them. Each side judges its own sends
+three behind the newest feedback and folds the loss every 32 judged packets;
+a direction is offline after 1000 ms (client) or 1500 ms (relay) of silence,
+congested while DELAYED or (uplink) 2 s after a Backpressure, lossy from 30‰
+until 10‰, severe from 150‰ until 100‰.
 
 History entries travel packed: consecutive entries fill one datagram up to the
 681-byte server payload as `[12][base seq LE u64][count]`, then per entry
@@ -120,15 +158,21 @@ History entries travel packed: consecutive entries fill one datagram up to the
 the rest); the client rebuilds each canonical entry with sequence base plus its
 index and reads it as if it had come alone. Status, Ack, Error and the other
 replies stay datagrams of their own. Each pushed reader has 64 entries of
-independent delivery credit, counted in entries. Receive watermarks acknowledge
-contiguous retained data, never simulation progress or another reader's input.
-Each socket-loop drain rotates recipients and emits at most 128 datagrams/96 KiB
-total, 32 datagrams per room and 8 per reader, using the same authenticated output
-budgets as replies. Unacknowledged entries go once more, packed, 8 ms after
-they were first sent. A 250 ms status heartbeat exposes a lost tail. Clients use
-the existing Pull operation to repair gaps: a reply is a Status, then at
-most 32 entries packed; healthy pushed clients do not continually request
-frames.
+independent delivery credit, counted in new entries only. Receive watermarks
+acknowledge contiguous retained data, never simulation progress or another
+reader's input. Each socket-loop drain rotates recipients and emits at most 128
+datagrams/96 KiB total, 32 datagrams per room and 8 per reader, using the same
+authenticated output budgets as replies. Per reader, in order: a status
+heartbeat every 250 ms or when the start or active sources change; the
+retransmission of what lost packs still owe; new packs, whose free space first
+carries the unacknowledged records of the reader's K newest packs (K 1 good, 2
+lossy, 3 severe, at most 2 congested) without ever adding a pack; then, from a
+relay-wide 8192 a second, the entries of a lossy reader once more 8 ms after
+they were first sent, and a tail probe of its newest pack after a PTO without
+acknowledgement progress. An offline reader gets nothing and restarts from its
+watermark when it is heard again. Clients repair gaps first by an UPLINK, then
+by the existing Pull after a grace of about an RTT plus a turn: a reply is a
+Status, then at most 32 entries packed.
 
 Synchronized pause is opt-in for every active match source. Ordering request5
 uses request ID0 to advertise support and query status; positive IDs carry an
@@ -144,11 +188,10 @@ the unchanged status. Lost markers replay through Pull. Ticket loss does not
 resume a game;
 the last explicit Leave appends a resume marker so the departure tail can finish.
 
-Pace: clients send ordering request6 about once a second with no reply,
-`[pace][frames run per second, LE u16]`, pace 0 keeping up, 1 behind, 2 catching
-up; the first one advertises reading rate markers. Under a `VO2C` certificate
-clients append their recent 90th-percentile simulation tick cost, `[LE u32 µs]`;
-older relays drop that longer report, so clients send it only under `VO2C`. A
+Pace: clients report about once a second in the next UPLINK's pace segment,
+once, with no reply: pace 0 keeping up, 1 behind, 2 catching up, the frames run
+in the last second and their recent 90th-percentile simulation tick cost in µs,
+0 for none; the first one advertises reading rate markers. A
 reporter holds the fastest rate its tick cost fits into four fifths of a second
 (legacy reports: nine tenths of what it ran). A fresh behind report (at most 3
 seconds old) from a player who cannot hold the current rate slows the clock to
@@ -172,9 +215,9 @@ catching up each, as `catching_up_s`. A paused, rejoining or hidden game
 reports keeping up.
 
 Checksums: batches carry only commands, `[2]` then the EventPacketCodec packet.
-Every 15th frame each client sends its post-Logic checksum as ordering request7,
-with no reply, `[count]` then per sample `[LE frame u32][LE checksum u32]`: the
-newest sample and the one before, so one lost datagram loses nothing. The relay
+Every 15th frame each client sends its post-Logic checksum in the next UPLINK's
+checksum segment, with no reply: the newest sample and the one before, so one
+lost datagram loses nothing, and alone within 100 ms if no other UPLINK goes. The relay
 keeps each active source's first value per sampled frame for the newest 256
 sampled frames. It takes none for a frame past the one after its sealed frames
 (a client reports frame F once it has run F - 1), and a source's values stop
