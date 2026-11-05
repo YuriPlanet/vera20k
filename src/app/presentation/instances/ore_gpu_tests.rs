@@ -248,7 +248,7 @@ impl Probe {
         let terrain = scene.sim().resolved_terrain().unwrap();
 
         if let Some((source, owner, expected)) = &mut self.live_a {
-            source.rebuild_if_needed(
+            source.rebuild_submitted(
                 &self.gpu.device,
                 &self.gpu.queue,
                 scene.sim().fog(),

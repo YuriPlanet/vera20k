@@ -3,7 +3,7 @@
 //! separately through the production SHP/palette preparation.
 use super::{
     batch::{CameraUniform, SpriteInstance},
-    frame_readback::PendingBgra8Readback,
+    frame_readback::PendingTextureReadback,
     radar::surface::RadarSurface,
 };
 use crate::render::gpu::block_on;
@@ -202,7 +202,7 @@ impl Gpu {
             pass.set_vertex_buffer(0, instances.slice(..));
             pass.draw(0..6, 0..1);
         }
-        let readback = PendingBgra8Readback::encode(
+        let readback = PendingTextureReadback::encode(
             &self.device,
             &mut encoder,
             &output,

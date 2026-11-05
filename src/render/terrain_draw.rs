@@ -437,7 +437,12 @@ impl TerrainDrawRenderer {
             reference_body_pipeline: pipeline("fs_body", false),
             #[cfg(test)]
             reference_shadow_pipeline: pipeline("fs_shadow", false),
-            surface_lines: surface_lines::SurfaceLineGpu::new(device, format, &snapshot_layout),
+            surface_lines: surface_lines::SurfaceLineGpu::new(
+                device,
+                queue,
+                format,
+                &snapshot_layout,
+            ),
             ion_blasts: ion_blasts::IonBlastGpu::new(device, format, &snapshot_layout),
             packed: packed::PackedSpriteGpu::new(device, queue, format, batch),
             source_layout,
@@ -1277,6 +1282,10 @@ mod webgl_shader_tests {
             (
                 "combat light",
                 pad_camera_structs(&crate::render::combat_light::shader_source(true)),
+            ),
+            (
+                "shroud compose",
+                crate::render::shroud_buffer::compose_shader_source().to_string(),
             ),
         ]
     }

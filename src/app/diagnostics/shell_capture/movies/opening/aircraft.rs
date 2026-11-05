@@ -90,6 +90,7 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
         }
         let shroud = state.match_state.match_presentation.shroud_buffer.as_ref();
         let input = &state.match_state.input;
+        let gpu = &state.renderer.gpu;
         observations.push(json!({
             "id": entity.stable_id(), "type": sim.interner().resolve(entity.type_ref()),
             "display_layer": object.parent.layer.0,
@@ -99,7 +100,7 @@ pub(super) fn observe(state: &AppState, output_prefix: &Path) -> Result<Value> {
                 json!({"texture": format!("{:?}",piece.target), "position": sprite.position,
                     "size": sprite.size, "z_adjust": sprite.z_adjust, "z_gradient": sprite.z_gradient,
                     "z_rect": sprite.zshape_origin, "a_at_rect_center": shroud.and_then(|a|
-                        a.sample_world(x,y,input.camera_x,input.camera_y))})
+                        a.read_world(&gpu.device, &gpu.queue, x, y, input.camera_x, input.camera_y))})
             }).collect::<Vec<_>>(),
             "outputs": outputs,
         }));
@@ -198,7 +199,7 @@ fn raster(
             );
         }
     }
-    let read = crate::render::frame_readback::PendingBgra8Readback::encode(
+    let read = crate::render::frame_readback::PendingTextureReadback::encode(
         &gpu.device,
         &mut encoder,
         &texture,

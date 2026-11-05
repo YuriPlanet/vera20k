@@ -459,6 +459,7 @@ pub struct BatchRenderer {
     /// depth write OFF. Overlays draw unconditionally over terrain because
     /// tiles without Z-data skip Z-testing entirely.
     overlay_passthrough_pipeline: wgpu::RenderPipeline,
+    surface_store_pipeline: wgpu::RenderPipeline,
     /// Depth-only pipeline: colour target fully masked, depth write ON, Less
     /// compare. Stamps a sprite's opaque silhouette so a later depth-testing
     /// pass can be clipped by it, without disturbing colour compositing order.
@@ -718,9 +719,9 @@ impl BatchRenderer {
         // Tiles without embedded Z-data (flag 0x02 at cell header byte 36) skip
         // Z-testing entirely. Ore, gems, and terrain objects have no Z-data, so
         // they paint unconditionally over terrain.
-        let overlay_passthrough_pipeline: wgpu::RenderPipeline =
+        let passthrough = |label, fragment| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Batch Pipeline (Overlay Passthrough)"),
+                label: Some(label),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
@@ -734,7 +735,7 @@ impl BatchRenderer {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: Some("fs_main"),
+                    entry_point: Some(fragment),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: surface_format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -756,7 +757,16 @@ impl BatchRenderer {
                 multisample: wgpu::MultisampleState::default(),
                 multiview_mask: None,
                 cache: None,
-            });
+            })
+        };
+        let overlay_passthrough_pipeline =
+            passthrough("Batch Pipeline (Overlay Passthrough)", "fs_main");
+        // DSurface4C0750's A-gated dashed stores: the same direct store,
+        // bound with the live A source.
+        let surface_store_pipeline = passthrough(
+            "Batch Pipeline (A-gated Surface Stores)",
+            "fs_surface_store",
+        );
 
         // Building bodies stamp their silhouette here so the post-shroud
         // selection-bracket redraw can be clipped by the art it stands behind.
@@ -1181,6 +1191,7 @@ impl BatchRenderer {
             default_zshape_bind_group,
             zdepth_pipeline,
             overlay_passthrough_pipeline,
+            surface_store_pipeline,
             #[cfg(test)]
             depth_stamp_pipeline,
             depth_test_pipeline,
@@ -1907,6 +1918,26 @@ impl BatchRenderer {
             start,
             count,
         );
+    }
+
+    /// Direct stores DSurface4C0750 keeps or skips per pixel by the live
+    /// tactical A (`FX_SURFACE_A_NONZERO`/`FX_SURFACE_A_ZERO`; neither stores
+    /// everywhere), bypassing Z and reading no palette row.
+    pub(crate) fn draw_surface_stores<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        texture: &'a BatchTexture,
+        buffer: &'a wgpu::Buffer,
+        count: u32,
+    ) {
+        if count == 0 {
+            return;
+        }
+        render_pass.set_pipeline(&self.surface_store_pipeline);
+        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        render_pass.set_bind_group(1, &texture.bind_group, &[]);
+        render_pass.set_vertex_buffer(0, buffer.slice(..));
+        render_pass.draw(0..6, 0..count);
     }
 
     /// Draw with depth bypassed AND the UI camera (zoom=1.0, screen-fixed).

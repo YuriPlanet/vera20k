@@ -2,12 +2,39 @@
 // Signed shifts use WGSL arithmetic shift: https://www.w3.org/TR/WGSL/#bit-expr
 @group(0) @binding(0) var old_words: texture_2d<u32>;
 @group(0) @binding(1) var old_depth: texture_2d<f32>;
+// `a_sample` is the logical pixel whose A the operation reads, two i16.
 struct Operation {
-    z: u32, strength: i32, rgb: u32, alpha: u32, mode: u32,
+    z: u32, strength: i32, rgb: u32, a_sample: u32, mode: u32,
     destination_weight: i32, gate_x: i32, gate_y: i32,
     source_x: i32, source_y: i32,
 };
 @group(1) @binding(0) var<storage, read> operations: array<Operation>;
+// ShroudBuffer's plane, composed earlier in the frame. The logical surface
+// frame and the plane share the floored camera, so a logical pixel is its
+// plane pixel. A disabled source, or a pixel off the plane, reads 127.
+@group(2) @binding(0) var surface_a_plane: texture_2d<f32>;
+@group(2) @binding(1) var<uniform> surface_a_source: TacticalASource;
+fn surface_a(sample: u32) -> u32 {
+    if surface_a_source.enabled == 0u { return 127u; }
+    let pixel = vec2i(bitcast<i32>(sample << 16u) >> 16u, bitcast<i32>(sample) >> 16u);
+    if any(pixel < vec2i(0)) || any(pixel >= vec2i(textureDimensions(surface_a_plane))) {
+        return 127u;
+    }
+    let a = u32(round(textureLoad(surface_a_plane, pixel, 0).r * 255.0));
+    return fog_lifted_a(a, surface_a_source.fog_strength);
+}
+// ParticleDraw62D02C: below A127 each signed x87 channel wraps through the
+// multiply by A and shifts arithmetically by 7; the RGB565 pack masks each
+// channel to 16 bits, so channels may overlap.
+fn point_word(rgb: vec3i, a: u32) -> u32 {
+    var lit = rgb;
+    if a < 127u {
+        lit = bitcast<vec3i>(bitcast<vec3u>(rgb) * a) >> vec3u(7u);
+    }
+    return ((bitcast<u32>(lit.r >> 3u) << 11u) & 65535u)
+        | ((bitcast<u32>(lit.g >> 2u) << 5u) & 65535u)
+        | (bitcast<u32>(lit.b >> 3u) & 65535u);
+}
 struct Output {
     @builtin(position) position: vec4f,
     @location(0) @interpolate(flat) span: vec2u,
@@ -55,11 +82,13 @@ fn fs_main(input: Output) -> @location(0) vec4f {
             continue;
         }
         //Particle62D02C compares a signed candidate with an unsigned stored
-        //word. CPU preparation used the shared interpolation/A/pack owner;
-        //the current Z is available only at this retained Display slot.
+        //word. CPU preparation interpolated the channels (carried in
+        //strength/destination_weight/source_x); A and the current Z are
+        //available only at this retained Display slot.
         if op.mode == 6u {
-            if op.alpha != 0u && bitcast<i32>(op.z) < i32(old_z) {
-                word = op.rgb;
+            let a = surface_a(op.a_sample);
+            if a != 0u && bitcast<i32>(op.z) < i32(old_z) {
+                word = point_word(vec3i(op.strength, op.destination_weight, op.source_x), a);
                 touched = true;
             }
             continue;
@@ -70,11 +99,25 @@ fn fs_main(input: Output) -> @location(0) vec4f {
             touched = true;
             continue;
         }
+        //Foot4DC340's drained dashes store only where A is nonzero, no Z.
+        if op.mode == 10u {
+            if surface_a(op.a_sample) != 0u {
+                word = op.rgb;
+                touched = true;
+            }
+            continue;
+        }
         var gate_z = old_z;
         if op.mode == 3u || op.mode == 5u {
             gate_z = u32(decoded_native_z(textureLoad(old_depth,vec2i(op.gate_x,op.gate_y),0).r));
         }
-        if op.z >= gate_z || op.alpha == 0u { continue; }
+        if op.z >= gate_z { continue; }
+        //4BBCA0 never reads A; every other store skips a zero A.
+        var alpha = 127u;
+        if op.mode != 8u {
+            alpha = surface_a(op.a_sample);
+            if alpha == 0u { continue; }
+        }
         if op.mode == 5u {
             //The X-major arm reads the other OLD destination before either
             //paired store. CPU dependency chunks guarantee this snapshot
@@ -91,11 +134,11 @@ fn fs_main(input: Output) -> @location(0) vec4f {
         } else if op.mode == 0u {
             let mixed = ((dst * (256 - op.strength)) >> vec3u(8))
                 + ((src * op.strength) >> vec3u(8));
-            lit = (mixed * i32(op.alpha)) >> vec3u(7);
+            lit = (mixed * i32(alpha)) >> vec3u(7);
         } else if op.mode == 1u {
             // DSurface4BDF00 -> RGB4BE9D0: additive saturation distributes
             // excess to channels below255 before the final cap and pack.
-            lit = dst + ((src * i32(op.alpha)) >> vec3u(7));
+            lit = dst + ((src * i32(alpha)) >> vec3u(7));
             let full = lit >= vec3i(255);
             let count = select(0,1,full.r) + select(0,1,full.g) + select(0,1,full.b);
             var excess = max(lit.r-255,0) + max(lit.g-255,0) + max(lit.b-255,0);
@@ -108,17 +151,17 @@ fn fs_main(input: Output) -> @location(0) vec4f {
             //4BC750: independently indexed native cubic weights. Both pixel
             //stores were admitted by the primary sample above; no WriteZ.
             lit = min(((dst * op.destination_weight + src * op.strength)
-                * i32(op.alpha)) >> vec3u(15),vec3i(255));
+                * i32(alpha)) >> vec3u(15),vec3i(255));
         } else {
             // DSurface4BFD30: alpha127 copies the packed source unchanged.
-            if op.alpha == 127u {
+            if alpha == 127u {
                 word = op.rgb;
                 touched = true;
                 continue;
             }
             let packed = vec3i(i32((op.rgb >> 11u) & 31u) << 3u,
                 i32((op.rgb >> 5u) & 63u) << 2u, i32(op.rgb & 31u) << 3u);
-            lit = (packed * i32(op.alpha)) >> vec3u(7);
+            lit = (packed * i32(alpha)) >> vec3u(7);
         }
         word = u32(((lit.r >> 3u) << 11u) | ((lit.g >> 2u) << 5u) | (lit.b >> 3u)) & 65535u;
         touched = true;
