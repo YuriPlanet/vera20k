@@ -316,6 +316,15 @@ pub(crate) fn render_game(
                 .and_then(|house| view.houses().get(&house))
                 .is_some_and(|house| house.is_defeated()),
         };
+        let rules = &rt.resources.rules;
+        shroud_buf.set_alpha_shapes(view.simulation().alpha_shapes().filter_map(
+            |(origin, image)| {
+                Some(crate::render::shroud_buffer::AlphaShapeDraw {
+                    origin,
+                    image: rules.alpha_image(image)?.clone(),
+                })
+            },
+        ));
         shroud_buf.rebuild_if_needed(
             &state.renderer.gpu.device,
             &state.renderer.gpu.queue,

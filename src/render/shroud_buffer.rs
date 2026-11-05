@@ -68,6 +68,22 @@ struct CellBlits {
 
 const NO_FRAME: u16 = u16::MAX;
 
+/// One AlphaShapeClass glow (`sim::world::alpha_shape`): its origin in
+/// absolute world pixels and its type's AlphaImage.
+#[derive(Debug, Clone)]
+pub struct AlphaShapeDraw {
+    pub origin: [i32; 2],
+    pub image: std::sync::Arc<crate::rules::alpha_image_assets::AlphaImage>,
+}
+
+/// Images are immutable rules resources, so the same allocation is the same
+/// image and a frame's list compares without reading pixels.
+impl PartialEq for AlphaShapeDraw {
+    fn eq(&self, other: &Self) -> bool {
+        self.origin == other.origin && std::sync::Arc::ptr_eq(&self.image, &other.image)
+    }
+}
+
 /// What the shroud brightness buffer writes for one cell.
 ///
 /// Split out of the rebuild loop so the decision can be tested without a GPU.
@@ -215,6 +231,10 @@ pub struct ShroudBuffer {
     drawn_blits: Vec<CellBlits>,
     /// The next rebuild's blits, allocated once.
     next_blits: Vec<CellBlits>,
+    /// The glows every redraw applies after the cells.
+    alpha_shapes: Vec<AlphaShapeDraw>,
+    /// The next frame's glows, allocated once.
+    next_alpha_shapes: Vec<AlphaShapeDraw>,
     /// A resize, new frames or a load leaves `pixels` unproven by
     /// `drawn_blits`; the next rebuild redraws whatever it collects.
     redraw_required: bool,
@@ -340,6 +360,8 @@ impl ShroudBuffer {
             fog_strength_milli: FOG_STRENGTH_MILLI,
             drawn_blits: Vec::new(),
             next_blits: Vec::new(),
+            alpha_shapes: Vec::new(),
+            next_alpha_shapes: Vec::new(),
             redraw_required: true,
         };
         result.upload(queue);
@@ -365,6 +387,17 @@ impl ShroudBuffer {
             .collect();
         self.fog_canvas = canvas;
         self.mark_stale();
+    }
+
+    /// Take this frame's AlphaShapeClass glows, in vector order. A list that
+    /// differs from the drawn one makes the next rebuild redraw the plane.
+    pub fn set_alpha_shapes(&mut self, shapes: impl IntoIterator<Item = AlphaShapeDraw>) {
+        self.next_alpha_shapes.clear();
+        self.next_alpha_shapes.extend(shapes);
+        if self.next_alpha_shapes != self.alpha_shapes {
+            std::mem::swap(&mut self.next_alpha_shapes, &mut self.alpha_shapes);
+            self.mark_stale();
+        }
     }
 
     /// Invalidate the fog dirty-gate so the next frame rebuilds regardless of
@@ -608,9 +641,10 @@ impl ShroudBuffer {
     }
 
     /// Redraw the plane from `drawn_blits`: fill bright, then copy each
-    /// cell's first frame and blend its second, in collection order.
-    /// Blitting in world-pixel coordinates at virtual resolution means
-    /// diamond tiles match the world grid exactly at every zoom.
+    /// cell's first frame and blend its second, in collection order, then
+    /// apply the glows. Blitting in world-pixel coordinates at virtual
+    /// resolution means diamond tiles match the world grid exactly at every
+    /// zoom.
     fn draw_blits(&mut self, fog_options: FogDrawOptions) {
         self.pixels.fill(NEUTRAL);
         self.redraw_required = false;
@@ -631,6 +665,13 @@ impl ShroudBuffer {
                     blit_frame_pixels(&mut self.pixels, stride, size, frame, blit.origin, write);
                 }
             }
+        }
+        // `AlphaShapeClass::DrawAll_NoMask @ 0x00421350` follows the cell
+        // loop (`0x006D754C`), over the same pass rectangle.
+        let camera = [self.last_cam_x as i32, self.last_cam_y as i32];
+        for shape in &self.alpha_shapes {
+            let origin = [shape.origin[0] - camera[0], shape.origin[1] - camera[1]];
+            draw_alpha_shape(&mut self.pixels, stride, size, &shape.image, origin);
         }
     }
 
@@ -749,6 +790,50 @@ fn blit_frame_pixels(
                     }
                 }
             }
+        }
+    }
+}
+
+/// One shape of `AlphaShapeClass::DrawAll_NoMask @ 0x00421350` over the
+/// whole plane, `origin` in plane pixels. Nothing is drawn unless the canvas
+/// meets the plane (`0x004213A7`). Frame 0 then starts at its own offset: the
+/// left and top edges clip to the canvas and plane, the right and bottom to
+/// the plane alone (`0x00421480..0x004214F4`). Every frame byte, 0 included,
+/// rescales the A beneath it through table `0x0088A118` (built by the ctor
+/// at `0x00420A71`): `min(255, byte * A / 127)`, so 127 keeps A and 254
+/// doubles it.
+fn draw_alpha_shape(
+    pixels: &mut [u8],
+    stride: usize,
+    size: [u32; 2],
+    image: &crate::rules::alpha_image_assets::AlphaImage,
+    origin: [i32; 2],
+) {
+    let [plane_w, plane_h] = size.map(|v| v as i32);
+    let [x, y] = origin;
+    let [canvas_w, canvas_h] = image.canvas();
+    let (left, top) = (x.max(0), y.max(0));
+    if (x + canvas_w).min(plane_w) <= left || (y + canvas_h).min(plane_h) <= top {
+        return;
+    }
+    let [frame_x, frame_y, frame_w, frame_h] = image.frame_bounds();
+    let left = left.max(x + frame_x);
+    let top = top.max(y + frame_y);
+    let right = (x + frame_x + frame_w).min(plane_w);
+    let bottom = (y + frame_y + frame_h).min(plane_h);
+    if right <= left {
+        return;
+    }
+    let count = (right - left) as usize;
+    for row in top..bottom {
+        let source = ((row - y - frame_y) * frame_w + left - x - frame_x) as usize;
+        let destination = row as usize * stride + left as usize;
+        let alphas = &image.pixels()[source..source + count];
+        for (a, &alpha) in pixels[destination..destination + count]
+            .iter_mut()
+            .zip(alphas)
+        {
+            *a = (u32::from(alpha) * u32::from(*a) / 127).min(255) as u8;
         }
     }
 }
@@ -1008,6 +1093,66 @@ mod tests {
         let mut fresh = new_source();
         assert!(rebuild(&mut fresh, &fog));
         assert_eq!(source.pixels, fresh.pixels);
+    }
+
+    /// `AlphaShapeClass::DrawAll_NoMask @ 0x00421350` after the cells: frame
+    /// 0 from its own offset, its left edge and the plane's bottom clipping
+    /// it, each byte rescaling A (254 doubles, 0 zeroes). A changed glow list
+    /// redraws a plane whose fog is unchanged; an equal one does not.
+    #[test]
+    fn a_glow_rescales_a_under_frame_zero_and_redraws_when_it_changes() {
+        let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
+        let owner = intern::test_intern("Americans");
+        let size = [64, 32];
+        let mut source = ShroudBuffer::new(
+            &gpu.device,
+            &gpu.queue,
+            size,
+            [32, 32],
+            Vec::new(),
+            [60, 30],
+            SHROUD_EDGE_LUT,
+        );
+        let fog = FogState::new(32, 32);
+        let rebuild = |source: &mut ShroudBuffer| {
+            source.rebuild_if_needed(
+                &gpu.device,
+                &gpu.queue,
+                &fog,
+                owner,
+                100.0,
+                50.0,
+                size[0],
+                size[1],
+                1.0,
+                None,
+                FogDrawOptions::default(),
+            )
+        };
+        assert!(rebuild(&mut source));
+        let image = std::sync::Arc::new(crate::rules::alpha_image_assets::AlphaImage::for_test(
+            [6, 4],
+            [1, 1, 3, 2],
+            vec![255, 254, 0, 9, 9, 9],
+        ));
+        // Plane origin (-2,30): frame 0 covers x -1..2 and y 31..33.
+        let glow = || AlphaShapeDraw {
+            origin: [98, 80],
+            image: image.clone(),
+        };
+        source.set_alpha_shapes([glow()]);
+        assert!(rebuild(&mut source));
+        let a = |x: f32, y: f32| source.sample_world(100.0 + x, 50.0 + y, 100.0, 50.0);
+        assert_eq!(
+            [a(0.0, 31.0), a(1.0, 31.0), a(2.0, 31.0), a(0.0, 30.0)],
+            [Some(254), Some(0), Some(NEUTRAL), Some(NEUTRAL)]
+        );
+
+        source.set_alpha_shapes([glow()]);
+        assert!(!rebuild(&mut source));
+        source.set_alpha_shapes([]);
+        assert!(rebuild(&mut source));
+        assert_eq!(source.sample_world(100.0, 81.0, 100.0, 50.0), Some(NEUTRAL));
     }
 }
 
