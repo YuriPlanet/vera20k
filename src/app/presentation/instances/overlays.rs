@@ -813,16 +813,20 @@ pub(super) fn anim_world_render_coords(
 }
 
 /// The Convert and scalar 0047F6A0 passes for one overlay body, in its branch
-/// order: ordinary cell Convert/common; resource (+0x2A9) and veins use global
-/// ordinary Convert, with resource brightness fixed at 1000. Walls (OverlayType+0x2A8,
-/// 0047F96A..0047F9C1) take the current house's ColorScheme Convert
-/// (A83D4C+0x16054 -> B054D4[]+0x30C) at the cell's +0x10A scalar. Every
-/// Convert reads A, so unexplored shroud selects palette row 0 (black).
+/// order: resource (+0x2A9) and overlay index 0x7E (`0x0047F9C6..0x0047FA5C`,
+/// the literal index, not IsVeins) use the global x_PAL Convert, with
+/// resource brightness fixed at 1000 and 0x7E at the cell's common scalar;
+/// every other overlay takes its cell's Convert at that scalar. Walls
+/// (OverlayType+0x2A8, 0047F96A..0047F9C1) take the current house's
+/// ColorScheme Convert (A83D4C+0x16054 -> B054D4[]+0x30C) at the cell's
+/// +0x10A scalar. Every Convert reads A, so unexplored shroud selects palette
+/// row 0 (black).
 ///
 /// RESIDUAL: that scheme's house remap of wall art is absent from this RGBA
 /// atlas; walls keep their unremapped colours. Trigger: every wall draw.
 /// Effect: remap-range wall pixels show source colours. Presentation only.
 fn ordinary_overlay_palette_light(
+    overlay_id: u8,
     flags: Option<&OverlayTypeFlags>,
     light_grid: &crate::map::lighting::CellLightGrid,
     cell: (u16, u16),
@@ -833,7 +837,7 @@ fn ordinary_overlay_palette_light(
         Some(f) if f.wall => {
             crate::app::presentation::lighting::body_palette_light(light_grid, cell, 0)
         }
-        Some(f) if f.is_veins => PaletteLight::plain(
+        _ if overlay_id == 0x7E => PaletteLight::plain(
             53,
             light_grid
                 .cell_light_at(cell)
@@ -1026,8 +1030,12 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             continue;
         };
         let tint: [f32; 3] = input.lighting.overlay_tint_at((entry.rx, entry.ry));
-        let palette_light =
-            ordinary_overlay_palette_light(overlay_flags, input.lighting, (entry.rx, entry.ry));
+        let palette_light = ordinary_overlay_palette_light(
+            live_overlay_id,
+            overlay_flags,
+            input.lighting,
+            (entry.rx, entry.ry),
+        );
         let mut instance = SpriteInstance {
             position: [
                 screen_x + TILE_WIDTH / 2.0 + spr.offset_x,
@@ -1857,7 +1865,7 @@ mod tests {
             wall: true,
             ..Default::default()
         };
-        let light = super::ordinary_overlay_palette_light(Some(&wall), &grid, (3, 4));
+        let light = super::ordinary_overlay_palette_light(0, Some(&wall), &grid, (3, 4));
         assert_eq!(
             (light.rows(), light.brightness()),
             (53, 1000),
@@ -1874,9 +1882,29 @@ mod tests {
                 ..Default::default()
             },
         ] {
-            let light = super::ordinary_overlay_palette_light(Some(&other), &grid, (3, 4));
+            let light = super::ordinary_overlay_palette_light(0, Some(&other), &grid, (3, 4));
             assert_eq!(light.rgb565(stone, 100, 2), 0);
         }
+    }
+
+    /// 0047F9C6 tests the overlay's index, 0x7E, for the x_PAL arm. An IsVeins
+    /// overlay at another index takes its cell Convert like any other.
+    #[test]
+    fn x_pal_overlay_arm_keys_on_index_0x7e_not_is_veins() {
+        let mut grid = crate::map::lighting::CellLightGrid::new();
+        grid.insert_profiled_light((3, 4), [1.5, 0.5, 0.5], 0.75);
+        let veins = OverlayTypeFlags {
+            is_veins: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            super::ordinary_overlay_palette_light(0x7E, None, &grid, (3, 4)),
+            crate::render::palette_light::PaletteLight::plain(53, 750)
+        );
+        assert_eq!(
+            super::ordinary_overlay_palette_light(0x7D, Some(&veins), &grid, (3, 4)),
+            crate::render::palette_light::PaletteLight::cell(&grid, (3, 4), false)
+        );
     }
 
     /// 0047F6A0's IsRubble arm: only the cell holding a rubble type draws,

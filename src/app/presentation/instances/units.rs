@@ -2856,8 +2856,9 @@ fn emit_harvest_overlay(
             depth,
             tint,
             // Unit DrawExtras 0073D276 selects global ANIM Convert, not the
-            // unit ColorScheme. Ordinary scalar is top + ExtraUnitLight.
-            // Its bridge/special-cell brightness branches remain unresolved.
+            // unit ColorScheme, at the body's intensity (`0x0073D22B`): top
+            // plus `body_extra_light`'s bridge, side-cell and ExtraUnitLight
+            // arms (`0x0073D00E..0x0073D0CF`).
             palette_light: crate::render::palette_light::PaletteLight::plain(53, brightness),
             alpha: 1.0,
             draw_state,

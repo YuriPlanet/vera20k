@@ -139,16 +139,13 @@ fn frozen_building_pieces(
         .map_or(1000, |light| light.top_scalar)
         .wrapping_add(art.map_or(0, |art| i32::from(art.extra_light as i16)));
     //4D1E96..4D1EE9 selects cell Convert for TerrainPalette, but keeps the
-    // same top-plus-ExtraLight intensity as the house-Convert arm.
+    // same top-plus-ExtraLight intensity as the house-Convert arm. The owner's
+    // ColorScheme Convert (`0x004D1C8A..0x004D1CA4`) carries the scheme RGB,
+    // which a cell Convert reset or a load can leave apart from the cells'.
     let palette = if art.is_some_and(|art| art.terrain_palette) {
         PaletteLight::cell(input.lighting, cell, false).with_brightness(brightness)
     } else {
-        PaletteLight::color_scheme(
-            input
-                .lighting
-                .palette_rgb(input.lighting.profiles().default_profile_id()),
-            brightness,
-        )
+        PaletteLight::color_scheme(input.lighting.color_scheme_rgb(), brightness)
     };
     let Ok(frame) = u16::try_from(body.frame) else {
         return pieces;
@@ -266,12 +263,7 @@ fn frozen_building_pieces(
         let palette = if context == ShpPaletteContext::AnimPalette {
             PaletteLight::plain(53, brightness)
         } else {
-            PaletteLight::color_scheme(
-                input
-                    .lighting
-                    .palette_rgb(input.lighting.profiles().default_profile_id()),
-                brightness,
-            )
+            PaletteLight::color_scheme(input.lighting.color_scheme_rgb(), brightness)
         };
         let mut instance = sprite(entry, [x, y], depth, palette);
         instance.z_adjust = super::lifted_z_adjust(lift, record.z_adjust.wrapping_sub(2));
@@ -391,7 +383,12 @@ mod tests {
         }
         let mut atlas = SpriteAtlas::from_test_entries(entries);
         atlas.set_object_shp_frame_count_for_test("TEST", 8);
-        let lighting = CellLightGrid::new();
+        // A trigger retint (`0x0053AD00`), then an in-game detail change
+        // (`0x00545000`) that rebuilds only the cell Converts as neutral: the
+        // house schemes keep the retint.
+        let mut lighting = CellLightGrid::new();
+        lighting.retint_normal_rgb([1200, 800, 600]);
+        lighting.reset_cell_converts(None);
         let colors = [("A".into(), HouseColorIndex(1))].into_iter().collect();
         let input = FrozenDrawInputs {
             interner: &interner,
@@ -440,6 +437,9 @@ mod tests {
         assert!(pieces.iter().all(|piece| piece.instance.alpha == 1.0
             && piece.instance.draw_state.native_selector_bits() == 0
             && piece.instance.palette_light.colour_word() == 0));
+        let scheme = PaletteLight::color_scheme([1200, 800, 600], 1000);
+        assert_eq!(pieces[0].instance.palette_light, scheme, "body");
+        assert_eq!(pieces[3].instance.palette_light, scheme, "anim");
         assert_eq!(pieces[3].render_z, RenderZPolicy::ReadOnly);
         assert_eq!(
             pieces[3].instance.z_adjust,

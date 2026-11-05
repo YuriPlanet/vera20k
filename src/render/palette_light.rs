@@ -2,8 +2,7 @@
 //!
 //! `0x00556090 -> 0x007DE200` constructs RGB565 rows; `0x00420140`
 //! selects them from brightness and A-buffer. The captured retail process uses
-//! MMX, RGB565 and x87 CW 0x0e7f. See
-//! `docs/research/LIGHTCONVERT_ROW_RGB565_ORACLE_2026_09_09.md`.
+//! MMX, RGB565 and x87 CW 0x0e7f. Executed tables: `tools/palette_oracle`.
 //! Palette ownership (cell versus ColorScheme), scalar brightness and the
 //! per-index mask remain separate. Zero/default means precomposed RGBA/UI.
 

@@ -198,6 +198,26 @@ fn twenty_original_palette_histories_keep_mutable_normal_rgb_and_native_pixels()
     }
 }
 
+/// TechnoClass_DrawSHP's TerrainPalette arm (`0x00705ED5..0x00705F52`) lights
+/// a building from the cell of its GetCoords (`0x00447AC0`, the foundation
+/// centre: (12, 12) for retail CITY06's 4x4 at (10, 10)); the house-scheme arm
+/// keeps the Location cell's top scalar.
+#[test]
+fn terrain_palette_building_takes_its_foundation_centre_cell() {
+    let mut grid = crate::map::lighting::CellLightGrid::new();
+    grid.insert_profiled_light((10, 10), [0.5, 0.5, 0.5], 0.5);
+    grid.insert_profiled_light((12, 12), [1.5, 1.0, 0.5], 1.5);
+    let art = ArtRegistry::from_ini(&IniFile::from_str("[CITY06]\nTerrainPalette=yes\n"));
+    assert_eq!(
+        building_palette_light(&grid, (10, 10), (12, 12), art.get("CITY06"), false),
+        PaletteLight::cell(&grid, (12, 12), false)
+    );
+    assert_eq!(
+        building_palette_light(&grid, (10, 10), (12, 12), None, false),
+        body_palette_light(&grid, (10, 10), 0)
+    );
+}
+
 #[test]
 fn mutable_lookup_keeps_old_cell_pointers_and_row_counts_while_new_samples_get_new_converts() {
     //544E94 returns neutral index0;544EF8 compares normal cache from
@@ -268,7 +288,7 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
     let expected = PaletteLight::color_scheme([1200, 800, 600], brightness);
     assert_eq!(body_palette_light(&lights.grid, (0, 0), 0), expected);
     assert_eq!(
-        building_palette_light(&lights.grid, (0, 0), None, false),
+        building_palette_light(&lights.grid, (0, 0), (0, 0), None, false),
         expected
     );
     let art = ArtRegistry::from_ini(&IniFile::from_str("[ALT]\nAltPalette=yes\n"));
