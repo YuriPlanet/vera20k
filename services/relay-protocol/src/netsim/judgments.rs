@@ -539,18 +539,24 @@ fn check_piggyback(trace: &Trace, client: usize) -> Check {
         if fresh.is_empty() {
             continue;
         }
-        let new_lens: Vec<usize> = fresh
+        let new_records: Vec<&inspect::PackRecord> = fresh
             .iter()
             .flat_map(|record| record.pack().unwrap().1)
             .filter(|entry| entry.seq >= pushed_high)
-            .map(|entry| entry.len)
             .collect();
-        ensure(fresh.len() == inspect::packs_needed(&new_lens), || {
+        // PACK v1 (transport spec §3.5) under envelope v2, PACK v2
+        // (bandwidth-compaction spec §5.4) under v3.
+        let needed = if fresh[0].parsed.as_ref().unwrap().version == 2 {
+            inspect::packs_needed(&new_records.iter().map(|r| r.len).collect::<Vec<_>>())
+        } else {
+            let canonical: Vec<Vec<u8>> = new_records.iter().map(|r| r.canonical.clone()).collect();
+            inspect::v3::packs_needed(&canonical)?
+        };
+        ensure(fresh.len() == needed, || {
             format!(
-                "client {client} at {} ms: {} new packs for records needing {} (spec §7.4)",
+                "client {client} at {} ms: {} new packs for records needing {needed} (spec §7.4)",
                 ms(at),
                 fresh.len(),
-                inspect::packs_needed(&new_lens)
             )
         })?;
         for (index, record) in fresh.iter().enumerate() {

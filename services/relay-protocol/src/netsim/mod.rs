@@ -61,6 +61,7 @@ enum Action {
     Renew,
     Restore(bool),
     Rebind,
+    Replay,
 }
 
 enum Event {
@@ -124,6 +125,9 @@ struct Client {
     sessions: Vec<Option<u32>>,
     /// Each hop's packet key (`derive_packet_key`), for tag checks.
     hop_keys: Vec<[u8; 32]>,
+    /// (sent µs, bytes) of the client's UPLINKs of the last two seconds,
+    /// kept only when the scenario replays.
+    recent_uplinks: std::collections::VecDeque<(u64, Vec<u8>)>,
     up: Link,
     down: Link,
     commands: Rng,
@@ -235,6 +239,7 @@ impl Simulation {
                 nonces: vec![ticket.nonce],
                 sessions: vec![None],
                 hop_keys: vec![hop_key],
+                recent_uplinks: Default::default(),
                 up: Link::new(up, stream(0)),
                 down: Link::new(down, stream(1)),
                 commands: stream(2),
@@ -305,6 +310,13 @@ impl Simulation {
                     .rebinds
                     .iter()
                     .map(|at| (at.client, at.at_ms, Action::Rebind)),
+            )
+            .chain(
+                simulation
+                    .scenario
+                    .replays
+                    .iter()
+                    .map(|at| (at.client, at.at_ms, Action::Replay)),
             )
             .collect();
         for (client, at_ms, action) in actions {
@@ -420,6 +432,16 @@ impl Simulation {
         };
         if measured {
             self.clients[index].observed.up.add(kind, bytes.len());
+        }
+        if !self.scenario.replays.is_empty() && kind == "UPLINK" {
+            let recent = &mut self.clients[index].recent_uplinks;
+            recent.push_back((at_us, bytes.clone()));
+            while recent
+                .front()
+                .is_some_and(|(at, _)| *at + 2_000_000 < at_us)
+            {
+                recent.pop_front();
+            }
         }
         let lost = if self.dropped_by_rule(index, Direction::Up, &[kind]) {
             Err(Loss::Rule)
@@ -604,6 +626,41 @@ impl Simulation {
         }
         self.forged_sent[index] += usize::from(session.is_some());
         self.schedule(at_us + period_us, Event::Forge(index));
+    }
+
+    /// Resends the client's newest UPLINK a second old or older, from an
+    /// attacker address, unchanged.
+    fn replay(&mut self, index: usize, at_us: u64) {
+        let Some((_, bytes)) = self.clients[index]
+            .recent_uplinks
+            .iter()
+            .rev()
+            .find(|(sent, _)| *sent + 1_000_000 <= at_us)
+            .cloned()
+        else {
+            return;
+        };
+        let endpoint = SocketAddrV4::new(Ipv4Addr::new(10, 7, 0, index as u8 + 1), 50_000);
+        let now_ms = at_us / 1000;
+        let result = self
+            .relay
+            .process_at(endpoint, &bytes, unix(now_ms), now_ms);
+        let replies = result.as_ref().map_or(0, |output| output.len());
+        if let Some(trace) = self.trace.as_mut() {
+            trace.replayed.push(trace::Forged {
+                forgery: index,
+                at_us,
+                endpoint,
+                result: result
+                    .as_ref()
+                    .map(|_| ())
+                    .map_err(|error| format!("{error:?}")),
+                replies,
+            });
+        }
+        if let Ok(output) = result {
+            self.route(output, at_us, Origin::Reply);
+        }
     }
 
     /// The client moves to a new address (compaction spec §6.2 "换地址"):
@@ -803,6 +860,7 @@ impl Simulation {
                             self.clients[index].driver.set_restoring(restoring)
                         }
                         Action::Rebind => self.rebind(index),
+                        Action::Replay => self.replay(index, at_us),
                     }
                     if event_mode {
                         self.client_tick(index, at_us, false);

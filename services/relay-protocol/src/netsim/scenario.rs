@@ -81,6 +81,11 @@ pub struct Scenario {
     /// spec §6.2 "换地址").
     #[serde(default)]
     pub rebinds: Vec<ClientAt>,
+    /// At `at_ms`, an attacker address resends the client's newest UPLINK
+    /// at least a second old, unchanged: a replay from a new address
+    /// (bandwidth-compaction spec §6.2 "换地址", §6.4 item 5).
+    #[serde(default)]
+    pub replays: Vec<ClientAt>,
     /// Keep every datagram's bytes in the trace, for byte comparisons.
     #[serde(default)]
     pub keep_wire_bytes: bool,
@@ -316,6 +321,7 @@ impl Scenario {
             .chain(&scenario.leaves)
             .chain(&scenario.renewals)
             .chain(&scenario.rebinds)
+            .chain(&scenario.replays)
             .all(|at| named(at.client))
             || !scenario.forgeries.iter().all(|forgery| {
                 named(forgery.client) && forgery.per_second > 0 && forgery.addresses > 0

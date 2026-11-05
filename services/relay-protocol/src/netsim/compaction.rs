@@ -330,104 +330,68 @@ fn refused(trace: &Trace, client: usize, from_us: u64, to_us: u64) -> Vec<u64> {
         .collect()
 }
 
-/// Forged failures from `ip` (or on any address, `None`) in the fixed
-/// relay-clock second holding `at_us`, up to it (§6.4 item 1: fixed 1 s
-/// windows).
-fn failures_this_second(trace: &Trace, ip: Option<Ipv4Addr>, at_us: u64) -> usize {
-    let second = at_us / 1_000_000 * 1_000_000;
-    trace
-        .forged
-        .iter()
-        .filter(|f| {
-            (second..=at_us).contains(&f.at_us) && ip.is_none_or(|ip| *f.endpoint.ip() == ip)
-        })
-        .count()
+/// §6.4 item 2: "合法包永远照常校验、照常接受" — no limit ever drops a
+/// datagram with a valid tag, so not one of any client is refused; and the
+/// forged ones change nothing (item 5): exact feedback windows, one stream.
+fn check_forged_flood(report: &Report, trace: &Trace, clients: usize, end_us: u64) {
+    check_forgeries_inert(trace).unwrap();
+    for client in 0..clients {
+        assert_eq!(
+            refused(trace, client, 0, u64::MAX),
+            Vec::<u64>::new(),
+            "client {client}"
+        );
+    }
+    check_bitmaps(trace, clients).unwrap();
+    check_consistency(report, trace, end_us).unwrap();
 }
 
 #[test]
 #[ignore = "waits for bandwidth compaction"]
 fn bc04_forgeries_from_another_address_change_nothing() {
-    // §6.4 item 1: 300 failures a second from one IP pass its 64 and stay
-    // under the session's 256, so only that IP is limited; the hop and its
-    // client go on untouched.
+    // 300 forged a second from one IP on A's session.
     let (report, trace) = run(r#"{ "name": "bc04", "players": 2, "keep_wire_bytes": true,
         "warmup_ms": 0, "duration_ms": 12000, "apm": 120,
         "forgeries": [ { "client": 0, "from_ms": 3000, "to_ms": 8000, "per_second": 300 } ] }"#);
-    check_forgeries_inert(&trace).unwrap();
-    for client in 0..2 {
-        assert_eq!(
-            refused(&trace, client, 0, u64::MAX),
-            Vec::<u64>::new(),
-            "client {client}"
-        );
-    }
-    // §6.4 item 4: forged sequences reach no window.
-    check_bitmaps(&trace, 2).unwrap();
-    check_consistency(&report, &trace, 12_000_000).unwrap();
+    check_forged_flood(&report, &trace, 2, 12_000_000);
 }
 
 #[test]
 #[ignore = "waits for bandwidth compaction"]
-fn bc05_forgeries_spoofing_the_clients_ip_limit_that_ip_per_second() {
-    // §6.4 item 1, as written: once an IP has 64 failures in a fixed
-    // second, the rest of its datagrams that second are dropped without
-    // the HMAC, the spoofed client's own among them (reported as a spec
-    // problem). Forging stops at 6000; from the next second on nothing of
-    // the client is refused.
-    let (_, trace) = run(r#"{ "name": "bc05", "players": 2, "keep_wire_bytes": true,
+fn bc05_forgeries_spoofing_the_clients_ip_drop_none_of_its_datagrams() {
+    // §6.4 (revised): no per-IP limit. 200 forged a second from A's own
+    // address and port leave every datagram of A accepted.
+    let (report, trace) = run(r#"{ "name": "bc05", "players": 2, "keep_wire_bytes": true,
         "warmup_ms": 0, "duration_ms": 10000, "apm": 300,
         "forgeries": [ { "client": 0, "from_ms": 3000, "to_ms": 6000, "per_second": 200,
             "spoof_client": true } ] }"#);
-    check_forgeries_inert(&trace).unwrap();
-    let ip = *trace.endpoints[0][0].ip();
-    let during = refused(&trace, 0, 3_000_000, 6_000_000);
-    assert!(
-        !during.is_empty(),
-        "no datagram of the spoofed client was limited"
-    );
-    for at in during {
-        assert!(
-            failures_this_second(&trace, Some(ip), at) >= 64,
-            "refused at {} ms before 64 failures that second",
-            at / 1000
-        );
-    }
-    assert_eq!(refused(&trace, 0, 7_000_000, u64::MAX), Vec::<u64>::new());
-    assert_eq!(refused(&trace, 1, 0, u64::MAX), Vec::<u64>::new());
+    check_forged_flood(&report, &trace, 2, 10_000_000);
 }
 
 #[test]
 #[ignore = "waits for bandwidth compaction"]
-fn bc06_forgeries_from_many_ips_limit_the_session_per_second() {
-    // §6.4 item 1: eight IPs at 48 a second each stay under 64, but the
-    // session takes 384 failures a second; past 256 in a fixed second the
-    // rest on that session are dropped without the HMAC, the client's own
-    // included. Another client's session is untouched.
-    let (_, trace) = run(r#"{ "name": "bc06", "players": 2, "keep_wire_bytes": true,
+fn bc06_forgeries_from_many_ips_drop_none_of_the_sessions_datagrams() {
+    // §6.4 item 2: eight IPs, 2000 forged a second on A's one session,
+    // 6000 in 3 s, past the 4096-a-minute alert; each fails alone and A's
+    // own datagrams all pass. (The failure and alert counts are asserted
+    // through `MacFailureCounts` once that interface is merged.)
+    let (report, trace) = run(r#"{ "name": "bc06", "players": 2, "keep_wire_bytes": true,
         "warmup_ms": 0, "duration_ms": 10000, "apm": 300,
-        "forgeries": [ { "client": 0, "from_ms": 3000, "to_ms": 6000, "per_second": 384,
+        "forgeries": [ { "client": 0, "from_ms": 3000, "to_ms": 6000, "per_second": 2000,
             "addresses": 8 } ] }"#);
-    check_forgeries_inert(&trace).unwrap();
-    let during = refused(&trace, 0, 3_000_000, 6_000_000);
-    assert!(!during.is_empty(), "the session was never limited");
-    for at in during {
-        assert!(
-            failures_this_second(&trace, None, at) >= 256,
-            "refused at {} ms before 256 failures that second",
-            at / 1000
-        );
-    }
-    assert_eq!(refused(&trace, 0, 7_000_000, u64::MAX), Vec::<u64>::new());
-    assert_eq!(refused(&trace, 1, 0, u64::MAX), Vec::<u64>::new());
+    assert!(trace.forged.len() > 4096);
+    check_forged_flood(&report, &trace, 2, 10_000_000);
 }
 
 #[test]
 #[ignore = "waits for bandwidth compaction"]
 fn bc07_sessions_are_allocated_per_hop_and_released_after_leave() {
+    // A's first LEAVE_ACK is lost, so A sends its LEAVE again.
     let (_, trace) = run(r#"{ "name": "bc07", "players": 2, "keep_wire_bytes": true,
         "warmup_ms": 0, "duration_ms": 12000, "apm": 120,
         "renewals": [ { "client": 1, "at_ms": 5000 } ],
-        "leaves": [ { "client": 0, "at_ms": 9000 } ] }"#);
+        "leaves": [ { "client": 0, "at_ms": 9000 } ],
+        "drop_rules": [ { "direction": "down", "client": 0, "kind": "LEAVE_ACK", "nth": 1 } ] }"#);
     check_envelopes(&trace).unwrap();
     let sessions = sessions(&trace);
     // §6.2 "分配": one nonzero session per hop, unique on the relay, the
@@ -437,8 +401,7 @@ fn bc07_sessions_are_allocated_per_hop_and_released_after_leave() {
     assert_eq!(distinct.len(), 3);
     assert!(!distinct.contains(&0));
     // §6.2 "续期": the new hop counts its own sequences from 1 both ways
-    // (check_envelopes) and the old hop's session stays on old-hop
-    // datagrams only; both hops were in use.
+    // (check_envelopes); both hops were in use.
     assert!(
         trace
             .of(1, Direction::Up)
@@ -449,33 +412,62 @@ fn bc07_sessions_are_allocated_per_hop_and_released_after_leave() {
             .of(1, Direction::Up)
             .any(|r| r.hop == 1 && r.uplink().is_some())
     );
-    // §6.2 "释放": after A's LEAVE_ACK the relay sends nothing on A's
-    // session.
-    let leave_ack = trace
+    // §6.2 "释放": in the leaving state each LEAVE, the resent one too,
+    // gets a LEAVE_ACK echoing its sequence, and the relay sends nothing
+    // else on A's session.
+    let leaves: Vec<&WireRecord> = trace
+        .of(0, Direction::Up)
+        .filter(|r| r.kind() == "LEAVE")
+        .collect();
+    assert!(leaves.len() >= 2, "the lost LEAVE_ACK brought no resend");
+    let acks: Vec<&WireRecord> = trace
         .of(0, Direction::Down)
-        .find(|r| r.kind() == "LEAVE_ACK")
-        .expect("LEAVE_ACK");
+        .filter(|r| r.kind() == "LEAVE_ACK")
+        .collect();
+    assert!(acks[0].lost());
+    let answered = acks
+        .iter()
+        .find(|ack| !ack.lost() && ack.sent_us >= leaves[1].arrived_us().unwrap())
+        .expect("no LEAVE_ACK for the resent LEAVE");
+    assert_eq!(answered.hop_seq(), leaves[1].hop_seq());
     let released = sessions[&(0, 0)];
+    let first_leave = leaves[0].arrived_us().unwrap();
     assert!(
-        !trace
-            .wire
-            .iter()
-            .any(|r| r.sent_us > leave_ack.sent_us && parsed(r).session == Some(released)),
-        "a datagram on a released session"
+        !trace.wire.iter().any(|r| r.direction == Direction::Down
+            && r.sent_us > first_leave
+            && r.kind() != "LEAVE_ACK"
+            && parsed(r).session == Some(released)),
+        "a relay datagram other than LEAVE_ACK on a leaving session"
     );
 }
 
 #[test]
 #[ignore = "waits for bandwidth compaction"]
-fn bc08_a_rebound_client_is_followed_but_a_forger_is_not() {
+fn bc08_a_rebound_client_is_followed_but_a_forger_or_replay_is_not() {
     // §6.2 "换地址": the first datagram from the new address with a valid
-    // tag moves the hop's endpoint; §6.4 item 4: a forged one from yet
-    // another address does not.
+    // tag and a fresh sequence moves the hop's endpoint; §6.4 item 5: a
+    // forged one from another address does not, nor (§6.2, revised) an old
+    // valid datagram replayed from another address.
     let (report, trace) = run(r#"{ "name": "bc08", "players": 2, "keep_wire_bytes": true,
         "warmup_ms": 0, "duration_ms": 12000, "apm": 120,
         "rebinds": [ { "client": 0, "at_ms": 5000 } ],
-        "forgeries": [ { "client": 0, "from_ms": 7000, "to_ms": 8000, "per_second": 50 } ] }"#);
+        "forgeries": [ { "client": 0, "from_ms": 7000, "to_ms": 8000, "per_second": 50 } ],
+        "replays": [ { "client": 0, "at_ms": 9000 }, { "client": 0, "at_ms": 9500 } ] }"#);
     check_forgeries_inert(&trace).unwrap();
+    assert_eq!(trace.replayed.len(), 2);
+    for replay in &trace.replayed {
+        assert_eq!(
+            replay.replies,
+            0,
+            "a replay at {} ms was answered",
+            replay.at_us / 1000
+        );
+    }
+    let replayers: HashSet<SocketAddrV4> = trace.replayed.iter().map(|r| r.endpoint).collect();
+    assert!(
+        !trace.misrouted.iter().any(|(_, to)| replayers.contains(to)),
+        "a replay moved the endpoint"
+    );
     let old = trace.endpoints[0][0];
     let moved = trace
         .of(0, Direction::Up)
