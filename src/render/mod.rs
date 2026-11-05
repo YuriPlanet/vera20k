@@ -20,6 +20,7 @@
 //! - render/ does NOT depend on: app/, audio/, net/
 
 pub(crate) mod aircraft_shadow;
+pub mod area_scale;
 pub(crate) mod atlas_growth;
 #[cfg(test)]
 mod atlas_refresh_retail_tests;

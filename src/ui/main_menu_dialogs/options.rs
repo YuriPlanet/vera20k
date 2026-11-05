@@ -84,6 +84,10 @@ pub(crate) const HD_RADAR_LABEL: &str = "HD Radar";
 pub(crate) const HD_RADAR_HELP: &str = "Draw the radar at the screen's full resolution when the sidebar is enlarged, so each map cell shows.";
 pub(crate) const SMOOTH_SIDEBAR_LABEL: &str = "Smooth Sidebar";
 pub(crate) const SMOOTH_SIDEBAR_HELP: &str = "Lightly smooth the sidebar's pictures and buttons with xBR when the sidebar is enlarged. Text stays sharp.";
+/// The Interface page's HD Map Previews (`app::map_picture`). The browser
+/// build cannot start the hidden run that draws a map's picture.
+pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
+    !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 pub(crate) const HD_MAP_PREVIEWS_LABEL: &str = "HD Map Previews";
 pub(crate) const HD_MAP_PREVIEWS_HELP: &str = "Show a sharp picture of the whole map in Skirmish, LAN and online games, drawn the first time each map is shown. Untick for the map's own small preview.";
 pub(crate) const SHIFT_QUEUE_LABEL: &str = "Shift-Click Batch Queue";
@@ -1373,6 +1377,14 @@ impl Category {
                 Setting::Checkbox(Check::CustomEndGameScore),
                 Setting::Checkbox(Check::CustomEndGameMovie),
             ],
+            Self::Interface if !HAS_HD_MAP_PREVIEWS => &[
+                Setting::List(List::Sidebar),
+                Setting::List(List::HealthBars),
+                Setting::Checkbox(Check::Tooltips),
+                Setting::Checkbox(Check::VeraIcon),
+                Setting::Checkbox(Check::HdRadar),
+                Setting::Checkbox(Check::SmoothSidebar),
+            ],
             Self::Interface => &[
                 Setting::List(List::Sidebar),
                 Setting::List(List::HealthBars),
@@ -1412,7 +1424,11 @@ impl Category {
                 "Detail, difficulty, target lines, hidden objects, queueing and end-game screens."
             }
             Self::Interface => {
-                "Sidebar size and smoothing, HD radar and map previews, health bars, tooltips and the VERA icon."
+                if HAS_HD_MAP_PREVIEWS {
+                    "Sidebar size and smoothing, HD radar and map previews, health bars, tooltips and the VERA icon."
+                } else {
+                    "Sidebar size and smoothing, HD radar, health bars, tooltips and the VERA icon."
+                }
             }
             Self::Audio => "Music, sound and voice volume.",
             Self::Controls => {

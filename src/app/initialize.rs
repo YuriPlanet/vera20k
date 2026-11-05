@@ -413,8 +413,15 @@ impl App {
         let wanted_display = super::display_target::screen_for(&displays, &options_profile.display);
         let fullscreen = (!capture && !hidden_spawn_window && options_profile.full_screen)
             .then(|| super::display_target::fullscreen_for(&displays, &options_profile.display));
+        // A hidden run's window has a title of its own, so a second launch's
+        // single-instance search (`util::single_instance`) finds the player's.
+        let title = if capture {
+            concat!("VERA20K hidden run ", env!("CARGO_PKG_VERSION"))
+        } else {
+            super::WINDOW_TITLE
+        };
         let mut window_attrs: WindowAttributes = WindowAttributes::default()
-            .with_title(super::WINDOW_TITLE)
+            .with_title(title)
             .with_inner_size(inner_size)
             .with_resizable(!capture)
             .with_fullscreen(fullscreen)

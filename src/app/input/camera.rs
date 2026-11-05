@@ -2102,7 +2102,8 @@ fn shown_world_rect(area: (f32, f32, f32, f32)) -> (f32, f32, f32, f32) {
 
 /// The world rectangle the tactical camera can show on the loaded map
 /// (`shown_world_rect` of its scroll rectangle), or None before a simulation
-/// has its LocalSize. Captures record it to frame the whole map.
+/// has its LocalSize. Pictures of whole maps (`app::map_picture`) are framed
+/// by it.
 pub(crate) fn tactical_view_area(state: &AppState) -> Option<(f32, f32, f32, f32)> {
     let runtime = state.match_state.sim_runtime.as_ref()?;
     let bounds = runtime.view().playfield_authority().0?;

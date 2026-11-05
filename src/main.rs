@@ -204,6 +204,7 @@ fn run(app_bundle: bool) -> Result<i32> {
             vera20k::app::App::new_tactical_capture(request)
         }
         vera20k::app::frontend::launch::AppLaunchMode::MapPicture(request) => {
+            vera20k::app::map_picture::watch_lifetime();
             vera20k::app::App::new_map_picture(request)
         }
     };

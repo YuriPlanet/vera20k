@@ -134,7 +134,7 @@ impl AppState {
     /// `[PreviewPack]` picture, which retail comparisons check, and the
     /// browser build cannot start the hidden run that draws one.
     pub(crate) fn hd_map_previews(&self) -> bool {
-        cfg!(not(all(target_arch = "wasm32", target_os = "unknown")))
+        crate::ui::main_menu_dialogs::options::HAS_HD_MAP_PREVIEWS
             && self.platform.capture_client_size.is_none()
             && self.persistence.options_profile.hd_map_previews
     }

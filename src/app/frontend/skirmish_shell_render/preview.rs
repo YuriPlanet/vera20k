@@ -35,9 +35,10 @@ pub(crate) struct SkirmishPreviewTexture {
     /// Whether Options' HD Map Previews was on when a chooser map's texture
     /// was made; a change remakes it.
     pub hd_setting: bool,
-    /// Whether the texture holds VERA's own picture of the map
-    /// (`app::map_picture`) rather than the map's `[PreviewPack]`.
-    pub hd_picture: bool,
+    /// When the texture holds VERA's own picture of the map
+    /// (`app::map_picture`) rather than the map's `[PreviewPack]`, the size
+    /// of the preview box it was shrunk for.
+    pub hd_picture: Option<(i32, i32)>,
 }
 
 fn preview_fits_texture(width: u32, height: u32, rgba_len: usize, maximum_side: u32) -> bool {
@@ -97,7 +98,7 @@ pub(super) fn ensure_received_preview_texture(state: &mut AppState) {
         setup_preview_generation: None,
         received_preview: Some(arrival),
         hd_setting: false,
-        hd_picture: false,
+        hd_picture: None,
     });
 }
 
@@ -239,6 +240,7 @@ pub(super) fn build_start_marker_instances(
 pub(super) fn selected_preview_texture_is_current(
     state: &AppState,
     selected_map_idx: usize,
+    preview_box: RectPx,
 ) -> bool {
     state
         .frontend
@@ -252,6 +254,9 @@ pub(super) fn selected_preview_texture_is_current(
                 && cached.received_preview.is_none()
                 && cached.selected_map_idx == selected_map_idx
                 && cached.hd_setting == state.hd_map_previews()
+                && cached
+                    .hd_picture
+                    .is_none_or(|size| size == (preview_box.w, preview_box.h))
         })
 }
 
@@ -409,7 +414,7 @@ pub(super) fn ensure_random_map_setup_preview_texture(state: &mut AppState) -> b
         setup_preview_generation: Some(generation),
         received_preview: None,
         hd_setting: false,
-        hd_picture: false,
+        hd_picture: None,
     });
     true
 }
@@ -437,16 +442,21 @@ pub(super) fn preview_map_idx(state: &AppState) -> usize {
         .unwrap_or(shell.selected_map_idx)
 }
 
-pub(super) fn ensure_selected_preview_texture(state: &mut AppState) {
+pub(super) fn ensure_selected_preview_texture(state: &mut AppState, preview_box: RectPx) {
     if ensure_random_map_setup_preview_texture(state) {
         return;
     }
     let selected_map_idx = preview_map_idx(state);
-    ensure_map_preview_texture(state, selected_map_idx);
+    ensure_map_preview_texture(state, selected_map_idx, preview_box);
 }
 
-/// Shared map preview cache used by offline and network setup/chooser pages.
-pub(super) fn ensure_map_preview_texture(state: &mut AppState, selected_map_idx: usize) {
+/// Shared map preview cache used by offline and network setup/chooser pages,
+/// for a preview drawn in `preview_box`.
+pub(super) fn ensure_map_preview_texture(
+    state: &mut AppState,
+    selected_map_idx: usize,
+    preview_box: RectPx,
+) {
     let selected_entry = state
         .frontend
         .scenario_catalog
@@ -464,13 +474,15 @@ pub(super) fn ensure_map_preview_texture(state: &mut AppState, selected_map_idx:
     let selected_is_random_sentinel = selected_entry
         .as_ref()
         .is_some_and(is_random_map_sentinel_entry);
-    if !selected_is_random_sentinel && selected_preview_texture_is_current(state, selected_map_idx)
+    if !selected_is_random_sentinel
+        && selected_preview_texture_is_current(state, selected_map_idx, preview_box)
     {
         return;
     }
     let hd_setting = state.hd_map_previews();
-    // VERA's own picture of the map, once one is kept. It is several times
-    // the box's size, so it shrinks smoothly rather than by dropped pixels.
+    // VERA's own picture of the map, once one is kept, shrunk here by area to
+    // the size the box shows it at: it is up to four times that size, and the
+    // GPU's linear filter, which reads four texels, would alias the shrink.
     if hd_setting
         && selected_entry.is_some()
         && !selected_is_random_sentinel
@@ -482,23 +494,38 @@ pub(super) fn ensure_map_preview_texture(state: &mut AppState, selected_map_idx:
             state.renderer.gpu.device.limits().max_texture_dimension_2d,
         )
     {
+        let fitted = aspect_fit_rect(preview_box, picture.width, picture.height);
+        let (width, height, rgba) =
+            if fitted.w > 0 && fitted.h > 0 && (fitted.w as u32) < picture.width {
+                let (width, height) = (fitted.w as u32, fitted.h as u32);
+                let rgba = crate::render::area_scale::scale(
+                    &picture.rgba,
+                    picture.width as usize,
+                    picture.height as usize,
+                    width as usize,
+                    height as usize,
+                );
+                (width, height, rgba)
+            } else {
+                (picture.width, picture.height, picture.rgba)
+            };
         let (_, texture) = state.renderer.batch_renderer.create_updatable_texture(
             &state.renderer.gpu.device,
             &state.renderer.gpu.queue,
-            &picture.rgba,
-            picture.width,
-            picture.height,
+            &rgba,
+            width,
+            height,
             wgpu::FilterMode::Linear,
         );
         state.frontend.skirmish_preview_texture = Some(SkirmishPreviewTexture {
             selected_map_idx,
             texture,
-            width: picture.width,
-            height: picture.height,
+            width,
+            height,
             setup_preview_generation: None,
             received_preview: None,
             hd_setting,
-            hd_picture: true,
+            hd_picture: Some((preview_box.w, preview_box.h)),
         });
         return;
     }
@@ -550,7 +577,7 @@ pub(super) fn ensure_map_preview_texture(state: &mut AppState, selected_map_idx:
         setup_preview_generation: None,
         received_preview: None,
         hd_setting,
-        hd_picture: false,
+        hd_picture: None,
     });
 }
 

@@ -3,13 +3,14 @@
 //! forces), with the shroud and fog off, never advances it, and moves the
 //! camera across the picture's rectangle, keeping one production frame at
 //! each place. The frames' battlefields are shrunk into the picture
-//! ([`super::canvas`]), which is written as a PNG. Nothing here touches
-//! simulation state; the process ends with the picture.
+//! ([`super::canvas`]), which is written as a PNG, with the start markers'
+//! JSON when asked ([`write_markers`]). Nothing here touches simulation
+//! state; the process ends with the picture.
 
 use anyhow::{Context, Result, bail, ensure};
 
-use super::MapPictureRequest;
 use super::canvas::{Canvas, Tile, WorldRect, tiles};
+use super::{MapPictureRequest, PictureArea};
 use crate::app::AppState;
 use crate::app::presentation::render::GameRenderOutput;
 use crate::ui::game_screen::GameScreen;
@@ -155,20 +156,24 @@ impl MapPictureSession {
         Ok(())
     }
 
-    /// The frames that cover `[Header]`'s rectangle, or all the camera can
-    /// show on a map without one.
+    /// The frames that cover the asked area: `[Header]`'s rectangle, or all
+    /// the camera can show.
     fn plan(&self, state: &AppState) -> Result<Plan> {
         let view = crate::app::input::camera::tactical_view_area(state)
             .and_then(WorldRect::of_view_area)
             .context("the loaded map has no visible area")?;
-        let area = self.header.unwrap_or(view);
+        let area = match self.request.area {
+            PictureArea::Header => self.header.unwrap_or(view),
+            PictureArea::View => view,
+        };
         let battlefield = crate::app::input::camera::tactical_viewport_size(state);
         let tiles = tiles(area, view, battlefield);
         ensure!(
             !tiles.is_empty(),
             "[Header]'s preview rectangle is outside the visible map"
         );
-        let canvas = Canvas::new(area).context("[Header]'s preview rectangle is empty")?;
+        let canvas =
+            Canvas::new(area, self.request.max_size).context("the picture's area is empty")?;
         log::info!(
             "Drawing {} in {} frames: {area:?}, visible {view:?}",
             self.request.map,
@@ -242,8 +247,13 @@ impl MapPictureSession {
         if self.next_tile < plan.tiles.len() {
             return Ok(false);
         }
-        let (width, height, rgb) = self.plan.take().expect("planned").canvas.finish();
+        let canvas = self.plan.take().expect("planned").canvas;
+        let (area, factor) = (canvas.area(), canvas.factor());
+        let (width, height, rgb) = canvas.finish();
         super::write_png(&self.request.output, width, height, &rgb)?;
+        if let Some(path) = &self.request.markers {
+            write_markers(path, state, area, factor)?;
+        }
         log::info!(
             "Wrote the {width}x{height} picture of {} in {:.1}s",
             self.request.map,
@@ -276,4 +286,58 @@ impl MapPictureSession {
             None => bail!("the map picture ended before it was written"),
         }
     }
+}
+
+/// Write `path` as JSON for tools/map_render.py: the picture's world `area`,
+/// the world pixels across each of its pixels (`factor`), and each
+/// multiplayer start waypoint with the mark the skirmish preview draws for a
+/// start (`DrawStartPositions 0x00640710`): its 1-based number, the world
+/// pixel at its cell's centre on the terrain, and the marker picture with
+/// that pixel at `origin`.
+fn write_markers(
+    path: &std::path::Path,
+    state: &AppState,
+    area: WorldRect,
+    factor: u32,
+) -> Result<()> {
+    use base64::Engine;
+    let assets = state
+        .process_assets
+        .manager()
+        .context("start markers need the process assets")?;
+    let art = crate::render::skirmish_shell_chrome::start_marker_art(assets)
+        .context("start marker art STARTBUT.SHP is unavailable")?;
+    let font = crate::assets::fnt_file::FntFile::from_bytes(
+        assets
+            .get_ref("GAME.FNT")
+            .context("start marker font GAME.FNT is unavailable")?,
+    )
+    .context("GAME.FNT")?;
+    let view = state
+        .sim_view()
+        .context("start markers lost the simulation")?;
+    let terrain = view
+        .resolved_terrain()
+        .context("start markers lost the terrain")?;
+    let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(None);
+    let mut markers = Vec::new();
+    for (&index, &(rx, ry)) in view.session().mp_start_waypoints() {
+        let cell = terrain
+            .cell(rx, ry)
+            .with_context(|| format!("start waypoint {index} at ({rx}, {ry}) has no cell"))?;
+        let label = (index + 1).to_string();
+        let picture =
+            crate::app::frontend::skirmish_shell_render::start_marker_picture(&art, &font, &label)
+                .with_context(|| format!("GAME.FNT cannot draw start number {label}"))?;
+        let (x, y) = crate::util::lepton::lepton_to_screen(rx, ry, sub_x, sub_y, cell.level);
+        let rgba = base64::engine::general_purpose::STANDARD.encode(&picture.rgba);
+        let marker = serde_json::json!({"label": label, "anchor": [x as i32, y as i32],
+            "picture": {"size": [picture.width, picture.height],
+                "origin": [picture.origin.0, picture.origin.1], "rgba": rgba}});
+        markers.push(marker);
+    }
+    let json = serde_json::json!({"area": [area.x, area.y, area.w, area.h], "factor": factor,
+        "start_markers": markers});
+    std::fs::write(path, serde_json::to_vec(&json)?)
+        .with_context(|| format!("write {}", path.display()))
 }

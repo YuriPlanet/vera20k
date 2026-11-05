@@ -2091,6 +2091,7 @@ impl ApplicationHandler for App {
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         if let Some(state) = self.state.as_mut() {
             crate::app::match_runtime::sim_tick::flush_replay_log(state);
+            crate::app::map_picture::stop_for_exit(&mut state.frontend.map_pictures);
             // However the game ends (Exit, the close button, Cmd-Q), the
             // next launch opens the window where the player left it.
             if std::mem::take(&mut state.platform.window_placement_unsaved) {

@@ -4,8 +4,8 @@
 
 use crate::map::preview::PreviewSourceBounds;
 
-/// The largest picture: four times the menus' 144 x 112 preview box, so a 4K
-/// window shows it at about its own size and smaller ones shrink it.
+/// The menus' largest picture: four times their 144 x 112 preview box, so a
+/// 4K window shows it at about its own size and smaller ones shrink it.
 pub(crate) const MAX_PICTURE: (u32, u32) = (576, 448);
 
 /// A rectangle of VERA world pixels at zoom 1.
@@ -152,12 +152,12 @@ pub(crate) struct Canvas {
 }
 
 impl Canvas {
-    /// The smallest whole factor that fits `area` in [`MAX_PICTURE`].
-    pub(crate) fn new(area: WorldRect) -> Option<Self> {
+    /// The smallest whole factor that fits `area` in `largest`.
+    pub(crate) fn new(area: WorldRect, largest: (u32, u32)) -> Option<Self> {
         let factor = area
             .w
-            .div_ceil(MAX_PICTURE.0)
-            .max(area.h.div_ceil(MAX_PICTURE.1))
+            .div_ceil(largest.0.max(1))
+            .max(area.h.div_ceil(largest.1.max(1)))
             .max(1);
         let (width, height) = (area.w / factor, area.h / factor);
         (width > 0 && height > 0).then(|| Self {
@@ -213,6 +213,16 @@ impl Canvas {
                 self.sums[out + 2] += u32::from(bgra[0]);
             }
         }
+    }
+
+    /// The world rectangle the picture shows, from its top-left pixel.
+    pub(crate) fn area(&self) -> WorldRect {
+        self.area
+    }
+
+    /// The world pixels across each picture pixel.
+    pub(crate) fn factor(&self) -> u32 {
+        self.factor
     }
 
     /// The finished picture: its size and packed RGB.
@@ -293,9 +303,9 @@ mod tests {
 
     #[test]
     fn canvas_averages_whole_blocks_and_leaves_the_unreached_part_black() {
-        let mut canvas = Canvas::new(rect(10, 20, 4, 2)).unwrap();
+        let mut canvas = Canvas::new(rect(10, 20, 4, 2), MAX_PICTURE).unwrap();
         assert_eq!((canvas.width, canvas.height, canvas.factor), (4, 2, 1));
-        let big = Canvas::new(rect(0, 0, 2304, 900)).unwrap();
+        let big = Canvas::new(rect(0, 0, 2304, 900), MAX_PICTURE).unwrap();
         assert_eq!((big.width, big.height, big.factor), (576, 225, 4));
 
         // A 3 x 1 battlefield in a 4-pixel-wide frame, showing world 9..12, 20.

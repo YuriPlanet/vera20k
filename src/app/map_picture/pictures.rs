@@ -1,6 +1,7 @@
 //! The menus' side of HD map previews: a shown map's kept picture, and the
 //! one hidden run (`--map-picture`) that draws a missing one. Runs go one at
-//! a time; while one runs, the newest map shown waits for the next.
+//! a time, only while the menus show with HD Map Previews on; while one
+//! runs, the newest map shown waits for the next.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -12,11 +13,15 @@ use super::MapPictureRequest;
 use crate::app::AppState;
 use crate::map::preview::DecodedPreview;
 use crate::map::skirmish_scenarios::SkirmishScenarioSource;
+use crate::ui::game_screen::GameScreen;
 use crate::util::time::{Duration, Instant};
 
 /// A run longer than this is stopped; the run itself gives up sooner.
 const RUN_TIMEOUT: Duration = Duration::from_secs(180);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
+/// How long a quitting game waits for its run to end: on Windows a running
+/// copy keeps the executable from being replaced by an update.
+const EXIT_WAIT: Duration = Duration::from_secs(1);
 
 /// What the menus know about map pictures during this run of the game.
 #[derive(Default)]
@@ -29,6 +34,9 @@ pub(crate) struct MapPictures {
     /// The newest map shown without a picture.
     wanted: Option<MapPictureRequest>,
     running: Option<Running>,
+    /// This build's pictures for the game folder (`super::generation_folder`),
+    /// found on first use.
+    folder: Option<PathBuf>,
 }
 
 struct Identity {
@@ -48,12 +56,15 @@ struct Running {
 /// none. A local map without one gets a run that draws it; a library map
 /// without a file shows a picture only when one is kept.
 pub(crate) fn picture_for_map(state: &mut AppState, map_index: usize) -> Option<DecodedPreview> {
-    let folder = state
-        .platform
-        .game_config
-        .as_ref()?
-        .paths
-        .map_pictures_dir();
+    let folder = match &state.frontend.map_pictures.folder {
+        Some(folder) => folder.clone(),
+        None => {
+            let paths = &state.platform.game_config.as_ref()?.paths;
+            let folder = super::generation_folder(&paths.map_pictures_dir(), &paths.ra2_dir);
+            state.frontend.map_pictures.folder = Some(folder.clone());
+            folder
+        }
+    };
     let record = state.frontend.scenario_catalog.records().get(map_index)?;
     let (sha256, map) = match &record.source {
         SkirmishScenarioSource::Online(sha256) => (sha256.clone(), None),
@@ -71,11 +82,7 @@ pub(crate) fn picture_for_map(state: &mut AppState, map_index: usize) -> Option<
     if let Some(map) = map {
         want(
             &mut state.frontend.map_pictures,
-            MapPictureRequest {
-                map,
-                sha256,
-                output,
-            },
+            MapPictureRequest::for_menus(map, sha256, output),
         );
     }
     None
@@ -181,24 +188,34 @@ fn start(request: &MapPictureRequest) -> Result<std::process::Child> {
 /// Take a finished run and start the next. A new picture replaces the map's
 /// own preview on the screen showing it.
 pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
+    // A match and its loading get the machine to themselves, and unticking
+    // HD Map Previews stops the drawing; a map stopped is drawn when next
+    // shown.
+    if !state.hd_map_previews() || state.frontend.screen != GameScreen::MainMenu {
+        let pictures = &mut state.frontend.map_pictures;
+        pictures.wanted = None;
+        if let Some(running) = pictures.running.take() {
+            end(running.child);
+        }
+        return None;
+    }
     let pictures = &mut state.frontend.map_pictures;
     let running = pictures.running.as_mut()?;
-    let drawn = match running.child.try_wait() {
-        Ok(Some(status)) => status.success(),
+    let (drawn, overdue) = match running.child.try_wait() {
+        Ok(Some(status)) => (status.success(), false),
         Ok(None) if running.started.elapsed() < RUN_TIMEOUT => {
             return Some(Instant::now() + POLL_INTERVAL);
         }
-        Ok(None) => {
-            let _ = running.child.kill();
-            let _ = running.child.wait();
-            false
-        }
+        Ok(None) => (false, true),
         Err(error) => {
             log::warn!("Lost the map picture run: {error}");
-            false
+            (false, false)
         }
     };
     let running = pictures.running.take().expect("checked above");
+    if overdue {
+        end(running.child);
+    }
     if !drawn {
         log::warn!(
             "Could not draw the map picture {} (logs/map-picture.log has why)",
@@ -216,9 +233,31 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
             .frontend
             .skirmish_preview_texture
             .as_ref()
-            .is_some_and(|texture| texture.hd_setting && !texture.hd_picture)
+            .is_some_and(|texture| texture.hd_setting && texture.hd_picture.is_none())
     {
         state.frontend.skirmish_preview_texture = None;
     }
     next
+}
+
+/// Kill a run and reap it on a thread of its own: a run stuck in a GPU
+/// driver call can be slow to die, and the menus must not wait for it.
+fn end(mut child: std::process::Child) {
+    let _ = child.kill();
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+}
+
+/// Stop the run as the game quits; dropping it would leave it running.
+pub(crate) fn stop_for_exit(pictures: &mut MapPictures) {
+    pictures.wanted = None;
+    let Some(mut running) = pictures.running.take() else {
+        return;
+    };
+    let _ = running.child.kill();
+    let deadline = Instant::now() + EXIT_WAIT;
+    while Instant::now() < deadline && matches!(running.child.try_wait(), Ok(None)) {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 }
