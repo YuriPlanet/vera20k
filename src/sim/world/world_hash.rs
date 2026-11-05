@@ -1171,6 +1171,7 @@ impl Simulation {
                 score.hash(hasher);
             }
             house.enemy_house().hash(hasher);
+            house.hash_scouted_houses(hasher);
 
             if let Some((rx, ry)) = house.base_center() {
                 1u8.hash(hasher);

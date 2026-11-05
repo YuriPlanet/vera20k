@@ -5,7 +5,7 @@
 //!
 //! Each House's state lives in the House array, [`crate::sim::houses::Houses`].
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::map::playfield::local_to_packed_cell;
 use crate::rules::object_type::ObjectCategory;
@@ -738,6 +738,14 @@ pub struct HouseState {
     /// still scans that order, never this map's key order.
     #[serde(default)]
     grudge_scores: BTreeMap<InternedId, i32>,
+    /// HouseClass's ScoutStruct marks (+561C), consumed by Script_Scout6EE800.
+    /// Constructor4F602A..4F6181 registers every peer with mark0; unmarked
+    /// peers are implicit in Houses::order(), including later registrations.
+    /// Save50422D..50427B retains the marks. Rust snapshots retain logical
+    /// identities: native Load503641 only fixes up the final peer pointer,
+    /// whose allocation-dependent stale-address effects are not reproduced.
+    #[serde(default)]
+    scouted_houses: BTreeSet<InternedId>,
     /// House selected by `HouseClass::UpdateAngerNodes`, or native `-1` as None.
     #[serde(default)]
     enemy_house: Option<InternedId>,
@@ -1031,6 +1039,27 @@ impl HouseState {
         if delta != 0 || self.grudge_scores.contains_key(&peer) {
             let score = self.grudge_scores.entry(peer).or_insert(0);
             *score = score.wrapping_add(delta);
+        }
+    }
+
+    pub(crate) fn has_scouted_house(&self, peer: InternedId) -> bool {
+        self.scouted_houses.contains(&peer)
+    }
+
+    /// HouseClass::Mark_Threat_Source00504860: mark a registered peer, with
+    /// no alliance, defeat, human or passive gate. The shared House array
+    /// supplies the constructor-registered peer list without duplicating it.
+    pub(crate) fn mark_scouted_house(&mut self, peer: InternedId, order: &[InternedId]) {
+        if peer != self.name && order.contains(&peer) {
+            self.scouted_houses.insert(peer);
+        }
+    }
+
+    pub(crate) fn hash_scouted_houses(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        if !self.scouted_houses.is_empty() {
+            b"house-scout-marks-v1".hash(hasher);
+            self.scouted_houses.hash(hasher);
         }
     }
 
@@ -2702,6 +2731,7 @@ impl HouseState {
             current_iq: 0,
             authored_iq: 0,
             grudge_scores: BTreeMap::new(),
+            scouted_houses: BTreeSet::new(),
             enemy_house: None,
             waypoint_edge: 0,
             stats: MatchStatistics::default(),
