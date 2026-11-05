@@ -1742,6 +1742,9 @@ const BASELINE_30P_LOSS_1PCT_300APM_P99_MS: [f64; 5] =
 const BASELINE_2P_JITTER_IDLE_HITCHES: [u64; 5] = [29, 32, 35, 31, 35];
 const BASELINE_2P_JITTER_300APM_HITCHES: [u64; 5] = [26, 38, 34, 30, 34];
 const SEEDS: [u64; 5] = [1, 2, 3, 4, 5];
+/// §13.2: latency comparisons with a baseline allow 5 ms besides the
+/// statistical bound, less than one 16 ms service.
+const LATENCY_TOLERANCE_MS: f64 = 5.0;
 
 /// Hitches of the new protocol against the baseline over the same seeds
 /// and clients, so both counts cover the same client-minutes. Taking each
@@ -1810,21 +1813,66 @@ fn jt1_a_jittery_good_link_gets_repeats_and_two_deep_piggyback() {
     check_repeats_only_when_lossy(&trace, 1).unwrap();
 }
 
-/// §7.2: JITTERY does not change the reader's state, so a jittery link
-/// without loss stays Good after its initial lossy state (§5.4): with the
-/// time threshold of §4.3, a datagram reordered by jitter is no loss.
+/// §7.2: a reader with large jitter is either Good and JITTERY or, when
+/// reordering reads as loss (§7.2's note), Lossy; both get repeats and
+/// K >= 2. Judged from the first JITTERY UPLINK reaching the relay after
+/// the initial lossy state (§5.4), since JITTERY needs 16 samples (§4.8):
+/// every reader snapshot from then on is one of the two, and every second
+/// of it adds repeats.
 #[test]
-#[ignore = "waits for the adaptive transport implementation of spec 252237ee4"]
-fn jt1b_a_lossless_jittery_reader_stays_good() {
+fn jt1b_a_jittery_reader_is_jittery_good_or_lossy_with_repeats() {
     let (_, trace) = run(r#"{ "name": "jt1", "players": 2,
         "warmup_ms": 0, "duration_ms": 30000, "apm": 60,
         "groups": [ { "label": "jittery", "first": 1, "last": 1,
             "network": { "link": { "delay_ms": 100, "jitter_ms": 50 } } } ] }"#);
-    let settled = downlink_settled_us(&trace, 1);
+    let ups = uplinks(&trace, 1);
+    let jittery_at = |at: u64| {
+        ups.iter()
+            .filter(|r| r.arrived_us().is_some_and(|arrived| arrived <= at))
+            .max_by_key(|r| r.arrived_us())
+            .is_some_and(|r| r.uplink().unwrap().link & 8 != 0)
+    };
+    let first_jittery = ups
+        .iter()
+        .filter(|r| r.uplink().unwrap().link & 8 != 0)
+        .filter_map(|r| r.arrived_us())
+        .min()
+        .expect("never JITTERY");
+    let from = first_jittery.max(downlink_settled_us(&trace, 1));
+    let end = trace.wire.iter().map(|r| r.sent_us).max().unwrap();
     for (at, c, stats) in &trace.reader_stats {
-        if *c == 1 && stats.subscribed && *at >= settled {
-            assert_ne!(stats.downlink, LinkState::Lossy, "at {} ms", ms(*at));
+        if *c != 1 || *at < from || !stats.subscribed {
+            continue;
         }
+        match stats.downlink {
+            LinkState::Good => {
+                assert!(jittery_at(*at), "Good without JITTERY at {} ms", ms(*at));
+                assert_eq!(stats.piggyback_depth, 2, "at {} ms", ms(*at));
+            }
+            LinkState::Lossy => {
+                assert!(
+                    stats.piggyback_depth >= 2,
+                    "K {} at {} ms",
+                    stats.piggyback_depth,
+                    ms(*at)
+                );
+            }
+            other => panic!("{other:?} at {} ms", ms(*at)),
+        }
+    }
+    let mut second = from;
+    while second + 1_000_000 <= end {
+        let repeats = |t: u64| {
+            trace
+                .reader_stats_at(1, t)
+                .map_or(0, |s| s.packets_by_kind[2])
+        };
+        assert!(
+            repeats(second + 1_000_000) > repeats(second),
+            "no repeat in the second from {} ms",
+            ms(second)
+        );
+        second += 1_000_000;
     }
 }
 
@@ -1845,7 +1893,7 @@ fn jt2_a_steady_link_is_not_jittery() {
 }
 
 #[test]
-#[ignore = "slow; five 30-player minutes. Waits for the adaptive transport implementation of spec 252237ee4"]
+#[ignore = "slow; five 30-player minutes, run with --ignored when the loss or repeat rules change"]
 fn jt3_one_percent_loss_in_a_full_room_is_no_worse_than_the_baseline() {
     let file = include_str!("../../netsim/loss-1pct.json");
     let mut hitches = 0;
@@ -1877,10 +1925,11 @@ fn jt3_one_percent_loss_in_a_full_room_is_no_worse_than_the_baseline() {
         BASELINE_30P_LOSS_1PCT_300APM_HITCHES.iter().sum(),
     );
     // The p99 per seed: the new mean is no worse when within two standard
-    // errors of the difference of the two means (Welch, five seeds each).
+    // errors of the difference of the two means (Welch, five seeds each)
+    // plus the 5 ms absolute tolerance of §13.2 for latencies.
     let (new_mean, new_var) = mean_variance(&p99s);
     let (old_mean, old_var) = mean_variance(&BASELINE_30P_LOSS_1PCT_300APM_P99_MS);
-    let bound = old_mean + 2.0 * ((new_var + old_var) / 5.0).sqrt();
+    let bound = old_mean + 2.0 * ((new_var + old_var) / 5.0).sqrt() + LATENCY_TOLERANCE_MS;
     assert!(
         new_mean <= bound,
         "p99 per seed {p99s:?}, mean {new_mean:.1}, baseline {old_mean:.1}, bound {bound:.1}"
@@ -1888,7 +1937,7 @@ fn jt3_one_percent_loss_in_a_full_room_is_no_worse_than_the_baseline() {
 }
 
 #[test]
-#[ignore = "waits for the adaptive transport implementation of spec 252237ee4"]
+#[ignore = "slow; ten 2-player minutes, run with --ignored when the jitter or repeat rules change"]
 fn jt4_pure_jitter_hitches_no_more_than_the_baseline() {
     // §5.3 judges DELAYED on `srtt - 2 rttvar`, so ±50 ms jitter is no
     // congestion and the jittery reader gets its repeats (§7.2).
