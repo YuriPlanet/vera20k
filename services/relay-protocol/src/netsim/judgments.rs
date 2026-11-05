@@ -295,6 +295,19 @@ fn j02_a_good_link_sends_each_batch_once_without_copies() {
     }
 }
 
+/// §4.5, §6.3 row 4, §10.1: on a 40 ms RTT without loss every ACK beats
+/// the RTO (at least 48 ms), so `rto_timeouts` stays 0.
+#[test]
+#[ignore = "A: rto_timeouts counts about one expiry per batch on a lossless 40 ms link (81 for 85 batches) though no batch rides a resend (1.08 UPLINKs per batch); spec §10.1 counts RTO expiries that resent batches"]
+fn j02_a_good_link_never_times_out() {
+    let (_, trace) = run(r#"{ "name": "j02-rto", "players": 2,
+        "warmup_ms": 0, "duration_ms": 15000, "apm": 300 }"#);
+    for client in 0..2 {
+        let stats = trace.client_stats_at(client, u64::MAX).unwrap();
+        assert_eq!(stats.rto_timeouts, 0, "client {client}");
+    }
+}
+
 // --- Judgment 3 (spec §6.3 row 6 and its copy-content paragraph) ---
 
 /// For each batch first sent while the uplink is lossy (§5.2, §5.4), one

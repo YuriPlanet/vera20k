@@ -27,5 +27,10 @@ test-support = ["dep:serde", "dep:serde_json"]
 name = "relay_netsim"
 required-features = ["test-support"]
 
+# Its players are the simulation's headless client.
+[[example]]
+name = "relay_load"
+required-features = ["test-support"]
+
 [lints]
 workspace = true
