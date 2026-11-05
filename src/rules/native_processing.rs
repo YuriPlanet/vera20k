@@ -1127,6 +1127,9 @@ impl ProcessedRulesLayers {
                 || member
                     .holds_what
                     .is_some_and(|index| index >= particle_count)
+                || member
+                    .particle_next
+                    .is_some_and(|index| index >= particle_count)
         }) {
             return Err(RulesError::InvalidSavedState(
                 "type reference is outside its registry",
@@ -1579,26 +1582,51 @@ impl ProcessedRulesLayers {
             })
     }
 
-    /// ParticleSystemType+294 after every reached ReadINI: the bound
-    /// ParticleType's stored ID, or `None` for `<none>` and unread types.
-    pub(crate) fn particle_system_holds_what_states(
+    /// Project every actual allocation in native array order, including empty
+    /// IDs and constructor-only types. References remain array indices; a
+    /// truncated duplicate name must not collapse either allocated object.
+    pub(crate) fn particle_type_projections(
         &self,
-    ) -> impl Iterator<Item = (&str, Option<&str>)> {
-        let families = &self
-            .native_type_construction_trace
+    ) -> impl Iterator<Item = crate::rules::particle_type::ParticleType> {
+        use crate::rules::particle_type::{ParticleType, ParticleTypeId};
+        self.native_type_construction_trace
             .registry_state()
-            .families;
-        families
+            .families
+            .get(&RulesTypeFamily::Particle)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                ParticleType::from_read_state(
+                    &member.native_stored_id,
+                    &member.body,
+                    &member.particle_read,
+                    member
+                        .particle_next
+                        .map(|index| ParticleTypeId(index as u32)),
+                    member.particle_warhead.clone(),
+                )
+            })
+    }
+
+    pub(crate) fn particle_system_type_projections(
+        &self,
+    ) -> impl Iterator<Item = crate::rules::particle_system_type::ParticleSystemType> {
+        use crate::rules::{
+            particle_system_type::ParticleSystemType, particle_type::ParticleTypeId,
+        };
+        self.native_type_construction_trace
+            .registry_state()
+            .families
             .get(&RulesTypeFamily::ParticleSystem)
             .into_iter()
             .flatten()
-            .map(move |member| {
-                let particle = member.holds_what.map(|index| {
-                    families[&RulesTypeFamily::Particle][index]
-                        .native_stored_id
-                        .as_str()
-                });
-                (member.native_stored_id.as_str(), particle)
+            .map(|member| {
+                ParticleSystemType::from_read_state(
+                    &member.native_stored_id,
+                    &member.body,
+                    member.particle_system_behavior,
+                    member.holds_what.map(|index| ParticleTypeId(index as u32)),
+                )
             })
     }
 
@@ -1836,13 +1864,6 @@ impl ProcessedRulesLayers {
     ) -> impl Iterator<Item = (&str, Option<&UnitDeliveryRules>)> {
         self.member_states(RulesTypeFamily::SuperWeapon, |member| {
             member.unit_delivery.as_ref()
-        })
-    }
-
-    /// Each ParticleType's `Warhead=` after every reached pass.
-    pub(crate) fn particle_warhead_states(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
-        self.member_states(RulesTypeFamily::Particle, |member| {
-            member.particle_warhead.as_deref()
         })
     }
 
@@ -4456,6 +4477,15 @@ struct ProcessedType {
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
     /// (`0x006440B3`), rebound by every reached ReadINI (`0x0064430F..0x00644323`).
     holds_what: Option<usize>,
+    /// ParticleTypeReadINI644F50's per-body reset state and retained +310
+    /// NextParticle binding (645315..64535B), owned by the allocated type.
+    #[serde(default)]
+    particle_read: crate::rules::particle_type::ParticleReadState,
+    #[serde(default)]
+    particle_next: Option<usize>,
+    /// Constructor6440B9 and reached reader644461 store -1 for no behavior.
+    #[serde(default)]
+    particle_system_behavior: crate::rules::particle_system_type::ParticleSystemBehavesLike,
     /// SuperWeaponType+9C `WeaponType=`, the stored ID of its WeaponType:
     /// constructor null (`0x006CE5CB`); ReadINI (`0x006CEA4A..0x006CEA8C`)
     /// keeps it on an empty ReadString128 and otherwise stores
@@ -4976,6 +5006,9 @@ impl ProcessedType {
             aircraft_crashable: None,
             armor_id: ArmorId::NONE,
             holds_what: None,
+            particle_read: Default::default(),
+            particle_next: None,
+            particle_system_behavior: Default::default(),
             super_weapon_weapon: None,
             super_weapon_aux_building: None,
             unit_delivery: None,
@@ -8083,10 +8116,22 @@ impl RulesPassProcessor {
         while index < self.family_len(RulesTypeFamily::Particle) {
             if let Some((_id, raw, _effective)) =
                 self.begin_rules_member_read(RulesTypeFamily::Particle, index, pass)
-                && let Some(warhead) =
-                    self.resolve_scalar_from(&raw, "Warhead", RulesTypeFamily::Warhead, 0x80)
             {
-                self.family_mut(RulesTypeFamily::Particle)[index].particle_warhead = warhead;
+                if let Some(warhead) =
+                    self.resolve_scalar_from(&raw, "Warhead", RulesTypeFamily::Warhead, 0x80)
+                {
+                    self.family_mut(RulesTypeFamily::Particle)[index].particle_warhead = warhead;
+                }
+                // ParticleTypeReadINI644F50,645315..64535B: empty retains;
+                // otherwise FindOrAllocate645430 recognizes only <none> as
+                // null. The live-count loop also visits newly allocated types.
+                if let Some(name) = raw.read_name("NextParticle", 0x20) {
+                    let next = self.find_or_allocate_particle(name);
+                    self.family_mut(RulesTypeFamily::Particle)[index].particle_next = next;
+                }
+                self.family_mut(RulesTypeFamily::Particle)[index]
+                    .particle_read
+                    .apply_pass(&raw);
             }
             index += 1;
         }
@@ -8105,7 +8150,10 @@ impl RulesPassProcessor {
                 // binds the empty-named ParticleType.
                 let holds_what = raw.read_string("HoldsWhat", "", 0x40);
                 let particle = self.find_or_allocate_particle(&holds_what);
-                self.family_mut(RulesTypeFamily::ParticleSystem)[index].holds_what = particle;
+                let member = &mut self.family_mut(RulesTypeFamily::ParticleSystem)[index];
+                member.holds_what = particle;
+                member.particle_system_behavior =
+                    crate::rules::particle_system_type::ParticleSystemType::read_behavior(&raw);
             }
             index += 1;
         }
