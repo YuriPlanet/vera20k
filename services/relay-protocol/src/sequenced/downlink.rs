@@ -146,7 +146,7 @@ impl PushSubscription {
 impl Peer {
     /// Re-evaluates this reader's downlink state (spec §5.2) and applies the
     /// §5.5 side effects of a change. Returns the current state.
-    pub(super) fn evaluate_reader(&mut self, now_ms: u64) -> LinkState {
+    pub(crate) fn evaluate_reader(&mut self, now_ms: u64) -> LinkState {
         if let Some(previous) = self.link.evaluate(now_ms) {
             let state = self.link.clock.state;
             if previous == LinkState::Offline {
@@ -619,7 +619,7 @@ impl RelayServer {
 
 #[cfg(test)]
 mod tests {
-    use super::super::tests::{certificate, client, configure, connect, subscribe, unix};
+    use super::super::tests::{certificate, client, configure, connect, endpoint, subscribe, unix};
     use super::*;
 
     fn lost_send(sequence: u64, first: u64, count: u8) -> SendRecord {
@@ -780,6 +780,13 @@ mod tests {
         assert!(server.drain_ordering_push(1500, unix(1500)).is_empty());
         assert_eq!(stats(&server).downlink, LinkState::Offline);
         assert_eq!(server.ordering_counts.offline_unsent_packets, 1);
+        // Any datagram of the hop ends the offline state (spec §5.1).
+        let mut bytes = Vec::new();
+        reader.probe_at(1550, &mut bytes).unwrap();
+        server
+            .process_at(endpoint(&reader), &bytes, unix(1550), 1550)
+            .unwrap();
+        assert_eq!(stats(&server).downlink, LinkState::Good);
         // Back: pushing restarts at the watermark the reader acknowledged.
         subscribe(&mut server, &mut reader, 1, 1600);
         assert_eq!(stats(&server).downlink, LinkState::Good);

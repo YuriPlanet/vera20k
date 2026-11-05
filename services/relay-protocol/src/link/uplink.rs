@@ -2,6 +2,8 @@
 //! what it carries. All times are the caller's `now_ms`.
 
 use super::codec::{FLAG_PACE, FLAG_PROBE, FLAG_PUSH, FLAG_RESTORING, PaceSegment, Uplink};
+use std::collections::VecDeque;
+
 use super::{LinkState, OrderingGap};
 use crate::{BROADCAST, CONTROL, ClientSession, MAX_WIRE_PAYLOAD, RelayError};
 
@@ -39,7 +41,8 @@ pub(crate) struct Schedule {
     // Checksum samples not yet sent, and when the first of them arrived.
     checksums: Option<(Vec<(u32, u32)>, u64)>,
     pace: Option<PaceSegment>,
-    copies: Option<Copies>,
+    // One plan per UPLINK that first sent batches while lossy.
+    copies: VecDeque<Copies>,
     pub(crate) gap: Option<Gap>,
     last: Option<LastUplink>,
     /// The newest STATUS `next_seq` (spec §7.7).
@@ -132,17 +135,23 @@ impl ClientSession {
             });
         }
         let newest = ordering.next_batch - 1;
-        let unacknowledged = newest > ordering.accepted_through;
         let fresh = newest > schedule.sent_batches_through.max(ordering.accepted_through);
-        // Row 4 times only batches some UPLINK already carried.
-        let timeout = unacknowledged
+        // Row 4 times only batches some UPLINK already carried (§6.7 item
+        // 2): those still unacknowledged since the last one carrying them.
+        let timeout = ordering.accepted_through < schedule.sent_batches_through
             && schedule
                 .batches_carried_ms
                 .is_some_and(|at| now_ms.saturating_sub(at) >= link.rtt.rto(link.rto_backoff));
         let copy = state == LinkState::Lossy
-            && schedule.copies.as_ref().is_some_and(|copies| {
-                copies.due_ms <= now_ms && copies.batch > ordering.accepted_through
-            });
+            && schedule
+                .copies
+                .iter()
+                .any(|copies| copies.due_ms <= now_ms && copies.batch > ordering.accepted_through);
+        // While congested, nothing carries a never-sent batch until 33 ms
+        // after the previous UPLINK (row 1): the wait merges new batches.
+        if fresh && state == LinkState::Congested && since_last < CONGESTED_SEND_SPACING_MS {
+            return None;
+        }
         let normal = self.hop.uplinks == 0
             || link.recovered
             || (fresh
@@ -193,7 +202,7 @@ impl ClientSession {
         let Some(due) = self.due_uplink(now_ms) else {
             return false;
         };
-        if self.send_uplink(due.kind, now_ms, out).is_err() {
+        if self.send_uplink(due.kind, due.copy, now_ms, out).is_err() {
             return false;
         }
         let link = &mut self.ordering.as_mut().expect("ordering").link;
@@ -202,18 +211,6 @@ impl ClientSession {
             link.rto_backoff += 1;
             link.rto_backoff_max = link.rto_backoff_max.max(link.rto_backoff);
             link.rto_timeouts += 1;
-        }
-        if due.copy
-            && let Some(copies) = link.schedule.copies.as_mut()
-        {
-            if due.kind == Kind::Copy {
-                link.copies += 1;
-            }
-            copies.remaining -= 1;
-            copies.due_ms = now_ms + COPY_SPACING_MS;
-            if copies.remaining == 0 {
-                link.schedule.copies = None;
-            }
         }
         true
     }
@@ -240,15 +237,29 @@ impl ClientSession {
 
     /// Encodes and logs one UPLINK of `kind` at `now_ms` (spec §3.2, §6.2,
     /// §6.3) and books it in the schedule.
+    /// `copy`: this send serves the earliest copy due (row 6).
     fn send_uplink(
         &mut self,
         kind: Kind,
+        copy: bool,
         now_ms: u64,
         out: &mut Vec<u8>,
     ) -> Result<(), RelayError> {
         let ordering = self.ordering.as_ref().expect("ordering");
         let link = &ordering.link;
         let schedule = &link.schedule;
+        let accepted = ordering.accepted_through;
+        let served = copy
+            .then(|| {
+                schedule
+                    .copies
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, copies)| copies.due_ms <= now_ms && copies.batch > accepted)
+                    .min_by_key(|(_, copies)| copies.due_ms)
+                    .map(|(index, _)| index)
+            })
+            .flatten();
         let mut flags = FLAG_PUSH;
         if ordering.restoring {
             flags |= FLAG_RESTORING;
@@ -262,10 +273,7 @@ impl ClientSession {
                 schedule.pace,
             ),
             Kind::Copy => (
-                schedule
-                    .copies
-                    .as_ref()
-                    .map_or(Vec::new(), |copies| copies.checksums.clone()),
+                served.map_or(Vec::new(), |index| schedule.copies[index].checksums.clone()),
                 None,
             ),
             Kind::Probe => {
@@ -304,13 +312,28 @@ impl ClientSession {
             schedule.checksums = None;
             schedule.pace = None;
         }
+        // The copy served: its next one 16 ms on; any other copy due now
+        // waits as long, so copies stay 16 ms apart (§6.3).
+        schedule.copies.retain(|copies| copies.batch > accepted);
+        if let Some(index) = served.filter(|&index| index < schedule.copies.len()) {
+            if kind == Kind::Copy {
+                link.copies += 1;
+            }
+            let copies = &mut schedule.copies[index];
+            copies.remaining -= 1;
+            copies.due_ms = now_ms + COPY_SPACING_MS;
+            for copies in schedule.copies.iter_mut() {
+                copies.due_ms = copies.due_ms.max(now_ms + COPY_SPACING_MS);
+            }
+            schedule.copies.retain(|copies| copies.remaining > 0);
+        }
         if !batches.is_empty() {
             schedule.batches_carried_ms = Some(now_ms);
             let newest = first_batch + batches.len() as u64 - 1;
             if newest > schedule.sent_batches_through {
                 schedule.sent_batches_through = newest;
                 if kind == Kind::Normal && lossy {
-                    schedule.copies = Some(Copies {
+                    schedule.copies.push_back(Copies {
                         batch: newest,
                         due_ms: now_ms + COPY_SPACING_MS,
                         remaining: if severe { 2 } else { 1 },
@@ -372,10 +395,10 @@ impl ClientSession {
             return false;
         }
         if ordering.link.clock.state == LinkState::Offline {
-            return self.send_uplink(Kind::Probe, now_ms, out).is_ok();
+            return self.send_uplink(Kind::Probe, false, now_ms, out).is_ok();
         }
         let Some(last) = schedule.last.clone() else {
-            return self.send_uplink(Kind::Probe, now_ms, out).is_ok();
+            return self.send_uplink(Kind::Probe, false, now_ms, out).is_ok();
         };
         // Batches as §6.2 packs them now; the checksum segment repeats.
         let (first_batch, batches) =
@@ -454,11 +477,12 @@ impl ClientSession {
         if !self.hop.first_pack {
             consider(after(link.rtt.rto(0)));
         }
-        if state == LinkState::Lossy
-            && let Some(copies) = &schedule.copies
-            && copies.batch > ordering.accepted_through
-        {
-            consider(copies.due_ms);
+        if state == LinkState::Lossy {
+            for copies in &schedule.copies {
+                if copies.batch > ordering.accepted_through {
+                    consider(copies.due_ms);
+                }
+            }
         }
         Some(deadline)
     }
@@ -829,6 +853,47 @@ mod tests {
         assert!(poll(&mut session, 156).is_some());
         assert!(poll(&mut session, 200).is_none());
         assert_eq!(session.link_stats().copies, 3);
+    }
+
+    #[test]
+    fn a_batch_first_sent_by_a_stand_in_for_a_copy_gets_its_own_copy() {
+        let mut session = started();
+        link(&mut session).loss.lossy = true;
+        poll(&mut session, 0).unwrap();
+        session.seal_ordering_batch(b"first").unwrap();
+        poll(&mut session, 10).unwrap();
+        // Batch 2 is new when batch 1's copy is due: one UPLINK serves both.
+        session.seal_ordering_batch(b"second").unwrap();
+        assert_eq!(decoded(&poll(&mut session, 26).unwrap()).batches.len(), 2);
+        assert_eq!(session.link_stats().copies, 0, "a stand-in is no copy");
+        let copy = poll(&mut session, 42).expect("batch 2's own copy");
+        assert_eq!(decoded(&copy).batches.len(), 2);
+        assert_eq!(session.link_stats().copies, 1);
+    }
+
+    #[test]
+    fn acknowledged_batches_never_time_out_a_later_first_send() {
+        let mut session = started();
+        poll(&mut session, 0).unwrap();
+        session.seal_ordering_batch(b"one").unwrap();
+        poll(&mut session, 10).unwrap();
+        session.ordering.as_mut().unwrap().accepted_through = 1;
+        session.seal_ordering_batch(b"two").unwrap();
+        poll(&mut session, 500).unwrap();
+        let stats = session.link_stats();
+        assert_eq!((stats.rto_timeouts, stats.rto_backoff), (0, 0));
+    }
+
+    #[test]
+    fn while_congested_no_uplink_carries_a_new_batch_within_33_ms() {
+        let mut session = started();
+        poll(&mut session, 0).unwrap();
+        link(&mut session).backpressure_at = Some(0);
+        session.seal_ordering_batch(b"held").unwrap();
+        session.set_ordering_gap(Some(OrderingGap::Reordered), 1);
+        assert!(poll(&mut session, 16).is_none(), "the gap waits with it");
+        assert!(poll(&mut session, 32).is_none());
+        assert_eq!(decoded(&poll(&mut session, 33).unwrap()).batches.len(), 1);
     }
 
     #[test]

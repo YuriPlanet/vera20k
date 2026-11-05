@@ -344,6 +344,9 @@ impl ClientSession {
             }
             _ => None,
         };
+        // Leave the offline state first: its recovery skips the loss cursor
+        // past everything sent before (spec §5.5).
+        self.evaluate_uplink(now_ms);
         if let Some(feedback) = feedback {
             self.take_feedback(feedback, now_ms);
         }

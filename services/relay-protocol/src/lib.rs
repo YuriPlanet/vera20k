@@ -1011,6 +1011,9 @@ impl RelayServer {
         }
         room.peers[index].received.accept(message.sequence)?;
         room.peers[index].link.heard(message.sequence, now_millis);
+        // Any datagram of the hop ends the reader's offline state (§5.1);
+        // push still waits for its subscription.
+        room.peers[index].evaluate_reader(now_millis);
         let admission = self
             .admissions
             .get_mut(&message.ticket.player)
@@ -1305,6 +1308,7 @@ impl RelayServer {
             }
             peer.received.accept(message.sequence)?;
             peer.link.heard(message.sequence, now_ms);
+            peer.evaluate_reader(now_ms);
             if peer.endpoint != source {
                 // A confirmed new path must opt in before receiving history.
                 peer.push = None;
