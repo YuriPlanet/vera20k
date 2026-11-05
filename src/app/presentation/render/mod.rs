@@ -290,8 +290,9 @@ pub(crate) fn render_game(
     #[cfg(feature = "telemetry-dashboard")]
     let after_debug = render_started.map(|_| Instant::now());
 
-    // Phase 3: Rebuild shroud ABuffer (CPU blit + GPU upload). The final
-    // shared surface lines sample this CPU buffer during upload preparation.
+    // Phase 3: Recompose the shroud ABuffer on the GPU, recorded into this
+    // frame's encoder ahead of every reader: world blitters, surface lines
+    // and A-gated surface stores all sample the same plane.
     let rw = state.render_width();
     let rh = state.render_height();
     // F10 cone: the render feed reads through SimView getters. This site
@@ -328,6 +329,7 @@ pub(crate) fn render_game(
         shroud_buf.rebuild_if_needed(
             &state.renderer.gpu.device,
             &state.renderer.gpu.queue,
+            encoder,
             view.fog(),
             owner_id,
             state.match_state.input.camera_x,
@@ -340,9 +342,9 @@ pub(crate) fn render_game(
         );
     }
 
-    // One A source feeds both CPU surface admission and world palette blitters.
-    // Its view identity is stable until resize/map replacement; sandbox uses
-    // neutral A without rebuilding or copying the live shroud plane.
+    // One A plane feeds the world palette blitters, surface lines and A-gated
+    // surface stores. Its view identity is stable until resize/map replacement;
+    // sandbox uses neutral A without rebuilding or copying the live plane.
     let shroud = (!state.match_state.sandbox_full_visibility)
         .then_some(state.match_state.match_presentation.shroud_buffer.as_ref())
         .flatten();
@@ -350,6 +352,10 @@ pub(crate) fn render_game(
         .renderer
         .batch_renderer
         .bind_shroud(&state.renderer.gpu.device, shroud);
+    state
+        .renderer
+        .terrain_draw_renderer
+        .bind_surface_line_a(&state.renderer.gpu.device, shroud);
     #[cfg(feature = "telemetry-dashboard")]
     let after_shroud = render_started.map(|_| Instant::now());
 
@@ -475,10 +481,6 @@ pub(crate) fn render_game(
     // Tactical6D4673 -> LineTrail556D40 updates once per actual composite.
     // It reads committed Bullet coordinates even when no simulation tick ran.
     // The ring belongs to presentation and survives only until it fades or loads.
-    let camera = [
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-    ];
     let viewport = tactical_surface_line_viewport(state);
     let palette = surface_palette
         .as_ref()
@@ -668,23 +670,6 @@ pub(crate) fn render_game(
     );
     let segments = presentation.line_trails.shown();
     let beam_draws = presentation.radiation_beams.shown(viewport.camera);
-    let shroud = presentation.shroud_buffer.as_ref();
-    let mut alpha = |point: [i32; 2]| {
-        if sandbox {
-            127
-        } else {
-            shroud
-                .and_then(|buffer| {
-                    buffer.sample_world(
-                        point[0] as f32 + camera[0].floor(),
-                        point[1] as f32 + camera[1].floor(),
-                        camera[0],
-                        camera[1],
-                    )
-                })
-                .map_or(127, u16::from)
-        }
-    };
     let terrain = &mut state.renderer.terrain_draw_renderer;
     let gpu = &state.renderer.gpu;
     terrain.begin_surface_lines();
@@ -715,7 +700,6 @@ pub(crate) fn render_game(
                 presentation.in_game_options.detail_level != 0
             }
         },
-        &mut alpha,
     );
     let tactical_lines = terrain.prepare_surface_lines(
         &gpu.device,
@@ -727,7 +711,6 @@ pub(crate) fn render_game(
         &[],
         viewport,
         |_| false,
-        &mut alpha,
     );
     for layer in &mut world.object_layers {
         layer.line_batches = layer
@@ -744,7 +727,6 @@ pub(crate) fn render_game(
                     &[],
                     viewport,
                     |_| false,
-                    &mut alpha,
                 )
             })
             .collect();
@@ -765,7 +747,6 @@ pub(crate) fn render_game(
                     &[],
                     viewport,
                     |_| false,
-                    &mut alpha,
                 );
             }
         }

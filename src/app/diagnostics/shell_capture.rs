@@ -17,7 +17,7 @@ use serde::Serialize;
 use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::Ra2tsDialogOwner;
 use crate::app::frontend::shell_transition::{MainMenuEntryPresentToken, ShellSlideKind};
-use crate::render::frame_readback::PendingBgra8Readback;
+use crate::render::frame_readback::PendingTextureReadback;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::main_menu_dialogs::options::Category;
 use crate::ui::main_menu_shell::MainMenuMovieBase;
@@ -2304,7 +2304,7 @@ pub(crate) enum ShellCompletionHandoff {
 
 struct PendingSequenceReadback {
     identity: EntrySequenceFrameIdentity,
-    readback: PendingBgra8Readback,
+    readback: PendingTextureReadback,
     submission: wgpu::SubmissionIndex,
 }
 
@@ -2346,7 +2346,7 @@ impl EntrySequenceState {
     fn record(
         &mut self,
         identity: EntrySequenceFrameIdentity,
-        readback: PendingBgra8Readback,
+        readback: PendingTextureReadback,
         submission: wgpu::SubmissionIndex,
     ) -> Result<()> {
         self.validate_next(identity)?;
@@ -2826,7 +2826,7 @@ impl ShellCaptureSession {
     pub(crate) fn record_entry_sequence_submission(
         &mut self,
         identity: EntrySequenceFrameIdentity,
-        readback: PendingBgra8Readback,
+        readback: PendingTextureReadback,
         submission: wgpu::SubmissionIndex,
     ) -> Result<()> {
         self.entry_sequence

@@ -683,7 +683,7 @@ mod tests {
     #[test]
     #[ignore = "requires a wgpu adapter for hidden capture frame readback"]
     fn hidden_capture_frame_renders_reads_back_and_resizes_without_a_swapchain() {
-        use crate::render::frame_readback::PendingBgra8Readback;
+        use crate::render::frame_readback::PendingTextureReadback;
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -738,7 +738,7 @@ mod tests {
                         multiview_mask: None,
                     });
                 }
-                let pending = PendingBgra8Readback::encode(
+                let pending = PendingTextureReadback::encode(
                     &device,
                     &mut encoder,
                     &frame.texture,

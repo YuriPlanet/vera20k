@@ -97,6 +97,9 @@ fn production_radbeam_pixels_match_original_and_preserve_depth() {
                     },
                     color.size(),
                 );
+                terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |[x, y]| {
+                    alpha[(y as u32 * size[0] + x as u32) as usize]
+                });
                 terrain.begin_surface_lines();
                 let prepared = terrain.prepare_surface_lines(
                     &gpu.device,
@@ -108,7 +111,6 @@ fn production_radbeam_pixels_match_original_and_preserve_depth() {
                     &[],
                     native::viewport(row),
                     |_| true,
-                    |[x, y]| alpha[(y as u32 * size[0] + x as u32) as usize],
                 );
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
                 if surface["z"].is_array() {

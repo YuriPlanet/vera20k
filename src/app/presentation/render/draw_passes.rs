@@ -1337,6 +1337,7 @@ fn composite_world_with_drag_rect(
 }
 
 /// Native path/rally pixels belong to the world surface, before wheel zoom.
+/// Their dashed stores keep or skip each pixel by the live A on the GPU.
 pub(super) fn draw_pooled_surface_lines<'a>(
     pass: &mut wgpu::RenderPass<'a>,
     batch: &'a BatchRenderer,
@@ -1345,7 +1346,7 @@ pub(super) fn draw_pooled_surface_lines<'a>(
     key: &'static str,
 ) {
     if let (Some(t), Some((buf, count))) = (tex, pool.get(key)) {
-        batch.draw_with_buffer_passthrough(pass, t, buf, count);
+        batch.draw_surface_stores(pass, t, buf, count);
     }
 }
 

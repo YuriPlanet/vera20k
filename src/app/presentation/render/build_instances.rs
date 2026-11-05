@@ -955,30 +955,16 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         }
     }
     let interleave_enabled = !designations.is_empty();
-    // The shroud A-buffer sample DSurface4C0750's dashed lines read.
-    let mut shroud_alpha = |point: [i32; 2]| -> u8 {
-        if state.match_state.sandbox_full_visibility {
-            return 127;
-        }
-        state
-            .match_state
-            .match_presentation
-            .shroud_buffer
-            .as_ref()
-            .and_then(|buffer| {
-                buffer.sample_world(
-                    (point[0] + camera[0] - view.clip[0]) as f32,
-                    (point[1] + camera[1] - view.clip[1]) as f32,
-                    input.camera_x,
-                    input.camera_y,
-                )
-            })
-            .unwrap_or(127)
-    };
+    // DSurface4C0750's dashed stores read the A plane on the GPU, whose
+    // pixels (like the surface lines') start at the floored camera.
+    let a_offset = [
+        camera[0] - input.camera_x.floor() as i32,
+        camera[1] - input.camera_y.floor() as i32,
+    ];
     let mut tactical_line_calls = Vec::new();
     let mut after_entity = |id, instances: &mut Vec<SpriteInstance>| {
         use crate::app::presentation::airstrike_lines::{TacticalLineCall, drain_opaque};
-        drain_opaque(&mut tactical_line_calls, instances, camera);
+        drain_opaque(&mut tactical_line_calls, instances, camera, a_offset);
         if let Some((coords, style)) = designations.remove(&id) {
             tactical_line_calls.push(TacticalLineCall::Designation { id, coords, style });
         }
@@ -1005,7 +991,6 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         } else {
             None
         },
-        &mut shroud_alpha,
         Some(&state.match_state.match_presentation.interpolation),
     );
     target_line.extend(action_lines);
@@ -1032,7 +1017,6 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
             &state.match_state.match_presentation.house_color_map,
             preferred_local_owner(state).as_deref(),
             view,
-            &mut shroud_alpha,
             Some(&state.match_state.match_presentation.interpolation),
         );
 
