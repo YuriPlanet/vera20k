@@ -74,6 +74,44 @@ fn ensure(condition: bool, message: impl FnOnce() -> String) -> Check {
     if condition { Ok(()) } else { Err(message()) }
 }
 
+/// Spec §5.4: each direction counts as lossy until its first loss fold.
+/// When the client's uplink made its first fold (µs), or the end.
+fn uplink_settled_us(trace: &Trace, client: usize) -> u64 {
+    trace
+        .client_stats
+        .iter()
+        .find(|(_, c, stats)| *c == client && stats.up_loss_folds >= 1)
+        .map_or(u64::MAX, |(at, ..)| *at)
+}
+
+/// When the relay first judged this subscribed reader other than lossy,
+/// which is no earlier than its first fold (§5.4), or the end.
+fn downlink_settled_us(trace: &Trace, client: usize) -> u64 {
+    trace
+        .reader_stats
+        .iter()
+        .find(|(_, c, stats)| {
+            *c == client && stats.subscribed && stats.downlink != LinkState::Lossy
+        })
+        .map_or(u64::MAX, |(at, ..)| *at)
+}
+
+/// Repeats (send-log kind 2) sent to `client` from `from_us` on.
+fn repeats_since(trace: &Trace, client: usize, from_us: u64) -> u64 {
+    let at = |t: u64| {
+        trace
+            .reader_stats_at(client, t)
+            .map_or(0, |s| s.packets_by_kind[2])
+    };
+    at(u64::MAX) - at(from_us)
+}
+
+/// Copies `client` sent from `from_us` on.
+fn copies_since(trace: &Trace, client: usize, from_us: u64) -> u64 {
+    let at = |t: u64| trace.client_stats_at(client, t).map_or(0, |s| s.copies);
+    at(u64::MAX) - at(from_us)
+}
+
 // --- Judgment 1 (spec §1.2, §3) and the one-UPLINK-per-service rule (§6.3) ---
 
 /// Every datagram parses by spec §3 (the inspector applies the six UPLINK
@@ -223,8 +261,8 @@ fn j01_every_datagram_has_the_spec_layout() {
 
 // --- Judgment 2 (spec §6.3 rows 1 and 6, §13.2 row 1) ---
 
-/// On a good link no copy is sent (`copies` stays 0, §6.3 row 6 is lossy
-/// only); each batch's first UPLINK goes out in the service that sealed it
+/// On a good link, once its first loss fold ends the initial lossy state
+/// (§5.4), no copy is sent (`copies` stays 0, §6.3 row 6 is lossy only); each batch's first UPLINK goes out in the service that sealed it
 /// (row 1, "立即"); and that first send is one datagram with no copy after
 /// it (§13.2 row 1): no UPLINK in the next service window (16-32 ms later,
 /// where a copy would go) carries the batch unless it has a reason of its
@@ -232,18 +270,20 @@ fn j01_every_datagram_has_the_spec_layout() {
 /// checksum segment). Later UPLINKs before the ACK carry it too; §13.2
 /// calls that normal redundancy (§6.2).
 fn check_good_uplink(trace: &Trace, client: usize) -> Check {
-    let copies = trace
-        .client_stats
-        .iter()
-        .filter(|(_, c, _)| *c == client)
-        .map(|(_, _, stats)| stats.copies)
-        .max()
-        .unwrap_or(0);
+    // §5.4: lossy until the first fold, so judged from then on.
+    let settled = uplink_settled_us(trace, client);
+    ensure(settled < u64::MAX, || {
+        format!("client {client}: no uplink fold")
+    })?;
+    let copies = copies_since(trace, client, settled);
     ensure(copies == 0, || {
         format!("client {client}: {copies} copies on a good link")
     })?;
     let ups = uplinks(trace, client);
     for &(sealed_at, id) in &trace.seals[client] {
+        if sealed_at <= settled {
+            continue;
+        }
         let first_index = ups
             .iter()
             .position(|record| record.uplink().unwrap().carries(id))
@@ -318,6 +358,7 @@ fn j02_a_good_link_never_times_out() {
 /// and no pace (§6.3, copy content).
 fn check_copies(trace: &Trace, client: usize) -> Check {
     let ups = uplinks(trace, client);
+    let end_us = trace.wire.iter().map(|r| r.sent_us).max().unwrap_or(0);
     let mut checked = 0;
     for &(sealed_at, id) in &trace.seals[client] {
         let Some(stats) = trace.client_stats_at(client, sealed_at) else {
@@ -333,6 +374,10 @@ fn check_copies(trace: &Trace, client: usize) -> Check {
             .ok_or_else(|| format!("batch {id} never sent"))?;
         for &offset in offsets {
             let due = first.sent_us + offset * 1000;
+            // A copy due after the run ended cannot be judged.
+            if due + 16_000 > end_us {
+                continue;
+            }
             if accepted_through(trace, client, due, true) >= id {
                 continue;
             }
@@ -449,8 +494,12 @@ fn j04_only_a_lossy_reader_gets_8_ms_repeats() {
         "groups": [ { "label": "lossy", "first": 1, "last": 1,
             "network": { "down": { "delay_ms": 20, "loss": 0.06 } } } ] }"#);
     check_wire(&trace).unwrap();
-    let good = trace.reader_stats_at(0, u64::MAX).unwrap();
-    assert_eq!(good.packets_by_kind[2], 0, "good reader got repeats");
+    // §5.4: the good reader is lossy only until its first fold.
+    assert_eq!(
+        repeats_since(&trace, 0, downlink_settled_us(&trace, 0)),
+        0,
+        "good reader got repeats"
+    );
     let lossy = trace.reader_stats_at(1, u64::MAX).unwrap();
     assert!(lossy.packets_by_kind[2] > 0, "lossy reader got no repeat");
     assert!(
@@ -1460,14 +1509,15 @@ fn smoke_good_idle() {
     );
     assert_eq!(report.groups[0].pulls, 0.0);
     for client in 0..2 {
+        // §5.4: lossy until each direction's first fold.
         assert_eq!(
-            trace
-                .reader_stats_at(client, u64::MAX)
-                .unwrap()
-                .packets_by_kind[2],
+            repeats_since(&trace, client, downlink_settled_us(&trace, client)),
             0
         );
-        assert_eq!(trace.client_stats_at(client, u64::MAX).unwrap().copies, 0);
+        assert_eq!(
+            copies_since(&trace, client, uplink_settled_us(&trace, client)),
+            0
+        );
     }
 }
 
@@ -1588,29 +1638,20 @@ fn j09_a_ping_ends_the_readers_offline_state() {
 // --- Downlink jitter (spec §4.8, §5.4, §7.2, §7.5, §13.2) ---
 
 /// The client's JITTERY bit as §4.8 defines it, recomputed from the wire:
-/// samples are the PACKs that bring a new turn, that is, pushed PACKs with
-/// a record never sent to this client before and a FRAME_END at or past the
-/// client's `recv_next` when they arrive (repeats, piggyback-only packs,
-/// retransmissions and PULL replies are not samples). `D = (t - t_prev) -
+/// samples are the PACKs that bring a new turn, a FRAME_END at or past the
+/// client's `recv_next` when they arrive, except PULL replies; a repeat or
+/// retransmission that first brings it counts too, as §4.8 allows. `D = (t - t_prev) -
 /// (f - f_prev) * 1000 / rate` with `f` the pack's highest frame,
 /// `J += (|D| - J) / 16`, JITTERY from 16 samples with `j0 = max(10,
-/// turn_ms / 4)`, set at `J >= j0`, cleared at `J <= j0 / 2`. Each UPLINK's
+/// turn_ms / 4)` unrounded, set at `J >= j0`, cleared at `J <= j0 / 2`. Each UPLINK's
 /// `link` bit3 must match the state as of its sending, except within 1.5 ms
 /// of either threshold or 20 ms of a change (rounding and service delay).
 /// Returns whether any UPLINK set the bit.
 fn check_jitter(trace: &Trace, client: usize, tick_hz: u16) -> Result<bool, String> {
     let rate = f64::from(tick_hz);
-    let j0 = (f64::from(crate::turn_ms(tick_hz)) / 4.0).ceil().max(10.0);
+    // §4.8: exact, not rounded (16.75 ms at 30 Hz).
+    let j0 = (f64::from(crate::turn_ms(tick_hz)) / 4.0).max(10.0);
     let down: Vec<&WireRecord> = trace.of(client, Direction::Down).collect();
-    let mut fresh = vec![false; down.len()];
-    let mut sent_high = 1;
-    for (index, record) in down.iter().enumerate() {
-        if let Some((_, records)) = record.pack() {
-            let high = records.iter().map(|e| e.seq + 1).max().unwrap_or(0);
-            fresh[index] = record.origin == Origin::Push && high > sent_high;
-            sent_high = sent_high.max(high);
-        }
-    }
     let mut arrivals: Vec<(u64, usize)> = down
         .iter()
         .enumerate()
@@ -1632,7 +1673,7 @@ fn check_jitter(trace: &Trace, client: usize, tick_hz: u16) -> Result<bool, Stri
             .filter(|e| e.kind == 4 && e.seq >= next)
             .map(|e| e.frame)
             .max();
-        if fresh[index]
+        if down[index].origin != Origin::Reply
             && let Some(frame) = turn
         {
             if let Some((t_prev, f_prev)) = previous {
@@ -1716,7 +1757,8 @@ fn jt1_a_jittery_good_link_gets_repeats_and_two_deep_piggyback() {
         !check_jitter(&trace, 0, 30).unwrap(),
         "the steady client was JITTERY"
     );
-    // §7.2: JITTERY keeps the reader Good and makes K = 2 there.
+    // §7.2: JITTERY keeps the reader Good (after the initial lossy state of
+    // §5.4) and makes K = 2 there.
     let ups = uplinks(&trace, 1);
     for (at, c, stats) in &trace.reader_stats {
         if *c != 1 || !stats.subscribed {
@@ -1727,7 +1769,9 @@ fn jt1_a_jittery_good_link_gets_repeats_and_two_deep_piggyback() {
             .filter(|r| r.arrived_us().is_some_and(|arrived| arrived <= *at))
             .max_by_key(|r| r.arrived_us())
             .is_some_and(|r| r.uplink().unwrap().link & 8 != 0);
-        assert_ne!(stats.downlink, LinkState::Lossy, "at {} ms", ms(*at));
+        if *at >= downlink_settled_us(&trace, 1) {
+            assert_ne!(stats.downlink, LinkState::Lossy, "at {} ms", ms(*at));
+        }
         if jittery && stats.downlink == LinkState::Good {
             assert_eq!(stats.piggyback_depth, 2, "at {} ms", ms(*at));
         }
@@ -1749,10 +1793,7 @@ fn jt2_a_steady_link_is_not_jittery() {
             "client {client} JITTERY"
         );
         assert_eq!(
-            trace
-                .reader_stats_at(client, u64::MAX)
-                .unwrap()
-                .packets_by_kind[2],
+            repeats_since(&trace, client, downlink_settled_us(&trace, client)),
             0
         );
     }
@@ -1831,4 +1872,71 @@ fn jt5_a_congested_jittery_reader_gets_no_repeats() {
             .any(|r| r.uplink().unwrap().link & 0x0C == 0x0C),
         "never DELAYED and JITTERY together"
     );
+}
+
+// --- Spec §5.4: lossy until the first fold ---
+
+#[test]
+#[ignore = "waits for the adaptive transport implementation: the initial lossy state (spec §5.4)"]
+fn j15_each_direction_starts_lossy_until_its_first_fold() {
+    let (_, trace) = run(r#"{ "name": "j15", "players": 2,
+        "warmup_ms": 0, "duration_ms": 10000, "apm": 300 }"#);
+    for client in 0..2 {
+        // Uplink: Lossy from the start to the first fold, with copies.
+        let settled = uplink_settled_us(&trace, client);
+        assert!(settled < u64::MAX, "client {client}: no fold");
+        let started = uplinks(&trace, client)[0].sent_us;
+        for (at, c, stats) in &trace.client_stats {
+            if *c == client && *at >= started && *at < settled {
+                assert_eq!(
+                    stats.uplink,
+                    LinkState::Lossy,
+                    "client {client} at {} ms",
+                    ms(*at)
+                );
+            }
+        }
+        assert!(
+            trace.client_stats_at(client, settled).unwrap().copies > 0,
+            "client {client}: no copy before the first fold"
+        );
+        check_copies(&trace, client).unwrap();
+        // Downlink: from the subscription, Lossy with K = 2 and repeats
+        // until the relay's first fold.
+        let reader_settled = downlink_settled_us(&trace, client);
+        assert!(
+            reader_settled < u64::MAX,
+            "client {client}: reader never settled"
+        );
+        let mut subscribed = false;
+        for (at, c, stats) in &trace.reader_stats {
+            if *c != client || *at >= reader_settled {
+                continue;
+            }
+            if stats.subscribed {
+                subscribed = true;
+                assert_eq!(
+                    stats.downlink,
+                    LinkState::Lossy,
+                    "reader {client} at {} ms",
+                    ms(*at)
+                );
+                assert_eq!(
+                    stats.piggyback_depth,
+                    2,
+                    "reader {client} at {} ms",
+                    ms(*at)
+                );
+            }
+        }
+        assert!(subscribed);
+        let repeats = trace
+            .reader_stats_at(client, reader_settled)
+            .unwrap()
+            .packets_by_kind[2];
+        assert!(
+            repeats > 0,
+            "reader {client}: no repeat before the first fold"
+        );
+    }
 }
