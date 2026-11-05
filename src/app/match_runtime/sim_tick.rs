@@ -2000,6 +2000,31 @@ fn advance_one_simulation_frame(
                 .combat_lights
                 .commit_frame(drained_combat_lights);
         }
+        // WolfCTOS dispatch: mods see only committed logical frames, never
+        // replay playback, and (MVP) never a network match, where a scripted
+        // order would diverge the peers.
+        if frame_committed && !replaying && state.match_state.session_mode().is_single_player() {
+            let frame = state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .map_or(0, |runtime| runtime.simulation.session().tick());
+            // Build this frame's read-only snapshot so World/House API closures
+            // see the correct committed-state.
+            if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+                let selected: Vec<u64> = state.match_state.input.selection_order.clone();
+                state.lua.refresh_snapshot(
+                    crate::app::lua::snapshot::FrameSnapshot::build(
+                        &runtime,
+                        &selected,
+                    ),
+                );
+            }
+            state.lua.on_frame(frame);
+        }
+        for text in state.lua.take_messages() {
+            crate::app::input::messages::post_lua_message(state, &text);
+        }
         crate::app::input::dispatch::reconcile_selection_order_after_sim(
             state,
             &drained_lifecycle_outputs,

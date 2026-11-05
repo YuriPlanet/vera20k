@@ -951,6 +951,14 @@ impl App {
                     && game_config.as_ref().is_some_and(|config| {
                         crate::app::persistence::intro_play::consume(config.paths.settings_dir())
                     });
+                let lua_paths = crate::app::lua::LuaPaths {
+                    game_root: game_config
+                        .as_ref()
+                        .map(|config| config.paths.ra2_dir.clone()),
+                    settings_root: game_config
+                        .as_ref()
+                        .map(|config| config.paths.settings_dir().to_path_buf()),
+                };
                 let mut state = AppState {
             platform: PlatformState::new(
                 window,
@@ -1249,7 +1257,7 @@ impl App {
             process_assets,
             audio: startup_audio_runtime,
             persistence: crate::app::persistence::PersistenceState::new(options_profile),
-            lua: crate::app::lua::LuaHost::new(),
+            lua: crate::app::lua::LuaHost::new(lua_paths),
             diag: crate::app::diagnostics::state::DiagnosticsState::new(
                 match crate::sim::parity_digest::ParityDigestSink::from_env() {
                     Ok(sink) => {

@@ -547,6 +547,22 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             .session
             .hand_mode_to_world(runtime.simulation.session().game_mode());
     }
+    if state.match_state.sim_runtime.is_some() {
+        // Build the initial read-only snapshot so World/House API closures
+        // work even before the first on_frame.
+        if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+            let selected: Vec<u64> = state.match_state.input.selection_order.clone();
+            state.lua.refresh_snapshot(
+                crate::app::lua::snapshot::FrameSnapshot::build(
+                    &runtime,
+                    &selected,
+                ),
+            );
+        }
+        // WolfCTOS `OnScenarioStart`: once per installed world, including a
+        // loaded save, because the VM outlives the match.
+        state.lua.on_scenario_start();
+    }
     crate::app::audio_runtime::bind_match_eva_context(state);
     // Only an actually-carried lease returns. A fallback result must not wipe
     // the process-sticky manager already restored by its failure path.

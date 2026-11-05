@@ -123,6 +123,9 @@ Thumbs.db
 
 tools/vendor-eval/
 
+# The Lua host's enabled-mods list ships with the probe mods (src/app/lua).
+!/mods/active_mods.txt
+
 /*.md
 !/README.md
 !/README.sv.md

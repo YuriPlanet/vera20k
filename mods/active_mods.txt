@@ -1,0 +1,5 @@
+# Mods the VERA20K Lua host loads, one per line, '#' comments.
+# The loader probes, in order: <game_root>/mods/active_mods.txt,
+# <game_root>/scripts/active_mods.txt, the VERA profile, <game_root>/active_mods.txt
+# (see src/app/lua/loader.rs). The first file that exists wins.
+lua_probe
