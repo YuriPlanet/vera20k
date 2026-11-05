@@ -58,7 +58,9 @@ pub(crate) fn render_saved_game_loading(
     use super::in_game_shell::{
         InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
     };
-    use crate::ui::shell::modal::{body_ok_layout, build_saved_game_loading_descriptor, control};
+    use crate::ui::shell::modal::{
+        body_ok_layout, body_ok_layout_in, build_saved_game_loading_descriptor, control,
+    };
 
     // An in-match load paints over the match frame at its source size and
     // zooms with it; a menu load paints over the menu at the window's size.
@@ -88,9 +90,15 @@ pub(crate) fn render_saved_game_loading(
         .expect("loading shell chrome");
     // 559D60 shows F0 before 69BB40 clears Session+30D8. An active load thus
     // starts with its current side; a menu load starts with the neutral assets.
-    let side = (state.frontend.screen == crate::ui::game_screen::GameScreen::InGame)
-        .then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
-    let layout = body_ok_layout(frame.0 as i32, frame.1 as i32);
+    let in_match = state.frontend.screen == crate::ui::game_screen::GameScreen::InGame;
+    let side =
+        in_match.then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
+    let (width, height) = (frame.0 as i32, frame.1 as i32);
+    let layout = if in_match {
+        body_ok_layout_in(RectPx::new(0, 0, width, height))
+    } else {
+        body_ok_layout(width, height)
+    };
     let descriptor = build_saved_game_loading_descriptor();
     let body = descriptor
         .controls

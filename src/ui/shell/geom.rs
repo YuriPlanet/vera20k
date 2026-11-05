@@ -206,6 +206,18 @@ impl ShellScale {
         Self { screen_w, screen_h }
     }
 
+    /// The mapping the front-end shell takes in a window. Only the two sizes
+    /// gamemd's shell runs at keep the retail layout: 800x600, and 640x480 with
+    /// its own 640-wide art (`AllowModeToggle`). Any other window gets the
+    /// 800x600 dialog scaled to fit at its own shape, centred.
+    pub fn for_window(screen_w: i32, screen_h: i32) -> Self {
+        if matches!((screen_w, screen_h), (800, 600) | (640, 480)) {
+            Self::RETAIL
+        } else {
+            Self::from_screen(screen_w, screen_h)
+        }
+    }
+
     /// The one factor both axes scale by: the largest at which the 800x600
     /// shell still fits the window. Glyphs, the software cursor and every
     /// rect use it, so the shell keeps its authored proportions.
