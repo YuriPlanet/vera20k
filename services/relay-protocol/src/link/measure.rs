@@ -57,6 +57,8 @@ impl RecvWindow {
 pub(crate) struct LossCursor {
     max_high: u64,
     eval_next: u64,
+    // The newest feedback, judged again while sequences wait (spec §4.3).
+    last_bits: u64,
 }
 
 /// Smoothed loss of one direction and its hysteresis bands (spec §4.3 step
@@ -95,6 +97,7 @@ impl LossCursor {
             return (0, 0);
         }
         self.max_high = high;
+        self.last_bits = bits;
         let (mut judged, mut missing) = (0, 0);
         if high > REORDER_THRESHOLD {
             // Older sequences are outside the bitmap and never counted.
@@ -125,6 +128,19 @@ impl LossCursor {
 }
 
 impl LossCursor {
+    /// Judges the newest feedback again at `now_ms`, for sequences that
+    /// waited out their RTT since it arrived (spec §4.3).
+    pub(crate) fn rejudge(
+        &mut self,
+        now_ms: u64,
+        wait_ms: u64,
+        sent: impl FnMut(u64) -> Option<u64>,
+        lost: impl FnMut(u64),
+    ) -> (u32, u32) {
+        let (high, bits) = (self.max_high, self.last_bits);
+        self.judge(high, bits, now_ms, wait_ms, sent, lost)
+    }
+
     /// Judges nothing before hop sequence `next` (spec §5.5, on recovery).
     pub(crate) fn skip_to(&mut self, next: u64) {
         self.eval_next = self.eval_next.max(next);
@@ -375,15 +391,21 @@ impl JitterMeter {
     }
 }
 
-/// `PTO_k` in ms (spec §4.6): `srtt_c` is the reader's reported srtt, 0 for
-/// none; `ack_delay_max` its state's acknowledgement interval.
-pub(crate) fn pto(srtt_c: u16, ack_delay_max: u64, backoff: u32) -> u64 {
-    let srtt = if srtt_c == 0 {
-        PTO_DEFAULT_SRTT
+/// The reader's reported `(srtt_c, rttvar_c)` in ms, or the §4.6 defaults
+/// 100 / 50 while it reports no srtt.
+pub(crate) fn reader_rtt(srtt_c: u16, rttvar_c: u16) -> (u64, u64) {
+    if srtt_c == 0 {
+        (PTO_DEFAULT_SRTT, PTO_DEFAULT_SRTT / 2)
     } else {
-        u64::from(srtt_c)
-    };
-    let pto = (srtt + 16.max(4 * (srtt / 2)) + ack_delay_max).clamp(PTO_MIN, PTO_MAX);
+        (u64::from(srtt_c), u64::from(rttvar_c))
+    }
+}
+
+/// `PTO_k` in ms (spec §4.6) from the reader's reported srtt and rttvar
+/// (0 for none); `ack_delay_max` is its state's acknowledgement interval.
+pub(crate) fn pto(srtt_c: u16, rttvar_c: u16, ack_delay_max: u64, backoff: u32) -> u64 {
+    let (srtt, rttvar) = reader_rtt(srtt_c, rttvar_c);
+    let pto = (srtt + 16.max(4 * rttvar) + ack_delay_max).clamp(PTO_MIN, PTO_MAX);
     backed_off(pto, backoff, PTO_MAX)
 }
 
@@ -666,12 +688,39 @@ mod tests {
     }
 
     #[test]
+    fn appendix_a_rtt_samples_give_rttvar_11() {
+        // Three 40 ms samples: rttvar 20, 15, 11.25 -> 11 (spec appendix A).
+        let mut rtt = RttEstimator::default();
+        for at in [0, 100, 200] {
+            rtt.sample(40, at);
+        }
+        assert_eq!((rtt.srtt, rtt.rttvar), (Some(40), 11));
+    }
+
+    #[test]
+    fn a_waiting_sequence_is_judged_again_without_new_feedback() {
+        let mut cursor = LossCursor::default();
+        let bits = 0b1111 & !(1 << 2); // 1..=4 from high 4: 2 missing
+        let sent = |s: u64| Some(s);
+        assert_eq!(
+            cursor.judge(5, bits << 1 | 1, 50, 100, sent, |_| {}),
+            (1, 0)
+        );
+        assert_eq!(cursor.rejudge(101, 100, sent, |_| {}), (0, 0));
+        let mut lost = Vec::new();
+        assert_eq!(cursor.rejudge(102, 100, sent, |s| lost.push(s)), (1, 1));
+        assert_eq!(lost, [2]);
+    }
+
+    #[test]
     fn pto_defaults_and_backs_off_to_its_cap() {
         // srtt_c 100, rttvar_c 50: 100 + 200 + 100.
-        assert_eq!(pto(0, 100, 0), 400);
-        assert_eq!(pto(20, 100, 0), 160);
-        assert_eq!(pto(1, 0, 0), 50);
-        assert_eq!(pto(20, 100, 3), 1000);
+        assert_eq!(pto(0, 0, 100, 0), 400);
+        // The reported rttvar_c: 20 + max(16, 4 * 3) + 100.
+        assert_eq!(pto(20, 3, 100, 0), 136);
+        assert_eq!(pto(20, 10, 100, 0), 160);
+        assert_eq!(pto(1, 0, 0, 0), 50);
+        assert_eq!(pto(20, 10, 100, 3), 1000);
     }
 
     #[test]

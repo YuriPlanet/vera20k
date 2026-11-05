@@ -192,6 +192,8 @@ impl ClientSession {
             return false;
         }
         self.clock_ms = now_ms;
+        // Waiting sequences are judged at every service (spec §4.3).
+        self.judge_uplink(None, now_ms);
         self.evaluate_uplink(now_ms);
         if self.hop.last_service_ms == Some(now_ms) {
             return false;
@@ -368,6 +370,8 @@ impl ClientSession {
             down: self.hop.down,
             srtt_ms: saturate(link.rtt.srtt),
             base_ms: saturate(link.rtt.base()),
+            // 0 with srtt (spec §3.2).
+            rttvar_ms: saturate(link.rtt.srtt.map(|_| link.rtt.rttvar)),
             link: link.link_byte(),
             checksums: checksums.to_vec(),
             pace,
@@ -806,6 +810,8 @@ mod tests {
         session.hop.first_pack = false;
         let first = poll(&mut session, 0).expect("the start sends at once");
         assert_eq!(decoded(&first).flags, FLAG_PUSH);
+        // No sample: srtt_ms 0 and rttvar_ms 0 (spec §3.2).
+        assert_eq!((decoded(&first).srtt_ms, decoded(&first).rttvar_ms), (0, 0));
         assert!(poll(&mut session, 0).is_none(), "one UPLINK per service");
         assert!(poll(&mut session, 99).is_none());
         assert!(

@@ -37,6 +37,7 @@ pub(crate) struct Uplink<'a> {
     pub down: RecvWindow,
     pub srtt_ms: u16,
     pub base_ms: u16,
+    pub rttvar_ms: u16,
     pub link: u8,
     pub checksums: Vec<(u32, u32)>,
     pub pace: Option<PaceSegment>,
@@ -47,7 +48,7 @@ pub(crate) struct Uplink<'a> {
 impl Uplink<'_> {
     /// The encoded length before any batch.
     pub(crate) fn head_len(checksums: usize, pace: bool) -> usize {
-        33 + 8 * checksums + if pace { 7 } else { 0 }
+        35 + 8 * checksums + if pace { 7 } else { 0 }
     }
 
     pub(crate) fn encode(&self, out: &mut Vec<u8>) {
@@ -59,6 +60,7 @@ impl Uplink<'_> {
         out.extend_from_slice(&self.down.bits.to_le_bytes());
         out.extend_from_slice(&self.srtt_ms.to_le_bytes());
         out.extend_from_slice(&self.base_ms.to_le_bytes());
+        out.extend_from_slice(&self.rttvar_ms.to_le_bytes());
         out.push(self.link);
         out.push(self.checksums.len() as u8);
         for (frame, checksum) in &self.checksums {
@@ -99,6 +101,7 @@ pub(crate) fn decode_uplink(payload: &[u8]) -> Result<Uplink<'_>, RelayError> {
     };
     let srtt_ms = reader.u16()?;
     let base_ms = reader.u16()?;
+    let rttvar_ms = reader.u16()?;
     let link = reader.u8()?;
     let checksum_count = usize::from(reader.u8()?);
     if flags & 0xF0 != 0
@@ -154,6 +157,7 @@ pub(crate) fn decode_uplink(payload: &[u8]) -> Result<Uplink<'_>, RelayError> {
         down,
         srtt_ms,
         base_ms,
+        rttvar_ms,
         link,
         checksums,
         pace,
@@ -224,6 +228,7 @@ mod tests {
             down: RecvWindow { high, bits },
             srtt_ms: 40,
             base_ms: 40,
+            rttvar_ms: 11,
             link: 0,
             checksums: Vec::new(),
             pace: None,
@@ -232,7 +237,7 @@ mod tests {
         }
     }
 
-    /// Spec appendix A packets 14 and 24: UPLINKs without batches, 33 B.
+    /// Spec appendix A packets 14 and 24: UPLINKs without batches, 35 B.
     #[test]
     fn appendix_uplinks_without_batches_encode_field_for_field() {
         for (uplink, recv_next, high, bits) in [
@@ -249,17 +254,18 @@ mod tests {
                 (bits, 8),
                 (40, 2),
                 (40, 2),
+                (11, 2),
                 (0, 1),
                 (0, 1),
                 (0, 1),
             ]);
             assert_eq!(bytes, expected);
-            assert_eq!(bytes.len(), 33);
+            assert_eq!(bytes.len(), 35);
             assert_eq!(decode_uplink(&bytes).unwrap(), uplink);
         }
     }
 
-    /// Spec appendix A packet 18: one 74-byte batch, 117 B.
+    /// Spec appendix A packet 18: one 74-byte batch, 119 B.
     #[test]
     fn appendix_uplink_with_a_batch_encodes_field_for_field() {
         let opaque = [0xAB; 74];
@@ -276,6 +282,7 @@ mod tests {
             (0xFF, 8),
             (40, 2),
             (40, 2),
+            (11, 2),
             (0, 1),
             (0, 1),
             (1, 1),
@@ -284,7 +291,7 @@ mod tests {
         ]);
         expected.extend_from_slice(&opaque);
         assert_eq!(bytes, expected);
-        assert_eq!(bytes.len(), 117);
+        assert_eq!(bytes.len(), 119);
         assert_eq!(decode_uplink(&bytes).unwrap(), uplink);
     }
 
@@ -303,7 +310,7 @@ mod tests {
         uplink.batches = vec![&opaque];
         let mut bytes = Vec::new();
         uplink.encode(&mut bytes);
-        assert_eq!(bytes.len(), 618);
+        assert_eq!(bytes.len(), 620);
         assert!(bytes.len() <= crate::MAX_WIRE_PAYLOAD);
         assert_eq!(bytes[1], FLAG_PUSH | FLAG_PACE);
         assert_eq!(decode_uplink(&bytes).unwrap(), uplink);
@@ -333,17 +340,17 @@ mod tests {
             malformed
         );
         // 2: counts and reserved bits.
-        assert_eq!(mutate(&|b| b[31] = 3), malformed);
-        assert_eq!(mutate(&|b| b[32] = 5), malformed);
+        assert_eq!(mutate(&|b| b[33] = 3), malformed);
+        assert_eq!(mutate(&|b| b[34] = 5), malformed);
         assert_eq!(mutate(&|b| b[1] |= 0x10), malformed);
-        assert_eq!(mutate(&|b| b[30] |= 0x10), malformed);
-        assert!(mutate(&|b| b[30] |= 0x08).is_ok(), "bit3 JITTERY");
+        assert_eq!(mutate(&|b| b[32] |= 0x10), malformed);
+        assert!(mutate(&|b| b[32] |= 0x08).is_ok(), "bit3 JITTERY");
         // 3: first_batch_id ≥ 1.
-        assert_eq!(mutate(&|b| b[33..41].fill(0)), malformed);
+        assert_eq!(mutate(&|b| b[35..43].fill(0)), malformed);
         // 4: 40 < len ≤ 552.
         assert_eq!(
             mutate(&|b| {
-                b[41] = 40;
+                b[43] = 40;
                 b.pop();
             }),
             malformed
