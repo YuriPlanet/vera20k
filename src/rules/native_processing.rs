@@ -1376,6 +1376,45 @@ impl ProcessedRulesLayers {
         })
     }
 
+    /// TechnoType+CD5/CD8..D10 after the last admitted ReadINI712170 body.
+    pub(crate) fn gattling_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            bool,
+            &crate::rules::gattling_type::GattlingStages,
+        ),
+    > {
+        let families = &self
+            .native_type_construction_trace
+            .registry_state()
+            .families;
+        [
+            RulesTypeFamily::Building,
+            RulesTypeFamily::Aircraft,
+            RulesTypeFamily::Vehicle,
+            RulesTypeFamily::Infantry,
+        ]
+        .into_iter()
+        .flat_map(move |family| {
+            let category = family.object_category().expect("TechnoType family");
+            families
+                .get(&family)
+                .into_iter()
+                .flatten()
+                .map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.is_gattling,
+                        &member.gattling_stages,
+                    )
+                })
+        })
+    }
+
     /// Final retained InfantryType state; the merged present-key history cannot
     /// represent admitted missing-Pip calls. Projection performs no new read.
     pub(crate) fn infantry_pip_states(&self) -> impl Iterator<Item = (&str, InfantryPips)> {
@@ -4372,6 +4411,9 @@ struct ProcessedType {
     /// TechnoType ctor71136F/711781, generic flag read71287E and FV pair
     /// reads747BBD..747E90, retained across every reached Rules pass.
     gunner_turrets: GunnerTurrets,
+    /// TechnoType ctor71148A/711490..49C/711765..77F; ReadINI714016..71410F.
+    is_gattling: bool,
+    gattling_stages: crate::rules::gattling_type::GattlingStages,
     /// Infantry ctor5236BD/C7 and unconditional ReadPip5240D1..524125.
     /// Missing type sections skip the whole reader; missing keys do not.
     #[serde(default)]
@@ -4935,6 +4977,8 @@ impl ProcessedType {
             unit_shp: Default::default(),
             unit_speed_type: SpeedType::Invalid,
             gunner_turrets: GunnerTurrets::default(),
+            is_gattling: false,
+            gattling_stages: Default::default(),
             infantry_pips: InfantryPips::default(),
             infantry_infiltration: InfantryInfiltration::default(),
             infantry_art: InfantryArt::default(),
@@ -7631,6 +7675,12 @@ impl RulesPassProcessor {
                 .techno_references
                 .destroy_particle_systems = systems;
         }
+        // TechnoTypeClass::ReadINI712170, original714016..71410F:
+        // read the current-default flag before the count/rates and stage gate.
+        let member = &mut self.family_mut(family)[index];
+        member.is_gattling = raw.read_bool("IsGattling", member.is_gattling);
+        member.gattling_stages.apply_pass(raw, member.is_gattling);
+
         // ReadINI714570..71458A passes the current+634 to ReadInt5276D0.
         // An absent exact-case key (also physically blank values omitted by
         // the INI loader) retains it. Present integers stay signed/unclamped.
