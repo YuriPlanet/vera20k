@@ -683,7 +683,38 @@ mod tests {
             configure(&mut server, peer, &cert, 0);
         }
         subscribe(&mut server, &mut reader, 1, 0);
+        // Measured good: the initial lossy state has its own test.
+        for peer in &mut server.rooms.get_mut(&[5; 16]).unwrap().peers {
+            peer.link.loss = Default::default();
+        }
         (server, reader)
+    }
+
+    /// Spec §5.4: a reader is lossy from its subscription until its first
+    /// fold, and a renewed hop keeps the measured loss.
+    #[test]
+    fn a_new_reader_starts_lossy_and_a_renewed_hop_keeps_its_measurement() {
+        let key = SecretKey::new([86; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let (mut reader, mut other) = (client(&key, 0), client(&key, 1));
+        let cert = certificate(&key, 3, 1400);
+        for peer in [&mut reader, &mut other] {
+            connect(&mut server, peer, 0);
+            configure(&mut server, peer, &cert, 0);
+        }
+        subscribe(&mut server, &mut reader, 1, 0);
+        let fresh = stats(&server);
+        assert_eq!(
+            (fresh.downlink, fresh.piggyback_depth),
+            (LinkState::Lossy, 2)
+        );
+        let peer = &mut server.rooms.get_mut(&[5; 16]).unwrap().peers[0];
+        peer.link.loss.add(32, 0);
+        peer.evaluate_reader(10);
+        assert_eq!(stats(&server).downlink, LinkState::Good);
+        super::super::tests::renew(&mut server, &mut reader, 20_000);
+        let renewed = &server.rooms[&[5; 16]].peers[0].link;
+        assert_eq!((renewed.loss.folds, renewed.loss.lossy), (1, false));
     }
 
     fn stats(server: &RelayServer) -> crate::ReaderLinkStats {

@@ -637,6 +637,9 @@ pub(crate) struct HopLink {
     pub(crate) uplinks: u64,
     // A PACK arrived on this hop: its subscription is confirmed (spec §6.0).
     pub(crate) first_pack: bool,
+    // The last `poll_uplink` send on this hop: one UPLINK per service. A
+    // renewed hop's first UPLINK is its own (spec §4.7).
+    pub(crate) last_service_ms: Option<u64>,
 }
 
 impl Default for HopLink {
@@ -650,6 +653,7 @@ impl Default for HopLink {
             received: 0,
             uplinks: 0,
             first_pack: false,
+            last_service_ms: None,
         }
     }
 }
@@ -700,7 +704,10 @@ pub(crate) struct ClientLink {
 
 impl ClientLink {
     pub(crate) fn new(rate: u16) -> Self {
-        let mut link = Self::default();
+        let mut link = Self {
+            loss: LossStats::initial(),
+            ..Self::default()
+        };
         link.schedule.turn_ms = crate::turn_ms(rate);
         link.jitter_rate = rate;
         link
@@ -752,7 +759,7 @@ impl ReaderLink {
             up_high_at_ms: now_ms,
             log: vec![SendRecord::default(); SENDLOG_READER],
             cursor: LossCursor::default(),
-            loss: LossStats::default(),
+            loss: LossStats::initial(),
             delayed: false,
             srtt_c: 0,
             jittery: false,

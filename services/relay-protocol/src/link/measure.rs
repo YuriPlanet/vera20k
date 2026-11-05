@@ -118,6 +118,15 @@ impl LossCursor {
 }
 
 impl LossStats {
+    /// A direction's loss before its first fold: treated as lossy (spec
+    /// §5.4), so a new link has redundancy until it is measured.
+    pub(crate) fn initial() -> Self {
+        Self {
+            lossy: true,
+            ..Self::default()
+        }
+    }
+
     /// Adds one judgement's counts and folds once 32 are judged (spec §4.3
     /// step 4), then applies the lossy and severe bands (spec §5.2, §5.4).
     pub(crate) fn add(&mut self, judged: u32, lost: u32) {
@@ -133,16 +142,19 @@ impl LossStats {
         self.folds += 1;
         self.permille_sum += u64::from(self.permille);
         self.permille_max = self.permille_max.max(self.permille);
-        if self.lossy {
-            self.lossy = self.permille > LOSSY_EXIT;
+        // The first fold decides afresh: the initial lossy state was no
+        // measurement (spec §5.4). Later folds keep the hysteresis.
+        let first = self.folds == 1;
+        self.lossy = if self.lossy && !first {
+            self.permille > LOSSY_EXIT
         } else {
-            self.lossy = self.permille >= LOSSY_ENTER;
-        }
-        if self.severe {
-            self.severe = self.permille > SEVERE_EXIT;
+            self.permille >= LOSSY_ENTER
+        };
+        self.severe = if self.severe && !first {
+            self.permille > SEVERE_EXIT
         } else {
-            self.severe = self.permille >= SEVERE_ENTER;
-        }
+            self.permille >= SEVERE_ENTER
+        };
     }
 
     /// Entering the offline state discards the open counts (spec §5.5).

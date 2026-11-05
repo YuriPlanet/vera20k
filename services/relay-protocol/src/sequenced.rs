@@ -2318,7 +2318,7 @@ mod tests {
         1000 + now_ms / 1000
     }
 
-    fn renew(server: &mut RelayServer, client: &mut ClientSession, now_ms: u64) {
+    pub(super) fn renew(server: &mut RelayServer, client: &mut ClientSession, now_ms: u64) {
         let mut ticket = client.ticket;
         ticket.expires = unix(now_ms) + 200;
         ticket.nonce[15] = ticket.nonce[15].wrapping_add(1);
@@ -2683,6 +2683,7 @@ mod tests {
         let replies = server
             .process_at(endpoint(&first), &bytes, unix(0), 0)
             .unwrap();
+        first.ordering.as_mut().unwrap().link.loss = Default::default();
         for reply in &replies {
             first.receive_at(&reply.bytes, 0).unwrap();
         }
@@ -3731,10 +3732,9 @@ mod tests {
             configure(&mut server, peer, &cert, 0);
             subscribe(&mut server, peer, 1, 0);
         }
-        server.rooms.get_mut(&[5; 16]).unwrap().peers[0]
-            .link
-            .loss
-            .lossy = true;
+        let peers = &mut server.rooms.get_mut(&[5; 16]).unwrap().peers;
+        peers[0].link.loss.lossy = true;
+        peers[1].link.loss = Default::default();
         server.advance_clock(300, unix(300));
         let first = server.drain_ordering_push(300, unix(300));
         let (lossy_at, good_at) = (endpoint(&lossy), endpoint(&good));

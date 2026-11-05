@@ -32,8 +32,6 @@ pub(crate) struct Schedule {
     acked_recv_next: u64,
     pub(crate) turn_ms: u32,
     last_uplink_ms: Option<u64>,
-    // The last `poll_uplink` send: one UPLINK per service.
-    last_service_ms: Option<u64>,
     // Every batch up to this ID went out at least once (row 1).
     sent_batches_through: u64,
     // The last UPLINK that carried unacknowledged batches (row 4).
@@ -195,8 +193,7 @@ impl ClientSession {
         }
         self.clock_ms = now_ms;
         self.evaluate_uplink(now_ms);
-        let schedule = &self.ordering.as_ref().expect("ordering").link.schedule;
-        if schedule.last_service_ms == Some(now_ms) {
+        if self.hop.last_service_ms == Some(now_ms) {
             return false;
         }
         let Some(due) = self.due_uplink(now_ms) else {
@@ -205,8 +202,8 @@ impl ClientSession {
         if self.send_uplink(due.kind, due.copy, now_ms, out).is_err() {
             return false;
         }
+        self.hop.last_service_ms = Some(now_ms);
         let link = &mut self.ordering.as_mut().expect("ordering").link;
-        link.schedule.last_service_ms = Some(now_ms);
         if due.timeout {
             link.rto_backoff += 1;
             link.rto_backoff_max = link.rto_backoff_max.max(link.rto_backoff);
@@ -690,7 +687,8 @@ mod tests {
     use crate::link::decode_uplink;
     use crate::{CLIENT_HEADER, MAC_LEN, OrderPace, OrderingCertificate, SecretKey, Ticket};
 
-    /// A ready, started session at 0 whose first PACK arrived.
+    /// A ready, started session at 0 whose first PACK arrived, its uplink
+    /// measured good.
     fn started() -> ClientSession {
         let key = SecretKey::new([3; 32]);
         let ticket = Ticket {
@@ -724,7 +722,24 @@ mod tests {
             .unwrap();
         session.hop.last_heard_ms = Some(0);
         session.note_ordering_receipt(true, true);
+        session.ordering.as_mut().unwrap().link.loss = Default::default();
         session
+    }
+
+    #[test]
+    fn the_uplink_copies_from_the_start_until_its_first_fold_measures_it() {
+        let mut session = started();
+        session.ordering.as_mut().unwrap().link.loss = crate::link::LossStats::initial();
+        poll(&mut session, 0).unwrap();
+        assert_eq!(session.link_stats().uplink, LinkState::Lossy);
+        session.seal_ordering_batch(b"early").unwrap();
+        poll(&mut session, 10).unwrap();
+        assert!(poll(&mut session, 26).is_some(), "a copy before any fold");
+        // 32 judged, none lost: the first fold decides good.
+        link(&mut session).loss.add(32, 0);
+        assert!(!link(&mut session).loss.lossy);
+        poll(&mut session, 40);
+        assert_eq!(session.link_stats().uplink, LinkState::Good);
     }
 
     /// One service at `now_ms` with the hop still hearing the relay.
