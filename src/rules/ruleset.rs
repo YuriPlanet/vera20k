@@ -7483,6 +7483,8 @@ impl RuleSet {
         }))
         .hash(&mut hasher);
 
+        b"powerups-v1".hash(&mut hasher);
+        self.powerups.hash(&mut hasher);
         // ReadINI71551E..715720 can retain different weights for identical
         // current text. Include the projected bits and process-resident defaults.
         b"threat-coefficients-v1".hash(&mut hasher);

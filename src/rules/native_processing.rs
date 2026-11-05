@@ -29,7 +29,7 @@ use crate::rules::object_image::{ImageTheater, ObjectImageKind, ObjectImageState
 use crate::rules::object_type::{
     InfantryArt, InfantryInfiltration, InfantryPips, ObjectCategory, WEAPON_SLOT_COUNT,
 };
-use crate::rules::powerups::{PowerupTable, PowerupsAccumulator};
+use crate::rules::powerups::PowerupTable;
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup, parse_prerequisites};
 use crate::rules::projectile_type::ProjectileArtState;
 use crate::rules::rules_type_references::{DEFAULT_PARTICLE_SYSTEMS, RulesTypeReferences};
@@ -396,7 +396,7 @@ impl RulesLayerStack {
                 kind == RulesLayerKind::RulesMd,
                 fixed_sounds,
             ) {
-                let (_, partial_trace, _) = processor.finish();
+                let (_, partial_trace) = processor.finish();
                 return Err(NativeRulesProcessingFailure {
                     error,
                     partial_trace: Box::new(partial_trace),
@@ -411,10 +411,9 @@ impl RulesLayerStack {
             if kind == RulesLayerKind::Scenario
                 && let Some(after_map) = after_map.take()
             {
-                let (ini, native_type_construction_trace, powerups) = processor.clone().finish();
+                let (ini, native_type_construction_trace) = processor.clone().finish();
                 let prefix = ProcessedRulesLayers {
                     ini,
-                    powerups,
                     content_hash: self.content_hash_for_layers(index + 1),
                     native_type_construction_trace,
                 };
@@ -441,11 +440,10 @@ impl RulesLayerStack {
             processor.init_overlay_theater();
             processor.init_anim_theater();
         }
-        let (ini, native_type_construction_trace, powerups) = processor.finish();
+        let (ini, native_type_construction_trace) = processor.finish();
         Ok((
             ProcessedRulesLayers {
                 ini,
-                powerups,
                 content_hash: self.content_hash(),
                 native_type_construction_trace,
             },
@@ -547,7 +545,7 @@ fn process_native_rules_cold_start_inner(
         fixed_sounds,
     );
     let after_building_bodies = processor.native_type_construction_events.len();
-    let (_, trace, _) = processor.finish();
+    let (_, trace) = processor.finish();
     Ok((
         trace,
         [
@@ -590,13 +588,13 @@ pub(crate) fn process_native_campaign_rules_prepass(
     if let Some(ini) = scenario_named_ini
         && let Err(error) = processor.apply_pass(ini, fixed_art, fixed_eva, false, fixed_sounds)
     {
-        let (_, partial_trace, _) = processor.finish();
+        let (_, partial_trace) = processor.finish();
         return Err(NativeRulesProcessingFailure {
             error,
             partial_trace: Box::new(partial_trace),
         });
     }
-    let (_, trace, _) = processor.finish();
+    let (_, trace) = processor.finish();
     Ok(trace)
 }
 
@@ -613,7 +611,7 @@ fn process_native_noncampaign_rules_prepass_inner(
     let after_general = processor.native_type_construction_events.len();
     processor.process_house_family(selected_rules_root, true);
     let after_house_bodies = processor.native_type_construction_events.len();
-    let (_, trace, _) = processor.finish();
+    let (_, trace) = processor.finish();
     (trace, [after_countries, after_general, after_house_bodies])
 }
 
@@ -709,7 +707,6 @@ const PARADROP_INFANTRY_KEYS: [&str; 4] = [
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct ProcessedRulesLayers {
     ini: IniFile,
-    powerups: PowerupTable,
     content_hash: u64,
     native_type_construction_trace: NativeTypeConstructionTrace,
 }
@@ -797,11 +794,6 @@ impl ProcessedRulesLayers {
 
     pub(crate) fn native_registry_state(&self) -> &NativeRulesRegistryState {
         self.native_type_construction_trace.registry_state()
-    }
-
-    pub(crate) fn install_global_sounds(&mut self, sounds: GlobalSoundReferences) {
-        self.native_type_construction_trace
-            .install_global_sounds(sounds);
     }
 
     /// Restore the inherited image calls of Terrain, Bullet and TechnoTypes
@@ -2431,15 +2423,6 @@ impl ProcessedRulesLayers {
         &self.native_registry_state().rules_land
     }
 
-    /// RMG's immutable projection shares its selected global land table.
-    pub(crate) fn install_terrain_rules(
-        &mut self,
-        rules: crate::rules::terrain_rules::TerrainRules,
-    ) {
-        self.native_type_construction_trace
-            .install_terrain_rules(rules);
-    }
-
     /// ReadAudioVisual669A60/669A99/669FC3 fixed-catalog IDs. These scalar
     /// Rules fields survive TypeReset6686C0 and Rules Save674730/Load675210.
     pub(crate) fn bomb_ticking_sound(&self) -> Option<&str> {
@@ -2741,7 +2724,10 @@ impl ProcessedRulesLayers {
     }
 
     pub fn powerups(&self) -> &PowerupTable {
-        &self.powerups
+        &self
+            .native_type_construction_trace
+            .registry_state()
+            .rules_powerups
     }
 
     /// The three `RocketStruct` blocks and their warheads after every pass.
@@ -2892,17 +2878,6 @@ impl NativeTypeConstructionTrace {
 
     pub(crate) fn registry_state(&self) -> &NativeRulesRegistryState {
         &self.registry_state
-    }
-
-    pub(crate) fn install_terrain_rules(
-        &mut self,
-        rules: crate::rules::terrain_rules::TerrainRules,
-    ) {
-        self.registry_state.install_terrain_rules(rules);
-    }
-
-    pub(crate) fn install_global_sounds(&mut self, sounds: GlobalSoundReferences) {
-        self.registry_state.install_global_sounds(sounds);
     }
 
     pub(crate) fn into_parts(
@@ -3729,6 +3704,9 @@ pub(crate) struct NativeRulesRegistryState {
     /// `[CrateRules]` (`0x0066B900`): its scalars, three images and
     /// UnitCrateType.
     rules_crate: CrateRules,
+    /// ReadPowerups673E80 updates process globals; Reset6686C0 retains them.
+    /// SaveMisc67F93E..67F982 / LoadMisc67FC97..67FCDB transfer all four arrays.
+    rules_powerups: PowerupTable,
     /// The three `RocketStruct` blocks with their types and warheads.
     rules_missile_spawn: MissileSpawnRules,
     rules_general_type_lists: GeneralTypeLists,
@@ -3821,6 +3799,7 @@ impl Default for NativeRulesRegistryState {
             rules_death_weapon: None,
             rules_type_references: RulesTypeReferences::default(),
             rules_crate: CrateRules::default(),
+            rules_powerups: PowerupTable::default(),
             rules_missile_spawn: MissileSpawnRules::default(),
             rules_general_type_lists: GeneralTypeLists::default(),
         }
@@ -3828,23 +3807,16 @@ impl Default for NativeRulesRegistryState {
 }
 
 impl NativeRulesRegistryState {
-    pub(crate) fn terrain_rules(&self) -> &crate::rules::terrain_rules::TerrainRules {
-        &self.rules_land
-    }
-
-    pub(crate) fn install_terrain_rules(
-        &mut self,
-        rules: crate::rules::terrain_rules::TerrainRules,
-    ) {
-        self.rules_land = rules;
-    }
-
-    pub(crate) fn global_sounds(&self) -> &GlobalSoundReferences {
-        &self.rules_global_sounds
-    }
-
-    pub(crate) fn install_global_sounds(&mut self, sounds: GlobalSoundReferences) {
-        self.rules_global_sounds = sounds;
+    /// Input to the existing read-only RMG source projection. Other domains
+    /// retain its prior default-based policy; the process-global tables start
+    /// with the same retained inputs as a real Reset6686C0.
+    pub(crate) fn retained_random_map_projection_seed(&self) -> Self {
+        Self {
+            rules_powerups: self.rules_powerups.clone(),
+            rules_land: self.rules_land.clone(),
+            rules_global_sounds: self.rules_global_sounds.clone(),
+            ..Self::default()
+        }
     }
 
     /// Read one presentation HSV from the retained paired Colors registry.
@@ -4249,6 +4221,9 @@ impl NativeRulesRegistryState {
             // reads them as its default.
             rules_prerequisite_lists: self.rules_prerequisite_lists,
             rules_crate: self.rules_crate.without_type_references(),
+            // Numeric animation indices survive deletion and may name a new
+            // slot after recreation; they are not swizzled Type pointers.
+            rules_powerups: self.rules_powerups,
             rules_missile_spawn: self.rules_missile_spawn.without_type_references(),
             ..Self::default()
         }
@@ -5340,7 +5315,7 @@ struct RulesPassProcessor {
     ares_global_controls: AresGlobalControls,
     ordinary: Option<IniFile>,
     crate_rules: CrateRules,
-    powerups: PowerupsAccumulator,
+    powerups: PowerupTable,
     general_type_lists: GeneralTypeLists,
     missile_spawn: MissileSpawnRules,
     families: HashMap<RulesTypeFamily, Vec<ProcessedType>>,
@@ -5498,7 +5473,7 @@ impl RulesPassProcessor {
             general_type_lists: registry_state.rules_general_type_lists,
             missile_spawn: registry_state.rules_missile_spawn,
             ordinary: None,
-            powerups: PowerupsAccumulator::default(),
+            powerups: registry_state.rules_powerups,
             native_type_construction_events: Vec::new(),
         }
     }
@@ -5535,6 +5510,11 @@ impl RulesPassProcessor {
 
         // JumpjetControls and MultiplayerSettings contain no Type factory.
         self.allocate_ai_references(pass);
+        // Process668ED0 reads Powerups after explicit Animations/AI, before
+        // General668EE8 and TypeData668EF0 can allocate more AnimTypes.
+        self.powerups.apply_pass(pass, |name| {
+            find_existing_type(&self.families, RulesTypeFamily::Animation, name)
+        });
         self.read_prerequisite_lists(pass);
         self.allocate_general_references(pass);
         #[cfg(feature = "ares")]
@@ -5597,7 +5577,6 @@ impl RulesPassProcessor {
             self.resolve_scalar_from(section, key, family, 0x80)
         });
         self.crate_rules = crate_rules;
-        self.powerups.apply_pass(pass);
         self.rules_land.apply_pass(pass);
         self.allocate_combat_references(pass);
         // ReadGeneral's rocket blocks and ReadCombatDamage's rocket warheads.
@@ -8775,7 +8754,7 @@ impl RulesPassProcessor {
         Ok(())
     }
 
-    fn finish(mut self) -> (IniFile, NativeTypeConstructionTrace, PowerupTable) {
+    fn finish(mut self) -> (IniFile, NativeTypeConstructionTrace) {
         let allocated_super_weapon_type_count = self
             .families
             .get(&RulesTypeFamily::SuperWeapon)
@@ -8910,11 +8889,11 @@ impl RulesPassProcessor {
                     rules_death_weapon: self.rules_death_weapon,
                     rules_type_references: self.rules_type_references,
                     rules_crate: self.crate_rules,
+                    rules_powerups: self.powerups,
                     rules_missile_spawn: self.missile_spawn,
                     rules_general_type_lists: self.general_type_lists,
                 },
             },
-            self.powerups.finish(),
         )
     }
 }

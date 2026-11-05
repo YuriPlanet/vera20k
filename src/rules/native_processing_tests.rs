@@ -4,6 +4,75 @@ use super::*;
 use crate::util::save_codec;
 
 #[test]
+fn powerup_animation_lookup_does_not_bind_later_type_allocations() {
+    let root =
+        IniFile::from_str("[General]\nDropZoneAnim=LATE\n[Powerups]\nMoney=20,LATE,yes,2000\n");
+    let processed = RulesLayerStack::new(root).process().unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    assert!(rules.anim_type_names.contains("LATE"));
+    let slot = crate::rules::powerups::POWERUP_MONEY;
+    assert_eq!(
+        rules.powerups.animation_index(slot),
+        -1,
+        "ReadPowerups673F2A precedes General's later AnimType allocation"
+    );
+    let (_, trace) = processed.into_ini_and_native_type_construction_trace();
+    let later = RulesLayerStack::new(IniFile::from_str("[Animations]\n0=LATE\n"))
+        .process_with_fixed_art_and_registry_state(
+            &IniFile::empty(),
+            trace.into_registry_state_discarding_events(),
+        )
+        .unwrap();
+    assert_eq!(later.powerups().animation_index(slot), -1);
+    let (_, trace) = later.into_ini_and_native_type_construction_trace();
+    let reread = RulesLayerStack::new(IniFile::from_str("[Powerups]\nMoney=25,LATE\n"))
+        .process_with_fixed_art_and_registry_state(
+            &IniFile::empty(),
+            trace.into_registry_state_discarding_events(),
+        )
+        .unwrap();
+    let rules = RuleSet::from_processed_rules(&reread).unwrap();
+    assert_eq!(
+        rules.anim_type_name_by_index(rules.powerups.animation_index(slot)),
+        Some("LATE")
+    );
+    assert_eq!(rules.powerups.weights[slot], 25);
+    assert!(rules.powerups.over_water[slot]);
+    assert_eq!(rules.powerups.magnitudes[slot].bits(), 2000_f64.to_bits());
+}
+
+#[test]
+fn powerup_globals_preserve_raw_indices_through_save_and_type_reset() {
+    let slot = crate::rules::powerups::POWERUP_MONEY;
+    let first = RulesLayerStack::new(IniFile::from_str(
+        "[Animations]\n0=OLD\n1=OLD_MONEY\n[Powerups]\nMoney=17,OLD_MONEY,yes,125%\n",
+    ))
+    .process()
+    .unwrap();
+    let table = first.powerups().clone();
+    let (_, trace) = first.into_ini_and_native_type_construction_trace();
+    let bytes = save_codec::serialize(&trace.into_registry_state_discarding_events()).unwrap();
+    let saved: NativeRulesRegistryState = save_codec::deserialize(&bytes).unwrap();
+    let next = RulesLayerStack::new(IniFile::from_str("[Animations]\n0=NEW\n1=NEW_MONEY\n"))
+        .process_with_fixed_art_and_registry_state(&IniFile::empty(), saved.destructive_reset())
+        .unwrap();
+    let rules = RuleSet::from_processed_rules(&next).unwrap();
+    assert_eq!(rules.powerups, table);
+    assert_eq!(
+        rules.anim_type_name_by_index(rules.powerups.animation_index(slot)),
+        Some("NEW_MONEY"),
+        "SaveMisc/LoadMisc retain a raw index, not the retired type name"
+    );
+    let fresh =
+        RuleSet::from_ini(&IniFile::from_str("[Animations]\n0=NEW\n1=NEW_MONEY\n")).unwrap();
+    assert_eq!(rules.source_ini_hash(), fresh.source_ini_hash());
+    assert_ne!(
+        rules.simulation_config_hash(),
+        fresh.simulation_config_hash()
+    );
+}
+
+#[test]
 fn player_at_supports_thirty_slots_without_constructing_countries() {
     let root = IniFile::from_str("[Countries]\n0=Americans\n");
     for (token, selector) in [

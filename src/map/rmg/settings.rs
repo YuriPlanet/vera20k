@@ -90,7 +90,7 @@ impl RmgSettings {
     /// Native indexes the selected vector entries without a length guard. Missing
     /// entries have no defined numeric fallback; preserve the existing empty INI
     /// for that unsupported input rather than inventing ambient values.
-    pub(super) fn generated_lighting_ini(&self, options: &RmgOptions) -> Option<IniFile> {
+    pub fn generated_lighting_ini(&self, options: &RmgOptions) -> Option<IniFile> {
         let time = usize::try_from(options.time).ok()?;
         let ambient = if options.theater == 0 {
             &self.temperate_ambient
