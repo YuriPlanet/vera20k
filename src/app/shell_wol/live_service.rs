@@ -23,8 +23,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{
-    WolApiStatus, WolHighScoreRecord, WolLadderRecord, WolLoginAccepted, WolProvider, WolServer,
-    WolServerList, WolServiceEvent, WolServiceRequest, service_event,
+    WolApiStatus, WolLoginAccepted, WolProvider, WolServer, WolServerList, WolServiceEvent,
+    WolServiceRequest, service_event,
 };
 use crate::app::AppState;
 use crate::app::persistence::account;
@@ -2945,12 +2945,8 @@ fn apply_event(
             );
         }
         "ladder" => {
-            let p: wire::Ladder = decode(payload)?;
-            let high_scores = p.records.iter().map(WolHighScoreRecord::from).collect();
-            service_event(
-                state,
-                WolServiceEvent::Ladder(p.records.iter().map(WolLadderRecord::from).collect()),
-            );
+            let (ladder, high_scores) = decode::<wire::Ladder>(payload)?.tables();
+            service_event(state, WolServiceEvent::Ladder(ladder));
             service_event(state, WolServiceEvent::HighScores(Ok(high_scores)));
         }
         "kicked" => {
@@ -3452,6 +3448,7 @@ fn poll_relay(state: &mut AppState, service: &mut LiveService) -> Result<()> {
 #[cfg(test)]
 mod completion_tests {
     use super::*;
+    use crate::app::shell_wol::{WolHighScoreRecord, WolLadderRecord};
 
     #[test]
     fn relay_grant_requires_match_player_and_encryption_key_agreement() {
@@ -3787,30 +3784,34 @@ mod completion_tests {
         service.look_up_ladder(vec!["boris".into()], true);
         assert_eq!(names(&input), [json!(["tanya"]), json!(["boris"])]);
 
-        let ladder: wire::Ladder = serde_json::from_value(json!({"season":1,"records":[
-            {"name":"Tanya","points":1520,"rank":7,"wins":40,"losses":12,"disconnects":1}]}))
+        // Boris played in an earlier season only: no record, but a badge.
+        let ladder: wire::Ladder = serde_json::from_value(json!({"season":2,"records":[
+            {"name":"Tanya","points":1520,"rank":7,"wins":40,"losses":12,"disconnects":1}],
+            "high_scores":[{"name":"Tanya","points":2100,"rank":3},{"name":"Boris","points":90,"rank":12}]}))
         .unwrap();
-        let record = &ladder.records[0];
+        let high_score = |name: &str, points, rank| WolHighScoreRecord {
+            name: name.into(),
+            points,
+            rank,
+            coop: 0,
+        };
         assert_eq!(
-            WolLadderRecord::from(record),
-            WolLadderRecord {
-                name: "Tanya".into(),
-                wins: 40,
-                losses: 12,
-                points: 1520,
-                rank: 7,
-                disconnects: 1,
-            }
+            ladder.tables(),
+            (
+                vec![WolLadderRecord {
+                    name: "Tanya".into(),
+                    wins: 40,
+                    losses: 12,
+                    points: 1520,
+                    rank: 7,
+                    disconnects: 1,
+                }],
+                vec![high_score("Tanya", 2100, 3), high_score("Boris", 90, 12)],
+            )
         );
-        assert_eq!(
-            WolHighScoreRecord::from(record),
-            WolHighScoreRecord {
-                name: "Tanya".into(),
-                points: 1520,
-                rank: 7,
-                coop: 0,
-            }
-        );
+        let older: wire::Ladder =
+            serde_json::from_value(json!({"season":null,"records":[]})).unwrap();
+        assert_eq!(older.tables(), (vec![], vec![]));
     }
 
     #[test]

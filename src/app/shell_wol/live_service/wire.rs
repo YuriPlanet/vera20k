@@ -299,11 +299,38 @@ pub(super) struct Start {
     pub relay: RelayGrant,
 }
 
-/// The `ladder` event: the running season's records of the names a `ladder`
-/// command asked for; a name without a rated game there has none.
+/// The `ladder` event for the names a `ladder` command asked for: the running
+/// season's records, which a name without a rated game there lacks, and the
+/// badge points of those that have played one.
 #[derive(Deserialize)]
 pub(super) struct Ladder {
     pub records: Vec<LadderRecord>,
+    /// Absent from a lobby from before all-time badges.
+    #[serde(default)]
+    pub high_scores: Vec<HighScoreRecord>,
+}
+
+impl Ladder {
+    /// The ladder table from the season's records, and the high-score table,
+    /// whose points pick the badges (`0x00783B80`), from the badge points.
+    pub(super) fn tables(&self) -> (Vec<WolLadderRecord>, Vec<WolHighScoreRecord>) {
+        (
+            self.records.iter().map(WolLadderRecord::from).collect(),
+            self.high_scores
+                .iter()
+                .map(WolHighScoreRecord::from)
+                .collect(),
+        )
+    }
+}
+
+/// A player's badge points, their ranked games of every season times their
+/// OS, over ten, and the rank they give.
+#[derive(Deserialize)]
+pub(super) struct HighScoreRecord {
+    pub name: String,
+    pub points: u32,
+    pub rank: u32,
 }
 
 #[derive(Deserialize)]
@@ -335,8 +362,8 @@ impl From<&LadderRecord> for WolLadderRecord {
 }
 
 /// The co-op icon's campaign bits have no lobby source and stay clear.
-impl From<&LadderRecord> for WolHighScoreRecord {
-    fn from(record: &LadderRecord) -> Self {
+impl From<&HighScoreRecord> for WolHighScoreRecord {
+    fn from(record: &HighScoreRecord) -> Self {
         Self {
             name: record.name.clone(),
             points: record.points,
