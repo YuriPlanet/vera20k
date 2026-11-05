@@ -143,6 +143,9 @@ pub enum WolTarget {
     ModernLobby,
     /// The same, then Create Game: `0xC3` on Red Alert 2's box art.
     ModernCreate,
+    /// The same, then a click on Tanya: VERA's player card with her badge,
+    /// country and season record, Message's help hovered.
+    ModernPlayerCard,
     /// The same, then OK: VERA's C2, whose Game Options toggles Crates.
     ModernRoomOptions,
     /// VERA's C2 opens two spectator rows past its players and the stand-in
@@ -525,6 +528,7 @@ impl WolTarget {
                 Self::TestServiceLobby
                     | Self::ModernLobby
                     | Self::ModernCreate
+                    | Self::ModernPlayerCard
                     | Self::ModernRoomOptions
                     | Self::ModernSpectators
                     | Self::ModernOptions
@@ -710,6 +714,7 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-test-service-lobby", WolTarget::TestServiceLobby),
     ("wol-modern-lobby", WolTarget::ModernLobby),
     ("wol-modern-create", WolTarget::ModernCreate),
+    ("wol-modern-player-card", WolTarget::ModernPlayerCard),
     ("wol-modern-room-options", WolTarget::ModernRoomOptions),
     ("wol-modern-spectators", WolTarget::ModernSpectators),
     ("wol-test-service-create", WolTarget::TestServiceCreate),
@@ -1017,6 +1022,7 @@ impl WolCapture {
                     target if target.online_login() => WolPhase::Login,
                     WolTarget::ModernLobby
                     | WolTarget::ModernCreate
+                    | WolTarget::ModernPlayerCard
                     | WolTarget::ModernRoomOptions
                     | WolTarget::ModernSpectators
                     | WolTarget::ModernOptions => WolPhase::ServiceLogin,
@@ -2034,6 +2040,7 @@ impl WolCapture {
                                 self.target,
                                 WolTarget::ModernLobby
                                     | WolTarget::ModernCreate
+                                    | WolTarget::ModernPlayerCard
                                     | WolTarget::ModernRoomOptions
                                     | WolTarget::ModernSpectators
                                     | WolTarget::ModernOptions
@@ -2106,6 +2113,32 @@ impl WolCapture {
                             == Some(lobby_ui::CREATE_LIMIT),
                         "Limit Screen Resolution has no help"
                     );
+                    self.settle();
+                    return Ok(());
+                }
+                if self.target == WolTarget::ModernPlayerCard {
+                    // The test service has sent Tanya's badge, country and
+                    // season record.
+                    player_row_click(state, "Tanya")?;
+                    ensure!(
+                        Self::lobby(state)?
+                            .ui
+                            .card
+                            .as_ref()
+                            .is_some_and(|card| card.name == "Tanya"),
+                        "a click on Tanya did not open her card"
+                    );
+                    self.event(frame, "player card opened");
+                    // Message's help in the box's status line.
+                    let card = crate::app::shell_wol::player_card::layout(state);
+                    set_window_pointer_to_rect_center(state, card.message);
+                    App::handle_wol_mouse_move(state);
+                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    let expected = crate::i18n::fill(
+                        &App::csf_label(state, "VERA:MessageHelp", "VERA:MessageHelp"),
+                        &[("name", &"Tanya")],
+                    );
+                    ensure!(help == expected, "Message's help read {help:?}");
                     self.settle();
                     return Ok(());
                 }
@@ -4918,6 +4951,31 @@ fn game_row_click(state: &mut AppState, row: usize) -> Result<()> {
             .game_list
             .geometry(layout.games, lobby.ui.game_rows.len(), layout.page.scale);
     let rect = geometry.row(row - lobby.ui.game_list.top_index);
+    welcome_click(state, rect);
+    Ok(())
+}
+
+/// A click on the player list's row of `name`.
+fn player_row_click(state: &mut AppState, name: &str) -> Result<()> {
+    let layout = crate::app::shell_wol::lobby::layout(state);
+    let lobby = state
+        .frontend
+        .wol
+        .as_ref()
+        .and_then(|visit| visit.lobby())
+        .context("the lobby runner")?;
+    let row = lobby
+        .ui
+        .player_rows
+        .iter()
+        .position(|row| row.name == name)
+        .context("the player's row")?;
+    let geometry = lobby.ui.player_list.geometry(
+        layout.players,
+        lobby.ui.player_rows.len(),
+        layout.page.scale,
+    );
+    let rect = geometry.row(row - lobby.ui.player_list.top_index);
     welcome_click(state, rect);
     Ok(())
 }

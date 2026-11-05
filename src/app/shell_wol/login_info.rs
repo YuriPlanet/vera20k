@@ -217,7 +217,7 @@ mod fetch {
 
     /// The website answers in English for a language it lacks.
     pub(super) fn news(language: &str) -> Result<Vec<NewsPost>> {
-        let url = format!("{}news.json?lang={language}", crate::app::updater::WEBSITE);
+        let url = format!("{}news.json?lang={language}", crate::app::web_link::WEBSITE);
         super::read_feed(&get(&url)?)
     }
 }
