@@ -564,8 +564,10 @@ or `sign_in_token` for a name without an account returns 404 `no_account`; other
 that name enters as a guest. A lobby without accounts set up refuses a password with
 503 `accounts_unavailable`.
 
-VERA20k's online login page has Password and Remember password under the name, and
-Create Account, Forgot Password and Delete Account under Login. Create Account asks
+VERA20k's online login page has Password and Remember password under the name. Login
+signs in to an account with its password, and Play as Guest under the name alone, with
+no password or remembered sign-in; Enter does Play as Guest while no password is typed.
+Create Account, Forgot Password and Delete Account follow. Create Account asks
 for the name, email and password, then the mailed code, and signs in. Forgot Password
 mails the typed name's code, then asks for it and a new password, and signs in. Delete
 Account asks for the typed name's password, then says the account is deleted and

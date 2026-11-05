@@ -1284,11 +1284,15 @@ impl WolCapture {
                         ensure!(
                             login.policy == crate::ui::wol_login::LoginPolicy::Online
                                 && login.password.units.is_empty()
-                                && login.login_enabled
+                                && !login.login_enabled
+                                && login.button_enabled(crate::ui::wol_login::PLAY_AS_GUEST)
                                 && !login.remember_enabled,
                             "the online login page did not take a guest name"
                         );
-                        self.event(frame, "Username typed; Login enabled without a password");
+                        self.event(
+                            frame,
+                            "Username typed; Play as Guest enabled, Login waits for a password",
+                        );
                         if target != WolTarget::ModernUsername {
                             self.account_popup(state, frame, target, &layout)?;
                         }
