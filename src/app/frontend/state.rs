@@ -247,6 +247,8 @@ pub(crate) struct FrontendState {
     pub(crate) random_map_retention: RandomMapGenerationRetention,
     pub(crate) skirmish_preview_texture:
         Option<crate::app::frontend::skirmish_shell_render::SkirmishPreviewTexture>,
+    /// VERA's enlarged map preview, while it shows.
+    pub(crate) preview_zoom: Option<crate::app::frontend::preview_zoom::PreviewZoom>,
     /// Minimap renderer — created at map load time.
     pub(crate) loading_screen_atlas:
         Option<crate::render::loading_screen_chrome::LoadingScreenAtlas>,
