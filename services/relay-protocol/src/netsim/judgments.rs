@@ -1917,6 +1917,20 @@ fn j15_each_direction_starts_lossy_until_its_first_fold() {
             trace.client_stats_at(client, settled).unwrap().copies > 0,
             "client {client}: no copy before the first fold"
         );
+        // §5.4: the initial lossy state ends at the first fold by the
+        // threshold alone, so on this lossless link the fold that makes
+        // `up_loss_folds` 1 is the one that turns the uplink Good.
+        let (_, _, first_fold) = trace
+            .client_stats
+            .iter()
+            .find(|(_, c, stats)| *c == client && stats.up_loss_folds >= 1)
+            .unwrap();
+        assert_eq!(first_fold.up_loss_folds, 1);
+        assert_eq!(
+            first_fold.uplink,
+            LinkState::Good,
+            "client {client} after its first fold"
+        );
         check_copies(&trace, client).unwrap();
         // Downlink: from the subscription, Lossy with K = 2 and repeats
         // until the relay's first fold.
