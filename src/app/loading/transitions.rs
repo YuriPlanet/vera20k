@@ -254,14 +254,18 @@ pub(crate) fn install_world_presentation(
         }
     }
     // GAME.FNT is process artwork, so retain the established process fallback
-    // when optional font preparation did not produce a replacement.
-    if let Some(ref fnt) = assets.fnt_file {
-        state.renderer.bit_font = crate::render::bit_font::BitFont::from_fnt(
-            &state.renderer.gpu.device,
-            &state.renderer.gpu.queue,
-            &state.renderer.batch_renderer,
-            fnt,
-        );
+    // when optional font preparation did not produce a replacement. A
+    // `[VERA] UiFont=` vector face is such a replacement and outlives scene
+    // loads.
+    if !state.renderer.bit_font.is_vector() {
+        if let Some(ref fnt) = assets.fnt_file {
+            state.renderer.bit_font = crate::render::bit_font::BitFont::from_fnt(
+                &state.renderer.gpu.device,
+                &state.renderer.gpu.queue,
+                &state.renderer.batch_renderer,
+                fnt,
+            );
+        }
     }
 
     // The final sidebar projection resolves incoming side/radar authority.

@@ -97,6 +97,8 @@ pub mod unit_atlas;
 pub mod unit_pose_cache;
 pub(crate) mod unit_shadow;
 pub mod upscale_pass;
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+pub mod vector_font;
 pub mod voxel_image_cache;
 pub(crate) mod voxel_gpu;
 #[cfg(test)]

@@ -40,6 +40,9 @@ const NET_ID_UNITS: usize = 0xC8;
 /// the capacity is ours: a device name is at most `\\.\DISPLAY` plus a few
 /// digits, and 64 leaves room for a backend that names screens differently.
 const DISPLAY_CAPACITY: usize = 64;
+/// Destination bytes `[VERA] UiFont=`'s ReadString copies into. VERA's own key:
+/// room for a few family names without becoming an unbounded string.
+const UI_FONT_CAPACITY: usize = 256;
 const SCREEN_SIZE_UNSET: i32 = -1;
 const DEFAULT_SCREEN_WIDTH: i32 = 800;
 const DEFAULT_SCREEN_HEIGHT: i32 = 600;
@@ -252,6 +255,12 @@ pub(crate) struct RetailOptionsProfile {
     /// game last sat, so the next launch opens there. `None` until the player
     /// moves or resizes the window; a zero width reads as unset.
     pub(crate) window_placement: Option<WindowPlacement>,
+    /// `[VERA] UiFont=`: installed font families, in fallback order, that
+    /// replace `GAME.FNT`'s bitmap glyphs with rasterised TrueType/OpenType
+    /// outlines (`render::vector_font`). Empty keeps the retail font. A
+    /// configured family missing from the system is skipped; names after it
+    /// still join the chain.
+    pub(crate) ui_font: Vec<String>,
 }
 
 /// The windowed game's last placement: the outer top-left corner in the
@@ -346,6 +355,7 @@ impl Default for RetailOptionsProfile {
             online_locale: 0,
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
             window_placement: None,
+            ui_font: Vec::new(),
         }
     }
 }
@@ -362,7 +372,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 30],
+    pub(crate) vera: [(&'static str, String); 31],
 }
 
 impl RetailOptionsLoad {
@@ -619,6 +629,9 @@ impl RetailOptionsProfile {
                 self.display =
                     crate::ui::main_menu_dialogs::options::DisplayTarget::from_ini_value(value);
             }
+            if let Some(value) = vera.read_name("UiFont", UI_FONT_CAPACITY) {
+                self.ui_font = split_font_families(value);
+            }
             let width = vera.read_int("WindowWidth", 0);
             let height = vera.read_int("WindowHeight", 0);
             if width > 0 && height > 0 {
@@ -776,6 +789,7 @@ impl RetailOptionsProfile {
                     "HdMapPreviews",
                     format_bool(self.hd_map_previews).to_string(),
                 ),
+                ("UiFont", self.ui_font.join(",")),
             ],
         }
     }
@@ -939,6 +953,17 @@ fn upper_only_volume(value: f64) -> f32 {
 
 fn format_bool(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
+}
+
+/// Split `[VERA] UiFont=` into family names. A `;` cannot separate them: the
+/// INI reader already treats it as a comment, so the list uses commas.
+fn split_font_families(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|family| !family.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 /// Lift a configured `[VERA] ShiftQueueCount=` into the range a click can use.
@@ -1682,6 +1707,43 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert_eq!(
             load_snapshot(&startup, &auto).retained_profile.display,
             DisplayTarget::Auto
+        );
+    }
+
+    #[test]
+    fn ui_font_families_split_and_round_trip_through_the_vera_section() {
+        let startup = RetailStartupOptions::default();
+        // Absent or empty keeps GAME.FNT: no family is configured.
+        for input in [
+            b"".as_slice(),
+            b"[VERA]\n".as_slice(),
+            b"[VERA]\nUiFont=\n".as_slice(),
+        ] {
+            assert!(
+                load_snapshot(&startup, input)
+                    .retained_profile
+                    .ui_font
+                    .is_empty()
+            );
+        }
+        let listed = load_snapshot(
+            &startup,
+            b"[VERA]\nUiFont=Segoe UI, Microsoft YaHei,Noto Sans\n",
+        );
+        assert_eq!(
+            listed.retained_profile.ui_font,
+            vec!["Segoe UI", "Microsoft YaHei", "Noto Sans"]
+        );
+        // The writer emits the chain in one key and a re-read agrees.
+        let output = listed.retained_profile.transform_settings(b"[VERA]\r\n");
+        let text = String::from_utf8(output.clone()).unwrap();
+        assert!(
+            text.contains("UiFont=Segoe UI,Microsoft YaHei,Noto Sans\r\n"),
+            "{text}"
+        );
+        assert_eq!(
+            load_snapshot(&startup, &output).retained_profile.ui_font,
+            listed.retained_profile.ui_font
         );
     }
 

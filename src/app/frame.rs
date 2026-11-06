@@ -1507,6 +1507,12 @@ impl App {
         } else {
             None
         };
+        // Glyphs rasterised while the frame's text was built reach the atlas
+        // before the command buffer that samples them is submitted.
+        state
+            .renderer
+            .bit_font
+            .flush_atlas(&state.renderer.gpu.queue);
         let submission = state
             .renderer
             .gpu

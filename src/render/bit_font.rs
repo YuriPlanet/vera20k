@@ -41,6 +41,13 @@ const DEFAULT_SPACE_WIDTH: u32 = 4;
 /// End-exclusive at u16::MAX, which is reserved for the missing-glyph sentinel.
 const PACKED_CODEPOINT_RANGE: std::ops::Range<u16> = 0x20..0xFFFF;
 
+/// `[VERA] UiFont=`'s optional vector face. Browsers have no system fonts, so
+/// the slot compiles to an empty type there and every branch below is inert.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+type VectorFontSlot = Option<crate::render::vector_font::VectorFont>;
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+type VectorFontSlot = Option<std::convert::Infallible>;
+
 /// UV + pixel-width record for a single glyph in the atlas.
 #[derive(Clone, Copy, Debug)]
 pub struct GlyphEntry {
@@ -95,6 +102,9 @@ pub struct BitFont {
     pub(crate) tab_width: u32,
     pub(crate) tab_origin: u32,
     pub(crate) darken_texture: Option<BatchTexture>,
+    /// `[VERA] UiFont=` replacement. `None` keeps the bitmap table above, which
+    /// is the only path VERA takes unless the key names installed families.
+    pub(crate) vector: VectorFontSlot,
 }
 
 /// The Path-A reveal a TextLabel draws for its inclusive count (see
@@ -125,9 +135,35 @@ impl BitFont {
     }
 
     pub fn atlas(&self) -> &BatchTexture {
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        if let Some(vector) = &self.vector {
+            return vector.texture();
+        }
         self.atlas_texture
             .as_ref()
             .expect("BitFont atlas not populated (test-only ctor)")
+    }
+    /// Whether `[VERA] UiFont=` replaced the bitmap glyph table. Scene loads
+    /// keep this font instead of rebuilding it from `GAME.FNT`.
+    pub fn is_vector(&self) -> bool {
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        {
+            self.vector.is_some()
+        }
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        {
+            false
+        }
+    }
+    /// Upload glyphs rasterised since the previous frame. Called before the
+    /// frame's command buffer is submitted.
+    pub fn flush_atlas(&self, queue: &wgpu::Queue) {
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        if let Some(vector) = &self.vector {
+            vector.flush(queue);
+        }
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        let _ = queue;
     }
     /// Darken-strip texture for the sidebar Ready overlay. Returns `None`
     /// when the BitFont was built via the 5x7 fallback path (sentinel that
@@ -177,6 +213,10 @@ impl BitFont {
         tint: [f32; 3],
         camera_offset: [f32; 2],
     ) -> Vec<SpriteInstance> {
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        if let Some(vector) = &self.vector {
+            return vector.build_text(text, x, y, scale, depth, tint, camera_offset);
+        }
         let mut instances = Vec::with_capacity(text.len());
         let mut cursor_x = x;
         let spacing = self.char_spacing as f32 * scale;
@@ -288,6 +328,19 @@ impl BitFont {
         already_consumed: u32,
         reveal: PathAReveal,
     ) -> (Vec<SpriteInstance>, u32) {
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        if let Some(vector) = &self.vector {
+            return vector.build_text_path_a(
+                text,
+                x,
+                y,
+                scale,
+                depth,
+                camera_offset,
+                already_consumed,
+                reveal,
+            );
+        }
         let mut instances = Vec::with_capacity(text.len());
         let mut cursor_x = x;
         let spacing = self.char_spacing as f32 * scale;
@@ -356,6 +409,10 @@ impl BitFont {
     }
 
     pub fn wrap_layout(&self, text: &str, max_width: u32) -> WrapLayout {
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        if let Some(vector) = &self.vector {
+            return vector.wrap_layout(text, max_width);
+        }
         if text.is_empty() {
             return WrapLayout::default();
         }
@@ -507,6 +564,10 @@ impl BitFont {
     /// dark-strip width and h-center anchor; matches the value
     /// `ComputeTextRect` and `FUN_00434CD0`'s wrap-accumulator use.
     pub fn text_width(&self, text: &str) -> u32 {
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        if let Some(vector) = &self.vector {
+            return vector.text_width(text);
+        }
         let mut x: u32 = 0;
         let mut count: u32 = 0;
         for ch in text.chars() {
@@ -613,6 +674,7 @@ impl BitFont {
             tab_width: TAB_WIDTH,
             tab_origin: TAB_ORIGIN,
             darken_texture: None,
+            vector: None,
         }
     }
 
@@ -779,7 +841,29 @@ impl BitFont {
             tab_width: TAB_WIDTH,
             tab_origin: TAB_ORIGIN,
             darken_texture: Some(darken_texture),
+            vector: None,
         }
+    }
+
+    /// Build the retail bitmap font and, when `[VERA] UiFont=` names installed
+    /// families, attach the vector face that replaces its glyph table. The
+    /// bitmap table and darken texture still exist, so a chain that fails to
+    /// build leaves the retail font fully in place.
+    pub fn from_fnt_with_ui_font(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        fnt: &FntFile,
+        families: &[String],
+    ) -> Self {
+        let mut font = Self::from_fnt(device, queue, batch, fnt);
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        if !families.is_empty() {
+            font.vector = crate::render::vector_font::VectorFont::new(device, batch, families);
+        }
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        let _ = families;
+        font
     }
 }
 
@@ -1240,6 +1324,7 @@ pub(crate) mod tests {
             tab_width: TAB_WIDTH,
             tab_origin: TAB_ORIGIN,
             darken_texture: None,
+            vector: None,
         }
     }
 

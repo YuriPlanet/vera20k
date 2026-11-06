@@ -1841,7 +1841,48 @@ impl BatchRenderer {
             wgpu::util::TextureDataOrder::LayerMajor,
             rgba_data,
         );
+        let batch_tex = self.updatable_batch_texture(device, &texture, width, height, filter);
+        (texture, batch_tex)
+    }
 
+    /// Create an empty reusable texture for pieces written later with
+    /// `queue.write_texture()`. Unlike [`Self::create_updatable_texture`] the
+    /// caller does not have to materialize the whole zeroed image first, which
+    /// matters for the lazily filled vector-font atlas (`render::vector_font`).
+    pub fn create_blank_updatable_texture(
+        &self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+        filter: wgpu::FilterMode,
+    ) -> (wgpu::Texture, BatchTexture) {
+        let texture: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Updatable Batch Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let batch_tex = self.updatable_batch_texture(device, &texture, width, height, filter);
+        (texture, batch_tex)
+    }
+
+    /// Sampler and bind group shared by both updatable-texture constructors.
+    fn updatable_batch_texture(
+        &self,
+        device: &wgpu::Device,
+        texture: &wgpu::Texture,
+        width: u32,
+        height: u32,
+        filter: wgpu::FilterMode,
+    ) -> BatchTexture {
         let view: wgpu::TextureView = texture.create_view(&Default::default());
         let sampler: wgpu::Sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("Updatable Batch Sampler"),
@@ -1869,13 +1910,12 @@ impl BatchRenderer {
             ],
         });
 
-        let batch_tex = BatchTexture {
+        BatchTexture {
             bind_group,
             view,
             width,
             height,
-        };
-        (texture, batch_tex)
+        }
     }
 
     /// Draw instances using the overlay pipeline (LessEqual, depth write ON).
