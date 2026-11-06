@@ -402,9 +402,12 @@ impl Simulation {
             &self.terrain_objects,
             &mut self.substrate,
             id,
+            // BuildingLightClass::GetLayer @ 0x004369F0 returns Air (3).
             DisplayLayer::AIR,
             rules,
         );
+        // BuildingLightClass::Unlimbo @ 0x00437050 registers it with Logic;
+        // Limbo @ 0x00437030 is `conceal_spotlight_logic`.
         self.register_spotlight_logic(id);
     }
     pub(crate) fn destroy_spotlight_for_parent(&mut self, parent: u64, context: UninitContext<'_>) {

@@ -12,6 +12,9 @@ use crate::render::batch::SpriteInstance;
 use crate::ui::game_screen::GameScreen;
 
 /// Native Init anchors: x = tactical_x + 3, y = tactical_y, w = tactical_w − 14.
+/// RESIDUAL: Set_View_Dimensions then sets the width to tactical_w − 8
+/// (`MessageListClass::SetWidth @ 0x005D4AD0`, from 0x004A8BC9) whenever the
+/// match changes video mode or a save loads; lines wrap 6 px early here.
 const MESSAGE_X_INSET: i32 = 3;
 const MESSAGE_WIDTH_INSET: i32 = 14;
 /// Fallback while match color schemes are unavailable.
