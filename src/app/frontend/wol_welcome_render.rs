@@ -635,14 +635,20 @@ pub(crate) fn render_wol_page(
     let player_card = match (&painted, children) {
         (Painted::Lobby(layout), true) => {
             crate::app::shell_wol::player_card::view(state).map(|view| {
+                let scale = layout.page.scale;
                 (
                     view.layout.dialog,
                     crate::app::frontend::skirmish_shell_render::paint_wol_player_card(
-                        state,
-                        &view,
-                        art,
-                        layout.page.scale,
+                        state, &view, art, scale,
                     ),
+                    view.countries.as_ref().map(|list| {
+                        (
+                            list.popup.rect,
+                            crate::app::frontend::skirmish_shell_render::paint_wol_card_countries(
+                                state, list, scale,
+                            ),
+                        )
+                    }),
                 )
             })
         }
@@ -1113,7 +1119,7 @@ pub(crate) fn render_wol_page(
         });
         text.extend(popup.texts);
     }
-    if let (Some(atlas), Some((dialog, card))) = (controls_atlas, player_card) {
+    if let (Some(atlas), Some((dialog, card, countries))) = (controls_atlas, player_card) {
         hide_glyphs_under(&mut text, dialog);
         draws.push(TexturedDraw {
             texture: &atlas.texture,
@@ -1126,6 +1132,14 @@ pub(crate) fn render_wol_page(
             });
         }
         text.extend(card.texts);
+        if let Some((list, countries)) = countries {
+            hide_glyphs_under(&mut text, list);
+            draws.push(TexturedDraw {
+                texture: &atlas.texture,
+                instances: countries.controls,
+            });
+            text.extend(countries.texts);
+        }
     }
     // 0xCF and 0x11E leave the page painting beneath them, over the lobby,
     // the buddy list or any other page.

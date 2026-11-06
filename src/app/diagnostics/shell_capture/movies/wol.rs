@@ -146,6 +146,10 @@ pub enum WolTarget {
     /// The same, then a click on Tanya: VERA's player card with her badge,
     /// country and season record, Message's help hovered.
     ModernPlayerCard,
+    /// The same, then a click on your own name: Change Country picks
+    /// Australia, which VERA.INI keeps and the lobby is sent; the list is
+    /// open again over the card, Australia lit.
+    ModernChangeCountry,
     /// The same, then OK: VERA's C2, whose Game Options toggles Crates.
     ModernRoomOptions,
     /// VERA's C2 opens two spectator rows past its players and the stand-in
@@ -529,6 +533,7 @@ impl WolTarget {
                     | Self::ModernLobby
                     | Self::ModernCreate
                     | Self::ModernPlayerCard
+                    | Self::ModernChangeCountry
                     | Self::ModernRoomOptions
                     | Self::ModernSpectators
                     | Self::ModernOptions
@@ -715,6 +720,7 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-modern-lobby", WolTarget::ModernLobby),
     ("wol-modern-create", WolTarget::ModernCreate),
     ("wol-modern-player-card", WolTarget::ModernPlayerCard),
+    ("wol-modern-change-country", WolTarget::ModernChangeCountry),
     ("wol-modern-room-options", WolTarget::ModernRoomOptions),
     ("wol-modern-spectators", WolTarget::ModernSpectators),
     ("wol-test-service-create", WolTarget::TestServiceCreate),
@@ -956,6 +962,86 @@ impl WolCapture {
         self.phase = WolPhase::Settle(SETTLE_FRAMES);
     }
 
+    /// Your own card's Change Country: the list opens at the login's United
+    /// States (2), a pick of its top shown row is kept and sent, and the list
+    /// then opens again at that row.
+    fn change_country(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::app::shell_wol::player_card;
+        use crate::ui::wol_lobby::CARD_COUNTRY_ROWS;
+        player_row_click(state, NICKNAME)?;
+        ensure!(
+            Self::lobby(state)?
+                .ui
+                .card
+                .as_ref()
+                .is_some_and(|card| card.name == NICKNAME),
+            "a click on your own name did not open your card"
+        );
+        let message = player_card::layout(state).message;
+        let countries = |state: &AppState| {
+            player_card::view(state).and_then(|view| view.countries.map(|list| (view.rows, list)))
+        };
+        // The open list's row for `locale` and the top row it should open at.
+        let opens_at = |state: &AppState, locale: i32| -> Result<(usize, usize)> {
+            let rows = &Self::lobby(state)?
+                .ui
+                .card
+                .as_ref()
+                .context("your card")?
+                .countries;
+            let row = rows
+                .iter()
+                .position(|row| row.locale == locale)
+                .context("the country's row")?;
+            Ok((row, row.min(rows.len().saturating_sub(CARD_COUNTRY_ROWS))))
+        };
+        welcome_click(state, message);
+        let (_, list) = countries(state).context("Change Country did not drop the country list")?;
+        let (lit, top) = opens_at(state, 2)?;
+        ensure!(
+            list.hot_row == Some(lit) && list.popup.first == top,
+            "the list opened at row {:?}, top {}, not at the United States",
+            list.hot_row,
+            list.popup.first
+        );
+        let row = list.popup.first;
+        let locale = Self::lobby(state)?
+            .ui
+            .card
+            .as_ref()
+            .and_then(|card| card.countries.get(row))
+            .context("the top row's country")?
+            .locale;
+        ensure!(locale != 2, "the top row is the United States");
+        welcome_click(state, list.popup.row_rect(row).context("the top row")?);
+        ensure!(countries(state).is_none(), "the pick left the list open");
+        ensure!(
+            state.persistence.options_profile.online_locale == locale,
+            "VERA.INI did not keep {locale}"
+        );
+        let requests = self.requests(state, frame)?;
+        ensure!(
+            requests.contains(&WolServiceRequest::SetLocale(locale)),
+            "the pick sent {requests:?}"
+        );
+        self.event(frame, json!({"country kept and sent": locale}));
+        welcome_click(state, message);
+        let (rows, list) = countries(state).context("Change Country did not open again")?;
+        let (lit, top) = opens_at(state, locale)?;
+        ensure!(
+            lit == row && list.hot_row == Some(row) && list.popup.first == top,
+            "the list opened again at row {:?}, top {}",
+            list.hot_row,
+            list.popup.first
+        );
+        let picked = &list.rows[row];
+        ensure!(
+            rows.iter().any(|(_, value)| value == picked),
+            "the card shows {rows:?}"
+        );
+        Ok(())
+    }
+
     fn requests(&mut self, state: &mut AppState, frame: u32) -> Result<Vec<WolServiceRequest>> {
         let requests = state
             .frontend
@@ -1023,6 +1109,7 @@ impl WolCapture {
                     WolTarget::ModernLobby
                     | WolTarget::ModernCreate
                     | WolTarget::ModernPlayerCard
+                    | WolTarget::ModernChangeCountry
                     | WolTarget::ModernRoomOptions
                     | WolTarget::ModernSpectators
                     | WolTarget::ModernOptions => WolPhase::ServiceLogin,
@@ -2041,6 +2128,7 @@ impl WolCapture {
                                 WolTarget::ModernLobby
                                     | WolTarget::ModernCreate
                                     | WolTarget::ModernPlayerCard
+                                    | WolTarget::ModernChangeCountry
                                     | WolTarget::ModernRoomOptions
                                     | WolTarget::ModernSpectators
                                     | WolTarget::ModernOptions
@@ -2139,6 +2227,11 @@ impl WolCapture {
                         &[("name", &"Tanya")],
                     );
                     ensure!(help == expected, "Message's help read {help:?}");
+                    self.settle();
+                    return Ok(());
+                }
+                if self.target == WolTarget::ModernChangeCountry {
+                    self.change_country(state, frame)?;
                     self.settle();
                     return Ok(());
                 }
