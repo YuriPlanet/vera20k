@@ -3,7 +3,8 @@
 //! This is presentation state, deliberately not simulation state. Active YR's
 //! registered byte (`TechnoClass+0x423`) and discovery/visibility decisions are
 //! local-client facts: they read `g_PlayerPtr` and that client's shroud. The
-//! tracker is also recreated by `FUN_00655990` and on load. Serializing or
+//! tracker is also recreated by `FUN_00655990` and on load. Its dots draw as
+//! `RadarClass::RenderTrackedObjects @ 0x00656150` (from RefreshRadar 0x00657D30). Serializing or
 //! world-hashing it would therefore make a local view cache part of lockstep.
 
 use std::collections::{BTreeMap, BTreeSet};
