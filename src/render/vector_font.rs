@@ -10,10 +10,14 @@
 //! is what gives Latin, Cyrillic, Greek and CJK text a covering face even when
 //! a single font does not carry it.
 //! Colour emoji draw from COLR layers or colour bitmap strikes and keep their
-//! own RGB instead of the caller's UI tint. Emoji sequences (ZWJ, flags,
-//! skin-tone modifiers) are not composed: each code point is drawn on its own.
-//! There is no complex-script shaping and no bidirectional reordering: Arabic
-//! and indic text draws with isolated, unjoined glyphs.
+//! own RGB instead of the caller's UI tint.
+//! Emoji sequences (ZWJ, flags, keycaps, skin-tone modifiers) are composed
+//! through the face's GSUB into one glyph run, which is why 👨‍👩‍👧 lays out as a
+//! single character even though Windows' emoji font paints it from three
+//! component glyphs; a sequence the face cannot compose falls back to its
+//! individual code points. There is no complex-script shaping and no
+//! bidirectional reordering: Arabic and indic text draws with isolated,
+//! unjoined glyphs.
 //!
 //! Glyphs are rasterised lazily at [`PX_SIZE`] and parked in one
 //! [`ATLAS_SIZE`] square RGBA atlas. The atlas texture is created empty and
@@ -29,8 +33,7 @@ use std::rc::Rc;
 
 use swash::scale::image::{Content, Image};
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
-use swash::shape::ShapeContext;
-use swash::text::{Codepoint, Script};
+use swash::text::Codepoint;
 use swash::{FontRef, GlyphId};
 
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
@@ -136,14 +139,26 @@ struct RasterGlyph {
     color: bool,
 }
 
-/// A composed emoji sequence: one glyph covering several source code points.
+/// One glyph of a composed emoji sequence, positioned relative to the run's
+/// origin in 16 px units.
+#[derive(Clone, Copy)]
+struct ShapedGlyph {
+    glyph: GlyphId,
+    /// Horizontal offset of the glyph (GPOS may move a zero-advance component,
+    /// such as the child in a family emoji, back over its parents).
+    x: f32,
+    y: f32,
+    advance: f32,
+}
+
+/// A composed emoji sequence: several glyphs covering several source code
+/// points. Windows emoji fonts build a ZWJ family from three narrow component
+/// glyphs, not from one full-width glyph, so a run must keep all of them.
+#[derive(Clone)]
 struct ShapedRun {
     face: usize,
-    /// Byte end of the consumed source span.
-    end_byte: usize,
-    glyph: GlyphId,
-    /// Pen offset of the glyph (zero for an ordinary ligature).
-    x: f32,
+    glyphs: Vec<ShapedGlyph>,
+    /// Total pen advance in 16 px units.
     advance: f32,
 }
 
@@ -217,8 +232,10 @@ pub struct VectorFont {
     /// Per-glyph rasterisation; `None` when swash cannot draw it.
     glyphs: RefCell<HashMap<(usize, GlyphId), Option<RasterGlyph>>>,
     context: RefCell<ScaleContext>,
-    /// GSUB shaper for emoji sequences (ZWJ, flags, keycaps, skin tones).
-    shape_context: RefCell<ShapeContext>,
+    /// Per-sequence shaping, including `None` for sequences that stay on the
+    /// per-code-point path. Layout measures text on every frame, so shaping
+    /// must not parse the face again for the same label.
+    shaped_runs: RefCell<HashMap<Box<str>, Option<ShapedRun>>>,
     atlas: RefCell<Atlas>,
     texture: wgpu::Texture,
     batch_texture: BatchTexture,
@@ -283,7 +300,7 @@ impl VectorFont {
             metrics: RefCell::new(HashMap::new()),
             glyphs: RefCell::new(HashMap::new()),
             context: RefCell::new(ScaleContext::new()),
-            shape_context: RefCell::new(ShapeContext::new()),
+            shaped_runs: RefCell::new(HashMap::new()),
             atlas: RefCell::new(Atlas {
                 shelf: Shelf::new(),
                 pending: Vec::new(),
@@ -394,11 +411,14 @@ impl VectorFont {
         None
     }
 
-    /// Shape one multi-code-point emoji sequence into a single glyph.
+    /// Shape one multi-code-point emoji sequence into its glyph run.
     ///
-    /// A face has to carry every non-variation-selector code point and produce
-    /// exactly one glyph; otherwise the sequence is not composed and the
-    /// caller falls back to per-character drawing.
+    /// A face has to carry every non-variation-selector code point, and the
+    /// shaper has to consume the sequence into fewer glyphs than it has
+    /// joiner-bearing code points (a flag's two regional indicators stay two
+    /// glyphs and so are not composed). The run must paint in colour: a
+    /// monochrome substitution would otherwise hide the remaining code points,
+    /// so those keep the per-character path.
     fn shape_sequence(
         &self,
         text: &str,
@@ -407,10 +427,24 @@ impl VectorFont {
         base: char,
     ) -> Option<ShapedRun> {
         let span = text.get(start_byte..end_byte)?;
+        if let Some(hit) = self.shaped_runs.borrow().get(span) {
+            return hit.clone();
+        }
+        let shaped = self.shape_sequence_uncached(span, base);
+        self.shaped_runs
+            .borrow_mut()
+            .insert(Box::from(span), shaped.clone());
+        shaped
+    }
+
+    fn shape_sequence_uncached(&self, span: &str, base: char) -> Option<ShapedRun> {
         let required: Vec<char> = span
             .chars()
             .filter(|ch| !is_variation_selector(*ch))
             .collect();
+        if required.len() < 2 {
+            return None;
+        }
         let mut candidate_faces: Vec<usize> = Vec::new();
         if let Some(metrics) = self.metrics_for(base) {
             candidate_faces.push(metrics.face);
@@ -432,41 +466,63 @@ impl VectorFont {
             if !required.iter().all(|ch| charmap.map(*ch) != 0) {
                 continue;
             }
-            let mut context = self.shape_context.borrow_mut();
-            for script in [Script::Common, Script::Latin] {
-                let mut shaper = context.builder(font).script(script).size(PX_SIZE).build();
-                shaper.add_str(span);
-                let mut single = None;
-                let mut glyph_count = 0usize;
-                shaper.shape_with(|cluster| {
-                    for glyph in cluster.glyphs {
-                        glyph_count += 1;
-                        if glyph.id != 0 {
-                            single = Some((glyph.id, glyph.x, glyph.advance));
-                        }
-                    }
+            // rustybuzz, not swash: swash's shaper stops after the first
+            // component ligature of a ZWJ sequence, dropping the rest of the
+            // run, while HarfBuzz keeps every component glyph.
+            let Some(ruby_face) = rustybuzz::Face::from_slice(data.as_slice(), source.index) else {
+                continue;
+            };
+            let mut buffer = rustybuzz::UnicodeBuffer::new();
+            buffer.push_str(span);
+            buffer.guess_segment_properties();
+            let output = rustybuzz::shape(&ruby_face, &[], buffer);
+            let infos = output.glyph_infos();
+            let positions = output.glyph_positions();
+            if infos.is_empty() || infos.len() >= required.len() {
+                continue;
+            }
+            let scale = PX_SIZE / ruby_face.units_per_em() as f32;
+            let mut glyphs = Vec::with_capacity(infos.len());
+            let mut advance = 0.0;
+            let mut valid = true;
+            for (info, position) in infos.iter().zip(positions) {
+                let glyph = info.glyph_id as u16;
+                if glyph == 0 {
+                    valid = false;
+                    break;
+                }
+                let glyph_advance = position.x_advance as f32 * scale;
+                glyphs.push(ShapedGlyph {
+                    glyph,
+                    x: position.x_offset as f32 * scale,
+                    y: position.y_offset as f32 * scale,
+                    advance: glyph_advance,
                 });
-                if glyph_count == 1 {
-                    if let Some((glyph, x, advance)) = single {
-                        // Only compose a sequence we can draw in colour. A
-                        // COLRv1-only glyph (newer Windows emoji sequences)
-                        // would otherwise render as one monochrome component
-                        // and hide the rest, so the caller's per-character
-                        // path keeps its coloured components instead.
-                        if self
-                            .rasterize(face, glyph)
-                            .is_some_and(|raster| raster.color && raster.rect[2] > 0)
-                        {
-                            return Some(ShapedRun {
-                                face,
-                                end_byte,
-                                glyph,
-                                x,
-                                advance,
-                            });
-                        }
+                advance += glyph_advance;
+            }
+            if !valid || glyphs.is_empty() || advance <= 0.0 {
+                continue;
+            }
+            let mut painted = false;
+            for shaped in &glyphs {
+                match self.rasterize(face, shaped.glyph) {
+                    Some(raster) if raster.color && raster.rect[2] > 0 => painted = true,
+                    Some(_) => {}
+                    // A zero-advance component may be blank; anything else has
+                    // to draw or the sequence is not usable.
+                    None if shaped.advance <= 0.0 => {}
+                    None => {
+                        valid = false;
+                        break;
                     }
                 }
+            }
+            if valid && painted {
+                return Some(ShapedRun {
+                    face,
+                    glyphs,
+                    advance,
+                });
             }
         }
         None
@@ -612,6 +668,36 @@ impl VectorFont {
         });
     }
 
+    /// Emit every glyph of a composed sequence at its shaped offset.
+    #[allow(clippy::too_many_arguments)]
+    fn emit_run(
+        &self,
+        out: &mut Vec<SpriteInstance>,
+        run: &ShapedRun,
+        cursor_x: f32,
+        baseline: f32,
+        scale: f32,
+        depth: f32,
+        tint: [f32; 3],
+        camera_offset: [f32; 2],
+    ) {
+        let mut pen = cursor_x;
+        for shaped in &run.glyphs {
+            self.emit_glyph_id(
+                out,
+                run.face,
+                shaped.glyph,
+                pen + shaped.x * scale,
+                baseline - shaped.y * scale,
+                scale,
+                depth,
+                tint,
+                camera_offset,
+            );
+            pen += shaped.advance * scale;
+        }
+    }
+
     pub fn build_text(
         &self,
         text: &str,
@@ -647,11 +733,10 @@ impl VectorFont {
                     .map(|(byte, _)| *byte)
                     .unwrap_or(text.len());
                 if let Some(run) = self.shape_sequence(text, byte_off, end_byte, ch) {
-                    self.emit_glyph_id(
+                    self.emit_run(
                         &mut out,
-                        run.face,
-                        run.glyph,
-                        cursor_x + run.x * scale,
+                        &run,
+                        cursor_x,
                         baseline,
                         scale,
                         depth,
@@ -740,11 +825,10 @@ impl VectorFont {
                 if encoded_unit_rgb(last, reveal).is_some() {
                     if let Some(run) = self.shape_sequence(text, byte_off, end_byte, ch) {
                         let tint = encoded_rgb.map(|channel| f32::from(channel) / 255.0);
-                        self.emit_glyph_id(
+                        self.emit_run(
                             &mut out,
-                            run.face,
-                            run.glyph,
-                            cursor_x + run.x * scale,
+                            &run,
+                            cursor_x,
                             baseline,
                             scale,
                             depth,
@@ -1471,16 +1555,42 @@ mod tests {
             }
         }
         font.flush(&gpu.queue);
-        // Sequences: a ZWJ family, a flag and a skin-toned emoji compose to one
-        // glyph when the installed emoji font carries them.
-        for sequence in ["👨‍👩‍👧", "🇨🇳", "👍🏽"] {
-            let base = sequence.chars().next().unwrap();
-            if let Some(run) = font.shape_sequence(sequence, 0, sequence.len(), base) {
-                assert!(
-                    font.rasterize(run.face, run.glyph)
-                        .is_some_and(|glyph| glyph.rect[2] > 0)
+        // A ZWJ family composes to a run of component glyphs, not one glyph:
+        // Segoe UI Emoji builds 👨‍👩‍👧 from three narrow component glyphs, so
+        // shaping has to keep all of them and each has to paint in colour.
+        let family = "👨‍👩‍👧";
+        if font.metrics_for('👨').is_some() {
+            let run = font
+                .shape_sequence(family, 0, family.len(), '👨')
+                .expect("a face covering the family composes it into a run");
+            assert!(run.advance > 0.0);
+            if font.faces[run.face].family == "Segoe UI Emoji" {
+                assert_eq!(
+                    run.glyphs.len(),
+                    3,
+                    "the family is three component glyphs, not one slice"
                 );
             }
+            for shaped in &run.glyphs {
+                if shaped.advance <= 0.0 {
+                    continue;
+                }
+                let glyph = font
+                    .rasterize(run.face, shaped.glyph)
+                    .expect("a family component paints");
+                assert!(glyph.color, "a composed emoji should keep its own RGB");
+                assert!(glyph.rect[2] > 0 && glyph.rect[3] > 0);
+            }
+        }
+        // A skin-toned emoji composes to a coloured glyph; a flag has no
+        // ligature in Segoe UI Emoji, so it keeps its two regional indicators.
+        let thumbs = "👍🏽";
+        if let Some(run) = font.shape_sequence(thumbs, 0, thumbs.len(), '👍') {
+            assert!(run.advance > 0.0);
+            assert!(run.glyphs.iter().any(|shaped| {
+                font.rasterize(run.face, shaped.glyph)
+                    .is_some_and(|glyph| glyph.color && glyph.rect[2] > 0)
+            }));
         }
     }
 }
