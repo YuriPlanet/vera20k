@@ -88,16 +88,21 @@ internal class AssetImportJob private constructor() : AutoCloseable {
         ACTIVE.compareAndSet(this, null)
     }
 
+    // `@JvmStatic` keeps `begin`, `cancelActive` and `child` callable as
+    // `AssetImportJob.begin()` from Java, as AssetImportJobTest calls them;
+    // without it Java sees them only on `AssetImportJob.Companion`.
     companion object {
         private val ACTIVE = AtomicReference<AssetImportJob?>(null)
 
         /** The import this process is running, or `null` when one already is. */
+        @JvmStatic
         fun begin(): AssetImportJob? {
             val job = AssetImportJob()
             return if (ACTIVE.compareAndSet(null, job)) job else null
         }
 
         /** Ask the running import to stop; false when it already published. */
+        @JvmStatic
         fun cancelActive(): Boolean = ACTIVE.get()?.cancel() ?: false
 
         /**
@@ -107,6 +112,7 @@ internal class AssetImportJob private constructor() : AutoCloseable {
          * paths.
          * https://developer.android.com/privacy-and-security/risks/untrustworthy-contentprovider-provided-filename
          */
+        @JvmStatic
         @Throws(IOException::class)
         fun child(directory: File, name: String): File {
             if (name.isEmpty() || name == "." || name == ".." ||
