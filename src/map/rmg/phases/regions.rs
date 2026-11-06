@@ -94,7 +94,8 @@ pub fn run(ctx: &mut RegionCtx<'_>) -> Regions {
     let mut regions = Regions::default();
     ctx.scratch.reset_region_ids();
 
-    // Seed scan: linear scratch order, class cells only.
+    // Seed scan (`RandomMapGenerator::PartitionRegions @ 0x0058CF90`): linear
+    // scratch order, class cells only.
     let width = ctx.scratch.width();
     for index in 0..width * width {
         let record = ctx.scratch.cells()[index];

@@ -173,6 +173,7 @@ pub fn run(ctx: &mut StartsCtx<'_>, args: &StartsArgs, zones: &ZoneField) -> Sta
 /// reference-ground cell in native scan order seeds a flood fill whose
 /// popped cells are appended to the region's cell list.
 fn rebuild_regions(ctx: &mut StartsCtx<'_>, zones: &ZoneField) {
+    // Teardown 0x0058CE90.
     ctx.scratch.reset_region_ids();
     ctx.regions.list.clear();
     ctx.regions.id_counter = 0;
@@ -194,7 +195,7 @@ fn rebuild_regions(ctx: &mut StartsCtx<'_>, zones: &ZoneField) {
             field_slots: None,
         };
 
-        // LIFO flood: stamp at enqueue, claim + append at pop.
+        // LIFO flood 0x00594420: stamp at enqueue, claim + append at pop.
         ctx.scratch.get_mut(x, y).stamp = id;
         let mut stack: Vec<(i16, i16)> = vec![(x as i16, y as i16)];
         while let Some((cx, cy)) = stack.pop() {
