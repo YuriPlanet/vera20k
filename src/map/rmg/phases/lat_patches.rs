@@ -73,6 +73,9 @@ pub fn run(ctx: &mut PatchCtx<'_>, theater: i32, vegetation: i32) {
 /// Temperate probabilities: shore-piece cells (with any in-diamond 5x5
 /// neighbour) get a heavy rough bias and no green; other cells get the base
 /// mix.
+///
+/// Native: `RandomMapGenerator::SeedLatPatchProbabilities_Temperate @
+/// 0x005A38C0`.
 fn prob_setup_temperate(ctx: &mut PatchCtx<'_>, veg: TruncF64) {
     let rough = veg.mul(t(ROUGH_FACTOR)).to_f64();
     let shore_rough = veg.mul(t(ROUGH_FACTOR)).mul(t(SHORE_ROUGH_MULT)).to_f64();

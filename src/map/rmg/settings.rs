@@ -35,6 +35,7 @@ pub struct RmgSettings {
     pub vegetation_max: [i32; MAP_TYPE_BUCKETS],
 }
 
+/// `MapSeedClass::InitDefaults @ 0x00595740`.
 impl Default for RmgSettings {
     fn default() -> Self {
         Self {
