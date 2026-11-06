@@ -125,15 +125,19 @@ fn vcenter_offset(rect_h: u32, measured_h: u32) -> f32 {
 }
 
 /// A line's left offset in its rect: centred or right-aligned as `flags`
-/// ask. Without either, a right-to-left line starts at the right edge, its
-/// start edge; gamemd's own text is left to right throughout.
-fn line_offset(flags: ShellAlign, span: &LineSpan, rect_w: u32) -> f32 {
+/// ask, else at the left. gamemd's layouts stay unmirrored for a
+/// right-to-left language, so a caption keeps beside what it labels; a
+/// right-to-left line is flush with the right edge of its text's widest
+/// line, `block_w`, so each line starts where the one above did.
+fn line_offset(flags: ShellAlign, span: &LineSpan, rect_w: u32, block_w: u32) -> f32 {
     if span.width >= rect_w {
         0.0
     } else if flags.contains(ShellAlign::H_CENTER) {
         ((rect_w - span.width) / 2) as f32
-    } else if flags.contains(ShellAlign::H_RIGHT) || span.rtl {
+    } else if flags.contains(ShellAlign::H_RIGHT) {
         (rect_w - span.width) as f32
+    } else if span.rtl {
+        block_w.min(rect_w).saturating_sub(span.width) as f32
     } else {
         0.0
     }
@@ -198,7 +202,7 @@ pub fn draw_in_rect_scaled(
             {
                 break;
             }
-            let line_x_offset = line_offset(flags, span, native.w);
+            let line_x_offset = line_offset(flags, span, native.w, layout.width);
             let segment = &text[span.start_byte..span.end_byte];
             instances.append(&mut font.build_text(
                 segment,
@@ -271,7 +275,7 @@ pub fn draw_in_rect_path_a_scaled(
             {
                 break;
             }
-            let line_x_offset = line_offset(flags, span, native.w);
+            let line_x_offset = line_offset(flags, span, native.w, layout.width);
             let segment = &text[span.start_byte..span.end_byte];
             let (mut line_instances, new_consumed) = font.build_text_path_a(
                 segment,
@@ -435,6 +439,44 @@ mod tests {
         assert_eq!(
             font.fit_box(text, wide.w, wide.h),
             crate::render::bit_font::Fit::NONE
+        );
+    }
+
+    /// gamemd's layouts stay unmirrored for a right-to-left language: an
+    /// Arabic caption keeps to its box's left, beside what it labels, and
+    /// the lines of a longer text share the right edge where each starts.
+    #[test]
+    fn right_to_left_text_keeps_to_its_boxs_left() {
+        let font = crate::render::bit_font::tests::make_vector_test_font();
+        let rect = TextRect {
+            x: 10,
+            y: 0,
+            w: 400,
+            h: 51,
+        };
+        let draw = |text| {
+            draw_in_rect(&font, text, rect, [1.0; 3], ShellAlign::NONE, [0.0; 2], 0.5).instances
+        };
+        let edges = |glyphs: &[SpriteInstance]| {
+            glyphs
+                .iter()
+                .fold([f32::MAX, f32::MIN], |[left, right], glyph| {
+                    [
+                        left.min(glyph.position[0]),
+                        right.max(glyph.position[0] + glyph.size[0]),
+                    ]
+                })
+        };
+        let caption = edges(&draw("مرحبا بالعالم"));
+        assert!(caption[0] < 13.0 && caption[1] < 200.0, "{caption:?}");
+        let (first, second): (Vec<_>, Vec<_>) = draw("مرحبا\nبالعالم مرة أخرى")
+            .into_iter()
+            .partition(|glyph| glyph.position[1] + glyph.size[1] / 2.0 < 17.0);
+        let (first, second) = (edges(&first), edges(&second));
+        assert!((first[1] - second[1]).abs() <= 3.0, "{first:?} {second:?}");
+        assert!(
+            second[0] < 13.0 && first[0] > second[0] + 20.0,
+            "{first:?} {second:?}"
         );
     }
 

@@ -192,13 +192,6 @@ pub(crate) fn text_label_reveal(count: u32, base_rgb: [u8; 3]) -> PathAReveal {
     }
 }
 
-/// Right-to-left letters: Hebrew, Arabic, Syriac, Thaana, N'Ko, Samaritan,
-/// Mandaic and their presentation forms. GAME.FNT has none, and its native
-/// paths would draw them left to right.
-fn is_rtl_letter(c: char) -> bool {
-    matches!(c as u32, 0x0590..=0x08FF | 0xFB1D..=0xFDFF | 0xFE70..=0xFEFF)
-}
-
 /// `text` without `\r` and `\n`, which the single-line native paths skip, and
 /// for each kept byte its offset in `text`.
 fn single_line(text: &str) -> (Cow<'_, str>, Option<Vec<u32>>) {
@@ -260,9 +253,13 @@ impl BitFont {
         self.mode = mode;
     }
 
-    /// The interface language's tag, for region-specific CJK glyph forms.
+    /// The interface language's tag, for region-specific CJK glyph forms
+    /// and its reading direction (`i18n::right_to_left`).
     pub fn set_locale(&mut self, locale: &str) {
-        self.engine.get_mut().set_locale(Some(locale));
+        let right_to_left = crate::i18n::right_to_left(locale);
+        self.engine
+            .get_mut()
+            .set_locale(Some(locale), right_to_left);
     }
 
     /// Measure and draw in `mode` for the length of `draw`, whatever the font
@@ -349,8 +346,13 @@ impl BitFont {
     /// scenario's GAME.FNT.
     pub fn inherit_settings(&mut self, previous: &BitFont) {
         self.mode = previous.mode;
-        let locale = previous.engine.borrow().locale().map(str::to_owned);
-        self.engine.get_mut().set_locale(locale.as_deref());
+        let (locale, right_to_left) = {
+            let engine = previous.engine.borrow();
+            (engine.locale().map(str::to_owned), engine.right_to_left())
+        };
+        self.engine
+            .get_mut()
+            .set_locale(locale.as_deref(), right_to_left);
     }
 
     /// Start a frame: the glyph atlas may empty or grow here, never while
@@ -374,7 +376,9 @@ impl BitFont {
             && !self.glyphs.is_empty()
             && text.chars().all(|c| match c {
                 '\t' | '\r' | '\n' | ' ' => true,
-                _ if is_rtl_letter(c) => false,
+                // GAME.FNT has no right-to-left letters, and its native paths
+                // would draw them left to right.
+                _ if crate::i18n::is_right_to_left_letter(c) => false,
                 _ => u16::try_from(c as u32).is_ok_and(|cp| self.glyphs.contains_key(&cp)),
             })
     }
@@ -383,17 +387,6 @@ impl BitFont {
         self.engine
             .borrow_mut()
             .shape(self.mode, text, max_width, self.fit.get())
-    }
-
-    /// Whether `text`'s first paragraph runs right to left, so a caller
-    /// aligning it to a box's start edge puts it on the right.
-    pub fn is_rtl(&self, text: &str) -> bool {
-        text.chars().any(is_rtl_letter)
-            && self
-                .shape(&single_line(text).0, 0)
-                .lines
-                .first()
-                .is_some_and(|line| line.rtl)
     }
 
     /// ComputeTextRect4A59E0: whole-string width, horizontal alignment and

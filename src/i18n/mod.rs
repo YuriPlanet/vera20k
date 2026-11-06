@@ -29,6 +29,12 @@
 //! A text with a count gives one line per CLDR plural form the language uses
 //! (`zero`, `one`, `two`, `few`, `many`, `other`); `{count}` is the count.
 //!
+//! A language whose texts mostly start with a right-to-left letter (Arabic,
+//! Hebrew) reads right to left ([`right_to_left`]): there a text holding
+//! such a letter reads from the right even when it starts with a name or a
+//! number. VERA keeps gamemd's layouts unmirrored, so text stays on its
+//! box's side.
+//!
 //! English holds every VERA label and answers any label the chosen language
 //! lacks. A label that is not VERA's own (`GUI:Ok`, `NAME:MTNK`) translates
 //! the game's string table: the chosen language's text replaces the game
@@ -78,25 +84,57 @@ fn form_name(category: PluralCategory) -> &'static str {
         .map_or("other", |(_, name)| name)
 }
 
+/// Right-to-left letters: Hebrew, Arabic, Syriac, Thaana, N'Ko, Samaritan,
+/// Mandaic and their presentation forms.
+pub fn is_right_to_left_letter(c: char) -> bool {
+    matches!(c as u32, 0x0590..=0x08FF | 0xFB1D..=0xFDFF | 0xFE70..=0xFEFF)
+}
+
+/// Whether more of `texts` start with a right-to-left letter than with a
+/// left-to-right one, the `{values}` VERA fills in aside.
+fn reads_right_to_left<'a>(texts: impl IntoIterator<Item = &'a str>) -> bool {
+    let first_letter = |text: &str| {
+        let mut in_value = false;
+        text.chars().find(|&c| {
+            match c {
+                '{' => in_value = true,
+                '}' => in_value = false,
+                _ => {}
+            }
+            !in_value && c.is_alphabetic()
+        })
+    };
+    let balance: i64 = texts
+        .into_iter()
+        .filter_map(first_letter)
+        .map(|c| if is_right_to_left_letter(c) { 1 } else { -1 })
+        .sum();
+    balance > 0
+}
+
 /// One language: its file's texts.
 struct Language {
     tag: String,
     name: String,
     /// Upper-case label, or `LABEL[form]` for a plural form, to text.
     strings: HashMap<String, String>,
+    /// Its texts read right to left ([`reads_right_to_left`]).
+    right_to_left: bool,
 }
 
 impl Language {
     fn from_file(tag: &str, text: &str) -> Self {
         let contents = parse(text);
+        let strings: HashMap<String, String> = contents
+            .entries
+            .into_iter()
+            .map(|entry| (entry.key(), entry.text))
+            .collect();
         Self {
             tag: tag.to_owned(),
             name: contents.name.unwrap_or_else(|| tag.to_owned()),
-            strings: contents
-                .entries
-                .into_iter()
-                .map(|entry| (entry.key(), entry.text))
-                .collect(),
+            right_to_left: reads_right_to_left(strings.values().map(String::as_str)),
+            strings,
         }
     }
 
@@ -110,6 +148,7 @@ impl Language {
                 .iter()
                 .map(|(key, text)| (key.clone(), pseudo(text)))
                 .collect(),
+            right_to_left: false,
         }
     }
 
@@ -324,6 +363,16 @@ pub fn select(tag: &str) -> bool {
 /// The language in use's tag, such as `en` or `zh-CN`.
 pub fn selected_language() -> String {
     catalog().selected.tag.clone()
+}
+
+/// Whether the language `tag` reads right to left: most of its file's texts
+/// start with a right-to-left letter. A text holding one then reads from
+/// the right whatever it starts with, as a sentence that opens with a name
+/// does; text without one, such as the game's English, keeps its own order.
+pub fn right_to_left(tag: &str) -> bool {
+    catalog()
+        .find(tag)
+        .is_some_and(|language| language.right_to_left)
 }
 
 /// A language the player can choose.
@@ -746,6 +795,7 @@ pub struct CheckReport {
     tag: Option<String>,
     name: Option<String>,
     forms: Vec<&'static str>,
+    right_to_left: bool,
     labels: usize,
     untranslated: Vec<(String, String)>,
     missing_forms: Vec<String>,
@@ -778,10 +828,15 @@ impl Display for CheckReport {
         };
         writeln!(
             f,
-            "{}: {} ({tag}), plural forms {}",
+            "{}: {} ({tag}), plural forms {}{}",
             self.file,
             self.name.as_deref().unwrap_or("no [Language] Name="),
-            self.forms.join(", ")
+            self.forms.join(", "),
+            if self.right_to_left {
+                ", reads right to left"
+            } else {
+                ""
+            }
         )?;
         let translated = self.labels - self.untranslated.len();
         writeln!(f, "{translated} of {} VERA texts translated", self.labels)?;
@@ -842,6 +897,9 @@ pub fn check(file_name: &str, text: &str) -> CheckReport {
         tag,
         name: contents.name.clone(),
         forms: forms.iter().map(|&form| form_name(form)).collect(),
+        right_to_left: reads_right_to_left(
+            contents.entries.iter().map(|entry| entry.text.as_str()),
+        ),
         labels: 0,
         untranslated: Vec::new(),
         missing_forms: Vec::new(),
@@ -1040,6 +1098,23 @@ mod tests {
         );
         assert_eq!(report.unknown.len(), 1);
         assert_eq!(report.problems.len(), 1);
+    }
+
+    /// A language reads right to left when most of its texts start with a
+    /// right-to-left letter; a value VERA fills in does not count.
+    #[test]
+    fn a_language_reads_right_to_left_when_its_texts_do() {
+        let arabic = "[Language]\nName=العربية\n[Strings]\nGUI:Ok=موافق\n\
+                      VERA:Joined={name} انضم\nVERA:Brand=VERA20k\n";
+        assert!(Language::from_file("ar", arabic).right_to_left);
+        assert!(
+            check("vera20k.ar.ini", arabic)
+                .to_string()
+                .contains("reads right to left")
+        );
+        for (tag, text) in shipped::FILES {
+            assert!(!Language::from_file(tag, text).right_to_left, "{tag}");
+        }
     }
 
     #[test]

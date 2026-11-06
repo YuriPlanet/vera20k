@@ -170,6 +170,8 @@ pub(crate) struct TextEngine {
     cached_layouts: usize,
     atlas: GlyphAtlas,
     locale: Option<String>,
+    /// The interface language reads right to left (`i18n::right_to_left`).
+    right_to_left: bool,
 }
 
 /// Cached layouts kept before the cache starts over.
@@ -209,6 +211,7 @@ impl TextEngine {
             cached_layouts: 0,
             atlas: GlyphAtlas::new(gpu),
             locale: None,
+            right_to_left: false,
         };
         for font in fonts::bundled() {
             let blob = Blob::new(Arc::new(font.data));
@@ -271,10 +274,17 @@ impl TextEngine {
         self.locale.as_deref()
     }
 
-    pub(crate) fn set_locale(&mut self, locale: Option<&str>) {
+    /// Whether the interface language reads right to left.
+    pub(crate) fn right_to_left(&self) -> bool {
+        self.right_to_left
+    }
+
+    /// The interface language and whether it reads right to left.
+    pub(crate) fn set_locale(&mut self, locale: Option<&str>, right_to_left: bool) {
         let locale = locale.map(str::to_owned);
-        if self.locale != locale {
+        if self.locale != locale || self.right_to_left != right_to_left {
             self.locale = locale;
+            self.right_to_left = right_to_left;
             self.clear_layouts();
         }
     }
@@ -421,6 +431,12 @@ impl TextEngine {
         let mut builder = self
             .layout_cx
             .ranged_builder(&mut self.fonts, paragraph, 1.0, false);
+        // In a right-to-left language a paragraph with a right-to-left letter
+        // reads from the right, though it may start with a name or a number;
+        // others take the direction of their first letter that has one.
+        if self.right_to_left && paragraph.chars().any(crate::i18n::is_right_to_left_letter) {
+            builder.set_base_direction(parley::BaseDirection::Rtl);
+        }
         builder.push_default(StyleProperty::FontFamily(FontFamily::List(Cow::Borrowed(
             &stack,
         ))));
@@ -908,6 +924,32 @@ mod tests {
             .find(|g| g.cluster as usize == "مرحبا 4".len())
             .unwrap();
         assert!(four.x < two.x && two.x < last_letter.x);
+    }
+
+    /// In a right-to-left language a sentence that starts with a name still
+    /// reads from the right; text without a right-to-left letter keeps the
+    /// order of its first letter.
+    #[test]
+    fn a_right_to_left_language_reads_a_sentence_from_the_right() {
+        let mut engine = TextEngine::new(None);
+        let name_on_the_right = |engine: &mut TextEngine, text: &str| {
+            let shaped = engine.shape(FontMode::Modern, text, 0, Fit::NONE);
+            let line = &shaped.lines[0];
+            let x = |at: usize| {
+                line.glyphs
+                    .iter()
+                    .find(|g| g.cluster as usize == at)
+                    .unwrap()
+                    .x
+            };
+            let last = text.char_indices().last().unwrap().0;
+            (line.rtl, x(0) > x(last))
+        };
+        let sentence = "Tanya انضم";
+        assert_eq!(name_on_the_right(&mut engine, sentence), (false, false));
+        engine.set_locale(Some("ar"), true);
+        assert_eq!(name_on_the_right(&mut engine, sentence), (true, true));
+        assert_eq!(name_on_the_right(&mut engine, "Abort?"), (false, false));
     }
 
     #[test]
