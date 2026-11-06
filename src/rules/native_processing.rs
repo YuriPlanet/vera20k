@@ -1791,6 +1791,21 @@ impl ProcessedRulesLayers {
             })
     }
 
+    /// TechnoRead712170 and ReadTypeData679A10 visit each concrete object
+    /// independently. Preserve its own admitted passes even when another
+    /// category has the same stored ID in the compatibility INI.
+    pub(crate) fn techno_type_read_section(
+        &self,
+        category: ObjectCategory,
+        index: i32,
+    ) -> Option<&IniSection> {
+        self.native_registry_state()
+            .families
+            .get(&RulesTypeFamily::from_object_category(category))?
+            .get(usize::try_from(index).ok()?)
+            .map(|member| &member.body)
+    }
+
     /// Already bound Country identities from each reached TechnoTypeExt read.
     #[cfg(feature = "ares")]
     pub(crate) fn factory_owner_states(
@@ -2464,6 +2479,16 @@ impl ProcessedRulesLayers {
         self.native_registry_state()
             .rules_global_sounds
             .psychic_reveal()
+    }
+
+    /// ReadAudioVisual669AE3/669FFC/66A0C1 retains these fixed Voc IDs.
+    pub(crate) fn mind_control_sounds(&self) -> [Option<&str>; 3] {
+        let sounds = &self.native_registry_state().rules_global_sounds;
+        [
+            sounds.mind_control(),
+            sounds.mind_cleared(),
+            sounds.mastermind_overload(),
+        ]
     }
 
     /// Final Difficulty readers after the ordered Process passes. Keeping the

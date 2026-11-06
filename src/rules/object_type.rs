@@ -3603,6 +3603,10 @@ impl ObjectType {
             section.and_then(|section| sounds.read_rules_reference(section, "CreateSound", None));
         self.damage_sound =
             section.and_then(|section| sounds.read_rules_reference(section, "DamageSound", None));
+        // TechnoType ReadINI713949..713985: current fixed Voc ID, with
+        // ctor710FA5=-1. Unknown/empty later reads retain a valid override.
+        self.mind_cleared_sound = section
+            .and_then(|section| sounds.read_rules_reference(section, "MindClearedSound", None));
         #[cfg(feature = "ares")]
         for (slot, key) in ["Promote.VeteranSound", "Promote.EliteSound"]
             .into_iter()
@@ -4671,11 +4675,9 @@ impl ObjectType {
             bombable: section.read_bool("Bombable", true),
             bomb_sight: section.read_int("BombSight", 0),
             mind_control_ring_offset: section.read_int("MindControlRingOffset", 0x8C),
-            // "none" finds no sound (-1), which FreeUnit reads as unset.
-            mind_cleared_sound: section
-                .read_name("MindClearedSound", 0x80)
-                .map(str::to_owned)
-                .filter(|sound| !sound.is_empty() && !sound.eq_ignore_ascii_case("none")),
+            // Ctor710FA5=-1; bind_scalar_sound_references owns the fixed
+            // Voc lookup, including registered none spellings.
+            mind_cleared_sound: None,
             #[cfg(feature = "phobos")]
             mind_control_range_limit: section.read_phobos_leptons("MindControlRangeLimit", 0),
             #[cfg(feature = "phobos")]

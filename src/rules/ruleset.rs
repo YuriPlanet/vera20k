@@ -4904,6 +4904,40 @@ pub struct RuleSet {
     source_ini_hash: u64,
 }
 
+/// Source for the shared sound binder. Production uses the retained process
+/// receipt; synthetic tests can explicitly supply a bare INI without a live
+/// native registry. There is one binding implementation for both inputs.
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub enum SoundReferenceSource<'a> {
+    Processed(&'a ProcessedRulesLayers),
+    #[cfg(any(test, feature = "test-support"))]
+    Fixture(&'a IniFile),
+}
+
+impl<'a> From<&'a ProcessedRulesLayers> for SoundReferenceSource<'a> {
+    fn from(value: &'a ProcessedRulesLayers) -> Self {
+        Self::Processed(value)
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl<'a> From<&'a IniFile> for SoundReferenceSource<'a> {
+    fn from(value: &'a IniFile) -> Self {
+        Self::Fixture(value)
+    }
+}
+
+impl<'a> SoundReferenceSource<'a> {
+    fn ini(self) -> &'a IniFile {
+        match self {
+            Self::Processed(processed) => processed.ini(),
+            #[cfg(any(test, feature = "test-support"))]
+            Self::Fixture(ini) => ini,
+        }
+    }
+}
+
 impl RuleSet {
     /// Ares1003DB30/1003DB50. Both group labels and ordinary type IDs share
     /// one namespace; callers compare these keys case-insensitively.
@@ -5759,11 +5793,13 @@ impl RuleSet {
     /// SOUNDMD registry. The processed projection retains only passes where
     /// each type existed, including the native current-ID retention order.
     /// Type defaults and Rules+208 start at -1; [AudioVisual] owns the latter.
-    pub fn bind_type_sound_references(
+    pub fn bind_type_sound_references<'a>(
         &mut self,
-        ini: &IniFile,
+        source: impl Into<SoundReferenceSource<'a>>,
         sounds: &crate::rules::sound_ini::SoundRegistry,
     ) {
+        let source = source.into();
+        let ini = source.ini();
         // Original669423..6694B6, in native open/close read order. The
         // processed section already owns the reached Rules pass history.
         self.general.gui_open_sound = ini
@@ -5960,8 +5996,15 @@ impl RuleSet {
                     .flatten();
             }
         }
+        let type_array_indices = &self.type_array_indices;
         for object in &mut self.object_list {
-            let section = ini.section(&object.id);
+            let section = match source {
+                SoundReferenceSource::Processed(processed) => type_array_indices
+                    .get(&(object.category, object.id.to_ascii_uppercase()))
+                    .and_then(|&index| processed.techno_type_read_section(object.category, index)),
+                #[cfg(any(test, feature = "test-support"))]
+                SoundReferenceSource::Fixture(ini) => ini.section(&object.id),
+            };
             object.bind_scalar_sound_references(section, sounds);
             object.bind_deploy_voice_references(section, sounds);
             object.bind_order_voice_references(section, sounds);
@@ -6511,10 +6554,14 @@ impl RuleSet {
         // ordered Process owner's, published by from_processed_rules.
         let bridge_warheads = crate::rules::bridge_warheads::BridgeWarheads::default();
 
-        let mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(
+        let mut mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(
             ini,
             processed.mind_control_attack_line_frames(),
         );
+        let [capture, release, overload] = processed.mind_control_sounds();
+        mind_control.mind_control_sound = capture.map(str::to_owned);
+        mind_control.mind_cleared_sound = release.map(str::to_owned);
+        mind_control.overload_sound = overload.map(str::to_owned);
 
         // [General] rocket blocks + [CombatDamage] missile warheads, retained
         // pass by pass by the ordered Process owner.
@@ -7490,6 +7537,23 @@ impl RuleSet {
         self.general.bomb_ticking_sound.hash(&mut hasher);
         self.general.bomb_attach_sound.hash(&mut hasher);
         self.general.psychic_reveal_activate_sound.hash(&mut hasher);
+        b"mind-control-sound-references-v1".hash(&mut hasher);
+        (
+            &self.mind_control.mind_control_sound,
+            &self.mind_control.mind_cleared_sound,
+            &self.mind_control.overload_sound,
+        )
+            .hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    &object.mind_cleared_sound,
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         b"infantry-sequence-bank-v1".hash(&mut hasher);
         Self::by_upper_id(self.object_list.iter().filter_map(|object| {
             object

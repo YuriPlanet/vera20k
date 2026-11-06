@@ -404,7 +404,9 @@ fn attack_control_rules(corpus: &serde_json::Value, input: &serde_json::Value) -
             // The native component supplies index1 at its declared selector
             // seam. Use the existing gunner owner to reach the same index,
             // rather than duplicating selection in the voice implementation.
-            body.push_str("TurretCount=1\nWeapon1=VOICE_CONTROL\nWeapon2=VOICE_CONTROL\n");
+            // Ares validates index1 against WeaponCount. Both original
+            // secondary rows keep that record's weapon pointer null.
+            body.push_str("TurretCount=1\nWeaponCount=2\nWeapon1=VOICE_CONTROL\n");
         }
         Some(-1) => body.push_str("DeployFire=yes\nDeployFireWeapon=-1\n"),
         None | Some(0) => {}
