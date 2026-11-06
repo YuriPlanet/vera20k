@@ -655,12 +655,6 @@ mod tests {
                 }
             }
             let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
-            let before = row["rng_before"].as_u64().unwrap() as usize;
-            assert_eq!(
-                state(rng.clone()),
-                doc["rng_states_hex"][before],
-                "{context}: entry RNG"
-            );
             let mut gauss = Gaussian::default();
             let size = &input["gen"];
             let args = WaterArgs {

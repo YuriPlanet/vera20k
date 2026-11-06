@@ -103,8 +103,7 @@ class LakeFixture:
                 region = struct.unpack('<i', u.mem_read(self.record(x, y) + 0x38, 4))[0]
                 if tile == self.water or region != 0:
                     cells.append([x, y, int(tile == self.water), region])
-        return dict(cells=cells, placed=m.read32(self.actor + 0x304),
-                    region=m.read32(self.actor + 0x308))
+        return dict(cells=cells, placed=m.read32(self.actor + 0x304))
 
     def run(self, case, pool):
         from tools import native_oracle as native
@@ -113,7 +112,7 @@ class LakeFixture:
         from unicorn.x86_const import UC_X86_REG_ECX, UC_X86_REG_EIP, UC_X86_REG_ESP
         f, m, u = self.terrain, self.m, self.u
         self.prepare(case)
-        before = pool.refs(f.states())
+        before = f.states()
         trace = native.NativeCallTrace(u, m.read32)
 
         def observe(machine, pc, _size, _data):
@@ -136,10 +135,11 @@ class LakeFixture:
             trace.returned(native.RET_MAGIC, u.reg_read(UC_X86_REG_ESP))
             assert not trace.pending
             check_code(u, f.code)
-            after = pool.refs(f.states())
+            after = f.states()
             assert all(before[name] == after[name] for name in ('main', 'scenario'))
-            return dict(input=case, result=result & 255, rng_before=before['mapgen'],
-                        rng_after=after['mapgen'], **self.observe())
+            # Entry states are the seeded constructor's, which rng.json covers.
+            exit_state = pool.refs(dict(after=after['mapgen']))['after']
+            return dict(input=case, result=result & 255, rng_after=exit_state, **self.observe())
         finally:
             f.active = False
             u.hook_del(hook)
@@ -149,7 +149,7 @@ def generate():
     from tools.rmg_oracle.cliff_materialization import StatePool
     fixture, pool = LakeFixture(), StatePool()
     rows = [fixture.run(case, pool) for case in controls()]
-    return dict(schema=1, scene=dict(stride=STRIDE, bounds=[LOW, HIGH], water_base=fixture.water,
+    return dict(schema=1, scene=dict(water_base=fixture.water,
                                      cliff_base=fixture.terrain.bases['cliff']),
                 rng_states_hex=pool.states, rows=rows)
 

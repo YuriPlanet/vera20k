@@ -21,5 +21,5 @@
     "gaussian": "0x005980C0"
   },
   "replay_command": "python -m tools.rmg_oracle.grow_lake",
-  "payload_sha256": "4a51ec9de416fe177e2ace2ec20dfe974308cbb96469276cff548bdb3e44e647"
+  "payload_sha256": "0b242d0a7e7b23fd0714bae0b8bc4e16e4730073275aeb660783d87224e048ef"
 }
