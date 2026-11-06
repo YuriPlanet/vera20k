@@ -551,6 +551,8 @@ impl App {
         }
     }
 
+    /// The next canonical frame and the committed frontier while that frame
+    /// is due now, so the draw may wait for it (`defer_online_render`).
     /// The render continuation is allowed only outside every modal, focus
     /// freeze, exact-step and terminal path. The sequencer remains frame
     /// authority. A visible window without focus still catches up: it takes
@@ -593,7 +595,7 @@ impl App {
                     frame,
                 )
                 .is_some();
-            if !state.platform.frame_pacer.online_catch_up_ready(
+            if !state.platform.frame_pacer.online_frame_due(
                 Instant::now(),
                 frame,
                 live.committed_frontier(),
@@ -737,7 +739,7 @@ impl App {
                 state
                     .platform
                     .frame_pacer
-                    .record_presented(Instant::now(), false);
+                    .record_presented(Instant::now(), None);
                 state
                     .frontend
                     .startup_splash
@@ -771,9 +773,6 @@ impl App {
         let shell_capture_owns_simulation = shell_capture
             .as_deref()
             .is_some_and(|capture| capture.owns_simulation_steps(state));
-        let ordinary_online = hidden_run.is_none()
-            && !shell_capture_owns_simulation
-            && Self::next_online_render_frame(state).is_some();
         // A capture that checks every committed frame needs one per render.
         let catch_up_allowed = !shell_capture
             .as_deref()
@@ -849,7 +848,9 @@ impl App {
         if unchanged && !state.platform.redraw_gate.auditing() {
             return Ok(FrameRenderOutcome::Unchanged);
         }
-        let next_canonical = ordinary_online
+        // Judged after the service: a frame that arrived or came due while
+        // it ran may still go before this draw.
+        let next_canonical = (hidden_run.is_none() && !shell_capture_owns_simulation)
             .then(|| Self::next_online_render_frame(state))
             .flatten();
         if state.platform.frame_pacer.defer_online_render(
@@ -860,7 +861,8 @@ impl App {
         ) {
             return Ok(FrameRenderOutcome::Deferred);
         }
-        state.diag.frame_timer.sample(Instant::now());
+        let draw_started = Instant::now();
+        state.diag.frame_timer.sample(draw_started);
 
         // Native queues/maintains [INTRO] before arming the 0xE2 first-paint
         // owner. An arm stays silent until the matching surface is acquired.
@@ -1518,7 +1520,7 @@ impl App {
         state
             .platform
             .frame_pacer
-            .record_presented(presented_at, battlefield);
+            .record_presented(presented_at, battlefield.then_some(draw_started));
         if battlefield {
             state
                 .match_state
