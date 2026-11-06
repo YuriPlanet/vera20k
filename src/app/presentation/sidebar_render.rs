@@ -13,6 +13,7 @@
 
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner_name;
+use crate::app::sidebar_projection::SidebarViewInputs;
 use crate::sim::production;
 use crate::ui::sidebar::{self, SidebarView};
 
@@ -287,7 +288,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
             size(atlas.and_then(|atlas| atlas.sell_frames[0].as_ref())),
             size(atlas.and_then(|atlas| atlas.scroll_down_frames[0].as_ref())),
             size(atlas.and_then(|atlas| atlas.scroll_up_frames[0].as_ref())),
-            std::array::from_fn(|i| {
+            std::array::from_fn::<_, 2, _>(|i| {
                 size(atlas.and_then(|atlas| atlas.top_button_frames[i][0].as_ref()))
             }),
         )
@@ -309,32 +310,91 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
                 sidebar::ArmedSidebarEntry::SuperWeapon(section.clone())
             }
         });
+    let view_inputs = SidebarViewInputs {
+        spec: state.match_state.match_presentation.sidebar_layout_spec,
+        screen: (screen_w, screen_h),
+        tab: state.match_state.match_presentation.active_sidebar_tab,
+        credits: display_credits,
+        sim: inputs,
+        button_sizes: [
+            tab_btn_size,
+            repair_btn_size,
+            sell_btn_size,
+            scroll_down_btn_size,
+            scroll_up_btn_size,
+            top_btn_sizes[0],
+            top_btn_sizes[1],
+        ],
+        armed: armed_entry,
+        supers: right_sw_views,
+        gadgets: state
+            .match_state
+            .match_presentation
+            .sidebar_gadget_state
+            .clone(),
+    };
+    // The gadget refresh runs this on every service pass, several per game
+    // frame; while the inputs, strips and Factory links all hold, the view
+    // it would build equals the retained one. Debug builds build it anyway
+    // and compare.
+    let holds = state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .view_holds_for(&view_inputs);
+    if !holds || crate::sim::live_read_check_enabled() {
+        let view = build_view(state, &view_inputs, owner);
+        let projection = &mut state.match_state.match_presentation.sidebar_projection;
+        if holds {
+            assert_eq!(
+                projection.view(),
+                Some(&view),
+                "the sidebar view changed while its inputs held"
+            );
+        }
+        projection.replace_built_view(view, view_inputs);
+    }
+    #[cfg(feature = "phobos")]
+    {
+        let sw = &mut state.match_state.match_presentation.sw_sidebar;
+        sw.layout = sw_plan.0;
+        sw.entries = sw_plan.1;
+    }
+}
+
+/// The view a refresh retains, built from `inputs` and the projection's
+/// strips and Factory links, with each cameo's art and drawn state.
+fn build_view(
+    state: &mut AppState,
+    inputs: &SidebarViewInputs,
+    owner: crate::sim::intern::InternedId,
+) -> SidebarView {
     let mut view = sidebar::build_sidebar_view_with_spec(
-        state.match_state.match_presentation.sidebar_layout_spec,
-        screen_w,
-        screen_h,
-        state.match_state.match_presentation.active_sidebar_tab,
-        display_credits,
-        inputs.power_produced,
-        inputs.power_drained,
-        tab_btn_size,
-        &inputs.queue_items,
-        &inputs.build_options,
-        &inputs.ready_buildings,
-        armed_entry.as_ref(),
+        inputs.spec,
+        inputs.screen.0,
+        inputs.screen.1,
+        inputs.tab,
+        inputs.credits,
+        inputs.sim.power_produced,
+        inputs.sim.power_drained,
+        inputs.button_sizes[0],
+        &inputs.sim.queue_items,
+        &inputs.sim.build_options,
+        &inputs.sim.ready_buildings,
+        inputs.armed.as_ref(),
         state
             .match_state
             .sim_runtime
             .as_ref()
             .map(|rt| &rt.simulation)
             .map(|sim| sim.interner()),
-        &right_sw_views,
-        &state.match_state.match_presentation.sidebar_gadget_state,
-        repair_btn_size,
-        sell_btn_size,
-        scroll_down_btn_size,
-        scroll_up_btn_size,
-        top_btn_sizes,
+        &inputs.supers,
+        &inputs.gadgets,
+        inputs.button_sizes[1],
+        inputs.button_sizes[2],
+        inputs.button_sizes[3],
+        inputs.button_sizes[4],
+        [inputs.button_sizes[5], inputs.button_sizes[6]],
         state
             .match_state
             .match_presentation
@@ -348,10 +408,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .set_scroll_row(
-            state.match_state.match_presentation.active_sidebar_tab,
-            view.scroll_rows,
-        );
+        .set_scroll_row(inputs.tab, view.scroll_rows);
     if let Some(atlas) = state
         .match_state
         .match_presentation
@@ -394,7 +451,8 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
     // write as every later frame, so it is never built from other rules.
     if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
         let sim = &runtime.simulation;
-        let armed_building = armed_entry
+        let armed_building = inputs
+            .armed
             .as_ref()
             .and_then(sidebar::ArmedSidebarEntry::as_building_placement)
             .and_then(|name| sim.interner().get(name));
@@ -410,17 +468,7 @@ fn refresh_projection(state: &mut AppState, reuse_sim_inputs: bool) {
                 armed_building,
             );
     }
-    state
-        .match_state
-        .match_presentation
-        .sidebar_projection
-        .replace_view(Some(view));
-    #[cfg(feature = "phobos")]
-    {
-        let sw = &mut state.match_state.match_presentation.sw_sidebar;
-        sw.layout = sw_plan.0;
-        sw.entries = sw_plan.1;
-    }
+    view
 }
 
 /// The per-frame part of the projection: each retained object cameo's drawn
