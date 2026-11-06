@@ -97,10 +97,10 @@ def driver_controls():
 
 
 class TiberiumFieldFixture:
-    def __init__(self):
+    def __init__(self, extra=(), size=16):
         from tools.rmg_oracle.cliff_materialization import CliffFixture, words
         from tools.spatial_oracle.harvest_field import IMAGES, OVERLAY_COUNT
-        self.terrain = CliffFixture()
+        self.terrain = CliffFixture(extra, size)
         m, u = self.m, self.u = self.terrain.m, self.terrain.u
         self.coord, self.origin_cell = m.alloc(0x10), m.alloc(4)
         # Prepared retail overlay/Tiberium registries (the harvest_field
@@ -140,7 +140,11 @@ class TiberiumFieldFixture:
         return out
 
     def record(self, x, y):
-        return self.terrain.scratch + (y * STRIDE + x) * 0x50
+        return self.terrain.scratch + (y * self.terrain.stride + x) * 0x50
+
+    def in_diamond(self, x, y):
+        low, high = self.terrain.size, 3 * self.terrain.size
+        return low < x + y and x - y < low and y - x < low and x + y <= high
 
     def prepare(self, case):
         from tools.rmg_oracle.cliff_materialization import words
@@ -149,9 +153,10 @@ class TiberiumFieldFixture:
         f.reset(dict(kind='tiberium', seed=case['seed']))
         u.mem_write(ARENA, bytes(self.cursor - ARENA))
         self.cursor, self.blocks = ARENA, []
-        for index in range(STRIDE * STRIDE):
-            x, y = index % STRIDE, index // STRIDE
-            coord = (x, y) if in_diamond(x, y) else (0, 0)
+        stride = self.terrain.stride
+        for index in range(stride * stride):
+            x, y = index % stride, index // stride
+            coord = (x, y) if self.in_diamond(x, y) else (0, 0)
             u.mem_write(f.scratch + index * 0x50, struct.pack('<hh', *coord))
             u.mem_write(f.scratch + index * 0x50 + 0x38, words(0, 0, -1))
             u.mem_write(f.scratch + index * 0x50 + 0x45, b'\0')
@@ -168,7 +173,7 @@ class TiberiumFieldFixture:
             u.mem_write(f.cells[(x, y)] + 0x44, words(overlay))
             u.mem_write(f.cells[(x, y)] + 0x11E, bytes([density]))
         # MapClass +F4 width and +FC local rect that Is_Cell_In_Playfield 578460 reads.
-        u.mem_write(MAP + 0xF4, words(16))
+        u.mem_write(MAP + 0xF4, words(self.terrain.size))
         u.mem_write(MAP + 0xFC, words(*case['rect']))
         u.mem_write(self.origin_cell, struct.pack('<hh', *case['origin']))
         self.prior = self.fields()
