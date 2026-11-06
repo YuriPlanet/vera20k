@@ -22,8 +22,6 @@ use super::blob::{CellHeap, by_key};
 use super::regions::{Regions, RmgRegion};
 use super::zones::{ZoneField, diamond_frame_contains};
 
-/// ~3*2^-32 with a perturbed mantissa — the lane-index draw scale.
-const K3_BITS: u64 = 0x3E08_0000_0018_0000;
 /// Region-size survival floor: 3% of the interior area but at least 400.
 const AREA_FRACTION: f64 = 0.03;
 const MIN_REGION_CELLS: f64 = 400.0;
@@ -225,19 +223,11 @@ fn rebuild_regions(ctx: &mut StartsCtx<'_>, zones: &ZoneField) {
     }
 }
 
-/// The lane draw: `trunc(draw * ~3*2^-32)`, redrawn while above 2.
+/// The lane draw (0x005948D2): `ftol(draw * [0x007ED8C0])`, redrawn while
+/// above 2. That constant is exactly `3 * K`, and `draw * 3` is exact, so
+/// this rounds the same product as `uniform(0, 2)`.
 fn lane_draw(rng: &mut RmgRng) -> i32 {
-    let scale = TruncF64::from_f64(f64::from_bits(K3_BITS));
-    loop {
-        let value = X87Chop53::ftol_f64_low_masked(
-            TruncF64::from_f64(f64::from(rng.next_u32()))
-                .mul(scale)
-                .to_f64(),
-        );
-        if (0..=2).contains(&value) {
-            return value;
-        }
-    }
+    rng.uniform(0, 2)
 }
 
 /// The 6x6 passability window around a candidate.
@@ -251,7 +241,13 @@ fn gate_6x6(ctx: &StartsCtx<'_>, x: i32, y: i32) -> bool {
     area::area_is_paved_clear(ctx.grid, ctx.scratch, ctx.ids, (x - 3, y - 3, 6, 6))
 }
 
-/// Gather candidates for one region, select, and write its waypoint slots.
+/// `RmgRegion::PlaceStartingPoints @ 0x00594870` (from
+/// `CreateStartingPoints` at 0x00594E66): gather candidates for one region,
+/// select, and write its waypoint slots. Lane draw 0x005948D2; up to 300
+/// gather iterations (0x00594910), each drawing a cell (0x0059493A) through
+/// the 6x6 test (0x00594992) and `MapClass::IsCellInViewRegion @
+/// 0x00578640`; the quota-bounded write loop 0x00594A76..0x00594ADD, then
+/// the count-guarded drain 0x00594AEA.
 fn place_region_starts(
     ctx: &mut StartsCtx<'_>,
     args: &StartsArgs,
@@ -323,7 +319,8 @@ fn place_region_starts(
     ctx.regions.list[region_index].field_slots = Some(selection);
 }
 
-/// The best-first selector: target count from the tiberium layout, a
+/// `RmgRegion::SelectStartCandidates @ 0x00594F40`, the best-first
+/// selector: target count from the tiberium layout, a
 /// max-distance pair seed, then farthest-point-first growth. Distances are
 /// the table square root plus a +20 bonus between cells whose region stamps
 /// differ (inert here — one bucket's candidates share a region — but the

@@ -78,6 +78,11 @@ pub(crate) fn run_traced(
     trace: &mut RmgConstructionTrace,
     entity_index_base: usize,
 ) -> Vec<TechPlacement> {
+    // `RandomMapGenerator::AddTechBuildings @ 0x005A95B0`, which `Generate`
+    // calls only for a non-zero map type. Its pass and building counts are
+    // `ftol(draw * [0x007ED8C0])` (0x005A95D9) and `ftol(draw * [0x007EDAB0])`
+    // (0x005A965F), redrawn while above 2 and 4: those constants are exactly
+    // 3K and 5K, so they round the same product as `uniform`.
     let mut placements = Vec::new();
     // The driver is not called at all for map type 0.
     if args.map_type == 0 || ctx.types.is_empty() {
