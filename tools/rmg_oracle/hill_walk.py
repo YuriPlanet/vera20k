@@ -61,6 +61,7 @@ class HillWalkFixture:
 
     def run(self, case, pool):
         from tools import native_oracle as native
+        from tools.rmg_oracle.start_points import published
         from tools.rmg_oracle.cliff_materialization import words
         f, m, u = self.terrain, self.m, self.u
         self.starts.scene(dict(seed=case['seed']), rough=case['rough'])
@@ -88,7 +89,7 @@ class HillWalkFixture:
                 locks.append(list(xy))
         flag = u.mem_read(GAUSS_STATE, 1)[0]
         cached = struct.unpack('<Q', u.mem_read(GAUSS_STATE + 8, 8))[0]
-        return row | dict(heights=heights, velocities=velocities, locks=locks,
+        return published(row) | dict(heights=heights, velocities=velocities, locks=locks,
                           gauss_cached=flag, gauss_value_bits=cached if flag else 0)
 
 

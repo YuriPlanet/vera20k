@@ -19,12 +19,6 @@ use super::shore::TileBlocks;
 /// Number of land types the class tables index.
 pub const LAND_TYPES: usize = 16;
 
-/// TMP sub-tile terrain byte -> land type (engine-fixed table).
-///
-/// Land types: 0 Clear, 1 Road, 2 Water, 3 Rock, 6 Beach, 7 Rough, 8 Ice,
-/// 9 Railroad, 10 Tunnel.
-const TERRAIN_TO_LAND: [u8; 16] = [0, 8, 8, 8, 8, 10, 9, 3, 3, 2, 6, 1, 1, 0, 7, 3];
-
 /// Passability classes (the subset producible from terrain).
 const CLASS_CLEAR: u8 = 0;
 const CLASS_BEACH: u8 = 3;
@@ -180,7 +174,7 @@ pub fn recalc_land(
                 .flatten()
         })
         .map_or(0, |sub| sub.terrain);
-    let land = TERRAIN_TO_LAND[usize::from(terrain & 0xF)];
+    let land = crate::rules::terrain_rules::tmp_terrain_to_land_type(terrain).as_index();
     // A missing neighbour reads the shared Dummy's level.
     let behind_cliff = || {
         is_behind_cliff(x as i16, y as i16, cell.level as i8, |nx, ny| {

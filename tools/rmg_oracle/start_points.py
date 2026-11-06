@@ -91,6 +91,12 @@ def mark_controls():
     return [dict(rough=[]) | row for row in rows]
 
 
+def published(row):
+    """A stage row without its raw draw count, which no Rust test reads (the
+    exit RNG state covers it)."""
+    return {key: value for key, value in row.items() if key != 'draws'}
+
+
 class StartPointsFixture:
     def __init__(self):
         from tools.rmg_oracle.tiberium_field import TiberiumFieldFixture
@@ -149,7 +155,7 @@ class StartPointsFixture:
                   if value != flags[xy]]
         native.require(all(self.flags()[tuple(xy)] == flags[tuple(xy)] | 4 for xy in marked),
                        'PlaceStartingPoints changed a Cell flag other than bit 4')
-        return row | dict(waypoints=self.waypoints(), start_flags=marked, field_slots=field)
+        return published(row) | dict(waypoints=self.waypoints(), start_flags=marked, field_slots=field)
 
     def run_mark(self, case, pool):
         from tools.rmg_oracle.cliff_materialization import words

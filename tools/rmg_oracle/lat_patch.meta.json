@@ -19,5 +19,5 @@
     "next": "0x0065C780"
   },
   "replay_command": "python -m tools.rmg_oracle.lat_patch",
-  "payload_sha256": "b74ca6d2a05e05e52164320ad18e2a5e63b414044e85d6a60b4ffdce5a8cefe9"
+  "payload_sha256": "d1ce7b3b77642fffc4ce2818716ac87d80ced76032c1537d5e00a332ea6100f0"
 }

@@ -23,5 +23,5 @@
     "next": "0x0065C780"
   },
   "replay_command": "python -m tools.rmg_oracle.tech_buildings",
-  "payload_sha256": "95aa717cfaa311265be92ad631cd0f056a92b121e919b00aca79266675294f5b"
+  "payload_sha256": "91af8a6199c135a727138329244e2e7af0500e5fcd5cce2c3c364017c41f80ca"
 }

@@ -65,6 +65,7 @@ class LatPatchFixture:
 
     def run(self, case, pool):
         from tools.rmg_oracle.cliff_materialization import words
+        from tools.rmg_oracle.start_points import published
         f, m, u = self.terrain, self.m, self.u
         tiles = [[x, y, 'misc_pave'] for x, y in case['pave']]
         self.starts.scene(dict(seed=case['seed'], tiles=tiles), rough=case['rough'])
@@ -86,7 +87,7 @@ class LatPatchFixture:
         after = self.state()
         changed = [[x, y, *after[(x, y)]] for (x, y) in self.diamond()
                    if after[(x, y)] != before[(x, y)]]
-        return row | dict(changed=changed)
+        return published(row) | dict(changed=changed)
 
 
 def generate():

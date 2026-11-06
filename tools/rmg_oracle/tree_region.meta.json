@@ -22,5 +22,5 @@
     "next": "0x0065C780"
   },
   "replay_command": "python -m tools.rmg_oracle.tree_region",
-  "payload_sha256": "8db9e93cc7ef32a852dfbb78bde55faab956c9839ae0f1ff942121b2ae9cf41d"
+  "payload_sha256": "fbdd4b4a19b0c952f6eab799e35f57fdcd63aec26de36519f3bedfc765d84fa3"
 }

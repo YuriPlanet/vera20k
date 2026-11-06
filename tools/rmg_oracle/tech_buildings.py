@@ -141,6 +141,7 @@ class TechBuildingsFixture:
 
     def run(self, case, pool):
         from tools import native_oracle as native
+        from tools.rmg_oracle.start_points import published
         from tools.rmg_oracle.cliff_materialization import words
         from tools.rmg_oracle.tiberium_field import in_diamond
         from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EIP, UC_X86_REG_ESP
@@ -191,7 +192,7 @@ class TechBuildingsFixture:
         row = self.starts.execute(case, pool, ENTRY, actor, (), extra=stub)
         placed = [b for b in buildings if b[1] != -1]
         native.require(len(live) == len(placed), 'A discarded building was not destroyed')
-        return row | dict(buildings=buildings)
+        return published(row) | dict(buildings=buildings)
 
 
 def generate():

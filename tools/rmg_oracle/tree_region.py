@@ -57,6 +57,7 @@ class TreeRegionFixture:
 
     def run(self, case, pool):
         from tools import native_oracle as native
+        from tools.rmg_oracle.start_points import published
         from tools.rmg_oracle.cliff_materialization import words
         from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EIP, UC_X86_REG_ESP
         f, m, u = self.terrain, self.m, self.u
@@ -101,7 +102,7 @@ class TreeRegionFixture:
         native.require(not names, 'A tree name was formatted without a constructor')
         visited = [list(xy) for xy in self.diamond()
                    if u.mem_read(self.base.record(*xy) + 0x47, 1)[0]]
-        return row | dict(placed=u.reg_read(UC_X86_REG_EAX), trees=trees, visited=visited)
+        return published(row) | dict(placed=u.reg_read(UC_X86_REG_EAX), trees=trees, visited=visited)
 
 
 def generate():

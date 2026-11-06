@@ -26,5 +26,5 @@
     "next": "0x0065C780"
   },
   "replay_command": "python -m tools.rmg_oracle.start_points",
-  "payload_sha256": "cf49cceb53358699ab5b3b3fc1a9b6a01a9a72d0859243afd7e38a4fde20185b"
+  "payload_sha256": "56ab4074259a3866cf426d3545dde70d44c39ba4fff9eeb906bcdfc381c2e658"
 }
