@@ -29,6 +29,8 @@ use std::rc::Rc;
 
 use swash::scale::image::{Content, Image};
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
+use swash::shape::ShapeContext;
+use swash::text::{Codepoint, Script};
 use swash::{FontRef, GlyphId};
 
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
@@ -134,6 +136,17 @@ struct RasterGlyph {
     color: bool,
 }
 
+/// A composed emoji sequence: one glyph covering several source code points.
+struct ShapedRun {
+    face: usize,
+    /// Byte end of the consumed source span.
+    end_byte: usize,
+    glyph: GlyphId,
+    /// Pen offset of the glyph (zero for an ordinary ligature).
+    x: f32,
+    advance: f32,
+}
+
 /// A glyph rectangle waiting for the next [`VectorFont::flush`].
 struct PendingUpload {
     origin: [u32; 2],
@@ -204,6 +217,8 @@ pub struct VectorFont {
     /// Per-glyph rasterisation; `None` when swash cannot draw it.
     glyphs: RefCell<HashMap<(usize, GlyphId), Option<RasterGlyph>>>,
     context: RefCell<ScaleContext>,
+    /// GSUB shaper for emoji sequences (ZWJ, flags, keycaps, skin tones).
+    shape_context: RefCell<ShapeContext>,
     atlas: RefCell<Atlas>,
     texture: wgpu::Texture,
     batch_texture: BatchTexture,
@@ -268,6 +283,7 @@ impl VectorFont {
             metrics: RefCell::new(HashMap::new()),
             glyphs: RefCell::new(HashMap::new()),
             context: RefCell::new(ScaleContext::new()),
+            shape_context: RefCell::new(ShapeContext::new()),
             atlas: RefCell::new(Atlas {
                 shelf: Shelf::new(),
                 pending: Vec::new(),
@@ -378,6 +394,84 @@ impl VectorFont {
         None
     }
 
+    /// Shape one multi-code-point emoji sequence into a single glyph.
+    ///
+    /// A face has to carry every non-variation-selector code point and produce
+    /// exactly one glyph; otherwise the sequence is not composed and the
+    /// caller falls back to per-character drawing.
+    fn shape_sequence(
+        &self,
+        text: &str,
+        start_byte: usize,
+        end_byte: usize,
+        base: char,
+    ) -> Option<ShapedRun> {
+        let span = text.get(start_byte..end_byte)?;
+        let required: Vec<char> = span
+            .chars()
+            .filter(|ch| !is_variation_selector(*ch))
+            .collect();
+        let mut candidate_faces: Vec<usize> = Vec::new();
+        if let Some(metrics) = self.metrics_for(base) {
+            candidate_faces.push(metrics.face);
+        }
+        for index in 0..self.faces.len() {
+            if !candidate_faces.contains(&index) {
+                candidate_faces.push(index);
+            }
+        }
+        for face in candidate_faces {
+            let Some(data) = self.face_data(face) else {
+                continue;
+            };
+            let source = &self.faces[face];
+            let Some(font) = FontRef::from_index(data.as_slice(), source.index as usize) else {
+                continue;
+            };
+            let charmap = font.charmap();
+            if !required.iter().all(|ch| charmap.map(*ch) != 0) {
+                continue;
+            }
+            let mut context = self.shape_context.borrow_mut();
+            for script in [Script::Common, Script::Latin] {
+                let mut shaper = context.builder(font).script(script).size(PX_SIZE).build();
+                shaper.add_str(span);
+                let mut single = None;
+                let mut glyph_count = 0usize;
+                shaper.shape_with(|cluster| {
+                    for glyph in cluster.glyphs {
+                        glyph_count += 1;
+                        if glyph.id != 0 {
+                            single = Some((glyph.id, glyph.x, glyph.advance));
+                        }
+                    }
+                });
+                if glyph_count == 1 {
+                    if let Some((glyph, x, advance)) = single {
+                        // Only compose a sequence we can draw in colour. A
+                        // COLRv1-only glyph (newer Windows emoji sequences)
+                        // would otherwise render as one monochrome component
+                        // and hide the rest, so the caller's per-character
+                        // path keeps its coloured components instead.
+                        if self
+                            .rasterize(face, glyph)
+                            .is_some_and(|raster| raster.color && raster.rect[2] > 0)
+                        {
+                            return Some(ShapedRun {
+                                face,
+                                end_byte,
+                                glyph,
+                                x,
+                                advance,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     fn rasterize(&self, face: usize, glyph: GlyphId) -> Option<RasterGlyph> {
         let key = (face, glyph);
         if let Some(hit) = self.glyphs.borrow().get(&key) {
@@ -465,7 +559,33 @@ impl VectorFont {
         tint: [f32; 3],
         camera_offset: [f32; 2],
     ) {
-        let Some(glyph) = self.rasterize(metrics.face, metrics.glyph) else {
+        self.emit_glyph_id(
+            out,
+            metrics.face,
+            metrics.glyph,
+            cursor_x,
+            baseline,
+            scale,
+            depth,
+            tint,
+            camera_offset,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn emit_glyph_id(
+        &self,
+        out: &mut Vec<SpriteInstance>,
+        face: usize,
+        glyph_id: GlyphId,
+        cursor_x: f32,
+        baseline: f32,
+        scale: f32,
+        depth: f32,
+        tint: [f32; 3],
+        camera_offset: [f32; 2],
+    ) {
+        let Some(glyph) = self.rasterize(face, glyph_id) else {
             return;
         };
         let [x, y, width, height] = glyph.rect;
@@ -505,16 +625,52 @@ impl VectorFont {
         let mut out = Vec::with_capacity(text.len());
         let mut cursor_x = x;
         let baseline = y + self.ascent * scale;
-        for ch in text.chars() {
+        let chars: Vec<(usize, char)> = text.char_indices().collect();
+        let mut index = 0;
+        while index < chars.len() {
+            let (byte_off, ch) = chars[index];
             match ch {
-                '\r' | '\n' => continue,
+                '\r' | '\n' => {
+                    index += 1;
+                    continue;
+                }
                 '\t' => {
                     cursor_x = tab_advance(cursor_x, x, scale);
+                    index += 1;
                     continue;
                 }
                 _ => {}
             }
+            if let Some(end_index) = emoji_sequence_end(&chars, index) {
+                let end_byte = chars
+                    .get(end_index)
+                    .map(|(byte, _)| *byte)
+                    .unwrap_or(text.len());
+                if let Some(run) = self.shape_sequence(text, byte_off, end_byte, ch) {
+                    self.emit_glyph_id(
+                        &mut out,
+                        run.face,
+                        run.glyph,
+                        cursor_x + run.x * scale,
+                        baseline,
+                        scale,
+                        depth,
+                        tint,
+                        camera_offset,
+                    );
+                    cursor_x += run.advance * scale;
+                    index = end_index;
+                    continue;
+                }
+            }
+            // A joiner the font could not compose is not text: skip it rather
+            // than drawing the missing-glyph stand-in for it.
+            if is_emoji_joiner(ch) {
+                index += 1;
+                continue;
+            }
             let Some((metrics, missing)) = self.metrics_or_missing(ch) else {
+                index += 1;
                 continue;
             };
             let tint = if missing {
@@ -533,6 +689,7 @@ impl VectorFont {
                 camera_offset,
             );
             cursor_x += metrics.advance * scale;
+            index += 1;
         }
         out
     }
@@ -555,46 +712,69 @@ impl VectorFont {
         let mut cursor_x = x;
         let baseline = y + self.ascent * scale;
         let mut consumed = already_consumed;
-        let units: Vec<u16> = text.encode_utf16().collect();
+        let chars: Vec<(usize, char)> = text.char_indices().collect();
         let mut index = 0;
-        while index < units.len() {
-            let unit = units[index];
-            // A surrogate pair is one character but still consumes two reveal
-            // positions, because the native reveal counts UTF-16 units.
-            let (ch, width) = match char::from_u32(u32::from(unit)) {
-                Some(ch) => (Some(ch), 1usize),
-                None => match units
-                    .get(index + 1)
-                    .and_then(|low| std::char::decode_utf16([unit, *low]).next())
-                    .and_then(Result::ok)
-                {
-                    Some(ch) => (Some(ch), 2),
-                    None => (None, 1),
-                },
-            };
+        while index < chars.len() {
+            let (byte_off, ch) = chars[index];
+            // Every code point occupies its UTF-16 length, matching the native
+            // reveal's unit count.
+            let units = ch.len_utf16() as u32;
             let Some(first) = consumed.checked_add(1) else {
                 break;
             };
             let Some(encoded_rgb) = encoded_unit_rgb(first, reveal) else {
                 break;
             };
-            if width == 2 && encoded_unit_rgb(first + 1, reveal).is_none() {
+            if let Some(end_index) = emoji_sequence_end(&chars, index) {
+                let end_byte = chars
+                    .get(end_index)
+                    .map(|(byte, _)| *byte)
+                    .unwrap_or(text.len());
+                let span_units: u32 = chars[index..end_index]
+                    .iter()
+                    .map(|(_, code)| code.len_utf16() as u32)
+                    .sum();
+                let last = first + span_units - 1;
+                // Compose only once the whole sequence is revealed; a partial
+                // sequence stays on the per-code-point path.
+                if encoded_unit_rgb(last, reveal).is_some() {
+                    if let Some(run) = self.shape_sequence(text, byte_off, end_byte, ch) {
+                        let tint = encoded_rgb.map(|channel| f32::from(channel) / 255.0);
+                        self.emit_glyph_id(
+                            &mut out,
+                            run.face,
+                            run.glyph,
+                            cursor_x + run.x * scale,
+                            baseline,
+                            scale,
+                            depth,
+                            tint,
+                            camera_offset,
+                        );
+                        cursor_x += run.advance * scale;
+                        consumed = last;
+                        index = end_index;
+                        continue;
+                    }
+                }
+            }
+            if units == 2 && encoded_unit_rgb(first + 1, reveal).is_none() {
                 break;
             }
-            consumed = first + (width as u32 - 1);
-            index += width;
-            if unit == u16::from(b'\r') || unit == u16::from(b'\n') {
+            consumed = first + (units - 1);
+            index += 1;
+            if matches!(ch, '\r' | '\n') {
                 continue;
             }
-            if unit == u16::from(b'\t') {
+            if ch == '\t' {
                 cursor_x = tab_advance(cursor_x, x, scale);
                 continue;
             }
+            if is_emoji_joiner(ch) {
+                continue;
+            }
             let tint = encoded_rgb.map(|channel| f32::from(channel) / 255.0);
-            let resolved = ch
-                .and_then(|ch| self.metrics_or_missing(ch))
-                .or_else(|| self.metrics_for('?').map(|metrics| (metrics, true)));
-            let Some((metrics, missing)) = resolved else {
+            let Some((metrics, missing)) = self.metrics_or_missing(ch) else {
                 continue;
             };
             let tint = if missing {
@@ -619,29 +799,132 @@ impl VectorFont {
 
     pub fn text_width(&self, text: &str) -> u32 {
         let mut x: f32 = 0.0;
-        for ch in text.chars() {
+        let chars: Vec<(usize, char)> = text.char_indices().collect();
+        let mut index = 0;
+        while index < chars.len() {
+            let (byte_off, ch) = chars[index];
             match ch {
-                '\r' | '\n' => continue,
+                '\r' | '\n' => {
+                    index += 1;
+                    continue;
+                }
                 '\t' => {
                     let advanced = x as u32 + TAB_WIDTH;
                     x = (advanced - ((advanced.saturating_sub(TAB_ORIGIN)) % TAB_WIDTH)) as f32;
+                    index += 1;
                     continue;
                 }
                 _ => {}
             }
-            let Some((metrics, _)) = self.metrics_or_missing(ch) else {
+            if let Some(end_index) = emoji_sequence_end(&chars, index) {
+                let end_byte = chars
+                    .get(end_index)
+                    .map(|(byte, _)| *byte)
+                    .unwrap_or(text.len());
+                if let Some(run) = self.shape_sequence(text, byte_off, end_byte, ch) {
+                    x += run.advance;
+                    index = end_index;
+                    continue;
+                }
+            }
+            if is_emoji_joiner(ch) {
+                index += 1;
                 continue;
-            };
-            x += metrics.advance;
+            }
+            if let Some((metrics, _)) = self.metrics_or_missing(ch) {
+                x += metrics.advance;
+            }
+            index += 1;
         }
         x.round().max(0.0) as u32
     }
 
     pub fn wrap_layout(&self, text: &str, max_width: u32) -> WrapLayout {
-        wrap_with_advances(text, max_width, self.cell_height, |ch| {
-            self.metrics_or_missing(ch)
-                .map(|(metrics, _)| metrics.advance)
-        })
+        if text.is_empty() {
+            return WrapLayout::default();
+        }
+        let units = self.wrap_units(text);
+        wrap_units(&units, text.len(), max_width, self.cell_height)
+    }
+
+    /// Split text into wrapping units, folding each emoji sequence into one
+    /// unbreakable unit whose width is the composed glyph's advance.
+    fn wrap_units(&self, text: &str) -> Vec<WrapUnit> {
+        let mut units = Vec::new();
+        let chars: Vec<(usize, char)> = text.char_indices().collect();
+        let mut index = 0;
+        while index < chars.len() {
+            let (byte_off, ch) = chars[index];
+            match ch {
+                '\r' | '\n' => {
+                    let end = match (ch, chars.get(index + 1)) {
+                        ('\r', Some((next_byte, '\n'))) => {
+                            index += 1;
+                            *next_byte
+                        }
+                        _ => byte_off + ch.len_utf8(),
+                    };
+                    units.push(WrapUnit {
+                        start: byte_off,
+                        end,
+                        width: 0.0,
+                        kind: WrapKind::Newline,
+                    });
+                    index += 1;
+                    continue;
+                }
+                '\t' => {
+                    units.push(WrapUnit {
+                        start: byte_off,
+                        end: byte_off + 1,
+                        width: 0.0,
+                        kind: WrapKind::Tab,
+                    });
+                    index += 1;
+                    continue;
+                }
+                ' ' => {
+                    let width = self.metrics_for(' ').map_or(0.0, |metrics| metrics.advance);
+                    units.push(WrapUnit {
+                        start: byte_off,
+                        end: byte_off + 1,
+                        width,
+                        kind: WrapKind::Space,
+                    });
+                    index += 1;
+                    continue;
+                }
+                _ => {}
+            }
+            if let Some(end_index) = emoji_sequence_end(&chars, index) {
+                let end_byte = chars
+                    .get(end_index)
+                    .map(|(byte, _)| *byte)
+                    .unwrap_or(text.len());
+                if let Some(run) = self.shape_sequence(text, byte_off, end_byte, ch) {
+                    units.push(WrapUnit {
+                        start: byte_off,
+                        end: end_byte,
+                        width: run.advance,
+                        kind: WrapKind::Glyph,
+                    });
+                    index = end_index;
+                    continue;
+                }
+            }
+            if !is_emoji_joiner(ch) {
+                if let Some((metrics, _)) = self.metrics_or_missing(ch) {
+                    units.push(WrapUnit {
+                        start: byte_off,
+                        end: byte_off + ch.len_utf8(),
+                        width: metrics.advance,
+                        kind: WrapKind::Glyph,
+                    });
+                }
+            }
+            index += 1;
+        }
+        units
     }
 }
 
@@ -768,115 +1051,254 @@ fn tab_advance(cursor_x: f32, origin: f32, scale: f32) -> f32 {
     origin + next_cell as f32 * scale
 }
 
+fn is_variation_selector(ch: char) -> bool {
+    matches!(ch, '\u{FE0E}' | '\u{FE0F}')
+}
+
+fn is_emoji_modifier(ch: char) -> bool {
+    ('\u{1F3FB}'..='\u{1F3FF}').contains(&ch)
+}
+
+fn is_regional_indicator(ch: char) -> bool {
+    ('\u{1F1E6}'..='\u{1F1FF}').contains(&ch)
+}
+
+fn is_keycap_base(ch: char) -> bool {
+    ch.is_ascii_digit() || ch == '#' || ch == '*'
+}
+
+fn is_tag_char(ch: char) -> bool {
+    ('\u{E0020}'..='\u{E007F}').contains(&ch)
+}
+
+/// A code point that only exists to join or modify an emoji sequence.
+fn is_emoji_joiner(ch: char) -> bool {
+    matches!(ch, '\u{200D}' | '\u{20E3}')
+        || is_variation_selector(ch)
+        || is_emoji_modifier(ch)
+        || is_tag_char(ch)
+}
+
+/// Char-index end (exclusive) of a multi-code-point emoji sequence at `start`.
+///
+/// Covers keycaps (`1️⃣`), flags (two regional indicators), tag sequences,
+/// skin-tone modifiers, variation selectors and ZWJ sequences. A single
+/// pictographic code point answers `None`: it needs no composition.
+fn emoji_sequence_end(chars: &[(usize, char)], start: usize) -> Option<usize> {
+    let ch = chars.get(start)?.1;
+    if is_keycap_base(ch) {
+        let mut i = start + 1;
+        if chars
+            .get(i)
+            .is_some_and(|(_, code)| is_variation_selector(*code))
+        {
+            i += 1;
+        }
+        if chars.get(i).is_some_and(|(_, code)| *code == '\u{20E3}') {
+            return Some(i + 1);
+        }
+        return None;
+    }
+    if is_regional_indicator(ch) {
+        return chars
+            .get(start + 1)
+            .is_some_and(|(_, code)| is_regional_indicator(*code))
+            .then_some(start + 2);
+    }
+    if !ch.is_extended_pictographic() {
+        return None;
+    }
+    let mut i = start + 1;
+    if chars
+        .get(i)
+        .is_some_and(|(_, code)| is_variation_selector(*code))
+    {
+        i += 1;
+    }
+    if chars
+        .get(i)
+        .is_some_and(|(_, code)| is_emoji_modifier(*code))
+    {
+        i += 1;
+    }
+    if chars.get(i).is_some_and(|(_, code)| is_tag_char(*code)) {
+        while chars.get(i).is_some_and(|(_, code)| is_tag_char(*code)) {
+            i += 1;
+        }
+        return Some(i);
+    }
+    while chars.get(i).is_some_and(|(_, code)| *code == '\u{200D}') {
+        let Some((_, next)) = chars.get(i + 1).copied() else {
+            break;
+        };
+        if !next.is_extended_pictographic() {
+            break;
+        }
+        i += 2;
+        if chars
+            .get(i)
+            .is_some_and(|(_, code)| is_variation_selector(*code))
+        {
+            i += 1;
+        }
+        if chars
+            .get(i)
+            .is_some_and(|(_, code)| is_emoji_modifier(*code))
+        {
+            i += 1;
+        }
+    }
+    (i > start + 1).then_some(i)
+}
+
+/// A wrapping unit: one glyph, one emoji sequence, a space, a tab or a line
+/// break. An emoji sequence stays one unit so it never splits across lines.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WrapKind {
+    Glyph,
+    Space,
+    Tab,
+    Newline,
+}
+
+#[derive(Clone, Copy)]
+struct WrapUnit {
+    start: usize,
+    end: usize,
+    width: f32,
+    kind: WrapKind,
+}
+
+/// One unit per character, for callers and tests without shaping.
+#[cfg(test)]
+fn per_char_units(text: &str, advance: impl Fn(char) -> Option<f32>) -> Vec<WrapUnit> {
+    let mut units = Vec::new();
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let mut index = 0;
+    while index < chars.len() {
+        let (byte_off, ch) = chars[index];
+        match ch {
+            '\r' | '\n' => {
+                let end = match (ch, chars.get(index + 1)) {
+                    ('\r', Some((next_byte, '\n'))) => {
+                        index += 1;
+                        *next_byte
+                    }
+                    _ => byte_off + ch.len_utf8(),
+                };
+                units.push(WrapUnit {
+                    start: byte_off,
+                    end,
+                    width: 0.0,
+                    kind: WrapKind::Newline,
+                });
+            }
+            '\t' => units.push(WrapUnit {
+                start: byte_off,
+                end: byte_off + 1,
+                width: 0.0,
+                kind: WrapKind::Tab,
+            }),
+            ' ' => units.push(WrapUnit {
+                start: byte_off,
+                end: byte_off + 1,
+                width: advance(ch).unwrap_or(0.0),
+                kind: WrapKind::Space,
+            }),
+            _ => {
+                if let Some(width) = advance(ch) {
+                    units.push(WrapUnit {
+                        start: byte_off,
+                        end: byte_off + ch.len_utf8(),
+                        width,
+                        kind: WrapKind::Glyph,
+                    });
+                }
+            }
+        }
+        index += 1;
+    }
+    units
+}
+
 /// Wrapped layout over fractional advances.
 ///
 /// Latin text breaks at its last space, like the native measure/wrap pair.
-/// With no space to break at, the line ends *before* the overflowing
-/// character, which is how CJK prose without spaces wraps. Kept separate from
-/// the glyph lookup so the break rules can be tested without a GPU or an
-/// installed font.
-fn wrap_with_advances(
-    text: &str,
-    max_width: u32,
-    cell_height: u32,
-    advance: impl Fn(char) -> Option<f32>,
-) -> WrapLayout {
-    if text.is_empty() {
-        return WrapLayout::default();
-    }
-    let chars: Vec<(usize, char)> = text.char_indices().collect();
+/// With no space to break at, the line ends *before* the overflowing unit,
+/// which is how CJK prose without spaces wraps. Kept separate from the glyph
+/// lookup so the break rules can be tested without a GPU or an installed font.
+fn wrap_units(units: &[WrapUnit], text_len: usize, max_width: u32, cell_height: u32) -> WrapLayout {
     let mut lines: Vec<LineSpan> = Vec::new();
     let mut line_start_byte: usize = 0;
     let mut line_x: f32 = 0.0;
-    let mut chars_on_line: u32 = 0;
+    let mut units_on_line: u32 = 0;
     let mut max_line_width: f32 = 0.0;
     let mut last_space: Option<(usize, f32)> = None;
-    let mut prev_char: Option<char> = None;
     let mut y_lines: u32 = 1;
     let mut i = 0;
-    while i < chars.len() {
-        let (byte_off, ch) = chars[i];
-        let next_byte_off = chars.get(i + 1).map(|c| c.0).unwrap_or(text.len());
-        match ch {
-            '\t' => {
-                let advanced = line_x as u32 + TAB_WIDTH;
-                line_x = (advanced - ((advanced.saturating_sub(TAB_ORIGIN)) % TAB_WIDTH)) as f32;
-                prev_char = Some('\t');
-                i += 1;
-                continue;
-            }
-            '\r' | '\n' => {
-                if ch == '\n' && prev_char == Some('\r') {
-                    prev_char = Some('\n');
-                    i += 1;
-                    continue;
-                }
+    while i < units.len() {
+        let unit = units[i];
+        match unit.kind {
+            WrapKind::Newline => {
                 lines.push(LineSpan {
                     start_byte: line_start_byte,
-                    end_byte: byte_off,
+                    end_byte: unit.start,
                     width: line_x.round() as u32,
                 });
                 max_line_width = max_line_width.max(line_x);
-                line_start_byte = next_byte_off;
+                line_start_byte = unit.end;
                 line_x = 0.0;
-                chars_on_line = 0;
+                units_on_line = 0;
                 last_space = None;
                 y_lines += 1;
-                prev_char = Some(ch);
                 i += 1;
                 continue;
             }
-            ' ' => last_space = Some((i, line_x)),
-            _ => {}
+            WrapKind::Tab => {
+                let advanced = line_x as u32 + TAB_WIDTH;
+                line_x = (advanced - ((advanced.saturating_sub(TAB_ORIGIN)) % TAB_WIDTH)) as f32;
+                i += 1;
+                continue;
+            }
+            WrapKind::Space => last_space = Some((i, line_x)),
+            WrapKind::Glyph => {}
         }
-        let Some(glyph_advance) = advance(ch) else {
-            prev_char = Some(ch);
-            i += 1;
-            continue;
-        };
-        let next_x = line_x + glyph_advance;
-        if max_width == 0 || next_x <= max_width as f32 {
+        let next_x = line_x + unit.width;
+        if max_width == 0 || next_x <= max_width as f32 || units_on_line == 0 {
             line_x = next_x;
-            chars_on_line += 1;
-            prev_char = Some(ch);
-            i += 1;
-        } else if chars_on_line == 0 {
-            line_x = next_x;
-            chars_on_line = 1;
-            prev_char = Some(ch);
+            units_on_line += 1;
             i += 1;
         } else if let Some((space_index, space_x)) = last_space {
             lines.push(LineSpan {
                 start_byte: line_start_byte,
-                end_byte: chars[space_index].0,
+                end_byte: units[space_index].start,
                 width: space_x.round() as u32,
             });
             max_line_width = max_line_width.max(space_x);
             i = space_index + 1;
-            line_start_byte = chars.get(i).map(|c| c.0).unwrap_or(text.len());
+            line_start_byte = units.get(i).map(|unit| unit.start).unwrap_or(text_len);
             line_x = 0.0;
-            chars_on_line = 0;
+            units_on_line = 0;
             last_space = None;
-            prev_char = Some(' ');
             y_lines += 1;
         } else {
             lines.push(LineSpan {
                 start_byte: line_start_byte,
-                end_byte: byte_off,
+                end_byte: unit.start,
                 width: line_x.round() as u32,
             });
             max_line_width = max_line_width.max(line_x);
-            line_start_byte = byte_off;
+            line_start_byte = unit.start;
             line_x = 0.0;
-            chars_on_line = 0;
+            units_on_line = 0;
             last_space = None;
             y_lines += 1;
-            // Retry this character on the new line.
+            // Retry this unit on the new line.
         }
     }
     lines.push(LineSpan {
         start_byte: line_start_byte,
-        end_byte: text.len(),
+        end_byte: text_len,
         width: line_x.round() as u32,
     });
     max_line_width = max_line_width.max(line_x);
@@ -898,7 +1320,8 @@ mod tests {
     #[test]
     fn cjk_text_breaks_between_characters_without_spaces() {
         let text = "你好世界";
-        let layout = wrap_with_advances(text, 32, CELL_HEIGHT, |_| Some(16.0));
+        let units = per_char_units(text, |_| Some(16.0));
+        let layout = wrap_units(&units, text.len(), 32, CELL_HEIGHT);
         assert_eq!(layout.lines.len(), 2);
         assert_eq!(line_text(text, &layout.lines[0]), "你好");
         assert_eq!(line_text(text, &layout.lines[1]), "世界");
@@ -909,7 +1332,8 @@ mod tests {
     #[test]
     fn latin_text_breaks_at_its_last_space() {
         let text = "hello world";
-        let layout = wrap_with_advances(text, 40, CELL_HEIGHT, |_| Some(8.0));
+        let units = per_char_units(text, |_| Some(8.0));
+        let layout = wrap_units(&units, text.len(), 40, CELL_HEIGHT);
         assert_eq!(layout.lines.len(), 2);
         assert_eq!(line_text(text, &layout.lines[0]), "hello");
         assert_eq!(line_text(text, &layout.lines[1]), "world");
@@ -920,9 +1344,8 @@ mod tests {
         // "ab 你好": the space is the preferred break, so the CJK run starts
         // the next line instead of splitting "ab".
         let text = "ab 你好";
-        let layout = wrap_with_advances(text, 32, CELL_HEIGHT, |ch| {
-            Some(if ch.is_ascii() { 8.0 } else { 16.0 })
-        });
+        let units = per_char_units(text, |ch| Some(if ch.is_ascii() { 8.0 } else { 16.0 }));
+        let layout = wrap_units(&units, text.len(), 32, CELL_HEIGHT);
         assert_eq!(layout.lines.len(), 2);
         assert_eq!(line_text(text, &layout.lines[0]), "ab");
         assert_eq!(line_text(text, &layout.lines[1]), "你好");
@@ -931,11 +1354,31 @@ mod tests {
     #[test]
     fn explicit_newlines_end_lines_immediately() {
         let text = "a\nb";
-        let layout = wrap_with_advances(text, 0, CELL_HEIGHT, |_| Some(8.0));
+        let units = per_char_units(text, |_| Some(8.0));
+        let layout = wrap_units(&units, text.len(), 0, CELL_HEIGHT);
         assert_eq!(layout.lines.len(), 2);
         assert_eq!(line_text(text, &layout.lines[0]), "a");
         assert_eq!(line_text(text, &layout.lines[1]), "b");
         assert_eq!(layout.height, CELL_HEIGHT * 2);
+    }
+
+    #[test]
+    fn an_emoji_sequence_wraps_as_one_unit() {
+        // Two 16 px glyphs and a 32 px sequence: the sequence must move to the
+        // next line whole rather than splitting between its code points.
+        let text = "ab👨‍👩‍👧";
+        let sequence_start = "ab".len();
+        let mut units = per_char_units(&text[..sequence_start], |_| Some(16.0));
+        units.push(WrapUnit {
+            start: sequence_start,
+            end: text.len(),
+            width: 32.0,
+            kind: WrapKind::Glyph,
+        });
+        let layout = wrap_units(&units, text.len(), 32, CELL_HEIGHT);
+        assert_eq!(layout.lines.len(), 2);
+        assert_eq!(line_text(text, &layout.lines[0]), "ab");
+        assert_eq!(line_text(text, &layout.lines[1]), "👨‍👩‍👧");
     }
 
     #[test]
@@ -1028,5 +1471,16 @@ mod tests {
             }
         }
         font.flush(&gpu.queue);
+        // Sequences: a ZWJ family, a flag and a skin-toned emoji compose to one
+        // glyph when the installed emoji font carries them.
+        for sequence in ["👨‍👩‍👧", "🇨🇳", "👍🏽"] {
+            let base = sequence.chars().next().unwrap();
+            if let Some(run) = font.shape_sequence(sequence, 0, sequence.len(), base) {
+                assert!(
+                    font.rasterize(run.face, run.glyph)
+                        .is_some_and(|glyph| glyph.rect[2] > 0)
+                );
+            }
+        }
     }
 }
