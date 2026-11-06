@@ -34,6 +34,28 @@ fn dispatch_shell_controller_confirmed_quit(operations: &mut impl ConfirmedQuitO
     operations.start_cascade();
 }
 
+impl AppState {
+    /// Puts `tag`'s language in use as a pick in the Language list does:
+    /// from the next frame every label reads in it, as the string table takes
+    /// its texts, the map titles read from the table follow, and the fonts
+    /// take its script's letter forms. False, changing nothing, when no
+    /// language file provides `tag`.
+    pub(crate) fn use_language(&mut self, tag: &str) -> bool {
+        if !crate::i18n::select(tag) {
+            return false;
+        }
+        if let Some(csf) = self.process_assets.csf.as_mut() {
+            crate::i18n::apply(csf);
+            crate::map::scenario_sources::relabel_records(
+                &mut self.frontend.scenario_catalog.records_mut(),
+                csf,
+            );
+        }
+        self.renderer.bit_font.set_locale(tag);
+        true
+    }
+}
+
 impl crate::app::persistence::options::launcher::LauncherPreviewOperations for AppState {
     fn play_cue(&mut self, cue: crate::ui::main_menu_dialogs::options::LauncherCue) {
         App::play_launcher_options_cue(self, cue);
@@ -154,18 +176,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
             .set_mode(crate::app::persistence::options_profile::font_mode(enabled));
     }
     fn store_language(&mut self, tag: String) {
-        // From the next frame every label reads in it: the string table
-        // takes its texts and the fonts its script's letter forms. The open
-        // Options page reads its captions again once the events have run;
-        // Options' accept writes the choice out.
-        if !crate::i18n::select(&tag) {
-            return;
+        // The open Options page reads its captions again once the events
+        // have run; Options' accept writes the choice out.
+        if self.use_language(&tag) {
+            self.persistence.options_profile.language = Some(tag);
         }
-        if let Some(csf) = self.process_assets.csf.as_mut() {
-            crate::i18n::apply(csf);
-        }
-        self.renderer.bit_font.set_locale(&tag);
-        self.persistence.options_profile.language = Some(tag);
     }
     fn store_mouse_wheel_zoom(&mut self, enabled: bool) {
         self.persistence.options_profile.mouse_wheel_zoom = enabled;

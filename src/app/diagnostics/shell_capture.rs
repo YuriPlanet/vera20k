@@ -2595,12 +2595,7 @@ impl ShellCaptureSession {
             .language
             .clone()
             .unwrap_or_else(|| crate::i18n::DEFAULT_LANGUAGE.to_owned());
-        if crate::i18n::select(&language) {
-            if let Some(csf) = state.process_assets.csf.as_mut() {
-                crate::i18n::apply(csf);
-            }
-            state.renderer.bit_font.set_locale(&language);
-        } else {
+        if !state.use_language(&language) {
             self.fail(format!(
                 "--language {language}: no language file provides it"
             ));
