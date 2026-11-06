@@ -1218,7 +1218,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                 }
                 let starts = matches!(request, NetworkSetupRequest::StartGame { .. });
                 if request_setup(state, &mut service, request).is_err() {
-                    let text = tr("VERA:LobbyRequestMismatch");
+                    let text = tr("VERA:OnlineRequestMismatch");
                     if starts {
                         service.start_preparation = None;
                         fail_start(state, &text);
@@ -2379,8 +2379,8 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             }
         }
         http::Response::Failure(label) => notice(state, &tr(label)),
-        http::Response::LobbyUnreachable => notice(state, &tr("VERA:LobbyNotResponding")),
-        http::Response::LobbyReachable => notice(state, &tr("VERA:LobbyRespondingAgain")),
+        http::Response::LobbyUnreachable => notice(state, &tr("VERA:OnlineNotResponding")),
+        http::Response::LobbyReachable => notice(state, &tr("VERA:OnlineRespondingAgain")),
         http::Response::LobbyLost => {
             // A match keeps its relay through a lobby outage; this asks
             // again after it.
