@@ -10,6 +10,11 @@
 //! is *never* cleared between iterations: a later region cannot re-enter cells
 //! an earlier region already walked, which is what keeps successive trees from
 //! all piling onto the first few origins.
+//!
+//! Native: the tree loop of `RandomMapGenerator::PaintLatPatchesTreesRocks_Temperate
+//! @ 0x005A3AE0` (0x005A3F4A..0x005A40BD) and
+//! `PaintLatPatchesTrees_NonTemperate @ 0x005A4280`, each region grown by
+//! `RandomMapGenerator::PlaceTreeRegion @ 0x005A45E0`.
 
 use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::RmgRng;
@@ -197,7 +202,8 @@ fn place_region(
         return 0;
     }
     let budget = size * REGION_MULT;
-    let mut heap = CellHeap::new(budget as usize + 8);
+    // 0x005A45E0: a `25 * size` pool and heap; `local_58` counts admissions.
+    let mut heap = CellHeap::new(budget as usize);
     ctx.scratch.get_mut(origin.0, origin.1).visited = true;
     heap.push((0.0, origin), by_key);
     // `admitted` is the monotonic total of cells ever pushed (native `local_58`,

@@ -6,6 +6,12 @@
 //! patch is a min-heap blob of a Gaussian-sized cell count. The base tile is
 //! stamped here; the LAT auto-tiling fixup (a separate, RNG-free pass) resolves
 //! the transition variants afterwards.
+//!
+//! Native: the patch loops of `RandomMapGenerator::PaintLatPatchesTreesRocks_Temperate
+//! @ 0x005A3AE0` and `PaintLatPatchesTrees_NonTemperate @ 0x005A4280`, each
+//! patch grown by `RandomMapGenerator::PlaceLatPatch @ 0x005A4B60`. The
+//! temperate size draw's `[4, 80]` fallback (mean 42, scale 38) is dormant:
+//! the mean is always in `[20, 40]`.
 
 use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::RmgRng;
@@ -35,8 +41,8 @@ const SIZE_BASE_OTHER: f64 = 20.0;
 const SIZE_MIN: f64 = 4.0;
 const SIZE_MAX_TEMPERATE: f64 = 80.0;
 const SIZE_MAX_OTHER: f64 = 60.0;
-/// Heap headroom over the target size (the frontier never approaches this).
-const HEAP_HEADROOM: usize = 512;
+/// Pool and heap size per patch cell (`0x005A4B60`: `size * 10`).
+const HEAP_PER_CELL: usize = 10;
 
 /// Everything the phase borrows.
 pub struct PatchCtx<'a> {
@@ -219,7 +225,7 @@ fn place_patch(ctx: &mut PatchCtx<'_>, origin: (i32, i32), tile: i32, size: i32,
     if size <= 0 {
         return;
     }
-    let cap = size as usize + HEAP_HEADROOM;
+    let cap = size as usize * HEAP_PER_CELL;
     let mut heap = CellHeap::new(cap);
     ctx.scratch.get_mut(origin.0, origin.1).stamp = patch_id;
     heap.push((0.0, origin), by_key);
