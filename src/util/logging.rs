@@ -9,7 +9,7 @@
 //! both (`wgpu_hal=error`); the longest matching prefix wins. A `/text` suffix
 //! keeps only messages containing `text`.
 
-use crate::util::time::{SystemTime, UNIX_EPOCH};
+use crate::util::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::backtrace::Backtrace;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -81,6 +81,39 @@ pub fn log_file() -> Option<&'static Path> {
     LOG_FILE.get().map(PathBuf::as_path)
 }
 
+/// A warning or error the installed logger wrote.
+#[derive(Debug, Clone)]
+pub struct LoggedProblem {
+    pub level: log::Level,
+    pub message: String,
+    pub at: Instant,
+}
+
+/// The newest one, for the in-game FPS panel.
+static LATEST_PROBLEM: Mutex<Option<LoggedProblem>> = Mutex::new(None);
+
+/// The newest warning or error that passed the log filter, if any.
+pub fn latest_problem() -> Option<LoggedProblem> {
+    LATEST_PROBLEM.lock().ok()?.clone()
+}
+
+fn remember_problem(
+    slot: &Mutex<Option<LoggedProblem>>,
+    level: log::Level,
+    message: &str,
+    at: Instant,
+) {
+    if level <= log::Level::Warn
+        && let Ok(mut latest) = slot.lock()
+    {
+        *latest = Some(LoggedProblem {
+            level,
+            message: message.to_owned(),
+            at,
+        });
+    }
+}
+
 /// Install a logger that writes to stderr, filtered by `RUST_LOG` or else
 /// `default_filter`. Fails when a logger is already installed.
 pub fn init_stderr_logger(default_filter: &str) -> Result<(), log::SetLoggerError> {
@@ -126,6 +159,7 @@ impl Log for Logger {
         }
         #[cfg(feature = "telemetry")]
         telemetry::record(record.level(), record.target(), &message);
+        remember_problem(&LATEST_PROBLEM, record.level(), &message, Instant::now());
         let line = format!(
             "[{} {:<5} {}] {message}\n",
             utc_timestamp(SystemTime::now()),
@@ -359,7 +393,22 @@ mod tests {
 
     use log::LevelFilter;
 
-    use super::{Filter, claim_exception_dump, roll_over_large_log, utc_timestamp};
+    use super::{
+        Filter, claim_exception_dump, remember_problem, roll_over_large_log, utc_timestamp,
+    };
+
+    #[test]
+    fn the_newest_warning_or_error_is_kept_and_info_is_not() {
+        let slot = std::sync::Mutex::new(None);
+        let at = crate::util::time::Instant::now();
+        remember_problem(&slot, log::Level::Info, "map loaded", at);
+        assert!(slot.lock().unwrap().is_none());
+        remember_problem(&slot, log::Level::Warn, "missing art", at);
+        remember_problem(&slot, log::Level::Error, "device lost", at);
+        let latest = slot.lock().unwrap().clone().unwrap();
+        assert_eq!(latest.level, log::Level::Error);
+        assert_eq!(latest.message, "device lost");
+    }
 
     #[test]
     fn a_log_past_the_limit_moves_aside_and_a_small_one_stays() {

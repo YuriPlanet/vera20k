@@ -212,6 +212,7 @@ pub(crate) fn render_and_present(
     presenter: &ShellSurfacePresenter,
     depth: &wgpu::TextureView,
     fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
+    font: &crate::render::bit_font::BitFont,
     splash: Option<&StartupSplashPresentation>,
 ) -> Result<bool> {
     batch.update_camera(
@@ -272,7 +273,7 @@ pub(crate) fn render_and_present(
         }
     }
     presenter.encode_present(&mut encoder, &output.texture);
-    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture);
+    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present(&gpu.queue);
     Ok(true)

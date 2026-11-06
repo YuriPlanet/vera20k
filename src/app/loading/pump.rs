@@ -3437,6 +3437,8 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result
         &state.renderer.batch_renderer,
         &mut encoder,
         &output.texture,
+        &state.renderer.bit_font,
+        None,
     );
     state
         .renderer
@@ -3456,6 +3458,7 @@ pub(crate) fn present_game_mode_blank(state: &AppState) {
         &state.renderer.shell_surface_presenter,
         &state.renderer.batch_renderer,
         &state.renderer.fps_overlay,
+        &state.renderer.bit_font,
     ) {
         log::warn!("Game-mode blank frame failed: {err:#}");
     }
