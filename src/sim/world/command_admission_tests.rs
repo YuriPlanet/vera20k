@@ -14,6 +14,124 @@ fn native_dolist_world() -> Simulation {
 }
 
 #[test]
+fn skirmish_large_move_batch_reaches_every_actor_after_snapshot() {
+    let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[VehicleTypes]\n0=PLANNER\n[PLANNER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
+    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    sim.session.set_current_house_for_test(Some(owner));
+    let actors: Vec<_> = (0..33)
+        .flat_map(|y| (0..33).map(move |x| (x, y)))
+        .filter_map(|(x, y)| {
+            sim.spawn_object_with_overlay_registry(
+                "PLANNER",
+                "Americans",
+                x,
+                y,
+                0,
+                &rules,
+                &registry,
+            )
+        })
+        .take(300)
+        .collect();
+    assert_eq!(actors.len(), 300);
+    let mut previous_destinations = Vec::new();
+    // Two successive clicks must reach actors beyond both native limits (128/256).
+    for (x, y) in [(19, 17), (10, 12)] {
+        let commands: Vec<_> = actors
+            .iter()
+            .map(|&entity_id| {
+                let record = sim
+                    .encode_megamission_record(
+                        owner,
+                        &Command::Move {
+                            entity_id,
+                            target_rx: x,
+                            target_ry: y,
+                        },
+                    )
+                    .unwrap();
+                CommandEnvelope::synchronized(record, 0)
+            })
+            .collect();
+        let mut expected: Vec<_> = commands
+            .iter()
+            .cloned()
+            .map(QueuedCommand::from_envelope)
+            .collect();
+        assert!(sim.issue_local_commands(commands));
+        let terrain = sim.resolved_terrain.clone();
+        let path = sim.path_grid.clone();
+        let saved = crate::util::save_codec::serialize(&sim).unwrap();
+        sim = crate::util::save_codec::deserialize(&saved).unwrap();
+        // Map-derived caches are rebuilt by the production save loader.
+        sim.resolved_terrain = terrain;
+        sim.path_grid = path;
+        sim.resolve_type_handles(&rules);
+        // This test covers delivery, not the formation algorithm: ask its
+        // production owner for the destinations the entire batch should get.
+        sim.adjust_staged_megamission_destinations(&mut expected, &rules, Some(&registry));
+        let destinations: Vec<_> = expected
+            .iter()
+            .map(|command| {
+                let record = command.record().expect("expected an encoded move");
+                let crate::sim::command::MegaMissionOrder::Move { target_x, target_y } =
+                    crate::sim::command::MegaMissionRecord::decode(record)
+                        .unwrap()
+                        .order
+                else {
+                    panic!("expected a move order");
+                };
+                Some(crate::sim::components::NavTargetRef::cell(
+                    target_x as u16,
+                    target_y as u16,
+                ))
+            })
+            .collect();
+        sim.transfer_local_commands();
+        let (executed, _) =
+            sim.apply_due_commands(&[], &rules, 0, Some(&registry), Default::default());
+        assert_eq!(executed, actors.len());
+        for (index, &actor) in actors.iter().enumerate() {
+            let actual = sim.entities().get(actor).unwrap().navigation.nav_com();
+            assert_eq!(
+                actual, destinations[index],
+                "actor {actor}, click ({x}, {y})"
+            );
+            if !previous_destinations.is_empty() {
+                assert_ne!(
+                    actual, previous_destinations[index],
+                    "actor {actor} retained the first click's destination"
+                );
+            }
+        }
+        previous_destinations = destinations;
+        assert!(sim.pending_commands.is_empty());
+    }
+}
+
+#[test]
+fn skirmish_full_queue_rejects_a_batch_without_accepting_a_prefix() {
+    let mut sim = native_dolist_world();
+    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    let capacity = sim.available_local_command_slots();
+    let record = crate::sim::command::CommandRecord::encode(0xff, 0, 0, &[]).unwrap();
+    let event = CommandEnvelope::synchronized(record, 0);
+    assert!(sim.issue_local_commands(std::iter::repeat_n(event.clone(), capacity - 1)));
+    assert!(!sim.issue_local_commands([event.clone(), event.clone()]));
+    assert_eq!(sim.pending_local_command_count(), capacity - 1);
+    sim.transfer_local_commands();
+    assert_eq!(sim.available_local_command_slots(), 1);
+    assert!(sim.issue_local_command(event));
+    sim.transfer_local_commands();
+    assert_eq!(sim.pending_commands.native_len(), capacity);
+}
+
+#[test]
 fn borrowed_execution_observer_reports_actual_timing_acceptance() {
     use crate::sim::command::{
         PROCESS_TIME_OPCODE, ProcessTimeRecord, TIMING_OPCODE, TimingRecord,
@@ -395,7 +513,7 @@ fn processed_native_records_do_not_reapply_to_input_projections() {
 #[test]
 fn unresolved_native_megamissions_still_consume_the_production_staging_slots() {
     let mut sim = native_dolist_world();
-    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    sim.session.set_game_mode(ScenarioGameMode::Campaign);
     for _ in 0..257 {
         let record = crate::sim::command::CommandRecord::encode(4, 0, 0, &[0; 23]).unwrap();
         assert!(sim.admit_native_command_record(record));
@@ -537,7 +655,7 @@ fn future_native_admission_is_recorded_once_and_replays_at_its_raw_frame() {
 #[test]
 fn production_dolist_preserves_unknown_records_and_enforces_native_capacity() {
     let mut sim = native_dolist_world();
-    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    sim.session.set_game_mode(ScenarioGameMode::Campaign);
     let record = crate::sim::command::CommandRecord::encode(0xff, -1, 10, &[0xaa]).unwrap();
     for _ in 0..crate::sim::command_queue::DO_LIST_CAPACITY {
         assert!(sim.admit_native_command_record(record.clone()));

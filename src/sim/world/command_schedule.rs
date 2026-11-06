@@ -74,6 +74,8 @@ impl Simulation {
             return false;
         }
         let network = self.session.game_mode().is_network();
+        let skirmish =
+            self.session.game_mode() == crate::sim::scenario_session::ScenarioGameMode::Skirmish;
         let mut prepared = Vec::new();
         let mut valid = true;
         for command in commands {
@@ -107,11 +109,13 @@ impl Simulation {
                     .find_map(|(entry, _)| entry.record().map(|record| record.house_id()))
             });
             source.map_or(0, |house| self.local_command_slots_for(house, control))
+        } else if skirmish {
+            self.available_local_command_slots()
         } else {
             crate::sim::command_queue::OUT_LIST_CAPACITY
                 .saturating_sub(self.local_commands.native_len())
         };
-        if network && (!valid || native > limit) {
+        if (network || skirmish) && (!valid || native > limit) {
             return false;
         }
         for (entry, ingress) in prepared {
@@ -122,6 +126,8 @@ impl Simulation {
                     entry,
                     if network {
                         crate::sim::command_queue::NETWORK_SOURCE_COMMAND_CAPACITY
+                    } else if skirmish {
+                        crate::sim::command_queue::SKIRMISH_COMMAND_CAPACITY
                     } else {
                         crate::sim::command_queue::OUT_LIST_CAPACITY
                     },
@@ -206,6 +212,12 @@ impl Simulation {
     }
 
     fn local_command_slots(&self, include_control_reserve: bool) -> usize {
+        if self.session.game_mode() == crate::sim::scenario_session::ScenarioGameMode::Skirmish {
+            return crate::sim::command_queue::SKIRMISH_COMMAND_CAPACITY
+                .saturating_sub(self.local_commands.native_len())
+                .saturating_sub(self.pending_commands.native_len())
+                .saturating_sub(self.dispatch_reserved_slots.total);
+        }
         if !self.session.game_mode().is_network() {
             return crate::sim::command_queue::OUT_LIST_CAPACITY
                 .saturating_sub(self.local_commands.native_len());
@@ -278,6 +290,11 @@ impl Simulation {
             self.dispatch_reserved_slots,
             if self.session.game_mode().is_network() {
                 crate::sim::command_queue::NETWORK_COMMAND_CAPACITY
+            } else if self.session.game_mode()
+                == crate::sim::scenario_session::ScenarioGameMode::Skirmish
+            {
+                crate::sim::command_queue::SKIRMISH_COMMAND_CAPACITY
+                    .saturating_sub(self.local_commands.native_len())
             } else {
                 crate::sim::command_queue::DO_LIST_CAPACITY
             },
@@ -1158,6 +1175,10 @@ impl Simulation {
             == super::CommandQueueRoute::Multiplayer
         {
             CommandDispatchMode::Network
+        } else if self.session.game_mode()
+            == crate::sim::scenario_session::ScenarioGameMode::Skirmish
+        {
+            CommandDispatchMode::Skirmish
         } else {
             CommandDispatchMode::Offline
         };
