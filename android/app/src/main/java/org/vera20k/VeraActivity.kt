@@ -59,13 +59,13 @@ class VeraActivity : NativeActivity() {
         nativeOnFolderPicked(tree?.toString() ?: "")
     }
 
-    /** Implemented in `crates/vera20k-android`; the import flow's entry. */
+    /** Implemented in `android/src/lib.rs`; the import flow's entry. */
     private external fun nativeOnFolderPicked(treeUri: String)
 
-    /** Implemented in `crates/vera20k-android`; reports the copy's outcome. */
+    /** Implemented in `android/src/lib.rs`; reports the copy's outcome. */
     private external fun nativeImportFinished(result: String)
 
-    /** Implemented in `crates/vera20k-android`; bytes copied so far. */
+    /** Implemented in `android/src/lib.rs`; bytes copied so far. */
     private external fun nativeImportProgress(copiedBytes: Long)
 
     /** Uses the engine's config editor, retaining the player's other settings. */

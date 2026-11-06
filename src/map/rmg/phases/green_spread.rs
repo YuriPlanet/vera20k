@@ -14,6 +14,8 @@ const SPREAD_CAP: i32 = 1000;
 /// The four even directions (N, E, S, W) the spread steps in.
 const EVEN_DIRS: [usize; 4] = [0, 2, 4, 6];
 
+/// `RandomMapGenerator::SpreadGreenTerrain @ 0x0059B740`, called from
+/// `Generate @ 0x00598960`.
 pub fn run(grid: &mut RmgGrid, ids: &TileIds, rng: &mut RmgRng) {
     // Collect: every green cell's clear cardinal neighbors, in native scan
     // order. Duplicates are kept — the original appends without dedup.
@@ -56,6 +58,8 @@ pub fn run(grid: &mut RmgGrid, ids: &TileIds, rng: &mut RmgRng) {
     }
 }
 
+/// The clear cardinal neighbours `0x0059B740` appends after each conversion,
+/// stepping with `MapCoord_StepByDir_GetCell @ 0x00481810`.
 fn append_clear_neighbors(
     grid: &mut RmgGrid,
     ids: &TileIds,

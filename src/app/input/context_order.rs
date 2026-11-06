@@ -1498,8 +1498,7 @@ fn finish_order(
                 .as_mut()
                 .map(|rt| &mut rt.simulation)
             {
-                let network = sim.session().game_mode().is_network();
-                accepted = sim.issue_local_commands(encoded) || !network;
+                accepted = sim.issue_local_commands(encoded);
             }
             if accepted {
                 if let Some(speaker_id) = speaker_id {
@@ -1516,6 +1515,8 @@ fn finish_order(
     // LeftUp4ABF78..4ABF8E refuses before dispatch; admitted clicks announce
     // after the append attempt, including a full OutList or a missed search
     // (4439DC/443A89 ->443A2B..443A69). Source: original gamemd.exe.
+    // Sim-scale deviation: a click VERA's larger queue refuses is not
+    // admitted, so it does not announce.
     if admitted && rally_announce {
         crate::app::input::dispatch::push_local_eva(
             state,

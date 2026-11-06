@@ -56,14 +56,14 @@ impl Simulation {
         self.issue_local_command(CommandEnvelope::synchronized(record, self.session.tick()))
     }
 
-    /// Submit a freshly produced local command. Native events share the
-    /// process-wide OutList cap; local selection/Options use their ingress.
+    /// Submit a freshly produced local command. Native events share the local
+    /// command bound; local selection/Options use their ingress.
     /// The result describes queue admission, not whether input was handled.
     pub fn issue_local_command(&mut self, command: CommandEnvelope) -> bool {
         self.issue_local_commands([command])
     }
 
-    /// A multiplayer input batch is accepted whole or left for the UI to retry.
+    /// An input batch is accepted whole or left for the UI to retry.
     /// The existing local FIFO remains its only owner; it is never spread over
     /// arbitrary execution frames merely to fit a packet or native stage.
     pub fn issue_local_commands(
@@ -108,10 +108,9 @@ impl Simulation {
             });
             source.map_or(0, |house| self.local_command_slots_for(house, control))
         } else {
-            crate::sim::command_queue::OUT_LIST_CAPACITY
-                .saturating_sub(self.local_commands.native_len())
+            self.available_local_command_slots()
         };
-        if network && (!valid || native > limit) {
+        if !valid || native > limit {
             return false;
         }
         for (entry, ingress) in prepared {
@@ -123,7 +122,7 @@ impl Simulation {
                     if network {
                         crate::sim::command_queue::NETWORK_SOURCE_COMMAND_CAPACITY
                     } else {
-                        crate::sim::command_queue::OUT_LIST_CAPACITY
+                        crate::sim::command_queue::SINGLE_PLAYER_COMMAND_CAPACITY
                     },
                 )
             };
@@ -207,8 +206,10 @@ impl Simulation {
 
     fn local_command_slots(&self, include_control_reserve: bool) -> usize {
         if !self.session.game_mode().is_network() {
-            return crate::sim::command_queue::OUT_LIST_CAPACITY
-                .saturating_sub(self.local_commands.native_len());
+            return crate::sim::command_queue::SINGLE_PLAYER_COMMAND_CAPACITY
+                .saturating_sub(self.local_commands.native_len())
+                .saturating_sub(self.pending_commands.native_len())
+                .saturating_sub(self.dispatch_reserved_slots.total);
         }
         let Some(house) = self.local_command_source() else {
             return 0;
@@ -279,7 +280,9 @@ impl Simulation {
             if self.session.game_mode().is_network() {
                 crate::sim::command_queue::NETWORK_COMMAND_CAPACITY
             } else {
-                crate::sim::command_queue::DO_LIST_CAPACITY
+                // Room stays for the queued input, so its transfer is never refused.
+                crate::sim::command_queue::SINGLE_PLAYER_DOLIST_CAPACITY
+                    .saturating_sub(self.local_commands.native_len())
             },
             if self.session.game_mode().is_network() {
                 crate::sim::command_queue::NETWORK_SOURCE_DOLIST_CAPACITY
@@ -1159,7 +1162,7 @@ impl Simulation {
         {
             CommandDispatchMode::Network
         } else {
-            CommandDispatchMode::Offline
+            CommandDispatchMode::SinglePlayer
         };
         let mut host = WorldCommandHost {
             sim: self,

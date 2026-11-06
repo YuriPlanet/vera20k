@@ -19,10 +19,12 @@
 //! through the shared area receiver (AnimAI424513..424654). Authored Overlay
 //! CellAnim provides a live FIRE3 producer; its stock ART Damage is .003.
 //! No common unchanged-stock ordinary positive-Damage producer is established.
-//! RESIDUAL: Terrain CatchFire71C5B0's producer and Terrain-owner attachment/
-//! coordinate integration remain separate work. Detached CellAnim does not
-//! ignite Terrain, attach to it or add it to Logic. That separate fire chain
-//! owns the multiplier's ordinary production activation, timers and detach.
+//! Terrain never burns in YR, so this needs no fire chain. `TerrainClass::
+//! Catch_Fire @ 0x0071C5B0`, the only IsOnFire writer, sits in vtable slot
+//! +0x178 (0x007F53A4) with no virtual call found. `Take_Damage @ 0x0071B920`
+//! uninits a terrain object on a lethal hit, and `Finish_Fire_Death @
+//! 0x0071C6B0` (from AnimClass 0x00422955/0x00424BB0) returns while IsOnFire is
+//! clear.
 
 use crate::sim::world::FrameEffects;
 use std::collections::BTreeMap;

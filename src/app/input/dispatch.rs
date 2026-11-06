@@ -1903,6 +1903,11 @@ fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
 
 fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
     match command {
+        // Held camera commands are sampled by queue_keyboard_scroll.
+        HotkeyCommand::CameraUp
+        | HotkeyCommand::CameraDown
+        | HotkeyCommand::CameraLeft
+        | HotkeyCommand::CameraRight => {}
         HotkeyCommand::HealthNav => selection_navigation::execute_category_navigation(
             state,
             crate::app::types::CategoryNavigationKind::Health,
@@ -1955,15 +1960,19 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         }
         HotkeyCommand::View(slot) => crate::app::input::camera::recall_view_bookmark(state, slot),
         HotkeyCommand::SetView(slot) => crate::app::input::camera::set_view_bookmark(state, slot),
-        HotkeyCommand::TeamSelect(slot) => handle_control_group_command(state, slot, None),
-        HotkeyCommand::TeamAddSelect(slot) => {
-            handle_control_group_command(state, slot, Some(GroupPressAction::AddToSelection))
+        HotkeyCommand::TeamSelect(slot) => {
+            handle_control_group_command(state, slot, GroupPress::Key)
         }
+        HotkeyCommand::TeamAddSelect(slot) => handle_control_group_command(
+            state,
+            slot,
+            GroupPress::Fixed(GroupPressAction::AddToSelection),
+        ),
         HotkeyCommand::TeamCreate(slot) => {
-            handle_control_group_command(state, slot, Some(GroupPressAction::Assign))
+            handle_control_group_command(state, slot, GroupPress::Fixed(GroupPressAction::Assign))
         }
         HotkeyCommand::TeamCenter(slot) => {
-            handle_control_group_command(state, slot, Some(GroupPressAction::Center))
+            handle_control_group_command(state, slot, GroupPress::Fixed(GroupPressAction::Center))
         }
         // Native SidebarUp/Down execute SidebarClass::Scroll 0x6A6A00 on the
         // active strip (up=true/false, tab -1), as the wheel does.
@@ -2118,7 +2127,8 @@ pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: 
                 queue_control_group_assignment(state, group, Vec::new());
                 return;
             }
-            HotkeyCommand::TeamSelect(group)
+            handle_control_group_command(state, group, GroupPress::CommandBar);
+            return;
         }
         3 => {
             execute_type_select_tap(state);
@@ -4144,6 +4154,31 @@ fn control_group_press_action(
     Some(GroupPressAction::Recall)
 }
 
+/// A Team button's left release (`TabClass::Action @ 0x006D0680`,
+/// 0x006D07EC..0x006D0822): `Team__CountMembers @ 0x00730A10` zero assigns
+/// the selection (`TeamAssign 0x00731060`); else
+/// `Team__AllMembersSelected @ 0x00730990` centres (`0x007313A0`) and anything
+/// less recalls (`0x007311C0`). Both predicates skip what the team walks skip,
+/// so `group` and `selected` arrive already filtered by `team_walk_members`.
+fn command_bar_team_press_action(group: &[u64], selected: &[u64]) -> GroupPressAction {
+    if group.is_empty() {
+        GroupPressAction::Assign
+    } else if group.iter().all(|id| selected.contains(id)) {
+        GroupPressAction::Center
+    } else {
+        GroupPressAction::Recall
+    }
+}
+
+/// Who pressed a control group: a key binding, a command-bar Team button,
+/// or a binding with one fixed action.
+#[derive(Debug, Clone, Copy)]
+enum GroupPress {
+    Key,
+    CommandBar,
+    Fixed(GroupPressAction),
+}
+
 fn control_group_action_for_input(
     modifiers: KeyModifiers,
     slot: usize,
@@ -4287,11 +4322,7 @@ fn live_group_members(sim: Option<&crate::sim::world::Simulation>, group: &[u64]
         .collect()
 }
 
-fn handle_control_group_command(
-    state: &mut AppState,
-    group_idx: usize,
-    action_override: Option<GroupPressAction>,
-) {
+fn handle_control_group_command(state: &mut AppState, group_idx: usize, press: GroupPress) {
     if group_idx >= 10 {
         return;
     }
@@ -4314,8 +4345,13 @@ fn handle_control_group_command(
         .input
         .last_control_group_press
         .map(|(slot, at)| (slot, at.elapsed()));
-    let action = action_override.unwrap_or_else(|| {
-        control_group_action_for_input(
+    let action = match press {
+        GroupPress::Fixed(action) => action,
+        GroupPress::CommandBar => command_bar_team_press_action(
+            &team_walk_members(sim, &group),
+            &team_walk_members(sim, &selected),
+        ),
+        GroupPress::Key => control_group_action_for_input(
             KeyModifiers::default(),
             group_idx,
             &group,
@@ -4323,8 +4359,8 @@ fn handle_control_group_command(
             last_press,
             sim,
         )
-        .expect("a bare team-select binding always resolves")
-    });
+        .expect("a bare team-select binding always resolves"),
+    };
 
     if action != GroupPressAction::Assign {
         // Recall731205, CenterCamera7313DE and AddTeam7314FD each START by
@@ -4858,9 +4894,9 @@ mod deploy_key_tests {
 mod control_group_tests {
     use super::{
         GroupPressAction, KeyModifiers, TEAM_SELECTION_VOICE_POLICY, TeamSelection,
-        control_group_action_for_input, control_group_press_action, live_group_members,
-        schedule_control_group_assignment, selection_voice_recipients, team_selection,
-        team_walk_members,
+        command_bar_team_press_action, control_group_action_for_input, control_group_press_action,
+        live_group_members, schedule_control_group_assignment, selection_voice_recipients,
+        team_selection, team_walk_members,
     };
     use std::time::Duration;
 
@@ -5023,6 +5059,25 @@ mod control_group_tests {
         );
         assert_eq!(sim.entities().get(tank).unwrap().object_group(), -1);
         assert_eq!(sim.projected_control_groups()[9], [reserve]);
+    }
+
+    /// TabClass::Action 0x006D07EC..0x006D0822: an empty team takes the
+    /// selection, a fully selected one centres without any double tap (extra
+    /// selected units allowed), and anything less recalls.
+    #[test]
+    fn command_bar_team_button_assigns_empty_centres_selected_else_recalls() {
+        assert_eq!(
+            command_bar_team_press_action(&[], &[7]),
+            GroupPressAction::Assign
+        );
+        assert_eq!(
+            command_bar_team_press_action(&[1, 2], &[2, 1, 7]),
+            GroupPressAction::Center
+        );
+        assert_eq!(
+            command_bar_team_press_action(&[1, 2], &[1]),
+            GroupPressAction::Recall
+        );
     }
 
     #[test]

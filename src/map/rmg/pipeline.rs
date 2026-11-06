@@ -22,7 +22,7 @@ use super::phases::blob::BlobCtx;
 use super::phases::carve::CarveCtx;
 use super::phases::carve_driver::{self, ConnectorRegion};
 use super::phases::hills::{HillsArgs, HillsCtx};
-use super::phases::island_passes::{self, IslandCtx};
+use super::phases::island_passes;
 use super::phases::lat_patches::PatchCtx;
 use super::phases::regions::{RegionCtx, Regions};
 use super::phases::rocks::{RockArgs, RockCtx};
@@ -68,6 +68,8 @@ pub struct PipelineInputs<'a> {
     /// How freely plateaus get linked by ramps. Zero does not disable the
     /// pass — it gives every adjacent pair exactly one ramp.
     pub accessibility: i32,
+    /// `RegionSize` option: the region split threshold for map types 3/4.
+    pub region_size: i32,
     pub theater: i32,
     pub num_players: i32,
     /// `WaterAmount` option.
@@ -198,7 +200,20 @@ pub fn run_pipeline(
             map_type: inputs.map_type,
             default_level: DEFAULT_LEVEL,
         };
-        regions::run(&mut ctx)
+        let mut regions = regions::run(&mut ctx);
+        // `SplitOversizedRegions` (0x0058EBC0) runs only for map types 3/4,
+        // between the partition and the island passes (0x00598D55..62).
+        if matches!(inputs.map_type, 3 | 4) {
+            regions::split_oversized(
+                &mut ctx,
+                &mut *gauss,
+                &mut regions,
+                inputs.region_size,
+                gen_w,
+                gen_h,
+            );
+        }
+        regions
     };
     observe(Stage::Regions, grid, &waypoints, &terrain);
 
@@ -207,11 +222,12 @@ pub fn run_pipeline(
     // back a rebuilt partition that replaces the one above wholesale. Every
     // later stage reads the rebuilt ids.
     if matches!(inputs.map_type, 3 | 4) {
-        let mut ctx = IslandCtx {
+        let mut ctx = RegionCtx {
             grid: &mut *grid,
             scratch: &mut *scratch,
             ids: inputs.ids,
             rng: &mut *rng,
+            map_type: inputs.map_type,
             default_level: DEFAULT_LEVEL,
         };
         regions = island_passes::run(&mut ctx);
@@ -288,7 +304,7 @@ pub fn run_pipeline(
     observe(Stage::RecalcAfterTerrain, grid, &waypoints, &terrain);
 
     // ---- Starts (needs the zone field) ------------------------------------
-    let outcome = {
+    let (outcome, start_tech_placements) = {
         let zone_params = ZoneParams {
             map_w,
             local_rect,
@@ -301,7 +317,6 @@ pub fn run_pipeline(
             ZoneKind::for_map_type(inputs.map_type),
         );
         let args = StartsArgs {
-            map_type: inputs.map_type,
             // SyncOptionsFromControls596C70 writes NumPlayers to global
             // MapSeed+50 (ABE028) at596DE9. Generate598960 uses that same
             // record (596644..59664C); CreateStartingPoints594B50 reads its
@@ -315,6 +330,41 @@ pub fn run_pipeline(
             gen_h,
             map_w,
         };
+        let outcome = {
+            let mut ctx = StartsCtx {
+                grid: &mut *grid,
+                scratch: &mut *scratch,
+                ids: inputs.ids,
+                rng: &mut *rng,
+                regions: &mut regions,
+            };
+            starts::run(&mut ctx, &args, &zones)
+        };
+        // Map type 0's tech buildings: CreateStartingPoints' coin-flip tail,
+        // before Generate's MarkStartAreas clearings.
+        let start_tech_placements = {
+            let tech_args = TechArgs {
+                map_type: inputs.map_type,
+                map_w,
+                local_rect,
+                stride: stride as i32,
+            };
+            let mut ctx = TechCtx {
+                grid: &mut *grid,
+                scratch: &mut *scratch,
+                ids: inputs.ids,
+                rng: &mut *rng,
+                regions: &regions,
+                types: inputs.tech_types,
+            };
+            tech_buildings::run_start_flips_traced(
+                &mut ctx,
+                &tech_args,
+                &outcome.region_order,
+                &mut construction_trace,
+                structures.len(),
+            )
+        };
         let mut ctx = StartsCtx {
             grid: &mut *grid,
             scratch: &mut *scratch,
@@ -322,7 +372,8 @@ pub fn run_pipeline(
             rng: &mut *rng,
             regions: &mut regions,
         };
-        starts::run(&mut ctx, &args, &zones)
+        starts::mark_start_areas(&mut ctx, &args, &outcome);
+        (outcome, start_tech_placements)
     };
     // Captured before `outcome` moves into the tiberium phase, which is also
     // the phase that turns each unfilled slot into a field seeded at the map
@@ -336,8 +387,9 @@ pub fn run_pipeline(
         .collect();
     observe(Stage::Starts, grid, &waypoints, &terrain);
 
-    // ---- Tech buildings (map types 1-4; map type 0 places none) -----------
-    let tech_placements = {
+    // ---- Tech buildings (map types 1-4; map type 0's came with the starts) -
+    let mut tech_placements = start_tech_placements;
+    let driver_placements = {
         let args = TechArgs {
             map_type: inputs.map_type,
             map_w,
@@ -352,8 +404,10 @@ pub fn run_pipeline(
             regions: &regions,
             types: inputs.tech_types,
         };
-        tech_buildings::run_traced(&mut ctx, &args, &mut construction_trace, structures.len())
+        let base = structures.len() + tech_placements.len();
+        tech_buildings::run_traced(&mut ctx, &args, &mut construction_trace, base)
     };
+    tech_placements.extend(driver_placements);
     observe(Stage::TechBuildings, grid, &waypoints, &terrain);
 
     // ---- Tiberium ----------------------------------------------------------

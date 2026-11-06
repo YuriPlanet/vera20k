@@ -23,16 +23,15 @@
 //! records linearly, so it yields cells in row-major order — ascending `y`, then
 //! ascending `x`. That difference is invisible everywhere else it is used,
 //! because those callers draw no randomness. Here it decides which border cell
-//! gets which random draw, so [`region_border_row_major`] exists to reproduce it
-//! rather than reusing the lake's collector.
+//! gets which random draw, and [`border_cells_of`] keeps that order.
 
 use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
-use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::x87::{self, TruncF64};
 use crate::util::native_heap::NativeHeap;
 use crate::util::native_x87::X87Chop53;
 
+use super::adjacency::border_cells_of;
 use super::blob::BlobCtx;
 
 /// The rect edge length that counts as "unclipped" when the heading is derived.
@@ -92,31 +91,6 @@ fn by_cost(nodes: &[Node]) -> impl Fn(&usize, &usize) -> bool + '_ {
     move |&a, &b| nodes[a].cost < nodes[b].cost
 }
 
-/// Cells of `region` that touch a differently-owned cell, in row-major order.
-///
-/// The original sweeps working-grid records by raw offset, and a record's index
-/// is `y * width + x`, so this is ascending `y` then ascending `x` — *not* the
-/// isometric order the rest of the generator draws in. See the module header.
-fn region_border_row_major(scratch: &RmgScratch, region: i32) -> Vec<(i32, i32)> {
-    let width = scratch.width() as i32;
-    let mut border = Vec::new();
-    for y in 0..width {
-        for x in 0..width {
-            if !scratch.in_diamond(x, y) || scratch.get(x, y).region != region {
-                continue;
-            }
-            for dir in 0..8usize {
-                let (nx, ny) = RmgGrid::step(x, y, dir);
-                if scratch.in_diamond(nx, ny) && scratch.get(nx, ny).region != region {
-                    border.push((x, y));
-                    break;
-                }
-            }
-        }
-    }
-    border
-}
-
 /// Where the growth points before the first Gaussian nudges it.
 ///
 /// Whichever rect edge is clipped decides the direction. The `y` test runs
@@ -166,14 +140,15 @@ fn angle_off_heading(cell: (i32, i32), reference: (i32, i32), heading: f64) -> f
     angle
 }
 
-/// The frontier priority: a random term plus the off-heading penalty.
+/// The frontier priority: a random term plus the off-heading penalty, stored
+/// with `FSTP m32` (`GrowMeanderArm` 0x005A0B9F seeds, 0x005A0F4F frontier).
 fn frontier_cost(angle: f64, draw: u32) -> f32 {
     let scale = TruncF64::from_f64(f64::from_bits(RANGE_K_BITS));
     let random_term = TruncF64::from_f64(f64::from(draw))
         .mul(scale)
         .mul(TruncF64::from_f64(COST_RANDOM));
     let angle_term = TruncF64::from_f64(angle).mul(TruncF64::from_f64(COST_ANGLE));
-    random_term.add(angle_term).to_f64() as f32
+    x87::store_f32(random_term.add(angle_term))
 }
 
 /// How many cells the arm may claim.
@@ -232,7 +207,7 @@ pub(crate) fn grow_meander_arm(ctx: &mut BlobCtx<'_>, args: &MeanderArgs) -> boo
         ctx.scratch.get_mut(x, y).stamp = 0;
     }
 
-    let border = region_border_row_major(ctx.scratch, args.tag);
+    let border = border_cells_of(ctx.scratch, args.tag);
     for &(x, y) in &border {
         if !in_rect(args.rect, x, y) {
             // Cells outside the rect consume nothing at all.
@@ -368,7 +343,7 @@ pub(crate) fn dilate_chained(
     level: Option<u8>,
     rect: [i32; 4],
 ) -> bool {
-    let mut frontier = region_border_row_major(ctx.scratch, region);
+    let mut frontier = border_cells_of(ctx.scratch, region);
     for _ in 0..rings {
         let mut claimed = Vec::new();
         for &(x, y) in &frontier {
@@ -409,6 +384,15 @@ pub(crate) fn dilate_chained(
 mod tests {
     use super::*;
 
+    /// `GrowMeanderArm` stores the cost with `FSTP m32` under chop
+    /// (0x005A0F4F): `u32::MAX * K * 2` stays just below 2.0.
+    #[test]
+    fn frontier_cost_store_truncates() {
+        assert_eq!(
+            frontier_cost(0.0, u32::MAX),
+            f32::from_bits(2.0f32.to_bits() - 1)
+        );
+    }
     #[test]
     fn a_whole_map_rect_points_east() {
         // The canyon's rect is unclipped on both axes, so neither test fires

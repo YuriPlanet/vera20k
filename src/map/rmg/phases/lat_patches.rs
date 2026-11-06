@@ -6,12 +6,18 @@
 //! patch is a min-heap blob of a Gaussian-sized cell count. The base tile is
 //! stamped here; the LAT auto-tiling fixup (a separate, RNG-free pass) resolves
 //! the transition variants afterwards.
+//!
+//! Native: the patch loops of `RandomMapGenerator::PaintLatPatchesTreesRocks_Temperate
+//! @ 0x005A3AE0` and `PaintLatPatchesTrees_NonTemperate @ 0x005A4280`, each
+//! patch grown by `RandomMapGenerator::PlaceLatPatch @ 0x005A4B60`. The
+//! temperate size draw's `[4, 80]` fallback (mean 42, scale 38) is dormant:
+//! the mean is always in `[20, 40]`.
 
 use crate::map::rmg::grid::RmgGrid;
-use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
+use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{Gaussian, TruncF64, approx_sqrt};
+use crate::map::rmg::x87::{self, Gaussian, TruncF64};
 use crate::util::native_x87::X87Chop53;
 
 use super::blob::{CellHeap, by_key};
@@ -35,10 +41,8 @@ const SIZE_BASE_OTHER: f64 = 20.0;
 const SIZE_MIN: f64 = 4.0;
 const SIZE_MAX_TEMPERATE: f64 = 80.0;
 const SIZE_MAX_OTHER: f64 = 60.0;
-/// Patch-placer priority jitter, `rand * 5·2⁻³²`.
-const JITTER: f64 = 5.0;
-/// Heap headroom over the target size (the frontier never approaches this).
-const HEAP_HEADROOM: usize = 512;
+/// Pool and heap size per patch cell (`0x005A4B60`: `size * 10`).
+const HEAP_PER_CELL: usize = 10;
 
 /// Everything the phase borrows.
 pub struct PatchCtx<'a> {
@@ -221,7 +225,7 @@ fn place_patch(ctx: &mut PatchCtx<'_>, origin: (i32, i32), tile: i32, size: i32,
     if size <= 0 {
         return;
     }
-    let cap = size as usize + HEAP_HEADROOM;
+    let cap = size as usize * HEAP_PER_CELL;
     let mut heap = CellHeap::new(cap);
     ctx.scratch.get_mut(origin.0, origin.1).stamp = patch_id;
     heap.push((0.0, origin), by_key);
@@ -251,12 +255,7 @@ fn place_patch(ctx: &mut PatchCtx<'_>, origin: (i32, i32), tile: i32, size: i32,
             }
             let dx = nx - origin.0;
             let dy = ny - origin.1;
-            let jitter = t(f64::from(ctx.rng.next_u32()))
-                .mul(t(JITTER))
-                .mul(t(f64::from_bits(RANGE_K_BITS)));
-            let priority = approx_sqrt(t(f64::from(dx * dx + dy * dy)))
-                .add(jitter)
-                .to_f64() as f32;
+            let priority = x87::jittered_distance_key(dx * dx + dy * dy, ctx.rng.next_u32());
             ctx.scratch.get_mut(nx, ny).stamp = patch_id;
             heap.push((priority, (nx, ny)), by_key);
         }

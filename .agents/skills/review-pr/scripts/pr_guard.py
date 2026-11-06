@@ -25,11 +25,13 @@ MAINTAINER = 'hrusten'
 ACCEPTED_AGENTS_COMMITS: set[str] = set()
 
 # Steer agents (AGENTS.md/CLAUDE.md at any depth, skills, hooks, settings) or
-# run on maintainer machines (CI, Cargo config, build scripts, the build runner).
+# run on maintainer machines (CI, Cargo config, build scripts, the build runner,
+# and the Gradle wrapper, build scripts and properties that build the APK).
 PROTECTED = re.compile(
     r'(^|/)(AGENTS|CLAUDE)\.md$|^\.(agents|claude|codex|github|cargo|vscode)/|(^|/)build\.rs$'
     r'|(^|/)Cargo\.(toml|lock)$|^rust-toolchain|^\.git(attributes|modules|ignore)$'
-    r'|^tools/(cargo_run|prepare_checkout|run_tests|skill_sync)\.py$|\.(sh|ps1|bat|cmd)$')
+    r'|^tools/(cargo_run|prepare_checkout|run_tests|skill_sync)\.py$|\.(sh|ps1|bat|cmd)$'
+    r'|(^|/)gradlew$|\.gradle(\.kts)?$|(^|/)gradle(-wrapper)?\.(properties|jar)$')
 MAINTAINER_ONLY = re.compile(r'(^|/)AGENTS\.md$')
 # Code marked this way differs from gamemd on purpose, for speed at 20,000 units.
 # AGENTS.md keeps it, and a PR seldom says that it undoes one.

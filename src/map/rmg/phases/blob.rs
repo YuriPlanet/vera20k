@@ -18,8 +18,6 @@ use crate::util::native_x87::X87Chop53;
 
 use super::shore::{self, ShoreCtx, TileBlocks};
 
-/// 5.0 — undirected jitter scale (double).
-const JITTER_SCALE: f64 = 5.0;
 /// 1.2 — aspect-weight scale (double).
 const ASPECT_SCALE: f64 = 1.2;
 
@@ -90,8 +88,9 @@ pub(crate) fn seed_draw(rng: &mut RmgRng, dim: i32) -> i32 {
     }
 }
 
-/// Ellipse membership test (`0x0059BAB0`, ellipse mode).
-fn ellipse_pass(
+/// Ellipse membership test (`Rmg__IsCellInRectOrEllipse @ 0x0059BAB0`,
+/// ellipse mode).
+pub(crate) fn ellipse_pass(
     map_w: i32,
     cell: (i32, i32),
     rect: &[i32; 4],
@@ -132,10 +131,12 @@ fn directed_key(
         .mul(TruncF64::from_f64(f64::from(weight_y)))
         .add(TruncF64::from_f64(f64::from(weight_x)).mul(tmp))
         .mul(TruncF64::from_f64(f64::from(cheb)));
-    key.to_f64() as f32
+    // Stored by the caller's `FSTP m32` at 0x0059C229.
+    x87::store_f32(key)
 }
 
-/// Carve one blob. Returns the pop count, or 0 on failure/rollback.
+/// Carve one blob (`RandomMapGenerator::CarveBlob @ 0x0059BBC0`). Returns the
+/// pop count, or 0 on failure/rollback.
 ///
 /// `blob_counter` is the shared blob-id source: the current value tags this
 /// blob, and a successful commit increments it here (the failure-path
@@ -240,12 +241,7 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
                 directed_key((rx, ry), (nx, ny), params.target, weight_x, weight_y)
             } else {
                 let dist2 = (nx - rx) * (nx - rx) + (ny - ry) * (ny - ry);
-                let jitter = TruncF64::from_f64(f64::from(ctx.rng.next_u32()))
-                    .mul(TruncF64::from_f64(JITTER_SCALE))
-                    .mul(TruncF64::from_f64(f64::from_bits(RANGE_K_BITS)));
-                approx_sqrt(TruncF64::from_f64(f64::from(dist2)))
-                    .add(jitter)
-                    .to_f64() as f32
+                x87::jittered_distance_key(dist2, ctx.rng.next_u32())
             };
             ctx.scratch.get_mut(nx, ny).stamp = blob_id;
             nodes_used += 1;

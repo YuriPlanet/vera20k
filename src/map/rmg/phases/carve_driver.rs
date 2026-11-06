@@ -24,7 +24,7 @@ use crate::util::native_x87::X87Chop53;
 use super::adjacency;
 use super::bridge_deck;
 use super::carve::{CarveCtx, CarveRegions, try_carve_connector_at_cell};
-use super::connector::LENIENCY_STEP;
+use super::connector::leniency;
 use crate::map::rmg::RmgConstructionTrace;
 
 /// `101 * (1 + 2^-32) * 2^-32` — the accessibility roll, pre-divided.
@@ -32,9 +32,6 @@ const ACCESS_ROLL_SCALE_BITS: u64 = 0x3E59_4000_0019_4000;
 /// `2 * (1 + 2^-32) * 2^-32` — the extra-connections roll, which then has 1.0
 /// added before truncation.
 const EXTRA_ROLL_SCALE_BITS: u64 = 0x3E00_0000_0010_0000;
-/// `(1 + 2^-32) * 2^-32` — the border-cell pick, which multiplies by the span
-/// separately rather than folding it in.
-const BORDER_PICK_SCALE_BITS: u64 = 0x3DF0_0000_0010_0000;
 
 /// Highest value the accessibility roll may take.
 const ACCESS_ROLL_MAX: i32 = 100;
@@ -99,19 +96,7 @@ fn connection_count(rng: &mut RmgRng, accessibility: i32) -> i32 {
 
 /// Pick one cell from the shared border, uniformly.
 fn pick_border_cell(rng: &mut RmgRng, count: i32) -> usize {
-    let scale = TruncF64::from_f64(f64::from_bits(BORDER_PICK_SCALE_BITS));
-    let span = TruncF64::from_f64(f64::from(count));
-    loop {
-        let v = X87Chop53::ftol_f64_low_masked(
-            TruncF64::from_f64(f64::from(rng.next_u32()))
-                .mul(span)
-                .mul(scale)
-                .to_f64(),
-        );
-        if v < count {
-            return v as usize;
-        }
-    }
+    rng.uniform(0, count - 1) as usize
 }
 
 /// Cut ramps between `region` and each higher-id neighbour at a different
@@ -177,7 +162,7 @@ pub(crate) fn carve_connectors_for_region(
             let cell = border[pick_border_cell(ctx.rng, border.len() as i32)];
             // Leniency runs 0.00, 0.01 ... 0.99 off the ZERO-based attempt
             // index, so the first try is the strictest.
-            let leniency = attempt as f32 * LENIENCY_STEP;
+            let leniency = leniency(attempt);
             if ctx.playfield.contains_geometry_packed(cell.0, cell.1)
                 && try_carve_connector_at_cell(ctx, carve_regions, cell, leniency)
             {

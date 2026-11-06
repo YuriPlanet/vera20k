@@ -21,6 +21,10 @@ const VK_DELETE: u16 = 0x2e;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HotkeyCommand {
+    CameraUp,
+    CameraDown,
+    CameraLeft,
+    CameraRight,
     CenterView,
     Options,
     CenterOnRadarEvent,
@@ -68,6 +72,44 @@ pub(crate) enum HotkeyCommand {
     /// Phobos: collapse/expand the left superweapon sidebar.
     #[cfg(feature = "phobos")]
     ToggleSwSidebar,
+}
+
+/// VERA camera bindings supplement the retail held-arrow fallback at
+/// ProcessCommand55DF80. Track the physical source so releasing one alias
+/// cannot cancel another held key, and rebinding cannot strand a direction.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct CameraScrollKeys(std::collections::HashMap<KeyCode, KeyCode>);
+
+impl CameraScrollKeys {
+    pub(crate) fn press(&mut self, physical: KeyCode, direction: KeyCode) {
+        self.0.insert(physical, direction);
+    }
+
+    pub(crate) fn release(&mut self, physical: KeyCode) -> bool {
+        self.0.remove(&physical).is_some()
+    }
+
+    pub(crate) fn held(
+        &self,
+        keys: &std::collections::HashSet<KeyCode>,
+        direction: KeyCode,
+    ) -> bool {
+        (keys.contains(&direction) && !self.0.contains_key(&direction))
+            || self
+                .0
+                .iter()
+                .any(|(physical, arrow)| *arrow == direction && keys.contains(physical))
+    }
+}
+
+pub(crate) fn camera_command_key(resolution: HotkeyResolution) -> Option<KeyCode> {
+    match resolution {
+        HotkeyResolution::Command(HotkeyCommand::CameraUp) => Some(KeyCode::ArrowUp),
+        HotkeyResolution::Command(HotkeyCommand::CameraDown) => Some(KeyCode::ArrowDown),
+        HotkeyResolution::Command(HotkeyCommand::CameraLeft) => Some(KeyCode::ArrowLeft),
+        HotkeyResolution::Command(HotkeyCommand::CameraRight) => Some(KeyCode::ArrowRight),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -650,6 +692,85 @@ fn command_from_name(name: &str) -> Option<HotkeyCommand> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn camera_bindings_use_normal_assignment_conflicts_and_persistence() {
+        let mut bindings = HotkeyBindings::from_ini_bytes(Some(
+            b"[Hotkey]\nStopObject=83\nDeployObject=68\nGuardObject=65\nScatterObject=87\n",
+        ));
+        assert_eq!(bindings.first_key(HotkeyCommand::CameraUp), None);
+        assert_eq!(bindings.command_at(83), Some(HotkeyCommand::StopObject));
+        bindings.assign(HotkeyCommand::StopObject, 79).unwrap();
+        let moves = [
+            (HotkeyCommand::CameraUp, 87, "w", KeyCode::ArrowUp),
+            (HotkeyCommand::CameraLeft, 65, "a", KeyCode::ArrowLeft),
+            (HotkeyCommand::CameraDown, 83, "s", KeyCode::ArrowDown),
+            (HotkeyCommand::CameraRight, 68, "d", KeyCode::ArrowRight),
+        ];
+        for (command, key, _, _) in moves {
+            bindings.assign(command, key).unwrap();
+            assert!(catalog::registered_commands().iter().any(|row| {
+                row.command == command && row.category_key == catalog::VERA_CATEGORY_KEY
+            }));
+        }
+        let saved = bindings.to_ini_string();
+        let mut restored = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
+        for (command, key, logical, direction) in moves {
+            assert_eq!(restored.first_key(command), Some(key));
+            let resolution = restored.resolve_event(
+                &character(logical),
+                KeyLocation::Standard,
+                ModifiersState::empty(),
+            );
+            assert_eq!(resolution, HotkeyResolution::Command(command));
+            assert_eq!(camera_command_key(resolution), Some(direction));
+        }
+        assert_eq!(restored.command_at(79), Some(HotkeyCommand::StopObject));
+        assert_eq!(restored.first_key(HotkeyCommand::DeployObject), None);
+        assert_eq!(restored.first_key(HotkeyCommand::GuardObject), None);
+        assert_eq!(restored.first_key(HotkeyCommand::ScatterObject), None);
+        restored.assign(HotkeyCommand::CameraDown, 0).unwrap();
+        restored.assign(HotkeyCommand::StopObject, 83).unwrap();
+        let saved = restored.to_ini_string();
+        let restored = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
+        assert_eq!(restored.first_key(HotkeyCommand::CameraDown), None);
+        assert_eq!(restored.command_at(83), Some(HotkeyCommand::StopObject));
+        assert_eq!(
+            restored.resolve_event(
+                &Key::Named(NamedKey::ArrowUp),
+                KeyLocation::Standard,
+                ModifiersState::empty()
+            ),
+            HotkeyResolution::Fallback(HotkeyFallback::ArrowUp)
+        );
+    }
+
+    #[test]
+    fn camera_holds_release_by_physical_source_and_respect_arrow_rebindings() {
+        use std::collections::HashSet;
+        let mut scroll = CameraScrollKeys::default();
+        let mut keys = HashSet::from([KeyCode::KeyW, KeyCode::ArrowUp]);
+        scroll.press(KeyCode::KeyW, KeyCode::ArrowUp);
+        assert!(scroll.held(&keys, KeyCode::ArrowUp));
+        scroll.release(KeyCode::KeyW);
+        keys.remove(&KeyCode::KeyW);
+        assert!(scroll.held(&keys, KeyCode::ArrowUp));
+        scroll.press(KeyCode::KeyW, KeyCode::ArrowUp);
+        keys.insert(KeyCode::KeyW);
+        keys.remove(&KeyCode::ArrowUp);
+        assert!(scroll.held(&keys, KeyCode::ArrowUp));
+        // A direction is retained from the admitted press, not re-resolved
+        // from bindings or modifiers that can change before the release.
+        assert!(scroll.release(KeyCode::KeyW));
+        keys.remove(&KeyCode::KeyW);
+        assert!(!scroll.held(&keys, KeyCode::ArrowUp));
+        keys.insert(KeyCode::ArrowDown);
+        scroll.press(KeyCode::ArrowDown, KeyCode::ArrowLeft);
+        assert!(scroll.held(&keys, KeyCode::ArrowLeft));
+        assert!(!scroll.held(&keys, KeyCode::ArrowDown));
+        keys.clear(); // A focus loss clears all active sources.
+        assert!(!scroll.held(&keys, KeyCode::ArrowLeft));
+    }
 
     fn native_keyboard_fixture() -> &'static serde_json::Value {
         crate::test_fixture::json("tools/storage_oracle/keyboard_bindings.json")

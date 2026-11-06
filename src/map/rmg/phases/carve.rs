@@ -2716,10 +2716,10 @@ mod tests {
         // fixed-geometry fallbacks can carve. Fifty steps of the float nearest
         // 0.01 land just under a half, so attempt 50 must not reach them;
         // attempt 51 carves the first, the south-clear straight.
-        use super::super::connector::{LENIENCY_STEP, ring_orientation_mask};
+        use super::super::connector::{leniency, ring_orientation_mask};
         let cell = (51, 50);
         for (attempt, carves) in [(50, false), (51, true)] {
-            let leniency = attempt as f32 * LENIENCY_STEP;
+            let leniency = leniency(attempt);
             let (mut grid, mut scratch) = harness();
             ring_with_windows(&mut scratch, cell, &[]);
             assert_eq!(
@@ -2756,9 +2756,9 @@ mod tests {
         // second, and the south bit again the third -- the original gates two
         // fallbacks on one bit. So the fourth, the west-clear straight, carves;
         // a port gating the third on north would carve the north-clear one.
-        use super::super::connector::{E, LENIENCY_STEP, NE, S, SE, SW, ring_orientation_mask};
+        use super::super::connector::{E, NE, S, SE, SW, leniency, ring_orientation_mask};
         let cell = (51, 50);
-        let leniency = 51.0 * LENIENCY_STEP;
+        let leniency = leniency(51);
         let (mut grid, mut scratch) = harness();
         ring_with_windows(
             &mut scratch,

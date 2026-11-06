@@ -11,17 +11,20 @@
 //! The BFS placer grows a closest-first blob from an origin: a min-heap keyed
 //! by `approx_sqrt(dist²) + uniform[0,5]`, up to 10 re-seeds, writing ore/gem
 //! overlays and one `TIBTRE` tree per seed generation.
+//!
+//! Native: `RandomMapGenerator::CreateTiberium @ 0x005A23A0` (the driver) and
+//! its field placer `RandomMapGenerator::PlaceTiberiumField @ 0x005A28C0`.
 
 use crate::map::rmg::grid::RmgGrid;
-use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
+use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{Gaussian, TruncF64, approx_sqrt, approx_sqrt_f32};
+use crate::map::rmg::x87::{self, Gaussian, TruncF64, approx_sqrt_f32};
 use crate::util::native_x87::X87Chop53;
 
-use super::blob::{CellHeap, by_key};
 use super::regions::Regions;
 use super::zones::diamond_frame_contains;
+use crate::util::native_heap::NativeHeap;
 
 /// Ore/gem overlay base indices (`0x66` / `0x1B`).
 const ORE_BASE: i32 = 102;
@@ -43,8 +46,6 @@ const GEM_SIZE_SCALE: f64 = 15.0;
 const GEM_SIZE_BASE: i32 = 500;
 /// Pass-2 score running-min seed.
 const SCORE_MIN_INIT: f64 = 9_999_999.0;
-/// BFS priority jitter scale.
-const PRIORITY_JITTER: f64 = 5.0;
 /// Heap capacity multiplier and re-seed cap.
 const HEAP_CAP_MULT: i32 = 10;
 const MAX_SEEDS: i32 = 10;
@@ -154,7 +155,7 @@ pub fn run(ctx: &mut TiberiumCtx<'_>, args: &TiberiumArgs) -> TiberiumOutcome {
                     break value;
                 }
             };
-            let size = X87Chop53::ftol_f64_low_masked(f64::from(per_field_base) + j);
+            let size = jittered_field_size(per_field_base, j);
             if size >= 0 {
                 let origin = ctx.regions.list[index].field_slots.as_ref().unwrap()[i as usize];
                 let is_gem = i == nearest_slot;
@@ -171,16 +172,18 @@ pub fn run(ctx: &mut TiberiumCtx<'_>, args: &TiberiumArgs) -> TiberiumOutcome {
         }
 
         // Pass 2: one field per start, distance-compensated size.
+        // 0x005A26D0..0x005A2719: the sum and the mean are chopped double
+        // operations (`FADD`, `FDIVR`) under the generator's control word.
         let mut scores: Vec<f64> = Vec::with_capacity(quota.max(0) as usize);
         for s in 0..quota {
             let start = waypoint(ctx, global_start_base + s);
-            let mut sum = 0.0f64;
+            let mut sum = TruncF64::zero();
             for &slot in ctx.regions.list[index].field_slots.as_ref().unwrap() {
                 let dx = i32::from(start.0) - i32::from(slot.0);
                 let dy = i32::from(start.1) - i32::from(slot.1);
-                sum += f64::from(approx_sqrt_f32(dx * dx + dy * dy));
+                sum = TruncF64::from_f64(f64::from(approx_sqrt_f32(dx * dx + dy * dy))).add(sum);
             }
-            scores.push(sum / f64::from(field_count));
+            scores.push(mean_distance(sum, field_count));
         }
         let min_score = scores.iter().copied().fold(SCORE_MIN_INIT, f64::min);
         for s in 0..quota {
@@ -205,6 +208,22 @@ pub fn run(ctx: &mut TiberiumCtx<'_>, args: &TiberiumArgs) -> TiberiumOutcome {
         global_start_base += quota;
     }
     outcome
+}
+
+/// A pass-1 field's size: `ftol(FILD base; FADD jitter)` at 0x005A25FB, a
+/// chopped double add.
+fn jittered_field_size(per_field_base: i32, jitter: f64) -> i32 {
+    X87Chop53::ftol_f64_low_masked(
+        TruncF64::from_f64(f64::from(per_field_base))
+            .add(TruncF64::from_f64(jitter))
+            .to_f64(),
+    )
+}
+
+/// A start's mean distance to the field slots: `sum / count`, the chopped
+/// `FDIVR` at 0x005A2715.
+fn mean_distance(sum: TruncF64, count: i32) -> f64 {
+    sum.div(TruncF64::from_f64(f64::from(count))).to_f64()
 }
 
 /// Read a start waypoint slot, treating an unwritten slot as the origin (the
@@ -304,6 +323,20 @@ fn is_tiberium_overlay(overlay: i32) -> bool {
 
 /// Grow one tiberium field from `origin`. Closest-first BFS with up to 10
 /// re-seeds; writes overlays/densities on the grid and records TIBTRE trees.
+///
+/// `PlaceTiberiumField @ 0x005A28C0`. The heap holds pointers into one node
+/// pool of `10 * size` nodes; `local_64` is the next free node. A re-seed puts
+/// the origin in node 0 and sets it to 1 (0x005A2A25); the first write rebinds
+/// the anchor, empties the heap and sets it to 0 (0x005A2B80). Every admission writes the
+/// next node (0x005A2D40) before the heap's full check, and the expanding node
+/// re-reads its coordinate from its node for each direction (0x005A2C8E). So
+/// when the expansion right after the first write starts from node 0 (or any
+/// node below the admissions), an admitted neighbour overwrites it, and the
+/// remaining directions step from that neighbour.
+///
+/// Residual: native's pool is a fixed `10 * size` allocation; admissions past
+/// it write beyond the block (heap corruption). Here the pool grows. Reaching
+/// it needs more than ten admissions per placed cell since the last reset.
 fn place_field(
     ctx: &mut TiberiumCtx<'_>,
     args: &TiberiumArgs,
@@ -322,8 +355,11 @@ fn place_field(
     let mut anchor = origin;
     let mut placed = 0i32;
     let mut seed_count = 0i32;
-    let mut heap = CellHeap::new(cap);
-    let mut current: Option<(i32, i32)> = None;
+    let mut heap = NativeHeap::<(f32, usize)>::new(cap);
+    let by_priority = |a: &(f32, usize), b: &(f32, usize)| a.0 < b.0;
+    let mut pool: Vec<(i32, i32)> = Vec::with_capacity(cap);
+    let mut next_node = 0usize;
+    let mut current: Option<usize> = None;
     let mut first_written = false;
 
     while placed < target_size {
@@ -333,10 +369,12 @@ fn place_field(
         if current.is_none() {
             // New seed: wipe every claim, re-seed from the same origin.
             ctx.scratch.clear_stamps();
-            heap = CellHeap::new(cap);
+            heap.clear();
+            write_node(&mut pool, 0, origin);
+            next_node = 1;
             ctx.scratch.get_mut(origin.0, origin.1).stamp = field_id;
-            heap.push((0.0, origin), by_key);
-            current = heap.pop(by_key).map(|(_, coord)| coord);
+            heap.push((0.0, 0), by_priority);
+            current = heap.pop(by_priority).map(|(_, node)| node);
             seed_count += 1;
             anchor = origin;
             first_written = false;
@@ -344,7 +382,8 @@ fn place_field(
                 break;
             }
         }
-        let cur = current.unwrap();
+        let node = current.unwrap();
+        let cur = pool[node];
 
         // Pop-write path, gated on the protected/blocked flag (scratch +0x45).
         let blocked = ctx.scratch.get(cur.0, cur.1).water_lock;
@@ -352,8 +391,10 @@ fn place_field(
             if !first_written {
                 anchor = cur;
                 first_written = true;
-                // Rebinding the anchor discards the current frontier.
-                heap = CellHeap::new(cap);
+                // Rebinding the anchor discards the current frontier and
+                // restarts the pool.
+                heap.clear();
+                next_node = 0;
                 if !is_gem {
                     let variant = tibtre_draw(ctx.rng);
                     out.trees
@@ -392,7 +433,8 @@ fn place_field(
 
         // Neighbor admission (runs whether or not the pop wrote resource).
         for dir in 0..8 {
-            let (nx, ny) = RmgGrid::step(cur.0, cur.1, dir);
+            let from = pool[node];
+            let (nx, ny) = RmgGrid::step(from.0, from.1, dir);
             let Some(cell) = ctx.grid.get(nx, ny) else {
                 continue;
             };
@@ -419,17 +461,24 @@ fn place_field(
             }
             let dx = anchor.0 - nx;
             let dy = anchor.1 - ny;
-            let jitter = TruncF64::from_f64(f64::from(ctx.rng.next_u32()))
-                .mul(TruncF64::from_f64(PRIORITY_JITTER))
-                .mul(TruncF64::from_f64(f64::from_bits(RANGE_K_BITS)));
-            let priority = approx_sqrt(TruncF64::from_f64(f64::from(dx * dx + dy * dy)))
-                .add(jitter)
-                .to_f64() as f32;
+            let priority = x87::jittered_distance_key(dx * dx + dy * dy, ctx.rng.next_u32());
+            write_node(&mut pool, next_node, (nx, ny));
             ctx.scratch.get_mut(nx, ny).stamp = field_id;
-            heap.push((priority, (nx, ny)), by_key);
+            heap.push((priority, next_node), by_priority);
+            next_node += 1;
         }
 
-        current = heap.pop(by_key).map(|(_, coord)| coord);
+        current = heap.pop(by_priority).map(|(_, node)| node);
+    }
+}
+
+/// Store a coordinate in pool node `index`, growing the pool past the native
+/// allocation instead of overrunning it.
+fn write_node(pool: &mut Vec<(i32, i32)>, index: usize, coord: (i32, i32)) {
+    if index == pool.len() {
+        pool.push(coord);
+    } else {
+        pool[index] = coord;
     }
 }
 
@@ -516,6 +565,44 @@ mod tests {
         });
         regions.id_counter = 1;
         regions
+    }
+
+    /// 0x005A2B80 restarts the pool under the node being expanded: the
+    /// origin's first admitted neighbour overwrites node 0, and the remaining
+    /// directions step from that neighbour, two cells out.
+    #[test]
+    fn the_first_expansion_steps_from_the_overwritten_node() {
+        let (targs, stride) = args(1, 0);
+        let mut w = world(stride);
+        let identity = ids();
+        let regions = Regions::default();
+        let mut rng = RmgRng::new(7);
+        let mut gauss = Gaussian::default();
+        let origin = (32, 32);
+        let mut out = TiberiumOutcome::default();
+        let mut ctx = TiberiumCtx {
+            grid: &mut w.grid,
+            scratch: &mut w.scratch,
+            ids: &identity,
+            rng: &mut rng,
+            gauss: &mut gauss,
+            regions: &regions,
+            waypoints: &[],
+        };
+        place_field(&mut ctx, &targs, origin, 1, 5, true, &mut out);
+        let first = RmgGrid::step(origin.0, origin.1, 0);
+        let (x, y) = RmgGrid::step(first.0, first.1, 1);
+        assert_eq!((x - origin.0).abs().max((y - origin.1).abs()), 2);
+        assert_eq!(w.scratch.get(x, y).stamp, 5);
+    }
+
+    /// The pass sizes round toward zero: the jittered size's add (0x005A25FF)
+    /// and the start's mean distance (0x005A2715).
+    #[test]
+    fn field_size_arithmetic_chops() {
+        assert_eq!(jittered_field_size(3000, -1e-13), 2999);
+        let mean = mean_distance(TruncF64::from_f64(1.0), 5);
+        assert_eq!(mean.to_bits(), 0.2f64.to_bits() - 1);
     }
 
     #[test]

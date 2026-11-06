@@ -10,12 +10,17 @@
 //! is *never* cleared between iterations: a later region cannot re-enter cells
 //! an earlier region already walked, which is what keeps successive trees from
 //! all piling onto the first few origins.
+//!
+//! Native: the tree loop of `RandomMapGenerator::PaintLatPatchesTreesRocks_Temperate
+//! @ 0x005A3AE0` (0x005A3F41..0x005A40BD) and
+//! `PaintLatPatchesTrees_NonTemperate @ 0x005A4280`, each region grown by
+//! `RandomMapGenerator::PlaceTreeRegion @ 0x005A45E0`.
 
 use crate::map::rmg::grid::RmgGrid;
-use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
+use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{Gaussian, TruncF64, approx_sqrt};
+use crate::map::rmg::x87::{self, Gaussian, TruncF64};
 use crate::util::native_x87::X87Chop53;
 
 use super::blob::{CellHeap, by_key};
@@ -43,9 +48,6 @@ const SIZE_SCALE: f64 = 10.0;
 const SIZE_OFFSET: f64 = 25.0;
 const SIZE_MIN: f64 = 10.0;
 const SIZE_MAX: f64 = 35.0;
-
-/// Region-walk priority jitter, `rand·5·2⁻³²`.
-const JITTER: f64 = 5.0;
 
 /// Tree-index draw: `ftol(rand·scale + 1.0)`, rejected above 25 → `[1, 25]`.
 ///
@@ -200,7 +202,8 @@ fn place_region(
         return 0;
     }
     let budget = size * REGION_MULT;
-    let mut heap = CellHeap::new(budget as usize + 8);
+    // 0x005A45E0: a `25 * size` pool and heap; `local_58` counts admissions.
+    let mut heap = CellHeap::new(budget as usize);
     ctx.scratch.get_mut(origin.0, origin.1).visited = true;
     heap.push((0.0, origin), by_key);
     // `admitted` is the monotonic total of cells ever pushed (native `local_58`,
@@ -252,12 +255,7 @@ fn place_region(
             }
             let dx = origin.0 - nx;
             let dy = origin.1 - ny;
-            let jitter = t(f64::from(ctx.rng.next_u32()))
-                .mul(t(JITTER))
-                .mul(t(f64::from_bits(RANGE_K_BITS)));
-            let priority = approx_sqrt(t(f64::from(dx * dx + dy * dy)))
-                .add(jitter)
-                .to_f64() as f32;
+            let priority = x87::jittered_distance_key(dx * dx + dy * dy, ctx.rng.next_u32());
             ctx.scratch.get_mut(nx, ny).visited = true;
             heap.push((priority, (nx, ny)), by_key);
             admitted += 1;

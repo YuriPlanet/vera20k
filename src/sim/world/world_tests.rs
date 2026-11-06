@@ -3280,17 +3280,12 @@ fn combat_test_rules() -> RuleSet {
 }
 
 fn combat_test_rules_with_override(extra: &str) -> RuleSet {
-    combat_rules_with_keys("", "", extra, None)
+    combat_rules_with_keys("", "", extra)
 }
 
 /// [`combat_test_rules`] with the tank on Drive, so an order drives it.
 fn driving_combat_test_rules() -> RuleSet {
-    combat_rules_with_keys(
-        "",
-        "Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
-        "",
-        None,
-    )
+    combat_rules_with_keys("", "Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n", "")
 }
 
 /// [`driving_combat_test_rules`] with E1 walking and animated, as retail
@@ -3304,23 +3299,32 @@ fn walking_combat_test_rules() -> RuleSet {
          [E1Sequence]\nReady=0,1,1\nGuard=0,1,1\nProne=86,1,6\nWalk=8,6,6\n\
          FireUp=164,6,6\nFireProne=212,6,6\nDie1=56,15,0\n",
     );
-    // Infantry sequence banks are read during the rules passes. Late ART
-    // projection cannot install the walking/firing/death sequence records.
-    let mut rules = combat_rules_with_keys(
+    // ReadSequenceData523D00 reads the sequence in the rules' ART pass, so this
+    // ART goes to that pass and is then installed, as the scenario loader does.
+    let mut rules = combat_rules_with_art(
         "Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n",
         "Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
         "",
-        Some(&art),
+        &art,
     );
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     rules
 }
 
-fn combat_rules_with_keys(
+fn combat_rules_with_keys(infantry_keys: &str, tank_keys: &str, extra: &str) -> RuleSet {
+    combat_rules_with_art(
+        infantry_keys,
+        tank_keys,
+        extra,
+        &IniFile::from_str("[GACNST]\nFoundation=4x3\n"),
+    )
+}
+
+fn combat_rules_with_art(
     infantry_keys: &str,
     tank_keys: &str,
     extra: &str,
-    fixed_art: Option<&IniFile>,
+    art: &IniFile,
 ) -> RuleSet {
     // Both warheads take the Die1 arm (`InfDeath=1`, retail [SA]'s): the
     // lethal-hit tests keep their victim's corpse through its die sequence.
@@ -3340,9 +3344,7 @@ fn combat_rules_with_keys(
          [Clear]\nBuildable=yes\n",
     ));
     ini.merge(&IniFile::from_str(extra));
-    let default_art = IniFile::from_str("[GACNST]\nFoundation=4x3\n");
-    RuleSet::from_ini_with_fixed_art_for_test(&ini, fixed_art.unwrap_or(&default_art))
-        .expect("combat test rules should parse")
+    RuleSet::from_ini_with_fixed_art_for_test(&ini, art).expect("combat test rules should parse")
 }
 
 fn sonic_wave_test_rules(range: u8) -> RuleSet {
@@ -7165,83 +7167,6 @@ fn spawn_tanks(sim: &mut Simulation, rules: &RuleSet, cells: &[(u16, u16)]) -> V
                 .expect("tank spawns")
         })
         .collect()
-}
-
-#[test]
-fn admitted_megamissions_drop_overflow_per_house_and_reopen_next_frame() {
-    // These are already-admitted DoList commands, not 257 local clicks:
-    // local OutList admission has its own, smaller capacity. Execute_DoList
-    // 0x64C739..0x64C743 drops the 257th MegaMission for each House, while
-    // 0x64CAA8 still marks that record processed. No retail tuning sets this cap.
-    let Some((mut sim, rules, grid)) = stacking_world(24) else {
-        return;
-    };
-    let american = spawn_tanks(&mut sim, &rules, &[(6, 6)])[0];
-    let russian = sim
-        .spawn_object("MTNK", "Russians", 8, 6, 64, &rules)
-        .unwrap();
-    let owners = [
-        sim.interner.get("Americans").unwrap(),
-        sim.interner.get("Russians").unwrap(),
-    ];
-    let guard = |owner, entity_id, tick, cell| {
-        CommandEnvelope::new(
-            owner,
-            tick,
-            Command::Guard {
-                entity_id,
-                target: Some(TargetKind::Cell(cell, cell)),
-            },
-        )
-    };
-    // Interleave Houses to exercise registration-order grouping and a fresh
-    // staging allowance for each House, independent of input storage order.
-    for _ in 0..256 {
-        sim.queue_command(guard(owners[1], russian, 1, 14));
-        sim.queue_command(guard(owners[0], american, 1, 12));
-    }
-    sim.queue_command(guard(owners[0], american, 1, 13));
-    sim.queue_command(guard(owners[1], russian, 1, 15));
-    sim.queue_command(CommandEnvelope::new(
-        owners[0],
-        1,
-        Command::LiveGameSpeed { speed: 4 },
-    ));
-    sim.queue_command(guard(owners[0], american, 2, 16));
-    let due = sim.take_due_commands();
-    let result = sim.advance_tick(&due, Some(&rules), Some(&grid), None, 67);
-
-    assert_eq!(
-        result.executed_commands, 513,
-        "512 accepted MegaMissions and one ordinary event"
-    );
-    assert_eq!(
-        sim.entities().get(american).unwrap().archive_target(),
-        Some(TargetKind::Cell(12, 12))
-    );
-    assert_eq!(
-        sim.entities().get(russian).unwrap().archive_target(),
-        Some(TargetKind::Cell(14, 14))
-    );
-    assert_eq!(
-        sim.session.game_options().game_speed,
-        4,
-        "overflow does not stop ordinary events"
-    );
-    assert_eq!(
-        sim.pending_command_snapshot().len(),
-        1,
-        "overflow is consumed, not deferred"
-    );
-
-    let due = sim.take_due_commands();
-    let result = sim.advance_tick(&due, Some(&rules), Some(&grid), None, 67);
-    assert_eq!(result.executed_commands, 1);
-    assert_eq!(
-        sim.entities().get(american).unwrap().archive_target(),
-        Some(TargetKind::Cell(16, 16))
-    );
-    assert!(sim.pending_command_snapshot().is_empty());
 }
 
 /// The longest stretch of consecutive ticks on which `id` did not change cell

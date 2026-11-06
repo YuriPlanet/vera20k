@@ -199,6 +199,7 @@ pub fn generate_map_observed(
         trig: resolved.trig,
         map_type: options.map_type,
         accessibility: options.accessibility,
+        region_size: options.region_size,
         theater: options.theater,
         num_players: options.num_players,
         bridge_enabled,
@@ -462,6 +463,43 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Map type 0's start-phase flips (`CreateStartingPoints @ 0x00594B50`,
+    /// 0x00594EA6..0x00594ED5) place a tech building on a start-free island,
+    /// and the trace binds it to its entity. Retail tiles, so the sea
+    /// separates islands into their own regions.
+    #[test]
+    fn map_type_zero_places_tech_at_start_flips() {
+        let Some((settings, resolved, blocks)) = retail_inputs() else {
+            return;
+        };
+        let types = [TechType {
+            name: "CATECH".to_string(),
+            footprint: vec![(0, 0)],
+        }];
+        let placed = (1..=8).find_map(|seed| {
+            let mut options = options(0, 0);
+            options.seed = seed;
+            let generated = generate_map(&options, &settings, &resolved, &blocks, &types);
+            let emitted =
+                generated
+                    .construction_trace
+                    .events
+                    .iter()
+                    .find_map(|event| match event.outcome {
+                        RmgConstructionOutcome::Emitted { entity_index, cell } => {
+                            Some((entity_index, cell))
+                        }
+                        RmgConstructionOutcome::Discarded => None,
+                    })?;
+            Some((generated, emitted))
+        });
+        let (generated, (entity_index, cell)) =
+            placed.expect("a map-type-0 seed wins a flip and places");
+        let entity = &generated.map_file.entities[entity_index];
+        assert_eq!(entity.type_id, "CATECH");
+        assert_eq!((entity.cell_x, entity.cell_y), cell);
     }
 
     type Projection = (Vec<i32>, Vec<(u16, u16, u8, u8)>, Vec<(u8, u16, u16)>);
