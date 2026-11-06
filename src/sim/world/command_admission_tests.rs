@@ -39,6 +39,7 @@ fn skirmish_large_move_batch_reaches_every_actor_after_snapshot() {
         .take(300)
         .collect();
     assert_eq!(actors.len(), 300);
+    let mut previous_destinations = Vec::new();
     // Two successive clicks must reach actors beyond both native limits (128/256).
     for (x, y) in [(19, 17), (10, 12)] {
         let commands: Vec<_> = actors
@@ -57,6 +58,11 @@ fn skirmish_large_move_batch_reaches_every_actor_after_snapshot() {
                 CommandEnvelope::synchronized(record, 0)
             })
             .collect();
+        let mut expected: Vec<_> = commands
+            .iter()
+            .cloned()
+            .map(QueuedCommand::from_envelope)
+            .collect();
         assert!(sim.issue_local_commands(commands));
         let terrain = sim.resolved_terrain.clone();
         let path = sim.path_grid.clone();
@@ -66,21 +72,44 @@ fn skirmish_large_move_batch_reaches_every_actor_after_snapshot() {
         sim.resolved_terrain = terrain;
         sim.path_grid = path;
         sim.resolve_type_handles(&rules);
+        // This test covers delivery, not the formation algorithm: ask its
+        // production owner for the destinations the entire batch should get.
+        sim.adjust_staged_megamission_destinations(&mut expected, &rules, Some(&registry));
+        let destinations: Vec<_> = expected
+            .iter()
+            .map(|command| {
+                let record = command.record().expect("expected an encoded move");
+                let crate::sim::command::MegaMissionOrder::Move { target_x, target_y } =
+                    crate::sim::command::MegaMissionRecord::decode(record)
+                        .unwrap()
+                        .order
+                else {
+                    panic!("expected a move order");
+                };
+                Some(crate::sim::components::NavTargetRef::cell(
+                    target_x as u16,
+                    target_y as u16,
+                ))
+            })
+            .collect();
         sim.transfer_local_commands();
         let (executed, _) =
             sim.apply_due_commands(&[], &rules, 0, Some(&registry), Default::default());
         assert_eq!(executed, actors.len());
-        for &actor in &actors {
-            assert!(
-                sim.entities()
-                    .get(actor)
-                    .unwrap()
-                    .navigation
-                    .nav_com()
-                    .is_some(),
-                "actor {actor}"
+        for (index, &actor) in actors.iter().enumerate() {
+            let actual = sim.entities().get(actor).unwrap().navigation.nav_com();
+            assert_eq!(
+                actual, destinations[index],
+                "actor {actor}, click ({x}, {y})"
             );
+            if !previous_destinations.is_empty() {
+                assert_ne!(
+                    actual, previous_destinations[index],
+                    "actor {actor} retained the first click's destination"
+                );
+            }
         }
+        previous_destinations = destinations;
         assert!(sim.pending_commands.is_empty());
     }
 }
