@@ -215,7 +215,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
         Some(&registry),
         crate::sim::world::FrameEffects::empty(),
     );
-    let graph = sim.planning_draw_graph(owner, &actors, None, None);
+    let graph = sim.planning_draw_graph(owner, None, None);
     assert_eq!(graph.nodes.len(), 1, "one click is one shared waypoint");
     assert_eq!(graph.nodes[0].members, actors);
     assert_eq!(
@@ -243,7 +243,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
             .collect();
         sim.apply_due_commands(&batch, &rules, 0, Some(&registry), Default::default());
     }
-    let graph = sim.planning_draw_graph(owner, &actors, None, None);
+    let graph = sim.planning_draw_graph(owner, None, None);
     assert_eq!(graph.nodes.len(), 3);
     assert_eq!(graph.nodes[1].incoming.len(), 1);
     assert_eq!(graph.nodes[2].incoming.len(), 1);

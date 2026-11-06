@@ -334,26 +334,32 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
         }
         MouseButton::Right => {
             if btn_state.is_pressed() {
-                // The native right press has no game effect at all: it records
-                // the pan anchor and takes the capture, and only does that when
-                // no other button already holds it. Everything the player sees
-                // happens on the release edge.
+                // PlanMgr's right press 0x0063AAC0 runs first (0x006932D0).
+                crate::app::input::planning_mode::right_press(state);
+                // Otherwise the native right press has no game effect: it
+                // records the pan anchor and takes the capture, and only does
+                // that when no other button already holds it. Everything the
+                // player sees happens on the release edge.
                 if state.match_state.input.tactical_mouse.press_may_arm() {
                     state.match_state.input.tactical_mouse.begin_right_drag((
                         state.match_state.input.cursor_x,
                         state.match_state.input.cursor_y,
                     ));
                 }
-            } else if let Some(is_click) = state.match_state.input.tactical_mouse.end_right_press()
-            {
-                // Dispatch a click only when the drag threshold was never
-                // crossed. A right drag that panned the map ends silently;
-                // the selection survives it.
-                if is_click {
-                    handle_tactical_right_click(state);
+            } else {
+                // 0x0069338A: PlanMgr's release 0x0063AB00 precedes the
+                // capture test.
+                crate::app::input::planning_mode::right_release(state);
+                if let Some(is_click) = state.match_state.input.tactical_mouse.end_right_press() {
+                    // Dispatch a click only when the drag threshold was never
+                    // crossed. A right drag that panned the map ends silently;
+                    // the selection survives it.
+                    if is_click {
+                        handle_tactical_right_click(state);
+                    }
+                    // The native release tears the band rectangle down too.
+                    state.match_state.input.selection_state.cancel_drag();
                 }
-                // The native release tears the band rectangle down too.
-                state.match_state.input.selection_state.cancel_drag();
             }
         }
         _ => {}
@@ -1981,10 +1987,10 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::Options => handle_options_hotkey(state),
         HotkeyCommand::CenterView => crate::app::input::camera::center_view_on_selection(state),
         HotkeyCommand::Follow => crate::app::input::camera::toggle_follow_target(state),
-        HotkeyCommand::PlanningMode => crate::app::input::planning_mode::toggle(state),
-        // DeleteCommand731A10: a planning node, else the selected beacon.
+        HotkeyCommand::PlanningMode => crate::app::input::planning_mode::toggle(state, false),
+        // DeleteCommand731A10: the retained planning node, else the selected beacon.
         HotkeyCommand::Delete => {
-            if !crate::app::input::planning_mode::delete_at_cursor(state) {
+            if !crate::app::input::planning_mode::delete_highlighted(state) {
                 crate::app::input::beacon::delete_selected(state);
             }
         }
@@ -2148,7 +2154,7 @@ pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: 
         }
         8 => HotkeyCommand::StopObject,
         9 => {
-            crate::app::input::planning_mode::toggle(state);
+            crate::app::input::planning_mode::toggle(state, true);
             return;
         }
         10 => HotkeyCommand::AllToCheer,

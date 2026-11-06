@@ -38,8 +38,7 @@ pub(super) fn build(
     };
     let mut graph = sim.planning_draw_graph(
         viewer,
-        &crate::app::input::planning_mode::selected_in_order(state),
-        crate::app::input::planning_mode::hover_native_screen(state),
+        crate::app::input::planning_mode::hover_node(state),
         state.match_state.input.planning.highlighted_node(),
     );
     // This is a disposable read projection. Node identity/membership and every
