@@ -28,6 +28,10 @@
 //! GetCoords (`0x005F4E0B..0x005F4E8F`), not where its glow was drawn. So the
 //! glow of a cloaked object, or of one that moved after Unlimbo and then died
 //! or left the map, stays until something redraws that area.
+//! A dirtied cell's redraw (`Tactical_layer_shroud_edges`, 0x006D3723)
+//! re-applies the glows inside its 60x30 diamond through
+//! `AlphaShapeClass::DrawAll_WithMask @ 0x00420F40`. VERA's whole-plane pass
+//! (`DrawAll_NoMask`) applies the same scaling once per pixel.
 
 use super::Simulation;
 use crate::rules::ruleset::RuleSet;
