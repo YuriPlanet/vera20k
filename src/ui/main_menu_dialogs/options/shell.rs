@@ -1258,19 +1258,9 @@ mod tests {
             for &(id, _) in &layout.buttons {
                 shown(dialog.shell_button_label(id));
             }
-            let rects = layout
-                .checkboxes
-                .iter()
-                .map(|(_, rect)| rect)
-                .chain(layout.combos.iter().map(|(_, rect)| rect))
-                .chain(layout.trackbars.iter().map(|(_, rect)| rect))
-                .chain(layout.buttons.iter().map(|(_, rect)| rect));
-            for rect in rects {
-                let help = dialog.shell_status_help_key(rect.x + 2, rect.y + 2, &layout);
-                if let Some(label) = help.filter(|label| label.starts_with("VERA:")) {
-                    english(label);
-                }
-            }
+            vera_help(&dialog, &layout)
+                .into_iter()
+                .for_each(|label| english(label));
         }
         shown(&dialog.shell_display_label());
         dialog
@@ -1284,6 +1274,47 @@ mod tests {
             .into_iter()
             .for_each(|mode| english(mode.label()));
         english(crate::ui::shell::pause_menu::DISPLAY_GROUP_CAPTION);
+    }
+
+    /// The status line wraps at its width, and its 21-pixel rect shows only
+    /// the top four rows of a second line (`draw_in_rect_path_a_scaled`), so
+    /// each language's VERA help fits one line in retail GAME.FNT.
+    #[test]
+    fn vera_help_fits_the_status_line_in_every_language() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let fnt = crate::assets::fnt_file::FntFile::from_bytes(
+            assets.get_ref("GAME.FNT").expect("retail GAME.FNT"),
+        )
+        .expect("parse retail GAME.FNT");
+        let font = crate::render::bit_font::tests::measuring_font(&fnt);
+        let dialog = state();
+        for category in Category::ALL {
+            let layout = page(category);
+            for label in vera_help(&dialog, &layout) {
+                for (language, text) in crate::i18n::translations(label) {
+                    let lines = font.wrap_layout(text, layout.status_help.w as u32).lines;
+                    assert_eq!(lines.len(), 1, "{language} {label}: {text}");
+                }
+            }
+        }
+    }
+
+    /// The `VERA:` status help of every control on the page, from the page's
+    /// own hit test.
+    fn vera_help(dialog: &OptionsDialogState, layout: &LauncherOptionsLayout) -> Vec<&'static str> {
+        let rects = layout
+            .checkboxes
+            .iter()
+            .map(|(_, rect)| rect)
+            .chain(layout.combos.iter().map(|(_, rect)| rect))
+            .chain(layout.trackbars.iter().map(|(_, rect)| rect))
+            .chain(layout.buttons.iter().map(|(_, rect)| rect));
+        rects
+            .filter_map(|rect| dialog.shell_status_help_key(rect.x + 2, rect.y + 2, layout))
+            .filter(|label| label.starts_with("VERA:"))
+            .collect()
     }
 
     #[test]
