@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "6 whole original PlaceLatPatch calls with the pave flag 0: small and large open patches, walls, MiscPaveTile cells, prior objects, overlays and slopes, cells already holding the patch id, a walled pocket smaller than the size and a diamond-edge origin; every jitter draw, stamped tile and patch-id stamp",
+  "assumptions": [
+    "Existing CliffFixture, TiberiumFieldFixture and StartPointsFixture own original-constructed Cell backing, admission, the stride-33 scratch, the physical clear/cliff TMP registration, the native theater tile-set globals and the guarded arena; bounds 16..48. Cells start tile 0, overlay -1, slope 0, no object (+E4); scratch stamp 0 unless declared.",
+    "Declared scene: CliffSet-base and native MiscPaveTile cells, a prior object pointer in +E4, overlay 0 in +44, slope 1 in +11C, the patch id in +3C. Stack arguments: the origin Cell, tile 300, the size, the patch id y*512+x and pave flag 0, as both LAT painters (5A3EF7, 5A43D3) pass EBX = 0. FPCW 0E7F. All streams seeded by original 65C6D0. Not a complete Generate prefix."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS, with guard bytes after each block that refuse a pool overrun; native code bytes unchanged. No draw, priority, tile or stamp is supplied."
+  ],
+  "entry_points": {
+    "place_lat_patch": "0x005A4B60",
+    "next": "0x0065C780"
+  },
+  "replay_command": "python -m tools.rmg_oracle.lat_patch",
+  "payload_sha256": "b74ca6d2a05e05e52164320ad18e2a5e63b414044e85d6a60b4ffdce5a8cefe9"
+}
