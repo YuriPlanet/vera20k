@@ -68,6 +68,8 @@ pub struct PipelineInputs<'a> {
     /// How freely plateaus get linked by ramps. Zero does not disable the
     /// pass — it gives every adjacent pair exactly one ramp.
     pub accessibility: i32,
+    /// `RegionSize` option: the region split threshold for map types 3/4.
+    pub region_size: i32,
     pub theater: i32,
     pub num_players: i32,
     /// `WaterAmount` option.
@@ -198,7 +200,20 @@ pub fn run_pipeline(
             map_type: inputs.map_type,
             default_level: DEFAULT_LEVEL,
         };
-        regions::run(&mut ctx)
+        let mut regions = regions::run(&mut ctx);
+        // `SplitOversizedRegions` (0x0058EBC0) runs only for map types 3/4,
+        // between the partition and the island passes (0x00598D55..62).
+        if matches!(inputs.map_type, 3 | 4) {
+            regions::split_oversized(
+                &mut ctx,
+                &mut *gauss,
+                &mut regions,
+                inputs.region_size,
+                gen_w,
+                gen_h,
+            );
+        }
+        regions
     };
     observe(Stage::Regions, grid, &waypoints, &terrain);
 

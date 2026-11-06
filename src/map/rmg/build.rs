@@ -199,6 +199,7 @@ pub fn generate_map_observed(
         trig: resolved.trig,
         map_type: options.map_type,
         accessibility: options.accessibility,
+        region_size: options.region_size,
         theater: options.theater,
         num_players: options.num_players,
         bridge_enabled,
