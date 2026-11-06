@@ -105,6 +105,19 @@ pub(crate) fn render_keyboard_shell(
         height,
         shell.map(|shell| (shell.layout, shell.button_size)),
     );
+    // The family page's `0x71C` monitor is the same static the options page
+    // shows, and is likewise held while the entry slide runs. Advancing it here
+    // keeps the timer alive on a page with no movie to drive redraws.
+    let monitor_frame = if shell.is_some() || leaving {
+        None
+    } else {
+        let frames = state
+            .frontend
+            .skirmish_shell_chrome
+            .as_ref()
+            .map_or(0, |atlas| atlas.launcher_warning_frames.len());
+        state.frontend.shell_monitor.paint(now, frames, !sliding)
+    };
     let dialog = state
         .frontend
         .keyboard_dialog
@@ -142,6 +155,15 @@ pub(crate) fn render_keyboard_shell(
             layout.scale,
         )
     };
+    if let Some(frame) = monitor_frame.and_then(|frame| atlas.launcher_warning_frames.get(frame)) {
+        push_flag_entry_clipped_centered(
+            &mut art,
+            *frame,
+            layout.warning,
+            layout.scale,
+            SHELL_CONTROL_DEPTH,
+        );
+    }
     if let Some(wave) = wave.as_ref() {
         push_slide_column(
             &mut art,
