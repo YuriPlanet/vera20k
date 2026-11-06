@@ -10,6 +10,8 @@ from pathlib import Path
 import struct
 
 ENTRY = 0x59C920
+GREEN_TILE = 0xAA0E18  # g_GreenTile, the fill at 0x0059D395
+ANCHOR_INIT = 0x57A9C0
 RNG_NEXT, GAUSSIAN = 0x65C780, 0x5980C0
 GAUSS_STATE, UNIFORM_SOURCE = 0xABDFB8, 0x598000
 LINEAR_OFFSETS = 0x89A304
@@ -29,8 +31,10 @@ def controls():
     rows += [dict(id='given_seed_near_foreign_water', seed=11, start=[24, 19], water=pond),
              dict(id='given_seed_rough_ring', seed=7, start=[24, 24],
                   rough=[[x, 20] for x in range(18, 29)]),
-             # A hunted lake that grows past the size gates runs the shore
-             # pass, a component of its own; these pockets stop it first.
+             # Unwalled hunted lakes pass the size gates and run the shore
+             # pass, the dilation and the green fill; the pockets stop first.
+             dict(id='hunted_seed_3_commits', seed=3, start=[0, 0]),
+             dict(id='hunted_seed_11_beside_foreign_water', seed=11, start=[0, 0], water=pond),
              dict(id='hunted_pocket_near_foreign_water', seed=11, start=[0, 0], water=pond,
                   pocket=[20, 18, 27, 27]),
              dict(id='hunted_pocket_seed_3', seed=3, start=[0, 0], pocket=[18, 20, 25, 27]),
@@ -47,6 +51,9 @@ class LakeFixture:
         self.actor = self.m.alloc(0x400)
         self.start = self.m.alloc(4)
         self.water = self.m.read32(0xAA0738)
+        # The driver's shore pass anchors pieces through the .bss table
+        # 0xABDB64 that the C++ static initializer FUN_0057A9C0 fills.
+        self.m.invoke(ANCHOR_INIT, 0, ())
         self.u.mem_map(ARENA, ARENA_SIZE)
         self.cursor = ARENA
         self.m.alloc = self.alloc
@@ -70,7 +77,11 @@ class LakeFixture:
             x, y = index % STRIDE, index // STRIDE
             coord = (x, y) if in_diamond(x, y) else (0, 0)
             u.mem_write(f.scratch + index * 0x50, struct.pack('<hh', *coord))
-            u.mem_write(f.scratch + index * 0x50 + 0x38, words(0, 0))
+            u.mem_write(f.scratch + index * 0x50 + 0x38, words(0, 0, -1))
+            u.mem_write(f.scratch + index * 0x50 + 0x4A, b'\1')  # shore enable, as RmgScratch defaults it
+        for cell in f.cells.values():
+            u.mem_write(cell + 0x38, words(0))
+            u.mem_write(cell + 0x11A, bytes(3))
         for x, y in case['water']:
             u.mem_write(f.cells[(x, y)] + 0x38, words(self.water))
             u.mem_write(self.record(x, y) + 0x38, words(3))
@@ -81,6 +92,7 @@ class LakeFixture:
             for (x, y), cell in f.cells.items():
                 if in_diamond(x, y) and not (x0 <= x <= x1 and y0 <= y <= y1):
                     u.mem_write(cell + 0x38, words(f.bases['cliff']))
+        self.prior = self.fields()
         w = STRIDE
         # PathfinderClass::ResizeMapArrays @ 0x0042AC00's offsets for this width.
         u.mem_write(LINEAR_OFFSETS, words(-w, 1 - w, 1, w + 1, w, w - 1, -1, -1 - w))
@@ -92,18 +104,25 @@ class LakeFixture:
             u.mem_write(self.actor + offset, words(value))
         u.mem_write(self.start, struct.pack('<hh', *case['start']))
 
-    def observe(self):
-        f, m, u = self.terrain, self.m, self.u
-        cells = []
+    def fields(self):
+        f, u = self.terrain, self.u
+        out = {}
         for y in range(STRIDE):
             for x in range(STRIDE):
                 if not in_diamond(x, y) or (x, y) not in f.cells:
                     continue
                 tile = struct.unpack('<i', u.mem_read(f.cells[(x, y)] + 0x38, 4))[0]
+                sub, level = u.mem_read(f.cells[(x, y)] + 0x11A, 2)
                 region = struct.unpack('<i', u.mem_read(self.record(x, y) + 0x38, 4))[0]
-                if tile == self.water or region != 0:
-                    cells.append([x, y, int(tile == self.water), region])
-        return dict(cells=cells, placed=m.read32(self.actor + 0x304))
+                out[(x, y)] = [tile, sub, level, region]
+        return out
+
+    def observe(self):
+        # Only cells whose tile, subtile, level or region differ from the
+        # declared scene, in row-major order.
+        cells = [[x, y] + value for (x, y), value in sorted(self.fields().items(), key=lambda i: i[0][::-1])
+                 if value != self.prior[(x, y)]]
+        return dict(cells=cells, placed=self.m.read32(self.actor + 0x304))
 
     def run(self, case, pool):
         from tools import native_oracle as native
@@ -149,7 +168,7 @@ def generate():
     from tools.rmg_oracle.cliff_materialization import StatePool
     fixture, pool = LakeFixture(), StatePool()
     rows = [fixture.run(case, pool) for case in controls()]
-    return dict(schema=1, scene=dict(water_base=fixture.water,
+    return dict(schema=1, scene=dict(water_base=fixture.water, green=fixture.m.read32(GREEN_TILE),
                                      cliff_base=fixture.terrain.bases['cliff']),
                 rng_states_hex=pool.states, rows=rows)
 
@@ -157,9 +176,9 @@ def generate():
 def provenance():
     from tools import native_oracle as native
     return native.provenance(
-        scope='9 whole original GrowLake calls: given seeds, hunted seeds stopped before the shore pass, an exhausted hunt, the Gaussian size draw, the growth heap, its drain and the rollback',
+        scope='11 whole original GrowLake calls: given seeds, hunted seeds that commit through the shore pass, dilation and green fill or roll back, pocketed and exhausted hunts, the Gaussian size draw, the growth heap and its drain',
         assumptions=[
-            'Existing CliffFixture owns original-constructed Cell backing, admission and the stride-33 scratch; bounds 16..48. Scratch coordinates stamped for in-diamond records only; region and stamp start 0.',
+            'Existing CliffFixture owns original-constructed Cell backing, admission, the stride-33 scratch and the physical clear/cliff/shore TMP registration; bounds 16..48. Shore-piece anchor table filled by its original static initializer 57A9C0. Scratch coordinates stamped for in-diamond records only; region and stamp start 0, mask cache -1, shore enable 1.',
             'Declared scene: clear cells, optional foreign water (WaterSet base, region 3) and non-clear (CliffSet base) cells, or every in-diamond cell outside a clear pocket non-clear. Generator +4C WaterAmount, +180/+184 generated size, +304 placed, +308 region. Not a complete Generate prefix.',
             'Linear neighbour offsets written as PathfinderClass::ResizeMapArrays 42AC00 computes them for stride 33. Gaussian cache empty with source 598000. FPCW 0E7F. All streams seeded by original 65C6D0.'],
         substitutions=[

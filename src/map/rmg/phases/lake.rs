@@ -611,12 +611,13 @@ mod tests {
                 .collect::<String>()
         };
         let scene = &doc["scene"];
-        let mut identity = ids();
+        // The driver's shore pass needs the fixture's physical shore TMPs.
+        let (mut identity, blocks) = super::super::cliff_native_tests::physical_tiles();
         identity.water_base = scene["water_base"].as_i64().unwrap() as i32;
+        identity.green = scene["green"].as_i64().unwrap() as i32;
         let cliff = scene["cliff_base"].as_i64().unwrap() as i32;
-        let blocks = blocks();
         let rows = doc["rows"].as_array().unwrap();
-        assert_eq!(rows.len(), 9);
+        assert_eq!(rows.len(), 11);
         for row in rows {
             let input = &row["input"];
             let context = input["id"].as_str().unwrap();
@@ -631,7 +632,8 @@ mod tests {
             let mut grid = RmgGrid::new(33, 16, 48);
             let mut scratch = RmgScratch::new(33, 16, 48);
             for (x, y) in grid.native_cells().collect::<Vec<_>>() {
-                grid.get_mut(x, y).unwrap().tile = 0;
+                let cell = grid.get_mut(x, y).unwrap();
+                (cell.tile, cell.sub_tile, cell.level) = (0, 0, 0);
             }
             for (x, y) in coords("water") {
                 grid.get_mut(x, y).unwrap().tile = identity.water_base;
@@ -654,6 +656,20 @@ mod tests {
                     }
                 }
             }
+            let fields = |grid: &RmgGrid, scratch: &RmgScratch| {
+                let mut out = Vec::new();
+                for y in 0..33 {
+                    for x in 0..33 {
+                        if scratch.in_diamond(x, y) {
+                            let cell = grid.get(x, y).unwrap();
+                            let (sub, level) = (i32::from(cell.sub_tile), i32::from(cell.level));
+                            out.push([x, y, cell.tile, sub, level, scratch.get(x, y).region]);
+                        }
+                    }
+                }
+                out
+            };
+            let prior = fields(&grid, &scratch);
             let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
             let mut gauss = Gaussian::default();
             let size = &input["gen"];
@@ -714,29 +730,18 @@ mod tests {
                 doc["rng_states_hex"][after],
                 "{context}: exit RNG"
             );
-            let mut cells = Vec::new();
-            for y in 0..33 {
-                for x in 0..33 {
-                    if !scratch.in_diamond(x, y) {
-                        continue;
-                    }
-                    let water = grid.get(x, y).unwrap().tile == identity.water_base;
-                    let region = scratch.get(x, y).region;
-                    if water || region != 0 {
-                        cells.push([
-                            i64::from(x),
-                            i64::from(y),
-                            i64::from(water),
-                            i64::from(region),
-                        ]);
-                    }
-                }
-            }
-            let native: Vec<[i64; 4]> = row["cells"]
+            // Only cells the call changed, as the producer records them.
+            let cells: Vec<[i32; 6]> = fields(&grid, &scratch)
+                .into_iter()
+                .zip(prior)
+                .filter(|(now, before)| now != before)
+                .map(|(now, _)| now)
+                .collect();
+            let native: Vec<[i32; 6]> = row["cells"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .map(|c| std::array::from_fn(|i| c[i].as_i64().unwrap()))
+                .map(|c| std::array::from_fn(|i| c[i].as_i64().unwrap() as i32))
                 .collect();
             assert_eq!(cells, native, "{context}: cells");
         }
