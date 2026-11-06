@@ -14,7 +14,10 @@ pub const TIBERIUM_DENSITY_LEVELS: u8 = 12;
 /// `0x3FB999999999999A` (0.1) at `0x007216DC`/`0x007216E7`.
 const CTOR_PERCENTAGE: f64 = 0.1;
 
-/// Index into the parsed `[Tiberiums]` list.
+/// Index into the parsed `[Tiberiums]` list: the `TiberiumClass+0x98`
+/// `ArrayIndex` that `TiberiumClass::Constructor @ 0x007216C0` assigns from
+/// the array count and `TiberiumClass::GetArrayIndex @ 0x00723700` (vtable
+/// slot `+0x40`) returns.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -52,6 +55,14 @@ pub struct TiberiumType {
 }
 
 /// Ordered tiberium type registry.
+///
+/// Its types live for the whole match, as gamemd's do: `TiberiumClass::
+/// Destructor @ 0x00721880` runs only from the scalar deleting destructor
+/// `0x00723710` (its vtable slot and the COM class factory), never from a
+/// match, and `PointerExpired @ 0x00722140` only drops a dying AnimType from
+/// `Debris` or a dying OverlayType from `Image`, type objects no match frees.
+/// VERA holds `Debris` by name and `Image` as its selector, so neither has a
+/// port.
 #[derive(Debug, Clone, Default)]
 pub struct TiberiumTypeRegistry {
     types: Vec<TiberiumType>,

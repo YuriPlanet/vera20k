@@ -2090,6 +2090,22 @@ fn advance_one_simulation_frame(
                         },
                     );
                 }
+                LifecycleOutput::PlanningAppendRefused { owner, message } => {
+                    crate::app::input::planning_mode::append_output(
+                        state,
+                        Some(owner) == local_house,
+                        message,
+                        false,
+                    );
+                }
+                LifecycleOutput::PlanningFramePassQueued { owner, message } => {
+                    crate::app::input::planning_mode::append_output(
+                        state,
+                        Some(owner) == local_house,
+                        message,
+                        true,
+                    );
+                }
                 LifecycleOutput::SidebarConstructionOption { .. }
                 | LifecycleOutput::SidebarRecalculated { .. }
                 | LifecycleOutput::ProductionBeginAttempted { .. }
@@ -2178,6 +2194,11 @@ fn advance_one_simulation_frame(
                 | LifecycleOutput::ClearDrawnState { .. }
                 | LifecycleOutput::ClearRedraw { .. } => {}
             }
+        }
+        // Main_Tick runs PlanMgr_Process_Frame after the frame's events
+        // (0x0055DEA4); its input tail follows their lifecycle outputs.
+        if frame_committed {
+            crate::app::input::planning_mode::frame_pass(state);
         }
         // Black-cell census, on a schedule rather than a keypress: nobody hits a debug key
         // at the exact moment they notice the artifact. Spread-out ticks give a time series,
@@ -2447,6 +2468,9 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
+    // UpdateFoundationCenter4A91B0 takes the cursor's Cell from
+    // `RadarClass::Click_Cell_Calc @ 0x00653760` (`0x004A9251`): the
+    // tactical ScreenPixelToCell answer this shared inverse ports.
     // UpdateFoundationCenter4A91B0 uses center + the type's active offset.
     // Resolve it before admission/ground/shroud, through the shared owner
     // also used by a fresh LeftUp; rendering consumes the resulting Cells.

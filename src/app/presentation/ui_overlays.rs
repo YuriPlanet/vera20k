@@ -2000,6 +2000,16 @@ pub(crate) fn scale_pip_draws(
 /// Maps game-state intent → CursorId → loaded sequence via HashMap lookup.
 /// The id travels with the sequence because the animation phase is keyed on it —
 /// changing shape restarts the sequence at frame 0.
+///
+/// This per-frame resolution stands in for MouseClass's stored shapes. In
+/// gamemd the hover cursor is the *default* one (`SetCursorFromAction`
+/// `0x004AAE90` calls `MouseClass::SetDefaultCursor` `0x005BDA80`), overrides
+/// go through `SetCursor` (`0x005BDC80`), and the mode setters and
+/// `ExitPause` return with `RevertCursor` (`0x005BDAA0`: `SetCursor(Default,
+/// small 0)`). The constructor (`0x005BDA40`) and `Init_Clear` (`0x005BDF50`)
+/// start `DefaultCursor` at row 0. Re-deriving the shape every frame shows the
+/// same row once its owner re-issues it; `GetDefaultCursor` (`0x0040D280`,
+/// slot +0xA0) has no display caller among the 47 `call [reg+0xA0]` sites.
 fn active_cursor_sequence(state: &AppState) -> Option<(CursorId, &SoftwareCursorSequence)> {
     let cursor = state
         .match_state

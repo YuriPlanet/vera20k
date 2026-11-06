@@ -155,7 +155,10 @@ pub use techno_ai::{BuildingDelayedFire, DelayedFire};
 pub(crate) use techno_ai::{can_fire_at, weapon_at_index};
 mod command_schedule;
 mod planning;
-pub use planning::{PlanningBadgeKind, PlanningDrawSegment, PlanningPressRefusal};
+pub use planning::{
+    PlanningAppendMessage, PlanningBadgeKind, PlanningDrawSegment, PlanningPressRefusal,
+    PlanningSelectionCheck,
+};
 mod selection_voice;
 pub(crate) mod techno_ai_cloak;
 pub(crate) mod unit_post;

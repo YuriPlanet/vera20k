@@ -993,12 +993,10 @@ impl App {
                     sidebar_layout_spec,
                     tooltips: startup_tooltips,
                     tooltip_epoch: Instant::now(),
-                    message_list: crate::ui::messages::MessageList::new(
-                        3,
-                        0,
-                        crate::ui::messages::MESSAGE_MAX_VISIBLE_RETAIL,
-                        0,
-                    ),
+                    // The Constructor `0x005D39D0` (from Session's static
+                    // constructor `0x00697256`) leaves an empty list that
+                    // nothing posts to before Read_Scenario's Init.
+                    message_list: crate::ui::messages::MessageList::scenario(),
                     chat: Default::default(),
                     beacons: Default::default(),
                     in_game_menu: crate::ui::pause_menu::InGameMenuState::default(),

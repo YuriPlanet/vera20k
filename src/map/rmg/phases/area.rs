@@ -46,7 +46,14 @@ pub fn tile_is_placeable(ids: &TileIds, tile: i32) -> bool {
     ids.is_clear(tile) || ids.is_misc_pave(tile) || ids.is_pave(tile)
 }
 
-/// Is every cell of `rect` clear of roads and standable?
+/// `RandomMapGenerator::AreaIsPavedClear @ 0x005A7250`: is every cell of
+/// `rect` clear of roads and standable?
+///
+/// Its two override bytes (EDX and the stack byte) admit roads and road ends.
+/// Every reachable call passes zero: `PlaceLowBridgeDeck @ 0x0058F2C0` and
+/// `RmgRegion::PlaceStartingPoints` (0x00594992, EBP cleared at 0x00594892).
+/// Only 0x005A5B50/0x005A6D80/0x005A7070, reached from the unreferenced
+/// 0x005A5020, and the unreferenced 0x005A80B0 set them, so the port has none.
 ///
 /// Corners first, then **exactly `w x h`** — no inclusive margin. There is no
 /// level test here; a rect spanning a step in the ground still passes. The

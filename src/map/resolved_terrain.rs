@@ -73,9 +73,10 @@ pub(crate) use bridge_flags::RealCellBridgeFlags0x1180;
 pub use build::OverlayLoadSource;
 pub use build::{AuthoredTerrainFill, RadarColorMetadata, current_tile_permissions};
 use build::{presentation_tile_parts, wheel_speed_at_or_below_one_percent};
+pub(crate) use build::cliff_back_normal_reclass_applies;
 pub(crate) use cell_recalc::{
     AutomaticTubeAllocation, AutomaticTubeRequest, LoadCellRecalcEffects, LoadCellRecalcError,
-    LoadCellRecalcOutcome, LoadCellRecalcState,
+    LoadCellRecalcOutcome, LoadCellRecalcState, is_behind_cliff,
 };
 use cliffs::DestroyableCliffCatalog;
 pub(crate) use native_cell::{

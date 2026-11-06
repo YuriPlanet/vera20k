@@ -1009,6 +1009,8 @@ pub fn carve_corner_ramp_reflected(
 /// slope 8 appears nowhere else.
 ///
 /// Two end blocks, `+7` and `+1` — a pair no other routine uses together.
+///
+/// Native: 0x00593AF0.
 pub fn carve_corner_ramp_north_east(
     ctx: &mut CarveCtx<'_>,
     regions: CarveRegions,

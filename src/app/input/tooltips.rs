@@ -9,7 +9,9 @@
 
 use crate::app::AppState;
 use crate::app::input::cursor::CursorVisibility;
-use crate::app::input::gadget_input::{ID_SCROLL_DOWN, ID_SCROLL_UP, ID_TAB_BASE};
+use crate::app::input::gadget_input::{
+    ID_DIPLOMACY, ID_OPTIONS, ID_SCROLL_DOWN, ID_SCROLL_UP, ID_TAB_BASE,
+};
 use crate::app::presentation::sidebar_render::{
     current_sidebar_side, current_sidebar_theme, current_sidebar_view,
 };
@@ -511,6 +513,21 @@ fn superweapon_money_tip(money_format: Option<&str>, name: &str, amount: i32) ->
     }
 }
 
+/// `RadarClass` slot +0x88 @ 0x00654320 registers the two radar-top buttons
+/// with a CSF label: 0xF2 `Tip:BriefingButton` while GameMode is 0, else
+/// `Tip:DiplomacyButton`, and 0xF3 `Tip:OptionsButton`. A labelled tip is
+/// loaded straight from the string table (ToolTipManager::Process 0x00724AE0),
+/// so neither gets the sidebar's `Tip:Disabled` suffix. The radar's own
+/// `GetTooltipText @ 0x00658770` only forwards to DisplayClass's.
+fn radar_button_tip_labels(game_mode_nonzero: bool) -> [(u16, &'static str); 2] {
+    let diplomacy = if game_mode_nonzero {
+        "Tip:DiplomacyButton"
+    } else {
+        "Tip:BriefingButton"
+    };
+    [(ID_DIPLOMACY, diplomacy), (ID_OPTIONS, "Tip:OptionsButton")]
+}
+
 /// Sidebar regions, mirroring the native registration set: tabs and scroll
 /// arrows from their `Tip:*` labels (with the disabled suffix), repair/sell
 /// from direct CSF keys, cameos through the money format.
@@ -591,6 +608,17 @@ fn sync_in_game_regions(state: &mut AppState) {
             text: sidebar_button_tip_text(state, cursor, &view, id),
         });
     }
+    let game_mode_nonzero = state.match_state.session_mode().is_nonzero();
+    for ((id, label), button) in radar_button_tip_labels(game_mode_nonzero)
+        .into_iter()
+        .zip(&view.top_buttons)
+    {
+        regions.push(TipRegion {
+            id: u32::from(id),
+            rect: tip_rect(frame, button.rect),
+            text: csf_text(state, label),
+        });
+    }
     for (slot, item) in view.items.iter().enumerate() {
         let text = dynamic_tip_text(cursor, || {
             if item.is_superweapon {
@@ -630,6 +658,17 @@ fn sync_in_game_regions(state: &mut AppState) {
             id: CAMEO_TIP_ID_BASE + slot as u32,
             rect: tip_rect(frame, item.rect),
             text,
+        });
+    }
+    // TabClass::ToggleSidebar 0x006D04F0 registers the command bar's tips
+    // after SidebarClass's own; a labelled tip reads its CSF text directly.
+    for (id, rect, label) in crate::app::input::gadget_input::command_bar_tooltips(
+        &state.match_state.match_presentation.in_game_gadgets,
+    ) {
+        regions.push(TipRegion {
+            id: u32::from(id),
+            rect: TipRect::new(rect.x, rect.y, rect.w, rect.h),
+            text: csf_text(state, label),
         });
     }
     // Phobos left superweapon sidebar: `SWButtonClass` shows the same super
@@ -921,6 +960,18 @@ mod tests {
         tips.on_mouse_move(6, 50, expiry + 2 * TOOLTIP_DURATION_MS);
         tips.poll(expiry + 2 * TOOLTIP_DURATION_MS + 1000);
         assert_eq!(tips.active().unwrap().id, ID_POWER_TIP);
+    }
+
+    #[test]
+    fn radar_diplomacy_tip_reads_briefing_in_campaign() {
+        assert_eq!(
+            radar_button_tip_labels(false),
+            [
+                (ID_DIPLOMACY, "Tip:BriefingButton"),
+                (ID_OPTIONS, "Tip:OptionsButton")
+            ]
+        );
+        assert_eq!(radar_button_tip_labels(true)[0].1, "Tip:DiplomacyButton");
     }
 
     #[test]

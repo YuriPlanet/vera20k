@@ -24,7 +24,8 @@ use crate::map::rmg::x87::TruncF64;
 use crate::map::rmg::{RmgConstructionPhase, RmgConstructionTrace};
 
 use super::regions::Regions;
-use super::zones::diamond_frame_contains;
+use super::shore::TileBlocks;
+use super::zones::{LAND_ROCK, diamond_frame_contains, recalc_land};
 
 /// Placement attempts per building.
 const MAX_ATTEMPTS: i32 = 100;
@@ -49,6 +50,8 @@ pub struct TechArgs {
     pub local_rect: [i32; 4],
     /// Scratch/grid stride: the whole-map anchor draw is `uniform(0, S²−1)`.
     pub stride: i32,
+    /// Low byte of `[General] CliffBackImpassability=`.
+    pub cliff_back_impassability: u8,
 }
 
 /// One recorded placement, emitted later as a neutral `[Structures]` entry.
@@ -64,6 +67,8 @@ pub struct TechCtx<'a> {
     pub grid: &'a mut RmgGrid,
     pub scratch: &'a mut RmgScratch,
     pub ids: &'a TileIds,
+    /// Tile blocks, for the foundation gate's land type.
+    pub blocks: &'a dyn TileBlocks,
     pub rng: &'a mut RmgRng,
     pub regions: &'a Regions,
     pub types: &'a [TechType],
@@ -78,6 +83,11 @@ pub(crate) fn run_traced(
     trace: &mut RmgConstructionTrace,
     entity_index_base: usize,
 ) -> Vec<TechPlacement> {
+    // `RandomMapGenerator::AddTechBuildings @ 0x005A95B0`, which `Generate`
+    // calls only for a non-zero map type. Its pass and building counts are
+    // `ftol(draw * [0x007ED8C0])` (0x005A95D9) and `ftol(draw * [0x007EDAB0])`
+    // (0x005A965F), redrawn while above 2 and 4: those constants are exactly
+    // 3K and 5K, so they round the same product as `uniform`.
     let mut placements = Vec::new();
     // The driver is not called at all for map type 0.
     if args.map_type == 0 || ctx.types.is_empty() {
@@ -272,14 +282,11 @@ fn try_place(
     true
 }
 
-/// One foundation cell's gate: unoccupied, clear, level-matched, inside the
-/// playfield frame, and outside every start's protected clearing.
-///
-/// The original also rejects land type 3 (Rock), but that is unreachable
-/// here: the clear-tile test already restricts the cell to tile 0 / the
-/// unassigned sentinel, both of which classify as land type 0, so the
-/// land-type branch can never fire on generated terrain. Omitted as a proven
-/// no-op.
+/// One foundation cell's gate (`AddTechBuildings @ 0x005A95B0` and
+/// `PlaceTechBuildingInRegion @ 0x00595400`): unoccupied, clear,
+/// level-matched, not Rock, inside the playfield frame, and outside every
+/// start's protected clearing. A clear tile is Rock when the CliffBack
+/// reclass of `RecalcAttributes @ 0x0047D2B0` put it behind a cliff.
 fn foundation_cell_ok(
     ctx: &TechCtx<'_>,
     args: &TechArgs,
@@ -297,6 +304,9 @@ fn foundation_cell_ok(
         return false;
     }
     if cell.level != anchor_level {
+        return false;
+    }
+    if recalc_land(ctx.grid, ctx.blocks, args.cliff_back_impassability, x, y) == LAND_ROCK {
         return false;
     }
     if !diamond_frame_contains(
@@ -347,6 +357,15 @@ mod tests {
         }
     }
 
+    /// One-cell clear blocks: every tile reads land type Clear.
+    struct ClearBlocks;
+
+    impl TileBlocks for ClearBlocks {
+        fn block(&self, _tile: i32) -> Option<&crate::map::rmg::phases::shore::TileBlock> {
+            None
+        }
+    }
+
     fn types() -> Vec<TechType> {
         // A 2x2 and a 1x1, so the type draw picks between distinct footprints.
         vec![
@@ -385,6 +404,7 @@ mod tests {
                 map_w,
                 local_rect: [2, 5, gen_w, gen_h],
                 stride,
+                cliff_back_impassability: 2,
             },
         }
     }
@@ -401,6 +421,7 @@ mod tests {
                 grid: &mut w.grid,
                 scratch: &mut w.scratch,
                 ids: &identity,
+                blocks: &ClearBlocks,
                 rng: &mut rng,
                 regions: &regions,
                 types: &type_list,
@@ -410,5 +431,176 @@ mod tests {
             (placements, rng.next_u32())
         };
         assert_eq!(snapshot(2024), snapshot(2024));
+    }
+
+    #[test]
+    fn foundation_cell_behind_a_cliff_is_rejected() {
+        let mut w = world(1);
+        let (x, y) = (60, 40);
+        let level = w.grid.get(x, y).unwrap().level;
+        w.grid.get_mut(x, y - 1).unwrap().level = level + 4;
+        let identity = ids();
+        let regions = Regions::default();
+        let mut rng = RmgRng::new(1);
+        let ctx = TechCtx {
+            grid: &mut w.grid,
+            scratch: &mut w.scratch,
+            ids: &identity,
+            blocks: &ClearBlocks,
+            rng: &mut rng,
+            regions: &regions,
+            types: &[],
+        };
+        // A cell four levels under its (x, y-1) neighbour reads Rock
+        // (0x0047D2B0); its (x+1, y) neighbour probes other cells.
+        assert!(!foundation_cell_ok(&ctx, &w.args, x, y, level));
+        assert!(foundation_cell_ok(&ctx, &w.args, x + 1, y, level));
+        let off = TechArgs {
+            cliff_back_impassability: 1,
+            ..w.args
+        };
+        assert!(foundation_cell_ok(&ctx, &off, x, y, level));
+    }
+
+    fn int(value: &serde_json::Value) -> i32 {
+        value.as_i64().unwrap() as i32
+    }
+
+    fn cells(value: &serde_json::Value) -> Vec<(i16, i16)> {
+        value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| (int(&c[0]) as i16, int(&c[1]) as i16))
+            .collect()
+    }
+
+    /// The harness's declared land types: tile 0's sub-tile 1 reads TMP
+    /// terrain 7 (Rock), standing in for its Cell `+0xEC = 3`.
+    struct DeclaredRock(crate::map::rmg::phases::shore::TileBlock);
+
+    impl TileBlocks for DeclaredRock {
+        fn block(&self, tile: i32) -> Option<&crate::map::rmg::phases::shore::TileBlock> {
+            (tile == 0).then_some(&self.0)
+        }
+    }
+
+    /// Whole original `RandomMapGenerator::AddTechBuildings @ 0x005A95B0`
+    /// calls from `tools/rmg_oracle/tech_buildings.py`: each constructed
+    /// building's type and cell (or its destroy) and the exit RNG.
+    #[test]
+    fn native_add_tech_buildings_controls() {
+        use crate::map::construction_trace::RmgConstructionOutcome;
+        use crate::map::rmg::phases::regions::RmgRegion;
+        use crate::map::rmg::phases::shore::{SubTile, TileBlock};
+
+        let doc = crate::test_fixture::json("tools/rmg_oracle/tech_buildings.json");
+        let rough = int(&doc["scene"]["rough"]);
+        let rock_terrain = SubTile {
+            terrain: 7,
+            ..SubTile::default()
+        };
+        let blocks = DeclaredRock(TileBlock {
+            width: 1,
+            height: 2,
+            subtiles: vec![Some(SubTile::default()), Some(rock_terrain)],
+        });
+        let identity = ids();
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 8);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let mut scratch = RmgScratch::new(33, 16, 48);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                let cell = grid.get_mut(x, y).unwrap();
+                (cell.tile, cell.sub_tile, cell.level, cell.slope) = (0, 0, 0, 0);
+            }
+            for (x, y) in cells(&input["rough"]) {
+                grid.get_mut(x.into(), y.into()).unwrap().tile = rough;
+            }
+            for (x, y) in cells(&input["occupied"]) {
+                grid.get_mut(x.into(), y.into()).unwrap().occupied = true;
+            }
+            for (x, y) in cells(&input["rock"]) {
+                grid.get_mut(x.into(), y.into()).unwrap().sub_tile = 1;
+            }
+            for (x, y) in cells(&input["locked"]) {
+                scratch.get_mut(x.into(), y.into()).water_lock = true;
+            }
+            for c in input["terrain"].as_array().unwrap() {
+                let cell = grid.get_mut(int(&c[0]), int(&c[1])).unwrap();
+                (cell.level, cell.slope) = (int(&c[2]) as u8, int(&c[3]) as u8);
+            }
+            let types: Vec<TechType> = input["types"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .map(|(index, footprint)| TechType {
+                    name: index.to_string(),
+                    footprint: cells(footprint),
+                })
+                .collect();
+            let mut regions = Regions::default();
+            for (id, region) in input["regions"].as_array().unwrap().iter().enumerate() {
+                let list = cells(&region[1]);
+                regions.list.push(RmgRegion {
+                    id: id as i32,
+                    level: 0,
+                    active: false,
+                    cell_count: list.len() as i32,
+                    cells: list,
+                    start_quota: int(&region[0]),
+                    field_slots: None,
+                });
+            }
+            let args = TechArgs {
+                map_type: int(&input["map_type"]),
+                map_w: 16,
+                local_rect: [2, 5, int(&input["gen"][0]), int(&input["gen"][1])],
+                stride: 33,
+                cliff_back_impassability: 2,
+            };
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut ctx = TechCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                blocks: &blocks,
+                rng: &mut rng,
+                regions: &regions,
+                types: &types,
+            };
+            let mut trace = RmgConstructionTrace::default();
+            run_traced(&mut ctx, &args, &mut trace, 0);
+            let buildings: Vec<[i32; 3]> = trace
+                .events
+                .iter()
+                .map(|event| {
+                    let kind = event.techno_type.parse().unwrap();
+                    match event.outcome {
+                        RmgConstructionOutcome::Emitted { cell, .. } => {
+                            [kind, i32::from(cell.0), i32::from(cell.1)]
+                        }
+                        RmgConstructionOutcome::Discarded => [kind, -1, -1],
+                    }
+                })
+                .collect();
+            let native: Vec<[i32; 3]> = row["buildings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|b| std::array::from_fn(|i| int(&b[i])))
+                .collect();
+            assert_eq!(buildings, native, "{context}: buildings");
+            assert_eq!(
+                rng.into_continuation().into_native_parts(),
+                super::super::cliff_native_tests::native_state(doc, &row["rng_after"])
+                    .into_native_parts(),
+                "{context}: exit RNG"
+            );
+        }
     }
 }

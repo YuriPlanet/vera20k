@@ -1,5 +1,5 @@
 //! Chat/system message surface driver (study §3.1): anchors the
-//! `ui::messages::MessageList` to the tactical viewport (x+3 / y / w−14),
+//! `ui::messages::MessageList` to the tactical viewport,
 //! posts system messages (insert sound = [AudioVisual] IncomingMessage),
 //! expires rows on Main_Tick against the advancing process wall clock,
 //! and builds the text instances drawn between sidebar text and tooltip.
@@ -11,9 +11,6 @@ use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::ui::game_screen::GameScreen;
 
-/// Native Init anchors: x = tactical_x + 3, y = tactical_y, w = tactical_w − 14.
-const MESSAGE_X_INSET: i32 = 3;
-const MESSAGE_WIDTH_INSET: i32 = 14;
 /// Fallback while match color schemes are unavailable.
 const MESSAGE_RGB_SYSTEM: [f32; 3] = [1.0, 1.0, 1.0];
 /// `0xF0` native 16 ms timer buckets.
@@ -126,9 +123,10 @@ pub(crate) fn post_type_select_feedback(state: &mut AppState, csf_key: &str) {
     post_silent_house_feedback(state, csf_key, TYPE_SELECT_MESSAGE_TIMEOUT_MS);
 }
 
-///63A0D0/639FD0/639130 use the same silent730A90 HUD owner with duration1E0.
-/// Their separate ScoldSound belongs to the planning input owner.
-pub(crate) fn post_planning_refusal(state: &mut AppState, csf_key: &str) {
+/// PlanMgr's refusals (63A0D0/639FD0/639130/638120/637270) and help
+/// (63A120/63A1B0) use the same silent730A90 HUD owner with duration1E0.
+/// A refusal's separate ScoldSound belongs to the planning input owner.
+pub(crate) fn post_planning_message(state: &mut AppState, csf_key: &str) {
     post_silent_house_feedback(state, csf_key, 0x1E0 * 16);
 }
 
@@ -829,11 +827,11 @@ fn sync_view(state: &mut AppState) {
     // list and its edit line start below it.
     let tactical_w = crate::app::input::camera::tactical_viewport_size(state).0 as i32;
     let top = state.renderer.fps_overlay.message_top();
-    state.match_state.match_presentation.message_list.set_view(
-        MESSAGE_X_INSET,
-        top,
-        (tactical_w - MESSAGE_WIDTH_INSET).max(0),
-    );
+    state
+        .match_state
+        .match_presentation
+        .message_list
+        .set_view(0, top, tactical_w);
 }
 
 /// Prepare one successful offline TextLabel paint, using raw wall time for
@@ -1401,7 +1399,7 @@ mod tests {
         assert!(list.messages().is_empty());
 
         // Admission failure cannot play the message-insertion sound.
-        list.set_view(3, 0, 0);
+        list.set_view(0, 0, 0);
         let rejected =
             add_localized_message(&mut list, Some(&csf), &post, resumed_wall_ms + 2, &|_| 8);
         assert_eq!(rejected.added, 0);
