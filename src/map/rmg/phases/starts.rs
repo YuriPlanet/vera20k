@@ -1,16 +1,17 @@
-//! Start-position generation: rebuilds the region registry over the final
-//! terrain, distributes the start quota across the surviving regions, gathers
-//! and selects candidate cells per region, writes the start waypoints, and
-//! floods a protected clearing around each start.
+//! Start-position generation (`RandomMapGenerator::CreateStartingPoints @
+//! 0x00594B50`): rebuilds the region registry over the final terrain,
+//! distributes the start quota across the surviving regions, gathers and
+//! selects candidate cells per region and writes the start waypoints. Its
+//! map-type-0 tail, the tech-building coin flips, belongs to the tech phase;
+//! [`mark_start_areas`] then floods a protected clearing around each start.
 //!
 //! Order within the phase is load-bearing for the draw stream: threshold,
 //! zone recompute, teardown + rebuild, small-region deletion, score + sort,
 //! quota split, per-region gather/select/write (one lane draw plus one
-//! candidate draw per iteration), the map-type-0 tech coin flips, then the
-//! per-start clearing floods.
+//! candidate draw per iteration).
 
 use crate::map::rmg::grid::RmgGrid;
-use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
+use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
 use crate::map::rmg::x87::{TruncF64, approx_sqrt_f32};
@@ -48,7 +49,6 @@ const CLEARING_POP_CAP: i32 = 400;
 /// Phase inputs.
 #[derive(Debug, Clone, Copy)]
 pub struct StartsArgs {
-    pub map_type: i32,
     /// Global MapSeed NumPlayers (ABE028), read by CreateStartingPoints594DF0.
     pub start_quota: i32,
     /// `.SED NumPlayers` — bound of the per-start clearing floods only.
@@ -76,9 +76,9 @@ pub struct StartsOutcome {
     /// Waypoint slot -> cell. `None` = the owning bucket selected nothing
     /// (the original leaves the scenario slot unwritten in that case).
     pub waypoints: Vec<Option<(i16, i16)>>,
-    /// Ids of zero-quota regions that won the map-type-0 tech-building coin
-    /// flip, in bucket order. Consumed by the tech-building phase.
-    pub tech_regions: Vec<i32>,
+    /// Region-list indices in bucket order (ascending sort key), the order the
+    /// map-type-0 tech coin flips walk.
+    pub region_order: Vec<usize>,
     /// How many waypoint slots a region could not fill because its selection
     /// came up shorter than its quota.
     ///
@@ -156,7 +156,7 @@ pub fn run(ctx: &mut StartsCtx<'_>, args: &StartsArgs, zones: &ZoneField) -> Sta
     // produced waypoints.
     let mut outcome = StartsOutcome {
         waypoints: vec![None; args.start_quota.max(0) as usize],
-        tech_regions: Vec::new(),
+        region_order: order.iter().map(|&(_, index)| index).collect(),
         unfilled_start_slots: 0,
     };
     let mut offset = 0i32;
@@ -165,26 +165,9 @@ pub fn run(ctx: &mut StartsCtx<'_>, args: &StartsArgs, zones: &ZoneField) -> Sta
         offset += ctx.regions.list[index].start_quota;
     }
 
-    // Map type 0 only: zero-quota regions flip a fair coin for a tech
-    // building. The draw is consumed here; placement is the tech phase.
-    if args.map_type == 0 {
-        for &(_, index) in &order {
-            if ctx.regions.list[index].start_quota != 0 {
-                continue;
-            }
-            let draw = TruncF64::from_f64(f64::from(ctx.rng.next_u32()))
-                .mul(TruncF64::from_f64(f64::from_bits(RANGE_K_BITS)));
-            if draw.to_f64() < HALF {
-                outcome.tech_regions.push(ctx.regions.list[index].id);
-            }
-        }
-    }
-
     // The original ends by publishing start/extent preview metadata into the
     // scenario (packed cells plus isometric pixel mins/extents). Nothing in
     // the port reads it yet; the emitter task owns that surface.
-
-    clearing_floods(ctx, args, &outcome);
     outcome
 }
 
@@ -430,10 +413,11 @@ fn select_candidates(
     Some(selection)
 }
 
-/// Per-start protected clearings: a closest-first flood (distance keys from
-/// the start cell) over clear tiles, marking up to 400 cells around each of
-/// the first `num_players` waypoints.
-fn clearing_floods(ctx: &mut StartsCtx<'_>, args: &StartsArgs, outcome: &StartsOutcome) {
+/// Per-start protected clearings (`RandomMapGenerator::MarkStartAreas @
+/// 0x005A1FB0`, which `Generate` calls after `CreateStartingPoints`): a
+/// closest-first flood (distance keys from the start cell) over clear tiles,
+/// marking up to 400 cells around each of the first `num_players` waypoints.
+pub fn mark_start_areas(ctx: &mut StartsCtx<'_>, args: &StartsArgs, outcome: &StartsOutcome) {
     let coords: Vec<(i32, i32)> = ctx.grid.native_cells().collect();
     for player in 0..args.num_players.max(0) {
         let marker = player + 1;
@@ -542,7 +526,6 @@ mod tests {
 
     fn args() -> StartsArgs {
         StartsArgs {
-            map_type: 1,
             start_quota: 4,
             num_players: 4,
             tiberium_layout: 50,
@@ -595,7 +578,9 @@ mod tests {
                 rng: &mut rng,
                 regions: &mut regions,
             };
-            run(&mut ctx, &args, &field)
+            let outcome = run(&mut ctx, &args, &field);
+            mark_start_areas(&mut ctx, &args, &outcome);
+            outcome
         };
         (outcome, regions, grid, scratch)
     }
