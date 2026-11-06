@@ -132,7 +132,8 @@ ini-expand
                        --all-mixes widens tooling lookup only, not game mounting.
 
 GLOBAL OPTIONS
-  --ini-profile <yr|mo|auto|custom>  ini-roots/get/type only; overrides [ini] as a unit.
+  --ini-profile <yr|mo|auto|custom>  ini-roots/get/type: overrides [ini] as a unit.
+                       Archive verbs: mo mounts MO's renamed startup archives.
   --rules-ini <NAME> --art-ini <NAME> --ai-ini <NAME>
                        Custom profile requires all three plain INI basenames.
   --ra2-dir <PATH>     Retail install root. Overrides $RA2_DIR and config.toml.
@@ -395,10 +396,15 @@ pub fn parse<I: IntoIterator<Item = String>>(argv: I) -> Result<Cli, String> {
             "--ra2-dir" => cli.ra2_dir = Some(PathBuf::from(value(&mut args, "--ra2-dir")?)),
             "--all-mixes" => cli.all_mixes = true,
             "--ini-profile" | "--rules-ini" | "--art-ini" | "--ai-ini" => {
-                if !matches!(
+                let ini_verb = matches!(
                     cli.verb,
                     Verb::IniGet { .. } | Verb::IniType { .. } | Verb::IniRoots
-                ) {
+                );
+                // Archive verbs take only a profile, which selects the
+                // archive family the game mounts for it (MO's renamed MIXes).
+                let archive_verb =
+                    !matches!(cli.verb, Verb::IniExpand { .. }) && flag == "--ini-profile";
+                if !ini_verb && !archive_verb {
                     return Err(flag_not_valid(&flag, &cli.verb));
                 }
                 let config = cli.ini_roots.get_or_insert_with(Default::default);
@@ -663,6 +669,11 @@ mod tests {
             custom.ini_roots.unwrap().resolve(|_| true).unwrap().names(),
             ["r.ini", "a.ini", "i.ini"]
         );
+        let extract = parse(args(&["extract", "aimo.ini", "--ini-profile", "mo"])).unwrap();
+        assert_eq!(
+            extract.ini_roots.unwrap().profile,
+            crate::util::ini_roots::IniProfile::Mo
+        );
         for words in [
             vec![
                 "ini-roots",
@@ -674,7 +685,7 @@ mod tests {
             vec!["ini-roots", "--ini-profile", "mo", "--ai-ini", "aimd.ini"],
             vec!["ini-roots", "--ini-profile", "unknown"],
             vec!["ini-roots", "--out", "somewhere"],
-            vec!["find", "r.ini", "--ini-profile", "mo"],
+            vec!["find", "r.ini", "--ai-ini", "aimo.ini"],
             vec!["ini-expand", "r.ini", "--ini-profile", "mo"],
             vec!["ini-roots", "--strict"],
             vec!["ini-roots", "--source-only"],
