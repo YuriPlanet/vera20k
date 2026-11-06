@@ -1319,6 +1319,12 @@ pub(crate) fn snapshot_get_rof(
 /// `0x006FF1AD..0x006FF1F5`) construct the weapon's AttachedParticleSystem
 /// alike (`0x0062DC50`): from the retained launch source toward the target,
 /// owned by the firer, with no House.
+/// `0x006FF190` pushes `[ebx+0x11C]`, where `ebx` is the `GetWeapon`
+/// (vtable `+0x3F8`) result's WeaponType: that is `AttachedParticleSystem=`
+/// (`+0x11C`, `0x0077290B`), the constructor's type argument, not the
+/// firer's TechnoClass Transporter. The constructor's fourth argument is the
+/// firer (`esi`), which VERA passes as the owner; vera20k#3838's Transporter
+/// entry for this site is a base-register misread.
 fn fireat_attached_system(
     world: &mut Simulation,
     rules: &RuleSet,
