@@ -1,6 +1,9 @@
-//! Neutral tech-building placement (skipped entirely on map type 0).
+//! Neutral tech-building placement.
 //!
-//! Two driver paths share one foundation gate:
+//! Map type 0 never reaches the driver (`Generate` gates `AddTechBuildings`
+//! on a non-zero type); its buildings come from the coin flips at the end of
+//! `CreateStartingPoints` instead ([`run_start_flips_traced`]). The driver's
+//! two paths share one foundation gate:
 //! - map type 2: `uniform(0,2)` passes; each pass walks the regions in
 //!   creation order and, for every region with a nonzero start quota, makes
 //!   one building whose anchor is drawn from that region's cell list.
@@ -14,9 +17,10 @@
 //! per-building type draw, and the anchor draws.
 
 use crate::map::rmg::grid::RmgGrid;
-use crate::map::rmg::rng::RmgRng;
+use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
+use crate::map::rmg::x87::TruncF64;
 use crate::map::rmg::{RmgConstructionPhase, RmgConstructionTrace};
 
 use super::regions::Regions;
@@ -100,12 +104,45 @@ pub(crate) fn run_traced(
     placements
 }
 
+/// Map type 0's tech buildings: `CreateStartingPoints @ 0x00594B50`'s tail
+/// (0x00594EA6..0x00594ED5) walks the regions in bucket order and, for each
+/// with no start quota, draws `draw * K < 0.5`; heads place one building in
+/// that region at once, so its draws interleave with the later flips. It runs
+/// before `MarkStartAreas`, whose clearings the foundation gate would reject.
+pub(crate) fn run_start_flips_traced(
+    ctx: &mut TechCtx<'_>,
+    args: &TechArgs,
+    region_order: &[usize],
+    trace: &mut RmgConstructionTrace,
+    entity_index_base: usize,
+) -> Vec<TechPlacement> {
+    let mut placements = Vec::new();
+    if args.map_type != 0 {
+        return placements;
+    }
+    for &index in region_order {
+        if ctx.regions.list[index].start_quota != 0 {
+            continue;
+        }
+        let draw = TruncF64::from_f64(f64::from(ctx.rng.next_u32()))
+            .mul(TruncF64::from_f64(f64::from_bits(RANGE_K_BITS)));
+        // With no NeutralTechBuildings the original would construct from an
+        // empty list; retail always lists some, so the port only flips.
+        if draw.to_f64() < 0.5 && !ctx.types.is_empty() {
+            place_from_region(ctx, args, index, &mut placements, trace, entity_index_base);
+        }
+    }
+    placements
+}
+
 /// Draw one building type index into the resolved list.
 fn draw_type(ctx: &mut TechCtx<'_>) -> usize {
     ctx.rng.uniform(0, ctx.types.len() as i32 - 1) as usize
 }
 
-/// Map-type-2 path: anchor drawn from the region's cell list, ≤100 attempts.
+/// One building in a region (`RandomMapGenerator::PlaceTechBuildingInRegion @
+/// 0x00595400`, for the map-type-2 driver and map type 0's start flips): one
+/// type draw, then up to 100 anchors drawn from the region's cell list.
 fn place_from_region(
     ctx: &mut TechCtx<'_>,
     args: &TechArgs,
@@ -120,7 +157,7 @@ fn place_from_region(
         ctx.types[type_index].name.clone(),
     );
     let cell_count = ctx.regions.list[region_index].cells.len() as i32;
-    debug_assert!(cell_count > 0, "quota-bearing regions own cells");
+    debug_assert!(cell_count > 0, "surviving regions own cells");
 
     for _ in 0..MAX_ATTEMPTS {
         let pick = ctx.rng.uniform(0, cell_count - 1) as usize;
