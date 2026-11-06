@@ -3881,6 +3881,12 @@ impl NativeRulesRegistryState {
             rules_powerups: self.rules_powerups.clone(),
             rules_land: self.rules_land.clone(),
             rules_global_sounds: self.rules_global_sounds.clone(),
+            // ReadCrateRules66BA08 retains the same process scalar on a
+            // failed root lookup, including prospective RMG agreement.
+            rules_crate: CrateRules {
+                heal_crate_sound: self.rules_crate.heal_crate_sound.clone(),
+                ..CrateRules::default()
+            },
             ..Self::default()
         }
     }
@@ -5647,7 +5653,7 @@ impl RulesPassProcessor {
         // ReadCrateRules @ 0x0066B900 allocates its three crate images and
         // UnitCrateType as it reads them, between scalars that allocate none.
         let mut crate_rules = std::mem::take(&mut self.crate_rules);
-        crate_rules.apply_pass(pass, |section, key| {
+        crate_rules.apply_pass(pass, fixed_sounds, |section, key| {
             let family = if key == "UnitCrateType" {
                 RulesTypeFamily::Vehicle
             } else {
