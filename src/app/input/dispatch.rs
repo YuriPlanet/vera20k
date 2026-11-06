@@ -1416,6 +1416,9 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
     }
     match action {
         SidebarAction::None => {}
+        // `RadarClass::AI @ 0x00653850`: input 0x80F3 (OPTBTN) writes
+        // in-scenario state 1, the options menu; 0x80F2 (DIPLOBTN) goes
+        // through the diplomacy owner's state 8/9 choice.
         SidebarAction::OpenPauseMenu => open_pause_menu(state),
         SidebarAction::OpenDiplomacy => crate::app::input::diplomacy::open(
             state,

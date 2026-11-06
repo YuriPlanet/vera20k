@@ -517,7 +517,8 @@ fn superweapon_money_tip(money_format: Option<&str>, name: &str, amount: i32) ->
 /// with a CSF label: 0xF2 `Tip:BriefingButton` while GameMode is 0, else
 /// `Tip:DiplomacyButton`, and 0xF3 `Tip:OptionsButton`. A labelled tip is
 /// loaded straight from the string table (ToolTipManager::Process 0x00724AE0),
-/// so neither gets the sidebar's `Tip:Disabled` suffix.
+/// so neither gets the sidebar's `Tip:Disabled` suffix. The radar's own
+/// `GetTooltipText @ 0x00658770` only forwards to DisplayClass's.
 fn radar_button_tip_labels(game_mode_nonzero: bool) -> [(u16, &'static str); 2] {
     let diplomacy = if game_mode_nonzero {
         "Tip:DiplomacyButton"

@@ -265,6 +265,8 @@ pub(crate) fn install_world_presentation(
     }
 
     // The final sidebar projection resolves incoming side/radar authority.
+    // `RadarClass::Init_Clear @ 0x00652DE0` starts each scenario offline at
+    // frame 0, outside any movie mode, with TacticalMapAvailable clear.
     state.match_state.match_presentation.radar_anim = None;
     state.match_state.match_presentation.radar_animation_source = None;
     state.match_state.match_presentation.radar_content_insets = None;
