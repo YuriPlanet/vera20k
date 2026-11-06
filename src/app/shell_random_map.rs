@@ -582,6 +582,13 @@ impl PreparedRandomMapGeneration {
         // Retained rows may differ despite identical current source text.
         // These are the land-derived inputs that generation actually consumes.
         bytes.extend(self.resolved_inputs.wheel_impassable.map(u8::from));
+        for facts in &self.resolved_inputs.overlay_zones {
+            bytes.extend([
+                facts.land,
+                u8::from(facts.early_land),
+                facts.zone_type.unwrap_or(0xFF),
+            ]);
+        }
         bytes.extend_from_slice(crate::util::sha256::sha256_hex(&self.theater.ini_data).as_bytes());
         bytes.extend_from_slice(self.blocks.multiplayer_digest().as_bytes());
         for technology in &self.tech_types {
@@ -686,9 +693,13 @@ pub(super) fn prepare_random_map_generation(
         || crate::rules::ruleset::GeneralRules::default().cliff_back_impassability,
         |preview| preview.rules.general.cliff_back_impassability,
     );
+    let empty_overlays = crate::rules::overlay_types::OverlayTypeRegistry::empty();
     let resolved_inputs = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
         &theater,
         &terrain_rules,
+        preview_rules
+            .as_ref()
+            .map_or(&empty_overlays, |preview| preview.rules.overlay_registry()),
         cliff_back_impassability,
     );
     let blocks =

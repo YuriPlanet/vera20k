@@ -565,6 +565,7 @@ mod tests {
                 local_rect: [2, 5, args.gen_w, args.gen_h],
                 wheel_impassable: wheel,
                 cliff_back_impassability: 2,
+                overlays: &[],
             },
             ZoneKind::Amphibious,
         )
@@ -803,6 +804,173 @@ mod tests {
                 .collect();
             assert_eq!(changed, native, "{context}: records");
             assert_eq!(int(&row["draws"]), 0, "{context}: draws");
+            assert_native_rng(doc, row, rng);
+        }
+    }
+
+    /// Terrain bytes per tile id for the zone controls' declared land types:
+    /// 0 clear, 500 water (9), 400 beach (0xA), 300 rock (7).
+    struct LandBlocks;
+
+    impl TileBlocks for LandBlocks {
+        fn block(&self, tile: i32) -> Option<&TileBlock> {
+            static BLOCKS: std::sync::OnceLock<[TileBlock; 4]> = std::sync::OnceLock::new();
+            let blocks = BLOCKS.get_or_init(|| {
+                [0, 9, 0xA, 7].map(|terrain| TileBlock {
+                    width: 1,
+                    height: 1,
+                    subtiles: vec![Some(SubTile {
+                        height: 0,
+                        terrain,
+                        slope: 0,
+                    })],
+                })
+            });
+            Some(match tile {
+                500 => &blocks[1],
+                400 => &blocks[2],
+                300 => &blocks[3],
+                _ => &blocks[0],
+            })
+        }
+    }
+
+    /// Original `CellClass::RecalcZoneType @ 0x00483C80` on every Cell, then
+    /// `CreateStartingPoints @ 0x00594B50..0x00594C47` with the original
+    /// `RebuildZoneConnectivity @ 0x0056C510` and `GetZoneID @ 0x0056D230`
+    /// (`tools/rmg_oracle/start_zones.py`): every zone class and base zone,
+    /// the largest zone, the requested derived row and the rebuilt regions.
+    #[test]
+    fn native_start_zone_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/start_zones.json");
+        let scene = &doc["scene"];
+        let mut wheel = [false; zones::LAND_TYPES];
+        for (land, blocked) in scene["wheel_blocked"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
+            wheel[land] = blocked.as_bool().unwrap();
+        }
+        // The deck overlay's facts through the production rules reader: the
+        // harness gives its type Road land, which every retail LOBRDG has.
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let overlays = zones::OverlayZoneFacts::from_registry(
+            crate::rules::ruleset::RuleSet::from_ini(&rules)
+                .expect("retail rules")
+                .overlay_registry(),
+        );
+        let deck = overlays[int(&scene["deck"]) as usize];
+        assert_eq!(
+            (deck.land, deck.early_land, deck.zone_type),
+            (1, true, None)
+        );
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 7);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let mut scratch = RmgScratch::new(33, 16, 48);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                let cell = grid.get_mut(x, y).unwrap();
+                (cell.tile, cell.sub_tile, cell.level, cell.slope) = (0, 0, 0, 0);
+            }
+            for c in input["land"].as_array().unwrap() {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile = match c[2].as_str().unwrap() {
+                    "water" => 500,
+                    "beach" => 400,
+                    "rock" => 300,
+                    other => panic!("{context}: land {other}"),
+                };
+            }
+            for c in input["terrain"].as_array().unwrap() {
+                let cell = grid.get_mut(int(&c[0]), int(&c[1])).unwrap();
+                (cell.level, cell.slope) = (int(&c[2]) as u8, int(&c[3]) as u8);
+            }
+            for (x, y) in pairs(&input["deck"]) {
+                let cell = grid.get_mut(x.into(), y.into()).unwrap();
+                (cell.tile, cell.overlay) = (500, int(&scene["deck"]));
+            }
+            for (x, y) in pairs(&input["hut"]) {
+                grid.get_mut(x.into(), y.into()).unwrap().occupied = true;
+            }
+            let gen_size = (int(&input["gen"][0]), int(&input["gen"][1]));
+            // Land types are declared as the last Recalc leaves them, so the
+            // CliffBack reclass is not applied again here.
+            let field = zones::compute(
+                &grid,
+                &LandBlocks,
+                &ZoneParams {
+                    map_w: 16,
+                    local_rect: [2, 5, gen_size.0, gen_size.1],
+                    wheel_impassable: wheel,
+                    cliff_back_impassability: 0,
+                    overlays: &overlays,
+                },
+                ZoneKind::for_map_type(int(&input["map_type"])),
+            );
+            for y in 0..33 {
+                let classes: String = (0..33)
+                    .map(|x| char::from(b'0' + field.class(x, y)))
+                    .collect();
+                assert_eq!(
+                    classes, row["classes"][y as usize],
+                    "{context}: classes row {y}"
+                );
+                let bases: Vec<i32> = (0..33)
+                    .map(|x| i32::from(field.native_parts(x, y).0))
+                    .collect();
+                let native: Vec<i32> = row["zones"][y as usize]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(int)
+                    .collect();
+                assert_eq!(bases, native, "{context}: base zones row {y}");
+            }
+            let (_, derived, largest) = field.native_parts(0, 0);
+            assert_eq!(
+                i32::from(largest),
+                int(&row["largest"]),
+                "{context}: largest"
+            );
+            let native_derived: Vec<i32> =
+                row["derived"].as_array().unwrap().iter().map(int).collect();
+            let derived: Vec<i32> = derived.iter().map(|&z| i32::from(z)).collect();
+            assert_eq!(derived, native_derived, "{context}: derived row");
+            assert_eq!(
+                i32::from(field.reference),
+                int(&row["reference"]),
+                "{context}: reference"
+            );
+            let identity = ids();
+            let mut regions = Regions::default();
+            let mut rng = RmgRng::new(1);
+            let mut ctx = StartsCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                rng: &mut rng,
+                regions: &mut regions,
+            };
+            rebuild_regions(&mut ctx, &field);
+            let listed: Vec<[i32; 2]> = regions.list.iter().map(|r| [r.id, r.cell_count]).collect();
+            let native: Vec<[i32; 2]> = row["regions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| [int(&r[0]), int(&r[1])])
+                .collect();
+            assert_eq!(listed, native, "{context}: regions");
+            assert_eq!(
+                regions.id_counter,
+                int(&row["next_region_id"]),
+                "{context}: next id"
+            );
             assert_native_rng(doc, row, rng);
         }
     }
