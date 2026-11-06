@@ -11,7 +11,7 @@ use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
 use crate::ui::main_menu_dialogs::options::{
-    FULL_SCREEN_LABEL, ORIGINAL_SHAPE_LABEL, SIDEBAR_LABEL, ZOOM_LABEL,
+    FPS_COUNTER_LABEL, FULL_SCREEN_LABEL, ORIGINAL_SHAPE_LABEL, SIDEBAR_LABEL, ZOOM_LABEL,
 };
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::geom::ShellScale;
@@ -221,7 +221,8 @@ pub(crate) fn render_pause_menu_shell(
         ));
     };
     // VERA's Display group: the main menu's Zoom and Sidebar lists, Full
-    // Screen and Original 4:3 Shape.
+    // Screen, Original 4:3 Shape and the FPS Counter, which shows the
+    // panel's own live state.
     let display_layout = layout.display;
     let display = &state.match_state.match_presentation.display_pause;
     group_box(
@@ -272,6 +273,11 @@ pub(crate) fn render_pause_menu_shell(
             display_layout.original_shape,
             display.original_shape,
             ORIGINAL_SHAPE_LABEL,
+        ),
+        (
+            display_layout.fps_counter,
+            state.renderer.fps_overlay.is_visible(),
+            FPS_COUNTER_LABEL,
         ),
     ] {
         paint_control(
