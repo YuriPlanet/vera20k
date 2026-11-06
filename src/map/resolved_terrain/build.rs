@@ -255,7 +255,7 @@ impl ResolvedTerrainGrid {
                 level_span: LevelSpan::of([]),
                 land_speed_costs: land_speed_cost_profiles(None),
                 overlay_passability: Vec::new(),
-                native_tmp_draw_heights: HashMap::new(),
+                native_tmp_draw_heights: LookupMap::default(),
                 shared_cell_dummy,
                 mutation_epoch: 0,
                 native_allocated: materialized_size_diamond.then(Vec::new),
@@ -962,7 +962,7 @@ impl ResolvedTerrainGrid {
             cells,
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Vec::new(),
-            native_tmp_draw_heights: HashMap::new(),
+            native_tmp_draw_heights: LookupMap::default(),
             shared_cell_dummy,
             mutation_epoch: 0,
             native_allocated,
@@ -1261,11 +1261,11 @@ pub(super) fn is_wood_bridge_repair_tile(
 pub(super) fn load_native_tmp_draw_heights(
     theater: Option<&TheaterData>,
     assets: Option<&crate::assets::asset_manager::AssetManager>,
-) -> HashMap<u16, PristineTmpHeader> {
+) -> LookupMap<u16, PristineTmpHeader> {
     let (Some(theater), Some(assets)) = (theater, assets) else {
-        return HashMap::new();
+        return LookupMap::default();
     };
-    let mut heights = HashMap::new();
+    let mut heights = LookupMap::default();
     for id in 0..theater.lookup.len() {
         let Ok(id) = u16::try_from(id) else {
             break;
