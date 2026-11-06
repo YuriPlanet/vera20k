@@ -847,6 +847,7 @@ impl App {
             );
         // The gate's audit draws the pass anyway and checks its pixels.
         if unchanged && !state.platform.redraw_gate.auditing() {
+            state.match_state.network_quality.picture_stood();
             return Ok(FrameRenderOutcome::Unchanged);
         }
         // Judged after the service: a frame that arrived or came due while
