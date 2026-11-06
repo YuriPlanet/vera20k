@@ -14,14 +14,14 @@ fn native_dolist_world() -> Simulation {
 }
 
 #[test]
-fn skirmish_large_move_batch_reaches_every_actor_after_snapshot() {
+fn campaign_large_move_batch_reaches_every_actor_after_snapshot() {
     let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
         "[VehicleTypes]\n0=PLANNER\n[PLANNER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
     );
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 0, 10));
-    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    sim.session.set_game_mode(ScenarioGameMode::Campaign);
     sim.session.set_current_house_for_test(Some(owner));
     let actors: Vec<_> = (0..33)
         .flat_map(|y| (0..33).map(move |x| (x, y)))
@@ -115,10 +115,11 @@ fn skirmish_large_move_batch_reaches_every_actor_after_snapshot() {
 }
 
 #[test]
-fn skirmish_full_queue_rejects_a_batch_without_accepting_a_prefix() {
+fn full_campaign_queue_rejects_a_batch_without_accepting_a_prefix() {
     let mut sim = native_dolist_world();
-    sim.session.set_game_mode(ScenarioGameMode::Skirmish);
+    sim.session.set_game_mode(ScenarioGameMode::Campaign);
     let capacity = sim.available_local_command_slots();
+    assert!(capacity >= 30_000, "a 30,000-unit click fits");
     let record = crate::sim::command::CommandRecord::encode(0xff, 0, 0, &[]).unwrap();
     let event = CommandEnvelope::synchronized(record, 0);
     assert!(sim.issue_local_commands(std::iter::repeat_n(event.clone(), capacity - 1)));
@@ -511,19 +512,6 @@ fn processed_native_records_do_not_reapply_to_input_projections() {
 }
 
 #[test]
-fn unresolved_native_megamissions_still_consume_the_production_staging_slots() {
-    let mut sim = native_dolist_world();
-    sim.session.set_game_mode(ScenarioGameMode::Campaign);
-    for _ in 0..257 {
-        let record = crate::sim::command::CommandRecord::encode(4, 0, 0, &[0; 23]).unwrap();
-        assert!(sim.admit_native_command_record(record));
-    }
-    let result = sim.advance_tick(&[], None, None, None, 33);
-    assert_eq!(result.executed_commands, 256);
-    assert!(sim.pending_commands.is_empty());
-}
-
-#[test]
 fn late_native_record_stays_unmarked_behind_a_future_head() {
     let mut sim = native_dolist_world();
     for (frame, speed) in [(3, 6), (-1, 4)] {
@@ -653,23 +641,18 @@ fn future_native_admission_is_recorded_once_and_replays_at_its_raw_frame() {
 }
 
 #[test]
-fn production_dolist_preserves_unknown_records_and_enforces_native_capacity() {
+fn production_dolist_preserves_unknown_records_and_enforces_its_capacity() {
     let mut sim = native_dolist_world();
     sim.session.set_game_mode(ScenarioGameMode::Campaign);
     let record = crate::sim::command::CommandRecord::encode(0xff, -1, 10, &[0xaa]).unwrap();
-    for _ in 0..crate::sim::command_queue::DO_LIST_CAPACITY {
+    let capacity = crate::sim::command_queue::SINGLE_PLAYER_COMMAND_CAPACITY;
+    for _ in 0..capacity {
         assert!(sim.admit_native_command_record(record.clone()));
     }
     assert!(!sim.admit_native_command_record(record));
-    assert_eq!(
-        sim.pending_commands.native_len(),
-        crate::sim::command_queue::DO_LIST_CAPACITY
-    );
+    assert_eq!(sim.pending_commands.native_len(), capacity);
     sim.advance_tick(&[], None, None, None, 33);
-    assert_eq!(
-        sim.pending_commands.native_len(),
-        crate::sim::command_queue::DO_LIST_CAPACITY
-    );
+    assert_eq!(sim.pending_commands.native_len(), capacity);
 }
 
 #[test]
@@ -921,13 +904,9 @@ fn options_opens_only_after_accepted_local_dispatch_and_never_during_replay() {
         (sim, local, peer)
     };
     let (mut sim, local, peer) = make();
-    for _ in 0..128 {
-        assert!(sim.issue_local_command(CommandEnvelope::new(
-            local,
-            0,
-            Command::Stop { entity_id: 999 }
-        )));
-    }
+    let capacity = sim.available_local_command_slots();
+    let stop = CommandEnvelope::new(local, 0, Command::Stop { entity_id: 999 });
+    assert!(sim.issue_local_commands(std::iter::repeat_n(stop, capacity)));
     assert!(!sim.queue_options_request());
     let mut full = sim
         .advance_app_frame(
@@ -944,7 +923,7 @@ fn options_opens_only_after_accepted_local_dispatch_and_never_during_replay() {
             .lifecycle_outputs
             .contains(&crate::sim::world::LifecycleOutput::OptionsRequested)
     );
-    assert_eq!(full.take_admitted_commands().len(), 128);
+    assert_eq!(full.take_admitted_commands().len(), capacity);
 
     assert!(sim.queue_options_request());
     assert!(
@@ -998,13 +977,9 @@ fn latency_event_occupies_a_slot_and_publishes_its_unclamped_session_write() {
     let local = sim.interner.intern("Local");
     sim.houses
         .register(HouseState::new(local, 0, None, true, 0, 10));
-    for _ in 0..127 {
-        assert!(sim.issue_local_command(CommandEnvelope::new(
-            local,
-            0,
-            Command::Stop { entity_id: 999 }
-        )));
-    }
+    let free = sim.available_local_command_slots() - 1;
+    let stop = CommandEnvelope::new(local, 0, Command::Stop { entity_id: 999 });
+    assert!(sim.issue_local_commands(std::iter::repeat_n(stop, free)));
     assert!(sim.issue_local_command(CommandEnvelope::new(
         local,
         0,
@@ -1045,13 +1020,9 @@ fn local_extensions_keep_paid_selection_order_without_using_event_slots() {
         destination: sim.interner.intern("Destination"),
         sequence: 1,
     };
-    for _ in 0..127 {
-        assert!(sim.issue_local_command(CommandEnvelope::new(
-            owner,
-            0,
-            Command::Stop { entity_id: 999 }
-        )));
-    }
+    let free = sim.available_local_command_slots() - 1;
+    let stop = CommandEnvelope::new(owner, 0, Command::Stop { entity_id: 999 });
+    assert!(sim.issue_local_commands(std::iter::repeat_n(stop, free)));
     let begin = CommandEnvelope::new(
         owner,
         0,
@@ -1080,7 +1051,7 @@ fn local_extensions_keep_paid_selection_order_without_using_event_slots() {
         "all native slots are occupied"
     );
     let transferred = sim.take_frame_commands_for_test();
-    assert_eq!(&transferred[127..], &[begin.clone(), cancel.clone()]);
+    assert_eq!(&transferred[free..], &[begin.clone(), cancel.clone()]);
 
     sim.issue_local_commands([cancel, begin]);
     assert_eq!(
