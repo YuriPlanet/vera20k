@@ -229,21 +229,31 @@ impl ZoneField {
 /// table, then the CliffBack reclass. Under `CliffBackImpassability=2`
 /// (retail) a Clear, Water, Beach or Ice cell behind a cliff becomes Rock
 /// (its final normal site; the sparse-subtile site is Clear-only, and
-/// missing block data reads Clear here). This is the tile path: the zone
-/// classifier gives an early-branch overlay (a low-bridge deck) its own land,
-/// and the tech and tree gates refuse overlay cells before reading land. This
-/// reads the levels current when the zone and tech stages ask, not a stored
-/// Recalc result.
+/// missing block data reads Clear here). `early_land` is the land of an
+/// overlay on the early branch (every low-bridge deck: `Land=Road`,
+/// `NoUseTileLandType=yes`), which replaces the tile's, and whose CliffBack
+/// test (`0x0047D30E..`) turns any land behind a cliff into Rock. Only the
+/// zone classifier passes one: the tech and tree gates refuse overlay cells
+/// before reading land. This reads the levels current when the zone and tech
+/// stages ask, not a stored Recalc result.
 pub fn recalc_land(
     grid: &RmgGrid,
     blocks: &dyn TileBlocks,
     cliff_back_impassability: u8,
+    early_land: Option<u8>,
     x: i32,
     y: i32,
 ) -> u8 {
     let Some(cell) = grid.get(x, y) else {
         return 0;
     };
+    if let Some(land) = early_land {
+        return if cliff_back_impassability == 2 && behind_cliff(grid, x, y) {
+            LAND_ROCK
+        } else {
+            land
+        };
+    }
     // Sub-tile terrain byte; unassigned/clear tiles and missing block data
     // read as terrain 0 (clear), matching the retail clear tiles.
     let terrain = blocks
@@ -282,10 +292,8 @@ fn behind_cliff(grid: &RmgGrid, x: i32, y: i32) -> bool {
 /// One cell's class: `RecalcZoneType @ 0x00483C80` over the land type
 /// `RecalcAttributes @ 0x0047D2B0` leaves.
 ///
-/// An overlay on the early branch (every low-bridge deck: `Land=Road`,
-/// `NoUseTileLandType=yes`) takes its own land, and the branch's CliffBack
-/// test (`0x0047D30E..`) turns any land behind a cliff into Rock; other cells
-/// read the tile's land through [`recalc_land`]. The only occupier at starts
+/// The land comes from [`recalc_land`], with an early-branch overlay's own
+/// land. The only occupier at starts
 /// time is the bridge-repair hut (`PlaceBridgeRepairHut @ 0x005904B0`), a
 /// building: the occupier walk's class-6 write needs a `FirestormWall=`
 /// type (`+0x16C0`, `0x00483D8E..0x00483DAC`) or is overwritten by the class-0
@@ -306,16 +314,17 @@ fn classify(grid: &RmgGrid, blocks: &dyn TileBlocks, params: &ZoneParams, x: i32
     let overlay = usize::try_from(cell.overlay)
         .ok()
         .and_then(|id| params.overlays.get(id));
-    let land = match overlay {
-        Some(facts) if facts.early_land => {
-            if params.cliff_back_impassability == 2 && behind_cliff(grid, x, y) {
-                LAND_ROCK
-            } else {
-                facts.land
-            }
-        }
-        _ => recalc_land(grid, blocks, params.cliff_back_impassability, x, y),
-    };
+    let early_land = overlay
+        .filter(|facts| facts.early_land)
+        .map(|facts| facts.land);
+    let land = recalc_land(
+        grid,
+        blocks,
+        params.cliff_back_impassability,
+        early_land,
+        x,
+        y,
+    );
     let wheel_blocked = params
         .wheel_impassable
         .get(usize::from(land))

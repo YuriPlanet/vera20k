@@ -306,7 +306,15 @@ fn foundation_cell_ok(
     if cell.level != anchor_level {
         return false;
     }
-    if recalc_land(ctx.grid, ctx.blocks, args.cliff_back_impassability, x, y) == LAND_ROCK {
+    if recalc_land(
+        ctx.grid,
+        ctx.blocks,
+        args.cliff_back_impassability,
+        None,
+        x,
+        y,
+    ) == LAND_ROCK
+    {
         return false;
     }
     if !diamond_frame_contains(
