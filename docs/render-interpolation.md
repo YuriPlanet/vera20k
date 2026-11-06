@@ -1,13 +1,14 @@
 # Scene render interpolation
 
-This local experiment compares native tick-stepped presentation with read-only
-previous/current scene transform interpolation. It is not a simulation-rate increase
-or an upstream parity claim. The existing ra2-mono `SnapshotPrevStateSystem`,
+Render interpolation is an optional presentation mode: instead of native
+tick-stepped motion, the client draws moving objects between their two latest
+committed simulation transforms. It is not a simulation-rate increase or a gamemd
+parity claim. The existing ra2-mono `SnapshotPrevStateSystem`,
 `PresentationInterpolationSample` and `RenderTransformInterpolation.Sample`
 provided the design reference; the implementation uses VERA's client-owned
 presentation state rather than adding interpolation components to simulation.
 
-## A/B controls
+## Controls
 
 - Off by default, so new profiles draw the original tick-stepped motion. The
   main menu's **Options** page has a
@@ -29,8 +30,8 @@ presentation state rather than adding interpolation components to simulation.
   after loading has no measured rate yet and displays zero.
 - For a clear comparison, use a timed game speed where SIM is below display FPS,
   then move a group of tanks diagonally, turn them, and enter a tank bunker.
-  Switch while the same movement is in progress. Neither the switch nor this
-  prototype changes the selected game speed.
+  Switch while the same movement is in progress. Neither the switch nor
+  interpolation changes the selected game speed.
 
 ## Sampling contract
 
@@ -70,7 +71,7 @@ No interpolation state is serialized, hashed or written into the simulation.
 No movement, facing timer, command, RNG, collision, occupancy or combat update is
 changed. The Ctrl+Alt+I chord is local presentation input, not a game command.
 
-## Prototype limits / player acceptance
+## Limits
 
 - Body/turret orientation still uses the existing atlas direction precision;
   this is not arbitrary-angle rerasterization or optical-flow frame generation.
@@ -84,44 +85,8 @@ changed. The Ctrl+Alt+I chord is local presentation input, not a game command.
   a lazy per-Logic history at its existing producer. Its first observed frame,
   identity/owner changes and missed history snap rather than invent old points.
 - Both modes run on the same thread. A long simulation stall can still block a
-  window presentation; interpolation does not fix CPU spikes or make 20k-unit
-  performance claims. The measured hook overhead and its optimization history
-  are in PR #2263's description; they cover cache/sampling hook cost, not
-  whole-game FPS.
-- I have entered a map and observed the interpolation in play; the smoothness
-  improvement is more noticeable at slower game speeds. That live observation
-  is separate from CPU probes and does not establish save/load regression or
-  long-session stability. Those remain to be checked alongside pause, teleport,
-  camera scrolling and response latency; builds alone do not prove them.
+  window presentation; interpolation does not fix CPU spikes.
 
 Focused checks: `cargo test -p vera20k --lib --no-default-features render_interpolation`
 and the `fps_overlay` filter. The normal game build keeps its default features.
 
-## Windows startup stack budget
-
-The game binary now explicitly reserves an 8 MiB Windows stack via `build.rs`:
-`/STACK:8388608` for MSVC, or `-Wl,--stack,8388608` for GNU Windows. Cargo scopes the
-option to the `vera20k` binary, so resource tools, test executables, libraries and
-non-Windows targets keep their existing policies. Only reserve is specified;
-initial commitment is not increased (the checked MSVC build retains 4 KiB).
-Unused reservation is virtual address space, not an upfront 8 MiB RAM allocation.
-
-The default 1 MiB MSVC reserve proved insufficient for the current development
-startup path. `App` contains `AppState` inline, and nested entry-point,
-initialization and rules-loading frames retain large values and temporaries.
-In a paired object-code probe using identical current libraries and opt-level 1,
-the `App::new_spawn(options)?` arm added 223,120 bytes to the entry-point frame,
-even for ordinary launches, since that frame is reserved before the mode branch.
-That upstream CnCNet path arrived with the main synchronization; the first dense
-interpolation-history optimization added only 928 bytes across three startup
-frames, with another 48 bytes after aircraft reuse and no increase in the final
-zero-height projection optimization. This is stack-budget evidence, not a claim
-that an AMD driver or retail resource format became incompatible.
-
-An independent copy of the same executable, with only its stack-header reserve
-and checksum changed, reached initialization complete and the main menu at 8 MiB.
-Its path/basename differed, so that observation is not a strict same-path live A/B.
-The permanent build policy preserves CnCNet, interpolation, simulation and assets;
-it is not a removal of either feature or a reduction of big-value copies. Build
-and PE-header verification are distinct from live startup, map loading and
-save/load acceptance; report only the checks actually completed for the PR.
