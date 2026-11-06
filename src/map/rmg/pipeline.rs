@@ -22,7 +22,7 @@ use super::phases::blob::BlobCtx;
 use super::phases::carve::CarveCtx;
 use super::phases::carve_driver::{self, ConnectorRegion};
 use super::phases::hills::{HillsArgs, HillsCtx};
-use super::phases::island_passes::{self, IslandCtx};
+use super::phases::island_passes;
 use super::phases::lat_patches::PatchCtx;
 use super::phases::regions::{RegionCtx, Regions};
 use super::phases::rocks::{RockArgs, RockCtx};
@@ -222,11 +222,12 @@ pub fn run_pipeline(
     // back a rebuilt partition that replaces the one above wholesale. Every
     // later stage reads the rebuilt ids.
     if matches!(inputs.map_type, 3 | 4) {
-        let mut ctx = IslandCtx {
+        let mut ctx = RegionCtx {
             grid: &mut *grid,
             scratch: &mut *scratch,
             ids: inputs.ids,
             rng: &mut *rng,
+            map_type: inputs.map_type,
             default_level: DEFAULT_LEVEL,
         };
         regions = island_passes::run(&mut ctx);

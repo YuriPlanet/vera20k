@@ -23,16 +23,15 @@
 //! records linearly, so it yields cells in row-major order — ascending `y`, then
 //! ascending `x`. That difference is invisible everywhere else it is used,
 //! because those callers draw no randomness. Here it decides which border cell
-//! gets which random draw, so [`region_border_row_major`] exists to reproduce it
-//! rather than reusing the lake's collector.
+//! gets which random draw, and [`border_cells_of`] keeps that order.
 
 use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
-use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::x87::{self, TruncF64};
 use crate::util::native_heap::NativeHeap;
 use crate::util::native_x87::X87Chop53;
 
+use super::adjacency::border_cells_of;
 use super::blob::BlobCtx;
 
 /// The rect edge length that counts as "unclipped" when the heading is derived.
@@ -90,31 +89,6 @@ struct Node {
 /// for finite floats.
 fn by_cost(nodes: &[Node]) -> impl Fn(&usize, &usize) -> bool + '_ {
     move |&a, &b| nodes[a].cost < nodes[b].cost
-}
-
-/// Cells of `region` that touch a differently-owned cell, in row-major order.
-///
-/// The original sweeps working-grid records by raw offset, and a record's index
-/// is `y * width + x`, so this is ascending `y` then ascending `x` — *not* the
-/// isometric order the rest of the generator draws in. See the module header.
-fn region_border_row_major(scratch: &RmgScratch, region: i32) -> Vec<(i32, i32)> {
-    let width = scratch.width() as i32;
-    let mut border = Vec::new();
-    for y in 0..width {
-        for x in 0..width {
-            if !scratch.in_diamond(x, y) || scratch.get(x, y).region != region {
-                continue;
-            }
-            for dir in 0..8usize {
-                let (nx, ny) = RmgGrid::step(x, y, dir);
-                if scratch.in_diamond(nx, ny) && scratch.get(nx, ny).region != region {
-                    border.push((x, y));
-                    break;
-                }
-            }
-        }
-    }
-    border
 }
 
 /// Where the growth points before the first Gaussian nudges it.
@@ -233,7 +207,7 @@ pub(crate) fn grow_meander_arm(ctx: &mut BlobCtx<'_>, args: &MeanderArgs) -> boo
         ctx.scratch.get_mut(x, y).stamp = 0;
     }
 
-    let border = region_border_row_major(ctx.scratch, args.tag);
+    let border = border_cells_of(ctx.scratch, args.tag);
     for &(x, y) in &border {
         if !in_rect(args.rect, x, y) {
             // Cells outside the rect consume nothing at all.
@@ -369,7 +343,7 @@ pub(crate) fn dilate_chained(
     level: Option<u8>,
     rect: [i32; 4],
 ) -> bool {
-    let mut frontier = region_border_row_major(ctx.scratch, region);
+    let mut frontier = border_cells_of(ctx.scratch, region);
     for _ in 0..rings {
         let mut claimed = Vec::new();
         for &(x, y) in &frontier {

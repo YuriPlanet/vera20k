@@ -8,6 +8,7 @@
 //! neighbor instead of becoming regions.
 
 use crate::map::rmg::grid::RmgGrid;
+use crate::map::rmg::phases::adjacency::border_cells_of;
 use crate::map::rmg::phases::blob::{CellHeap, by_key};
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
 use crate::map::rmg::scratch::RmgScratch;
@@ -122,20 +123,33 @@ pub fn run(ctx: &mut RegionCtx<'_>) -> Regions {
     }
 
     // Fallback: every remaining unassigned cell seeds a region.
+    flood_unowned(ctx, &mut regions);
+
+    regions
+}
+
+/// One [`flood_fill`] per scratch slot still unowned, in linear slot order;
+/// unused slots keep the coordinate (0, 0). The partition's fallback scan,
+/// and step 5 of `RandomMapGenerator::BridgeAndConnectorPass @ 0x0058EF10`.
+/// `RandomMapGenerator::FloodUnownedRegions @ 0x0058D010`; both callers pass 0
+/// for the regions' finalised flag (+0x1A), as the constructor already sets it.
+pub(crate) fn flood_unowned(ctx: &mut RegionCtx<'_>, regions: &mut Regions) {
+    let width = ctx.scratch.width();
     for index in 0..width * width {
         let record = ctx.scratch.cells()[index];
         let coord = (i32::from(record.x), i32::from(record.y));
         if record.region != -1 || coord == (0, 0) {
             continue;
         }
-        flood_fill(ctx, &mut regions, coord);
+        flood_fill(ctx, regions, coord);
     }
-
-    regions
 }
 
 /// The flood-fill constructor: LIFO stack, claim-at-enqueue, level+class
 /// matched growth, small-blob dissolve/merge, and the registry append.
+/// `RandomMapGenerator::FloodBuildRegion @ 0x0058C800`. A dissolve whose
+/// border pick finds no qualifying neighbour falls through to construction
+/// (0x0058CC70 -> 0x0058CDF6).
 fn flood_fill(ctx: &mut RegionCtx<'_>, regions: &mut Regions, seed: (i32, i32)) {
     let id = regions.id_counter;
     let seed_tile = ctx.grid.cell_native(seed.0, seed.1).tile;
@@ -219,22 +233,10 @@ fn flood_fill(ctx: &mut RegionCtx<'_>, regions: &mut Regions, seed: (i32, i32)) 
 /// differently-leveled non-water neighbor, and if found dissolve the whole
 /// blob back to unassigned clear land at that neighbor's level.
 fn dissolve_first_region(ctx: &mut RegionCtx<'_>) -> bool {
-    let width = ctx.scratch.width();
-    let mut border: Vec<(i32, i32)> = Vec::new();
-    for index in 0..width * width {
-        let record = ctx.scratch.cells()[index];
-        let coord = (i32::from(record.x), i32::from(record.y));
-        if coord == (0, 0) || record.region != 0 {
-            continue;
-        }
-        let is_border = (0..8).any(|dir| {
-            let (nx, ny) = RmgGrid::step(coord.0, coord.1, dir);
-            ctx.scratch.in_diamond(nx, ny) && ctx.scratch.get(nx, ny).region != 0
-        });
-        if is_border {
-            border.push(coord);
-        }
-    }
+    let border = border_cells_of(ctx.scratch, 0);
+    // Residual: native draws once and reads entry 0 of an empty list here
+    // (undefined); an empty border needs a <= 0x4A-cell blob covering the
+    // whole diamond, which no generated map has.
     if border.is_empty() {
         return false;
     }
@@ -283,6 +285,8 @@ fn rewrite_blob(ctx: &mut RegionCtx<'_>, blob_id: i32, adopt_id: i32, adopt_leve
 /// later passes from the previous pass's claims. Returns false on the abort
 /// conditions (foreign region contact, or an unclaimed level-matching
 /// neighbor failing the clear/green class test).
+/// `RandomMapGenerator::ExpandRegionRings @ 0x0058E740`; an abort keeps the
+/// claims made so far.
 fn expand(ctx: &mut RegionCtx<'_>, id: i32, level: u8, passes: i32) -> bool {
     let mut frontier = boundary(ctx, id);
     for _ in 0..passes {
@@ -319,6 +323,8 @@ fn expand(ctx: &mut RegionCtx<'_>, id: i32, level: u8, passes: i32) -> bool {
 
 /// The boundary collector: region cells with at least one in-diamond
 /// neighbor owned by a different region, in native scan order.
+/// `RandomMapGenerator::CollectRegionBorderCellsForRegion @ 0x0058D410`, which
+/// walks the cell iterator, unlike `CollectRegionBorderCells @ 0x005A0700`.
 fn boundary(ctx: &mut RegionCtx<'_>, id: i32) -> Vec<(i32, i32)> {
     let mut out = Vec::new();
     for (x, y) in ctx.grid.native_cells().collect::<Vec<_>>() {
@@ -339,12 +345,11 @@ fn boundary(ctx: &mut RegionCtx<'_>, id: i32) -> Vec<(i32, i32)> {
 /// The water-propagation pass: claims unassigned water-flagged cells
 /// reachable from the region's boundary. A no-op on the base path (nothing
 /// sets the flag before the mode-3/4 carvers).
+/// `RandomMapGenerator::PropagateRegionWater @ 0x0058E9B0`: a LIFO stack seeded
+/// with the boundary, claiming at push.
 fn water_propagate(ctx: &mut RegionCtx<'_>, id: i32) {
-    let mut queue = boundary(ctx, id);
-    let mut cursor = 0;
-    while cursor < queue.len() {
-        let (x, y) = queue[cursor];
-        cursor += 1;
+    let mut stack = boundary(ctx, id);
+    while let Some((x, y)) = stack.pop() {
         for dir in 0..8 {
             let (nx, ny) = RmgGrid::step(x, y, dir);
             if !ctx.scratch.in_diamond(nx, ny) {
@@ -353,7 +358,7 @@ fn water_propagate(ctx: &mut RegionCtx<'_>, id: i32) {
             let record = ctx.scratch.get(nx, ny);
             if record.water_region && record.region == -1 {
                 ctx.scratch.get_mut(nx, ny).region = id;
-                queue.push((nx, ny));
+                stack.push((nx, ny));
             }
         }
     }
