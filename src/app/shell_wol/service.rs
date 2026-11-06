@@ -87,11 +87,7 @@ pub(crate) struct WolLoginAccepted {
 /// `TXT_PAGE_COMMAND`, since the online screens have no Page button.
 pub(super) fn vera_motd(state: &AppState) -> String {
     let page = App::csf_label(state, "TXT_PAGE_COMMAND", "TXT_PAGE_COMMAND");
-    format!(
-        "Welcome to VERA20K Online!\n\
-         Create a game or join one, and chat with everyone here.\n\
-         To send a private message, type {page} <name> <message>."
-    )
+    crate::i18n::tr_fill("VERA:OnlineWelcome", &[("page", &page)])
 }
 
 #[derive(Clone, PartialEq, Eq)]

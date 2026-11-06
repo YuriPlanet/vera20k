@@ -6,6 +6,7 @@
 use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::shell_reveal_path_a;
 use crate::app::loading::init::MapMenuEntry;
+use crate::i18n::{tr, tr_count, tr_fill};
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::BitFont;
 use crate::render::shell_paint::{self, PaintLabel};
@@ -35,13 +36,11 @@ use super::{
     SHELL_DROPDOWN_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB,
 };
 
+/// A label in the language in use. VERA's own (`VERA:`) come from its
+/// language files, which need no string table; the game's come from the
+/// loaded table, and `fallback` stands in while none is loaded.
 pub(super) fn localized_label(state: &AppState, key: &str, fallback: &str) -> String {
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .map(|csf| csf.text(key).into_owned())
-        .unwrap_or_else(|| fallback.to_string())
+    crate::i18n::label(state.process_assets.csf.as_ref(), key, fallback)
 }
 
 pub(super) fn checkbox_label(id: SkirmishCheckboxId) -> (&'static str, &'static str) {
@@ -452,9 +451,12 @@ pub(crate) fn skirmish_right_panel_label_strings(state: &AppState) -> (String, S
         .find(|mode| mode.id == shell.selected_mode_id)
         .map(|mode| localized_label(state, &mode.ui_name_key, &mode.ui_name_key))
         .unwrap_or_else(|| localized_label(state, "GUI:Battle", "Battle"));
+    // VERA: with no map files the list is empty and no map is selected. The
+    // online setup dialogs' map name static `0x5A8` has the template caption
+    // `GUI:None` (`tools/storage_oracle/wol_shell.json`), which the LAN and
+    // online setup also show with no map.
     let map_label = skirmish_selected_map_name(state)
-        .unwrap_or("None")
-        .to_string();
+        .map_or_else(|| localized_label(state, "GUI:None", "None"), str::to_owned);
     (title, game_type, map_label)
 }
 
@@ -810,8 +812,8 @@ fn push_right_panel_text_draws(
 ) {
     let start = localized_label(state, "GUI:StartGame", "Start Game");
     let choose = localized_label(state, "GUI:ChooseMap", "Choose Map");
-    let save = localized_label(state, "VERA:SaveSetup", "Save Setup");
-    let load = localized_label(state, "VERA:LoadSetup", "Load Setup");
+    let save = tr("VERA:SaveSetup");
+    let load = tr("VERA:LoadSetup");
     let back = localized_label(state, "GUI:Back", "Back");
     let load_disabled = !crate::app::App::skirmish_setup_saved(state);
 
@@ -1080,7 +1082,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
 /// VERA: Choose Map's credit for a map's `[Basic]` `Author`, when it names one.
 fn map_author_line(author: Option<&str>) -> Option<String> {
     let author = author?.trim();
-    (!author.is_empty()).then(|| format!("By {author}"))
+    (!author.is_empty()).then(|| tr_fill("VERA:MapAuthor", &[("author", &author)]))
 }
 
 /// Text of Choose Map `0x6B` besides its heading and status line, which the
@@ -1138,9 +1140,9 @@ pub(super) fn push_choose_map_modal_text_draws(
             (
                 // VERA: under Online Maps this button stars the map.
                 match modal.favorite_button(state.frontend.scenario_catalog.records()) {
-                    Some(true) => "Remove Favorite".to_owned(),
-                    Some(false) => "Add Favorite".to_owned(),
-                    None if modal.online_maps_selected() => "Add Favorite".to_owned(),
+                    Some(true) => tr("VERA:RemoveFavorite"),
+                    Some(false) => tr("VERA:AddFavorite"),
+                    None if modal.online_maps_selected() => tr("VERA:AddFavorite"),
                     None => localized_label(state, "GUI:CreateRandomMap", "Create Random Map"),
                 },
                 layout.create_random_map_button,
@@ -1187,7 +1189,7 @@ pub(super) fn push_choose_map_modal_text_draws(
         .enumerate()
     {
         let label = if *mode_id == crate::ui::skirmish_shell::ONLINE_MAPS_ROW {
-            "Online Maps".to_owned()
+            tr("VERA:OnlineMaps")
         } else {
             let Some(mode) = mode_by_id(&state.frontend.skirmish_modes, *mode_id) else {
                 continue;
@@ -1262,7 +1264,7 @@ pub(super) fn push_choose_map_modal_text_draws(
         push_text_draw(
             out,
             state,
-            crate::app::map_library::empty_online_maps_text(state),
+            &crate::app::map_library::empty_online_maps_text(state),
             rect_to_text_rect(RectPx::new(
                 row.x + list_text_inset(scale),
                 row.y,
@@ -1277,9 +1279,9 @@ pub(super) fn push_choose_map_modal_text_draws(
     }
     // VERA: the search line under the map list; typing anywhere fills it.
     let search = if modal.search.is_empty() {
-        "Search: type a map name".to_owned()
+        tr("VERA:MapSearchHint")
     } else {
-        format!("Search: {}_", modal.search)
+        tr_fill("VERA:MapSearch", &[("search", &modal.search)])
     };
     let list = layout.map_list;
     let px = |value: f32| (value * scale.factor()).round() as i32;
@@ -1635,41 +1637,44 @@ fn choose_map_prompt_labels(
         let map = state.frontend.map_library.online_map(record)?;
         Some((map.name.as_str(), record.player_capacity, map.byte_length))
     });
+    // The map's name fills in last, so a `{...}` in it stays as written.
     let body = match (prompt.kind, online) {
         // A downloaded map's row is the saved file's, no longer the library's.
-        (ChooseMapPromptKind::Downloaded, _) => format!(
-            "{} was downloaded and saved in VERA20k's Maps folder.",
-            record.map_or("The map", |record| record.display_name.as_str())
-        ),
-        (ChooseMapPromptKind::Download, Some((name, players, bytes))) => format!(
-            "Download {name} ({players} players, {} KB)? It is saved in VERA20k's Maps folder.",
-            bytes.div_ceil(1024)
+        (ChooseMapPromptKind::Downloaded, _) => match record {
+            Some(record) => tr_fill("VERA:MapDownloaded", &[("name", &record.display_name)]),
+            None => tr("VERA:MapDownloadedUnnamed"),
+        },
+        (ChooseMapPromptKind::Download, Some((name, players, bytes))) => tr_count(
+            "VERA:DownloadMap",
+            players,
+            &[("size", &bytes.div_ceil(1024)), ("name", &name)],
         ),
         (ChooseMapPromptKind::Downloading, Some((name, ..))) => {
             match crate::app::map_library::download_progress(state) {
-                Some((received, length)) => format!(
-                    "Downloading {name}... {}%",
-                    received.min(length) * 100 / length.max(1)
+                Some((received, length)) => tr_fill(
+                    "VERA:DownloadingMapPercent",
+                    &[
+                        ("percent", &(received.min(length) * 100 / length.max(1))),
+                        ("name", &name),
+                    ],
                 ),
-                None => format!("Downloading {name}..."),
+                None => tr_fill("VERA:DownloadingMap", &[("name", &name)]),
             }
         }
         (ChooseMapPromptKind::DownloadFailed, Some((name, ..))) => {
-            format!("{name} could not be downloaded. Check your internet connection and try again.")
+            tr_fill("VERA:MapDownloadFailed", &[("name", &name)])
         }
         (ChooseMapPromptKind::SaveFailed, Some((name, ..))) => {
-            format!("{name} was downloaded but could not be saved in VERA20k's Maps folder.")
+            tr_fill("VERA:MapSaveFailed", &[("name", &name)])
         }
-        (ChooseMapPromptKind::RandomMapFailed, _) => {
-            "The random map could not be saved in VERA20k's Maps folder.".to_owned()
-        }
+        (ChooseMapPromptKind::RandomMapFailed, _) => tr("VERA:RandomMapSaveFailed"),
         _ => localized_label(state, "GUI:EjectAIPlayers", "GUI:EjectAIPlayers"),
     };
     let ok = match prompt.kind {
         ChooseMapPromptKind::EjectAi
         | ChooseMapPromptKind::Downloaded
         | ChooseMapPromptKind::RandomMapFailed => localized_label(state, "GUI:Ok", "OK"),
-        _ => "Download".to_owned(),
+        _ => tr("VERA:Download"),
     };
     (body, ok)
 }

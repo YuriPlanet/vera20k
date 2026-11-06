@@ -46,8 +46,8 @@ const SERVER_STATUS_READY: u32 = 0x0004_012F;
 /// join, a join asks for both lists).
 const ROUNDS: usize = 8;
 
-const MOTD: &str = "VERA20k offline test service: these lobbies, games and players are \
-                    stand-ins and nobody else is online.\nTurn it off on the Options page.";
+/// The label of this service's message of the day.
+const MOTD: &str = "VERA:TestServiceMotd";
 
 /// Answer the queued requests of a visit that uses this service; returns
 /// "now" while requests wait for a running transition.
@@ -378,7 +378,11 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         }
         // VERA's own message of the day, then this service's.
         WolServiceRequest::Connect { .. } => WolServiceEvent::Login(Ok(WolLoginAccepted {
-            motd: format!("{}\n{MOTD}", super::service::vera_motd(state)),
+            motd: format!(
+                "{}\n{}",
+                super::service::vera_motd(state),
+                crate::i18n::tr(MOTD)
+            ),
         })),
         WolServiceRequest::ListChannels { kind, .. } => WolServiceEvent::Channels {
             kind,
@@ -436,7 +440,7 @@ fn answer(state: &mut AppState, request: WolServiceRequest) {
         WolServiceRequest::SquadInfo { id: 0 | SQUAD } => WolServiceEvent::Squad {
             id: SQUAD,
             squad: Ok(crate::ui::wol_lobby::WolSquad {
-                name: "VERA Testers".into(),
+                name: crate::i18n::tr("VERA:TestServiceClan"),
                 tag: "VERA".into(),
             }),
         },
@@ -565,9 +569,12 @@ fn lobby_greeting(state: &mut AppState) {
         WolServiceEvent::UserLocales(Ok(vec![("Tanya".into(), 2)])),
         line(
             member("Tanya", MEMBER_OPERATOR),
-            "Welcome to the VERA20k test lobby.",
+            &crate::i18n::tr("VERA:TestLobbyWelcome"),
         ),
-        line(member("Boris", MEMBER_VOICE), "Anyone up for a game?"),
+        line(
+            member("Boris", MEMBER_VOICE),
+            &crate::i18n::tr("VERA:TestLobbyInvite"),
+        ),
     ] {
         service_event(state, event);
     }
@@ -652,7 +659,9 @@ fn page(state: &mut AppState, name: &str) {
         state,
         WolServiceEvent::Page {
             from: stand_in,
-            text: "Got your page.".encode_utf16().collect(),
+            text: crate::i18n::tr("VERA:TestPageReply")
+                .encode_utf16()
+                .collect(),
             ansi: false,
         },
     );
@@ -692,10 +701,12 @@ fn member(name: &str, flags: u32) -> WolMember {
     }
 }
 
-/// Record 0 is never connected to (`0x0078753D`); record 1 is selected.
+/// Record 0 is never connected to (`0x0078753D`) or shown; record 1 is
+/// selected.
 fn servers() -> WolServerList {
+    let test_server = crate::i18n::tr("VERA:TestServer");
     WolServerList {
-        servers: ["Ladder", "VERA20k Test Server"]
+        servers: ["Ladder", test_server.as_str()]
             .into_iter()
             .map(|name| WolServer {
                 name: format!("vera20k.test:{name}"),

@@ -982,7 +982,7 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
             message_line(state, line.to_owned());
         }
         if modern_lobby(state) {
-            message_line(state, JOINED_LOBBY_LINE.to_owned());
+            message_line(state, crate::i18n::tr(JOINED_LOBBY_LINE));
         }
         message_line(state, "\n".to_owned());
     }
@@ -1018,7 +1018,7 @@ fn await_room(state: &mut AppState) {
     show_wait(state, "TXT_REQ_CHANLIST");
     let cancel = service::resolve(state, "GUI:Cancel");
     if let Some(wait) = lobby_mut(state).and_then(|lobby| lobby.wait.as_mut()) {
-        wait.text = "Returning to the game room...".to_owned();
+        wait.text = crate::i18n::tr("VERA:ReturningToRoom");
         wait.disconnect = cancel;
     }
 }
@@ -1054,7 +1054,7 @@ fn room_not_returned(state: &mut AppState, closed: bool) {
         deadline: Instant::now() + LIST_WAIT,
     };
     if closed {
-        message_line(state, "The game room closed.".to_owned());
+        message_line(state, crate::i18n::tr("VERA:GameRoomClosed"));
     }
     list_lobbies(state);
 }
@@ -1640,15 +1640,15 @@ fn left_channel(state: &mut AppState) {
     message_line(state, text);
 }
 
-/// VERA's line after the MOTD, once per sign-in, in its chat lobby, which
-/// has no `TXT_JOINED_S` line (VERA's own addition; gamemd's reads "You
-/// joined channel %s").
-const JOINED_LOBBY_LINE: &str = "You have joined VERA lobby.";
+/// The label of VERA's line after the MOTD, once per sign-in, in its chat
+/// lobby, which has no `TXT_JOINED_S` line (VERA's own addition; gamemd's
+/// reads "You joined channel %s").
+const JOINED_LOBBY_LINE: &str = "VERA:JoinedLobby";
 
 /// The Room name VERA's online Create Game starts with; OK with it unchanged
 /// creates gamemd's own name.
 fn default_room_name(nickname: &str) -> String {
-    format!("{nickname}'s game")
+    crate::i18n::tr_fill("VERA:DefaultRoomName", &[("nickname", &nickname)])
 }
 
 /// VERA's line for a guest entering a modern-lobby game room (gamemd's C9
@@ -1659,19 +1659,17 @@ fn default_room_name(nickname: &str) -> String {
 fn joined_game_line(users: &[(String, bool)], room: &str) -> Option<String> {
     let (host, _) = users.iter().find(|(_, operator)| *operator)?;
     // gamemd's own name is "%s's_game" (`0x00789B60`).
-    let named = if !room.eq_ignore_ascii_case(&format!("{host}'s_game")) {
-        format!(" ({room})")
+    Some(if room.eq_ignore_ascii_case(&format!("{host}'s_game")) {
+        crate::i18n::tr_fill("VERA:JoinedGame", &[("host", host)])
     } else {
-        String::new()
-    };
-    Some(format!(
-        "You have joined {host}'s game{named}. {host} starts it when everyone is here."
-    ))
+        crate::i18n::tr_fill("VERA:JoinedNamedGame", &[("host", host), ("room", &room)])
+    })
 }
 
-/// VERA's line for the host of a modern-lobby game room (gamemd's C2 prints
-/// none): its guests accept on their own (`setup::service::auto_accept`).
-const HOST_ROOM_LINE: &str = "Players join ready. Press Start Game when everyone is here.";
+/// The label of VERA's line for the host of a modern-lobby game room
+/// (gamemd's C2 prints none): its guests accept on their own
+/// (`setup::service::auto_accept`).
+const HOST_ROOM_LINE: &str = "VERA:HostRoomHint";
 
 fn modern_lobby(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| lobby.ui.is_modern())
@@ -1852,7 +1850,7 @@ pub(crate) fn commit_hide(state: &mut AppState) {
 pub(crate) fn commit_create(state: &mut AppState, observe: bool) {
     commit_hide(state);
     if App::open_host_setup(state, observe) && modern_lobby(state) {
-        message_line(state, HOST_ROOM_LINE.to_owned());
+        message_line(state, crate::i18n::tr(HOST_ROOM_LINE));
     }
 }
 
@@ -2841,7 +2839,7 @@ pub(crate) const KEPT_OUT_JOIN_ERROR: u32 = 0xA004_0072;
 
 /// VERA's lobby refused a Create because another open room has that name.
 pub(crate) const ROOM_NAME_TAKEN: u32 = 0xA004_0073;
-const ROOM_NAME_TAKEN_TEXT: &str = "That room name is already in use. Choose another one.";
+const ROOM_NAME_TAKEN_TEXT: &str = "VERA:RoomNameTaken";
 
 fn join_error_reply(code: u32, pending: bool) -> JoinErrorReply {
     let reply = |key, close, forget, next_lobby| JoinErrorReply::Box {
@@ -2946,7 +2944,7 @@ fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>) {
             };
             show_box(state, key, false, then);
             if code == ROOM_NAME_TAKEN {
-                replace_box_body(state, ROOM_NAME_TAKEN_TEXT);
+                replace_box_body(state, &crate::i18n::tr(ROOM_NAME_TAKEN_TEXT));
             }
         }
         Ok(members) => {

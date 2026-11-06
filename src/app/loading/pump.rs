@@ -3373,7 +3373,7 @@ fn fail_loading(state: &mut AppState, policy: LoadingFailurePolicy, err: anyhow:
         crate::app::App::return_to_main_menu(state);
     } else if policy == LoadingFailurePolicy::ReportNativeFailure {
         state.frontend.screen = GameScreen::MissionResult {
-            title: "Loading Failed".to_string(),
+            title: crate::i18n::tr("VERA:LoadingFailed"),
             detail: format!("{err:#}"),
         };
     } else {

@@ -715,7 +715,7 @@ pub(crate) fn post_match_speed(state: &mut AppState, text: &str) {
 pub(super) fn post_command_backpressure(state: &mut AppState) {
     post_grey_row(
         state,
-        "Commands are still being sent. Try again shortly.",
+        &crate::i18n::tr("VERA:CommandsStillSending"),
         false,
         true,
     );

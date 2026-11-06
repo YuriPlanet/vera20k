@@ -289,11 +289,11 @@ pub(crate) fn render_score_page(
     }
     if wave.is_none() && page.page_count() > 1 {
         for (id, caption) in [
-            (crate::ui::score_shell::PREVIOUS_PAGE, "Previous"),
-            (crate::ui::score_shell::NEXT_PAGE, "Next"),
+            (crate::ui::score_shell::PREVIOUS_PAGE, "VERA:Previous"),
+            (crate::ui::score_shell::NEXT_PAGE, "VERA:Next"),
         ] {
             labels.push(PaintLabel {
-                text: caption.to_owned().into(),
+                text: crate::i18n::tr(caption).into(),
                 rect: owner_draw_button_label_rect(
                     layout.paging_button(id).expect("paging button"),
                     pressed == Some(id),
@@ -307,7 +307,14 @@ pub(crate) fn render_score_page(
             .paging_button(crate::ui::score_shell::PREVIOUS_PAGE)
             .expect("paging button");
         labels.push(PaintLabel {
-            text: format!("Page {}/{}", page.page_index() + 1, page.page_count()).into(),
+            text: crate::i18n::tr_fill(
+                "VERA:PageOf",
+                &[
+                    ("page", &(page.page_index() + 1)),
+                    ("pages", &page.page_count()),
+                ],
+            )
+            .into(),
             rect: RectPx::new(rect.x, rect.y - 24, rect.w, 20),
             align: ShellAlign::H_CENTER,
             rgb: SHELL_TEXT_RGB_ENABLED,

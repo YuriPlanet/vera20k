@@ -1153,7 +1153,8 @@ impl App {
                             .to_string();
                         crate::app::frontend::status_screen::render(
                             state, &mut encoder, &view,
-                            "Loading...", &format!("Map: {map_name_display}"),
+                            &crate::i18n::tr("VERA:Loading"),
+                            &crate::i18n::tr_fill("VERA:LoadingMap", &[("map", &map_name_display)]),
                             crate::app::frontend::status_screen::Buttons::NONE,
                         );
                     }
@@ -1200,8 +1201,12 @@ impl App {
                     == crate::ui::pause_menu::InGameMenuState::AbortConfirm;
                 crate::app::frontend::status_screen::render(
                     state, &mut encoder, &view,
-                    if abort { "Leave this mission?" } else { "Menu resources unavailable" },
-                    "Required retail dialog artwork could not be loaded. Check your game installation. Full details are in logs/ra2.log.",
+                    &crate::i18n::tr(if abort {
+                        "VERA:LeaveMissionQuestion"
+                    } else {
+                        "VERA:InGameMenuUnavailable"
+                    }),
+                    &crate::i18n::tr("VERA:InGameMenuArtworkMissing"),
                     if abort {
                         crate::app::frontend::status_screen::Buttons::ABORT_CONFIRM
                     } else {

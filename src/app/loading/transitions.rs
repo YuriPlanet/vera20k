@@ -789,7 +789,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         Err(err) => {
             state.match_state.startup.clear();
             state.frontend.screen = GameScreen::MissionResult {
-                title: "Startup Rejected".to_string(),
+                title: crate::i18n::tr("VERA:StartupRejected"),
                 detail: err.clone(),
             };
             log::error!("Scenario installation rejected startup: {err}");

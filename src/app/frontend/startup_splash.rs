@@ -6,7 +6,7 @@
 //! like the menus, so it lines up with the menu that follows it.
 //!
 //! It also carries VERA20K's own legal notices, which gamemd's splash lacks; see
-//! [`LEGAL_NOTICE`] and [`FFMPEG_NOTICE`].
+//! [`legal_notice`] and [`ffmpeg_notice`].
 
 use crate::util::time::{Duration, Instant};
 
@@ -96,22 +96,25 @@ const TRADEMARK_BOTTOM_FALLBACK: &str =
 /// VERA20K's GPLv3 "Appropriate Legal Notices" (sections 0 and 5(d)): the
 /// copyright, the right to share under the license, no warranty, and where to
 /// read the license and get the source (a release build names its commit;
-/// build.rs). Drawn top right, opposite "Loading...". In GAME.FNT each row stays
-/// right of Yuri's Revenge's logo at 800x600, and the three end above the art the
-/// retail test compares. Because the program shows them, modified versions must
-/// keep showing such a notice.
-const LEGAL_NOTICE: [&str; 3] = [
-    "VERA20K © 2026 Halvor Nikolai Rusten and contributors",
-    "You may share it under the GNU GPL v3. It has no warranty.",
-    concat!("License and source: ", env!("VERA20K_SOURCE")),
-];
+/// build.rs), in the language in use. Drawn top right, opposite "Loading...". In
+/// GAME.FNT each English row stays right of Yuri's Revenge's logo at 800x600,
+/// and the three end above the art the retail test compares. Because the
+/// program shows them, modified versions must keep showing such a notice.
+fn legal_notice() -> [String; 3] {
+    [
+        crate::i18n::tr("VERA:LegalCopyright"),
+        crate::i18n::tr("VERA:LegalShare"),
+        crate::i18n::tr_fill("VERA:LegalSource", &[("source", &env!("VERA20K_SOURCE"))]),
+    ]
+}
 
 /// The LGPL 2.1 (section 6) of the code ported from FFmpeg, the Bink decoder and
 /// the sidebar's xBR scaler, puts FFmpeg's copyright, as FFmpeg shows it, and a
 /// reference to that license's text among the copyright notices a program
 /// shows. Drawn bottom left, above the trademark lines.
-const FFMPEG_NOTICE: &str =
-    "Bink decoder and xBR scaler © the FFmpeg developers. License: LGPL-2.1-or-later.txt";
+fn ffmpeg_notice() -> String {
+    crate::i18n::tr("VERA:LegalFfmpeg")
+}
 
 /// The minimum on-screen hold, anchored at the first successful present.
 ///
@@ -437,12 +440,12 @@ fn splash_lines(
         line(&brand, right(&brand), second_bottom_y),
         line(&loading, 10, 10),
     ];
-    for (index, notice) in LEGAL_NOTICE.into_iter().enumerate() {
+    for (index, notice) in legal_notice().iter().enumerate() {
         lines.push(line(notice, right(notice), 10 + index as i32 * row));
     }
     lines.push(line(&trademark_top, 10, first_bottom_y));
     lines.push(line(&trademark_bottom, 10, second_bottom_y));
-    lines.push(line(FFMPEG_NOTICE, 10, first_bottom_y - row));
+    lines.push(line(&ffmpeg_notice(), 10, first_bottom_y - row));
     lines
 }
 
@@ -503,7 +506,7 @@ mod tests {
 
         let loading = find(LOADING_FALLBACK);
         assert_eq!((loading.x, loading.y), (10, 10));
-        for (row, notice) in LEGAL_NOTICE.into_iter().enumerate() {
+        for (row, notice) in legal_notice().iter().enumerate() {
             let line = find(notice);
             assert_eq!(
                 line.x + font.text_width(notice) as i32,
@@ -521,7 +524,7 @@ mod tests {
         let find = |text: &str| lines.iter().find(|line| line.text == text).expect(text);
 
         let trademark = find(TRADEMARK_TOP_FALLBACK);
-        let ffmpeg = find(FFMPEG_NOTICE);
+        let ffmpeg = find(&ffmpeg_notice());
         assert_eq!((trademark.x, trademark.y), (10, 600 - 40));
         assert_eq!(ffmpeg.x, 10);
         assert_eq!(ffmpeg.y, trademark.y - 3 - font.cell_height as i32);

@@ -400,7 +400,6 @@ mod first_launch {
     impl Text {
         fn new() -> Self {
             use crate::i18n::tr;
-            crate::i18n::init(None, None);
             Self {
                 found: tr("VERA:GameFolderFound"),
                 found_at: tr("VERA:GameFolderFoundAt"),

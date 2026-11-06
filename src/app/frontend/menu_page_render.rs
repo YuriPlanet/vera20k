@@ -346,7 +346,7 @@ pub(crate) fn render_menu_page(
         state
             .frontend
             .main_menu_shell_error
-            .get_or_insert_with(|| "Required game-menu resources could not be loaded.".to_owned());
+            .get_or_insert_with(|| crate::i18n::tr("VERA:MenuResourcesMissing"));
         return Ok(MenuPageRenderResult::Fallback);
     }
 
@@ -375,8 +375,10 @@ pub(crate) fn render_menu_page(
                 "Failed to step RA2TS movie for dialog 0x{:X}: {err:#}",
                 view.spec.dialog.0
             );
-            state.frontend.main_menu_shell_error =
-                Some(format!("Could not play the menu movie: {err:#}"));
+            state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+                "VERA:MenuMovieFailed",
+                &[("error", &format!("{err:#}"))],
+            ));
             return Ok(MenuPageRenderResult::Fallback);
         }
     }

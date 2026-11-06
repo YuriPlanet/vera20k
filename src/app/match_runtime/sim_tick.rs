@@ -194,8 +194,8 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     if !crate::app::commander_feedback::verdict_was_held_for_a_clip(state) {
         start_verdict_theme(state, outcome, wall_ms);
     }
-    let title = crate::app::match_runtime::scenario_exit::outcome_title(outcome).to_string();
-    let detail = crate::app::match_runtime::scenario_exit::outcome_detail(outcome).to_string();
+    let title = crate::app::match_runtime::scenario_exit::outcome_title(outcome);
+    let detail = crate::app::match_runtime::scenario_exit::outcome_detail(outcome);
     let destination = crate::app::match_runtime::scenario_exit::scenario_exit_destination(
         state.match_state.session_mode(),
         outcome,

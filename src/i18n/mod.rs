@@ -12,16 +12,18 @@
 //!
 //! ```ini
 //! [Language]
-//! Name=Deutsch                  ; how the Language list shows it
+//! ; How the Language list shows it.
+//! Name=Deutsch
 //!
 //! [Strings]
 //! VERA:SaveSetup=Setup speichern
 //! VERA:CatchingUp[one]=Holt auf - {count} Frame zurück
 //! VERA:CatchingUp[other]=Holt auf - {count} Frames zurück
-//! GUI:Ok=OK                     ; one of the game's own labels
+//! ; One of the game's own labels.
+//! GUI:Ok=OK
 //! ```
 //!
-//! A line starting with `;` is a comment. `\n` in a text is a line break, and
+//! A line starting with `;` is a comment; a `;` after a text is part of it. `\n` in a text is a line break, and
 //! `{name}` marks a value VERA fills in, in whatever order the sentence needs.
 //! A text with a count gives one line per CLDR plural form the language uses
 //! (`zero`, `one`, `two`, `few`, `many`, `other`); `{count}` is the count.
@@ -303,12 +305,17 @@ pub fn init(settings_dir: Option<&Path>, chosen: Option<&str>) -> String {
 /// Use `tag`'s language from now on. False when there is no such language.
 /// The caller re-applies it to the loaded string table ([`apply`]).
 pub fn select(tag: &str) -> bool {
-    let mut catalog = CATALOG.write().unwrap_or_else(PoisonError::into_inner);
-    let Some(language) = catalog.find(tag).cloned() else {
-        return false;
+    let language = {
+        let mut catalog = CATALOG.write().unwrap_or_else(PoisonError::into_inner);
+        let Some(language) = catalog.find(tag).cloned() else {
+            return false;
+        };
+        catalog.selected = language.clone();
+        language
     };
+    // Logged after the lock is released: a panic while logging reports
+    // itself in the language in use, which reads the catalog.
     log::info!("Interface language: {} ({})", language.tag, language.name);
-    catalog.selected = language;
     true
 }
 
@@ -427,6 +434,17 @@ fn apply_catalog(catalog: &Catalog, csf: &mut CsfFile) {
     }
 }
 
+/// The text of a label a screen names: VERA's own (`VERA:`) from its
+/// language files, which answer whether or not the game's string table has
+/// loaded, and the game's from that table (`csf`), or `fallback` while none
+/// has.
+pub fn label(csf: Option<&CsfFile>, key: &str, fallback: &str) -> String {
+    if key.starts_with("VERA:") {
+        return tr(key);
+    }
+    csf.map_or_else(|| fallback.to_owned(), |csf| csf.text(key).into_owned())
+}
+
 /// VERA's text for `key` in the language in use.
 pub fn tr(key: &str) -> String {
     catalog()
@@ -448,18 +466,55 @@ where
     let text = catalog()
         .plural(key, count.into())
         .map_or_else(|| missing(key), str::to_owned);
-    fill(&fill(&text, &[("count", &count)]), values)
+    let mut all: Vec<(&str, &dyn Display)> = vec![("count", &count)];
+    all.extend_from_slice(values);
+    fill(&text, &all)
+}
+
+/// [`tr`]'s text before any value is filled in, or `None` when no language
+/// file has `key`: for keys that come from outside VERA, such as the lobby's
+/// lines, whose sender's own text stands in for an unknown key.
+pub fn find(key: &str) -> Option<String> {
+    catalog().text(key).map(str::to_owned)
+}
+
+/// [`tr_count`]'s form for `count` before any value is filled in, or `None`
+/// as for [`find`].
+pub fn find_count(key: &str, count: PluralOperands) -> Option<String> {
+    catalog().plural(key, count).map(str::to_owned)
 }
 
 fn missing(key: &str) -> String {
     format!("MISSING:'{key}'")
 }
 
-/// Replace each `{name}` in a localized text with its value.
+/// Replace each `{name}` in a localized text with its value, in one pass, so
+/// a value is never read for names itself: a player called `{count}` stays
+/// `{count}`. A `{name}` with no value stays as it is.
 pub fn fill(text: &str, values: &[(&str, &dyn Display)]) -> String {
-    values.iter().fold(text.to_owned(), |text, (name, value)| {
-        text.replace(&format!("{{{name}}}"), &value.to_string())
-    })
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('{') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        let value = after.find('}').and_then(|close| {
+            let name = &after[..close];
+            let value = values.iter().find(|(key, _)| *key == name)?.1;
+            Some((close, value))
+        });
+        match value {
+            Some((close, value)) => {
+                let _ = write!(out, "{value}");
+                rest = &after[close + 1..];
+            }
+            None => {
+                out.push('{');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// `text` in the pseudo-language: letters swapped for accented look-alikes,
@@ -866,6 +921,17 @@ mod tests {
         let mut catalog = Catalog::new(vec![english, language(selected, file)]);
         catalog.selected = catalog.languages[1].clone();
         catalog
+    }
+
+    /// A value is never read for names: a player called `{count}` keeps the
+    /// name, and a name with no value stays as it is.
+    #[test]
+    fn fill_puts_each_value_in_once() {
+        let values: [(&str, &dyn Display); 2] = [("name", &"{count}"), ("count", &3)];
+        assert_eq!(
+            fill("{name} has {count} {rest}", &values),
+            "{count} has 3 {rest}"
+        );
     }
 
     #[test]

@@ -45,17 +45,24 @@ enum Action {
 impl Action {
     fn label(self, state: &AppState) -> Cow<'_, str> {
         let (key, fallback) = match self {
-            Self::Quit => (None, "Quit"),
-            Self::BackToMenu => (None, "Back To Menu"),
-            Self::Resume => (Some("GUI:ResumeMission"), "Resume Mission"),
-            Self::Abort => (Some("GUI:AbortMission"), "Abort Mission"),
-            Self::Leave => (Some("GUI:Leave"), "Quit"),
-            Self::ImportAssets => (None, "Import Game Files"),
-            Self::ChooseFolder => (None, "Choose Folder"),
-            Self::CancelImport => (None, "Cancel"),
-            Self::CloseImport => (None, "Close"),
+            // VERA's own words: these cards show before, or without, the
+            // game's string table.
+            Self::Quit => return crate::i18n::tr("VERA:Quit").into(),
+            Self::BackToMenu => return crate::i18n::tr("VERA:BackToMenu").into(),
+            Self::ImportAssets => return crate::i18n::tr("VERA:ImportGameFiles").into(),
+            Self::ChooseFolder => return crate::i18n::tr("VERA:ChooseFolder").into(),
+            Self::CancelImport => return crate::i18n::tr("VERA:Cancel").into(),
+            Self::CloseImport => return crate::i18n::tr("VERA:Close").into(),
+            // The game's own labels, on the in-game cards.
+            Self::Resume => ("GUI:ResumeMission", "Resume Mission"),
+            Self::Abort => ("GUI:AbortMission", "Abort Mission"),
+            Self::Leave => ("GUI:Leave", "Quit"),
         };
-        key.and_then(|key| state.process_assets.csf.as_ref()?.get(key))
+        state
+            .process_assets
+            .csf
+            .as_ref()
+            .and_then(|csf| csf.get(key))
             .map_or(Cow::Borrowed(fallback), Cow::Borrowed)
     }
 
@@ -83,7 +90,7 @@ impl Action {
                     state
                         .frontend
                         .asset_import
-                        .fail("no folder picker in this build yet");
+                        .fail(crate::i18n::tr("VERA:NoFolderPicker"));
                 }
                 state.platform.window.request_redraw();
             }

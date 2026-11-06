@@ -235,7 +235,7 @@ pub(crate) fn render_multiplayer_setup(
             // Ordinary MNBTTN buttons, as Game Options' OK; one with no page
             // to go to is hidden.
             let mut buttons = Vec::new();
-            for (id, caption) in [(PREVIOUS_ROWS, "Previous"), (NEXT_ROWS, "Next")] {
+            for (id, caption) in [(PREVIOUS_ROWS, "VERA:Previous"), (NEXT_ROWS, "VERA:Next")] {
                 if !view.enabled(id) {
                     continue;
                 }
@@ -247,7 +247,7 @@ pub(crate) fn render_multiplayer_setup(
                     enabled: true,
                 });
                 texts.push(text(
-                    caption,
+                    &crate::i18n::tr(caption),
                     crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
                     ShellAlign::H_CENTER | ShellAlign::V_CENTER,
                     SHELL_LABEL_TEXT_RGB,
@@ -267,11 +267,13 @@ pub(crate) fn render_multiplayer_setup(
                 },
             ));
             texts.push(text(
-                &format!(
-                    "Players {}-{} of {}",
-                    view.first_row + 1,
-                    (view.first_row + page_rows).min(view.row_count),
-                    view.row_count
+                &crate::i18n::tr_fill(
+                    "VERA:RosterPage",
+                    &[
+                        ("first", &(view.first_row + 1)),
+                        ("last", &(view.first_row + page_rows).min(view.row_count)),
+                        ("total", &view.row_count),
+                    ],
                 ),
                 layout.roster_page_label,
                 ShellAlign::H_CENTER | ShellAlign::V_CENTER,
@@ -536,7 +538,7 @@ pub(crate) fn render_multiplayer_setup(
                         font,
                         &view.dialog.button_label(button.id).map_or_else(
                             || localized_label(state, spec.csf_key, spec.csf_key),
-                            str::to_owned,
+                            crate::i18n::tr,
                         ),
                         button_text_rect(button.rect, pressed, scale),
                         super::text::button_label_color_for_disabled(!view.enabled(button.id)),
@@ -680,12 +682,16 @@ pub(crate) fn render_multiplayer_setup(
                 .flatten()
                 .map(|(completed, total)| (u64::from(completed), u64::from(total)));
             let body = match progress {
-                Some((completed, total)) => format!(
-                    "Downloading {}... {}%",
-                    offer.name,
-                    completed.min(total) * 100 / total.max(1)
+                Some((completed, total)) => crate::i18n::tr_fill(
+                    "VERA:DownloadingMapPercent",
+                    &[
+                        ("name", &offer.name),
+                        ("percent", &(completed.min(total) * 100 / total.max(1))),
+                    ],
                 ),
-                None if offer.downloading => format!("Downloading {}...", offer.name),
+                None if offer.downloading => {
+                    crate::i18n::tr_fill("VERA:DownloadingMap", &[("name", &offer.name)])
+                }
                 None => offer.message.clone(),
             };
             let button_label = |text: String, rect: RectPx, pressed: bool, rgb| PaintLabel {
@@ -704,7 +710,7 @@ pub(crate) fn render_multiplayer_setup(
                     path_a_reveal: None,
                 },
                 button_label(
-                    "Download".to_owned(),
+                    crate::i18n::tr("VERA:Download"),
                     boxed.ok,
                     pressed(MAP_OFFER_DOWNLOAD),
                     if offer.downloading {
@@ -905,7 +911,7 @@ fn push_option_controls(
                 scale,
             );
             texts.push(text(
-                label,
+                &crate::i18n::tr(label),
                 crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
                 ShellAlign::V_CENTER,
             ));
