@@ -658,6 +658,19 @@ pub(crate) fn render_game(
                 !effect_hidden(birth.to.x, birth.to.y)
             });
     }
+    // The effects above that age or take Main draws in each composite count
+    // while any is alive, shown or not; the lines and rings that read the
+    // composite's clock or pulse count while drawn.
+    let animated = !presentation.lasers.is_empty()
+        || !presentation.electric_bolts.is_empty()
+        || !presentation.line_trails.is_empty()
+        || !presentation.radiation_beams.is_empty()
+        || !ui.tactical_line_calls.is_empty()
+        || !ui.target_line.is_empty()
+        || !radials.draws.is_empty();
+    #[cfg(feature = "ares")]
+    let animated = animated || !presentation.flying_credits.get_mut().is_empty();
+    presentation.tactical_composite.record_contents(animated);
     let bolt_lines = presentation.electric_bolts.shown(viewport.camera);
     // Uploads consume these resolved commands and cannot take further random draws.
     let tactical_draws = crate::app::presentation::airstrike_lines::composite(
