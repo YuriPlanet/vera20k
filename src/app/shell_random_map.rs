@@ -305,6 +305,22 @@ impl AcceptedRmgStartStaging {
         }
     }
 
+    /// A Skirmish rematch's staging: the first launch consumed the accepted
+    /// setup, but the shell keeps the accepted map's Scenario `+0x11C0` cells
+    /// (`0x0058B830`), which Full_Init copies again (`0x006873E6`), as the
+    /// network rematch does. `None` unless `RandMap.Sed` is selected and the
+    /// shell holds a start.
+    pub(crate) fn for_rematch(
+        staging: &crate::map::preview::ScenarioStartStaging,
+        selected_map_file: Option<&str>,
+    ) -> Option<Self> {
+        let random_map = selected_map_file.is_some_and(|file| {
+            file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED)
+        });
+        (random_map && staging.defined_cells().next().is_some())
+            .then(|| Self::from_scenario_staging(staging))
+    }
+
     fn from_generated(generated: &crate::map::rmg::GeneratedMap) -> Self {
         let mut slots = [None; crate::skirmish_launch::SKIRMISH_PLAYER_SLOT_COUNT];
         for &(slot, rx, ry) in &generated.start_waypoints {
@@ -1645,6 +1661,30 @@ mod terrain_preview_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Restarting the same random map after a Skirmish match: the shell's
+    /// retained staging supplies every start.
+    #[test]
+    fn a_skirmish_rematch_reuses_the_retained_random_map_starts() {
+        let mut staging = crate::map::preview::ScenarioStartStaging {
+            width: 400,
+            height: 200,
+            count: 4,
+            ..Default::default()
+        };
+        for slot in 0..4 {
+            staging.cells[slot] = (slot as i16 + 10, 20);
+        }
+        let rematch = AcceptedRmgStartStaging::for_rematch(&staging, Some("randmap.sed"))
+            .expect("random map rematch staging");
+        let table = rematch.waypoint_table_for_admission();
+        assert_eq!(table.len(), 4);
+        assert_eq!((table[&3].rx, table[&3].ry), (13, 20));
+
+        assert!(AcceptedRmgStartStaging::for_rematch(&staging, Some("large500.yrm")).is_none());
+        let empty = crate::map::preview::ScenarioStartStaging::default();
+        assert!(AcceptedRmgStartStaging::for_rematch(&empty, Some(RANDMAP_SED_FILE)).is_none());
+    }
 
     #[test]
     fn generated_digest_covers_retained_powerups_without_mutating_rules() {

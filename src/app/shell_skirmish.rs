@@ -161,6 +161,17 @@ impl App {
             .frontend
             .random_map_retention
             .take_acceptance_for_loading(session.selected_map_file.as_deref());
+        // A rematch of the same random map: the first launch consumed the
+        // accepted setup, so the shell's retained staging supplies the starts.
+        let rematch_staging = accepted_random_map
+            .is_none()
+            .then(|| {
+                crate::app::shell_random_map::AcceptedRmgStartStaging::for_rematch(
+                    &state.frontend.multiplayer_shell_runtime.start_staging(),
+                    session.selected_map_file.as_deref(),
+                )
+            })
+            .flatten();
         let request = match crate::app::match_bootstrap::classify_startup_session(&session) {
             crate::app::match_bootstrap::StartupSessionClassification::AcceptedExplicitFixedBattle(
                 accepted,
@@ -181,7 +192,8 @@ impl App {
                 crate::app::loading::pump::LoadingRequest::unverified_legacy_skirmish(session, seed)
             }
         }
-        .with_accepted_random_map(accepted_random_map);
+        .with_accepted_random_map(accepted_random_map)
+        .with_start_staging(rematch_staging);
         state
             .frontend
             .skirmish_shell_state
