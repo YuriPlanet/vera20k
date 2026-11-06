@@ -659,7 +659,7 @@ impl NativeRulesProcessOwner {
         rules: &mut RuleSet,
         processed: &ProcessedRulesLayers,
     ) {
-        rules.bind_type_sound_references(processed.ini(), &self.sources.fixed_sounds);
+        rules.bind_type_sound_references(processed, &self.sources.fixed_sounds);
         rules.bind_terrain_type_sound_references(processed, &self.sources.fixed_sounds);
         rules.bind_type_eva_references(processed.ini(), &self.sources.fixed_eva);
     }
@@ -1305,6 +1305,151 @@ mod tests {
     use crate::rules::retail_sources::RetailRulesSources;
 
     #[test]
+    fn retail_crush_sounds_retain_fixed_catalog_bindings() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+        let loaded = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(Some(&IniFile::from_str(
+                    "[GASAND]\nCrushSound=\n[CAKRMW]\nCrushSound=Unknown\n",
+                ))),
+                &IniFile::from_str("[CAFNCB]\nCrushSound=Unknown\n"),
+            )
+            .unwrap();
+        let overlays = loaded.rules.overlay_registry();
+        for (name, sound) in [
+            ("GASAND", "WallCrushSandbag"),
+            ("CAFNCB", "WallCrushBlack"),
+            ("CAFNCW", "WallCrushWhite"),
+            ("CAKRMW", "WallCrushKremlin"),
+            ("CAFNCP", "WallCrushBlack"),
+        ] {
+            assert_eq!(
+                overlays
+                    .flags(overlays.id_for_name(name).unwrap())
+                    .unwrap()
+                    .crush_sound
+                    .as_deref(),
+                Some(sound),
+                "{name}: ObjectTypeRead5F938B retains the fixed Voc binding"
+            );
+        }
+        assert_eq!(
+            loaded.rules.object("E1").unwrap().crush_sound.as_deref(),
+            Some("InfantrySquish")
+        );
+    }
+
+    #[test]
+    fn object_crush_sound_history_survives_save_but_not_type_reset() {
+        let sounds = Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=First\n1=Second\n2=none\n3=<none>\n",
+        )));
+        let later = IniFile::from_str(
+            "[InfantryTypes]\n1=SAME\n[SAME]\nCrushSound=Unknown\n[E1]\nCrushSound=<none>\n",
+        );
+        let cue = |rules: &RuleSet| {
+            let overlays = rules.overlay_registry();
+            overlays
+                .flags(overlays.id_for_name("SAME").unwrap())
+                .unwrap()
+                .crush_sound
+                .clone()
+        };
+        let mut hashes = Vec::new();
+        for first in ["First", "Second"] {
+            let root = IniFile::from_str(&format!(
+                "[OverlayTypes]\n0=SAME\n1=EMPTY\n[InfantryTypes]\n0=E1\n\
+                 [SAME]\nCrushSound={first}\n[EMPTY]\nCrushSound=none\n[E1]\nCrushSound={first}\n",
+            ));
+            let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+                root,
+                None,
+                IniFile::empty(),
+                Arc::clone(&sounds),
+                Arc::default(),
+            )
+            .unwrap();
+            let loaded = owner
+                .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &later)
+                .unwrap();
+            assert_eq!(cue(&loaded.rules).as_deref(), Some(first));
+            assert_eq!(
+                loaded.rules.object("SAME").unwrap().crush_sound,
+                None,
+                "the newly allocated Infantry must not inherit the Overlay's history"
+            );
+            assert_eq!(
+                loaded.rules.object("E1").unwrap().crush_sound.as_deref(),
+                Some("<none>")
+            );
+            let overlays = loaded.rules.overlay_registry();
+            assert_eq!(
+                overlays
+                    .flags(overlays.id_for_name("EMPTY").unwrap())
+                    .unwrap()
+                    .crush_sound
+                    .as_deref(),
+                Some("none")
+            );
+            let bytes =
+                crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+            let restored = crate::util::save_codec::deserialize(&bytes).unwrap();
+            owner.install_saved_scenario_rules(restored);
+            let saved = owner
+                .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+                .unwrap();
+            assert_eq!(cue(&saved).as_deref(), Some(first));
+            assert_eq!(
+                saved.simulation_config_hash(),
+                loaded.rules.simulation_config_hash()
+            );
+
+            // Continue identical physical input from two different live
+            // histories. The source hash covers this incoming pass; only
+            // the effective configuration hash can distinguish the Voc IDs.
+            let state = owner.registry.take().unwrap().into_registry_state();
+            let reread = RulesLayerStack::new(later.clone())
+                .process_with_fixed_art_and_registry_state_recovering(
+                    &owner.sources.fixed_art,
+                    state,
+                    RulesProcessContext::Ordinary,
+                    &owner.sources.fixed_eva,
+                    &sounds,
+                )
+                .unwrap();
+            let rules = RuleSet::from_processed_rules(&reread).unwrap();
+            hashes.push((rules.source_ini_hash(), rules.simulation_config_hash()));
+            owner.install_saved_scenario_rules(reread);
+
+            owner
+                .load_scenario(
+                    NativeScenarioRulesPrefix::Campaign(None),
+                    &IniFile::from_str("[SAME]\nCrushSound=none\n"),
+                )
+                .unwrap();
+            let preview = owner
+                .random_map_preview_projection(None, "TEMPERATE")
+                .unwrap();
+            assert_eq!(
+                cue(&RuleSet::from_processed_rules(&preview).unwrap()).as_deref(),
+                Some(first)
+            );
+            let reset = owner
+                .load_scenario(NativeScenarioRulesPrefix::RandomMap(None), &later)
+                .unwrap();
+            assert_eq!(cue(&reset.rules).as_deref(), Some(first));
+        }
+        assert_eq!(
+            hashes[0].0, hashes[1].0,
+            "same final text, different retained Voc IDs"
+        );
+        assert_ne!(hashes[0].1, hashes[1].1);
+    }
+
+    #[test]
     fn rmg_land_reads_obey_cache_and_preserve_untouched_rows() {
         use crate::rules::terrain_rules::{LandType, test_speed_percent};
         let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
@@ -1403,7 +1548,7 @@ mod tests {
     #[test]
     fn rmg_sound_reads_survive_cancel_and_skip_cached_preview() {
         let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
-            IniFile::from_str("[AudioVisual]\nBombTickingSound=Unknown\n"),
+            IniFile::from_str("[AudioVisual]\nBombTickingSound=Unknown\nGUIBuildSound=Unknown\nGUITabSound=Unknown\nBuildingSlam=Unknown\n"),
             None,
             IniFile::empty(),
             Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
@@ -1415,17 +1560,17 @@ mod tests {
         owner
             .load_scenario(
                 NativeScenarioRulesPrefix::Campaign(None),
-                &IniFile::from_str("[AudioVisual]\nBombTickingSound=Earlier\n"),
+                &IniFile::from_str("[AudioVisual]\nBombTickingSound=Earlier\nGUIBuildSound=Earlier\nGUITabSound=Earlier\nBuildingSlam=Earlier\n"),
             )
             .unwrap();
         let mode = IniFile::from_str(
-            "[AudioVisual]\nBombTickingSound=Preview\nBombAttachSound=Preview\nPsychicRevealActivateSound=Preview\n",
+            "[AudioVisual]\nBombTickingSound=Preview\nBombAttachSound=Preview\nPsychicRevealActivateSound=Preview\nGUIBuildSound=Preview\nGUITabSound=Preview\nBuildingSlam=Preview\n",
         );
         owner
             .prepare_random_map_preview(Some(&mode), "TEMPERATE", true)
             .unwrap();
         let changed = IniFile::from_str(
-            "[AudioVisual]\nBombTickingSound=Earlier\nBombAttachSound=Earlier\nPsychicRevealActivateSound=Earlier\n",
+            "[AudioVisual]\nBombTickingSound=Earlier\nBombAttachSound=Earlier\nPsychicRevealActivateSound=Earlier\nGUIBuildSound=Earlier\nGUITabSound=Earlier\nBuildingSlam=Earlier\n",
         );
         owner
             .prepare_random_map_preview(Some(&changed), "TEMPERATE", false)
@@ -1434,6 +1579,10 @@ mod tests {
         assert_eq!(cached.bomb_ticking_sound(), Some("Preview"));
         assert_eq!(cached.bomb_attach_sound(), Some("Preview"));
         assert_eq!(cached.psychic_reveal_activate_sound(), Some("Preview"));
+        let rules = RuleSet::from_processed_rules(cached).unwrap();
+        assert_eq!(rules.general.gui_build_sound.as_deref(), Some("Preview"));
+        assert_eq!(rules.general.gui_tab_sound.as_deref(), Some("Preview"));
+        assert_eq!(rules.general.building_slam.as_deref(), Some("Preview"));
         let prospective = owner
             .random_map_preview_projection(None, "TEMPERATE")
             .unwrap();
@@ -1443,7 +1592,7 @@ mod tests {
             "an unknown root sound retains the live fixed-catalog binding"
         );
         // Cancel keeps process fields. The next scenario and its saved envelope
-        // receive the same three retained sound indices through the full owner.
+        // receive the same retained sound indices through the full owner.
         let loaded = owner
             .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
             .unwrap();
@@ -1461,6 +1610,18 @@ mod tests {
                 .general
                 .psychic_reveal_activate_sound
                 .as_deref(),
+            Some("Preview")
+        );
+        assert_eq!(
+            loaded.rules.general.gui_build_sound.as_deref(),
+            Some("Preview")
+        );
+        assert_eq!(
+            loaded.rules.general.gui_tab_sound.as_deref(),
+            Some("Preview")
+        );
+        assert_eq!(
+            loaded.rules.general.building_slam.as_deref(),
             Some("Preview")
         );
         let saved =
@@ -1481,16 +1642,208 @@ mod tests {
             restored.general.psychic_reveal_activate_sound.as_deref(),
             Some("Preview")
         );
+        assert_eq!(restored.general.gui_build_sound.as_deref(), Some("Preview"));
+        assert_eq!(restored.general.gui_tab_sound.as_deref(), Some("Preview"));
+        assert_eq!(restored.general.building_slam.as_deref(), Some("Preview"));
+    }
+
+    #[test]
+    fn mind_control_sounds_retain_fixed_bindings_through_reset_and_save() {
+        let bad = IniFile::from_str(
+            "[AudioVisual]\nYuriMindControlSound=Unknown\nMindClearedSound=Unknown\n\
+             MasterMindOverloadDeathSound=Unknown\n",
+        );
+        let sounds = Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=Capture\n1=Release\n2=Overload\n3=none\n4=<none>\n",
+        )));
+        let new_owner = || {
+            NativeRulesProcessOwner::from_cold_start_sources(
+                bad.clone(),
+                None,
+                IniFile::empty(),
+                Arc::clone(&sounds),
+                Arc::default(),
+            )
+            .unwrap()
+        };
+        let cues = |rules: &RuleSet| {
+            [
+                rules.mind_control.mind_control_sound.clone(),
+                rules.mind_control.mind_cleared_sound.clone(),
+                rules.mind_control.overload_sound.clone(),
+            ]
+        };
+        let mut owner = new_owner();
+        let first = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &bad)
+            .unwrap();
+        // Yuri's uninitialized native field gets deterministic silence until
+        // a successful binding; the other two native fields start at-1.
+        assert_eq!(cues(&first.rules), [None, None, None]);
+        let early = IniFile::from_str(
+            "[AudioVisual]\nYuriMindControlSound=capture\nMindClearedSound=release\n\
+             MasterMindOverloadDeathSound=overload\n",
+        );
+        let loaded = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(Some(&early)), &bad)
+            .unwrap();
+        let expected = [
+            Some("Capture".into()),
+            Some("Release".into()),
+            Some("Overload".into()),
+        ];
+        assert_eq!(cues(&loaded.rules), expected);
+        let fresh = new_owner()
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &bad)
+            .unwrap();
+        assert_eq!(
+            loaded.rules.source_ini_hash(),
+            fresh.rules.source_ini_hash()
+        );
+        assert_ne!(
+            loaded.rules.simulation_config_hash(),
+            fresh.rules.simulation_config_hash()
+        );
+        let bytes =
+            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+        owner.install_saved_scenario_rules(crate::util::save_codec::deserialize(&bytes).unwrap());
+        let restored = owner
+            .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+            .unwrap();
+        assert_eq!(cues(&restored), expected);
+        let none = IniFile::from_str(
+            "[AudioVisual]\nYuriMindControlSound=none\nMindClearedSound=<none>\n\
+             MasterMindOverloadDeathSound=\n",
+        );
+        let loaded = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &none)
+            .unwrap();
+        assert_eq!(
+            cues(&loaded.rules),
+            [
+                Some("none".into()),
+                Some("<none>".into()),
+                Some("Overload".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn mind_cleared_type_sound_keeps_a_valid_override_and_rejects_unknown_first_read() {
+        let sounds = Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=Release\n1=TypeRelease\n2=none\n",
+        )));
+        let build = |first: &str| {
+            let root = IniFile::from_str(&format!(
+                "[AudioVisual]\nMindClearedSound=Release\n[InfantryTypes]\n0=E1\n\
+                 [E1]\nMindClearedSound={first}\n",
+            ));
+            let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+                root,
+                None,
+                IniFile::empty(),
+                Arc::clone(&sounds),
+                Arc::default(),
+            )
+            .unwrap();
+            let loaded = owner
+                .load_scenario(
+                    NativeScenarioRulesPrefix::Campaign(None),
+                    &IniFile::from_str("[E1]\nMindClearedSound=Unknown\n"),
+                )
+                .unwrap();
+            (owner, loaded.rules)
+        };
+        let (mut owner, retained) = build("TypeRelease");
+        assert_eq!(
+            retained.object("E1").unwrap().mind_cleared_sound.as_deref(),
+            Some("TypeRelease")
+        );
+        let bytes =
+            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+        owner.install_saved_scenario_rules(crate::util::save_codec::deserialize(&bytes).unwrap());
+        let restored = owner
+            .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+            .unwrap();
+        assert_eq!(
+            restored.object("E1").unwrap().mind_cleared_sound.as_deref(),
+            Some("TypeRelease")
+        );
+        let (_, unknown) = build("Unknown");
+        assert_eq!(unknown.object("E1").unwrap().mind_cleared_sound, None);
+        assert_eq!(
+            unknown.mind_control.mind_cleared_sound.as_deref(),
+            Some("Release")
+        );
+        let (_, registered_none) = build("none");
+        assert_eq!(
+            registered_none
+                .object("E1")
+                .unwrap()
+                .mind_cleared_sound
+                .as_deref(),
+            Some("none")
+        );
+    }
+
+    #[test]
+    fn same_named_technos_keep_their_own_sound_read_history() {
+        use crate::rules::object_type::ObjectCategory;
+
+        let root = IniFile::from_str(
+            "[AudioVisual]\nMindClearedSound=Release\n[BuildingTypes]\n0=SAME\n\
+             [SAME]\nMindClearedSound=TypeRelease\nCreateSound=TypeRelease\nImmuneToPsionics=no\n",
+        );
+        let sounds = Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=Release\n1=TypeRelease\n",
+        )));
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            root,
+            None,
+            IniFile::empty(),
+            sounds,
+            Arc::default(),
+        )
+        .unwrap();
+        let map = IniFile::from_str(
+            "[InfantryTypes]\n0=SAME\n[SAME]\nMindClearedSound=Unknown\nCreateSound=Unknown\n",
+        );
+        let loaded = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &map)
+            .unwrap();
+        let fields = |rules: &RuleSet, category| {
+            let object = rules.object_in_category(category, "SAME").unwrap();
+            (
+                object.mind_cleared_sound.clone(),
+                object.create_sound().map(str::to_owned),
+            )
+        };
+        // TechnoRead713949 defaults to each object's own +5B0, not another
+        // class with the same ID. Only the Building existed for the first read.
+        let expected = (Some("TypeRelease".into()), Some("TypeRelease".into()));
+        assert_eq!(fields(&loaded.rules, ObjectCategory::Building), expected);
+        assert_eq!(
+            fields(&loaded.rules, ObjectCategory::Infantry),
+            (None, None)
+        );
+        let bytes =
+            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+        owner.install_saved_scenario_rules(crate::util::save_codec::deserialize(&bytes).unwrap());
+        let restored = owner
+            .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+            .unwrap();
+        assert_eq!(fields(&restored, ObjectCategory::Building), expected);
+        assert_eq!(fields(&restored, ObjectCategory::Infantry), (None, None));
     }
 
     #[test]
     fn global_sound_bindings_survive_invalid_layers_reset_and_save() {
         let root = IniFile::from_str(
             "[AudioVisual]\nBombTickingSound=Unknown\nBombAttachSound=Unknown\n\
-             PsychicRevealActivateSound=Unknown\n",
+             PsychicRevealActivateSound=Unknown\nGUIBuildSound=Unknown\nGUITabSound=Unknown\nBuildingSlam=Unknown\n",
         );
         let sounds = Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
-            "[SoundList]\n0=Tick\n1=Attach\n2=Reveal\n3=none\n",
+            "[SoundList]\n0=Tick\n1=Attach\n2=Reveal\n3=none\n4=<none>\n",
         )));
         let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
             root.clone(),
@@ -1502,22 +1855,28 @@ mod tests {
         .unwrap();
         let early = IniFile::from_str(
             "[AudioVisual]\nBombTickingSound=tIcK\nBombAttachSound=Attach\n\
-             PsychicRevealActivateSound=Reveal\n",
+             PsychicRevealActivateSound=Reveal\nGUIBuildSound=tIcK\nGUITabSound=Attach\nBuildingSlam=Reveal\n",
         );
         let cues = |rules: &RuleSet| {
             [
                 rules.general.bomb_ticking_sound.clone(),
                 rules.general.bomb_attach_sound.clone(),
                 rules.general.psychic_reveal_activate_sound.clone(),
+                rules.general.gui_build_sound.clone(),
+                rules.general.gui_tab_sound.clone(),
+                rules.general.building_slam.clone(),
             ]
         };
         let expected = [
             Some("Tick".into()),
             Some("Attach".into()),
             Some("Reveal".into()),
+            Some("Tick".into()),
+            Some("Attach".into()),
+            Some("Reveal".into()),
         ];
         // Campaign's named INI precedes TypeReset; the root and map then
-        // name unknown cues. All three must keep the pre-reset fixed IDs.
+        // name unknown cues. All cues must keep the pre-reset fixed IDs.
         let loaded = owner
             .load_scenario(NativeScenarioRulesPrefix::Campaign(Some(&early)), &root)
             .unwrap();
@@ -1531,7 +1890,9 @@ mod tests {
             .unwrap();
         assert_eq!(cues(&restored_rules), expected);
 
-        let later = IniFile::from_str("[AudioVisual]\nBombTickingSound=\nBombAttachSound=none\n");
+        let later = IniFile::from_str(
+            "[AudioVisual]\nBombTickingSound=\nBombAttachSound=none\nGUIBuildSound=none\nGUITabSound=<none>\n",
+        );
         let loaded = owner
             .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &later)
             .unwrap();
@@ -1540,21 +1901,34 @@ mod tests {
             [
                 Some("Tick".into()),
                 Some("none".into()),
+                Some("Reveal".into()),
+                Some("none".into()),
+                Some("<none>".into()),
                 Some("Reveal".into())
             ]
         );
         let mut fresh = NativeRulesProcessOwner::from_cold_start_sources(
-            root,
+            root.clone(),
             None,
             IniFile::empty(),
-            sounds,
+            Arc::clone(&sounds),
             Arc::default(),
         )
         .unwrap();
         let fresh = fresh
             .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &later)
             .unwrap();
-        assert_eq!(cues(&fresh.rules), [None, Some("none".into()), None]);
+        assert_eq!(
+            cues(&fresh.rules),
+            [
+                None,
+                Some("none".into()),
+                None,
+                Some("none".into()),
+                Some("<none>".into()),
+                None
+            ]
+        );
         assert_eq!(
             loaded.rules.source_ini_hash(),
             fresh.rules.source_ini_hash()
@@ -1562,6 +1936,35 @@ mod tests {
         assert_ne!(
             loaded.rules.simulation_config_hash(),
             fresh.rules.simulation_config_hash()
+        );
+
+        // Equalize the original three cues to isolate the new UI bindings in
+        // the effective hash. Only BuildingSlam differs after this same input.
+        let only_bombs = IniFile::from_str(
+            "[AudioVisual]\nBombTickingSound=Tick\nBombAttachSound=Attach\nPsychicRevealActivateSound=Reveal\n",
+        );
+        let mut ui_fresh = NativeRulesProcessOwner::from_cold_start_sources(
+            root,
+            None,
+            IniFile::empty(),
+            sounds,
+            Arc::default(),
+        )
+        .unwrap();
+        let ui_fresh = ui_fresh
+            .load_scenario(
+                NativeScenarioRulesPrefix::Campaign(Some(&only_bombs)),
+                &later,
+            )
+            .unwrap();
+        assert_eq!(cues(&loaded.rules)[..5], cues(&ui_fresh.rules)[..5]);
+        assert_eq!(
+            loaded.rules.source_ini_hash(),
+            ui_fresh.rules.source_ini_hash()
+        );
+        assert_ne!(
+            loaded.rules.simulation_config_hash(),
+            ui_fresh.rules.simulation_config_hash()
         );
     }
 

@@ -226,6 +226,7 @@ fn scenario_land_speed_rows_survive_nonempty_and_empty_grid_construction() {
     for cells in [
         Vec::new(),
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 0,
             ry: 0,
             tile_index: 0,
@@ -278,6 +279,7 @@ fn fractional_retail_land_row_reaches_rhino_entry_and_drive() {
     let mut map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 12,
                 ry: 12,
                 tile_index: 0,
@@ -285,6 +287,7 @@ fn fractional_retail_land_row_reaches_rhino_entry_and_drive() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 13,
                 ry: 12,
                 tile_index: 0,
@@ -407,6 +410,7 @@ fn scenario_overlay_wall_flags_bind_with_the_grid() {
     for cells in [
         Vec::new(),
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 0,
             ry: 0,
             tile_index: 0,
@@ -626,6 +630,7 @@ fn gsi_04_01_smaller_production_load_replaces_larger_grid_without_stale_state() 
     let mut cache = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
     let mut larger = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 4,
             ry: 8,
             tile_index: theater::NO_TILE,
@@ -810,6 +815,7 @@ fn native_tmp_catalog_covers_unused_pristine_types_and_live_subtile_replacements
     );
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 1,
             ry: 1,
             tile_index: 0,
@@ -888,6 +894,7 @@ fn projectile_level_uses_loaded_theater_interval_through_runtime() {
     for (tile, semantic_water, admit) in [(0, true, true), (1, false, false)] {
         let map = make_map(
             vec![MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 3,
                 tile_index: tile,
@@ -1039,6 +1046,7 @@ fn gsi_04_02_last_tiles_pack_materialization_precedes_tmp_lat_and_final_state() 
     assert_eq!(theater.lookup.total_file_count(8), 2);
     let mut map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 3,
             ry: 2,
             tile_index: 5,
@@ -1118,6 +1126,7 @@ fn gsi_04_02_last_tiles_provenance_gates_both_materialization_paths() {
     let theater = gsi_04_02_last_tiles_theater();
     let mut pack = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 2,
             ry: 2,
             tile_index: 5,
@@ -1221,6 +1230,7 @@ fn gsi_04_02_last_tiles_does_not_translate_fill_or_dummy_only_pack_misses() {
     let theater = gsi_04_02_last_tiles_theater();
     let mut map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 99,
             ry: 99,
             tile_index: 5,
@@ -1326,6 +1336,7 @@ fn gsi_04_01_isomap_misses_stamp_raw_coord_without_payload_leak() {
     let mut map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 2,
                 ry: 1,
                 tile_index: 41,
@@ -1333,6 +1344,7 @@ fn gsi_04_01_isomap_misses_stamp_raw_coord_without_payload_leak() {
                 z: 5,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 1,
                 tile_index: 99,
@@ -1398,6 +1410,7 @@ fn gsi_04_01_isomap_misses_stamp_raw_coord_without_payload_leak() {
 fn gsi_04_01_valid_isomap_lookup_does_not_stamp_dummy() {
     let mut map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 2,
             ry: 1,
             tile_index: 41,
@@ -1617,6 +1630,7 @@ fn authored_fill_defers_all_executable_projection() {
     assert_eq!(theater.lookup.total_file_count(0), 2);
     let mut map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 2,
             ry: 3,
             tile_index: 0,
@@ -1886,6 +1900,7 @@ fn gsi_04_01_production_overlaypack_stamps_two_anchors_in_row_major_order() {
 fn gsi_04_12_generated_materialized_overlays_never_replay_fixed_map_mark() {
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 4,
             ry: 4,
             tile_index: 0,
@@ -1962,6 +1977,7 @@ fn gsi_04_03a_level_prefill_wraps_before_absolute_last_isomap_overwrite() {
     let mut map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 2,
                 ry: 2,
                 tile_index: 98,
@@ -1969,6 +1985,7 @@ fn gsi_04_03a_level_prefill_wraps_before_absolute_last_isomap_overwrite() {
                 z: 5,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 2,
                 ry: 2,
                 tile_index: 99,
@@ -2092,6 +2109,7 @@ fn gsi_04_02_clear_and_unknown_fill_zero_with_equal_scenario_bounds() {
 fn gsi_04_02_production_build_prefills_before_selector_and_skips_outside_slots() {
     let mut map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 2,
             ry: 2,
             tile_index: theater::NO_TILE,
@@ -2463,6 +2481,7 @@ fn invalid_non_8_direction_does_not_wrap() {
 fn gsi_02_11_clear_fallback_calls_selector_even_with_pristine_only() {
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 1,
             ry: 4,
             tile_index: theater::NO_TILE,
@@ -2510,6 +2529,7 @@ fn gsi_02_11_clear_fallback_calls_selector_even_with_pristine_only() {
 fn gsi_02_11_positive_registry_oor_uses_clear_and_invokes_selector() {
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 1,
             ry: 4,
             tile_index: 1,
@@ -2573,6 +2593,7 @@ fn no_tile_presentation_uses_theater_clear_tile_without_rewriting_semantics() {
     theater_data.rmg_tiles.clear_tile = Some(37);
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 1,
             ry: 0,
             tile_index: theater::NO_TILE,
@@ -2621,6 +2642,7 @@ fn wood_bridge_repair_tile_uses_first_16_tiles_of_wood_bridge_set() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 0,
                 tile_index: 9,
@@ -2628,6 +2650,7 @@ fn wood_bridge_repair_tile_uses_first_16_tiles_of_wood_bridge_set() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: 10,
@@ -2635,6 +2658,7 @@ fn wood_bridge_repair_tile_uses_first_16_tiles_of_wood_bridge_set() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 2,
                 ry: 0,
                 tile_index: 25,
@@ -2642,6 +2666,7 @@ fn wood_bridge_repair_tile_uses_first_16_tiles_of_wood_bridge_set() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 0,
                 tile_index: 26,
@@ -2669,6 +2694,7 @@ fn gsi_04_03a_special_terrain_identity_is_not_promoted_to_hard_blocking() {
     theater.cliff_ranges.cliff_set = Some(10);
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 0,
             ry: 0,
             tile_index: 10,
@@ -2713,6 +2739,7 @@ fn tileset_names_never_decide_land_without_a_tmp() {
     let theater = synthetic_theater_from_ini(ini.as_bytes());
     let cells = (0..names.len())
         .map(|index| MapCell {
+            legacy_ice_byte: 0,
             rx: index as u16,
             ry: 0,
             tile_index: index as i32,
@@ -2754,6 +2781,7 @@ fn tileset_names_never_decide_land_row_attributes() {
     let map = make_map(
         (0..2)
             .map(|tile| MapCell {
+                legacy_ice_byte: 0,
                 rx: tile,
                 ry: 0,
                 tile_index: i32::from(tile),
@@ -2816,6 +2844,7 @@ fn an_unauthored_rock_row_is_zero_for_tmp_and_cliff_back_rock_alike() {
         (filenames[1].as_str(), rock_tmp.as_slice()),
     ]);
     let cell = |rx, ry, tile_index, z| MapCell {
+        legacy_ice_byte: 0,
         rx,
         ry,
         tile_index,
@@ -2895,6 +2924,7 @@ fn resolved_terrain_allow_tiberium_uses_final_lat_tile() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 5,
                 ry: 5,
                 tile_index: 5,
@@ -2902,6 +2932,7 @@ fn resolved_terrain_allow_tiberium_uses_final_lat_tile() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 5,
                 ry: 4,
                 tile_index: 0,
@@ -2909,6 +2940,7 @@ fn resolved_terrain_allow_tiberium_uses_final_lat_tile() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 4,
                 ry: 5,
                 tile_index: 6,
@@ -2916,6 +2948,7 @@ fn resolved_terrain_allow_tiberium_uses_final_lat_tile() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 6,
                 ry: 5,
                 tile_index: 1,
@@ -2923,6 +2956,7 @@ fn resolved_terrain_allow_tiberium_uses_final_lat_tile() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 5,
                 ry: 6,
                 tile_index: 7,
@@ -3015,6 +3049,7 @@ fn gsi_04_04_valid_tile_sparse_and_oob_entries_materialize_no_tile_cells() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: theater::NO_TILE,
@@ -3022,6 +3057,7 @@ fn gsi_04_04_valid_tile_sparse_and_oob_entries_materialize_no_tile_cells() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 0,
                 tile_index: theater::NO_TILE,
@@ -3029,6 +3065,7 @@ fn gsi_04_04_valid_tile_sparse_and_oob_entries_materialize_no_tile_cells() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 1,
                 tile_index: 0,
@@ -3036,6 +3073,7 @@ fn gsi_04_04_valid_tile_sparse_and_oob_entries_materialize_no_tile_cells() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 1,
                 tile_index: 0,
@@ -3307,6 +3345,7 @@ fn bridge_overlay_stamps_anchor_structural_and_transition_flags_without_theater(
     let reg = OverlayTypeRegistry::from_ini(&IniFile::from_str(&ini_str), None);
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 5,
             ry: 5,
             tile_index: 0,
@@ -3360,6 +3399,7 @@ IsRubble=yes
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 0,
                 tile_index: 0,
@@ -3367,6 +3407,7 @@ IsRubble=yes
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: 0,
@@ -3374,6 +3415,7 @@ IsRubble=yes
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 2,
                 ry: 0,
                 tile_index: 0,
@@ -3381,6 +3423,7 @@ IsRubble=yes
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 0,
                 tile_index: 0,
@@ -3458,6 +3501,7 @@ SnowOccupationBits=-1
     let mut map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 1,
                 tile_index: 0,
@@ -3465,6 +3509,7 @@ SnowOccupationBits=-1
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: 0,
@@ -3604,6 +3649,7 @@ NoUseTileLandType=yes
     let registry = OverlayTypeRegistry::from_ini(&ini, None);
     let cells = (0..6)
         .map(|rx| MapCell {
+            legacy_ice_byte: 0,
             rx,
             ry: 0,
             tile_index: 0,
@@ -3880,6 +3926,7 @@ fn gsi_04_04_rules_backed_land_type_uses_canonical_tmp_conversion() {
 fn test_canonical_ramp_is_ground_passable_but_stays_non_buildable() {
     let map = make_map(
         vec![MapCell {
+            legacy_ice_byte: 0,
             rx: 0,
             ry: 0,
             tile_index: 0,
@@ -4348,6 +4395,7 @@ fn gsi_04_04_normal_cliff_back_writer_accepts_clear_but_not_road() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: 0,
@@ -4355,6 +4403,7 @@ fn gsi_04_04_normal_cliff_back_writer_accepts_clear_but_not_road() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 1,
                 tile_index: 0,
@@ -4362,6 +4411,7 @@ fn gsi_04_04_normal_cliff_back_writer_accepts_clear_but_not_road() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 0,
                 tile_index: 0,
@@ -4369,6 +4419,7 @@ fn gsi_04_04_normal_cliff_back_writer_accepts_clear_but_not_road() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 3,
                 ry: 1,
                 tile_index: 1,
@@ -4411,6 +4462,7 @@ fn gsi_04_04_early_overlay_writer_does_not_bake_rock_into_road_base() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: 0,
@@ -4418,6 +4470,7 @@ fn gsi_04_04_early_overlay_writer_does_not_bake_rock_into_road_base() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 1,
                 tile_index: 0,
@@ -4466,6 +4519,7 @@ fn gsi_04_04_cliff_back_neighbor_lookup_keeps_fixed_stride_alias() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 0,
                 tile_index: -1,
@@ -4473,6 +4527,7 @@ fn gsi_04_04_cliff_back_neighbor_lookup_keeps_fixed_stride_alias() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 511,
                 ry: 0,
                 tile_index: -1,
@@ -4500,6 +4555,7 @@ fn gsi_04_04_invalid_clear_cliff_back_writer_bakes_base() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 0,
                 tile_index: -1,
@@ -4507,6 +4563,7 @@ fn gsi_04_04_invalid_clear_cliff_back_writer_bakes_base() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: -1,
@@ -4514,6 +4571,7 @@ fn gsi_04_04_invalid_clear_cliff_back_writer_bakes_base() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 1,
                 tile_index: -1,
@@ -4521,6 +4579,7 @@ fn gsi_04_04_invalid_clear_cliff_back_writer_bakes_base() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 1,
                 tile_index: -1,
@@ -4568,6 +4627,7 @@ fn gsi_04_04_sentinel_tile_uses_final_cliff_back_copy_for_overlay_water() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: theater::NO_TILE,
@@ -4575,6 +4635,7 @@ fn gsi_04_04_sentinel_tile_uses_final_cliff_back_copy_for_overlay_water() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 1,
                 tile_index: theater::NO_TILE,
@@ -4617,6 +4678,7 @@ fn gsi_04_03b_cliff_back_compares_levels_as_signed_bytes() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 0,
                 tile_index: -1,
@@ -4624,6 +4686,7 @@ fn gsi_04_03b_cliff_back_compares_levels_as_signed_bytes() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: -1,
@@ -4631,6 +4694,7 @@ fn gsi_04_03b_cliff_back_compares_levels_as_signed_bytes() {
                 z: 3,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 1,
                 tile_index: -1,
@@ -4638,6 +4702,7 @@ fn gsi_04_03b_cliff_back_compares_levels_as_signed_bytes() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 1,
                 tile_index: -1,
@@ -4662,6 +4727,7 @@ fn cliff_back_impassability_skips_when_disabled() {
     let map = make_map(
         vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 0,
                 tile_index: -1,
@@ -4669,6 +4735,7 @@ fn cliff_back_impassability_skips_when_disabled() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 0,
                 tile_index: -1,
@@ -4676,6 +4743,7 @@ fn cliff_back_impassability_skips_when_disabled() {
                 z: 4,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 0,
                 ry: 1,
                 tile_index: -1,
@@ -4683,6 +4751,7 @@ fn cliff_back_impassability_skips_when_disabled() {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 1,
                 ry: 1,
                 tile_index: -1,
@@ -4749,6 +4818,7 @@ Tile03ZAdjust=-10
 
 fn anim_cell(rx: u16, ry: u16, tile_index: i32, sub_tile: u8, z: u8) -> MapCell {
     MapCell {
+        legacy_ice_byte: 0,
         rx,
         ry,
         tile_index,

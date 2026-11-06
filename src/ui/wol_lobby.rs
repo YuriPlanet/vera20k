@@ -704,6 +704,7 @@ impl WolLobbyState {
         }
         if let Some(card) = self.card.as_mut() {
             card.buttons = ShellButtonInteraction::default();
+            card.country_list.cancel_pointer();
         }
     }
 

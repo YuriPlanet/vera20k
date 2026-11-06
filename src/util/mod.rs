@@ -15,8 +15,10 @@ pub mod direction_tables;
 pub mod fixed_math;
 pub mod flh_transform;
 pub mod fnv;
-pub mod ini_writer;
+pub mod folder_picker;
+pub mod import_status;
 pub mod ini_roots;
+pub mod ini_writer;
 pub mod lcw;
 pub mod legacy_crt_rng;
 pub mod lepton;
@@ -27,21 +29,22 @@ pub(crate) mod native_ballistics;
 pub mod native_color;
 pub(crate) mod native_coord;
 pub(crate) mod native_heap;
+pub(crate) mod native_quaternion;
 pub(crate) mod native_random;
 pub mod native_string;
 pub mod native_trig;
 pub mod native_x87;
-pub(crate) mod native_quaternion;
 pub mod pixel_conversion;
+pub mod platform_dir;
 pub mod read_helpers;
+pub mod rect;
 pub mod retail_pointer_sort;
 pub mod retail_trig;
+pub mod save_codec;
 pub(crate) mod sha1;
 pub mod sha256;
 pub mod single_instance;
 pub mod version;
-pub mod rect;
-pub mod save_codec;
 // Portable state hashing; `rules` and `sim` both fold identities through it.
 pub(crate) mod state_hasher;
 // pub mod color;
@@ -53,7 +56,7 @@ pub mod native_file_name;
 pub mod native_affine;
 
 // Platform services retain the standard-library types on native targets.
-pub mod time;
 pub mod file_system;
+pub mod time;
 
 pub mod debug_checks;

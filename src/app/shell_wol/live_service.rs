@@ -1638,7 +1638,10 @@ fn request_service(state: &mut AppState, service: &mut LiveService, request: Wol
         WolServiceRequest::SetLocale(locale) => {
             service.command("set_locale", json!({"locale":locale}))
         }
-        WolServiceRequest::LocaleCount => service_event(state, WolServiceEvent::LocaleCount(1)),
+        WolServiceRequest::LocaleCount => service_event(
+            state,
+            WolServiceEvent::LocaleCount(crate::ui::wol_persona::LOCALE_COUNT),
+        ),
         WolServiceRequest::ListBuddies => service.command("buddies", json!({})),
         WolServiceRequest::AddBuddy(name) => service.command("add_buddy", json!({"name":name})),
         WolServiceRequest::RemoveBuddy(name) => {

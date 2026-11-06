@@ -114,6 +114,7 @@ pub fn populate(
             cell.tile
         };
         map_file.cells.push(MapCell {
+            legacy_ice_byte: 0,
             rx,
             ry,
             tile_index,

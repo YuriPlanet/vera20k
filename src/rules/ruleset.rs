@@ -1526,17 +1526,15 @@ pub struct GeneralRules {
     /// `[AudioVisual] GUIBuildSound=` (`Rules+0x18C`, read at `0x006693C1`
     /// through `VocClass::FindByName`; retail `MenuClick`): the sidebar cameo
     /// click sound, played by `SelectClass::Action @ 0x006AAD00` for every
-    /// click that acts (e.g. `0x006AAE2A`, `0x006AB713`). Residual: gamemd
-    /// resolves the name as it reads it and keeps the previous layer's sound
-    /// when the name does not resolve; VERA stores the name and resolves it at
-    /// play time. Retail's `MenuClick` resolves.
+    /// click that acts (e.g. `0x006AAE2A`, `0x006AB713`). The retained
+    /// GlobalSoundReferences owner resolves against the fixed Voc catalog.
     pub gui_build_sound: Option<String>,
     /// `[AudioVisual] BuildingSlam=` (`Rules+0x6EC`, read at `0x0066AAA7`
     /// through `VocClass::FindByName`; retail `PlaceBuilding`): the PLACE
     /// event handler `HouseClass @ 0x004FB0E0` plays it centred at full
     /// volume (`0x004FB2FD..0x004FB314`) for the player's own house after the
-    /// building's Unlimbo succeeds. Same name-resolution residual as
-    /// `gui_build_sound`; retail's `PlaceBuilding` resolves.
+    /// building's Unlimbo succeeds. GlobalSoundReferences retains its fixed
+    /// Voc binding; constructor666009 starts at -1.
     pub building_slam: Option<String>,
     /// Sidebar tab click sound from [AudioVisual] GUITabSound (retail
     /// `MenuTab`; `Rules+0x190`, read at `0x00669402..0x0066942C`).
@@ -4081,15 +4079,11 @@ impl GeneralRules {
             ore_twinkle: defaults.ore_twinkle.clone(),
             ore_twinkle_chance: audio_visual
                 .read_int("OreTwinkleChance", defaults.ore_twinkle_chance),
-            gui_build_sound: audio_visual
-                .read_name("GUIBuildSound", 0x80)
-                .map(str::to_owned),
-            building_slam: audio_visual
-                .read_name("BuildingSlam", 0x80)
-                .map(str::to_owned),
-            gui_tab_sound: audio_visual
-                .read_name("GUITabSound", 0x80)
-                .map(str::to_owned),
+            // ReadAudioVisual owns these independently of ReadGeneral.
+            // The process projection supplies retained fixed Voc bindings.
+            gui_build_sound: None,
+            building_slam: None,
+            gui_tab_sound: None,
             // The fixed sound registry binds these readers below, including
             // current-ID retention through the actual Rules pass history.
             voice_ifv_repair: None,
@@ -4904,6 +4898,40 @@ pub struct RuleSet {
     source_ini_hash: u64,
 }
 
+/// Source for the shared sound binder. Production uses the retained process
+/// receipt; synthetic tests can explicitly supply a bare INI without a live
+/// native registry. There is one binding implementation for both inputs.
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub enum SoundReferenceSource<'a> {
+    Processed(&'a ProcessedRulesLayers),
+    #[cfg(any(test, feature = "test-support"))]
+    Fixture(&'a IniFile),
+}
+
+impl<'a> From<&'a ProcessedRulesLayers> for SoundReferenceSource<'a> {
+    fn from(value: &'a ProcessedRulesLayers) -> Self {
+        Self::Processed(value)
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+impl<'a> From<&'a IniFile> for SoundReferenceSource<'a> {
+    fn from(value: &'a IniFile) -> Self {
+        Self::Fixture(value)
+    }
+}
+
+impl<'a> SoundReferenceSource<'a> {
+    fn ini(self) -> &'a IniFile {
+        match self {
+            Self::Processed(processed) => processed.ini(),
+            #[cfg(any(test, feature = "test-support"))]
+            Self::Fixture(ini) => ini,
+        }
+    }
+}
+
 impl RuleSet {
     /// Ares1003DB30/1003DB50. Both group labels and ordinary type IDs share
     /// one namespace; callers compare these keys case-insensitively.
@@ -5420,13 +5448,15 @@ impl RuleSet {
                 object.project_explicit_factory(state);
             }
         }
-        for (category, name, references, image) in processed.techno_reference_states() {
+        for (category, name, references, image, crush_sound) in processed.techno_reference_states()
+        {
             if let Some(object) = rules
                 .object_list
                 .iter_mut()
                 .find(|object| object.category == category && object.id == name)
             {
                 object.project_image_state(image);
+                object.crush_sound = crush_sound.map(str::to_owned);
                 references.apply_to(object);
             }
         }
@@ -5759,11 +5789,13 @@ impl RuleSet {
     /// SOUNDMD registry. The processed projection retains only passes where
     /// each type existed, including the native current-ID retention order.
     /// Type defaults and Rules+208 start at -1; [AudioVisual] owns the latter.
-    pub fn bind_type_sound_references(
+    pub fn bind_type_sound_references<'a>(
         &mut self,
-        ini: &IniFile,
+        source: impl Into<SoundReferenceSource<'a>>,
         sounds: &crate::rules::sound_ini::SoundRegistry,
     ) {
+        let source = source.into();
+        let ini = source.ini();
         // Original669423..6694B6, in native open/close read order. The
         // processed section already owns the reached Rules pass history.
         self.general.gui_open_sound = ini
@@ -5960,8 +5992,15 @@ impl RuleSet {
                     .flatten();
             }
         }
+        let type_array_indices = &self.type_array_indices;
         for object in &mut self.object_list {
-            let section = ini.section(&object.id);
+            let section = match source {
+                SoundReferenceSource::Processed(processed) => type_array_indices
+                    .get(&(object.category, object.id.to_ascii_uppercase()))
+                    .and_then(|&index| processed.techno_type_read_section(object.category, index)),
+                #[cfg(any(test, feature = "test-support"))]
+                SoundReferenceSource::Fixture(ini) => ini.section(&object.id),
+            };
             object.bind_scalar_sound_references(section, sounds);
             object.bind_deploy_voice_references(section, sounds);
             object.bind_order_voice_references(section, sounds);
@@ -6166,6 +6205,10 @@ impl RuleSet {
         general.bomb_attach_sound = processed.bomb_attach_sound().map(str::to_owned);
         general.psychic_reveal_activate_sound =
             processed.psychic_reveal_activate_sound().map(str::to_owned);
+        let [gui_build, gui_tab, building_slam] = processed.ui_sounds();
+        general.gui_build_sound = gui_build.map(str::to_owned);
+        general.gui_tab_sound = gui_tab.map(str::to_owned);
+        general.building_slam = building_slam.map(str::to_owned);
         let (_, color_indexes) = processed.color_add_state();
         general.laser_target_color = color_indexes.laser_target_color();
         general.iron_curtain_color = color_indexes.iron_curtain_color();
@@ -6511,10 +6554,14 @@ impl RuleSet {
         // ordered Process owner's, published by from_processed_rules.
         let bridge_warheads = crate::rules::bridge_warheads::BridgeWarheads::default();
 
-        let mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(
+        let mut mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(
             ini,
             processed.mind_control_attack_line_frames(),
         );
+        let [capture, release, overload] = processed.mind_control_sounds();
+        mind_control.mind_control_sound = capture.map(str::to_owned);
+        mind_control.mind_cleared_sound = release.map(str::to_owned);
+        mind_control.overload_sound = overload.map(str::to_owned);
 
         // [General] rocket blocks + [CombatDamage] missile warheads, retained
         // pass by pass by the ordered Process owner.
@@ -7490,6 +7537,29 @@ impl RuleSet {
         self.general.bomb_ticking_sound.hash(&mut hasher);
         self.general.bomb_attach_sound.hash(&mut hasher);
         self.general.psychic_reveal_activate_sound.hash(&mut hasher);
+        [
+            &self.general.gui_build_sound,
+            &self.general.gui_tab_sound,
+            &self.general.building_slam,
+        ]
+        .hash(&mut hasher);
+        b"mind-control-sound-references-v1".hash(&mut hasher);
+        (
+            &self.mind_control.mind_control_sound,
+            &self.mind_control.mind_cleared_sound,
+            &self.mind_control.overload_sound,
+        )
+            .hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    &object.mind_cleared_sound,
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         b"infantry-sequence-bank-v1".hash(&mut hasher);
         Self::by_upper_id(self.object_list.iter().filter_map(|object| {
             object
@@ -7541,6 +7611,19 @@ impl RuleSet {
         // OverlayRead5FE8BE / InitTheater5FE620 retain typed history that a
         // flattened Image key cannot recover; saved resource plans matter too.
         self.overlay_registry.hash_configuration(&mut hasher);
+        // ObjectTypeRead5F93D5 can retain a different Voc ID for identical
+        // current text. Keep concrete type identities distinct in the hash.
+        b"object-crush-sounds-v1".hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    &object.crush_sound,
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         // Fixed ART foundation state is not covered by the layered RULES
         // source hash. Include retained declared/list/outline geometry, also
         // when a later rules pass no longer authors the original custom key.
@@ -11336,16 +11419,13 @@ SpawnCount=3
         // Rules+0xF0 MaximumQueuedObjects ([General], 0x00671DA7), +0x18C
         // GUIBuildSound, +0x6EC BuildingSlam and +0x700 ScoldSound
         // ([AudioVisual], 0x006693C1, 0x0066AAA7 and 0x0066ABE8).
-        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
-            return;
-        };
-        let general = GeneralRules::from_ini(&ini);
-        assert_eq!(general.maximum_queued_objects, 29);
-        assert_eq!(general.gui_build_sound.as_deref(), Some("MenuClick"));
-        assert_eq!(general.building_slam.as_deref(), Some("PlaceBuilding"));
         let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
             return;
         };
+        let general = &retail.rules.general;
+        assert_eq!(general.maximum_queued_objects, 29);
+        assert_eq!(general.gui_build_sound.as_deref(), Some("MenuClick"));
+        assert_eq!(general.building_slam.as_deref(), Some("PlaceBuilding"));
         assert_eq!(
             retail.rules.general.scold_sound.as_deref(),
             Some("MenuScold")

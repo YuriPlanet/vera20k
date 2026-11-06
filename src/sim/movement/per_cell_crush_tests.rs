@@ -4,6 +4,58 @@ use super::*;
 use crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art;
 use crate::sim::occupancy::OccupancyGrid;
 
+#[test]
+fn crush_sound_uses_the_victims_concrete_type() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
+    use crate::rules::sound_ini::SoundRegistry;
+    use std::sync::Arc;
+
+    let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+        IniFile::from_str("[InfantryTypes]\n0=SAME\n[SAME]\nCrushSound=First\n"),
+        None,
+        IniFile::empty(),
+        Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=First\n",
+        ))),
+        Arc::default(),
+    )
+    .unwrap();
+    let rules = owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(None),
+            &IniFile::from_str("[BuildingTypes]\n0=SAME\n[SAME]\nCrushSound=Unknown\n"),
+        )
+        .unwrap()
+        .into_parts()
+        .0;
+    assert_eq!(rules.object("SAME").unwrap().crush_sound, None);
+    let mut interner = crate::sim::intern::StringInterner::new();
+    let mut victim =
+        crate::sim::game_entity::GameEntity::test_default(1, "SAME", "Americans", 3, 4);
+    victim.set_type_ref_for_test(interner.intern("SAME"));
+    interner.bind_types(&rules);
+    let mut sounds = crate::sim::world::FrameChannel::default();
+    for category in [EntityCategory::Infantry, EntityCategory::Structure] {
+        victim.set_category_for_test(category);
+        crate::sim::movement::bump_crush::emit_crush_kill_sounds_at(
+            &victim,
+            crate::sim::components::DriveCoord::cell(3, 4, 0),
+            &rules,
+            &mut interner,
+            &mut sounds,
+        );
+    }
+    assert_eq!(
+        sounds.len(),
+        1,
+        "only the actual Infantry type has a bound cue"
+    );
+    assert!(matches!(sounds[0],
+        crate::sim::world::SimSoundEvent::EntityCrushed { crush_sound_id, .. }
+            if interner.resolve(crush_sound_id) == "First"));
+}
+
 /// Stock Attack and Move orders reach capture and crushing. The authored map
 /// shares a recurring destroyed Tag between the controller and its captive:
 /// Action14 gives both to Russians. Retail releases captures in victim +170,
