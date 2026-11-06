@@ -1,5 +1,5 @@
 //! Chat/system message surface driver (study §3.1): anchors the
-//! `ui::messages::MessageList` to the tactical viewport (x+3 / y / w−14),
+//! `ui::messages::MessageList` to the tactical viewport,
 //! posts system messages (insert sound = [AudioVisual] IncomingMessage),
 //! expires rows on Main_Tick against the advancing process wall clock,
 //! and builds the text instances drawn between sidebar text and tooltip.
@@ -11,12 +11,6 @@ use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::ui::game_screen::GameScreen;
 
-/// Native Init anchors: x = tactical_x + 3, y = tactical_y, w = tactical_w − 14.
-/// RESIDUAL: Set_View_Dimensions then sets the width to tactical_w − 8
-/// (`MessageListClass::SetWidth @ 0x005D4AD0`, from 0x004A8BC9) whenever the
-/// match changes video mode or a save loads; lines wrap 6 px early here.
-const MESSAGE_X_INSET: i32 = 3;
-const MESSAGE_WIDTH_INSET: i32 = 14;
 /// Fallback while match color schemes are unavailable.
 const MESSAGE_RGB_SYSTEM: [f32; 3] = [1.0, 1.0, 1.0];
 /// `0xF0` native 16 ms timer buckets.
@@ -830,11 +824,11 @@ fn sync_view(state: &mut AppState) {
         .set_typing(typing);
     // The list spans the tactical viewport: the frame left of the sidebar.
     let tactical_w = crate::app::input::camera::tactical_viewport_size(state).0 as i32;
-    state.match_state.match_presentation.message_list.set_view(
-        MESSAGE_X_INSET,
-        0,
-        (tactical_w - MESSAGE_WIDTH_INSET).max(0),
-    );
+    state
+        .match_state
+        .match_presentation
+        .message_list
+        .set_view(0, 0, tactical_w);
 }
 
 /// Prepare one successful offline TextLabel paint, using raw wall time for
@@ -1402,7 +1396,7 @@ mod tests {
         assert!(list.messages().is_empty());
 
         // Admission failure cannot play the message-insertion sound.
-        list.set_view(3, 0, 0);
+        list.set_view(0, 0, 0);
         let rejected =
             add_localized_message(&mut list, Some(&csf), &post, resumed_wall_ms + 2, &|_| 8);
         assert_eq!(rejected.added, 0);
