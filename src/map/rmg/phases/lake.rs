@@ -77,7 +77,8 @@ pub struct WaterQuota {
     pub region_id: i32,
 }
 
-/// Seed water for the carved map types.
+/// Seed water for the carved map types
+/// (`RandomMapGenerator::SeedWaterInlandMountain @ 0x0059C580`).
 ///
 /// Only reached when the water amount is non-zero — the original does not enter
 /// this seeder at all otherwise, which is why a zero-water inland map is
@@ -108,7 +109,7 @@ pub fn seed_water_carved(ctx: &mut BlobCtx<'_>, args: &WaterArgs) -> WaterQuota 
 }
 
 /// Total water cells this map is allowed, from the map's generated dimensions
-/// and the water amount.
+/// and the water amount, as `GrowLake @ 0x0059C920` computes it on entry.
 fn water_target(args: &WaterArgs) -> i32 {
     if args.water_percent == 0 {
         return 0;
@@ -124,7 +125,8 @@ fn water_target(args: &WaterArgs) -> i32 {
     )
 }
 
-/// Cells of `region` that touch a cell of any other region.
+/// Cells of `region` that touch a cell of any other region
+/// (`RandomMapGenerator::CollectRegionBorderCells @ 0x005A0700`).
 ///
 /// The original scans every scratch slot and skips the ones whose stored
 /// coordinate is the invalid `(0, 0)`; walking the diamond covers the same set,
@@ -148,6 +150,7 @@ fn region_border(scratch: &RmgScratch, grid_cells: &[(i32, i32)], region: i32) -
 
 /// Peel `rings` border rings off `region`, retagging them and flattening their
 /// tiles. Consumes no randomness and always succeeds.
+/// `RandomMapGenerator::RetagBorderBand @ 0x005A0410`.
 fn retag_border_band(
     ctx: &mut BlobCtx<'_>,
     cells: &[(i32, i32)],
@@ -167,7 +170,8 @@ fn retag_border_band(
     }
 }
 
-/// Grow `region` outward by `rings`, claiming clear unowned neighbours.
+/// Grow `region` outward by `rings`, claiming clear unowned neighbours
+/// (`RandomMapGenerator::DilateRegionRings @ 0x005A0160`).
 ///
 /// Returns false as soon as a neighbour belongs to a different region or is not
 /// clear — the caller treats that as the whole lake failing.
@@ -180,23 +184,25 @@ pub(crate) fn dilate_region_rings(ctx: &mut BlobCtx<'_>, region: i32, rings: i32
     super::meander::dilate_chained(ctx, region, rings, None, [0, 0, 0x200, 0x200])
 }
 
-/// The growth key, as a single-precision value.
+/// The growth key (`GrowLake` 0x0059D01C..0x0059D053): `(draw*K)*10` plus
+/// `0.5*distance`, less `0.02*placed`, the weights single-precision constants,
+/// stored as the heap's f32 with `FSTP m32` under the chop control word.
 ///
 /// Distance is narrowed to `f32` before it is weighted — that narrowing is the
 /// square-root helper's own store, not a rounding choice made here.
 fn growth_key(distance: f32, draw: u32, placed: i32) -> f32 {
-    let scale = TruncF64::from_f64(f64::from_bits(RANGE_K_BITS));
+    let random_term = TruncF64::from_f64(f64::from(draw))
+        .mul(TruncF64::from_f64(f64::from_bits(RANGE_K_BITS)))
+        .mul(TruncF64::from_f64(f64::from(KEY_RANDOM)));
     let dist_term =
         TruncF64::from_f64(f64::from(distance)).mul(TruncF64::from_f64(f64::from(KEY_DIST)));
-    let random_term = TruncF64::from_f64(f64::from(KEY_RANDOM))
-        .mul(TruncF64::from_f64(f64::from(draw)))
-        .mul(scale);
     let decay_term =
         TruncF64::from_f64(f64::from(placed)).mul(TruncF64::from_f64(f64::from(KEY_DECAY)));
-    dist_term.add(random_term).sub(decay_term).to_f64() as f32
+    x87::narrow_to_f32(random_term.add(dist_term).sub(decay_term)).to_f64() as f32
 }
 
-/// Derive the allow mask, then pick a seed cell.
+/// Derive the allow mask, then pick a seed cell (`GrowLake @ 0x0059C920`,
+/// hunted-seed arm).
 ///
 /// The mask is what keeps lakes off the immediate surroundings of water that
 /// already exists: the band peel tags a two-ring margin around foreign water,
@@ -248,7 +254,8 @@ fn prepare_and_seed(
     None
 }
 
-/// Draw the target lake size.
+/// Draw the target lake size: `NextGaussian @ 0x005980C0` draws, inline in
+/// `GrowLake @ 0x0059C920`.
 fn size_draw(ctx: &mut BlobCtx<'_>, remaining: i32) -> i32 {
     let upper = if remaining > MIN_CELLS {
         remaining
@@ -281,7 +288,8 @@ fn size_draw(ctx: &mut BlobCtx<'_>, remaining: i32) -> i32 {
     }
 }
 
-/// Undo every cell this attempt claimed.
+/// Undo every cell this attempt claimed: `GrowLake`'s failure tail
+/// (`0x0059C920`).
 fn rollback(ctx: &mut BlobCtx<'_>, cells: &[(i32, i32)], region: i32) {
     for &(x, y) in cells {
         if ctx.scratch.get(x, y).region != region {
@@ -298,7 +306,8 @@ fn rollback(ctx: &mut BlobCtx<'_>, cells: &[(i32, i32)], region: i32) {
     }
 }
 
-/// Grow one lake. Returns whether it was committed.
+/// Grow one lake (`RandomMapGenerator::GrowLake @ 0x0059C920`). Returns
+/// whether it was committed.
 pub(crate) fn grow_lake(
     ctx: &mut BlobCtx<'_>,
     args: &WaterArgs,
@@ -384,8 +393,10 @@ pub(crate) fn grow_lake(
 
     // Drain: whatever is still queued must remain carvable, or the attempt dies.
     // These cells still count toward `placed`, so a committed lake is larger
-    // than the drawn size by the length of its final frontier.
-    if let Some(mut entry) = current.or_else(|| heap.pop(by_key)) {
+    // than the drawn size by the length of its final frontier. The node the
+    // growth loop last popped is dropped: the drain pops afresh
+    // (`GrowLake` 0x0059D11B, `if nCount != 0`).
+    if let Some(mut entry) = heap.pop(by_key) {
         loop {
             if !alive {
                 break;
@@ -576,6 +587,163 @@ mod tests {
                 water_cells(&second, &identity),
                 "map type {map_type} is not deterministic"
             );
+        }
+    }
+
+    /// Whole original `RandomMapGenerator::GrowLake @ 0x0059C920` calls from
+    /// `tools/rmg_oracle/grow_lake.py`: a declared flat scene (not a full
+    /// Generate prefix), seeded streams, and every carved cell, region tag,
+    /// result, quota and draw the original produced.
+    #[test]
+    fn native_grow_lake_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/grow_lake.json");
+        let state = |rng: RmgRng| {
+            let (locked, words, a, b) = rng.into_continuation().into_native_parts();
+            let mut bytes = vec![locked, 0, 0, 0];
+            bytes.extend_from_slice(&(a as u32).to_le_bytes());
+            bytes.extend_from_slice(&(b as u32).to_le_bytes());
+            for word in words {
+                bytes.extend_from_slice(&word.to_le_bytes());
+            }
+            bytes
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        };
+        let scene = &doc["scene"];
+        // The driver's shore pass needs the fixture's physical shore TMPs.
+        let (mut identity, blocks) = super::super::cliff_native_tests::physical_tiles();
+        identity.water_base = scene["water_base"].as_i64().unwrap() as i32;
+        identity.green = scene["green"].as_i64().unwrap() as i32;
+        let cliff = scene["cliff_base"].as_i64().unwrap() as i32;
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 11);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let coords = |key: &str| -> Vec<(i32, i32)> {
+                input[key]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|c| (c[0].as_i64().unwrap() as i32, c[1].as_i64().unwrap() as i32))
+                    .collect()
+            };
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let mut scratch = RmgScratch::new(33, 16, 48);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                let cell = grid.get_mut(x, y).unwrap();
+                (cell.tile, cell.sub_tile, cell.level) = (0, 0, 0);
+            }
+            for (x, y) in coords("water") {
+                grid.get_mut(x, y).unwrap().tile = identity.water_base;
+                scratch.get_mut(x, y).region = 3;
+            }
+            for (x, y) in coords("rough")
+                .into_iter()
+                .filter(|&(x, y)| scratch.in_diamond(x, y))
+            {
+                grid.get_mut(x, y).unwrap().tile = cliff;
+            }
+            // Every in-diamond cell outside a declared clear pocket is rough.
+            if let Some(pocket) = input["pocket"].as_array() {
+                let [x0, y0, x1, y1]: [i32; 4] =
+                    std::array::from_fn(|i| pocket[i].as_i64().unwrap() as i32);
+                for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                    let inside = (x0..=x1).contains(&x) && (y0..=y1).contains(&y);
+                    if scratch.in_diamond(x, y) && !inside {
+                        grid.get_mut(x, y).unwrap().tile = cliff;
+                    }
+                }
+            }
+            let fields = |grid: &RmgGrid, scratch: &RmgScratch| {
+                let mut out = Vec::new();
+                for y in 0..33 {
+                    for x in 0..33 {
+                        if scratch.in_diamond(x, y) {
+                            let cell = grid.get(x, y).unwrap();
+                            let (sub, level) = (i32::from(cell.sub_tile), i32::from(cell.level));
+                            out.push([x, y, cell.tile, sub, level, scratch.get(x, y).region]);
+                        }
+                    }
+                }
+                out
+            };
+            let prior = fields(&grid, &scratch);
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut gauss = Gaussian::default();
+            let size = &input["gen"];
+            let args = WaterArgs {
+                map_type: 3,
+                water_percent: input["water_percent"].as_i64().unwrap() as i32,
+                num_players: 2,
+                bridge_enabled: false,
+                playable: PlayableRect {
+                    x: 0,
+                    y: 0,
+                    w: size[0].as_i64().unwrap() as i32,
+                    h: size[1].as_i64().unwrap() as i32,
+                },
+            };
+            let mut quota = WaterQuota {
+                placed: input["placed"].as_i64().unwrap() as i32,
+                region_id: input["region"].as_i64().unwrap() as i32,
+            };
+            let start = &input["start"];
+            let given = (
+                start[0].as_i64().unwrap() as i32,
+                start[1].as_i64().unwrap() as i32,
+            );
+            let committed = {
+                let mut ctx = BlobCtx {
+                    grid: &mut grid,
+                    scratch: &mut scratch,
+                    ids: &identity,
+                    blocks: &blocks,
+                    rng: &mut rng,
+                    gauss: &mut gauss,
+                    trig: None,
+                    map_w: 16,
+                    map_h: 16,
+                    rollback_level: 0,
+                };
+                grow_lake(
+                    &mut ctx,
+                    &args,
+                    &mut quota,
+                    (given != (0, 0)).then_some(given),
+                )
+            };
+            assert_eq!(
+                committed,
+                row["result"].as_u64().unwrap() != 0,
+                "{context}: result"
+            );
+            assert_eq!(
+                i64::from(quota.placed),
+                row["placed"].as_i64().unwrap(),
+                "{context}: placed"
+            );
+            let after = row["rng_after"].as_u64().unwrap() as usize;
+            assert_eq!(
+                state(rng),
+                doc["rng_states_hex"][after],
+                "{context}: exit RNG"
+            );
+            // Only cells the call changed, as the producer records them.
+            let cells: Vec<[i32; 6]> = fields(&grid, &scratch)
+                .into_iter()
+                .zip(prior)
+                .filter(|(now, before)| now != before)
+                .map(|(now, _)| now)
+                .collect();
+            let native: Vec<[i32; 6]> = row["cells"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| std::array::from_fn(|i| c[i].as_i64().unwrap() as i32))
+                .collect();
+            assert_eq!(cells, native, "{context}: cells");
         }
     }
 }

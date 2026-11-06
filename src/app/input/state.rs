@@ -221,6 +221,7 @@ pub(crate) struct MatchInputState {
     /// saved nor simulation state and is discarded when pointer focus changes.
     last_cursor_window: Option<(f32, f32)>,
     pub(crate) keys_held: HashSet<KeyCode>,
+    pub(crate) camera_scroll_keys: super::hotkeys::CameraScrollKeys,
     pub(crate) hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings,
     pub(crate) hotkey_modifiers: ModifiersState,
     /// Local AllToCheer730F30 admission scalar84555C. The simulation owns
@@ -450,6 +451,7 @@ impl MatchInputState {
             cursor_zoom: None,
             last_cursor_window: None,
             keys_held: HashSet::new(),
+            camera_scroll_keys: Default::default(),
             hotkey_bindings,
             hotkey_modifiers: ModifiersState::empty(),
             last_cheer_frame: -100,

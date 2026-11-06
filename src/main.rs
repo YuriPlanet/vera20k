@@ -3,8 +3,8 @@
 //! Runs the CLI-only switches (replay verification, retail data check and the
 //! headless spawn probe), then delegates start-up to [`vera20k::entry`], which
 //! owns the logging, panic reporting and event-loop work. Android has no
-//! `main`; its cdylib (`crates/vera20k-android`) reaches the same start-up
-//! through `entry::run_with_loop`.
+//! `main`; its cdylib (the `vera20k-android` crate in `android/`) reaches the
+//! same start-up through `entry::run_with_loop`.
 //!
 //! Module declarations live in lib.rs so integration tests can import them.
 

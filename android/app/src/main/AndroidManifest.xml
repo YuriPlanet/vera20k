@@ -26,7 +26,7 @@
         android:theme="@style/Theme.Vera20k">
 
         <!-- NativeActivity loads android.app.lib_name and calls android_main in
-             libvera20k_android.so (crates/vera20k-android). configChanges lists
+             libvera20k_android.so (android/src/lib.rs). configChanges lists
              everything winit handles, so a rotation or split-screen resize
              reaches Rust as a resize instead of destroying the activity. -->
         <activity

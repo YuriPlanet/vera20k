@@ -51,6 +51,7 @@ Supported extensions:
 - [Supplemental string tables](../tools/rules_oracle/ares_csf.md), shared by
   game loading and default `asset csf-get` / `csf-grep` queries.
 - [Per-type SHP building palettes](ares-building-palettes.md)
+- [PCX sidebar icons](ares-pcx-cameos.md) (`CameoPCX`, `AltCameoPCX`, `SidebarPCX`)
 - [EVA voice tags and Side selection](ares-eva.md)
 - [Per-type promotion sounds](ares-promotion-sounds.md)
   (`Promote.VeteranSound`, `Promote.EliteSound`)

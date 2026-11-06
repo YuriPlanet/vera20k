@@ -90,8 +90,9 @@ pub(crate) fn seed_draw(rng: &mut RmgRng, dim: i32) -> i32 {
     }
 }
 
-/// Ellipse membership test (`0x0059BAB0`, ellipse mode).
-fn ellipse_pass(
+/// Ellipse membership test (`Rmg__IsCellInRectOrEllipse @ 0x0059BAB0`,
+/// ellipse mode).
+pub(crate) fn ellipse_pass(
     map_w: i32,
     cell: (i32, i32),
     rect: &[i32; 4],
@@ -135,7 +136,8 @@ fn directed_key(
     key.to_f64() as f32
 }
 
-/// Carve one blob. Returns the pop count, or 0 on failure/rollback.
+/// Carve one blob (`RandomMapGenerator::CarveBlob @ 0x0059BBC0`). Returns the
+/// pop count, or 0 on failure/rollback.
 ///
 /// `blob_counter` is the shared blob-id source: the current value tags this
 /// blob, and a successful commit increments it here (the failure-path
