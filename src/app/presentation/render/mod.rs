@@ -286,7 +286,16 @@ pub(crate) fn render_game(
     });
     // Phase 1: Build game-world instances (terrain, overlays, entities).
     let phase1_started = render_started.map(|_| Instant::now());
-    let mut world = build_instances::build_world_instances(state, vsw, vsh, bracket_palette);
+    // The selection in order and the cursor's pick each walk every object;
+    // the draw reads them once (TacticalPick 6DA380 runs once per frame).
+    let cursor_targets = crate::app::input::cursor::CursorTargets::read(state);
+    let mut world = build_instances::build_world_instances(
+        state,
+        vsw,
+        vsh,
+        bracket_palette,
+        cursor_targets.hover,
+    );
     for layer in &mut world.object_layers {
         object_extras::defer_health_to_frame(layer, world_camera.camera_pos, z);
     }
@@ -391,7 +400,7 @@ pub(crate) fn render_game(
 
     // Phase 4: Update minimap + build UI instances (selection, health, placement).
     build_instances::update_minimap(state, &local_owner);
-    let ui = build_instances::build_ui_instances(state, clock_ms as u32);
+    let ui = build_instances::build_ui_instances(state, clock_ms as u32, &cursor_targets);
     let after_ui = render_started.map(|_| Instant::now());
 
     // Phase 5: Build sidebar instances, once the smooth sidebar's copies
@@ -487,16 +496,6 @@ pub(crate) fn render_game(
     let palette = surface_palette
         .as_ref()
         .map(crate::render::electric_bolt::ElectricBoltPalette::from_palette);
-    let radial_selection = crate::app::input::dispatch::selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
-    );
     let armed_super_weapon = state.armed_super_weapon_type().map(str::to_owned);
     let armed_building = state.armed_building_type().map(str::to_owned);
     let cursor_cell = (armed_super_weapon.is_some() || armed_building.is_some()).then(|| {
@@ -529,7 +528,7 @@ pub(crate) fn render_game(
     let radials = crate::app::presentation::radial_indicators::build(
         simulation,
         rules,
-        &radial_selection,
+        &cursor_targets.selected,
         armed_super_weapon.as_deref(),
         armed_building.as_deref(),
         cursor_cell,

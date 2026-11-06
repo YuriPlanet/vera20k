@@ -160,6 +160,7 @@ pub(super) fn build_world_instances(
     sw: f32,
     sh: f32,
     bracket_palette: Option<[u16; 2]>,
+    hover: Option<crate::app::input::entity_pick::HoverObject>,
 ) -> WorldInstances {
     // Terrain tiles use the selected TMP owner exactly. A sparse/null cell in
     // a positive suffix remains absent instead of borrowing pristine UVs.
@@ -362,11 +363,10 @@ pub(super) fn build_world_instances(
     // The same admitted Display parents feed native6D9789's later sweep.
     // Shared health admission/selection/hover owners derive frame-local strips;
     // storage order and atlas identity never determine their submission order.
-    // One cursor pick serves the group labels and every health bar: both
-    // read the hover flag the cursor's action target sets.
+    // The frame's cursor pick serves the group labels and every health bar:
+    // both read the hover flag the cursor's action target sets.
     let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
-    let hovered =
-        crate::app::presentation::ui_overlays::health_hover_target(state, local_owner.as_deref());
+    let hovered = crate::app::presentation::ui_overlays::health_hover_target(hover);
     let mut group_labels =
         build_control_group_status_instances(state, local_owner.as_deref(), hovered, sw, sh);
     if let (Some(sim), Some(overlay)) = (
@@ -893,8 +893,12 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
 /// `wall_ms` is the last tactical composite's timeGetTime: planning dashes
 /// (63D8B8), mind-control links (704E40), psychic detection lines (4DC340)
 /// and the airstrike wobble move with it once per composite.
-pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances {
-    let (software_cursor, software_cursor_draw) = build_software_cursor_instances(state);
+pub(super) fn build_ui_instances(
+    state: &AppState,
+    wall_ms: u32,
+    cursor: &crate::app::input::cursor::CursorTargets,
+) -> UiInstances {
+    let (software_cursor, software_cursor_draw) = build_software_cursor_instances(state, cursor);
     let drag = match &state.match_state.match_presentation.selection_overlay {
         Some(o) => o.build_drag_rect(
             &state.match_state.input.selection_state,
@@ -994,16 +998,6 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
     );
     target_line.extend(action_lines);
     target_line.extend(planning_highlights);
-    let selected = crate::app::input::dispatch::selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
-    );
     let [factory_rally_first, factory_rally_second] =
         crate::app::presentation::target_lines::build_factory_rally_line_instances_sampled(
             state
@@ -1012,7 +1006,7 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
                 .as_ref()
                 .map(|rt| &rt.simulation),
             state.rules(),
-            &selected,
+            &cursor.selected,
             &state.match_state.match_presentation.house_color_map,
             preferred_local_owner(state).as_deref(),
             view,

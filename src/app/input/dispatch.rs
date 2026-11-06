@@ -2439,6 +2439,21 @@ pub(crate) fn is_alt_held(state: &AppState) -> bool {
     state.match_state.input.hotkey_modifiers.alt_key()
 }
 
+/// [`selected_stable_ids_in_order`] of `state`'s world and ledger. It walks
+/// every object, so a draw reads it once and hands it to its consumers.
+pub(crate) fn selected_in_order(state: &AppState) -> Vec<u64> {
+    selected_stable_ids_in_order(
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        state.rules(),
+        &state.match_state.input.selection_order,
+        state.match_state.input.selection_order_pending,
+    )
+}
+
 /// Read the player-side selection vector in native order. While a selection
 /// command is queued the ledger is already the newest local state; after the
 /// sim tick, reconciliation trusts the committed selected bits and admits any

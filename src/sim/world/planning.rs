@@ -1158,7 +1158,7 @@ impl Simulation {
     /// `Rect_CenteredSquare @ 0x00634510` grown by 4 (`Rect_Inflate_Uniform
     /// @ 0x006357D0`), tested half-open (0x0063DB20); the press's AC4CCC
     /// test builds the same 8x8 with `GetSurfaceRect @ 0x006345A0`.
-    fn planning_node_id_at_screen(
+    pub fn planning_node_id_at_screen(
         &self,
         owner: Option<InternedId>,
         point: [i32; 2],

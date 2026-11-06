@@ -80,7 +80,31 @@ impl CursorVisibility {
     }
 }
 
-pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFeedbackKind> {
+/// What the cursor's action reads, once per draw: the selection in order
+/// ([`crate::app::input::dispatch::selected_in_order`]) and the object under
+/// the cursor ([`crate::app::input::entity_pick::cursor_hover_object`]). Both
+/// walk every object, so a draw reads them once and also hands them to the
+/// hover health bar, the target lines and the placement rings.
+pub(crate) struct CursorTargets {
+    pub(crate) selected: Vec<u64>,
+    pub(crate) hover: Option<HoverObject>,
+}
+
+impl CursorTargets {
+    pub(crate) fn read(state: &AppState) -> Self {
+        Self {
+            selected: crate::app::input::dispatch::selected_in_order(state),
+            hover: crate::app::input::entity_pick::cursor_hover_object(state),
+        }
+    }
+}
+
+/// The cursor feedback for this frame's `targets`.
+pub(crate) fn current_cursor_feedback_kind(
+    state: &AppState,
+    targets: &CursorTargets,
+) -> Option<CursorFeedbackKind> {
+    let selected = targets.selected.as_slice();
     // State_Machine entry (`StateMachine__EnterPause` 0x00683EB0) sets the
     // normal arrow (`SetCursor(0)`) for the whole modal; the in-match 0xCF
     // shows it over the battlefield.
@@ -138,16 +162,6 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     {
         return Some(CursorFeedbackKind::Default);
     }
-    let selected = crate::app::input::dispatch::selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
-    );
     // Superweapon targeting cursor takes precedence over building placement.
     // Sidebar/minimap hits are already short-circuited above, so the SW reticle
     // only renders on the tactical map. DetermineAction answers the armed
@@ -263,11 +277,6 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
             return Some(CursorFeedbackKind::Select);
         }
     }
-    let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
-    );
     let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
         state,
         state.match_state.input.cursor_x,
@@ -275,18 +284,12 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     );
     // The cursor update asks the Cell's What_Action with mouse-over set
     // (`0x0069300B`).
-    let query = ActionQuery::new(state, sim, &selected, true);
+    let query = ActionQuery::new(state, sim, selected, true);
     if !query.cell_visible(cell) {
         return Some(query.hidden_cell(cell));
     }
     let owner = preferred_local_owner_name(state)?;
-    let hover_object = crate::app::input::entity_pick::hover_object_at_point(
-        crate::app::input::entity_pick::presented(state, sim),
-        world_x,
-        world_y,
-        &owner,
-        state.match_state.sandbox_full_visibility,
-    );
+    let hover_object = targets.hover;
     if selected.is_empty() {
         let fog = (!state.match_state.sandbox_full_visibility).then(|| sim.fog());
         let player = sim.interner().get(&owner);

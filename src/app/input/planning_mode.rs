@@ -2,6 +2,7 @@
 //! Native PlanMgr6379C0/637A10, command536750 and connect63AD50.
 
 use crate::app::AppState;
+use crate::app::input::dispatch::selected_in_order;
 use crate::app::input::hotkeys::{HotkeyCommand, HotkeyResolution};
 use crate::audio::events::{GameSoundEvent, SoundEventQueue};
 use crate::rules::ruleset::RuleSet;
@@ -498,6 +499,9 @@ fn live_hover_node(state: &AppState) -> Option<u64> {
     let point = hover_native_screen(state)?;
     let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
     let owner = sim.session().current_house()?;
+    // Only a node under the cursor reads the selection, which walks every
+    // object: the cursor asks this at every draw.
+    sim.planning_node_id_at_screen(Some(owner), point)?;
     sim.planning_hover_node(owner, &selected_in_order(state), point)
 }
 
@@ -508,19 +512,6 @@ pub(crate) fn node_at_cursor(state: &AppState) -> Option<u64> {
         return None;
     }
     live_hover_node(state)
-}
-
-pub(crate) fn selected_in_order(state: &AppState) -> Vec<u64> {
-    crate::app::input::dispatch::selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
-    )
 }
 
 /// ScrollClass's left press runs PlanMgr 0x0063A5A0 (0x00693187) before it
