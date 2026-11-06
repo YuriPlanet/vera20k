@@ -6,11 +6,11 @@
 //! boxes, centered at the top of the battlefield at the match zoom, or of the
 //! window elsewhere. Its rows are in [`panel`]: rates and units, the engine
 //! areas that took the most of the last second, the load on each core and
-//! the newest logged warning or error. Before GAME.FNT loads, a built-in font
-//! draws the first row alone. The status line is localized text
-//! ([`crate::i18n`]), so it draws with the caller's GAME.FNT font. Both are
-//! independent of tactical cameras, optional dev overlays, and
-//! shell/offscreen composition.
+//! the newest logged warning or error. The rows and the status line are
+//! localized text ([`crate::i18n`]), so both draw with the caller's GAME.FNT
+//! font; before GAME.FNT loads, a built-in font draws the first row alone, in
+//! English capitals. Both are independent of tactical cameras, optional dev
+//! overlays, and shell/offscreen composition.
 
 mod panel;
 

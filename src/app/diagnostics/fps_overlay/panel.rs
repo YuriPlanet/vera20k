@@ -23,46 +23,47 @@ const DOT: &str = "  ·  ";
 const MIN_AREA_PERCENT: f32 = 1.0;
 const MOST_AREAS: usize = 5;
 
-/// The simulation's frame-profile phases, by `frame_profile::phase` slot.
+/// The labels of the simulation's frame-profile phases, by
+/// `frame_profile::phase` slot.
 const SIM_AREAS: [&str; PHASE_COUNT] = [
-    "Commands in",
-    "Commands",
-    "Triggers",
-    "Shroud",
-    "Lighting",
-    "Ore growth",
-    "Bombs",
-    "Superweapons",
-    "Radiation",
-    "Team AI",
-    "Objects",
-    "Wall crush",
-    "Wakes",
-    "Vision",
-    "Combat",
-    "Passengers",
-    "Ion blasts",
-    "Crates",
-    "Production",
-    "Docks",
-    "Spawn fog",
-    "Late AI",
-    "Overlays",
-    "Debug checks",
-    "Anims",
-    "Score",
-    "State hash",
+    "VERA:CpuCommandsIn",
+    "VERA:CpuCommands",
+    "VERA:CpuTriggers",
+    "VERA:CpuShroud",
+    "VERA:CpuLighting",
+    "VERA:CpuOreGrowth",
+    "VERA:CpuBombs",
+    "VERA:CpuSuperweapons",
+    "VERA:CpuRadiation",
+    "VERA:CpuTeamAI",
+    "VERA:CpuObjects",
+    "VERA:CpuWallCrush",
+    "VERA:CpuWakes",
+    "VERA:CpuVision",
+    "VERA:CpuCombat",
+    "VERA:CpuPassengers",
+    "VERA:CpuIonBlasts",
+    "VERA:CpuCrates",
+    "VERA:CpuProduction",
+    "VERA:CpuDocks",
+    "VERA:CpuSpawnFog",
+    "VERA:CpuLateAI",
+    "VERA:CpuOverlays",
+    "VERA:CpuDebugChecks",
+    "VERA:CpuAnims",
+    "VERA:CpuScore",
+    "VERA:CpuStateHash",
 ];
 
-/// The render's phases, in `RenderPhases::spans` order.
+/// The labels of the render's phases, in `RenderPhases::spans` order.
 const RENDER_AREAS: [&str; 7] = [
-    "Draw world",
-    "Draw debug",
-    "Draw shroud",
-    "Draw UI",
-    "Draw sidebar",
-    "GPU upload",
-    "Draw other",
+    "VERA:CpuDrawWorld",
+    "VERA:CpuDrawDebug",
+    "VERA:CpuDrawShroud",
+    "VERA:CpuDrawUI",
+    "VERA:CpuDrawSidebar",
+    "VERA:CpuGpuUpload",
+    "VERA:CpuDrawOther",
 ];
 
 /// A running match's figures, read when a window closes.
@@ -79,7 +80,8 @@ pub(super) struct Shown {
     pub(super) frame_ms: f32,
     pub(super) simulation: Option<SimulationReadout>,
     pub(super) units: Option<usize>,
-    /// The costliest areas first, in percent of the window's wall time.
+    /// The costliest areas first: their labels and percent of the window's
+    /// wall time.
     pub(super) areas: Vec<(&'static str, f32)>,
     pub(super) core_loads: Option<Vec<f32>>,
     /// The newest warning or error, and how long before the window closed.
@@ -190,12 +192,13 @@ pub(super) enum Part {
 }
 
 /// The panel in GAME.FNT: rates and units, Most CPU, Cores and the newest
-/// warning, each row only once it has something to say.
+/// warning, each row only once it has something to say. The warning's
+/// message stays as logged; its level and age are labels like the rest.
 pub(super) fn rows(shown: &Shown) -> Vec<Vec<Part>> {
     let mut rows = vec![vec![Part::Text(first_row(shown), GREEN)]];
     if let Some((first, rest)) = shown.areas.split_first() {
         let mut row = vec![
-            Part::Text("Most CPU:  ".to_owned(), GREEN),
+            Part::Text(format!("{}  ", label("VERA:FpsPanelMostCpu")), GREEN),
             Part::Text(area(first), WARM),
         ];
         if !rest.is_empty() {
@@ -205,28 +208,42 @@ pub(super) fn rows(shown: &Shown) -> Vec<Vec<Part>> {
         rows.push(row);
     }
     if let Some(loads) = shown.core_loads.as_ref().filter(|loads| !loads.is_empty()) {
-        let average = loads.iter().sum::<f32>() / loads.len() as f32;
+        let average = format!("{:.0}", loads.iter().sum::<f32>() / loads.len() as f32);
+        let average = label_with("VERA:FpsPanelAverage", "percent", &average);
         rows.push(vec![
-            Part::Text("Cores  ".to_owned(), GREEN),
+            Part::Text(format!("{}  ", label("VERA:FpsPanelCores")), GREEN),
             Part::Bars(loads.clone()),
-            Part::Text(format!("   avg {average:.0}%"), GREEN),
+            Part::Text(format!("   {average}"), GREEN),
         ]);
     }
     if let Some((level, message, age)) = &shown.problem {
-        let (label, color) = match level {
-            log::Level::Error => ("Error", HOT),
-            _ => ("Warning", WARM),
+        let (level, color) = match level {
+            log::Level::Error => ("VERA:FpsPanelError", HOT),
+            _ => ("VERA:FpsPanelWarning", WARM),
         };
         let message = message.lines().next().unwrap_or("").replace('\t', " ");
         rows.push(vec![Part::Text(
-            format!("{label}{DOT}{}{DOT}{}", ago(*age), message.trim()),
+            format!("{}{DOT}{}{DOT}{}", label(level), ago(*age), message.trim()),
             color,
         )]);
     }
     rows
 }
 
-/// Before GAME.FNT loads: the first row in the built-in font's characters.
+/// A panel label in the selected language ([`crate::i18n`]). The panel also
+/// draws before any CSF loads, and the retail CSF has no `VERA:` labels, so
+/// VERA's language files answer without one.
+fn label(key: &str) -> String {
+    crate::i18n::text(None, key).into_owned()
+}
+
+/// A label with its one `{name}` filled in.
+fn label_with(key: &str, name: &str, value: &dyn std::fmt::Display) -> String {
+    crate::i18n::fill(&label(key), &[(name, value)])
+}
+
+/// Before GAME.FNT loads: the first row in the built-in font's characters,
+/// English capitals only.
 pub(super) fn fallback_rows(shown: &Shown) -> Vec<Vec<Part>> {
     vec![vec![Part::Text(
         simulation_readout_text(shown.frame_ms, shown.simulation),
@@ -242,29 +259,37 @@ fn first_row(shown: &Shown) -> String {
         } else {
             format!("{frame_ms:.0}")
         };
-        format!("FPS {:.0}{DOT}{ms} ms", 1000.0 / frame_ms)
+        let fps = format!("{:.0}", 1000.0 / frame_ms);
+        format!(
+            "{}{DOT}{}",
+            label_with("VERA:FpsPanelFps", "fps", &fps),
+            label_with("VERA:FpsPanelFrameTime", "ms", &ms)
+        )
     } else {
-        "FPS --".to_owned()
+        label_with("VERA:FpsPanelFps", "fps", &"--")
     };
     if let Some(simulation) = shown.simulation {
         let interpolation = match (simulation.interpolation, simulation.sampling) {
-            (true, true) => "on",
-            (true, false) => "bypass",
-            (false, _) => "off",
+            (true, true) => "VERA:FpsPanelInterpOn",
+            (true, false) => "VERA:FpsPanelInterpBypass",
+            (false, _) => "VERA:FpsPanelInterpOff",
         };
+        let tps = format!("{:.0}", simulation.tps);
         row.push_str(&format!(
-            "{DOT}Sim {:.0} TPS{DOT}Interp {interpolation}",
-            simulation.tps
+            "{DOT}{}{DOT}{}",
+            label_with("VERA:FpsPanelSim", "tps", &tps),
+            label(interpolation)
         ));
     }
     if let Some(units) = shown.units {
-        row.push_str(&format!("{DOT}Units {}", thousands(units)));
+        let units = label_with("VERA:FpsPanelUnits", "count", &thousands(units));
+        row.push_str(&format!("{DOT}{units}"));
     }
     row
 }
 
-fn area(&(name, percent): &(&str, f32)) -> String {
-    format!("{name} {percent:.0}%")
+fn area(&(key, percent): &(&str, f32)) -> String {
+    format!("{} {percent:.0}%", label(key))
 }
 
 fn thousands(value: usize) -> String {
@@ -280,11 +305,12 @@ fn thousands(value: usize) -> String {
 }
 
 fn ago(age: Duration) -> String {
-    match age.as_secs() {
-        seconds @ 0..60 => format!("{seconds} s ago"),
-        seconds @ 60..3_600 => format!("{} min ago", seconds / 60),
-        seconds => format!("{} h ago", seconds / 3_600),
-    }
+    let (key, count) = match age.as_secs() {
+        seconds @ 0..60 => ("VERA:FpsPanelSecondsAgo", seconds),
+        seconds @ 60..3_600 => ("VERA:FpsPanelMinutesAgo", seconds / 60),
+        seconds => ("VERA:FpsPanelHoursAgo", seconds / 3_600),
+    };
+    label_with(key, "count", &count)
 }
 
 fn readout_text(frame_ms: f32) -> String {
@@ -337,7 +363,11 @@ mod tests {
             frame_ms: 1000.0 / 60.0,
             simulation: Some(READOUT),
             units: Some(12_345),
-            areas: vec![("Objects", 38.4), ("Draw world", 27.0), ("Vision", 11.0)],
+            areas: vec![
+                ("VERA:CpuObjects", 38.4),
+                ("VERA:CpuDrawWorld", 27.0),
+                ("VERA:CpuVision", 11.0),
+            ],
             core_loads: Some(vec![90.0, 10.0]),
             problem: Some((
                 log::Level::Warn,
@@ -377,6 +407,48 @@ mod tests {
     }
 
     #[test]
+    fn every_panel_label_has_english_text() {
+        let rows = rows_of(Shown {
+            frame_ms: f32::NAN,
+            simulation: Some(SimulationReadout {
+                interpolation: false,
+                ..READOUT
+            }),
+            areas: SIM_AREAS
+                .iter()
+                .chain(&RENDER_AREAS)
+                .map(|&key| (key, 1.0))
+                .collect(),
+            core_loads: Some(vec![40.0]),
+            problem: Some((
+                log::Level::Error,
+                "x".to_owned(),
+                Duration::from_secs(7_200),
+            )),
+            ..Shown::default()
+        });
+        assert_eq!(rows[0], "FPS --  ·  Sim 30 TPS  ·  Interp off");
+        assert!(rows[1].starts_with("Most CPU:  Commands in 1%  ·  Commands 1%"));
+        assert_eq!(rows[2], "Cores     avg 40%");
+        assert_eq!(rows[3], "Error  ·  2 h ago  ·  x");
+        let bypass = SimulationReadout {
+            sampling: false,
+            ..READOUT
+        };
+        let rest = [
+            first_row(&Shown {
+                simulation: Some(bypass),
+                ..Shown::default()
+            }),
+            ago(Duration::from_secs(5)),
+        ];
+        assert_eq!(rest, ["FPS --  ·  Sim 30 TPS  ·  Interp bypass", "5 s ago"]);
+        for text in rows.iter().chain(&rest) {
+            assert!(!text.contains("MISSING:"), "{text}");
+        }
+    }
+
+    #[test]
     fn most_cpu_ranks_sim_and_render_areas_and_skips_a_restarted_profile() {
         let mut sim = [0u128; PHASE_COUNT];
         sim[crate::sim::frame_profile::phase::OBJECTS] = 300_000_000;
@@ -387,9 +459,9 @@ mod tests {
         assert_eq!(
             most_cpu(Duration::from_secs(1), Some(&sim), &render),
             [
-                ("Draw other", 40.0),
-                ("Objects", 30.0),
-                ("Draw world", 20.0)
+                ("VERA:CpuDrawOther", 40.0),
+                ("VERA:CpuObjects", 30.0),
+                ("VERA:CpuDrawWorld", 20.0)
             ]
         );
         let later = sim.map(|ns| ns + 1);
