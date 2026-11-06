@@ -150,14 +150,17 @@ pub fn status_line_rect(dlu: RectPx, screen_w: i32, screen_h: i32) -> RectPx {
 }
 
 /// The status line's text box, VERA's own: the window above
-/// ([`status_line_rect`], 456 pixels wide at 800x600) runs on to x 628, the
-/// right end of the bar's dark interior, as translations run longer than the
-/// English it was sized for. Retail texts fit the window and draw as before.
+/// ([`status_line_rect`], 456x21 at 800x600 on most pages) runs on to x 628,
+/// the right end of the bar's dark interior, at the window's scale, as
+/// translations run longer than the English it was sized for. A window that
+/// already reaches there, such as `0x102`'s, keeps its width. Retail texts
+/// fit the window and draw as before.
 pub fn status_text_rect(window: RectPx) -> RectPx {
-    const WINDOW_W: i32 = 456;
+    // The window's height and the text box's width at 800x600.
+    const WINDOW_H: i32 = 21;
     const TEXT_W: i32 = 618;
     RectPx {
-        w: window.w * TEXT_W / WINDOW_W,
+        w: window.w.max(TEXT_W * window.h / WINDOW_H),
         ..window
     }
 }
@@ -244,6 +247,18 @@ pub(crate) mod tests {
     };
     use crate::ui::shell::geom::SDBTNANM_CELL_W_NARROW;
     use crate::ui::shell::in_game_options::{build_in_game_options_descriptor, control};
+
+    /// `0x102`'s status line (410x12 DLU) is wider than the family's and
+    /// already reaches the bar's end, so its text box stays on the screen.
+    #[test]
+    fn a_status_line_that_reaches_the_bar_end_keeps_its_width() {
+        let family = status_line_rect(RectPx::new(2, 355, 303, 12), 800, 600);
+        let skirmish = status_line_rect(RectPx::new(2, 355, 410, 12), 800, 600);
+        for window in [family, skirmish] {
+            let text_box = status_text_rect(window);
+            assert_eq!(text_box.x + text_box.w, 628, "{window:?}");
+        }
+    }
 
     /// Child `control` of `dialog` at `width`x`height` after the executed
     /// WM_INITDIALOG relayout (`tools/storage_oracle/shell_relayout.py`).
