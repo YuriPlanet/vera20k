@@ -556,6 +556,7 @@ mod tests {
                 map_w: args.map_w,
                 local_rect: [2, 5, args.gen_w, args.gen_h],
                 wheel_impassable: wheel,
+                cliff_back_impassability: 2,
             },
             ZoneKind::Amphibious,
         )
@@ -598,5 +599,203 @@ mod tests {
             (outcome.waypoints.clone(), quotas, slots, locks)
         };
         assert_eq!(snapshot(2024), snapshot(2024));
+    }
+
+    fn int(value: &serde_json::Value) -> i32 {
+        value.as_i64().unwrap() as i32
+    }
+
+    fn pairs(value: &serde_json::Value) -> Vec<(i16, i16)> {
+        value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| (int(&c[0]) as i16, int(&c[1]) as i16))
+            .collect()
+    }
+
+    /// The harness scene on its 16x16 map: clear level-0 cells, then the
+    /// declared tile families, `[level, slope]` and scratch owners.
+    fn native_scene(doc: &serde_json::Value, input: &serde_json::Value) -> (RmgGrid, RmgScratch) {
+        let mut grid = RmgGrid::new(33, 16, 48);
+        let mut scratch = RmgScratch::new(33, 16, 48);
+        for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+            let cell = grid.get_mut(x, y).unwrap();
+            (cell.tile, cell.sub_tile, cell.level, cell.slope) = (0, 0, 0, 0);
+        }
+        let list = |key: &str| input.get(key).map_or(&[][..], |v| v.as_array().unwrap());
+        for c in list("tiles") {
+            let family = c[2].as_str().unwrap();
+            grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile =
+                int(&doc["scene"]["tiles"][family]);
+        }
+        for c in list("rough") {
+            grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile =
+                int(&doc["scene"]["tiles"]["rough"]);
+        }
+        for c in list("terrain") {
+            let cell = grid.get_mut(int(&c[0]), int(&c[1])).unwrap();
+            (cell.level, cell.slope) = (int(&c[2]) as u8, int(&c[3]) as u8);
+        }
+        for c in list("regions") {
+            scratch.get_mut(int(&c[0]), int(&c[1])).region = int(&c[2]);
+        }
+        (grid, scratch)
+    }
+
+    fn native_ids(doc: &serde_json::Value) -> TileIds {
+        let tile = |name: &str| int(&doc["scene"]["tiles"][name]);
+        TileIds {
+            paved_roads: tile("paved_roads"),
+            paved_road_ends: tile("paved_road_ends"),
+            misc_pave: tile("misc_pave"),
+            pave: tile("pave"),
+            ..ids()
+        }
+    }
+
+    fn assert_native_rng(doc: &serde_json::Value, row: &serde_json::Value, rng: RmgRng) {
+        assert_eq!(
+            rng.into_continuation().into_native_parts(),
+            super::super::cliff_native_tests::native_state(doc, &row["rng_after"])
+                .into_native_parts(),
+            "{}: exit RNG",
+            row["input"]["id"]
+        );
+    }
+
+    /// Whole original `RmgRegion::PlaceStartingPoints @ 0x00594870` calls
+    /// from `tools/rmg_oracle/start_points.py`: waypoint slots, start flags,
+    /// the drained field slots and the exit RNG.
+    #[test]
+    fn native_place_starting_points_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/start_points.json");
+        let identity = native_ids(doc);
+        let rows = doc["place"].as_array().unwrap();
+        assert_eq!(rows.len(), 9);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let (mut grid, mut scratch) = native_scene(doc, input);
+            let cells = pairs(&input["cells"]);
+            let mut regions = Regions::default();
+            regions.list.push(RmgRegion {
+                id: 0,
+                level: 0,
+                active: false,
+                cell_count: cells.len() as i32,
+                cells,
+                start_quota: int(&input["quota"]),
+                field_slots: None,
+            });
+            let args = StartsArgs {
+                start_quota: int(&input["start_quota"]),
+                num_players: int(&input["start_quota"]),
+                tiberium_layout: int(&input["layout"]),
+                gen_w: int(&input["gen"][0]),
+                gen_h: int(&input["gen"][1]),
+                map_w: 16,
+            };
+            let slots = row["waypoints"].as_array().unwrap().len();
+            let mut outcome = StartsOutcome {
+                waypoints: vec![None; slots],
+                ..Default::default()
+            };
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut ctx = StartsCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                rng: &mut rng,
+                regions: &mut regions,
+            };
+            place_region_starts(&mut ctx, &args, 0, int(&input["offset"]), &mut outcome);
+            assert_eq!(outcome.unfilled_start_slots, 0, "{context}: unfilled");
+            let waypoints: Vec<(i16, i16)> = outcome
+                .waypoints
+                .iter()
+                .map(|slot| slot.unwrap_or((-1, -1)))
+                .collect();
+            assert_eq!(waypoints, pairs(&row["waypoints"]), "{context}: waypoints");
+            let flags: Vec<(i16, i16)> = (0..33)
+                .flat_map(|y| (0..33).map(move |x| (x, y)))
+                .filter(|&(x, y)| grid.get(x, y).is_some_and(|c| c.start_marker))
+                .map(|(x, y)| (x as i16, y as i16))
+                .collect();
+            assert_eq!(flags, pairs(&row["start_flags"]), "{context}: start flags");
+            let native_slots = (!row["field_slots"].is_null()).then(|| pairs(&row["field_slots"]));
+            assert_eq!(
+                regions.list[0].field_slots, native_slots,
+                "{context}: field slots"
+            );
+            assert_native_rng(doc, row, rng);
+        }
+    }
+
+    /// Whole original `RandomMapGenerator::MarkStartAreas @ 0x005A1FB0`
+    /// calls from the same harness: every changed scratch stamp and lock.
+    #[test]
+    fn native_mark_start_areas_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/start_points.json");
+        let identity = native_ids(doc);
+        let rows = doc["mark"].as_array().unwrap();
+        assert_eq!(rows.len(), 4);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let (mut grid, mut scratch) = native_scene(doc, input);
+            let record = |scratch: &RmgScratch, x: i32, y: i32| {
+                let cell = scratch.get(x, y);
+                [cell.stamp, i32::from(cell.water_lock)]
+            };
+            let diamond: Vec<(i32, i32)> = (0..33)
+                .flat_map(|y| (0..33).map(move |x| (x, y)))
+                .filter(|&(x, y)| scratch.in_diamond(x, y))
+                .collect();
+            let prior: Vec<[i32; 2]> = diamond
+                .iter()
+                .map(|&(x, y)| record(&scratch, x, y))
+                .collect();
+            let players = int(&input["players"]);
+            let args = StartsArgs {
+                start_quota: players,
+                num_players: players,
+                tiberium_layout: 0,
+                gen_w: 12,
+                gen_h: 12,
+                map_w: 16,
+            };
+            let outcome = StartsOutcome {
+                waypoints: pairs(&input["waypoints"]).into_iter().map(Some).collect(),
+                ..Default::default()
+            };
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut regions = Regions::default();
+            let mut ctx = StartsCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                rng: &mut rng,
+                regions: &mut regions,
+            };
+            mark_start_areas(&mut ctx, &args, &outcome);
+            let changed: Vec<[i32; 4]> = diamond
+                .iter()
+                .zip(prior)
+                .filter_map(|(&(x, y), before)| {
+                    let now = record(&scratch, x, y);
+                    (now != before).then_some([x, y, now[0], now[1]])
+                })
+                .collect();
+            let native: Vec<[i32; 4]> = row["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| std::array::from_fn(|i| int(&c[i])))
+                .collect();
+            assert_eq!(changed, native, "{context}: records");
+            assert_eq!(int(&row["draws"]), 0, "{context}: draws");
+            assert_native_rng(doc, row, rng);
+        }
     }
 }

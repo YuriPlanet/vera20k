@@ -440,4 +440,99 @@ mod tests {
             .count();
         assert!(painted > 0, "sand/green patches appear even at veg 0");
     }
+
+    /// Whole original `RandomMapGenerator::PlaceLatPatch @ 0x005A4B60`
+    /// calls from `tools/rmg_oracle/lat_patch.py`: every stamped tile and
+    /// patch-id stamp and the exit RNG.
+    #[test]
+    fn native_place_lat_patch_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/lat_patch.json");
+        let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
+        let cells = |value: &serde_json::Value| -> Vec<(i32, i32)> {
+            value
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| (int(&c[0]), int(&c[1])))
+                .collect()
+        };
+        let scene = &doc["scene"];
+        let identity = ids();
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 6);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let mut scratch = RmgScratch::new(33, 16, 48);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                grid.get_mut(x, y).unwrap().tile = 0;
+            }
+            for (key, tile) in [("rough", "rough"), ("pave", "misc_pave")] {
+                for (x, y) in cells(&input[key]) {
+                    grid.get_mut(x, y).unwrap().tile = int(&scene[tile]);
+                }
+            }
+            for (x, y) in cells(&input["occupied"]) {
+                grid.get_mut(x, y).unwrap().occupied = true;
+            }
+            for (x, y) in cells(&input["overlay"]) {
+                grid.get_mut(x, y).unwrap().overlay = 0;
+            }
+            for (x, y) in cells(&input["sloped"]) {
+                grid.get_mut(x, y).unwrap().slope = 1;
+            }
+            let stamp = int(&input["stamp"]);
+            for (x, y) in cells(&input["claimed"]) {
+                scratch.get_mut(x, y).stamp = stamp;
+            }
+            let diamond: Vec<(i32, i32)> = (0..33)
+                .flat_map(|y| (0..33).map(move |x| (x, y)))
+                .filter(|&(x, y)| scratch.in_diamond(x, y))
+                .collect();
+            let state = |grid: &RmgGrid, scratch: &RmgScratch| -> Vec<[i32; 2]> {
+                diamond
+                    .iter()
+                    .map(|&(x, y)| [grid.get(x, y).unwrap().tile, scratch.get(x, y).stamp])
+                    .collect()
+            };
+            let before = state(&grid, &scratch);
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut gauss = Gaussian::default();
+            let mut ctx = PatchCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                rng: &mut rng,
+                gauss: &mut gauss,
+            };
+            let origin = (int(&input["origin"][0]), int(&input["origin"][1]));
+            place_patch(
+                &mut ctx,
+                origin,
+                int(&scene["patch_tile"]),
+                int(&input["size"]),
+                stamp,
+            );
+            let changed: Vec<[i32; 4]> = diamond
+                .iter()
+                .zip(before.iter().zip(state(&grid, &scratch)))
+                .filter(|(_, (before, after))| *before != after)
+                .map(|(&(x, y), (_, after))| [x, y, after[0], after[1]])
+                .collect();
+            let native: Vec<[i32; 4]> = row["changed"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| std::array::from_fn(|i| int(&c[i])))
+                .collect();
+            assert_eq!(changed, native, "{context}: tiles and stamps");
+            assert_eq!(
+                rng.into_continuation().into_native_parts(),
+                super::super::cliff_native_tests::native_state(doc, &row["rng_after"])
+                    .into_native_parts(),
+                "{context}: exit RNG"
+            );
+        }
+    }
 }

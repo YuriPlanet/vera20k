@@ -11,18 +11,13 @@
 //! occupied flag); the overlay/wall/occupier class cases cannot occur at
 //! starts time because nothing has been placed yet.
 
-use crate::map::rmg::grid::RmgGrid;
+use crate::map::resolved_terrain::{cliff_back_normal_reclass_applies, is_behind_cliff};
+use crate::map::rmg::grid::{CellRef, RmgGrid};
 
 use super::shore::TileBlocks;
 
 /// Number of land types the class tables index.
 pub const LAND_TYPES: usize = 16;
-
-/// TMP sub-tile terrain byte -> land type (engine-fixed table).
-///
-/// Land types: 0 Clear, 1 Road, 2 Water, 3 Rock, 6 Beach, 7 Rough, 8 Ice,
-/// 9 Railroad, 10 Tunnel.
-const TERRAIN_TO_LAND: [u8; 16] = [0, 8, 8, 8, 8, 10, 9, 3, 3, 2, 6, 1, 1, 0, 7, 3];
 
 /// Passability classes (the subset producible from terrain).
 const CLASS_CLEAR: u8 = 0;
@@ -35,6 +30,8 @@ const CLASS_OUTSIDE: u8 = 7;
 /// Water land type -> class 4; beach land type -> class 3.
 const LAND_WATER: u8 = 2;
 const LAND_BEACH: u8 = 6;
+/// The land type the CliffBack reclass writes.
+pub const LAND_ROCK: u8 = 3;
 
 /// The movement kind the starts phase filters by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,6 +70,8 @@ pub struct ZoneParams {
     pub local_rect: [i32; 4],
     /// Per-land-type "Wheel speed <= 1%" flags from the rules terrain data.
     pub wheel_impassable: [bool; LAND_TYPES],
+    /// Low byte of `[General] CliffBackImpassability=`.
+    pub cliff_back_impassability: u8,
 }
 
 /// The diamond-frame containment test shared by the playfield and
@@ -143,6 +142,55 @@ impl ZoneField {
     }
 }
 
+/// The land type `CellClass::RecalcAttributes @ 0x0047D2B0` leaves on a
+/// generated cell, which `RecalcZoneType @ 0x00483C80` and the tech-building
+/// foundation gate read: the sub-tile's TMP terrain byte through the fixed
+/// table, then the CliffBack reclass. Under `CliffBackImpassability=2`
+/// (retail) a Clear, Water, Beach or Ice cell behind a cliff becomes Rock
+/// (its final normal site; the sparse-subtile site is Clear-only, and
+/// missing block data reads Clear here). Generated cells
+/// carry no overlay before the tiberium stage, so the early-overlay site is
+/// not reached. This reads the levels current when the zone and tech
+/// stages ask, not a stored Recalc result.
+pub fn recalc_land(
+    grid: &RmgGrid,
+    blocks: &dyn TileBlocks,
+    cliff_back_impassability: u8,
+    x: i32,
+    y: i32,
+) -> u8 {
+    let Some(cell) = grid.get(x, y) else {
+        return 0;
+    };
+    // Sub-tile terrain byte; unassigned/clear tiles and missing block data
+    // read as terrain 0 (clear), matching the retail clear tiles.
+    let terrain = blocks
+        .block(cell.tile)
+        .and_then(|block| {
+            block
+                .subtiles
+                .get(cell.sub_tile as usize)
+                .copied()
+                .flatten()
+        })
+        .map_or(0, |sub| sub.terrain);
+    let land = crate::rules::terrain_rules::tmp_terrain_to_land_type(terrain).as_index();
+    // A missing neighbour reads the shared Dummy's level.
+    let behind_cliff = || {
+        is_behind_cliff(x as i16, y as i16, cell.level as i8, |nx, ny| {
+            let (nx, ny) = (i32::from(nx), i32::from(ny));
+            grid.get(nx, ny)
+                .unwrap_or_else(|| grid.ref_cell(CellRef::Border))
+                .level as i8
+        })
+    };
+    if cliff_back_impassability == 2 && cliff_back_normal_reclass_applies(land) && behind_cliff() {
+        LAND_ROCK
+    } else {
+        land
+    }
+}
+
 /// Classify one cell (terrain-only reduction of the native classifier).
 fn classify(grid: &RmgGrid, blocks: &dyn TileBlocks, params: &ZoneParams, x: i32, y: i32) -> u8 {
     let cell = match grid.get(x, y) {
@@ -159,19 +207,7 @@ fn classify(grid: &RmgGrid, blocks: &dyn TileBlocks, params: &ZoneParams, x: i32
     ) {
         return CLASS_OUTSIDE;
     }
-    // Sub-tile terrain byte; unassigned/clear tiles and missing block data
-    // read as terrain 0 (clear), matching the retail clear tiles.
-    let terrain = blocks
-        .block(cell.tile)
-        .and_then(|block| {
-            block
-                .subtiles
-                .get(cell.sub_tile as usize)
-                .copied()
-                .flatten()
-        })
-        .map_or(0, |sub| sub.terrain);
-    let land = TERRAIN_TO_LAND[usize::from(terrain & 0xF)];
+    let land = recalc_land(grid, blocks, params.cliff_back_impassability, x, y);
     if land == LAND_WATER {
         return CLASS_WATER;
     }
@@ -487,6 +523,7 @@ mod tests {
             map_w,
             local_rect: [2, 5, gen_w, gen_h],
             wheel_impassable: wheel(),
+            cliff_back_impassability: 2,
         };
         (grid, params)
     }
@@ -612,6 +649,34 @@ mod tests {
             field.zone(land.0, land.1),
             "a 4-level cliff splits the derived zones"
         );
+    }
+
+    /// `RecalcAttributes @ 0x0047D2B0`'s final CliffBack site turns Clear and
+    /// Water behind a cliff into Rock under the retail
+    /// `CliffBackImpassability=2`; `RecalcZoneType @ 0x00483C80` then blocks
+    /// the Rock (Wheel 0%) instead of classing it ground or water.
+    #[test]
+    fn cells_behind_a_cliff_are_rock() {
+        let (mut grid, mut params) = world();
+        let cells = playable(&grid, &params);
+        let (x, y) = cells[cells.len() / 2];
+        let (wx, wy) = cells[cells.len() / 3];
+        grid.get_mut(wx, wy).unwrap().tile = 500;
+        // Three levels above is not a cliff; four is (the (x, y-1) probe).
+        grid.get_mut(x, y - 1).unwrap().level = 7;
+        let field = compute(&grid, &TerrainBlocks, &params, ZoneKind::Amphibious);
+        assert_eq!(field.class(x, y), CLASS_CLEAR);
+        grid.get_mut(x, y - 1).unwrap().level = 8;
+        // The water cell: the (x+2, y+2) probe reaches over a neighbour.
+        grid.get_mut(wx + 2, wy + 2).unwrap().level = 8;
+        let field = compute(&grid, &TerrainBlocks, &params, ZoneKind::Amphibious);
+        assert_eq!(field.class(x, y), CLASS_WHEEL_BLOCKED);
+        assert_eq!(field.class(wx, wy), CLASS_WHEEL_BLOCKED);
+        assert!(!field.is_reference_ground(x, y));
+        params.cliff_back_impassability = 1;
+        let field = compute(&grid, &TerrainBlocks, &params, ZoneKind::Amphibious);
+        assert_eq!(field.class(x, y), CLASS_CLEAR, "only 2 reclasses");
+        assert_eq!(field.class(wx, wy), CLASS_WATER);
     }
 
     #[test]
