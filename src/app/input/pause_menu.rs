@@ -68,6 +68,8 @@ pub(crate) struct DisplayPauseControls {
     pub(crate) zoom_labels: Vec<String>,
     /// The sizes the battle frame has room for, one list row each.
     pub(crate) sidebar_choices: Vec<SidebarSize>,
+    /// The main menu's Sidebar text for each choice, in list order.
+    pub(crate) sidebar_labels: Vec<String>,
     /// The size in effect, the one the face shows.
     pub(crate) sidebar: SidebarSize,
     pub(crate) full_screen: bool,
@@ -106,7 +108,7 @@ impl DisplayPauseControls {
     pub(crate) fn row_label(&self, list: DisplayList, row: usize) -> &str {
         match list {
             DisplayList::Zoom => self.zoom_labels.get(row).map_or("", String::as_str),
-            DisplayList::Sidebar => self.sidebar_choices.get(row).map_or("", |s| s.label()),
+            DisplayList::Sidebar => self.sidebar_labels.get(row).map_or("", String::as_str),
         }
     }
 
@@ -136,6 +138,7 @@ pub(crate) fn sync_display_controls(state: &mut AppState) {
     );
     let battle = App::match_zoom_geometry(state);
     let profile = &state.persistence.options_profile;
+    let csf = state.process_assets.csf.as_ref();
     let display = &mut state.match_state.match_presentation.display_pause;
     display.zoom_choices = Zoom::choices(window.0, window.1);
     display.zoom_labels = display
@@ -146,11 +149,17 @@ pub(crate) fn sync_display_controls(state: &mut AppState) {
                 zoom,
                 window,
                 profile.original_shape,
+                csf,
             )
         })
         .collect();
     display.zoom = profile.zoom;
     display.sidebar_choices = SidebarSize::choices(battle.src_width, battle.src_height);
+    display.sidebar_labels = display
+        .sidebar_choices
+        .iter()
+        .map(|size| crate::i18n::text(csf, size.label()).into_owned())
+        .collect();
     display.sidebar = profile
         .sidebar
         .in_effect(battle.src_width, battle.src_height);
@@ -637,7 +646,6 @@ mod tests {
             display.pick(Some(2)),
             Some(DisplayPick::Sidebar(SidebarSize::ExtraLarge))
         );
-        assert_eq!(display.row_label(DisplayList::Sidebar, 2), "XL");
         // A fixed zoom past this window's largest step shows that step.
         display.zoom = Zoom::Percent(300);
         assert_eq!(display.selected(DisplayList::Zoom), 3);
