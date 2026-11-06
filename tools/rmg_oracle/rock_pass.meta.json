@@ -24,5 +24,5 @@
     "next": "0x0065C780"
   },
   "replay_command": "python -m tools.rmg_oracle.rock_pass",
-  "payload_sha256": "aace294e6ca22f88fab085a012f4339d370e49a75be41fe67ae7a823731edbcc"
+  "payload_sha256": "ae7b7b1cd350afcd679114687ef7a900853f7150871e5ee54606ec66ec56511f"
 }

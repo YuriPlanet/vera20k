@@ -103,7 +103,7 @@ class RockPassFixture:
         after = self.state()
         changed = [[x, y, *after[(x, y)]] for (x, y) in self.diamond()
                    if after[(x, y)] != before[(x, y)]]
-        return published(row) | dict(changed=changed, recalcs=recalcs)
+        return published(row) | dict(changed=changed, recalc_count=len(recalcs))
 
 
 def generate():

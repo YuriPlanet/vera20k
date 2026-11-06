@@ -276,8 +276,11 @@ mod tests {
                 };
                 run(&mut ctx, &args)
             };
-            let recalcs = row["recalcs"].as_array().unwrap();
-            assert_eq!(placed as usize, recalcs.len(), "{context}: counted picks");
+            assert_eq!(
+                placed,
+                int(&row["recalc_count"]),
+                "{context}: counted picks"
+            );
             let changed: Vec<[i32; 4]> = state(&grid)
                 .into_iter()
                 .zip(before)

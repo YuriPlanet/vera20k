@@ -195,15 +195,12 @@ fn rebuild_regions(ctx: &mut StartsCtx<'_>, zones: &ZoneField) {
         // `RmgRegion::RmgRegion @ 0x0058BF70`: the seed's level and its
         // Cell 0x004865D0 water test.
         let seed = ctx.grid.get(x, y);
-        let mut region = RmgRegion {
+        let mut region = RmgRegion::rebuilt(
             id,
-            level: seed.map_or(0, |cell| cell.level),
-            active: seed.is_some_and(|cell| ctx.ids.is_water_shore_or_waterfall(cell.tile)),
-            cell_count: 0,
-            cells: Vec::new(),
-            start_quota: 0,
-            field_slots: None,
-        };
+            seed.map_or(0, |cell| cell.level),
+            seed.is_some_and(|cell| ctx.ids.is_water_shore_or_waterfall(cell.tile)),
+            0,
+        );
 
         // LIFO flood `RmgRegion::FloodFromCell @ 0x00594420`: stamp at
         // enqueue, claim + append at pop.
@@ -891,6 +888,8 @@ mod tests {
                 row["records"].as_array().unwrap(),
                 "{context}: records"
             );
+            // The rebuild draws nothing.
+            assert_native_rng(&doc, row, rng);
         }
         let split = doc["split"].as_array().unwrap();
         assert_eq!(split.len(), 6);
@@ -920,6 +919,8 @@ mod tests {
             assert_eq!(sorted, ids(&row["order"]), "{context}: order");
             let quotas: Vec<i32> = order.iter().map(|&i| regions.list[i].start_quota).collect();
             assert_eq!(quotas, ids(&row["quotas"]), "{context}: quotas");
+            // Nor do the deletion, sort and split (the scene seeds 1).
+            assert_native_rng(&doc, row, RmgRng::new(1));
         }
     }
 }
