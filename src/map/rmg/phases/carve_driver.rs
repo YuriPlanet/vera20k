@@ -24,7 +24,7 @@ use crate::util::native_x87::X87Chop53;
 use super::adjacency;
 use super::bridge_deck;
 use super::carve::{CarveCtx, CarveRegions, try_carve_connector_at_cell};
-use super::connector::LENIENCY_STEP;
+use super::connector::leniency;
 use crate::map::rmg::RmgConstructionTrace;
 
 /// `101 * (1 + 2^-32) * 2^-32` — the accessibility roll, pre-divided.
@@ -177,7 +177,7 @@ pub(crate) fn carve_connectors_for_region(
             let cell = border[pick_border_cell(ctx.rng, border.len() as i32)];
             // Leniency runs 0.00, 0.01 ... 0.99 off the ZERO-based attempt
             // index, so the first try is the strictest.
-            let leniency = attempt as f32 * LENIENCY_STEP;
+            let leniency = leniency(attempt);
             if ctx.playfield.contains_geometry_packed(cell.0, cell.1)
                 && try_carve_connector_at_cell(ctx, carve_regions, cell, leniency)
             {
