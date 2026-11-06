@@ -278,7 +278,7 @@ impl App {
             VictoryBranch::Credits => VictoryEnd::Credits,
             VictoryBranch::MapSelect => {
                 let mapsel = state.process_assets.manager().and_then(|assets| {
-                    crate::rules::retail_sources::select_ini(assets, "MAPSELMD.INI")
+                    crate::rules::retail_sources::select_ini(assets, assets.ini_roots().mapsel())
                         .map_err(|error| log::warn!("MapSelect: {error}"))
                         .ok()
                 });
