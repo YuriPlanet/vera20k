@@ -146,12 +146,17 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
     let max_cells = params.max_cells.max(400);
     let cap = (max_cells * 8 + 2).max(100) as usize;
 
-    // Seed selection (random path only when the caller passes (0,0)).
+    // Seed selection (random path only when the caller passes (0,0)). The
+    // count reaches 200 before the 200th candidate is tested
+    // (0x0059BD7E..0x0059BD88), so 200 draw pairs test 199 candidates.
     let seed = if params.seed == (0, 0) {
         let mut found = None;
-        for _ in 0..200 {
+        for attempt in 1..=200 {
             let d1 = seed_draw(ctx.rng, ctx.map_w);
             let d2 = seed_draw(ctx.rng, ctx.map_h);
+            if attempt == 200 {
+                break;
+            }
             let candidate = (d1 + d2 + 1, (ctx.map_w - d1) + d2);
             let free = ctx.scratch.in_diamond(candidate.0, candidate.1)
                 && ctx.scratch.get(candidate.0, candidate.1).region == 0;
@@ -380,6 +385,120 @@ mod tests {
             grid.get_mut(x, y).unwrap().tile = 500;
         }
         (grid, scratch)
+    }
+
+    /// Whole original `RandomMapGenerator::CarveBlob @ 0x0059BBC0` calls from
+    /// `tools/rmg_oracle/carve_blob.py`: a declared all-water scene (not a
+    /// full Generate prefix) on the fixture's physical shore TMPs, and every
+    /// carved cell, stamp, region tag, return value, blob id and draw.
+    #[test]
+    fn native_carve_blob_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/carve_blob.json");
+        let int = |v: &serde_json::Value| v.as_i64().unwrap() as i32;
+        let (mut identity, blocks) = super::super::cliff_native_tests::physical_tiles();
+        identity.water_base = int(&doc["scene"]["water_base"]);
+        let cliff = int(&doc["scene"]["cliff_base"]);
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 9);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let pair = |v: &serde_json::Value| (int(&v[0]), int(&v[1]));
+            let list = |key: &str| input[key].as_array().unwrap().clone();
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let mut scratch = RmgScratch::new(33, 16, 48);
+            let fill = int(&input["fill"]);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                let cell = grid.get_mut(x, y).unwrap();
+                (cell.sub_tile, cell.level) = (0, 0);
+                cell.tile = if fill != 0 { 0 } else { identity.water_base };
+                scratch.get_mut(x, y).region = fill;
+            }
+            for c in list("water") {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile = identity.water_base;
+                scratch.get_mut(int(&c[0]), int(&c[1])).region = 0;
+            }
+            for c in list("land") {
+                let (x, y) = (int(&c[0]), int(&c[1]));
+                if scratch.in_diamond(x, y) {
+                    grid.get_mut(x, y).unwrap().tile = 0;
+                    scratch.get_mut(x, y).region = int(&c[2]);
+                }
+            }
+            for c in list("rough") {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile = cliff;
+            }
+            let fields = |grid: &RmgGrid, scratch: &RmgScratch| {
+                let mut out = Vec::new();
+                for y in 0..33 {
+                    for x in 0..33 {
+                        if scratch.in_diamond(x, y) {
+                            let cell = grid.get(x, y).unwrap();
+                            let record = scratch.get(x, y);
+                            out.push([
+                                x,
+                                y,
+                                cell.tile,
+                                i32::from(cell.sub_tile),
+                                i32::from(cell.level),
+                                record.region,
+                                record.stamp,
+                            ]);
+                        }
+                    }
+                }
+                out
+            };
+            let prior = fields(&grid, &scratch);
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut gauss = Gaussian::default();
+            let mut blob = int(&input["blob"]);
+            let rect = &input["rect"];
+            let params = BlobParams {
+                max_cells: int(&input["max_cells"]),
+                rect: std::array::from_fn(|i| int(&rect[i])),
+                seed: pair(&input["start"]),
+                target: pair(&input["target"]),
+                drift_scale: input["drift"].as_f64().unwrap(),
+                directed: int(&input["directed"]) != 0,
+            };
+            let pops = {
+                let mut ctx = BlobCtx {
+                    grid: &mut grid,
+                    scratch: &mut scratch,
+                    ids: &identity,
+                    blocks: &blocks,
+                    rng: &mut rng,
+                    gauss: &mut gauss,
+                    trig: None,
+                    map_w: 16,
+                    map_h: 16,
+                    rollback_level: int(&input["level"]) as u8,
+                };
+                carve(&mut ctx, &mut blob, &params)
+            };
+            assert_eq!(pops, int(&row["result"]), "{context}: result");
+            assert_eq!(blob, int(&row["blob_after"]), "{context}: blob id");
+            let cells: Vec<[i32; 7]> = fields(&grid, &scratch)
+                .into_iter()
+                .zip(prior)
+                .filter(|(now, before)| now != before)
+                .map(|(now, _)| now)
+                .collect();
+            let native: Vec<[i32; 7]> = row["cells"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| std::array::from_fn(|i| int(&c[i])))
+                .collect();
+            assert_eq!(cells, native, "{context}: cells");
+            assert_eq!(
+                rng.into_continuation().into_native_parts(),
+                super::super::cliff_native_tests::native_state(&doc, &row["rng_after"])
+                    .into_native_parts(),
+                "{context}: exit RNG"
+            );
+        }
     }
 
     #[test]
