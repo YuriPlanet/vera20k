@@ -1562,6 +1562,7 @@ fn advance_one_simulation_frame(
         let mut hud_messages = Vec::new();
         // Carried out of the sim borrow so the census can read `state` freely below.
         let mut census_tick: Option<u64> = None;
+        let fps_panel_shown = state.renderer.fps_overlay.is_visible();
         if let Some(rt) = state.match_state.sim_runtime.as_mut() {
             let sim = &mut rt.simulation;
             let native_frame = sim.session().binary_frame();
@@ -1576,9 +1577,9 @@ fn advance_one_simulation_frame(
                 crate::sim::replay::PLAY_HASH_INTERVAL
             });
             // Report points need the ledger whether or not a dashboard is
-            // attached; `publish_if_due` only runs with a client.
-            #[cfg(feature = "telemetry-dashboard")]
-            sim.set_frame_profiling(true);
+            // attached; `publish_if_due` only runs with a client. Elsewhere
+            // the FPS panel's Most CPU row reads it while the panel shows.
+            sim.set_frame_profiling(cfg!(feature = "telemetry-dashboard") || fps_panel_shown);
             // Delay-zero AnimClass construction can emit StartSound during the
             // final map-load sweep. Keep it until this first tactical drain;
             // `drain(..)` below still consumes every event exactly once.

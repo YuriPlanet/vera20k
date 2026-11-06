@@ -733,6 +733,7 @@ impl App {
                 &state.renderer.shell_surface_presenter,
                 &state.renderer.depth_view,
                 &state.renderer.fps_overlay,
+                &state.renderer.bit_font,
                 Some(splash),
             )?;
             if presented {
@@ -1263,9 +1264,10 @@ impl App {
                         .copy_game_frame_to(&mut encoder, &output.texture);
                     render_output
                 };
-                #[cfg(feature = "telemetry-dashboard")]
                 if let Some(phases) = game_output.phases {
+                    #[cfg(feature = "telemetry-dashboard")]
                     state.diag.render_timing.record(phases);
+                    state.renderer.fps_overlay.record_render_phases(phases);
                 }
                 game_render_output = Some(game_output);
             }
@@ -1330,6 +1332,9 @@ impl App {
             &state.renderer.batch_renderer,
             &mut encoder,
             &output.texture,
+            &state.renderer.bit_font,
+            state.process_assets.csf.as_ref(),
+            crate::app::diagnostics::fps_overlay::match_panel(state),
         );
         if state.frontend.screen == GameScreen::InGame {
             let csf = state.process_assets.csf.as_ref();

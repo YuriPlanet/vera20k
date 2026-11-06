@@ -823,12 +823,15 @@ fn sync_view(state: &mut AppState) {
         .message_list
         .set_typing(typing);
     // The list spans the tactical viewport: the frame left of the sidebar.
+    // VERA's FPS panel holds the viewport's top left while it shows, and the
+    // list and its edit line start below it.
     let tactical_w = crate::app::input::camera::tactical_viewport_size(state).0 as i32;
+    let top = state.renderer.fps_overlay.message_top();
     state
         .match_state
         .match_presentation
         .message_list
-        .set_view(0, 0, tactical_w);
+        .set_view(0, top, tactical_w);
 }
 
 /// Prepare one successful offline TextLabel paint, using raw wall time for

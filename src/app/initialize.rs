@@ -682,6 +682,7 @@ impl App {
                 &shell_surface_presenter,
                 &depth_view,
                 &fps_overlay,
+                &bit_font,
                 splash.as_deref(),
             ) {
                 Ok(true) => {
