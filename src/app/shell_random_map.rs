@@ -378,6 +378,13 @@ pub(crate) struct RandomMapGenerationRetention {
     /// Simulation exists. Inactive load attempts receive draw-free snapshots;
     /// only successful Simulation installation retires this transport.
     pending_process_mapgen: Option<crate::rng_continuation::MapGenRngContinuation>,
+    /// The globals `ComputeScenarioHeaderFromMap @ 0x0058B820` fills at every
+    /// Generate (count `0x00ABED0C`, cells `0x00ABE304`, pairs `0x00ABE328`,
+    /// bounds `0x00ABDFD0..0x00ABECD0`). OK and Cancel leave them; they live
+    /// for the process, empty before the first Generate. `0x0058BB30` copies
+    /// them back into Scenario when the random map is selected, and
+    /// `DrawStartPositions 0x00640710` numbers the starts from them.
+    generated_header: crate::map::preview::ScenarioStartStaging,
 }
 
 impl RandomMapGenerationRetention {
@@ -472,7 +479,19 @@ impl RandomMapGenerationRetention {
     }
 
     pub(super) fn finish_generation(&mut self, generated: crate::map::rmg::GeneratedMap) {
+        // RandomMapGenerator__CreateStartingPoints calls 0x0058B820 at
+        // 0x00594EE3, inside the generate block.
+        self.generated_header = crate::app::loading::composition::scenario_start_staging(
+            &generated.map_file,
+            &generated.start_waypoints,
+        );
         self.candidate = Some(generated);
+    }
+
+    /// The last Generate's start header (`0x0058B820`'s globals), which a
+    /// random map's preview numbers its starts from.
+    pub(crate) fn generated_header(&self) -> crate::map::preview::ScenarioStartStaging {
+        self.generated_header
     }
 
     fn cancel_setup(&mut self) {
@@ -877,16 +896,13 @@ pub(super) fn accept_random_map_setup_owners(
         return None;
     };
     runtime.remember_random_map_options(&options);
-    // 0x0058B830 writes the 'W' staging at each Generate. VERA stages it
+    // 0x0058B820 writes the 'W' staging at each Generate. VERA stages it
     // from the accepted candidate, the host's own load authority, so the 'W'
     // and the host's start cells always agree.
     // RESIDUAL: natively a later Generate that is cancelled still overwrites
     // Scenario +0x11C0, which both the host's load and the 'W' then read.
-    if let Some(generated) = retention.candidate.as_ref() {
-        runtime.stage_generated_starts(crate::app::loading::composition::scenario_start_staging(
-            &generated.map_file,
-            &generated.start_waypoints,
-        ));
+    if retention.candidate.is_some() {
+        runtime.stage_generated_starts(retention.generated_header());
     }
     retention.accept_setup(RANDMAP_SED_FILE);
     dismiss_random_map_setup_owners(modal, retention, dir);
@@ -2178,7 +2194,7 @@ mod tests {
             accept_random_map_setup_owners(&mut runtime, &mut modal, &mut retention, Some(&base))
                 .expect("generated modal accepts");
         assert!(img_path.exists(), "common teardown must publish .img first");
-        // OK stages the accepted map's starts for the LAN 'W' (0x0058B830).
+        // OK stages the accepted map's starts for the LAN 'W' (0x0058B820).
         let accepted_staging = runtime.start_staging();
         assert_eq!(
             accepted_staging.defined_cells().collect::<Vec<_>>(),
@@ -2432,6 +2448,22 @@ mod tests {
                 "preview rasterization must not run another MapClass Resize"
             );
         }
+    }
+
+    #[test]
+    fn every_generate_records_the_start_header_and_cancel_keeps_it() {
+        let mut retention = RandomMapGenerationRetention::default();
+        assert_eq!(retention.generated_header().count, 0, "before any Generate");
+        retention.finish_generation(generated_preview(0x501, 10));
+        let header = retention.generated_header();
+        assert_eq!(header.count, 1);
+        assert_eq!(header.cells[0], (10, 20));
+        retention.cancel_setup();
+        assert_eq!(
+            retention.generated_header(),
+            header,
+            "0x0058B820's globals outlive Cancel"
+        );
     }
 
     fn generated_preview(seed: i32, start_x: u16) -> crate::map::rmg::GeneratedMap {
