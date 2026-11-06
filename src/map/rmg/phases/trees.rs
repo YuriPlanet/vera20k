@@ -24,6 +24,8 @@ use crate::map::rmg::x87::{self, Gaussian, TruncF64};
 use crate::util::native_x87::X87Chop53;
 
 use super::blob::{CellHeap, by_key};
+use super::shore::TileBlocks;
+use super::zones::{LAND_ROCK, recalc_land};
 
 /// Placement iterations cap (`local_5c < 100`).
 const MAX_ITERATIONS: i32 = 100;
@@ -79,6 +81,37 @@ pub struct TreeCtx<'a> {
     pub rng: &'a mut RmgRng,
     /// Shared with the water/blob phases — the Box-Muller cache persists.
     pub gauss: &'a mut Gaussian,
+    pub recalc_rock: &'a RecalcRock,
+}
+
+/// The cells whose land type the last full recalc before the trees left Rock
+/// (`CellClass::RecalcAttributes @ 0x0047D2B0`, see [`recalc_land`]): the
+/// tree gate reads that stored land type, not one for the current levels.
+/// An overlay cell's native land type is its overlay's, but the gate refuses
+/// overlay cells before reading it.
+#[derive(Debug, Default)]
+pub struct RecalcRock {
+    stride: usize,
+    rock: Vec<bool>,
+}
+
+impl RecalcRock {
+    pub fn snapshot(grid: &RmgGrid, blocks: &dyn TileBlocks, cliff_back_impassability: u8) -> Self {
+        let stride = grid.width();
+        let rock = (0..stride * stride)
+            .map(|index| {
+                let (x, y) = ((index % stride) as i32, (index / stride) as i32);
+                grid.get(x, y).is_some()
+                    && recalc_land(grid, blocks, cliff_back_impassability, x, y) == LAND_ROCK
+            })
+            .collect();
+        Self { stride, rock }
+    }
+
+    /// Only asked for a valid cell.
+    fn get(&self, x: i32, y: i32) -> bool {
+        self.rock[y as usize * self.stride + x as usize]
+    }
 }
 
 fn t(value: f64) -> TruncF64 {
@@ -220,10 +253,13 @@ fn place_region(
             break;
         }
 
-        // Eligibility gate. (The original also rejects land type 3, but a clear
-        // tile is land type 0, so that branch is a proven no-op — omitted.)
+        // Eligibility gate: clear, unoccupied, overlay-free and not Rock; a
+        // clear tile is Rock when the CliffBack reclass put it behind a cliff.
         let eligible = ctx.grid.get(cur.0, cur.1).is_some_and(|cell| {
-            ctx.ids.is_clear(cell.tile) && !cell.occupied && cell.overlay == -1
+            ctx.ids.is_clear(cell.tile)
+                && !cell.occupied
+                && cell.overlay == -1
+                && !ctx.recalc_rock.get(cur.0, cur.1)
         });
         if eligible && ctx.rng.next_unit() < density {
             let v = tree_index_draw(ctx.rng);
@@ -328,9 +364,19 @@ mod tests {
         }
     }
 
+    /// No block data: every tile reads land type Clear.
+    struct NoBlocks;
+
+    impl TileBlocks for NoBlocks {
+        fn block(&self, _tile: i32) -> Option<&crate::map::rmg::phases::shore::TileBlock> {
+            None
+        }
+    }
+
     fn run_once(seed: u16, max_trees: i32) -> (Vec<(String, i16, i16)>, World) {
         let mut w = world();
         let targs = args(&w, max_trees);
+        let rock = RecalcRock::snapshot(&w.grid, &NoBlocks, 2);
         let identity = ids();
         let mut rng = RmgRng::new(seed);
         let mut gauss = Gaussian::default();
@@ -341,10 +387,39 @@ mod tests {
                 ids: &identity,
                 rng: &mut rng,
                 gauss: &mut gauss,
+                recalc_rock: &rock,
             };
             run(&mut ctx, &targs)
         };
         (trees, w)
+    }
+
+    #[test]
+    fn cell_behind_a_cliff_takes_no_tree() {
+        // The origin sits four levels under its (x, y-1) neighbour.
+        let first_tree = |cliff_back_impassability| {
+            let mut w = world();
+            let (x, y) = (60, 40);
+            let level = w.grid.get(x, y).unwrap().level;
+            w.grid.get_mut(x, y - 1).unwrap().level = level + 4;
+            let rock = RecalcRock::snapshot(&w.grid, &NoBlocks, cliff_back_impassability);
+            let identity = ids();
+            let mut rng = RmgRng::new(7);
+            let mut gauss = Gaussian::default();
+            let mut ctx = TreeCtx {
+                grid: &mut w.grid,
+                scratch: &mut w.scratch,
+                ids: &identity,
+                rng: &mut rng,
+                gauss: &mut gauss,
+                recalc_rock: &rock,
+            };
+            let mut out = Vec::new();
+            place_region(&mut ctx, (x, y), 1, 1.0, &mut out);
+            (out[0].1, out[0].2)
+        };
+        assert_ne!(first_tree(2), (60, 40));
+        assert_eq!(first_tree(1), (60, 40));
     }
 
     #[test]

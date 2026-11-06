@@ -448,6 +448,11 @@ pub fn run_pipeline(
     observe(Stage::RegionReset, grid, &waypoints, &terrain);
     lat_fixup::run(grid, inputs.ids);
     observe(Stage::RecalcAfterTiberium, grid, &waypoints, &terrain);
+    // This recalc (Generate 0x00598960, just before CreateHills) is the last
+    // to set the land type PlaceTreeRegion (0x005A45E0) reads: neither the
+    // hills nor the LAT patches recompute it, so its Rock cells are kept.
+    let recalc_rock =
+        trees::RecalcRock::snapshot(grid, inputs.blocks, inputs.cliff_back_impassability);
 
     // ---- Hills -------------------------------------------------------------
     {
@@ -495,6 +500,7 @@ pub fn run_pipeline(
             ids: inputs.ids,
             rng: &mut *rng,
             gauss: &mut *gauss,
+            recalc_rock: &recalc_rock,
         };
         trees::run(&mut ctx, &args)
     };
