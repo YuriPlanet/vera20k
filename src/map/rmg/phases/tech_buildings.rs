@@ -24,7 +24,8 @@ use crate::map::rmg::x87::TruncF64;
 use crate::map::rmg::{RmgConstructionPhase, RmgConstructionTrace};
 
 use super::regions::Regions;
-use super::zones::diamond_frame_contains;
+use super::shore::TileBlocks;
+use super::zones::{LAND_ROCK, diamond_frame_contains, recalc_land};
 
 /// Placement attempts per building.
 const MAX_ATTEMPTS: i32 = 100;
@@ -49,6 +50,8 @@ pub struct TechArgs {
     pub local_rect: [i32; 4],
     /// Scratch/grid stride: the whole-map anchor draw is `uniform(0, S²−1)`.
     pub stride: i32,
+    /// Low byte of `[General] CliffBackImpassability=`.
+    pub cliff_back_impassability: u8,
 }
 
 /// One recorded placement, emitted later as a neutral `[Structures]` entry.
@@ -64,6 +67,8 @@ pub struct TechCtx<'a> {
     pub grid: &'a mut RmgGrid,
     pub scratch: &'a mut RmgScratch,
     pub ids: &'a TileIds,
+    /// Tile blocks, for the foundation gate's land type.
+    pub blocks: &'a dyn TileBlocks,
     pub rng: &'a mut RmgRng,
     pub regions: &'a Regions,
     pub types: &'a [TechType],
@@ -277,14 +282,11 @@ fn try_place(
     true
 }
 
-/// One foundation cell's gate: unoccupied, clear, level-matched, inside the
-/// playfield frame, and outside every start's protected clearing.
-///
-/// The original also rejects land type 3 (Rock), but that is unreachable
-/// here: the clear-tile test already restricts the cell to tile 0 / the
-/// unassigned sentinel, both of which classify as land type 0, so the
-/// land-type branch can never fire on generated terrain. Omitted as a proven
-/// no-op.
+/// One foundation cell's gate (`AddTechBuildings @ 0x005A95B0` and
+/// `PlaceTechBuildingInRegion @ 0x00595400`): unoccupied, clear,
+/// level-matched, not Rock, inside the playfield frame, and outside every
+/// start's protected clearing. A clear tile is Rock when the CliffBack
+/// reclass of `RecalcAttributes @ 0x0047D2B0` put it behind a cliff.
 fn foundation_cell_ok(
     ctx: &TechCtx<'_>,
     args: &TechArgs,
@@ -302,6 +304,9 @@ fn foundation_cell_ok(
         return false;
     }
     if cell.level != anchor_level {
+        return false;
+    }
+    if recalc_land(ctx.grid, ctx.blocks, args.cliff_back_impassability, x, y) == LAND_ROCK {
         return false;
     }
     if !diamond_frame_contains(
@@ -352,6 +357,15 @@ mod tests {
         }
     }
 
+    /// One-cell clear blocks: every tile reads land type Clear.
+    struct ClearBlocks;
+
+    impl TileBlocks for ClearBlocks {
+        fn block(&self, _tile: i32) -> Option<&crate::map::rmg::phases::shore::TileBlock> {
+            None
+        }
+    }
+
     fn types() -> Vec<TechType> {
         // A 2x2 and a 1x1, so the type draw picks between distinct footprints.
         vec![
@@ -390,6 +404,7 @@ mod tests {
                 map_w,
                 local_rect: [2, 5, gen_w, gen_h],
                 stride,
+                cliff_back_impassability: 2,
             },
         }
     }
@@ -406,6 +421,7 @@ mod tests {
                 grid: &mut w.grid,
                 scratch: &mut w.scratch,
                 ids: &identity,
+                blocks: &ClearBlocks,
                 rng: &mut rng,
                 regions: &regions,
                 types: &type_list,
@@ -415,5 +431,34 @@ mod tests {
             (placements, rng.next_u32())
         };
         assert_eq!(snapshot(2024), snapshot(2024));
+    }
+
+    #[test]
+    fn foundation_cell_behind_a_cliff_is_rejected() {
+        let mut w = world(1);
+        let (x, y) = (60, 40);
+        let level = w.grid.get(x, y).unwrap().level;
+        w.grid.get_mut(x, y - 1).unwrap().level = level + 4;
+        let identity = ids();
+        let regions = Regions::default();
+        let mut rng = RmgRng::new(1);
+        let ctx = TechCtx {
+            grid: &mut w.grid,
+            scratch: &mut w.scratch,
+            ids: &identity,
+            blocks: &ClearBlocks,
+            rng: &mut rng,
+            regions: &regions,
+            types: &[],
+        };
+        // A cell four levels under its (x, y-1) neighbour reads Rock
+        // (0x0047D2B0); its (x+1, y) neighbour probes other cells.
+        assert!(!foundation_cell_ok(&ctx, &w.args, x, y, level));
+        assert!(foundation_cell_ok(&ctx, &w.args, x + 1, y, level));
+        let off = TechArgs {
+            cliff_back_impassability: 1,
+            ..w.args
+        };
+        assert!(foundation_cell_ok(&ctx, &off, x, y, level));
     }
 }

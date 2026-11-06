@@ -682,8 +682,15 @@ pub(super) fn prepare_random_map_generation(
         .as_ref()
         .map(|preview| preview.rules.terrain_rules.clone())
         .unwrap_or_default();
-    let resolved_inputs =
-        crate::map::rmg::build::ResolvedTheaterInputs::from_theater(&theater, &terrain_rules);
+    let cliff_back_impassability = preview_rules.as_ref().map_or_else(
+        || crate::rules::ruleset::GeneralRules::default().cliff_back_impassability,
+        |preview| preview.rules.general.cliff_back_impassability,
+    );
+    let resolved_inputs = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
+        &theater,
+        &terrain_rules,
+        cliff_back_impassability,
+    );
     let blocks =
         crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
             asset_manager.get(name)

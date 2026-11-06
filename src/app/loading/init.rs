@@ -2588,8 +2588,15 @@ pub(crate) fn load_map_initial_with_assets(
             full_init_entry_mode != crate::app::match_runtime::session::SessionMode::Campaign,
         )?;
         let terrain_rules = &generated_rules.native.rules().terrain_rules;
-        let resolved =
-            crate::map::rmg::build::ResolvedTheaterInputs::from_theater(&theater, terrain_rules);
+        let resolved = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
+            &theater,
+            terrain_rules,
+            generated_rules
+                .native
+                .rules()
+                .general
+                .cliff_back_impassability,
+        );
 
         // Tile-block layouts (sub-cell height/terrain grids) from the theater's
         // real TMP data — the shore tiler and zone classifier read these.

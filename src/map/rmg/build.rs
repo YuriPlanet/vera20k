@@ -50,6 +50,8 @@ pub struct ResolvedTheaterInputs {
     /// Resolved tile ids, including the theater's cliff/waterfall ranges.
     pub ids: TileIds,
     pub wheel_impassable: [bool; LAND_TYPES],
+    /// Low byte of `[General] CliffBackImpassability=`.
+    pub cliff_back_impassability: u8,
     /// Per-tile `Morphable=` flag, indexed by flat tile id.
     pub morphable: Vec<bool>,
     /// The generator's sine table: always the retail table in production.
@@ -59,13 +61,18 @@ pub struct ResolvedTheaterInputs {
 
 impl ResolvedTheaterInputs {
     /// Snapshot a theater + rules into the resolved input set.
-    pub fn from_theater(theater: &TheaterData, rules: &TerrainRules) -> Self {
+    pub fn from_theater(
+        theater: &TheaterData,
+        rules: &TerrainRules,
+        cliff_back_impassability: u8,
+    ) -> Self {
         let morphable = (0..theater.lookup.len())
             .map(|tile| theater.lookup.is_morphable(tile as u16))
             .collect();
         Self {
             ids: TileIds::resolve(theater),
             wheel_impassable: wheel_impassable_from_rules(rules),
+            cliff_back_impassability,
             morphable,
             trig: Some(TrigTable::embedded()),
         }
@@ -195,6 +202,7 @@ pub fn generate_map_observed(
         blocks,
         morphable: &morphable,
         wheel_impassable: resolved.wheel_impassable,
+        cliff_back_impassability: resolved.cliff_back_impassability,
         tech_types,
         trig: resolved.trig,
         map_type: options.map_type,
@@ -332,6 +340,7 @@ mod tests {
                 w[3] = true; // Rock, as in stock rules
                 w
             },
+            cliff_back_impassability: 2,
             morphable: Vec::new(),
         }
     }
@@ -558,8 +567,14 @@ mod tests {
         let rules = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini")?;
         let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE")
             .expect("retail TEMPERATE theater");
-        let resolved =
-            ResolvedTheaterInputs::from_theater(&theater, &TerrainRules::from_ini(&rules));
+        let resolved = ResolvedTheaterInputs::from_theater(
+            &theater,
+            &TerrainRules::from_ini(&rules),
+            crate::rules::ruleset::RuleSet::from_ini(&rules)
+                .expect("retail rules")
+                .general
+                .cliff_back_impassability,
+        );
         let blocks =
             crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
                 assets.get(name)

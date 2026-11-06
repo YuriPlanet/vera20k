@@ -556,6 +556,7 @@ mod tests {
                 map_w: args.map_w,
                 local_rect: [2, 5, args.gen_w, args.gen_h],
                 wheel_impassable: wheel,
+                cliff_back_impassability: 2,
             },
             ZoneKind::Amphibious,
         )

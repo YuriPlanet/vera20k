@@ -58,6 +58,9 @@ pub struct PipelineInputs<'a> {
     pub morphable: &'a dyn Fn(i32) -> bool,
     /// Per-land-type "wheel speed <= 1%" flags for the zone classifier.
     pub wheel_impassable: [bool; LAND_TYPES],
+    /// Low byte of `[General] CliffBackImpassability=`, for the Recalc land
+    /// type the zone classifier and tech foundation gate read.
+    pub cliff_back_impassability: u8,
     /// The resolved `NeutralTechBuildings` list.
     pub tech_types: &'a [TechType],
     /// The generator's sine table, for the river's heading.
@@ -309,6 +312,7 @@ pub fn run_pipeline(
             map_w,
             local_rect,
             wheel_impassable: inputs.wheel_impassable,
+            cliff_back_impassability: inputs.cliff_back_impassability,
         };
         let zones = zones::compute(
             grid,
@@ -348,11 +352,13 @@ pub fn run_pipeline(
                 map_w,
                 local_rect,
                 stride: stride as i32,
+                cliff_back_impassability: inputs.cliff_back_impassability,
             };
             let mut ctx = TechCtx {
                 grid: &mut *grid,
                 scratch: &mut *scratch,
                 ids: inputs.ids,
+                blocks: inputs.blocks,
                 rng: &mut *rng,
                 regions: &regions,
                 types: inputs.tech_types,
@@ -395,11 +401,13 @@ pub fn run_pipeline(
             map_w,
             local_rect,
             stride: stride as i32,
+            cliff_back_impassability: inputs.cliff_back_impassability,
         };
         let mut ctx = TechCtx {
             grid: &mut *grid,
             scratch: &mut *scratch,
             ids: inputs.ids,
+            blocks: inputs.blocks,
             rng: &mut *rng,
             regions: &regions,
             types: inputs.tech_types,
@@ -692,12 +700,14 @@ mod tests {
             map_w: 74,
             local_rect: [2, 5, 70, 70],
             stride: STRIDE as i32,
+            cliff_back_impassability: 2,
         };
         let tech_placements = {
             let mut ctx = TechCtx {
                 grid: &mut grid,
                 scratch: &mut scratch,
                 ids: &identity,
+                blocks: &blocks,
                 rng: &mut rng,
                 regions: &empty_regions,
                 types: &types,
