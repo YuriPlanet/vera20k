@@ -67,7 +67,9 @@ pub mod audio;
 pub mod app;
 
 // Process start-up shared by the desktop binary and the Android cdylib, which
-// has no `main` of its own.
+// has no `main` of its own. The browser starts in `web` instead, and its build
+// has neither the system dialogs nor the spawn-launch result this module uses.
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub mod entry;
 
 // Source-level dependency guards for the domain-boundaries ledger.
