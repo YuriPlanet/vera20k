@@ -139,12 +139,14 @@ pub enum WolTarget {
     LobbyBack,
     /// The Options page's offline test service: login to a settled 0x113.
     TestServiceLobby,
-    /// Modern lobby presentation with sealed local fixture data, no credentials.
+    /// Modern lobby presentation with sealed local fixture data, no
+    /// credentials, Tanya's row hovered.
     ModernLobby,
-    /// The same, then Create Game: `0xC3` on Red Alert 2's box art.
+    /// The same, then Create Game: `0xC3` on Red Alert 2's box art, its
+    /// Ranked game box's help hovered.
     ModernCreate,
     /// The same, then a click on Tanya: VERA's player card with her badge,
-    /// country and season record, Message's help hovered.
+    /// country and season record, her season row's help hovered.
     ModernPlayerCard,
     /// The same, then a click on your own name: Change Country picks
     /// Australia, which VERA.INI keeps and the lobby is sent; the list is
@@ -2201,6 +2203,36 @@ impl WolCapture {
                             == Some(lobby_ui::CREATE_LIMIT),
                         "Limit Screen Resolution has no help"
                     );
+                    // Ranked game says when the lobby ranks the room's games.
+                    set_window_pointer_to_rect_center(state, create.ranked.context("Ranked game")?);
+                    App::handle_wol_mouse_move(state);
+                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    ensure!(
+                        help == App::csf_label(state, "VERA:RankedGameHelp", "VERA:RankedGameHelp"),
+                        "Ranked game's help read {help:?}"
+                    );
+                    self.event(frame, json!({"Ranked game help": help}));
+                    self.settle();
+                    return Ok(());
+                }
+                if self.target == WolTarget::ModernLobby {
+                    // Tanya's row names her badge, rank and OS.
+                    let row = player_row_rect(state, "Tanya")?;
+                    set_window_pointer_to_rect_center(state, row);
+                    App::handle_wol_mouse_move(state);
+                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    let label = |key: &str| App::csf_label(state, key, key);
+                    let expected = crate::i18n::fill(
+                        &label("VERA:PlayerHelp"),
+                        &[
+                            ("name", &"Tanya"),
+                            ("badge", &label("VERA:LobbyBadgeCommanderInChief")),
+                            ("rank", &1),
+                            ("os", &"48.51"),
+                        ],
+                    );
+                    ensure!(help == expected, "Tanya's row help read {help:?}");
+                    self.event(frame, json!({"hovered player help": help}));
                     self.settle();
                     return Ok(());
                 }
@@ -2227,6 +2259,27 @@ impl WolCapture {
                         &[("name", &"Tanya")],
                     );
                     ensure!(help == expected, "Message's help read {help:?}");
+                    // The season row: her OS to the hundredth, and what OS
+                    // is under the pointer.
+                    let label = |key: &str| App::csf_label(state, key, key);
+                    let rows = crate::app::shell_wol::player_card::view(state)
+                        .context("Tanya's card")?
+                        .rows;
+                    let season = rows
+                        .iter()
+                        .position(|(caption, _)| *caption == label("VERA:Season"))
+                        .context("the season row")?;
+                    let shown = crate::i18n::fill(
+                        &label("VERA:SeasonRank"),
+                        &[("rank", &1), ("os", &"48.51")],
+                    );
+                    ensure!(rows[season].1 == shown, "the card shows {rows:?}");
+                    let explained = label("VERA:SeasonHelp");
+                    set_window_pointer_to_rect_center(state, card.rows[season].1);
+                    App::handle_wol_mouse_move(state);
+                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    ensure!(help == explained, "the season row's help read {help:?}");
+                    self.event(frame, json!({"season row help": help}));
                     self.settle();
                     return Ok(());
                 }
@@ -5051,6 +5104,13 @@ fn game_row_click(state: &mut AppState, row: usize) -> Result<()> {
 
 /// A click on the player list's row of `name`.
 fn player_row_click(state: &mut AppState, name: &str) -> Result<()> {
+    let rect = player_row_rect(state, name)?;
+    welcome_click(state, rect);
+    Ok(())
+}
+
+/// The modern player list's row of `name`.
+fn player_row_rect(state: &AppState, name: &str) -> Result<RectPx> {
     let layout = crate::app::shell_wol::lobby::layout(state);
     let lobby = state
         .frontend
@@ -5069,9 +5129,7 @@ fn player_row_click(state: &mut AppState, name: &str) -> Result<()> {
         lobby.ui.player_rows.len(),
         layout.page.scale,
     );
-    let rect = geometry.row(row - lobby.ui.player_list.top_index);
-    welcome_click(state, rect);
-    Ok(())
+    Ok(geometry.row(row - lobby.ui.player_list.top_index))
 }
 
 /// Three IRC records; the preferred-server draw left record 1 selected.
