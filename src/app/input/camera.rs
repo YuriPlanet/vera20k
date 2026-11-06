@@ -1233,10 +1233,14 @@ pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
     {
         return;
     }
-    let wasd = state.persistence.options_profile.wasd_camera
-        && !state.match_state.match_presentation.message_list.editing();
-    let held =
-        |arrow| super::hotkeys::camera_scroll_held(&state.match_state.input.keys_held, arrow, wasd);
+    let held = |arrow| {
+        !state.match_state.match_presentation.message_list.editing()
+            && state
+                .match_state
+                .input
+                .camera_scroll_keys
+                .held(&state.match_state.input.keys_held, arrow)
+    };
     let key_distance = keyboard_scroll_distance(state);
     let mut movement = (0.0, 0.0);
     if held(winit::keyboard::KeyCode::ArrowLeft) {

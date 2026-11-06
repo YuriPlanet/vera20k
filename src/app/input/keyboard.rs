@@ -30,6 +30,16 @@ pub(crate) fn in_game_key_edge(
     edge: InGameKeyEdge<'_>,
     paused_at_event: bool,
 ) {
+    // Releases must clear custom scroll state even when chat or a pause owns
+    // the key. Forget its old direction before resolving a new press as well.
+    if state
+        .match_state
+        .input
+        .camera_scroll_keys
+        .release(edge.physical)
+    {
+        state.match_state.input.keys_held.remove(&edge.physical);
+    }
     // Native chat owns its edit keys before game-local chords or hotkeys.
     if crate::app::input::chat::key_edge(state, &edge) {
         if !edge.state.is_pressed() {
@@ -61,12 +71,10 @@ pub(crate) fn in_game_key_edge(
     let is_escape = matches!(edge.logical, Key::Named(NamedKey::Escape));
     let locked = crate::app::input::campaign_input::is_locked(state);
     let binding_key = hotkeys::binding_logical_key(edge.logical, edge.unmodified, edge.location);
-    let mut resolution = state.match_state.input.hotkey_bindings.resolve_game_event(
-        edge.physical,
+    let mut resolution = state.match_state.input.hotkey_bindings.resolve_event(
         binding_key,
         edge.location,
         state.match_state.input.hotkey_modifiers,
-        state.persistence.options_profile.wasd_camera,
     );
     // EncodeAndEnqueue54F200 admits Escape while A8ED9C is set and refuses
     // other buffered keys. ProcessCommand55DF80 then falls back to Options
@@ -101,15 +109,20 @@ pub(crate) fn in_game_key_edge(
         return;
     }
     if edge.state.is_pressed() {
-        if let Some(scroll_key) = hotkeys::fallback_scroll_key(resolution)
+        if let Some(scroll_key) = hotkeys::camera_command_key(resolution)
+            && !locked
+        {
+            state
+                .match_state
+                .input
+                .camera_scroll_keys
+                .press(edge.physical, scroll_key);
+            state.match_state.input.keys_held.insert(edge.physical);
+        } else if let Some(scroll_key) = hotkeys::fallback_scroll_key(resolution)
             && !locked
         {
             state.match_state.input.keys_held.insert(scroll_key);
-        } else if hotkeys::physical_scroll_key(edge.physical).is_none()
-            && !(state.persistence.options_profile.wasd_camera
-                && hotkeys::wasd_scroll_key(edge.physical).is_some()
-                && (locked || !modifiers.is_empty()))
-        {
+        } else if hotkeys::physical_scroll_key(edge.physical).is_none() {
             state.match_state.input.keys_held.insert(edge.physical);
         }
     } else {
@@ -323,11 +336,11 @@ fn activate(state: &mut AppState, id: KeyboardButton) {
             else {
                 return;
             };
-            let result = state.match_state.input.hotkey_bindings.assign_game(
-                command,
-                dialog.captured,
-                state.persistence.options_profile.wasd_camera,
-            );
+            let result = state
+                .match_state
+                .input
+                .hotkey_bindings
+                .assign(command, dialog.captured);
             dialog.error = result.err().map(|error| match error {
                 BindingAssignmentError::CannotMap => "Error:CannotMap",
                 BindingAssignmentError::CannotRemap => "Error:CannotRemap",

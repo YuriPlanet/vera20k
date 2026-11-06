@@ -358,11 +358,7 @@ pub(crate) fn render_keyboard_shell(
         ));
     }
     let catalog = registered_commands();
-    let bindings = state
-        .match_state
-        .input
-        .hotkey_bindings
-        .for_game(state.persistence.options_profile.wasd_camera);
+    let bindings = &state.match_state.input.hotkey_bindings;
     if let Some(selected) = dialog.selected_command() {
         texts.push(text(
             font,

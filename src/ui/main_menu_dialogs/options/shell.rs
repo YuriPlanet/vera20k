@@ -22,9 +22,8 @@ use super::{
     RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL,
     SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP,
     SKIP_INTRO_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize,
-    VERA_ICON_HELP, VERA_ICON_LABEL, WASD_CAMERA_HELP, WASD_CAMERA_LABEL, WOL_TEST_SERVICE_HELP,
-    WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL,
-    Zoom,
+    VERA_ICON_HELP, VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
+    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{
@@ -497,7 +496,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::RenderInterpolation => RENDER_INTERPOLATION_LABEL,
             LauncherCheckboxId::MouseWheelZoom => MOUSE_WHEEL_ZOOM_LABEL,
             LauncherCheckboxId::RightClickOrders => RIGHT_CLICK_ORDERS_LABEL,
-            LauncherCheckboxId::WasdCamera => WASD_CAMERA_LABEL,
             LauncherCheckboxId::LockCursor => LOCK_CURSOR_LABEL,
             LauncherCheckboxId::VeraIcon => VERA_ICON_LABEL,
             LauncherCheckboxId::HdRadar => HD_RADAR_LABEL,
@@ -559,7 +557,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::RenderInterpolation => self.values.render_interpolation,
             LauncherCheckboxId::MouseWheelZoom => self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => self.values.right_click_orders,
-            LauncherCheckboxId::WasdCamera => self.values.wasd_camera,
             LauncherCheckboxId::LockCursor => self.values.lock_cursor,
             LauncherCheckboxId::VeraIcon => self.values.vera_icon,
             LauncherCheckboxId::HdRadar => self.values.hd_radar,
@@ -777,7 +774,6 @@ impl OptionsDialogState {
                 LauncherCheckboxId::RightClickOrders => {
                     LauncherStatusHelp::Text(RIGHT_CLICK_ORDERS_HELP)
                 }
-                LauncherCheckboxId::WasdCamera => LauncherStatusHelp::Text(WASD_CAMERA_HELP),
                 LauncherCheckboxId::LockCursor => LauncherStatusHelp::Text(LOCK_CURSOR_HELP),
                 LauncherCheckboxId::VeraIcon => LauncherStatusHelp::Text(VERA_ICON_HELP),
                 LauncherCheckboxId::HdRadar => LauncherStatusHelp::Text(HD_RADAR_HELP),
@@ -1614,11 +1610,12 @@ mod tests {
         );
     }
 
-    /// Each box toggles with its cue and reports the
+    /// Each box on the Display page toggles with its cue and reports the
     /// change; a fresh dialog per box keeps them independent.
     #[test]
     fn settings_checkboxes_toggle_with_their_cue() {
         use LauncherCheckboxId::*;
+        let layout = page(Category::Display);
         for (id, label, event) in [
             (
                 FullScreen,
@@ -1640,17 +1637,7 @@ mod tests {
                 YR_ORIGINAL_STYLE_LABEL,
                 LauncherOptionsEvent::YrOriginalStyleChanged,
             ),
-            (
-                WasdCamera,
-                WASD_CAMERA_LABEL,
-                LauncherOptionsEvent::WasdCameraChanged,
-            ),
         ] {
-            let layout = page(if id == WasdCamera {
-                Category::Controls
-            } else {
-                Category::Display
-            });
             let mut state = state();
             let rect = checkbox(&layout, id);
             assert_eq!(state.shell_checkbox_label(id), label);

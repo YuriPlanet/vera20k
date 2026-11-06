@@ -71,8 +71,6 @@ pub(crate) const RENDER_INTERPOLATION_LABEL: &str = "Render Interpolation";
 pub(crate) const RENDER_INTERPOLATION_HELP: &str = "Smooth motion between simulation frames. Adds one frame of visual latency; does not increase simulation speed.";
 pub(crate) const MOUSE_WHEEL_ZOOM_LABEL: &str = "Mouse Wheel Zoom";
 pub(crate) const MOUSE_WHEEL_ZOOM_HELP: &str = "Use the mouse wheel to zoom battles in or out. Turning this off restores the normal view distance.";
-pub(crate) const WASD_CAMERA_LABEL: &str = "WASD Camer Control (O stops Unit)";
-pub(crate) const WASD_CAMERA_HELP: &str = "Use WASD to move the camera. O stops selected units by default; change Stop in Keyboard options. Turn off to restore normal keyboard controls.";
 pub(crate) const RIGHT_CLICK_ORDERS_LABEL: &str = "Right-Click Orders";
 pub(crate) const RIGHT_CLICK_ORDERS_HELP: &str =
     "Left-click to select; right-click to give orders.";
@@ -567,7 +565,6 @@ pub(crate) enum LauncherCheckboxId {
     MouseWheelZoom,
     /// VERA-only alternative controls: left selects, right commands.
     RightClickOrders,
-    WasdCamera,
     /// VERA's cursor lock: the pointer stays inside the game window. It
     /// applies at once and is saved.
     LockCursor,
@@ -650,7 +647,6 @@ pub(crate) enum LauncherOptionsEvent {
     RenderInterpolationChanged(bool),
     MouseWheelZoomChanged(bool),
     RightClickOrdersChanged(bool),
-    WasdCameraChanged(bool),
     LockCursorChanged(bool),
     VeraIconChanged(bool),
     HdRadarChanged(bool),
@@ -701,7 +697,6 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) render_interpolation: bool,
     pub(crate) mouse_wheel_zoom: bool,
     pub(crate) right_click_orders: bool,
-    pub(crate) wasd_camera: bool,
     pub(crate) lock_cursor: bool,
     pub(crate) vera_icon: bool,
     pub(crate) hd_radar: bool,
@@ -749,7 +744,6 @@ impl Default for LauncherOptionsValues {
             render_interpolation: false,
             mouse_wheel_zoom: false,
             right_click_orders: false,
-            wasd_camera: false,
             lock_cursor: false,
             vera_icon: false,
             hd_radar: false,
@@ -1125,7 +1119,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::RenderInterpolation => &mut self.values.render_interpolation,
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
             LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
-            LauncherCheckboxId::WasdCamera => &mut self.values.wasd_camera,
             LauncherCheckboxId::LockCursor => &mut self.values.lock_cursor,
             LauncherCheckboxId::VeraIcon => &mut self.values.vera_icon,
             LauncherCheckboxId::HdRadar => &mut self.values.hd_radar,
@@ -1166,9 +1159,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::RightClickOrders => self
                 .pending_events
                 .push(LauncherOptionsEvent::RightClickOrdersChanged(checked)),
-            LauncherCheckboxId::WasdCamera => self
-                .pending_events
-                .push(LauncherOptionsEvent::WasdCameraChanged(checked)),
             LauncherCheckboxId::LockCursor => self
                 .pending_events
                 .push(LauncherOptionsEvent::LockCursorChanged(checked)),
@@ -1412,7 +1402,6 @@ impl Category {
             Self::Controls => &[
                 Setting::Slider(Slider::Scroll),
                 Setting::Checkbox(Check::RightClickOrders),
-                Setting::Checkbox(Check::WasdCamera),
                 Setting::Checkbox(Check::MouseWheelZoom),
                 Setting::Checkbox(Check::LockCursor),
             ],
@@ -2092,7 +2081,6 @@ mod tests {
                     Check::RenderInterpolation,
                     Check::MouseWheelZoom,
                     Check::RightClickOrders,
-                    Check::WasdCamera,
                     Check::LockCursor,
                     Check::VeraIcon,
                     Check::HdRadar,

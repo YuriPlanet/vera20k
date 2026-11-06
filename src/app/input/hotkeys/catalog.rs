@@ -29,23 +29,17 @@ macro_rules! command {
 }
 
 pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
-    #[cfg(any(feature = "verax", feature = "phobos"))]
-    {
-        use std::sync::OnceLock;
-        static ALL: OnceLock<Vec<CommandMetadata>> = OnceLock::new();
-        ALL.get_or_init(|| {
-            let mut all = RETAIL_COMMANDS.to_vec();
-            #[cfg(feature = "verax")]
-            all.extend_from_slice(&VERA_COMMANDS);
-            #[cfg(feature = "phobos")]
-            all.extend_from_slice(&PHOBOS_COMMANDS);
-            all
-        })
-    }
-    #[cfg(not(any(feature = "verax", feature = "phobos")))]
-    {
-        retail_commands()
-    }
+    use std::sync::OnceLock;
+    static ALL: OnceLock<Vec<CommandMetadata>> = OnceLock::new();
+    ALL.get_or_init(|| {
+        let mut all = RETAIL_COMMANDS.to_vec();
+        all.extend_from_slice(&CAMERA_COMMANDS);
+        #[cfg(feature = "verax")]
+        all.extend_from_slice(&VERA_COMMANDS);
+        #[cfg(feature = "phobos")]
+        all.extend_from_slice(&PHOBOS_COMMANDS);
+        all
+    })
 }
 
 /// Original gamemd registration only; the keyboard-page fixture compares it
@@ -62,6 +56,43 @@ pub(crate) fn retail_commands() -> &'static [CommandMetadata] {
 /// Ares-style enhancements add their keys here rather than among the original
 /// commands. The CSF has no entry, so the page shows the key itself.
 pub(crate) const VERA_CATEGORY_KEY: &str = "vera20k";
+
+/// Optional bindings: ordinary arrow fallback and retail W/A/S/D bindings
+/// remain unchanged until the player assigns a camera command in Keyboard.
+const CAMERA_COMMANDS: [CommandMetadata; 4] = [
+    command!(
+        HotkeyCommand::CameraUp,
+        "CameraUp",
+        "Camera Up",
+        "vera20k",
+        "Scroll the camera up while held (arrow keys also scroll by default)",
+        None
+    ),
+    command!(
+        HotkeyCommand::CameraDown,
+        "CameraDown",
+        "Camera Down",
+        "vera20k",
+        "Scroll the camera down while held (arrow keys also scroll by default)",
+        None
+    ),
+    command!(
+        HotkeyCommand::CameraLeft,
+        "CameraLeft",
+        "Camera Left",
+        "vera20k",
+        "Scroll the camera left while held (arrow keys also scroll by default)",
+        None
+    ),
+    command!(
+        HotkeyCommand::CameraRight,
+        "CameraRight",
+        "Camera Right",
+        "vera20k",
+        "Scroll the camera right while held (arrow keys also scroll by default)",
+        None
+    ),
+];
 
 const RETAIL_COMMANDS: [CommandMetadata; 87] = [
     command!(
