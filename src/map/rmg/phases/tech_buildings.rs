@@ -485,85 +485,139 @@ mod tests {
         }
     }
 
+    /// The tech harnesses' scene: clear level-0 cells, declared rough,
+    /// occupied, Rock, locked and `[level, slope]` cells, the foundations in
+    /// `NeutralTechBuildings` order and the region records.
+    fn native_scene(
+        doc: &serde_json::Value,
+        input: &serde_json::Value,
+    ) -> (RmgGrid, RmgScratch, Vec<TechType>, Regions, TechArgs) {
+        use crate::map::rmg::phases::regions::RmgRegion;
+        let rough = int(&doc["scene"]["rough"]);
+        let mut grid = RmgGrid::new(33, 16, 48);
+        let mut scratch = RmgScratch::new(33, 16, 48);
+        for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+            let cell = grid.get_mut(x, y).unwrap();
+            (cell.tile, cell.sub_tile, cell.level, cell.slope) = (0, 0, 0, 0);
+        }
+        for (x, y) in cells(&input["rough"]) {
+            grid.get_mut(x.into(), y.into()).unwrap().tile = rough;
+        }
+        for (x, y) in cells(&input["occupied"]) {
+            grid.get_mut(x.into(), y.into()).unwrap().occupied = true;
+        }
+        for (x, y) in cells(&input["rock"]) {
+            grid.get_mut(x.into(), y.into()).unwrap().sub_tile = 1;
+        }
+        for (x, y) in cells(&input["locked"]) {
+            scratch.get_mut(x.into(), y.into()).water_lock = true;
+        }
+        for c in input["terrain"].as_array().unwrap() {
+            let cell = grid.get_mut(int(&c[0]), int(&c[1])).unwrap();
+            (cell.level, cell.slope) = (int(&c[2]) as u8, int(&c[3]) as u8);
+        }
+        let types: Vec<TechType> = input["types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .map(|(index, footprint)| TechType {
+                name: index.to_string(),
+                footprint: cells(footprint),
+            })
+            .collect();
+        let mut regions = Regions::default();
+        for (id, region) in input["regions"].as_array().unwrap().iter().enumerate() {
+            let list = cells(&region[1]);
+            regions.list.push(RmgRegion {
+                id: id as i32,
+                level: 0,
+                active: false,
+                cell_count: list.len() as i32,
+                cells: list,
+                start_quota: int(&region[0]),
+                field_slots: None,
+            });
+        }
+        let args = TechArgs {
+            map_type: int(&input["map_type"]),
+            map_w: 16,
+            local_rect: [2, 5, int(&input["gen"][0]), int(&input["gen"][1])],
+            stride: 33,
+            cliff_back_impassability: 2,
+        };
+        (grid, scratch, types, regions, args)
+    }
+
+    /// The declared Rock: tile 0's sub-tile 1 reads TMP terrain 7.
+    fn declared_rock() -> DeclaredRock {
+        use crate::map::rmg::phases::shore::{SubTile, TileBlock};
+        DeclaredRock(TileBlock {
+            width: 1,
+            height: 2,
+            subtiles: vec![
+                Some(SubTile::default()),
+                Some(SubTile {
+                    terrain: 7,
+                    ..SubTile::default()
+                }),
+            ],
+        })
+    }
+
+    /// Each traced building's type and cell, `-1` for a destroyed one.
+    fn traced_buildings(trace: &RmgConstructionTrace) -> Vec<[i32; 3]> {
+        use crate::map::construction_trace::RmgConstructionOutcome;
+        trace
+            .events
+            .iter()
+            .map(|event| {
+                let kind = event.techno_type.parse().unwrap();
+                match event.outcome {
+                    RmgConstructionOutcome::Emitted { cell, .. } => {
+                        [kind, i32::from(cell.0), i32::from(cell.1)]
+                    }
+                    RmgConstructionOutcome::Discarded => [kind, -1, -1],
+                }
+            })
+            .collect()
+    }
+
+    fn assert_native_row(
+        doc: &serde_json::Value,
+        row: &serde_json::Value,
+        trace: &RmgConstructionTrace,
+        rng: RmgRng,
+    ) {
+        let context = row["input"]["id"].as_str().unwrap();
+        let native: Vec<[i32; 3]> = row["buildings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|b| std::array::from_fn(|i| int(&b[i])))
+            .collect();
+        assert_eq!(traced_buildings(trace), native, "{context}: buildings");
+        assert_eq!(
+            rng.into_continuation().into_native_parts(),
+            super::super::cliff_native_tests::native_state(doc, &row["rng_after"])
+                .into_native_parts(),
+            "{context}: exit RNG"
+        );
+    }
+
     /// Whole original `RandomMapGenerator::AddTechBuildings @ 0x005A95B0`
     /// calls from `tools/rmg_oracle/tech_buildings.py`: each constructed
     /// building's type and cell (or its destroy) and the exit RNG.
     #[test]
     fn native_add_tech_buildings_controls() {
-        use crate::map::construction_trace::RmgConstructionOutcome;
-        use crate::map::rmg::phases::regions::RmgRegion;
-        use crate::map::rmg::phases::shore::{SubTile, TileBlock};
-
         let doc = crate::test_fixture::json("tools/rmg_oracle/tech_buildings.json");
-        let rough = int(&doc["scene"]["rough"]);
-        let rock_terrain = SubTile {
-            terrain: 7,
-            ..SubTile::default()
-        };
-        let blocks = DeclaredRock(TileBlock {
-            width: 1,
-            height: 2,
-            subtiles: vec![Some(SubTile::default()), Some(rock_terrain)],
-        });
+        let blocks = declared_rock();
         let identity = ids();
         let rows = doc["rows"].as_array().unwrap();
         assert_eq!(rows.len(), 8);
         for row in rows {
-            let input = &row["input"];
-            let context = input["id"].as_str().unwrap();
-            let mut grid = RmgGrid::new(33, 16, 48);
-            let mut scratch = RmgScratch::new(33, 16, 48);
-            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
-                let cell = grid.get_mut(x, y).unwrap();
-                (cell.tile, cell.sub_tile, cell.level, cell.slope) = (0, 0, 0, 0);
-            }
-            for (x, y) in cells(&input["rough"]) {
-                grid.get_mut(x.into(), y.into()).unwrap().tile = rough;
-            }
-            for (x, y) in cells(&input["occupied"]) {
-                grid.get_mut(x.into(), y.into()).unwrap().occupied = true;
-            }
-            for (x, y) in cells(&input["rock"]) {
-                grid.get_mut(x.into(), y.into()).unwrap().sub_tile = 1;
-            }
-            for (x, y) in cells(&input["locked"]) {
-                scratch.get_mut(x.into(), y.into()).water_lock = true;
-            }
-            for c in input["terrain"].as_array().unwrap() {
-                let cell = grid.get_mut(int(&c[0]), int(&c[1])).unwrap();
-                (cell.level, cell.slope) = (int(&c[2]) as u8, int(&c[3]) as u8);
-            }
-            let types: Vec<TechType> = input["types"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .enumerate()
-                .map(|(index, footprint)| TechType {
-                    name: index.to_string(),
-                    footprint: cells(footprint),
-                })
-                .collect();
-            let mut regions = Regions::default();
-            for (id, region) in input["regions"].as_array().unwrap().iter().enumerate() {
-                let list = cells(&region[1]);
-                regions.list.push(RmgRegion {
-                    id: id as i32,
-                    level: 0,
-                    active: false,
-                    cell_count: list.len() as i32,
-                    cells: list,
-                    start_quota: int(&region[0]),
-                    field_slots: None,
-                });
-            }
-            let args = TechArgs {
-                map_type: int(&input["map_type"]),
-                map_w: 16,
-                local_rect: [2, 5, int(&input["gen"][0]), int(&input["gen"][1])],
-                stride: 33,
-                cliff_back_impassability: 2,
-            };
-            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let (mut grid, mut scratch, types, regions, args) = native_scene(doc, &row["input"]);
+            let mut rng = RmgRng::new(row["input"]["seed"].as_u64().unwrap() as u16);
             let mut ctx = TechCtx {
                 grid: &mut grid,
                 scratch: &mut scratch,
@@ -575,32 +629,43 @@ mod tests {
             };
             let mut trace = RmgConstructionTrace::default();
             run_traced(&mut ctx, &args, &mut trace, 0);
-            let buildings: Vec<[i32; 3]> = trace
-                .events
-                .iter()
-                .map(|event| {
-                    let kind = event.techno_type.parse().unwrap();
-                    match event.outcome {
-                        RmgConstructionOutcome::Emitted { cell, .. } => {
-                            [kind, i32::from(cell.0), i32::from(cell.1)]
-                        }
-                        RmgConstructionOutcome::Discarded => [kind, -1, -1],
-                    }
-                })
-                .collect();
-            let native: Vec<[i32; 3]> = row["buildings"]
+            assert_native_row(doc, row, &trace, rng);
+        }
+    }
+
+    /// `CreateStartingPoints @ 0x00594B50`'s map-type-0 tail from its gate at
+    /// 0x00594E80 (`tools/rmg_oracle/start_tech_flips.py`): one flip per
+    /// quota-0 region in the bucket list, each head's
+    /// `PlaceTechBuildingInRegion @ 0x00595400` between the flips.
+    #[test]
+    fn native_start_tech_flip_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/start_tech_flips.json");
+        let blocks = declared_rock();
+        let identity = ids();
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 6);
+        for row in rows {
+            let input = &row["input"];
+            let (mut grid, mut scratch, types, regions, args) = native_scene(doc, input);
+            let order: Vec<usize> = input["order"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .map(|b| std::array::from_fn(|i| int(&b[i])))
+                .map(|i| int(i) as usize)
                 .collect();
-            assert_eq!(buildings, native, "{context}: buildings");
-            assert_eq!(
-                rng.into_continuation().into_native_parts(),
-                super::super::cliff_native_tests::native_state(doc, &row["rng_after"])
-                    .into_native_parts(),
-                "{context}: exit RNG"
-            );
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut ctx = TechCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                blocks: &blocks,
+                rng: &mut rng,
+                regions: &regions,
+                types: &types,
+            };
+            let mut trace = RmgConstructionTrace::default();
+            run_start_flips_traced(&mut ctx, &args, &order, &mut trace, 0);
+            assert_native_row(doc, row, &trace, rng);
         }
     }
 }

@@ -139,7 +139,9 @@ class TechBuildingsFixture:
         u.mem_write(actor + 0x3C, words(case['map_type']))
         return actor
 
-    def run(self, case, pool):
+    def run(self, case, pool, slice_frame=None):
+        """Whole AddTechBuildings, or with `slice_frame(case)` (called after
+        the scene is prepared) a slice `(entry, until, frame)` on that frame."""
         from tools import native_oracle as native
         from tools.rmg_oracle.start_points import published
         from tools.rmg_oracle.cliff_materialization import words
@@ -189,7 +191,12 @@ class TechBuildingsFixture:
                 return False
             return True
 
-        row = self.starts.execute(case, pool, ENTRY, actor, (), extra=stub)
+        if slice_frame is None:
+            row = self.starts.execute(case, pool, ENTRY, actor, (), extra=stub)
+        else:
+            entry, until, frame = slice_frame(case)
+            row = self.starts.execute(case, pool, entry, 0, (), extra=stub, until=until,
+                                      frame=frame)
         placed = [b for b in buildings if b[1] != -1]
         native.require(len(live) == len(placed), 'A discarded building was not destroyed')
         return published(row) | dict(buildings=buildings)
