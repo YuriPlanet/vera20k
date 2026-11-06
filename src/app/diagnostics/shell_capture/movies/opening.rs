@@ -603,7 +603,9 @@ impl OpeningCapture {
         let locked_after = crate::app::input::campaign_input::is_locked(state);
         let depth_after = state.match_state.input.cursor_visibility.level();
         let cursor_instances_after =
-            crate::app::presentation::ui_overlays::build_software_cursor_instances(state).len();
+            crate::app::presentation::ui_overlays::build_software_cursor_instances(state)
+                .0
+                .len();
         ensure!(
             !locked_after && depth_after == 0 && cursor_instances_after == 1,
             "the unlocked save loaded in the lock left the pointer hidden \

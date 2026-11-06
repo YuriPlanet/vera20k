@@ -145,6 +145,9 @@ pub(crate) struct GameRenderOutput {
     pub particle_draws: Option<Vec<crate::app::presentation::instances::ParticleDrawObservation>>,
     /// Phase spans of this render, for the dashboard's meter and the FPS panel.
     pub phases: Option<RenderPhases>,
+    /// The frame of this render's software cursor sprite, for a zoomed
+    /// match's window pass (`window_ui::draw_battlefield`).
+    pub software_cursor: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
 }
 
 /// Actual HUD update inputs observed by the frame owner, and the radar draw
@@ -791,6 +794,7 @@ pub(crate) fn render_game(
             sidebar_gclock: &sidebar.gclock,
             smooth_chrome: sidebar.smooth_chrome,
             smooth_command_bar: sidebar.smooth_command_bar,
+            software_cursor: ui.software_cursor_draw,
         },
     );
     // Prep before phase 1 plus everything after phase 6 is the `other` row:
@@ -812,6 +816,7 @@ pub(crate) fn render_game(
         times,
         particle_draws: world.particle_draws,
         phases,
+        software_cursor: ui.software_cursor_draw,
     })
 }
 

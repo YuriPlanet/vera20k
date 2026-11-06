@@ -68,6 +68,8 @@ pub(super) struct DebugInstances {
 /// In-game UI overlays: health bars, placement preview, cursor.
 pub(super) struct UiInstances {
     pub software_cursor: Vec<SpriteInstance>,
+    /// The frame `software_cursor` was built from, whose texture draws it.
+    pub software_cursor_draw: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
     pub drag: Vec<SpriteInstance>,
     pub placement: Vec<SpriteInstance>,
     /// Phobos placement preview artwork, drawn after the PLACE cells.
@@ -360,7 +362,13 @@ pub(super) fn build_world_instances(
     // The same admitted Display parents feed native6D9789's later sweep.
     // Shared health admission/selection/hover owners derive frame-local strips;
     // storage order and atlas identity never determine their submission order.
-    let mut group_labels = build_control_group_status_instances(state, sw, sh);
+    // One cursor pick serves the group labels and every health bar: both
+    // read the hover flag the cursor's action target sets.
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let hovered =
+        crate::app::presentation::ui_overlays::health_hover_target(state, local_owner.as_deref());
+    let mut group_labels =
+        build_control_group_status_instances(state, local_owner.as_deref(), hovered, sw, sh);
     if let (Some(sim), Some(overlay)) = (
         state
             .match_state
@@ -373,11 +381,6 @@ pub(super) fn build_world_instances(
             .selection_overlay
             .as_ref(),
     ) {
-        let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
-        let hovered = crate::app::presentation::ui_overlays::health_hover_target(
-            state,
-            local_owner.as_deref(),
-        );
         let speech_wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         for parent in &mut planned_objects {
             parent.status = sim.entities().get(parent.parent.id).map(|entity| {
@@ -891,7 +894,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
 /// (63D8B8), mind-control links (704E40), psychic detection lines (4DC340)
 /// and the airstrike wobble move with it once per composite.
 pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances {
-    let software_cursor = build_software_cursor_instances(state);
+    let (software_cursor, software_cursor_draw) = build_software_cursor_instances(state);
     let drag = match &state.match_state.match_presentation.selection_overlay {
         Some(o) => o.build_drag_rect(
             &state.match_state.input.selection_state,
@@ -1018,6 +1021,7 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
 
     UiInstances {
         software_cursor,
+        software_cursor_draw,
         drag,
         placement: placement_preview.cells,
         #[cfg(feature = "phobos")]

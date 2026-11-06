@@ -5,7 +5,7 @@
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner_name;
 use crate::app::input::cursor::{
-    current_cursor_feedback_kind, cursor_id_for_feedback, software_cursor_frame_for,
+    current_cursor_feedback_kind, cursor_id_for_feedback, software_cursor_frame_index,
 };
 use crate::app::presentation::instances::in_view;
 use crate::app::types::{CursorId, HoverTargetKind, SoftwareCursorSequence};
@@ -27,16 +27,14 @@ const UNIT_PIPS_INFANTRY: u32 = 8;
 /// Horizontal pixel spacing between unit health pips (each pip drawn 2px apart).
 const UNIT_PIP_STEP_X: f32 = 2.0;
 
-/// The object under the cursor whose health bar the original draws on hover.
+/// The object under the cursor whose health bar the original draws on hover,
+/// for either Techno health branch.
 ///
 /// The per-object overlay pass calls the health-bar slot from exactly two arms:
 /// the object is selected, or the object carries the cursor's hover flag and is
 /// *not* selected. The hover flag is set from the cursor's resolved action
 /// target, so a shrouded enemy — which is never an action target — is excluded.
-fn health_bar_hover_target(
-    state: &AppState,
-    local_owner: Option<&str>,
-) -> Option<(u64, HoverTargetKind)> {
+pub(crate) fn health_hover_target(state: &AppState, local_owner: Option<&str>) -> Option<u64> {
     let sim = state
         .match_state
         .sim_runtime
@@ -59,14 +57,9 @@ fn health_bar_hover_target(
         HoverTargetKind::FriendlyStructure
         | HoverTargetKind::EnemyStructure
         | HoverTargetKind::FriendlyUnit
-        | HoverTargetKind::EnemyUnit => Some((hover.stable_id, hover.kind)),
+        | HoverTargetKind::EnemyUnit => Some(hover.stable_id),
         HoverTargetKind::HiddenEnemy => None,
     }
-}
-
-/// The existing resolved hover target for either Techno health branch.
-pub(crate) fn health_hover_target(state: &AppState, local_owner: Option<&str>) -> Option<u64> {
-    health_bar_hover_target(state, local_owner).map(|(id, _)| id)
 }
 
 /// Whether a status-producing object draws its bracket background and pips.
@@ -603,9 +596,12 @@ pub(crate) fn build_control_group_status_render_instances(
     parents
 }
 
-/// AppState adapter for the production tactical UI build.
+/// AppState adapter for the production tactical UI build. `hovered_entity_id`
+/// is this draw's [`health_hover_target`] for `local_owner`.
 pub(crate) fn build_control_group_status_instances(
     state: &AppState,
+    local_owner: Option<&str>,
+    hovered_entity_id: Option<u64>,
     sw: f32,
     sh: f32,
 ) -> BTreeMap<u64, StatusTextOverlayInstances> {
@@ -619,12 +615,7 @@ pub(crate) fn build_control_group_status_instances(
     ) else {
         return BTreeMap::new();
     };
-    let local_owner = preferred_local_owner_name(state);
-    let local_owner_id = local_owner
-        .as_deref()
-        .and_then(|name| sim.interner().get(name));
-    let hovered_entity_id =
-        health_bar_hover_target(state, local_owner.as_deref()).map(|(stable_id, _)| stable_id);
+    let local_owner_id = local_owner.and_then(|name| sim.interner().get(name));
     let (tactical_width, tactical_height) =
         crate::app::input::camera::tactical_viewport_size(state);
     let zoom = state.match_state.input.zoom_level;
@@ -2042,29 +2033,44 @@ pub(crate) fn static_default_cursor(state: &AppState) -> bool {
             .is_some_and(|(id, sequence)| id == CursorId::Default && sequence.interval_ms == 0)
 }
 
-pub(crate) fn build_software_cursor_instances(state: &AppState) -> Vec<SpriteInstance> {
+/// The software cursor frame a draw shows. Its sprite and its texture come
+/// from this one choice, made once per draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SoftwareCursorDraw {
+    id: CursorId,
+    frame: usize,
+}
+
+pub(crate) fn build_software_cursor_instances(
+    state: &AppState,
+) -> (Vec<SpriteInstance>, Option<SoftwareCursorDraw>) {
     if !state.use_software_cursor() || !state.match_state.input.cursor_visibility.is_visible() {
-        return Vec::new();
+        return (Vec::new(), None);
     }
     let Some((id, sequence)) = active_cursor_sequence(state) else {
-        return Vec::new();
+        return (Vec::new(), None);
     };
-    let frame = if id == CursorId::Default
+    // Row 0 is still the shape shown over a node, so its phase steps:
+    // leaving the node restarts the next cursor's animation.
+    let Some(animated) = software_cursor_frame_index(id, sequence) else {
+        return (Vec::new(), None);
+    };
+    let index = if id == CursorId::Default
         && crate::app::input::planning_mode::node_at_cursor(state).is_some()
     {
         //63AC41..4E selects row0's static small frame when only hovering.
-        sequence.frames.get(1)
+        1
     } else {
-        software_cursor_frame_for(id, sequence)
+        animated
     };
-    let Some(frame) = frame else {
-        return Vec::new();
+    let Some(frame) = sequence.frames.get(index) else {
+        return (Vec::new(), None);
     };
     // Cursor rendering: the hotspot pixel must sit exactly at the OS cursor position.
     // Scroll cursors use edge-aligned hotspots, so cursor_x/y represents the hotspot
     // location — subtract the hotspot offset to find the top-left of the sprite.
     // Note: cursor_x/y are in screen space; camera offset is NOT applied (cursor is UI).
-    vec![SpriteInstance {
+    let sprite = SpriteInstance {
         position: [
             state.match_state.input.cursor_x + state.match_state.input.camera_x
                 - sequence.hotspot[0],
@@ -2078,15 +2084,21 @@ pub(crate) fn build_software_cursor_instances(state: &AppState) -> Vec<SpriteIns
         tint: [1.0, 1.0, 1.0],
         alpha: 1.0,
         ..Default::default()
-    }]
+    };
+    (vec![sprite], Some(SoftwareCursorDraw { id, frame: index }))
 }
 
-pub(crate) fn current_software_cursor_texture(state: &AppState) -> Option<&BatchTexture> {
-    if !state.match_state.input.cursor_visibility.is_visible() {
-        return None;
-    }
-    let (id, sequence) = active_cursor_sequence(state)?;
-    Some(&software_cursor_frame_for(id, sequence)?.texture)
+/// The texture of the frame a draw's cursor sprite was built from.
+pub(crate) fn software_cursor_texture(
+    state: &AppState,
+    draw: SoftwareCursorDraw,
+) -> Option<&BatchTexture> {
+    let cursor = state
+        .match_state
+        .match_presentation
+        .software_cursor
+        .as_ref()?;
+    Some(&cursor.get(draw.id)?.frames.get(draw.frame)?.texture)
 }
 
 fn status_entity_visible_plain(

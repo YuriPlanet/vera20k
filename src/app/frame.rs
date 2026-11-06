@@ -1283,7 +1283,10 @@ impl App {
                         state, &mut encoder, &view,
                     );
                     crate::app::presentation::window_ui::draw_battlefield(
-                        state, &mut encoder, &view,
+                        state,
+                        &mut encoder,
+                        &view,
+                        render_output.software_cursor,
                     );
                     render_output
                 } else {
