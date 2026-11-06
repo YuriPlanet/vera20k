@@ -280,7 +280,6 @@ impl Endpoints {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct SimulationReadout {
     pub tps: f32,
-    pub interpolation: bool,
     pub sampling: bool,
 }
 
@@ -440,7 +439,6 @@ impl RenderInterpolation {
     pub(crate) fn readout(&self) -> SimulationReadout {
         SimulationReadout {
             tps: self.tps,
-            interpolation: self.enabled,
             sampling: self.enabled && !self.held && self.interval_ms.is_some(),
         }
     }
@@ -703,9 +701,9 @@ mod tests {
         );
         cache.set_enabled(false);
         assert!(cache.poses.is_empty());
-        assert!(!cache.readout().interpolation);
+        assert!(!cache.enabled);
         cache.set_enabled(true);
-        assert!(cache.readout().interpolation);
+        assert!(cache.enabled);
         assert!(
             !cache.readout().sampling,
             "reenabling waits for fresh history"
@@ -901,11 +899,11 @@ mod tests {
     }
 
     #[test]
-    fn render_interpolation_readout_distinguishes_requested_from_bypassed() {
+    fn render_interpolation_samples_only_with_fresh_unheld_history() {
         let mut sim = live_world();
         let mut cache = RenderInterpolation::new(true);
         cache.observe(&sim, 0, None, false);
-        assert!(cache.readout().interpolation);
+        assert!(cache.enabled);
         assert!(!cache.readout().sampling);
         let next_frame = sim.session().binary_frame() + 1;
         sim.session_mut_for_test()
@@ -915,7 +913,7 @@ mod tests {
         cache.observe(&sim, 40, Some(32.0), true);
         assert!(!cache.readout().sampling);
         cache.toggle();
-        assert!(!cache.readout().interpolation);
+        assert!(!cache.enabled);
     }
 
     #[test]

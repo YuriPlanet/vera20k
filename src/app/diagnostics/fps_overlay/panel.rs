@@ -253,17 +253,9 @@ fn first_row(shown: &Shown, csf: Option<&CsfFile>) -> String {
         label_with(csf, "VERA:FpsPanelFps", "fps", &"--")
     };
     if let Some(simulation) = shown.simulation {
-        let interpolation = match (simulation.interpolation, simulation.sampling) {
-            (true, true) => "VERA:FpsPanelInterpOn",
-            (true, false) => "VERA:FpsPanelInterpBypass",
-            (false, _) => "VERA:FpsPanelInterpOff",
-        };
         let tps = format!("{:.0}", simulation.tps);
-        row.push_str(&format!(
-            "{DOT}{}{DOT}{}",
-            label_with(csf, "VERA:FpsPanelSim", "tps", &tps),
-            label(csf, interpolation)
-        ));
+        let sim = label_with(csf, "VERA:FpsPanelSim", "tps", &tps);
+        row.push_str(&format!("{DOT}{sim}"));
     }
     if let Some(units) = shown.units {
         let units = label_with(csf, "VERA:FpsPanelUnits", "count", &thousands(units));
@@ -300,17 +292,7 @@ fn readout_text(frame_ms: f32) -> String {
 fn simulation_readout_text(frame_ms: f32, simulation: Option<SimulationReadout>) -> String {
     let mut text = readout_text(frame_ms);
     if let Some(simulation) = simulation {
-        text.push_str(&format!(
-            "  SIM {:.0} TPS  INTERP {}",
-            simulation.tps,
-            if simulation.interpolation && simulation.sampling {
-                "ON"
-            } else if simulation.interpolation {
-                "BYPASS"
-            } else {
-                "OFF"
-            },
-        ));
+        text.push_str(&format!("  SIM {:.0} TPS", simulation.tps));
     }
     text
 }
@@ -321,7 +303,6 @@ mod tests {
 
     const READOUT: SimulationReadout = SimulationReadout {
         tps: 30.0,
-        interpolation: true,
         sampling: true,
     };
 
@@ -348,7 +329,7 @@ mod tests {
         let rows = rows(&shown, None);
         assert_eq!(
             text(&rows[0][0]),
-            "FPS 60  ·  17 ms  ·  Sim 30 TPS  ·  Interp on  ·  Units 12,345"
+            "FPS 60  ·  17 ms  ·  Sim 30 TPS  ·  Units 12,345"
         );
         assert_eq!(rows[1][1], Part::Text("Objects 38%".to_owned(), WARM));
         assert_eq!(text(&rows[1][2]), "  ·  Draw world 27%  ·  Vision 11%");
@@ -394,10 +375,7 @@ mod tests {
         let rows = rows_of(
             Shown {
                 frame_ms: f32::NAN,
-                simulation: Some(SimulationReadout {
-                    interpolation: false,
-                    ..READOUT
-                }),
+                simulation: Some(READOUT),
                 areas: SIM_AREAS
                     .iter()
                     .chain(&RENDER_AREAS)
@@ -408,21 +386,10 @@ mod tests {
             },
             None,
         );
-        assert_eq!(rows[0], "FPS --  ·  Sim 30 TPS  ·  Interp off");
+        assert_eq!(rows[0], "FPS --  ·  Sim 30 TPS");
         assert!(rows[1].starts_with("Most CPU:  Commands in 1%  ·  Commands 1%"));
         assert_eq!(rows[2], "Cores     avg 40%");
-        let bypass = first_row(
-            &Shown {
-                simulation: Some(SimulationReadout {
-                    sampling: false,
-                    ..READOUT
-                }),
-                ..Shown::default()
-            },
-            None,
-        );
-        assert_eq!(bypass, "FPS --  ·  Sim 30 TPS  ·  Interp bypass");
-        for text in rows.iter().chain([&bypass]) {
+        for text in &rows {
             assert!(!text.contains("MISSING:"), "{text}");
         }
     }
@@ -456,24 +423,17 @@ mod tests {
     fn fallback_readout_stays_in_the_built_in_font() {
         let supported = crate::render::bit_font::fallback_5x7_glyphs();
         for frame_ms in [0.0, f32::NAN, 0.5, 1000.0 / 60.0, 1234.0] {
-            for (interpolation, sampling) in [(true, true), (false, false), (true, false)] {
-                let simulation = SimulationReadout {
-                    interpolation,
-                    sampling,
-                    ..READOUT
-                };
-                for ch in simulation_readout_text(frame_ms, Some(simulation)).chars() {
-                    assert!(
-                        supported.iter().any(|(glyph, _)| *glyph == ch),
-                        "missing {ch}"
-                    );
-                }
+            for ch in simulation_readout_text(frame_ms, Some(READOUT)).chars() {
+                assert!(
+                    supported.iter().any(|(glyph, _)| *glyph == ch),
+                    "missing {ch}"
+                );
             }
         }
         assert_eq!(readout_text(f32::NAN), "FPS --");
         assert_eq!(
             simulation_readout_text(1000.0 / 60.0, Some(READOUT)),
-            "FPS 60  17 MS  SIM 30 TPS  INTERP ON"
+            "FPS 60  17 MS  SIM 30 TPS"
         );
     }
 }
