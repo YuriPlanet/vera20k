@@ -456,12 +456,16 @@ fn native_radar_event_surface_rebuild_uses_current_playfield_without_baseline_re
         (rebuilt_local.0 as u32, rebuilt_local.1 as u32),
         "terrain and overlay rebuild in the same generated-primary frame"
     );
-    let destination = rebuilt_surface.surface_to_aperture_pixel(rebuilt_local);
-    let offset = ((destination.1 as u32 * MINIMAP_WIDTH + destination.0 as u32) * 4) as usize;
+    let width = rebuilt_surface.generated_size().0;
+    let word = rebuilt
+        .native_radar_terrain
+        .as_ref()
+        .expect("rebuilt terrain surface")
+        .generated_rgb565()[(rebuilt_local.1 * width + rebuilt_local.0) as usize];
     assert_eq!(
-        &rebuilt.base_rgba[offset..offset + 4],
-        &[168, 168, 128, 255],
-        "stock no-CellAnim tiberium reaches the aperture as packed khaki"
+        crate::render::native_surface_format::RGB565.unpack_rgb8(word),
+        [168, 168, 128],
+        "stock no-CellAnim tiberium reaches the generated surface as packed khaki"
     );
     assert_ne!(
         initial

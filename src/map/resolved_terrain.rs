@@ -219,6 +219,10 @@ pub struct ResolvedTerrainCell {
     /// by Engineer CABHUT bridge-repair dispatch.
     pub is_wood_bridge_repair_tile: bool,
     pub level: u8,
+    /// Raw CellClass+0x119 from ReadIsoMapPack5 (gamemd.exe 0x0056BAC0).
+    /// Constructor47BBF0 initializes zero; Cell Save483C10/Load4839F0 retain
+    /// the whole byte. Tile/overlay mutations do not reinterpret or reset it.
+    pub legacy_ice_byte: u8,
     pub filled_clear: bool,
     pub tileset_index: Option<u16>,
     /// `CellClass+0xEC` LandType after TMP and overlay derivation: the one
@@ -938,6 +942,7 @@ pub fn test_loader_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_flat_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
+        legacy_ice_byte: 0,
         rx,
         ry,
         source_tile_index: 0,

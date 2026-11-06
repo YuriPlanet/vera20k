@@ -418,11 +418,7 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         .radar_anim
         .as_mut()
         .expect("radar draw owner")
-        .paint_movie(
-            &state.renderer.gpu,
-            surface.rgba(),
-            [surface.width(), surface.height()],
-        );
+        .paint_movie(surface.batch_texture(), [surface.width(), surface.height()]);
     let mut due = Vec::new();
     if active
         && let Some(subtitles) = state

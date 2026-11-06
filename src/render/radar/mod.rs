@@ -4,6 +4,7 @@
 //! optional HD radar.
 
 pub mod anim;
+pub(super) mod compose;
 mod current_cell;
 mod events;
 #[cfg(test)]
@@ -16,7 +17,6 @@ mod interaction;
 pub(crate) use interaction::{NativeRadarCameraTarget, NativeRadarInputTarget};
 pub mod minimap;
 pub(super) mod projection;
-pub(super) mod surface;
 mod terrain;
 mod terrain_updates;
 mod tracker;

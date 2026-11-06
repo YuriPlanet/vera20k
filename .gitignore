@@ -41,6 +41,7 @@ Thumbs.db
 !/docs/capabilities.md
 !/docs/wasm.md
 !/docs/ares.md
+!/docs/android.md
 !/docs/ares-side-defaults.md
 !/docs/ares-country-presentation.md
 !/docs/ares-country-paradrop.md
@@ -150,3 +151,14 @@ tools/vendor-eval/
 
 # Dashboard build dependencies; compiled JS is intentionally tracked.
 /tools/telemetry-dashboard/node_modules/
+
+# --- Android (android/) ---
+# Gradle output, the machine-local SDK path, the generated debug keystore, and
+# the native libraries cargo-ndk writes into the APK's jniLibs directory: all
+# generated, none committed.
+/android/.gradle/
+/android/.kotlin/
+/android/.android/
+/android/local.properties
+/android/**/build/
+/android/app/src/main/jniLibs/

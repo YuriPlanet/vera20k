@@ -11,6 +11,7 @@ fn saved_terrain_roundtrip_retains_materialized_values_without_constructor_effec
     grid.cells[2].source_tile_index = 1234;
     grid.cells[2].final_tile_index = 0xffff;
     grid.cells[2].variant = 7;
+    grid.cells[2].legacy_ice_byte = 0x80;
     grid.cells[2].terrain_object_occupation = Some(7);
     grid.cells[2].bridge_facts.raw_flags = 0x1_2580;
     grid.cells[2].tube_index = Some(TubeId(0));
@@ -34,7 +35,7 @@ fn saved_terrain_roundtrip_retains_materialized_values_without_constructor_effec
     let encoded = save_codec::serialize(&saved).unwrap();
     let decoded: SavedTerrainTemplate = save_codec::deserialize(&encoded).unwrap();
     let dummy = SharedCellDummy::fresh();
-    let restored = decoded.restore_values(dummy.clone()).unwrap();
+    let mut restored = decoded.restore_values(dummy.clone()).unwrap();
     assert_eq!(restored.cells(), grid.cells());
     assert_eq!(restored.native_allocated, grid.native_allocated);
     assert_eq!(restored.radar_color_valid, grid.radar_color_valid);
@@ -53,6 +54,11 @@ fn saved_terrain_roundtrip_retains_materialized_values_without_constructor_effec
         serde_json::to_value(restored.capture_saved_template().unwrap()).unwrap(),
         value
     );
+    let mut replacement = DynamicTerrainCellState::capture(restored.cell(0, 1).unwrap());
+    replacement.final_tile_index = 4321;
+    replacement.level = 2;
+    assert!(restored.apply_dynamic_cell_state(0, 1, &replacement));
+    assert_eq!(restored.cell(0, 1).unwrap().legacy_ice_byte, 0x80);
 }
 
 #[test]

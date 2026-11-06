@@ -1040,7 +1040,7 @@ impl Simulation {
     ) {
         if first {
             let index = argument & 0xffff;
-            let type_name = rules.anim_type_name_by_index(index).map(str::to_owned);
+            let type_name = rules.anim_type_runtime_key_by_index(index);
             if let Some(type_name) = type_name {
                 let type_id = self.interner.intern(&type_name);
                 let members: Vec<u64> = self

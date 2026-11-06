@@ -676,11 +676,11 @@ pub(super) fn apply_napalm_crate(
         // modeled coordinate; native would read its lingering object. Unpinned.
         return;
     };
-    if let Some(fire_anim) = rules.anim_type_name_by_index(0) {
+    if let Some(fire_anim) = rules.anim_type_runtime_key_by_index(0) {
         // `0x004827C9..0x004827E3`: AnimClass(type, &mid, 0, 1, 0x600, 0, 0).
         sim.spawn_named_anim(
             rules,
-            fire_anim,
+            &fire_anim,
             crate::sim::anim_class::AnimWorldCoord {
                 x: mid.x,
                 y: mid.y,

@@ -29,6 +29,7 @@ pub(crate) mod my_info;
 pub(crate) mod options;
 pub(crate) mod page;
 pub(crate) mod persona;
+pub(crate) mod player_card;
 pub(crate) mod quick_match;
 mod service;
 mod test_service;
@@ -68,6 +69,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<crate::util::time::Instant> {
         my_info::poll_scroll_repeat(state),
         buddy::poll(state),
         page::poll_scroll_repeat(state),
+        player_card::poll_scroll_repeat(state),
         lobby::poll(state),
         quick_match::poll(state),
         live_service::poll(state),

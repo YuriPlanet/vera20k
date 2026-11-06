@@ -277,7 +277,7 @@ fn assert_paid_deso_light_lifecycle(packet_path: &'static str, profile_path: &'s
                 - input["viewport_y"].as_i64().unwrap() as f32,
         ];
         let a = a.as_mut().unwrap();
-        a.rebuild_if_needed(
+        a.rebuild_submitted(
             &gpu.device,
             &gpu.queue,
             scene.sim().fog(),
@@ -647,7 +647,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
             input["full_view"]["view_origin"][0].as_i64().unwrap() as f32,
             input["full_view"]["view_origin"][1].as_i64().unwrap() as f32 + 15.0,
         ];
-        source.rebuild_if_needed(
+        source.rebuild_submitted(
             &gpu.device,
             &gpu.queue,
             scene.sim().fog(),
@@ -1053,6 +1053,7 @@ fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
                 map.header.width = u32::from(coords[0].max(coords[1]));
                 map.header.height = map.header.width;
                 map.cells = vec![MapCell {
+                    legacy_ice_byte: 0,
                     rx: coords[0],
                     ry: coords[1],
                     tile_index: i32::from(tile_id),
@@ -1263,6 +1264,7 @@ fn retail_partial_redraw_continuation_matches_full_reconstruction() {
     map.cells = inputs
         .iter()
         .map(|cell| MapCell {
+            legacy_ice_byte: 0,
             rx: cell["coords"][0].as_u64().unwrap() as u16,
             ry: cell["coords"][1].as_u64().unwrap() as u16,
             tile_index: cell["tile_id"].as_i64().unwrap() as i32,

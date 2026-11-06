@@ -8,6 +8,7 @@
 //! - ui/ does NOT depend on: assets/, render/, audio/, net/
 
 pub mod campaign_score_shell;
+pub(crate) mod asset_import;
 pub(crate) mod coop_score_shell;
 pub mod campaign_shell;
 pub(crate) mod chat_translation;

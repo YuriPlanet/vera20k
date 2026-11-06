@@ -96,6 +96,9 @@ fn production_radial_pixels_match_original_in_both_formats_and_immutable_depth()
                     },
                     color.size(),
                 );
+                terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |[x, y]| {
+                    alpha[(y * 160 + x) as usize]
+                });
                 terrain.begin_surface_lines();
                 let prepared = terrain.prepare_surface_lines(
                     &gpu.device,
@@ -115,7 +118,6 @@ fn production_radial_pixels_match_original_in_both_formats_and_immutable_depth()
                         zoom: 1.,
                     },
                     |_| true,
-                    |[x, y]| alpha[(y * 160 + x) as usize],
                 );
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
                 seed_depth_grid(&gpu, &mut encoder, &dv, &depths, 160);

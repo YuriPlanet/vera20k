@@ -1225,6 +1225,12 @@ fn connect_succeeded(state: &mut AppState) {
     }
     if online {
         state.frontend.wol.as_mut().expect("WOL visit").flow = None;
+        // VERA: the lobby forgets a locale at sign-out, so the country the
+        // player chose on their card goes again after each sign-in.
+        let locale = state.persistence.options_profile.online_locale;
+        if locale != 0 {
+            send_locale(state, locale);
+        }
         finish_login(state);
         return;
     }
@@ -1301,7 +1307,7 @@ pub(super) fn locale_chosen(state: &mut AppState, locale: i32) {
 
 /// API+0xB8, the locale request again, and the table entry: `0x007AE1F0`
 /// removes it and only a removed one is inserted again (`0x007ACBE0`).
-fn send_locale(state: &mut AppState, locale: i32) {
+pub(super) fn send_locale(state: &mut AppState, locale: i32) {
     let nickname = state.frontend.wol_account.nickname.clone();
     let Some(visit) = state.frontend.wol.as_mut() else {
         return;

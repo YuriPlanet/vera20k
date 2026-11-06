@@ -426,7 +426,12 @@ pub(crate) fn install_world_presentation(
         // is set. It belongs to this same tactical source, not a sprite atlas.
         let fog = crate::assets::shp_file::ShpFile::from_bytes(assets.get_ref("fog.shp")?).ok()?;
         let (frames, width, height) = crate::render::shroud_buffer::extract_shp_brightness(&fog);
-        buffer.install_fog_frames(frames, [width, height]);
+        buffer.install_fog_frames(
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
+            frames,
+            [width, height],
+        );
         Some(buffer)
     });
     state.match_state.match_presentation.shroud_buffer = shroud_buffer;

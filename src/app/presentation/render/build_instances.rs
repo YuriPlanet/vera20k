@@ -335,12 +335,7 @@ pub(super) fn build_world_instances(
     }
 
     // Every dynamic pose consumer, including Bullet46B0C0, has now populated
-    // the shared page. One upload precedes this frame's draw submission.
-    state.renderer.vxl_pose_frame_cache.borrow_mut().upload(
-        &state.renderer.gpu.device,
-        &state.renderer.gpu.queue,
-        &state.renderer.batch_renderer,
-    );
+    // the shared pages; the draw passes encode them before the main pass.
 
     // Selection is read by its existing presentation producer; only parents
     // admitted by the Display/body plan receive commands. Native6D913C and
@@ -853,6 +848,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
             let (radar_dirty_cells, radar_dirty_generation) = view.radar_terrain_dirty();
             Ok::<_, std::convert::Infallible>(
                 minimap.update_unit_dots(
+                    &state.renderer.gpu.device,
                     &state.renderer.gpu.queue,
                     view.entities(),
                     view.logic_order(),
@@ -955,30 +951,16 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         }
     }
     let interleave_enabled = !designations.is_empty();
-    // The shroud A-buffer sample DSurface4C0750's dashed lines read.
-    let mut shroud_alpha = |point: [i32; 2]| -> u8 {
-        if state.match_state.sandbox_full_visibility {
-            return 127;
-        }
-        state
-            .match_state
-            .match_presentation
-            .shroud_buffer
-            .as_ref()
-            .and_then(|buffer| {
-                buffer.sample_world(
-                    (point[0] + camera[0] - view.clip[0]) as f32,
-                    (point[1] + camera[1] - view.clip[1]) as f32,
-                    input.camera_x,
-                    input.camera_y,
-                )
-            })
-            .unwrap_or(127)
-    };
+    // DSurface4C0750's dashed stores read the A plane on the GPU, whose
+    // pixels (like the surface lines') start at the floored camera.
+    let a_offset = [
+        camera[0] - input.camera_x.floor() as i32,
+        camera[1] - input.camera_y.floor() as i32,
+    ];
     let mut tactical_line_calls = Vec::new();
     let mut after_entity = |id, instances: &mut Vec<SpriteInstance>| {
         use crate::app::presentation::airstrike_lines::{TacticalLineCall, drain_opaque};
-        drain_opaque(&mut tactical_line_calls, instances, camera);
+        drain_opaque(&mut tactical_line_calls, instances, camera, a_offset);
         if let Some((coords, style)) = designations.remove(&id) {
             tactical_line_calls.push(TacticalLineCall::Designation { id, coords, style });
         }
@@ -1005,7 +987,6 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         } else {
             None
         },
-        &mut shroud_alpha,
         Some(&state.match_state.match_presentation.interpolation),
     );
     target_line.extend(action_lines);
@@ -1032,7 +1013,6 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
             &state.match_state.match_presentation.house_color_map,
             preferred_local_owner(state).as_deref(),
             view,
-            &mut shroud_alpha,
             Some(&state.match_state.match_presentation.interpolation),
         );
 
@@ -1385,10 +1365,9 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         presentation.radar_anim.as_mut(),
         presentation.minimap.as_ref(),
     ) {
-        let (rgba, size) = mm.composed_rgba();
         radar.retain_online_content(
-            rgba,
-            size,
+            mm.native_map_texture(),
+            mm.white_texture(),
             &minimap,
             viewport_rect.iter().chain(&content_boundary).copied(),
             origin,

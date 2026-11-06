@@ -123,6 +123,9 @@ pub(crate) struct FrontendState {
     pub(crate) movie_list_selection: i32,
     /// Full-screen Play_Movie session (Sneak Peeks or a movie-list entry).
     pub(crate) fullscreen_movie: Option<crate::app::frontend::fullscreen_movie::FullscreenMovie>,
+    /// The "import game files" dialog on the startup-failure card: what step it
+    /// is on, and therefore which buttons the card shows.
+    pub(crate) asset_import: crate::ui::asset_import::AssetImport,
     /// Show_Credits session.
     pub(crate) credits_roll: Option<crate::app::frontend::credits_roll::CreditsRollSession>,
     /// Campaign selection `0x94` instance while its route shows.

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The app window: black underneath, so a missing or failed surface shows
+         black rather than a white flash, and the brand art while the first
+         frame is still loading. -->
+    <style name="Theme.Vera20k" parent="android:Theme.Black.NoTitleBar.Fullscreen">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+    </style>
+</resources>

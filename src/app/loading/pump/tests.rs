@@ -1014,6 +1014,7 @@ fn gsi_04_12_generated_prefix_uses_accepted_staging_once() {
     regenerated_map.cells = [(60, 60), (60, 140), (140, 60), (140, 140)]
         .into_iter()
         .map(|(rx, ry)| MapCell {
+            legacy_ice_byte: 0,
             rx,
             ry,
             tile_index: 0,
@@ -1624,6 +1625,7 @@ fn gsi_04_12_stock_ffa_preview_can_only_supply_loading_fallback_pixels() {
         crate::map::rmg::emit::empty_map_file(&crate::map::rmg::RmgOptions::default(), 100, 100);
     map.cells = vec![
         MapCell {
+            legacy_ice_byte: 0,
             rx: 60,
             ry: 60,
             tile_index: 0,
@@ -1631,6 +1633,7 @@ fn gsi_04_12_stock_ffa_preview_can_only_supply_loading_fallback_pixels() {
             z: 0,
         },
         MapCell {
+            legacy_ice_byte: 0,
             rx: 60,
             ry: 140,
             tile_index: 0,
@@ -1638,6 +1641,7 @@ fn gsi_04_12_stock_ffa_preview_can_only_supply_loading_fallback_pixels() {
             z: 0,
         },
         MapCell {
+            legacy_ice_byte: 0,
             rx: 140,
             ry: 60,
             tile_index: 0,

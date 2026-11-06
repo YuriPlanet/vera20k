@@ -20,7 +20,7 @@ mod install;
 mod manifest;
 pub(crate) mod notes;
 
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -28,6 +28,7 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use crate::app::App;
 use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
 use crate::app::state::AppState;
+use crate::app::web_link::{WEBSITE, open_in_browser};
 use crate::ui::main_menu_dialogs::ShellMessageBoxLabels;
 use crate::ui::shell::modal::ModalResult;
 use crate::util::time::{Duration, Instant};
@@ -38,10 +39,6 @@ use manifest::{Offer, Release, Version};
 
 /// How often a pending check or download is polled.
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
-
-/// Where a release that needs a newer updater is downloaded by hand; the
-/// online login page also reads its news there.
-pub(crate) const WEBSITE: &str = "https://vera20k.org/";
 
 /// Set only for the Release workflow's update test (`tools/update_test.py`):
 /// its runners have no retail game data, so no main menu to ask on, and the
@@ -413,33 +410,6 @@ pub(crate) fn answer_offer(state: &mut AppState, result: ModalResult) {
         _ => {}
     }
     state.platform.window.request_redraw();
-}
-
-/// Open `url` in the player's browser.
-fn open_in_browser(url: &str) {
-    let opener = if cfg!(target_os = "windows") {
-        "explorer"
-    } else if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    };
-    let opened = Command::new(opener)
-        .arg(url)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn();
-    match opened {
-        Ok(mut child) => {
-            log::info!("Updater: opening {url}");
-            // xdg-open may run the browser itself: reap it when it ends.
-            let _ = std::thread::Builder::new()
-                .name("vera-update-browser".into())
-                .spawn(move || child.wait());
-        }
-        Err(error) => log::warn!("Updater: cannot open {url}: {error}"),
-    }
 }
 
 fn download(state: &mut AppState, package: Package, release: Release) {

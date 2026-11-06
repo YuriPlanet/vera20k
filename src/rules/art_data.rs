@@ -15,6 +15,7 @@ use thiserror::Error;
 
 use crate::rules::flh::Flh;
 use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::rules::native_processing::anim_type_runtime_key;
 use crate::rules::object_type::{BuildingHiddenOccupancyProfile, HIDDEN_OCCUPY_SLOT_COUNT};
 use crate::util::lookup_hash::LookupMap;
 use crate::util::native_x87::NativeF64Bits;
@@ -928,7 +929,7 @@ pub struct ArtRegistry {
     /// section ID (uppercase) -> generic AnimType runtime metadata. Every
     /// anim reads its type's here each frame; only looked up.
     anim_runtime_configs: LookupMap<String, AnimTypeRuntimeConfig>,
-    /// First native Anim slot's immutable image projection. Unlike orphan
+    /// Each native Anim slot's immutable image projection. Unlike orphan
     /// ART metadata, these requests came from the retained ProcessedType.
     anim_type_images: HashMap<String, crate::rules::object_image::ObjectImageState>,
     /// Fresh AnimType `(Theater, NewTheater)` after the Image and own ART reads.
@@ -1389,17 +1390,29 @@ impl ArtRegistry {
     /// Building/weapon references allocated after the AnimType sweep retain
     /// constructor state even when a same-named ART section exists.
     pub fn apply_anim_type_read_states(&mut self, states: &[(String, bool)]) {
-        let mut seen = BTreeSet::new();
-        for (name, read) in states {
-            let key = name.to_ascii_uppercase();
-            // Find returns the first slot when native truncated IDs collide.
-            if !seen.insert(key.clone()) || *read {
-                continue;
+        // Read every ART template before publishing any constructor-only
+        // slot, which must not overwrite a later twin's reached ART body.
+        let configs: Vec<_> = states
+            .iter()
+            .map(|(name, read)| {
+                if *read {
+                    self.anim_runtime_config(name).cloned()
+                } else {
+                    let mut config = parse_anim_runtime_config(&IniSection::new(name.clone()));
+                    config.art_body_read = false;
+                    config.image = name.clone();
+                    Some(config)
+                }
+            })
+            .collect();
+        for (index, config) in configs.into_iter().enumerate() {
+            if let Some(config) = config {
+                let key =
+                    anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
+                        .unwrap()
+                        .to_ascii_uppercase();
+                self.anim_runtime_configs.insert(key, config);
             }
-            let mut config = parse_anim_runtime_config(&IniSection::new(name.clone()));
-            config.art_body_read = false;
-            config.image = name.clone();
-            self.anim_runtime_configs.insert(key, config);
         }
     }
 
@@ -1411,11 +1424,10 @@ impl ArtRegistry {
         states: &[(String, crate::rules::object_image::ObjectImageState)],
     ) {
         self.anim_type_images.clear();
-        for (name, image) in states {
-            let key = name.to_ascii_uppercase();
-            if self.anim_type_images.contains_key(&key) {
-                continue;
-            }
+        for (index, (_, image)) in states.iter().enumerate() {
+            let key = anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
+                .unwrap()
+                .to_ascii_uppercase();
             if let Some(config) = self.anim_runtime_configs.get_mut(&key) {
                 config.image = image.image().to_owned();
             }
@@ -1435,8 +1447,8 @@ impl ArtRegistry {
     }
 
     /// Apply the canonical RulesClass processing receipt's AnimType references
-    /// ([`AnimTypeReferences`]), in AnimType registry order. A name's first
-    /// slot wins, as in [`Self::apply_anim_type_read_states`]; a type whose
+    /// ([`AnimTypeReferences`]), in AnimType registry order. Each slot has the
+    /// same identity as [`Self::apply_anim_type_read_states`]; a type whose
     /// ART body was never read carries the constructor's nulls.
     ///
     /// [`AnimTypeReferences`]: crate::rules::native_processing::AnimTypeReferences
@@ -1444,12 +1456,10 @@ impl ArtRegistry {
         &mut self,
         states: &[(String, crate::rules::native_processing::AnimTypeReferences)],
     ) {
-        let mut seen = BTreeSet::new();
-        for (name, references) in states {
-            let key = name.to_ascii_uppercase();
-            if !seen.insert(key.clone()) {
-                continue;
-            }
+        for (index, (_, references)) in states.iter().enumerate() {
+            let key = anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
+                .unwrap()
+                .to_ascii_uppercase();
             if let Some(config) = self.anim_runtime_configs.get_mut(&key) {
                 references.apply_to(config);
             }

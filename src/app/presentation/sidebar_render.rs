@@ -815,7 +815,8 @@ fn refresh_radar_animation_source(state: &mut AppState) {
     let presentation = &mut state.match_state.match_presentation;
     if let Some(radar) = presentation.radar_anim.as_mut() {
         if !radar.replace_frames(
-            &state.renderer.gpu,
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
             &state.renderer.batch_renderer,
             frames,
             width,
@@ -825,7 +826,8 @@ fn refresh_radar_animation_source(state: &mut AppState) {
         }
     } else {
         presentation.radar_anim = crate::render::radar::anim::RadarAnimState::new(
-            &state.renderer.gpu,
+            &state.renderer.gpu.device,
+            &state.renderer.gpu.queue,
             &state.renderer.batch_renderer,
             frames,
             width,

@@ -122,14 +122,7 @@ pub(crate) fn prepared_points(input: &Value, draws: &Value) -> Vec<PreparedSpark
         .zip(draws.as_array().unwrap())
         .enumerate()
         .filter_map(|(index, (point, draw))| {
-            match prepare_spark_point(
-                command(point, draw, index),
-                &colors,
-                viewport,
-                SparkPointPlanes::Deferred,
-            )
-            .unwrap()
-            {
+            match prepare_spark_point(command(point, draw, index), &colors, viewport).unwrap() {
                 SparkPointPreparation::Ready { point, .. } => Some(point),
                 SparkPointPreparation::Rejected(_) => None,
             }
@@ -137,78 +130,36 @@ pub(crate) fn prepared_points(input: &Value, draws: &Value) -> Vec<PreparedSpark
         .collect()
 }
 
+/// The CPU half of ParticleDraw62CEC0: gates, projection, candidate Z and
+/// the interpolated colour. The GPU test of these rows covers A, Z and the
+/// store.
 #[test]
-fn welding_points_match_complete_original_particle_draw() {
+fn welding_point_preparation_matches_original_particle_draw() {
     let rows = native()["spark_draw_cases"].as_array().unwrap();
     assert!(!rows.is_empty());
     for row in rows {
         let input = &row["input"];
-        let [width, height] = array::<2>(&input["size"]).map(|value| value as usize);
-        let a = plane(input, "a");
-        let z = plane(input, "z");
         let colors = colors(input);
         let viewport = viewport(input);
-        let mut output = vec![int(&input["background"]) as u16; width * height];
         let points = input["points"].as_array().unwrap();
         let draws = row["draws"].as_array().unwrap();
         assert_eq!(points.len(), draws.len());
         for (ordinal, (point, draw)) in points.iter().zip(draws).enumerate() {
-            let command = command(point, draw, ordinal);
-            let result = resolve_spark_point(
-                command,
-                &colors,
-                TacticalCompatFrame {
-                    a_plane: WordPlane {
-                        words: &a,
-                        width,
-                        height,
-                        pitch_words: width,
-                        row_origin: 0,
-                    },
-                    z_plane: WordPlane {
-                        words: &z,
-                        width,
-                        height,
-                        pitch_words: width,
-                        row_origin: 0,
-                    },
-                    viewport,
-                    pixel_format: crate::render::native_surface_format::RGB565,
-                },
-            )
-            .unwrap();
-            let actual = match result {
-                PointResolution::Rejected(_) => Value::Null,
-                PointResolution::Write(write) => {
-                    assert_eq!(write.draw_ordinal, ordinal as u64);
-                    assert_eq!(write.byte_width, 2);
-                    output[write.screen.y as usize * width + write.screen.x as usize] =
-                        write.packed_value;
-                    serde_json::json!({"screen":write.screen.to_array(),"packed_value":write.packed_value})
-                }
-            };
-            assert_eq!(actual, draw["write"], "{} point{ordinal}", input["name"]);
-            if let SparkPointPreparation::Ready {
-                point: prepared, ..
-            } =
-                prepare_spark_point(command, &colors, viewport, SparkPointPlanes::Deferred).unwrap()
-            {
-                for (key, actual) in [
-                    ("screen", serde_json::json!(prepared.screen.to_array())),
-                    ("candidate_z", serde_json::json!(prepared.candidate_z)),
-                    ("interpolated_rgb", serde_json::json!(prepared.rgb)),
-                ] {
-                    if !draw[key].is_null() {
-                        assert_eq!(actual, draw[key], "{} {key}", input["name"]);
+            let name = format!("{} point{ordinal}", input["name"]);
+            match prepare_spark_point(command(point, draw, ordinal), &colors, viewport).unwrap() {
+                SparkPointPreparation::Ready { point } => {
+                    for (key, actual) in [
+                        ("screen", serde_json::json!(point.screen.to_array())),
+                        ("candidate_z", serde_json::json!(point.candidate_z)),
+                        ("interpolated_rgb", serde_json::json!(point.rgb)),
+                    ] {
+                        if !draw[key].is_null() {
+                            assert_eq!(actual, draw[key], "{name} {key}");
+                        }
                     }
                 }
+                SparkPointPreparation::Rejected(_) => assert!(draw["write"].is_null(), "{name}"),
             }
         }
-        assert_eq!(
-            output,
-            expected_words(row),
-            "{} full surface",
-            input["name"]
-        );
     }
 }

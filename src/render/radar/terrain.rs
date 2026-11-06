@@ -36,6 +36,8 @@ pub(super) struct NativeRadarTerrainSurface {
     overrides: BTreeMap<(u16, u16), [u8; 3]>,
     raw_rgb: Vec<[u8; 3]>,
     generated_rgb565: Vec<u16>,
+    /// Bumped whenever `generated_rgb565` is regenerated.
+    revision: u64,
     /// VERA's optional HD terrain, bumping `hd_revision` whenever it changes.
     hd: Option<HdTerrain>,
     hd_revision: u64,
@@ -59,6 +61,7 @@ impl NativeRadarTerrainSurface {
             overrides,
             raw_rgb: vec![[0; 3]; area(raw_size)],
             generated_rgb565: vec![0; area(generated_size)],
+            revision: 0,
             hd: None,
             hd_revision: 0,
         };
@@ -76,6 +79,11 @@ impl NativeRadarTerrainSurface {
 
     pub fn generated_rgb565(&self) -> &[u16] {
         &self.generated_rgb565
+    }
+
+    /// Changes whenever [`Self::generated_rgb565`] does.
+    pub const fn revision(&self) -> u64 {
+        self.revision
     }
 
     #[cfg(test)]
@@ -166,6 +174,7 @@ impl NativeRadarTerrainSurface {
         }
         self.generated_rgb565 =
             generate_rgb565(&self.raw_rgb, raw_size, self.geometry.generated_size());
+        self.revision = self.revision.wrapping_add(1);
     }
 }
 
@@ -392,13 +401,6 @@ impl HdTerrain {
 fn channel_to_u8(accum: X87Value) -> u8 {
     let biased = X87Chop53::add(accum, load_f64(NativeF64Bits::HALF));
     native_ftol(biased).min(255) as u8
-}
-
-pub(super) fn half_bright_rgb565(pixel: u16) -> [u8; 4] {
-    let [red, green, blue] = RGB565.unpack_rgb8(pixel);
-    let [red, green, blue] =
-        RGB565.unpack_rgb8(RGB565.pack_rgb8([red >> 1, green >> 1, blue >> 1]));
-    [red, green, blue, 255]
 }
 
 fn load_f32(value: f32) -> X87Value {

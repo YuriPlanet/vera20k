@@ -76,6 +76,7 @@ fn draw_sidebar_surface(
     encoder: &mut wgpu::CommandEncoder,
     data: &DrawPassData<'_>,
 ) {
+    encode_radar_pictures(state, encoder);
     let side_index = crate::app::presentation::sidebar_render::current_sidebar_side(state);
     let presentation = &state.match_state.match_presentation;
     let chrome = presentation
@@ -247,6 +248,26 @@ fn draw_sidebar_surface(
     );
 }
 
+/// The radar's pictures for this frame: the minimap's composition
+/// (`RadarClass::Update @ 0x00656EC0`), then the housing's paints
+/// (`RadarClass::Draw @ 0x00653100`), whose retained online draw samples it.
+/// Every frame encodes them, sidebar drawn or not, so neither waits a frame.
+fn encode_radar_pictures(state: &mut AppState, encoder: &mut wgpu::CommandEncoder) {
+    let renderer = &state.renderer;
+    let presentation = &mut state.match_state.match_presentation;
+    if let Some(minimap) = presentation.minimap.as_mut() {
+        minimap.encode_composition(&renderer.gpu.device, encoder);
+    }
+    if let Some(radar) = presentation.radar_anim.as_mut() {
+        radar.encode_paints(
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
+            encoder,
+        );
+    }
+}
+
 /// Create the main render pass and dispatch all draw calls in the correct order.
 ///
 /// The frame has two regions, matching the native composition: the **tactical
@@ -264,6 +285,13 @@ pub(super) fn dispatch_draw_passes(
     view: &wgpu::TextureView,
     data: &DrawPassData<'_>,
 ) {
+    // The posed voxel images the world draws sample.
+    state.renderer.vxl_pose_frame_cache.borrow_mut().encode(
+        &state.renderer.gpu.device,
+        &state.renderer.gpu.queue,
+        &state.renderer.batch_renderer,
+        encoder,
+    );
     // The sidebar's surface is complete before the frame begins; the
     // screen-fixed block copies it in.
     draw_sidebar_surface(state, encoder, data);
@@ -1337,6 +1365,7 @@ fn composite_world_with_drag_rect(
 }
 
 /// Native path/rally pixels belong to the world surface, before wheel zoom.
+/// Their dashed stores keep or skip each pixel by the live A on the GPU.
 pub(super) fn draw_pooled_surface_lines<'a>(
     pass: &mut wgpu::RenderPass<'a>,
     batch: &'a BatchRenderer,
@@ -1345,7 +1374,7 @@ pub(super) fn draw_pooled_surface_lines<'a>(
     key: &'static str,
 ) {
     if let (Some(t), Some((buf, count))) = (tex, pool.get(key)) {
-        batch.draw_with_buffer_passthrough(pass, t, buf, count);
+        batch.draw_surface_stores(pass, t, buf, count);
     }
 }
 

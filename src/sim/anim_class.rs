@@ -1468,14 +1468,14 @@ impl Simulation {
         waypoint: i32,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
-        let Some(type_name) = rules.anim_type_name_by_index(anim_type_index) else {
+        let Some(type_name) = rules.anim_type_runtime_key_by_index(anim_type_index) else {
             return false;
         };
         let Some([x, y, z]) = self.trigger_waypoint_coord(waypoint) else {
             return false;
         };
         let world_coord = AnimWorldCoord { x, y, z };
-        let type_id = self.interner.intern(type_name);
+        let type_id = self.interner.intern(&type_name);
         let (rx, ry, sub_x, sub_y, level) = world_coord.to_cell_sub_z();
         let descriptor = AnimClassSpawnDescriptor {
             draw_flags: 0x600,

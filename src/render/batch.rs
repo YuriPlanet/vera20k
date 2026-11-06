@@ -261,7 +261,8 @@ fn source_index_texture_on_device(
 
 /// A GPU texture prepared for batch rendering.
 ///
-/// Created via `BatchRenderer::create_texture()`.
+/// Created via `BatchRenderer::create_texture()`. A clone shares the texture.
+#[derive(Clone)]
 pub struct BatchTexture {
     /// Bind group containing texture view + sampler.
     pub bind_group: wgpu::BindGroup,
@@ -459,6 +460,7 @@ pub struct BatchRenderer {
     /// depth write OFF. Overlays draw unconditionally over terrain because
     /// tiles without Z-data skip Z-testing entirely.
     overlay_passthrough_pipeline: wgpu::RenderPipeline,
+    surface_store_pipeline: wgpu::RenderPipeline,
     /// Depth-only pipeline: colour target fully masked, depth write ON, Less
     /// compare. Stamps a sprite's opaque silhouette so a later depth-testing
     /// pass can be clipped by it, without disturbing colour compositing order.
@@ -508,6 +510,8 @@ pub struct BatchRenderer {
     ui_camera_bind_group: wgpu::BindGroup,
     /// Neutral A, for the camera groups that sample no shroud.
     neutral_a: (wgpu::TextureView, wgpu::Buffer),
+    /// The colour format every pipeline here draws into.
+    surface_format: wgpu::TextureFormat,
 }
 
 impl BatchRenderer {
@@ -718,9 +722,9 @@ impl BatchRenderer {
         // Tiles without embedded Z-data (flag 0x02 at cell header byte 36) skip
         // Z-testing entirely. Ore, gems, and terrain objects have no Z-data, so
         // they paint unconditionally over terrain.
-        let overlay_passthrough_pipeline: wgpu::RenderPipeline =
+        let passthrough = |label, fragment| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Batch Pipeline (Overlay Passthrough)"),
+                label: Some(label),
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
@@ -734,7 +738,7 @@ impl BatchRenderer {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: Some("fs_main"),
+                    entry_point: Some(fragment),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: surface_format,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
@@ -756,7 +760,16 @@ impl BatchRenderer {
                 multisample: wgpu::MultisampleState::default(),
                 multiview_mask: None,
                 cache: None,
-            });
+            })
+        };
+        let overlay_passthrough_pipeline =
+            passthrough("Batch Pipeline (Overlay Passthrough)", "fs_main");
+        // DSurface4C0750's A-gated dashed stores: the same direct store,
+        // bound with the live A source.
+        let surface_store_pipeline = passthrough(
+            "Batch Pipeline (A-gated Surface Stores)",
+            "fs_surface_store",
+        );
 
         // Building bodies stamp their silhouette here so the post-shroud
         // selection-bracket redraw can be clipped by the art it stands behind.
@@ -1181,6 +1194,7 @@ impl BatchRenderer {
             default_zshape_bind_group,
             zdepth_pipeline,
             overlay_passthrough_pipeline,
+            surface_store_pipeline,
             #[cfg(test)]
             depth_stamp_pipeline,
             depth_test_pipeline,
@@ -1203,7 +1217,48 @@ impl BatchRenderer {
             ui_camera_buffer,
             ui_camera_bind_group,
             neutral_a: (neutral_a, neutral_a_uniform),
+            surface_format,
         }
+    }
+
+    /// The colour format every pipeline here draws into.
+    pub(crate) const fn target_format(&self) -> wgpu::TextureFormat {
+        self.surface_format
+    }
+
+    /// A blank `format` texture that GPU passes draw into and the batch
+    /// pipelines sample with nearest filtering.
+    pub(crate) fn create_render_target_texture(
+        &self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+        format: wgpu::TextureFormat,
+    ) -> BatchTexture {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Batch Render Target"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.batch_texture(
+            device,
+            &texture,
+            &self.default_source_indices,
+            width,
+            height,
+        )
     }
 
     /// Create a single-channel R8Uint atlas texture from byte data.
@@ -1244,6 +1299,32 @@ impl BatchRenderer {
         width: u32,
         height: u32,
     ) -> BatchTexture {
+        self.unit_atlas_texture(device, width, height, wgpu::TextureUsages::empty())
+    }
+
+    /// A blank palette-index page the GPU voxel raster draws into
+    /// ([`crate::render::voxel_gpu`]).
+    pub(crate) fn create_unit_page_texture(
+        &self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+    ) -> BatchTexture {
+        self.unit_atlas_texture(
+            device,
+            width,
+            height,
+            wgpu::TextureUsages::RENDER_ATTACHMENT,
+        )
+    }
+
+    fn unit_atlas_texture(
+        &self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+        usage: wgpu::TextureUsages,
+    ) -> BatchTexture {
         let texture: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("unit_atlas_r8uint"),
             size: wgpu::Extent3d {
@@ -1255,7 +1336,7 @@ impl BatchRenderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::R8Uint,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            usage: usage | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
 
@@ -1907,6 +1988,26 @@ impl BatchRenderer {
             start,
             count,
         );
+    }
+
+    /// Direct stores DSurface4C0750 keeps or skips per pixel by the live
+    /// tactical A (`FX_SURFACE_A_NONZERO`/`FX_SURFACE_A_ZERO`; neither stores
+    /// everywhere), bypassing Z and reading no palette row.
+    pub(crate) fn draw_surface_stores<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        texture: &'a BatchTexture,
+        buffer: &'a wgpu::Buffer,
+        count: u32,
+    ) {
+        if count == 0 {
+            return;
+        }
+        render_pass.set_pipeline(&self.surface_store_pipeline);
+        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        render_pass.set_bind_group(1, &texture.bind_group, &[]);
+        render_pass.set_vertex_buffer(0, buffer.slice(..));
+        render_pass.draw(0..6, 0..count);
     }
 
     /// Draw with depth bypassed AND the UI camera (zoom=1.0, screen-fixed).
