@@ -1150,6 +1150,7 @@ impl App {
                 external_launch: false,
                 external_launch_error: None,
                 match_result: None,
+                match_result_at: None,
                 match_winners: None,
                 external_progress: Default::default(),
                 network_goodbye_deadline: None,

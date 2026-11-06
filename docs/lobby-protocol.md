@@ -129,7 +129,7 @@ Commands and their payloads:
 | `map_status` | `{status,revision,version,rules_digest,map_digest,effective_map_digest,staging_digest}` |
 | `advertise` | `{channel:<Channel>}` |
 | `start` | `{users:[name],revision,version,rules_digest,effective_map_digest,staging_digest}` |
-| `finish` | `{match_id,back_to_room?,result?,winners?,network_quality?}` |
+| `finish` | `{match_id,back_to_room?,result?,winners?,ended_ago?,network_quality?}` |
 | `relay_ready` | `{match_id}` |
 | `latency_ready` | `{match_id,pings:[{source_index,round_trip_ms}]}` |
 | `renew_relay` | `{match_id}` |
@@ -191,7 +191,7 @@ Event kinds and payloads:
 | `buddies` | `{names:[name]}` |
 | `located` | `{channel:<Channel or null>}` |
 | `kicked` | `{channel:<Channel>,user:<Member>,by:<Member>}` |
-| `ladder` | `{season,records:[{name,points,rank,wins,losses,disconnects}],high_scores:[{name,points,rank}]}` |
+| `ladder` | `{season,records:[{name,points,os,rank,wins,losses,disconnects}],high_scores:[{name,points,rank}]}` |
 | `balance` | `{teams:[{name,team}]}` |
 | `error` | `{code,message}` |
 
@@ -535,14 +535,21 @@ replies are `chat` events with `ansi:true`: a private `Working` at once, also to
 request, which keeps the player's place; a public `Pool <n>` whenever the number waiting
 changes; and on a pairing a private `Start <seed>:<host>,0,0,0,0,0,0,0,<guest>,0,0,0,0,0,0,0`
 to both players with `quick_match:{seed,host:{name,country,color},guest:{name,country,color}}`,
-a fresh random u32 seed and each player's COU and COL as sent. Pairing is first come, first
-served between two players whose `User-Agent` names the same version (two unknown versions
-may pair); the earlier waiter hosts. Leaving `Lob_40_0` (leave, logout, expiry or another
-join) leaves the queue.
-A request that puts a player in the queue without pairing them makes them first in line for
-their version. They then get private `Info <text>` lines after `Working`, which the game
-prints as they come. These say:
-- that the match starts when another player presses Quick Match;
+a fresh random u32 seed and each player's COU and COL as sent. Pairing joins two players
+whose `User-Agent` names the same version (two unknown versions may pair): a searcher pairs
+with the waiting player who makes the most even game, weighing each by their OS
+([Ranked games](#ranked-games)), one a season would rank them with before one it would not,
+as long as the favorite's chance to win is at most 60%, a limit that widens with the longer
+wait of the two until, after 60 seconds, anyone pairs. While a season runs, a pairing it
+will not rank (a guest, or two players who played three rated games against each other in
+the last 24 hours) first sends both `Info This match will not be ranked: <why>.`
+Every request the lobby serves pairs again those whose waits now allow it; the longer waiter
+hosts. Leaving `Lob_40_0` (leave, logout, expiry or another join) leaves the queue.
+A request that puts a player in the queue without pairing them gets private `Info <text>`
+lines after `Working`, which the game prints as they come. These say:
+- that the match starts when a player near their OS presses Quick Match, or any player
+  once they have waited a minute;
+- when no season runs, or they play as a guest, that the match will not be ranked;
 - how many others wait on another version;
 - how many public-channel players heard of the search;
 - that their game sent the side and colour last picked for a multiplayer game.
@@ -626,45 +633,73 @@ size: teams, in a mode that lets players ally, or each player alone, in a mode t
 not. Three or more teams also need in-game allying off. The game must keep the sides
 apart: players on two sides may not pick the same start, which makes them share a House,
 nor, in a mode without alliances, the same team. A Cooperative mode (`mode.class`) never
-ranks. Every side's chance against every other is within 80/20. Ranked matches have no AI,
-and every player is signed in to an account.
+ranks. Unless every side is one player, every side has at least a 20% chance against every
+other, head to head, weighing each player by their OS. Ranked matches have no AI, every
+player is signed in to an account, and the same rosters have not played three rated games
+against each other in the last 24 hours.
 
 A host who unticks Ranked game at Create Game sends `ranked:false` on `create`, and that
 room's games never rank; its odds line says why. A ticked box sends nothing, as a lobby
 from before the choice refuses the field.
 
 A guest's match plays unranked. `ranked:true` in `timing_confirmed` marks a ranked match.
+The players of a Quick Match a running season does not rank hear why from `VERA20k` after
+it, such as `This Quick Match was not ranked: Guest plays as a guest.`
 
 A `finish` after play adds the game's own `result`: `won`, `lost`, `quit` (the player
 left) or `disconnected` (the game lost its connection). A player who leaves after the game
 decided their House reports that result: `lost` once it was defeated, `won` once it won. When the game saw the match
 decided, `winners` names the players still in it whose Houses won. A lobby from before
-team ladders refuses `winners`; the game then finishes again without it.
+team ladders refuses `winners`; the game then finishes again without it. `ended_ago` is how
+many whole seconds before this `finish` the game decided its `result`, which the score screen
+holds back, so the lobby times a player's leaving by their game, not by when they closed the
+score screen; a lobby from before it refuses the field, and the game then finishes again
+without it.
 
 `ladder` with up to 64 names answers with the running season's records of those that
 played a rated game in it (`season` is `null` and `records` empty when no season runs),
 and the `high_scores` of those that ever played one. Every ranked game, Quick Match, team
-game or free-for-all, moves one rating per player, shown as OS: μ − σ, as Beyond All Reason
-shows skill, about 16.7 for a new player. A record's `points` is its player's OS rounded,
-and `rank` their place among the season's players by OS. A high score's `points` are its
-player's badge points, the ranked games of every season times the OS, over ten, rounded
-and at most 2000, and `rank` their place by them. One lookup fills both of the game's
-tables: its ladder table from `records`, and its high-score table, whose points pick each
-player's badge (Private below 32 up to Five-Star General from 1501; the game's Commander in
-Chief badge, from 2001, never shows), from `high_scores`. Badges therefore grow with play
-and skill and outlast seasons. A lobby from before them sends no
-`high_scores`, and the game then shows no badges. After a rated game each of its players
-hears their new OS from `VERA20k`, such as `Ranked game won: your OS is now 19.57 (+2.90).`
+game or free-for-all, moves one rating per player, shown as OS: μ − σ, never below 0, as
+Beyond All Reason shows skill, 16.67 for a new player. A record's `os` is its player's OS
+to the hundredth, `points` it rounded, and `rank` their place among the season's players
+by OS, then wins. A high score's `points` pick its player's badge from their OS, as the
+game's own thresholds (gamemd `0x00783B80`) read them: Private below OS 18, then one badge
+every 4 OS, from Corporal (32 points) at 18 to Five-Star General (1501) at 46, and
+Commander in Chief (2001) for the running season's number 1 from OS 46. Its `rank` is
+their place this season, 0 when unranked. One lookup fills both of the game's tables: its
+ladder table from `records`, and its high-score table, whose points pick each player's
+badge, from `high_scores`. A lobby from before badges sends no `high_scores`, and the game
+then shows none; one from before `os` leaves it out, and the game shows the rounded OS.
+After a ranked game each of its players hears from `VERA20k` how it counted: their new OS,
+their place in the season and the badge the game brought them, such as `Ranked game won:
+your OS is now 19.57 (+2.90), rank 1 of 2 in season 1. Promoted to Corporal.`, with why a
+loss counted as it did, or why the game rated nothing, such as `This ranked game was not
+rated: the players' games disagree on who won.` Every session not in a match then gets the
+rated players' records as an unasked `ladder` event, and when a season starts or ends one
+with no records and the new `season` (`null` when ranked play stopped). A game that sees
+`season` change forgets the records and badges it holds and asks for them again.
+
+The operator starts a season, with a length of 7 to 366 days or none; one with a length
+ends on time and the next starts then, as long, unless the operator stops ranked play
+after it. An ended season keeps its final standings.
 
 `GET /v1/players/<name>` answers the player profile vera20k.org shows:
-`{name,os,season,rank,wins,losses,disconnects,games}`, `rank` being `null` when the player
-is unranked in the running season, and `games` their 20 newest rated games, each
-`{ended,sides,size,won,os,change}`. A name without an account answers 404.
-`GET /v1/leaderboard` answers the leaderboard vera20k.org shows, renewed once a minute:
-`{season,updated_at,total,players}`, `season` being `null` when no season runs, `total` the
-players ranked in it and `players` the best 1,000 of them by OS, then wins, each
-`{name,os,rank,wins,losses,badge_points}`, its badge points picking the badge shown by the
-name.
+`{name,os,badge,season,rank,ranked,wins,losses,disconnects,games,trend,seasons}`. `badge`
+indexes the ten badges, lowest first, and is `null` before the player's first ranked game;
+`rank` is `null` when they are unranked in the running season, and `ranked` is how many
+players it ranks. `games` holds their 20 newest rated games, each
+`{ended,season,sides,size,map,mode,teams,won,os,change}`, their own team first in `teams`; `trend`
+their OS after each of their 200 newest rated games, oldest first, each `{ended,season,os}`;
+and `seasons` their final standing in each ended season they played, newest first, each
+`{season,rank,total,os,badge,wins,losses,disconnects}`. A name without an account answers
+404. `GET /v1/leaderboard` answers the leaderboard vera20k.org shows, renewed once a
+minute: `{season,started_at,ends_at,updated_at,total,players,seasons,running}`, `season`
+being `null` when no season runs and `ends_at` `null` without an end, `total` the players
+ranked in it and `players` the best 1,000 of them by OS, then wins, each
+`{name,os,rank,wins,losses,badge}`. `seasons` lists the ended seasons, newest first, each
+`{number,started_at,ended_at}`, and `running` names the running season. With
+`?season=<n>` it answers an ended season's final standings, with `final` true and its
+`ended_at`; an unknown season answers 404.
 
 While a season runs, the host's options for a game room whose players are all on teams,
 or in a mode without alliances, give an odds line, which the room hears from the `VERA20k`
@@ -672,8 +707,8 @@ notice sender each time it changes: each side's chance to win, such as
 `Team A 54%, Team B 46%. Ranked.` (a free-for-all names its players), or `Unranked:` and
 why. Quick Match and Cooperative rooms get none. In a game room the host's chat line
 `/balance` is a command, not chat.
-The room hears the two teams with the most even odds on the team ratings, keeping as
-many players on their teams as it can, and the host's game gets a `balance` event with
+The room hears the two teams with the most even odds, weighing each player by their OS,
+keeping as many players on their teams as it can, and the host's game gets a `balance` event with
 every playing human's `team` (0 to 3 for A to D). The host's game moves each named player
 to that team, as their own team choice would, and publishes the options. A game that
 ignores the event leaves the teams to the host. The host alone hears why nothing moves:

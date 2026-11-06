@@ -1200,7 +1200,7 @@ macro_rules! serial_driver {
                     }
                     Err(error) => {
                         if !platform_await!(client.session_failed(error, &output)) {
-                            let _ = output.send(Response::Failure("VERA:LobbyRefreshFailed"));
+                            let _ = output.send(Response::Failure("VERA:OnlineRefreshFailed"));
                         }
                     }
                 }

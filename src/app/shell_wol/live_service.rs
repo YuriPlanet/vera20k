@@ -43,6 +43,8 @@ const DEFAULT_LOBBY_URL: &str = match option_env!("VERA20K_LOBBY_URL") {
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 const RELAY_TIMEOUT: Duration = Duration::from_secs(30);
 const EXIT_CLEANUP_TIMEOUT: Duration = Duration::from_secs(90);
+/// The most `ended_ago` VERA20K Online's lobby accepts in a `finish`, a day.
+const ENDED_AGO_LIMIT: u64 = 24 * 60 * 60;
 /// Gameplay grants (timing confirmation, `relay_renewed`, match resume) are
 /// issued for 300 seconds (docs/lobby-protocol.md). Their
 /// `expires` is lobby wall time; a local clock running slow would renew after
@@ -291,6 +293,9 @@ pub(super) struct LiveService {
     finish_result: Option<&'static str>,
     /// A lobby match's `winners`: the players still in it whose Houses won.
     finish_winners: Option<Vec<String>>,
+    /// VERA: when a lobby match's result was decided, which `finish` sends
+    /// as `ended_ago`.
+    finish_decided: Option<Instant>,
     /// docs/spawn.md: every opponent left before the local player did.
     finish_opponents_left: bool,
     /// The lobby match's network report (`network_quality`), kept as its
@@ -642,6 +647,7 @@ impl LiveService {
             back_to_room: false,
             finish_result: None,
             finish_winners: None,
+            finish_decided: None,
             finish_opponents_left: false,
             network_quality: None,
             relay_timeout: RELAY_TIMEOUT,
@@ -708,10 +714,11 @@ impl LiveService {
 
     /// The match returned to the shell: finish it, a lobby match with its
     /// result and winners. A spawned match reports when the process exits.
-    fn match_returned(&mut self, (result, winners): MatchReport, now: Instant) {
+    fn match_returned(&mut self, (result, winners, decided): MatchReport, now: Instant) {
         if !self.spawned && self.finishing.is_none() {
             self.finish_result = result;
             self.finish_winners = winners;
+            self.finish_decided = decided;
         }
         self.begin_finish(now);
     }
@@ -726,7 +733,7 @@ impl LiveService {
         self.next_renewal_attempt = None;
         self.relay_renewal_due = None;
         self.finishing = Some(RetryingCommand::new(self.next_request, now));
-        let payload = self.finish_payload(&match_id);
+        let payload = self.finish_payload(&match_id, now);
         self.command("finish", payload);
     }
 
@@ -742,9 +749,10 @@ impl LiveService {
     /// The lobby's `finish` is `{match_id}`, with `back_to_room` when the
     /// player returns to the room it kept and `network_quality` when the match
     /// played; a spawned match adds its local result for the launcher
-    /// (docs/spawn.md), and a lobby match that ended its local result and
-    /// `winners` for the ranked ladder (docs/lobby-protocol.md).
-    fn finish_payload(&self, match_id: &str) -> Value {
+    /// (docs/spawn.md), and a lobby match that ended its local result,
+    /// `winners` and `ended_ago`, the whole seconds since its result was
+    /// decided at `now`, for the ranked ladder (docs/lobby-protocol.md).
+    fn finish_payload(&self, match_id: &str, now: Instant) -> Value {
         let mut payload = json!({"match_id":match_id});
         if self.back_to_room {
             payload["back_to_room"] = json!(true);
@@ -759,6 +767,10 @@ impl LiveService {
             payload["result"] = json!(result);
             if let Some(winners) = &self.finish_winners {
                 payload["winners"] = json!(winners);
+            }
+            if let Some(decided) = self.finish_decided {
+                let ago = now.saturating_duration_since(decided).as_secs();
+                payload["ended_ago"] = json!(ago.min(ENDED_AGO_LIMIT));
             }
         }
         payload
@@ -775,6 +787,7 @@ impl LiveService {
             self.network_quality = None;
             self.finish_result = None;
             self.finish_winners = None;
+            self.finish_decided = None;
             self.left_for_match = false;
         }
     }
@@ -795,9 +808,13 @@ impl LiveService {
         };
         finish.failed(now);
         let rejected = matches!(failure, http::CommandFailure::Rejected(_));
-        // A lobby from before team ladders refuses `winners`, and one from
+        // A lobby from before leaving was timed by the game refuses
+        // `ended_ago`, one from before team ladders `winners`, and one from
         // before match reports `network_quality`: the finish goes again
         // without the newest, and then as before.
+        if rejected && self.finish_decided.take().is_some() {
+            return false;
+        }
         if rejected && self.finish_winners.take().is_some() {
             return false;
         }
@@ -981,7 +998,7 @@ impl LiveService {
             .and_then(|finish| finish.take_due(now))
             && let Some(match_id) = self.match_id.as_ref()
         {
-            self.send_command(id, "finish", self.finish_payload(match_id));
+            self.send_command(id, "finish", self.finish_payload(match_id, now));
         }
         if let Some(id) = self.leaving.as_mut().and_then(|leave| leave.take_due(now)) {
             self.send_command(id, "leave", json!({}));
@@ -1201,7 +1218,7 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                 }
                 let starts = matches!(request, NetworkSetupRequest::StartGame { .. });
                 if request_setup(state, &mut service, request).is_err() {
-                    let text = tr("VERA:LobbyRequestMismatch");
+                    let text = tr("VERA:OnlineRequestMismatch");
                     if starts {
                         service.start_preparation = None;
                         fail_start(state, &text);
@@ -1315,13 +1332,14 @@ pub(super) fn match_returned(state: &mut AppState) {
 }
 
 /// A lobby match's `finish` result and `winners`, as
-/// `App::record_match_result` decided them.
-type MatchReport = (Option<&'static str>, Option<Vec<String>>);
+/// `App::record_match_result` decided them, and when it did.
+type MatchReport = (Option<&'static str>, Option<Vec<String>>, Option<Instant>);
 
 fn match_report(state: &AppState) -> MatchReport {
     (
         crate::app::App::match_result(state).map(crate::app::cncnet::ExternalMatchResult::as_str),
         crate::app::App::match_winners(state).map(<[String]>::to_vec),
+        crate::app::App::match_result_at(state),
     )
 }
 
@@ -2361,8 +2379,8 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             }
         }
         http::Response::Failure(label) => notice(state, &tr(label)),
-        http::Response::LobbyUnreachable => notice(state, &tr("VERA:LobbyNotResponding")),
-        http::Response::LobbyReachable => notice(state, &tr("VERA:LobbyRespondingAgain")),
+        http::Response::LobbyUnreachable => notice(state, &tr("VERA:OnlineNotResponding")),
+        http::Response::LobbyReachable => notice(state, &tr("VERA:OnlineRespondingAgain")),
         http::Response::LobbyLost => {
             // A match keeps its relay through a lobby outage; this asks
             // again after it.
@@ -2939,8 +2957,10 @@ fn apply_event(
             );
         }
         "ladder" => {
-            let (ladder, high_scores) = decode::<wire::Ladder>(payload)?.tables();
-            service_event(state, WolServiceEvent::Ladder(ladder));
+            let ladder = decode::<wire::Ladder>(payload)?;
+            let (records, high_scores) = ladder.tables();
+            service_event(state, WolServiceEvent::LadderSeason(ladder.season));
+            service_event(state, WolServiceEvent::Ladder(records));
             service_event(state, WolServiceEvent::HighScores(Ok(high_scores)));
         }
         "kicked" => {
@@ -3540,6 +3560,7 @@ mod completion_tests {
             back_to_room: false,
             finish_result: None,
             finish_winners: None,
+            finish_decided: None,
             finish_opponents_left: false,
             network_quality: None,
             relay_timeout: RELAY_TIMEOUT,
@@ -3718,23 +3739,38 @@ mod completion_tests {
     fn a_match_finishes_with_its_result_and_a_lobby_match_with_its_winners() {
         // A lobby match reports for the ranked ladder. A lobby from before
         // team ladders refuses `winners`: the finish goes again without them.
+        // Its score screen held the finish back for a minute and a half: the
+        // lobby times its player's leaving by `ended_ago`.
         let (mut lobby, input, _output) = control_service(Some("lobby-match"));
         lobby.finish_result = Some("won");
         lobby.finish_winners = Some(vec!["Tanya".into(), "Boris".into()]);
+        lobby.finish_decided = Instant::now().checked_sub(Duration::from_secs(90));
         assert_eq!(
             finish_payload_sent(&mut lobby, &input),
+            json!({"match_id":"lobby-match","result":"won","winners":["Tanya","Boris"],"ended_ago":90})
+        );
+        // A lobby from before `ended_ago` refuses it, and one from before team
+        // ladders `winners`: the finish goes again without the newest.
+        let mut retried = |at: u64| {
+            assert!(!lobby.finish_failed(
+                5,
+                http::CommandFailure::Rejected(0x8000_4005),
+                Instant::now()
+            ));
+            lobby.poll_cleanup(Instant::now() + Duration::from_secs(at));
+            let http::Request::Command { payload, .. } = input.try_recv().unwrap() else {
+                panic!("finish retry");
+            };
+            payload
+        };
+        assert_eq!(
+            retried(3),
             json!({"match_id":"lobby-match","result":"won","winners":["Tanya","Boris"]})
         );
-        assert!(!lobby.finish_failed(
-            5,
-            http::CommandFailure::Rejected(0x8000_4005),
-            Instant::now()
-        ));
-        lobby.poll_cleanup(Instant::now() + Duration::from_secs(3));
-        let http::Request::Command { payload: retry, .. } = input.try_recv().unwrap() else {
-            panic!("finish retry");
-        };
-        assert_eq!(retry, json!({"match_id":"lobby-match","result":"won"}));
+        assert_eq!(
+            retried(10),
+            json!({"match_id":"lobby-match","result":"won"})
+        );
 
         let (mut spawned, input, _output) = control_service(Some("spawned-match"));
         spawned.spawned = true;
@@ -3753,7 +3789,10 @@ mod completion_tests {
         };
         assert_eq!(retry, payload);
         spawned.finish_opponents_left = true;
-        assert_eq!(spawned.finish_payload("m")["opponents_left"], json!(true));
+        assert_eq!(
+            spawned.finish_payload("m", Instant::now())["opponents_left"],
+            json!(true)
+        );
     }
 
     #[test]
@@ -3777,8 +3816,8 @@ mod completion_tests {
 
         // Boris played in an earlier season only: no record, but a badge.
         let ladder: wire::Ladder = serde_json::from_value(json!({"season":2,"records":[
-            {"name":"Tanya","points":1520,"rank":7,"wins":40,"losses":12,"disconnects":1}],
-            "high_scores":[{"name":"Tanya","points":2100,"rank":3},{"name":"Boris","points":90,"rank":12}]}))
+            {"name":"Tanya","points":49,"os":48.51,"rank":7,"wins":40,"losses":12,"disconnects":1}],
+            "high_scores":[{"name":"Tanya","points":1501,"rank":7},{"name":"Boris","points":81,"rank":0}]}))
         .unwrap();
         let high_score = |name: &str, points, rank| WolHighScoreRecord {
             name: name.into(),
@@ -3786,23 +3825,35 @@ mod completion_tests {
             rank,
             coop: 0,
         };
+        let tanya = WolLadderRecord {
+            name: "Tanya".into(),
+            wins: 40,
+            losses: 12,
+            points: 49,
+            os_hundredths: 4851,
+            rank: 7,
+            disconnects: 1,
+        };
         assert_eq!(
             ladder.tables(),
             (
-                vec![WolLadderRecord {
-                    name: "Tanya".into(),
-                    wins: 40,
-                    losses: 12,
-                    points: 1520,
-                    rank: 7,
-                    disconnects: 1,
-                }],
-                vec![high_score("Tanya", 2100, 3), high_score("Boris", 90, 12)],
+                vec![tanya.clone()],
+                vec![high_score("Tanya", 1501, 7), high_score("Boris", 81, 0)],
             )
         );
-        let older: wire::Ladder =
+        assert_eq!(ladder.tables().0[0].os_text(), "48.51");
+        // A lobby from before `os` gives the rounded OS.
+        let older: wire::Ladder = serde_json::from_value(json!({"season":2,"records":[
+            {"name":"Tanya","points":49,"rank":7,"wins":40,"losses":12,"disconnects":1}]}))
+        .unwrap();
+        let rounded = WolLadderRecord {
+            os_hundredths: 4900,
+            ..tanya
+        };
+        assert_eq!(older.tables(), (vec![rounded], vec![]));
+        let unseasoned: wire::Ladder =
             serde_json::from_value(json!({"season":null,"records":[]})).unwrap();
-        assert_eq!(older.tables(), (vec![], vec![]));
+        assert_eq!(unseasoned.tables(), (vec![], vec![]));
     }
 
     #[test]
@@ -4277,8 +4328,8 @@ mod completion_tests {
             channel: crate::ui::wol_lobby::WolChannel::default(),
             key: String::new(),
         });
-        visit.match_returned((None, None), now);
-        visit.match_returned((None, None), now); //Repeated abort callbacks keep one intent.
+        visit.match_returned((None, None, None), now);
+        visit.match_returned((None, None, None), now); //Repeated abort callbacks keep one intent.
         assert!(matches!(
             visit.take_service_requests().as_slice(),
             [
@@ -4292,7 +4343,7 @@ mod completion_tests {
         );
         assert_eq!(borrowed.match_id.as_deref(), Some("loading-match"));
         visit.live_service = Some(borrowed);
-        visit.match_returned((None, None), now);
+        visit.match_returned((None, None, None), now);
         let http::Request::Command {
             id,
             operation,
@@ -4310,7 +4361,7 @@ mod completion_tests {
         service.finish_completed(id);
         assert!(!service.admission_blocked());
         service.clear_cleanup(); //Definitive Offline has retired the authority.
-        visit.match_returned((None, None), now);
+        visit.match_returned((None, None, None), now);
         assert!(
             input.try_recv().is_err(),
             "expired authority cannot issue finish"
@@ -4325,7 +4376,7 @@ mod completion_tests {
         visit.back_to_room = true;
         visit.live_service = Some(service);
         let now = Instant::now();
-        visit.match_returned((None, None), now);
+        visit.match_returned((None, None, None), now);
         let sent = |input: &Receiver<http::Request>| {
             let http::Request::Command {
                 id,

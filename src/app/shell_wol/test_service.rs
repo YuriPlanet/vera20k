@@ -580,13 +580,14 @@ fn lobby_greeting(state: &mut AppState) {
     }
 }
 
-/// Tanya's ladder record.
+/// Tanya's ladder record: OS 48.51, the lobby's points being it rounded.
 fn tanya_ladder() -> WolLadderRecord {
     WolLadderRecord {
         name: "Tanya".into(),
         wins: 12,
         losses: 3,
-        points: 1520,
+        points: 49,
+        os_hundredths: 4851,
         rank: 1,
         disconnects: 0,
     }
@@ -602,7 +603,8 @@ fn ladder_record(name: &str) -> Option<WolLadderRecord> {
             name: "Boris".into(),
             wins: 4,
             losses: 6,
-            points: 300,
+            points: 27,
+            os_hundredths: 2730,
             rank: 17,
             disconnects: 1,
         })
@@ -611,14 +613,15 @@ fn ladder_record(name: &str) -> Option<WolLadderRecord> {
     }
 }
 
-/// The high scores: Tanya's 1520 points (a five-star general's badge) at
-/// rank 7; Boris's 90 points (lieutenant) at rank 123 with every co-op
-/// campaign finished.
+/// The high scores, as the lobby gives them from the ladder: Tanya, the
+/// season's number 1 at OS 48.51, has commander in chief's 2001 points;
+/// Boris, 17th at OS 27.30, a lieutenant's 81, with every co-op campaign
+/// finished.
 fn high_score(name: &str) -> Option<WolHighScoreRecord> {
     let (name, points, rank, coop) = if name.eq_ignore_ascii_case("Tanya") {
-        ("Tanya", 1520, 7, 0)
+        ("Tanya", 2001, 1, 0)
     } else if name.eq_ignore_ascii_case("Boris") {
-        ("Boris", 90, 123, 0xF)
+        ("Boris", 81, 17, 0xF)
     } else {
         return None;
     };

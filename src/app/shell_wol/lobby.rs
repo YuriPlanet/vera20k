@@ -89,6 +89,25 @@ pub(crate) struct WolLobbyGlobals {
     /// WOL reset clears, shares this table.
     pub(crate) ladder: std::collections::HashMap<String, service::WolLadderRecord>,
     pub(crate) high_scores: std::collections::HashMap<String, service::WolHighScoreRecord>,
+    /// VERA: the VERA20K Online season the tables were filled in, `None`
+    /// before its first `ladder` event ([`Self::ladder_season`]).
+    pub(crate) ladder_season: Option<Option<u32>>,
+}
+
+impl WolLobbyGlobals {
+    /// VERA: a `ladder` event from VERA20K Online's `season` (`None` when
+    /// none runs). A season other than the one the tables were filled in
+    /// empties both, so the season before's ranks and badges go; true then,
+    /// for the listed players to be asked again (docs/lobby-protocol.md).
+    pub(crate) fn ladder_season(&mut self, season: Option<u32>) -> bool {
+        let changed = self.ladder_season.is_some_and(|held| held != season);
+        self.ladder_season = Some(season);
+        if changed {
+            self.ladder.clear();
+            self.high_scores.clear();
+        }
+        changed
+    }
 }
 
 /// The user-list sink sends its ladder batch once it holds more than 20
@@ -701,9 +720,13 @@ fn listed_requests(listed: &[WolMember], ranked: impl Fn(&str) -> bool) -> Vec<L
     requests
 }
 
+/// VERA: the modern lobby asks for every listed user, not only those its
+/// table lacks, since VERA20K Online's records change with each rated game
+/// while the table lasts the process; the native lobby keeps its records.
 fn request_listed(state: &mut AppState, listed: &[WolMember]) {
+    let modern = modern_lobby(state);
     let ladder = &state.frontend.wol_lobby_globals.ladder;
-    let requests = listed_requests(listed, |key| ladder.contains_key(key));
+    let requests = listed_requests(listed, |key| !modern && ladder.contains_key(key));
     for listed in requests {
         match listed {
             ListedRequest::Squad(squad) => request_squad(state, squad),
@@ -755,6 +778,27 @@ fn insert_members(state: &mut AppState, members: impl IntoIterator<Item = WolMem
             insert_member(&mut lobby.members, member, sort, rank);
         }
     });
+}
+
+/// VERA: a `ladder` event's season ([`WolLobbyGlobals::ladder_season`]).
+/// When it changed, the player list drops the ranks and badges it showed
+/// and, outside a match, asks again for its users' records; after a match
+/// the lobby's list asks anyway.
+pub(super) fn ladder_season(state: &mut AppState, season: Option<u32>) {
+    if !state.frontend.wol_lobby_globals.ladder_season(season) {
+        return;
+    }
+    refill_players(state);
+    if state
+        .frontend
+        .wol
+        .as_ref()
+        .is_none_or(|visit| visit.in_game)
+    {
+        return;
+    }
+    let listed = lobby(state).map_or_else(Vec::new, |lobby| lobby.members.clone());
+    request_listed(state, &listed);
 }
 
 /// The ladder sink's re-sort (`0x007A3966..0x007A39C4`): under a rank
@@ -3064,14 +3108,16 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                 }
                 // 0x7A6542..0x7A662D: the lowered name's ladder record and
                 // high score, each unless its table holds it, before the
-                // insert.
+                // insert. VERA: the modern lobby asks for both always, as
+                // for its listed users (request_listed).
                 // RESIDUAL: native kicks a game-channel joiner while a start
                 // is pending ([0xB77DEC]/[0xB77E28]/[0xB77E27]) before these
                 // requests and the insert; VERA kicks in setup::user_joined.
                 let key = name.to_ascii_lowercase();
+                let modern = modern_lobby(state);
                 let globals = &state.frontend.wol_lobby_globals;
-                let ladder = !globals.ladder.contains_key(&key);
-                let high_score = !globals.high_scores.contains_key(&key);
+                let ladder = modern || !globals.ladder.contains_key(&key);
+                let high_score = modern || !globals.high_scores.contains_key(&key);
                 if ladder {
                     request(state, WolServiceRequest::LadderRecords(vec![key.clone()]));
                 }
@@ -4193,7 +4239,7 @@ pub(crate) fn status_help(state: &AppState) -> String {
             .and_then(|row| ui.player_rows.get(row))
         {
             None => csf(state, "STT:LobbyListUsers"),
-            Some(row) if ui.is_modern() => row.name.clone(),
+            Some(row) if ui.is_modern() => modern_user_help(state, row),
             Some(row) => {
                 let member = lobby.members.iter().find(|member| member.name == row.name);
                 user_help(state, &row.name, member)
@@ -4203,6 +4249,37 @@ pub(crate) fn status_help(state: &AppState) -> String {
             .map(|key| csf(state, key))
             .unwrap_or_default(),
         None => String::new(),
+    }
+}
+
+/// VERA's help for a modern player row: the name, then its badge's name and
+/// the season's rank and OS as the player card shows them, or Unranked; the
+/// name alone without a badge.
+fn modern_user_help(state: &AppState, row: &WolPlayerRow) -> String {
+    let Some(badge) = row
+        .score_icons
+        .iter()
+        .find(|(_, x)| *x == PLAYER_BADGE_X)
+        .and_then(|(file, _)| badge_name_key(file))
+        .map(|key| csf(state, key))
+    else {
+        return row.name.clone();
+    };
+    let ladder = &state.frontend.wol_lobby_globals.ladder;
+    match ladder.get(&row.name.to_ascii_lowercase()) {
+        Some(record) => crate::i18n::fill(
+            &csf(state, "VERA:PlayerHelp"),
+            &[
+                ("name", &row.name),
+                ("badge", &badge),
+                ("rank", &record.rank),
+                ("os", &record.os_text()),
+            ],
+        ),
+        None => crate::i18n::fill(
+            &csf(state, "VERA:PlayerHelpUnranked"),
+            &[("name", &row.name), ("badge", &badge)],
+        ),
     }
 }
 
@@ -4688,6 +4765,30 @@ mod tests {
                 ListedRequest::Ladder(names(86..=99, 0)),
             ]
         );
+    }
+
+    #[test]
+    fn a_ladder_event_from_another_season_empties_the_tables() {
+        let mut globals = WolLobbyGlobals::default();
+        let fill = |globals: &mut WolLobbyGlobals| {
+            globals
+                .ladder
+                .insert("tanya".into(), service::WolLadderRecord::default());
+            globals
+                .high_scores
+                .insert("tanya".into(), service::WolHighScoreRecord::default());
+        };
+        // The first event only notes its season; the same season keeps the records.
+        assert!(!globals.ladder_season(Some(1)));
+        fill(&mut globals);
+        assert!(!globals.ladder_season(Some(1)));
+        assert_eq!((globals.ladder.len(), globals.high_scores.len()), (1, 1));
+        // A new season, and ranked play stopping, each drop the season before's.
+        assert!(globals.ladder_season(Some(2)));
+        assert!(globals.ladder.is_empty() && globals.high_scores.is_empty());
+        fill(&mut globals);
+        assert!(globals.ladder_season(None));
+        assert!(globals.ladder.is_empty() && globals.high_scores.is_empty());
     }
 
     #[test]
