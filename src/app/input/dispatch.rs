@@ -1245,6 +1245,20 @@ fn sidebar_cameo_press(
     }
     if let Some(line) = click.eva {
         push_local_eva(state, line);
+        // Accessibility: `EVA_Building` / `EVA_Training` / `EVA_Canceled`
+        // name no object, but the clicked cameo's type key is right here.
+        // Other click lines (hold, refusal, target select) post nothing.
+        crate::app::input::messages::post_eva_production_start(state, line, type_id);
+        // A single ABANDON removed exactly this cameo's build. ABANDON_ALL
+        // removed a set the voice does not name either, so it names nothing.
+        if line == sidebar_eva::EVA_CANCELED && sidebar_eva::cancel_names_clicked_type(click.order)
+        {
+            crate::app::input::messages::post_eva_cancel(
+                state,
+                type_id,
+                sidebar_eva::is_structure_strip(category),
+            );
+        }
     }
     let owner = preferred_local_owner_name(state).and_then(|name| {
         state
@@ -2709,6 +2723,10 @@ fn apply_selection_mutation(
     }
     state.match_state.input.selection_order = ordered.clone();
     state.match_state.input.selection_order_pending = true;
+    // VERA-only accessibility row: the VoiceSelect audio never names what was
+    // selected. Post once per changed selection; the switch short-circuits
+    // before aggregating anything.
+    crate::app::input::messages::post_eva_selection(state, &ordered);
     let Some(owner) = preferred_local_owner(state) else {
         return true;
     };

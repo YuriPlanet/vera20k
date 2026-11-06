@@ -661,13 +661,21 @@ pub enum SimSoundEvent {
         world: crate::sim::anim_class::AnimWorldCoord,
     },
     /// A building finished construction — play EVA "Construction complete".
-    BuildingComplete { owner: InternedId },
+    /// `type_id` is the factory's already-resolved completed product; the app
+    /// names it in the optional accessibility text line. Transient event only:
+    /// drained each frame, never a gameplay hash or persisted identity input.
+    BuildingComplete {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// `HouseClass::Place_Production 0x004FB5C6..0x004FB644`: a unit left the
     /// factory of a human-controlled house. `EVA_UnitReady` plays for the
-    /// local owner once its client admits `radar` (type 6).
+    /// local owner once its client admits `radar` (type 6). `type_id` is the
+    /// held product the factory completed, carried for the optional text line.
     UnitComplete {
         owner: InternedId,
         radar: RadarEventRequest,
+        type_id: InternedId,
     },
     /// One accepted HouseClass win/loss transition. The app resolves the
     /// local owner's faction-specific STANDARD EVA; this edge is transient so
@@ -766,9 +774,13 @@ pub enum SimSoundEvent {
     /// skirmish that is `owner == the local player`, which the app resolves.
     /// `sound_id` is `None` when the rules key is absent or empty (native's
     /// invalid Voc index is silence).
+    /// `type_id` is the promoted object's already-resolved type reference; the
+    /// app names it in the optional accessibility text line. Transient event
+    /// only: drained each frame, never a gameplay hash or persisted identity.
     UnitPromoted {
         owner: InternedId,
         sound_id: Option<InternedId>,
+        type_id: InternedId,
         /// The object's Location (`0x006FA092..0x006FA0BC`,
         /// `0x006FA0FF..0x006FA12A`).
         world: crate::sim::anim_class::AnimWorldCoord,
@@ -796,10 +808,12 @@ pub enum SimSoundEvent {
     /// `TechnoClass::Death_Announcement @ 0x004D98C0` fired for a unit of
     /// `owner` (a human house) that is not `Spawned=`. The app plays
     /// `EVA_UnitLost` for the local owner once its client admits `radar`
-    /// (`CreateRadarEvent(7, cell)`, 8-cell dedupe).
+    /// (`CreateRadarEvent(7, cell)`, 8-cell dedupe). `type_id` is the dead
+    /// techno's own interned type, resolved at the death site; transient.
     UnitLost {
         owner: InternedId,
         radar: RadarEventRequest,
+        type_id: InternedId,
     },
     /// A `PlayEVA` line native speaks only for the player's house: the
     /// `HouseClass::Update` advice (`EVA_InsufficientFunds` `0x004F8BA0`,
@@ -815,8 +829,13 @@ pub enum SimSoundEvent {
     /// `+0x6DD`): `TechnoClass+0x41A` (owner is the local player) and no
     /// `UndeploysInto=` (`Type+0x408`) — an undeploying building stays
     /// silent. Each removed upgrade uses the same event at
-    /// `0x0044AB22..0x0044AB36`. App plays `EVA_StructureSold`.
-    StructureSold { owner: InternedId },
+    /// `0x0044AB22..0x0044AB36`. App plays `EVA_StructureSold`. `type_id`
+    /// names the building that was sold (or whose upgrade was removed); the
+    /// emit site already resolved it. Transient accessibility fact only.
+    StructureSold {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// A sale order's click (`BuildingClass::Sell_Back @ 0x00447110`:
     /// `VocClass::PlayAtPos` of `[AudioVisual] GenericClick=`) for the
     /// owner's player (`HouseClass::IsHumanPlayer @ 0x0050B6F0`; the app
@@ -826,8 +845,14 @@ pub enum SimSoundEvent {
     /// switched on while `Health != Type.Strength` (`0x00447059`) and the
     /// owner is the local player (`0x004470A4 CALL 0x0050B6F0`). App plays
     /// `EVA_Repairing` for the local owner. Depot MissionRepair44C507 emits
-    /// the same request when its first paid service step starts.
-    Repairing { owner: InternedId },
+    /// the same request when its first paid service step starts. `type_id` is
+    /// the building being repaired (ToggleRepair) or the depot that began the
+    /// service (MissionRepair); both are already resolved at the emit site.
+    /// Transient accessibility fact only.
+    Repairing {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// Depot MissionRepair44BDB2 reaches CreateRadarEvent8 after a service
     /// request completes. The app resolves the local-owner+41A gate and
     /// existing client radar admission before playing EVA_UnitRepaired.
@@ -993,13 +1018,19 @@ pub enum SimSoundEvent {
     /// Owner is the building owner at AddGarrisonOccupant time; civilian
     /// ownership transfer is reported separately from building reconciliation.
     /// App layer plays EVA_StructureGarrisoned if owner is local human.
-    StructureGarrisoned { owner: InternedId },
+    /// `type_id` is the occupied building, already resolved at the emit site.
+    StructureGarrisoned {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// CheckAutoSellOrCivilian458200 abandoned an empty map garrison.
     /// House50B6F0 already admitted the old owner. The sound precedes radar
     /// admission; EVA plays only when CreateRadarEvent accepts the request.
     StructureAbandoned {
         owner: InternedId,
         radar: crate::sim::radar::RadarEventRequest,
+        /// The abandoned building, already resolved at the emit site.
+        type_id: InternedId,
     },
     /// First-occupant SFX from rulesmd [AudioVisual] BuildingGarrisonedSound.
     /// Positional cue gated on owner == local human, at the occupant's
@@ -3212,9 +3243,11 @@ impl Simulation {
             if !self.owner_is_human(event.owner) {
                 continue;
             }
+            let type_id = self.interner.intern(&event.type_key);
             self.sound_events.emit(SimSoundEvent::UnitLost {
                 owner: event.owner,
                 radar: RadarEventRequest::new(RadarEventType::UnitLost, event.rx, event.ry),
+                type_id,
             });
         }
     }

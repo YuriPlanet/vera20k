@@ -29,6 +29,7 @@ pub(crate) fn death_announcement_event(
         rx,
         ry,
         owner,
+        type_key: obj.id.clone(),
     })
 }
 
