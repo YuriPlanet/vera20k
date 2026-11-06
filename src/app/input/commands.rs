@@ -1010,7 +1010,9 @@ pub(crate) fn schedule_command(state: &mut AppState, owner: &str, payload: Comma
             .sim_runtime
             .as_ref()
             .is_some_and(|runtime| {
-                runtime.simulation.session().game_mode().is_network()
+                (runtime.simulation.session().game_mode().is_network()
+                    || runtime.simulation.session().game_mode()
+                        == crate::sim::scenario_session::ScenarioGameMode::Skirmish)
                     && runtime.simulation.available_local_command_slots() == 0
             })
     {
@@ -1024,7 +1026,9 @@ pub(super) fn selection_input_has_capacity(state: &mut AppState, count: usize) -
         .sim_runtime
         .as_ref()
         .is_some_and(|runtime| {
-            runtime.simulation.session().game_mode().is_network()
+            (runtime.simulation.session().game_mode().is_network()
+                || runtime.simulation.session().game_mode()
+                    == crate::sim::scenario_session::ScenarioGameMode::Skirmish)
                 && count > runtime.simulation.available_local_command_slots()
         });
     if blocked {

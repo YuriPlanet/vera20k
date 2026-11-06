@@ -1499,7 +1499,9 @@ fn finish_order(
                 .map(|rt| &mut rt.simulation)
             {
                 let network = sim.session().game_mode().is_network();
-                accepted = sim.issue_local_commands(encoded) || !network;
+                let skirmish = sim.session().game_mode()
+                    == crate::sim::scenario_session::ScenarioGameMode::Skirmish;
+                accepted = sim.issue_local_commands(encoded) || !(network || skirmish);
             }
             if accepted {
                 if let Some(speaker_id) = speaker_id {
