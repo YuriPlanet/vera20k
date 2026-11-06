@@ -166,14 +166,15 @@ fn angle_off_heading(cell: (i32, i32), reference: (i32, i32), heading: f64) -> f
     angle
 }
 
-/// The frontier priority: a random term plus the off-heading penalty.
+/// The frontier priority: a random term plus the off-heading penalty, stored
+/// with `FSTP m32` (`GrowMeanderArm` 0x005A0B9F seeds, 0x005A0F4F frontier).
 fn frontier_cost(angle: f64, draw: u32) -> f32 {
     let scale = TruncF64::from_f64(f64::from_bits(RANGE_K_BITS));
     let random_term = TruncF64::from_f64(f64::from(draw))
         .mul(scale)
         .mul(TruncF64::from_f64(COST_RANDOM));
     let angle_term = TruncF64::from_f64(angle).mul(TruncF64::from_f64(COST_ANGLE));
-    random_term.add(angle_term).to_f64() as f32
+    x87::store_f32(random_term.add(angle_term))
 }
 
 /// How many cells the arm may claim.
@@ -409,6 +410,15 @@ pub(crate) fn dilate_chained(
 mod tests {
     use super::*;
 
+    /// `GrowMeanderArm` stores the cost with `FSTP m32` under chop
+    /// (0x005A0F4F): `u32::MAX * K * 2` stays just below 2.0.
+    #[test]
+    fn frontier_cost_store_truncates() {
+        assert_eq!(
+            frontier_cost(0.0, u32::MAX),
+            f32::from_bits(2.0f32.to_bits() - 1)
+        );
+    }
     #[test]
     fn a_whole_map_rect_points_east() {
         // The canyon's rect is unclipped on both axes, so neither test fires

@@ -12,7 +12,7 @@ use crate::map::rmg::phases::blob::{CellHeap, by_key};
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{Gaussian, TruncF64, approx_sqrt, narrow_to_f32};
+use crate::map::rmg::x87::{self, Gaussian, TruncF64, approx_sqrt};
 use crate::util::direction_tables::native_atan_from_table;
 use crate::util::native_x87::X87Chop53;
 
@@ -707,7 +707,7 @@ fn split_frontier_cost(
         .mul(tf(f64::from_bits(RANGE_K_BITS)))
         .mul(tf(2.5));
     let cost = noise.add(tf(1.5).mul(off)).add(tf(0.15).mul(distance));
-    narrow_to_f32(cost).to_f64() as f32
+    x87::store_f32(cost)
 }
 
 #[cfg(test)]

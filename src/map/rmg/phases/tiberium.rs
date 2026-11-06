@@ -13,10 +13,10 @@
 //! overlays and one `TIBTRE` tree per seed generation.
 
 use crate::map::rmg::grid::RmgGrid;
-use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
+use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{Gaussian, TruncF64, approx_sqrt, approx_sqrt_f32};
+use crate::map::rmg::x87::{self, Gaussian, TruncF64, approx_sqrt_f32};
 use crate::util::native_x87::X87Chop53;
 
 use super::blob::{CellHeap, by_key};
@@ -43,8 +43,6 @@ const GEM_SIZE_SCALE: f64 = 15.0;
 const GEM_SIZE_BASE: i32 = 500;
 /// Pass-2 score running-min seed.
 const SCORE_MIN_INIT: f64 = 9_999_999.0;
-/// BFS priority jitter scale.
-const PRIORITY_JITTER: f64 = 5.0;
 /// Heap capacity multiplier and re-seed cap.
 const HEAP_CAP_MULT: i32 = 10;
 const MAX_SEEDS: i32 = 10;
@@ -419,12 +417,7 @@ fn place_field(
             }
             let dx = anchor.0 - nx;
             let dy = anchor.1 - ny;
-            let jitter = TruncF64::from_f64(f64::from(ctx.rng.next_u32()))
-                .mul(TruncF64::from_f64(PRIORITY_JITTER))
-                .mul(TruncF64::from_f64(f64::from_bits(RANGE_K_BITS)));
-            let priority = approx_sqrt(TruncF64::from_f64(f64::from(dx * dx + dy * dy)))
-                .add(jitter)
-                .to_f64() as f32;
+            let priority = x87::jittered_distance_key(dx * dx + dy * dy, ctx.rng.next_u32());
             ctx.scratch.get_mut(nx, ny).stamp = field_id;
             heap.push((priority, (nx, ny)), by_key);
         }

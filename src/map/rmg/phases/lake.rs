@@ -198,7 +198,7 @@ fn growth_key(distance: f32, draw: u32, placed: i32) -> f32 {
         TruncF64::from_f64(f64::from(distance)).mul(TruncF64::from_f64(f64::from(KEY_DIST)));
     let decay_term =
         TruncF64::from_f64(f64::from(placed)).mul(TruncF64::from_f64(f64::from(KEY_DECAY)));
-    x87::narrow_to_f32(random_term.add(dist_term).sub(decay_term)).to_f64() as f32
+    x87::store_f32(random_term.add(dist_term).sub(decay_term))
 }
 
 /// Derive the allow mask, then pick a seed cell (`GrowLake @ 0x0059C920`,
