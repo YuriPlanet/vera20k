@@ -10,7 +10,7 @@ use crate::app::AppState;
 use crate::app::presentation::instances::{CellBodyAtlas, CellBodyDraw};
 use crate::app::presentation::sidebar_render::{begin_main_load_pass, begin_main_pass};
 use crate::app::presentation::sidebar_surface::SidebarPart;
-use crate::app::presentation::ui_overlays::current_software_cursor_texture;
+use crate::app::presentation::ui_overlays::software_cursor_texture;
 use crate::render::batch::{BatchRenderer, BatchTexture, InstanceBufferPool, SpriteInstance};
 use crate::render::bridge_atlas::BridgeAtlas;
 use crate::render::overlay_atlas::OverlayAtlas;
@@ -59,6 +59,8 @@ pub(super) struct DrawPassData<'a> {
     /// `SidebarInstances::smooth_chrome` and `smooth_command_bar`.
     pub smooth_chrome: bool,
     pub smooth_command_bar: bool,
+    /// The frame the software cursor sprite was built from.
+    pub software_cursor: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
 }
 
 /// Draw the sidebar into its own surface, as gamemd draws `g_SidebarSurface`
@@ -1265,7 +1267,8 @@ pub(super) fn dispatch_draw_passes(
             &mut pass,
             &state.renderer.batch_renderer,
             pool,
-            current_software_cursor_texture(state),
+            data.software_cursor
+                .and_then(|draw| software_cursor_texture(state, draw)),
             "software_cursor",
         );
     }

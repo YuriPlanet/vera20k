@@ -1741,25 +1741,24 @@ pub(crate) fn reset_cursor_shape() {
     CURSOR_ANIMATION.with(|animation| animation.set(CursorAnimation::new()));
 }
 
-/// The frame of `sequence` to draw for cursor `id` right now.
+/// The index of the frame of `sequence` to draw for cursor `id` right now.
 ///
 /// The id is part of the query because the phase is keyed on it: asking for a
 /// different cursor than last frame restarts that cursor's animation.
-pub(crate) fn software_cursor_frame_for(
+pub(crate) fn software_cursor_frame_index(
     id: CursorId,
     sequence: &SoftwareCursorSequence,
-) -> Option<&SoftwareCursorFrame> {
+) -> Option<usize> {
     if sequence.frames.is_empty() {
         return None;
     }
     let now_ms = cursor_animation_now_ms();
-    let frame_idx = CURSOR_ANIMATION.with(|cell| {
+    Some(CURSOR_ANIMATION.with(|cell| {
         let mut animation = cell.get();
         let idx = animation.advance(id, sequence.frames.len(), sequence.interval_ms, now_ms);
         cell.set(animation);
         idx
-    });
-    sequence.frames.get(frame_idx)
+    }))
 }
 
 /// Shell screens (menu, skirmish setup, score) only ever show the default
@@ -1767,7 +1766,9 @@ pub(crate) fn software_cursor_frame_for(
 pub(crate) fn current_software_cursor_frame(
     sequence: &SoftwareCursorSequence,
 ) -> Option<&SoftwareCursorFrame> {
-    software_cursor_frame_for(CursorId::Default, sequence)
+    sequence
+        .frames
+        .get(software_cursor_frame_index(CursorId::Default, sequence)?)
 }
 
 fn cursor_animation_now_ms() -> u64 {

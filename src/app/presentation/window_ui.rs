@@ -301,6 +301,7 @@ pub(crate) fn draw_battlefield(
     state: &AppState,
     encoder: &mut wgpu::CommandEncoder,
     view: &wgpu::TextureView,
+    software_cursor: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
 ) {
     let Some(zoom) = zoom_raster(state) else {
         return;
@@ -355,7 +356,9 @@ pub(crate) fn draw_battlefield(
         }
     }
     if let (Some(texture), Some((buffer, count))) = (
-        crate::app::presentation::ui_overlays::current_software_cursor_texture(state),
+        software_cursor.and_then(|draw| {
+            crate::app::presentation::ui_overlays::software_cursor_texture(state, draw)
+        }),
         pool.get("software_cursor"),
     ) {
         pass.draw_cursor(texture, buffer, count, frame);
