@@ -129,9 +129,10 @@ pub(crate) fn post_type_select_feedback(state: &mut AppState, csf_key: &str) {
     post_silent_house_feedback(state, csf_key, TYPE_SELECT_MESSAGE_TIMEOUT_MS);
 }
 
-///63A0D0/639FD0/639130 use the same silent730A90 HUD owner with duration1E0.
-/// Their separate ScoldSound belongs to the planning input owner.
-pub(crate) fn post_planning_refusal(state: &mut AppState, csf_key: &str) {
+/// PlanMgr's refusals (63A0D0/639FD0/639130/638120/637270) and help
+/// (63A120/63A1B0) use the same silent730A90 HUD owner with duration1E0.
+/// A refusal's separate ScoldSound belongs to the planning input owner.
+pub(crate) fn post_planning_message(state: &mut AppState, csf_key: &str) {
     post_silent_house_feedback(state, csf_key, 0x1E0 * 16);
 }
 

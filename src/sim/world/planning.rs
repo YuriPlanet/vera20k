@@ -143,6 +143,16 @@ pub enum PlanningPressRefusal {
     NoUnknowns,
 }
 
+/// The messages PlanMgr's append 0x00638120 raises for the local house
+/// (event house == PlayerPtr, 0x0063814C), each as its literal CSF key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanningAppendMessage {
+    PostTerminatingCommand,
+    PostContinualCommand,
+    PostLoop,
+    NodeMaximum,
+}
+
 #[derive(Debug, Clone)]
 pub struct PlanningPathView {
     pub actor_id: u64,
@@ -157,8 +167,6 @@ pub struct PlanningPathView {
 pub struct PlanningDrawGraph {
     pub nodes: Vec<PlanningDrawNode>,
     pub actors: Vec<PlanningDrawActor>,
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) hovered_node: Option<u64>,
     pub highlighted_node: Option<u64>,
     pub hovered_coord: Option<DriveCoord>,
     pub highlighted_coord: Option<DriveCoord>,
@@ -721,12 +729,17 @@ impl Simulation {
         self.planning_delete_record_for_node(owner, node)
     }
 
-    pub fn encode_plan_node_delete_record_at_screen(
+    /// `Planning__QueueNodeDeleteEvent @ 0x00637D00`, which Delete
+    /// (`0x00731A10`) reaches with the retained highlight AC4BF0: a 0x2C
+    /// event naming the node's first member event target.
+    pub fn encode_plan_node_delete_record_for_node(
         &self,
         owner: InternedId,
-        point: [i32; 2],
+        node: u64,
     ) -> Option<CommandRecord> {
-        let node = self.planning_node_id_at_screen(Some(owner), point)?;
+        if !self.planning_node_exists(node) {
+            return None;
+        }
         self.planning_delete_record_for_node(owner, node)
     }
 
@@ -773,23 +786,25 @@ impl Simulation {
     /// Only the presentation and input ask this. A target read looks its
     /// cell up, which stamps the fallback CellClass on a miss; the stamp
     /// stays private to the query, so drawing cannot change the simulation.
+    /// `hovered_node` is PlanMgr's AC4CCC ([`Self::planning_hover_node`]) and
+    /// `retained_highlighted_node` its AC4BF0; both are local input state. A
+    /// node that no longer exists draws neither: each node destructor
+    /// (0x00637640, 0x006340B0, 0x00633D30, 0x0063D9C0) clears both globals.
     pub fn planning_draw_graph(
         &self,
         viewer: InternedId,
-        selected: &[u64],
-        hover_point: Option<[i32; 2]>,
+        hovered_node: Option<u64>,
         retained_highlighted_node: Option<u64>,
     ) -> PlanningDrawGraph {
         self.effective_shared_cell_dummy().detached(|| {
-            self.build_planning_draw_graph(viewer, selected, hover_point, retained_highlighted_node)
+            self.build_planning_draw_graph(viewer, hovered_node, retained_highlighted_node)
         })
     }
 
     fn build_planning_draw_graph(
         &self,
         viewer: InternedId,
-        selected: &[u64],
-        hover_point: Option<[i32; 2]>,
+        hovered_node: Option<u64>,
         retained_highlighted_node: Option<u64>,
     ) -> PlanningDrawGraph {
         let mut positions = BTreeMap::new();
@@ -994,15 +1009,12 @@ impl Simulation {
         }
         //63B2F0 draws retained/hover rectangles independently of the allied
         // node drawing pass.63D650 likewise checks full node membership.
-        let hovered_node =
-            hover_point.and_then(|point| self.planning_hover_node_id(viewer, selected, point));
+        let hovered_node = hovered_node.filter(|id| self.planning.nodes.contains_key(id));
         let highlighted_node =
             retained_highlighted_node.filter(|id| self.planning.nodes.contains_key(id));
         PlanningDrawGraph {
             nodes,
             actors,
-            #[cfg(any(test, feature = "test-support"))]
-            hovered_node,
             highlighted_node,
             hovered_coord: hovered_node.and_then(|id| self.planning_node_coords(id)),
             highlighted_coord: highlighted_node.and_then(|id| self.planning_node_coords(id)),
@@ -1027,17 +1039,7 @@ impl Simulation {
     /// mouse changes, while this re-checks it each frame against the current
     /// selection; and it hit-tests the first node in AC4C18 before its owner
     /// test, while this finds the first own node (allied plans only).
-    pub fn planning_node_at_screen(
-        &self,
-        owner: InternedId,
-        selected: &[u64],
-        point: [i32; 2],
-    ) -> Option<(u16, u16)> {
-        self.planning_node_coords(self.planning_hover_node_id(owner, selected, point)?)
-            .and_then(coord_cell)
-    }
-
-    fn planning_hover_node_id(
+    pub fn planning_hover_node(
         &self,
         owner: InternedId,
         selected: &[u64],
@@ -1045,6 +1047,12 @@ impl Simulation {
     ) -> Option<u64> {
         self.planning_node_id_at_screen(Some(owner), point)
             .filter(|&node| self.planning_invalid_node_reason(selected, node).is_none())
+    }
+
+    /// Whether a node id still names a node. Input keeps AC4CCC/AC4BF0 as
+    /// ids, which node ids never reuse within one planner.
+    pub fn planning_node_exists(&self, node: u64) -> bool {
+        self.planning.nodes.contains_key(&node)
     }
 
     /// Planning__GetInvalidNodeReason 0x0063AC70 over the selection in order.
@@ -1553,46 +1561,67 @@ impl Simulation {
         }
         //638120 requires a resolved actor; ordinary-event admission is deferred
         // until its generated flag2 is dispatched, even after capture.
-        // Append63821F accepts only disposition -1 from638CE0. A Cell
-        // Attack/AreaGuard tail is terminal even while it is still being edited.
-        if self
-            .planning
-            .paths
-            .get(&actor)
-            .and_then(|path| path.nodes.last())
-            .and_then(|id| self.planning.nodes.get(id))
-            .and_then(|node| node.order(actor))
-            .is_some_and(|record| {
-                let mut ordinary = record.clone();
-                ordinary.payload_mut()[22] = 0;
-                matches!(
-                    MegaMissionRecord::decode(&ordinary).map(|order| order.order),
-                    Some(MegaMissionOrder::Attack {
-                        target: MegaMissionTarget::Cell { .. }
-                    }) | Some(MegaMissionOrder::AreaGuard {
-                        post: MegaMissionTarget::Cell { .. } | MegaMissionTarget::Null
-                    })
-                )
-            })
-        {
-            return PlanningAppend::Refused;
-        }
-        // PlanMgr638B70 rejects AreaGuard with no target or the actor's
-        // current CellStruct; this is separate from commit admission.
+        // Append63821F accepts only disposition -1 from638CE0.
+        // 0x0063822C and the later tests: only the local house hears these;
+        // the presentation owner compares `owner` with it.
+        let refuse = |sim: &mut Self, message| {
+            sim.lifecycle_outputs
+                .emit(super::lifecycle::LifecycleOutput::PlanningAppendRefused { owner, message });
+            PlanningAppend::Refused
+        };
+        // PlanMgr638B70 (638CE0's first test) rejects AreaGuard with no target
+        // or the actor's current CellStruct as disposition 0: no message for a
+        // MEGAMISSION (0x00638238..0x00638274).
         if matches!(order.order, MegaMissionOrder::AreaGuard { .. })
             && cell == (entity.position.rx(), entity.position.ry())
         {
             return PlanningAppend::Refused;
         }
-        // 6384DC compares 10h directly in this active append path.
-        self.planning.register_token(actor);
-        if self
+        // 638CE0 then reads the actor's tail event: mission +0xC Enter,
+        // Capture or Eaten is terminal (1, PostTerminatingCommand 0x006382B6);
+        // a continual tail 638C40 accepts is 2 (PostContinualCommand
+        // 0x0063831B). A tail is terminal even while it is still being edited.
+        let tail = self
             .planning
             .paths
             .get(&actor)
-            .is_some_and(|path| path.nodes.len() == 16 || path.loop_start.is_some())
-        {
-            return PlanningAppend::Refused;
+            .and_then(|path| path.nodes.last())
+            .and_then(|id| self.planning.nodes.get(id))
+            .and_then(|node| node.order(actor));
+        if let Some(tail) = tail {
+            let (mission, kind) = (tail.payload()[5], tail.payload()[11]);
+            if matches!(mission, 7..=9) {
+                return refuse(self, PlanningAppendMessage::PostTerminatingCommand);
+            }
+            if planning_continual(mission, kind) {
+                return refuse(self, PlanningAppendMessage::PostContinualCommand);
+            }
+        }
+        // 6384DC compares 10h directly in this active append path.
+        self.planning.register_token(actor);
+        let (count, looped) = self.planning.paths.get(&actor).map_or((0, false), |path| {
+            (path.nodes.len(), path.loop_start.is_some())
+        });
+        // 0x00638378..0x006383BF: for the local house a new terminal or
+        // continual event leaves AC4C90 0 for PlanMgr637270's frame pass, and
+        // the fifteenth node leaves 2. Both are set before the loop and
+        // count refusals below.
+        let (mission, kind) = (record.payload()[5], record.payload()[11]);
+        let pending = if matches!(mission, 7..=9) || planning_continual(mission, kind) {
+            Some(PlanningAppendMessage::PostTerminatingCommand)
+        } else {
+            (count == 15).then_some(PlanningAppendMessage::NodeMaximum)
+        };
+        if let Some(message) = pending {
+            self.lifecycle_outputs.emit(
+                super::lifecycle::LifecycleOutput::PlanningFramePassQueued { owner, message },
+            );
+        }
+        if looped {
+            return refuse(self, PlanningAppendMessage::PostLoop);
+        }
+        if count == 16 {
+            return refuse(self, PlanningAppendMessage::NodeMaximum);
         }
         // 0x00636EB0 reads the actor's tail before the new node joins it.
         let tail_members: Vec<u64> = self
@@ -1946,6 +1975,13 @@ fn planning_record_target(record: &CommandRecord) -> Option<MegaMissionTarget> {
     [7, 17, 12].into_iter().find_map(|offset| {
         read_target(record, offset).filter(|target| *target != MegaMissionTarget::Null)
     })
+}
+
+/// `0x00638C40`: an Attack (1) or AreaGuard (11) whose primary target kind
+/// (event+0x12) is a Cell, or an AreaGuard with none. Arguments are the
+/// event's mission byte (+0xC) and that kind.
+fn planning_continual(mission: u8, kind: u8) -> bool {
+    matches!(mission, 1 | 11) && (kind == 0x0b || (mission == 11 && kind == 0))
 }
 
 fn coord_cell(coord: DriveCoord) -> Option<(u16, u16)> {
