@@ -3966,7 +3966,9 @@ fn load_map_first_step(
                                                                             (None, None)
                                                                         };
 
-                                                                    // Campaigns open on the shared post-map owner's HomeCell (684C30),
+                                                                    // Campaigns open on the shared post-map owner's HomeCell (684C30,
+                                                                    // through `RadarClass::SetTacticalPosition @ 0x00653F70`, a plain
+                                                                    // SetViewToCoordInstant, at `0x00684D42`),
                                                                     // other scenarios on its CenterCameraOnPlayerTechnos coordinate
                                                                     // (4AC4F0). Without either (no current player, or an observer
                                                                     // with nothing), a multiplayer waypoint or the playable centre.
