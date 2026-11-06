@@ -195,6 +195,11 @@ impl PlanningInputState {
         self.frame_pass_message.take()
     }
 
+    /// PlanMgr_Process_Frame's input tail: AC4C08 resets (0x0063753F).
+    fn end_frame_pass(&mut self) {
+        self.refusal_latched = false;
+    }
+
     fn key_transition(
         &mut self,
         planning: bool,
@@ -338,7 +343,7 @@ pub(crate) fn frame_pass(state: &mut AppState) {
         crate::app::input::dispatch::unselect_all(state);
         refuse(state, PlanningRefusal::Append(message));
     }
-    state.match_state.input.planning.refusal_latched = false;
+    state.match_state.input.planning.end_frame_pass();
 }
 
 /// 0x0063A120/0x0063A1B0's help: a silent 730A90 post with duration 1E0,
@@ -1406,5 +1411,20 @@ mod tests {
         assert!(input.admit_refusal());
         input.restore_active(true);
         assert!(input.admit_refusal());
+    }
+
+    #[test]
+    fn a_queued_append_message_posts_under_the_latch_then_the_latch_resets() {
+        let mut input = PlanningInputState::default();
+        input.frame_pass_message = Some(PlanningAppendMessage::NodeMaximum);
+        assert!(input.admit_refusal(), "an earlier refusal this frame");
+        assert_eq!(
+            input.begin_frame_pass(true),
+            Some(PlanningAppendMessage::NodeMaximum)
+        );
+        assert!(!input.admit_refusal(), "the queued post shares AC4C08");
+        assert_eq!(input.begin_frame_pass(true), None, "consumed once");
+        input.end_frame_pass();
+        assert!(input.admit_refusal(), "0x0063753F resets the latch");
     }
 }
