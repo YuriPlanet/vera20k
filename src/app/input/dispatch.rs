@@ -3451,11 +3451,26 @@ mod item83_selection_order_tests {
                     Some(pill)
                 );
             } else if phase == 2 {
-                assert!(sim.apply_command(
-                    "Americans",
-                    &Command::EjectBunker { bunker_id: pill },
-                    Some(rules)
-                ));
+                // Phase 1 installed through the production install-end seam;
+                // clear the same two links for the post-release band. This
+                // control is about selection, not about the eject chain: the
+                // VERA-only opcode 0x31 now queues the Unload mission instead
+                // of releasing at command time (#3675).
+                {
+                    let entities = sim.entities_mut_for_test();
+                    entities
+                        .get_mut(pill)
+                        .unwrap()
+                        .bunker
+                        .set_bunker_occupant_for_test(None);
+                    entities
+                        .get_mut(tank)
+                        .unwrap()
+                        .bunker
+                        .set_bunker_link_for_test(
+                            crate::sim::docking::bunker_link::BunkerLink::None,
+                        );
+                }
                 assert_eq!(sim.entities().get(pill).unwrap().bunker.occupant(), None);
                 assert_eq!(
                     sim.entities()
