@@ -36,6 +36,15 @@ const MESSAGE_OVERFLOW_END: usize = MESSAGE_EDIT_MAX_CHARS - 1;
 /// Input's width margin: a unit stays only while the whole edit line is
 /// narrower than the width limit minus 10 (`0x005D4510`).
 const MESSAGE_EDIT_WIDTH_MARGIN_PX: i32 = 10;
+/// Init's anchors as Read_Scenario (`0x00684A9A..0x00684AC9`) and
+/// Set_View_Dimensions (`0x004A8B9B..0x004A8BB8`) pass them: X = tactical
+/// x + 3, Y = tactical y, Width = tactical w − 6, of which Init `0x005D3A60`
+/// keeps Width − 8.
+const MESSAGE_X_INSET: i32 = 3;
+const MESSAGE_INIT_WIDTH_INSET: i32 = 6 + 8;
+/// SetWidth `0x005D4AD0` keeps its argument − 8; Set_View_Dimensions
+/// passes the whole tactical width (`0x004A8BBD..0x004A8BC9`).
+const MESSAGE_SET_WIDTH_INSET: i32 = 8;
 
 /// One live message row.
 #[derive(Debug, Clone, PartialEq)]
@@ -158,12 +167,30 @@ pub struct EditLine {
     pub y: i32,
 }
 
+/// MessageListClass, the session's one list at `0x00A8BC60`. Its rows are
+/// the TextLabels Add_Message links, in order (NumMessages `0x005D4AA0`
+/// and ComputeY `0x005D4BF0` are inlined into Add_Message, AddEdit,
+/// RemoveEdit, Manage and Input, and have no callers of their own).
+///
+/// Absent on purpose, with no caller in gamemd: GetMessage `0x005D3F60`,
+/// GetLabel `0x005D3F90`, SetEditFocus `0x005D41E0`, HasEditFocus
+/// `0x005D41F0` (their virtual calls are inlined where the edit takes
+/// focus) and SetEditColor `0x005D4410`. ConcatMessage `0x005D3FC0`
+/// appends to a row with the same id; its one caller `0x0064A630` handles
+/// the modem/serial chat packet `0x68`, reached only in GameMode 1 or 2
+/// (`0x00649347`, `0x006484DF`), which VERA lacks. The Constructor
+/// `0x005D39D0` (Session's static constructor `0x00697256`) is
+/// [`MessageList::scenario`] before its first anchor; the Destructor
+/// `0x005D3A40` runs only from the process-exit teardown `0x00697A58`.
 #[derive(Debug)]
 pub struct MessageList {
     x: i32,
     y: i32,
     max_visible: usize,
     max_width_px: i32,
+    /// The pixels the anchor takes off the tactical width: Init's 14 until
+    /// SetWidth leaves 8.
+    width_inset: i32,
     messages: Vec<Message>,
     edit: Option<MessageEdit>,
     /// Add_Message's per-mode reveal gate: LANScrollText `[0xA8D1F8]` in
@@ -178,25 +205,42 @@ impl MessageList {
             y,
             max_visible: max_visible.min(MESSAGE_SLOTS),
             max_width_px,
+            width_inset: MESSAGE_INIT_WIDTH_INSET,
             messages: Vec::with_capacity(MESSAGE_SLOTS),
             edit: None,
             typing: true,
         }
     }
 
-    /// Re-anchor on viewport/layout change (the native viewport re-init,
-    /// contract §4.1): x = tactical_x + 3, y = tactical_y, width = tactical_w − 14.
-    /// A width change is Set_View_Dimensions' Init (`0x004A8BB8`), which
-    /// drops a live edit without a message.
+    /// Init `0x005D3A60` with the arguments Read_Scenario (`0x00684AC9`)
+    /// and Set_View_Dimensions (`0x004A8BB8`) pass: no rows, no edit, six
+    /// rows at most. [`Self::set_view`] anchors it to the tactical view.
+    pub fn scenario() -> Self {
+        Self::new(MESSAGE_X_INSET, 0, MESSAGE_MAX_VISIBLE_RETAIL, 0)
+    }
+
+    /// Anchor to the tactical viewport: x = tactical_x + 3, y = tactical_y,
+    /// width = tactical_w less Init's 14 or SetWidth's 8. VERA re-anchors
+    /// whenever its window resizes; a width change then drops a live edit
+    /// without a message, as Set_View_Dimensions' Init does.
     /// RESIDUAL: that Init also deletes every row; VERA keeps them.
-    pub fn set_view(&mut self, x: i32, y: i32, max_width_px: i32) {
+    pub fn set_view(&mut self, tactical_x: i32, tactical_y: i32, tactical_w: i32) {
+        let max_width_px = (tactical_w - self.width_inset).max(0);
         if max_width_px != self.max_width_px && self.edit.is_some() {
             self.end_edit();
         }
-        self.x = x;
-        self.y = y;
+        self.x = tactical_x + MESSAGE_X_INSET;
+        self.y = tactical_y;
         self.max_width_px = max_width_px;
         self.restack();
+    }
+
+    /// SetWidth `0x005D4AD0`, which Set_View_Dimensions calls right after
+    /// its Init (`0x004A8BC9`): the list, its rows and an open edit keep
+    /// `tactical_w − 8`, 6 px wider than Init left them.
+    pub fn set_width(&mut self, tactical_w: i32) {
+        self.width_inset = MESSAGE_SET_WIDTH_INSET;
+        self.max_width_px = (tactical_w - self.width_inset).max(0);
     }
 
     /// The mode's reveal gate for later non-silent adds.
@@ -268,6 +312,8 @@ impl MessageList {
                 if typed < MESSAGE_EDIT_MAX_CHARS - 1 {
                     edit.buffer.push(u16::from(b' '));
                 }
+                // The caller sends GetEditBuffer `0x005D4400`: the buffer
+                // past Start, the prefix.
                 let text = String::from_utf16_lossy(&edit.buffer[edit.start..]);
                 self.end_edit();
                 EditInput::Sent(text)
@@ -294,8 +340,8 @@ impl MessageList {
         }
     }
 
-    /// Every end-of-edit path (`0x005D4390` and Input's copies): the rows
-    /// move back up and the row cap returns.
+    /// Every end-of-edit path (RemoveEdit `0x005D4390` and Input's
+    /// copies): the rows move back up and the row cap returns.
     fn end_edit(&mut self) {
         if self.edit.take().is_some() {
             self.restack();
@@ -313,8 +359,9 @@ impl MessageList {
         &self.messages
     }
 
-    /// Contract §4.2: compose prefix+":"+fitted text, evict the head when
-    /// full, tail-insert, restack, recurse silently on the remainder.
+    /// Add_Message `0x005D3BA0`: compose prefix+":"+fitted text, evict the
+    /// head when full, tail-insert, restack, recurse silently on the
+    /// remainder.
     pub fn add_message(
         &mut self,
         post: &MessagePost,
@@ -353,8 +400,9 @@ impl MessageList {
         if budget <= 0 {
             return;
         }
-        // Step 4 — fit (char cap + px budget, word break).
-        let fit_bytes = fit_prefix_bytes(text, budget, MESSAGE_LINE_FIT_CHARS, measure);
+        // Step 4 — fit (unit cap + px budget, word break). Native would
+        // recurse on the same text forever when nothing fits; VERA stops.
+        let fit_bytes = count_fitting_units(text, budget, MESSAGE_LINE_FIT_CHARS, measure);
         if fit_bytes == 0 {
             return;
         }
@@ -397,7 +445,7 @@ impl MessageList {
         }
     }
 
-    /// Contract §4.3 — expiry: remove rows whose deadline passed strictly
+    /// Manage `0x005D4430` — expiry: remove rows whose deadline passed strictly
     /// (`now > deadline`), then restack. Returns true when anything expired.
     /// Add5D3DD5 and Manage5D4449 use the same process timer887338/887340.
     /// The driver skips this call while Main_Tick is blocked, without
@@ -483,29 +531,37 @@ fn trim_message_cut(text: &[u16], min: usize, max: usize) -> usize {
         .min(text.len())
 }
 
-/// Greedy px-budget fitter with word break (contract lane §4.2 step-4 fitter
-/// shape, doc fidelity — exact boundary semantics are a plan deferred item):
-/// fits chars while BOTH the char cap and the pixel budget hold; on overflow
-/// backs up to just-after the last space when one exists. Returns the fitted
-/// BYTE length.
-fn fit_prefix_bytes(
+/// BitFont::CountFittingUnits `0x00433F50` in wrap mode 1, as Add_Message
+/// calls it (`0x005D3C76`, cap 0x6F). Units fit while the text so far stays
+/// within the budget; reaching the cap, or a `\r`/`\n`, ends the line
+/// after that unit. When a unit above 0x20 overflows, the line backs up to
+/// just after the last unit at or below 0x20 before it, if any; an
+/// overflowing space stays as the next line's first unit. Returns the
+/// fitted byte length.
+fn count_fitting_units(
     text: &str,
     budget_px: i32,
-    max_chars: usize,
+    max_units: usize,
     measure: &dyn Fn(&str) -> i32,
 ) -> usize {
+    let mut units = 0usize;
     let mut fitted = 0usize;
-    let mut last_break: Option<usize> = None;
-    // `chars` counts the characters already fitted before this iteration.
-    for (chars, (idx, ch)) in text.char_indices().enumerate() {
+    for (idx, ch) in text.char_indices() {
         let end = idx + ch.len_utf8();
-        if chars + 1 > max_chars || measure(&text[..end]) > budget_px {
-            return last_break.unwrap_or(idx);
-        }
-        if ch == ' ' {
-            last_break = Some(end);
+        if measure(&text[..end]) > budget_px {
+            if u32::from(ch) > 0x20
+                && fitted != 0
+                && let Some(brk) = text[..idx].rfind(|c: char| u32::from(c) <= 0x20)
+            {
+                return brk + 1;
+            }
+            return fitted;
         }
         fitted = end;
+        units += ch.len_utf16();
+        if units >= max_units || ch == '\r' || ch == '\n' {
+            return fitted;
+        }
     }
     fitted
 }
@@ -603,8 +659,53 @@ mod tests {
     #[test]
     fn word_break_backs_up_to_last_space() {
         // budget 100 px = 10 chars; "hello worlds" breaks after "hello ".
-        let fit = fit_prefix_bytes("hello worlds", 100, 111, &mono);
+        let fit = count_fitting_units("hello worlds", 100, 111, &mono);
         assert_eq!(&"hello worlds"[..fit], "hello ");
+    }
+
+    fn row_texts(l: &MessageList) -> Vec<&str> {
+        l.messages().iter().map(|m| m.text.as_str()).collect()
+    }
+
+    /// CountFittingUnits `0x00433F50` backs up only for an overflowing unit
+    /// above 0x20; an overflowing space ends the line and leads the next.
+    #[test]
+    fn an_overflowing_space_cuts_before_itself() {
+        // Budget 108 − 8 = 100 px: ten units.
+        let mut l = list(6, 108);
+        l.add_message(&post(None, "abcd fghij klm", None, true), 0, &mono);
+        assert_eq!(row_texts(&l), ["abcd fghij", " klm"]);
+    }
+
+    /// The 0x6F unit cap and a newline end the line at once, with no
+    /// word back-up.
+    #[test]
+    fn the_unit_cap_and_a_newline_cut_without_backing_up() {
+        let mut l = list(14, 100_000);
+        l.add_message(&post(None, &"abcd ".repeat(30), None, true), 0, &mono);
+        assert_eq!(l.messages()[0].text.encode_utf16().count(), 111);
+        assert!(l.messages()[0].text.ends_with('a'));
+        let mut l = list(6, 100_000);
+        l.add_message(&post(None, "ab\ncd", None, true), 0, &mono);
+        assert_eq!(row_texts(&l), ["ab\n", "cd"]);
+    }
+
+    /// Init leaves tactical_w − 14; Set_View_Dimensions' SetWidth then
+    /// leaves tactical_w − 8, and later anchors keep it.
+    #[test]
+    fn set_width_widens_the_wrap_by_six_pixels() {
+        let text = "a".repeat(18);
+        let mut l = MessageList::scenario();
+        l.set_view(0, 0, 200);
+        assert_eq!(l.x(), 3);
+        l.add_message(&post(None, &text, None, true), 0, &mono);
+        assert_eq!(l.messages().len(), 2, "186 − 8 px holds 17 units");
+        let mut l = MessageList::scenario();
+        l.set_view(0, 0, 200);
+        l.set_width(200);
+        l.set_view(0, 0, 200);
+        l.add_message(&post(None, &text, None, true), 0, &mono);
+        assert_eq!(row_texts(&l), [text.as_str()], "192 − 8 px holds 18");
     }
 
     #[test]
@@ -827,9 +928,9 @@ mod tests {
     fn a_width_change_drops_the_edit() {
         let mut l = list(6, 500);
         l.add_edit("P:", WHITE, true);
-        l.set_view(3, 0, 500);
+        l.set_view(0, 0, 514);
         assert!(l.editing());
-        l.set_view(3, 0, 600);
+        l.set_view(0, 0, 614);
         assert!(!l.editing());
     }
 
