@@ -173,4 +173,23 @@ mod tests {
             serde_json::from_str(r#"[{"key":"OnlyPlayerOnline"},{"key":"NotYetKnown"}]"#).unwrap();
         assert_eq!(localized(&unknown), None, "the lobby's own text stands");
     }
+
+    /// A ranked result, as `service.js` sends it, names its badge with the
+    /// player list's badge names and reads as the lobby's English.
+    #[test]
+    fn a_ranked_result_reads_as_the_lobby_wrote_it_in_english() {
+        let line: Vec<Phrase> = serde_json::from_str(
+            r#"[{"key":"RankedLostRank","values":{"os":"14.30","change":"-2.37","rank":2,"total":2,"season":1}},
+               {"key":"Demoted","values":{"badge":{"key":"BadgePrivate"}}},
+               {"key":"LeftEarly","values":{"count":3}}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            localized(&line).as_deref(),
+            Some(
+                "Ranked game lost: your OS is now 14.30 (-2.37), rank 2 of 2 in season 1. \
+                 Demoted to Private. You left in the first 3 minutes, so it counts as your loss."
+            )
+        );
+    }
 }
