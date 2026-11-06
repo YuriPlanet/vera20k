@@ -1174,13 +1174,9 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         .unwrap()
         .entity_id
         .unwrap();
-    for _ in 0..128 {
-        assert!(live.issue_local_command(CommandEnvelope::new(
-            owner,
-            0,
-            Command::Stop { entity_id: 999 },
-        )));
-    }
+    let free = live.available_local_command_slots();
+    let stop = CommandEnvelope::new(owner, 0, Command::Stop { entity_id: 999 });
+    assert!(live.issue_local_commands(std::iter::repeat_n(stop, free)));
     // The app's pre-Logic drain must not free any of the local slots.
     let due = live.take_due_commands();
     assert!(due.is_empty());
@@ -1226,7 +1222,7 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         )
         .unwrap();
     let admitted = output.take_admitted_commands();
-    assert_eq!(admitted.len(), 129);
+    assert_eq!(admitted.len(), free + 1);
     assert_eq!(admitted[0], future);
     assert!(
         admitted[1..]
