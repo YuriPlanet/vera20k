@@ -34,6 +34,7 @@ pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
     ALL.get_or_init(|| {
         let mut all = RETAIL_COMMANDS.to_vec();
         all.extend_from_slice(&CAMERA_COMMANDS);
+        all.extend_from_slice(&SHORTCUT_COMMANDS);
         #[cfg(feature = "verax")]
         all.extend_from_slice(&VERA_COMMANDS);
         #[cfg(feature = "phobos")]
@@ -93,6 +94,44 @@ const CAMERA_COMMANDS: [CommandMetadata; 4] = [
         "VERA:CameraRight",
         "VERA:HotkeyCategory",
         "VERA:CameraRightDesc",
+        None
+    ),
+];
+
+/// VERA's built-in keys, with their default keys in the binding owner
+/// (`hotkeys::VERA_DEFAULT_KEYS`). Each name is the Options page's label for
+/// the same setting; each category literal is [`VERA_CATEGORY_KEY`].
+const SHORTCUT_COMMANDS: [CommandMetadata; 4] = [
+    command!(
+        HotkeyCommand::FpsCounter,
+        "FpsCounter",
+        "VERA:FpsCounter",
+        "VERA:HotkeyCategory",
+        "VERA:FpsCounterDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::LockCursor,
+        "LockCursor",
+        "VERA:LockCursor",
+        "VERA:HotkeyCategory",
+        "VERA:LockCursorDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::FullScreen,
+        "FullScreen",
+        "VERA:FullScreen",
+        "VERA:HotkeyCategory",
+        "VERA:FullScreenDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::RenderInterpolation,
+        "RenderInterpolation",
+        "VERA:RenderInterpolation",
+        "VERA:HotkeyCategory",
+        "VERA:RenderInterpolationDesc",
         None
     ),
 ];

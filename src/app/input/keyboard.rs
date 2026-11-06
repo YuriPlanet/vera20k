@@ -61,19 +61,6 @@ pub(crate) fn in_game_key_edge(
     if !hotkeys::input_admitted_while_paused(paused_at_event, edge.logical) {
         return;
     }
-    // Local prototype control; consume the chord before retail key dispatch.
-    let modifiers = state.match_state.input.hotkey_modifiers;
-    if edge.physical == KeyCode::KeyI && modifiers.control_key() && modifiers.alt_key() {
-        if edge.state.is_pressed() && !edge.repeat {
-            let enabled = state.match_state.match_presentation.interpolation.toggle();
-            state.persistence.options_profile.render_interpolation = enabled;
-            log::info!(
-                "Render interpolation prototype: {}",
-                if enabled { "ON" } else { "OFF" }
-            );
-        }
-        return;
-    }
     let is_escape = matches!(edge.logical, Key::Named(NamedKey::Escape));
     let locked = crate::app::input::campaign_input::is_locked(state);
     let binding_key = hotkeys::binding_logical_key(edge.logical, edge.unmodified, edge.location);
@@ -627,6 +614,7 @@ fn virtual_key_name(vk: u16) -> String {
         use crate::i18n::tr;
         match vk {
             0 => String::new(),
+            0x0d => tr("VERA:KeyEnter"),
             16 => tr("VERA:KeyShift"),
             17 => tr("VERA:KeyCtrl"),
             18 => tr("VERA:KeyAlt"),

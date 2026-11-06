@@ -2042,7 +2042,45 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::AutoLoad => crate::app::input::autoload::hotkey_pressed(state),
         #[cfg(not(feature = "verax"))]
         HotkeyCommand::AutoLoad => {}
+        // A chord runs in the window owner before this dispatch; a binding on
+        // a typing key reaches here, after the chat edit.
+        HotkeyCommand::FpsCounter | HotkeyCommand::LockCursor | HotkeyCommand::FullScreen => {
+            run_window_command(state, command)
+        }
+        HotkeyCommand::RenderInterpolation => {
+            let enabled = state.match_state.match_presentation.interpolation.toggle();
+            state.persistence.options_profile.render_interpolation = enabled;
+            log::info!(
+                "Render interpolation prototype: {}",
+                if enabled { "ON" } else { "OFF" }
+            );
+        }
     }
+}
+
+/// VERA's every-screen commands ([`HotkeyBindings::window_command`]): from the
+/// window owner's key handling on every screen, or from a battle's hotkey
+/// dispatch for a binding on a typing key.
+///
+/// [`HotkeyBindings::window_command`]: crate::app::input::hotkeys::HotkeyBindings::window_command
+pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
+    match command {
+        HotkeyCommand::LockCursor => crate::app::input::cursor::toggle_cursor_confinement(state),
+        // A capture keeps its fixed surface.
+        HotkeyCommand::FullScreen if state.platform.capture_client_size.is_none() => {
+            let full_screen = state.platform.window.fullscreen().is_none();
+            crate::app::App::set_full_screen(state, full_screen);
+        }
+        HotkeyCommand::FpsCounter => {
+            let shown = state.renderer.fps_overlay.toggle();
+            if let Some(dialog) = state.frontend.options_dialog.as_mut() {
+                dialog.sync_fps_counter(shown);
+            }
+            log::info!("FPS overlay: {}", if shown { "shown" } else { "hidden" });
+        }
+        _ => return,
+    }
+    state.platform.window.request_redraw();
 }
 
 /// A superweapon cameo press. Phobos's `FireTacticalSW` keys call
