@@ -42,6 +42,7 @@ use crate::rules::overlay_types::{
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_object_type::TerrainObjectType;
 use crate::rules::terrain_rules::{LandType, LandTypeSemantics, SpeedCostProfile, TerrainRules};
+use crate::util::lookup_hash::LookupMap;
 use crate::util::pixel_conversion::PixelConversionBounds;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{
@@ -740,8 +741,9 @@ pub struct ResolvedTerrainGrid {
     overlay_passability: Vec<OverlayPassability>,
     /// Pristine TMP dimensions used by Techno draw depth (0x547150/0x704350).
     /// Derived asset data, keyed by tile identity rather than mutable cell:
-    /// never serialized or included in simulation hashes.
-    native_tmp_draw_heights: HashMap<u16, PristineTmpHeader>,
+    /// never serialized or included in simulation hashes. Every drawn object
+    /// asks it each frame and nothing walks it, so it takes the lookup hasher.
+    native_tmp_draw_heights: LookupMap<u16, PristineTmpHeader>,
     cells: Vec<ResolvedTerrainCell>,
     /// Derived bound on the signed levels in `cells`, always holding 0 (the
     /// level presentation assumes for a cell the grid lacks). Every
@@ -1086,7 +1088,7 @@ impl ResolvedTerrainGrid {
             cells,
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Vec::new(),
-            native_tmp_draw_heights: HashMap::new(),
+            native_tmp_draw_heights: LookupMap::default(),
             shared_cell_dummy: SharedCellDummy::fresh(),
             mutation_epoch: 0,
             native_allocated: None,
