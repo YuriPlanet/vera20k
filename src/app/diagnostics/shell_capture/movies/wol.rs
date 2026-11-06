@@ -963,8 +963,8 @@ impl WolCapture {
     }
 
     /// Your own card's Change Country: the list opens at the login's United
-    /// States (2), a pick of its top shown row is kept and sent, and the list
-    /// then opens again at that row.
+    /// States (2), a pick of another shown country is kept and sent, and the
+    /// list then opens again at that row.
     fn change_country(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::app::shell_wol::player_card;
         use crate::ui::wol_lobby::CARD_COUNTRY_ROWS;
@@ -1004,16 +1004,16 @@ impl WolCapture {
             list.hot_row,
             list.popup.first
         );
-        let row = list.popup.first;
-        let locale = Self::lobby(state)?
-            .ui
-            .card
-            .as_ref()
-            .and_then(|card| card.countries.get(row))
-            .context("the top row's country")?
-            .locale;
-        ensure!(locale != 2, "the top row is the United States");
-        welcome_click(state, list.popup.row_rect(row).context("the top row")?);
+        // The first shown row of another country: where the United States
+        // sits depends on the language's names.
+        let (row, locale) = {
+            let card = Self::lobby(state)?.ui.card.as_ref().context("your card")?;
+            (list.popup.first..list.popup.first + CARD_COUNTRY_ROWS)
+                .filter_map(|row| card.countries.get(row).map(|country| (row, country.locale)))
+                .find(|&(_, locale)| locale != 2)
+                .context("every shown row is the United States")?
+        };
+        welcome_click(state, list.popup.row_rect(row).context("the picked row")?);
         ensure!(countries(state).is_none(), "the pick left the list open");
         ensure!(
             state.persistence.options_profile.online_locale == locale,
@@ -1640,7 +1640,7 @@ impl WolCapture {
                     .iter()
                     .map(|line| String::from_utf16_lossy(&line.text))
                     .collect();
-                if texts.iter().any(|text| text == "(Tanya) Got your page.") {
+                if texts.contains(&test_page_back("Tanya")) {
                     ensure!(
                         texts.contains(&format!("[{NICKNAME}] On my way"))
                             && received.lines.iter().any(|line| line.color == 0xF0F0),
@@ -4549,7 +4549,8 @@ impl WolCapture {
         let done = match self.target {
             WolTarget::PageFindStatus => page.status == csf("TXT_FINDPAGE_NOT_ONLINE"),
             WolTarget::PageUserGone => texts.contains(&csf("TXT_PAGEUSERGONE")),
-            _ => texts.iter().any(|text| text.ends_with(") Got your page.")),
+            WolTarget::SetupPage => texts.contains(&test_page_back("Boris")),
+            _ => texts.contains(&test_page_back("Tanya")),
         };
         if !done {
             return Ok(());
@@ -4568,7 +4569,7 @@ impl WolCapture {
                 "0xCF lacks the echo, the result or the status: {texts:?} {:?}",
                 page.status
             );
-            let line = format!("({name}) Got your page.");
+            let line = test_page_back(name);
             let transcript = if self.target == WolTarget::SetupPage {
                 setup_chat_has(state, &line)?
             } else {
@@ -5104,6 +5105,12 @@ fn server_list() -> WolServerList {
 
 fn button(layout: &crate::ui::wol_login::WolLoginLayout, id: u16) -> Result<RectPx> {
     layout.page.button_rect(id).context("0x10F button")
+}
+
+/// The test service's page back from `name`, as the page dialog shows it
+/// (`(name) ` before the stand-in's line, in the player's language).
+fn test_page_back(name: &str) -> String {
+    format!("({name}) {}", crate::i18n::tr("VERA:TestPageReply"))
 }
 
 /// A press and release through the window handlers' WOL routing; like the

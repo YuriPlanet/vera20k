@@ -713,7 +713,7 @@ pub(crate) fn post_match_speed(state: &mut AppState, text: &str) {
 pub(super) fn post_command_backpressure(state: &mut AppState) {
     post_grey_row(
         state,
-        "Commands are still being sent. Try again shortly.",
+        &crate::i18n::tr("VERA:CommandsStillSending"),
         false,
         true,
     );
@@ -881,15 +881,17 @@ pub(crate) fn ime_edit_rect(state: &AppState) -> Option<crate::ui::shell::geom::
     let list = &state.match_state.match_presentation.message_list;
     let edit = list.edit_line()?;
     let font = &state.renderer.bit_font;
-    // The message rows are tactical pixels; the zoom pass stretches them over
-    // the window.
-    let sx = state.renderer.gpu.config.width as f32 / state.render_width().max(1) as f32;
-    let sy = state.renderer.gpu.config.height as f32 / state.render_height().max(1) as f32;
+    // The message rows are frame pixels, which a zoomed match shows scaled
+    // and centred in the window.
+    let (x, y) = (list.x() as f32, edit.y as f32);
+    let ((x, y), scale) = state.tactical_zoom().map_or(((x, y), 1.0), |zoom| {
+        (zoom.source_to_window(x, y), zoom.scale())
+    });
     Some(crate::ui::shell::geom::RectPx::new(
-        (list.x() as f32 * sx) as i32,
-        (edit.y as f32 * sy) as i32,
-        (font.text_width(&edit.text) as f32 * sx) as i32,
-        (font.cell_height() as f32 * sy) as i32,
+        x as i32,
+        y as i32,
+        (font.text_width(&edit.text) as f32 * scale) as i32,
+        (font.cell_height() * scale) as i32,
     ))
 }
 

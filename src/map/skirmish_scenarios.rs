@@ -57,6 +57,10 @@ pub struct SkirmishScenarioRecord {
     pub source: SkirmishScenarioSource,
     pub file_name: String,
     pub display_name: String,
+    /// VERA: the string-table label a PKT entry's `Description` names, kept
+    /// so the title reads again in a language picked after the scan
+    /// (`scenario_sources::relabel_records`).
+    pub title_label: Option<String>,
     pub author: Option<String>,
     pub preview: PreviewSection,
     pub multiplayer_start_waypoints: Vec<Waypoint>,
@@ -91,6 +95,7 @@ impl SkirmishScenarioRecord {
             source,
             file_name: entry.file_name,
             display_name: entry.display_name,
+            title_label: None,
             author: entry.author,
             preview: entry.preview,
             multiplayer_start_waypoints: entry.multiplayer_start_waypoints,
@@ -140,6 +145,7 @@ impl SkirmishScenarioRecord {
             source: SkirmishScenarioSource::Synthetic,
             file_name: RANDMAP_SED.to_string(),
             display_name: display_name.into(),
+            title_label: None,
             author: None,
             preview: PreviewSection::default(),
             multiplayer_start_waypoints: Vec::new(),
@@ -159,6 +165,7 @@ impl SkirmishScenarioRecord {
             source: source_for_file_name(&entry.file_name),
             file_name: entry.file_name.clone(),
             display_name: entry.display_name.clone(),
+            title_label: None,
             author: entry.author.clone(),
             preview: entry.preview.clone(),
             multiplayer_start_waypoints: entry.multiplayer_start_waypoints.clone(),

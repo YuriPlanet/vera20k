@@ -844,6 +844,16 @@ fn upload_to_gpu(
     ui: &UiInstances,
     sidebar: &SidebarInstances,
 ) {
+    // A zoomed match draws the battlefield's screen-fixed text below, with
+    // the boxes and frames behind it, at the window's pixels
+    // (`window_ui`): its producers lay out in the frame and emit for the
+    // window.
+    let window_raster = crate::app::presentation::window_ui::battlefield_raster(state);
+    let frame_raster = state
+        .renderer
+        .bit_font
+        .set_raster(window_raster.unwrap_or(crate::render::bit_font::TextRaster::NATIVE));
+
     // A5 chat/system message lines (GAME.FNT atlas) — chat draws before the
     // tooltip (O10). Prepare once: nonsilent TextLabel72A4A0 advances its
     // raw-wall reveal and requests typing audio once per successful paint.
@@ -866,6 +876,28 @@ fn upload_to_gpu(
     // top-right identity box; empty outside Phobos builds.
     let (build_text_fill, build_text_text) =
         crate::app::presentation::build_text::build_instances(state);
+    state.renderer.bit_font.set_raster(frame_raster);
+    let [message_fill, tooltip_fill, tooltip_border, super_timer_fill, build_text_fill] = [
+        message_fill,
+        tooltip_fill,
+        tooltip_border,
+        super_timer_fill,
+        build_text_fill,
+    ]
+    .map(|quads| match window_raster {
+        Some(raster) => quads.into_iter().map(|quad| raster.quad(quad)).collect(),
+        None => quads,
+    });
+    // The software cursor follows them into the window, last.
+    let software_cursor: std::borrow::Cow<'_, [crate::render::batch::SpriteInstance]> =
+        match crate::app::presentation::window_ui::zoom_raster(state) {
+            Some(raster) => ui
+                .software_cursor
+                .iter()
+                .map(|quad| raster.quad(*quad))
+                .collect(),
+            None => ui.software_cursor.as_slice().into(),
+        };
 
     #[cfg(feature = "ares")]
     let bounty_text = {
@@ -947,7 +979,7 @@ fn upload_to_gpu(
         pool.upload_page(&state.renderer.gpu, "beacons", house, beacons);
     }
     pool.upload(&state.renderer.gpu, "drag", &ui.drag);
-    pool.upload(&state.renderer.gpu, "software_cursor", &ui.software_cursor);
+    pool.upload(&state.renderer.gpu, "software_cursor", &software_cursor);
     pool.upload(&state.renderer.gpu, "placement", &ui.placement);
     #[cfg(feature = "phobos")]
     pool.upload(&state.renderer.gpu, "placement_ghost", &ui.placement_ghost);

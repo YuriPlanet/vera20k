@@ -14,6 +14,11 @@ persistent state is created.
 `{nickname,protocol:4,password?,remember?,sign_in_token?}` and returns
 `{player_id,nickname,token,expires_at}`, plus `motd` while an operator welcome is set:
 text the game prints in the chat lobby in place of its own welcome, one line per `\n`.
+A client names its player's language in `Vera-Language: <tag>`, a BCP 47 tag of two or
+three letters and at most three subtags such as `zh-CN`; the operator's welcome, notice
+and maintenance message then come in that language when the operator wrote it: the
+translation for that tag, else for its language alone (`zh`), else for another region of
+that language, else the operator's `text`. A missing or malformed tag gets `text`.
 Each entry receives a fresh random player
 UUID and bearer token. `expires_at` is a Unix timestamp in seconds. An active name
 returns 409 `name_unavailable`; entering its name never replaces that session.
@@ -27,7 +32,9 @@ otherwise through 10 minutes of silence, until explicit finish/leave or the
 match/session lifetime.
 A later entry gets a new identity and empty preferences. The old
 `POST /v1/accounts` returns 426 `upgrade_required`.
-Failed requests return `{error:{code,message}}`; messages must not echo credentials.
+Failed requests return `{error:{code,message,phrases?}}`; messages must not echo
+credentials. A refusal a game shows its player (sign-in, accounts, versions, a full
+or busy lobby) also carries its message as `phrases`, as a lobby line does (`chat`).
 Clients show a 426 `message` (plain text, at most 160 characters) to the player with
 the releases link, so it should name the version players need; older clients show a
 fixed line.
@@ -173,7 +180,7 @@ Event kinds and payloads:
 | `choices` | `{from,row,slot,observer}` |
 | `ready` | `{from,ready,revision}` |
 | `map_status` | `{from,status,revision}` |
-| `chat` | `{from:<Member>,text,private,action,sent_at,ansi?,quick_match?}` |
+| `chat` | `{from:<Member>,text,private,action,sent_at,ansi?,quick_match?,phrases?}` |
 | `game_started` | `{match_id,revision,version,rules_digest,seed,users:[{player_id,name,flags,source_index}],relay:<RelayGrant>}` |
 | `start_confirmed` | `{match_id}` |
 | `timing_confirmed` | `{match_id,pings:[integer],relay:<RelayGrant>,ranked?}` |
@@ -190,6 +197,19 @@ Event kinds and payloads:
 
 A `chat` event's `sent_at` is the Unix time in seconds the service sent it. Games from
 0.2.4 show it, in the player's local time, before each line of the chat lobby.
+
+Lines the lobby writes itself, from the notice sender (`VERA20k`) and the matchbot's
+`Info` lines, also carry `phrases`: the line as a list of sentences `{key,values?}`, of
+which `text` is the English joined by spaces (for a matchbot line, the text after its
+first word, `Info`). A client shows each sentence as its
+language file's `VERA:Lobby<key>` with `{name}` filled from `values`, and shows `text`
+when it lacks one of the keys or values. A value is a string, a number, a phrase, an
+`{and:[value]}` list read "a, b and c", or a `{unit:[value]}` list read "a, b, c"; the
+language file gives both joins. A phrase whose values hold `count` takes the plural form
+its language gives that number. The keys and their English are the `VERA:Lobby` entries of
+`src/i18n/vera20k.en.ini`, and a key the lobby adds needs its English line there.
+Operator notices carry no `phrases`: they come in the session's language when the
+operator translated them.
 
 RelayGrant is `{address,ticket,packet_key,payload_key,source_index,ordering_certificate,federation?}`. Address is `IPv4:port`
 of the user's relay in the match. The service chooses it at start and every later grant for that match names it;
@@ -457,7 +477,9 @@ deployment's `ADMIN_KEY`. Without a key of at least 32 characters it returns 404
 `not_found`; a missing or different bearer returns 401 `unauthorized`. It shares
 the sign-in ingress limit of 120 requests a minute per address. `{text,minutes}`
 sets the one current notice, replacing any earlier one: non-blank text of at most
-2048 UTF-8 bytes, kept for 1–10080 minutes. `{minutes:0}` alone clears it. Both
+2048 UTF-8 bytes, kept for 1–10080 minutes, and optional `translations`: `{<tag>:text}`
+for at most 40 BCP 47 tags, each text within the same limit, of which each session gets
+the one for its `Vera-Language`. `{minutes:0}` alone clears it. Both
 return `{notice,delivered}`: the notice `{id,text,sent_at,expires_at}` or `null`, and how
 many sessions received it at once. A notice is an ordinary public `chat` event from
 `{player_id:"00000000-0000-0000-0000-000000000000",name:"VERA20k",flags:1,squad:0,clan_name:"",clan_tag:""}`
@@ -469,7 +491,10 @@ session receives a notice once. Sign-in refuses `VERA20k` without case with 409
 
 `POST /v1/admin/welcome` takes the same bearer, answers and ingress limit. `{text}`
 sets the welcome that sign-in responses carry as `motd`: non-blank text of at most
-2048 UTF-8 bytes. `{text:null}` clears it. Both return `{welcome}`, the text or `null`.
+2048 UTF-8 bytes, with optional `translations` as for a notice. `{text:null}` clears it.
+Both return `{welcome}`, the text or `null`. `POST /v1/admin/maintenance` takes the same
+bearer: `{text}`, one line of at most 160 characters with optional `translations` of the
+same kind, closes sign-ins, and `{text:null}` opens them.
 
 Released clients sign in with `User-Agent: VERA20k/<MAJOR.MINOR.PATCH> multiplayer-client`.
 A client that names a version older than 0.2.7 is refused at sign-in with 426
@@ -583,9 +608,10 @@ Forgot Password asks for the name and mails its code, then asks for it and a new
 password, and signs in. Delete Account asks for the name and its password, then says the
 account is deleted and forgets a remembered sign-in of it. The pane shows the players
 online, or while nobody is, the last 24 hours' games (`GET /v1/stats`), vera20k.org's five
-newest news posts in the game's language (`GET https://vera20k.org/news.json?lang=en` or
-`zh-CN`: `{posts:[{date,title,summary}]}`) and the online rules; it reads both each time
-the page opens. A remembered
+newest news posts in the game's language (`GET https://vera20k.org/news.json?lang=<tag>`,
+the tag of VERA's interface language such as `en`, `zh-CN` or `ru`, each post in English
+where the site has no translation: `{posts:[{date,title,summary}]}`) and the online rules;
+it reads both each time the page opens. A remembered
 sign-in lives in `Account.json` beside `VERA.INI` as `{name, sign_in_token}` per lobby,
 readable only by its owner; Login's popup then opens on the name with a masked password.
 Unticking Remember password forgets it here and at the lobby, and so does a password

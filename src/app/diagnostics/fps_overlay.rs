@@ -2,23 +2,22 @@
 //! Options page's FPS Counter box shows it, and the replay/recovery status
 //! line below it.
 //!
-//! The panel reads like the game's message line: GAME.FNT rows on black
+//! The panel reads like the game's message line: rows of text on black
 //! boxes, at the top left of the battlefield at the match zoom, or of the
 //! window elsewhere. While it shows, the status line and the match's message
 //! list start below it. Its rows are in [`panel`]:
 //! rates and units, the engine areas that took the most of the last second
 //! and the load on each core. The rows and the status line are localized
-//! text ([`crate::i18n`]), so both draw with the caller's GAME.FNT font;
-//! before GAME.FNT loads, a built-in font draws the first row alone, in
-//! English capitals. Both are independent of tactical cameras, optional dev
-//! overlays, and shell/offscreen composition.
+//! text ([`crate::i18n`]), so both draw with the process font in the chosen
+//! font option, which is the bundled fonts alone until GAME.FNT loads
+//! ([`BitFont::vector_only`]). Both are independent of tactical cameras,
+//! optional dev overlays, and shell/offscreen composition.
 
 mod panel;
 
 use crate::util::time::Instant;
 use std::sync::Mutex;
 
-use crate::assets::csf_file::CsfFile;
 use crate::render::batch::{
     BatchRenderer, BatchTexture, CameraUniform, InstanceBufferPool, SpriteInstance,
 };
@@ -26,7 +25,7 @@ use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
 
 use super::state::FrameTimer;
-use panel::{GREEN, HOT, PanelStats, Part, TRACK, WARM};
+use panel::{DOT, GREEN, HOT, PanelStats, Part, TRACK, WARM};
 
 /// The status line's top when the panel is hidden.
 const STATUS_TOP: f32 = 8.0;
@@ -43,7 +42,6 @@ const ELLIPSIS: &str = "...";
 
 pub(crate) struct FpsOverlay {
     visible: bool,
-    font: BitFont,
     /// One white texel, tinted into the row boxes and the core bars.
     white: BatchTexture,
     camera_buffer: wgpu::Buffer,
@@ -131,7 +129,6 @@ impl FpsOverlay {
         let (camera_buffer, camera_group) = batch.create_ui_camera(&gpu.device);
         Self {
             visible: false,
-            font: BitFont::fallback_5x7(&gpu.device, &gpu.queue, batch),
             white: batch.create_texture(gpu, &[255; 4], 1, 1),
             camera_buffer,
             camera_group,
@@ -203,11 +200,9 @@ impl FpsOverlay {
 
     /// Call exactly once after all content has reached the acquired window
     /// surface, including synchronous loading repaints, before submission.
-    /// `font` is the process GAME.FNT font and `csf` the loaded string table,
-    /// which answers the panel's labels ahead of VERA's language files;
-    /// `in_match` places the panel over a match's battlefield. The dedicated
-    /// camera avoids rewriting uniforms used by earlier passes.
-    #[allow(clippy::too_many_arguments)]
+    /// `font` is the process font; `in_match` places the panel over a
+    /// match's battlefield. The dedicated camera avoids rewriting uniforms
+    /// used by earlier passes.
     pub(crate) fn encode(
         &self,
         gpu: &GpuContext,
@@ -215,7 +210,6 @@ impl FpsOverlay {
         encoder: &mut wgpu::CommandEncoder,
         destination: &wgpu::Texture,
         font: &BitFont,
-        csf: Option<&CsfFile>,
         in_match: Option<MatchPanel<'_>>,
     ) {
         let mut frame = self.frame.lock().expect("FPS overlay frame lock");
@@ -245,25 +239,10 @@ impl FpsOverlay {
                 .stats
                 .close_window(now, frame_ms, readout, simulation.map(match_sample));
         }
-        // The 5x7 fallback has no darken strip: GAME.FNT has not loaded yet.
-        let (font, scale, mut rows) = if font.darken_texture().is_some() {
-            (font, placement.scale, panel::rows(&frame.stats.shown, csf))
-        } else {
-            (
-                &self.font,
-                placement.scale * 2.0,
-                panel::fallback_rows(&frame.stats.shown),
-            )
-        };
+        let mut rows = panel::rows(&frame.stats.shown);
         let mut instances = Vec::new();
         let mut glyphs = Vec::new();
-        let bottom = layout_rows(
-            font,
-            &mut rows,
-            PanelPlacement { scale, ..placement },
-            &mut instances,
-            &mut glyphs,
-        );
+        let bottom = layout_rows(font, &mut rows, placement, &mut instances, &mut glyphs);
         frame.status_top = bottom + 4.0;
         frame.message_top = if over_battlefield {
             placement.battlefield_rows(bottom)
@@ -298,7 +277,7 @@ impl FpsOverlay {
     }
 
     /// Persistent replay/recovery facts share the final-window camera. `font`
-    /// is the process GAME.FNT font, which covers localized text.
+    /// is the process font, which covers localized text.
     /// This call neither samples nor changes the FPS panel's visibility.
     pub(crate) fn encode_status(
         &self,
@@ -437,7 +416,9 @@ fn match_sample(simulation: &crate::sim::world::Simulation) -> panel::MatchSampl
 /// Lay `rows` out down from `placement.top` in reading order, each on its own
 /// black box as the game's message line draws text, left-aligned at
 /// `placement.left`, and return the last box's bottom edge. Box and bar quads
-/// go to `solid`, text to `glyphs`.
+/// go to `solid`, text to `glyphs`. A row too wide narrows as long
+/// translations do in VERA's boxes, and [`fit_row`] shortens it only past
+/// the tightest squeeze.
 fn layout_rows(
     font: &BitFont,
     rows: &mut [Vec<Part>],
@@ -449,52 +430,58 @@ fn layout_rows(
     let row_height = (font.cell_height() + 2.0) * scale;
     let left = placement.left.round();
     let mut box_top = placement.top.round();
+    let max_width = placement.max_width / scale;
     for row in rows.iter_mut() {
-        fit_row(font, row, placement.max_width / scale);
-        let width = row_width(font, row) * scale + 2.0 * scale;
-        solid.push(quad([left, box_top], [width, row_height], [0; 3]));
-        let text_top = box_top + scale;
-        let mut x = left + scale;
-        for part in row.iter() {
-            match part {
-                Part::Text(text, rgb) => {
-                    glyphs.extend(font.build_text(
-                        text,
-                        x,
-                        text_top,
-                        scale,
-                        0.0,
-                        tint(*rgb),
-                        [0.0; 2],
-                    ));
-                    x += font.text_width(text) as f32 * scale;
-                }
-                Part::Bars(loads) => {
-                    let bar_top = text_top + BAR_DROP * scale;
-                    for (index, &load) in loads.iter().enumerate() {
-                        let bar_x = x + index as f32 * (BAR_WIDTH + BAR_GAP) * scale;
-                        let size = [BAR_WIDTH * scale, BAR_HEIGHT * scale];
-                        solid.push(quad([bar_x, bar_top], size, TRACK));
-                        let filled = (BAR_HEIGHT * load.clamp(0.0, 100.0) / 100.0)
-                            .round()
-                            .max(1.0);
-                        let color = if load >= 90.0 {
-                            HOT
-                        } else if load >= 75.0 {
-                            WARM
-                        } else {
-                            GREEN
-                        };
-                        solid.push(quad(
-                            [bar_x, bar_top + (BAR_HEIGHT - filled) * scale],
-                            [size[0], filled * scale],
-                            color,
+        let fit = font
+            .first_fit(|font| row_width(font, row) <= max_width)
+            .unwrap_or_else(|tightest| tightest);
+        font.fitted(fit, |font| {
+            fit_row(font, row, max_width);
+            let width = row_width(font, row) * scale + 2.0 * scale;
+            solid.push(quad([left, box_top], [width, row_height], [0; 3]));
+            let text_top = box_top + scale;
+            let mut x = left + scale;
+            for part in row.iter() {
+                match part {
+                    Part::Text(text, rgb) => {
+                        glyphs.extend(font.build_text(
+                            text,
+                            x,
+                            text_top,
+                            scale,
+                            0.0,
+                            tint(*rgb),
+                            [0.0; 2],
                         ));
+                        x += font.text_width(text) as f32 * scale;
                     }
-                    x += bars_width(loads.len()) * scale;
+                    Part::Bars(loads) => {
+                        let bar_top = text_top + BAR_DROP * scale;
+                        for (index, &load) in loads.iter().enumerate() {
+                            let bar_x = x + index as f32 * (BAR_WIDTH + BAR_GAP) * scale;
+                            let size = [BAR_WIDTH * scale, BAR_HEIGHT * scale];
+                            solid.push(quad([bar_x, bar_top], size, TRACK));
+                            let filled = (BAR_HEIGHT * load.clamp(0.0, 100.0) / 100.0)
+                                .round()
+                                .max(1.0);
+                            let color = if load >= 90.0 {
+                                HOT
+                            } else if load >= 75.0 {
+                                WARM
+                            } else {
+                                GREEN
+                            };
+                            solid.push(quad(
+                                [bar_x, bar_top + (BAR_HEIGHT - filled) * scale],
+                                [size[0], filled * scale],
+                                color,
+                            ));
+                        }
+                        x += bars_width(loads.len()) * scale;
+                    }
                 }
             }
-        }
+        });
         box_top += row_height;
     }
     box_top
@@ -516,7 +503,8 @@ fn bars_width(count: usize) -> f32 {
 }
 
 /// Cut the end of a row wider than `max_width` font pixels: its last text
-/// loses characters behind an ellipsis.
+/// drops whole entries from its end, the least costly areas on the Most CPU
+/// row, and only then loses characters behind an ellipsis.
 fn fit_row(font: &BitFont, row: &mut [Part], max_width: f32) {
     let width = row_width(font, row);
     if width <= max_width {
@@ -525,8 +513,18 @@ fn fit_row(font: &BitFont, row: &mut [Part], max_width: f32) {
     let Some(Part::Text(text, _)) = row.last_mut() else {
         return;
     };
-    let mut keep =
-        max_width - (width - font.text_width(text) as f32) - font.text_width(ELLIPSIS) as f32;
+    let others = width - font.text_width(text) as f32;
+    while others + font.text_width(text) as f32 > max_width {
+        let Some(entry) = text.rfind(DOT) else {
+            break;
+        };
+        text.truncate(entry);
+    }
+    if others + font.text_width(text) as f32 <= max_width {
+        return;
+    }
+    crate::render::text_audit::cut_off(text, max_width as u32);
+    let mut keep = max_width - others - font.text_width(ELLIPSIS) as f32;
     let mut buffer = [0u8; 4];
     let end = text
         .char_indices()
@@ -579,6 +577,41 @@ mod tests {
             panic!("the last part stays text");
         };
         assert!(text.ends_with(ELLIPSIS) && text.len() < "aaaaaaaa...".len());
+    }
+
+    #[test]
+    fn a_row_too_wide_drops_whole_entries_before_cutting_a_word() {
+        let font = crate::render::bit_font::tests::make_test_font(
+            &[(u16::from(b'a'), 4), (0xB7, 2), (u16::from(b'.'), 1)],
+            3,
+        );
+        let two = format!("aa{DOT}aaaa");
+        let mut row = vec![Part::Text(format!("{two}{DOT}aaaaaa"), GREEN)];
+        fit_row(&font, &mut row, font.text_width(&two) as f32 + 1.0);
+        assert_eq!(row[0], Part::Text(two, GREEN));
+    }
+
+    #[test]
+    fn a_row_a_little_too_wide_narrows_instead_of_losing_its_end() {
+        let font = crate::render::bit_font::tests::make_vector_test_font();
+        let text = "Most CPU:  Objects 38%";
+        let natural = font.text_width(text) as f32;
+        let mut rows = vec![vec![Part::Text(text.to_owned(), GREEN)]];
+        let placement = PanelPlacement {
+            left: 0.0,
+            top: 0.0,
+            scale: 1.0,
+            max_width: natural * 0.9,
+        };
+        let (mut boxes, mut glyphs) = (Vec::new(), Vec::new());
+        layout_rows(&font, &mut rows, placement, &mut boxes, &mut glyphs);
+        assert_eq!(rows[0][0], Part::Text(text.to_owned(), GREEN));
+        // The box holds the narrowed text and its 1-pixel margins.
+        assert!(
+            boxes[0].size[0] <= natural * 0.9 + 2.0,
+            "{}",
+            boxes[0].size[0]
+        );
     }
 
     #[test]

@@ -459,10 +459,11 @@ impl App {
                 }
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 crate::web::status(
-                    self.state
+                    &self
+                        .state
                         .as_ref()
-                        .and_then(|state| state.frontend.main_menu_shell_error.as_deref())
-                        .unwrap_or("Ready"),
+                        .and_then(|state| state.frontend.main_menu_shell_error.clone())
+                        .unwrap_or_else(|| crate::i18n::tr("VERA:EngineReady")),
                 );
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 if let (Some(error), Some(state)) = (browser_spawn_failure, self.state.as_mut()) {
@@ -473,8 +474,13 @@ impl App {
             Err(err) => {
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 {
+                    // The lifecycle event keeps its English for the host; the
+                    // page's status line is the player's.
                     crate::web::request_exit(Some(&format!("Startup failed: {err:#}")));
-                    crate::web::status(&format!("Startup failed: {err:#}"));
+                    crate::web::status(&crate::i18n::tr_fill(
+                        "VERA:StartupFailed",
+                        &[("error", &format!("{err:#}"))],
+                    ));
                 }
                 log::error!("Failed to initialize: {:#}", err);
                 if self.spawn_request.is_some() || self.replay_request.is_some() {

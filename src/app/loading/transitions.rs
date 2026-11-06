@@ -256,12 +256,14 @@ pub(crate) fn install_world_presentation(
     // GAME.FNT is process artwork, so retain the established process fallback
     // when optional font preparation did not produce a replacement.
     if let Some(ref fnt) = assets.fnt_file {
-        state.renderer.bit_font = crate::render::bit_font::BitFont::from_fnt(
+        let mut font = crate::render::bit_font::BitFont::from_fnt(
             &state.renderer.gpu.device,
             &state.renderer.gpu.queue,
             &state.renderer.batch_renderer,
             fnt,
         );
+        font.inherit_settings(&state.renderer.bit_font);
+        state.renderer.bit_font = font;
     }
 
     // The final sidebar projection resolves incoming side/radar authority.
@@ -801,7 +803,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         Err(err) => {
             state.match_state.startup.clear();
             state.frontend.screen = GameScreen::MissionResult {
-                title: "Startup Rejected".to_string(),
+                title: crate::i18n::tr("VERA:StartupRejected"),
                 detail: err.clone(),
             };
             log::error!("Scenario installation rejected startup: {err}");

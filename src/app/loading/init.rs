@@ -2439,11 +2439,15 @@ pub(crate) fn load_csf(
 ) -> anyhow::Result<crate::assets::csf_file::CsfFile> {
     let (mut csf, supplements) =
         crate::assets::csf_file::CsfFile::load_active(|name| asset_manager.get_ref(name)).map_err(
+            // The startup error card shows these, before any string table.
             |err| match err {
                 crate::assets::error::AssetError::AssetNotFound { .. } => {
-                    anyhow::anyhow!("required retail string table ra2md.csf is missing")
+                    anyhow::anyhow!(crate::i18n::tr("VERA:CsfMissing"))
                 }
-                err => anyhow::anyhow!("could not parse required ra2md.csf: {err:#}"),
+                err => anyhow::anyhow!(crate::i18n::tr_fill(
+                    "VERA:CsfUnreadable",
+                    &[("error", &format!("{err:#}"))],
+                )),
             },
         )?;
     log::info!("Loaded CSF string table: ra2md.csf; supplements={supplements:?}");

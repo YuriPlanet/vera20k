@@ -616,6 +616,39 @@ impl App {
             && (Self::house_outcome_wait_pending(state) || !state.focus_freeze_active())
     }
 
+    /// The active-game shell `page` into `destination`.
+    fn render_in_game_shell(
+        state: &mut AppState,
+        encoder: &mut wgpu::CommandEncoder,
+        destination: &wgpu::Texture,
+        page: ScreenPage,
+    ) -> Result<()> {
+        use crate::app::frontend::skirmish_shell_render as shell;
+        use crate::ui::pause_menu::InGameMenuState;
+        match page {
+            ScreenPage::InGameShell(InGameMenuState::Menu) => {
+                let buttons = crate::app::input::pause_menu::button_states(state);
+                shell::render_pause_menu_shell(state, encoder, destination, buttons)
+            }
+            ScreenPage::InGameShell(InGameMenuState::AbortConfirm) => {
+                shell::render_abort_shell(state, encoder, destination)
+            }
+            ScreenPage::InGameShell(InGameMenuState::Sound) => {
+                shell::render_sound_shell(state, encoder, destination)
+            }
+            ScreenPage::InGameShell(InGameMenuState::Diplomacy) => {
+                shell::render_diplomacy_shell(state, encoder, destination)
+            }
+            ScreenPage::InGameShell(InGameMenuState::MissionBriefing) => {
+                shell::render_restate_shell(state, encoder, destination)
+            }
+            ScreenPage::InGameShell(InGameMenuState::SavedGame(_)) => {
+                shell::render_saved_game_shell(state, encoder, destination)
+            }
+            _ => shell::render_in_game_options_shell(state, encoder, destination),
+        }
+    }
+
     /// The one owner of the window's own cursor after the startup splash, set
     /// after each frame's draw. gamemd's WWMouse constructor (`0x007B8730`)
     /// hides it with `ShowCursor(FALSE)` (`0x007B88BA`) and the game draws
@@ -677,6 +710,12 @@ impl App {
         mut hidden_run: Option<&mut crate::app::hidden_run::HiddenRun>,
         pass: FramePass,
     ) -> Result<FrameRenderOutcome> {
+        // The glyph atlas empties or grows only between frames, while no
+        // instance built from it is waiting to draw.
+        state
+            .renderer
+            .bit_font
+            .begin_frame(&state.renderer.gpu.device, &state.renderer.batch_renderer);
         if let Some(presented) = crate::app::persistence::commands::pump_saved_game_load(state) {
             return Ok(if presented {
                 FrameRenderOutcome::Presented
@@ -916,6 +955,7 @@ impl App {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Frame"),
                 });
+        state.renderer.window_ui.begin_frame();
         let mut pending_main_menu_entry_token = None;
         let mut pending_main_menu_title_receipt = None;
         use crate::app::diagnostics::shell_capture::PresentedShell;
@@ -1150,7 +1190,8 @@ impl App {
                             .to_string();
                         crate::app::frontend::status_screen::render(
                             state, &mut encoder, &view,
-                            "Loading...", &format!("Map: {map_name_display}"),
+                            &crate::i18n::tr("VERA:Loading"),
+                            &crate::i18n::tr_fill("VERA:LoadingMap", &[("map", &map_name_display)]),
                             crate::app::frontend::status_screen::Buttons::NONE,
                         );
                     }
@@ -1162,43 +1203,27 @@ impl App {
             _ if matches!(screen_page, ScreenPage::InGameShell(_)) => {
                 // 621FCE -> 72F540 clears and paints a complete active-game shell.
                 // No battlefield commands share this encoder/camera upload.
-                use crate::ui::pause_menu::InGameMenuState;
-                match screen_page {
-                    ScreenPage::InGameShell(InGameMenuState::Menu) => {
-                        let buttons = crate::app::input::pause_menu::button_states(state);
-                        crate::app::frontend::skirmish_shell_render::render_pause_menu_shell(
-                            state, &mut encoder, &output.texture, buttons,
-                        )?;
-                    }
-                    ScreenPage::InGameShell(InGameMenuState::AbortConfirm) => {
-                        crate::app::frontend::skirmish_shell_render::render_abort_shell(state, &mut encoder, &output.texture)?;
-                    }
-                    ScreenPage::InGameShell(InGameMenuState::Sound) => {
-                        crate::app::frontend::skirmish_shell_render::render_sound_shell(state, &mut encoder, &output.texture)?;
-                    }
-                    ScreenPage::InGameShell(InGameMenuState::Diplomacy) => {
-                        crate::app::frontend::skirmish_shell_render::render_diplomacy_shell(state, &mut encoder, &output.texture)?;
-                    }
-                    ScreenPage::InGameShell(InGameMenuState::MissionBriefing) => {
-                        crate::app::frontend::skirmish_shell_render::render_restate_shell(state, &mut encoder, &output.texture)?;
-                    }
-                    ScreenPage::InGameShell(InGameMenuState::SavedGame(_)) => {
-                        crate::app::frontend::skirmish_shell_render::render_saved_game_shell(state, &mut encoder, &output.texture)?;
-                    }
-                    _ => {
-                        crate::app::frontend::skirmish_shell_render::render_in_game_options_shell(
-                            state, &mut encoder, &output.texture,
-                        )?;
-                    }
-                }
+                // Its text is laid out at the Sidebar size and drawn in the
+                // window (`window_ui::shell_raster`).
+                let raster = crate::app::presentation::window_ui::shell_raster(state, true)
+                    .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
+                let frame_raster = state.renderer.bit_font.set_raster(raster);
+                let painted =
+                    Self::render_in_game_shell(state, &mut encoder, &output.texture, screen_page);
+                state.renderer.bit_font.set_raster(frame_raster);
+                painted?;
             }
             _ if screen_page == ScreenPage::InGameCard => {
                 let abort = state.match_state.match_presentation.in_game_menu
                     == crate::ui::pause_menu::InGameMenuState::AbortConfirm;
                 crate::app::frontend::status_screen::render(
                     state, &mut encoder, &view,
-                    if abort { "Leave this mission?" } else { "Menu resources unavailable" },
-                    "Required retail dialog artwork could not be loaded. Check your game installation. Full details are in logs/ra2.log.",
+                    &crate::i18n::tr(if abort {
+                        "VERA:LeaveMissionQuestion"
+                    } else {
+                        "VERA:InGameMenuUnavailable"
+                    }),
+                    &crate::i18n::tr("VERA:InGameMenuArtworkMissing"),
                     if abort {
                         crate::app::frontend::status_screen::Buttons::ABORT_CONFIRM
                     } else {
@@ -1255,6 +1280,9 @@ impl App {
                         .unwrap()
                         .draw(&mut encoder, &view);
                     crate::app::presentation::sidebar_surface::draw_window_copy(
+                        state, &mut encoder, &view,
+                    );
+                    crate::app::presentation::window_ui::draw_battlefield(
                         state, &mut encoder, &view,
                     );
                     render_output
@@ -1334,11 +1362,9 @@ impl App {
             &mut encoder,
             &output.texture,
             &state.renderer.bit_font,
-            state.process_assets.csf.as_ref(),
             crate::app::diagnostics::fps_overlay::match_panel(state),
         );
         if state.frontend.screen == GameScreen::InGame {
-            let csf = state.process_assets.csf.as_ref();
             let status = state
                 .match_state
                 .match_diagnostics
@@ -1364,17 +1390,11 @@ impl App {
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .is_ok_and(|now| now.as_secs() >= expires)
                             });
-                            Some(
-                                crate::i18n::text(
-                                    csf,
-                                    if lapsed {
-                                        "VERA:ReconnectPassLapsed"
-                                    } else {
-                                        "VERA:Reconnecting"
-                                    },
-                                )
-                                .into_owned(),
-                            )
+                            Some(crate::i18n::tr(if lapsed {
+                                "VERA:ReconnectPassLapsed"
+                            } else {
+                                "VERA:Reconnecting"
+                            }))
                         }
                         crate::net::live_commands::NetworkRecoveryStatus::CatchingUp { frames } => {
                             let key = if live.restoring_match() {
@@ -1382,17 +1402,14 @@ impl App {
                             } else {
                                 "VERA:CatchingUp"
                             };
-                            Some(crate::i18n::fill(
-                                &crate::i18n::text(csf, key),
-                                &[("frames", &frames)],
-                            ))
+                            Some(crate::i18n::tr_count(key, frames, &[]))
                         }
                     }
                 })
                 .or_else(|| {
                     crate::app::input::pause_menu::multiplayer_control(state)?
                         .status
-                        .map(|key| crate::i18n::text(csf, key).into_owned())
+                        .map(crate::i18n::tr)
                 });
             if let Some(status) = status {
                 state.renderer.fps_overlay.encode_status(
@@ -1484,20 +1501,43 @@ impl App {
         let retail_screenshot_current_frame =
             std::mem::take(&mut state.match_state.input.retail_screenshot_requested);
         let screenshot_central_rect = shake_central_rect(state, &output.texture);
-        let pending_retail_screenshot = state
+        // Text drawn in the window (`window_ui`) is not in the frame the
+        // screenshot retains: this frame's goes over its copy.
+        let window_text = state.renderer.window_ui.drew_text();
+        let previous_composition = state
             .renderer
             .retail_screenshot_frame_cache
-            .capture_previous_if_requested(
+            .previous_composition(
                 retail_screenshot_current_frame,
+                window_text,
                 &state.renderer.gpu.device,
                 &mut encoder,
                 state.renderer.gpu.config.format,
                 state.renderer.gpu.config.width,
                 state.renderer.gpu.config.height,
                 state.renderer.upscale_pass.as_ref(),
-                &mut state.renderer.screen_presentation,
-                screenshot_central_rect,
             )?;
+        if let Some(copy) = previous_composition
+            .as_ref()
+            .and_then(|previous| previous.copy())
+            .filter(|_| window_text)
+        {
+            state
+                .renderer
+                .window_ui
+                .draw_screenshot_text(state, &mut encoder, copy);
+        }
+        let pending_retail_screenshot = previous_composition
+            .map(|previous| {
+                previous.read_back(
+                    &state.renderer.gpu.device,
+                    &mut encoder,
+                    state.renderer.gpu.config.format,
+                    &mut state.renderer.screen_presentation,
+                    screenshot_central_rect,
+                )
+            })
+            .transpose()?;
         let capture_timeout = if capture_current_frame {
             Some(if replay_capture_current_frame {
                 crate::render::screenshot::READBACK_TIMEOUT

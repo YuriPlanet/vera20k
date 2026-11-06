@@ -29,6 +29,7 @@ use super::{
 use crate::app::AppState;
 use crate::app::persistence::account;
 use crate::app::shell_network_setup::{NetworkSetupEvent, NetworkSetupRequest};
+use crate::i18n::tr;
 use crate::net::reliable::{LanConnectionConfig, LanConnections, RetryTiming};
 use crate::net::udp::{LanUdpTransport, UdpBindConfig};
 use crate::ui::wol_account::AccountRequest;
@@ -323,19 +324,21 @@ pub(super) struct LiveService {
 /// Where players download a newer build (README "Download and play").
 pub(crate) const RELEASES_URL: &str = "https://github.com/YuriPlanet/vera20k/releases";
 
-/// The login box for a lobby that did not answer, instead of retail
-/// TXT_CANT_CONNECT's "Westwood Online".
-const CANT_CONNECT_TEXT: &str = "Could not connect to VERA20k Online. The service may be down, or check your internet connection.";
+/// The label of the login box's text for a lobby that did not answer,
+/// instead of retail TXT_CANT_CONNECT's "Westwood Online".
+const CANT_CONNECT_TEXT: &str = "VERA:OnlineCantConnect";
 
-/// The box when the lobby stops answering while the player is in it.
-const LOBBY_LOST_TEXT: &str = "Lost connection to VERA20k Online. The service may be down, or check your internet connection.";
+/// The label of the box's text when the lobby stops answering while the
+/// player is in it.
+const LOBBY_LOST_TEXT: &str = "VERA:OnlineConnectionLost";
 
-/// The lobby's own maintenance message when it gave a plain one.
 /// The lobby's own 426 reason when it gave a plain one, then where to get a
-/// newer build.
+/// newer build; without one, VERA's own sentence with the link.
 fn update_required_text(message: Option<&str>) -> String {
-    let reason = message.unwrap_or("Update VERA20k to use secure online multiplayer.");
-    format!("{reason} {RELEASES_URL}")
+    match message {
+        Some(reason) => format!("{reason} {RELEASES_URL}"),
+        None => crate::i18n::tr_fill("VERA:OnlineUpdateRequired", &[("url", &RELEASES_URL)]),
+    }
 }
 
 /// The external launch's online visit: once its match ends or admission
@@ -1198,17 +1201,12 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
                 }
                 let starts = matches!(request, NetworkSetupRequest::StartGame { .. });
                 if request_setup(state, &mut service, request).is_err() {
+                    let text = tr("VERA:LobbyRequestMismatch");
                     if starts {
                         service.start_preparation = None;
-                        fail_start(
-                            state,
-                            "The lobby request does not match the current game setup.",
-                        );
+                        fail_start(state, &text);
                     } else {
-                        notice(
-                            state,
-                            "The lobby request does not match the current game setup.",
-                        );
+                        notice(state, &text);
                     }
                 }
             }
@@ -1220,21 +1218,15 @@ pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
         {
             service.pending_choices = None;
             restore_accepted_options(state, &service);
-            notice(
-                state,
-                "The host did not acknowledge the player choices. Review the settings and try again.",
-            );
+            notice(state, &tr("VERA:ChoicesNotAcknowledged"));
         }
         if poll_start_preparation(state, &mut service).is_err() {
             service.start_preparation = None;
-            fail_start(
-                state,
-                "The final game settings could not be agreed. Try Start again.",
-            );
+            fail_start(state, &tr("VERA:SettingsNotAgreed"));
         }
         if poll_relay(state, &mut service).is_err() {
             cancel_pending(state, &mut service);
-            fail_start(state, "Could not establish the gameplay relay connection.");
+            fail_start(state, &tr("VERA:RelayConnectionFailed"));
         }
         if !service.spawned && service.pending.is_none() && service.match_id.is_none() {
             maps::poll(state, &mut service);
@@ -1939,10 +1931,7 @@ fn restore_accepted_options(state: &mut AppState, service: &LiveService) {
                 .try_for_each(|event| crate::app::shell_network_setup::service_event(state, event))
         });
     if result.is_err() {
-        notice(
-            state,
-            "The latest host settings are unavailable. Leave and rejoin the room.",
-        );
+        notice(state, &tr("VERA:HostSettingsUnavailable"));
     }
 }
 
@@ -1972,10 +1961,7 @@ fn poll_start_preparation(state: &mut AppState, service: &mut LiveService) -> Re
         return Ok(());
     };
     if Instant::now() >= start.deadline {
-        fail_start(
-            state,
-            "Not every player's game was ready in time. Try Start again.",
-        );
+        fail_start(state, &tr("VERA:PlayersNotReadyInTime"));
         return Ok(());
     }
     if start.submitted_request.is_some()
@@ -2116,10 +2102,7 @@ fn request_setup(
                         crate::app::shell_network_setup::OnlineStartPhase::Preparing,
                     );
                 }
-                notice(
-                    state,
-                    "Waiting for every player's game to confirm the final settings.",
-                );
+                notice(state, &tr("VERA:ConfirmingFinalSettings"));
             }
         }
         NetworkSetupRequest::Leave => {
@@ -2166,10 +2149,7 @@ fn request_setup(
         NetworkSetupRequest::RequestAcceptance
         | NetworkSetupRequest::BroadcastPings
         | NetworkSetupRequest::ObserverSlot { .. } => {}
-        _ => notice(
-            state,
-            "This online setup operation is not available for the selected map.",
-        ),
+        _ => notice(state, &tr("VERA:SetupOperationUnavailable")),
     }
     Ok(())
 }
@@ -2196,11 +2176,11 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             cancel_pending(state, service);
             fail_start(
                 state,
-                if retryable {
-                    "The online lobby is busy or not responding. Try Start again."
+                &tr(if retryable {
+                    "VERA:StartLobbyBusy"
                 } else {
-                    "The match could not start. Check every player's map, rules, version and readiness."
-                },
+                    "VERA:StartRefusedSetup"
+                }),
             );
         }
         http::Response::Authenticated {
@@ -2232,7 +2212,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             service_event(state, WolServiceEvent::Login(Err(code)));
             // Code 0 is no answer or an unexpected one: TXT_CANT_CONNECT.
             if code == 0 {
-                super::service::replace_open_box_body(state, CANT_CONNECT_TEXT);
+                super::service::replace_open_box_body(state, &tr(CANT_CONNECT_TEXT));
             }
         }
         http::Response::SignInRefused {
@@ -2277,7 +2257,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     "Online lobby update rejected: host_options={}",
                     event.kind == "options"
                 );
-                notice(state, "The server sent an invalid lobby update.");
+                notice(state, &tr("VERA:InvalidLobbyUpdate"));
             }
         }
         http::Response::CommandCompleted { id, operation } => match operation {
@@ -2311,10 +2291,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     .is_some_and(|start| start.publication_request == Some(id)) =>
             {
                 service.start_preparation = None;
-                fail_start(
-                    state,
-                    "The final settings could not be published. Try Start again.",
-                );
+                fail_start(state, &tr("VERA:SettingsNotPublished"));
             }
             "choices"
                 if service
@@ -2324,10 +2301,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             {
                 service.pending_choices = None;
                 restore_accepted_options(state, service);
-                notice(
-                    state,
-                    "The host could not accept those player choices. Review the settings and try again.",
-                );
+                notice(state, &tr("VERA:ChoicesRefused"));
             }
             "ready" if service.last_ready_request == Some((id, service.revision)) => {
                 if failure != http::CommandFailure::Retryable {
@@ -2360,10 +2334,7 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                     // No room comes back: the waiting runner goes to the lobby.
                     super::lobby::room_refused(state);
                 } else if first_failure && failure != http::CommandFailure::AlreadyFinished {
-                    notice(
-                        state,
-                        "Reconnecting to finish the previous match before rematch.",
-                    );
+                    notice(state, &tr("VERA:FinishingPreviousMatch"));
                 }
             }
             // The host's 5 s ping; an outage is reported once by the poll.
@@ -2373,10 +2344,10 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             "ladder" => {}
             "relay_ready" | "latency_ready" => {
                 if !service.report_failed(id, failure, Instant::now()) {
-                    notice(state, "The online request was not accepted.");
+                    notice(state, &tr("VERA:OnlineRequestRefused"));
                 }
             }
-            _ => notice(state, "The online request was not accepted."),
+            _ => notice(state, &tr("VERA:OnlineRequestRefused")),
         },
         http::Response::Translated { id, outcome } => {
             if let Some((line, text)) = service.translations.reply(id, outcome, Instant::now()) {
@@ -2389,11 +2360,9 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
                 service_event(state, WolServiceEvent::Account(answer));
             }
         }
-        http::Response::Failure(message) => notice(state, message),
-        http::Response::LobbyUnreachable => {
-            notice(state, "The online lobby is not responding. Retrying.")
-        }
-        http::Response::LobbyReachable => notice(state, "The online lobby is responding again."),
+        http::Response::Failure(label) => notice(state, &tr(label)),
+        http::Response::LobbyUnreachable => notice(state, &tr("VERA:LobbyNotResponding")),
+        http::Response::LobbyReachable => notice(state, &tr("VERA:LobbyRespondingAgain")),
         http::Response::LobbyLost => {
             // A match keeps its relay through a lobby outage; this asks
             // again after it.
@@ -2417,16 +2386,17 @@ fn apply_response(state: &mut AppState, service: &mut LiveService, response: htt
             // runner has no lobby (Quick Match), which then gets one at the
             // welcome.
             service_event(state, WolServiceEvent::NetStatus(super::NET_STATUS_LOST));
-            if !super::lobby::replace_box_body(state, LOBBY_LOST_TEXT)
-                && !super::service::show_text_box(state, LOBBY_LOST_TEXT)
+            let text = tr(LOBBY_LOST_TEXT);
+            if !super::lobby::replace_box_body(state, &text)
+                && !super::service::show_text_box(state, &text)
             {
-                notice(state, LOBBY_LOST_TEXT);
+                notice(state, &text);
             }
         }
         http::Response::Offline => {
             crate::app::loading::pump::cancel_network_loading(
                 state,
-                "The online session ended while the map was loading.",
+                &tr("VERA:OnlineSessionEndedWhileLoading"),
             );
             maps::cancel(state, service);
             cancel_pending(state, service);
@@ -2474,9 +2444,32 @@ struct Chat {
     quick_match: Option<super::quick_match::MatchStart>,
     #[serde(default)]
     sent_at: Option<u64>,
+    /// The lobby's own lines as phrases ([`super::lobby_phrases`]), read
+    /// only once the event decodes, so that a shape this game does not know
+    /// leaves the line in `text`.
+    #[serde(default)]
+    phrases: Value,
 }
 
 impl Chat {
+    /// The line in the language in use when the lobby said it as phrases
+    /// that VERA's language files hold, else the lobby's `text`. A matchbot
+    /// reply's phrases say what follows its first word, the reply's kind,
+    /// which its Quick Match runner reads (`Info`).
+    fn shown_text(&self) -> String {
+        let Some(said) =
+            serde_json::from_value::<Vec<super::lobby_phrases::Phrase>>(self.phrases.clone())
+                .ok()
+                .and_then(|phrases| super::lobby_phrases::localized(&phrases))
+        else {
+            return self.text.clone();
+        };
+        match self.text.split_once(' ') {
+            Some((kind, _)) if self.ansi => format!("{kind} {said}"),
+            _ => said,
+        }
+    }
+
     /// The pairing of the matchbot's `Start` that `local` hosts; only its
     /// ANSI text carries one.
     fn hosted_pairing(&self, local: &str) -> Option<super::quick_match::MatchStart> {
@@ -2685,7 +2678,7 @@ fn apply_event(
                 );
                 crate::app::loading::pump::cancel_network_loading(
                     state,
-                    "The online room closed while the map was loading.",
+                    &tr("VERA:OnlineRoomClosedWhileLoading"),
                 );
             }
             service.accepted_options = None;
@@ -2739,7 +2732,7 @@ fn apply_event(
             if required {
                 crate::app::loading::pump::cancel_network_loading(
                     state,
-                    "A player left the online room while the map was loading.",
+                    &tr("VERA:OnlinePlayerLeftWhileLoading"),
                 );
             }
             service_event(state, WolServiceEvent::UserLeft(name));
@@ -2758,10 +2751,7 @@ fn apply_event(
                 && start.revision.is_some()
             {
                 service.start_preparation = None;
-                fail_start(
-                    state,
-                    "The game settings changed while starting. Try Start again.",
-                );
+                fail_start(state, &tr("VERA:SettingsChangedWhileStarting"));
             }
             service.revision = p.revision;
             if service
@@ -2895,11 +2885,12 @@ fn apply_event(
             let options = p
                 .hosted_pairing(&local)
                 .and_then(|pairing| super::quick_match::online_start_options(state, pairing));
+            let text = p.shown_text().encode_utf16().collect();
             service_event(
                 state,
                 WolServiceEvent::Message {
                     from: p.from.into_member(&local),
-                    text: p.text.encode_utf16().collect(),
+                    text,
                     private: p.private,
                     action: p.action,
                     ansi: p.ansi,
@@ -3024,12 +3015,9 @@ fn apply_event(
         }
         "start_rejected" => {
             cancel_pending(state, service);
-            fail_start(
-                state,
-                "The match could not start. Check every player's connection, map and version.",
-            );
+            fail_start(state, &tr("VERA:StartRefusedConnection"));
         }
-        "error" => notice(state, "The online service rejected the request."),
+        "error" => notice(state, &tr("VERA:OnlineServiceRefused")),
         _ => {}
     }
     Ok(())

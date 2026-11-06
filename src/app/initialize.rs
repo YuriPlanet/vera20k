@@ -182,9 +182,9 @@ fn startup_asset_or_error<T>(result: Result<T>, error: &mut Option<String>) -> O
     match result {
         Ok(asset) => Some(asset),
         Err(err) => {
-            // The log keeps the raw chain, which carries the host's localized
-            // OS text; the card gets an English description instead, because
-            // its in-repo face cannot draw a localised sentence.
+            // The log keeps the raw chain, with the host's own OS text; the
+            // card describes the failure in the language in use, which need
+            // not be the host's.
             log::warn!("{err:#}");
             error.get_or_insert_with(|| describe_startup_error(&err));
             None
@@ -192,12 +192,11 @@ fn startup_asset_or_error<T>(result: Result<T>, error: &mut Option<String>) -> O
     }
 }
 
-/// English description of a startup failure, for the error card.
+/// A startup failure in the language in use, for the error card.
 ///
-/// `std::io::Error`'s own message is localized by the host, so on a Chinese
-/// Windows the raw chain reads a localized sentence and the card could only
-/// draw boxes. This walks the `anyhow` chain and states each link in English:
-/// our own context strings already are, and I/O kinds are mapped here.
+/// `std::io::Error`'s own message is in the host's language, which need not
+/// be the player's. This walks the `anyhow` chain and states each I/O link
+/// from the language files, as our own context strings already are.
 fn describe_startup_error(err: &anyhow::Error) -> String {
     use crate::assets::error::AssetError;
 
@@ -222,23 +221,24 @@ fn describe_startup_error(err: &anyhow::Error) -> String {
     parts.join(": ")
 }
 
-/// One I/O failure in English, with the numeric code kept for the log search.
+/// One I/O failure in the language in use, with the numeric code kept for
+/// the log search.
 fn describe_io_error(err: &std::io::Error) -> String {
     use std::io::ErrorKind;
 
-    let text = match err.kind() {
-        ErrorKind::NotFound => "the file or path does not exist",
-        ErrorKind::PermissionDenied => "access was denied",
-        ErrorKind::AlreadyExists => "the target already exists",
-        ErrorKind::InvalidData => "the file is not a valid game archive",
-        ErrorKind::InvalidInput => "the file name or data is invalid",
-        ErrorKind::UnexpectedEof => "the file is truncated",
-        ErrorKind::WouldBlock => "the file is in use by another program",
-        _ => "the file could not be read",
-    };
+    let text = crate::i18n::tr(match err.kind() {
+        ErrorKind::NotFound => "VERA:IoNotFound",
+        ErrorKind::PermissionDenied => "VERA:IoPermissionDenied",
+        ErrorKind::AlreadyExists => "VERA:IoAlreadyExists",
+        ErrorKind::InvalidData => "VERA:IoInvalidData",
+        ErrorKind::InvalidInput => "VERA:IoInvalidInput",
+        ErrorKind::UnexpectedEof => "VERA:IoTruncated",
+        ErrorKind::WouldBlock => "VERA:IoInUse",
+        _ => "VERA:IoUnreadable",
+    });
     match err.raw_os_error() {
-        Some(code) => format!("{text} (os error {code})"),
-        None => text.to_owned(),
+        Some(code) => crate::i18n::tr_fill("VERA:IoOsError", &[("text", &text), ("code", &code)]),
+        None => text,
     }
 }
 
@@ -331,14 +331,27 @@ impl App {
                     let prepared = (|| -> Result<crate::rules::personal_rules::PersonalRules> {
                         crate::app::persistence::profile_file::import_legacy(&config.paths)
                             .map_err(|error| {
-                                anyhow::Error::new(error).context("Could not prepare VERA.INI")
+                                anyhow::Error::new(error).context(crate::i18n::tr_fill(
+                                    "VERA:CannotPrepareFile",
+                                    &[("file", &"VERA.INI")],
+                                ))
                             })?;
                         let bytes = crate::app::persistence::rules_profile::load_or_create(
                             config.paths.settings_dir(),
                         )
-                        .context("Could not prepare VERARULES.INI")?;
+                        .with_context(|| {
+                            crate::i18n::tr_fill(
+                                "VERA:CannotPrepareFile",
+                                &[("file", &"VERARULES.INI")],
+                            )
+                        })?;
                         crate::rules::personal_rules::PersonalRules::from_bytes(&bytes)
-                            .context("Could not read VERARULES.INI")
+                            .with_context(|| {
+                                crate::i18n::tr_fill(
+                                    "VERA:CannotReadFile",
+                                    &[("file", &"VERARULES.INI")],
+                                )
+                            })
                     })();
                     match prepared {
                         Ok(rules) => personal_rules = rules,
@@ -371,7 +384,12 @@ impl App {
         let profile_screen = options_load.startup_shell_screen;
         let mut options_profile = options_load.retained_profile;
         // Before the first CSF load below, which layers this language over it.
-        crate::i18n::select_language(&options_profile.language);
+        crate::i18n::init(
+            game_config
+                .as_ref()
+                .map(|config| config.paths.settings_dir()),
+            options_profile.language.as_deref(),
+        );
         options_profile.render_interpolation =
             crate::app::presentation::interpolation::startup_enabled(
                 options_profile.render_interpolation,
@@ -574,9 +592,11 @@ impl App {
         );
         terrain_draw_renderer.generate_ion_blast_frames(&gpu.device, &gpu.queue);
         let combat_light_renderer = crate::render::combat_light::CombatLightRenderer::new(&gpu);
-        let mut bit_font = BitFont::fallback_5x7(&gpu.device, &gpu.queue, &batch_renderer);
+        let mut bit_font = BitFont::vector_only(&gpu.device, &gpu.queue, &batch_renderer);
         let fps_overlay =
             crate::app::diagnostics::fps_overlay::FpsOverlay::new(&gpu, &batch_renderer);
+        let window_ui =
+            crate::app::presentation::window_ui::WindowUi::new(&gpu.device, &batch_renderer);
         let depth_view: wgpu::TextureView = gpu.create_depth_texture();
         let shell_surface_presenter =
             crate::render::shell_surface_present::ShellSurfacePresenter::new(&gpu)?;
@@ -589,7 +609,7 @@ impl App {
             startup_asset_or_error(
                 AssetManager::new(&config.paths.ra2_dir, startup_options.media_archive_mode)
                     .and_then(|assets| assets.with_ini_roots(&config.ini))
-                    .context("Could not load the game archives"),
+                    .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),
                 &mut main_menu_shell_error,
             )
         });
@@ -629,6 +649,8 @@ impl App {
         if let Some(fnt) = startup_fnt.as_ref() {
             bit_font = BitFont::from_fnt(&gpu.device, &gpu.queue, &batch_renderer, fnt);
         }
+        bit_font.set_mode(options_profile.font_mode());
+        bit_font.set_locale(&crate::i18n::selected_language());
         let outcome_banner_art = startup_asset_manager.as_ref().and_then(|assets| {
             crate::app::presentation::outcome_banner::OutcomeBannerArt::build(
                 &gpu,
@@ -647,23 +669,20 @@ impl App {
         // The load then runs behind the black frame presented below.
         let play_startup = process_movies && !options_profile.skip_intro;
         let mut startup_splash = if play_startup {
-            startup_asset_manager
-                .as_ref()
-                .zip(startup_fnt.as_ref())
-                .and_then(|(assets, fnt)| {
-                    startup_splash::StartupSplashPresentation::build(
-                        &gpu,
-                        &batch_renderer,
-                        assets,
-                        startup_csf.as_ref(),
-                        fnt,
-                        gpu.config.width,
-                        gpu.config.height,
-                        options_profile.yr_original_style,
-                    )
-                    .map_err(|err| log::warn!("Could not build retail startup splash: {err:#}"))
-                    .ok()
-                })
+            startup_asset_manager.as_ref().and_then(|assets| {
+                startup_splash::StartupSplashPresentation::build(
+                    &gpu,
+                    &batch_renderer,
+                    assets,
+                    startup_csf.as_ref(),
+                    &bit_font,
+                    gpu.config.width,
+                    gpu.config.height,
+                    options_profile.yr_original_style,
+                )
+                .map_err(|err| log::warn!("Could not build retail startup splash: {err:#}"))
+                .ok()
+            })
         } else {
             None
         };
@@ -1250,7 +1269,7 @@ impl App {
                 status_screen_fill,
                 status_card_glow,
                 bit_font,
-                status_font: crate::render::status_font::StatusFaceCache::new(),
+                window_ui,
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
@@ -1385,13 +1404,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn startup_errors_are_described_in_english_not_host_locale() {
+    fn startup_errors_are_described_in_the_language_in_use_not_the_hosts() {
         // A missing install surfaces as io::ErrorKind::NotFound inside the
-        // asset error. The card cannot draw the host's localized sentence, so
-        // the description must state the cause in English and keep the code.
+        // asset error. The host's sentence for it is in the host's language,
+        // so the description states the cause from the language files (here
+        // English) and keeps the code.
         let io = std::io::Error::from_raw_os_error(3);
         let asset = crate::assets::error::AssetError::Io(io);
-        let err = anyhow::Error::new(asset).context("Could not load the game archives");
+        let err = anyhow::Error::new(asset).context(crate::i18n::tr("VERA:CannotLoadArchives"));
         let text = describe_startup_error(&err);
         assert!(text.is_ascii(), "{text}");
         assert!(text.contains("Could not load the game archives"), "{text}");

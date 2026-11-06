@@ -103,10 +103,14 @@ impl DisplayPauseControls {
     }
 
     /// A row's text.
-    pub(crate) fn row_label(&self, list: DisplayList, row: usize) -> &str {
+    pub(crate) fn row_label(&self, list: DisplayList, row: usize) -> String {
         match list {
-            DisplayList::Zoom => self.zoom_labels.get(row).map_or("", String::as_str),
-            DisplayList::Sidebar => self.sidebar_choices.get(row).map_or("", |s| s.label()),
+            DisplayList::Zoom => self.zoom_labels.get(row).cloned().unwrap_or_default(),
+            DisplayList::Sidebar => self
+                .sidebar_choices
+                .get(row)
+                .map(|size| size.label())
+                .unwrap_or_default(),
         }
     }
 

@@ -6,7 +6,7 @@ use crate::app::diagnostics::core_load::CoreLoadSampler;
 use crate::app::diagnostics::state::RenderTimingMeter;
 use crate::app::presentation::interpolation::SimulationReadout;
 use crate::app::presentation::render::RenderPhases;
-use crate::assets::csf_file::CsfFile;
+use crate::i18n::{tr, tr_fill};
 use crate::sim::frame_profile::PHASE_COUNT;
 use crate::util::time::{Duration, Instant};
 
@@ -18,7 +18,8 @@ pub(super) const HOT: [u8; 3] = [255, 0, 0];
 pub(super) const TRACK: [u8; 3] = [30, 84, 24];
 
 const WINDOW: Duration = Duration::from_secs(1);
-const DOT: &str = "  ·  ";
+/// The gap between a row's entries.
+pub(super) const DOT: &str = "  ·  ";
 /// Areas under this share of the window stay off the Most CPU row.
 const MIN_AREA_PERCENT: f32 = 1.0;
 const MOST_AREAS: usize = 5;
@@ -181,28 +182,26 @@ pub(super) enum Part {
     Bars(Vec<f32>),
 }
 
-/// The panel in GAME.FNT: rates and units, Most CPU and Cores, each row only
-/// once it has something to say.
-pub(super) fn rows(shown: &Shown, csf: Option<&CsfFile>) -> Vec<Vec<Part>> {
-    let mut rows = vec![vec![Part::Text(first_row(shown, csf), GREEN)]];
+/// The panel's rows in the language in use ([`crate::i18n`]): rates and
+/// units, Most CPU and Cores, each row only once it has something to say.
+pub(super) fn rows(shown: &Shown) -> Vec<Vec<Part>> {
+    let mut rows = vec![vec![Part::Text(first_row(shown), GREEN)]];
     if let Some((first, rest)) = shown.areas.split_first() {
         let mut row = vec![
-            Part::Text(format!("{}  ", label(csf, "VERA:FpsPanelMostCpu")), GREEN),
-            Part::Text(area(first, csf), WARM),
+            Part::Text(format!("{}  ", tr("VERA:FpsPanelMostCpu")), GREEN),
+            Part::Text(area(first), WARM),
         ];
         if !rest.is_empty() {
-            let rest = rest
-                .iter()
-                .map(|other| format!("{DOT}{}", area(other, csf)));
+            let rest = rest.iter().map(|other| format!("{DOT}{}", area(other)));
             row.push(Part::Text(rest.collect(), GREEN));
         }
         rows.push(row);
     }
     if let Some(loads) = shown.core_loads.as_ref().filter(|loads| !loads.is_empty()) {
         let average = format!("{:.0}", loads.iter().sum::<f32>() / loads.len() as f32);
-        let average = label_with(csf, "VERA:FpsPanelAverage", "percent", &average);
+        let average = tr_fill("VERA:FpsPanelAverage", &[("percent", &average)]);
         rows.push(vec![
-            Part::Text(format!("{}  ", label(csf, "VERA:FpsPanelCores")), GREEN),
+            Part::Text(format!("{}  ", tr("VERA:FpsPanelCores")), GREEN),
             Part::Bars(loads.clone()),
             Part::Text(format!("   {average}"), GREEN),
         ]);
@@ -210,32 +209,7 @@ pub(super) fn rows(shown: &Shown, csf: Option<&CsfFile>) -> Vec<Vec<Part>> {
     rows
 }
 
-/// A panel label through [`crate::i18n`]: the loaded CSF first, then the
-/// selected language's file and English. `None` before the CSF loads.
-fn label(csf: Option<&CsfFile>, key: &str) -> String {
-    crate::i18n::text(csf, key).into_owned()
-}
-
-/// A label with its one `{name}` filled in.
-fn label_with(
-    csf: Option<&CsfFile>,
-    key: &str,
-    name: &str,
-    value: &dyn std::fmt::Display,
-) -> String {
-    crate::i18n::fill(&label(csf, key), &[(name, value)])
-}
-
-/// Before GAME.FNT loads: the first row in the built-in font's characters,
-/// English capitals only.
-pub(super) fn fallback_rows(shown: &Shown) -> Vec<Vec<Part>> {
-    vec![vec![Part::Text(
-        simulation_readout_text(shown.frame_ms, shown.simulation),
-        GREEN,
-    )]]
-}
-
-fn first_row(shown: &Shown, csf: Option<&CsfFile>) -> String {
+fn first_row(shown: &Shown) -> String {
     let frame_ms = shown.frame_ms;
     let mut row = if frame_ms.is_finite() && frame_ms > 0.0 {
         let ms = if frame_ms < 10.0 {
@@ -246,26 +220,30 @@ fn first_row(shown: &Shown, csf: Option<&CsfFile>) -> String {
         let fps = format!("{:.0}", 1000.0 / frame_ms);
         format!(
             "{}{DOT}{}",
-            label_with(csf, "VERA:FpsPanelFps", "fps", &fps),
-            label_with(csf, "VERA:FpsPanelFrameTime", "ms", &ms)
+            tr_fill("VERA:FpsPanelFps", &[("fps", &fps)]),
+            tr_fill("VERA:FpsPanelFrameTime", &[("ms", &ms)])
         )
     } else {
-        label_with(csf, "VERA:FpsPanelFps", "fps", &"--")
+        tr_fill("VERA:FpsPanelFps", &[("fps", &"--")])
     };
     if let Some(simulation) = shown.simulation {
         let tps = format!("{:.0}", simulation.tps);
-        let sim = label_with(csf, "VERA:FpsPanelSim", "tps", &tps);
+        let sim = tr_fill("VERA:FpsPanelSim", &[("tps", &tps)]);
         row.push_str(&format!("{DOT}{sim}"));
     }
     if let Some(units) = shown.units {
-        let units = label_with(csf, "VERA:FpsPanelUnits", "count", &thousands(units));
+        let units = tr_fill("VERA:FpsPanelUnits", &[("count", &thousands(units))]);
         row.push_str(&format!("{DOT}{units}"));
     }
     row
 }
 
-fn area(&(key, percent): &(&str, f32), csf: Option<&CsfFile>) -> String {
-    format!("{} {percent:.0}%", label(csf, key))
+fn area(&(key, percent): &(&str, f32)) -> String {
+    let percent = format!("{percent:.0}");
+    tr_fill(
+        "VERA:FpsPanelArea",
+        &[("area", &tr(key)), ("percent", &percent)],
+    )
 }
 
 fn thousands(value: usize) -> String {
@@ -278,23 +256,6 @@ fn thousands(value: usize) -> String {
         grouped.push(digit);
     }
     grouped
-}
-
-fn readout_text(frame_ms: f32) -> String {
-    if !frame_ms.is_finite() || frame_ms <= 0.0 {
-        "FPS --".to_owned()
-    } else {
-        // The built-in font is uppercase-only and has no decimal point.
-        format!("FPS {:.0}  {:.0} MS", 1000.0 / frame_ms, frame_ms)
-    }
-}
-
-fn simulation_readout_text(frame_ms: f32, simulation: Option<SimulationReadout>) -> String {
-    let mut text = readout_text(frame_ms);
-    if let Some(simulation) = simulation {
-        text.push_str(&format!("  SIM {:.0} TPS", simulation.tps));
-    }
-    text
 }
 
 #[cfg(test)]
@@ -326,7 +287,7 @@ mod tests {
             ],
             core_loads: Some(vec![90.0, 10.0]),
         };
-        let rows = rows(&shown, None);
+        let rows = rows(&shown);
         assert_eq!(
             text(&rows[0][0]),
             "FPS 60  ·  17 ms  ·  Sim 30 TPS  ·  Units 12,345"
@@ -337,55 +298,33 @@ mod tests {
         assert_eq!(text(&rows[2][2]), "   avg 50%");
         assert_eq!(rows.len(), 3);
         // Shell screens: no match figures, no measured areas or cores yet.
-        let shell = rows_of(
-            Shown {
-                frame_ms: 4.0,
-                ..Shown::default()
-            },
-            None,
-        );
+        let shell = rows_of(Shown {
+            frame_ms: 4.0,
+            ..Shown::default()
+        });
         assert_eq!(shell, ["FPS 250  ·  4.0 ms"]);
     }
 
-    fn rows_of(shown: Shown, csf: Option<&CsfFile>) -> Vec<String> {
-        rows(&shown, csf)
+    fn rows_of(shown: Shown) -> Vec<String> {
+        rows(&shown)
             .iter()
             .map(|row| row.iter().map(text).collect())
             .collect()
     }
 
     #[test]
-    fn a_loaded_csf_answers_the_panel_labels_first() {
-        // A mod's CSF may carry a VERA: label; the language files fill the rest.
-        let mut csf = crate::assets::csf_file::test_csf(&[("VERA:FpsPanelCores", "Mod cores")]);
-        crate::i18n::apply(&mut csf);
-        let shown = Shown {
-            frame_ms: 4.0,
-            core_loads: Some(vec![50.0]),
-            ..Shown::default()
-        };
-        assert_eq!(
-            rows_of(shown, Some(&csf)),
-            ["FPS 250  ·  4.0 ms", "Mod cores     avg 50%"]
-        );
-    }
-
-    #[test]
     fn every_panel_label_has_english_text() {
-        let rows = rows_of(
-            Shown {
-                frame_ms: f32::NAN,
-                simulation: Some(READOUT),
-                areas: SIM_AREAS
-                    .iter()
-                    .chain(&RENDER_AREAS)
-                    .map(|&key| (key, 1.0))
-                    .collect(),
-                core_loads: Some(vec![40.0]),
-                ..Shown::default()
-            },
-            None,
-        );
+        let rows = rows_of(Shown {
+            frame_ms: f32::NAN,
+            simulation: Some(READOUT),
+            areas: SIM_AREAS
+                .iter()
+                .chain(&RENDER_AREAS)
+                .map(|&key| (key, 1.0))
+                .collect(),
+            core_loads: Some(vec![40.0]),
+            ..Shown::default()
+        });
         assert_eq!(rows[0], "FPS --  ·  Sim 30 TPS");
         assert!(rows[1].starts_with("Most CPU:  Commands in 1%  ·  Commands 1%"));
         assert_eq!(rows[2], "Cores     avg 40%");
@@ -416,24 +355,6 @@ mod tests {
         assert_eq!(
             profile_delta((10, sim), (12, later)),
             Some([1; PHASE_COUNT])
-        );
-    }
-
-    #[test]
-    fn fallback_readout_stays_in_the_built_in_font() {
-        let supported = crate::render::bit_font::fallback_5x7_glyphs();
-        for frame_ms in [0.0, f32::NAN, 0.5, 1000.0 / 60.0, 1234.0] {
-            for ch in simulation_readout_text(frame_ms, Some(READOUT)).chars() {
-                assert!(
-                    supported.iter().any(|(glyph, _)| *glyph == ch),
-                    "missing {ch}"
-                );
-            }
-        }
-        assert_eq!(readout_text(f32::NAN), "FPS --");
-        assert_eq!(
-            simulation_readout_text(1000.0 / 60.0, Some(READOUT)),
-            "FPS 60  17 MS  SIM 30 TPS"
         );
     }
 }

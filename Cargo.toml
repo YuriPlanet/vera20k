@@ -39,7 +39,7 @@ required-features = ["telemetry-dashboard"]
 
 [features]
 # Browser host support; target selection still controls every platform implementation.
-wasm = ["vera20k-core/wasm", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys", "dep:console_log", "dep:console_error_panic_hook", "getrandom/wasm_js"]
+wasm = ["vera20k-core/wasm", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys", "dep:console_log", "dep:console_error_panic_hook", "getrandom/wasm_js", "sys-locale/js"]
 # Optional browser networking; desktop targets keep their native transport.
 wasm-net = ["wasm", "vera20k-core/wasm-net"]
 # Browser LAN play over WebRTC; the gateway only coordinates the handshake.
@@ -112,6 +112,26 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
+
+# --- UI text ---
+# Layout of every interface string: shaping (harfrust), bidirectional text,
+# line breaking (ICU4X, with the word dictionaries `complex-scripts` adds for
+# Thai, Lao, Khmer and Burmese, which put no spaces between words) and font
+# fallback by script. Only VERA's bundled fonts are registered: fontique's
+# `system` feature (CoreText, DirectWrite, fontconfig) stays off. See
+# src/render/text_engine/mod.rs.
+parley = { version = "0.12", default-features = false, features = ["std", "complex-scripts"] }
+# Glyph rasterisation from the outlines parley's runs name, through the same
+# skrifa parley reads them with; exact-area coverage is what scales GAME.FNT's
+# pixels evenly.
+swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"] }
+# CLDR plural rules for the language files' plural forms (src/i18n), from the
+# ICU4X release parley's line breaking already uses.
+icu_plurals = { version = "2.4", default-features = false, features = ["compiled_data"] }
+icu_locale_core = { version = "2.4", default-features = false }
+# The system's preferred languages, which choose VERA's language until the
+# player picks one (src/i18n).
+sys-locale = "0.3"
 
 # --- Image processing ---
 # Used for texture atlas creation and debug image output, not for asset parsing.

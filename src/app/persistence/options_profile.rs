@@ -161,6 +161,10 @@ pub(crate) struct RetailOptionsProfile {
     /// own drawing of the whole map (`app::map_picture`) in place of
     /// the map's `[PreviewPack]` picture. On by default; presentation only.
     pub(crate) hd_map_previews: bool,
+    /// `[VERA] OriginalFont=`: interface text draws in the game's own
+    /// GAME.FNT, scaled evenly, instead of VERA's vector fonts
+    /// ([`crate::render::text_engine`]). Off by default; presentation only.
+    pub(crate) original_font: bool,
     /// `[VERA] WindowMaximized=`: whether the window was last left maximised.
     /// [`Self::window_placement`] keeps the size it returns to.
     pub(crate) window_maximized: bool,
@@ -225,10 +229,10 @@ pub(crate) struct RetailOptionsProfile {
     /// translated into, or `None`, the default, for off. Only the `/translate`
     /// chat command changes it ([`Self::commit_chat_translation`]).
     pub(crate) translate_chat: Option<crate::ui::chat_translation::ChatLanguage>,
-    /// `[VERA] Language=`: the language tag of VERA's own text
-    /// ([`crate::i18n`]), `en` by default. Edited in VERA.INI only, so the
-    /// writer leaves the player's line as it is; read once at startup.
-    pub(crate) language: String,
+    /// `[VERA] Language=`: the tag of the interface language the player chose
+    /// ([`crate::i18n`]); `None`, the default, follows the system's languages.
+    /// Only the Language list changes it; Options' accept writes it out.
+    pub(crate) language: Option<String>,
     /// `[VERA] SkipUpdate=`: the release the player chose to skip when the
     /// updater offered it; empty, the default, offers every newer release.
     /// Only the updater changes it ([`Self::commit_skipped_update`]).
@@ -328,6 +332,7 @@ impl Default for RetailOptionsProfile {
             hd_radar: false,
             smooth_sidebar: false,
             hd_map_previews: true,
+            original_font: false,
             window_maximized: false,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
@@ -340,7 +345,7 @@ impl Default for RetailOptionsProfile {
             custom_end_game_movie: false,
             health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode::Vanilla,
             translate_chat: None,
-            language: crate::i18n::DEFAULT_LANGUAGE.to_owned(),
+            language: None,
             skipped_update: String::new(),
             online_name: String::new(),
             online_locale: 0,
@@ -362,7 +367,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 30],
+    pub(crate) vera: [(&'static str, String); 32],
 }
 
 impl RetailOptionsLoad {
@@ -571,6 +576,7 @@ impl RetailOptionsProfile {
             self.hd_radar = vera.read_bool("HdRadar", self.hd_radar);
             self.smooth_sidebar = vera.read_bool("SmoothSidebar", self.smooth_sidebar);
             self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
+            self.original_font = vera.read_bool("OriginalFont", self.original_font);
             self.window_maximized = vera.read_bool("WindowMaximized", self.window_maximized);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
@@ -600,8 +606,10 @@ impl RetailOptionsProfile {
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 self.translate_chat = crate::ui::chat_translation::ChatLanguage::from_tag(value);
             }
+            // Empty, as a profile that never picked one writes it, follows
+            // the system again.
             if let Some(value) = vera.read_name("Language", 16) {
-                self.language = value.to_owned();
+                self.language = Some(value).filter(|tag| !tag.is_empty()).map(str::to_owned);
             }
             if let Some(value) = vera.read_name("SkipUpdate", 16) {
                 self.skipped_update = value.to_owned();
@@ -776,8 +784,15 @@ impl RetailOptionsProfile {
                     "HdMapPreviews",
                     format_bool(self.hd_map_previews).to_string(),
                 ),
+                ("OriginalFont", format_bool(self.original_font).to_string()),
+                ("Language", self.language.clone().unwrap_or_default()),
             ],
         }
+    }
+
+    /// The face [`Self::original_font`] selects.
+    pub(crate) fn font_mode(&self) -> crate::render::text_engine::FontMode {
+        font_mode(self.original_font)
     }
 
     /// Transform one raw profile snapshot without performing filesystem I/O.
@@ -935,6 +950,15 @@ fn upper_only_volume(value: f64) -> f32 {
     // An explicit branch matters for NaN: native's ordered comparison is
     // false, so NaN passes through instead of `min` selecting the other input.
     if value >= 1.0 { 1.0 } else { value as f32 }
+}
+
+/// `[VERA] OriginalFont=`'s face: GAME.FNT when set, the vector fonts otherwise.
+pub(crate) fn font_mode(original_font: bool) -> crate::render::text_engine::FontMode {
+    if original_font {
+        crate::render::text_engine::FontMode::Original
+    } else {
+        crate::render::text_engine::FontMode::Modern
+    }
 }
 
 fn format_bool(value: bool) -> &'static str {
