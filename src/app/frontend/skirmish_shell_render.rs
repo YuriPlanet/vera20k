@@ -642,17 +642,26 @@ fn render_skirmish_shell_with_atlas(
         .scenario_catalog
         .shell_maps()
         .get(preview::preview_map_idx(state));
+    let setup_dialog_open = state
+        .frontend
+        .skirmish_shell_state
+        .random_map_setup_modal
+        .is_some();
+    let random_map_row = selected_entry.is_some_and(is_random_map_sentinel_entry);
+    // VERA: an accepted random map's starts are numbered over its baked squares.
+    let random_map_bounds = preview::random_map_start_bounds(
+        &state.frontend.multiplayer_shell_runtime.start_staging(),
+        random_map_row,
+        setup_dialog_open,
+    );
     // Both the sentinel's RandMap.img and the setup dialog's generated image
     // already carry their start markers, so the overlay pass must not add them
-    // a second time.
-    let preview_has_baked_start_markers = selected_entry.is_some_and(is_random_map_sentinel_entry)
-        || state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .is_some();
-    let selected_preview_bounds =
-        selected_entry.and_then(|entry| entry.preview_source_bounds.as_ref());
+    // a second time, unless VERA numbers the accepted map's starts.
+    let preview_has_baked_start_markers =
+        setup_dialog_open || (random_map_row && random_map_bounds.is_none());
+    let selected_preview_bounds = random_map_bounds
+        .as_ref()
+        .or_else(|| selected_entry.and_then(|entry| entry.preview_source_bounds.as_ref()));
     let fitted_preview_rect = state
         .frontend
         .skirmish_preview_texture
@@ -1121,9 +1130,10 @@ mod tests {
             );
             (draws, [title, help], scale.factor())
         };
-        for (random, sample) in [true, false].into_iter().flat_map(|random| {
-            ["字".repeat(90), "A ".repeat(100)].map(|sample| (random, sample))
-        }) {
+        for (random, sample) in [true, false]
+            .into_iter()
+            .flat_map(|random| ["字".repeat(90), "A ".repeat(100)].map(|sample| (random, sample)))
+        {
             let base = draw(800, 600, random, &sample).0;
             assert!(base.iter().all(|draw| !draw.instances.is_empty()));
             for (width, height) in [(800, 600), (1200, 900), (1600, 1200)] {
@@ -1146,9 +1156,7 @@ mod tests {
                     }
                 }
                 let help = &fitted[1];
-                assert!(
-                    (help.instances[0].position[1] - rects[1].y as f32).abs() <= 0.5
-                );
+                assert!((help.instances[0].position[1] - rects[1].y as f32).abs() <= 0.5);
                 assert!(help.scissor.y + help.scissor.h <= height);
             }
         }

@@ -946,6 +946,24 @@ pub(super) fn draw_zoom<'a>(
     }
 }
 
+/// VERA extension: the accepted random map's numbered starts in Skirmish.
+///
+/// Natively the Skirmish random-map row has no start bounds, so its preview
+/// shows only the generator's baked red squares. VERA numbers them from the
+/// staging the accepted map left in the shell (`0x0058B830`), as a network
+/// guest's preview does from the host's `'W'` (`0x00640710`), so a player can
+/// tell which start the Start column picks. `None` while the setup dialog's
+/// live preview is up, for any other row, or before a map is accepted.
+pub(super) fn random_map_start_bounds(
+    staging: &crate::map::preview::ScenarioStartStaging,
+    random_map_row: bool,
+    setup_dialog_open: bool,
+) -> Option<PreviewSourceBounds> {
+    (random_map_row && !setup_dialog_open)
+        .then(|| staging.preview_source_bounds())
+        .flatten()
+}
+
 pub(super) fn should_draw_start_marker_overlays(
     fitted_preview_rect: Option<RectPx>,
     projected_start_positions: &[(i32, i32)],
@@ -1008,6 +1026,38 @@ pub(super) fn build_preview_surface_instance(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_accepted_random_map_numbers_its_staged_starts() {
+        let mut staging = crate::map::preview::ScenarioStartStaging {
+            width: 400,
+            height: 200,
+            count: 8,
+            ..Default::default()
+        };
+        for slot in 0..8 {
+            staging.pairs[slot] = (slot as i32 * 10, 100);
+            staging.cells[slot] = (slot as i16 + 10, 20);
+        }
+        let bounds = random_map_start_bounds(&staging, true, false).expect("random map starts");
+        assert_eq!(
+            project_preview_start_positions(&bounds, RectPx::new(0, 0, 400, 200)).len(),
+            8
+        );
+        assert!(
+            random_map_start_bounds(&staging, true, true).is_none(),
+            "setup dialog"
+        );
+        assert!(
+            random_map_start_bounds(&staging, false, false).is_none(),
+            "authored row"
+        );
+        let empty = crate::map::preview::ScenarioStartStaging::default();
+        assert!(
+            random_map_start_bounds(&empty, true, false).is_none(),
+            "nothing accepted"
+        );
+    }
 
     #[test]
     fn the_briefing_box_hugs_its_lines_in_the_pictures_middle_and_cuts_what_does_not_fit() {
