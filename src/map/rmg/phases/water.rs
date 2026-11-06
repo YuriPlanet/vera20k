@@ -38,13 +38,15 @@ pub struct PlayableRect {
     pub h: i32,
 }
 
-/// Logical-rect center to diamond coordinates.
+/// Logical-rect center to diamond coordinates, as the shape routines
+/// (`ShapeArchipelago @ 0x0059AD10` and its siblings) compute it inline.
 fn diamond_center(map_w: i32, rect: &[i32; 4]) -> (i32, i32) {
     let (x0, y0, w, h) = (rect[0], rect[1], rect[2], rect[3]);
     (w / 2 + h / 2 + x0 + 1 + y0, h / 2 - w / 2 - x0 + map_w + y0)
 }
 
-/// Uniform-unit compare: `draw * K < threshold`.
+/// Uniform-unit compare: `draw * K < threshold`, inline in
+/// `RandomMapGenerator::ShapeArchipelago @ 0x0059AD10` and its siblings.
 fn draw_below(rng: &mut RmgRng, threshold: f64) -> bool {
     let value = TruncF64::from_f64(f64::from(rng.next_u32()))
         .mul(TruncF64::from_f64(f64::from_bits(RANGE_K_BITS)));
@@ -75,6 +77,7 @@ pub struct WaterArgs {
 /// water-finalize stage.
 const CARVED_WATER_MAP_TYPES: [i32; 2] = [3, 4];
 
+/// The sea-shaping seeder, `RandomMapGenerator::SeedWaterStandard @ 0x0059A6C0`.
 pub fn run(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     let coords: Vec<(i32, i32)> = ctx.grid.native_cells().collect();
 
@@ -188,7 +191,8 @@ pub fn run(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     }
 }
 
-/// Mode 0: islands on a randomized partition grid.
+/// Mode 0: islands on a randomized partition grid
+/// (`RandomMapGenerator::ShapeArchipelago @ 0x0059AD10`).
 fn archipelago(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     let mut blob_counter = 1;
     let m = (args.num_players / 2).max(2);
@@ -248,7 +252,8 @@ fn archipelago(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     }
 }
 
-/// Mode 1: one landmass grown toward the fixed map center.
+/// Mode 1: one landmass grown toward the fixed map center
+/// (`RandomMapGenerator::ShapeContinental @ 0x0059AFA0`).
 fn continental(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     let mut blob_counter = 1;
     let area = (ctx.map_h + 4) * ctx.map_w * 2;
@@ -298,7 +303,8 @@ fn continental(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     }
 }
 
-/// Mode 2: two landmasses in randomly split halves of the playable rect.
+/// Mode 2: two landmasses in randomly split halves of the playable rect
+/// (`RandomMapGenerator::ShapeIslandsInSea @ 0x0059B200`).
 fn islands_in_sea(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     let mut blob_counter = 1;
     let area = (ctx.map_h + 4) * ctx.map_w * 2;
@@ -330,23 +336,7 @@ fn islands_in_sea(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     let mut calls = 0;
     for rect in [rect1, rect2] {
         let center = diamond_center(ctx.map_w, &rect);
-        // Aspect weights are DOUBLES on this path (no f32 narrowing).
-        let scale = TruncF64::from_f64(1.2);
-        let (wx, wy) = if rect[3] < rect[2] {
-            (
-                TruncF64::from_f64(1.0),
-                TruncF64::from_f64(f64::from(rect[2]))
-                    .div(TruncF64::from_f64(f64::from(rect[3])))
-                    .mul(scale),
-            )
-        } else {
-            (
-                TruncF64::from_f64(f64::from(rect[3]))
-                    .div(TruncF64::from_f64(f64::from(rect[2])))
-                    .mul(scale),
-                TruncF64::from_f64(1.0),
-            )
-        };
+        let (wx, wy) = aspect_weights(rect[2], rect[3]);
         let one = TruncF64::from_f64(1.0);
         let half = TruncF64::from_f64(0.5);
         let half_w = TruncF64::from_f64(f64::from(rect[2])).mul(half);
@@ -379,7 +369,8 @@ fn islands_in_sea(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     }
 }
 
-/// `(max - min) * (1 - water% * 0.01) + min`, differences at runtime.
+/// `(max - min) * (1 - water% * 0.01) + min`, differences at runtime; inline
+/// in the three shape routines (`0x0059AD10`, `0x0059AFA0`, `0x0059B200`).
 fn land_target(water_percent: i32, max: f64, min: f64) -> TruncF64 {
     let t = TruncF64::from_f64(1.0)
         .sub(TruncF64::from_f64(f64::from(water_percent)).mul(TruncF64::from_f64(PERCENT)));
@@ -390,7 +381,8 @@ fn land_target(water_percent: i32, max: f64, min: f64) -> TruncF64 {
 }
 
 /// Mode-1 next-seed scan: cell-iterator order, Manhattan distance to the
-/// fixed center, strict less-than (first wins ties). (0,0) if none.
+/// fixed center, strict less-than (first wins ties). (0,0) if none. Inline in
+/// `RandomMapGenerator::ShapeContinental @ 0x0059AFA0`.
 fn nearest_unstamped_iterator_order(ctx: &mut BlobCtx<'_>, center: (i32, i32)) -> (i32, i32) {
     let mut best = 50_000;
     let mut found = (0, 0);
@@ -409,7 +401,8 @@ fn nearest_unstamped_iterator_order(ctx: &mut BlobCtx<'_>, center: (i32, i32)) -
 
 /// Mode-2 next-seed scan: LINEAR scratch walk reading each record's own
 /// coords, gated by the rect's diamond window and the ellipse, weighted
-/// Manhattan metric. (0,0) if none.
+/// Manhattan metric. (0,0) if none. Inline in
+/// `RandomMapGenerator::ShapeIslandsInSea @ 0x0059B200`.
 fn nearest_unstamped_linear(
     ctx: &mut BlobCtx<'_>,
     rect: &[i32; 4],
@@ -437,7 +430,7 @@ fn nearest_unstamped_linear(
         if x + y < sum_lo || x + y > sum_hi || x - y < diff_lo || x - y > diff_hi {
             continue;
         }
-        if !ellipse_gate(map_w, (x, y), rect, coeff_a, coeff_b) {
+        if !blob::ellipse_pass(map_w, (x, y), rect, coeff_a, coeff_b) {
             continue;
         }
         let metric = X87Chop53::ftol_f64_low_masked(
@@ -454,33 +447,29 @@ fn nearest_unstamped_linear(
     found
 }
 
-/// The same ellipse test the flood fill uses (re-derived here to keep the
-/// blob module's private helper private).
-fn ellipse_gate(
-    map_w: i32,
-    cell: (i32, i32),
-    rect: &[i32; 4],
-    coeff_a: TruncF64,
-    coeff_b: TruncF64,
-) -> bool {
-    let half = TruncF64::from_f64(0.5);
-    let t1 = cell.0 - 2 * rect[0] - cell.1 + map_w - 1;
-    let t2 = cell.0 - 2 * rect[1] - map_w + cell.1 - 1;
-    let dx = TruncF64::from_f64(f64::from(t1))
-        .mul(half)
-        .sub(TruncF64::from_f64(f64::from(rect[2])).mul(half));
-    let dy = TruncF64::from_f64(f64::from(t2))
-        .mul(half)
-        .sub(TruncF64::from_f64(f64::from(rect[3])).mul(half));
-    dy.mul(dy)
-        .mul(coeff_b)
-        .add(dx.mul(dx).mul(coeff_a))
-        .lt(TruncF64::from_f64(1.0))
+/// Reseed-metric axis weights for a `w`×`h` half of the sea
+/// (`RandomMapGenerator::ShapeIslandsInSea @ 0x0059B200`):
+/// the shorter axis is weighted by the aspect ratio times 1.2, and a square half
+/// weights y. They are doubles on this path, with no f32 narrowing.
+fn aspect_weights(w: i32, h: i32) -> (TruncF64, TruncF64) {
+    let one = TruncF64::from_f64(1.0);
+    let scale = TruncF64::from_f64(1.2);
+    let ratio = |a: i32, b: i32| {
+        TruncF64::from_f64(f64::from(a))
+            .div(TruncF64::from_f64(f64::from(b)))
+            .mul(scale)
+    };
+    if w < h {
+        (ratio(h, w), one)
+    } else {
+        (one, ratio(w, h))
+    }
 }
 
 /// Island partition grid: ceil-sqrt strips with randomized orientation and
 /// leftover removal. Emits logical rects `{x+2, y+2, cw-4, ch-4}`,
-/// strip-major.
+/// strip-major. `RandomMapGenerator::PartitionIslandRects @ 0x0059A8F0`,
+/// called from `ShapeArchipelago`.
 pub fn partition_grid(rng: &mut RmgRng, n: i32, rect: &[i32; 4]) -> Vec<[i32; 4]> {
     let s = X87Chop53::ftol_f64_low_masked(approx_sqrt(TruncF64::from_f64(f64::from(n))).to_f64());
     let slots_per_strip = if s * s == n { s } else { s + 1 };
@@ -678,6 +667,15 @@ mod tests {
         (land, water, green, shore)
     }
 
+    /// `ShapeIslandsInSea @ 0x0059B200` branches on `w < h`, so a square half
+    /// weights y by 1.2 and x by 1.
+    #[test]
+    fn square_sea_half_weights_y() {
+        let (wx, wy) = aspect_weights(10, 10);
+        assert_eq!((wx.to_f64(), wy.to_f64()), (1.0, 1.2));
+        let (wx, wy) = aspect_weights(10, 11);
+        assert!(wx.to_f64() > 1.2 && wy.to_f64() == 1.0);
+    }
     #[test]
     fn shorelines_are_grassed() {
         let (grid, identity) = run_water(1, 77);

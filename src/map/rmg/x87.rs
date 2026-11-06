@@ -89,6 +89,15 @@ impl TruncF64 {
         Self(X87Chop53::sub(self.0, rhs.0))
     }
 
+    /// `FABS`.
+    pub fn abs(self) -> Self {
+        if self.lt(Self::zero()) {
+            self.neg()
+        } else {
+            self
+        }
+    }
+
     /// `FCOM`: whether `self` is below `rhs`.
     pub fn lt(self, rhs: Self) -> bool {
         X87Chop53::compare(self.0, rhs.0) == X87Ordering::Less
@@ -100,6 +109,12 @@ impl TruncF64 {
 impl From<X87Value> for TruncF64 {
     fn from(value: X87Value) -> Self {
         Self(value)
+    }
+}
+
+impl From<TruncF64> for X87Value {
+    fn from(value: TruncF64) -> Self {
+        value.0
     }
 }
 

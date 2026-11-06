@@ -1,7 +1,10 @@
 //! Shared A3 lifecycle/input. Original5FBEF0/5FB320 and command assignment5FBB38.
 use crate::app::input::hotkeys::{self, BindingAssignmentError, catalog::registered_commands};
-#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-use crate::app::web_keyboard::KeyEventExtModifierSupplement;
+#[cfg(any(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+))]
+use crate::app::keyboard_shim::KeyEventExtModifierSupplement;
 use crate::app::{App, AppState};
 use crate::ui::shell::keyboard::*;
 use crate::ui::shell::list::ListMetrics;
@@ -9,7 +12,10 @@ use crate::ui::shell::list::ShellListGeometry;
 use crate::util::time::Instant;
 use winit::event::{ElementState, KeyEvent, MouseButton};
 use winit::keyboard::{Key, KeyCode, KeyLocation, NamedKey};
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(not(any(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+)))]
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 /// A keyboard edge after the front-end/dialog admission gates. Both a window

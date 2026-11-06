@@ -553,7 +553,7 @@ fn process_native_rules_cold_start_inner(
         RulesTypeFamily::Animation,
     );
     let after_animation_master = processor.native_type_construction_events.len();
-    processor.process_anim_family(fixed_art);
+    processor.process_anim_family(fixed_art, fixed_sounds);
     let after_animation_bodies = processor.native_type_construction_events.len();
     processor.allocate_explicit_family(
         selected_rules_root,
@@ -958,7 +958,16 @@ impl ProcessedRulesLayers {
     /// fields and resource requests; registry construction performs no reads.
     pub(crate) fn overlay_type_states(
         &self,
-    ) -> impl Iterator<Item = (&str, i32, bool, Option<&str>, &ObjectImageState)> {
+    ) -> impl Iterator<
+        Item = (
+            &str,
+            i32,
+            bool,
+            Option<&str>,
+            &ObjectImageState,
+            Option<&str>,
+        ),
+    > {
         self.native_type_construction_trace
             .registry_state()
             .families
@@ -972,6 +981,7 @@ impl ProcessedRulesLayers {
                     member.overlay_explodes,
                     member.overlay_cell_anim.as_deref(),
                     &member.object_image,
+                    member.object_crush_sound.as_deref(),
                 )
             })
     }
@@ -1770,6 +1780,7 @@ impl ProcessedRulesLayers {
             &str,
             &TechnoTypeReferences,
             &ObjectImageState,
+            Option<&str>,
         ),
     > {
         self.native_type_construction_trace
@@ -1786,9 +1797,25 @@ impl ProcessedRulesLayers {
                         member.native_stored_id.as_str(),
                         &member.techno_references,
                         &member.object_image,
+                        member.object_crush_sound.as_deref(),
                     )
                 })
             })
+    }
+
+    /// TechnoRead712170 and ReadTypeData679A10 visit each concrete object
+    /// independently. Preserve its own admitted passes even when another
+    /// category has the same stored ID in the compatibility INI.
+    pub(crate) fn techno_type_read_section(
+        &self,
+        category: ObjectCategory,
+        index: i32,
+    ) -> Option<&IniSection> {
+        self.native_registry_state()
+            .families
+            .get(&RulesTypeFamily::from_object_category(category))?
+            .get(usize::try_from(index).ok()?)
+            .map(|member| &member.body)
     }
 
     /// Already bound Country identities from each reached TechnoTypeExt read.
@@ -2464,6 +2491,22 @@ impl ProcessedRulesLayers {
         self.native_registry_state()
             .rules_global_sounds
             .psychic_reveal()
+    }
+
+    /// ReadAudioVisual6693AC/6693F6/66AA93 fixed Voc bindings. RulesClass
+    /// keeps these scalars through type reset, RMG and Save674730/Load675210.
+    pub(crate) fn ui_sounds(&self) -> [Option<&str>; 3] {
+        self.native_registry_state().rules_global_sounds.ui_sounds()
+    }
+
+    /// ReadAudioVisual669AE3/669FFC/66A0C1 retains these fixed Voc IDs.
+    pub(crate) fn mind_control_sounds(&self) -> [Option<&str>; 3] {
+        let sounds = &self.native_registry_state().rules_global_sounds;
+        [
+            sounds.mind_control(),
+            sounds.mind_cleared(),
+            sounds.mastermind_overload(),
+        ]
     }
 
     /// Final Difficulty readers after the ordered Process passes. Keeping the
@@ -4501,6 +4544,9 @@ struct ProcessedType {
     // Mandatory on load: a missing Arctic latch cannot be reconstructed from
     // a flattened Image key or inferred from whether its name ends in A.
     object_image: ObjectImageState,
+    /// ObjectTypeCtor5F713A starts +1F0 at -1. Each successful inherited
+    /// ObjectTypeRead5F938B..5F93D5 retains a fixed Voc binding on bad input.
+    object_crush_sound: Option<String>,
     /// OverlayCtor5FE265 starts at1; OverlayRead5FE8A6..5FE8C3 retains
     /// the full signed dword through each fixed-ART Image-section read.
     overlay_damage_levels: i32,
@@ -5103,6 +5149,14 @@ struct WeaponReadState {
 }
 
 impl ProcessedType {
+    fn read_object_sound(&mut self, section: &IniSection, sounds: &SoundRegistry) {
+        // ObjectTypeClass::ReadINI5F92D0: ReadString128 then VocFind7514D0.
+        // All subclasses share this field, their own admitted section and
+        // lifetime. A missing/empty/unknown read keeps the previous signed ID.
+        self.object_crush_sound =
+            sounds.read_rules_reference(section, "CrushSound", self.object_crush_sound.take());
+    }
+
     fn terrain_projection(&self) -> Option<crate::rules::terrain_object_type::TerrainObjectType> {
         let mut terrain = crate::rules::terrain_object_type::TerrainObjectType::from_retained(
             &self.native_stored_id,
@@ -5119,6 +5173,7 @@ impl ProcessedType {
             threat_coefficients: Default::default(),
             body: IniSection::new(native_stored_id.clone()),
             object_image: ObjectImageState::new(&native_stored_id),
+            object_crush_sound: None,
             overlay_damage_levels: 1,
             overlay_explodes: false,
             overlay_cell_anim: None,
@@ -6569,24 +6624,24 @@ impl RulesPassProcessor {
         }
         self.process_house_family(pass, primary_rules);
         self.process_super_weapon_family(pass, _fixed_eva);
-        self.process_anim_family(fixed_art);
+        self.process_anim_family(fixed_art, fixed_sounds);
         self.process_techno_family(RulesTypeFamily::Building, pass, fixed_art, fixed_sounds);
         self.process_techno_family(RulesTypeFamily::Aircraft, pass, fixed_art, fixed_sounds);
         self.process_techno_family(RulesTypeFamily::Vehicle, pass, fixed_art, fixed_sounds);
         self.process_techno_family(RulesTypeFamily::Infantry, pass, fixed_art, fixed_sounds);
         self.process_weapon_family(pass);
-        self.process_bullet_family(pass, fixed_art);
+        self.process_bullet_family(pass, fixed_art, fixed_sounds);
         self.process_warhead_family(pass);
         // 679B8C follows all three readers, even for absent Type sections.
         // AudioVisual6691E0 runs later in Process, so this uses prior Gravity.
         self.postprocess_weapon_speeds();
         // Building post adds no Type references.
-        self.process_plain_family(RulesTypeFamily::Terrain, pass, fixed_art);
-        self.process_plain_family(RulesTypeFamily::Smudge, pass, fixed_art);
-        self.process_plain_family(RulesTypeFamily::Overlay, pass, fixed_art);
-        self.process_particle_family(pass);
-        self.process_particle_system_family(pass);
-        self.process_voxel_anim_family(pass);
+        self.process_plain_family(RulesTypeFamily::Terrain, pass, fixed_art, fixed_sounds);
+        self.process_plain_family(RulesTypeFamily::Smudge, pass, fixed_art, fixed_sounds);
+        self.process_plain_family(RulesTypeFamily::Overlay, pass, fixed_art, fixed_sounds);
+        self.process_particle_family(pass, fixed_sounds);
+        self.process_particle_system_family(pass, fixed_sounds);
+        self.process_voxel_anim_family(pass, fixed_sounds);
         // MissionControl adds no Type references.
     }
 
@@ -7125,7 +7180,7 @@ impl RulesPassProcessor {
         }
     }
 
-    fn process_anim_family(&mut self, fixed_art: &IniFile) {
+    fn process_anim_family(&mut self, fixed_art: &IniFile, fixed_sounds: &SoundRegistry) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Animation) {
             let native_stored_id = self
@@ -7145,6 +7200,7 @@ impl RulesPassProcessor {
                 // .local/anim-type-art-read-acceptance.md.
                 let theater = self.image_theater;
                 let member = &mut self.family_mut(RulesTypeFamily::Animation)[index];
+                member.read_object_sound(section, fixed_sounds);
                 member.anim_art_read = true;
                 // AnimTypeRead427D1B admits the inherited Object read, then
                 //427D9D..427DDD supplies its own theater flags and image call.
@@ -7226,6 +7282,7 @@ impl RulesPassProcessor {
             if let Some((native_stored_id, raw, effective)) =
                 self.begin_rules_member_read(family, index, pass)
             {
+                self.family_mut(family)[index].read_object_sound(&raw, fixed_sounds);
                 self.process_techno_base(family, index, &raw);
                 // TechnoTypeClass::ReadINI parses `Prerequisite=` (`0x007141C5`)
                 // and `PrerequisiteOverride=` (`0x0071424B`) after `Dock=` and
@@ -8092,7 +8149,12 @@ impl RulesPassProcessor {
         }
     }
 
-    fn process_bullet_family(&mut self, pass: &IniFile, fixed_art: &IniFile) {
+    fn process_bullet_family(
+        &mut self,
+        pass: &IniFile,
+        fixed_art: &IniFile,
+        fixed_sounds: &SoundRegistry,
+    ) {
         // Colors66D3A0 precedes this sweep. Own the small name list while
         // reference readers below may allocate more native type members.
         let color_names: Vec<_> = self.colors.iter().map(|(name, _)| name.clone()).collect();
@@ -8105,6 +8167,7 @@ impl RulesPassProcessor {
                 // clearing Image25 read and byte-narrowed Bullet ART fields.
                 // Keep type-reference allocation here in native read order.
                 let member = &mut self.family_mut(RulesTypeFamily::Projectile)[index];
+                member.read_object_sound(&raw, fixed_sounds);
                 let mut art =
                     std::mem::replace(&mut member.projectile_art, ProjectileArtState::new());
                 let mut image =
@@ -8255,11 +8318,13 @@ impl RulesPassProcessor {
         family: RulesTypeFamily,
         pass: &IniFile,
         fixed_art: &IniFile,
+        fixed_sounds: &SoundRegistry,
     ) {
         let mut index = 0;
         while index < self.family_len(family) {
             if let Some((_id, raw, _effective)) = self.begin_rules_member_read(family, index, pass)
             {
+                self.family_mut(family)[index].read_object_sound(&raw, fixed_sounds);
                 let theater = self.image_theater;
                 let tree_strength = self.rules_tree_strength;
                 match family {
@@ -8358,12 +8423,14 @@ impl RulesPassProcessor {
         }
     }
 
-    fn process_particle_family(&mut self, pass: &IniFile) {
+    fn process_particle_family(&mut self, pass: &IniFile, fixed_sounds: &SoundRegistry) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::Particle) {
             if let Some((_id, raw, _effective)) =
                 self.begin_rules_member_read(RulesTypeFamily::Particle, index, pass)
             {
+                self.family_mut(RulesTypeFamily::Particle)[index]
+                    .read_object_sound(&raw, fixed_sounds);
                 if let Some(warhead) =
                     self.resolve_scalar_from(&raw, "Warhead", RulesTypeFamily::Warhead, 0x80)
                 {
@@ -8384,12 +8451,14 @@ impl RulesPassProcessor {
         }
     }
 
-    fn process_particle_system_family(&mut self, pass: &IniFile) {
+    fn process_particle_system_family(&mut self, pass: &IniFile, fixed_sounds: &SoundRegistry) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::ParticleSystem) {
             if let Some((_id, raw, _effective)) =
                 self.begin_rules_member_read(RulesTypeFamily::ParticleSystem, index, pass)
             {
+                self.family_mut(RulesTypeFamily::ParticleSystem)[index]
+                    .read_object_sound(&raw, fixed_sounds);
                 // ParticleSystemType ReadINI 0x0064430F..0x00644323: ReadString
                 // into 0x40 bytes over the shared empty default 0x00889F64,
                 // then an unconditional ParticleType FindOrAllocate whose index
@@ -8406,12 +8475,14 @@ impl RulesPassProcessor {
         }
     }
 
-    fn process_voxel_anim_family(&mut self, pass: &IniFile) {
+    fn process_voxel_anim_family(&mut self, pass: &IniFile, fixed_sounds: &SoundRegistry) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::VoxelAnimation) {
             if let Some((_id, raw, _effective)) =
                 self.begin_rules_member_read(RulesTypeFamily::VoxelAnimation, index, pass)
             {
+                self.family_mut(RulesTypeFamily::VoxelAnimation)[index]
+                    .read_object_sound(&raw, fixed_sounds);
                 let mut references = std::mem::take(
                     &mut self.family_mut(RulesTypeFamily::VoxelAnimation)[index]
                         .voxel_anim_references,

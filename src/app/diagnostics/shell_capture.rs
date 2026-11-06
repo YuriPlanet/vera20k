@@ -1301,6 +1301,7 @@ impl ShellCaptureRequest {
                         movies::WolTarget::ModernLobby
                             | movies::WolTarget::ModernCreate
                             | movies::WolTarget::ModernPlayerCard
+                            | movies::WolTarget::ModernChangeCountry
                             | movies::WolTarget::ModernRoomOptions
                             | movies::WolTarget::ModernSpectators
                             | movies::WolTarget::ModernOptions

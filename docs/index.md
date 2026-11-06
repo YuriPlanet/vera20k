@@ -25,8 +25,8 @@ Source paths below are under `src/`. The workspace has two crates:
 - `app/` — window, input, loading and saving; wires sim, render, ui, audio and net together.
 - `ui/` — menus, dialogs, in-game screens and the sidebar.
 - `audio/` — sound effects and music.
-- `net/` — LAN UDP transport, reliable delivery and synchronized command exchange.
-  [Networking.md](Networking.md) describes the current behavior and remaining work.
+- `net/` — LAN and online UDP transport, reliable delivery and synchronized command exchange.
+  [Networking.md](Networking.md) describes how LAN and online play work.
 - `rules/` — the retail INI files and their layers.
 - `map/` — maps, theaters, terrain, triggers and the random map generator.
 - `assets/` — parsers for the original file formats (`.mix`, `.shp`, `.vxl`, `.pal`, Bink video and more).
@@ -59,3 +59,4 @@ simulation, session and network command owners.
 
 - [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
 - [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
+- [Render interpolation](render-interpolation.md): the `[VERA] RenderInterpolation=` option, smoother motion between simulation frames.

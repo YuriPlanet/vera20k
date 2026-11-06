@@ -101,6 +101,10 @@ python3 -m unittest tools.tests.test_wasm_build
   战役重开按 `quit` 结束，局内读档直接替换对局、不发送该事件。原版多人地图通常
   没有 `[Basic] Name`，此时 `map_name` 为 `null`。
   结算快照直接读取模拟已有结果，不额外消耗 RNG；没有快照时 `scores` 为 `null`。
+  只有在线 relay 对局附带 `network_quality`：本客户端按墙钟时间观察到的对局时长、
+  追帧、网络缺口与修复、指令往返时间、帧耗时与帧率、降速以及失步和重连情况。桌面
+  `-SPAWN` 把同一对象写入 `spawn_result.json`，每个客户端也会在对局交还网络传输时
+  记录一次 `Network quality:` 日志。
 - `engine-exited`：引擎收尾后通知一次，`reason` 为 `quit`、`match-ended` 或
   `error`，`error` 携带错误文本或 `null`。资源加载失败后点击退出也携带原错误。
 - `engine-error`：panic 的尽力通知，不能视为已正常收尾。浏览器终止页面或

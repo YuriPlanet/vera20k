@@ -77,6 +77,7 @@ pub struct CommandDispatchClock {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandDispatchMode {
     Offline,
+    Skirmish,
     Network,
 }
 
@@ -484,12 +485,15 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
             }
             let mut staged = Vec::new();
             let mut staged_late = Vec::new();
-            let stage_capacity =
-                if mode == CommandDispatchMode::Network && CAPACITY > DO_LIST_CAPACITY {
-                    super::NETWORK_SOURCE_DOLIST_CAPACITY
-                } else {
-                    MEGAMISSION_STAGE_CAPACITY
-                };
+            let stage_capacity = if mode == CommandDispatchMode::Skirmish {
+                // Sim-scale deviation: Execute_DoList64C380's 256-event
+                // stage must not discard the rest of an admitted army click.
+                super::SKIRMISH_COMMAND_CAPACITY
+            } else if mode == CommandDispatchMode::Network && CAPACITY > DO_LIST_CAPACITY {
+                super::NETWORK_SOURCE_DOLIST_CAPACITY
+            } else {
+                MEGAMISSION_STAGE_CAPACITY
+            };
             for entry in self.entries.iter_mut().take(scan_len) {
                 if entry.is_processed() {
                     continue;

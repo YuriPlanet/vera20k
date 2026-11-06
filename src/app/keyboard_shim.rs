@@ -1,7 +1,10 @@
-//! Winit does not expose modifier_supplement on Web. Browsers supply a
-//! logical key plus a physical code; lowercase letters and recover the digit
-//! shortcuts from their physical row even while Shift is held.
-//! Residual: shifted punctuation on non-US layouts needs browser layout data.
+//! Winit exposes `modifier_supplement` only on its desktop backends, so the
+//! browser and Android builds use this shim instead. Both supply a logical key
+//! plus a physical code; lowercase letters and recover the digit shortcuts from
+//! their physical row even while Shift is held.
+//! Residual: shifted punctuation on non-US layouts needs platform layout data,
+//! and a soft keyboard reports no physical code at all, so only its logical key
+//! reaches the binding table.
 use winit::{
     event::KeyEvent,
     keyboard::{Key, KeyCode, PhysicalKey},

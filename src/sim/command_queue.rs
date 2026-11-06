@@ -38,6 +38,11 @@ pub struct ChecksumMismatch {
 /// Try_Append_Event_To_OutList6521C0's process-wide capacity.
 pub const OUT_LIST_CAPACITY: usize = 0x80;
 
+/// Sim-scale deviation from Try_Append_Event_To_OutList6521C0's 128 events:
+/// skirmish must retain a complete 20,000-unit click. Admission, transfer and
+/// Execute_DoList64C380 staging share this bound so neither tail drops orders.
+pub const SKIRMISH_COMMAND_CAPACITY: usize = 0x8000;
+
 /// Send_OutList649CA0 caps its local mirror at 0x2000 occupied DoList slots.
 pub const NETWORK_LOCAL_MIRROR_LIMIT: usize = 0x2000;
 

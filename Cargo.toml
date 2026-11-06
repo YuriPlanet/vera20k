@@ -13,7 +13,7 @@ publish = false
 # asset tools and the game binary). The core manifest sits in `src/`, so rustc
 # still names every source file `src/...`.
 [workspace]
-members = ["src", "services/relay-protocol", "services/relay"]
+members = ["src", "services/relay-protocol", "services/relay", "android"]
 # Plain `cargo build`/`cargo test --lib` cover both crates.
 default-members = [".", "src"]
 
@@ -157,6 +157,16 @@ wgpu = { version = "30.0.1", features = ["webgl"] }
 # Continuing presentation uptime across saved-game process restarts. The
 # existing core dependency already pins the same libc version in Cargo.lock.
 libc = "0.2"
+
+# --- Android ---
+# The client crate also builds for Android, where winit refuses to compile
+# without a platform backend feature; the desktop features above stay in the
+# unconditional table, and winit gates their crates by target internally, so
+# this only adds the Android backend. `android-game-activity` (winit's other
+# Android backend, which carries text input) replaces this feature if P6 picks
+# GameActivity over NativeActivity.
+[target.'cfg(target_os = "android")'.dependencies]
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "android-native-activity"] }
 
 # --- macOS application icon and game folder chooser ---
 # macOS has no per-window icon; the Dock shows NSApplication's icon image, which

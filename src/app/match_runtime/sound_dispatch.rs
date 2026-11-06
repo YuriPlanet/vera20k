@@ -1745,9 +1745,13 @@ mod tests {
     /// from retail `[AudioVisual]`.
     #[test]
     fn building_slam_plays_only_for_the_local_owner() {
-        let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "Hills.mmx",
+            &crate::rules::ini_parser::IniFile::from_str("[AudioVisual]\nBuildingSlam=Unknown\n"),
+        ) else {
             return;
         };
+        let rules = retail.rules;
         let mut sim = Simulation::new();
         let local = sim.intern("Local");
         let remote = sim.intern("Remote");
