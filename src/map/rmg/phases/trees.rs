@@ -435,4 +435,95 @@ mod tests {
         };
         assert_eq!(snapshot(2024), snapshot(2024));
     }
+
+    /// Whole original `RandomMapGenerator::PlaceTreeRegion @ 0x005A45E0`
+    /// calls from `tools/rmg_oracle/tree_region.py`: each tree's name and
+    /// cell, the returned count, the visited marks and the exit RNG.
+    #[test]
+    fn native_place_tree_region_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/tree_region.json");
+        let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
+        let cells = |value: &serde_json::Value| -> Vec<(i32, i32)> {
+            value
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| (int(&c[0]), int(&c[1])))
+                .collect()
+        };
+        let identity = ids();
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 7);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let mut scratch = RmgScratch::new(33, 16, 48);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                grid.get_mut(x, y).unwrap().tile = 0;
+            }
+            for (x, y) in cells(&input["rough"]) {
+                grid.get_mut(x, y).unwrap().tile = int(&doc["scene"]["rough"]);
+            }
+            for (x, y) in cells(&input["occupied"]) {
+                grid.get_mut(x, y).unwrap().occupied = true;
+            }
+            for (x, y) in cells(&input["overlay"]) {
+                grid.get_mut(x, y).unwrap().overlay = 0;
+            }
+            for (x, y) in cells(&input["locked"]) {
+                scratch.get_mut(x, y).water_lock = true;
+            }
+            for (x, y) in cells(&input["visited"]) {
+                scratch.get_mut(x, y).visited = true;
+            }
+            let mut rock = RecalcRock {
+                stride: 33,
+                rock: vec![false; 33 * 33],
+            };
+            for (x, y) in cells(&input["rock"]) {
+                rock.rock[y as usize * 33 + x as usize] = true;
+            }
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut gauss = Gaussian::default();
+            let mut ctx = TreeCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                rng: &mut rng,
+                gauss: &mut gauss,
+                recalc_rock: &rock,
+            };
+            let origin = (int(&input["origin"][0]), int(&input["origin"][1]));
+            let size = int(&input["size"]);
+            let density = input["density"].as_f64().unwrap();
+            let mut trees = Vec::new();
+            let placed = place_region(&mut ctx, origin, size, density, &mut trees);
+            assert_eq!(placed, int(&row["placed"]), "{context}: placed");
+            let native: Vec<(String, i16, i16)> = row["trees"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| {
+                    (
+                        t[0].as_str().unwrap().to_owned(),
+                        int(&t[1]) as i16,
+                        int(&t[2]) as i16,
+                    )
+                })
+                .collect();
+            assert_eq!(trees, native, "{context}: trees");
+            let visited: Vec<(i32, i32)> = (0..33)
+                .flat_map(|y| (0..33).map(move |x| (x, y)))
+                .filter(|&(x, y)| scratch.in_diamond(x, y) && scratch.get(x, y).visited)
+                .collect();
+            assert_eq!(visited, cells(&row["visited"]), "{context}: visited");
+            assert_eq!(
+                rng.into_continuation().into_native_parts(),
+                super::super::cliff_native_tests::native_state(doc, &row["rng_after"])
+                    .into_native_parts(),
+                "{context}: exit RNG"
+            );
+        }
+    }
 }
