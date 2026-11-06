@@ -402,6 +402,56 @@ mod tests {
         .expect("generated map")
     }
 
+    /// VERA extension: a thirty-player seed gets a start for every player.
+    #[test]
+    fn a_thirty_player_map_places_every_start() {
+        let options = RmgOptions {
+            num_players: 30,
+            ..options(1, 0)
+        };
+        let generated = generate_map(
+            &options,
+            &RmgSettings::default(),
+            &resolved(),
+            &one_by_one(),
+            &[],
+        );
+        assert_eq!(generated.unfilled_start_slots, 0);
+        let mut slots: Vec<u8> = generated.start_waypoints.iter().map(|w| w.0).collect();
+        slots.sort_unstable();
+        assert_eq!(slots, (0..30).collect::<Vec<u8>>());
+    }
+
+    /// VERA extension: the largest size option generates a 500x500 interior.
+    #[test]
+    #[ignore = "slow; run when changing what it covers"]
+    fn a_colossal_thirty_player_map_generates_at_500() {
+        let options = RmgOptions {
+            num_players: 30,
+            width: crate::map::rmg::MAX_SIZE_OPTION,
+            height: crate::map::rmg::MAX_SIZE_OPTION,
+            ..options(1, 0)
+        };
+        let started = std::time::Instant::now();
+        let generated = generate_map(
+            &options,
+            &RmgSettings::default(),
+            &resolved(),
+            &one_by_one(),
+            &[],
+        );
+        eprintln!("colossal generation took {:?}", started.elapsed());
+        assert_eq!(generated.unfilled_start_slots, 0);
+        assert_eq!(generated.start_waypoints.len(), 30);
+        assert_eq!(
+            (
+                generated.map_file.header.width,
+                generated.map_file.header.height
+            ),
+            (504, 512)
+        );
+    }
+
     #[test]
     fn generate_map_is_deterministic() {
         let resolved = resolved();

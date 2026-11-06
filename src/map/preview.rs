@@ -59,8 +59,13 @@ impl ScenarioStartHeader {
     }
 }
 
-/// Start slots the retained staging holds (`Scenario+0x1140`, 8 pairs).
-pub const START_STAGING_SLOTS: usize = 8;
+/// Start slots the native staging holds (`Scenario+0x1140`, 8 pairs), and so
+/// the slots every `'W'` record carries.
+pub const NATIVE_START_STAGING_SLOTS: usize = 8;
+/// VERA extension: the staging holds a start for each of thirty players, so a
+/// random map for more than eight players keeps every start. A `'W'` record
+/// grows past the native 8 slots only when a slot beyond them is used.
+pub const START_STAGING_SLOTS: usize = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT;
 
 /// The retained Scenario start staging `+0x112C..+0x11DF` that the host's
 /// `'W'` options string carries to its guests.
@@ -90,12 +95,24 @@ impl ScenarioStartStaging {
     /// The `'W'` string `0x005E7EB0` formats: `"%c%d,%d,%d,%d,%d"` (`0x00831C18`)
     /// with width, height, start X, start Y and count, then
     /// `",%d,%d,%d,%d"` (`0x00831C08`) per slot with the pair and the cell.
+    ///
+    /// VERA extension: slots past the native eight are appended only when one
+    /// of them is used, so a record for eight or fewer starts is unchanged.
     pub fn to_w_text(&self) -> String {
         let mut text = format!(
             "W{},{},{},{},{}",
             self.width, self.height, self.start_x, self.start_y, self.count
         );
-        for (pair, cell) in self.pairs.iter().zip(&self.cells) {
+        let used = (0..START_STAGING_SLOTS)
+            .rev()
+            .find(|&slot| self.pairs[slot] != (0, 0) || self.cells[slot] != (0, 0))
+            .map_or(0, |slot| slot + 1);
+        let slots = used.max(NATIVE_START_STAGING_SLOTS).max(
+            usize::try_from(self.count)
+                .unwrap_or(0)
+                .min(START_STAGING_SLOTS),
+        );
+        for (pair, cell) in self.pairs.iter().zip(&self.cells).take(slots) {
             text.push_str(&format!(",{},{},{},{}", pair.0, pair.1, cell.0, cell.1));
         }
         text
@@ -105,15 +122,19 @@ impl ScenarioStartStaging {
     /// tokens. It commits only when the 37th token exists
     /// (`0x005E3FE9`); nothing is clamped, and a cell keeps the low 16 bits
     /// of each value (`0x005E4041..0x005E4098`).
+    ///
+    /// VERA extension: whole 4-token slots past the native 37th token fill
+    /// slots 8 and up, to `START_STAGING_SLOTS`.
     pub fn parse_w_text(text: &str) -> Option<Self> {
         let body = text.strip_prefix('W')?;
-        let values: Vec<i32> = crate::rules::ini_value::strtok(body, &[','])
+        let mut values: Vec<i32> = crate::rules::ini_value::strtok(body, &[','])
             .take(5 + 4 * START_STAGING_SLOTS)
             .map(crate::rules::ini_value::crt_atoi)
             .collect();
-        if values.len() < 5 + 4 * START_STAGING_SLOTS {
+        if values.len() < 5 + 4 * NATIVE_START_STAGING_SLOTS {
             return None;
         }
+        values.truncate(5 + (values.len() - 5) / 4 * 4);
         let mut staging = Self {
             width: values[0],
             height: values[1],
@@ -669,6 +690,28 @@ mod start_staging_tests {
         assert_eq!(
             staging.defined_cells().collect::<Vec<_>>(),
             [(0, (55, 70)), (1, (-1, 300))]
+        );
+    }
+
+    #[test]
+    fn a_thirty_start_w_text_carries_every_slot() {
+        let mut staging = ScenarioStartStaging {
+            width: 400,
+            height: 200,
+            count: 30,
+            ..ScenarioStartStaging::default()
+        };
+        for slot in 0..30 {
+            staging.pairs[slot] = (slot as i32 + 1, 2);
+            staging.cells[slot] = (slot as i16 + 10, 20);
+        }
+        let text = staging.to_w_text();
+        assert_eq!(text.matches(',').count(), 4 + 4 * 30);
+        assert_eq!(ScenarioStartStaging::parse_w_text(&text), Some(staging));
+        assert_eq!(staging.defined_cells().last(), Some((29, (39, 20))));
+        assert_eq!(
+            staging.preview_source_bounds().unwrap().start_points.len(),
+            30
         );
     }
 }

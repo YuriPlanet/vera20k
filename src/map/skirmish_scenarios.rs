@@ -12,9 +12,10 @@ use crate::skirmish_modes::SkirmishGameMode;
 
 pub const RANDMAP_SED: &str = "RandMap.Sed";
 /// `[RandomMap] NumPlayers` is clamped to this inclusive range before
-/// generation, so the sentinel has to advertise the same span.
+/// generation, so the sentinel has to advertise the same span. The original
+/// stops at 8; VERA's generator seats up to thirty (`rmg::MAX_PLAYERS`).
 pub const RANDOM_MAP_MIN_PLAYERS: u8 = 2;
-pub const RANDOM_MAP_MAX_PLAYERS: u8 = 8;
+pub const RANDOM_MAP_MAX_PLAYERS: u8 = crate::map::rmg::MAX_PLAYERS as u8;
 /// Start slots the generator produces before a `.SED` supplies `NumPlayers`.
 /// This is a *default quota*, not a capacity limit: `RANDOM_MAP_MAX_PLAYERS`
 /// used to alias it, which capped the sentinel at 4 and made 5-8 player random
@@ -450,7 +451,7 @@ mod tests {
         // Pinned to literals on purpose: the capacity used to alias the
         // generated-start quota, which silently capped random maps at 4.
         assert_eq!(RANDOM_MAP_MIN_PLAYERS, 2);
-        assert_eq!(RANDOM_MAP_MAX_PLAYERS, 8, "NumPlayers clamps to 2..8");
+        assert_eq!(RANDOM_MAP_MAX_PLAYERS, 30, "NumPlayers clamps to 2..30");
         assert_ne!(
             RANDOM_MAP_MAX_PLAYERS, RANDOM_MAP_GENERATED_START_QUOTA,
             "capacity must not be re-aliased to the start quota"
@@ -461,7 +462,7 @@ mod tests {
             "Random Map",
             i32::from(RANDOM_MAP_GENERATED_START_QUOTA),
         );
-        assert_eq!(rec.max_players, Some(8));
+        assert_eq!(rec.max_players, Some(30));
     }
 
     #[test]
