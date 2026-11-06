@@ -2,6 +2,10 @@
 //! scissor clip, vertical center via measure-then-offset, per-line horizontal
 //! alignment, `max_height` cutoff. Calls into `bit_font::BitFont` for glyph
 //! data and wrap layout.
+//!
+//! VERA's own: text too long for its rect is first squeezed until it fits
+//! ([`BitFont::fit_box`]); only what the tightest squeeze still leaves over
+//! is cut off as gamemd cuts it.
 
 use crate::render::batch::SpriteInstance;
 use crate::render::bit_font::{BitFont, LineSpan};
@@ -138,37 +142,44 @@ pub fn draw_in_rect_scaled(
         };
     }
     let native = to_native_rect(rect, scale);
-    let layout = font.wrap_layout(text, native.w);
-    let base_x = native.x as f32;
-    let mut line_y = native.y as f32;
-    if flags.contains(ShellAlign::V_CENTER) {
-        line_y += vcenter_offset(native.h, layout.height);
-    }
-    let line_advance = font.cell_height();
-
-    let mut instances: Vec<SpriteInstance> = Vec::with_capacity(text.len());
-    for (line_index, span) in layout.lines.iter().enumerate() {
-        // 434CD0 paints the first line before consulting max-height. Its
-        // newline/wrap tails (434EC2..434ED7 /435112..435127) stop only after
-        // consumed cell advances reach the nonzero limit. The raster scissor
-        // clips overhanging glyph pixels; a short clip must not discard an
-        // admitted line. Retail GAME.FNT has16 bitmap rows and17px cell advance.
-        if line_index > 0 && native.h != 0 && line_index as f32 * line_advance >= native.h as f32 {
-            break;
+    let fit = font.fit_box(text, native.w, native.h);
+    let instances = font.fitted(fit, |font| {
+        let layout = font.wrap_layout(text, native.w);
+        let base_x = native.x as f32;
+        let mut line_y = native.y as f32;
+        if flags.contains(ShellAlign::V_CENTER) {
+            line_y += vcenter_offset(native.h, layout.height);
         }
-        let line_x_offset = line_offset(flags, span, native.w);
-        let segment = &text[span.start_byte..span.end_byte];
-        instances.append(&mut font.build_text(
-            segment,
-            (base_x + line_x_offset) * scale,
-            line_y * scale,
-            scale,
-            depth,
-            color,
-            cam_offset,
-        ));
-        line_y += line_advance;
-    }
+        let line_advance = font.cell_height();
+
+        let mut instances: Vec<SpriteInstance> = Vec::with_capacity(text.len());
+        for (line_index, span) in layout.lines.iter().enumerate() {
+            // 434CD0 paints the first line before consulting max-height. Its
+            // newline/wrap tails (434EC2..434ED7 /435112..435127) stop only after
+            // consumed cell advances reach the nonzero limit. The raster scissor
+            // clips overhanging glyph pixels; a short clip must not discard an
+            // admitted line. Retail GAME.FNT has16 bitmap rows and17px cell advance.
+            if line_index > 0
+                && native.h != 0
+                && line_index as f32 * line_advance >= native.h as f32
+            {
+                break;
+            }
+            let line_x_offset = line_offset(flags, span, native.w);
+            let segment = &text[span.start_byte..span.end_byte];
+            instances.append(&mut font.build_text(
+                segment,
+                (base_x + line_x_offset) * scale,
+                line_y * scale,
+                scale,
+                depth,
+                color,
+                cam_offset,
+            ));
+            line_y += line_advance;
+        }
+        instances
+    });
     ShellTextDraw { instances, scissor }
 }
 
@@ -211,37 +222,45 @@ pub fn draw_in_rect_path_a_scaled(
         };
     }
     let native = to_native_rect(rect, scale);
-    let layout = font.wrap_layout(text, native.w);
-    let base_x = native.x as f32;
-    let mut line_y = native.y as f32;
-    if flags.contains(ShellAlign::V_CENTER) {
-        line_y += vcenter_offset(native.h, layout.height);
-    }
-    let line_advance = font.cell_height();
-    let mut instances = Vec::with_capacity(text.len());
-    let mut consumed = 0u32;
-
-    for (line_index, span) in layout.lines.iter().enumerate() {
-        // Same original 434CD0 line admission as the non-reveal entry above.
-        if line_index > 0 && native.h != 0 && line_index as f32 * line_advance >= native.h as f32 {
-            break;
+    // The whole text decides the squeeze, so a reveal does not re-wrap.
+    let fit = font.fit_box(text, native.w, native.h);
+    let instances = font.fitted(fit, |font| {
+        let layout = font.wrap_layout(text, native.w);
+        let base_x = native.x as f32;
+        let mut line_y = native.y as f32;
+        if flags.contains(ShellAlign::V_CENTER) {
+            line_y += vcenter_offset(native.h, layout.height);
         }
-        let line_x_offset = line_offset(flags, span, native.w);
-        let segment = &text[span.start_byte..span.end_byte];
-        let (mut line_instances, new_consumed) = font.build_text_path_a(
-            segment,
-            (base_x + line_x_offset) * scale,
-            line_y * scale,
-            scale,
-            depth,
-            cam_offset,
-            consumed,
-            reveal,
-        );
-        consumed = new_consumed;
-        instances.append(&mut line_instances);
-        line_y += line_advance;
-    }
+        let line_advance = font.cell_height();
+        let mut instances = Vec::with_capacity(text.len());
+        let mut consumed = 0u32;
+
+        for (line_index, span) in layout.lines.iter().enumerate() {
+            // Same original 434CD0 line admission as the non-reveal entry above.
+            if line_index > 0
+                && native.h != 0
+                && line_index as f32 * line_advance >= native.h as f32
+            {
+                break;
+            }
+            let line_x_offset = line_offset(flags, span, native.w);
+            let segment = &text[span.start_byte..span.end_byte];
+            let (mut line_instances, new_consumed) = font.build_text_path_a(
+                segment,
+                (base_x + line_x_offset) * scale,
+                line_y * scale,
+                scale,
+                depth,
+                cam_offset,
+                consumed,
+                reveal,
+            );
+            consumed = new_consumed;
+            instances.append(&mut line_instances);
+            line_y += line_advance;
+        }
+        instances
+    });
     ShellTextDraw { instances, scissor }
 }
 
@@ -252,6 +271,57 @@ mod tests {
 
     fn test_font() -> BitFont {
         make_test_font(&[(b'x' as u16, 6), (b'a' as u16, 6), (b'b' as u16, 6)], 4)
+    }
+
+    /// VERA's own: a caption too long for its rect, as translations run, is
+    /// condensed onto the lines the rect holds instead of losing its end.
+    #[test]
+    fn a_caption_too_long_for_its_rect_is_squeezed_instead_of_cut() {
+        let font = crate::render::bit_font::tests::make_vector_test_font();
+        let text = "[Šîñĝļé Þļåýéŕ ~~~~]";
+        let natural = font.text_width(text);
+        let rect = TextRect {
+            x: 0,
+            y: 0,
+            w: natural * 9 / 10,
+            h: 17,
+        };
+        let wide = TextRect {
+            w: natural * 2,
+            ..rect
+        };
+        let flags = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+        let draw = |rect| draw_in_rect(&font, text, rect, [1.0; 3], flags, [0.0; 2], 0.5);
+        let squeezed = draw(rect);
+        assert!(font.fit_box(text, rect.w, rect.h) > crate::render::bit_font::Fit::NONE);
+        assert_eq!(squeezed.instances.len(), draw(wide).instances.len());
+        for glyph in &squeezed.instances {
+            let [left, right] = [glyph.position[0], glyph.position[0] + glyph.size[0]];
+            assert!(left >= -1.0 && right <= rect.w as f32 + 1.0, "{glyph:?}");
+        }
+        assert_eq!(
+            font.fit_box(text, wide.w, wide.h),
+            crate::render::bit_font::Fit::NONE
+        );
+    }
+
+    /// A word too long for its line is squeezed before it splits; Chinese
+    /// breaks between any two hanzi, so wrapping it splits nothing.
+    #[test]
+    fn a_word_is_squeezed_before_it_splits() {
+        use crate::render::bit_font::Fit;
+        let font = crate::render::bit_font::tests::make_vector_test_font();
+        let word = "Šûþéŕçåļîƒŕåĝîļîšţîç";
+        let width = font.text_width(word) * 9 / 10;
+        assert!(font.wrap_layout(word, width).split_word);
+        let fit = font.fit_box(word, width, 17 * 3);
+        assert!(fit > Fit::NONE);
+        let layout = font.fitted(fit, |font| font.wrap_layout(word, width));
+        assert_eq!((layout.lines.len(), layout.split_word), (1, false));
+        assert_eq!(
+            font.fit_box("这是一个没有空格的很长的句子", 75, 17 * 5),
+            Fit::NONE
+        );
     }
 
     #[test]

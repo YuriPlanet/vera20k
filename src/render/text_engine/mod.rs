@@ -25,8 +25,8 @@ use std::sync::Arc;
 
 use parley::fontique::Blob;
 use parley::{
-    Alignment, AlignmentOptions, FontContext, FontFamily, FontFamilyName, FontWeight, FontWidth,
-    Layout, LayoutContext, OverflowWrap, PositionedLayoutItem, StyleProperty,
+    Alignment, AlignmentOptions, BreakReason, FontContext, FontFamily, FontFamilyName, FontWeight,
+    FontWidth, Layout, LayoutContext, OverflowWrap, PositionedLayoutItem, StyleProperty,
 };
 
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
@@ -44,6 +44,43 @@ pub enum FontMode {
     /// Retail GAME.FNT, scaled evenly, with the bundled fonts for the
     /// characters it lacks.
     Original,
+}
+
+/// How far a text is squeezed to fit the box it draws in: narrower letters
+/// first, along the bundled fonts' width axis, then smaller ones. VERA's own:
+/// gamemd cuts off what does not fit, and translations run longer than the
+/// English the boxes were drawn for.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Fit(u8);
+
+/// Each step's width and size as shares of the text's own. Noto Sans's width
+/// axis ends at 62.5, a quarter narrower than Latin text's 82.
+const FIT_STEPS: [(f32, f32); 5] = [
+    (1.0, 1.0),
+    (72.0 / LATIN_WIDTH_PERCENT, 1.0),
+    (62.5 / LATIN_WIDTH_PERCENT, 1.0),
+    (62.5 / LATIN_WIDTH_PERCENT, 0.9),
+    (62.5 / LATIN_WIDTH_PERCENT, 0.8),
+];
+
+impl Fit {
+    /// The text as designed.
+    pub const NONE: Self = Self(0);
+    /// The last step, where a word too long for a line splits.
+    pub const TIGHTEST: Self = Self(FIT_STEPS.len() as u8 - 1);
+
+    /// The next step, or `None` past the tightest.
+    pub fn tighter(self) -> Option<Self> {
+        (self < Self::TIGHTEST).then_some(Self(self.0 + 1))
+    }
+
+    fn width(self) -> f32 {
+        FIT_STEPS[usize::from(self.0)].0
+    }
+
+    fn size(self) -> f32 {
+        FIT_STEPS[usize::from(self.0)].1
+    }
 }
 
 /// One positioned glyph of a shaped line, in native pixels.
@@ -74,6 +111,8 @@ pub(crate) struct ShapedLine {
     pub(crate) width: f32,
     /// The paragraph runs right to left.
     pub(crate) rtl: bool,
+    /// A word too long for the line was split at its end.
+    pub(crate) split: bool,
     pub(crate) glyphs: Vec<ShapedGlyph>,
 }
 
@@ -114,7 +153,7 @@ pub(crate) struct TextEngine {
     original_family: Option<String>,
     /// GAME.FNT's slot and the glyph each of its code points draws with.
     original_slot: Option<u16>,
-    layouts: HashMap<(FontMode, u32), HashMap<String, Arc<ShapedText>>>,
+    layouts: HashMap<(FontMode, u32, Fit), HashMap<String, Arc<ShapedText>>>,
     cached_layouts: usize,
     atlas: GlyphAtlas,
     locale: Option<String>,
@@ -226,9 +265,15 @@ impl TextEngine {
         self.atlas.begin_frame(gpu);
     }
 
-    /// Shape `text` in `mode`, wrapping at `max_width` native pixels (0: one
-    /// line per paragraph). Cached.
-    pub(crate) fn shape(&mut self, mode: FontMode, text: &str, max_width: u32) -> Arc<ShapedText> {
+    /// Shape `text` in `mode` at `fit`, wrapping at `max_width` native pixels
+    /// (0: one line per paragraph). Cached.
+    pub(crate) fn shape(
+        &mut self,
+        mode: FontMode,
+        text: &str,
+        max_width: u32,
+        fit: Fit,
+    ) -> Arc<ShapedText> {
         let mode = if mode == FontMode::Original && self.original_family.is_none() {
             FontMode::Modern
         } else {
@@ -236,24 +281,30 @@ impl TextEngine {
         };
         if let Some(shaped) = self
             .layouts
-            .get(&(mode, max_width))
+            .get(&(mode, max_width, fit))
             .and_then(|layouts| layouts.get(text))
         {
             return Arc::clone(shaped);
         }
-        let shaped = Arc::new(self.shape_uncached(mode, text, max_width));
+        let shaped = Arc::new(self.shape_uncached(mode, text, max_width, fit));
         if self.cached_layouts >= LAYOUT_CACHE_LIMIT {
             self.clear_layouts();
         }
         self.cached_layouts += 1;
         self.layouts
-            .entry((mode, max_width))
+            .entry((mode, max_width, fit))
             .or_default()
             .insert(text.to_owned(), Arc::clone(&shaped));
         shaped
     }
 
-    fn shape_uncached(&mut self, mode: FontMode, text: &str, max_width: u32) -> ShapedText {
+    fn shape_uncached(
+        &mut self,
+        mode: FontMode,
+        text: &str,
+        max_width: u32,
+        fit: Fit,
+    ) -> ShapedText {
         let mut lines = Vec::new();
         for (start, end) in paragraphs(text) {
             let paragraph = &text[start..end];
@@ -266,10 +317,10 @@ impl TextEngine {
                 continue;
             }
             if max_width == 0 && paragraph.contains('\t') {
-                lines.push(self.shape_tabbed(mode, paragraph, start));
+                lines.push(self.shape_tabbed(mode, paragraph, start, fit));
             } else {
                 let paragraph = paragraph.replace('\t', " ");
-                self.shape_paragraph(mode, &paragraph, start, max_width, &mut lines);
+                self.shape_paragraph(mode, &paragraph, start, max_width, fit, &mut lines);
             }
         }
         ShapedText { lines }
@@ -277,7 +328,13 @@ impl TextEngine {
 
     /// GAME.FNT's tab stops: every [`crate::render::bit_font::TAB_WIDTH`]
     /// pixels from the line start.
-    fn shape_tabbed(&mut self, mode: FontMode, paragraph: &str, start: usize) -> ShapedLine {
+    fn shape_tabbed(
+        &mut self,
+        mode: FontMode,
+        paragraph: &str,
+        start: usize,
+        fit: Fit,
+    ) -> ShapedLine {
         let tab = crate::render::bit_font::TAB_WIDTH as f32;
         let mut line = ShapedLine {
             start,
@@ -291,7 +348,7 @@ impl TextEngine {
                 x = ((x / tab).floor() + 1.0) * tab;
             }
             let mut segment_lines = Vec::new();
-            self.shape_paragraph(mode, segment, offset, 0, &mut segment_lines);
+            self.shape_paragraph(mode, segment, offset, 0, fit, &mut segment_lines);
             for segment_line in segment_lines {
                 line.rtl |= segment_line.rtl;
                 line.glyphs
@@ -315,6 +372,7 @@ impl TextEngine {
         paragraph: &str,
         base: usize,
         max_width: u32,
+        fit: Fit,
         lines: &mut Vec<ShapedLine>,
     ) {
         let mut stack: Vec<FontFamilyName<'_>> = Vec::with_capacity(self.modern_stack.len() + 1);
@@ -338,15 +396,18 @@ impl TextEngine {
         builder.push_default(StyleProperty::FontFamily(FontFamily::List(Cow::Borrowed(
             &stack,
         ))));
-        builder.push_default(StyleProperty::FontSize(TextClass::Latin.size()));
+        builder.push_default(StyleProperty::FontSize(
+            TextClass::Latin.size() * fit.size(),
+        ));
         builder.push_default(StyleProperty::FontWeight(FontWeight::new(LATIN_WEIGHT)));
         builder.push_default(StyleProperty::FontWidth(FontWidth::from_percentage(
-            LATIN_WIDTH_PERCENT,
+            LATIN_WIDTH_PERCENT * fit.width(),
         )));
         builder.push_default(StyleProperty::OverflowWrap(OverflowWrap::Anywhere));
         builder.push_default(StyleProperty::Locale(locale));
         // Runs of one size class: CJK at GAME.FNT's full cell, other scripts at
-        // their reading size, both at their own weight and normal width.
+        // their reading size, both at their own weight and normal width, each
+        // narrowed and shrunk as `fit` asks.
         let mut run: Option<(usize, TextClass)> = None;
         let push_run = |builder: &mut parley::RangedBuilder<'_, ()>,
                         start: usize,
@@ -357,12 +418,18 @@ impl TextEngine {
                 TextClass::Cjk => CJK_WEIGHT,
                 TextClass::Other(_) => OTHER_WEIGHT,
             };
-            builder.push(StyleProperty::FontSize(class.size()), start..end);
+            builder.push(
+                StyleProperty::FontSize(class.size() * fit.size()),
+                start..end,
+            );
             builder.push(
                 StyleProperty::FontWeight(FontWeight::new(weight)),
                 start..end,
             );
-            builder.push(StyleProperty::FontWidth(FontWidth::NORMAL), start..end);
+            builder.push(
+                StyleProperty::FontWidth(FontWidth::from_percentage(100.0 * fit.width())),
+                start..end,
+            );
         };
         for (at, c) in paragraph.char_indices() {
             let class = TextClass::of(c);
@@ -392,6 +459,7 @@ impl TextEngine {
                 end: base + trimmed_end,
                 width: (metrics.advance - metrics.hanging_advance).max(0.0),
                 rtl,
+                split: line.break_reason() == BreakReason::Emergency,
                 glyphs: Vec::new(),
             };
             // A right-to-left line hangs its trailing whitespace at the left.
@@ -671,7 +739,7 @@ mod tests {
         w: usize,
         h: usize,
     ) -> Vec<u8> {
-        let shaped = engine.shape(mode, text, 0);
+        let shaped = engine.shape(mode, text, 0, Fit::NONE);
         let mut quads = Vec::new();
         for line in &shaped.lines {
             engine.emit_line(line, [2.0, 0.0], scale, 0.0, |_| Some([1.0; 3]), &mut quads);
@@ -728,7 +796,7 @@ mod tests {
     #[test]
     fn original_font_falls_back_for_characters_game_fnt_lacks() {
         let mut engine = engine_with_tiny_fnt();
-        let shaped = engine.shape(FontMode::Original, "AБ中", 0);
+        let shaped = engine.shape(FontMode::Original, "AБ中", 0, Fit::NONE);
         let glyphs = &shaped.lines[0].glyphs;
         assert_eq!(glyphs.len(), 3);
         let original = engine.original_slot().expect("GAME.FNT registered");
@@ -748,7 +816,7 @@ mod tests {
             "مرحبا שלום नमस्ते হ্যালো สวัสดี வணக்கம் ສະບາຍດີ ជំរាបសួរ",
             "ಹಲೋ ഹലോ నమస్కారం ਸਤ ਸ੍ਰੀ ਅਕਾਲ નમસ્તે ନମସ୍କାର ආයුබෝවන් မင်္ဂလာပါ Բարեւ გამარჯობა ሰላም",
         ] {
-            let shaped = engine.shape(FontMode::Modern, text, 0);
+            let shaped = engine.shape(FontMode::Modern, text, 0, Fit::NONE);
             let missing: Vec<u32> = shaped.lines[0]
                 .glyphs
                 .iter()
@@ -762,7 +830,7 @@ mod tests {
     #[test]
     fn arabic_runs_right_to_left() {
         let mut engine = TextEngine::new(None);
-        let shaped = engine.shape(FontMode::Modern, "مرحبا 42", 0);
+        let shaped = engine.shape(FontMode::Modern, "مرحبا 42", 0, Fit::NONE);
         let line = &shaped.lines[0];
         assert!(line.rtl);
         let first = line
@@ -799,7 +867,7 @@ mod tests {
         let mut engine = TextEngine::new(None);
         // Chinese breaks between any two ideographs.
         let text = "这是一个没有空格的很长的句子";
-        let shaped = engine.shape(FontMode::Modern, text, 5 * 15);
+        let shaped = engine.shape(FontMode::Modern, text, 5 * 15, Fit::NONE);
         assert!(shaped.lines.len() >= 3);
         for line in &shaped.lines {
             assert!(line.width <= 75.0, "{line:?}");
@@ -808,7 +876,7 @@ mod tests {
         // Thai breaks at word boundaries from the dictionary, never before a
         // combining vowel or tone mark.
         let text = "ภาษาไทยไม่มีช่องว่างระหว่างคำ";
-        let shaped = engine.shape(FontMode::Modern, text, 60);
+        let shaped = engine.shape(FontMode::Modern, text, 60, Fit::NONE);
         assert!(shaped.lines.len() >= 2);
         for line in &shaped.lines[1..] {
             let first = text[line.start..].chars().next().unwrap() as u32;
@@ -823,7 +891,7 @@ mod tests {
     fn wrapped_lines_report_their_text_without_the_break_space() {
         let mut engine = TextEngine::new(None);
         let text = "Pause requested - waiting for the relay";
-        let shaped = engine.shape(FontMode::Modern, text, 120);
+        let shaped = engine.shape(FontMode::Modern, text, 120, Fit::NONE);
         assert!(shaped.lines.len() >= 2);
         for pair in shaped.lines.windows(2) {
             assert_eq!(&text[pair[0].end..pair[1].start], " ");

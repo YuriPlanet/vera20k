@@ -348,12 +348,18 @@ pub(super) fn truncate_owner_draw_label<'a>(
     font.truncate_to_width(label, fit_width)
 }
 
-pub(super) fn truncate_combo_dropdown_label<'a>(
+/// An owner-drawn label in `fit_width`: squeezed until it fits
+/// ([`BitFont::fit_line`]) and cut only as far as the tightest squeeze still
+/// leaves over. `draw` gets the text while the font draws at that squeeze.
+pub(super) fn fit_owner_draw_label<R>(
     font: &BitFont,
-    label: &'a str,
+    label: &str,
     fit_width: u32,
-) -> std::borrow::Cow<'a, str> {
-    truncate_owner_draw_label(font, label, fit_width)
+    draw: impl FnOnce(&str) -> R,
+) -> R {
+    font.fitted(font.fit_line(label, fit_width), |font| {
+        draw(&truncate_owner_draw_label(font, label, fit_width))
+    })
 }
 
 pub(super) fn push_label_draw(
@@ -419,17 +425,18 @@ fn push_combo_face_label_draw_with_color(
 ) {
     let text_rect = combo_face_text_draw_rect(rect, scale);
     let fit_width = combo_face_text_fit_width(rect, scale);
-    let label = truncate_owner_draw_label(&state.renderer.bit_font, label, fit_width);
-    push_text_draw(
-        out,
-        state,
-        label.as_ref(),
-        rect_to_text_rect(text_rect),
-        color,
-        ShellAlign::V_CENTER,
-        SHELL_CONTROL_TEXT_DEPTH,
-        scale.factor(),
-    );
+    fit_owner_draw_label(&state.renderer.bit_font, label, fit_width, |label| {
+        push_text_draw(
+            out,
+            state,
+            label,
+            rect_to_text_rect(text_rect),
+            color,
+            ShellAlign::V_CENTER,
+            SHELL_CONTROL_TEXT_DEPTH,
+            scale.factor(),
+        );
+    });
 }
 
 /// The texts `0x102` holds for its heading, game type and map name statics
@@ -776,18 +783,19 @@ pub(super) fn build_dropdown_text_draws(
             }
             let rect = combo_dropdown_text_rect_for_current_renderer(content, idx, layout.scale);
             let fit_width = combo_dropdown_text_fit_width(content, layout.scale);
-            let label = truncate_combo_dropdown_label(&state.renderer.bit_font, &label, fit_width);
-            push_text_draw(
-                &mut shell_draws,
-                state,
-                label.as_ref(),
-                rect,
-                SHELL_LABEL_TEXT_RGB,
-                ShellAlign::V_CENTER,
-                SHELL_DROPDOWN_TEXT_DEPTH,
-                // The rows stretch, so their captions grow with them.
-                layout.scale.factor(),
-            );
+            fit_owner_draw_label(&state.renderer.bit_font, &label, fit_width, |label| {
+                push_text_draw(
+                    &mut shell_draws,
+                    state,
+                    label,
+                    rect,
+                    SHELL_LABEL_TEXT_RGB,
+                    ShellAlign::V_CENTER,
+                    SHELL_DROPDOWN_TEXT_DEPTH,
+                    // The rows stretch, so their captions grow with them.
+                    layout.scale.factor(),
+                );
+            });
         }
     }
     shell_draws
@@ -1833,9 +1841,22 @@ mod tests {
             20
         );
 
-        let label = truncate_combo_dropdown_label(&font, "ab cd", 20);
-        assert_eq!(label.as_ref(), "ab ");
-        assert!(font.text_width(label.as_ref()) <= 20);
+        let label = fit_owner_draw_label(&font, "ab cd", 20, str::to_owned);
+        assert_eq!(label, "ab ");
+        assert!(font.text_width(&label) <= 20);
+    }
+
+    /// VERA's own: a combo caption too wide for its face is squeezed whole,
+    /// and loses its end only where the tightest squeeze is still too wide.
+    #[test]
+    fn an_owner_drawn_label_is_squeezed_before_it_is_cut() {
+        let font = crate::render::bit_font::tests::make_vector_test_font();
+        let label = "[Ŕåñðöɱ ~~~]";
+        let natural = font.text_width(label);
+        let squeezed = fit_owner_draw_label(&font, label, natural * 9 / 10, str::to_owned);
+        assert_eq!(squeezed, label);
+        let cut = fit_owner_draw_label(&font, label, natural / 3, str::to_owned);
+        assert!(label.starts_with(&cut) && cut.len() < label.len(), "{cut}");
     }
 
     #[test]
@@ -1912,11 +1933,11 @@ mod tests {
     fn owner_draw_label_truncates_non_bmp_by_utf16_code_unit() {
         let font = crate::render::bit_font::tests::make_test_font(&[(b'a' as u16, 6)], 4);
 
-        let label = truncate_combo_dropdown_label(&font, "a😀", 13);
+        let label = fit_owner_draw_label(&font, "a😀", 13, str::to_owned);
 
-        assert_eq!(label.as_ref(), "a\u{fffd}");
-        assert_ne!(label.as_ref(), "a");
-        assert!(font.text_width(label.as_ref()) <= 13);
+        assert_eq!(label, "a\u{fffd}");
+        assert_ne!(label, "a");
+        assert!(font.text_width(&label) <= 13);
     }
 
     #[test]

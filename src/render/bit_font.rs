@@ -13,18 +13,20 @@
 //! Public surface:
 //!   - [`BitFont::from_fnt`] / [`BitFont::vector_only`] constructors
 //!   - [`BitFont::text_width`] / [`BitFont::wrap_layout`] for measurement
+//!   - [`BitFont::fit_box`] / [`BitFont::fit_line`] / [`BitFont::fitted`] to
+//!     squeeze text too long for its box
 //!   - [`BitFont::build_text`] for sprite-instance emission
 //!   - [`BitFont::missing_color_xor`] for caller-side tint adjustment
 
 use std::borrow::Cow;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::assets::fnt_file::{FntFile, FntGlyph};
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::shell_text_reveal::{PathAReveal, encoded_unit_rgb};
-pub use crate::render::text_engine::FontMode;
+pub use crate::render::text_engine::{Fit, FontMode};
 use crate::render::text_engine::{ShapedText, TextEngine};
 
 /// Hardcoded inter-glyph spacing.
@@ -91,6 +93,8 @@ pub struct WrapLayout {
     pub width: u32,
     pub height: u32,
     pub lines: Vec<LineSpan>,
+    /// A word wider than a line was split across lines.
+    pub split_word: bool,
 }
 
 /// Immutable atlas observation; `source_identity == None` identifies the
@@ -132,6 +136,8 @@ pub struct BitFont {
     /// GPU-free test fonts: every text takes the native path and places
     /// whole cells, as GAME.FNT's own glyph table did.
     cells_only: bool,
+    /// The squeeze every measurement and draw takes ([`Self::fitted`]).
+    fit: Cell<Fit>,
 }
 
 /// The Path-A reveal a TextLabel draws for its inclusive count (see
@@ -227,6 +233,56 @@ impl BitFont {
         result
     }
 
+    /// Measure and draw at `fit` for the length of `draw`.
+    pub fn fitted<R>(&self, fit: Fit, draw: impl FnOnce(&BitFont) -> R) -> R {
+        let outer = self.fit.replace(fit);
+        let result = draw(self);
+        self.fit.set(outer);
+        result
+    }
+
+    /// The first [`Fit`] step, from the one [`Self::fitted`] set, at which
+    /// `text` wraps into `max_width` native pixels without splitting a word
+    /// and in no more lines than `max_height` holds whole (at least one, or
+    /// as many as the text's own line breaks make; 0 holds any number). The
+    /// tightest when none does.
+    pub fn fit_box(&self, text: &str, max_width: u32, max_height: u32) -> Fit {
+        if max_width == 0 || text.is_empty() {
+            return self.fit.get();
+        }
+        let rows = match max_height {
+            0 => usize::MAX,
+            height => {
+                (height.saturating_sub(self.bitmap_rows) / self.cell_height.max(1) + 1) as usize
+            }
+        }
+        .max(text.split('\n').count());
+        self.first_fit(|font| {
+            let layout = font.wrap_layout(text, max_width);
+            layout.lines.len() <= rows && !layout.split_word && layout.width <= max_width
+        })
+    }
+
+    /// The first [`Fit`] step, from the one [`Self::fitted`] set, at which
+    /// `text` is no wider than `max_width` native pixels on one line; the
+    /// tightest when none is.
+    pub fn fit_line(&self, text: &str, max_width: u32) -> Fit {
+        self.first_fit(|font| font.text_width(text) <= max_width)
+    }
+
+    /// GPU-free test fonts draw their cells as they are.
+    fn first_fit(&self, fits: impl Fn(&BitFont) -> bool) -> Fit {
+        let mut fit = self.fit.get();
+        if self.cells_only {
+            return fit;
+        }
+        while !self.fitted(fit, &fits) {
+            let Some(tighter) = fit.tighter() else { break };
+            fit = tighter;
+        }
+        fit
+    }
+
     /// Take `previous`'s face and language, for a font rebuilt from a
     /// scenario's GAME.FNT.
     pub fn inherit_settings(&mut self, previous: &BitFont) {
@@ -245,13 +301,14 @@ impl BitFont {
         }
     }
 
-    /// Whether `text` takes the native GAME.FNT paths: Original mode and
-    /// every character drawn by GAME.FNT itself.
+    /// Whether `text` takes the native GAME.FNT paths: Original mode, no
+    /// squeeze and every character drawn by GAME.FNT itself.
     fn native(&self, text: &str) -> bool {
         if self.cells_only {
             return true;
         }
-        self.mode == FontMode::Original
+        self.fit.get() == Fit::NONE
+            && self.mode == FontMode::Original
             && !self.glyphs.is_empty()
             && text.chars().all(|c| match c {
                 '\t' | '\r' | '\n' | ' ' => true,
@@ -261,7 +318,9 @@ impl BitFont {
     }
 
     fn shape(&self, text: &str, max_width: u32) -> Arc<ShapedText> {
-        self.engine.borrow_mut().shape(self.mode, text, max_width)
+        self.engine
+            .borrow_mut()
+            .shape(self.mode, text, max_width, self.fit.get())
     }
 
     /// Whether `text`'s first paragraph runs right to left, so a caller
@@ -641,6 +700,7 @@ impl BitFont {
             width: lines.iter().map(|line| line.width).max().unwrap_or(0),
             height: self.cell_height * lines.len() as u32,
             lines,
+            split_word: shaped.lines.iter().any(|line| line.split),
         }
     }
 
@@ -655,6 +715,7 @@ impl BitFont {
         let mut last_space: Option<(usize, u32)> = None;
         let mut prev_char: Option<char> = None;
         let mut y_lines: u32 = 1;
+        let mut split_word = false;
 
         let chars: Vec<(usize, char)> = text.char_indices().collect();
         let mut i = 0;
@@ -748,6 +809,9 @@ impl BitFont {
                 // separate emission start and scan cursor; remeasuring the
                 // deferred glyph changes subsequent native line boundaries.
                 let deferred_byte = chars[i - 1].0;
+                // Hanzi break between any two; anything else was a word.
+                split_word |=
+                    !crate::render::text_engine::fonts::is_cjk_sized(chars[i - 1].1 as u32);
                 lines.push(LineSpan {
                     start_byte: line_start_byte,
                     end_byte: deferred_byte,
@@ -775,6 +839,7 @@ impl BitFont {
             width: max_line_width,
             height: self.cell_height * y_lines,
             lines,
+            split_word,
         }
     }
 
@@ -947,6 +1012,7 @@ impl BitFont {
             engine: RefCell::new(engine),
             mode: FontMode::default(),
             cells_only: false,
+            fit: Cell::new(Fit::NONE),
         }
     }
 
@@ -1062,6 +1128,7 @@ impl BitFont {
             engine: RefCell::new(engine),
             mode: FontMode::default(),
             cells_only: false,
+            fit: Cell::new(Fit::NONE),
         }
     }
 }
@@ -1069,6 +1136,28 @@ impl BitFont {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// A GPU-free font that shapes every text with the bundled fonts, as
+    /// [`BitFont::vector_only`] does.
+    pub(crate) fn make_vector_test_font() -> BitFont {
+        BitFont {
+            source_identity: None,
+            atlas_texture: None,
+            glyphs: HashMap::new(),
+            missing_glyph: None,
+            cell_height: CELL_HEIGHT,
+            bitmap_rows: BITMAP_ROWS,
+            space_width: DEFAULT_SPACE_WIDTH,
+            char_spacing: CHAR_SPACING,
+            tab_width: TAB_WIDTH,
+            tab_origin: TAB_ORIGIN,
+            darken_texture: None,
+            engine: RefCell::new(TextEngine::new(None)),
+            mode: FontMode::Modern,
+            cells_only: false,
+            fit: Cell::new(Fit::NONE),
+        }
+    }
 
     /// Build a measurement-only BitFont without a GPU context, for pure-logic
     /// tests. Atlas/darken textures are left as None -- production callers
@@ -1108,6 +1197,7 @@ pub(crate) mod tests {
             engine: RefCell::new(TextEngine::new(None)),
             mode: FontMode::Original,
             cells_only: true,
+            fit: Cell::new(Fit::NONE),
         }
     }
 
