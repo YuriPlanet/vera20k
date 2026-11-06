@@ -173,6 +173,7 @@ impl PreparedSavedLocalView {
         let (order, pending, follow) = self.saved.into_local_input();
         input.selection_order = order;
         input.selection_order_pending = pending;
+        input.eva_selection_line = None;
         input.follow_target = follow;
         // ClearScene685640 and PostLoad6851D2 call734210, which resets the
         // last team slot to -1 and rewinds both click clocks. None has the
@@ -258,6 +259,9 @@ pub(crate) struct MatchInputState {
     /// Existing selection paths speak by default; held TypeSelect batches
     /// temporarily suppress and restore this latch.
     pub(crate) selection_voice_enabled: bool,
+    /// Last accessibility selection row, for debouncing repeated selections
+    /// of the same group. Client presentation only, never saved or synced.
+    pub(crate) eva_selection_line: Option<String>,
     /// Pending order mode for the next right-click command.
     pub(crate) queued_order_mode: crate::app::types::OrderMode,
     /// Slot and wall-clock instant of the last plain control-group recall, for
@@ -427,6 +431,7 @@ impl MatchInputState {
             cursor_from_touch: false,
             selection_state: crate::sim::selection::SelectionState::new(),
             selection_order: Vec::new(),
+            eva_selection_line: None,
             selection_order_pending: false,
             selection_voice_enabled: true,
             queued_order_mode: crate::app::types::OrderMode::Move,

@@ -73,7 +73,7 @@ fn selling_visits_refund_one_upgrade_each_before_the_host_sale_tail() {
         assert_eq!(
             sim.sound_events
                 .iter()
-                .filter(|event| matches!(event, SimSoundEvent::StructureSold { owner: speaker } if *speaker == owner))
+                .filter(|event| matches!(event, SimSoundEvent::StructureSold { owner: speaker, .. } if *speaker == owner))
                 .count(),
             frame as usize
         );

@@ -284,7 +284,7 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
                 )
                 .unwrap();
             sold_events += frame.sound_events.iter().filter(|event| {
-                matches!(event, SimSoundEvent::StructureSold { owner } if *owner == computer)
+                matches!(event, SimSoundEvent::StructureSold { owner, .. } if *owner == computer)
             }).count();
             let sim = scene.sim();
             let house = &sim.houses[&computer];

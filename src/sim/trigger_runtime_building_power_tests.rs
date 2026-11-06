@@ -169,10 +169,9 @@ fn building_toggle_scans_tagged_live_marked_unlimboed_buildings_and_returns_a_re
             .take_for_test()
             .into_iter()
             .filter_map(|event| {
-                if let SimSoundEvent::HouseEva { event, owner } = event {
-                    Some((event, owner))
-                } else {
-                    None
+                match event {
+                    SimSoundEvent::HouseEva { event, owner } => Some((event, owner)),
+                    _ => None,
                 }
             })
             .collect::<Vec<_>>(),
@@ -212,10 +211,9 @@ fn counted_tag_runs_off_and_on_in_order_without_a_second_state_or_rng_draws() {
             .take_for_test()
             .into_iter()
             .filter_map(|event| {
-                if let SimSoundEvent::HouseEva { event, .. } = event {
-                    Some(event)
-                } else {
-                    None
+                match event {
+                    SimSoundEvent::HouseEva { event, .. } => Some(event),
+                    _ => None,
                 }
             })
             .collect::<Vec<_>>(),

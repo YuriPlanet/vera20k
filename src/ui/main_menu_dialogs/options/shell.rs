@@ -10,15 +10,15 @@
 use super::{
     CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP,
     CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL,
-    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, DEVELOPER_OPTIONS_LABEL,
-    DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FPS_COUNTER_HELP,
-    FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES,
-    HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP,
-    HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode,
-    LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId,
-    LauncherCue, LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId,
-    MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL,
-    OptionsDialogState, PhysicalControlFrame, RENDER_INTERPOLATION_HELP,
+    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, DETAILED_EVA_TEXT_HELP,
+    DETAILED_EVA_TEXT_LABEL, DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP,
+    DISPLAY_LABEL, DisplayTarget, FPS_COUNTER_HELP, FPS_COUNTER_LABEL, FULL_SCREEN_HELP,
+    FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL,
+    HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
+    HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton,
+    LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult,
+    LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP,
+    ORIGINAL_SHAPE_LABEL, OptionsDialogState, PhysicalControlFrame, RENDER_INTERPOLATION_HELP,
     RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL,
     SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP,
     SKIP_INTRO_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize,
@@ -508,6 +508,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameBanner => CUSTOM_END_GAME_BANNER_LABEL,
             LauncherCheckboxId::CustomEndGameScore => CUSTOM_END_GAME_SCORE_LABEL,
             LauncherCheckboxId::CustomEndGameMovie => CUSTOM_END_GAME_MOVIE_LABEL,
+            LauncherCheckboxId::DetailedEvaText => DETAILED_EVA_TEXT_LABEL,
         }
     }
 
@@ -569,6 +570,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameBanner => self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => self.values.custom_end_game_score,
             LauncherCheckboxId::CustomEndGameMovie => self.values.custom_end_game_movie,
+            LauncherCheckboxId::DetailedEvaText => self.values.detailed_eva_text,
         }
     }
 
@@ -793,6 +795,9 @@ impl OptionsDialogState {
                 }
                 LauncherCheckboxId::CustomEndGameMovie => {
                     LauncherStatusHelp::Text(CUSTOM_END_GAME_MOVIE_HELP)
+                }
+                LauncherCheckboxId::DetailedEvaText => {
+                    LauncherStatusHelp::Text(DETAILED_EVA_TEXT_HELP)
                 }
             });
         }

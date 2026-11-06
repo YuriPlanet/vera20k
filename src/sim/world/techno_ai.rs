@@ -1059,6 +1059,10 @@ fn veterancy_promotion_step(
         return;
     };
     let owner = entity.owner();
+    // The promoted object's type is already interned on the entity; carry it
+    // out so the accessibility line can name the game's own object without a
+    // second lookup or a guessed translation. Transient fact only.
+    let type_id = entity.type_ref();
     let world = crate::sim::movement::ground_pose::object_location(entity, terrain).into();
     let sound = match promotion {
         crate::sim::combat::veterancy::Promotion::Elite => {
@@ -1086,6 +1090,7 @@ fn veterancy_promotion_step(
     sound_events.emit(super::SimSoundEvent::UnitPromoted {
         owner,
         sound_id,
+        type_id,
         world,
     });
 }

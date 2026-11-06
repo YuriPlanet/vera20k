@@ -49,6 +49,7 @@ pub(crate) fn launcher_values_from_profile(
         custom_end_game_banner: profile.custom_end_game_banner,
         custom_end_game_score: profile.custom_end_game_score,
         custom_end_game_movie: profile.custom_end_game_movie,
+        detailed_eva_text: profile.detailed_eva_text,
         sidebar: profile.sidebar,
         health_bars: profile.health_bars,
         // The slider's position is the stored level less the retail strength,
@@ -128,6 +129,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_custom_end_game_score(&mut self, enabled: bool);
     /// Whether the exit lets the closing commander clip finish.
     fn store_custom_end_game_movie(&mut self, enabled: bool);
+    /// VERA-only accessibility text rows; default off.
+    fn store_detailed_eva_text(&mut self, enabled: bool);
     /// VERA's team-colour strength, as the level the profile stores.
     fn store_house_color_strength(&mut self, strength: u8);
 }
@@ -190,6 +193,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::CustomEndGameMovieChanged(enabled) => {
             operations.store_custom_end_game_movie(enabled);
+        }
+        LauncherOptionsEvent::DetailedEvaTextChanged(enabled) => {
+            operations.store_detailed_eva_text(enabled);
         }
         LauncherOptionsEvent::HouseColorStrengthChanged(strength) => {
             operations.store_house_color_strength(strength);

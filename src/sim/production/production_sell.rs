@@ -534,17 +534,19 @@ pub fn sell_stage_zero(
     {
         crate::sim::docking::bunker_link::release_sell_destroy(sim, id, rules, frame_effects);
     }
-    if let Some((owner, upgrade_type)) = sim.substrate.entities.get(id).and_then(|building| {
-        let upgrades = building.building_upgrades();
-        (upgrades.count() != 0).then(|| {
-            let upgrade_type = usize::try_from(i32::from(upgrades.count()) - 1)
-                .ok()
-                .and_then(|slot| upgrades.types().get(slot))
-                .copied()
-                .flatten();
-            (building.owner(), upgrade_type)
+    if let Some((owner, upgrade_type, type_id)) =
+        sim.substrate.entities.get(id).and_then(|building| {
+            let upgrades = building.building_upgrades();
+            (upgrades.count() != 0).then(|| {
+                let upgrade_type = usize::try_from(i32::from(upgrades.count()) - 1)
+                    .ok()
+                    .and_then(|slot| upgrades.types().get(slot))
+                    .copied()
+                    .flatten();
+                (building.owner(), upgrade_type, building.type_ref())
+            })
         })
-    }) {
+    {
         // Steam gamemd:44AAC3..44AB03 constructs the last type, refunds it through70ADA0,
         // scalar-deletes it, then calls PowerDown451690. Reuse the shared
         // constructor/destructor transaction: ID/RNG remain spent, tracking
@@ -582,7 +584,7 @@ pub fn sell_stage_zero(
         //44AB22..44AB36: the existing app receiver applies +41A's local-owner
         // gate before playing EVA_StructureSold (literal819030).
         sim.sound_events
-            .emit(SimSoundEvent::StructureSold { owner });
+            .emit(SimSoundEvent::StructureSold { owner, type_id });
         //44AB44 calls the real Queue5B35E0, whose Selling guard rejects
         // Guard5,0. Preserve that shared decision: no forced Assign/Commence.
         // The early return bypasses44ABAC's status=1, so another visit pops
@@ -744,9 +746,9 @@ pub(crate) fn sell_complete(
     id: u64,
     frame_effects: FrameEffects<'_>,
 ) -> bool {
-    let Some((owner, undeploys)) = sim.substrate.entities.get(id).and_then(|entity| {
+    let Some((owner, undeploys, type_id)) = sim.substrate.entities.get(id).and_then(|entity| {
         let object = sim.object_type(entity.type_ref(), rules)?;
-        Some((entity.owner(), undeploys(rules, object)))
+        Some((entity.owner(), undeploys(rules, object), entity.type_ref()))
     }) else {
         return false;
     };
@@ -755,7 +757,7 @@ pub(crate) fn sell_complete(
     let _ = sim.assign_target_represented(id, None, rules, registry, frame_effects);
     if !undeploys {
         sim.sound_events
-            .emit(SimSoundEvent::StructureSold { owner });
+            .emit(SimSoundEvent::StructureSold { owner, type_id });
     }
     if qualifying_undeploy(sim, rules, id) {
         sim.finish_undeploy(id, rules, registry, frame_effects);
