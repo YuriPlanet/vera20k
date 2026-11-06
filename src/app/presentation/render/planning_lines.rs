@@ -447,7 +447,8 @@ fn emit_badge(
     ];
     emit_outline(out, [mid[0] - 9, mid[1] - 9, 19, 19], rgb, view);
     emit_rect(out, [mid[0] - 8, mid[1] - 8, 17, 17], interior, view);
-    //731CE0/731CD0 cursor rows76/77 are mouse frames433/434, not text.
+    //731CE0/731CD0 cursor rows76/77 are mouse frames433/434, not text:
+    // MouseClass::GetCursorBaseFrame (0x005BDB90) with small flag 0.
     let frame = match kind {
         PlanningBadgeKind::AreaGuard => 433,
         PlanningBadgeKind::AttackMove => 434,
