@@ -26,6 +26,11 @@
 //! `0x3FC25E5374344960`; the shared native-x87 substrate owns that value and
 //! the 53-bit, truncate-toward-zero operation order.
 //!
+//! Buildings on VERA's extended terrain keep that native conversion for
+//! relative height, but align their ground baseline to the terrain's 15px
+//! levels. [`building_terrain_correction`] is shared by their live, attached
+//! animation, placement and fogged drawing paths.
+//!
 //! ### What this replaced
 //!
 //! Until this landed the lift was applied in two layers — the air movement pass
@@ -57,8 +62,27 @@
 
 use crate::sim::game_entity::GameEntity;
 
-fn adjust_for_z_lift_px(leptons: i32) -> f32 {
-    crate::util::native_x87::adjust_for_z_standard(leptons) as f32
+/// Presentation-only extension of Tactical::AdjustForZ @ 0x006D20E0 for
+/// buildings on high terrain. Its native scale agrees with 15px terrain
+/// levels through level 14, but gives 538px instead of 540px at level 36.
+/// Shift the ground baseline, keeping exact-Z offsets and simulation intact;
+/// otherwise the TMP depth surface hides flat parts of the building.
+pub(crate) fn building_terrain_correction(level: i32) -> i32 {
+    if !(15..=i32::from(i8::MAX)).contains(&level) {
+        return 0;
+    }
+    level * crate::render::native_z::HEIGHT_LEVEL_PX
+        - crate::util::native_x87::adjust_for_z_standard(
+            level * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
+        )
+}
+
+fn entity_terrain_correction(entity: &GameEntity) -> i32 {
+    if entity.category() == crate::map::entities::EntityCategory::Structure {
+        building_terrain_correction(i32::from(entity.position.z() as i8))
+    } else {
+        0
+    }
 }
 
 /// Upward screen lift of an entity's exact Location Z, in pixels.
@@ -66,10 +90,10 @@ fn adjust_for_z_lift_px(leptons: i32) -> f32 {
 /// Positive lifts the entity toward the top of the screen (screen Y decreases).
 ///
 /// The exact Z is total world Z, the terrain level included. An object
-/// without one has no lift here: [`screen_position`] draws it at its stored
-/// level.
+/// without one already projects its stored level; only the high-terrain
+/// building correction is added here.
 ///
-/// The height term reproduces gamemd's `AdjustForZ` exactly, quantisation
+/// The native height term reproduces gamemd's `AdjustForZ` exactly, quantisation
 /// included: the startup scale, the 728-lepton correction, and the `+ 0.5`
 /// truncate that rounds it to a whole pixel. The engine's own
 /// blitter is integer-pixel, so a climbing aircraft steps a pixel at a time
@@ -80,7 +104,8 @@ fn adjust_for_z_lift_px(leptons: i32) -> f32 {
 /// `ObjectClass__GetCoords` at `0x005F65A0`, which copies exact XYZ and adds no
 /// walking sine bob. Grounded objects therefore have zero additional lift.
 pub fn height_lift_px(entity: &GameEntity) -> f32 {
-    adjust_for_z_lift_px(entity.position.exact_z_leptons().unwrap_or(0))
+    (crate::util::native_x87::adjust_for_z_standard(entity.position.exact_z_leptons().unwrap_or(0))
+        + entity_terrain_correction(entity)) as f32
 }
 
 /// Where this entity is drawn, in world-space screen pixels.
@@ -114,6 +139,7 @@ pub(crate) fn screen_position_and_lift(entity: &GameEntity) -> ((f32, f32), i32)
         } else {
             crate::util::native_x87::adjust_for_z_standard(z)
         };
+        let lift = lift + entity_terrain_correction(entity);
         ((sx, sy - lift as f32), lift)
     } else {
         (screen_position(entity), screen_lift_px(entity))
@@ -130,7 +156,8 @@ pub fn facing_step_screen_position(entity: &GameEntity, facing: u16, distance: i
     let z = entity.position.exact_z_leptons().unwrap_or_else(|| {
         i32::from(entity.position.z() as i8) * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS
     });
-    crate::util::lepton::absolute_leptons_to_screen(x, y, z)
+    let (sx, sy) = crate::util::lepton::absolute_leptons_to_screen(x, y, z);
+    (sx, sy - entity_terrain_correction(entity) as f32)
 }
 
 /// Fly Draw_Point4CF830 returns X0 and this screen-row delta. It is separate
@@ -168,15 +195,16 @@ pub(crate) fn fly_draw_point_y(
 /// The whole upward lift [`screen_position`] draws `entity` with, in pixels:
 /// `AdjustForZ` of its exact Location Z, or of its stored level. A draw that
 /// cancels its lift for depth or per-pixel Z
-/// cancels this, as the building draw's `NormalZAdjust - AdjustForZ(Z)` seed
-/// does (`BuildingClass_DrawBody`).
+/// cancels this, including the high-terrain correction, as the building
+/// draw's `NormalZAdjust - AdjustForZ(Z)` seed does (`BuildingClass_DrawBody`).
 pub fn screen_lift_px(entity: &GameEntity) -> i32 {
-    match entity.position.exact_z_leptons() {
+    let native = match entity.position.exact_z_leptons() {
         Some(z) => crate::util::native_x87::adjust_for_z_standard(z),
         None => crate::util::native_x87::adjust_for_z_standard(
             i32::from(entity.position.z() as i8) * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
         ),
-    }
+    };
+    native + entity_terrain_correction(entity)
 }
 
 /// How far up a building's art sits from the entity anchor, in screen pixels.
@@ -247,6 +275,47 @@ fn z_free_screen_position(position: &crate::sim::components::Position) -> (f32, 
 mod tests {
     use super::*;
     use crate::map::entities::EntityCategory;
+
+    #[test]
+    fn high_terrain_building_anchor_matches_its_tile_and_depth_lift() {
+        let mut building = GameEntity::test_default_of_category(
+            1,
+            "GASPYSAT",
+            "Neutral",
+            189,
+            258,
+            EntityCategory::Structure,
+        );
+        for (level, exact_z) in [(14, Some(1456)), (36, Some(3744)), (36, None)] {
+            building.position.set_z_for_test(level);
+            building.position.set_exact_z_leptons_for_test(exact_z);
+            let ((x, y), lift) = screen_position_and_lift(&building);
+            let (tile_x, tile_y) = crate::map::terrain::iso_to_screen(189, 258, level);
+            assert_eq!(building_art_anchor(x, y), (tile_x + 30.0, tile_y));
+            assert_eq!(screen_position(&building), (x, y));
+            assert_eq!(screen_lift_px(&building), lift);
+            assert_eq!(
+                y + lift as f32,
+                z_free_screen_position(&building.position).1
+            );
+        }
+        building.position.set_exact_z_leptons_for_test(Some(3796));
+        assert_eq!(
+            screen_lift_px(&building) - 540,
+            crate::util::native_x87::adjust_for_z_standard(3796)
+                - crate::util::native_x87::adjust_for_z_standard(3744),
+            "retain the native relative lift above the high plateau"
+        );
+        let mut aircraft =
+            GameEntity::test_default_of_category(2, "ZEP", "A", 189, 258, EntityCategory::Aircraft);
+        aircraft.position.set_z_for_test(36);
+        aircraft.position.set_exact_z_leptons_for_test(Some(3744));
+        assert_eq!(
+            screen_lift_px(&aircraft),
+            crate::util::native_x87::adjust_for_z_standard(3744),
+            "aircraft retain their native lift"
+        );
+    }
 
     #[test]
     fn fly_draw_point_matches_original_signed_frames_and_phase_gates() {
