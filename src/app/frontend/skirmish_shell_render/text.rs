@@ -345,52 +345,7 @@ pub(super) fn truncate_owner_draw_label<'a>(
     label: &'a str,
     fit_width: u32,
 ) -> std::borrow::Cow<'a, str> {
-    let mut utf16: Vec<u16> = label.encode_utf16().collect();
-    if owner_draw_utf16_text_width(font, &utf16) <= fit_width {
-        return std::borrow::Cow::Borrowed(label);
-    }
-
-    while !utf16.is_empty() && owner_draw_utf16_text_width(font, &utf16) > fit_width {
-        utf16.pop();
-    }
-    std::borrow::Cow::Owned(String::from_utf16_lossy(&utf16))
-}
-
-fn owner_draw_utf16_text_width(font: &BitFont, units: &[u16]) -> u32 {
-    const TAB: u16 = b'\t' as u16;
-    const CR: u16 = b'\r' as u16;
-    const LF: u16 = b'\n' as u16;
-    const SPACE: u16 = b' ' as u16;
-
-    let mut x: u32 = 0;
-    let mut count: u32 = 0;
-    for unit in units.iter().copied() {
-        match unit {
-            0 => break,
-            TAB => {
-                let advanced = x + font.tab_width;
-                x = advanced - ((advanced.saturating_sub(font.tab_origin)) % font.tab_width);
-                continue;
-            }
-            CR | LF => continue,
-            SPACE => {
-                x += font.space_width;
-                count += 1;
-            }
-            other => {
-                let w = font
-                    .glyphs
-                    .get(&other)
-                    .map(|g| g.pixel_width as u32)
-                    .or_else(|| font.missing_glyph.as_ref().map(|g| g.pixel_width as u32));
-                if let Some(w) = w {
-                    x += w;
-                    count += 1;
-                }
-            }
-        }
-    }
-    x + count * font.char_spacing
+    font.truncate_to_width(label, fit_width)
 }
 
 pub(super) fn truncate_combo_dropdown_label<'a>(

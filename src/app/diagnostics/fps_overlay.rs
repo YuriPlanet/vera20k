@@ -44,7 +44,7 @@ impl FpsOverlay {
         let (camera_buffer, camera_group) = batch.create_ui_camera(&gpu.device);
         Self {
             visible: false,
-            font: BitFont::fallback_5x7(&gpu.device, &gpu.queue, batch),
+            font: BitFont::vector_only(&gpu.device, &gpu.queue, batch),
             camera_buffer,
             camera_group,
             frame: Mutex::new(OverlayFrame {
@@ -309,24 +309,6 @@ mod tests {
             )
             .ends_with("INTERP BYPASS")
         );
-        let supported = crate::render::bit_font::fallback_5x7_glyphs();
-        for (interpolation, sampling) in [(true, true), (false, false), (true, false)] {
-            for ch in simulation_readout_text(
-                16.0,
-                Some(crate::app::presentation::interpolation::SimulationReadout {
-                    interpolation,
-                    sampling,
-                    ..readout
-                }),
-            )
-            .chars()
-            {
-                assert!(
-                    supported.iter().any(|(glyph, _)| *glyph == ch),
-                    "missing {ch}"
-                );
-            }
-        }
     }
 
     #[test]
@@ -340,18 +322,5 @@ mod tests {
     fn fps_overlay_reports_render_rate_not_simulation_ticks() {
         assert_eq!(readout_text(1000.0 / 60.0), "FPS 60  17 MS");
         assert_eq!(readout_text(100.0), "FPS 10  100 MS");
-    }
-
-    #[test]
-    fn fps_overlay_font_covers_every_readout_character() {
-        let supported = crate::render::bit_font::fallback_5x7_glyphs();
-        for frame_ms in [0.0, 0.5, 1000.0 / 60.0, 100.0, 1234.0] {
-            for ch in readout_text(frame_ms).chars() {
-                assert!(
-                    supported.iter().any(|(glyph, _)| *glyph == ch),
-                    "missing {ch}"
-                );
-            }
-        }
     }
 }

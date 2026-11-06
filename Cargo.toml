@@ -113,6 +113,19 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
 
+# --- UI text ---
+# Layout of every interface string: shaping (harfrust), bidirectional text,
+# line breaking (ICU4X, with the word dictionaries `complex-scripts` adds for
+# Thai, Lao, Khmer and Burmese, which put no spaces between words) and font
+# fallback by script. Only VERA's bundled fonts are registered: fontique's
+# `system` feature (CoreText, DirectWrite, fontconfig) stays off. See
+# src/render/text_engine/mod.rs.
+parley = { version = "0.12", default-features = false, features = ["std", "complex-scripts"] }
+# Glyph rasterisation from the outlines parley's runs name, through the same
+# skrifa parley reads them with; exact-area coverage is what scales GAME.FNT's
+# pixels evenly.
+swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"] }
+
 # --- Image processing ---
 # Used for texture atlas creation and debug image output, not for asset parsing.
 # Only PNG (every image written) and ICO (the window icon) are enabled: the default

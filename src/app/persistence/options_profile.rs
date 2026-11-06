@@ -161,6 +161,10 @@ pub(crate) struct RetailOptionsProfile {
     /// own drawing of the whole map (`app::map_picture`) in place of
     /// the map's `[PreviewPack]` picture. On by default; presentation only.
     pub(crate) hd_map_previews: bool,
+    /// `[VERA] OriginalFont=`: interface text draws in the game's own
+    /// GAME.FNT, scaled evenly, instead of VERA's vector fonts
+    /// ([`crate::render::text_engine`]). Off by default; presentation only.
+    pub(crate) original_font: bool,
     /// `[VERA] WindowMaximized=`: whether the window was last left maximised.
     /// [`Self::window_placement`] keeps the size it returns to.
     pub(crate) window_maximized: bool,
@@ -328,6 +332,7 @@ impl Default for RetailOptionsProfile {
             hd_radar: false,
             smooth_sidebar: false,
             hd_map_previews: true,
+            original_font: false,
             window_maximized: false,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
@@ -362,7 +367,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 30],
+    pub(crate) vera: [(&'static str, String); 31],
 }
 
 impl RetailOptionsLoad {
@@ -571,6 +576,7 @@ impl RetailOptionsProfile {
             self.hd_radar = vera.read_bool("HdRadar", self.hd_radar);
             self.smooth_sidebar = vera.read_bool("SmoothSidebar", self.smooth_sidebar);
             self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
+            self.original_font = vera.read_bool("OriginalFont", self.original_font);
             self.window_maximized = vera.read_bool("WindowMaximized", self.window_maximized);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
@@ -776,8 +782,14 @@ impl RetailOptionsProfile {
                     "HdMapPreviews",
                     format_bool(self.hd_map_previews).to_string(),
                 ),
+                ("OriginalFont", format_bool(self.original_font).to_string()),
             ],
         }
+    }
+
+    /// The face [`Self::original_font`] selects.
+    pub(crate) fn font_mode(&self) -> crate::render::text_engine::FontMode {
+        font_mode(self.original_font)
     }
 
     /// Transform one raw profile snapshot without performing filesystem I/O.
@@ -935,6 +947,15 @@ fn upper_only_volume(value: f64) -> f32 {
     // An explicit branch matters for NaN: native's ordered comparison is
     // false, so NaN passes through instead of `min` selecting the other input.
     if value >= 1.0 { 1.0 } else { value as f32 }
+}
+
+/// `[VERA] OriginalFont=`'s face: GAME.FNT when set, the vector fonts otherwise.
+pub(crate) fn font_mode(original_font: bool) -> crate::render::text_engine::FontMode {
+    if original_font {
+        crate::render::text_engine::FontMode::Original
+    } else {
+        crate::render::text_engine::FontMode::Modern
+    }
 }
 
 fn format_bool(value: bool) -> &'static str {

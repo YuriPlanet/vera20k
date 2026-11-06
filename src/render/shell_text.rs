@@ -4,7 +4,7 @@
 //! data and wrap layout.
 
 use crate::render::batch::SpriteInstance;
-use crate::render::bit_font::BitFont;
+use crate::render::bit_font::{BitFont, LineSpan};
 use crate::render::shell_text_reveal::PathAReveal;
 
 /// Alignment flag set for `draw_in_rect`.
@@ -82,6 +82,21 @@ fn vcenter_offset(rect_h: u32, measured_h: u32) -> f32 {
     ((rect_h as i32 - measured_h as i32) / 2) as f32
 }
 
+/// A line's left offset in its rect: centred or right-aligned as `flags`
+/// ask. Without either, a right-to-left line starts at the right edge, its
+/// start edge; gamemd's own text is left to right throughout.
+fn line_offset(flags: ShellAlign, span: &LineSpan, rect_w: u32) -> f32 {
+    if span.width >= rect_w {
+        0.0
+    } else if flags.contains(ShellAlign::H_CENTER) {
+        ((rect_w - span.width) / 2) as f32
+    } else if flags.contains(ShellAlign::H_RIGHT) || span.rtl {
+        (rect_w - span.width) as f32
+    } else {
+        0.0
+    }
+}
+
 pub fn draw_in_rect(
     font: &BitFont,
     text: &str,
@@ -141,13 +156,7 @@ pub fn draw_in_rect_scaled(
         if line_index > 0 && native.h != 0 && line_index as f32 * line_advance >= native.h as f32 {
             break;
         }
-        let line_x_offset = if flags.contains(ShellAlign::H_CENTER) && span.width < native.w {
-            ((native.w - span.width) / 2) as f32
-        } else if flags.contains(ShellAlign::H_RIGHT) && span.width < native.w {
-            (native.w - span.width) as f32
-        } else {
-            0.0
-        };
+        let line_x_offset = line_offset(flags, span, native.w);
         let segment = &text[span.start_byte..span.end_byte];
         instances.append(&mut font.build_text(
             segment,
@@ -217,13 +226,7 @@ pub fn draw_in_rect_path_a_scaled(
         if line_index > 0 && native.h != 0 && line_index as f32 * line_advance >= native.h as f32 {
             break;
         }
-        let line_x_offset = if flags.contains(ShellAlign::H_CENTER) && span.width < native.w {
-            ((native.w - span.width) / 2) as f32
-        } else if flags.contains(ShellAlign::H_RIGHT) && span.width < native.w {
-            (native.w - span.width) as f32
-        } else {
-            0.0
-        };
+        let line_x_offset = line_offset(flags, span, native.w);
         let segment = &text[span.start_byte..span.end_byte];
         let (mut line_instances, new_consumed) = font.build_text_path_a(
             segment,

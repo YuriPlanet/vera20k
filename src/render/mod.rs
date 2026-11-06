@@ -82,8 +82,6 @@ pub(crate) mod sinking;
 pub mod skirmish_shell_chrome;
 pub mod smudge;
 pub mod sprite_atlas;
-pub mod status_font;
-pub(crate) mod status_font_data;
 pub(crate) mod surface_line;
 pub mod tactical_compat;
 pub mod tactical_draw_plan;
@@ -92,6 +90,7 @@ pub(crate) mod terrain_draw;
 #[cfg(test)]
 pub(crate) mod terrain_draw_gpu_tests;
 pub mod terrain_instances;
+pub mod text_engine;
 pub mod tile_atlas;
 pub mod unit_atlas;
 pub mod unit_pose_cache;

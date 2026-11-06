@@ -42,6 +42,7 @@ pub(crate) fn launcher_values_from_profile(
         hd_radar: profile.hd_radar,
         smooth_sidebar: profile.smooth_sidebar,
         hd_map_previews: profile.hd_map_previews,
+        original_font: profile.original_font,
         shift_queue: profile.shift_queue,
         wol_test_service: profile.wol_test_service,
         fps_counter: false,
@@ -118,6 +119,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_smooth_sidebar(&mut self, enabled: bool);
     /// Show VERA's own map pictures in the setup screens (`[VERA] HdMapPreviews=`).
     fn store_hd_map_previews(&mut self, enabled: bool);
+    /// Draw interface text in GAME.FNT instead of the vector fonts (`[VERA] OriginalFont=`).
+    fn store_original_font(&mut self, enabled: bool);
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
     fn set_fps_counter(&mut self, shown: bool);
@@ -171,6 +174,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::HdMapPreviewsChanged(enabled) => {
             operations.store_hd_map_previews(enabled);
+        }
+        LauncherOptionsEvent::OriginalFontChanged(enabled) => {
+            operations.store_original_font(enabled);
         }
         LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
             operations.store_shift_queue(shift_queue);

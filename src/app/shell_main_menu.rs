@@ -146,6 +146,13 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next setup screen picks its preview from it.
         self.persistence.options_profile.hd_map_previews = enabled;
     }
+    fn store_original_font(&mut self, enabled: bool) {
+        // Every text path measures and draws in it from the next frame.
+        self.persistence.options_profile.original_font = enabled;
+        self.renderer
+            .bit_font
+            .set_mode(crate::app::persistence::options_profile::font_mode(enabled));
+    }
     fn store_mouse_wheel_zoom(&mut self, enabled: bool) {
         self.persistence.options_profile.mouse_wheel_zoom = enabled;
         if !enabled {

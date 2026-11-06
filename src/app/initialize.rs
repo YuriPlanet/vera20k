@@ -574,7 +574,7 @@ impl App {
         );
         terrain_draw_renderer.generate_ion_blast_frames(&gpu.device, &gpu.queue);
         let combat_light_renderer = crate::render::combat_light::CombatLightRenderer::new(&gpu);
-        let mut bit_font = BitFont::fallback_5x7(&gpu.device, &gpu.queue, &batch_renderer);
+        let mut bit_font = BitFont::vector_only(&gpu.device, &gpu.queue, &batch_renderer);
         let fps_overlay =
             crate::app::diagnostics::fps_overlay::FpsOverlay::new(&gpu, &batch_renderer);
         let depth_view: wgpu::TextureView = gpu.create_depth_texture();
@@ -629,6 +629,8 @@ impl App {
         if let Some(fnt) = startup_fnt.as_ref() {
             bit_font = BitFont::from_fnt(&gpu.device, &gpu.queue, &batch_renderer, fnt);
         }
+        bit_font.set_mode(options_profile.font_mode());
+        bit_font.set_locale(crate::i18n::selected_language());
         let outcome_banner_art = startup_asset_manager.as_ref().and_then(|assets| {
             crate::app::presentation::outcome_banner::OutcomeBannerArt::build(
                 &gpu,
@@ -647,23 +649,20 @@ impl App {
         // The load then runs behind the black frame presented below.
         let play_startup = process_movies && !options_profile.skip_intro;
         let mut startup_splash = if play_startup {
-            startup_asset_manager
-                .as_ref()
-                .zip(startup_fnt.as_ref())
-                .and_then(|(assets, fnt)| {
-                    startup_splash::StartupSplashPresentation::build(
-                        &gpu,
-                        &batch_renderer,
-                        assets,
-                        startup_csf.as_ref(),
-                        fnt,
-                        gpu.config.width,
-                        gpu.config.height,
-                        options_profile.yr_original_style,
-                    )
-                    .map_err(|err| log::warn!("Could not build retail startup splash: {err:#}"))
-                    .ok()
-                })
+            startup_asset_manager.as_ref().and_then(|assets| {
+                startup_splash::StartupSplashPresentation::build(
+                    &gpu,
+                    &batch_renderer,
+                    assets,
+                    startup_csf.as_ref(),
+                    &bit_font,
+                    gpu.config.width,
+                    gpu.config.height,
+                    options_profile.yr_original_style,
+                )
+                .map_err(|err| log::warn!("Could not build retail startup splash: {err:#}"))
+                .ok()
+            })
         } else {
             None
         };
@@ -682,6 +681,7 @@ impl App {
                 &shell_surface_presenter,
                 &depth_view,
                 &fps_overlay,
+                &bit_font,
                 splash.as_deref(),
             ) {
                 Ok(true) => {
@@ -1251,7 +1251,6 @@ impl App {
                 status_screen_fill,
                 status_card_glow,
                 bit_font,
-                status_font: crate::render::status_font::StatusFaceCache::new(),
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),

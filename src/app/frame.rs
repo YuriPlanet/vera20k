@@ -675,6 +675,12 @@ impl App {
         mut hidden_run: Option<&mut crate::app::hidden_run::HiddenRun>,
         pass: FramePass,
     ) -> Result<FrameRenderOutcome> {
+        // The glyph atlas empties or grows only between frames, while no
+        // instance built from it is waiting to draw.
+        state
+            .renderer
+            .bit_font
+            .begin_frame(&state.renderer.gpu.device, &state.renderer.batch_renderer);
         if let Some(presented) = crate::app::persistence::commands::pump_saved_game_load(state) {
             return Ok(if presented {
                 FrameRenderOutcome::Presented
@@ -731,6 +737,7 @@ impl App {
                 &state.renderer.shell_surface_presenter,
                 &state.renderer.depth_view,
                 &state.renderer.fps_overlay,
+                &state.renderer.bit_font,
                 Some(splash),
             )?;
             if presented {
