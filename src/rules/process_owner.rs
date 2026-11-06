@@ -1431,11 +1431,7 @@ mod tests {
                 )
                 .unwrap();
             let preview = owner
-                .random_map_preview_projection(
-                    None,
-                    "TEMPERATE",
-                    owner.project_random_map_terrain_rules(None, true),
-                )
+                .random_map_preview_projection(None, "TEMPERATE")
                 .unwrap();
             assert_eq!(
                 cue(&RuleSet::from_processed_rules(&preview).unwrap()).as_deref(),
