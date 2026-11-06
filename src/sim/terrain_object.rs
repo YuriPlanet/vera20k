@@ -674,6 +674,7 @@ impl TerrainObjectStore {
         self.objects.insert(terrain.stable_id, terrain);
     }
 
+    /// `TerrainClass::Mark @ 0x0071BFB0` places through
     /// CellAddContent47E913..47E91F, original instructions: prepend to
     /// this recipient unless its head.Next already equals the object. Every
     /// recipient overwrites the same Object+30, never a per-cell successor.

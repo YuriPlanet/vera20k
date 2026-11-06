@@ -1,7 +1,14 @@
 //! Active YR PlanMgr: shared nodes and per-Techno path tokens.
 //! Native identities: append638120, commit636CE0, consume636590,
 //! lookup636E60, connect639740/639800 and delete639BC0 (gamemd.exe).
-//! The obsolete TS House path slots and Foot Formation+520 are unrelated.
+//! The obsolete TS House path slots (`WaypointPathClass`) and Foot Formation+520
+//! are unrelated. YR never fills those slots: every caller of
+//! `DisplayClass::SetWaypointMode @ 0x004AC700` passes mode 0, so its flag
+//! (+0x11B3) is never set and `DetermineAction`'s waypoint branch (0x006928A9) never
+//! runs. The functions that add waypoints (0x00502160, 0x00502290, 0x005022F0)
+//! have no references. Drawing (`Tactical::DrawWaypointPaths @ 0x006DAD60`) and
+//! following (`FootClass::ProceedToNextPlanningWaypoint @ 0x004DE580`) therefore
+//! only ever see empty paths.
 
 use super::Simulation;
 use crate::map::entities::EntityCategory;

@@ -131,6 +131,7 @@ impl RmgSettings {
         })
     }
 
+    /// `MapSeedClass::ReadINI @ 0x005981F0` reads `RMGMD.INI`
     /// `[General]` through ReadInt over each field and the IntVector reader
     /// (`0x00475D70`) for the lists (`0x005982D0..0x0059877A`).
     pub(super) fn apply(&mut self, ini: &IniFile) {
