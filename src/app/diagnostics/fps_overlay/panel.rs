@@ -6,6 +6,7 @@ use crate::app::diagnostics::core_load::CoreLoadSampler;
 use crate::app::diagnostics::state::RenderTimingMeter;
 use crate::app::presentation::interpolation::SimulationReadout;
 use crate::app::presentation::render::RenderPhases;
+use crate::assets::csf_file::CsfFile;
 use crate::sim::frame_profile::PHASE_COUNT;
 use crate::util::logging::LoggedProblem;
 use crate::util::time::{Duration, Instant};
@@ -194,24 +195,26 @@ pub(super) enum Part {
 /// The panel in GAME.FNT: rates and units, Most CPU, Cores and the newest
 /// warning, each row only once it has something to say. The warning's
 /// message stays as logged; its level and age are labels like the rest.
-pub(super) fn rows(shown: &Shown) -> Vec<Vec<Part>> {
-    let mut rows = vec![vec![Part::Text(first_row(shown), GREEN)]];
+pub(super) fn rows(shown: &Shown, csf: Option<&CsfFile>) -> Vec<Vec<Part>> {
+    let mut rows = vec![vec![Part::Text(first_row(shown, csf), GREEN)]];
     if let Some((first, rest)) = shown.areas.split_first() {
         let mut row = vec![
-            Part::Text(format!("{}  ", label("VERA:FpsPanelMostCpu")), GREEN),
-            Part::Text(area(first), WARM),
+            Part::Text(format!("{}  ", label(csf, "VERA:FpsPanelMostCpu")), GREEN),
+            Part::Text(area(first, csf), WARM),
         ];
         if !rest.is_empty() {
-            let rest = rest.iter().map(|other| format!("{DOT}{}", area(other)));
+            let rest = rest
+                .iter()
+                .map(|other| format!("{DOT}{}", area(other, csf)));
             row.push(Part::Text(rest.collect(), GREEN));
         }
         rows.push(row);
     }
     if let Some(loads) = shown.core_loads.as_ref().filter(|loads| !loads.is_empty()) {
         let average = format!("{:.0}", loads.iter().sum::<f32>() / loads.len() as f32);
-        let average = label_with("VERA:FpsPanelAverage", "percent", &average);
+        let average = label_with(csf, "VERA:FpsPanelAverage", "percent", &average);
         rows.push(vec![
-            Part::Text(format!("{}  ", label("VERA:FpsPanelCores")), GREEN),
+            Part::Text(format!("{}  ", label(csf, "VERA:FpsPanelCores")), GREEN),
             Part::Bars(loads.clone()),
             Part::Text(format!("   {average}"), GREEN),
         ]);
@@ -223,23 +226,32 @@ pub(super) fn rows(shown: &Shown) -> Vec<Vec<Part>> {
         };
         let message = message.lines().next().unwrap_or("").replace('\t', " ");
         rows.push(vec![Part::Text(
-            format!("{}{DOT}{}{DOT}{}", label(level), ago(*age), message.trim()),
+            format!(
+                "{}{DOT}{}{DOT}{}",
+                label(csf, level),
+                ago(*age, csf),
+                message.trim()
+            ),
             color,
         )]);
     }
     rows
 }
 
-/// A panel label in the selected language ([`crate::i18n`]). The panel also
-/// draws before any CSF loads, and the retail CSF has no `VERA:` labels, so
-/// VERA's language files answer without one.
-fn label(key: &str) -> String {
-    crate::i18n::text(None, key).into_owned()
+/// A panel label through [`crate::i18n`]: the loaded CSF first, then the
+/// selected language's file and English. `None` before the CSF loads.
+fn label(csf: Option<&CsfFile>, key: &str) -> String {
+    crate::i18n::text(csf, key).into_owned()
 }
 
 /// A label with its one `{name}` filled in.
-fn label_with(key: &str, name: &str, value: &dyn std::fmt::Display) -> String {
-    crate::i18n::fill(&label(key), &[(name, value)])
+fn label_with(
+    csf: Option<&CsfFile>,
+    key: &str,
+    name: &str,
+    value: &dyn std::fmt::Display,
+) -> String {
+    crate::i18n::fill(&label(csf, key), &[(name, value)])
 }
 
 /// Before GAME.FNT loads: the first row in the built-in font's characters,
@@ -251,7 +263,7 @@ pub(super) fn fallback_rows(shown: &Shown) -> Vec<Vec<Part>> {
     )]]
 }
 
-fn first_row(shown: &Shown) -> String {
+fn first_row(shown: &Shown, csf: Option<&CsfFile>) -> String {
     let frame_ms = shown.frame_ms;
     let mut row = if frame_ms.is_finite() && frame_ms > 0.0 {
         let ms = if frame_ms < 10.0 {
@@ -262,11 +274,11 @@ fn first_row(shown: &Shown) -> String {
         let fps = format!("{:.0}", 1000.0 / frame_ms);
         format!(
             "{}{DOT}{}",
-            label_with("VERA:FpsPanelFps", "fps", &fps),
-            label_with("VERA:FpsPanelFrameTime", "ms", &ms)
+            label_with(csf, "VERA:FpsPanelFps", "fps", &fps),
+            label_with(csf, "VERA:FpsPanelFrameTime", "ms", &ms)
         )
     } else {
-        label_with("VERA:FpsPanelFps", "fps", &"--")
+        label_with(csf, "VERA:FpsPanelFps", "fps", &"--")
     };
     if let Some(simulation) = shown.simulation {
         let interpolation = match (simulation.interpolation, simulation.sampling) {
@@ -277,19 +289,19 @@ fn first_row(shown: &Shown) -> String {
         let tps = format!("{:.0}", simulation.tps);
         row.push_str(&format!(
             "{DOT}{}{DOT}{}",
-            label_with("VERA:FpsPanelSim", "tps", &tps),
-            label(interpolation)
+            label_with(csf, "VERA:FpsPanelSim", "tps", &tps),
+            label(csf, interpolation)
         ));
     }
     if let Some(units) = shown.units {
-        let units = label_with("VERA:FpsPanelUnits", "count", &thousands(units));
+        let units = label_with(csf, "VERA:FpsPanelUnits", "count", &thousands(units));
         row.push_str(&format!("{DOT}{units}"));
     }
     row
 }
 
-fn area(&(key, percent): &(&str, f32)) -> String {
-    format!("{} {percent:.0}%", label(key))
+fn area(&(key, percent): &(&str, f32), csf: Option<&CsfFile>) -> String {
+    format!("{} {percent:.0}%", label(csf, key))
 }
 
 fn thousands(value: usize) -> String {
@@ -304,13 +316,13 @@ fn thousands(value: usize) -> String {
     grouped
 }
 
-fn ago(age: Duration) -> String {
+fn ago(age: Duration, csf: Option<&CsfFile>) -> String {
     let (key, count) = match age.as_secs() {
         seconds @ 0..60 => ("VERA:FpsPanelSecondsAgo", seconds),
         seconds @ 60..3_600 => ("VERA:FpsPanelMinutesAgo", seconds / 60),
         seconds => ("VERA:FpsPanelHoursAgo", seconds / 3_600),
     };
-    label_with(key, "count", &count)
+    label_with(csf, key, "count", &count)
 }
 
 fn readout_text(frame_ms: f32) -> String {
@@ -375,7 +387,7 @@ mod tests {
                 Duration::from_secs(75),
             )),
         };
-        let rows = rows(&shown);
+        let rows = rows(&shown, None);
         assert_eq!(
             text(&rows[0][0]),
             "FPS 60  ·  17 ms  ·  Sim 30 TPS  ·  Interp on  ·  Units 12,345"
@@ -392,41 +404,63 @@ mod tests {
             )
         );
         // Shell screens: no match figures, no measured areas or cores yet.
-        let shell = rows_of(Shown {
-            frame_ms: 4.0,
-            ..Shown::default()
-        });
+        let shell = rows_of(
+            Shown {
+                frame_ms: 4.0,
+                ..Shown::default()
+            },
+            None,
+        );
         assert_eq!(shell, ["FPS 250  ·  4.0 ms"]);
     }
 
-    fn rows_of(shown: Shown) -> Vec<String> {
-        rows(&shown)
+    fn rows_of(shown: Shown, csf: Option<&CsfFile>) -> Vec<String> {
+        rows(&shown, csf)
             .iter()
             .map(|row| row.iter().map(text).collect())
             .collect()
     }
 
     #[test]
-    fn every_panel_label_has_english_text() {
-        let rows = rows_of(Shown {
-            frame_ms: f32::NAN,
-            simulation: Some(SimulationReadout {
-                interpolation: false,
-                ..READOUT
-            }),
-            areas: SIM_AREAS
-                .iter()
-                .chain(&RENDER_AREAS)
-                .map(|&key| (key, 1.0))
-                .collect(),
-            core_loads: Some(vec![40.0]),
-            problem: Some((
-                log::Level::Error,
-                "x".to_owned(),
-                Duration::from_secs(7_200),
-            )),
+    fn a_loaded_csf_answers_the_panel_labels_first() {
+        // A mod's CSF may carry a VERA: label; the language files fill the rest.
+        let mut csf = crate::assets::csf_file::test_csf(&[("VERA:FpsPanelCores", "Mod cores")]);
+        crate::i18n::apply(&mut csf);
+        let shown = Shown {
+            frame_ms: 4.0,
+            core_loads: Some(vec![50.0]),
             ..Shown::default()
-        });
+        };
+        assert_eq!(
+            rows_of(shown, Some(&csf)),
+            ["FPS 250  ·  4.0 ms", "Mod cores     avg 50%"]
+        );
+    }
+
+    #[test]
+    fn every_panel_label_has_english_text() {
+        let rows = rows_of(
+            Shown {
+                frame_ms: f32::NAN,
+                simulation: Some(SimulationReadout {
+                    interpolation: false,
+                    ..READOUT
+                }),
+                areas: SIM_AREAS
+                    .iter()
+                    .chain(&RENDER_AREAS)
+                    .map(|&key| (key, 1.0))
+                    .collect(),
+                core_loads: Some(vec![40.0]),
+                problem: Some((
+                    log::Level::Error,
+                    "x".to_owned(),
+                    Duration::from_secs(7_200),
+                )),
+                ..Shown::default()
+            },
+            None,
+        );
         assert_eq!(rows[0], "FPS --  ·  Sim 30 TPS  ·  Interp off");
         assert!(rows[1].starts_with("Most CPU:  Commands in 1%  ·  Commands 1%"));
         assert_eq!(rows[2], "Cores     avg 40%");
@@ -436,11 +470,14 @@ mod tests {
             ..READOUT
         };
         let rest = [
-            first_row(&Shown {
-                simulation: Some(bypass),
-                ..Shown::default()
-            }),
-            ago(Duration::from_secs(5)),
+            first_row(
+                &Shown {
+                    simulation: Some(bypass),
+                    ..Shown::default()
+                },
+                None,
+            ),
+            ago(Duration::from_secs(5), None),
         ];
         assert_eq!(rest, ["FPS --  ·  Sim 30 TPS  ·  Interp bypass", "5 s ago"]);
         for text in rows.iter().chain(&rest) {

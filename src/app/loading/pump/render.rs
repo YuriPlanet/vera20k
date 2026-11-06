@@ -89,6 +89,7 @@ pub(super) fn present_blank(
     batch: &BatchRenderer,
     fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
     font: &BitFont,
+    csf: Option<&crate::assets::csf_file::CsfFile>,
 ) -> anyhow::Result<()> {
     let Some(output) = gpu
         .acquire_frame()
@@ -102,7 +103,7 @@ pub(super) fn present_blank(
             label: Some("Game Mode Blank"),
         });
     encode_blank(presenter, &mut encoder, &output.texture);
-    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
+    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, csf, None);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present(&gpu.queue);
     Ok(())
@@ -900,7 +901,9 @@ pub(super) fn present_native_loading(
         &mut encoder,
         &output.texture,
     )?;
-    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
+    // These repaints run while the loader holds the process assets, CSF
+    // included, so VERA's language files answer the panel's labels.
+    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None, None);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present(&gpu.queue);
     Ok(())

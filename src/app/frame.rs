@@ -1331,6 +1331,7 @@ impl App {
             &mut encoder,
             &output.texture,
             &state.renderer.bit_font,
+            state.process_assets.csf.as_ref(),
             crate::app::diagnostics::fps_overlay::match_panel(state),
         );
         if state.frontend.screen == GameScreen::InGame {
