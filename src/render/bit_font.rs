@@ -342,6 +342,12 @@ impl BitFont {
         Ok(fit)
     }
 
+    /// Whether this font was built from `fnt`'s exact bytes, so building one
+    /// from `fnt` would give this font again.
+    pub(crate) fn is_built_from(&self, fnt: &FntFile) -> bool {
+        self.source_identity.is_some() && self.source_identity.as_ref() == fnt.source_identity()
+    }
+
     /// Take `previous`'s face and language, for a font rebuilt from a
     /// scenario's GAME.FNT.
     pub fn inherit_settings(&mut self, previous: &BitFont) {
@@ -1342,6 +1348,17 @@ pub(crate) mod tests {
         data[glyphs + STRIDE + 1] = 0xFF;
         data[glyphs + STRIDE + 2] = 0xFF;
         FntFile::from_bytes(&data).expect("synthetic FNT parses")
+    }
+
+    /// A scenario that reads the GAME.FNT bytes the font was built from keeps
+    /// the font (`install_world_presentation`); other bytes rebuild it.
+    #[test]
+    fn a_font_is_built_from_its_own_fnt_bytes_only() {
+        let fnt = two_record_fnt();
+        let font = make_original_test_font(&fnt);
+        assert!(font.is_built_from(&two_record_fnt()));
+        assert!(!font.is_built_from(&FntFile::solid_for_test(7)));
+        assert!(!make_vector_test_font().is_built_from(&fnt));
     }
 
     #[test]
