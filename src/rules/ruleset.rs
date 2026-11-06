@@ -584,6 +584,14 @@ pub struct GeneralRules {
     /// (`0x0066571B`), read by ReadInteger at `0x006719A1` without a clamp.
     /// ReceiveDamage starts each Techno's radar combat flash with it.
     pub radar_combat_flash_time: i32,
+    /// `[General] WeedCapacity=`, `RulesClass+0x17D0`. The constructor
+    /// `0x006676FD` (`RulesClass::Constructor @ 0x00665650`) clears it;
+    /// `RulesClass::ReadGeneral @ 0x0067194D..0x00671967` passes the retained
+    /// dword as `ReadInteger @ 0x005276D0`'s default and stores the signed
+    /// result unchanged. `HouseClass::GiveWeed @ 0x004F9700` converts it to
+    /// f32 and compares the whole House+0x314 store against it. Retail
+    /// rulesmd.ini supplies 56; no retail type sets `Weeder=`.
+    pub weed_capacity: i32,
     /// `[AudioVisual]` thresholds copied to the presentation frame-rate
     /// controller by Fill_In_Data6850F5 and the radar movie transitions.
     pub detail: DetailRules,
@@ -2577,6 +2585,9 @@ impl Default for GeneralRules {
             talk_bubble_time: 300,
             flash_frame_time: 7,
             radar_combat_flash_time: 21,
+            // RulesClass::Constructor 0x006676FD clears +0x17D0 with the
+            // zeroed EBX; an absent [General] section skips its reader.
+            weed_capacity: 0,
             detail: DetailRules::default(),
             pose_dir: 0,
             deploy_dir: 0,
@@ -3720,6 +3731,8 @@ impl GeneralRules {
             flash_frame_time: general.read_int("FlashFrameTime", defaults.flash_frame_time),
             radar_combat_flash_time: general
                 .read_int("RadarCombatFlashTime", defaults.radar_combat_flash_time),
+            // ReadGeneral 0x0067194D..0x00671967, unclamped signed dword.
+            weed_capacity: general.read_int("WeedCapacity", defaults.weed_capacity),
             scroll_multiplier: audio_visual
                 .read_double("ScrollMultiplier", defaults.scroll_multiplier),
             savour_delay_minutes,

@@ -183,7 +183,34 @@ fn unload_dumping(
             .and_then(|entity| entity.miner.as_mut())
             .and_then(|miner| drain_first_slot(&mut miner.cargo));
         if let Some((slot, bales)) = drained {
-            pay_refinery_owner(sim, rules, building, slot, bales);
+            // `UnitClass::Mission_Unload @ 0x0073E46D..0x0073E493`: when the
+            // unloader's type has `Weeder=` (`Type+0xE0F`), native passes
+            // `ftol(removed amount)` and the drained slot index to
+            // `HouseClass::GiveWeed @ 0x004F9700`, with ECX = Unit+0x21C —
+            // the unloader's OWN House, not the refinery owner that the
+            // tiberium arm below pays. VERA's cargo keeps whole bales where
+            // native keeps float StorageClass amounts, so `bales` is already
+            // the integer that native `ftol` produced.
+            let weeder = sim
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+                .is_some_and(|object| object.weeder);
+            if weeder {
+                let owner = sim.substrate.entities.get(id).map(|entity| entity.owner());
+                if let Some(owner) = owner
+                    && let Some(house) = sim.houses.get_mut(&owner)
+                {
+                    house.economy_mut().give_weed(
+                        bales,
+                        slot.0 as usize,
+                        rules.general.weed_capacity,
+                    );
+                }
+            } else {
+                pay_refinery_owner(sim, rules, building, slot, bales);
+            }
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 // `Unit+0xF8 = 0` (`0x0073E493`).
                 entity.set_native_stage_value(0);
@@ -485,7 +512,9 @@ pub(crate) fn drain_first_slot(
 /// owner's purifiers plus `AIVirtualPurifiers[difficulty]` for a computer
 /// house outside the campaign (`0x0073E3D5..0x0073E408`). A slave's deposit
 /// pays its master the same way (`0x00522D71..0x00522E36`). The unloader's
-/// `Weeder=` arm (`0x0073E474`) is not ported; no retail unit sets it.
+/// `Weeder=` arm (`0x0073E474`) takes a different owner: the dispatcher in
+/// `unload_dumping` calls `Economy::give_weed` on the unloader's own House
+/// instead of this function. No retail unit sets `Weeder=`.
 pub(crate) fn pay_refinery_owner(
     sim: &mut Simulation,
     rules: &RuleSet,

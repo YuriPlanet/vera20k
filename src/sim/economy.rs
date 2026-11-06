@@ -7,10 +7,26 @@
 //! omits its silo-drain arm; Available_Money omits its storage-value term
 //! and assumes a finite native HouseType `IncomeMult`. The corresponding
 //! tools/house_money_oracle.py controls supply an empty aggregate.
-//! `Added_To_Game @ 0x00502B83` merges a building's store (`+0x33C`), while
-//! the `Weeder=` deposit (`0x004F9700`, called at `0x0073E48E`) writes the
-//! separate store `+0x314`. Raw native Save/Load preserves these slots, so
-//! the empty-store boundary must not be extended to arbitrary native saves.
+//! `Added_To_Game @ 0x00502B83` merges a building's store (`+0x33C`) into
+//! that same aggregate, which VERA still omits. Raw native Save/Load preserves
+//! these slots, so the empty-store boundary must not be extended to arbitrary
+//! native saves.
+//!
+//! The separate house weed store `+0x314` *is* represented here: four float
+//! slots and `HouseClass::GiveWeed @ 0x004F9700`, its only writer, reached from
+//! `UnitClass::Mission_Unload @ 0x0073E474..0x0073E493` when the unloader's
+//! type has `Weeder=` (`Type+0xE0F`). Native credits that deposit to the
+//! *unloader's own* House (`Unit+0x21C`), unlike the ordinary tiberium arm
+//! which pays the refinery building's owner. `Rules+0x17D0`
+//! (`[General] WeedCapacity`, `ReadGeneral @ 0x0067194D..0x00671967`)
+//! bounds the whole store, not one slot.
+//!
+//! RESIDUAL: the weed source terrain, the `Weeder=` harvest branches
+//! (`0x0073D4F4`, `0x0073E76C`), `UseWeeds=` superweapon drain,
+//! `HouseClass @ 0x004F9750` (the total/capacity ratio) and the Phobos
+//! `WeedsCounter` sidebar indicator are separate chains. With retail rules no
+//! type sets `Weeder=`, so this store stays at zero unless a custom rules set
+//! supplies one.
 //!
 //! `Fill_In_Data`'s exact `[Basic] FillSilos=` path (`0x00684F02..0x00684F7C`)
 //! is a fresh-start cash/score writer, not a storage fill: it retains
@@ -24,7 +40,8 @@
 //! Never depends on render/ui/audio/net (sim invariant #1). The wallet is
 //! serialized and hashed.
 
-use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF32Bits};
+use crate::sim::storage_class::StorageAmounts;
+use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF32Bits};
 
 /// Per-house wallet and statistics. There is no second house credit balance.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -40,6 +57,11 @@ pub struct Economy {
     /// House `+0x54E8`, the score: refinery deposits, kills and captures add
     /// to it, and the score screen reads it.
     score: i32,
+    /// House `+0x314`, the TS-era weed store (`StorageClass`, four
+    /// per-Tiberium floats). `HouseClass::Constructor @ 0x004F57F6` clears
+    /// it; `GiveWeed @ 0x004F9700` is its only writer in YR.
+    #[serde(default)]
+    owned_weed: StorageAmounts,
 }
 
 impl Economy {
@@ -51,6 +73,7 @@ impl Economy {
             scenario_credits: 0,
             spent_credits: 0,
             score: 0,
+            owned_weed: StorageAmounts::EMPTY,
         }
     }
 
@@ -186,6 +209,52 @@ impl Economy {
             ),
             X87::load_i32(self.credits),
         ));
+    }
+
+    /// `HouseClass::GiveWeed @ 0x004F9700`, the sole writer of House+0x314.
+    ///
+    /// `count` is the whole-bale amount the unload gate removed from one
+    /// cargo slot and `slot` is that Tiberium slot's index. The native loop
+    /// (`0x004F9715..0x004F9748`) re-reads `StorageClass::GetTotalAmount
+    /// @ 0x006C9650` **before every single** `Add_Amount(1.0, slot) @
+    /// 0x006C9690`, and stops as soon as the total is no longer strictly less
+    /// than `f32(Rules+0x17D0)` (`fild`/`fstp` at `0x004F971C..0x004F9722`,
+    /// `fcomp` at `0x004F972B`). So a deposit larger than the remaining
+    /// capacity is truncated mid-count, and a non-positive count or capacity
+    /// adds nothing.
+    pub(crate) fn give_weed(&mut self, count: i32, slot: usize, weed_capacity: i32) {
+        if count <= 0 {
+            return;
+        }
+        let mut remaining = count;
+        loop {
+            // 0x004F9715 re-reads Rules+0x17D0 and narrows it to f32 on
+            // every iteration, before the GetTotalAmount call.
+            let capacity = X87::store_f32_masked_chop(X87::load_i32(weed_capacity));
+            let total = self.owned_weed.total();
+            if X87::compare(X87::load_i32(total), X87::load_f32(capacity))
+                != MaskedX87Ordering::Less
+            {
+                return;
+            }
+            self.owned_weed.add_amount(slot, NativeF32Bits::ONE);
+            remaining -= 1;
+            if remaining <= 0 {
+                return;
+            }
+        }
+    }
+
+    /// `StorageClass::GetTotalAmount @ 0x006C9650` over House+0x314 — the
+    /// value Phobos' `WeedsCounter` hook reads.
+    pub fn owned_weed_total(&self) -> i32 {
+        self.owned_weed.total()
+    }
+
+    /// The four retained House+0x314 float slots, for the state hash and
+    /// save/load diagnostics.
+    pub(crate) const fn owned_weed_amounts(&self) -> [NativeF32Bits; 4] {
+        self.owned_weed.amounts()
     }
 
     /// A captured or authored balance for a test.

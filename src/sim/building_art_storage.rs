@@ -1,5 +1,6 @@
 //! Building storage-derived animation callers; original6C9650/445FE4/450CCB.
 use super::{RuleSet, Simulation, requested_damage_state};
+use crate::sim::storage_class::StorageAmounts;
 use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF32Bits, NativeF64Bits};
 
 /// Four retained Techno StorageClass float slots and Building's last refinery
@@ -7,7 +8,7 @@ use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF32Bits, NativeF64Bi
 /// this owner. Ordinary construction6C95E0/43B9AF starts with all zeros.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BuildingStorage {
-    amounts: [NativeF32Bits; 4],
+    amounts: StorageAmounts,
     refinery_tier: i32,
 }
 
@@ -15,7 +16,7 @@ impl BuildingStorage {
     /// A fixture's value.
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_amounts_for_test(&mut self, amounts: [NativeF32Bits; 4]) {
-        self.amounts = amounts;
+        self.amounts.set_amounts_for_test(amounts);
     }
 
     /// A fixture's value.
@@ -27,23 +28,17 @@ impl BuildingStorage {
 impl Default for BuildingStorage {
     fn default() -> Self {
         Self {
-            amounts: [NativeF32Bits::POSITIVE_ZERO; 4],
+            amounts: StorageAmounts::EMPTY,
             refinery_tier: 0,
         }
     }
 }
 impl BuildingStorage {
-    ///6C9650 rounds after EACH float addition through signed _ftol lowEAX.
-    fn total(self) -> i32 {
-        self.amounts.into_iter().fold(0, |total, amount| {
-            X87::ftol_i32_low_masked(X87::add(X87::load_i32(total), X87::load_f32(amount)))
-        })
-    }
     fn tier(self, capacity: i32, frame: u32, caller: &str) -> i32 {
-        if self.total() == 0 {
+        if self.amounts.total() == 0 {
             return 0;
         }
-        let numerator = self.total().wrapping_shl(2);
+        let numerator = self.amounts.total().wrapping_shl(2);
         numerator.checked_div(capacity).unwrap_or_else(|| panic!(
             "native Building storage IDIV fault: caller={caller} frame={frame} numerator={numerator} capacity={capacity}"
         ))
@@ -52,7 +47,7 @@ impl BuildingStorage {
         if capacity <= 0 {
             return 0;
         }
-        let numerator = self.total().wrapping_shl(2);
+        let numerator = self.amounts.total().wrapping_shl(2);
         X87::ftol_i32_low_masked(X87::add(
             X87::div(X87::load_i32(numerator), X87::load_i32(capacity)),
             X87::load_f64(NativeF64Bits::HALF),
@@ -238,11 +233,11 @@ mod tests {
             entity.lifecycle.set_in_limbo_for_test(false);
             entity.building_art.damage_state_active = current <= 50;
             entity.building_art.storage = BuildingStorage {
-                amounts: std::array::from_fn(|i| {
+                amounts: StorageAmounts::from_amounts(std::array::from_fn(|i| {
                     NativeF32Bits::from_bits(
                         u32::from_str_radix(input["amount_bits"][i].as_str().unwrap(), 16).unwrap(),
                     )
-                }),
+                })),
                 refinery_tier: tier,
             };
             sim.substrate.entities.insert(entity);

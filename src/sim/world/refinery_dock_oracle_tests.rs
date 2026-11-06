@@ -1187,6 +1187,84 @@ fn stage_tick_matches_the_original_stageclass_step() {
     }
 }
 
+/// `UnitClass::Mission_Unload @ 0x0073E46D..0x0073E493`: the `Weeder=` arm
+/// credits House+0x314 through `GiveWeed @ 0x004F9700` instead of paying the
+/// refinery owner. Both scenes run the real dump gate on a War Miner holding
+/// three Riparius bales; only the unit's type flag differs.
+#[test]
+fn weeder_unload_gate_deposits_into_the_house_weed_store() {
+    let base = serde_json::json!({
+        "facing": 16384,
+        "miner_cell": [9, 10],
+        "mission": "unload",
+        "stage": [15, 0, 199, 1, 1],
+        "status": 3,
+        "storage": [3, 0, 0, 0],
+        "unloading": true,
+        "weeder_dock": true,
+        "balance": 0,
+    });
+    let mut weeder_input = base.clone();
+    weeder_input["weeder"] = true.into();
+    let mut weeder = scene(&weeder_input);
+    // RulesClass::ReadGeneral 0x0067194D reads this from rulesmd.ini; the
+    // fixture sets it directly so the capacity gate truncates at two units.
+    weeder.rules.general.weed_capacity = 2;
+    crate::sim::miner::mission_unload(
+        &mut weeder.sim,
+        &weeder.rules,
+        weeder.miner,
+        super::FrameEffects::default(),
+    );
+    let owner = weeder.sim.interner.get("Americans").unwrap();
+    let house = &weeder.sim.houses[&owner];
+    assert_eq!(
+        house.economy().owned_weed_total(),
+        2,
+        "the whole-store capacity refuses the third bale"
+    );
+    assert_eq!(
+        house.economy().owned_weed_amounts()[0],
+        crate::util::native_x87::NativeF32Bits::from_bits(2.0_f32.to_bits())
+    );
+    assert_eq!(
+        house.economy().credits(),
+        0,
+        "the tiberium arm must not run"
+    );
+    assert_eq!(house.economy().score(), 0);
+    assert!(
+        weeder
+            .sim
+            .entities()
+            .get(weeder.miner)
+            .unwrap()
+            .miner
+            .as_ref()
+            .unwrap()
+            .cargo()
+            .is_empty()
+    );
+
+    // Without `Weeder=` the same gate pays Add_Tiberium_Credits 0x004F9610
+    // and never touches the weed store.
+    let mut normal = scene(&base);
+    normal.rules.general.weed_capacity = 2;
+    crate::sim::miner::mission_unload(
+        &mut normal.sim,
+        &normal.rules,
+        normal.miner,
+        super::FrameEffects::default(),
+    );
+    let owner = normal.sim.interner.get("Americans").unwrap();
+    let house = &normal.sim.houses[&owner];
+    assert_eq!(house.economy().owned_weed_total(), 0);
+    assert!(
+        house.economy().credits() > 0,
+        "the ordinary deposit still pays"
+    );
+}
+
 #[test]
 fn replay_covers_every_row() {
     let corpus = corpus();
