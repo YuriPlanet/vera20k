@@ -1236,6 +1236,11 @@ fn render_part_on(
     vxl_raster::render_vxl_on(part.vxl(), part.hva(), params, vpl, depth)
 }
 
+/// A part's files, as a composite layer.
+fn part_layer(part: &VoxelPart) -> (&VxlFile, Option<&HvaFile>) {
+    (part.vxl(), part.hva())
+}
+
 /// `Ok(None)` for an omitted part; `Err` when a present part has no
 /// native draw bounds.
 fn part_native_draw_bounds(
@@ -1494,9 +1499,11 @@ impl UnitModel {
         // The rasterizer outputs post-VPL palette indices directly.
         let sprite: VxlSprite = match key.layer {
             VxlLayer::Composite => composite_parts(
-                self.body.as_ref().map(|body| (body.vxl(), body.hva())),
-                turret,
-                barrel,
+                &[self.body.as_ref(), turret, barrel]
+                    .into_iter()
+                    .flatten()
+                    .map(part_layer)
+                    .collect::<Vec<_>>(),
                 &params,
                 vpl,
                 depth,
@@ -1595,6 +1602,41 @@ impl UnitModel {
         depth_tested: bool,
         depth: Option<&mut vxl_raster::DepthMap>,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
+        let (layers, params, bounds) = self.pose_draw(key, tilt, depth_tested)?;
+        Some((composite_parts(&layers, &params, vpl, depth), bounds))
+    }
+
+    /// [`Self::render_pose`] on a clear depth map, as an image for the GPU
+    /// raster where the pose draws one part; a composite of several stays
+    /// on the CPU.
+    pub(crate) fn pose_image(
+        &self,
+        key: &UnitSpriteKey,
+        vpl: Option<&VplFile>,
+        tilt: PoseTilt,
+        depth_tested: bool,
+    ) -> Option<(vxl_raster::VoxelImage<'_>, Option<[i32; 4]>)> {
+        let (layers, params, bounds) = self.pose_draw(key, tilt, depth_tested)?;
+        let image = match layers[..] {
+            [(vxl, hva)] => vxl_raster::voxel_image(vxl, hva, &params, vpl),
+            _ => vxl_raster::VoxelImage::Cpu(composite_parts(&layers, &params, vpl, None)),
+        };
+        Some((image, bounds))
+    }
+
+    /// What a posed draw rasterizes, its parameters and its native draw
+    /// bounds: a ground part alone, or the body with its gun parts.
+    #[allow(clippy::type_complexity)]
+    fn pose_draw(
+        &self,
+        key: &UnitSpriteKey,
+        tilt: PoseTilt,
+        depth_tested: bool,
+    ) -> Option<(
+        Vec<(&VxlFile, Option<&HvaFile>)>,
+        VxlRenderParams,
+        Option<[i32; 4]>,
+    )> {
         let use_buffer = self.use_buffer || depth_tested;
         let body = self.body.as_ref()?;
         if let PoseTilt::Ground(pose) = tilt {
@@ -1621,10 +1663,8 @@ impl UnitModel {
                 use_buffer,
                 ..VxlRenderParams::default()
             };
-            return Some((
-                render_part_on(part, &params, vpl, depth),
-                part_native_draw_bounds(Some(part), &params).ok().flatten(),
-            ));
+            let bounds = part_native_draw_bounds(Some(part), &params).ok().flatten();
+            return Some((vec![part_layer(part)], params, bounds));
         }
         let body_tilt = match tilt {
             PoseTilt::Fly(angles) => vxl_raster::BodyTilt::Fly(angles),
@@ -1646,18 +1686,13 @@ impl UnitModel {
             ..VxlRenderParams::default()
         };
         let (turret, barrel) = self.gun_parts(key.turret_index);
-        let sprite = composite_parts(
-            Some((body.vxl(), body.hva())),
-            turret,
-            barrel,
-            &params,
-            vpl,
-            depth,
-        );
-        Some((
-            sprite,
-            self.native_draw_bounds(&params, VxlLayer::Composite, key.turret_index),
-        ))
+        let layers = [Some(body), turret, barrel]
+            .into_iter()
+            .flatten()
+            .map(part_layer)
+            .collect();
+        let bounds = self.native_draw_bounds(&params, VxlLayer::Composite, key.turret_index);
+        Some((layers, params, bounds))
     }
 
     /// A `VoxelAnimClass` piece at its bounce matrix: the body, drawn without
@@ -1676,10 +1711,7 @@ impl UnitModel {
         use_buffer: bool,
         depth: Option<&mut vxl_raster::DepthMap>,
     ) -> Option<(VxlSprite, Option<VxlSprite>)> {
-        let body = self.body.as_ref()?;
-        if section != 0 || body.vxl().limbs.len() != 1 {
-            return None;
-        }
+        let body = self.tumble_body(section)?;
         let (sprite, _) = self.render_matrix(
             matrix,
             0,
@@ -1695,11 +1727,45 @@ impl UnitModel {
         ))
     }
 
+    /// [`Self::render_tumble`] on a clear depth map, as images for the GPU
+    /// raster.
+    pub(crate) fn tumble_images(
+        &self,
+        section: i32,
+        matrix: glam::Mat4,
+        vpl: Option<&VplFile>,
+        use_buffer: bool,
+    ) -> Option<(
+        vxl_raster::VoxelImage<'_>,
+        Option<vxl_raster::VoxelImage<'_>>,
+    )> {
+        let body = self.tumble_body(section)?;
+        let (image, _) = self.matrix_image(
+            matrix,
+            0,
+            false,
+            vxl_raster::VxlLighting::Diffuse,
+            vpl,
+            use_buffer,
+        )?;
+        Some((
+            image,
+            vxl_raster::shadow::matrix_image(body.vxl(), matrix, 0, false),
+        ))
+    }
+
+    fn tumble_body(&self, section: i32) -> Option<&VoxelPart> {
+        self.body
+            .as_ref()
+            .filter(|body| section == 0 && body.vxl().limbs.len() == 1)
+    }
+
     /// Shared direct-matrix body raster. Bullet46B0C0 submits every section
     /// with HVA frame modulo count and diffuse lighting; the VoxelAnim caller
     /// instead selects no HVA and separately renders its shadow. Neither
     /// stores the image: `use_buffer` is 0xB43180 at the draw, and `depth`
     /// the shared depth map it reads and writes (None: a clear one).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn render_matrix(
         &self,
         matrix: glam::Mat4,
@@ -1710,6 +1776,42 @@ impl UnitModel {
         use_buffer: bool,
         depth: Option<&mut vxl_raster::DepthMap>,
     ) -> Option<(VxlSprite, Option<[i32; 4]>)> {
+        let (vxl, hva, params, bounds) =
+            self.matrix_draw(matrix, frame, use_hva, lighting, use_buffer)?;
+        Some((
+            vxl_raster::render_vxl_on(vxl, hva, &params, vpl, depth),
+            Some(bounds),
+        ))
+    }
+
+    /// [`Self::render_matrix`] on a clear depth map, as an image for the GPU
+    /// raster.
+    pub(crate) fn matrix_image(
+        &self,
+        matrix: glam::Mat4,
+        frame: u32,
+        use_hva: bool,
+        lighting: vxl_raster::VxlLighting,
+        vpl: Option<&VplFile>,
+        use_buffer: bool,
+    ) -> Option<(vxl_raster::VoxelImage<'_>, Option<[i32; 4]>)> {
+        let (vxl, hva, params, bounds) =
+            self.matrix_draw(matrix, frame, use_hva, lighting, use_buffer)?;
+        Some((
+            vxl_raster::voxel_image(vxl, hva, &params, vpl),
+            Some(bounds),
+        ))
+    }
+
+    /// A direct-matrix body draw's files, parameters and native draw bounds.
+    fn matrix_draw(
+        &self,
+        matrix: glam::Mat4,
+        frame: u32,
+        use_hva: bool,
+        lighting: vxl_raster::VxlLighting,
+        use_buffer: bool,
+    ) -> Option<(&VxlFile, Option<&HvaFile>, VxlRenderParams, [i32; 4])> {
         let body = self.body.as_ref()?;
         let hva = if use_hva { Some(body.hva()?) } else { None };
         let frame = if let Some(hva) = hva {
@@ -1725,10 +1827,7 @@ impl UnitModel {
             ..VxlRenderParams::default()
         };
         let bounds = vxl_raster::native_vxl_draw_bounds(body.vxl(), hva, &params)?;
-        Some((
-            vxl_raster::render_vxl_on(body.vxl(), hva, &params, vpl, depth),
-            Some(bounds),
-        ))
+        Some((body.vxl(), hva, params, bounds))
     }
 
     /// Metadata follows the requested VXL, not the union-sized texture canvas
@@ -1782,31 +1881,29 @@ pub fn composite_unit_vxl_cpu(
     let part = |layer| VoxelPart::load(asset_manager, &voxel_gun_basename(image, layer, 0), false);
     let turret = part(VxlLayer::Turret);
     let barrel = part(VxlLayer::Barrel);
-    composite_parts(
-        Some((body, body_hva)),
-        turret.as_ref(),
-        barrel.as_ref(),
-        params,
-        vpl,
-        None,
-    )
+    let layers: Vec<_> = [Some((body, body_hva))]
+        .into_iter()
+        .chain([turret.as_ref(), barrel.as_ref()].map(|part| part.map(part_layer)))
+        .flatten()
+        .collect();
+    composite_parts(&layers, params, vpl, None)
 }
 
-/// `depth` rasterizes each part in turn on the shared depth map.
+/// The parts, body first, rasterized and depth-composited; one part is its
+/// own image. `depth` rasterizes each part in turn on the shared depth map.
 fn composite_parts(
-    body: Option<(&VxlFile, Option<&HvaFile>)>,
-    turret: Option<&VoxelPart>,
-    barrel: Option<&VoxelPart>,
+    parts: &[(&VxlFile, Option<&HvaFile>)],
     params: &VxlRenderParams,
     vpl: Option<&VplFile>,
     mut depth: Option<&mut vxl_raster::DepthMap>,
 ) -> VxlSprite {
-    let mut layers: Vec<VxlSprite> = body
-        .map(|(body, hva)| vxl_raster::render_vxl_on(body, hva, params, vpl, depth.as_deref_mut()))
-        .into_iter()
+    let mut layers: Vec<VxlSprite> = parts
+        .iter()
+        .map(|&(vxl, hva)| vxl_raster::render_vxl_on(vxl, hva, params, vpl, depth.as_deref_mut()))
         .collect();
-    layers.extend(turret.map(|part| render_part_on(part, params, vpl, depth.as_deref_mut())));
-    layers.extend(barrel.map(|part| render_part_on(part, params, vpl, depth.as_deref_mut())));
+    if layers.len() == 1 {
+        return layers.pop().expect("one layer");
+    }
     composite_vxl_layers(&layers)
 }
 

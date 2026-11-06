@@ -1551,9 +1551,87 @@ pub(crate) struct MapLoadInitial {
     /// Ordered launch-generation Building constructor effects. Preview traces
     /// never reach this owner; fixed maps carry none.
     generated_construction_trace: Option<crate::map::rmg::RmgConstructionTrace>,
+    /// Accepted .SED Full_Init runs before generation. Its one Rules/AI read
+    /// and constructor receipt move with the generated source into admission.
+    generated_rules: Option<PreparedScenarioRules>,
+}
+
+struct PreparedScenarioRules {
+    native: crate::rules::process_owner::NativeScenarioRulesLoad,
+    team_ai_registry: crate::rules::team_ai_ini::TeamAiIniRegistry,
+    rules_at_ai_read: Option<RuleSet>,
+}
+
+impl PreparedScenarioRules {
+    fn into_parts(
+        self,
+    ) -> (
+        RuleSet,
+        crate::rules::team_ai_ini::TeamAiIniRegistry,
+        Option<RuleSet>,
+        crate::rules::ini_parser::IniFile,
+        crate::rules::process_owner::NativeScenarioRulesReceipt,
+    ) {
+        let (rules, _, art, receipt) = self.native.into_parts();
+        (
+            rules,
+            self.team_ai_registry,
+            self.rules_at_ai_read,
+            art,
+            receipt,
+        )
+    }
+}
+
+/// The shared Rules/AI ordering for ordinary Full_Init and its early .SED arm.
+/// Process state remains in `owner`; this value carries immutable projections
+/// and the constructor receipt, never another live registry.
+fn prepare_scenario_rules(
+    owner: &mut crate::rules::process_owner::NativeRulesProcessOwner,
+    assets: &mut AssetManager,
+    prefix: crate::rules::process_owner::NativeScenarioRulesPrefix<'_>,
+    map_ini: &crate::rules::ini_parser::IniFile,
+    tmcj4f: Option<&crate::rules::ini_parser::IniFile>,
+    game_mode_nonzero: bool,
+) -> Result<PreparedScenarioRules> {
+    let (native, team_ai_registry, rules_at_ai_read) = if let Some(tmcj4f) = tmcj4f {
+        let (loaded, (ai, rules_at_read)) = owner
+            .load_scenario_with_post_map(prefix, map_ini, tmcj4f, |rules_at_read| {
+                (
+                    crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+                        assets,
+                        map_ini,
+                        game_mode_nonzero,
+                    ),
+                    rules_at_read,
+                )
+            })
+            .map_err(|error| anyhow::anyhow!("failed native scenario rules rebuild: {error}"))?;
+        (loaded, ai.map_err(anyhow::Error::msg)?, Some(rules_at_read))
+    } else {
+        let loaded = owner
+            .load_scenario(prefix, map_ini)
+            .map_err(|error| anyhow::anyhow!("failed native scenario rules rebuild: {error}"))?;
+        let ai = crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
+            assets,
+            map_ini,
+            game_mode_nonzero,
+        )
+        .map_err(anyhow::Error::msg)?;
+        (loaded, ai, None)
+    };
+    Ok(PreparedScenarioRules {
+        native,
+        team_ai_registry,
+        rules_at_ai_read,
+    })
 }
 
 impl MapLoadInitial {
+    pub(super) fn has_generated_rules(&self) -> bool {
+        self.generated_rules.is_some()
+    }
+
     /// Publish successful generation before fallible admission, then snapshot
     /// the one process owner for this inactive attempt. Authored loading does
     /// not reset or advance MapGen before installation (ReadScenario684620 ->
@@ -1617,6 +1695,7 @@ impl MapLoadInitial {
             retained_campaign_special_flags: None,
             retained_local_variables: None,
             generated_construction_trace: None,
+            generated_rules: None,
         }
     }
 }
@@ -1928,6 +2007,7 @@ impl MapLoadInitial {
             retained_campaign_special_flags: _,
             retained_local_variables: _,
             generated_construction_trace,
+            generated_rules,
         } = self;
         assert_eq!(fresh_scenario_context.physical_source(), &map_source);
         assert_eq!(
@@ -2031,20 +2111,10 @@ impl MapLoadInitial {
         // standard Battle launch application, and the shared Post_Map_Init
         // finalizer.
         let theater_result = theater::load_theater(asset_manager, &map_data.header.theater);
-        let mode_override_ini = crate::rules::retail_sources::select_mode_ini(
-            asset_manager,
-            Some(&match_launch_descriptor.session().mode.override_file),
-        )
-        .expect("select the generated-map mode INI layer");
-        let (mut rules, _, art_ini, native_rules_receipt) =
-            crate::app::loading::init_helpers::load_rules_with_prefix_for_test(
-                asset_manager,
-                crate::rules::process_owner::NativeScenarioRulesPrefix::RandomMap(
-                    mode_override_ini.as_ref(),
-                ),
-                Some(&map_data.ini),
-            )
-            .expect("retail generated-map rules");
+        let (mut rules, _, art_ini, native_rules_receipt) = generated_rules
+            .expect("generated-map receipt includes its early Full_Init Rules")
+            .native
+            .into_parts();
         rules.install_art_data(ArtRegistry::from_ini(&art_ini));
         let overlay_registry = rules.overlay_registry().clone();
         // Stage the one Simulation before terrain Fill, as the match load does:
@@ -2384,12 +2454,57 @@ pub(crate) fn load_csf(
 // Scenario-menu metadata is map-owned (F06); re-exported for app callers.
 pub use crate::map::scenario_menu::MapMenuEntry;
 
+/// InitMap5997AB..59985E writes these sections before its accepted Full_Init
+/// at599A56. Keep the current first Country identity, including bytes that a
+/// physical INI parser would treat as syntax, in the existing INI store.
+fn generated_full_init_ini(
+    settings: &crate::map::rmg::RmgSettings,
+    options: &crate::map::rmg::RmgOptions,
+    owner: &crate::rules::process_owner::NativeRulesProcessOwner,
+) -> Result<crate::rules::ini_parser::IniFile> {
+    use crate::rules::ini_parser::{IniFile, IniSection};
+    let first_country = owner
+        .multiplayer_countries()
+        .next()
+        .map(|(id, _)| id)
+        .ok_or_else(|| anyhow::anyhow!("RMG Full_Init requires the current first Country"))?;
+    let geometry = crate::map::rmg::MapGeometry::from_options(options);
+    let mut map = IniSection::new("Map".into());
+    map.set(
+        "Theater",
+        crate::map::rmg::emit::theater_name(options.theater),
+    );
+    map.set(
+        "Size",
+        &format!("0,0,{},{}", geometry.map_w, geometry.map_h),
+    );
+    map.set(
+        "LocalSize",
+        &format!("2,5,{},{}", geometry.gen_w, geometry.gen_h),
+    );
+    map.set("Level", "4");
+    let mut ini = IniFile::from_sections([map]);
+    let mut country = IniSection::new(first_country.to_owned());
+    country.set("TechLevel", "0");
+    ini.merge(&IniFile::from_sections([country]));
+    let mut basic = IniSection::new("Basic".into());
+    basic.set("Player", first_country);
+    ini.merge(&IniFile::from_sections([basic]));
+    if let Some(lighting) = settings.generated_lighting_ini(options) {
+        ini.merge(&lighting);
+    }
+    Ok(ini)
+}
+
 pub(crate) fn load_map_initial_with_assets(
     ra2_dir: PathBuf,
     asset_manager: &mut AssetManager,
     mut native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+    resident: Option<&mut crate::sim::world::Simulation>,
     requested_map: Option<&str>,
     mode_rules_file: Option<&str>,
+    full_init_entry_mode: crate::app::match_runtime::session::SessionMode,
+    the_team_enabled: bool,
     progress: &mut dyn crate::app::loading::pump::LoadingProgressSink,
 ) -> Result<MapLoadInitial> {
     // Check RA2_QUICKPLAY env var: if it names a .map/.mpr file, load that directly.
@@ -2441,18 +2556,40 @@ pub(crate) fn load_map_initial_with_assets(
         let theater = crate::map::theater::load_theater(asset_manager, theater_name)
             .ok_or_else(|| anyhow::anyhow!("random map: theater {theater_name} unavailable"))?;
 
-        // Generate598A74 -> InitMap599A56 enters Full_Init before generated
-        // terrain or starts: root/LANG/committed mode update global89EA40.
-        // This .SED path has no preview cache and cannot reuse its land rows.
+        // Generate598A74 -> InitMap599A56 completes Full_Init before terrain
+        // generation. Transfer outgoing writes and retain this exact Rules/AI
+        // result and its E/P receipt; the later load must not read them again.
         let mode_rules =
             crate::rules::retail_sources::select_mode_ini(asset_manager, mode_rules_file)
                 .map_err(anyhow::Error::msg)?;
-        let terrain_rules = native_rules
-            .as_deref_mut()
-            .map(|owner| owner.prepare_random_map_terrain_rules(mode_rules.as_ref(), true))
-            .unwrap_or_default();
+        let owner = native_rules.as_deref_mut().ok_or_else(|| {
+            anyhow::anyhow!("generated map requires the process-resident Rules owner")
+        })?;
+        if let Some(resident) = resident {
+            resident.retire_scenario_started();
+            crate::app::process_assets::transfer_outgoing_simulation_rules(owner, resident)?;
+        }
+        if owner.multiplayer_countries().next().is_none() {
+            // Direct .SED adapters can bypass PrepareSession52E11E/52E123.
+            // Populate its Country sources before InitMap599825 uses array[0];
+            // normal shell entry has already performed these same reads.
+            owner.read_multiplayer_country(&crate::rules::ini_parser::IniFile::empty(), -1);
+            owner.refresh_multiplayer_country_bodies();
+        }
+        let synthetic_ini = generated_full_init_ini(&settings, &options, owner)?;
+        let tmcj4f =
+            select_tmcj4f_for_full_init(asset_manager, full_init_entry_mode, the_team_enabled)?;
+        let generated_rules = prepare_scenario_rules(
+            owner,
+            asset_manager,
+            crate::rules::process_owner::NativeScenarioRulesPrefix::RandomMap(mode_rules.as_ref()),
+            &synthetic_ini,
+            tmcj4f.as_ref(),
+            full_init_entry_mode != crate::app::match_runtime::session::SessionMode::Campaign,
+        )?;
+        let terrain_rules = &generated_rules.native.rules().terrain_rules;
         let resolved =
-            crate::map::rmg::build::ResolvedTheaterInputs::from_theater(&theater, &terrain_rules);
+            crate::map::rmg::build::ResolvedTheaterInputs::from_theater(&theater, terrain_rules);
 
         // Tile-block layouts (sub-cell height/terrain grids) from the theater's
         // real TMP data — the shore tiler and zone classifier read these.
@@ -2464,8 +2601,13 @@ pub(crate) fn load_map_initial_with_assets(
         // `[AI] NeutralTechBuildings` plus each type's `Foundation=`. The phase
         // runs for every map type except 0, so an empty list here would both
         // strip the buildings and skip the draws the original consumes.
-        let tech_types =
-            crate::app::loading::init_helpers::load_neutral_tech_types(native_rules.as_deref());
+        let tech_types = crate::map::rmg::tech_catalog::resolve(
+            owner
+                .saved_scenario_rules()
+                .expect("completed RMG Rules remain owned")
+                .neutral_tech_buildings(),
+            owner.fixed_art(),
+        );
         let mut generated = crate::map::rmg::build::generate_map(
             &options,
             &settings,
@@ -2473,6 +2615,7 @@ pub(crate) fn load_map_initial_with_assets(
             &blocks,
             &tech_types,
         );
+        generated.map_file.ini = synthetic_ini;
         log::info!(
             "Random map generated: theater={}, {}x{}, seed={}, players={}",
             generated.map_file.header.theater,
@@ -2505,6 +2648,7 @@ pub(crate) fn load_map_initial_with_assets(
             retained_campaign_special_flags: None,
             retained_local_variables: None,
             generated_construction_trace: Some(generated_construction_trace),
+            generated_rules: Some(generated_rules),
         });
     }
 
@@ -2569,6 +2713,7 @@ pub(crate) fn load_map_initial_with_assets(
         retained_campaign_special_flags: None,
         retained_local_variables: None,
         generated_construction_trace: None,
+        generated_rules: None,
     })
 }
 
@@ -2776,6 +2921,7 @@ fn load_map_first_step(
         retained_campaign_special_flags,
         retained_local_variables,
         generated_construction_trace,
+        generated_rules,
     } = initial;
     let signed_new_ini_format = map_data.basic.new_ini_format.unwrap_or(0);
     fresh_scenario_context.validate_terminal_transfer(
@@ -2872,121 +3018,84 @@ fn load_map_first_step(
             // is missing keeps an empty layer (0x005D67B0) instead of aborting.
             let asset_manager = &mut *services.asset_manager;
             let native_rules_owner = &mut *services.native_rules_owner;
-            let mode_override_ini = crate::rules::retail_sources::select_mode_ini(
-                asset_manager,
-                skirmish_launch_session.map(|launch| launch.mode.override_file.as_str()),
-            )
-            .map_err(anyhow::Error::msg)?;
-            let campaign_named_ini = select_campaign_named_ini_for_full_init(
-                asset_manager,
-                campaign.as_ref(),
-                full_init_entry_mode,
-            )?;
-            let tmcj4f_ini = select_tmcj4f_for_full_init(
-                asset_manager,
-                full_init_entry_mode,
-                services.the_team_enabled,
-            )?;
-            let tmcj4f_ini = tmcj4f_ini.as_ref();
             #[cfg(feature = "ares")]
             let prepared_prefix = services.prepared_noncampaign_prefix.take();
-            let rules_prefix = if materialization == FreshMapMaterialization::AcceptedGenerated {
+            let prepared_rules = if let Some(generated_rules) = generated_rules {
+                anyhow::ensure!(
+                    materialization == FreshMapMaterialization::AcceptedGenerated,
+                    "authored map carried generated Full_Init Rules"
+                );
                 #[cfg(feature = "ares")]
                 assert!(
                     prepared_prefix.is_none(),
                     "generated loading cannot consume an ordinary prefix"
                 );
-                crate::rules::process_owner::NativeScenarioRulesPrefix::RandomMap(
-                    mode_override_ini.as_ref(),
+                generated_rules
+            } else {
+                anyhow::ensure!(
+                    materialization != FreshMapMaterialization::AcceptedGenerated,
+                    "generated map lost its early Full_Init Rules receipt"
+                );
+                let mode_override_ini = crate::rules::retail_sources::select_mode_ini(
+                    asset_manager,
+                    skirmish_launch_session.map(|launch| launch.mode.override_file.as_str()),
                 )
-            } else if game_mode_nonzero {
-                #[cfg(feature = "ares")]
-                if let Some(preparation) = prepared_prefix {
-                    crate::rules::process_owner::NativeScenarioRulesPrefix::PreparedNonCampaign {
-                        preparation,
-                        mode_rules_override: mode_override_ini.as_ref(),
+                .map_err(anyhow::Error::msg)?;
+                let campaign_named_ini = select_campaign_named_ini_for_full_init(
+                    asset_manager,
+                    campaign.as_ref(),
+                    full_init_entry_mode,
+                )?;
+                let tmcj4f_ini = select_tmcj4f_for_full_init(
+                    asset_manager,
+                    full_init_entry_mode,
+                    services.the_team_enabled,
+                )?;
+                let rules_prefix = if game_mode_nonzero {
+                    #[cfg(feature = "ares")]
+                    if let Some(preparation) = prepared_prefix {
+                        crate::rules::process_owner::NativeScenarioRulesPrefix::PreparedNonCampaign {
+                            preparation,
+                            mode_rules_override: mode_override_ini.as_ref(),
+                        }
+                    } else {
+                        crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
+                            mode_override_ini.as_ref(),
+                        )
                     }
-                } else {
+                    #[cfg(not(feature = "ares"))]
                     crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
                         mode_override_ini.as_ref(),
                     )
-                }
-                #[cfg(not(feature = "ares"))]
-                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
-                    mode_override_ini.as_ref(),
-                )
-            } else {
-                #[cfg(feature = "ares")]
-                assert!(
-                    prepared_prefix.is_none(),
-                    "campaign loading cannot consume an ordinary prefix"
-                );
-                crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(
-                    campaign_named_ini.as_ref(),
-                )
+                } else {
+                    #[cfg(feature = "ares")]
+                    assert!(
+                        prepared_prefix.is_none(),
+                        "campaign loading cannot consume an ordinary prefix"
+                    );
+                    crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(
+                        campaign_named_ini.as_ref(),
+                    )
+                };
+                prepare_scenario_rules(
+                    native_rules_owner,
+                    asset_manager,
+                    rules_prefix,
+                    &map_data.ini,
+                    tmcj4f_ini.as_ref(),
+                    game_mode_nonzero,
+                )?
             };
             let (
                 loaded_rules,
-                team_ai_registry_at_read,
+                team_ai_registry,
                 team_ai_rules_at_read,
                 fixed_art_ini,
                 native_rules_receipt,
-            ) = if let Some(tmcj4f_ini) = tmcj4f_ini {
-                let (loaded, (team_ai_registry, rules_at_read)) = native_rules_owner
-                    .load_scenario_with_post_map(
-                        rules_prefix,
-                        &map_data.ini,
-                        tmcj4f_ini,
-                        |rules_at_read| {
-                            (
-                                crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
-                                    asset_manager,
-                                    &map_data.ini,
-                                    game_mode_nonzero,
-                                ),
-                                rules_at_read,
-                            )
-                        },
-                    )
-                    .map_err(|error| {
-                        anyhow::anyhow!("failed native scenario rules rebuild: {error}")
-                    })?;
-                let team_ai_registry = team_ai_registry.map_err(anyhow::Error::msg)?;
-                let (loaded_rules, _, fixed_art_ini, native_rules_receipt) = loaded.into_parts();
-                (
-                    loaded_rules,
-                    Some(team_ai_registry),
-                    Some(rules_at_read),
-                    fixed_art_ini,
-                    native_rules_receipt,
-                )
-            } else {
-                let loaded = native_rules_owner
-                    .load_scenario(rules_prefix, &map_data.ini)
-                    .map_err(|error| {
-                        anyhow::anyhow!("failed native scenario rules rebuild: {error}")
-                    })?;
-                let (loaded_rules, _, fixed_art_ini, native_rules_receipt) = loaded.into_parts();
-                (
-                    loaded_rules,
-                    None,
-                    None,
-                    fixed_art_ini,
-                    native_rules_receipt,
-                )
-            };
+            ) = prepared_rules.into_parts();
             Ok(FreshMapLoadStep::Continue(FreshMapLoadContinuation::new(
                 "art-metadata",
                 move |services| {
-                    let team_ai_registry = match team_ai_registry_at_read {
-                        Some(registry) => registry,
-                        None => crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(
-                            services.asset_manager,
-                            &map_data.ini,
-                            game_mode_nonzero,
-                        )
-                        .map_err(anyhow::Error::msg)?,
-                    };
                     let mut rules = loaded_rules;
                     // VERA's presentation strength applies before any colour
                     // table is derived: the sprite atlas bakes its house remap
@@ -4036,6 +4145,138 @@ pub(super) const fn should_read_tmcj4f(
 mod full_init_rules_gate_tests {
     use super::*;
 
+    #[test]
+    fn generated_rules_are_read_before_generation_and_carried_once_through_failure() {
+        use crate::app::match_runtime::session::SessionMode;
+        use crate::map::source::test_support::TestDirectory;
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::powerups::POWERUP_MONEY;
+        use crate::rules::process_owner::NativeRulesProcessOwner;
+        use std::sync::Arc;
+
+        struct Progress {
+            fail: bool,
+        }
+        impl crate::app::loading::pump::LoadingProgressSink for Progress {
+            fn milestone(&mut self, _: u32) -> anyhow::Result<()> {
+                anyhow::ensure!(!self.fail, "stop after generated-map preparation");
+                Ok(())
+            }
+        }
+        let directory = TestDirectory::new("rmg-early-rules");
+        directory.write(
+            "temperatmd.ini",
+            b"[General]\nClearTile=0\n[TileSet0000]\nFileName=clear\nTilesInSet=1\n",
+        );
+        directory.write("isotem.pal", &[0; 768]);
+        directory.write("unittem.pal", &[0; 768]);
+        let Some((_, retail)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        directory.write("aimd.ini", retail.get_ref("AIMD.INI").unwrap());
+        directory.write(
+            "mode.ini",
+            b"[Animations]\n0=MODE\n[Powerups]\nMoney=7,MODE,yes,125\n[Clear]\nWheel=0%\n",
+        );
+        directory.write(
+            "TMCJ4F.INI",
+            b"[Animations]\n0=TAIL\n[Powerups]\nMoney=9,TAIL,yes,250\n[Clear]\nWheel=100%\n",
+        );
+        let options = crate::map::rmg::RmgOptions {
+            map_type: 0,
+            resources: 0,
+            vegetation: 0,
+            seed: 4242,
+            ..Default::default()
+        };
+        directory.write("early.sed", &options.to_sed_bytes());
+        let seed_path = directory.path().join("early.sed");
+        let root =
+            IniFile::from_str("[Countries]\n0=C]\n[Animations]\n0=BASE\n[Clear]\nWheel=25%\n");
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            root,
+            None,
+            IniFile::empty(),
+            Arc::default(),
+            Arc::default(),
+        )
+        .unwrap();
+        let mut assets = AssetManager::from_loose_root_for_test(directory.path());
+        let initial = load_map_initial_with_assets(
+            directory.path().to_owned(),
+            &mut assets,
+            Some(&mut owner),
+            None,
+            Some(seed_path.to_str().unwrap()),
+            Some("mode.ini"),
+            SessionMode::Skirmish,
+            true,
+            &mut Progress { fail: false },
+        )
+        .unwrap();
+        assert!(initial.has_generated_rules());
+        assert_eq!(
+            initial
+                .map_data
+                .ini
+                .section("C]")
+                .unwrap()
+                .read_int("TechLevel", -1),
+            0
+        );
+        assert_eq!(
+            initial
+                .map_data
+                .ini
+                .section("Basic")
+                .unwrap()
+                .read_name("Player", 32)
+                .as_deref(),
+            Some("C]")
+        );
+        let saved_hash = owner.saved_scenario_rules().unwrap().content_hash();
+        let prepared = initial.generated_rules.unwrap();
+        assert_eq!(prepared.native.rules().powerups.weights[POWERUP_MONEY], 9);
+        assert_eq!(
+            prepared.native.rules().anim_type_name_by_index(2),
+            Some("TAIL")
+        );
+        assert_eq!(
+            prepared.rules_at_ai_read.as_ref().unwrap().powerups.weights[POWERUP_MONEY],
+            7,
+            "AI reads before TMCJ4F"
+        );
+        let (rules, _, _, _, _) = prepared.into_parts();
+        assert_eq!(rules.powerups.weights[POWERUP_MONEY], 9);
+        assert_eq!(
+            owner.saved_scenario_rules().unwrap().content_hash(),
+            saved_hash,
+            "consuming the carried result does not replay Process"
+        );
+
+        // A later admission error does not undo the already reached global read.
+        directory.write("TMCJ4F.INI", b"[Powerups]\nMoney=11,MODE,no,333\n");
+        let mut assets = AssetManager::from_loose_root_for_test(directory.path());
+        assert!(
+            load_map_initial_with_assets(
+                directory.path().to_owned(),
+                &mut assets,
+                Some(&mut owner),
+                None,
+                Some(seed_path.to_str().unwrap()),
+                Some("mode.ini"),
+                SessionMode::Skirmish,
+                true,
+                &mut Progress { fail: true },
+            )
+            .is_err()
+        );
+        assert_eq!(
+            owner.saved_scenario_rules().unwrap().powerups().weights[POWERUP_MONEY],
+            11
+        );
+    }
+
     fn rules_owner() -> crate::rules::process_owner::NativeRulesProcessOwner {
         use crate::rules::ini_parser::IniFile;
         use crate::rules::process_owner::NativeRulesProcessOwner;
@@ -4407,8 +4648,11 @@ mod random_map_retail_tests {
                     seed_dir,
                     &mut asset_manager,
                     Some(&mut native_rules),
+                    None,
                     Some(&seed_name),
                     None,
+                    crate::app::match_runtime::session::SessionMode::Skirmish,
+                    false,
                     &mut SilentProgress,
                 )
                 .unwrap_or_else(|err| panic!("{tag}: the .SED branch failed: {err}"));

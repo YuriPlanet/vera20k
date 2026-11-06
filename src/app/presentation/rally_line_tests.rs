@@ -44,12 +44,26 @@ fn packed(tint: [f32; 3]) -> u16 {
     (r >> 3) << 11 | (g >> 2) << 5 | (b >> 3)
 }
 
-fn composite(canvas: &mut [u16], instances: &[SpriteInstance], view: TacticalViewport) {
+/// Store each pass's spans as the GPU does, keeping or skipping each pixel by
+/// its A gate against `a` (`fs_surface_store`).
+fn composite(
+    canvas: &mut [u16],
+    instances: &[SpriteInstance],
+    view: TacticalViewport,
+    a: &impl Fn([i32; 2]) -> u8,
+) {
+    use crate::render::draw_state::{FX_SURFACE_A_NONZERO, FX_SURFACE_A_ZERO};
     for instance in instances {
         let x = instance.position[0] as i32 - view.camera[0];
         let y = instance.position[1] as i32 - view.camera[1];
         for dy in 0..instance.size[1] as i32 {
             for dx in 0..instance.size[0] as i32 {
+                let zero = a([x + dx, y + dy]) == 0;
+                if (instance.draw_state.fx_flags & FX_SURFACE_A_NONZERO != 0 && zero)
+                    || (instance.draw_state.fx_flags & FX_SURFACE_A_ZERO != 0 && !zero)
+                {
+                    continue;
+                }
                 canvas[((y + dy) * 160 + x + dx) as usize] = packed(instance.tint);
             }
         }
@@ -60,10 +74,11 @@ pub(super) fn assert_native_passes(
     actual: &[Vec<SpriteInstance>; 2],
     row: &Value,
     view: TacticalViewport,
+    a: impl Fn([i32; 2]) -> u8,
 ) {
     let mut canvas = vec![0x39E7; 160 * 120];
     for (index, pass) in actual.iter().enumerate() {
-        composite(&mut canvas, pass, view);
+        composite(&mut canvas, pass, view, &a);
         let pixels: Vec<_> = canvas
             .iter()
             .enumerate()
@@ -144,10 +159,14 @@ pub(super) fn projected_fixture(
             [248. / 255., 40. / 255., 8. / 255.],
             input["frame"].as_u64().unwrap_or(0) as u32,
             view,
-            |p| alpha_fixture(p, input["alpha"].as_str().unwrap_or("clear")),
         );
     }
     (actual, view)
+}
+
+/// The A fixture a producer row names.
+fn row_alpha(row: &Value) -> impl Fn([i32; 2]) -> u8 + '_ {
+    |p| alpha_fixture(p, row["input"]["alpha"].as_str().unwrap_or("clear"))
 }
 
 #[test]
@@ -165,7 +184,7 @@ fn native_rally_producer_clipped_rows_phase_and_abuffer_passes() {
     );
     for row in producer_rows() {
         let (actual, view) = projected_fixture(row, 1., [0, 0]);
-        assert_native_passes(&actual, row, view);
+        assert_native_passes(&actual, row, view, row_alpha(row));
     }
 }
 
@@ -210,9 +229,8 @@ fn rally_crossing_stock_shroud_frontier_matches_the_original_combined_draw() {
         [248. / 255., 40. / 255., 8. / 255.],
         0,
         view,
-        |[x, y]| alpha[(y * 160 + x) as usize],
     );
-    assert_native_passes(&actual, &row, view);
+    assert_native_passes(&actual, &row, view, |[x, y]| alpha[(y * 160 + x) as usize]);
 }
 
 fn simulation_fixture(row: &Value) -> (Simulation, RuleSet) {
@@ -340,7 +358,6 @@ fn native_rally_gates_foundation_ground_bridge_and_object_target_through_product
                 "Americans"
             }),
             view,
-            |p| alpha_fixture(p, row["input"]["alpha"].as_str().unwrap_or("clear")),
         );
         // House RGB is a supplied native boundary. Its RGB565 conversion is
         // checked by the separate native producer + GPU comparisons.
@@ -349,7 +366,7 @@ fn native_rally_gates_foundation_ground_bridge_and_object_target_through_product
                 instance.tint = [248. / 255., 40. / 255., 8. / 255.];
             }
         }
-        assert_native_passes(&actual, row, view);
+        assert_native_passes(&actual, row, view, row_alpha(row));
     }
 }
 
@@ -458,9 +475,8 @@ fn retail_gapile_house_color_and_production_crop_match_original_rally_and_no_tar
             &colors,
             Some(owner),
             view,
-            |p| alpha_fixture(p, input["alpha"].as_str().unwrap()),
         );
-        assert_native_passes(&actual, row, view);
+        assert_native_passes(&actual, row, view, row_alpha(row));
         assert_eq!(actual.iter().all(Vec::is_empty), no_target);
     }
     assert_eq!(
@@ -491,13 +507,12 @@ fn presentation_target_query_does_not_stamp_simulation_dummy_cell() {
             clip: [0, 0, 160, 120],
             zoom: 1.,
         },
-        |_| 127,
     );
     assert_eq!(canonical.dummy().snapshot().coord, before);
 }
 
 #[test]
-#[ignore = "requires GPU; compares original complete rally pixels and unchanged depth"]
+#[ignore = "requires GPU; compares original complete rally pixels, their A passes and unchanged depth"]
 fn production_rally_gpu_matches_native_pixels_and_preserves_depth() {
     use crate::render::batch::BatchRenderer;
     use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded};
@@ -510,12 +525,13 @@ fn production_rally_gpu_matches_native_pixels_and_preserves_depth() {
         for zoom in [0.75, 1., 1.5, 2.] {
             let size = [(160. * zoom) as u32, (120. * zoom) as u32];
             let camera_pos = [-17, 73];
-            let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+            let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+            // The production world pass draws these at zoom 1; the spans
+            // carry the wheel-zoom scaling themselves.
             batch.write_camera(
                 &gpu.queue,
                 crate::render::batch::CameraUniform {
                     camera_pos: camera_pos.map(|v| v as f32),
-                    zoom,
                     ..camera(size)
                 },
             );
@@ -527,6 +543,20 @@ fn production_rally_gpu_matches_native_pixels_and_preserves_depth() {
             let dv = depth.create_view(&Default::default());
             for row in producer_rows() {
                 let (mut actual, _) = projected_fixture(row, zoom, camera_pos);
+                // The live A under each stored pixel, from its logical pixel.
+                let alpha = row_alpha(row);
+                let plane: Vec<u8> = (0..size[1])
+                    .flat_map(|y| (0..size[0]).map(move |x| [x, y]))
+                    .map(|p| alpha(p.map(|v| ((v as f32 + 0.5) / zoom).floor() as i32)))
+                    .collect();
+                let a = crate::render::shroud_buffer::ShroudBuffer::fixture(
+                    &gpu.device,
+                    &gpu.queue,
+                    size,
+                    camera_pos.map(|v| v as f32),
+                    &plane,
+                );
+                batch.bind_shroud(&gpu.device, Some(&a));
                 // Poison unused hardware depth: both reads and writes must be bypassed.
                 for instance in actual.iter_mut().flatten() {
                     instance.depth = 0.9;
@@ -579,7 +609,7 @@ fn production_rally_gpu_matches_native_pixels_and_preserves_depth() {
                             occlusion_query_set: None,
                             multiview_mask: None,
                         });
-                        batch.draw_with_buffer_ui_passthrough(
+                        batch.draw_surface_stores(
                             &mut pass,
                             &texture,
                             buffer,
@@ -834,7 +864,6 @@ fn production_rally_workload_timing() {
                 &colors,
                 Some("Americans"),
                 view,
-                |p| alpha_fixture(p, "mixed"),
             );
             let build_ms = begin.elapsed().as_secs_f64() * 1000.;
             if mobile {
@@ -923,7 +952,6 @@ fn production_rally_workload_timing() {
                 0,
                 view,
                 None,
-                &mut |_| 127,
             );
             let build_ms = begin.elapsed().as_secs_f64() * 1000.;
             assert_eq!(!actual.is_empty(), active && selected);

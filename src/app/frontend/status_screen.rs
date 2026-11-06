@@ -31,6 +31,14 @@ enum Action {
     Resume,
     Abort,
     Leave,
+    /// Open the import dialog on the startup-failure card.
+    ImportAssets,
+    /// Ask the platform for the folder holding the retail installation.
+    ChooseFolder,
+    /// Leave the import dialog.
+    CancelImport,
+    /// Dismiss the finished import dialog.
+    CloseImport,
 }
 
 impl Action {
@@ -41,6 +49,10 @@ impl Action {
             Self::Resume => (Some("GUI:ResumeMission"), "Resume Mission"),
             Self::Abort => (Some("GUI:AbortMission"), "Abort Mission"),
             Self::Leave => (Some("GUI:Leave"), "Quit"),
+            Self::ImportAssets => (None, "Import Game Files"),
+            Self::ChooseFolder => (None, "Choose Folder"),
+            Self::CancelImport => (None, "Cancel"),
+            Self::CloseImport => (None, "Close"),
         };
         key.and_then(|key| state.process_assets.csf.as_ref()?.get(key))
             .map_or(Cow::Borrowed(fallback), Cow::Borrowed)
@@ -57,6 +69,34 @@ impl Action {
                 state,
                 ModalOutcome::LeaveMatch { destruct: false },
             ),
+            // The import dialog is self-contained: it owns the step, and the
+            // picker itself belongs to the platform (`ui::asset_import`).
+            Self::ImportAssets => {
+                state.frontend.asset_import.open();
+                state.platform.window.request_redraw();
+            }
+            Self::ChooseFolder => {
+                if !crate::ui::asset_import::choose_folder() {
+                    // The build has no system picker. Say so on the card: a
+                    // button that only writes to the log looks broken.
+                    state
+                        .frontend
+                        .asset_import
+                        .fail("no folder picker in this build yet");
+                }
+                state.platform.window.request_redraw();
+            }
+            Self::CancelImport => {
+                state.frontend.asset_import.press_right();
+                if crate::util::folder_picker::cancel_import() {
+                    state.frontend.asset_import.cancel_copy();
+                }
+                state.platform.window.request_redraw();
+            }
+            Self::CloseImport => {
+                state.frontend.asset_import.close();
+                state.platform.window.request_redraw();
+            }
         }
     }
 }
@@ -75,7 +115,7 @@ impl Buttons {
     /// same decision (`input::precedence`).
     fn for_state(state: &AppState) -> Option<Self> {
         match crate::app::input::precedence::input_layer(state) {
-            InputLayer::Page(ModalPage::ShellError) => Some(Self::QUIT),
+            InputLayer::Page(ModalPage::ShellError) => Some(Self::for_shell_error(state)),
             InputLayer::Screen(ScreenPage::ResultCard) => Some(Self::BACK_TO_MENU),
             InputLayer::Screen(ScreenPage::InGameCard) => Some(
                 if state.match_state.match_presentation.in_game_menu
@@ -92,6 +132,52 @@ impl Buttons {
 
     fn actions(self) -> Vec<Action> {
         self.0.into_iter().flatten().collect()
+    }
+
+    /// The startup-failure card: the plain quit, or the import dialog's step
+    /// while one is open. Without a loaded installation the import is the way
+    /// out that does not need a file browser.
+    fn for_shell_error(state: &AppState) -> Self {
+        use crate::ui::asset_import::ImportStep;
+        match state.frontend.asset_import.step() {
+            ImportStep::Closed
+                if crate::ui::asset_import::AVAILABLE
+                    && state.process_assets.manager().is_none() =>
+            {
+                Self([Some(Action::ImportAssets), Some(Action::Quit)])
+            }
+            ImportStep::Closed => Self::QUIT,
+            ImportStep::ChooseFolder | ImportStep::Failed(_) => {
+                Self([Some(Action::ChooseFolder), Some(Action::CancelImport)])
+            }
+            ImportStep::Copying { .. } => Self([None, Some(Action::CancelImport)]),
+            ImportStep::Cancelling => Self::NONE,
+            ImportStep::Done => Self([Some(Action::CloseImport), None]),
+        }
+    }
+}
+
+/// The buttons the startup-failure card shows right now, for the render path
+/// that paints the same decision `handle_event` acts on.
+pub(crate) fn shell_error_buttons(state: &AppState) -> Buttons {
+    Buttons::for_shell_error(state)
+}
+
+/// Move the importing thread's progress and outcome into the dialog.
+///
+/// The copy belongs to the platform thread that can read the chosen tree, so it
+/// reports through `util::import_status` and the card drains it here, on the
+/// frame it draws.
+fn apply_import_events(state: &mut AppState) {
+    use crate::util::import_status::ImportEvent;
+    for event in crate::util::import_status::drain() {
+        match event {
+            ImportEvent::Started => state.frontend.asset_import.start_copy(None),
+            ImportEvent::Progress(bytes) => state.frontend.asset_import.advance_copy(bytes),
+            ImportEvent::Done(path) => state.frontend.asset_import.finish_copy(path),
+            ImportEvent::Failed(reason) => state.frontend.asset_import.fail(reason),
+            ImportEvent::Cancelled => state.frontend.asset_import.close(),
+        }
     }
 }
 
@@ -250,7 +336,14 @@ pub(crate) fn handle_event(
                         actions.first().copied()
                     }
                     PhysicalKey::Code(KeyCode::Escape) => actions.iter().copied().find(|action| {
-                        matches!(action, Action::Resume | Action::Quit | Action::BackToMenu)
+                        matches!(
+                            action,
+                            Action::Resume
+                                | Action::Quit
+                                | Action::BackToMenu
+                                | Action::CancelImport
+                                | Action::CloseImport
+                        )
                     }),
                     _ => None,
                 };
@@ -315,6 +408,7 @@ pub(crate) fn render(
     detail: &str,
     buttons: Buttons,
 ) {
+    apply_import_events(state);
     state.frontend.status_screen_drawn = true;
     // The in-repo stroke face is a skeleton: its capitals are unambiguous where
     // its lowercase forms are not, so the card sets every string in caps. That

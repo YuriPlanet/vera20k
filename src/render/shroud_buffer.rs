@@ -1,11 +1,14 @@
 //! Shared tactical ABuffer — native per-pixel palette-row input.
 //!
 //! The original engine writes SHROUD.SHP/FOG.SHP into a 16-bit circular buffer;
-//! each tile/sprite blitter uses A to select a palette row. Our GPU source:
+//! each tile/sprite blitter uses A to select a palette row. Ours is one R8 GPU
+//! texture the GPU composes in place (`shroud_compose.wgsl`):
 //!
-//! 1. CPU-side: copy/blend the raw brightness pixels into a screen-res R8 buffer
-//! 2. Upload to an R8Unorm GPU texture
-//! 3. Every world blitter reads this same texture before storing its source color
+//! 1. Clear to the neutral 0x7F, then copy/blend the selected frames' raw
+//!    bytes from R8Uint atlases, in native cell order;
+//! 2. Rescale it under the AlphaShapeClass glows through a scratch copy;
+//! 3. Every world blitter, surface line and A-gated surface store reads this
+//!    same texture. Play never reads it back to the CPU.
 //!
 //! Original493DF0/494B60/4990E0 select a palette row with A. Native surface
 //! lines store their packed color directly, and shadow497390 halves the existing
@@ -17,12 +20,15 @@
 //! diamonds tile the screen without gaps at height discontinuities.
 //!
 //! ## Dependency rules
-//! - Part of render/ — reads FogState (no mutation), uploads through Device/Queue.
+//! - Part of render/ — reads FogState (no mutation), draws through Device/Queue.
 
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::map::terrain::{iso_to_screen, screen_to_iso};
+use crate::rules::alpha_image_assets::AlphaImage;
 use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
+use std::ops::Range;
+use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
 /// Tactical clear value written by6D3F9F. A selects a palette row; it is not
@@ -31,14 +37,14 @@ const NEUTRAL: u8 = 0x7F;
 
 /// The default retains native A. The optional translucent style uses 500;
 /// simulation visibility, shroud knowledge and stored A bytes stay unchanged.
-/// The lift also halves the AlphaShapeClass glows (`draw_alpha_shape`), which
-/// share the plane with the shroud.
+/// The lift also halves the AlphaShapeClass glows, which share the plane with
+/// the shroud.
 const FOG_STRENGTH_MILLI: u32 = 1000;
 
 /// Lift one A value toward [`NEUTRAL`] by `strength_milli` (0 = no shading,
-/// 1000 = native). The GPU's `tactical_a_at` applies the same integer
-/// expression, so CPU surface lines and world shaders agree pixel for pixel.
-fn fog_lifted_a(a: u8, strength_milli: u32) -> u8 {
+/// 1000 = native). Every A reader's WGSL (`fog_lifted_a`) applies the same
+/// integer expression; this one serves readbacks.
+pub(crate) fn fog_lifted_a(a: u8, strength_milli: u32) -> u8 {
     let delta = i32::from(a) - i32::from(NEUTRAL);
     (i32::from(NEUTRAL) + delta * strength_milli as i32 / 1000).clamp(0, 255) as u8
 }
@@ -60,8 +66,8 @@ pub struct FogDrawOptions {
 ///
 /// The A plane is a pure function of these, the lattice size and camera, the
 /// frame set the options select and the frames' bytes. So a fog generation
-/// whose list equals the drawn one, with all else unchanged, needs no redraw
-/// or upload; most ticks change no cell in view.
+/// whose list equals the drawn one, with all else unchanged, needs no redraw;
+/// most ticks change no cell in view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct CellBlits {
     origin: [i32; 2],
@@ -75,14 +81,14 @@ const NO_FRAME: u16 = u16::MAX;
 #[derive(Debug, Clone)]
 pub struct AlphaShapeDraw {
     pub origin: [i32; 2],
-    pub image: std::sync::Arc<crate::rules::alpha_image_assets::AlphaImage>,
+    pub image: Arc<AlphaImage>,
 }
 
 /// Images are immutable rules resources, so the same allocation is the same
 /// image and a frame's list compares without reading pixels.
 impl PartialEq for AlphaShapeDraw {
     fn eq(&self, other: &Self) -> bool {
-        self.origin == other.origin && std::sync::Arc::ptr_eq(&self.image, &other.image)
+        self.origin == other.origin && Arc::ptr_eq(&self.image, &other.image)
     }
 }
 
@@ -129,83 +135,839 @@ pub(crate) fn cell_fill(
 
 pub use crate::sim::vision::SHROUD_EDGE_LUT;
 
-/// Immutable decoded SHROUD bytes and their derived non-FE row spans. Both are
-/// created together when a ShroudBuffer takes a source frame set; viewport,
-/// camera and fog changes reuse them. Replacing the source creates a new set,
-/// so no separately invalidated copy of the source bytes exists.
-struct BrightnessFrame {
-    pixels: Vec<u8>,
-    spans: Vec<BrightnessSpan>,
+/// One SHROUD.SHP or FOG.SHP frame set: its raw bytes as an R8Uint atlas the
+/// compositor reads, frames stacked down columns. Created once with the set;
+/// viewport, camera and fog changes reuse it.
+struct FrameAtlas {
+    canvas: [u32; 2],
+    count: usize,
+    per_column: u32,
+    view: wgpu::TextureView,
+    /// No two cells' stores can meet (see [`cells_disjoint`]), so copies and
+    /// blends of different cells commute.
+    cells_disjoint: bool,
+    /// The compositor's binding of this atlas, made with its first use.
+    binding: Option<wgpu::BindGroup>,
 }
 
-/// Compact source coordinates and byte offsets, visited in source row order.
-struct BrightnessSpan {
-    row: u32,
-    left: u32,
-    source: std::ops::Range<u32>,
-}
-
-impl BrightnessFrame {
-    fn new(pixels: Vec<u8>, canvas: [u32; 2]) -> Self {
-        assert_eq!(
-            pixels.len() as u64,
-            u64::from(canvas[0]) * u64::from(canvas[1])
+impl FrameAtlas {
+    fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        frames: Vec<Vec<u8>>,
+        canvas: [u32; 2],
+    ) -> Self {
+        let area = canvas[0] as usize * canvas[1] as usize;
+        assert!(frames.iter().all(|frame| frame.len() == area));
+        let limit = device.limits().max_texture_dimension_2d;
+        let per_column = (limit / canvas[1].max(1)).max(1);
+        let count = u32::try_from(frames.len()).expect("frame count");
+        let size = [
+            (count.div_ceil(per_column) * canvas[0]).max(1),
+            (count.min(per_column) * canvas[1]).max(1),
+        ];
+        assert!(
+            size[0] <= limit && size[1] <= limit,
+            "frame atlas exceeds the GPU limit"
         );
-        assert!(u32::try_from(pixels.len()).is_ok());
-        let mut spans = Vec::new();
-        if canvas[0] != 0 {
-            for (row_index, row) in pixels.chunks_exact(canvas[0] as usize).enumerate() {
-                let mut x = 0;
-                while x < row.len() {
-                    if row[x] == TRANSPARENT {
-                        x += 1;
-                        continue;
-                    }
-                    let left = x;
-                    while x < row.len() && row[x] != TRANSPARENT {
-                        x += 1;
-                    }
-                    let base = row_index * canvas[0] as usize;
-                    spans.push(BrightnessSpan {
-                        row: row_index as u32,
-                        left: left as u32,
-                        source: (base + left) as u32..(base + x) as u32,
-                    });
+        let mut texels = vec![TRANSPARENT; size[0] as usize * size[1] as usize];
+        if area != 0 {
+            for (index, frame) in frames.iter().enumerate() {
+                let [x, y] = atlas_origin(index, per_column, canvas);
+                for (row, source) in frame.chunks_exact(canvas[0] as usize).enumerate() {
+                    let start = (y as usize + row) * size[0] as usize + x as usize;
+                    texels[start..start + source.len()].copy_from_slice(source);
                 }
             }
         }
-        Self { pixels, spans }
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Shroud frame atlas"),
+            size: wgpu::Extent3d {
+                width: size[0],
+                height: size[1],
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Uint,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        crate::render::atlas_growth::write_texels(queue, &texture, [0, 0], size, 1, &texels);
+        Self {
+            canvas,
+            count: frames.len(),
+            per_column,
+            view: texture.create_view(&Default::default()),
+            cells_disjoint: cells_disjoint(&frames, canvas),
+            binding: None,
+        }
+    }
+
+    fn has(&self, frame: u16) -> bool {
+        frame != NO_FRAME && usize::from(frame) < self.count
     }
 }
 
-/// Authoritative CPU A bytes and their single GPU texture. Derived bindings
-/// cache the retained view identity; a resize replaces it and invalidates them.
+fn atlas_origin(index: usize, per_column: u32, canvas: [u32; 2]) -> [u32; 2] {
+    let index = index as u32;
+    [
+        index / per_column * canvas[0],
+        index % per_column * canvas[1],
+    ]
+}
+
+/// Whether two different cells' stores can never meet: the union of every
+/// frame's stored (non-FE) pixels misses itself at each lattice offset at
+/// which two canvases overlap. Stock SHROUD and FOG diamonds tile exactly.
+fn cells_disjoint(frames: &[Vec<u8>], canvas: [u32; 2]) -> bool {
+    let [width, height] = canvas.map(|v| v as i32);
+    if frames.is_empty() || width == 0 || height == 0 {
+        return true;
+    }
+    let stored: Vec<bool> = (0..(width * height) as usize)
+        .map(|i| frames.iter().any(|frame| frame[i] != TRANSPARENT))
+        .collect();
+    // The shared projection's lattice, one cell from a base well inside u16.
+    let base = iso_to_screen(1024, 1024, 0);
+    let offset = |rx: i32, ry: i32| {
+        let (x, y) = iso_to_screen((1024 + rx) as u16, (1024 + ry) as u16, 0);
+        [(x - base.0) as i32, (y - base.1) as i32]
+    };
+    let step = offset(1, 0).map(|v| v.abs().max(1));
+    let reach = [(width - 1) / step[0], (height - 1) / step[1]];
+    for u in -reach[0]..=reach[0] {
+        for v in -reach[1]..=reach[1] {
+            // u = rx - ry and v = rx + ry share parity.
+            if (u, v) == (0, 0) || (u + v) % 2 != 0 {
+                continue;
+            }
+            let [dx, dy] = offset((u + v) / 2, (v - u) / 2);
+            for y in 0.max(-dy)..height.min(height - dy) {
+                for x in 0.max(-dx)..width.min(width - dx) {
+                    if stored[(y * width + x) as usize]
+                        && stored[((y + dy) * width + x + dx) as usize]
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    true
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct CellInstance {
+    origin: [i32; 2],
+    atlas: [u32; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct GlowInstance {
+    scratch: [i32; 2],
+    size: [i32; 2],
+    plane: [i32; 2],
+    image: [i32; 2],
+}
+
+/// A target size and canvas (cells) or scratch size (glows), 16 bytes.
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct ComposeParams {
+    target_size: [f32; 2],
+    extent: [f32; 2],
+}
+
+/// Instance indices of one cell run: its copies, then its blends.
+struct CellRun {
+    copies: Range<u32>,
+    blends: Range<u32>,
+}
+
+/// A vertex buffer that grows to the largest upload.
+#[derive(Default)]
+pub(crate) struct InstanceUpload {
+    buffer: Option<wgpu::Buffer>,
+}
+
+impl InstanceUpload {
+    /// The buffer of the last write, if any.
+    pub(crate) fn buffer(&self) -> Option<&wgpu::Buffer> {
+        self.buffer.as_ref()
+    }
+
+    pub(crate) fn write(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        label: &'static str,
+        bytes: &[u8],
+    ) -> &wgpu::Buffer {
+        let size = (bytes.len() as u64).max(16);
+        if self
+            .buffer
+            .as_ref()
+            .is_none_or(|buffer| buffer.size() < size)
+        {
+            self.buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size: size.next_power_of_two(),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }));
+        }
+        let buffer = self.buffer.as_ref().expect("allocated above");
+        queue.write_buffer(buffer, 0, bytes);
+        buffer
+    }
+}
+
+/// The GPU programs and transient state that compose the plane. Made with
+/// the first composition, so A fixtures never compile them.
+struct Compositor {
+    cell_layout: wgpu::BindGroupLayout,
+    copy: wgpu::RenderPipeline,
+    blend: wgpu::RenderPipeline,
+    glow_layout: wgpu::BindGroupLayout,
+    image_layout: wgpu::BindGroupLayout,
+    glow: wgpu::RenderPipeline,
+    cell_params: wgpu::Buffer,
+    glow_params: wgpu::Buffer,
+    cell_upload: InstanceUpload,
+    glow_upload: InstanceUpload,
+    /// The glow binding of the current plane view.
+    glow_binding: Option<(wgpu::TextureView, wgpu::BindGroup)>,
+    /// Glow results before their copy back; grows to the largest group.
+    scratch: Option<wgpu::Texture>,
+    /// One binding per distinct glow image, holding its allocation.
+    images: Vec<(Arc<AlphaImage>, wgpu::BindGroup)>,
+    cells: Vec<CellInstance>,
+    runs: Vec<CellRun>,
+    glows: Vec<GlowInstance>,
+    glow_images: Vec<usize>,
+    glow_groups: Vec<Range<usize>>,
+}
+
+const CELL_STRIDE: u64 = std::mem::size_of::<CellInstance>() as u64;
+const GLOW_STRIDE: u64 = std::mem::size_of::<GlowInstance>() as u64;
+
+pub(crate) fn layout_entry(binding: u32, ty: wgpu::BindingType) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+        ty,
+        count: None,
+    }
+}
+
+pub(crate) fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    layout_entry(
+        binding,
+        wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+    )
+}
+
+pub(crate) fn texture_entry(
+    binding: u32,
+    sample_type: wgpu::TextureSampleType,
+) -> wgpu::BindGroupLayoutEntry {
+    layout_entry(
+        binding,
+        wgpu::BindingType::Texture {
+            sample_type,
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+    )
+}
+
+fn params_buffer(device: &wgpu::Device, label: &'static str) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: std::mem::size_of::<ComposeParams>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
+pub(crate) fn compose_shader_source() -> &'static str {
+    include_str!("shroud_compose.wgsl")
+}
+
+impl Compositor {
+    fn new(device: &wgpu::Device) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Tactical A composition"),
+            source: wgpu::ShaderSource::Wgsl(compose_shader_source().into()),
+        });
+        let cell_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Shroud frame atlas"),
+            entries: &[
+                uniform_entry(0),
+                texture_entry(1, wgpu::TextureSampleType::Uint),
+            ],
+        });
+        let glow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Glow A source"),
+            entries: &[
+                uniform_entry(2),
+                texture_entry(3, wgpu::TextureSampleType::Float { filterable: false }),
+            ],
+        });
+        let image_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Glow AlphaImage"),
+            entries: &[texture_entry(0, wgpu::TextureSampleType::Uint)],
+        });
+        let pipeline = |label,
+                        layouts: &[Option<&wgpu::BindGroupLayout>],
+                        vertex: &'static str,
+                        attributes: &[wgpu::VertexAttribute],
+                        stride: u64,
+                        fragment: &'static str,
+                        blend: Option<wgpu::BlendState>| {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some(label),
+                bind_group_layouts: layouts,
+                immediate_size: 0,
+            });
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some(vertex),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: stride,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes,
+                    })],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some(fragment),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: PLANE_FORMAT,
+                        blend,
+                        write_mask: wgpu::ColorWrites::RED,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: Default::default(),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let cell_attributes = wgpu::vertex_attr_array![0 => Sint32x2, 1 => Uint32x2];
+        let glow_attributes =
+            wgpu::vertex_attr_array![0 => Sint32x2, 1 => Sint32x2, 2 => Sint32x2, 3 => Sint32x2];
+        // A - (127 - byte), clamped at zero by the unorm target.
+        let subtract = wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::One,
+            dst_factor: wgpu::BlendFactor::One,
+            operation: wgpu::BlendOperation::ReverseSubtract,
+        };
+        let copy = pipeline(
+            "Shroud frame copy (47EFE0)",
+            &[Some(&cell_layout)],
+            "vs_cell",
+            &cell_attributes,
+            CELL_STRIDE,
+            "fs_copy",
+            None,
+        );
+        let blend = pipeline(
+            "Fog frame blend (47F250)",
+            &[Some(&cell_layout)],
+            "vs_cell",
+            &cell_attributes,
+            CELL_STRIDE,
+            "fs_blend",
+            Some(wgpu::BlendState {
+                color: subtract,
+                alpha: subtract,
+            }),
+        );
+        let glow = pipeline(
+            "AlphaShape glow (421350)",
+            &[Some(&glow_layout), Some(&image_layout)],
+            "vs_glow",
+            &glow_attributes,
+            GLOW_STRIDE,
+            "fs_glow",
+            None,
+        );
+        Self {
+            cell_layout,
+            copy,
+            blend,
+            glow_layout,
+            image_layout,
+            glow,
+            cell_params: params_buffer(device, "Shroud cell parameters"),
+            glow_params: params_buffer(device, "Glow scratch parameters"),
+            cell_upload: InstanceUpload::default(),
+            glow_upload: InstanceUpload::default(),
+            glow_binding: None,
+            scratch: None,
+            images: Vec::new(),
+            cells: Vec::new(),
+            runs: Vec::new(),
+            glows: Vec::new(),
+            glow_images: Vec::new(),
+            glow_groups: Vec::new(),
+        }
+    }
+
+    /// Copy each blit's first frame and blend its second onto `target`, in
+    /// collection order, after clearing it to [`NEUTRAL`] when `clear`.
+    /// Copies alone keep native order through primitive order. A run whose
+    /// cells cannot meet draws all its copies, then all its blends; that is
+    /// the whole list when the frames tile, else one diagonal's run of
+    /// canvases that lie apart.
+    #[allow(clippy::too_many_arguments)]
+    fn encode_cells(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::TextureView,
+        size: [u32; 2],
+        frames: &mut FrameAtlas,
+        blits: &[CellBlits],
+        clear: bool,
+    ) {
+        self.cells.clear();
+        self.runs.clear();
+        let any_blend = blits.iter().any(|blit| frames.has(blit.frames[1]));
+        let mut start = 0;
+        while start < blits.len() {
+            let mut end = blits.len();
+            if any_blend && !frames.cells_disjoint {
+                // Native6D7312..6D7532: one diagonal shares its Y origin and
+                // advances right, so each canvas only meets its neighbors.
+                end = start + 1;
+                while end < blits.len()
+                    && blits[end].origin[1] == blits[start].origin[1]
+                    && blits[end].origin[0] - blits[end - 1].origin[0] >= frames.canvas[0] as i32
+                {
+                    end += 1;
+                }
+            }
+            let mut push = |slot: usize| {
+                let first = self.cells.len() as u32;
+                for blit in &blits[start..end] {
+                    let frame = blit.frames[slot];
+                    if frames.has(frame) {
+                        self.cells.push(CellInstance {
+                            origin: blit.origin,
+                            atlas: atlas_origin(
+                                usize::from(frame),
+                                frames.per_column,
+                                frames.canvas,
+                            ),
+                        });
+                    }
+                }
+                first..self.cells.len() as u32
+            };
+            let copies = push(0);
+            let blends = push(1);
+            self.runs.push(CellRun { copies, blends });
+            start = end;
+        }
+        queue.write_buffer(
+            &self.cell_params,
+            0,
+            bytemuck::bytes_of(&ComposeParams {
+                target_size: size.map(|v| v as f32),
+                extent: frames.canvas.map(|v| v as f32),
+            }),
+        );
+        let binding = frames.binding.get_or_insert_with(|| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Shroud frame atlas"),
+                layout: &self.cell_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.cell_params.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&frames.view),
+                    },
+                ],
+            })
+        });
+        let instances = self.cell_upload.write(
+            device,
+            queue,
+            "Shroud cell blits",
+            bytemuck::cast_slice(&self.cells),
+        );
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Tactical A cells"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: if clear {
+                        wgpu::LoadOp::Clear(wgpu::Color {
+                            r: f64::from(NEUTRAL) / 255.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        })
+                    } else {
+                        wgpu::LoadOp::Load
+                    },
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_bind_group(0, &*binding, &[]);
+        for run in &self.runs {
+            for (pipeline, range) in [(&self.copy, &run.copies), (&self.blend, &run.blends)] {
+                if range.is_empty() {
+                    continue;
+                }
+                pass.set_pipeline(pipeline);
+                // Slices rather than a first instance: WebGL2 has no base instance.
+                pass.set_vertex_buffer(
+                    0,
+                    instances.slice(
+                        u64::from(range.start) * CELL_STRIDE..u64::from(range.end) * CELL_STRIDE,
+                    ),
+                );
+                pass.draw(0..4, 0..range.end - range.start);
+            }
+        }
+    }
+
+    /// `AlphaShapeClass::DrawAll_NoMask @ 0x00421350` over the whole plane,
+    /// in vector order. Each glow rescales the A beneath it, so a glow reads
+    /// the plane through its own scratch result and copies it back. Glows in
+    /// one group never overlap, so they share a pass; an overlap starts the
+    /// next group, which reads the earlier group's copies.
+    #[allow(clippy::too_many_arguments)]
+    fn encode_glows(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        plane: &wgpu::Texture,
+        plane_view: &wgpu::TextureView,
+        shapes: &[AlphaShapeDraw],
+        camera: [i32; 2],
+    ) {
+        self.glows.clear();
+        self.glow_images.clear();
+        self.glow_groups.clear();
+        let limit = device.limits().max_texture_dimension_2d as i32;
+        let plane_size = [plane.width() as i32, plane.height() as i32];
+        let mut group = 0;
+        let mut x = 0;
+        let mut extent = [1, 1];
+        for shape in shapes {
+            let origin = [shape.origin[0] - camera[0], shape.origin[1] - camera[1]];
+            let Some(rect) = glow_rect(&shape.image, origin, plane_size) else {
+                continue;
+            };
+            let size = [rect[2] - rect[0], rect[3] - rect[1]];
+            let overlaps = self.glows[group..].iter().any(|glow| {
+                glow.plane[0] < rect[2]
+                    && rect[0] < glow.plane[0] + glow.size[0]
+                    && glow.plane[1] < rect[3]
+                    && rect[1] < glow.plane[1] + glow.size[1]
+            });
+            if overlaps || x + size[0] > limit {
+                self.glow_groups.push(group..self.glows.len());
+                group = self.glows.len();
+                x = 0;
+            }
+            let [frame_x, frame_y, _, _] = shape.image.frame_bounds();
+            self.glows.push(GlowInstance {
+                scratch: [x, 0],
+                size,
+                plane: [rect[0], rect[1]],
+                image: [origin[0] + frame_x, origin[1] + frame_y],
+            });
+            let image = self.image_binding(device, queue, &shape.image);
+            self.glow_images.push(image);
+            x += size[0];
+            extent = [extent[0].max(x), extent[1].max(size[1])];
+        }
+        if group == self.glows.len() {
+            return;
+        }
+        self.glow_groups.push(group..self.glows.len());
+        if self.scratch.as_ref().is_none_or(|scratch| {
+            (scratch.width() as i32) < extent[0] || (scratch.height() as i32) < extent[1]
+        }) {
+            let current = self.scratch.as_ref().map_or([0, 0], |scratch| {
+                [scratch.width() as i32, scratch.height() as i32]
+            });
+            self.scratch = Some(create_plane_texture(
+                device,
+                "Glow scratch",
+                [
+                    current[0].max(extent[0]) as u32,
+                    current[1].max(extent[1]) as u32,
+                ],
+                wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            ));
+        }
+        let scratch = self.scratch.as_ref().expect("allocated above");
+        queue.write_buffer(
+            &self.glow_params,
+            0,
+            bytemuck::bytes_of(&ComposeParams {
+                target_size: [scratch.width() as f32, scratch.height() as f32],
+                extent: [0.0; 2],
+            }),
+        );
+        if self
+            .glow_binding
+            .as_ref()
+            .is_none_or(|(view, _)| view != plane_view)
+        {
+            let binding = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Glow A source"),
+                layout: &self.glow_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: self.glow_params.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(plane_view),
+                    },
+                ],
+            });
+            self.glow_binding = Some((plane_view.clone(), binding));
+        }
+        let (_, binding) = self.glow_binding.as_ref().expect("bound above");
+        let instances = self.glow_upload.write(
+            device,
+            queue,
+            "Glow rectangles",
+            bytemuck::cast_slice(&self.glows),
+        );
+        let scratch_view = scratch.create_view(&Default::default());
+        for group in &self.glow_groups {
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Tactical A glows"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &scratch_view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_pipeline(&self.glow);
+                pass.set_bind_group(0, binding, &[]);
+                for index in group.clone() {
+                    pass.set_bind_group(1, &self.images[self.glow_images[index]].1, &[]);
+                    let offset = index as u64 * GLOW_STRIDE;
+                    pass.set_vertex_buffer(0, instances.slice(offset..offset + GLOW_STRIDE));
+                    pass.draw(0..4, 0..1);
+                }
+            }
+            for glow in &self.glows[group.clone()] {
+                encoder.copy_texture_to_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: scratch,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d {
+                            x: glow.scratch[0] as u32,
+                            y: glow.scratch[1] as u32,
+                            z: 0,
+                        },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::TexelCopyTextureInfo {
+                        texture: plane,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d {
+                            x: glow.plane[0] as u32,
+                            y: glow.plane[1] as u32,
+                            z: 0,
+                        },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::Extent3d {
+                        width: glow.size[0] as u32,
+                        height: glow.size[1] as u32,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
+    }
+
+    /// The binding of one glow image, uploaded with its first use.
+    fn image_binding(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        image: &Arc<AlphaImage>,
+    ) -> usize {
+        if let Some(index) = self
+            .images
+            .iter()
+            .position(|(known, _)| Arc::ptr_eq(known, image))
+        {
+            return index;
+        }
+        let [_, _, width, height] = image.frame_bounds().map(|v| v.max(1) as u32);
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Glow AlphaImage frame"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Uint,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        if image.pixels().len() == (width * height) as usize {
+            crate::render::atlas_growth::write_texels(
+                queue,
+                &texture,
+                [0, 0],
+                [width, height],
+                1,
+                image.pixels(),
+            );
+        }
+        let binding = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Glow AlphaImage frame"),
+            layout: &self.image_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(
+                    &texture.create_view(&Default::default()),
+                ),
+            }],
+        });
+        self.images.push((image.clone(), binding));
+        self.images.len() - 1
+    }
+}
+
+/// The plane rectangle one glow rescales, `origin` in plane pixels. Nothing
+/// is drawn unless the canvas meets the plane (`Rect_Intersect` at
+/// `0x004213FA`, tested at `0x00421411..0x0042141E`). Frame 0 then starts at
+/// its own offset: the left and top edges clip to the canvas and plane, the
+/// right and bottom to the plane alone (`0x00421480..0x004214F4`). Every
+/// frame byte, 0 included, rescales the A beneath it.
+fn glow_rect(
+    image: &AlphaImage,
+    [x, y]: [i32; 2],
+    [plane_w, plane_h]: [i32; 2],
+) -> Option<[i32; 4]> {
+    let [canvas_w, canvas_h] = image.canvas();
+    let (left, top) = (x.max(0), y.max(0));
+    if (x + canvas_w).min(plane_w) <= left || (y + canvas_h).min(plane_h) <= top {
+        return None;
+    }
+    let [frame_x, frame_y, frame_w, frame_h] = image.frame_bounds();
+    let left = left.max(x + frame_x);
+    let top = top.max(y + frame_y);
+    let right = (x + frame_x + frame_w).min(plane_w);
+    let bottom = (y + frame_y + frame_h).min(plane_h);
+    (right > left && bottom > top).then_some([left, top, right, bottom])
+}
+
+const PLANE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
+
+fn create_plane_texture(
+    device: &wgpu::Device,
+    label: &'static str,
+    [width, height]: [u32; 2],
+    usage: wgpu::TextureUsages,
+) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width: width.max(1),
+            height: height.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: PLANE_FORMAT,
+        usage,
+        view_formats: &[],
+    })
+}
+
+/// The live plane: sampled by every A reader, composed in place, glows copied
+/// back into it, and read back by diagnostics.
+fn create_a_plane(device: &wgpu::Device, size: [u32; 2]) -> wgpu::Texture {
+    create_plane_texture(
+        device,
+        "Shroud ABuffer Texture",
+        size,
+        wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+    )
+}
+
+/// The authoritative A plane on the GPU and its source origin. Derived
+/// bindings cache the retained view identity; a resize replaces it and
+/// invalidates them.
 pub struct ShroudBuffer {
-    /// CPU-side brightness buffer (one byte per screen pixel).
-    /// Native clear is 0x7F; stock unrevealed SHROUD stores 0x02. These are
-    /// palette-row inputs, stored with padded GPU-upload row stride.
-    pixels: Vec<u8>,
-    /// Actual screen width.
+    /// Plane width in virtual pixels.
     width: u32,
-    /// Actual screen height.
+    /// Plane height in virtual pixels.
     height: u32,
-    /// Padded bytes-per-row (aligned to 256 for wgpu).
-    row_stride: u32,
-    /// GPU R8 texture.
+    /// GPU R8 plane. Native clear is 0x7F; stock unrevealed SHROUD stores
+    /// 0x02. These are palette-row inputs.
     texture: wgpu::Texture,
     view: wgpu::TextureView,
-    /// World-pixel origin of the CPU/GPU A lattice, updated with the pixels.
+    /// World-pixel origin of the GPU A lattice, updated with each rebuild.
     source_uniform: wgpu::Buffer,
-    /// Original SHROUD bytes plus immutable derived visible row spans.
-    /// Recreated only with the source frame set, not on viewport/fog changes.
-    frames: Vec<BrightnessFrame>,
+    /// SHROUD.SHP bytes, recreated only with the source frame set.
+    frames: FrameAtlas,
     /// FOG.SHP is a second source for the same A plane, not an RGB overlay.
-    fog_frames: Vec<BrightnessFrame>,
-    fog_canvas: [u32; 2],
-    /// SHP canvas width (typically 60).
-    canvas_w: u32,
-    /// SHP canvas height (typically 30).
-    canvas_h: u32,
+    fog_frames: FrameAtlas,
+    compositor: Option<Compositor>,
     /// Cached camera X for change detection.
     last_cam_x: f32,
     /// Cached camera Y for change detection.
@@ -229,22 +991,17 @@ pub struct ShroudBuffer {
     /// Translucent-fog policy, expressed as the fraction of native A darkening
     /// that survives; this source's own value keeps native fixtures intact.
     fog_strength_milli: u32,
-    /// What `pixels` holds: the blits of the last redraw.
+    /// What the plane holds: the blits of the last composition.
     drawn_blits: Vec<CellBlits>,
     /// The next rebuild's blits, allocated once.
     next_blits: Vec<CellBlits>,
-    /// The glows every redraw applies after the cells.
+    /// The glows every composition applies after the cells.
     alpha_shapes: Vec<AlphaShapeDraw>,
     /// The next frame's glows, allocated once.
     next_alpha_shapes: Vec<AlphaShapeDraw>,
-    /// A resize, new frames or a load leaves `pixels` unproven by
+    /// A resize, new frames or a load leaves the plane unproven by
     /// `drawn_blits`; the next rebuild redraws whatever it collects.
     redraw_required: bool,
-}
-
-/// Align `n` up to the next multiple of `align`.
-fn align_up(n: u32, align: u32) -> u32 {
-    n.div_ceil(align) * align
 }
 
 /// Same virtual-pixel coverage as the camera projection; no arbitrary4096
@@ -274,8 +1031,8 @@ impl ShroudBuffer {
         vp_w: i32,
         vp_h: i32,
     ) -> Option<((u16, u16), (u16, u16))> {
-        let pad_x = self.canvas_w.max(self.fog_canvas[0]) as f32;
-        let pad_y = self.canvas_h.max(self.fog_canvas[1]) as f32;
+        let pad_x = self.frames.canvas[0].max(self.fog_frames.canvas[0]) as f32;
+        let pad_y = self.frames.canvas[1].max(self.fog_frames.canvas[1]) as f32;
         let left = cam_x - pad_x;
         let right = cam_x + vp_w as f32 + pad_x;
         let top = cam_y - pad_y;
@@ -326,28 +1083,28 @@ impl ShroudBuffer {
     ) -> Self {
         let [screen_w, screen_h] = screen_size;
         let [map_width, map_height] = map_size;
-        let [canvas_w, canvas_h] = canvas_size;
-        let row_stride = align_up(screen_w, 256);
-        let pixels = vec![NEUTRAL; (row_stride * screen_h) as usize];
-        let texture = create_r8_texture(device, screen_w, screen_h);
+        let size = screen_size.map(|v| v.max(1));
+        let texture = create_a_plane(device, size);
+        // Readers may sample before the first rebuild composes the plane.
+        crate::render::atlas_growth::write_texels(
+            queue,
+            &texture,
+            [0, 0],
+            size,
+            1,
+            &vec![NEUTRAL; size[0] as usize * size[1] as usize],
+        );
         let view = texture.create_view(&Default::default());
         let source_uniform = source_uniform(device, [0.0; 2], true, FOG_STRENGTH_MILLI);
-        let result = Self {
-            pixels,
-            width: screen_w,
-            height: screen_h,
-            row_stride,
+        Self {
+            width: size[0],
+            height: size[1],
             texture,
             view,
             source_uniform,
-            frames: frame_pixels
-                .into_iter()
-                .map(|pixels| BrightnessFrame::new(pixels, [canvas_w, canvas_h]))
-                .collect(),
-            fog_frames: Vec::new(),
-            fog_canvas: [0, 0],
-            canvas_w,
-            canvas_h,
+            frames: FrameAtlas::new(device, queue, frame_pixels, canvas_size),
+            fog_frames: FrameAtlas::new(device, queue, Vec::new(), [0, 0]),
+            compositor: None,
             last_cam_x: f32::NAN,
             last_cam_y: f32::NAN,
             last_fog_gen: u64::MAX,
@@ -365,29 +1122,29 @@ impl ShroudBuffer {
             alpha_shapes: Vec::new(),
             next_alpha_shapes: Vec::new(),
             redraw_required: true,
-        };
-        result.upload(queue);
-        result
+        }
     }
 
-    /// Apply the local graphics preference through this A source's existing
-    /// uniform/upload owner. Both CPU sampling and WGSL use the same strength.
+    /// Apply the local graphics preference through this A source's uniform.
+    /// Every reader's WGSL lifts the stored bytes with the same strength.
     pub(crate) fn set_translucent_fog(&mut self, queue: &wgpu::Queue, enabled: bool) {
         let strength = if enabled { 500 } else { FOG_STRENGTH_MILLI };
         if self.fog_strength_milli != strength {
             self.fog_strength_milli = strength;
-            self.upload(queue);
+            self.write_source_uniform(queue);
         }
     }
 
     /// Cell47EFE0/47F250 load the literal FOG.SHP at81CE10. Keep its raw
     /// brightness bytes with the existing A-buffer source owner.
-    pub(crate) fn install_fog_frames(&mut self, pixels: Vec<Vec<u8>>, canvas: [u32; 2]) {
-        self.fog_frames = pixels
-            .into_iter()
-            .map(|pixels| BrightnessFrame::new(pixels, canvas))
-            .collect();
-        self.fog_canvas = canvas;
+    pub(crate) fn install_fog_frames(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        pixels: Vec<Vec<u8>>,
+        canvas: [u32; 2],
+    ) {
+        self.fog_frames = FrameAtlas::new(device, queue, pixels, canvas);
         self.mark_stale();
     }
 
@@ -410,16 +1167,18 @@ impl ShroudBuffer {
         self.redraw_required = true;
     }
 
-    /// Rebuild the shroud buffer if camera moved, fog changed, or screen resized.
+    /// Recompose the plane if the camera moved, fog changed, or the screen
+    /// resized, recording the GPU work into `encoder` ahead of its readers.
     ///
-    /// Copy/blend the selected SHROUD.SHP/FOG.SHP bytes into the CPU buffer,
-    /// then upload it once. Native per-cell ordering is retained. A new fog
-    /// generation that selects the same frames for every cell in view keeps
-    /// the plane as drawn. Returns whether the plane was redrawn and uploaded.
+    /// Native per-cell ordering is retained. A new fog generation that
+    /// selects the same frames for every cell in view keeps the plane as
+    /// drawn. Returns whether the plane was recomposed.
+    #[allow(clippy::too_many_arguments)]
     pub fn rebuild_if_needed(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
         fog: &FogState,
         owner: crate::sim::intern::InternedId,
         cam_x: f32,
@@ -430,8 +1189,8 @@ impl ShroudBuffer {
         native_cells: Option<&NativeCellQuery<'_>>,
         fog_options: FogDrawOptions,
     ) -> bool {
-        // Render shroud at virtual resolution (screen / zoom) so diamond blits
-        // stay at fixed world-pixel sizes. Blitters address it from the uploaded
+        // Compose at virtual resolution (screen / zoom) so diamond blits stay
+        // at fixed world-pixel sizes. Blitters address it from the uploaded
         // camera/zoom and this source's origin, without normalized UV stretching.
         // The camera owner bounds zoom against the requested device limit.
         // Truncating this lattice would silently expose unsampled shroud as
@@ -451,10 +1210,7 @@ impl ShroudBuffer {
         {
             self.width = virt_w;
             self.height = virt_h;
-            self.row_stride = align_up(virt_w, 256);
-            self.pixels
-                .resize((self.row_stride * virt_h) as usize, NEUTRAL);
-            self.texture = create_r8_texture(device, virt_w, virt_h);
+            self.texture = create_a_plane(device, [virt_w, virt_h]);
             self.view = self.texture.create_view(&Default::default());
             self.last_screen_w = screen_w;
             self.last_screen_h = screen_h;
@@ -487,29 +1243,35 @@ impl ShroudBuffer {
             return false;
         }
         self.next_blits = std::mem::replace(&mut self.drawn_blits, blits);
-        self.draw_blits(fog_options);
-
-        // Debug: dump the CPU brightness buffer as a grayscale PNG when
-        // RA2_DUMP_SHROUD names a path. Diagnostic only — no gamemd counterpart.
-        if let Ok(path) = std::env::var("RA2_DUMP_SHROUD") {
-            let w = self.width as usize;
-            let mut img = vec![0u8; w * self.height as usize];
-            for y in 0..self.height as usize {
-                let src = y * self.row_stride as usize;
-                img[y * w..(y + 1) * w].copy_from_slice(&self.pixels[src..src + w]);
+        // Debug: compose on an own submission and save the plane as a
+        // grayscale PNG when RA2_DUMP_SHROUD names a path. Diagnostic only —
+        // no gamemd counterpart.
+        if let Some(path) = std::env::var_os("RA2_DUMP_SHROUD") {
+            let mut own = device.create_command_encoder(&Default::default());
+            self.compose(device, queue, &mut own, fog_options);
+            queue.submit([own.finish()]);
+            match self.read_plane(device, queue, [0, 0], [self.width, self.height]) {
+                Ok(plane) => {
+                    if let Err(e) = image::save_buffer(
+                        &path,
+                        &plane,
+                        self.width,
+                        self.height,
+                        image::ColorType::L8,
+                    ) {
+                        log::warn!("shroud dump failed: {e}");
+                    }
+                }
+                Err(e) => log::warn!("shroud dump readback failed: {e}"),
             }
-            if let Err(e) =
-                image::save_buffer(&path, &img, self.width, self.height, image::ColorType::L8)
-            {
-                log::warn!("shroud dump failed: {e}");
-            }
+        } else {
+            self.compose(device, queue, encoder, fog_options);
         }
-
-        self.upload(queue);
+        self.write_source_uniform(queue);
         true
     }
 
-    fn upload(&self, queue: &wgpu::Queue) {
+    fn write_source_uniform(&self, queue: &wgpu::Queue) {
         let origin =
             [self.last_cam_x, self.last_cam_y].map(|v| if v.is_finite() { v } else { 0.0 });
         queue.write_buffer(
@@ -517,32 +1279,16 @@ impl ShroudBuffer {
             0,
             bytemuck::bytes_of(&SourceUniform::new(origin, true, self.fog_strength_milli)),
         );
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &self.pixels,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(self.row_stride),
-                rows_per_image: Some(self.height),
-            },
-            wgpu::Extent3d {
-                width: self.width,
-                height: self.height,
-                depth_or_array_layers: 1,
-            },
-        );
     }
 
-    /// Shared full-rebuild CPU owner, separated from upload for direct native
-    /// scene comparisons. Empty bounds still retain the authoritative reset.
+    /// Collect and compose at the current camera, for direct native scene
+    /// comparisons and timing. Empty bounds still retain the authoritative reset.
     #[cfg(test)]
     fn rasterize(
         &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
         fog: &FogState,
         owner: InternedId,
         native_cells: Option<&NativeCellQuery<'_>>,
@@ -551,12 +1297,12 @@ impl ShroudBuffer {
         let mut blits = std::mem::take(&mut self.next_blits);
         self.collect_blits(fog, owner, native_cells, fog_options, &mut blits);
         self.next_blits = std::mem::replace(&mut self.drawn_blits, blits);
-        self.draw_blits(fog_options);
+        self.compose(device, queue, encoder, fog_options);
     }
 
     /// The cells a rebuild blits, in native order, with the frames each
     /// selects at the current camera. Reads the fog state only;
-    /// [`Self::draw_blits`] writes the plane from them. Cells that select no
+    /// [`Self::compose`] draws the plane from them. Cells that select no
     /// frame leave the neutral fill and are left out.
     fn collect_blits(
         &self,
@@ -581,6 +1327,10 @@ impl ShroudBuffer {
         };
         // A frame index past the set selects nothing, as a missing frame does.
         let frame = |index: usize| u16::try_from(index).unwrap_or(NO_FRAME);
+        let canvas = [
+            self.frames.canvas[0].max(self.fog_frames.canvas[0]) as i32,
+            self.frames.canvas[1].max(self.fog_frames.canvas[1]) as i32,
+        ];
 
         // Native6D7312..6D7532 visits increasing screen diagonals, then
         // increasing X/decreasing Y within each diagonal. Each cell copies
@@ -605,11 +1355,7 @@ impl ShroudBuffer {
                 let vx = sx as i32 - cam_xi;
                 let vy = sy as i32 - cam_yi;
 
-                if vx + self.canvas_w.max(self.fog_canvas[0]) as i32 <= 0
-                    || vx >= vp_w
-                    || vy + self.canvas_h.max(self.fog_canvas[1]) as i32 <= 0
-                    || vy >= vp_h
-                {
+                if vx + canvas[0] <= 0 || vx >= vp_w || vy + canvas[1] <= 0 || vy >= vp_h {
                     continue;
                 }
 
@@ -642,49 +1388,73 @@ impl ShroudBuffer {
         }
     }
 
-    /// Redraw the plane from `drawn_blits`: fill bright, then copy each
-    /// cell's first frame and blend its second, in collection order, then
-    /// apply the glows. Blitting in world-pixel coordinates at virtual
-    /// resolution means diamond tiles match the world grid exactly at every
-    /// zoom.
-    fn draw_blits(&mut self, fog_options: FogDrawOptions) {
-        self.pixels.fill(NEUTRAL);
-        self.redraw_required = false;
-        let size = [self.width, self.height];
-        let stride = self.row_stride as usize;
-        let frames = if fog_options.fog_of_war {
-            &self.fog_frames
-        } else {
-            &self.frames
-        };
-        for blit in &self.drawn_blits {
-            let writes = [BrightnessWrite::Copy, BrightnessWrite::FogBlend];
-            for (index, write) in blit.frames.into_iter().zip(writes) {
-                if index == NO_FRAME {
-                    continue;
-                }
-                if let Some(frame) = frames.get(usize::from(index)) {
-                    blit_frame_pixels(&mut self.pixels, stride, size, frame, blit.origin, write);
-                }
-            }
-        }
+    /// Recompose the plane from `drawn_blits`: fill neutral, copy each cell's
+    /// first frame and blend its second in collection order, then apply the
+    /// glows. Blitting in world-pixel coordinates at virtual resolution means
+    /// diamond tiles match the world grid exactly at every zoom.
+    fn compose(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        fog_options: FogDrawOptions,
+    ) {
+        self.compose_cells(device, queue, encoder, fog_options, true);
         // `AlphaShapeClass::DrawAll_NoMask @ 0x00421350` follows the cell
         // loop (`0x006D754C`), over the same pass rectangle.
         let camera = [self.last_cam_x as i32, self.last_cam_y as i32];
-        for shape in &self.alpha_shapes {
-            let origin = [shape.origin[0] - camera[0], shape.origin[1] - camera[1]];
-            draw_alpha_shape(&mut self.pixels, stride, size, &shape.image, origin);
-        }
+        let compositor = self
+            .compositor
+            .get_or_insert_with(|| Compositor::new(device));
+        compositor.encode_glows(
+            device,
+            queue,
+            encoder,
+            &self.texture,
+            &self.view,
+            &self.alpha_shapes,
+            camera,
+        );
+    }
+
+    /// The cell half of [`Self::compose`]. Without `clear` it draws over the
+    /// plane's current bytes, as the native leaf comparisons need.
+    fn compose_cells(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        fog_options: FogDrawOptions,
+        clear: bool,
+    ) {
+        self.redraw_required = false;
+        let frames = if fog_options.fog_of_war {
+            &mut self.fog_frames
+        } else {
+            &mut self.frames
+        };
+        self.compositor
+            .get_or_insert_with(|| Compositor::new(device))
+            .encode_cells(
+                device,
+                queue,
+                encoder,
+                &self.view,
+                [self.width, self.height],
+                frames,
+                &self.drawn_blits,
+                clear,
+            );
     }
 
     /// Read-only GPU source. The view stays stable until a resize; the uniform
-    /// and CPU samples share the floored world origin from the last rebuild.
+    /// holds the floored world origin from the last rebuild.
     pub(crate) fn gpu_source(&self) -> (&wgpu::TextureView, &wgpu::Buffer) {
         (&self.view, &self.source_uniform)
     }
 
     /// Synthetic native A input for GPU leaf tests, through the production
-    /// source allocation/upload owner. Pixels are row-major, without padding.
+    /// source allocation and uniform owner. Pixels are row-major, without padding.
     #[cfg(test)]
     pub(crate) fn fixture(
         device: &wgpu::Device,
@@ -693,7 +1463,6 @@ impl ShroudBuffer {
         origin: [f32; 2],
         pixels: &[u8],
     ) -> Self {
-        assert_eq!(pixels.len(), (size[0] * size[1]) as usize);
         let mut result = Self::new(
             device,
             queue,
@@ -705,29 +1474,106 @@ impl ShroudBuffer {
         );
         result.last_cam_x = origin[0].floor();
         result.last_cam_y = origin[1].floor();
-        for (row, source) in pixels.chunks_exact(size[0] as usize).enumerate() {
-            let start = row * result.row_stride as usize;
-            result.pixels[start..start + source.len()].copy_from_slice(source);
-        }
-        result.upload(queue);
+        result.write_plane(queue, pixels);
+        result.write_source_uniform(queue);
         result
     }
 
-    /// Sample the CPU-side ABuffer at a world-space screen pixel.
-    ///
-    /// The shroud buffer is rebuilt in virtual world pixels (`screen / zoom`),
-    /// with camera scroll subtracted before blitting. Callers that build
-    /// world-space surface operations use this same source as the GPU blitters.
-    pub fn sample_world(&self, world_x: f32, world_y: f32, cam_x: f32, cam_y: f32) -> Option<u8> {
+    /// Replace the plane's bytes (row-major, unpadded) ahead of later work.
+    #[cfg(test)]
+    fn write_plane(&self, queue: &wgpu::Queue, pixels: &[u8]) {
+        assert_eq!(pixels.len(), (self.width * self.height) as usize);
+        crate::render::atlas_growth::write_texels(
+            queue,
+            &self.texture,
+            [0, 0],
+            [self.width, self.height],
+            1,
+            pixels,
+        );
+    }
+
+    /// Rebuild through a submission of its own, as a frame would.
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn rebuild_submitted(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        fog: &FogState,
+        owner: InternedId,
+        cam_x: f32,
+        cam_y: f32,
+        screen_w: u32,
+        screen_h: u32,
+        zoom: f32,
+        native_cells: Option<&NativeCellQuery<'_>>,
+        fog_options: FogDrawOptions,
+    ) -> bool {
+        let mut encoder = device.create_command_encoder(&Default::default());
+        let rebuilt = self.rebuild_if_needed(
+            device,
+            queue,
+            &mut encoder,
+            fog,
+            owner,
+            cam_x,
+            cam_y,
+            screen_w,
+            screen_h,
+            zoom,
+            native_cells,
+            fog_options,
+        );
+        queue.submit([encoder.finish()]);
+        rebuilt
+    }
+
+    /// The plane's raw bytes over a rectangle, after every submitted
+    /// composition: a synchronous readback for diagnostics and tests.
+    pub(crate) fn read_plane(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        origin: [u32; 2],
+        size: [u32; 2],
+    ) -> Result<Vec<u8>, crate::render::frame_readback::FrameReadbackError> {
+        let mut encoder = device.create_command_encoder(&Default::default());
+        let pending = crate::render::frame_readback::PendingTextureReadback::encode_r8(
+            device,
+            &mut encoder,
+            &self.texture,
+            origin,
+            size,
+        )?;
+        let submission = queue.submit([encoder.finish()]);
+        pending.finish(device, submission, std::time::Duration::from_secs(30))
+    }
+
+    /// The A a world pixel holds as the world blitters read it, after every
+    /// submitted composition; `None` outside the plane. A synchronous
+    /// readback for diagnostics and tests.
+    pub(crate) fn read_world(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        world_x: f32,
+        world_y: f32,
+        cam_x: f32,
+        cam_y: f32,
+    ) -> Option<u8> {
         let vx = (world_x - cam_x.floor()).floor() as i32;
         let vy = (world_y - cam_y.floor()).floor() as i32;
         if vx < 0 || vy < 0 || vx >= self.width as i32 || vy >= self.height as i32 {
             return None;
         }
-        let idx = vy as usize * self.row_stride as usize + vx as usize;
-        self.pixels
-            .get(idx)
-            .map(|&a| fog_lifted_a(a, self.fog_strength_milli))
+        match self.read_plane(device, queue, [vx as u32, vy as u32], [1, 1]) {
+            Ok(bytes) => Some(fog_lifted_a(bytes[0], self.fog_strength_milli)),
+            Err(error) => {
+                log::warn!("tactical A readback failed: {error}");
+                None
+            }
+        }
     }
 }
 
@@ -737,107 +1583,6 @@ fn native_frame_index(frame: i8) -> usize {
         -2 => 15,
         -1 => 0,
         value => value as usize,
-    }
-}
-
-#[derive(Clone, Copy)]
-enum BrightnessWrite {
-    Copy,
-    FogBlend,
-}
-
-/// Original47EFE0 copies raw A bytes and skips FE. 47F250 instead ignores
-/// source bytes above127, then stores source for neutral127 or
-/// max(destination + source -127, 0). Both share the native clipped spans;
-/// palette or RGB conversion does not participate.
-fn blit_frame_pixels(
-    pixels: &mut [u8],
-    stride: usize,
-    size: [u32; 2],
-    frame: &BrightnessFrame,
-    origin: [i32; 2],
-    write: BrightnessWrite,
-) {
-    let [vx, vy] = origin;
-    let [vp_w, vp_h] = size.map(|v| v as i32);
-    // The spans retain every native store (including 00 and FF), omitting
-    // only FE. Copying each clipped span preserves source order without a
-    // transparency branch for every pixel on every rebuild.
-    for span in &frame.spans {
-        let y = vy + span.row as i32;
-        if y < 0 {
-            continue;
-        }
-        if y >= vp_h {
-            break;
-        }
-        let left = vx + span.left as i32;
-        let right = (left + (span.source.end - span.source.start) as i32).min(vp_w);
-        let x = left.max(0);
-        if x >= right {
-            continue;
-        }
-        let count = (right - x) as usize;
-        let source = span.source.start as usize + (x - left) as usize;
-        let destination = y as usize * stride + x as usize;
-        let src = &frame.pixels[source..source + count];
-        let dst = &mut pixels[destination..destination + count];
-        match write {
-            BrightnessWrite::Copy => dst.copy_from_slice(src),
-            BrightnessWrite::FogBlend => {
-                for (dst, &src) in dst.iter_mut().zip(src) {
-                    //47F403..47F43D /47F4A2..47F4DE.
-                    if src <= NEUTRAL {
-                        *dst = (u16::from(*dst) + u16::from(src)).saturating_sub(127) as u8;
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// One shape of `AlphaShapeClass::DrawAll_NoMask @ 0x00421350` over the
-/// whole plane, `origin` in plane pixels. Nothing is drawn unless the canvas
-/// meets the plane (`Rect_Intersect` at `0x004213FA`, tested at
-/// `0x00421411..0x0042141E`). Frame 0 then starts at its own offset: the
-/// left and top edges clip to the canvas and plane, the right and bottom to
-/// the plane alone (`0x00421480..0x004214F4`). Every frame byte, 0 included,
-/// rescales the A beneath it through table `0x0088A118` (built by the ctor
-/// at `0x00420A71`): `min(255, byte * A / 127)`, so 127 keeps A and 254
-/// doubles it.
-fn draw_alpha_shape(
-    pixels: &mut [u8],
-    stride: usize,
-    size: [u32; 2],
-    image: &crate::rules::alpha_image_assets::AlphaImage,
-    origin: [i32; 2],
-) {
-    let [plane_w, plane_h] = size.map(|v| v as i32);
-    let [x, y] = origin;
-    let [canvas_w, canvas_h] = image.canvas();
-    let (left, top) = (x.max(0), y.max(0));
-    if (x + canvas_w).min(plane_w) <= left || (y + canvas_h).min(plane_h) <= top {
-        return;
-    }
-    let [frame_x, frame_y, frame_w, frame_h] = image.frame_bounds();
-    let left = left.max(x + frame_x);
-    let top = top.max(y + frame_y);
-    let right = (x + frame_x + frame_w).min(plane_w);
-    let bottom = (y + frame_y + frame_h).min(plane_h);
-    if right <= left {
-        return;
-    }
-    let count = (right - left) as usize;
-    for row in top..bottom {
-        let source = ((row - y - frame_y) * frame_w + left - x - frame_x) as usize;
-        let destination = row as usize * stride + left as usize;
-        let alphas = &image.pixels()[source..source + count];
-        for (a, &alpha) in pixels[destination..destination + count]
-            .iter_mut()
-            .zip(alphas)
-        {
-            *a = (u32::from(alpha) * u32::from(*a) / 127).min(255) as u8;
-        }
     }
 }
 
@@ -1037,10 +1782,10 @@ mod tests {
     }
 
     /// The sim bumps the view generation every committed tick. One that
-    /// changes no cell in view keeps the drawn plane and skips the upload; a
+    /// changes no cell in view keeps the drawn plane and records no work; a
     /// change in view redraws exactly what a fresh buffer draws.
     #[test]
-    #[ignore = "requires GPU; the A plane's texture and upload"]
+    #[ignore = "requires GPU; the A plane's composition"]
     fn a_fog_generation_that_changes_no_cell_in_view_keeps_the_drawn_plane() {
         let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
         let owner = intern::test_intern("Americans");
@@ -1060,7 +1805,7 @@ mod tests {
         };
         // The view's centre is cell (16, 16).
         let rebuild = |source: &mut ShroudBuffer, fog: &FogState| {
-            source.rebuild_if_needed(
+            source.rebuild_submitted(
                 &gpu.device,
                 &gpu.queue,
                 fog,
@@ -1080,22 +1825,27 @@ mod tests {
                 fog.mark_visible_for_owner(owner, rx, ry);
             }
         }
+        let plane = |source: &ShroudBuffer| {
+            source
+                .read_plane(&gpu.device, &gpu.queue, [0, 0], size)
+                .unwrap()
+        };
         let mut source = new_source();
         assert!(rebuild(&mut source, &fog));
-        let drawn = source.pixels.clone();
+        let drawn = plane(&source);
 
         fog.mark_visible_for_owner(owner, 31, 0);
         fog.bump_view_generation();
         assert!(!rebuild(&mut source, &fog), "the change is out of view");
-        assert_eq!(source.pixels, drawn);
+        assert_eq!(plane(&source), drawn);
 
         fog.mark_visible_for_owner(owner, 19, 16);
         fog.bump_view_generation();
         assert!(rebuild(&mut source, &fog));
-        assert_ne!(source.pixels, drawn);
+        assert_ne!(plane(&source), drawn);
         let mut fresh = new_source();
         assert!(rebuild(&mut fresh, &fog));
-        assert_eq!(source.pixels, fresh.pixels);
+        assert_eq!(plane(&source), plane(&fresh));
     }
 
     /// `AlphaShapeClass::DrawAll_NoMask @ 0x00421350` after the cells: frame
@@ -1119,7 +1869,7 @@ mod tests {
         );
         let fog = FogState::new(32, 32);
         let rebuild = |source: &mut ShroudBuffer| {
-            source.rebuild_if_needed(
+            source.rebuild_submitted(
                 &gpu.device,
                 &gpu.queue,
                 &fog,
@@ -1147,7 +1897,9 @@ mod tests {
         };
         source.set_alpha_shapes([glow()]);
         assert!(rebuild(&mut source));
-        let a = |x: f32, y: f32| source.sample_world(100.0 + x, 50.0 + y, 100.0, 50.0);
+        let a = |x: f32, y: f32| {
+            source.read_world(&gpu.device, &gpu.queue, 100.0 + x, 50.0 + y, 100.0, 50.0)
+        };
         assert_eq!(
             [a(0.0, 31.0), a(1.0, 31.0), a(2.0, 31.0), a(0.0, 30.0)],
             [Some(254), Some(0), Some(NEUTRAL), Some(NEUTRAL)]
@@ -1157,7 +1909,10 @@ mod tests {
         assert!(!rebuild(&mut source));
         source.set_alpha_shapes([]);
         assert!(rebuild(&mut source));
-        assert_eq!(source.sample_world(100.0, 81.0, 100.0, 50.0), Some(NEUTRAL));
+        assert_eq!(
+            source.read_world(&gpu.device, &gpu.queue, 100.0, 81.0, 100.0, 50.0),
+            Some(NEUTRAL)
+        );
     }
 }
 
@@ -1173,7 +1928,7 @@ pub fn extract_shp_brightness(shp: &crate::assets::shp_file::ShpFile) -> (Vec<Ve
 
     for frame in &shp.frames {
         // Start with TRANSPARENT so pixels outside the actual SHP subframe
-        // are skipped by blit_frame_pixels(). Only real SHP pixels affect the buffer.
+        // are skipped by the copy and blend. Only real SHP pixels affect A.
         let mut buf = vec![TRANSPARENT; canvas_size];
         let fw = frame.frame_width as u32;
         let fh = frame.frame_height as u32;
@@ -1195,27 +1950,6 @@ pub fn extract_shp_brightness(shp: &crate::assets::shp_file::ShpFile) -> (Vec<Ve
     }
 
     (all_frames, canvas_w, canvas_h)
-}
-
-// ---------------------------------------------------------------------------
-// GPU resource helpers
-// ---------------------------------------------------------------------------
-
-fn create_r8_texture(device: &wgpu::Device, w: u32, h: u32) -> wgpu::Texture {
-    device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("Shroud ABuffer Texture"),
-        size: wgpu::Extent3d {
-            width: w.max(1),
-            height: h.max(1),
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::R8Unorm,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    })
 }
 
 #[repr(C)]
@@ -1254,7 +1988,12 @@ pub(crate) fn neutral_gpu_source(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> (wgpu::TextureView, wgpu::Buffer) {
-    let texture = create_r8_texture(device, 1, 1);
+    let texture = create_plane_texture(
+        device,
+        "Neutral tactical A",
+        [1, 1],
+        wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+    );
     crate::render::atlas_growth::write_texels(queue, &texture, [0, 0], [1, 1], 1, &[NEUTRAL]);
     (
         texture.create_view(&Default::default()),

@@ -237,6 +237,11 @@ pub(crate) struct RetailOptionsProfile {
     /// as a guest or an account; empty, the default, until one succeeds.
     /// Only that sign-in changes it ([`Self::commit_online_name`]).
     pub(crate) online_name: String,
+    /// `[VERA] OnlineLocale=`: the country (`WOL:Locale%02d`) the player chose
+    /// on their player card, which every online sign-in sends; 0, the
+    /// default, sends none. Only that card changes it
+    /// ([`Self::commit_online_locale`]).
+    pub(crate) online_locale: i32,
     /// `[VERA] Display=`: the screen the game opens on, by the window system's
     /// own name (`\\.\DISPLAY1`). Absent or empty means the system's choice,
     /// which is how every earlier build behaved. A name no longer attached
@@ -338,6 +343,7 @@ impl Default for RetailOptionsProfile {
             language: crate::i18n::DEFAULT_LANGUAGE.to_owned(),
             skipped_update: String::new(),
             online_name: String::new(),
+            online_locale: 0,
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
             window_placement: None,
         }
@@ -605,6 +611,10 @@ impl RetailOptionsProfile {
             {
                 self.online_name = value.to_owned();
             }
+            let locale = vera.read_int("OnlineLocale", self.online_locale);
+            if (0..crate::ui::wol_persona::LOCALE_COUNT).contains(&locale) {
+                self.online_locale = locale;
+            }
             if let Some(value) = vera.read_name("Display", DISPLAY_CAPACITY) {
                 self.display =
                     crate::ui::main_menu_dialogs::options::DisplayTarget::from_ini_value(value);
@@ -850,6 +860,16 @@ impl RetailOptionsProfile {
             VERA_SECTION,
             &[("OnlineName", self.online_name.as_str())],
         )
+    }
+
+    /// The player card's writer: `[VERA] OnlineLocale=` alone.
+    pub(crate) fn commit_online_locale(&self, settings_dir: &Path) -> io::Result<()> {
+        profile_file::update(settings_dir, |input| self.transform_online_locale(input))
+    }
+
+    fn transform_online_locale(&self, input: &[u8]) -> Vec<u8> {
+        let locale = self.online_locale.to_string();
+        set_ini_values(input, VERA_SECTION, &[("OnlineLocale", locale.as_str())])
     }
 
     fn transform_chat_translation(&self, input: &[u8]) -> Vec<u8> {
@@ -1703,6 +1723,32 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
             load_snapshot(&startup, &quit).retained_profile.online_name,
             "Boris_2"
         );
+    }
+
+    #[test]
+    fn online_locale_round_trips_survives_the_quit_writer_and_drops_unknown_ones() {
+        let startup = RetailStartupOptions::default();
+        let input = b"[VERA]\nOnlineName=Boris_2\n";
+        let mut profile = load_snapshot(&startup, input).retained_profile;
+        assert_eq!(profile.online_locale, 0);
+        profile.online_locale = 15;
+        let written = profile.transform_online_locale(input);
+        assert!(String::from_utf8_lossy(&written).contains("OnlineName=Boris_2"));
+        let quit = load_snapshot(&startup, input)
+            .retained_profile
+            .transform_settings(&written);
+        assert_eq!(
+            load_snapshot(&startup, &quit)
+                .retained_profile
+                .online_locale,
+            15
+        );
+        // WOL:Locale37 is the last the retail CSF names.
+        for (value, kept) in [("37", 37), ("38", 0), ("-1", 0)] {
+            let input = format!("[VERA]\nOnlineLocale={value}\n");
+            let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
+            assert_eq!(profile.online_locale, kept, "{value}");
+        }
     }
 
     #[test]

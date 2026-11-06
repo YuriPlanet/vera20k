@@ -19,6 +19,20 @@
 
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 
+/// Return the outgoing scene's live Rules writes before any native Type reset,
+/// whether the next consumer is Full_Init or an RMG preview.
+pub(crate) fn transfer_outgoing_simulation_rules(
+    owner: &mut crate::rules::process_owner::NativeRulesProcessOwner,
+    simulation: &mut crate::sim::world::Simulation,
+) -> Result<(), crate::rules::error::RulesError> {
+    owner.consume_outgoing_scenario_rules(
+        simulation.retire_object_type_tech_levels(),
+        simulation.retire_ambient_change_inputs(),
+        simulation.retire_building_upgrade_art_names(),
+        simulation.retire_voxel_type_damage(),
+    )
+}
+
 pub(crate) struct ProcessAssets {
     /// Selected at launch, retained even if initial archive loading fails.
     media_archive_mode: MediaArchiveMode,
@@ -332,12 +346,10 @@ impl ProcessAssets {
         let prepared = crate::app::shell_random_map::prepare_random_map_generation(
             assets,
             options,
-            self.native_rules.as_ref(),
+            crate::app::shell_random_map::RandomMapRulesPreparation::ReadOnly(
+                self.native_rules.as_ref(),
+            ),
             mode_rules.as_ref(),
-            self.native_rules
-                .as_ref()
-                .map(|owner| owner.project_random_map_terrain_rules(mode_rules.as_ref(), true))
-                .unwrap_or_default(),
         )
         .ok_or("generated map theater is unavailable")?;
         let mut bytes = b"VERA20k generated rules agreement v1\0".to_vec();

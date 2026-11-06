@@ -3681,13 +3681,16 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         && !super::page::open(state)
         && App::wol_page_is_lobby(state);
     lobby(state)
-        .filter(|lobby| routed && lobby.interactive() && lobby.ui.popup.is_none())
+        .filter(|lobby| {
+            routed && lobby.interactive() && lobby.ui.popup.is_none() && lobby.ui.card.is_none()
+        })
         .map(|_| layout(state).chat)
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
     if shell_transition::blocks_shell_input(state)
         || !lobby(state).is_some_and(WolLobby::interactive)
+        || super::player_card::key_press(state, code)
     {
         return;
     }
@@ -3805,6 +3808,12 @@ pub(super) fn cursor_moved(state: &mut AppState) {
         state.platform.window.request_redraw();
         return;
     }
+    if super::player_card::cursor_moved(state) {
+        return;
+    }
+    let Some(lobby) = lobby_mut(state) else {
+        return;
+    };
     let ui = &mut lobby.ui;
     ui.buttons.hovered = layout.control_at(x, y);
     let scale = layout.page.scale;
@@ -3899,6 +3908,9 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         state.platform.window.request_redraw();
         return;
     }
+    if super::player_card::mouse(state, pressed) {
+        return;
+    }
     let over = layout.control_at(x, y);
     let lobby = lobby_mut(state).expect("checked");
     let ui = &mut lobby.ui;
@@ -3923,6 +3935,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     }
     let now = Instant::now();
     let mut action = None;
+    let mut card = None;
     let mut press = Press::Nothing;
     let mut scrolled = false;
     let enabled = [LOBBIES, GAMES, PLAYERS, CHAT_LOG].map(|id| ui.enabled(id));
@@ -3994,7 +4007,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                             ui.select_game(row, double)
                         }
                         _ => {
-                            ui.toggle_player(row);
+                            card = ui.press_player(row);
                             None
                         }
                     };
@@ -4018,6 +4031,9 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         }
     }
     play(state, press);
+    if let Some(name) = card {
+        super::player_card::opened(state, &name);
+    }
     if let Some(action) = action {
         dispatch(state, action);
     }
@@ -4164,6 +4180,9 @@ pub(crate) fn status_help(state: &AppState) -> String {
         .map(|key| csf(state, key))
         .unwrap_or_default();
     }
+    if let Some(help) = super::player_card::status_help(state) {
+        return help;
+    }
     let ui = &lobby.ui;
     match ui.buttons.hovered {
         Some(GAMES) => match ui.game_list.hot_row.and_then(|row| ui.game_rows.get(row)) {
@@ -4196,12 +4215,12 @@ pub(crate) fn status_help(state: &AppState) -> String {
 /// name (`0x007B5B30`). A player row passes its user record; a game row's
 /// record (`0x00780E30`) holds only the host's name, so no clan.
 /// RESIDUAL: the lobby's locale queue `0xB765F8` (filled at `0x007A73C8`
-/// and `0x007A6495`) is not ported; only the user's own locale request
-/// fills the locale table.
+/// and `0x007A6495`) is not ported; only the user's own locale request and
+/// VERA's player card fill the locale table.
 fn user_help(state: &AppState, name: &str, member: Option<&WolMember>) -> String {
-    let Some(visit) = state.frontend.wol.as_ref() else {
+    if state.frontend.wol.is_none() {
         return String::new();
-    };
+    }
     let key = name.to_ascii_lowercase();
     let mut help = format!("{name} : ");
     match state.frontend.wol_lobby_globals.ladder.get(&key) {
@@ -4223,13 +4242,22 @@ fn user_help(state: &AppState, name: &str, member: Option<&WolMember>) -> String
             help.push_str(clan);
         }
     }
-    if visit.api
-        && let Some(locale) = visit.locales.get(&key).filter(|locale| **locale != 0)
-    {
+    if let Some(locale) = locale_name(state, name) {
         help.push_str(" : ");
-        help.push_str(&csf(state, &format!("WOL:Locale{locale:02}")));
+        help.push_str(&locale);
     }
     help
+}
+
+/// `WOL:Locale%02d` of the user's known nonzero locale, by the ASCII-lowered
+/// name, while the WOLAPI object exists (`0x00780A90`'s locale part).
+pub(super) fn locale_name(state: &AppState, name: &str) -> Option<String> {
+    let visit = state.frontend.wol.as_ref().filter(|visit| visit.api)?;
+    let locale = *visit
+        .locales
+        .get(&name.to_ascii_lowercase())
+        .filter(|locale| **locale != 0)?;
+    Some(csf(state, &format!("WOL:Locale{locale:02}")))
 }
 
 /// `0x00780D90`: `TXT_RANDOM_MAP_DESCRIPTION` for `RandMap.Sed`, else the

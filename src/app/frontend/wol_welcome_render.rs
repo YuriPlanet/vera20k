@@ -631,6 +631,29 @@ pub(crate) fn render_wol_page(
         }
         _ => None,
     };
+    // VERA's player card over the modern lobby.
+    let player_card = match (&painted, children) {
+        (Painted::Lobby(layout), true) => {
+            crate::app::shell_wol::player_card::view(state).map(|view| {
+                let scale = layout.page.scale;
+                (
+                    view.layout.dialog,
+                    crate::app::frontend::skirmish_shell_render::paint_wol_player_card(
+                        state, &view, art, scale,
+                    ),
+                    view.countries.as_ref().map(|list| {
+                        (
+                            list.popup.rect,
+                            crate::app::frontend::skirmish_shell_render::paint_wol_card_countries(
+                                state, list, scale,
+                            ),
+                        )
+                    }),
+                )
+            })
+        }
+        _ => None,
+    };
     let lobby_popup = lobby.and_then(|lobby| {
         let popup = lobby.ui.popup.as_ref()?;
         let status = if page_statics || matches!(painted, Painted::Backdrop) {
@@ -1095,6 +1118,28 @@ pub(crate) fn render_wol_page(
             instances: popup.controls,
         });
         text.extend(popup.texts);
+    }
+    if let (Some(atlas), Some((dialog, card, countries))) = (controls_atlas, player_card) {
+        hide_glyphs_under(&mut text, dialog);
+        draws.push(TexturedDraw {
+            texture: &atlas.texture,
+            instances: card.controls,
+        });
+        if let Some(art) = art {
+            draws.push(TexturedDraw {
+                texture: &art.texture,
+                instances: card.icons,
+            });
+        }
+        text.extend(card.texts);
+        if let Some((list, countries)) = countries {
+            hide_glyphs_under(&mut text, list);
+            draws.push(TexturedDraw {
+                texture: &atlas.texture,
+                instances: countries.controls,
+            });
+            text.extend(countries.texts);
+        }
     }
     // 0xCF and 0x11E leave the page painting beneath them, over the lobby,
     // the buddy list or any other page.

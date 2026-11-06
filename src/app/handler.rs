@@ -510,7 +510,23 @@ impl ApplicationHandler for App {
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.state.is_some() || self.pending_initialization.is_some() {
+        if self.pending_initialization.is_some() {
+            return;
+        }
+        if self.state.is_some() {
+            #[cfg(target_os = "android")]
+            {
+                let state = self.state.as_mut().expect("checked initialized app");
+                if let Err(error) = state.renderer.gpu.restore_surface() {
+                    log::error!("Could not rebuild the surface: {error:#}");
+                    event_loop.exit();
+                    return;
+                }
+                // This owner resizes depth and offscreen targets as well, even
+                // when Android changed dimensions without a resize event.
+                Self::follow_window_size(state);
+                state.platform.window.request_redraw();
+            }
             return;
         }
         // Asked once AppKit has launched and activated the app; macOS keeps a
@@ -550,7 +566,34 @@ impl ApplicationHandler for App {
         self.accept_initialization_step(event_loop, result);
     }
 
+    fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+        #[cfg(target_os = "android")]
+        {
+            // winit requires every native render surface to be dropped before
+            // this callback returns. A startup continuation owns its GPU in a
+            // closure, so drop it too and restart initialization on resume.
+            // https://docs.rs/winit/0.30.13/winit/application/trait.ApplicationHandler.html#method.suspended
+            self.pending_initialization = None;
+            if let Some(state) = self.state.as_mut() {
+                state.renderer.gpu.suspend_surface();
+            }
+            _event_loop.set_control_flow(ControlFlow::Wait);
+        }
+        log::info!("Application suspended");
+    }
+
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        // Android may deliver a queued redraw after suspension. Keep focus and
+        // input-release events flowing, but never render on a destroyed surface.
+        #[cfg(target_os = "android")]
+        if matches!(event, WindowEvent::RedrawRequested)
+            && self
+                .state
+                .as_ref()
+                .is_some_and(|state| !state.renderer.gpu.has_surface())
+        {
+            return;
+        }
         if let Some(job) = &mut self.pending_initialization {
             if job.window_id() == _id {
                 if matches!(event, WindowEvent::CloseRequested) {
@@ -612,6 +655,19 @@ impl ApplicationHandler for App {
                     return;
                 };
                 if state.persistence.pending_load.is_some() {
+                    return;
+                }
+                // Android has no Escape key to offer, so a touch skips a playing
+                // movie the way Escape does on desktop. An external mouse or
+                // trackpad still does not: its clicks stay consumed and ignored
+                // while a movie plays, exactly as on every other platform.
+                #[cfg(target_os = "android")]
+                if matches!(touch.phase, winit::event::TouchPhase::Started)
+                    && let Some(movie) = state.frontend.fullscreen_movie.as_mut()
+                {
+                    log::info!("Touch skipped the movie");
+                    movie.abort();
+                    state.platform.window.request_redraw();
                     return;
                 }
                 let in_game = state.frontend.screen == GameScreen::InGame;
@@ -1916,6 +1972,27 @@ impl ApplicationHandler for App {
         } else {
             None
         };
+        // Keep background services on their existing owners while Android has
+        // no surface, without scheduling a render or an acquire-retry loop.
+        #[cfg(target_os = "android")]
+        if self
+            .state
+            .as_ref()
+            .is_some_and(|state| !state.renderer.gpu.has_surface())
+        {
+            let state = self.state.as_mut().expect("checked initialized app");
+            let wake = if Self::match_runs_while_hidden(state) {
+                if Self::service_match_runtime(state, event_loop, true, true).quit_requested {
+                    return;
+                }
+                let service = Instant::now() + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
+                Some(shell_scroll_wake.map_or(service, |wake| wake.min(service)))
+            } else {
+                shell_scroll_wake
+            };
+            event_loop.set_control_flow(wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
+            return;
+        }
         if self.shell_capture.is_some() || self.hidden_run.is_some() {
             // A callback already queued by the platform can arrive after the
             // completed one-shot capture requested exit. Never render it again.

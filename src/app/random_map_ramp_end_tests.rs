@@ -54,9 +54,8 @@ fn retail_generation_inputs(
     let prepared = prepare_random_map_generation(
         &mut assets,
         options,
-        Some(&rules),
+        crate::app::shell_random_map::RandomMapRulesPreparation::ReadOnly(Some(&rules)),
         None,
-        rules.project_random_map_terrain_rules(None, true),
     )
     .expect("production Generate preparation");
     Some((assets, prepared, rules))
@@ -276,8 +275,11 @@ fn generated_connector_uses_native_slope_piece_tileset() {
         seed_dir.path().to_path_buf(),
         &mut assets,
         Some(&mut rules),
+        None,
         Some(seed_name),
         None,
+        crate::app::match_runtime::session::SessionMode::Skirmish,
+        false,
         &mut SilentProgress,
     )
     .expect("ordinary selected-.SED load");

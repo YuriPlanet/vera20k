@@ -298,6 +298,9 @@ pub(crate) struct LoadingRequest {
     /// owner stamps it from the rules it just loaded; the constructors leave it
     /// unset, which resolves to the vanilla priority table.
     skirmish_colors: Option<SkirmishColorMode>,
+    /// Freeze the process flag before the early generated-map Full_Init; the
+    /// later continuation consumes its result without selecting sources again.
+    the_team_enabled: bool,
 }
 
 impl LoadingRequest {
@@ -325,6 +328,7 @@ impl LoadingRequest {
             accepted_rmg_start_staging: None,
             random_map_preview: None,
             skirmish_colors: None,
+            the_team_enabled: false,
         }
     }
 
@@ -334,6 +338,7 @@ impl LoadingRequest {
             accepted_rmg_start_staging: None,
             random_map_preview: None,
             skirmish_colors: None,
+            the_team_enabled: false,
         }
     }
 
@@ -347,6 +352,7 @@ impl LoadingRequest {
             accepted_rmg_start_staging: None,
             random_map_preview: None,
             skirmish_colors: None,
+            the_team_enabled: false,
         }
     }
 
@@ -356,6 +362,7 @@ impl LoadingRequest {
             accepted_rmg_start_staging: None,
             random_map_preview: None,
             skirmish_colors: None,
+            the_team_enabled: false,
         }
     }
 
@@ -371,6 +378,7 @@ impl LoadingRequest {
             accepted_rmg_start_staging: None,
             random_map_preview: None,
             skirmish_colors: None,
+            the_team_enabled: false,
         }
     }
 
@@ -383,6 +391,7 @@ impl LoadingRequest {
             accepted_rmg_start_staging: None,
             random_map_preview: None,
             skirmish_colors: None,
+            the_team_enabled: false,
         }
     }
 
@@ -412,16 +421,20 @@ impl LoadingRequest {
         ra2_dir: std::path::PathBuf,
         asset_manager: &mut AssetManager,
         native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
+        resident: Option<&mut crate::sim::world::Simulation>,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<MapLoadInitial> {
         let mut loaded = init::load_map_initial_with_assets(
             ra2_dir,
             asset_manager,
             native_rules,
+            resident,
             Some(self.startup().physical_map_file()),
             self.startup()
                 .launch_session()
                 .map(|launch| launch.mode.override_file.as_str()),
+            self.startup().session_mode(),
+            self.the_team_enabled,
             progress,
         )?;
         if let LoadingStartup::Network(_) = self.startup() {
@@ -525,10 +538,16 @@ impl LoadingRequest {
         assets: &mut AssetManager,
         native_rules: Option<&mut crate::rules::process_owner::NativeRulesProcessOwner>,
         mapgen_retention: &mut crate::app::shell_random_map::RandomMapGenerationRetention,
-        resident: Option<&mut crate::sim::world::Simulation>,
+        mut resident: Option<&mut crate::sim::world::Simulation>,
         progress: &mut dyn LoadingProgressSink,
     ) -> anyhow::Result<PreparedScenarioLoad> {
-        let mut initial = self.load_initial_with_assets(ra2_dir, assets, native_rules, progress)?;
+        let mut initial = self.load_initial_with_assets(
+            ra2_dir,
+            assets,
+            native_rules,
+            resident.as_deref_mut(),
+            progress,
+        )?;
         initial.retain_process_state(mapgen_retention, resident);
         self.prepare_initial(initial)
     }
@@ -1169,12 +1188,7 @@ fn prepare_country_loading_prefix(
         // loading fails. Shell/failure screens retain it only for projection;
         // it must never restart after its runtime Rules writes are transferred.
         resident.retire_scenario_started();
-        owner.consume_outgoing_scenario_rules(
-            resident.retire_object_type_tech_levels(),
-            resident.retire_ambient_change_inputs(),
-            resident.retire_building_upgrade_art_names(),
-            resident.retire_voxel_type_damage(),
-        )?;
+        crate::app::process_assets::transfer_outgoing_simulation_rules(owner, resident)?;
     }
     let preparation = owner.prepare_noncampaign_scenario_prefix();
     native.late_country_loading = Some(
@@ -1375,11 +1389,16 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     // The shell writes GameMode before the loading screen (`0x0052E10F`
     // Skirmish, `0x0052E175` campaign); the session owner is live from here.
     prepare_session_for_loading(&mut state.match_state.session, request.startup());
-    let request = request.with_skirmish_colors(
+    let mut request = request.with_skirmish_colors(
         state
             .rules()
             .map(crate::rules::ruleset::RuleSet::skirmish_colors),
     );
+    request.the_team_enabled = state
+        .frontend
+        .main_menu_shell_state
+        .typed_codes
+        .the_team_enabled();
     let mut session = LoadingSession::from_request(request);
     session.job.ra2_dir = state
         .platform
@@ -1881,12 +1900,13 @@ fn pump_loading_after_present(
                 true
             }
         };
-        if should_retire_outgoing && let Some(runtime) = state.match_state.sim_runtime.as_mut() {
-            native_rules_owner.consume_outgoing_scenario_rules(
-                runtime.simulation.retire_object_type_tech_levels(),
-                runtime.simulation.retire_ambient_change_inputs(),
-                runtime.simulation.retire_building_upgrade_art_names(),
-                runtime.simulation.retire_voxel_type_damage(),
+        if !initial.has_generated_rules()
+            && should_retire_outgoing
+            && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+        {
+            crate::app::process_assets::transfer_outgoing_simulation_rules(
+                native_rules_owner,
+                &mut runtime.simulation,
             )?;
         }
         let the_team_enabled = state

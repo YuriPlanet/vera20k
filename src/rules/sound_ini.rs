@@ -333,7 +333,10 @@ pub struct SoundRegistry {
 }
 
 /// Fixed Voc bindings retained by Rules across scenario and RMG resets.
-/// Ctor665946/66594C/6659AC stores -1; names represent resolved catalog IDs.
+/// Names represent resolved catalog IDs. Ctor665946/66594C/6659AC and
+///6659B2/6659C4 store -1. YuriMindControl+214 is uninitialized (66594C/52
+/// skip it): deterministic silence until a successful binding is a safety
+/// deviation for invalid custom inputs, not a claimed native default.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct GlobalSoundReferences {
     /// RulesCtor665886/66588C: +18C/+190 start at -1.
@@ -342,6 +345,9 @@ pub(crate) struct GlobalSoundReferences {
     bomb_ticking: Option<String>,
     bomb_attach: Option<String>,
     psychic_reveal: Option<String>,
+    mind_control: Option<String>,
+    mind_cleared: Option<String>,
+    mastermind_overload: Option<String>,
     /// RulesCtor666009: +6EC starts at -1.
     building_slam: Option<String>,
 }
@@ -367,6 +373,18 @@ impl GlobalSoundReferences {
         self.psychic_reveal.as_deref()
     }
 
+    pub(crate) fn mind_control(&self) -> Option<&str> {
+        self.mind_control.as_deref()
+    }
+
+    pub(crate) fn mind_cleared(&self) -> Option<&str> {
+        self.mind_cleared.as_deref()
+    }
+
+    pub(crate) fn mastermind_overload(&self) -> Option<&str> {
+        self.mastermind_overload.as_deref()
+    }
+
     pub(crate) fn read_pass(&mut self, pass: &IniFile, sounds: &SoundRegistry) {
         let Some(section) = pass.section("AudioVisual") else {
             return;
@@ -382,11 +400,22 @@ impl GlobalSoundReferences {
             sounds.read_rules_reference(section, "BombTickingSound", self.bomb_ticking.take());
         self.bomb_attach =
             sounds.read_rules_reference(section, "BombAttachSound", self.bomb_attach.take());
+        // ReadAudioVisual669AE3..669B19 precedes PsychicReveal.
+        self.mind_control =
+            sounds.read_rules_reference(section, "YuriMindControlSound", self.mind_control.take());
         self.psychic_reveal = sounds.read_rules_reference(
             section,
             "PsychicRevealActivateSound",
             self.psychic_reveal.take(),
         );
+        // ReadAudioVisual669FFC..66A03B /66A0C1..66A100, in native order.
+        self.mastermind_overload = sounds.read_rules_reference(
+            section,
+            "MasterMindOverloadDeathSound",
+            self.mastermind_overload.take(),
+        );
+        self.mind_cleared =
+            sounds.read_rules_reference(section, "MindClearedSound", self.mind_cleared.take());
         // ReadAudioVisual66AA93..66AAC9, after the earlier AV sound reads.
         self.building_slam =
             sounds.read_rules_reference(section, "BuildingSlam", self.building_slam.take());

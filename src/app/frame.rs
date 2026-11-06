@@ -1417,14 +1417,16 @@ impl App {
             _ => None,
         };
         let pending_entry_sequence = if entry_sequence_identity.is_some() {
-            Some(crate::render::frame_readback::PendingBgra8Readback::encode(
-                &state.renderer.gpu.device,
-                &mut encoder,
-                &output.texture,
-                state.renderer.gpu.config.format,
-                state.renderer.gpu.config.width,
-                state.renderer.gpu.config.height,
-            )?)
+            Some(
+                crate::render::frame_readback::PendingTextureReadback::encode(
+                    &state.renderer.gpu.device,
+                    &mut encoder,
+                    &output.texture,
+                    state.renderer.gpu.config.format,
+                    state.renderer.gpu.config.width,
+                    state.renderer.gpu.config.height,
+                )?,
+            )
         } else {
             None
         };
@@ -1444,26 +1446,30 @@ impl App {
         let capture_current_frame =
             shell_capture_current_frame || hidden_run_current_frame || replay_capture_current_frame;
         let pending_capture = if capture_current_frame {
-            Some(crate::render::frame_readback::PendingBgra8Readback::encode(
-                &state.renderer.gpu.device,
-                &mut encoder,
-                &output.texture,
-                state.renderer.gpu.config.format,
-                state.renderer.gpu.config.width,
-                state.renderer.gpu.config.height,
-            )?)
+            Some(
+                crate::render::frame_readback::PendingTextureReadback::encode(
+                    &state.renderer.gpu.device,
+                    &mut encoder,
+                    &output.texture,
+                    state.renderer.gpu.config.format,
+                    state.renderer.gpu.config.width,
+                    state.renderer.gpu.config.height,
+                )?,
+            )
         } else {
             None
         };
         let pending_gate_audit = if state.platform.redraw_gate.auditing() {
-            Some(crate::render::frame_readback::PendingBgra8Readback::encode(
-                &state.renderer.gpu.device,
-                &mut encoder,
-                &output.texture,
-                state.renderer.gpu.config.format,
-                state.renderer.gpu.config.width,
-                state.renderer.gpu.config.height,
-            )?)
+            Some(
+                crate::render::frame_readback::PendingTextureReadback::encode(
+                    &state.renderer.gpu.device,
+                    &mut encoder,
+                    &output.texture,
+                    state.renderer.gpu.config.format,
+                    state.renderer.gpu.config.width,
+                    state.renderer.gpu.config.height,
+                )?,
+            )
         } else {
             None
         };

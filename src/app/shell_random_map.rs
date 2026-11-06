@@ -52,7 +52,7 @@ pub(super) struct RandomMapStorageDecision {
 }
 
 impl RandomMapStorageDecision {
-    pub(super) fn reinitializes(&self) -> bool {
+    pub(super) fn reinitializes(self) -> bool {
         self.reinitialize
     }
 
@@ -99,25 +99,20 @@ fn build_random_map_preview_grid(
     )
 }
 
-/// Immutable projection of reset-selected Rules/ART for one generation. Its
-/// source remains NativeRulesProcessOwner; dropping the job retires this cache.
+/// Immutable projection of the process owner's Rules/ART for one generation.
+/// Dropping the job retires only this view, not the live Rules registry.
 struct RandomMapPreviewRules {
     rules: crate::rules::ruleset::RuleSet,
 }
 
 impl RandomMapPreviewRules {
-    fn from_process(
+    fn from_processed(
         owner: &crate::rules::process_owner::NativeRulesProcessOwner,
-        mode: Option<&crate::rules::ini_parser::IniFile>,
-        theater: &str,
+        processed: &crate::rules::native_processing::ProcessedRulesLayers,
         assets: &crate::assets::asset_manager::AssetManager,
         theater_ext: &str,
-        terrain_rules: crate::rules::terrain_rules::TerrainRules,
     ) -> Option<Self> {
-        let processed = owner
-            .random_map_preview_projection(mode, theater, terrain_rules)
-            .ok()?;
-        let mut rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).ok()?;
+        let mut rules = crate::rules::ruleset::RuleSet::from_processed_rules(processed).ok()?;
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(
             owner.fixed_art(),
         ));
@@ -448,6 +443,19 @@ impl RandomMapGenerationRetention {
         }
     }
 
+    pub(super) fn begin_map_storage_decision(
+        &mut self,
+        options: &crate::map::rmg::RmgOptions,
+    ) -> RandomMapStorageDecision {
+        let decision = self.map_storage_decision(options);
+        if decision.reinitialize {
+            // A later Rules/asset failure must not admit the old A cache key
+            // against the partially rebuilt B registry on the next attempt.
+            self.map_storage_key = None;
+        }
+        decision
+    }
+
     pub(super) fn commit_map_storage_decision(&mut self, decision: RandomMapStorageDecision) {
         self.map_storage_key = Some(decision.key);
     }
@@ -546,8 +554,9 @@ pub(super) struct PreparedRandomMapGeneration {
 }
 
 impl PreparedRandomMapGeneration {
-    /// These are the same resolved settings, theater, TMP geometry and neutral
-    /// structures passed to `generate_map`; preparation does not consume RNG.
+    /// These are the same resolved generation inputs, including the process
+    /// Powerups table that the generated scenario inherits. Projection consumes
+    /// no RNG and never mutates the live Rules owner.
     pub(super) fn multiplayer_digest(&self) -> String {
         let mut bytes = b"VERA20k RMG dependencies v2\0".to_vec();
         bytes.extend_from_slice(self.settings.multiplayer_digest().as_bytes());
@@ -565,16 +574,35 @@ impl PreparedRandomMapGeneration {
                 bytes.extend_from_slice(&y.to_le_bytes());
             }
         }
+        bytes.push(u8::from(self.preview_rules.is_some()));
+        if let Some(preview) = &self.preview_rules {
+            let powerups = &preview.rules.powerups;
+            for slot in 0..crate::rules::powerups::POWERUP_COUNT {
+                bytes.extend_from_slice(&powerups.weights[slot].to_le_bytes());
+                bytes.extend_from_slice(&powerups.animation_index(slot).to_le_bytes());
+                bytes.push(u8::from(powerups.over_water[slot]));
+                bytes.extend_from_slice(&powerups.magnitudes[slot].bits().to_le_bytes());
+            }
+        }
         crate::util::sha256::sha256_hex(&bytes)
     }
+}
+
+/// Actual dialog generation mutates the one Rules owner at the native cache
+/// boundary. Network agreement only inspects prospective generation inputs.
+pub(super) enum RandomMapRulesPreparation<'a> {
+    ReadOnly(Option<&'a crate::rules::process_owner::NativeRulesProcessOwner>),
+    Generation {
+        owner: Option<&'a mut crate::rules::process_owner::NativeRulesProcessOwner>,
+        reinitialize: bool,
+    },
 }
 
 pub(super) fn prepare_random_map_generation(
     asset_manager: &mut crate::assets::asset_manager::AssetManager,
     options: &crate::map::rmg::RmgOptions,
-    native_rules: Option<&crate::rules::process_owner::NativeRulesProcessOwner>,
+    preparation: RandomMapRulesPreparation<'_>,
     mode_rules_override: Option<&crate::rules::ini_parser::IniFile>,
-    terrain_rules: crate::rules::terrain_rules::TerrainRules,
 ) -> Option<PreparedRandomMapGeneration> {
     let settings = crate::map::rmg::RmgSettings::load(asset_manager);
     let theater_name = crate::map::rmg::emit::theater_name(options.theater);
@@ -582,23 +610,65 @@ pub(super) fn prepare_random_map_generation(
         log::warn!("random map: theater {theater_name} unavailable");
         return None;
     };
+    let prospective_rules = match &preparation {
+        RandomMapRulesPreparation::ReadOnly(Some(owner)) => Some(
+            owner
+                .random_map_preview_projection(mode_rules_override, theater_name)
+                .ok()?,
+        ),
+        _ => None,
+    };
+    let native_rules = match preparation {
+        RandomMapRulesPreparation::ReadOnly(owner) => owner,
+        RandomMapRulesPreparation::Generation {
+            owner,
+            reinitialize,
+        } => {
+            if let Some(owner) = owner {
+                if let Err(error) = owner.prepare_random_map_preview(
+                    mode_rules_override,
+                    theater_name,
+                    reinitialize,
+                ) {
+                    log::warn!("Random-map Rules preparation failed: {error}");
+                    return None;
+                }
+                Some(&*owner)
+            } else {
+                None
+            }
+        }
+    };
+    let processed = prospective_rules
+        .as_ref()
+        .or_else(|| native_rules.and_then(|owner| owner.prepared_random_map_rules()));
+    let tech_types = match (native_rules, processed) {
+        (Some(owner), Some(processed)) => crate::map::rmg::tech_catalog::resolve(
+            processed.neutral_tech_buildings(),
+            owner.fixed_art(),
+        ),
+        _ => Vec::new(),
+    };
+    let preview_rules = if let Some((owner, processed)) = native_rules.zip(processed) {
+        Some(RandomMapPreviewRules::from_processed(
+            owner,
+            processed,
+            asset_manager,
+            theater.extension,
+        )?)
+    } else {
+        None
+    };
+    let terrain_rules = preview_rules
+        .as_ref()
+        .map(|preview| preview.rules.terrain_rules.clone())
+        .unwrap_or_default();
     let resolved_inputs =
         crate::map::rmg::build::ResolvedTheaterInputs::from_theater(&theater, &terrain_rules);
     let blocks =
         crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
             asset_manager.get(name)
         });
-    let tech_types = crate::app::loading::init_helpers::load_neutral_tech_types(native_rules);
-    let preview_rules = native_rules.and_then(|owner| {
-        RandomMapPreviewRules::from_process(
-            owner,
-            mode_rules_override,
-            theater_name,
-            asset_manager,
-            theater.extension,
-            terrain_rules.clone(),
-        )
-    });
     Some(PreparedRandomMapGeneration {
         theater,
         terrain_rules,
@@ -914,12 +984,10 @@ impl App {
             )
             .map(|mode| mode.override_file.clone())
         };
-        // InitMap599BAE..599BD3 uses this same tuple before deciding whether
-        // the land reader runs at59A0F0. Select it before any Rules projection.
         let map_storage_decision = state
             .frontend
             .random_map_retention
-            .map_storage_decision(options);
+            .begin_map_storage_decision(options);
         let (manager, mut native_rules, _) =
             state.process_assets.manager_and_rules_with_tile_cache();
         let Some(asset_manager) = manager else {
@@ -935,21 +1003,22 @@ impl App {
                 return false;
             }
         };
-        if let Some(owner) = native_rules.as_deref_mut() {
-            owner.prepare_random_map_sound_references(
-                mode_rules.as_ref(),
-                map_storage_decision.reinitialize,
-            );
+        if map_storage_decision.reinitialize
+            && let Some(owner) = native_rules.as_deref_mut()
+            && let Some(runtime) = state.match_state.sim_runtime.as_mut()
+        {
+            // The outgoing Simulation can remain resident for shell drawing.
+            // Drain its live Rules writes before59A0F0 destroys those Types;
+            // a later Full_Init must not replay them onto the preview registry.
+            runtime.simulation.retire_scenario_started();
+            if let Err(error) = crate::app::process_assets::transfer_outgoing_simulation_rules(
+                owner,
+                &mut runtime.simulation,
+            ) {
+                log::warn!("Random-map outgoing Rules transfer failed: {error}");
+                return false;
+            }
         }
-        let terrain_rules = native_rules
-            .as_deref_mut()
-            .map(|owner| {
-                owner.prepare_random_map_terrain_rules(
-                    mode_rules.as_ref(),
-                    map_storage_decision.reinitialize,
-                )
-            })
-            .unwrap_or_default();
         let Some(PreparedRandomMapGeneration {
             theater,
             terrain_rules,
@@ -961,9 +1030,11 @@ impl App {
         }) = prepare_random_map_generation(
             asset_manager,
             options,
-            native_rules.as_deref(),
+            RandomMapRulesPreparation::Generation {
+                owner: native_rules,
+                reinitialize: map_storage_decision.reinitialize,
+            },
             mode_rules.as_ref(),
-            terrain_rules,
         )
         else {
             return false;
@@ -1576,6 +1647,54 @@ mod tests {
     use super::*;
 
     #[test]
+    fn generated_digest_covers_retained_powerups_without_mutating_rules() {
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut owner =
+            crate::rules::process_owner::NativeRulesProcessOwner::from_cold_start_sources(
+                crate::rules::ini_parser::IniFile::from_str("[Animations]\n0=BASE\n"),
+                None,
+                crate::rules::ini_parser::IniFile::empty(),
+                std::sync::Arc::default(),
+                std::sync::Arc::default(),
+            )
+            .unwrap();
+        let options = crate::map::rmg::RmgOptions::default();
+        let original = prepare_random_map_generation(
+            &mut assets,
+            &options,
+            RandomMapRulesPreparation::ReadOnly(Some(&owner)),
+            None,
+        )
+        .unwrap()
+        .multiplayer_digest();
+        owner
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),
+                &crate::rules::ini_parser::IniFile::from_str(
+                    "[Animations]\n0=HISTORY\n[Powerups]\nMoney=7,HISTORY,yes,125\n",
+                ),
+            )
+            .unwrap();
+        let live = owner.saved_scenario_rules().unwrap().powerups().clone();
+        let after_history = prepare_random_map_generation(
+            &mut assets,
+            &options,
+            RandomMapRulesPreparation::ReadOnly(Some(&owner)),
+            None,
+        )
+        .unwrap()
+        .multiplayer_digest();
+        assert_ne!(
+            original, after_history,
+            "same sources do not erase Powerups history"
+        );
+        assert_eq!(owner.saved_scenario_rules().unwrap().powerups(), &live);
+        assert!(owner.prepared_random_map_rules().is_none());
+    }
+
+    #[test]
     fn network_generated_seed_keeps_a_complete_admissible_start_table() {
         let Some((retail_dir, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
             return;
@@ -1609,9 +1728,8 @@ mod tests {
         let prepared = prepare_random_map_generation(
             &mut assets,
             &options,
-            Some(&rules),
+            RandomMapRulesPreparation::ReadOnly(Some(&rules)),
             None,
-            rules.project_random_map_terrain_rules(None, true),
         )
         .unwrap();
         let generated = crate::map::rmg::build::generate_map(
@@ -1677,9 +1795,8 @@ mod tests {
         let prepared = prepare_random_map_generation(
             &mut assets,
             &options,
-            Some(&rules),
+            RandomMapRulesPreparation::ReadOnly(Some(&rules)),
             mode_rules.as_ref(),
-            rules.project_random_map_terrain_rules(mode_rules.as_ref(), true),
         )
         .expect("registered production theater");
         let tech_footprints: std::collections::HashMap<_, _> = prepared
@@ -1946,13 +2063,14 @@ mod tests {
             )
             .unwrap();
         let mode = crate::rules::ini_parser::IniFile::from_str("[TIB01]\nRadarColor=140,0,140\n");
-        let mode_projection = RandomMapPreviewRules::from_process(
+        rules
+            .prepare_random_map_preview(Some(&mode), "TEMPERATE", true)
+            .unwrap();
+        let mode_projection = RandomMapPreviewRules::from_processed(
             &rules,
-            Some(&mode),
-            "TEMPERATE",
+            rules.prepared_random_map_rules().unwrap(),
             &assets,
             prepared.theater.extension,
-            rules.project_random_map_terrain_rules(Some(&mode), true),
         )
         .unwrap();
         control.overlays[0].frame = 1;
@@ -2136,7 +2254,7 @@ mod tests {
         options: &crate::map::rmg::RmgOptions,
         process_dummy: &crate::map::resolved_terrain::SharedCellDummy,
     ) -> bool {
-        let decision = retention.map_storage_decision(options);
+        let decision = retention.begin_map_storage_decision(options);
         decision.apply_resize_to(process_dummy);
         retention.commit_map_storage_decision(decision);
         decision.reinitialize
@@ -2224,6 +2342,18 @@ mod tests {
                 }
             );
         }
+
+        let mut failed_attempt = options.clone();
+        failed_attempt.width = 1;
+        assert!(
+            retention
+                .begin_map_storage_decision(&failed_attempt)
+                .reinitialize
+        );
+        assert!(
+            retention.map_storage_decision(&options).reinitialize,
+            "a failed miss cannot reuse the previous key against a partially rebuilt registry"
+        );
     }
 
     #[test]

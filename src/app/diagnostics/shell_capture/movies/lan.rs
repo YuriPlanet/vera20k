@@ -1155,13 +1155,21 @@ impl LanCapture {
             .session
             .network_setup()
             .map(|launch| launch.mode.override_file.clone());
+        let the_team_enabled = state
+            .frontend
+            .main_menu_shell_state
+            .typed_codes
+            .the_team_enabled();
         let (manager, rules, _) = state.process_assets.manager_and_rules_with_tile_cache();
         let initial = crate::app::loading::init::load_map_initial_with_assets(
             host_dir,
             manager.context("controlled host assets")?,
             rules,
+            None,
             Some(sed_path.to_str().context("controlled host seed path")?),
             mode_file.as_deref(),
+            SessionMode::Lan,
+            the_team_enabled,
             &mut Silent,
         )?;
         let map = initial.map_data();

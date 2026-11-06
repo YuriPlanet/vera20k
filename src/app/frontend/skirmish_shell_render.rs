@@ -2069,7 +2069,10 @@ mod wol_persona;
 mod wol_quick_match;
 pub(crate) use lan_lobby::render_lan_lobby;
 pub(crate) use wol_buddy::paint_wol_buddy_children;
-pub(crate) use wol_lobby::{WolLobbyPaint, paint_wol_lobby_children, paint_wol_lobby_popup};
+pub(crate) use wol_lobby::{
+    WolLobbyPaint, paint_wol_card_countries, paint_wol_lobby_children, paint_wol_lobby_popup,
+    paint_wol_player_card,
+};
 pub(crate) use wol_login::{
     paint_wol_account_form, paint_wol_login_children, wol_button_label_rgb,
 };

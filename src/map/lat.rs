@@ -430,6 +430,7 @@ mod tests {
 
     fn cell(rx: u16, ry: u16, tile_index: i32) -> MapCell {
         MapCell {
+            legacy_ice_byte: 0,
             rx,
             ry,
             tile_index,

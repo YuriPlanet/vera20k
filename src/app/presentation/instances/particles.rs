@@ -319,7 +319,6 @@ pub(super) fn build_particle_instance(
                     command,
                     &kind.color_list,
                     context.point_viewport,
-                    crate::render::tactical_compat::SparkPointPlanes::Deferred,
                 )
                 .expect("produced point-particle state has finite native arithmetic")
             {
