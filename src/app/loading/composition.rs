@@ -1069,6 +1069,7 @@ mod tests {
             (10_000, 10_000, -10_000, -10_000)
         );
         let cell = |rx, ry| MapCell {
+            legacy_ice_byte: 0,
             rx,
             ry,
             tile_index: 0,
@@ -1105,6 +1106,7 @@ mod tests {
             100,
         );
         let cell = |rx, ry| MapCell {
+            legacy_ice_byte: 0,
             rx,
             ry,
             tile_index: 0,
@@ -1177,6 +1179,7 @@ mod tests {
         );
         map.cells = vec![
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 60,
                 ry: 60,
                 tile_index: 0,
@@ -1184,6 +1187,7 @@ mod tests {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 60,
                 ry: 140,
                 tile_index: 0,
@@ -1191,6 +1195,7 @@ mod tests {
                 z: 0,
             },
             MapCell {
+                legacy_ice_byte: 0,
                 rx: 140,
                 ry: 60,
                 tile_index: 0,

@@ -16,6 +16,153 @@ const LOAD_CLOCK_MS: u64 = 16_000;
 const SAVED_ELAPSED_BUCKETS: u32 = 180;
 const MISSING_FOLLOW_ID: u64 = 0xBAD_F011;
 
+#[test]
+fn packed_ice_bytes_survive_materialization_and_saved_resource_loading() {
+    use crate::map::map_file::MapFile;
+    use crate::util::{base64::base64_decode, ini_writer, lzo};
+    use ::base64::Engine;
+
+    let Some((root, mut assets)) = retail_assets() else {
+        return;
+    };
+    let original = assets.get_ref("XMP03T4.MAP").unwrap().to_vec();
+    let stock = MapFile::from_bytes(&original).unwrap();
+    let section = stock.ini.section("IsoMapPack5").unwrap();
+    let packed = base64_decode(&section.read_packed_text()).unwrap();
+    let mut records = lzo::decompress_chunks(&packed, 512 * 512 * 11 + 4).unwrap();
+    // Actual retail record744 crosses the 8192-byte decompression boundary.
+    assert_eq!(&records[8184..8195], &[68, 0, 28, 0, 140, 0, 0, 0, 0, 4, 0]);
+    let next: [u8; 11] = records[8195..8206].try_into().unwrap();
+    let next_cell = (
+        u16::from_le_bytes([next[0], next[1]]),
+        u16::from_le_bytes([next[2], next[3]]),
+    );
+    let end = records
+        .chunks(11)
+        .position(|record| record.len() >= 4 && record[..4] == [0; 4])
+        .map_or(records.len(), |index| index * 11);
+    records.truncate(end);
+    records[8194] = 0x80; // Authored derivative, not a stock/native numeric golden.
+    let mut duplicate = next;
+    let alias_x =
+        i16::try_from(i32::from(next_cell.0) + 512 * (i32::from(next_cell.1) + 1)).unwrap();
+    duplicate[..2].copy_from_slice(&alias_x.to_le_bytes());
+    duplicate[2..4].copy_from_slice(&(-1i16).to_le_bytes());
+    duplicate[10] = 1;
+    records.extend_from_slice(&duplicate);
+    let mut missed = next;
+    missed[..2].copy_from_slice(&i16::MAX.to_le_bytes());
+    missed[2..4].copy_from_slice(&i16::MAX.to_le_bytes());
+    missed[10] = 0xff;
+    records.extend_from_slice(&missed);
+    records.extend_from_slice(&[0; 4]);
+    let encoded =
+        ::base64::engine::general_purpose::STANDARD.encode(lzo::compress_chunks(&records, 0x2000));
+    let values: Vec<_> = encoded
+        .as_bytes()
+        .chunks(70)
+        .enumerate()
+        .map(|(index, bytes)| {
+            (
+                index.to_string(),
+                std::str::from_utf8(bytes).unwrap().to_owned(),
+            )
+        })
+        .collect();
+    let refs: Vec<_> = values
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect();
+    let keys: Vec<_> = section.keys().collect();
+    let cleared = ini_writer::remove_ini_keys(&original, "IsoMapPack5", &keys);
+    let derivative = ini_writer::set_ini_values(&cleared, "IsoMapPack5", &refs);
+    let directory = TestDirectory::new("packed-ice-resource-load");
+    directory.write("authored.map", &derivative);
+    let path = directory.path().join("authored.map");
+    let name = path.to_str().unwrap();
+    let loaded =
+        crate::map::source::load_map_by_name_or_path_with_assets(&root, name, &assets).unwrap();
+    let mut owner = retail_rules_owner(&assets);
+    let mode = crate::rules::retail_sources::select_ini(&assets, "MPBattleMD.ini")
+        .unwrap()
+        .ini;
+    let mut cache = TileVariantSelectorCache::default();
+    let (mut runtime, metadata, _) =
+        bound_saved_world(loaded, name, &mut assets, &mut owner, &mode, &mut cache);
+    let ice = |grid: &ResolvedTerrainGrid, (x, y)| grid.cell(x, y).unwrap().legacy_ice_byte;
+    assert_eq!(
+        ice(runtime.simulation.resolved_terrain().unwrap(), (68, 28)),
+        0x80
+    );
+    assert_eq!(
+        ice(runtime.simulation.resolved_terrain().unwrap(), next_cell),
+        1
+    );
+    assert_eq!(
+        runtime
+            .simulation
+            .resolved_terrain()
+            .unwrap()
+            .iter()
+            .filter(|cell| cell.legacy_ice_byte != 0)
+            .count(),
+        2,
+        "the out-of-range record cannot alter an allocated cell"
+    );
+    assert!(
+        runtime
+            .simulation
+            .rebuild_dynamic_navigation(&runtime.resources.rules)
+    );
+    let hash = runtime.resources.rules.simulation_config_hash();
+    let bytes = snapshot_bytes(&runtime, &owner, &metadata, None, hash);
+    std::fs::remove_file(&path).unwrap();
+    let repository = SaveRepository::at(directory.path().join("saves"));
+    let frontend = frontend_main();
+    let clock = || LOAD_CLOCK_MS;
+    let view = SavedGamePreparationView {
+        repository: &repository,
+        current_simulation: None,
+        frontend_main: &frontend,
+        rules_owner: &owner,
+        tile_cache: &cache,
+        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
+        load_clock: &clock,
+    };
+    let restored = assets
+        .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(&bytes, &view, assets))
+        .unwrap();
+    assert_eq!(
+        ice(
+            restored.world.simulation.resolved_terrain().unwrap(),
+            (68, 28)
+        ),
+        0x80
+    );
+    assert_eq!(
+        ice(
+            restored.world.simulation.resolved_terrain().unwrap(),
+            next_cell
+        ),
+        1
+    );
+    let stock =
+        crate::map::source::load_map_by_name_or_path_with_assets(&root, "XMP03T4.MAP", &assets)
+            .unwrap();
+    let (fresh, _, _) = bound_saved_world(
+        stock,
+        "XMP03T4.MAP",
+        &mut assets,
+        &mut owner,
+        &mode,
+        &mut cache,
+    );
+    assert_eq!(
+        ice(fresh.simulation.resolved_terrain().unwrap(), (68, 28)),
+        0
+    );
+}
+
 fn map_text(theater: &str, strength: i32, size: u32) -> String {
     // This Pack5 record is the existing map/source.rs one-cell fixture. The
     // map owner supplies the remaining native Size diamond from retail Clear.

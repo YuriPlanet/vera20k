@@ -694,6 +694,7 @@ impl ResolvedTerrainGrid {
                     final_sub_tile: stored_final_sub_tile,
                     is_wood_bridge_repair_tile,
                     level,
+                    legacy_ice_byte: raw.map_or(0, |cell| cell.legacy_ice_byte),
                     filled_clear: raw.is_none(),
                     tileset_index: metadata.tileset_index,
                     land_type: metadata.land_type,
@@ -1703,6 +1704,9 @@ pub(super) fn materialize_map_load_cells(
                 tile_index: selector.draw_fill_tile_index(is_water, scenario_fill_ranged),
                 sub_tile: 0,
                 z: 0u8.wrapping_add(map.header.level as u8),
+                // CellClass::Constructor47BBF0 writes zero at47BCFE before
+                // authored Pack5 records overwrite allocated cells.
+                legacy_ice_byte: 0,
             });
             index_by_coord.insert((rx, ry), index);
         }
