@@ -161,6 +161,25 @@ pub(crate) fn fallback_scroll_key(
     }
 }
 
+/// VERA-only physical WASD camera overlay. Retail arrow fallback remains unchanged.
+pub(crate) fn wasd_scroll_key(physical: KeyCode) -> Option<KeyCode> {
+    match physical {
+        KeyCode::KeyW => Some(KeyCode::ArrowUp),
+        KeyCode::KeyA => Some(KeyCode::ArrowLeft),
+        KeyCode::KeyS => Some(KeyCode::ArrowDown),
+        KeyCode::KeyD => Some(KeyCode::ArrowRight),
+        _ => None,
+    }
+}
+
+pub(crate) fn camera_scroll_held(
+    keys: &std::collections::HashSet<KeyCode>,
+    arrow: KeyCode,
+    wasd: bool,
+) -> bool {
+    keys.contains(&arrow) || wasd && keys.iter().any(|&key| wasd_scroll_key(key) == Some(arrow))
+}
+
 pub(crate) fn physical_scroll_key(
     physical: winit::keyboard::KeyCode,
 ) -> Option<winit::keyboard::KeyCode> {
@@ -177,6 +196,8 @@ pub(crate) fn physical_scroll_key(
 #[derive(Debug, Clone, Default)]
 pub(crate) struct HotkeyBindings {
     by_key: BTreeMap<u16, HotkeyCommand>,
+    /// Independent Stop shortcut for the WASD overlay; absent means O, zero unbinds.
+    wasd_stop_key: Option<u16>,
     /// VeraX AutoLoad was explicitly unbound (`AutoLoad=0`); reloads and
     /// startups keep it unbound instead of restoring the Ctrl+D default.
     #[cfg(feature = "verax")]
@@ -209,6 +230,10 @@ impl HotkeyBindings {
             .and_then(|ini| ini.section("Hotkey").cloned())
         {
             for name in section.keys() {
+                if name.eq_ignore_ascii_case("WasdStopObject") {
+                    bindings.wasd_stop_key = u16::try_from(section.read_int(name, 0)).ok();
+                    continue;
+                }
                 let Some(command) = command_from_name(name) else {
                     continue;
                 };
@@ -317,10 +342,72 @@ impl HotkeyBindings {
             entries.push(("AutoLoad", 0));
         }
         let mut output = String::from("[Hotkey]\n");
+        if let Some(key) = self.wasd_stop_key {
+            writeln!(output, "WasdStopObject={key}").expect("writing a String cannot fail");
+        }
         for (name, key) in entries {
             writeln!(output, "{name}={key}").expect("writing a String cannot fail");
         }
         output
+    }
+
+    /// The keyboard dialog and ProcessCommand55DF80 overlay share this view.
+    /// Keep ordinary bindings intact when the player toggles WASD off again.
+    pub(crate) fn for_game(&self, wasd_camera: bool) -> std::borrow::Cow<'_, Self> {
+        if !wasd_camera {
+            return std::borrow::Cow::Borrowed(self);
+        }
+        let mut bindings = self.clone();
+        bindings.by_key.retain(|key, command| {
+            !matches!(*key, 0x57 | 0x41 | 0x53 | 0x44) && *command != HotkeyCommand::StopObject
+        });
+        let stop = self.wasd_stop_key.unwrap_or(0x4f);
+        if stop != 0 {
+            bindings.by_key.insert(stop, HotkeyCommand::StopObject);
+        }
+        std::borrow::Cow::Owned(bindings)
+    }
+
+    /// A3 Assign5FBB38, with a separate saved Stop shortcut in WASD mode.
+    pub(crate) fn assign_game(
+        &mut self,
+        command: HotkeyCommand,
+        encoded: u16,
+        wasd_camera: bool,
+    ) -> Result<(), BindingAssignmentError> {
+        if !wasd_camera {
+            return self.assign(command, encoded);
+        }
+        if matches!(encoded, 0x57 | 0x41 | 0x53 | 0x44) {
+            return Err(BindingAssignmentError::CannotMap);
+        }
+        let mut effective = self.for_game(true).into_owned();
+        effective.assign(command, encoded)?;
+        if command == HotkeyCommand::StopObject {
+            self.wasd_stop_key = Some(encoded);
+        } else {
+            self.assign(command, encoded)?;
+            if encoded != 0 && encoded == self.wasd_stop_key.unwrap_or(0x4f) {
+                self.wasd_stop_key = Some(0);
+            }
+        }
+        Ok(())
+    }
+
+    /// Opt-in overlay before the retail lookup; chat is admitted before here.
+    pub(crate) fn resolve_game_event(
+        &self,
+        physical: KeyCode,
+        logical_key: &Key,
+        location: KeyLocation,
+        modifiers: ModifiersState,
+        wasd_camera: bool,
+    ) -> HotkeyResolution {
+        if wasd_camera && modifiers.is_empty() && wasd_scroll_key(physical).is_some() {
+            return HotkeyResolution::Unhandled;
+        }
+        self.for_game(wasd_camera)
+            .resolve_event(logical_key, location, modifiers)
     }
 
     pub(crate) fn resolve_event(
@@ -1266,6 +1353,128 @@ mod tests {
                 HotkeyResolution::Fallback(expected)
             );
         }
+    }
+
+    #[test]
+    fn wasd_overlay_reserves_camera_keys_and_restores_saved_bindings() {
+        let bindings = HotkeyBindings::from_ini_bytes(Some(b"[Hotkey]\nStopObject=83\n"));
+        let resolve = |physical, logical: &str, enabled| {
+            bindings.resolve_game_event(
+                physical,
+                &character(logical),
+                KeyLocation::Standard,
+                ModifiersState::empty(),
+                enabled,
+            )
+        };
+        assert_eq!(
+            resolve(KeyCode::KeyS, "s", false),
+            HotkeyResolution::Command(HotkeyCommand::StopObject)
+        );
+        for (physical, logical) in [
+            (KeyCode::KeyW, "w"),
+            (KeyCode::KeyA, "a"),
+            (KeyCode::KeyS, "s"),
+            (KeyCode::KeyD, "d"),
+        ] {
+            assert_eq!(
+                resolve(physical, logical, true),
+                HotkeyResolution::Unhandled
+            );
+        }
+        assert_eq!(
+            resolve(KeyCode::KeyO, "o", true),
+            HotkeyResolution::Command(HotkeyCommand::StopObject)
+        );
+        assert_eq!(
+            resolve(KeyCode::KeyO, "o", false),
+            bindings.resolve_event(
+                &character("o"),
+                KeyLocation::Standard,
+                ModifiersState::empty()
+            )
+        );
+        assert_eq!(
+            bindings.resolve_game_event(
+                KeyCode::KeyS,
+                &character("s"),
+                KeyLocation::Standard,
+                ModifiersState::CONTROL,
+                true
+            ),
+            bindings.resolve_event(
+                &character("s"),
+                KeyLocation::Standard,
+                ModifiersState::CONTROL
+            )
+        );
+        let mut rebound = bindings.clone();
+        assert_eq!(
+            rebound.for_game(true).first_key(HotkeyCommand::StopObject),
+            Some(0x4f)
+        );
+        rebound
+            .assign_game(HotkeyCommand::StopObject, 0x58, true)
+            .unwrap();
+        let saved = rebound.to_ini_string();
+        let mut restored = HotkeyBindings::from_ini_bytes(Some(saved.as_bytes()));
+        assert_eq!(
+            restored.for_game(true).first_key(HotkeyCommand::StopObject),
+            Some(0x58)
+        );
+        assert_eq!(
+            restored
+                .for_game(false)
+                .first_key(HotkeyCommand::StopObject),
+            Some(0x53)
+        );
+        assert_eq!(
+            restored.resolve_game_event(
+                KeyCode::KeyX,
+                &character("x"),
+                KeyLocation::Standard,
+                ModifiersState::empty(),
+                true
+            ),
+            HotkeyResolution::Command(HotkeyCommand::StopObject)
+        );
+        assert_ne!(
+            restored.resolve_game_event(
+                KeyCode::KeyO,
+                &character("o"),
+                KeyLocation::Standard,
+                ModifiersState::empty(),
+                true
+            ),
+            HotkeyResolution::Command(HotkeyCommand::StopObject)
+        );
+        assert_eq!(
+            restored.assign_game(HotkeyCommand::StopObject, 0x53, true),
+            Err(BindingAssignmentError::CannotMap)
+        );
+        restored
+            .assign_game(HotkeyCommand::StopObject, 0, true)
+            .unwrap();
+        let saved = restored.to_ini_string();
+        let restored = HotkeyBindings::from_ini_bytes(Some(saved.as_bytes()));
+        assert_eq!(
+            restored.for_game(true).first_key(HotkeyCommand::StopObject),
+            None
+        );
+    }
+
+    #[test]
+    fn wasd_camera_holds_remain_independent_of_arrow_holds() {
+        let mut keys = std::collections::HashSet::from([KeyCode::KeyW, KeyCode::ArrowUp]);
+        assert!(camera_scroll_held(&keys, KeyCode::ArrowUp, true));
+        keys.remove(&KeyCode::KeyW);
+        assert!(camera_scroll_held(&keys, KeyCode::ArrowUp, true));
+        keys.insert(KeyCode::KeyW);
+        keys.remove(&KeyCode::ArrowUp);
+        assert!(camera_scroll_held(&keys, KeyCode::ArrowUp, true));
+        assert!(!camera_scroll_held(&keys, KeyCode::ArrowUp, false));
+        keys.remove(&KeyCode::KeyW);
+        assert!(!camera_scroll_held(&keys, KeyCode::ArrowUp, true));
     }
 
     #[test]

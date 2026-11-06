@@ -141,6 +141,8 @@ pub(crate) struct RetailOptionsProfile {
     /// `[VERA] RightClickOrders=`: left selects, right issues context orders.
     /// VERA-only input preference; off by default.
     pub(crate) right_click_orders: bool,
+    /// Optional local WASD camera controls; O issues Stop without rewriting bindings.
+    pub(crate) wasd_camera: bool,
     /// `[VERA] LockCursor=`: keep the pointer inside the game window. Off
     /// unless the player turns it on, so a new install leaves the pointer free.
     pub(crate) lock_cursor: bool,
@@ -318,6 +320,7 @@ impl Default for RetailOptionsProfile {
             render_interpolation: false,
             mouse_wheel_zoom: false,
             right_click_orders: false,
+            wasd_camera: false,
             lock_cursor: false,
             vera_icon: false,
             hd_radar: false,
@@ -356,7 +359,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 30],
+    pub(crate) vera: [(&'static str, String); 31],
 }
 
 impl RetailOptionsLoad {
@@ -560,6 +563,7 @@ impl RetailOptionsProfile {
                 vera.read_bool("RenderInterpolation", self.render_interpolation);
             self.mouse_wheel_zoom = vera.read_bool("MouseWheelZoom", self.mouse_wheel_zoom);
             self.right_click_orders = vera.read_bool("RightClickOrders", self.right_click_orders);
+            self.wasd_camera = vera.read_bool("WasdCamera", self.wasd_camera);
             self.lock_cursor = vera.read_bool("LockCursor", self.lock_cursor);
             self.vera_icon = vera.read_bool("VeraIcon", self.vera_icon);
             self.hd_radar = vera.read_bool("HdRadar", self.hd_radar);
@@ -741,6 +745,7 @@ impl RetailOptionsProfile {
                     "RightClickOrders",
                     format_bool(self.right_click_orders).to_string(),
                 ),
+                ("WasdCamera", format_bool(self.wasd_camera).to_string()),
                 ("HouseColorStrength", self.house_color_strength.to_string()),
                 ("Display", self.display.ini_value().to_owned()),
                 ("WindowX", placement.map_or(0, |p| p.x).to_string()),
@@ -1727,6 +1732,29 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let reloaded = load_snapshot(&startup, &written).retained_profile;
         assert!(!reloaded.mouse_wheel_zoom);
         assert!(!reloaded.render_interpolation);
+        assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+    }
+
+    #[test]
+    fn wasd_camera_preference_defaults_off_and_round_trips() {
+        let startup = RetailStartupOptions::default();
+        assert!(!load_snapshot(&startup, b"").retained_profile.wasd_camera);
+        let input = b"[VERA]\nWasdCamera=yes\nUnowned=keep\n";
+        let mut profile = load_snapshot(&startup, input).retained_profile;
+        assert!(profile.wasd_camera);
+        let written = profile.transform_settings(input);
+        assert!(
+            load_snapshot(&startup, &written)
+                .retained_profile
+                .wasd_camera
+        );
+        profile.wasd_camera = false;
+        let written = profile.transform_settings(&written);
+        assert!(
+            !load_snapshot(&startup, &written)
+                .retained_profile
+                .wasd_camera
+        );
         assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
     }
 

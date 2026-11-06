@@ -61,10 +61,12 @@ pub(crate) fn in_game_key_edge(
     let is_escape = matches!(edge.logical, Key::Named(NamedKey::Escape));
     let locked = crate::app::input::campaign_input::is_locked(state);
     let binding_key = hotkeys::binding_logical_key(edge.logical, edge.unmodified, edge.location);
-    let mut resolution = state.match_state.input.hotkey_bindings.resolve_event(
+    let mut resolution = state.match_state.input.hotkey_bindings.resolve_game_event(
+        edge.physical,
         binding_key,
         edge.location,
         state.match_state.input.hotkey_modifiers,
+        state.persistence.options_profile.wasd_camera,
     );
     // EncodeAndEnqueue54F200 admits Escape while A8ED9C is set and refuses
     // other buffered keys. ProcessCommand55DF80 then falls back to Options
@@ -103,7 +105,11 @@ pub(crate) fn in_game_key_edge(
             && !locked
         {
             state.match_state.input.keys_held.insert(scroll_key);
-        } else if hotkeys::physical_scroll_key(edge.physical).is_none() {
+        } else if hotkeys::physical_scroll_key(edge.physical).is_none()
+            && !(state.persistence.options_profile.wasd_camera
+                && hotkeys::wasd_scroll_key(edge.physical).is_some()
+                && (locked || !modifiers.is_empty()))
+        {
             state.match_state.input.keys_held.insert(edge.physical);
         }
     } else {
@@ -317,11 +323,11 @@ fn activate(state: &mut AppState, id: KeyboardButton) {
             else {
                 return;
             };
-            let result = state
-                .match_state
-                .input
-                .hotkey_bindings
-                .assign(command, dialog.captured);
+            let result = state.match_state.input.hotkey_bindings.assign_game(
+                command,
+                dialog.captured,
+                state.persistence.options_profile.wasd_camera,
+            );
             dialog.error = result.err().map(|error| match error {
                 BindingAssignmentError::CannotMap => "Error:CannotMap",
                 BindingAssignmentError::CannotRemap => "Error:CannotRemap",

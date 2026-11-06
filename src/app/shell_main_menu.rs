@@ -131,6 +131,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
             icon.show_on(&self.platform.window);
         }
     }
+    fn store_wasd_camera(&mut self, enabled: bool) {
+        self.persistence.options_profile.wasd_camera = enabled;
+        self.match_state.input.keys_held.clear();
+    }
     fn store_right_click_orders(&mut self, enabled: bool) {
         self.persistence.options_profile.right_click_orders = enabled;
     }

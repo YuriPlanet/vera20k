@@ -1233,38 +1233,22 @@ pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
     {
         return;
     }
+    let wasd = state.persistence.options_profile.wasd_camera
+        && !state.match_state.match_presentation.message_list.editing();
+    let held =
+        |arrow| super::hotkeys::camera_scroll_held(&state.match_state.input.keys_held, arrow, wasd);
     let key_distance = keyboard_scroll_distance(state);
     let mut movement = (0.0, 0.0);
-    if state
-        .match_state
-        .input
-        .keys_held
-        .contains(&winit::keyboard::KeyCode::ArrowLeft)
-    {
+    if held(winit::keyboard::KeyCode::ArrowLeft) {
         movement.0 -= key_distance / state.match_state.input.zoom_level;
     }
-    if state
-        .match_state
-        .input
-        .keys_held
-        .contains(&winit::keyboard::KeyCode::ArrowRight)
-    {
+    if held(winit::keyboard::KeyCode::ArrowRight) {
         movement.0 += key_distance / state.match_state.input.zoom_level;
     }
-    if state
-        .match_state
-        .input
-        .keys_held
-        .contains(&winit::keyboard::KeyCode::ArrowUp)
-    {
+    if held(winit::keyboard::KeyCode::ArrowUp) {
         movement.1 -= key_distance / state.match_state.input.zoom_level;
     }
-    if state
-        .match_state
-        .input
-        .keys_held
-        .contains(&winit::keyboard::KeyCode::ArrowDown)
-    {
+    if held(winit::keyboard::KeyCode::ArrowDown) {
         movement.1 += key_distance / state.match_state.input.zoom_level;
     }
 

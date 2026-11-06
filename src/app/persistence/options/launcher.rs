@@ -37,6 +37,7 @@ pub(crate) fn launcher_values_from_profile(
         render_interpolation: profile.render_interpolation,
         mouse_wheel_zoom: profile.mouse_wheel_zoom,
         right_click_orders: profile.right_click_orders,
+        wasd_camera: profile.wasd_camera,
         lock_cursor: profile.lock_cursor,
         vera_icon: profile.vera_icon,
         hd_radar: profile.hd_radar,
@@ -109,6 +110,7 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_render_interpolation(&mut self, enabled: bool);
     fn store_mouse_wheel_zoom(&mut self, enabled: bool);
     fn store_right_click_orders(&mut self, enabled: bool);
+    fn store_wasd_camera(&mut self, enabled: bool);
     fn store_lock_cursor(&mut self, locked: bool);
     /// Show VERA's artwork or the red star on the window, taskbar and Dock.
     fn store_vera_icon(&mut self, vera_icon: bool);
@@ -162,6 +164,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::RightClickOrdersChanged(enabled) => {
             operations.store_right_click_orders(enabled);
+        }
+        LauncherOptionsEvent::WasdCameraChanged(enabled) => {
+            operations.store_wasd_camera(enabled);
         }
         LauncherOptionsEvent::LockCursorChanged(locked) => operations.store_lock_cursor(locked),
         LauncherOptionsEvent::VeraIconChanged(vera_icon) => operations.store_vera_icon(vera_icon),
