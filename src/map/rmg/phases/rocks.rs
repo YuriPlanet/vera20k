@@ -7,7 +7,9 @@
 //! overlay-free cell counts toward the target even when it matches neither rock
 //! terrain — a native quirk this reproduces.
 //!
-//! Non-temperate theaters skip this phase entirely (the orchestrator gates it).
+//! Non-temperate theaters skip this phase entirely (the orchestrator gates it):
+//! `PaintLatPatchesTrees_NonTemperate @ 0x005A4280` has no rock pass.
+//! Native comparison: `tools/rmg_oracle/rock_pass.py`.
 //!
 //! Native: the tail of `RandomMapGenerator::PaintLatPatchesTreesRocks_Temperate
 //! @ 0x005A3AE0` (0x005A40C3..0x005A4271). The target is drawn against
@@ -207,6 +209,95 @@ mod tests {
             run(&mut ctx, &w.args)
         };
         (placed, w)
+    }
+
+    /// The original temperate rock tail (`0x005A40C3..0x005A4277`) from
+    /// `tools/rmg_oracle/rock_pass.py`: a declared scene (not a full Generate
+    /// prefix), and every rock, cleared density and draw the original made.
+    /// Native's `RecalcAttributes` calls, one per counted pick, give the count.
+    #[test]
+    fn native_rock_pass_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/rock_pass.json");
+        let int = |v: &serde_json::Value| v.as_i64().unwrap() as i32;
+        let tiles = &doc["scene"]["tiles"];
+        let identity = TileIds {
+            sand_lat: int(&tiles["sand_lat"]),
+            green: int(&tiles["green"]),
+            green_lat: int(&tiles["green_lat"]),
+            ..ids()
+        };
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 7);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let scratch = RmgScratch::new(33, 16, 48);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                let cell = grid.get_mut(x, y).unwrap();
+                (cell.tile, cell.overlay, cell.density) = (0, -1, 0);
+            }
+            for t in input["tiles"].as_array().unwrap() {
+                let family = int(&tiles[t[2].as_str().unwrap()]);
+                grid.get_mut(int(&t[0]), int(&t[1])).unwrap().tile = family + int(&t[3]);
+            }
+            for c in input["overlay"].as_array().unwrap() {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().overlay = 0;
+            }
+            for c in input["density"].as_array().unwrap() {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().density = int(&c[2]) as u8;
+            }
+            let state = |grid: &RmgGrid| {
+                let mut out = Vec::new();
+                for y in 0..33 {
+                    for x in 0..33 {
+                        if scratch.in_diamond(x, y) {
+                            let cell = grid.get(x, y).unwrap();
+                            out.push([x, y, cell.overlay, i32::from(cell.density)]);
+                        }
+                    }
+                }
+                out
+            };
+            let before = state(&grid);
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let size = &input["size"];
+            let args = RockArgs {
+                map_w: int(&size[0]),
+                map_h: int(&size[1]),
+                stride: 33,
+            };
+            let placed = {
+                let mut ctx = RockCtx {
+                    grid: &mut grid,
+                    scratch: &scratch,
+                    ids: &identity,
+                    rng: &mut rng,
+                };
+                run(&mut ctx, &args)
+            };
+            let recalcs = row["recalcs"].as_array().unwrap();
+            assert_eq!(placed as usize, recalcs.len(), "{context}: counted picks");
+            let changed: Vec<[i32; 4]> = state(&grid)
+                .into_iter()
+                .zip(before)
+                .filter(|(now, before)| now != before)
+                .map(|(now, _)| now)
+                .collect();
+            let native: Vec<[i32; 4]> = row["changed"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| std::array::from_fn(|i| int(&c[i])))
+                .collect();
+            assert_eq!(changed, native, "{context}: overlays and densities");
+            assert_eq!(
+                rng.into_continuation().into_native_parts(),
+                super::super::cliff_native_tests::native_state(&doc, &row["rng_after"])
+                    .into_native_parts(),
+                "{context}: exit RNG"
+            );
+        }
     }
 
     #[test]
