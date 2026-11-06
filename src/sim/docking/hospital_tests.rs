@@ -18,6 +18,9 @@ struct Heard {
 impl SoundBoundary for Heard {
     fn consume(&self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
         for event in &events[self.delivered.get()..] {
+            if let SimSoundEvent::UnitRepaired { owner_admitted, .. } = event {
+                assert!(*owner_admitted, "hospital already passed House50B6F0");
+            }
             if let SimSoundEvent::VocAt {
                 sound_id,
                 rx,
@@ -107,6 +110,14 @@ fn retail_hospital_heal_sound_is_delivered_before_the_patient_leaves_cargo() {
         sim.entities().get(patient).unwrap().health.current(),
         strength - 2
     );
+    // House50B6F0 admits a campaign PlayerControl house even when it is
+    // not the local PlayerPtr. The same hospital prefix must still be sent.
+    let listener = sim.interner.intern("Russians");
+    sim.session.set_current_house_for_test(Some(listener));
+    let house = sim.houses.get_mut(&owner).unwrap();
+    house.set_is_human_for_test(false);
+    house.set_player_control_for_test(true);
+    assert!(sim.house_is_human_player(owner));
     let building = sim.entities().get(hospital).unwrap();
     assert_eq!(building.ammo().unwrap().current(), 2);
     // The real admission/contact/arrival owners prepare the hospital patient;

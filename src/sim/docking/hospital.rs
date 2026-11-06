@@ -78,6 +78,7 @@ pub(super) fn mission_repair(
                 //EVA itself is further gated by the app's radar admission.
                 sim.sound_events.emit(SimSoundEvent::UnitRepaired {
                     owner: building.owner(),
+                    owner_admitted: true,
                     radar: crate::sim::radar::RadarEventRequest::new(
                         crate::sim::radar::RadarEventType::UnitRepaired,
                         building.position.rx(),
