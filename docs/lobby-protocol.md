@@ -437,6 +437,8 @@ A game whose online match reached play adds `network_quality` to that match's
 Times are seconds, or milliseconds where the name says so; `command_round_trip_ms`
 is `{mean,max,samples}` or null, `tick_ms_p50`, `tick_ms_p99`, `fps_p50`, `fps_p5` and
 `desync_frame` may be null, and `slowed_by` lists the House each relay slowdown named.
+`fps_p50` and `fps_p5` read the presents of a moving picture: one that stands between
+frames is not drawn again, and the present after it starts a new interval.
 `underruns` counts the waits for a frame due but not yet received; `underrun_wait_ms`
 sums how late each waited-for frame arrived after its deadline and
 `max_underrun_wait_ms` is the longest, leaving out waits that end in a reconnect or

@@ -2,6 +2,8 @@
 //!
 //! Original layout `72FC60`, draw `6D0A20`, and UIMD ButtonList reader
 //! `674650`. Assets own dimensions; the bar tiles at integer native pixels.
+//! TabClass::One_Time `6D0260` (a jump to SidebarClass's) and GetTooltipText
+//! `6D1800` only forward to SidebarClass and add no TabClass behavior.
 
 use super::Rect;
 use crate::rules::ini_parser::IniSection;

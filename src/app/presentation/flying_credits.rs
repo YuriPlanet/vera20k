@@ -99,6 +99,10 @@ impl FlyingCredits {
         self.live.clear();
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        self.live.is_empty()
+    }
+
     /// One composite's aging. 10064514 ages each record after drawing it;
     /// here a composite first ages the records an earlier one drew, so a draw
     /// between composites shows the same labels. Offscreen records age too.

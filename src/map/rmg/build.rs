@@ -50,6 +50,8 @@ pub struct ResolvedTheaterInputs {
     /// Resolved tile ids, including the theater's cliff/waterfall ranges.
     pub ids: TileIds,
     pub wheel_impassable: [bool; LAND_TYPES],
+    /// Low byte of `[General] CliffBackImpassability=`.
+    pub cliff_back_impassability: u8,
     /// Per-tile `Morphable=` flag, indexed by flat tile id.
     pub morphable: Vec<bool>,
     /// The generator's sine table: always the retail table in production.
@@ -59,13 +61,18 @@ pub struct ResolvedTheaterInputs {
 
 impl ResolvedTheaterInputs {
     /// Snapshot a theater + rules into the resolved input set.
-    pub fn from_theater(theater: &TheaterData, rules: &TerrainRules) -> Self {
+    pub fn from_theater(
+        theater: &TheaterData,
+        rules: &TerrainRules,
+        cliff_back_impassability: u8,
+    ) -> Self {
         let morphable = (0..theater.lookup.len())
             .map(|tile| theater.lookup.is_morphable(tile as u16))
             .collect();
         Self {
             ids: TileIds::resolve(theater),
             wheel_impassable: wheel_impassable_from_rules(rules),
+            cliff_back_impassability,
             morphable,
             trig: Some(TrigTable::embedded()),
         }
@@ -195,6 +202,7 @@ pub fn generate_map_observed(
         blocks,
         morphable: &morphable,
         wheel_impassable: resolved.wheel_impassable,
+        cliff_back_impassability: resolved.cliff_back_impassability,
         tech_types,
         trig: resolved.trig,
         map_type: options.map_type,
@@ -332,6 +340,7 @@ mod tests {
                 w[3] = true; // Rock, as in stock rules
                 w
             },
+            cliff_back_impassability: 2,
             morphable: Vec::new(),
         }
     }
@@ -465,6 +474,43 @@ mod tests {
         }
     }
 
+    /// Map type 0's start-phase flips (`CreateStartingPoints @ 0x00594B50`,
+    /// 0x00594EA6..0x00594ED5) place a tech building on a start-free island,
+    /// and the trace binds it to its entity. Retail tiles, so the sea
+    /// separates islands into their own regions.
+    #[test]
+    fn map_type_zero_places_tech_at_start_flips() {
+        let Some((settings, resolved, blocks)) = retail_inputs() else {
+            return;
+        };
+        let types = [TechType {
+            name: "CATECH".to_string(),
+            footprint: vec![(0, 0)],
+        }];
+        let placed = (1..=8).find_map(|seed| {
+            let mut options = options(0, 0);
+            options.seed = seed;
+            let generated = generate_map(&options, &settings, &resolved, &blocks, &types);
+            let emitted =
+                generated
+                    .construction_trace
+                    .events
+                    .iter()
+                    .find_map(|event| match event.outcome {
+                        RmgConstructionOutcome::Emitted { entity_index, cell } => {
+                            Some((entity_index, cell))
+                        }
+                        RmgConstructionOutcome::Discarded => None,
+                    })?;
+            Some((generated, emitted))
+        });
+        let (generated, (entity_index, cell)) =
+            placed.expect("a map-type-0 seed wins a flip and places");
+        let entity = &generated.map_file.entities[entity_index];
+        assert_eq!(entity.type_id, "CATECH");
+        assert_eq!((entity.cell_x, entity.cell_y), cell);
+    }
+
     type Projection = (Vec<i32>, Vec<(u16, u16, u8, u8)>, Vec<(u8, u16, u16)>);
 
     /// The comparable content of a generated map: what the emitter projected
@@ -521,8 +567,14 @@ mod tests {
         let rules = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini")?;
         let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE")
             .expect("retail TEMPERATE theater");
-        let resolved =
-            ResolvedTheaterInputs::from_theater(&theater, &TerrainRules::from_ini(&rules));
+        let resolved = ResolvedTheaterInputs::from_theater(
+            &theater,
+            &TerrainRules::from_ini(&rules),
+            crate::rules::ruleset::RuleSet::from_ini(&rules)
+                .expect("retail rules")
+                .general
+                .cliff_back_impassability,
+        );
         let blocks =
             crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
                 assets.get(name)

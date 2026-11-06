@@ -293,6 +293,9 @@ pub(crate) fn build_sidebar_view_with_spec(
     // Ordinary local-player branch of 6A6610: both arrows share capacity
     // availability, independent of the current end position.
     let scroll_disabled = total_items <= layout.side2_tile_count * CAMEO_COLUMNS;
+    // `RadarClass::AddOrRemoveButtons @ 0x00652E50` adds both buttons to the
+    // gadget list whenever ToggleSidebar shows the sidebar, which every
+    // scenario keeps shown (Init and Action pass 1), so they are always laid out.
     let top_buttons = std::array::from_fn(|i| {
         let [w, h] = top_button_sizes[i].unwrap_or([0.0, 0.0]);
         SidebarScrollButton {

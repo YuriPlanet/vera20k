@@ -1148,8 +1148,18 @@ impl SidebarProjectionState {
         }
     }
 
-    /// Return the owner's retained display value, seeding a newly observed
-    /// owner from the actual balance without animating during projection build.
+    /// A fresh scenario's counter starts at zero and counts up to the balance:
+    /// InitializeScenarioFromINI reaches InitSideMixFiles, whose
+    /// TabClass::LoadSHPs @ 0x006D02B0 (call 0x00535347) clears
+    /// CreditsClass+4. Saved games run it before MouseClass::Load
+    /// (0x0067E761, 0x0067E870), so loads keep the saved value instead.
+    pub(crate) fn start_scenario_credits_counter(&mut self, owner: Option<&str>) {
+        self.restore_credits_counter(owner, Some(0));
+    }
+
+    /// Return the owner's retained display value. An owner neither started
+    /// nor restored (a save without the counter) is seeded from the actual
+    /// balance without animating during projection build.
     pub(crate) fn displayed_credits_or_seed(&mut self, owner: &str, actual: i32) -> i32 {
         *self
             .displayed_credits
@@ -1158,8 +1168,7 @@ impl SidebarProjectionState {
     }
 
     /// Advance one native CreditsClass AI step for an already observed owner.
-    /// A newly observed owner starts at the actual balance, matching the former
-    /// first-view behavior without making a view read mutate state.
+    /// An owner neither started nor restored starts at the actual balance.
     ///
     /// Returns the step's [`CreditTick`]: `Some(CreditTick { counting_up })`
     /// when the displayed value changed (native sets `animating(+0xA) = 1` and
@@ -2020,6 +2029,25 @@ mod tests {
             !projection
                 .reconcile_fixture(owner, &[candidate(a)], 3)
                 .build_inserted()
+        );
+    }
+
+    /// TabClass::LoadSHPs 0x006D02B0 zeroes the counter on every fresh
+    /// scenario, even over the previous match's value for the same House, so
+    /// a 10000 start rolls up from 0 by the 0x8F step cap with up ticks.
+    #[test]
+    fn fresh_scenario_counter_rolls_up_from_zero() {
+        let mut projection = SidebarProjectionState::default();
+        projection.displayed_credits_or_seed("Americans", 10_000);
+        projection.start_scenario_credits_counter(Some("Americans"));
+        assert_eq!(projection.displayed_credits_or_seed("Americans", 10_000), 0);
+        assert_eq!(
+            projection.advance_credits("Americans", 10_000),
+            Some(CreditTick { counting_up: true })
+        );
+        assert_eq!(
+            projection.displayed_credits_for_test("Americans"),
+            Some(0x8F)
         );
     }
 

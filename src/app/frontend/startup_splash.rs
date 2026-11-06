@@ -311,7 +311,7 @@ pub(crate) fn render_and_present(
         }
     }
     presenter.encode_present(&mut encoder, &output.texture);
-    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture);
+    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present(&gpu.queue);
     Ok(true)

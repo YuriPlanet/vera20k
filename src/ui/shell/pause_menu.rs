@@ -331,8 +331,8 @@ pub enum DisplayList {
 }
 
 /// VERA's Display group: the main menu's Zoom and Sidebar lists with their
-/// captions, and its Full Screen and Original 4:3 Shape boxes. gamemd's
-/// menus have none of them. It sits where FF's Internet Game Controls group
+/// captions, its Full Screen and Original 4:3 Shape boxes, and the FPS Counter
+/// box under them. gamemd's menus have none of them. It sits where FF's Internet Game Controls group
 /// does, or under it in FF, and takes the same ordinary placement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DisplayControlsLayout {
@@ -343,6 +343,7 @@ pub struct DisplayControlsLayout {
     pub lists: [RectPx; 2],
     pub full_screen: RectPx,
     pub original_shape: RectPx,
+    pub fps_counter: RectPx,
 }
 
 impl DisplayControlsLayout {
@@ -468,7 +469,7 @@ pub fn pause_menu_layout(
         )
     };
     let display = DisplayControlsLayout {
-        group: ordinary(58, top, 301, 74),
+        group: ordinary(58, top, 301, 92),
         captions: [
             ordinary(61, top + 14, 67, 15),
             ordinary(61, top + 33, 67, 15),
@@ -476,6 +477,9 @@ pub fn pause_menu_layout(
         lists: [face(top + 14), face(top + 33)],
         full_screen: ordinary(134, top + 56, 80, 10),
         original_shape: ordinary(222, top + 56, 130, 10),
+        // One checkbox row (18 DLU, as BBB's Target Lines and Show Hidden)
+        // under Full Screen.
+        fps_counter: ordinary(134, top + 74, 80, 10),
     };
     PauseMenuLayout {
         template,
@@ -713,7 +717,11 @@ mod tests {
         assert!(display.full_screen.x + display.full_screen.w <= display.original_shape.x);
         let group = display.group;
         assert!(display.original_shape.x + display.original_shape.w <= group.x + group.w);
-        assert!(display.full_screen.y + display.full_screen.h < group.y + group.h);
+        // The FPS Counter box takes the next row under Full Screen.
+        assert_eq!(display.fps_counter.x, display.full_screen.x);
+        assert!(display.full_screen.y + display.full_screen.h < display.fps_counter.y);
+        assert!(display.fps_counter.y + display.fps_counter.h < group.y + group.h);
+        assert!(group.y + group.h < ff.footer.y);
         assert_eq!(
             display.face_at(sidebar.x + 5, sidebar.y + 5),
             Some(DisplayList::Sidebar)

@@ -39,7 +39,8 @@ pub struct RmgOptions {
 }
 
 impl Default for RmgOptions {
-    /// The original constructor's defaults. Note `seed = -1`, which the
+    /// The original constructor's defaults (`MapSeedClass` ctor `0x00595680`,
+    /// fields +0x38..+0x74). Note `seed = -1`, which the
     /// normalizer later clamps to 0 unless a `.SED` supplies a real seed.
     fn default() -> Self {
         Self {
@@ -71,7 +72,8 @@ fn encode_description(text: &SeedDescription) -> String {
 }
 
 impl RmgOptions {
-    /// Clamp every field to its accepted range.
+    /// Clamp every field to its accepted range (`MapSeedClass::ClampFields
+    /// @ 0x005975E0`).
     ///
     /// Deliberately does **not** touch `theater`: the original normalizer has
     /// no code path that writes that field, so an out-of-range theater survives

@@ -57,7 +57,8 @@ impl InternetPauseControls {
 /// VERA's Display group. The Options profile owns the zoom, sidebar size and
 /// shape, and the window owns full screen; the group copies them each frame.
 /// Each applies at once, as on the main menu's Options pages, and the
-/// profile saves them with the rest of its values.
+/// profile saves them with the rest of its values. The FPS Counter box reads
+/// and switches the FPS panel itself, which no profile saves.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct DisplayPauseControls {
     /// The window's `Zoom::choices`, one list row each.
@@ -213,6 +214,13 @@ fn display_press(state: &mut AppState, layout: &PauseMenuLayout) -> bool {
         display.original_shape = !display.original_shape;
         state.persistence.options_profile.original_shape = display.original_shape;
         refit_match(state);
+        play_checkbox_sound(state);
+        return true;
+    }
+    if box_at(controls.fps_counter) {
+        // Ctrl+Alt+F's switch: the panel shows or hides at once, over the
+        // menu too, and starts hidden at the next launch.
+        state.renderer.fps_overlay.toggle();
         play_checkbox_sound(state);
         return true;
     }

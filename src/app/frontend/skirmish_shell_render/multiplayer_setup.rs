@@ -483,20 +483,24 @@ pub(crate) fn render_multiplayer_setup(
                             .preview_source_bounds()
                     })
                     .flatten();
+                // The host's RandMap sentinel numbers the last Generate's
+                // starts, copied back by 0x0058BB30 (0x005E67ED).
+                let entry = view
+                    .selected_map_index
+                    .and_then(|index| state.frontend.scenario_catalog.shell_maps().get(index));
+                let own_bounds = super::preview::start_marker_bounds(
+                    entry
+                        .is_some_and(super::preview::is_random_map_sentinel_entry)
+                        .then(|| state.frontend.random_map_retention.generated_header()),
+                    entry.and_then(|entry| entry.preview_source_bounds.as_ref()),
+                );
                 let bounds = state
                     .frontend
                     .network_setup_protocol
                     .as_ref()
                     .and_then(|protocol| protocol.received_preview_bounds())
                     .or(received_bounds.as_ref())
-                    .or_else(|| {
-                        view.selected_map_index
-                            .and_then(|index| {
-                                state.frontend.scenario_catalog.shell_maps().get(index)
-                            })
-                            .filter(|entry| !super::preview::is_random_map_sentinel_entry(entry))
-                            .and_then(|entry| entry.preview_source_bounds.as_ref())
-                    });
+                    .or(own_bounds.as_ref());
                 overlay.zoom = zoom_layout
                     .as_ref()
                     .map(|zoom_layout| zoom_draws(state, atlas, zoom_layout, bounds, scale));

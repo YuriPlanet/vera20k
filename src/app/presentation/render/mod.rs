@@ -56,7 +56,6 @@ mod object_stages;
 #[cfg(test)]
 mod object_stages_gpu_tests;
 
-#[cfg(feature = "telemetry-dashboard")]
 use crate::util::time::{Duration, Instant};
 use anyhow::Result;
 
@@ -99,9 +98,8 @@ impl GameRenderInstanceCounts {
 
 /// Wall-clock spans of one in-game render, in `render_game`'s phase order.
 ///
-/// Sampled by the frame owner into the diagnostics meter; readers only ever see
-/// the rolling means, never an individual frame's spans.
-#[cfg(feature = "telemetry-dashboard")]
+/// Sampled by the frame owner into the dashboard's meter and the FPS panel's;
+/// readers only ever see a window's totals or means, never one frame's spans.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct RenderPhases {
     /// Phase 1 — terrain, overlays, entities.
@@ -121,7 +119,6 @@ pub(crate) struct RenderPhases {
     pub other: Duration,
 }
 
-#[cfg(feature = "telemetry-dashboard")]
 impl RenderPhases {
     /// The seven spans in declaration order, for the meter and the wire.
     pub(crate) fn spans(&self) -> [Duration; 7] {
@@ -146,8 +143,7 @@ pub(crate) struct GameRenderOutput {
     pub instance_counts: GameRenderInstanceCounts,
     pub times: GameRenderTimes,
     pub particle_draws: Option<Vec<crate::app::presentation::instances::ParticleDrawObservation>>,
-    /// Phase spans of this render, for the diagnostics meter.
-    #[cfg(feature = "telemetry-dashboard")]
+    /// Phase spans of this render, for the dashboard's meter and the FPS panel.
     pub phases: Option<RenderPhases>,
 }
 
@@ -160,6 +156,16 @@ pub(crate) struct GameRenderTimes {
     pub message_ms: Option<u64>,
 }
 
+/// Whether this render measures its phases: for an attached dashboard, or
+/// while the FPS panel shows its Most CPU row.
+fn render_phases_wanted(state: &AppState) -> bool {
+    #[cfg(feature = "telemetry-dashboard")]
+    if state.diag.telemetry_observer.active() {
+        return true;
+    }
+    state.renderer.fps_overlay.is_visible()
+}
+
 /// Render one in-game frame: terrain, units, overlays, UI, sidebar.
 ///
 /// Orchestrates the 7-phase pipeline described in the module doc.
@@ -170,11 +176,10 @@ pub(crate) fn render_game(
     times: GameRenderTimes,
     cadence: crate::app::presentation::tactical_composite::CompositeCadence,
 ) -> Result<GameRenderOutput> {
-    // Phase accounting for the dashboard's render breakdown. One clock read per
-    // phase boundary; the spans are handed back on `GameRenderOutput` and never
-    // written into the world here.
-    #[cfg(feature = "telemetry-dashboard")]
-    let render_started = state.diag.telemetry_observer.active().then(Instant::now);
+    // Phase accounting for the dashboard's render breakdown and the FPS panel's
+    // Most CPU row. One clock read per phase boundary; the spans are handed
+    // back on `GameRenderOutput` and never written into the world here.
+    let render_started = render_phases_wanted(state).then(Instant::now);
     // RadarClass::Draw 653100 consumes timeGetTime buckets. The frame owner
     // supplies wall time normally, or the map diagnostic's recorded OS input.
     let housing_settled = state
@@ -276,18 +281,15 @@ pub(crate) fn render_game(
         })
     });
     // Phase 1: Build game-world instances (terrain, overlays, entities).
-    #[cfg(feature = "telemetry-dashboard")]
     let phase1_started = render_started.map(|_| Instant::now());
     let mut world = build_instances::build_world_instances(state, vsw, vsh, bracket_palette);
     for layer in &mut world.object_layers {
         object_extras::defer_health_to_frame(layer, world_camera.camera_pos, z);
     }
-    #[cfg(feature = "telemetry-dashboard")]
     let after_world = render_started.map(|_| Instant::now());
 
     // Phase 2: Build debug overlay instances (pathgrid, cell grid, heightmap).
     let debug = build_instances::build_debug_instances(state, vsw, vsh);
-    #[cfg(feature = "telemetry-dashboard")]
     let after_debug = render_started.map(|_| Instant::now());
 
     // Phase 3: Recompose the shroud ABuffer on the GPU, recorded into this
@@ -356,7 +358,6 @@ pub(crate) fn render_game(
         .renderer
         .terrain_draw_renderer
         .bind_surface_line_a(&state.renderer.gpu.device, shroud);
-    #[cfg(feature = "telemetry-dashboard")]
     let after_shroud = render_started.map(|_| Instant::now());
 
     // One tactical composite per Main_Tick (`tactical_composite`): the
@@ -387,19 +388,16 @@ pub(crate) fn render_game(
     // Phase 4: Update minimap + build UI instances (selection, health, placement).
     build_instances::update_minimap(state, &local_owner);
     let ui = build_instances::build_ui_instances(state, clock_ms as u32);
-    #[cfg(feature = "telemetry-dashboard")]
     let after_ui = render_started.map(|_| Instant::now());
 
     // Phase 5: Build sidebar instances, once the smooth sidebar's copies
     // follow this frame's draw scale.
     crate::app::presentation::sidebar_render::prepare_smooth_sidebar(state);
     let sidebar = build_instances::build_sidebar_instances(state);
-    #[cfg(feature = "telemetry-dashboard")]
     let after_sidebar = render_started.map(|_| Instant::now());
 
     // Phase 6: Upload all instances to GPU buffer pool.
     upload_to_gpu(state, &world, &debug, &ui, &sidebar);
-    #[cfg(feature = "telemetry-dashboard")]
     let after_upload = render_started.map(|_| Instant::now());
     state
         .match_state
@@ -660,6 +658,19 @@ pub(crate) fn render_game(
                 !effect_hidden(birth.to.x, birth.to.y)
             });
     }
+    // The effects above that age or take Main draws in each composite count
+    // while any is alive, shown or not; the lines and rings that read the
+    // composite's clock or pulse count while drawn.
+    let animated = !presentation.lasers.is_empty()
+        || !presentation.electric_bolts.is_empty()
+        || !presentation.line_trails.is_empty()
+        || !presentation.radiation_beams.is_empty()
+        || !ui.tactical_line_calls.is_empty()
+        || !ui.target_line.is_empty()
+        || !radials.draws.is_empty();
+    #[cfg(feature = "ares")]
+    let animated = animated || !presentation.flying_credits.get_mut().is_empty();
+    presentation.tactical_composite.record_contents(animated);
     let bolt_lines = presentation.electric_bolts.shown(viewport.camera);
     // Uploads consume these resolved commands and cannot take further random draws.
     let tactical_draws = crate::app::presentation::airstrike_lines::composite(
@@ -783,9 +794,7 @@ pub(crate) fn render_game(
     );
     // Prep before phase 1 plus everything after phase 6 is the `other` row:
     // combat lights and terrain prep are real work, just not a named phase.
-    #[cfg(feature = "telemetry-dashboard")]
     let finished = render_started.map(|_| Instant::now());
-    #[cfg(feature = "telemetry-dashboard")]
     let phases = render_started.map(|render_started| RenderPhases {
         world: after_world.unwrap().duration_since(phase1_started.unwrap()),
         debug: after_debug.unwrap().duration_since(after_world.unwrap()),
@@ -801,7 +810,6 @@ pub(crate) fn render_game(
         sidebar_view: sidebar.view,
         times,
         particle_draws: world.particle_draws,
-        #[cfg(feature = "telemetry-dashboard")]
         phases,
     })
 }

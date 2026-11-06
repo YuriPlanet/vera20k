@@ -106,7 +106,6 @@ pub(crate) const LOGIC_STEPS: [FrameStep; 19] = [
 impl FrameStep {
     /// The profile ledger slot this step's time folds into; a step without
     /// one folds into the next step that has one.
-    #[cfg(feature = "telemetry")]
     fn profile_slot(self) -> Option<usize> {
         use crate::sim::frame_profile::phase;
         Some(match self {
@@ -213,7 +212,6 @@ impl Simulation {
             ));
         }
         // The disabled path reads no clock and does not construct a ledger.
-        #[cfg(feature = "telemetry")]
         let mut frame_clock = self
             .frame_profiling
             .then(crate::sim::frame_profile::FrameClock::start);
@@ -255,13 +253,11 @@ impl Simulation {
         for step in LOGIC_STEPS {
             self.enter_frame_step(step);
             self.run_logic_step(step, inputs, request, &mut frame)?;
-            #[cfg(feature = "telemetry")]
             if let (Some(clock), Some(slot)) = (frame_clock.as_mut(), step.profile_slot()) {
                 clock.stamp(slot);
             }
         }
         let tail_result = self.run_late_region(inputs, &mut frame, None)?;
-        #[cfg(feature = "telemetry")]
         if let Some(clock) = frame_clock.as_mut() {
             clock.stamp(crate::sim::frame_profile::phase::LATE_AI);
         }
@@ -269,13 +265,7 @@ impl Simulation {
             .trigger_effects
             .iter()
             .any(|effect| matches!(effect, TriggerEffect::BridgeStateChanged));
-        Ok(self.complete_or_suspend_frame(
-            frame,
-            tail_result,
-            inputs,
-            #[cfg(feature = "telemetry")]
-            frame_clock,
-        ))
+        Ok(self.complete_or_suspend_frame(frame, tail_result, inputs, frame_clock))
     }
 
     /// Run one step before the tail. Each arm calls the step's owner.
@@ -870,13 +860,7 @@ impl Simulation {
         };
         let inputs = FrameInputs::new(rules, overlay_registry, pending.tick_ms, effects);
         let result = self.run_late_region(inputs, &mut pending.frame, Some(pending.cursor))?;
-        let output = self.complete_or_suspend_frame(
-            pending.frame,
-            result,
-            inputs,
-            #[cfg(feature = "telemetry")]
-            None,
-        );
+        let output = self.complete_or_suspend_frame(pending.frame, result, inputs, None);
         self.unit_voice_visit_interest.clear();
         Ok(self.collect_frame_output(output, inputs.effects))
     }
@@ -982,13 +966,7 @@ impl Simulation {
         inputs: FrameInputs<'_>,
     ) -> SimFrameOutput {
         let committed = self.commit_frame_tail(inputs, frame.execute_tick);
-        let mut frame = self.finish_master_frame(
-            frame,
-            committed,
-            inputs,
-            #[cfg(feature = "telemetry")]
-            None,
-        );
+        let mut frame = self.finish_master_frame(frame, committed, inputs, None);
         // This is the terminal match frame even when its native commit ran.
         frame.tick.state_hash = Some(self.state_hash());
         self.unit_voice_visit_interest.clear();
@@ -1025,13 +1003,7 @@ impl Simulation {
                 return Err(error);
             }
         };
-        let output = self.complete_or_suspend_frame(
-            pending.frame,
-            result,
-            inputs,
-            #[cfg(feature = "telemetry")]
-            None,
-        );
+        let output = self.complete_or_suspend_frame(pending.frame, result, inputs, None);
         Ok(self.collect_frame_output(output, inputs.effects))
     }
 
@@ -1122,7 +1094,7 @@ impl Simulation {
         mut frame: FrameCompletion,
         result: FrameTailResult,
         inputs: FrameInputs<'_>,
-        #[cfg(feature = "telemetry")] frame_clock: Option<crate::sim::frame_profile::FrameClock>,
+        frame_clock: Option<crate::sim::frame_profile::FrameClock>,
     ) -> MasterFrameOutput {
         let tick_ms = inputs.tick_ms;
         // A MindControl shot changes an existing SHP's house-colour key.
@@ -1190,13 +1162,7 @@ impl Simulation {
                 outcome_waiting,
             };
         };
-        self.finish_master_frame(
-            frame,
-            frame_committed,
-            inputs,
-            #[cfg(feature = "telemetry")]
-            frame_clock,
-        )
+        self.finish_master_frame(frame, frame_committed, inputs, frame_clock)
     }
 
     /// Finish the same frame after the single commit/pending-delete tail.
@@ -1205,9 +1171,7 @@ impl Simulation {
         frame: FrameCompletion,
         frame_committed: bool,
         inputs: FrameInputs<'_>,
-        #[cfg(feature = "telemetry")] mut frame_clock: Option<
-            crate::sim::frame_profile::FrameClock,
-        >,
+        mut frame_clock: Option<crate::sim::frame_profile::FrameClock>,
     ) -> MasterFrameOutput {
         let FrameInputs {
             rules,
@@ -1225,7 +1189,6 @@ impl Simulation {
         } = frame;
         macro_rules! profile_phase {
             ($phase:ident) => {
-                #[cfg(feature = "telemetry")]
                 if let Some(clock) = frame_clock.as_mut() {
                     clock.stamp(crate::sim::frame_profile::phase::$phase);
                 }
@@ -1298,7 +1261,6 @@ impl Simulation {
                 .is_some_and(|frames| self.session.tick().is_multiple_of(frames.get())))
         .then(|| self.state_hash());
         profile_phase!(HASH);
-        #[cfg(feature = "telemetry")]
         if let Some(clock) = frame_clock {
             let (phases, total) = clock.finish();
             self.frame_profile.record(phases, total);

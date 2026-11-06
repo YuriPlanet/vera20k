@@ -1,7 +1,26 @@
 //! Active YR PlanMgr: shared nodes and per-Techno path tokens.
 //! Native identities: append638120, commit636CE0, consume636590,
 //! lookup636E60, connect639740/639800 and delete639BC0 (gamemd.exe).
-//! The obsolete TS House path slots and Foot Formation+520 are unrelated.
+//! The obsolete TS House path slots (`WaypointPathClass`) and Foot Formation+520
+//! are unrelated. YR never fills those slots: every caller of
+//! `DisplayClass::SetWaypointMode @ 0x004AC700` passes mode 0, so its flag
+//! (+0x11B3) is never set and `DetermineAction`'s waypoint branch (0x006928A9) never
+//! runs. The functions that add waypoints (0x00502160, 0x00502290, 0x005022F0)
+//! have no references. Drawing (`Tactical::DrawWaypointPaths @ 0x006DAD60`) and
+//! following (`FootClass::ProceedToNextPlanningWaypoint @ 0x004DE580`) therefore
+//! only ever see empty paths.
+//!
+//! So VERA ports no `WaypointPathClass` member. Its only append
+//! (`0x007639A0`) and `WaypointExistsAt @ 0x00763A50` are reached only from
+//! those unreferenced adders, as is the ctor `0x00763810`, apart from
+//! `HouseClass::EnsurePlanningPathExists @ 0x00504740`. That function's one caller
+//! is the draw pass, and it makes an empty path. `SetWaypointMode`'s default
+//! ctor call (`0x005090A0`) needs a nonzero mode. The readers `GetWaypoint @
+//! 0x00763980` and `GetWaypointAfter @ 0x00763BA0` in `Enter_Idle_Mode
+//! @ 0x004D82B0` (`0x004D83F8`), `PerCellProcess @ 0x004D85D0` (`0x004D8DFF`) and the
+//! aircraft Move and Patrol missions (`0x004174B2`) are skipped while
+//! Foot+0x520 is -1, its start value (see `aircraft::move_mission`). Load, Save and CRC (`0x00763C70`,
+//! `0x00763D90`, `0x00763C00`) serve native saves, which VERA does not read.
 
 use super::Simulation;
 use crate::map::entities::EntityCategory;
@@ -107,6 +126,25 @@ struct PlanningPath {
     current: Option<CommandRecord>,
 }
 
+/// What `planning_append` did with one event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlanningAppend {
+    Refused,
+    /// The actor was already on the same-frame node at this coordinate.
+    Joined,
+    Added,
+}
+
+/// The outcome of [`Simulation::planning_selection_check`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanningSelectionCheck {
+    Admit,
+    /// No selected object is a Techno: refused without a message.
+    Refuse,
+    /// `MSG:PlanningModeHeteroSel` with ScoldSound (0x006390D0..0x0063911D).
+    Heterogeneous,
+}
+
 /// The refusals PlanMgr 0x0063A5A0 posts on a left press, each as its
 /// literal CSF key with ScoldSound.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,6 +153,16 @@ pub enum PlanningPressRefusal {
     NoAircraft,
     NoBuildings,
     NoUnknowns,
+}
+
+/// The messages PlanMgr's append 0x00638120 raises for the local house
+/// (event house == PlayerPtr, 0x0063814C), each as its literal CSF key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanningAppendMessage {
+    PostTerminatingCommand,
+    PostContinualCommand,
+    PostLoop,
+    NodeMaximum,
 }
 
 #[derive(Debug, Clone)]
@@ -131,8 +179,6 @@ pub struct PlanningPathView {
 pub struct PlanningDrawGraph {
     pub nodes: Vec<PlanningDrawNode>,
     pub actors: Vec<PlanningDrawActor>,
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) hovered_node: Option<u64>,
     pub highlighted_node: Option<u64>,
     pub hovered_coord: Option<DriveCoord>,
     pub highlighted_coord: Option<DriveCoord>,
@@ -365,6 +411,10 @@ impl PlanningState {
         }
     }
 
+    /// `PlanningNodeClass::RemoveMember @ 0x006340B0`: drop `actor`'s first
+    /// member and destroy the node it empties. Its one call (0x0063647A)
+    /// never iterates; the live removals repeat its steps (0x00636120,
+    /// 0x006386E0, 0x00638840, 0x00636B50).
     fn remove_member(&mut self, node_id: u64, actor: u64) {
         self.unindex_node(node_id);
         let Some(node) = self.nodes.get_mut(&node_id) else {
@@ -391,6 +441,9 @@ impl PlanningState {
         }
     }
 
+    /// `PlanningNodeClass::Destructor @ 0x00633D30` (ChangeOwner 0x00638840),
+    /// or 0x00635120 and `PlanningNodeClass::UnlinkGlobals @ 0x00637640`
+    /// (Clear 0x00636120, 0x00636B50): the node leaves every node list.
     fn remove_node(&mut self, node_id: u64) {
         self.unindex_node(node_id);
         self.nodes.remove(&node_id);
@@ -440,6 +493,8 @@ impl PlanningNode {
             .and_then(planning_record_target)
     }
 
+    /// `PlanningNodeClass::AddMember @ 0x00633FA0`'s node half: the member
+    /// joins the end of the node's member vector (+0x4, +0x10).
     fn insert_order(&mut self, actor: u64, record: CommandRecord) {
         let position = self.member_order.len();
         self.member_order.push(actor);
@@ -465,7 +520,9 @@ impl Simulation {
             .is_some_and(|path| !path.nodes.is_empty())
     }
 
-    /// ClearScene6370B0 and TechnoLoad70BF79 discard active YR planning.
+    /// ClearScene6370B0 and TechnoLoad70BF79 discard active YR planning:
+    /// `Planning__ResetState @ 0x006370B0` runs `PlanningTokenClass::Clear
+    /// @ 0x00636120` on each token, frees it and zeroes AC4B84.
     /// This is a player-load boundary, separate from internal serialization.
     pub(crate) fn reset_planning_after_player_load(&mut self) {
         self.planning = PlanningState::default();
@@ -600,6 +657,43 @@ impl Simulation {
         retained.wrapping_add(additional as i32) <= 0x80
     }
 
+    /// `Planning__ValidateHomogeneousSelection @ 0x00639040`, which LeftUp
+    /// runs at 0x004ABF78 before the capacity check 0x00639130. The first
+    /// selected Techno's token is the reference, and every selected object must
+    /// be a Techno whose token matches it under 0x00639E30: neither has a node,
+    /// or each owner is a member of the other's tail node. An empty selection
+    /// is admitted. A selection with no Techno is refused without a message.
+    pub fn planning_selection_check(&self, selected: &[u64]) -> PlanningSelectionCheck {
+        let is_techno = |id: &u64| self.substrate.entities.contains(*id);
+        if selected.is_empty() {
+            return PlanningSelectionCheck::Admit;
+        }
+        let Some(&first) = selected.iter().find(|id| is_techno(id)) else {
+            return PlanningSelectionCheck::Refuse;
+        };
+        let has_member = |node: &PlanningNode, actor: u64| {
+            node.live_members.values().any(|&member| member == actor)
+        };
+        let compatible = |actor: u64| match (
+            self.planning_tail_node(first),
+            self.planning_tail_node(actor),
+        ) {
+            (None, None) => true,
+            (Some(reference), Some(tail)) => {
+                has_member(reference, actor) && has_member(tail, first)
+            }
+            _ => false,
+        };
+        if selected
+            .iter()
+            .all(|&actor| is_techno(&actor) && compatible(actor))
+        {
+            PlanningSelectionCheck::Admit
+        } else {
+            PlanningSelectionCheck::Heterogeneous
+        }
+    }
+
     pub fn encode_plan_commit_record(&self, owner: InternedId) -> Option<CommandRecord> {
         // Event constructor4C66C0: header only, no route packet.
         self.planning_header(owner, 0x2b)
@@ -658,12 +752,17 @@ impl Simulation {
         self.planning_delete_record_for_node(owner, node)
     }
 
-    pub fn encode_plan_node_delete_record_at_screen(
+    /// `Planning__QueueNodeDeleteEvent @ 0x00637D00`, which Delete
+    /// (`0x00731A10`) reaches with the retained highlight AC4BF0: a 0x2C
+    /// event naming the node's first member event target.
+    pub fn encode_plan_node_delete_record_for_node(
         &self,
         owner: InternedId,
-        point: [i32; 2],
+        node: u64,
     ) -> Option<CommandRecord> {
-        let node = self.planning_node_id_at_screen(Some(owner), point)?;
+        if !self.planning_node_exists(node) {
+            return None;
+        }
         self.planning_delete_record_for_node(owner, node)
     }
 
@@ -710,23 +809,25 @@ impl Simulation {
     /// Only the presentation and input ask this. A target read looks its
     /// cell up, which stamps the fallback CellClass on a miss; the stamp
     /// stays private to the query, so drawing cannot change the simulation.
+    /// `hovered_node` is PlanMgr's AC4CCC ([`Self::planning_hover_node`]) and
+    /// `retained_highlighted_node` its AC4BF0; both are local input state. A
+    /// node that no longer exists draws neither: each node destructor
+    /// (0x00637640, 0x006340B0, 0x00633D30, 0x0063D9C0) clears both globals.
     pub fn planning_draw_graph(
         &self,
         viewer: InternedId,
-        selected: &[u64],
-        hover_point: Option<[i32; 2]>,
+        hovered_node: Option<u64>,
         retained_highlighted_node: Option<u64>,
     ) -> PlanningDrawGraph {
         self.effective_shared_cell_dummy().detached(|| {
-            self.build_planning_draw_graph(viewer, selected, hover_point, retained_highlighted_node)
+            self.build_planning_draw_graph(viewer, hovered_node, retained_highlighted_node)
         })
     }
 
     fn build_planning_draw_graph(
         &self,
         viewer: InternedId,
-        selected: &[u64],
-        hover_point: Option<[i32; 2]>,
+        hovered_node: Option<u64>,
         retained_highlighted_node: Option<u64>,
     ) -> PlanningDrawGraph {
         let mut positions = BTreeMap::new();
@@ -931,15 +1032,12 @@ impl Simulation {
         }
         //63B2F0 draws retained/hover rectangles independently of the allied
         // node drawing pass.63D650 likewise checks full node membership.
-        let hovered_node =
-            hover_point.and_then(|point| self.planning_hover_node_id(viewer, selected, point));
+        let hovered_node = hovered_node.filter(|id| self.planning.nodes.contains_key(id));
         let highlighted_node =
             retained_highlighted_node.filter(|id| self.planning.nodes.contains_key(id));
         PlanningDrawGraph {
             nodes,
             actors,
-            #[cfg(any(test, feature = "test-support"))]
-            hovered_node,
             highlighted_node,
             hovered_coord: hovered_node.and_then(|id| self.planning_node_coords(id)),
             highlighted_coord: highlighted_node.and_then(|id| self.planning_node_coords(id)),
@@ -955,8 +1053,8 @@ impl Simulation {
         self.planning_node_id_at_cell(owner, cell).is_some()
     }
 
-    /// PlanMgr 0x00638E60's hover AC4CCC: the node under `point` (Node634220
-    /// projects634550's live XYZ; its half-open hit box is16x16), kept only
+    /// PlanMgr 0x00638E60's hover AC4CCC: the node under `point`
+    /// ([`Self::planning_node_id_at_screen`]'s half-open 16x16 box), kept only
     /// when Planning__GetInvalidNodeReason admits it for `selected`. A refused
     /// node goes to AC4C3C, which nothing reads. Residuals: the press-held
     /// node AC4C38 gate is not kept (it only holds between an admitted press
@@ -964,17 +1062,7 @@ impl Simulation {
     /// mouse changes, while this re-checks it each frame against the current
     /// selection; and it hit-tests the first node in AC4C18 before its owner
     /// test, while this finds the first own node (allied plans only).
-    pub fn planning_node_at_screen(
-        &self,
-        owner: InternedId,
-        selected: &[u64],
-        point: [i32; 2],
-    ) -> Option<(u16, u16)> {
-        self.planning_node_coords(self.planning_hover_node_id(owner, selected, point)?)
-            .and_then(coord_cell)
-    }
-
-    fn planning_hover_node_id(
+    pub fn planning_hover_node(
         &self,
         owner: InternedId,
         selected: &[u64],
@@ -982,6 +1070,12 @@ impl Simulation {
     ) -> Option<u64> {
         self.planning_node_id_at_screen(Some(owner), point)
             .filter(|&node| self.planning_invalid_node_reason(selected, node).is_none())
+    }
+
+    /// Whether a node id still names a node. Input keeps AC4CCC/AC4BF0 as
+    /// ids, which node ids never reuse within one planner.
+    pub fn planning_node_exists(&self, node: u64) -> bool {
+        self.planning.nodes.contains_key(&node)
     }
 
     /// Planning__GetInvalidNodeReason 0x0063AC70 over the selection in order.
@@ -1059,7 +1153,11 @@ impl Simulation {
     }
 
     /// `None` hit-tests every house's nodes, as the press and release
-    /// loops over AC4B34 do (0x0063A5A0, 0x0063A8E0).
+    /// loops over AC4B34 do (0x0063A5A0, 0x0063A8E0). The box is
+    /// `PlanningNodeClass::GetSurfacePoint @ 0x00634400`'s point, the 8x8
+    /// `Rect_CenteredSquare @ 0x00634510` grown by 4 (`Rect_Inflate_Uniform
+    /// @ 0x006357D0`), tested half-open (0x0063DB20); the press's AC4CCC
+    /// test builds the same 8x8 with `GetSurfaceRect @ 0x006345A0`.
     fn planning_node_id_at_screen(
         &self,
         owner: Option<InternedId>,
@@ -1165,6 +1263,8 @@ impl Simulation {
         actors
     }
 
+    /// `PlanningNodeClass::GetCoords @ 0x006343C0`: the first member's
+    /// event coordinates (0x00633BC0).
     fn planning_node_coords(&self, id: u64) -> Option<DriveCoord> {
         self.planning_target_coords(self.planning.nodes.get(&id)?.target()?)
     }
@@ -1240,21 +1340,39 @@ impl Simulation {
             .min()
     }
 
+    /// `TechnoClass::ClearPlanningTokens @ 0x006386E0`: a nonempty path runs
+    /// `PlanningTokenClass::Clear @ 0x00636120`'s body inline, then the
+    /// in-flight latch +0x1C clears. Callers apply its event +0x1D gate.
     pub(super) fn planning_detach_actor(&mut self, id: u64) {
-        if let Some(mut path) = self.planning.paths.remove(&id) {
-            if !path.nodes.is_empty() {
-                self.release_planning_charge(id);
-                path.pending = -1;
-                path.loop_start = None;
-                path.loop_changed = false;
-            }
-            for node in std::mem::take(&mut path.nodes) {
-                self.planning.remove_member(node, id);
-            }
-            path.executing = false;
-            if path.current.is_some() || path.loop_changed {
-                self.planning.paths.insert(id, path);
-            }
+        if self.planning_has_remaining_nodes(id) {
+            self.clear_planning_token(id);
+        }
+        let Some(path) = self.planning.paths.get_mut(&id) else {
+            return;
+        };
+        path.executing = false;
+        if path.current.is_none() && !path.loop_changed {
+            self.planning.paths.remove(&id);
+        }
+    }
+
+    /// `PlanningTokenClass::Clear @ 0x00636120`, whose body 0x006386E0 and
+    /// ChangeOwner 0x00638840 also run inline: a nonempty path releases the
+    /// house's charge, the future nodes lose this member and the cursors
+    /// reset; +1C/+1D stay.
+    fn clear_planning_token(&mut self, actor: u64) {
+        if self.planning_has_remaining_nodes(actor) {
+            self.release_planning_charge(actor);
+        }
+        let Some(path) = self.planning.paths.get_mut(&actor) else {
+            return;
+        };
+        let nodes = std::mem::take(&mut path.nodes);
+        path.pending = -1;
+        path.loop_start = None;
+        path.loop_changed = false;
+        for node in nodes {
+            self.planning.remove_member(node, actor);
         }
     }
 
@@ -1271,11 +1389,16 @@ impl Simulation {
         }
     }
 
+    /// `PlanningTokenClass::CreateForTechno @ 0x00638A80`, which InitManagers
+    /// calls when Techno+0x514 is empty (0x006F3F77..0x006F3F83), appends
+    /// the new token to AC4C78.
     pub(super) fn initialize_planning_token(&mut self, actor: u64) {
         self.planning.register_token(actor);
     }
 
-    /// Techno6F4507..6F4531, after Foot disposal and before voice/Anim tails.
+    /// `PlanningTokenClass::ClearAndDelete @ 0x00636310`: Clear inline, then
+    /// the token leaves AC4C78 and is freed. Techno6F4507..6F4531, after
+    /// Foot disposal and before voice/Anim tails.
     pub(super) fn destroy_planning_token(&mut self, actor: u64) {
         self.planning_detach_actor(actor);
         self.planning.paths.remove(&actor);
@@ -1283,21 +1406,10 @@ impl Simulation {
         self.planning.token_order.retain(|id| *id != actor);
     }
 
-    /// ChangeOwner638840 clears future nodes/cursors, preserving +1C/+1D.
+    /// ChangeOwner638840 runs `PlanningTokenClass::Clear @ 0x00636120`'s
+    /// body inline.
     pub(super) fn planning_change_owner(&mut self, actor: u64) {
-        if self.planning_has_remaining_nodes(actor) {
-            self.release_planning_charge(actor);
-        }
-        let Some(path) = self.planning.paths.get_mut(&actor) else {
-            return;
-        };
-        let nodes = std::mem::take(&mut path.nodes);
-        path.pending = -1;
-        path.loop_start = None;
-        path.loop_changed = false;
-        for node in nodes {
-            self.planning.remove_member(node, actor);
-        }
+        self.clear_planning_token(actor);
     }
 
     /// PlanMgr637270: after frame commit and deferred finalization, walk
@@ -1430,91 +1542,133 @@ impl Simulation {
                 true
             }
             4 if record.payload()[22] == 1 => {
-                let accepted = self.planning_append(owner, record);
-                if accepted {
-                    self.sound_events
-                        .emit(super::SimSoundEvent::PlanningNodeAdded { owner });
+                // 0x00638593..0x006385AE plays AddPlanningModeCommandSound only
+                // for a new node; an actor joining one jumps past it to
+                // 0x006385B3 (0x00638210).
+                match self.planning_append(owner, record) {
+                    PlanningAppend::Refused => false,
+                    PlanningAppend::Joined => true,
+                    PlanningAppend::Added => {
+                        self.sound_events
+                            .emit(super::SimSoundEvent::PlanningNodeAdded { owner });
+                        true
+                    }
                 }
-                accepted
             }
             _ => false,
         }
     }
 
-    fn planning_append(&mut self, owner: InternedId, record: &CommandRecord) -> bool {
+    fn planning_append(&mut self, owner: InternedId, record: &CommandRecord) -> PlanningAppend {
         let mut ordinary = record.clone();
         ordinary.payload_mut()[22] = 0;
         let Some(order) = MegaMissionRecord::decode(&ordinary) else {
-            return false;
+            return PlanningAppend::Refused;
         };
         let Ok(actor) = u64::try_from(order.source_id) else {
-            return false;
+            return PlanningAppend::Refused;
         };
         let Some(entity) = self.substrate.entities.get(actor) else {
-            return false;
+            return PlanningAppend::Refused;
         };
+        let Some(target) = planning_record_target(record) else {
+            return PlanningAppend::Refused;
+        };
+        let Some(coord) = self.planning_target_coords(target) else {
+            return PlanningAppend::Refused;
+        };
+        let Some(cell) = coord_cell(coord) else {
+            return PlanningAppend::Refused;
+        };
+        // 0x0063819C..0x006381F3 reuses this house's node at the same XYZ and
+        // frame. An actor already on it is accepted with nothing added
+        // (0x00638208, 0x00634290), before the disposition check 0x00638CE0:
+        // the other members' events of a group append reach this.
+        let frame = record.frame_stamp();
+        let shared = self
+            .planning_candidates(owner, cell)
+            .filter(|id| {
+                self.planning.nodes[id].frame == frame
+                    && self.planning_node_coords(*id) == Some(coord)
+            })
+            .min();
+        if let Some(id) = shared
+            && self.planning.nodes[&id]
+                .live_members
+                .values()
+                .any(|&member| member == actor)
+        {
+            return PlanningAppend::Joined;
+        }
         //638120 requires a resolved actor; ordinary-event admission is deferred
         // until its generated flag2 is dispatched, even after capture.
-        // Append63821F accepts only disposition -1 from638CE0. A Cell
-        // Attack/AreaGuard tail is terminal even while it is still being edited.
-        if self
+        // Append63821F accepts only disposition -1 from638CE0.
+        // 0x0063822C and the later tests: only the local house hears these;
+        // the presentation owner compares `owner` with it.
+        let refuse = |sim: &mut Self, message| {
+            sim.lifecycle_outputs
+                .emit(super::lifecycle::LifecycleOutput::PlanningAppendRefused { owner, message });
+            PlanningAppend::Refused
+        };
+        // PlanMgr638B70 (638CE0's first test) rejects AreaGuard with no target
+        // or the actor's current CellStruct as disposition 0: no message for a
+        // MEGAMISSION (0x00638238..0x00638274).
+        if matches!(order.order, MegaMissionOrder::AreaGuard { .. })
+            && cell == (entity.position.rx(), entity.position.ry())
+        {
+            return PlanningAppend::Refused;
+        }
+        // 638CE0 then reads the actor's tail event: mission +0xC Enter,
+        // Capture or Eaten is terminal (1, PostTerminatingCommand 0x006382B6);
+        // a continual tail 638C40 accepts is 2 (PostContinualCommand
+        // 0x0063831B). A tail is terminal even while it is still being edited.
+        let tail = self
             .planning
             .paths
             .get(&actor)
             .and_then(|path| path.nodes.last())
             .and_then(|id| self.planning.nodes.get(id))
-            .and_then(|node| node.order(actor))
-            .is_some_and(|record| {
-                let mut ordinary = record.clone();
-                ordinary.payload_mut()[22] = 0;
-                matches!(
-                    MegaMissionRecord::decode(&ordinary).map(|order| order.order),
-                    Some(MegaMissionOrder::Attack {
-                        target: MegaMissionTarget::Cell { .. }
-                    }) | Some(MegaMissionOrder::AreaGuard {
-                        post: MegaMissionTarget::Cell { .. } | MegaMissionTarget::Null
-                    })
-                )
-            })
-        {
-            return false;
-        }
-        let Some(target) = planning_record_target(record) else {
-            return false;
-        };
-        let Some(coord) = self.planning_target_coords(target) else {
-            return false;
-        };
-        let Some(cell) = coord_cell(coord) else {
-            return false;
-        };
-        // PlanMgr638B70 rejects AreaGuard with no target or the actor's
-        // current CellStruct; this is separate from commit admission.
-        if matches!(order.order, MegaMissionOrder::AreaGuard { .. })
-            && cell == (entity.position.rx(), entity.position.ry())
-        {
-            return false;
+            .and_then(|node| node.order(actor));
+        if let Some(tail) = tail {
+            let (mission, kind) = (tail.payload()[5], tail.payload()[11]);
+            if matches!(mission, 7..=9) {
+                return refuse(self, PlanningAppendMessage::PostTerminatingCommand);
+            }
+            if planning_continual(mission, kind) {
+                return refuse(self, PlanningAppendMessage::PostContinualCommand);
+            }
         }
         // 6384DC compares 10h directly in this active append path.
         self.planning.register_token(actor);
-        if self
-            .planning
-            .paths
-            .get(&actor)
-            .is_some_and(|path| path.nodes.len() == 16 || path.loop_start.is_some())
-        {
-            return false;
+        let (count, looped) = self.planning.paths.get(&actor).map_or((0, false), |path| {
+            (path.nodes.len(), path.loop_start.is_some())
+        });
+        // 0x00638378..0x006383BF: for the local house a new terminal or
+        // continual event leaves AC4C90 0 for PlanMgr637270's frame pass, and
+        // the fifteenth node leaves 2. Both are set before the loop and
+        // count refusals below.
+        let (mission, kind) = (record.payload()[5], record.payload()[11]);
+        let pending = if matches!(mission, 7..=9) || planning_continual(mission, kind) {
+            Some(PlanningAppendMessage::PostTerminatingCommand)
+        } else {
+            (count == 15).then_some(PlanningAppendMessage::NodeMaximum)
+        };
+        if let Some(message) = pending {
+            self.lifecycle_outputs.emit(
+                super::lifecycle::LifecycleOutput::PlanningFramePassQueued { owner, message },
+            );
         }
-        let frame = record.frame_stamp();
-        let shared = self
-            .planning_candidates(owner, cell)
-            .filter(|id| {
-                let node = &self.planning.nodes[id];
-                node.frame == frame
-                    && !node.orders.contains_key(&actor)
-                    && self.planning_node_coords(*id) == Some(coord)
-            })
-            .min();
+        if looped {
+            return refuse(self, PlanningAppendMessage::PostLoop);
+        }
+        if count == 16 {
+            return refuse(self, PlanningAppendMessage::NodeMaximum);
+        }
+        // 0x00636EB0 reads the actor's tail before the new node joins it.
+        let tail_members: Vec<u64> = self
+            .planning_tail_node(actor)
+            .map(|node| node.live_members.values().copied().collect())
+            .unwrap_or_default();
         let id = if let Some(id) = shared {
             id
         } else {
@@ -1539,26 +1693,45 @@ impl Simulation {
         {
             *charge = charge.wrapping_add(1);
         }
-        let node = self.planning.nodes.get_mut(&id).unwrap();
-        node.insert_order(actor, record.clone());
-        self.planning.index_node(id);
-        let path = self
-            .planning
-            .paths
-            .entry(actor)
-            .or_insert_with(|| PlanningPath {
-                nodes: Vec::new(),
-                pending: 0,
-                loop_start: None,
-                loop_changed: false,
-                executing: false,
-                current: None,
-            });
-        if path.pending == -1 {
-            path.pending = path.nodes.len() as i32;
+        // With no tail the actor joins alone (0x00633FA0). Otherwise
+        // 0x00639A50 gives every member of that tail, in encounter order, a
+        // copy of the event with itself as source (0x00639A8B..0x00639A9B)
+        // and the node on its path, whether it is selected or not.
+        let members = if tail_members.is_empty() {
+            vec![actor]
+        } else {
+            tail_members
+        };
+        for member in members {
+            let Ok(source) = i32::try_from(member) else {
+                continue;
+            };
+            let mut member_record = record.clone();
+            member_record.payload_mut()[0..4].copy_from_slice(&source.to_le_bytes());
+            self.planning
+                .nodes
+                .get_mut(&id)
+                .unwrap()
+                .insert_order(member, member_record);
+            let path = self
+                .planning
+                .paths
+                .entry(member)
+                .or_insert_with(|| PlanningPath {
+                    nodes: Vec::new(),
+                    pending: 0,
+                    loop_start: None,
+                    loop_changed: false,
+                    executing: false,
+                    current: None,
+                });
+            if path.pending == -1 {
+                path.pending = path.nodes.len() as i32;
+            }
+            path.nodes.push(id);
         }
-        path.nodes.push(id);
-        true
+        self.planning.index_node(id);
+        PlanningAppend::Added
     }
 
     fn planning_connect(
@@ -1613,6 +1786,9 @@ impl Simulation {
             let node = self.planning.nodes.get_mut(node_id).unwrap();
             //639800 copies each suffix member for the selected source path,
             // not the node's unrelated first member.634290 finds its first.
+            // PlanningTokenClass::CopyPathRangeToTechno 0x006367B0 copies
+            // [index, count); the loop prefix goes through AddMember
+            // 0x00633FA0 (0x00639942).
             let Some(template) = node.order(source_actor) else {
                 continue;
             };
@@ -1843,6 +2019,13 @@ fn planning_record_target(record: &CommandRecord) -> Option<MegaMissionTarget> {
     [7, 17, 12].into_iter().find_map(|offset| {
         read_target(record, offset).filter(|target| *target != MegaMissionTarget::Null)
     })
+}
+
+/// `0x00638C40`: an Attack (1) or AreaGuard (11) whose primary target kind
+/// (event+0x12) is a Cell, or an AreaGuard with none. Arguments are the
+/// event's mission byte (+0xC) and that kind.
+fn planning_continual(mission: u8, kind: u8) -> bool {
+    matches!(mission, 1 | 11) && (kind == 0x0b || (mission == 11 && kind == 0))
 }
 
 fn coord_cell(coord: DriveCoord) -> Option<(u16, u16)> {

@@ -96,6 +96,9 @@ pub enum RampShape {
 ///
 /// Stops the moment the bar is met, so it is a threshold test and never a
 /// count. Cells outside the diamond are skipped, not counted as misses.
+///
+/// Native: `RmgGrid::CountRegionCellsInRect @ 0x005A1E50`, which also ignores
+/// its lower-region argument.
 pub(crate) fn region_meets_quota_in_rect(
     scratch: &RmgScratch,
     rect: (i32, i32, i32, i32),

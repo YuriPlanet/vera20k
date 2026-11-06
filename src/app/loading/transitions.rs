@@ -267,6 +267,8 @@ pub(crate) fn install_world_presentation(
     }
 
     // The final sidebar projection resolves incoming side/radar authority.
+    // `RadarClass::Init_Clear @ 0x00652DE0` starts each scenario offline at
+    // frame 0, outside any movie mode, with TacticalMapAvailable clear.
     state.match_state.match_presentation.radar_anim = None;
     state.match_state.match_presentation.radar_animation_source = None;
     state.match_state.match_presentation.radar_content_insets = None;
@@ -617,6 +619,12 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .match_presentation
         .sidebar_projection
         .reset_cameo_seed();
+    let owner = state.match_state.local_player_owner().map(str::to_owned);
+    state
+        .match_state
+        .match_presentation
+        .sidebar_projection
+        .start_scenario_credits_counter(owner.as_deref());
     if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
         runtime
             .simulation
@@ -650,12 +658,18 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     );
     state.match_state.input.reset_targeting_for_new_world();
     state.match_state.match_presentation.active_sidebar_tab = SidebarTab::default_active_tab();
-    state.match_state.match_presentation.message_list = crate::ui::messages::MessageList::new(
-        3,
-        0,
-        crate::ui::messages::MESSAGE_MAX_VISIBLE_RETAIL,
-        0,
-    );
+    // Read_Scenario's Init (`0x00684AC9`). Start_Scenario then changes video
+    // mode when the game size differs from the shell's (`0x00683DB8..0x00683DF3`):
+    // Change_Video_Mode's Set_View_Dimensions (`0x005610EC`) Inits the empty
+    // list again and SetWidth leaves it 6 px wider. VERA's match takes the
+    // window's size, so a match frame other than the 800x600 shell stands for
+    // that switch.
+    let mut message_list = crate::ui::messages::MessageList::scenario();
+    let shell = crate::app::persistence::options_profile::RETAIL_SHELL_SIZE;
+    if (state.render_width(), state.render_height()) != (shell.width, shell.height) {
+        message_list.set_width(tactical_width as i32);
+    }
+    state.match_state.match_presentation.message_list = message_list;
     state.match_state.match_presentation.chat = Default::default();
     // Clear_Scene6851F0 -> 534450 resets BeaconManagerClass (53499B).
     // Display Init_Clear4A88C0 clears +11B0..+11B2, not beacon mode +11B4.
