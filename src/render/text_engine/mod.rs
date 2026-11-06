@@ -35,7 +35,9 @@ pub(crate) use atlas::SUBPIXEL_STEPS;
 use atlas::{GlyphAtlas, GlyphKey};
 use fonts::{BASELINE, CJK_WEIGHT, LATIN_WEIGHT, LATIN_WIDTH_PERCENT, OTHER_WEIGHT, TextClass};
 
-/// Which face interface text draws in. `[VERA] Font=` in VERA.INI.
+/// Which face interface text draws in. The options profile picks it at
+/// startup from `[VERA] OriginalFont=`, which is on by default; `Default` is
+/// only the face a font starts in until then.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum FontMode {
     /// The bundled vector fonts, drawn at window resolution.
