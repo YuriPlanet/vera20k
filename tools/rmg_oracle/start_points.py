@@ -182,9 +182,12 @@ class StartPointsFixture:
                                self.u.mem_read(record + 0x45, 1)[0]]
         return out
 
-    def execute(self, case, pool, entry, this, args, extra=None):
+    def execute(self, case, pool, entry, this, args, extra=None, until=None, frame=None):
         """`extra(machine, pc, sp)` may serve a declared substitution and
-        returns whether it did."""
+        returns whether it did. With `until`, `entry` starts a slice of a
+        function that runs up to that address with EBX zero (the zero
+        register of the slices here) on `frame`, a fresh one by default;
+        `this` and `args` are then unused, and a fresh frame must balance."""
         from tools import native_oracle as native
         from tools.rmg_oracle.gen_rng_vectors import check_code
         from unicorn import UC_HOOK_CODE
@@ -206,8 +209,19 @@ class StartPointsFixture:
         hook = u.hook_add(UC_HOOK_CODE, observe)
         f.active = True
         try:
-            m.invoke(entry, this, args, instruction_limit=500_000_000,
-                     timeout_us=300_000_000, context=dict(control=case['id']))
+            if until is None:
+                m.invoke(entry, this, args, instruction_limit=500_000_000,
+                         timeout_us=300_000_000, context=dict(control=case['id']))
+            else:
+                from unicorn.x86_const import UC_X86_REG_EBX
+                fresh = frame is None
+                frame = m.alloc(0x400) + 0x200 if fresh else frame
+                u.reg_write(UC_X86_REG_ESP, frame)
+                u.reg_write(UC_X86_REG_EBX, 0)
+                native.run_checked(u, entry, until, count=500_000_000, timeout_us=300_000_000,
+                                   context=dict(control=case['id']))
+                native.require(not fresh or u.reg_read(UC_X86_REG_ESP) == frame,
+                               f"{case['id']}: the slice left its frame unbalanced")
             for start, size in self.base.blocks:
                 native.require(bytes(u.mem_read(start, size)) == bytes([0xA5]) * size,
                                f"{case['id']}: native pool overran its allocation")

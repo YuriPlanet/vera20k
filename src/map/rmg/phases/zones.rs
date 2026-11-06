@@ -140,6 +140,37 @@ impl ZoneField {
     pub fn is_reference_ground(&self, x: i32, y: i32) -> bool {
         self.class(x, y) == CLASS_CLEAR && self.zone(x, y) == self.reference
     }
+
+    /// A declared field for native comparisons that supply the zones: `typed`
+    /// cells take a non-clear class, `ground` cells the reference zone and
+    /// every other cell a second zone.
+    #[cfg(test)]
+    pub(crate) fn declared(
+        stride: usize,
+        typed: impl Fn(i32, i32) -> bool,
+        ground: impl Fn(i32, i32) -> bool,
+    ) -> Self {
+        let records = (0..stride * stride)
+            .map(|index| {
+                let (x, y) = ((index % stride) as i32, (index / stride) as i32);
+                Record {
+                    class: if typed(x, y) {
+                        CLASS_BEACH
+                    } else {
+                        CLASS_CLEAR
+                    },
+                    level: 0,
+                    zone: if ground(x, y) { 1 } else { 2 },
+                }
+            })
+            .collect();
+        Self {
+            stride,
+            records,
+            derived: vec![0xFFFF, 2, 3],
+            reference: 2,
+        }
+    }
 }
 
 /// The land type `CellClass::RecalcAttributes @ 0x0047D2B0` leaves on a
