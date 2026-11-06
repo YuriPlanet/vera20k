@@ -5,8 +5,10 @@
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner_name;
 use crate::app::input::cursor::{
-    current_cursor_feedback_kind, cursor_id_for_feedback, software_cursor_frame_index,
+    CursorTargets, current_cursor_feedback_kind, cursor_id_for_feedback,
+    software_cursor_frame_index,
 };
+use crate::app::input::entity_pick::HoverObject;
 use crate::app::presentation::instances::in_view;
 use crate::app::types::{CursorId, HoverTargetKind, SoftwareCursorSequence};
 use crate::assets::csf_file::{CsfArg, format_csf};
@@ -28,31 +30,15 @@ const UNIT_PIPS_INFANTRY: u32 = 8;
 const UNIT_PIP_STEP_X: f32 = 2.0;
 
 /// The object under the cursor whose health bar the original draws on hover,
-/// for either Techno health branch.
+/// for either Techno health branch, from the frame's cursor `hover`
+/// ([`CursorTargets::hover`]).
 ///
 /// The per-object overlay pass calls the health-bar slot from exactly two arms:
 /// the object is selected, or the object carries the cursor's hover flag and is
 /// *not* selected. The hover flag is set from the cursor's resolved action
 /// target, so a shrouded enemy — which is never an action target — is excluded.
-pub(crate) fn health_hover_target(state: &AppState, local_owner: Option<&str>) -> Option<u64> {
-    let sim = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .map(|rt| &rt.simulation)?;
-    let local_owner = local_owner?;
-    let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
-    );
-    let hover = crate::app::input::entity_pick::hover_target_at_point(
-        crate::app::input::entity_pick::presented(state, sim),
-        world_x,
-        world_y,
-        local_owner,
-        state.match_state.sandbox_full_visibility,
-    )?;
+pub(crate) fn health_hover_target(hover: Option<HoverObject>) -> Option<u64> {
+    let hover = hover?.techno()?;
     match hover.kind {
         HoverTargetKind::FriendlyStructure
         | HoverTargetKind::EnemyStructure
@@ -2005,13 +1991,16 @@ pub(crate) fn scale_pip_draws(
 /// start `DefaultCursor` at row 0. Re-deriving the shape every frame shows the
 /// same row once its owner re-issues it; `GetDefaultCursor` (`0x0040D280`,
 /// slot +0xA0) has no display caller among the 47 `call [reg+0xA0]` sites.
-fn active_cursor_sequence(state: &AppState) -> Option<(CursorId, &SoftwareCursorSequence)> {
+fn active_cursor_sequence<'a>(
+    state: &'a AppState,
+    targets: &CursorTargets,
+) -> Option<(CursorId, &'a SoftwareCursorSequence)> {
     let cursor = state
         .match_state
         .match_presentation
         .software_cursor
         .as_ref()?;
-    let kind = current_cursor_feedback_kind(state);
+    let kind = current_cursor_feedback_kind(state, targets);
     state.match_state.input.note_shown_cursor(kind);
     let id: CursorId = kind
         .and_then(cursor_id_for_feedback)
@@ -2022,14 +2011,14 @@ fn active_cursor_sequence(state: &AppState) -> Option<(CursorId, &SoftwareCursor
 /// The cursor id the production draw shows now. Like a draw, it notes the
 /// shown cursor, so a held button over the sidebar keeps it.
 pub(crate) fn shown_cursor_id(state: &AppState) -> Option<CursorId> {
-    active_cursor_sequence(state).map(|(id, _)| id)
+    active_cursor_sequence(state, &CursorTargets::read(state)).map(|(id, _)| id)
 }
 
 /// Observation of the same cursor selection used by the production draw.
 /// Map captures admit only a static arrow, so cursor wall time cannot alter it.
 pub(crate) fn static_default_cursor(state: &AppState) -> bool {
     state.use_software_cursor()
-        && active_cursor_sequence(state)
+        && active_cursor_sequence(state, &CursorTargets::read(state))
             .is_some_and(|(id, sequence)| id == CursorId::Default && sequence.interval_ms == 0)
 }
 
@@ -2041,13 +2030,15 @@ pub(crate) struct SoftwareCursorDraw {
     frame: usize,
 }
 
+/// The draw's cursor sprite, for its cursor `targets`.
 pub(crate) fn build_software_cursor_instances(
     state: &AppState,
+    targets: &CursorTargets,
 ) -> (Vec<SpriteInstance>, Option<SoftwareCursorDraw>) {
     if !state.use_software_cursor() || !state.match_state.input.cursor_visibility.is_visible() {
         return (Vec::new(), None);
     }
-    let Some((id, sequence)) = active_cursor_sequence(state) else {
+    let Some((id, sequence)) = active_cursor_sequence(state, targets) else {
         return (Vec::new(), None);
     };
     // Row 0 is still the shape shown over a node, so its phase steps:
