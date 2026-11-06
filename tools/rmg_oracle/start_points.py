@@ -176,7 +176,9 @@ class StartPointsFixture:
                                self.u.mem_read(record + 0x45, 1)[0]]
         return out
 
-    def execute(self, case, pool, entry, this, args):
+    def execute(self, case, pool, entry, this, args, extra=None):
+        """`extra(machine, pc, sp)` may serve a declared substitution and
+        returns whether it did."""
         from tools import native_oracle as native
         from tools.rmg_oracle.gen_rng_vectors import check_code
         from unicorn import UC_HOOK_CODE
@@ -187,6 +189,8 @@ class StartPointsFixture:
 
         def observe(machine, pc, _size, _data):
             if machine.reg_read(UC_X86_REG_EIP) != pc:
+                return
+            if extra and extra(machine, pc, machine.reg_read(UC_X86_REG_ESP)):
                 return
             if pc == RNG_NEXT:
                 native.require(machine.reg_read(UC_X86_REG_ECX) == f.rngs['mapgen'], 'Unexpected RNG stream')

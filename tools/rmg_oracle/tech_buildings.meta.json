@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "8 whole original AddTechBuildings calls: 5 whole-map rows (map types 1, 3 and 4; walls, prior objects, start locks, raised and sloped cells, Rock land, a clipped playfield, the 200-draw anchor cap with a destroyed building) and 3 map-type-2 rows through PlaceTechBuildingInRegion (quota-0 regions skipped, a region exhausted to its 100-attempt cap, walls and locks); every pass, count, type and anchor draw and each building's cell",
+  "assumptions": [
+    "Existing CliffFixture, TiberiumFieldFixture and StartPointsFixture own original-constructed Cell backing, admission, the stride-33 scratch, the physical clear/cliff TMP registration and the guarded arena; bounds 16..48, MapClass +F4 width 16, +FC local rect (2, 5, w, h) with h <= 4, so the playfield lies inside the map diamond as on generated maps. Scratch region and stamp 0, +45 lock 0 unless declared. Cells start tile 0, level 0, slope 0, no object (+E4), land type Clear (+EC).",
+    "Declared scene: CliffSet-base (non-clear) cells, a prior object pointer in +E4, land type 3 in +EC, +45 locks, levels and slopes. Land types are declared, not computed by RecalcAttributes 47D2B0. Not a complete Generate prefix.",
+    "MapSeed +3C map type; region vector ABDF94/ABDFA0 records with +20 start quota and +2C/+38 cell list. A zeroed RulesClass block whose +AE0/+AEC NeutralTechBuildings holds one declared type object per row foundation. FPCW 0E7F. All streams seeded by original 65C6D0."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS, with guard bytes after each block that refuse a pool overrun; native code bytes unchanged. No draw, anchor or gate result is supplied.",
+    "BuildingClass constructor 43B740 records its type and writes only the vtable and +520 type. The type vtable +90 (GetFoundationData 45EC20) returns the declared foundation. Building vtable +D8 Unlimbo always succeeds, recording the cell and occupying the foundation cells' +E4; vtable +20 records the destroy. BuildingClass::Unlimbo's own admission and side effects are not executed."
+  ],
+  "entry_points": {
+    "add_tech_buildings": "0x005A95B0",
+    "place_tech_building_in_region": "0x00595400",
+    "building_ctor": "0x0043B740",
+    "next": "0x0065C780"
+  },
+  "replay_command": "python -m tools.rmg_oracle.tech_buildings",
+  "payload_sha256": "95aa717cfaa311265be92ad631cd0f056a92b121e919b00aca79266675294f5b"
+}
