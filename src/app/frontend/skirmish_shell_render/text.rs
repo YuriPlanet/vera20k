@@ -182,7 +182,7 @@ pub(super) fn push_button_label_draw(
         label,
         text_rect,
         button_label_color_for_disabled(disabled),
-        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+        ShellAlign::BUTTON_CAPTION,
         depth,
         scale.factor(),
     );
@@ -534,7 +534,7 @@ pub(super) fn dialog_statics_labels(
     let shown = statics.paint(crate::util::time::Instant::now(), sliding);
     shown
         .heading
-        .map(|shown| static_label(shown, title, ShellAlign::H_CENTER))
+        .map(|shown| static_label(shown, title, ShellAlign::PANEL_TITLE))
         .into_iter()
         .chain(status_line_label(shown.status_line, status_line))
         .collect()
@@ -980,7 +980,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
             &localized_label(state, key, fallback),
             button_text_rect(rect, modal.pressed_control == Some(control), scale),
             button_label_color_for_disabled(!modal.is_enabled(control)),
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            ShellAlign::BUTTON_CAPTION,
             SHELL_DROPDOWN_TEXT_DEPTH - 0.00009,
             scale.factor(),
         );

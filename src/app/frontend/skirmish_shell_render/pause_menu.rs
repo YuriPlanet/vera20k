@@ -134,7 +134,7 @@ fn text_draws(
             &title,
             layout.title,
             SHELL_LABEL_TEXT_RGB,
-            ShellAlign::H_CENTER,
+            ShellAlign::PANEL_TITLE,
         ));
     }
     // The common handler shows the hovered control's 6040B0 help in 0x695.

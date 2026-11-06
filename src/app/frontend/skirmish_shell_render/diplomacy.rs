@@ -103,7 +103,7 @@ pub(crate) fn render_diplomacy_shell(
         &localized_label(state, TITLE_LABEL.0, TITLE_LABEL.1),
         layout.title,
         SHELL_LABEL_TEXT_RGB,
-        ShellAlign::H_CENTER,
+        ShellAlign::PANEL_TITLE,
     );
     for header in DiplomacyHeader::ALL {
         let shown = match header {

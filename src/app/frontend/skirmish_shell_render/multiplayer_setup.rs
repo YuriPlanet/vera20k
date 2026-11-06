@@ -128,14 +128,12 @@ pub(crate) fn render_multiplayer_setup(
             .set_map_labels(&view.mode_label, &view.map_label, now);
         let shown = ui.statics.paint(now, sliding);
         [
-            (shown.heading, layout.page.title),
-            (shown.game_type, layout.mode_label),
-            (shown.map_label, layout.map_label),
+            (shown.heading, layout.page.title, ShellAlign::PANEL_TITLE),
+            (shown.game_type, layout.mode_label, ShellAlign::H_CENTER),
+            (shown.map_label, layout.map_label, ShellAlign::H_CENTER),
         ]
         .into_iter()
-        .filter_map(|(shown, rect)| {
-            shown.map(|shown| static_label(shown, rect, ShellAlign::H_CENTER))
-        })
+        .filter_map(|(shown, rect, align)| shown.map(|shown| static_label(shown, rect, align)))
         .chain(status_line_label(
             shown.status_line,
             layout.page.status_help,
@@ -542,7 +540,7 @@ pub(crate) fn render_multiplayer_setup(
                         ),
                         button_text_rect(button.rect, pressed, scale),
                         super::text::button_label_color_for_disabled(!view.enabled(button.id)),
-                        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                        ShellAlign::BUTTON_CAPTION,
                         [0.0; 2],
                         SHELL_CONTROL_TEXT_DEPTH,
                         scale.factor(),

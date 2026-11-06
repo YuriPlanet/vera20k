@@ -464,8 +464,12 @@ pub fn fill(text: &str, values: &[(&str, &dyn Display)]) -> String {
 
 /// `text` in the pseudo-language: letters swapped for accented look-alikes,
 /// lengthened by a run of tildes and bracketed, with `{name}` values,
-/// `%`-formats and line breaks kept as they are.
+/// `%`-formats and line breaks kept as they are. A blank text stays blank,
+/// and a single letter, such as a team's, is not lengthened.
 pub fn pseudo(text: &str) -> String {
+    if text.trim().is_empty() {
+        return text.to_owned();
+    }
     const LOWER: [char; 26] = [
         'å', 'ƀ', 'ç', 'ð', 'é', 'ƒ', 'ĝ', 'ĥ', 'î', 'ĵ', 'ķ', 'ļ', 'ɱ', 'ñ', 'ö', 'þ', 'ǫ', 'ŕ',
         'š', 'ţ', 'û', 'ṽ', 'ŵ', 'ẋ', 'ý', 'ž',
@@ -514,7 +518,9 @@ pub fn pseudo(text: &str) -> String {
     }
     // About a third longer, as German or Russian often runs; half again for
     // short texts, which grow most in translation.
-    let extra = if letters <= 10 {
+    let extra = if letters <= 1 {
+        0
+    } else if letters <= 10 {
         letters.div_ceil(2)
     } else {
         letters.div_ceil(3)
@@ -912,6 +918,9 @@ mod tests {
     fn the_pseudo_language_keeps_values_and_formats() {
         assert_eq!(pseudo("Rank {rank}, %d%%"), "[Ŕåñķ {rank}, %d%% ~~]");
         assert_eq!(pseudo("OK"), "[ÖĶ ~]");
+        assert_eq!(pseudo("A"), "[Å]");
+        assert_eq!(pseudo(""), "");
+        assert_eq!(pseudo(" "), " ");
     }
 
     #[test]

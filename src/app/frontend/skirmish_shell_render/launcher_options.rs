@@ -186,7 +186,7 @@ fn build_text(
                         w: label.rect.w as u32,
                         h: label.rect.h as u32,
                     },
-                    align,
+                    align | ShellAlign::PANEL_FACE,
                     [0.0, 0.0],
                     SHELL_CONTROL_TEXT_DEPTH,
                     PathAReveal {
@@ -283,7 +283,7 @@ fn build_text(
                 native_text.w as i32,
                 native_text.h as i32,
             ),
-            ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+            ShellAlign::BUTTON_CAPTION,
             button_label_color(),
             glyph,
         ));

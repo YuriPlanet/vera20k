@@ -282,7 +282,7 @@ pub(crate) fn render_score_page(
                 layout.continue_button(),
                 pressed == Some(CONTINUE_BUTTON),
             ),
-            align: ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0),
+            align: ShellAlign::BUTTON_CAPTION,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: None,
         });
@@ -298,7 +298,7 @@ pub(crate) fn render_score_page(
                     layout.paging_button(id).expect("paging button"),
                     pressed == Some(id),
                 ),
-                align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                align: ShellAlign::BUTTON_CAPTION,
                 rgb: SHELL_TEXT_RGB_ENABLED,
                 path_a_reveal: None,
             });

@@ -310,7 +310,7 @@ pub(crate) fn render_lan_lobby(
                 font,
                 &localized_label(state, PAGE.title_key, "Lobby"),
                 rect_to_text_rect(layout.page.title),
-                ShellAlign::H_CENTER,
+                ShellAlign::PANEL_TITLE,
                 [0.0; 2],
                 SHELL_CONTROL_TEXT_DEPTH,
                 PathAReveal {
@@ -348,7 +348,7 @@ pub(crate) fn render_lan_lobby(
                         } else {
                             crate::render::shell_paint::SHELL_TEXT_RGB_DISABLED
                         },
-                        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                        ShellAlign::BUTTON_CAPTION,
                         [0.0; 2],
                         SHELL_CONTROL_TEXT_DEPTH,
                         scale.factor(),

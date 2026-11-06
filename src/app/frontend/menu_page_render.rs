@@ -36,8 +36,7 @@ pub(crate) const MENU_PAGE_BUTTON_POLICY: ButtonPolicy = ButtonPolicy {
     hover_flash: false,
     art_sink_y: 0.0,
 };
-const MENU_PAGE_BUTTON_ALIGN: ShellAlign =
-    ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0);
+const MENU_PAGE_BUTTON_ALIGN: ShellAlign = ShellAlign::BUTTON_CAPTION;
 
 pub(crate) enum MenuPageRenderResult {
     Rendered,
@@ -130,7 +129,7 @@ fn paint_labels<'a>(
         out.push(PaintLabel {
             text: resolve_csf(state, view.spec.title_key),
             rect: layout.title,
-            align: ShellAlign::H_CENTER,
+            align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: Some(shell_reveal_path_a(window)),
         });

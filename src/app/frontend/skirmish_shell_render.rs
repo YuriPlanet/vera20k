@@ -1114,7 +1114,7 @@ mod tests {
             let draws = paint_map_dialog_statics(
                 &font,
                 &[
-                    text::static_label(shown, title, ShellAlign::H_CENTER),
+                    text::static_label(shown, title, ShellAlign::PANEL_TITLE),
                     text::static_label(shown, help, ShellAlign::NONE),
                 ],
                 scale,

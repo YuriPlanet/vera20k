@@ -5,14 +5,17 @@
 //!
 //! VERA's own: text too long for its rect is first squeezed until it fits
 //! ([`BitFont::fit_box`]); only what the tightest squeeze still leaves over
-//! is cut off as gamemd cuts it.
+//! is cut off as gamemd cuts it. A right-panel caption flagged
+//! [`ShellAlign::PANEL_FACE`] squeezes onto one line on the art it labels,
+//! which is narrower than its rect.
 
 use crate::render::batch::SpriteInstance;
-use crate::render::bit_font::{BitFont, LineSpan};
+use crate::render::bit_font::{BitFont, Fit, LineSpan};
 use crate::render::shell_text_reveal::PathAReveal;
+use crate::ui::shell::geom::RIGHT_PANEL_FACE_W;
 
 /// Alignment flag set for `draw_in_rect`.
-/// 0x01 = h-center, 0x02 = h-right, 0x04 = v-center.
+/// 0x01 = h-center, 0x02 = h-right, 0x04 = v-center, 0x08 = panel face.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct ShellAlign(pub u8);
 
@@ -21,6 +24,14 @@ impl ShellAlign {
     pub const H_CENTER: ShellAlign = ShellAlign(0x01);
     pub const H_RIGHT: ShellAlign = ShellAlign(0x02);
     pub const V_CENTER: ShellAlign = ShellAlign(0x04);
+    /// VERA's own: the rect is wider than the right-panel art it labels, an
+    /// SDBTNANM button's red face or the title window atop the column, so the
+    /// text must also fit [`RIGHT_PANEL_FACE_W`] on one line to stay on it.
+    pub const PANEL_FACE: ShellAlign = ShellAlign(0x08);
+    /// An SDBTNANM button's caption, centred on its face.
+    pub const BUTTON_CAPTION: ShellAlign = ShellAlign(0x01 | 0x04 | 0x08);
+    /// The right panel's title, centred in its window.
+    pub const PANEL_TITLE: ShellAlign = ShellAlign(0x01 | 0x08);
 
     pub fn contains(self, flag: ShellAlign) -> bool {
         (self.0 & flag.0) != 0
@@ -68,6 +79,16 @@ fn to_native_rect(rect: TextRect, scale: f32) -> TextRect {
         y: (rect.y as f32 / scale).round() as i32,
         w: (rect.w as f32 / scale).round().max(0.0) as u32,
         h: (rect.h as f32 / scale).round().max(0.0) as u32,
+    }
+}
+
+/// How far `text` squeezes to fit `native` (VERA's own; see the module doc).
+fn squeeze(font: &BitFont, text: &str, native: TextRect, flags: ShellAlign) -> Fit {
+    if flags.contains(ShellAlign::PANEL_FACE) {
+        let face = font.fit_line(text, native.w.min(RIGHT_PANEL_FACE_W));
+        font.fitted(face, |font| font.fit_box(text, native.w, native.h))
+    } else {
+        font.fit_box(text, native.w, native.h)
     }
 }
 
@@ -142,7 +163,7 @@ pub fn draw_in_rect_scaled(
         };
     }
     let native = to_native_rect(rect, scale);
-    let fit = font.fit_box(text, native.w, native.h);
+    let fit = squeeze(font, text, native, flags);
     let instances = font.fitted(fit, |font| {
         let layout = font.wrap_layout(text, native.w);
         let base_x = native.x as f32;
@@ -223,7 +244,7 @@ pub fn draw_in_rect_path_a_scaled(
     }
     let native = to_native_rect(rect, scale);
     // The whole text decides the squeeze, so a reveal does not re-wrap.
-    let fit = font.fit_box(text, native.w, native.h);
+    let fit = squeeze(font, text, native, flags);
     let instances = font.fitted(fit, |font| {
         let layout = font.wrap_layout(text, native.w);
         let base_x = native.x as f32;
@@ -302,6 +323,53 @@ mod tests {
         assert_eq!(
             font.fit_box(text, wide.w, wide.h),
             crate::render::bit_font::Fit::NONE
+        );
+    }
+
+    /// A caption that fits its SDBTNANM caption rect but not the red face
+    /// squeezes onto the face; the same text in a plain rect is left as it is.
+    #[test]
+    fn a_button_caption_too_long_for_the_face_is_squeezed_onto_it() {
+        let font = crate::render::bit_font::tests::make_vector_test_font();
+        let text = "[Ṁöṽîéš & Çŕéðîţš ~~~~~]";
+        let natural = font.text_width(text);
+        assert!(natural > RIGHT_PANEL_FACE_W && natural < 154, "{natural}");
+        let rect = TextRect {
+            x: 644,
+            y: 300,
+            w: 154,
+            h: 41,
+        };
+        let face = draw_in_rect(
+            &font,
+            text,
+            rect,
+            [1.0; 3],
+            ShellAlign::BUTTON_CAPTION,
+            [0.0; 2],
+            0.5,
+        );
+        let left = face
+            .instances
+            .iter()
+            .map(|g| g.position[0])
+            .fold(f32::MAX, f32::min);
+        let right = face
+            .instances
+            .iter()
+            .map(|g| g.position[0] + g.size[0])
+            .fold(0.0, f32::max);
+        let centre = rect.x as f32 + rect.w as f32 / 2.0;
+        let half = RIGHT_PANEL_FACE_W as f32 / 2.0 + 1.0;
+        assert!(
+            left >= centre - half && right <= centre + half,
+            "{left}..{right}"
+        );
+        let plain = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+        assert_eq!(squeeze(&font, text, rect, plain), Fit::NONE);
+        assert_eq!(
+            squeeze(&font, "[Öþţîöñš ~~~~]", rect, ShellAlign::BUTTON_CAPTION),
+            Fit::NONE
         );
     }
 

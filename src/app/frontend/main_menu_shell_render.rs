@@ -229,7 +229,7 @@ fn main_menu_paint_labels<'a>(
 ) -> Vec<PaintLabel<'a>> {
     use crate::render::shell_text::ShellAlign;
     let mut out = Vec::new();
-    let button_align = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+    let button_align = ShellAlign::BUTTON_CAPTION;
     // The slide engine draws the button frames only (`0x006071E0`).
     for button in layout.buttons.iter().filter(|_| captions) {
         let pressed = pressed_button == Some(button.id);
@@ -246,7 +246,7 @@ fn main_menu_paint_labels<'a>(
         out.push(PaintLabel {
             text: main_menu_title_text(state),
             rect: layout.title,
-            align: ShellAlign::H_CENTER,
+            align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: Some(shell_reveal_path_a(window)),
         });
