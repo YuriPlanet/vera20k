@@ -102,7 +102,7 @@ impl RecalcRock {
             .map(|index| {
                 let (x, y) = ((index % stride) as i32, (index / stride) as i32);
                 grid.get(x, y).is_some()
-                    && recalc_land(grid, blocks, cliff_back_impassability, x, y) == LAND_ROCK
+                    && recalc_land(grid, blocks, cliff_back_impassability, None, x, y) == LAND_ROCK
             })
             .collect();
         Self { stride, rock }

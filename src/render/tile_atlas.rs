@@ -19,6 +19,7 @@ use crate::map::theater::{TileImage, TileKey};
 use crate::render::atlas_growth;
 use crate::render::batch::BatchRenderer;
 use crate::render::batch::BatchTexture;
+use crate::util::lookup_hash::LookupMap;
 
 /// Padding between tiles in the atlas (pixels). Prevents texture bleeding
 /// from bilinear filtering at tile boundaries.
@@ -51,8 +52,9 @@ pub struct TileAtlas {
     /// Pre-built bind group for the Z-depth pipeline (color + sampler + R8 depth).
     /// Used by `draw_with_buffer_zdepth()` in the render pass.
     pub zdepth_bind_group: wgpu::BindGroup,
-    /// Tile key → UV rectangle + rendering metadata.
-    uv_map: HashMap<TileKey, TileUV>,
+    /// Tile key → UV rectangle + rendering metadata. Lookup-only: the
+    /// terrain instance build reads it for every visible cell each draw.
+    uv_map: LookupMap<TileKey, TileUV>,
 }
 
 impl TileAtlas {
@@ -89,7 +91,7 @@ pub fn build_atlas(
             texture,
             depth_texture_view,
             zdepth_bind_group,
-            uv_map: HashMap::new(),
+            uv_map: LookupMap::default(),
         };
     }
 
@@ -123,7 +125,8 @@ pub fn build_atlas(
     // Allocate RGBA color buffer and R8 depth buffer (same layout), then blit tiles.
     let mut rgba: Vec<u8> = vec![0u8; (atlas_width * atlas_height * 4) as usize];
     let mut depth_buf: Vec<u8> = vec![0u8; (atlas_width * atlas_height) as usize];
-    let mut uv_map: HashMap<TileKey, TileUV> = HashMap::with_capacity(plan.placements.len());
+    let mut uv_map: LookupMap<TileKey, TileUV> =
+        LookupMap::with_capacity_and_hasher(plan.placements.len(), Default::default());
     let aw: f32 = atlas_width as f32;
     let ah: f32 = atlas_height as f32;
 

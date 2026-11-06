@@ -24,7 +24,8 @@ use crate::ui::sidebar::cameo_order::{
     Cameo, CameoId, CameoKey, CameoRequestState, CameoStrips, pending_production_affordability,
     pending_production_prediction_rate, pending_production_smoothed_stage,
 };
-use crate::ui::sidebar::{SidebarTab, SidebarView};
+use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
+use crate::ui::sidebar::{ArmedSidebarEntry, SidebarChromeLayoutSpec, SidebarTab, SidebarView};
 
 /// One changed `CreditsClass::AI` step: the `animating(+0xA)` latch plus the
 /// `counting_up(+0x9)` direction that `CreditsClass::Draw @ 0x004A2370` reads
@@ -72,6 +73,53 @@ pub(crate) struct SidebarProjectionState {
     /// The cameo candidates of those inputs, with the right strip's
     /// superweapons they were derived with.
     kept_cameos: Option<(SimInputsKey, Vec<SuperWeaponView>, Arc<Vec<Cameo>>)>,
+    /// What `current_view` was built from, while it stands for those inputs.
+    view_basis: Option<ViewBasis>,
+}
+
+/// What a refresh builds the view from besides the projection's own strips
+/// and Factory links: the layout, the gadgets, the credits shown and the
+/// [`SidebarSimInputs`] of one world revision. The cameo atlas is installed
+/// with a new world and its rules (`loading::transitions`), so it never
+/// changes under one [`SidebarSimInputs`].
+#[derive(Debug)]
+pub(crate) struct SidebarViewInputs {
+    pub(crate) spec: SidebarChromeLayoutSpec,
+    pub(crate) screen: (f32, f32),
+    pub(crate) tab: SidebarTab,
+    pub(crate) credits: i32,
+    /// Compared by identity: [`SidebarProjectionState::sim_inputs`] derives
+    /// one per world revision, rules and owner.
+    pub(crate) sim: Arc<SidebarSimInputs>,
+    /// Tab, Repair, Sell, scroll down, scroll up and the two top buttons.
+    pub(crate) button_sizes: [Option<[f32; 2]>; 7],
+    pub(crate) armed: Option<ArmedSidebarEntry>,
+    /// The right strip's superweapons.
+    pub(crate) supers: Vec<SuperWeaponView>,
+    pub(crate) gadgets: SidebarGadgetState,
+}
+
+impl PartialEq for SidebarViewInputs {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.sim, &other.sim)
+            && self.spec == other.spec
+            && self.screen == other.screen
+            && self.tab == other.tab
+            && self.credits == other.credits
+            && self.button_sizes == other.button_sizes
+            && self.armed == other.armed
+            && self.supers == other.supers
+            && self.gadgets == other.gadgets
+    }
+}
+
+/// The inputs of a built view, with the strips and Factory links it was
+/// built and drawn from.
+#[derive(Debug)]
+struct ViewBasis {
+    inputs: SidebarViewInputs,
+    cameos: Option<(InternedId, CameoStrips)>,
+    factory_links: HashMap<InternedId, CameoFactoryLink>,
 }
 
 /// What one projection refresh reads from the simulation for the local owner.
@@ -241,7 +289,30 @@ impl SidebarProjectionState {
         self.view_revision
     }
 
+    /// Whether the retained view was built from `inputs` and the strips and
+    /// Factory links as they stand now, so that building it again would give
+    /// an equal view. The per-pass gadget refresh then keeps it.
+    pub(crate) fn view_holds_for(&self, inputs: &SidebarViewInputs) -> bool {
+        self.view_basis.as_ref().is_some_and(|basis| {
+            basis.inputs == *inputs
+                && basis.cameos == self.cameos
+                && basis.factory_links == self.factory_links
+        })
+    }
+
+    /// Retain a view just built from `inputs` and the current strips and
+    /// Factory links.
+    pub(crate) fn replace_built_view(&mut self, view: SidebarView, inputs: SidebarViewInputs) {
+        self.replace_view(Some(view));
+        self.view_basis = Some(ViewBasis {
+            inputs,
+            cameos: self.cameos.clone(),
+            factory_links: self.factory_links.clone(),
+        });
+    }
+
     pub(crate) fn replace_view(&mut self, view: Option<SidebarView>) {
+        self.view_basis = None;
         if self.current_view != view {
             self.view_revision = self.view_revision.wrapping_add(1);
         }
@@ -649,6 +720,7 @@ impl SidebarProjectionState {
         let Some(mut view) = self.current_view.take() else {
             return;
         };
+        self.view_basis = None;
         self.apply_cameo_draw_state(&mut view, sim, rules, owner, armed_building);
         self.current_view = Some(view);
         // Committed frames only; the world revision moves with them anyway.

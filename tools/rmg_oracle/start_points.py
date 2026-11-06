@@ -98,9 +98,9 @@ def published(row):
 
 
 class StartPointsFixture:
-    def __init__(self):
+    def __init__(self, extra=(), size=16):
         from tools.rmg_oracle.tiberium_field import TiberiumFieldFixture
-        self.base = TiberiumFieldFixture()
+        self.base = TiberiumFieldFixture(extra, size)
         self.terrain, self.m, self.u = self.base.terrain, self.base.m, self.base.u
         self.tiles = dict(rough=self.terrain.bases['cliff'],
                           **{k: self.m.read32(a) for k, a in TILE_GLOBALS.items()})

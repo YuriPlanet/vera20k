@@ -2595,6 +2595,7 @@ pub(crate) fn load_map_initial_with_assets(
         let resolved = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
             &theater,
             terrain_rules,
+            generated_rules.native.rules().overlay_registry(),
             generated_rules
                 .native
                 .rules()
