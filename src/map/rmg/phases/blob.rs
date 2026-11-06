@@ -56,13 +56,6 @@ pub struct BlobParams {
     pub directed: bool,
 }
 
-/// Water-family gate: shore pieces, the narrow water set, or the auxiliary
-/// waterfall sets (absent from generated maps; see tiles.rs reasoning).
-fn water_family(ids: &TileIds, tile: i32) -> bool {
-    (ids.shore != -1 && tile >= ids.shore && tile < ids.shore + 0x2A)
-        || (ids.water_base != -1 && tile >= ids.water_base && tile < ids.water_base + 0x0E)
-}
-
 /// A flood's heap: f32 keys over cell coordinates. The starts phase's
 /// per-start clearing flood, the lakes, Tiberium, trees and patches share it.
 pub(crate) type CellHeap = NativeHeap<(f32, (i32, i32))>;
@@ -160,10 +153,12 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
             let candidate = (d1 + d2 + 1, (ctx.map_w - d1) + d2);
             let free = ctx.scratch.in_diamond(candidate.0, candidate.1)
                 && ctx.scratch.get(candidate.0, candidate.1).region == 0;
+            // Every water test here is Cell 0x004865D0: water, shore pieces
+            // and the four waterfall bands.
             let watery = ctx
                 .grid
                 .get(candidate.0, candidate.1)
-                .is_some_and(|cell| water_family(ctx.ids, cell.tile));
+                .is_some_and(|cell| ctx.ids.is_water_shore_or_waterfall(cell.tile));
             if free && watery {
                 found = Some(candidate);
                 break;
@@ -232,7 +227,7 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
             let watery = ctx
                 .grid
                 .get(nx, ny)
-                .is_some_and(|cell| water_family(ctx.ids, cell.tile));
+                .is_some_and(|cell| ctx.ids.is_water_shore_or_waterfall(cell.tile));
             if !watery || nodes_used >= cap {
                 continue;
             }
@@ -267,7 +262,7 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
         let watery = ctx
             .grid
             .get(coord.0, coord.1)
-            .is_some_and(|cell| water_family(ctx.ids, cell.tile));
+            .is_some_and(|cell| ctx.ids.is_water_shore_or_waterfall(cell.tile));
         if free && watery {
             if let Some(cell) = ctx.grid.get_mut(coord.0, coord.1) {
                 cell.tile = 0;
@@ -292,7 +287,7 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
     let coords: Vec<(i32, i32)> = ctx.grid.native_cells().collect();
     for &(x, y) in &coords {
         let tile = ctx.grid.get(x, y).expect("native cell").tile;
-        if ctx.ids.shore != -1 && tile >= ctx.ids.shore && tile < ctx.ids.shore + 0x2A {
+        if ctx.ids.is_shore_piece(tile) {
             let cell = ctx.grid.get_mut(x, y).expect("native cell");
             cell.tile = 0;
             cell.sub_tile = 0;
@@ -398,8 +393,10 @@ mod tests {
         let (mut identity, blocks) = super::super::cliff_native_tests::physical_tiles();
         identity.water_base = int(&doc["scene"]["water_base"]);
         let cliff = int(&doc["scene"]["cliff_base"]);
+        let falls = int(&doc["scene"]["waterfall_east"]);
+        assert_eq!(identity.cliffs.waterfall_bases()[1], falls);
         let rows = doc["rows"].as_array().unwrap();
-        assert_eq!(rows.len(), 9);
+        assert_eq!(rows.len(), 10);
         for row in rows {
             let input = &row["input"];
             let context = input["id"].as_str().unwrap();
@@ -427,6 +424,9 @@ mod tests {
             }
             for c in list("rough") {
                 grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile = cliff;
+            }
+            for c in list("falls") {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile = falls + int(&c[2]);
             }
             let fields = |grid: &RmgGrid, scratch: &RmgScratch| {
                 let mut out = Vec::new();

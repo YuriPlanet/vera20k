@@ -15,6 +15,7 @@ import struct
 
 ENTRY = 0x59BBC0
 MAP = 0x87F7E8  # +F4/+F8 map rect width/height the seed hunt scales by
+WATERFALL_EAST = 0xAA073C  # one of the four bands 0x004865D0 also admits
 SEED_CANDIDATE = 0x59BD79  # each hunted candidate is at [ESP+0x34] here
 STRIDE = 33
 
@@ -23,9 +24,9 @@ def controls():
     """Declared inputs only. The map starts all water (WaterSet base, region 0),
     or all clear land of region `fill`; `water` cells are water of region 0,
     `land` cells are clear with a region id, `rough` cells hold a non-clear
-    tile with no region. `rect` is the logical (x, y, w, h) rect, `seed`
-    (0, 0) hunts a random water seed. Every max_cells here is under the
-    native 400 floor."""
+    tile with no region, `falls` cells a WaterfallEast tile (base + offset).
+    `rect` is the logical (x, y, w, h) rect, `seed` (0, 0) hunts a random
+    water seed. Every max_cells here is under the native 400 floor."""
     def wide(x0, y0, x1, y1, region=3):
         from tools.rmg_oracle.start_points import box
         return [[x, y, region] for x, y in box(x0, y0, x1, y1)]
@@ -41,6 +42,9 @@ def controls():
         # A tall rect whose shore pass fails: the blob rolls back at level 4.
         dict(id='directed_tall_rollback', seed=42, rect=[2, 0, 6, 16], start=[11, 11],
              target=[11, 11], directed=1, drift=0.75, level=4),
+        # Waterfall tiles count as water to 0x004865D0: growth carves them.
+        dict(id='waterfall_tiles_carve', seed=17, rect=[2, 2, 12, 12], start=[17, 15],
+             falls=[[x, y, (x + y) % 4] for x in range(14, 21) for y in range(12, 15)]),
         # Prior land of another region and rough tiles inside the ellipse.
         dict(id='beside_foreign_land', seed=13, rect=[2, 2, 12, 12], start=[17, 9],
              land=wide(19, 14, 23, 18), rough=[[15, 12], [16, 12], [17, 12]]),
@@ -54,8 +58,8 @@ def controls():
         dict(id='hunt_refuses_200th_candidate', seed=2, rect=[1, 1, 14, 14], start=[0, 0],
              fill=3, water=[[14, 27]]),
     ]
-    return [dict(blob=5, level=0, fill=0, land=[], water=[], rough=[], target=[0, 0], directed=0, drift=0.25,
-                 max_cells=60) | row for row in rows]
+    return [dict(blob=5, level=0, fill=0, land=[], water=[], rough=[], falls=[], target=[0, 0],
+                 directed=0, drift=0.25, max_cells=60) | row for row in rows]
 
 
 class BlobFixture:
@@ -86,6 +90,8 @@ class BlobFixture:
                 u.mem_write(lake.record(x, y) + 0x38, words(region))
         for x, y in case['rough']:
             u.mem_write(f.cells[(x, y)] + 0x38, words(f.bases['cliff']))
+        for x, y, offset in case['falls']:
+            u.mem_write(f.cells[(x, y)] + 0x38, words(self.m.read32(WATERFALL_EAST) + offset))
         u.mem_write(lake.actor + 0x30C, words(case['level']))
         u.mem_write(self.args, words(*case['rect']))
         # The seed is two ints (59BC74..59BC7F, 59BDEC); the target a CellStruct.
@@ -165,17 +171,18 @@ def generate():
     assert size == [16, 16], f'fixture map rect {size}'
     rows = [fixture.run(case, pool) for case in controls()]
     return dict(schema=1, scene=dict(water_base=fixture.water,
-                                     cliff_base=fixture.terrain.bases['cliff']),
+                                     cliff_base=fixture.terrain.bases['cliff'],
+                                     waterfall_east=fixture.m.read32(WATERFALL_EAST)),
                 rng_states_hex=pool.states, rows=rows)
 
 
 def provenance():
     from tools import native_oracle as native
     return native.provenance(
-        scope='whole original CarveBlob calls: undirected and directed growth over square, wide and tall rects, an off-centre target, foreign land and rough tiles, random seed hunts that succeed or exhaust, and a shore-pass failure that rolls back; every carved cell, stamp, region tag, blob id, return value and RNG/Gaussian draw',
+        scope='whole original CarveBlob calls: undirected and directed growth over square, wide and tall rects, an off-centre target, waterfall tiles, foreign land and rough tiles, random seed hunts that succeed or exhaust, and a shore-pass failure that rolls back; every carved cell, stamp, region tag, blob id, return value and RNG/Gaussian draw',
         assumptions=[
             'Existing LakeFixture and CliffFixture own original-constructed Cell backing, admission, the stride-33 scratch, the physical clear/cliff/shore TMP registration, the shore anchor table (original 57A9C0), the linear neighbour offsets and the empty Gaussian cache; bounds 16..48, MapClass +F4/+F8 rect 16x16.',
-            'Declared scene: every in-diamond cell WaterSet base with region 0, except clear cells with a declared region and CliffSet-base cells. Generator +308 blob id, +30C rollback level. Stack arguments: max cells, the logical rect, the seed (0, 0 hunts), shape flag 1 as all three shape drivers (59AF02, 59B10E, 59B508) pass it, the target, the drift double and the directed flag. FPCW 0E7F. All streams seeded by original 65C6D0. Not a complete Generate prefix.'],
+            'Declared scene: every in-diamond cell WaterSet base with region 0, except clear cells with a declared region, CliffSet-base cells and WaterfallEast-base cells. Generator +308 blob id, +30C rollback level. Stack arguments: max cells, the logical rect, the seed (0, 0 hunts), shape flag 1 as all three shape drivers (59AF02, 59B10E, 59B508) pass it, the target, the drift double and the directed flag. FPCW 0E7F. All streams seeded by original 65C6D0. Not a complete Generate prefix.'],
         substitutions=[
             'Existing PaletteReader CRT allocation/free/TLS; native code bytes unchanged. No blob, key, RNG, Gaussian, shore or tile result is supplied.'],
         entry_points=dict(carve_blob=ENTRY, directed_key=0x59B940, rect_or_ellipse=0x59BAB0,
