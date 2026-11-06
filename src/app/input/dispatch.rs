@@ -1903,6 +1903,11 @@ fn place_ready_building_for_tab(state: &mut AppState, tab: SidebarTab) {
 
 fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
     match command {
+        // Held camera commands are sampled by queue_keyboard_scroll.
+        HotkeyCommand::CameraUp
+        | HotkeyCommand::CameraDown
+        | HotkeyCommand::CameraLeft
+        | HotkeyCommand::CameraRight => {}
         HotkeyCommand::HealthNav => selection_navigation::execute_category_navigation(
             state,
             crate::app::types::CategoryNavigationKind::Health,

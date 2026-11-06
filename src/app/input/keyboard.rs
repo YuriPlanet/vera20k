@@ -36,6 +36,16 @@ pub(crate) fn in_game_key_edge(
     edge: InGameKeyEdge<'_>,
     paused_at_event: bool,
 ) {
+    // Releases must clear custom scroll state even when chat or a pause owns
+    // the key. Forget its old direction before resolving a new press as well.
+    if state
+        .match_state
+        .input
+        .camera_scroll_keys
+        .release(edge.physical)
+    {
+        state.match_state.input.keys_held.remove(&edge.physical);
+    }
     // Native chat owns its edit keys before game-local chords or hotkeys.
     if crate::app::input::chat::key_edge(state, &edge) {
         if !edge.state.is_pressed() {
@@ -105,7 +115,16 @@ pub(crate) fn in_game_key_edge(
         return;
     }
     if edge.state.is_pressed() {
-        if let Some(scroll_key) = hotkeys::fallback_scroll_key(resolution)
+        if let Some(scroll_key) = hotkeys::camera_command_key(resolution)
+            && !locked
+        {
+            state
+                .match_state
+                .input
+                .camera_scroll_keys
+                .press(edge.physical, scroll_key);
+            state.match_state.input.keys_held.insert(edge.physical);
+        } else if let Some(scroll_key) = hotkeys::fallback_scroll_key(resolution)
             && !locked
         {
             state.match_state.input.keys_held.insert(scroll_key);
