@@ -35,7 +35,12 @@ pub use telemetry::{enable_telemetry_capture, ring};
 /// Honors `RUST_LOG` and defaults to `info` when the variable is unset.
 /// Returns the resolved log file path on success.
 pub fn init_file_logger(name: &str) -> io::Result<PathBuf> {
-    let mut log_dir = std::env::current_dir()?;
+    // A platform that hands the engine a data directory (Android) keeps its
+    // logs there; desktop launches keep the working-directory convention.
+    let mut log_dir = match crate::util::platform_dir::get() {
+        Some(dir) => dir.to_path_buf(),
+        None => std::env::current_dir()?,
+    };
     log_dir.push("logs");
     fs::create_dir_all(&log_dir)?;
 

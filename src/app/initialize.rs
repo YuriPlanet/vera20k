@@ -1127,6 +1127,7 @@ impl App {
             },
             frontend: crate::app::frontend::state::FrontendState {
                 shell_dialog_background: None,
+                asset_import: Default::default(),
                 campaign_speed_control: startup_options.campaign_speed_control,
                 external_launch: false,
                 external_launch_error: None,

@@ -424,10 +424,12 @@ vera20k.exe:\n{config}"
 holding ra2md.mix and ra2.mix with the rest of the game, then start VERA20K again."
                 ),
             };
-            let game_files = game_files.map_or_else(
-                || "No game installation configured".to_owned(),
-                |path| path.display().to_string(),
-            );
+            // An unconfigured launch resolves the installation to the
+            // executable's own directory, which on Android is `/system/bin`
+            // (app_process). Naming that path sends the player looking for game
+            // files that were never there, so say what is actually true: no
+            // installation is configured.
+            let game_files = game_installation_label(game_files.as_deref());
             (
                 title,
                 format!(
@@ -448,6 +450,32 @@ Game files: {game_files}\nLog: {log}"
     text.push_str("\n\nDetails: ");
     text.push_str(details);
     (title, text)
+}
+
+/// What the card and the import dialog name as the game installation.
+///
+/// An unconfigured launch resolves the installation to the executable's own
+/// directory, which on Android is `/system/bin` (app_process). Naming that path
+/// sends the player looking for game files that were never there, so on Android
+/// the fallback reads as "no installation configured". The desktop builds keep
+/// printing whatever path they resolved.
+///
+/// One function for both screens: the import dialog sits on the same card and
+/// must never name a path the card behind it has stopped naming.
+fn game_installation_label(game_files: Option<&std::path::Path>) -> String {
+    let executable_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf));
+    game_files.map_or_else(
+        || "No game installation configured".to_owned(),
+        |path| {
+            if cfg!(target_os = "android") && executable_dir.as_deref() == Some(path) {
+                "No game installation configured".to_owned()
+            } else {
+                path.display().to_string()
+            }
+        },
+    )
 }
 
 /// Reduce a startup error to text the status card can draw.
@@ -1088,21 +1116,32 @@ impl App {
             .game_config
             .as_ref()
             .map(|config| config.paths.ra2_dir.clone());
-        let (title, text) = shell_error_card(
-            CardHost::CURRENT,
-            &state.frontend.startup_files,
-            state.process_assets.manager().is_some(),
-            game_files.as_deref(),
-            crate::util::logging::log_file(),
-            &display_error(&error),
-        );
+        let (title, text) =
+            if crate::ui::asset_import::AVAILABLE && state.frontend.asset_import.is_open() {
+                // Same label as the card behind it: the dialog must not name a
+                // fallback path the card has just stopped naming.
+                let game_files_text = game_installation_label(game_files.as_deref());
+                (
+                    state.frontend.asset_import.title(),
+                    state.frontend.asset_import.body(&game_files_text, ""),
+                )
+            } else {
+                shell_error_card(
+                    CardHost::CURRENT,
+                    &state.frontend.startup_files,
+                    state.process_assets.manager().is_some(),
+                    game_files.as_deref(),
+                    crate::util::logging::log_file(),
+                    &display_error(&error),
+                )
+            };
         crate::app::frontend::status_screen::render(
             state,
             encoder,
             view,
             title,
             &text,
-            crate::app::frontend::status_screen::Buttons::QUIT,
+            crate::app::frontend::status_screen::shell_error_buttons(state),
         );
         Ok(())
     }
