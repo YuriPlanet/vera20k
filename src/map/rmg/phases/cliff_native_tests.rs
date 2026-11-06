@@ -50,7 +50,7 @@ fn bytes(text: &str) -> Vec<u8> {
 fn word(raw: &[u8], offset: usize) -> u32 {
     u32::from_le_bytes(raw[offset..offset + 4].try_into().unwrap())
 }
-fn native_state(doc: &Value, index: &Value) -> MapGenRngContinuation {
+pub(super) fn native_state(doc: &Value, index: &Value) -> MapGenRngContinuation {
     let raw = bytes(
         doc["rng_states_hex"][index.as_u64().unwrap() as usize]
             .as_str()
