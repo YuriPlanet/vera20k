@@ -13,7 +13,8 @@ use crate::ui::main_menu_dialogs::options::shell::{
     LauncherLabelAlign, LauncherOptionsLayout, LauncherStatusHelp,
 };
 use crate::ui::main_menu_dialogs::options::{
-    HealthBarMode, LauncherButton, LauncherCheckboxId, LauncherComboId, OptionsDialogState, Zoom,
+    HealthBarMode, LauncherButton, LauncherCheckboxId, LauncherComboId, OptionsDialogState,
+    SidebarSize, Zoom,
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
@@ -28,10 +29,15 @@ pub(crate) fn zoom_label(zoom: Zoom, (width, height): (u32, u32), original_shape
         FrameShape::Window
     };
     let geometry = ZoomGeometry::new(width, height, zoom.percent(width, height), shape);
-    let size = format!("({}x{})", geometry.src_width, geometry.src_height);
+    let (width, height) = (&geometry.src_width, &geometry.src_height);
     match zoom {
-        Zoom::Auto => format!("Auto {size}"),
-        Zoom::Percent(percent) => format!("{percent}% {size}"),
+        Zoom::Auto => {
+            crate::i18n::tr_fill("VERA:ZoomAuto", &[("width", width), ("height", height)])
+        }
+        Zoom::Percent(percent) => crate::i18n::tr_fill(
+            "VERA:ZoomPercent",
+            &[("percent", &percent), ("width", width), ("height", height)],
+        ),
     }
 }
 
@@ -173,7 +179,7 @@ fn build_text(
             if let Some(window) = title {
                 out.push(shell_text::draw_in_rect_path_a_scaled(
                     font,
-                    label.text,
+                    &label.text,
                     TextRect {
                         x: label.rect.x,
                         y: label.rect.y,
@@ -195,7 +201,7 @@ fn build_text(
         } else {
             out.push(text_draw(
                 font,
-                label.text,
+                &label.text,
                 label.rect,
                 align,
                 SHELL_LABEL_TEXT_RGB,
@@ -210,7 +216,7 @@ fn build_text(
         });
         out.push(text_draw(
             font,
-            dialog.shell_checkbox_label(id),
+            &dialog.shell_checkbox_label(id),
             text,
             ShellAlign::V_CENTER,
             SHELL_LABEL_TEXT_RGB,
@@ -245,9 +251,10 @@ fn build_text(
                 layout.screen(),
                 dialog.shell_checkbox_checked(LauncherCheckboxId::OriginalShape),
             ),
-            LauncherComboId::Sidebar => dialog.shell_selected_sidebar(layout).label().to_owned(),
+            LauncherComboId::Sidebar => dialog.shell_selected_sidebar(layout).label(),
             LauncherComboId::Display => dialog.shell_display_label(),
-            LauncherComboId::HealthBars => dialog.shell_selected_health_bars().label().to_owned(),
+            LauncherComboId::HealthBars => dialog.shell_selected_health_bars().label(),
+            LauncherComboId::Language => dialog.shell_language_label(),
         };
         out.push(text_draw(
             font,
@@ -269,7 +276,7 @@ fn build_text(
         let native_text = button_text_rect(rect, pressed, scale);
         out.push(text_draw(
             font,
-            dialog.shell_button_label(id),
+            &dialog.shell_button_label(id),
             RectPx::new(
                 native_text.x,
                 native_text.y,
@@ -371,7 +378,7 @@ pub(crate) fn render_launcher_options(
                 LauncherStatusHelp::Csf(key) => {
                     crate::app::frontend::shell_pass::resolve_csf(state, key).into_owned()
                 }
-                LauncherStatusHelp::Text(text) => text.to_owned(),
+                LauncherStatusHelp::Vera(key) => crate::i18n::tr(key),
             })
             .unwrap_or_default();
         let status = crate::app::frontend::menu_page_render::paint_shell_status_line(
@@ -447,13 +454,14 @@ pub(crate) fn render_launcher_options(
             LauncherComboId::Sidebar => layout
                 .sidebar_choices()
                 .into_iter()
-                .map(|size| size.label().to_owned())
+                .map(SidebarSize::label)
                 .collect(),
             LauncherComboId::Display => dialog.shell_display_rows(),
             LauncherComboId::HealthBars => HealthBarMode::choices()
                 .into_iter()
-                .map(|mode| mode.label().to_owned())
+                .map(HealthBarMode::label)
                 .collect(),
+            LauncherComboId::Language => dialog.shell_language_rows(),
         };
         for (i, row_text) in rows.iter().enumerate() {
             let rect = popup.row_rect(i);

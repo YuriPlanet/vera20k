@@ -358,7 +358,8 @@ impl DisplayControlsLayout {
     }
 }
 
-pub const DISPLAY_GROUP_CAPTION: &str = "Display";
+/// VERA's Display group's caption, a label of VERA's language files.
+pub const DISPLAY_GROUP_CAPTION: &str = "VERA:DisplayGroup";
 const DISPLAY_COMBO_W: i32 = 180;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1337,7 +1337,6 @@ impl App {
             &output.texture,
         );
         if state.frontend.screen == GameScreen::InGame {
-            let csf = state.process_assets.csf.as_ref();
             let status = state
                 .match_state
                 .match_diagnostics
@@ -1363,17 +1362,11 @@ impl App {
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .is_ok_and(|now| now.as_secs() >= expires)
                             });
-                            Some(
-                                crate::i18n::text(
-                                    csf,
-                                    if lapsed {
-                                        "VERA:ReconnectPassLapsed"
-                                    } else {
-                                        "VERA:Reconnecting"
-                                    },
-                                )
-                                .into_owned(),
-                            )
+                            Some(crate::i18n::tr(if lapsed {
+                                "VERA:ReconnectPassLapsed"
+                            } else {
+                                "VERA:Reconnecting"
+                            }))
                         }
                         crate::net::live_commands::NetworkRecoveryStatus::CatchingUp { frames } => {
                             let key = if live.restoring_match() {
@@ -1381,17 +1374,14 @@ impl App {
                             } else {
                                 "VERA:CatchingUp"
                             };
-                            Some(crate::i18n::fill(
-                                &crate::i18n::text(csf, key),
-                                &[("frames", &frames)],
-                            ))
+                            Some(crate::i18n::tr_count(key, frames, &[]))
                         }
                     }
                 })
                 .or_else(|| {
                     crate::app::input::pause_menu::multiplayer_control(state)?
                         .status
-                        .map(|key| crate::i18n::text(csf, key).into_owned())
+                        .map(crate::i18n::tr)
                 });
             if let Some(status) = status {
                 state.renderer.fps_overlay.encode_status(

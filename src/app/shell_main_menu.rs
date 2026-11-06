@@ -153,6 +153,20 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
             .bit_font
             .set_mode(crate::app::persistence::options_profile::font_mode(enabled));
     }
+    fn store_language(&mut self, tag: String) {
+        // From the next frame every label reads in it: the string table
+        // takes its texts and the fonts its script's letter forms. The open
+        // Options page reads its captions again once the events have run;
+        // Options' accept writes the choice out.
+        if !crate::i18n::select(&tag) {
+            return;
+        }
+        if let Some(csf) = self.process_assets.csf.as_mut() {
+            crate::i18n::apply(csf);
+        }
+        self.renderer.bit_font.set_locale(&tag);
+        self.persistence.options_profile.language = Some(tag);
+    }
     fn store_mouse_wheel_zoom(&mut self, enabled: bool) {
         self.persistence.options_profile.mouse_wheel_zoom = enabled;
         if !enabled {
@@ -1175,21 +1189,13 @@ impl App {
         Self::ensure_skirmish_shell_chrome(state);
         if state.frontend.skirmish_shell_chrome.is_none() {
             state.frontend.main_menu_shell_error =
-                Some("Could not load the retail Options artwork.".to_owned());
+                Some(crate::i18n::tr("VERA:OptionsArtworkMissing"));
             state.platform.window.request_redraw();
             return;
         }
         use crate::app::persistence::options::launcher::launcher_dialog_from_profile;
-        use crate::ui::main_menu_dialogs::options::LauncherOptionsLabels;
 
-        let labels = LauncherOptionsLabels::resolve(&|key| {
-            state
-                .process_assets
-                .csf
-                .as_ref()
-                .and_then(|csf| csf.get(key))
-                .map(str::to_owned)
-        });
+        let labels = Self::launcher_options_labels(state);
         // The Display list is VERA's own: it reads the screens attached now, so
         // a screen plugged in or removed since the last launch shows correctly.
         let displays = crate::app::display_target::current_displays(&state.platform.window)
@@ -1204,10 +1210,25 @@ impl App {
             state.audio.launcher_audio_available,
             displays,
         );
+        dialog.set_languages(crate::i18n::choices(), crate::i18n::selected_language());
         if let Some(category) = state.frontend.options_reopen_at.take() {
             dialog.select_category(category);
         }
         state.frontend.options_dialog = Some(dialog);
+    }
+
+    /// The Options captions the string table names, in the language in use.
+    fn launcher_options_labels(
+        state: &AppState,
+    ) -> crate::ui::main_menu_dialogs::options::LauncherOptionsLabels {
+        crate::ui::main_menu_dialogs::options::LauncherOptionsLabels::resolve(&|key| {
+            state
+                .process_assets
+                .csf
+                .as_ref()
+                .and_then(|csf| csf.get(key))
+                .map(str::to_owned)
+        })
     }
 
     pub(crate) fn play_launcher_options_cue(
@@ -1237,15 +1258,21 @@ impl App {
     /// semantic transaction; profile and audio authority remain in their owners.
     fn dispatch_launcher_options_output(
         state: &mut AppState,
-        dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
+        mut dialog: crate::ui::main_menu_dialogs::OptionsDialogState,
         output: crate::ui::main_menu_dialogs::options::LauncherOptionsFrameOutput,
     ) {
-        {
-            for event in output.events {
-                crate::app::persistence::options::launcher::dispatch_launcher_preview_event(
-                    state, event,
-                );
-            }
+        use crate::ui::main_menu_dialogs::options::LauncherOptionsEvent;
+        let relabel = output
+            .events
+            .iter()
+            .any(|event| matches!(event, LauncherOptionsEvent::LanguageSelected(_)));
+        for event in output.events {
+            crate::app::persistence::options::launcher::dispatch_launcher_preview_event(
+                state, event,
+            );
+        }
+        if relabel {
+            dialog.set_labels(Self::launcher_options_labels(state));
         }
         match output.result {
             // 0x0055FD06 tears D5 down before every continuation, including
@@ -1430,6 +1457,7 @@ impl App {
                 MainMenuShellAction::SinglePlayer
                 | MainMenuShellAction::MoviesAndCredits
                 | MainMenuShellAction::Options
+                | MainMenuShellAction::Language
                 | MainMenuShellAction::Network
                 | MainMenuShellAction::WwOnline
                 | MainMenuShellAction::ExitGame => {
@@ -2039,6 +2067,13 @@ impl App {
             }
             MainMenuShellAction::Options => {
                 Self::open_launcher_options_dialog(state);
+            }
+            // VERA's Language button: Options, at its Language list.
+            MainMenuShellAction::Language => {
+                Self::open_launcher_options_dialog(state);
+                if let Some(dialog) = state.frontend.options_dialog.as_mut() {
+                    dialog.open_language_list();
+                }
             }
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);

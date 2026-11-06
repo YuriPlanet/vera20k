@@ -371,7 +371,12 @@ impl App {
         let profile_screen = options_load.startup_shell_screen;
         let mut options_profile = options_load.retained_profile;
         // Before the first CSF load below, which layers this language over it.
-        crate::i18n::select_language(&options_profile.language);
+        crate::i18n::init(
+            game_config
+                .as_ref()
+                .map(|config| config.paths.settings_dir()),
+            options_profile.language.as_deref(),
+        );
         options_profile.render_interpolation =
             crate::app::presentation::interpolation::startup_enabled(
                 options_profile.render_interpolation,
@@ -630,7 +635,7 @@ impl App {
             bit_font = BitFont::from_fnt(&gpu.device, &gpu.queue, &batch_renderer, fnt);
         }
         bit_font.set_mode(options_profile.font_mode());
-        bit_font.set_locale(crate::i18n::selected_language());
+        bit_font.set_locale(&crate::i18n::selected_language());
         let outcome_banner_art = startup_asset_manager.as_ref().and_then(|assets| {
             crate::app::presentation::outcome_banner::OutcomeBannerArt::build(
                 &gpu,

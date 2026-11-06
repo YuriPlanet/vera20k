@@ -46,9 +46,11 @@ pub struct CsfFile {
     // Ares's override hook frees the old value before reading its replacement.
     // A malformed body can therefore leave a registered label with a null value.
     entries: CsfEntries,
-    /// VERA's localization layer (`[VERA] Language=`), searched only for
-    /// labels the table has no text for. Lookup-only: `len`/`entries` still
-    /// describe the loaded files.
+    /// VERA's localization layer (the client's `i18n`), lookup-only:
+    /// `len`/`entries` still describe the loaded files. The player's language
+    /// answers ahead of the table, so it can translate the game's own labels;
+    /// English answers only labels neither has.
+    overrides: HashMap<String, CsfText>,
     fallbacks: HashMap<String, CsfText>,
 }
 
@@ -141,6 +143,7 @@ impl CsfFile {
             version,
             language,
             entries: CsfEntries::Raw(entries),
+            overrides: HashMap::new(),
             fallbacks: HashMap::new(),
         })
     }
@@ -265,15 +268,21 @@ impl CsfFile {
     /// used as written: CSF whitespace normalization is a property of the
     /// binary table, not of VERA's string files.
     pub fn set_fallback(&mut self, key: &str, value: &str) {
-        let stored_key = key.to_ascii_uppercase();
-        self.fallbacks.insert(
-            stored_key.clone(),
-            CsfText {
-                value: value.to_owned(),
-                raw: value.to_owned(),
-                stored_key,
-            },
-        );
+        self.fallbacks
+            .insert(key.to_ascii_uppercase(), localized(key, value));
+    }
+
+    /// Install the player's language's text for `key` ahead of the loaded
+    /// table: it answers even for a label the table has.
+    pub fn set_override(&mut self, key: &str, value: &str) {
+        self.overrides
+            .insert(key.to_ascii_uppercase(), localized(key, value));
+    }
+
+    /// Drop every installed text, before a language change installs its own.
+    pub fn clear_localization(&mut self) {
+        self.overrides.clear();
+        self.fallbacks.clear();
     }
 
     fn lookup_text(&self, key: &str) -> Option<&CsfText> {
@@ -285,7 +294,10 @@ impl CsfFile {
                 native_label_search(labels, &key).and_then(|slot| labels[slot].1.as_ref())
             }
         };
-        loaded.or_else(|| self.fallbacks.get(&key))
+        self.overrides
+            .get(&key)
+            .or(loaded)
+            .or_else(|| self.fallbacks.get(&key))
     }
 
     /// Native initialized-table lookup. Missing labels are visible, not an
@@ -325,6 +337,14 @@ impl CsfFile {
                     .filter_map(|(k, v)| v.as_ref().map(|v| (k.as_str(), v.value.as_str()))),
             ),
         }
+    }
+}
+
+fn localized(key: &str, value: &str) -> CsfText {
+    CsfText {
+        value: value.to_owned(),
+        raw: value.to_owned(),
+        stored_key: key.to_ascii_uppercase(),
     }
 }
 

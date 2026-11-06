@@ -344,8 +344,7 @@ pub(crate) fn post_caught_up(state: &mut AppState) {
             live.take_caught_up_in_pause(reached, frame) && !live.exit_requested()
         });
     if caught_up && !defeated {
-        let text =
-            crate::i18n::text(state.process_assets.csf.as_ref(), "VERA:CaughtUp").into_owned();
+        let text = crate::i18n::tr("VERA:CaughtUp");
         crate::app::input::chat::send_to_all(state, &text);
     }
 }

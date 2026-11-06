@@ -581,9 +581,10 @@ Forgot Password asks for the name and mails its code, then asks for it and a new
 password, and signs in. Delete Account asks for the name and its password, then says the
 account is deleted and forgets a remembered sign-in of it. The pane shows the players
 online, or while nobody is, the last 24 hours' games (`GET /v1/stats`), vera20k.org's five
-newest news posts in the game's language (`GET https://vera20k.org/news.json?lang=en` or
-`zh-CN`: `{posts:[{date,title,summary}]}`) and the online rules; it reads both each time
-the page opens. A remembered
+newest news posts in the game's language (`GET https://vera20k.org/news.json?lang=<tag>`,
+the tag of VERA's interface language such as `en`, `zh-CN` or `ru`, each post in English
+where the site has no translation: `{posts:[{date,title,summary}]}`) and the online rules;
+it reads both each time the page opens. A remembered
 sign-in lives in `Account.json` beside `VERA.INI` as `{name, sign_in_token}` per lobby,
 readable only by its owner; Login's popup then opens on the name with a masked password.
 Unticking Remember password forgets it here and at the lobby, and so does a password

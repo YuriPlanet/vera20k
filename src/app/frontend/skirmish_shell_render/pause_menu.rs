@@ -111,10 +111,10 @@ fn text_draws(
         let state = states[button as usize];
         let label = if button == PauseMenuButton::SharedPause {
             shared_pause_caption
-                .map(|key| crate::i18n::text(csf, key).into_owned())
+                .map(crate::i18n::tr)
                 .unwrap_or_default()
         } else if button == PauseMenuButton::Resume && shared_pause_caption.is_some() {
-            crate::i18n::text(csf, "VERA:ReturnToGame").into_owned()
+            crate::i18n::tr("VERA:ReturnToGame")
         } else {
             let control = layout.template.control(button).expect("template button");
             caption(csf, control.csf_key)
@@ -228,9 +228,9 @@ pub(crate) fn render_pause_menu_shell(
         &mut controls,
         &mut texts,
         display_layout.group,
-        DISPLAY_GROUP_CAPTION,
+        &crate::i18n::tr(DISPLAY_GROUP_CAPTION),
     );
-    for (list, caption_text) in [
+    for (list, caption_key) in [
         (DisplayList::Zoom, ZOOM_LABEL),
         (DisplayList::Sidebar, SIDEBAR_LABEL),
     ] {
@@ -248,7 +248,7 @@ pub(crate) fn render_pause_menu_shell(
         );
         texts.push(text_draw(
             font,
-            caption_text,
+            &crate::i18n::tr(caption_key),
             display_layout.captions[list as usize],
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
@@ -256,13 +256,13 @@ pub(crate) fn render_pause_menu_shell(
         // The face's text clears the arrow, as on the main menu's Options page.
         texts.push(text_draw(
             font,
-            display.row_label(list, display.selected(list)),
+            &display.row_label(list, display.selected(list)),
             RectPx::new(face.x + 3, face.y, face.w - 23, face.h),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,
         ));
     }
-    for (rect, checked, caption_text) in [
+    for (rect, checked, caption_key) in [
         (
             display_layout.full_screen,
             display.full_screen,
@@ -283,7 +283,7 @@ pub(crate) fn render_pause_menu_shell(
         // 61663A..616674: the caption starts 26 pixels into the box's window.
         texts.push(text_draw(
             font,
-            caption_text,
+            &crate::i18n::tr(caption_key),
             RectPx::new(rect.x + 26, rect.y, rect.w - 26, rect.h),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,
@@ -315,7 +315,7 @@ pub(crate) fn render_pause_menu_shell(
             }
             overlay.texts.push(text_draw(
                 font,
-                display.row_label(open, row),
+                &display.row_label(open, row),
                 RectPx::new(rect.x + 3, rect.y, rect.w - 6, rect.h),
                 SHELL_LABEL_TEXT_RGB,
                 ShellAlign::V_CENTER,

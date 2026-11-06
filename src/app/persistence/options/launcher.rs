@@ -121,6 +121,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_hd_map_previews(&mut self, enabled: bool);
     /// Draw interface text in GAME.FNT instead of the vector fonts (`[VERA] OriginalFont=`).
     fn store_original_font(&mut self, enabled: bool);
+    /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
+    fn store_language(&mut self, tag: String);
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
     fn set_fps_counter(&mut self, shown: bool);
@@ -148,6 +150,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::SidebarSelected(size) => operations.store_sidebar(size),
         LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
+        LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),
         LauncherOptionsEvent::FullScreenChanged(full_screen) => {
             operations.set_full_screen(full_screen);
         }

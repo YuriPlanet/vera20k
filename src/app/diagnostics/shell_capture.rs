@@ -1174,6 +1174,9 @@ pub struct ShellCaptureRequest {
     /// `--original-font`: draw text in GAME.FNT, as the Original Font option
     /// does; the sealed capture profile otherwise draws VERA's vector fonts.
     original_font: bool,
+    /// `--language <tag>`: VERA's interface language, such as `zh-CN` or the
+    /// pseudo-language `qps-ploc`; English otherwise, whatever the system's.
+    language: Option<String>,
 }
 
 /// Nonsecret username and match inputs for an ordinary online UI run.
@@ -1425,6 +1428,7 @@ where
     let mut observe_loading = false;
     let mut profile_check = false;
     let mut original_font = false;
+    let mut language = None;
 
     while let Some(flag) = args.next() {
         let flag = flag
@@ -1616,6 +1620,11 @@ where
                 ensure!(!original_font, "duplicate --original-font");
                 original_font = true;
             }
+            "--language" => set_once(
+                &mut language,
+                next_utf8(&mut args, "value after --language")?,
+                "--language",
+            )?,
             "--online-exit-checkpoint" => set_once(
                 &mut online_exit_checkpoint,
                 next_utf8(&mut args, "value after --online-exit-checkpoint")?,
@@ -2124,6 +2133,7 @@ where
         live_lan,
         live_online,
         original_font,
+        language,
     }))
 }
 
@@ -2577,6 +2587,23 @@ impl ShellCaptureSession {
                 .renderer
                 .bit_font
                 .set_mode(state.persistence.options_profile.font_mode());
+        }
+        // As the Language list applies a pick; a language no file provides
+        // fails the capture instead of drawing English under its name.
+        let language = self
+            .request
+            .language
+            .clone()
+            .unwrap_or_else(|| crate::i18n::DEFAULT_LANGUAGE.to_owned());
+        if crate::i18n::select(&language) {
+            if let Some(csf) = state.process_assets.csf.as_mut() {
+                crate::i18n::apply(csf);
+            }
+            state.renderer.bit_font.set_locale(&language);
+        } else {
+            self.fail(format!(
+                "--language {language}: no language file provides it"
+            ));
         }
         self.started_at = Some(Instant::now());
     }

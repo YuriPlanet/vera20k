@@ -229,10 +229,10 @@ pub(crate) struct RetailOptionsProfile {
     /// translated into, or `None`, the default, for off. Only the `/translate`
     /// chat command changes it ([`Self::commit_chat_translation`]).
     pub(crate) translate_chat: Option<crate::ui::chat_translation::ChatLanguage>,
-    /// `[VERA] Language=`: the language tag of VERA's own text
-    /// ([`crate::i18n`]), `en` by default. Edited in VERA.INI only, so the
-    /// writer leaves the player's line as it is; read once at startup.
-    pub(crate) language: String,
+    /// `[VERA] Language=`: the tag of the interface language the player chose
+    /// ([`crate::i18n`]); `None`, the default, follows the system's languages.
+    /// Only the Language list changes it; Options' accept writes it out.
+    pub(crate) language: Option<String>,
     /// `[VERA] SkipUpdate=`: the release the player chose to skip when the
     /// updater offered it; empty, the default, offers every newer release.
     /// Only the updater changes it ([`Self::commit_skipped_update`]).
@@ -345,7 +345,7 @@ impl Default for RetailOptionsProfile {
             custom_end_game_movie: false,
             health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode::Vanilla,
             translate_chat: None,
-            language: crate::i18n::DEFAULT_LANGUAGE.to_owned(),
+            language: None,
             skipped_update: String::new(),
             online_name: String::new(),
             online_locale: 0,
@@ -367,7 +367,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 31],
+    pub(crate) vera: [(&'static str, String); 32],
 }
 
 impl RetailOptionsLoad {
@@ -606,8 +606,10 @@ impl RetailOptionsProfile {
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 self.translate_chat = crate::ui::chat_translation::ChatLanguage::from_tag(value);
             }
+            // Empty, as a profile that never picked one writes it, follows
+            // the system again.
             if let Some(value) = vera.read_name("Language", 16) {
-                self.language = value.to_owned();
+                self.language = Some(value).filter(|tag| !tag.is_empty()).map(str::to_owned);
             }
             if let Some(value) = vera.read_name("SkipUpdate", 16) {
                 self.skipped_update = value.to_owned();
@@ -783,6 +785,7 @@ impl RetailOptionsProfile {
                     format_bool(self.hd_map_previews).to_string(),
                 ),
                 ("OriginalFont", format_bool(self.original_font).to_string()),
+                ("Language", self.language.clone().unwrap_or_default()),
             ],
         }
     }
