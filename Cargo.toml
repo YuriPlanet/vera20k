@@ -13,7 +13,7 @@ publish = false
 # asset tools and the game binary). The core manifest sits in `src/`, so rustc
 # still names every source file `src/...`.
 [workspace]
-members = ["src", "services/relay-protocol", "services/relay", "crates/vera20k-android"]
+members = ["src", "services/relay-protocol", "services/relay", "android"]
 # Plain `cargo build`/`cargo test --lib` cover both crates.
 default-members = [".", "src"]
 
