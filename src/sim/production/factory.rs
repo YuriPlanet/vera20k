@@ -1473,6 +1473,12 @@ impl FactoryRegistry {
             let owner = f.owner;
             // Only an armed, in-flight build steps: object held, not complete
             // (held for delivery), with the one suspension authority clear.
+            // RESIDUAL: AI4C9B20 also steps a running Factory whose held
+            // product PointerExpired4CA580 cleared, charging 0 per stage and
+            // the whole Balance at stage 54. Trigger: a running product's
+            // expiry; VERA destroys a product only through Abandon, which
+            // suspends first, so no path reaches it. Effect if reached: the
+            // build would freeze instead of finishing empty and charging.
             if f.object.is_none() || f.suspended || f.progress >= PRODUCTION_STEPS {
                 continue;
             }
