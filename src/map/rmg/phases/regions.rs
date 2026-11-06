@@ -31,7 +31,9 @@ pub struct RmgRegion {
     /// Class flag: seed was water-ish or green (drives the expansion loop).
     pub active: bool,
     pub cell_count: i32,
-    /// Per-region cell list; populated by the starts phase, not here.
+    /// Per-region cell list, in descending linear-cell order: rebuilt by the
+    /// region split (map types 3/4) and by the starts phase, not by the
+    /// partition itself.
     pub cells: Vec<(i16, i16)>,
     /// Start slots assigned by the starts phase.
     pub start_quota: i32,
@@ -385,6 +387,14 @@ pub fn split_oversized(
     gen_w: i32,
     gen_h: i32,
 ) {
+    debug_assert!(
+        regions
+            .list
+            .iter()
+            .enumerate()
+            .all(|(pos, r)| r.id == pos as i32),
+        "the rebuild indexes regions by id; ids must equal list positions"
+    );
     // 0x0058EBC0..0x0058ED83: clear, then recount in descending scratch order.
     for region in &mut regions.list {
         region.cells.clear();
