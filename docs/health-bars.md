@@ -20,11 +20,15 @@ the original strip.
 
 ## Which objects count as seen
 
-Own and allied objects always count. Another house's object needs its cell
-explored — and, under the `FogOfWar` game option, currently visible — the same
-reveal gate screen selection uses, so the strip never shows what shroud hides.
-gamemd's disguise rule still applies: an enemy Mirage worn as a tree draws no
-strip until it is selected, in every mode.
+The strip follows the shroud plane the bodies use: the object's cell must be
+explored and not covered by a hostile gap, for every house alike, so an object
+pre-placed on unrevealed ground gets no strip either. `FogOfWar` does not
+tighten this to current sight — a trigger can leave an explored cell with no
+sustained sight source (`TActionClass::RevealAroundWaypoint`), and the body is
+still drawn there. `MultiplayPassive` houses (stock Neutral and Special) get no
+automatic strip in modes 1 and 2; selecting or hovering one still draws gamemd's
+own strip. gamemd's disguise rule still applies: an enemy Mirage worn as a tree
+draws no strip until it is selected, in every mode.
 
 ## Full health
 

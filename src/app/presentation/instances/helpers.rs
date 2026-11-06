@@ -516,7 +516,10 @@ pub(crate) fn object_shown_to_local_owner(
 
 /// Does `viewer` see another house's objects on this cell? Explored (with
 /// `current_sight_only`, currently seen) and not covered by a hostile gap.
-fn cell_shows_objects(
+/// With `current_sight_only == false` this is the A plane's own admission
+/// (`render::shroud_buffer::cell_fill`), so overlays whose material reads no
+/// A can ask it instead of inventing a second fog interpretation.
+pub(crate) fn cell_shows_objects(
     viewer: InternedId,
     fog: &FogState,
     rx: u16,

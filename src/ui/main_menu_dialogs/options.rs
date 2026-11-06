@@ -302,10 +302,12 @@ pub(crate) enum HealthBarMode {
     #[default]
     Vanilla,
     /// [`Self::Vanilla`], plus a bare strip on every other object the local
-    /// player can see.
+    /// player can see on a revealed cell. Neutral/Special passive houses are
+    /// scenery and get no automatic strip.
     Always,
     /// [`Self::Vanilla`], plus a bare strip on every other object the local
-    /// player can see that is below full health.
+    /// player can see on a revealed cell that is below full health. Same
+    /// passive-house exclusion as [`Self::Always`].
     AlwaysExceptFull,
 }
 
