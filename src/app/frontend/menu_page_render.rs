@@ -181,7 +181,7 @@ pub(crate) fn paint_shell_status_line(
     let reveal = status.paint(now)?;
     (!text.is_empty()).then(|| PaintLabel {
         text: text.into(),
-        rect: window,
+        rect: crate::ui::shell::layout::status_text_rect(window),
         align: ShellAlign::NONE,
         rgb: SHELL_TEXT_RGB_ENABLED,
         path_a_reveal: Some(shell_reveal_path_a(reveal)),

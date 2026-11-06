@@ -149,6 +149,19 @@ pub fn status_line_rect(dlu: RectPx, screen_w: i32, screen_h: i32) -> RectPx {
     RectPx::new(dx + 10, screen_h - h - dy - 1, w, h)
 }
 
+/// The status line's text box, VERA's own: the window above
+/// ([`status_line_rect`], 456 pixels wide at 800x600) runs on to x 628, the
+/// right end of the bar's dark interior, as translations run longer than the
+/// English it was sized for. Retail texts fit the window and draw as before.
+pub fn status_text_rect(window: RectPx) -> RectPx {
+    const WINDOW_W: i32 = 456;
+    const TEXT_W: i32 = 618;
+    RectPx {
+        w: window.w * TEXT_W / WINDOW_W,
+        ..window
+    }
+}
+
 /// Resolve one include-set control outside a descriptor table, with the same
 /// per-control rule `layout_pass` applies.
 pub fn anchor_rect(rule: AnchorRule, dlu: RectPx, screen_w: i32, screen_h: i32) -> RectPx {

@@ -23,8 +23,9 @@
 //! GUI:Ok=OK
 //! ```
 //!
-//! A line starting with `;` is a comment; a `;` after a text is part of it. `\n` in a text is a line break, and
-//! `{name}` marks a value VERA fills in, in whatever order the sentence needs.
+//! A line starting with `;` is a comment; a `;` after a text is part of it.
+//! `\n` in a text is a line break, and `{name}` marks a value VERA fills in,
+//! in whatever order the sentence needs.
 //! A text with a count gives one line per CLDR plural form the language uses
 //! (`zero`, `one`, `two`, `few`, `many`, `other`); `{count}` is the count.
 //!
@@ -36,7 +37,8 @@
 //! Until the player picks a language (`[VERA] Language=`), VERA follows the
 //! system's preferred languages. The pseudo-language [`PSEUDO_LANGUAGE`]
 //! rewrites and lengthens every text, VERA's and the game's, so a screen
-//! shows any text that does not come from a language file or does not fit.
+//! shows any text that does not come from a language file or does not fit;
+//! `VERA20K_TEXT_AUDIT` logs both ([`crate::render::text_audit`]).
 
 use std::collections::{BTreeSet, HashMap};
 use std::fmt::{self, Display, Write as _};
@@ -332,13 +334,37 @@ pub struct LanguageChoice {
     pub name: String,
 }
 
-/// The languages the player can choose, English first and the rest by tag.
+/// Each shipped language's text for every label `wanted` picks, then the
+/// pseudo-language's, as (tag, label, text): for tests that check a text
+/// fits where it is drawn in every language.
+#[cfg(test)]
+pub(crate) fn shipped_texts(wanted: impl Fn(&str) -> bool) -> Vec<(String, String, String)> {
+    let languages: Vec<Language> = shipped::FILES
+        .iter()
+        .map(|(tag, text)| Language::from_file(tag, text))
+        .collect();
+    let pseudo = Language::pseudo(&languages[0]);
+    languages
+        .iter()
+        .chain([&pseudo])
+        .flat_map(|language| {
+            language
+                .strings
+                .iter()
+                .filter(|(label, _)| wanted(label))
+                .map(|(label, text)| (language.tag.clone(), label.clone(), text.clone()))
+        })
+        .collect()
+}
+
+/// The languages the player can choose, English first and the rest by tag;
+/// the pseudo-language only while it is in use, so its name shows.
 pub fn choices() -> Vec<LanguageChoice> {
     let catalog = catalog();
     let mut choices: Vec<LanguageChoice> = catalog
         .languages
         .iter()
-        .filter(|language| !language.is_pseudo())
+        .filter(|language| !language.is_pseudo() || catalog.selected.is_pseudo())
         .map(|language| LanguageChoice {
             tag: language.tag.clone(),
             name: language.name.clone(),

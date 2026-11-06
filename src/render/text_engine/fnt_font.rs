@@ -13,6 +13,11 @@
 //! ([`super::fonts`]), so the full-cell CJK glyphs draw 1:1 beside Latin ones.
 //! The shared placeholder box is left unmapped, so those characters fall back
 //! to the bundled fonts; glyph 0 is native's missing-glyph stand-in.
+//!
+//! GAME.FNT has no width axis, so it is also built narrowed to each width a
+//! squeeze asks for ([`super::Fit`]), one family per width: text too long for
+//! its box narrows in the Original font option as it does in the bundled
+//! fonts, instead of only shrinking.
 
 use crate::assets::fnt_file::{FntFile, FntGlyph};
 
@@ -33,10 +38,22 @@ fn units_per_pixel(codepoint: u32) -> i32 {
     (f32::from(UNITS_PER_EM) / size).round() as i32
 }
 
-/// The TrueType bytes and the family name they register under.
+/// The family a face built `width` times as wide as designed registers
+/// under: [`FAMILY_NAME`] as designed.
+fn family_name(width: f32) -> String {
+    if width == 1.0 {
+        FAMILY_NAME.to_owned()
+    } else {
+        format!("{FAMILY_NAME} {}", (width * 100.0).round())
+    }
+}
+
+/// GAME.FNT's TrueType faces, as designed and narrowed.
 pub(crate) struct FntFont {
-    pub(crate) data: Vec<u8>,
-    /// The glyph each mapped code point draws with.
+    /// Each face's width, as a share of the designed one, and its bytes: as
+    /// designed first, then each width a [`super::Fit`] step narrows to.
+    pub(crate) faces: Vec<(f32, Vec<u8>)>,
+    /// The glyph each mapped code point draws with, in every face.
     pub(crate) glyph_ids: std::collections::HashMap<u16, u16>,
 }
 
@@ -51,21 +68,25 @@ impl FntFont {
         codepoints.sort_unstable_by_key(|&(cp, _)| cp);
 
         let rows = fnt.bitmap_rows;
-        let mut glyphs: Vec<GlyphOutline> = Vec::with_capacity(codepoints.len() + 1);
-        glyphs.push(match missing {
-            Some(glyph) => {
-                GlyphOutline::from_bitmap(glyph, rows, baseline_row, units_per_pixel(0x58))
+        let outlines = |width: f32| {
+            let mut glyphs: Vec<GlyphOutline> = Vec::with_capacity(codepoints.len() + 1);
+            let px = units_per_pixel(0x58);
+            glyphs.push(match missing {
+                Some(glyph) => GlyphOutline::from_bitmap(glyph, rows, baseline_row, px, width),
+                None => GlyphOutline::empty((5.0 * px as f32 * width).round() as i32),
+            });
+            for &(cp, glyph) in &codepoints {
+                let px = units_per_pixel(u32::from(cp));
+                glyphs.push(GlyphOutline::from_bitmap(
+                    glyph,
+                    rows,
+                    baseline_row,
+                    px,
+                    width,
+                ));
             }
-            None => GlyphOutline::empty(units_per_pixel(0x58) * 5),
-        });
-        for &(cp, glyph) in &codepoints {
-            glyphs.push(GlyphOutline::from_bitmap(
-                glyph,
-                rows,
-                baseline_row,
-                units_per_pixel(u32::from(cp)),
-            ));
-        }
+            glyphs
+        };
 
         // Format-12 groups: runs of consecutive code points on consecutive
         // glyph ids (glyph i + 1 is the i-th code point).
@@ -87,13 +108,20 @@ impl FntFont {
         let ascent = baseline_row as i32 * latin_px;
         let descent = (rows as i32 - baseline_row as i32) * latin_px;
         let line_gap = (fnt.cell_height as i32 - rows as i32).max(0) * latin_px;
-        let data = Writer::new(&glyphs, &groups, ascent, descent, line_gap).finish();
+        let faces = super::Fit::widths()
+            .map(|width| {
+                let glyphs = outlines(width);
+                let family = family_name(width);
+                let writer = Writer::new(&glyphs, &groups, ascent, descent, line_gap, &family);
+                (width, writer.finish())
+            })
+            .collect();
         let glyph_ids = codepoints
             .iter()
             .enumerate()
             .map(|(index, &(cp, _))| (cp, index as u16 + 1))
             .collect();
-        Self { data, glyph_ids }
+        Self { faces, glyph_ids }
     }
 }
 
@@ -113,8 +141,10 @@ impl GlyphOutline {
     }
 
     /// Lit pixels merged into rectangles: horizontal runs per row, and a run
-    /// that repeats exactly on the next row extends downwards.
-    fn from_bitmap(glyph: &FntGlyph, rows: u32, baseline_row: u32, px: i32) -> Self {
+    /// that repeats exactly on the next row extends downwards. `px` font
+    /// units per pixel, columns `narrow` times as wide.
+    fn from_bitmap(glyph: &FntGlyph, rows: u32, baseline_row: u32, px: i32, narrow: f32) -> Self {
+        let column = |x: usize| (x as f32 * px as f32 * narrow).round() as i32;
         let width = glyph.width as usize;
         let lit = |x: usize, y: usize| {
             glyph
@@ -127,9 +157,9 @@ impl GlyphOutline {
         let mut rects = Vec::new();
         let mut close = |(x0, x1, top): (usize, usize, usize), bottom: usize| {
             rects.push([
-                x0 as i32 * px,
+                column(x0),
                 (baseline_row as i32 - bottom as i32) * px,
-                x1 as i32 * px,
+                column(x1),
                 (baseline_row as i32 - top as i32) * px,
             ]);
         };
@@ -161,7 +191,7 @@ impl GlyphOutline {
             still_open.extend(runs.into_iter().map(|(x0, x1)| (x0, x1, y)));
             open = still_open;
         }
-        Self::empty((glyph.width as i32 + 1) * px).with_rects(rects)
+        Self::empty(column(width + 1)).with_rects(rects)
     }
 
     fn with_rects(mut self, rects: Vec<[i32; 4]>) -> Self {
@@ -251,6 +281,7 @@ impl Writer {
         ascent: i32,
         descent: i32,
         line_gap: i32,
+        family: &str,
     ) -> Self {
         let mut glyf = Vec::new();
         let mut loca = Vec::with_capacity((glyphs.len() + 1) * 4);
@@ -381,11 +412,14 @@ impl Writer {
         push_u32(&mut post, 0x0003_0000);
         post.extend_from_slice(&[0; 28]);
 
+        let postscript = family
+            .replacen(FAMILY_NAME, "VERA-GAMEFNT", 1)
+            .replace(' ', "-");
         let names = [
-            (1, FAMILY_NAME),
+            (1, family),
             (2, "Regular"),
-            (4, FAMILY_NAME),
-            (6, "VERA-GAMEFNT"),
+            (4, family),
+            (6, postscript.as_str()),
         ];
         let mut name = Vec::new();
         push_u16(&mut name, 0);

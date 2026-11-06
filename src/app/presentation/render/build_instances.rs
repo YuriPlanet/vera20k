@@ -1332,6 +1332,12 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             crate::app::presentation::sw_sidebar_build::build(state, status_labels, ready_tint)
         })
         .unwrap_or_default();
+    // The column's text, at the window's pixels wherever it is drawn.
+    let frame_raster = state.renderer.bit_font.set_raster(
+        crate::app::presentation::sidebar_surface::column_text(state)
+            .raster()
+            .unwrap_or(crate::render::bit_font::TextRaster::NATIVE),
+    );
     let mut text_layers = view
         .as_ref()
         .map(|v| build_sidebar_text_instances(state, v, status_labels, ready_tint))
@@ -1353,6 +1359,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             ),
         );
     }
+    state.renderer.bit_font.set_raster(frame_raster);
 
     // Preserve the pixels actually drawn online for a possible pre-due loss.
     // This is display history, separate from ongoing internal minimap updates.

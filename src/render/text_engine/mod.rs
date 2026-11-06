@@ -78,6 +78,17 @@ impl Fit {
         FIT_STEPS[usize::from(self.0)].0
     }
 
+    /// Each width the steps narrow text to, as designed first.
+    fn widths() -> impl Iterator<Item = f32> {
+        let mut widths: Vec<f32> = Vec::with_capacity(FIT_STEPS.len());
+        for (width, _) in FIT_STEPS {
+            if !widths.contains(&width) {
+                widths.push(width);
+            }
+        }
+        widths.into_iter()
+    }
+
     fn size(self) -> f32 {
         FIT_STEPS[usize::from(self.0)].1
     }
@@ -150,7 +161,9 @@ pub(crate) struct TextEngine {
     coords: Vec<Vec<i16>>,
     /// Family names: the bundled fallback order.
     modern_stack: Vec<String>,
-    original_family: Option<String>,
+    /// GAME.FNT's family at each width a [`Fit`] narrows to, as designed
+    /// first ([`fnt_font`]).
+    original_families: Vec<(f32, String)>,
     /// GAME.FNT's slot and the glyph each of its code points draws with.
     original_slot: Option<u16>,
     layouts: HashMap<(FontMode, u32, Fit), HashMap<String, Arc<ShapedText>>>,
@@ -161,6 +174,16 @@ pub(crate) struct TextEngine {
 
 /// Cached layouts kept before the cache starts over.
 const LAYOUT_CACHE_LIMIT: usize = 8192;
+
+/// GAME.FNT's family for `fit` among [`TextEngine::original_families`]: the
+/// face narrowed to its width.
+fn original_family(families: &[(f32, String)], fit: Fit) -> Option<&str> {
+    let width = fit.width();
+    families
+        .iter()
+        .min_by(|(a, _), (b, _)| (a - width).abs().total_cmp(&(b - width).abs()))
+        .map(|(_, family)| family.as_str())
+}
 
 impl TextEngine {
     pub(crate) fn new(gpu: Option<(&wgpu::Device, &wgpu::Queue, &BatchRenderer)>) -> Self {
@@ -180,7 +203,7 @@ impl TextEngine {
             slot_of: HashMap::new(),
             coords: vec![Vec::new()],
             modern_stack: Vec::new(),
-            original_family: None,
+            original_families: Vec::new(),
             original_slot: None,
             layouts: HashMap::new(),
             cached_layouts: 0,
@@ -230,10 +253,14 @@ impl TextEngine {
 
     /// Put GAME.FNT ahead of the bundled fonts for [`FontMode::Original`].
     pub(crate) fn set_original_font(&mut self, font: fnt_font::FntFont) {
-        let blob = Blob::new(Arc::new(font.data));
         let first_slot = self.slots.len() as u16;
-        let families = self.register(blob, 0.0, false, true);
-        self.original_family = families.into_iter().next();
+        self.original_families.clear();
+        for (width, data) in font.faces {
+            let families = self.register(Blob::new(Arc::new(data)), 0.0, false, true);
+            if let Some(family) = families.into_iter().next() {
+                self.original_families.push((width, family));
+            }
+        }
         self.original_slot = (usize::from(first_slot) < self.slots.len()).then_some(first_slot);
         self.clear_layouts();
     }
@@ -274,7 +301,7 @@ impl TextEngine {
         max_width: u32,
         fit: Fit,
     ) -> Arc<ShapedText> {
-        let mode = if mode == FontMode::Original && self.original_family.is_none() {
+        let mode = if mode == FontMode::Original && self.original_families.is_empty() {
             FontMode::Modern
         } else {
             mode
@@ -286,6 +313,7 @@ impl TextEngine {
         {
             return Arc::clone(shaped);
         }
+        crate::render::text_audit::laid_out(text);
         let shaped = Arc::new(self.shape_uncached(mode, text, max_width, fit));
         if self.cached_layouts >= LAYOUT_CACHE_LIMIT {
             self.clear_layouts();
@@ -377,7 +405,7 @@ impl TextEngine {
     ) {
         let mut stack: Vec<FontFamilyName<'_>> = Vec::with_capacity(self.modern_stack.len() + 1);
         if mode == FontMode::Original
-            && let Some(family) = self.original_family.as_deref()
+            && let Some(family) = original_family(&self.original_families, fit)
         {
             stack.push(FontFamilyName::Named(Cow::Borrowed(family)));
         }
@@ -791,6 +819,26 @@ mod tests {
         let alpha = draw(&mut engine, FontMode::Original, "A", 1.5, 16, 32);
         let ink: f32 = alpha.iter().map(|&a| f32::from(a) / 255.0).sum();
         assert!((ink - 6.0 * 2.25).abs() < 0.1, "ink {ink}");
+    }
+
+    /// A squeeze narrows GAME.FNT's own letters by the width it narrows the
+    /// bundled fonts to, before shrinking them; GAME.FNT has no width axis.
+    #[test]
+    fn a_squeeze_narrows_game_fnt_letters() {
+        let mut engine = engine_with_tiny_fnt();
+        let narrowest = Fit(2);
+        let designed = engine.shape(FontMode::Original, "AAAA", 0, Fit::NONE);
+        let narrowed = engine.shape(FontMode::Original, "AAAA", 0, narrowest);
+        let slots = &engine.slots;
+        assert!(
+            narrowed.lines[0]
+                .glyphs
+                .iter()
+                .all(|g| slots[usize::from(g.font)].original)
+        );
+        let share = narrowed.width() / designed.width();
+        assert!((share - narrowest.width()).abs() < 0.01, "{share}");
+        assert!(narrowest.width() < 0.8 && narrowest.size() == 1.0);
     }
 
     #[test]

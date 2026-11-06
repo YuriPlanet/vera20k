@@ -489,12 +489,13 @@ pub(super) fn static_label(
     }
 }
 
-/// A status line's label, top-left in its window; nothing while it is
-/// hidden or blank.
+/// A status line's label, top-left in its window and running on along the
+/// bar (`status_text_rect`); nothing while it is hidden or blank.
 pub(super) fn status_line_label(
     shown: Option<StaticPaint<'_>>,
-    rect: RectPx,
+    window: RectPx,
 ) -> Option<PaintLabel<'static>> {
+    let rect = crate::ui::shell::layout::status_text_rect(window);
     shown
         .filter(|shown| !shown.text.is_empty())
         .map(|shown| static_label(shown, rect, ShellAlign::NONE))

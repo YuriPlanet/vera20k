@@ -138,6 +138,47 @@ pub struct BitFont {
     cells_only: bool,
     /// The squeeze every measurement and draw takes ([`Self::fitted`]).
     fit: Cell<Fit>,
+    /// Where the text drawn now lands ([`Self::set_raster`]).
+    raster: Cell<TextRaster>,
+}
+
+/// Where the text a [`BitFont`] emits lands, and how finely it rasterizes
+/// ([`BitFont::set_raster`]). Text laid out for one pass at `p`, its camera
+/// included, lands at `origin + (p - camera) * scale` in a pass whose camera
+/// is at the origin, with every glyph drawn `scale` times as large; a clip
+/// rect, in the first pass's pixels, at `origin + rect * scale`. A zoomed
+/// match lays its text out in the frame and draws it in the window
+/// (`app::presentation::window_ui`), so it shows the window's pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextRaster {
+    pub scale: f32,
+    pub origin: [f32; 2],
+    pub camera: [f32; 2],
+}
+
+impl TextRaster {
+    /// Text drawn in the pass it is laid out for.
+    pub const NATIVE: Self = Self {
+        scale: 1.0,
+        origin: [0.0; 2],
+        camera: [0.0; 2],
+    };
+
+    pub fn point(self, [x, y]: [f32; 2]) -> [f32; 2] {
+        [
+            self.origin[0] + (x - self.camera[0]) * self.scale,
+            self.origin[1] + (y - self.camera[1]) * self.scale,
+        ]
+    }
+
+    /// A box, frame or picture laid out with the text, moved and grown alike.
+    pub fn quad(self, instance: SpriteInstance) -> SpriteInstance {
+        SpriteInstance {
+            position: self.point(instance.position),
+            size: instance.size.map(|length| length * self.scale),
+            ..instance
+        }
+    }
 }
 
 /// The Path-A reveal a TextLabel draws for its inclusive count (see
@@ -241,6 +282,16 @@ impl BitFont {
         result
     }
 
+    /// Draw every text for `raster` from now on; returns the raster it
+    /// replaces, for the caller to put back. Measurement is unchanged.
+    pub fn set_raster(&self, raster: TextRaster) -> TextRaster {
+        self.raster.replace(raster)
+    }
+
+    pub fn raster(&self) -> TextRaster {
+        self.raster.get()
+    }
+
     /// The first [`Fit`] step, from the one [`Self::fitted`] set, at which
     /// `text` wraps into `max_width` native pixels without splitting a word
     /// and in no more lines than `max_height` holds whole (at least one, or
@@ -261,6 +312,10 @@ impl BitFont {
             let layout = font.wrap_layout(text, max_width);
             layout.lines.len() <= rows && !layout.split_word && layout.width <= max_width
         })
+        .unwrap_or_else(|tightest| {
+            crate::render::text_audit::cut_off(text, max_width);
+            tightest
+        })
     }
 
     /// The first [`Fit`] step, from the one [`Self::fitted`] set, at which
@@ -268,19 +323,26 @@ impl BitFont {
     /// tightest when none is.
     pub fn fit_line(&self, text: &str, max_width: u32) -> Fit {
         self.first_fit(|font| font.text_width(text) <= max_width)
+            .unwrap_or_else(|tightest| {
+                crate::render::text_audit::cut_off(text, max_width);
+                tightest
+            })
     }
 
-    /// GPU-free test fonts draw their cells as they are.
-    fn first_fit(&self, fits: impl Fn(&BitFont) -> bool) -> Fit {
+    /// The first step that `fits`, or the tightest as the error when none
+    /// does. GPU-free test fonts draw their cells as they are.
+    fn first_fit(&self, fits: impl Fn(&BitFont) -> bool) -> Result<Fit, Fit> {
         let mut fit = self.fit.get();
         if self.cells_only {
-            return fit;
+            return Ok(fit);
         }
         while !self.fitted(fit, &fits) {
-            let Some(tighter) = fit.tighter() else { break };
+            let Some(tighter) = fit.tighter() else {
+                return Err(fit);
+            };
             fit = tighter;
         }
-        fit
+        Ok(fit)
     }
 
     /// Take `previous`'s face and language, for a font rebuilt from a
@@ -370,17 +432,12 @@ impl BitFont {
         camera_offset: [f32; 2],
     ) -> Vec<SpriteInstance> {
         let missing_tint = Self::missing_color_xor(tint);
+        let ([x, y], scale) = self.rastered([x, y], scale, camera_offset);
         if self.native(text) {
             let mut instances = Vec::with_capacity(text.len());
             self.native_glyph_pens(text, x, scale, |glyph, pen_x, missing| {
                 let tint = if missing { missing_tint } else { tint };
-                instances.extend(self.native_instance(
-                    glyph,
-                    [pen_x + camera_offset[0], y + camera_offset[1]],
-                    scale,
-                    depth,
-                    tint,
-                ));
+                instances.extend(self.native_instance(glyph, [pen_x, y], scale, depth, tint));
                 true
             });
             return instances;
@@ -392,7 +449,7 @@ impl BitFont {
         for shaped_line in &shaped.lines {
             engine.emit_line(
                 shaped_line,
-                [x + camera_offset[0], y + camera_offset[1]],
+                [x, y],
                 scale,
                 depth,
                 |glyph| Some(if glyph.missing { missing_tint } else { tint }),
@@ -400,6 +457,16 @@ impl BitFont {
             );
         }
         instances
+    }
+
+    /// A text's pen `[x, y]` and glyph `scale`, laid out with `camera_offset`
+    /// added, where the raster in use draws them.
+    fn rastered(&self, [x, y]: [f32; 2], scale: f32, camera_offset: [f32; 2]) -> ([f32; 2], f32) {
+        let raster = self.raster.get();
+        (
+            raster.point([x + camera_offset[0], y + camera_offset[1]]),
+            scale * raster.scale,
+        )
     }
 
     /// Walk `text` the way native `BitFont` advances its pen: `visit` gets
@@ -559,6 +626,7 @@ impl BitFont {
                 .get(unit)
                 .map(|rgb| rgb.map(|c| f32::from(c) / 255.0))
         };
+        let ([x, y], scale) = self.rastered([x, y], scale, camera_offset);
 
         let mut instances = Vec::with_capacity(text.len());
         if self.native(text) {
@@ -580,13 +648,7 @@ impl BitFont {
                 } else {
                     tint
                 };
-                instances.extend(self.native_instance(
-                    glyph,
-                    [pen_x + camera_offset[0], y + camera_offset[1]],
-                    scale,
-                    depth,
-                    tint,
-                ));
+                instances.extend(self.native_instance(glyph, [pen_x, y], scale, depth, tint));
                 true
             });
             return (instances, consumed);
@@ -607,7 +669,7 @@ impl BitFont {
         for shaped_line in &shaped.lines {
             engine.emit_line(
                 shaped_line,
-                [x + camera_offset[0], y + camera_offset[1]],
+                [x, y],
                 scale,
                 depth,
                 |glyph| {
@@ -1013,6 +1075,7 @@ impl BitFont {
             mode: FontMode::default(),
             cells_only: false,
             fit: Cell::new(Fit::NONE),
+            raster: Cell::new(TextRaster::NATIVE),
         }
     }
 
@@ -1062,6 +1125,12 @@ impl BitFont {
         batch: &BatchRenderer,
         fnt: &FntFile,
     ) -> Self {
+        Self::with_fnt(fnt, Some((device, queue, batch)))
+    }
+
+    /// [`Self::from_fnt`]'s font; without `gpu` it only measures and lays
+    /// out, for tests.
+    fn with_fnt(fnt: &FntFile, gpu: Option<(&wgpu::Device, &wgpu::Queue, &BatchRenderer)>) -> Self {
         let missing = Self::missing_glyph_record(fnt);
         let baseline_row = fnt
             .glyph(u16::from(b'H'))
@@ -1085,7 +1154,7 @@ impl BitFont {
             baseline_row,
             missing.as_ref(),
         );
-        let mut engine = TextEngine::new(Some((device, queue, batch)));
+        let mut engine = TextEngine::new(gpu);
         let glyph_ids = outline.glyph_ids.clone();
         engine.set_original_font(outline);
 
@@ -1102,8 +1171,9 @@ impl BitFont {
             .glyph(0x20)
             .map(|g| g.width)
             .unwrap_or(DEFAULT_SPACE_WIDTH);
-        let darken_texture =
-            batch.create_texture_on_device(device, queue, &[0u8, 0, 0, DARKEN_ALPHA], 1, 1, None);
+        let darken_texture = gpu.map(|(device, queue, batch)| {
+            batch.create_texture_on_device(device, queue, &[0u8, 0, 0, DARKEN_ALPHA], 1, 1, None)
+        });
 
         log::info!(
             "BitFont: GAME.FNT draws {} code points (+missing={}), baseline row {}, space_width={}",
@@ -1124,11 +1194,12 @@ impl BitFont {
             char_spacing: CHAR_SPACING,
             tab_width: TAB_WIDTH,
             tab_origin: TAB_ORIGIN,
-            darken_texture: Some(darken_texture),
+            darken_texture,
             engine: RefCell::new(engine),
             mode: FontMode::default(),
             cells_only: false,
             fit: Cell::new(Fit::NONE),
+            raster: Cell::new(TextRaster::NATIVE),
         }
     }
 }
@@ -1156,7 +1227,17 @@ pub(crate) mod tests {
             mode: FontMode::Modern,
             cells_only: false,
             fit: Cell::new(Fit::NONE),
+            raster: Cell::new(TextRaster::NATIVE),
         }
+    }
+
+    /// A GPU-free font in the Original font option: `fnt` itself, falling
+    /// back to the bundled fonts for what it lacks, as [`BitFont::from_fnt`]
+    /// builds it.
+    pub(crate) fn make_original_test_font(fnt: &FntFile) -> BitFont {
+        let mut font = BitFont::with_fnt(fnt, None);
+        font.set_mode(FontMode::Original);
+        font
     }
 
     /// Build a measurement-only BitFont without a GPU context, for pure-logic
@@ -1198,6 +1279,7 @@ pub(crate) mod tests {
             mode: FontMode::Original,
             cells_only: true,
             fit: Cell::new(Fit::NONE),
+            raster: Cell::new(TextRaster::NATIVE),
         }
     }
 

@@ -595,6 +595,8 @@ impl App {
         let mut bit_font = BitFont::vector_only(&gpu.device, &gpu.queue, &batch_renderer);
         let fps_overlay =
             crate::app::diagnostics::fps_overlay::FpsOverlay::new(&gpu, &batch_renderer);
+        let window_ui =
+            crate::app::presentation::window_ui::WindowUi::new(&gpu.device, &batch_renderer);
         let depth_view: wgpu::TextureView = gpu.create_depth_texture();
         let shell_surface_presenter =
             crate::render::shell_surface_present::ShellSurfacePresenter::new(&gpu)?;
@@ -1269,6 +1271,7 @@ impl App {
                 status_screen_fill,
                 status_card_glow,
                 bit_font,
+                window_ui,
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),

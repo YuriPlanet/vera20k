@@ -482,6 +482,9 @@ pub(crate) fn render_wol_page(
         for (text, rect) in &layout.texts {
             let caption = match filled.iter().find(|(id, _)| Some(*id) == text.id) {
                 Some((_, value)) => value.as_str().into(),
+                // An empty template caption is no label: the persona heading
+                // stays blank without a nickname.
+                None if text.key.is_empty() => continue,
                 None => resolve_csf(state, text.key),
             };
             if caption.is_empty() {

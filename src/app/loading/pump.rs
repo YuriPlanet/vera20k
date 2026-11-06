@@ -3427,6 +3427,7 @@ pub(crate) fn present_saved_game_loading(state: &mut AppState) -> anyhow::Result
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Saved Game Loading"),
             });
+    state.renderer.window_ui.begin_frame();
     crate::app::frontend::skirmish_shell_render::render_saved_game_loading(
         state,
         &mut encoder,

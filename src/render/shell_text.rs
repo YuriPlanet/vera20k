@@ -10,7 +10,7 @@
 //! which is narrower than its rect.
 
 use crate::render::batch::SpriteInstance;
-use crate::render::bit_font::{BitFont, Fit, LineSpan};
+use crate::render::bit_font::{BitFont, Fit, LineSpan, TextRaster};
 use crate::render::shell_text_reveal::PathAReveal;
 use crate::ui::shell::geom::RIGHT_PANEL_FACE_W;
 
@@ -52,6 +52,23 @@ pub struct ScissorRect {
     pub y: u32,
     pub w: u32,
     pub h: u32,
+}
+
+impl ScissorRect {
+    /// `rect`, in the pixels its text lands on ([`BitFont::set_raster`]).
+    pub fn of(rect: TextRect, raster: TextRaster) -> Self {
+        let left = raster.origin[0] + rect.x as f32 * raster.scale;
+        let top = raster.origin[1] + rect.y as f32 * raster.scale;
+        // Both edges on whole pixels, as the text's own pixels are.
+        let width = (left + rect.w as f32 * raster.scale).round() - left.round();
+        let height = (top + rect.h as f32 * raster.scale).round() - top.round();
+        Self {
+            x: left.round().max(0.0) as u32,
+            y: top.round().max(0.0) as u32,
+            w: width as u32,
+            h: height as u32,
+        }
+    }
 }
 
 /// Output of `draw_in_rect`: sprite instances plus the scissor the caller
@@ -150,12 +167,7 @@ pub fn draw_in_rect_scaled(
     depth: f32,
     scale: f32,
 ) -> ShellTextDraw {
-    let scissor = ScissorRect {
-        x: rect.x.max(0) as u32,
-        y: rect.y.max(0) as u32,
-        w: rect.w,
-        h: rect.h,
-    };
+    let scissor = ScissorRect::of(rect, font.raster());
     if text.is_empty() {
         return ShellTextDraw {
             instances: Vec::new(),
@@ -230,12 +242,7 @@ pub fn draw_in_rect_path_a_scaled(
     reveal: PathAReveal,
     scale: f32,
 ) -> ShellTextDraw {
-    let scissor = ScissorRect {
-        x: rect.x.max(0) as u32,
-        y: rect.y.max(0) as u32,
-        w: rect.w,
-        h: rect.h,
-    };
+    let scissor = ScissorRect::of(rect, font.raster());
     if text.is_empty() {
         return ShellTextDraw {
             instances: Vec::new(),
@@ -292,6 +299,111 @@ mod tests {
 
     fn test_font() -> BitFont {
         make_test_font(&[(b'x' as u16, 6), (b'a' as u16, 6), (b'b' as u16, 6)], 4)
+    }
+
+    /// A zoomed match lays its text out in the frame and draws it in the
+    /// window: each glyph lands where the raster puts its frame position,
+    /// grown by the raster's scale, and the clip moves with it.
+    #[test]
+    fn a_label_under_a_raster_lands_where_the_raster_puts_it() {
+        let font = test_font();
+        let rect = TextRect {
+            x: 10,
+            y: 20,
+            w: 60,
+            h: 17,
+        };
+        let draw = || {
+            draw_in_rect(
+                &font,
+                "xa b",
+                rect,
+                [1.0; 3],
+                ShellAlign::H_CENTER,
+                [0.0; 2],
+                0.5,
+            )
+        };
+        let frame = draw();
+        let raster = TextRaster {
+            scale: 2.0,
+            origin: [7.0, 3.0],
+            camera: [0.0; 2],
+        };
+        let previous = font.set_raster(raster);
+        let window = draw();
+        font.set_raster(previous);
+        assert_eq!(frame.instances.len(), 3);
+        assert_eq!(window.instances.len(), 3);
+        for (frame, window) in frame.instances.iter().zip(&window.instances) {
+            assert_eq!(window.position, raster.point(frame.position));
+            assert_eq!(window.size, frame.size.map(|length| length * 2.0));
+        }
+        let clip = window.scissor;
+        assert_eq!((clip.x, clip.y, clip.w, clip.h), (27, 43, 120, 34));
+    }
+
+    /// A clip at a fractional scale keeps both edges on the whole pixels its
+    /// text's pixels round to, so it never reaches past the rect's right edge.
+    #[test]
+    fn a_clip_at_a_fractional_scale_rounds_both_edges() {
+        let raster = TextRaster {
+            scale: 1.5,
+            ..TextRaster::NATIVE
+        };
+        let clip = ScissorRect::of(
+            TextRect {
+                x: 1,
+                y: 1,
+                w: 3,
+                h: 3,
+            },
+            raster,
+        );
+        assert_eq!((clip.x, clip.y, clip.w, clip.h), (2, 2, 4, 4));
+    }
+
+    /// VERA's status help, the longest text a shell line holds, fits the
+    /// status line's text box on one line at the tightest squeeze in every
+    /// shipped language and the pseudo-language, in both font options (the
+    /// Original one from retail GAME.FNT), so none loses its end.
+    #[test]
+    fn every_status_help_fits_the_status_line_in_every_language() {
+        use crate::render::bit_font::tests::{make_original_test_font, make_vector_test_font};
+        let mut fonts = vec![("Modern", make_vector_test_font())];
+        if let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() {
+            let fnt = crate::assets::fnt_file::FntFile::from_bytes(
+                assets.get_ref("GAME.FNT").expect("retail GAME.FNT"),
+            )
+            .expect("parse retail GAME.FNT");
+            fonts.push(("Original", make_original_test_font(&fnt)));
+        }
+        let window = crate::ui::shell::layout::status_line_rect(
+            crate::ui::shell::geom::RectPx::new(0, 0, 303, 12),
+            800,
+            600,
+        );
+        let text_box = crate::ui::shell::layout::status_text_rect(window);
+        assert_eq!((window.w, text_box.w, text_box.h), (456, 618, 21));
+        let texts = crate::i18n::shipped_texts(|label| label.ends_with("HELP"));
+        assert!(texts.len() > 40 * 3, "{}", texts.len());
+        let fits = |font: &BitFont, text: &str| {
+            font.fitted(Fit::TIGHTEST, |font| {
+                let layout = font.wrap_layout(text, text_box.w as u32);
+                layout.lines.len() == 1 && !layout.split_word && layout.width <= text_box.w as u32
+            })
+        };
+        let too_long: Vec<_> = fonts
+            .iter()
+            .flat_map(|(face, font)| {
+                let fits = &fits;
+                texts
+                    .iter()
+                    .filter(move |(_, _, text)| !fits(font, text))
+                    .map(move |(tag, label, text)| (*face, tag, label, text))
+            })
+            .collect();
+        assert!(too_long.is_empty(), "{too_long:#?}");
     }
 
     /// VERA's own: a caption too long for its rect, as translations run, is
