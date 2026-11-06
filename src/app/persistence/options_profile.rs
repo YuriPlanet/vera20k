@@ -163,7 +163,8 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) hd_map_previews: bool,
     /// `[VERA] OriginalFont=`: interface text draws in the game's own
     /// GAME.FNT, scaled evenly, instead of VERA's vector fonts
-    /// ([`crate::render::text_engine`]). Off by default; presentation only.
+    /// ([`crate::render::text_engine`]). On by default, so text looks as the
+    /// game shipped; presentation only.
     pub(crate) original_font: bool,
     /// `[VERA] WindowMaximized=`: whether the window was last left maximised.
     /// [`Self::window_placement`] keeps the size it returns to.
@@ -332,7 +333,7 @@ impl Default for RetailOptionsProfile {
             hd_radar: false,
             smooth_sidebar: false,
             hd_map_previews: true,
-            original_font: false,
+            original_font: true,
             window_maximized: false,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
@@ -1643,10 +1644,14 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let unset = load_snapshot(&startup, &unset).retained_profile;
         assert_eq!(unset.window_placement, None);
         // The lock starts off, a window starts unmaximised, its icon is the
-        // red star, the radar is native and the sidebar sharp, and map
-        // previews are VERA's own; all six round-trip.
+        // red star, the radar is native and the sidebar sharp, map previews
+        // are VERA's own and text draws in GAME.FNT; all seven round-trip.
         assert!(!unset.lock_cursor && !unset.window_maximized && !unset.vera_icon);
         assert!(!unset.hd_radar && !unset.smooth_sidebar && unset.hd_map_previews);
+        assert_eq!(
+            unset.font_mode(),
+            crate::render::text_engine::FontMode::Original
+        );
         let changed = RetailOptionsProfile {
             lock_cursor: true,
             window_maximized: true,
@@ -1654,12 +1659,17 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
             hd_radar: true,
             smooth_sidebar: true,
             hd_map_previews: false,
+            original_font: false,
             ..RetailOptionsProfile::default()
         }
         .transform_settings(b"");
         let changed = load_snapshot(&startup, &changed).retained_profile;
         assert!(changed.lock_cursor && changed.window_maximized && changed.vera_icon);
         assert!(changed.hd_radar && changed.smooth_sidebar && !changed.hd_map_previews);
+        assert_eq!(
+            changed.font_mode(),
+            crate::render::text_engine::FontMode::Modern
+        );
     }
 
     #[test]

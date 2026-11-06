@@ -772,7 +772,7 @@ impl Default for LauncherOptionsValues {
             hd_radar: false,
             smooth_sidebar: false,
             hd_map_previews: true,
-            original_font: false,
+            original_font: true,
             shift_queue: false,
             wol_test_service: false,
             fps_counter: false,
