@@ -18,7 +18,8 @@ pub(super) const HOT: [u8; 3] = [255, 0, 0];
 pub(super) const TRACK: [u8; 3] = [30, 84, 24];
 
 const WINDOW: Duration = Duration::from_secs(1);
-const DOT: &str = "  ·  ";
+/// The gap between a row's entries.
+pub(super) const DOT: &str = "  ·  ";
 /// Areas under this share of the window stay off the Most CPU row.
 const MIN_AREA_PERCENT: f32 = 1.0;
 const MOST_AREAS: usize = 5;

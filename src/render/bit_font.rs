@@ -328,7 +328,7 @@ impl BitFont {
 
     /// The first step that `fits`, or the tightest as the error when none
     /// does. GPU-free test fonts draw their cells as they are.
-    fn first_fit(&self, fits: impl Fn(&BitFont) -> bool) -> Result<Fit, Fit> {
+    pub(crate) fn first_fit(&self, fits: impl Fn(&BitFont) -> bool) -> Result<Fit, Fit> {
         let mut fit = self.fit.get();
         if self.cells_only {
             return Ok(fit);
