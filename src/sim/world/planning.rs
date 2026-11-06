@@ -399,6 +399,10 @@ impl PlanningState {
         }
     }
 
+    /// `PlanningNodeClass::RemoveMember @ 0x006340B0`: drop `actor`'s first
+    /// member and destroy the node it empties. Its one call (0x0063647A)
+    /// never iterates; the live removals repeat its steps (0x00636120,
+    /// 0x006386E0, 0x00638840, 0x00636B50).
     fn remove_member(&mut self, node_id: u64, actor: u64) {
         self.unindex_node(node_id);
         let Some(node) = self.nodes.get_mut(&node_id) else {
@@ -425,6 +429,9 @@ impl PlanningState {
         }
     }
 
+    /// `PlanningNodeClass::Destructor @ 0x00633D30` (ChangeOwner 0x00638840),
+    /// or 0x00635120 and `PlanningNodeClass::UnlinkGlobals @ 0x00637640`
+    /// (Clear 0x00636120, 0x00636B50): the node leaves every node list.
     fn remove_node(&mut self, node_id: u64) {
         self.unindex_node(node_id);
         self.nodes.remove(&node_id);
@@ -474,6 +481,8 @@ impl PlanningNode {
             .and_then(planning_record_target)
     }
 
+    /// `PlanningNodeClass::AddMember @ 0x00633FA0`'s node half: the member
+    /// joins the end of the node's member vector (+0x4, +0x10).
     fn insert_order(&mut self, actor: u64, record: CommandRecord) {
         let position = self.member_order.len();
         self.member_order.push(actor);
@@ -499,7 +508,9 @@ impl Simulation {
             .is_some_and(|path| !path.nodes.is_empty())
     }
 
-    /// ClearScene6370B0 and TechnoLoad70BF79 discard active YR planning.
+    /// ClearScene6370B0 and TechnoLoad70BF79 discard active YR planning:
+    /// `Planning__ResetState @ 0x006370B0` runs `PlanningTokenClass::Clear
+    /// @ 0x00636120` on each token, frees it and zeroes AC4B84.
     /// This is a player-load boundary, separate from internal serialization.
     pub(crate) fn reset_planning_after_player_load(&mut self) {
         self.planning = PlanningState::default();
@@ -1030,8 +1041,8 @@ impl Simulation {
         self.planning_node_id_at_cell(owner, cell).is_some()
     }
 
-    /// PlanMgr 0x00638E60's hover AC4CCC: the node under `point` (Node634220
-    /// projects634550's live XYZ; its half-open hit box is16x16), kept only
+    /// PlanMgr 0x00638E60's hover AC4CCC: the node under `point`
+    /// ([`Self::planning_node_id_at_screen`]'s half-open 16x16 box), kept only
     /// when Planning__GetInvalidNodeReason admits it for `selected`. A refused
     /// node goes to AC4C3C, which nothing reads. Residuals: the press-held
     /// node AC4C38 gate is not kept (it only holds between an admitted press
@@ -1130,7 +1141,11 @@ impl Simulation {
     }
 
     /// `None` hit-tests every house's nodes, as the press and release
-    /// loops over AC4B34 do (0x0063A5A0, 0x0063A8E0).
+    /// loops over AC4B34 do (0x0063A5A0, 0x0063A8E0). The box is
+    /// `PlanningNodeClass::GetSurfacePoint @ 0x00634400`'s point, the 8x8
+    /// `Rect_CenteredSquare @ 0x00634510` grown by 4 (`Rect_Inflate_Uniform
+    /// @ 0x006357D0`), tested half-open (0x0063DB20); the press's AC4CCC
+    /// test builds the same 8x8 with `GetSurfaceRect @ 0x006345A0`.
     fn planning_node_id_at_screen(
         &self,
         owner: Option<InternedId>,
@@ -1236,6 +1251,8 @@ impl Simulation {
         actors
     }
 
+    /// `PlanningNodeClass::GetCoords @ 0x006343C0`: the first member's
+    /// event coordinates (0x00633BC0).
     fn planning_node_coords(&self, id: u64) -> Option<DriveCoord> {
         self.planning_target_coords(self.planning.nodes.get(&id)?.target()?)
     }
@@ -1311,6 +1328,9 @@ impl Simulation {
             .min()
     }
 
+    /// `TechnoClass::ClearPlanningTokens @ 0x006386E0`: a nonempty path runs
+    /// `PlanningTokenClass::Clear @ 0x00636120`'s body inline, then the
+    /// in-flight latch +0x1C clears. Callers apply its event +0x1D gate.
     pub(super) fn planning_detach_actor(&mut self, id: u64) {
         if let Some(mut path) = self.planning.paths.remove(&id) {
             if !path.nodes.is_empty() {
@@ -1342,11 +1362,16 @@ impl Simulation {
         }
     }
 
+    /// `PlanningTokenClass::CreateForTechno @ 0x00638A80`, which InitManagers
+    /// calls when Techno+0x514 is empty (0x006F3F77..0x006F3F83), appends
+    /// the new token to AC4C78.
     pub(super) fn initialize_planning_token(&mut self, actor: u64) {
         self.planning.register_token(actor);
     }
 
-    /// Techno6F4507..6F4531, after Foot disposal and before voice/Anim tails.
+    /// `PlanningTokenClass::ClearAndDelete @ 0x00636310`: Clear inline, then
+    /// the token leaves AC4C78 and is freed. Techno6F4507..6F4531, after
+    /// Foot disposal and before voice/Anim tails.
     pub(super) fn destroy_planning_token(&mut self, actor: u64) {
         self.planning_detach_actor(actor);
         self.planning.paths.remove(&actor);
@@ -1354,7 +1379,8 @@ impl Simulation {
         self.planning.token_order.retain(|id| *id != actor);
     }
 
-    /// ChangeOwner638840 clears future nodes/cursors, preserving +1C/+1D.
+    /// ChangeOwner638840 runs `PlanningTokenClass::Clear @ 0x00636120`'s
+    /// body inline: future nodes/cursors clear, +1C/+1D stay.
     pub(super) fn planning_change_owner(&mut self, actor: u64) {
         if self.planning_has_remaining_nodes(actor) {
             self.release_planning_charge(actor);
@@ -1745,6 +1771,9 @@ impl Simulation {
             let node = self.planning.nodes.get_mut(node_id).unwrap();
             //639800 copies each suffix member for the selected source path,
             // not the node's unrelated first member.634290 finds its first.
+            // PlanningTokenClass::CopyPathRangeToTechno 0x006367B0 copies
+            // [index, count); the loop prefix goes through AddMember
+            // 0x00633FA0 (0x00639942).
             let Some(template) = node.order(source_actor) else {
                 continue;
             };
