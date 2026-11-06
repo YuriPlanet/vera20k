@@ -659,6 +659,17 @@ fn sync_in_game_regions(state: &mut AppState) {
             text,
         });
     }
+    // TabClass::ToggleSidebar 0x006D04F0 registers the command bar's tips
+    // after SidebarClass's own; a labelled tip reads its CSF text directly.
+    for (id, rect, label) in crate::app::input::gadget_input::command_bar_tooltips(
+        &state.match_state.match_presentation.in_game_gadgets,
+    ) {
+        regions.push(TipRegion {
+            id: u32::from(id),
+            rect: TipRect::new(rect.x, rect.y, rect.w, rect.h),
+            text: csf_text(state, label),
+        });
+    }
     // Phobos left superweapon sidebar: `SWButtonClass` shows the same super
     // weapon name/cost tip as the right cameo.
     #[cfg(feature = "phobos")]

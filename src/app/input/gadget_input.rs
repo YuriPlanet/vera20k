@@ -14,6 +14,7 @@ use winit::event::MouseButton;
 
 #[path = "command_bar_input.rs"]
 mod command_bar;
+pub(crate) use command_bar::tooltips as command_bar_tooltips;
 
 use crate::app::AppState;
 use crate::app::presentation::sidebar_render::current_sidebar_view;
