@@ -8,10 +8,10 @@
 //! one column at the places retail's first band uses.
 
 use super::{
-    AUTO_LABEL, CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, CONTROLS_LABEL,
-    CUSTOM_END_GAME_BANNER_HELP, CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP,
-    CUSTOM_END_GAME_MOVIE_LABEL, CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category,
-    DEVELOPER_OPTIONS_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FPS_COUNTER_HELP,
+    CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP,
+    CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL,
+    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, DEVELOPER_OPTIONS_LABEL,
+    DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FPS_COUNTER_HELP,
     FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES,
     HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP,
     HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode,
@@ -19,7 +19,7 @@ use super::{
     LauncherCue, LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId,
     MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL,
     OptionsDialogState, PhysicalControlFrame, RENDER_INTERPOLATION_HELP,
-    RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL, SCREEN_LABEL,
+    RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL,
     SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP,
     SKIP_INTRO_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize,
     VERA_ICON_HELP, VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
@@ -39,7 +39,7 @@ pub(super) struct ShellInteraction {
     pressed_button: Option<LauncherButton>,
     popup_hovered: Option<usize>,
     /// Status help last written by a dialog hit test (`0x00622CCB`).
-    status_help: Option<&'static str>,
+    status_help: Option<LauncherStatusHelp>,
 }
 
 impl ShellInteraction {
@@ -53,6 +53,15 @@ impl ShellInteraction {
             ..Self::default()
         }
     }
+}
+
+/// What the status line says for a control.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LauncherStatusHelp {
+    /// A retail `STT:` string-table key.
+    Csf(&'static str),
+    /// VERA's own text, for the display controls retail never had.
+    Text(&'static str),
 }
 
 pub(crate) const KEYBOARD_BUTTON: u16 = 0x05CE;
@@ -425,7 +434,7 @@ impl OptionsDialogState {
         result.extend(layout.labels.iter().map(|&(rect, label)| {
             let (text, align) = match label {
                 PageLabel::Heading => (self.shell_category_label(layout.category), Left),
-                PageLabel::List(id) => (self.labels.vera(list_caption(id)), Left),
+                PageLabel::List(id) => (list_caption(id), Left),
                 PageLabel::Slider(id) => (self.slider_caption(id), Left),
                 PageLabel::Step(id) => (self.slider_step(id), Right),
                 PageLabel::Blank => (self.labels.blank.as_str(), Left),
@@ -448,8 +457,8 @@ impl OptionsDialogState {
             Category::Gameplay => &self.labels.game_options,
             Category::Interface => &self.labels.ui_options,
             Category::Audio => &self.labels.audio_options,
-            Category::Controls => self.labels.vera(CONTROLS_LABEL),
-            Category::Developer => self.labels.vera(DEVELOPER_OPTIONS_LABEL),
+            Category::Controls => CONTROLS_LABEL,
+            Category::Developer => DEVELOPER_OPTIONS_LABEL,
         }
     }
 
@@ -461,7 +470,7 @@ impl OptionsDialogState {
             LauncherTrackbarId::Score => &self.labels.music_volume,
             LauncherTrackbarId::Sound => &self.labels.sound_volume,
             LauncherTrackbarId::Voice => &self.labels.voice_volume,
-            LauncherTrackbarId::HouseColorStrength => self.labels.vera(HOUSE_COLOR_STRENGTH_LABEL),
+            LauncherTrackbarId::HouseColorStrength => HOUSE_COLOR_STRENGTH_LABEL,
         }
     }
 
@@ -481,26 +490,24 @@ impl OptionsDialogState {
             LauncherCheckboxId::Tooltips => &self.labels.tooltips,
             LauncherCheckboxId::TargetLines => &self.labels.target_lines,
             LauncherCheckboxId::ShowHidden => &self.labels.show_hidden,
-            LauncherCheckboxId::FullScreen => self.labels.vera(FULL_SCREEN_LABEL),
-            LauncherCheckboxId::OriginalShape => self.labels.vera(ORIGINAL_SHAPE_LABEL),
-            LauncherCheckboxId::YrOriginalStyle => self.labels.vera(YR_ORIGINAL_STYLE_LABEL),
-            LauncherCheckboxId::RenderInterpolation => self.labels.vera(RENDER_INTERPOLATION_LABEL),
-            LauncherCheckboxId::MouseWheelZoom => self.labels.vera(MOUSE_WHEEL_ZOOM_LABEL),
-            LauncherCheckboxId::RightClickOrders => self.labels.vera(RIGHT_CLICK_ORDERS_LABEL),
-            LauncherCheckboxId::LockCursor => self.labels.vera(LOCK_CURSOR_LABEL),
-            LauncherCheckboxId::VeraIcon => self.labels.vera(VERA_ICON_LABEL),
-            LauncherCheckboxId::HdRadar => self.labels.vera(HD_RADAR_LABEL),
-            LauncherCheckboxId::SmoothSidebar => self.labels.vera(SMOOTH_SIDEBAR_LABEL),
-            LauncherCheckboxId::HdMapPreviews => self.labels.vera(HD_MAP_PREVIEWS_LABEL),
-            LauncherCheckboxId::ShiftQueue => self.labels.vera(SHIFT_QUEUE_LABEL),
-            LauncherCheckboxId::WolTestService => self.labels.vera(WOL_TEST_SERVICE_LABEL),
-            LauncherCheckboxId::FpsCounter => self.labels.vera(FPS_COUNTER_LABEL),
-            LauncherCheckboxId::SkipIntro => self.labels.vera(SKIP_INTRO_LABEL),
-            LauncherCheckboxId::CustomEndGameBanner => {
-                self.labels.vera(CUSTOM_END_GAME_BANNER_LABEL)
-            }
-            LauncherCheckboxId::CustomEndGameScore => self.labels.vera(CUSTOM_END_GAME_SCORE_LABEL),
-            LauncherCheckboxId::CustomEndGameMovie => self.labels.vera(CUSTOM_END_GAME_MOVIE_LABEL),
+            LauncherCheckboxId::FullScreen => FULL_SCREEN_LABEL,
+            LauncherCheckboxId::OriginalShape => ORIGINAL_SHAPE_LABEL,
+            LauncherCheckboxId::YrOriginalStyle => YR_ORIGINAL_STYLE_LABEL,
+            LauncherCheckboxId::RenderInterpolation => RENDER_INTERPOLATION_LABEL,
+            LauncherCheckboxId::MouseWheelZoom => MOUSE_WHEEL_ZOOM_LABEL,
+            LauncherCheckboxId::RightClickOrders => RIGHT_CLICK_ORDERS_LABEL,
+            LauncherCheckboxId::LockCursor => LOCK_CURSOR_LABEL,
+            LauncherCheckboxId::VeraIcon => VERA_ICON_LABEL,
+            LauncherCheckboxId::HdRadar => HD_RADAR_LABEL,
+            LauncherCheckboxId::SmoothSidebar => SMOOTH_SIDEBAR_LABEL,
+            LauncherCheckboxId::HdMapPreviews => HD_MAP_PREVIEWS_LABEL,
+            LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
+            LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
+            LauncherCheckboxId::FpsCounter => FPS_COUNTER_LABEL,
+            LauncherCheckboxId::SkipIntro => SKIP_INTRO_LABEL,
+            LauncherCheckboxId::CustomEndGameBanner => CUSTOM_END_GAME_BANNER_LABEL,
+            LauncherCheckboxId::CustomEndGameScore => CUSTOM_END_GAME_SCORE_LABEL,
+            LauncherCheckboxId::CustomEndGameMovie => CUSTOM_END_GAME_MOVIE_LABEL,
         }
     }
 
@@ -510,7 +517,7 @@ impl OptionsDialogState {
             LauncherButton::Exit(LauncherParentResult::Back) => &self.labels.main_menu,
             LauncherButton::Exit(LauncherParentResult::Terminal) => "",
             LauncherButton::Category(category) => self.shell_category_label(category),
-            LauncherButton::CheckForUpdates => self.labels.vera(CHECK_FOR_UPDATES_LABEL),
+            LauncherButton::CheckForUpdates => CHECK_FOR_UPDATES_LABEL,
         }
     }
 
@@ -609,28 +616,24 @@ impl OptionsDialogState {
     /// when the window layer no longer lists it.
     pub(crate) fn shell_display_label(&self) -> String {
         match &self.display {
-            DisplayTarget::Auto => self.labels.vera(AUTO_LABEL).to_owned(),
+            DisplayTarget::Auto => DISPLAY_AUTO_LABEL.to_owned(),
             DisplayTarget::Fixed(id) => self
                 .displays
                 .iter()
                 .position(|choice| &choice.id == id)
-                .map_or_else(
-                    || id.clone(),
-                    |index| self.displays[index].label(self.labels.vera(SCREEN_LABEL), index + 1),
-                ),
+                .map_or_else(|| id.clone(), |index| self.displays[index].label(index + 1)),
         }
     }
 
-    /// The Display popup's rows, top to bottom: [`AUTO_LABEL`], then
+    /// The Display popup's rows, top to bottom: [`DISPLAY_AUTO_LABEL`], then
     /// each screen's `DisplayChoice::label`, numbered from 1.
     pub(crate) fn shell_display_rows(&self) -> Vec<String> {
-        let screen = self.labels.vera(SCREEN_LABEL);
-        std::iter::once(self.labels.vera(AUTO_LABEL).to_owned())
+        std::iter::once(DISPLAY_AUTO_LABEL.to_owned())
             .chain(
                 self.displays
                     .iter()
                     .enumerate()
-                    .map(|(index, choice)| choice.label(screen, index + 1)),
+                    .map(|(index, choice)| choice.label(index + 1)),
             )
             .collect()
     }
@@ -690,7 +693,7 @@ impl OptionsDialogState {
     /// The status help the line shows: what the last dialog hit test wrote.
     /// While a slider or button holds the mouse capture, or a list is open,
     /// the dialog gets no hit test and the text stays.
-    pub(crate) fn shell_status_help(&self) -> Option<&'static str> {
+    pub(crate) fn shell_status_help(&self) -> Option<LauncherStatusHelp> {
         self.shell_interaction.status_help
     }
 
@@ -702,7 +705,7 @@ impl OptionsDialogState {
         x: i32,
         y: i32,
         layout: &LauncherOptionsLayout,
-    ) -> Option<&'static str> {
+    ) -> Option<LauncherStatusHelp> {
         if self
             .shell_popup(layout)
             .is_some_and(|popup| popup.rect.contains(x, y))
@@ -712,10 +715,10 @@ impl OptionsDialogState {
         if let Some((id, _)) = layout.buttons.iter().find(|(_, rect)| rect.contains(x, y)) {
             let control = match id {
                 LauncherButton::Category(category) => {
-                    return Some(category.help());
+                    return Some(LauncherStatusHelp::Text(category.help()));
                 }
                 LauncherButton::CheckForUpdates => {
-                    return Some(CHECK_FOR_UPDATES_HELP);
+                    return Some(LauncherStatusHelp::Text(CHECK_FOR_UPDATES_HELP));
                 }
                 LauncherButton::Exit(LauncherParentResult::Keyboard) => KEYBOARD_BUTTON,
                 LauncherButton::Exit(
@@ -724,7 +727,7 @@ impl OptionsDialogState {
             };
             return OPTIONS_PAGE
                 .button(control)
-                .map(|button| button.tooltip_key);
+                .map(|button| LauncherStatusHelp::Csf(button.tooltip_key));
         }
         if let Some((id, _)) = layout
             .trackbars
@@ -732,14 +735,18 @@ impl OptionsDialogState {
             .find(|(_, rect)| rect.contains(x, y))
         {
             return Some(match id {
-                LauncherTrackbarId::Detail => "STT:MainOptSliderVisual",
-                LauncherTrackbarId::Difficulty => "STT:MainOptSliderDifficulty",
-                LauncherTrackbarId::Scroll => "STT:MainOptSliderScroll",
-                LauncherTrackbarId::Score => "STT:MainOptSliderMusic",
-                LauncherTrackbarId::Sound => "STT:MainOptSliderSound",
-                LauncherTrackbarId::Voice => "STT:MainOptSliderVoice",
+                LauncherTrackbarId::Detail => LauncherStatusHelp::Csf("STT:MainOptSliderVisual"),
+                LauncherTrackbarId::Difficulty => {
+                    LauncherStatusHelp::Csf("STT:MainOptSliderDifficulty")
+                }
+                LauncherTrackbarId::Scroll => LauncherStatusHelp::Csf("STT:MainOptSliderScroll"),
+                LauncherTrackbarId::Score => LauncherStatusHelp::Csf("STT:MainOptSliderMusic"),
+                LauncherTrackbarId::Sound => LauncherStatusHelp::Csf("STT:MainOptSliderSound"),
+                LauncherTrackbarId::Voice => LauncherStatusHelp::Csf("STT:MainOptSliderVoice"),
                 // VERA's own slider: retail has no string for it.
-                LauncherTrackbarId::HouseColorStrength => HOUSE_COLOR_STRENGTH_HELP,
+                LauncherTrackbarId::HouseColorStrength => {
+                    LauncherStatusHelp::Text(HOUSE_COLOR_STRENGTH_HELP)
+                }
             });
         }
         if let Some((id, _)) = layout
@@ -748,38 +755,58 @@ impl OptionsDialogState {
             .find(|(_, rect)| rect.contains(x, y))
         {
             return Some(match id {
-                LauncherCheckboxId::Tooltips => "STT:MainOptCBoxTooltips",
-                LauncherCheckboxId::TargetLines => "STT:MainOptCBoxTargetLines",
-                LauncherCheckboxId::ShowHidden => "STT:MainOptCBoxHidden",
-                LauncherCheckboxId::FullScreen => FULL_SCREEN_HELP,
-                LauncherCheckboxId::OriginalShape => ORIGINAL_SHAPE_HELP,
-                LauncherCheckboxId::YrOriginalStyle => YR_ORIGINAL_STYLE_HELP,
-                LauncherCheckboxId::RenderInterpolation => RENDER_INTERPOLATION_HELP,
-                LauncherCheckboxId::MouseWheelZoom => MOUSE_WHEEL_ZOOM_HELP,
-                LauncherCheckboxId::RightClickOrders => RIGHT_CLICK_ORDERS_HELP,
-                LauncherCheckboxId::LockCursor => LOCK_CURSOR_HELP,
-                LauncherCheckboxId::VeraIcon => VERA_ICON_HELP,
-                LauncherCheckboxId::HdRadar => HD_RADAR_HELP,
-                LauncherCheckboxId::SmoothSidebar => SMOOTH_SIDEBAR_HELP,
-                LauncherCheckboxId::HdMapPreviews => HD_MAP_PREVIEWS_HELP,
-                LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_HELP,
-                LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_HELP,
-                LauncherCheckboxId::FpsCounter => FPS_COUNTER_HELP,
-                LauncherCheckboxId::SkipIntro => SKIP_INTRO_HELP,
-                LauncherCheckboxId::CustomEndGameBanner => CUSTOM_END_GAME_BANNER_HELP,
-                LauncherCheckboxId::CustomEndGameScore => CUSTOM_END_GAME_SCORE_HELP,
-                LauncherCheckboxId::CustomEndGameMovie => CUSTOM_END_GAME_MOVIE_HELP,
+                LauncherCheckboxId::Tooltips => LauncherStatusHelp::Csf("STT:MainOptCBoxTooltips"),
+                LauncherCheckboxId::TargetLines => {
+                    LauncherStatusHelp::Csf("STT:MainOptCBoxTargetLines")
+                }
+                LauncherCheckboxId::ShowHidden => LauncherStatusHelp::Csf("STT:MainOptCBoxHidden"),
+                LauncherCheckboxId::FullScreen => LauncherStatusHelp::Text(FULL_SCREEN_HELP),
+                LauncherCheckboxId::OriginalShape => LauncherStatusHelp::Text(ORIGINAL_SHAPE_HELP),
+                LauncherCheckboxId::YrOriginalStyle => {
+                    LauncherStatusHelp::Text(YR_ORIGINAL_STYLE_HELP)
+                }
+                LauncherCheckboxId::RenderInterpolation => {
+                    LauncherStatusHelp::Text(RENDER_INTERPOLATION_HELP)
+                }
+                LauncherCheckboxId::MouseWheelZoom => {
+                    LauncherStatusHelp::Text(MOUSE_WHEEL_ZOOM_HELP)
+                }
+                LauncherCheckboxId::RightClickOrders => {
+                    LauncherStatusHelp::Text(RIGHT_CLICK_ORDERS_HELP)
+                }
+                LauncherCheckboxId::LockCursor => LauncherStatusHelp::Text(LOCK_CURSOR_HELP),
+                LauncherCheckboxId::VeraIcon => LauncherStatusHelp::Text(VERA_ICON_HELP),
+                LauncherCheckboxId::HdRadar => LauncherStatusHelp::Text(HD_RADAR_HELP),
+                LauncherCheckboxId::SmoothSidebar => LauncherStatusHelp::Text(SMOOTH_SIDEBAR_HELP),
+                LauncherCheckboxId::HdMapPreviews => LauncherStatusHelp::Text(HD_MAP_PREVIEWS_HELP),
+                LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Text(SHIFT_QUEUE_HELP),
+                LauncherCheckboxId::WolTestService => {
+                    LauncherStatusHelp::Text(WOL_TEST_SERVICE_HELP)
+                }
+                LauncherCheckboxId::FpsCounter => LauncherStatusHelp::Text(FPS_COUNTER_HELP),
+                LauncherCheckboxId::SkipIntro => LauncherStatusHelp::Text(SKIP_INTRO_HELP),
+                LauncherCheckboxId::CustomEndGameBanner => {
+                    LauncherStatusHelp::Text(CUSTOM_END_GAME_BANNER_HELP)
+                }
+                LauncherCheckboxId::CustomEndGameScore => {
+                    LauncherStatusHelp::Text(CUSTOM_END_GAME_SCORE_HELP)
+                }
+                LauncherCheckboxId::CustomEndGameMovie => {
+                    LauncherStatusHelp::Text(CUSTOM_END_GAME_MOVIE_HELP)
+                }
             });
         }
         layout
             .combos
             .iter()
             .find(|(_, rect)| rect.contains(x, y))
-            .map(|(combo, _)| match combo {
-                LauncherComboId::Zoom => ZOOM_HELP,
-                LauncherComboId::Sidebar => SIDEBAR_HELP,
-                LauncherComboId::Display => DISPLAY_HELP,
-                LauncherComboId::HealthBars => HEALTH_BARS_HELP,
+            .map(|(combo, _)| {
+                LauncherStatusHelp::Text(match combo {
+                    LauncherComboId::Zoom => ZOOM_HELP,
+                    LauncherComboId::Sidebar => SIDEBAR_HELP,
+                    LauncherComboId::Display => DISPLAY_HELP,
+                    LauncherComboId::HealthBars => HEALTH_BARS_HELP,
+                })
             })
     }
 
@@ -895,7 +922,7 @@ impl OptionsDialogState {
     }
 }
 
-/// A list's caption label: VERA's own, as retail has no such lists.
+/// A list's caption: VERA's own, as retail has no such lists.
 fn list_caption(id: LauncherComboId) -> &'static str {
     match id {
         LauncherComboId::Zoom => ZOOM_LABEL,
@@ -1164,7 +1191,10 @@ mod tests {
         );
         assert_eq!((output.result, output.check_for_updates), (None, false));
         // The pointer still rests on the button: its help stays up.
-        assert_eq!(state.shell_status_help(), Some(Category::Audio.help()));
+        assert_eq!(
+            state.shell_status_help(),
+            Some(LauncherStatusHelp::Text(Category::Audio.help()))
+        );
         let audio_page = page(Category::Audio);
         let labels = state.shell_labels(&audio_page);
         assert_eq!(
@@ -1199,6 +1229,8 @@ mod tests {
 
     #[test]
     fn status_help_names_the_control_under_the_pointer() {
+        let csf = |key| Some(LauncherStatusHelp::Csf(key));
+        let text = |text| Some(LauncherStatusHelp::Text(text));
         let dialog = state();
         let layout = page(Category::Display);
         let at = |rect: RectPx| dialog.shell_status_help_key(rect.x + 2, rect.y + 2, &layout);
@@ -1208,20 +1240,20 @@ mod tests {
         ] {
             assert_eq!(
                 at(button(&layout, LauncherButton::Exit(result))),
-                Some(key),
+                csf(key),
                 "{result:?}"
             );
         }
         for category in Category::ALL {
             assert_eq!(
                 at(button(&layout, LauncherButton::Category(category))),
-                Some(category.help())
+                text(category.help())
             );
         }
         assert_eq!(dialog.shell_status_help_key(5, 5, &layout), None);
         assert_eq!(
             at(layout.combo_rect(LauncherComboId::Zoom).unwrap()),
-            Some(ZOOM_HELP)
+            text(ZOOM_HELP)
         );
         use LauncherCheckboxId::*;
         for (id, help) in [
@@ -1230,91 +1262,8 @@ mod tests {
             (RenderInterpolation, RENDER_INTERPOLATION_HELP),
             (YrOriginalStyle, YR_ORIGINAL_STYLE_HELP),
         ] {
-            assert_eq!(at(checkbox(&layout, id)), Some(help), "{id:?}");
+            assert_eq!(at(checkbox(&layout, id)), text(help), "{id:?}");
         }
-    }
-
-    /// VERA's captions, list rows and status help are `VERA:` labels. Each
-    /// needs English text, or the page shows the label or `MISSING:` itself.
-    #[test]
-    fn every_vera_caption_row_and_help_has_english_text() {
-        let dialog = state();
-        let shown = |text: &str| {
-            assert!(
-                !text.starts_with("VERA:") && !text.starts_with("MISSING:"),
-                "{text}"
-            );
-        };
-        let english = |label: &str| shown(&crate::i18n::text(None, label));
-        for category in Category::ALL {
-            let layout = page(category);
-            dialog
-                .shell_labels(&layout)
-                .iter()
-                .for_each(|label| shown(label.text));
-            for &(id, _) in &layout.checkboxes {
-                shown(dialog.shell_checkbox_label(id));
-            }
-            for &(id, _) in &layout.buttons {
-                shown(dialog.shell_button_label(id));
-            }
-            vera_help(&dialog, &layout)
-                .into_iter()
-                .for_each(|label| english(label));
-        }
-        shown(&dialog.shell_display_label());
-        dialog
-            .shell_display_rows()
-            .iter()
-            .for_each(|row| shown(row));
-        SidebarSize::choices(1920, 1080)
-            .into_iter()
-            .for_each(|size| english(size.label()));
-        HealthBarMode::choices()
-            .into_iter()
-            .for_each(|mode| english(mode.label()));
-        english(crate::ui::shell::pause_menu::DISPLAY_GROUP_CAPTION);
-    }
-
-    /// The status line wraps at its width, and its 21-pixel rect shows only
-    /// the top four rows of a second line (`draw_in_rect_path_a_scaled`), so
-    /// each language's VERA help fits one line in retail GAME.FNT.
-    #[test]
-    fn vera_help_fits_the_status_line_in_every_language() {
-        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
-            return;
-        };
-        let fnt = crate::assets::fnt_file::FntFile::from_bytes(
-            assets.get_ref("GAME.FNT").expect("retail GAME.FNT"),
-        )
-        .expect("parse retail GAME.FNT");
-        let font = crate::render::bit_font::tests::measuring_font(&fnt);
-        let dialog = state();
-        for category in Category::ALL {
-            let layout = page(category);
-            for label in vera_help(&dialog, &layout) {
-                for (language, text) in crate::i18n::translations(label) {
-                    let lines = font.wrap_layout(text, layout.status_help.w as u32).lines;
-                    assert_eq!(lines.len(), 1, "{language} {label}: {text}");
-                }
-            }
-        }
-    }
-
-    /// The `VERA:` status help of every control on the page, from the page's
-    /// own hit test.
-    fn vera_help(dialog: &OptionsDialogState, layout: &LauncherOptionsLayout) -> Vec<&'static str> {
-        let rects = layout
-            .checkboxes
-            .iter()
-            .map(|(_, rect)| rect)
-            .chain(layout.combos.iter().map(|(_, rect)| rect))
-            .chain(layout.trackbars.iter().map(|(_, rect)| rect))
-            .chain(layout.buttons.iter().map(|(_, rect)| rect));
-        rects
-            .filter_map(|rect| dialog.shell_status_help_key(rect.x + 2, rect.y + 2, layout))
-            .filter(|label| label.starts_with("VERA:"))
-            .collect()
     }
 
     #[test]
@@ -1431,14 +1380,17 @@ mod tests {
         state.shell_mouse_move(srect.x + 2, srect.y + 10, &gameplay);
         assert_eq!(
             state.shell_status_help(),
-            Some("STT:MainOptSliderDifficulty")
+            Some(LauncherStatusHelp::Csf("STT:MainOptSliderDifficulty"))
         );
         state.shell_mouse_up(srect.x + srect.w - 2, srect.y + srect.h - 3, &gameplay);
         assert_eq!(state.capture, None);
         // Main Menu's status help reads after hovering it.
         let back = button(&gameplay, LauncherButton::Exit(LauncherParentResult::Back));
         state.shell_mouse_move(back.x + 5, back.y + 5, &gameplay);
-        assert_eq!(state.shell_status_help(), Some("STT:MainOptButtonBack"));
+        assert_eq!(
+            state.shell_status_help(),
+            Some(LauncherStatusHelp::Csf("STT:MainOptButtonBack"))
+        );
         assert_eq!(state.drain_output().result, None);
         // The Tooltips box: its caption takes no press; its 18x18 icon
         // toggles, and the box starts ticked.
@@ -1585,7 +1537,7 @@ mod tests {
         let face = layout.combo_rect(LauncherComboId::Display).unwrap();
         // Auto is the face's text and the list's first row until a screen is
         // picked, so a fresh profile reads the way it always behaved.
-        assert_eq!(state.shell_display_label(), "Auto");
+        assert_eq!(state.shell_display_label(), DISPLAY_AUTO_LABEL);
         state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
         assert_eq!(state.open_combo, Some(LauncherComboId::Display));
         let popup = state.shell_popup(&layout).unwrap();
@@ -1597,7 +1549,7 @@ mod tests {
         assert_eq!(
             state.shell_display_rows(),
             [
-                "Auto".to_owned(),
+                DISPLAY_AUTO_LABEL.to_owned(),
                 "Screen 1: 1920x1080 60Hz".to_owned(),
                 "Screen 2: 2560x1440 144Hz".to_owned(),
             ]
@@ -1624,7 +1576,7 @@ mod tests {
         state.drain_output();
         let auto = popup.row_rect(0);
         state.shell_mouse_down(auto.x + 10, auto.y + 5, &layout);
-        assert_eq!(state.shell_display_label(), "Auto");
+        assert_eq!(state.shell_display_label(), DISPLAY_AUTO_LABEL);
         assert_eq!(
             state.drain_output().events,
             [
@@ -1688,10 +1640,7 @@ mod tests {
         ] {
             let mut state = state();
             let rect = checkbox(&layout, id);
-            assert_eq!(
-                state.shell_checkbox_label(id),
-                crate::i18n::text(None, label)
-            );
+            assert_eq!(state.shell_checkbox_label(id), label);
             let before = state.shell_checkbox_checked(id);
             state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
             assert_eq!(state.shell_checkbox_checked(id), !before, "{id:?}");
@@ -1732,10 +1681,7 @@ mod tests {
             // A fresh dialog per box: each click is the player's first, and
             // the boxes must not remember each other's state.
             let mut state = state();
-            assert_eq!(
-                state.shell_checkbox_label(id),
-                crate::i18n::text(None, label)
-            );
+            assert_eq!(state.shell_checkbox_label(id), label);
             assert!(!state.shell_checkbox_checked(id), "{id:?} starts unticked");
             let rect = checkbox(&layout, id);
             state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);

@@ -655,13 +655,6 @@ impl BitFont {
             .map(Self::missing_glyph_stand_in)
     }
 
-    /// The space advance: the FNT's 0x20 glyph, or a default without one.
-    fn fnt_space_width(fnt: &FntFile) -> u32 {
-        fnt.glyph(0x20)
-            .map(|g| g.width)
-            .unwrap_or(DEFAULT_SPACE_WIDTH)
-    }
-
     pub fn from_fnt(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -756,7 +749,10 @@ impl BitFont {
             }
         }
 
-        let space_width = Self::fnt_space_width(fnt);
+        let space_width = fnt
+            .glyph(0x20)
+            .map(|g| g.width)
+            .unwrap_or(DEFAULT_SPACE_WIDTH);
         let atlas_texture =
             batch.create_texture_on_device(device, queue, &rgba, atlas_w, atlas_h, None);
         let darken_texture =
@@ -1245,24 +1241,6 @@ pub(crate) mod tests {
             tab_origin: TAB_ORIGIN,
             darken_texture: None,
         }
-    }
-
-    /// A measurement-only font with `fnt`'s own metrics, as
-    /// [`BitFont::from_fnt`] packs them, for tests that measure real text:
-    /// its glyph widths, space advance, missing-glyph stand-in and cell.
-    pub(crate) fn measuring_font(fnt: &FntFile) -> BitFont {
-        let widths: Vec<_> = PACKED_CODEPOINT_RANGE
-            .filter_map(|cp| fnt.glyph(cp).map(|glyph| (cp, glyph.width)))
-            .collect();
-        let mut font = make_test_font(&widths, BitFont::fnt_space_width(fnt));
-        font.missing_glyph = BitFont::missing_glyph_record(fnt).map(|glyph| GlyphEntry {
-            uv_origin: [0.0, 0.0],
-            uv_size: [0.0, 0.0],
-            pixel_width: glyph.width as f32,
-        });
-        font.cell_height = fnt.cell_height;
-        font.bitmap_rows = fnt.bitmap_rows;
-        font
     }
 
     #[test]

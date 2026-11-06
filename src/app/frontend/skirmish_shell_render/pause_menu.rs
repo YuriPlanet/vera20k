@@ -229,7 +229,7 @@ pub(crate) fn render_pause_menu_shell(
         &mut controls,
         &mut texts,
         display_layout.group,
-        &crate::i18n::text(csf, DISPLAY_GROUP_CAPTION),
+        DISPLAY_GROUP_CAPTION,
     );
     for (list, caption_text) in [
         (DisplayList::Zoom, ZOOM_LABEL),
@@ -249,7 +249,7 @@ pub(crate) fn render_pause_menu_shell(
         );
         texts.push(text_draw(
             font,
-            &crate::i18n::text(csf, caption_text),
+            caption_text,
             display_layout.captions[list as usize],
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
@@ -289,7 +289,7 @@ pub(crate) fn render_pause_menu_shell(
         // 61663A..616674: the caption starts 26 pixels into the box's window.
         texts.push(text_draw(
             font,
-            &crate::i18n::text(csf, caption_text),
+            caption_text,
             RectPx::new(rect.x + 26, rect.y, rect.w - 26, rect.h),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::V_CENTER,

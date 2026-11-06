@@ -122,20 +122,6 @@ pub fn fill(text: &str, values: &[(&str, &dyn std::fmt::Display)]) -> String {
     })
 }
 
-/// Each language file's text for `key`, with the file's tag, for tests that
-/// check every translation and not only the selected one.
-#[cfg(test)]
-pub(crate) fn translations(key: &str) -> Vec<(&'static str, &'static str)> {
-    let key = key.to_ascii_uppercase();
-    (0..LANGUAGES.len())
-        .filter_map(|index| {
-            table(index)
-                .get(&key)
-                .map(|text| (LANGUAGES[index].0, text.as_str()))
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

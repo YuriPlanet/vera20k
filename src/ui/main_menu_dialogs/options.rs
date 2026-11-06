@@ -52,80 +52,86 @@ pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 29] = [
     ("TXT_FASTEST", "Fastest"),
 ];
 
-/// VERA's own captions and status help on this page, as `VERA:` labels. The
-/// retail string table has nothing for full screen, zoom, the battle shape or
-/// the Red Alert 2 loading screen and menu movie, so their text is in VERA's
-/// language files, behind the loaded CSF ([`crate::i18n`]).
-pub(crate) const ZOOM_LABEL: &str = "VERA:OptionsZoom";
-pub(crate) const ZOOM_HELP: &str = "VERA:OptionsZoomHelp";
-pub(crate) const SIDEBAR_LABEL: &str = "VERA:OptionsSidebar";
-pub(crate) const SIDEBAR_HELP: &str = "VERA:OptionsSidebarHelp";
-pub(crate) const FULL_SCREEN_LABEL: &str = "VERA:OptionsFullScreen";
-pub(crate) const FULL_SCREEN_HELP: &str = "VERA:OptionsFullScreenHelp";
-pub(crate) const ORIGINAL_SHAPE_LABEL: &str = "VERA:OptionsOriginalShape";
-pub(crate) const ORIGINAL_SHAPE_HELP: &str = "VERA:OptionsOriginalShapeHelp";
-pub(crate) const YR_ORIGINAL_STYLE_LABEL: &str = "VERA:OptionsYrOriginalStyle";
-pub(crate) const YR_ORIGINAL_STYLE_HELP: &str = "VERA:OptionsYrOriginalStyleHelp";
-pub(crate) const RENDER_INTERPOLATION_LABEL: &str = "VERA:OptionsRenderInterpolation";
-pub(crate) const RENDER_INTERPOLATION_HELP: &str = "VERA:OptionsRenderInterpolationHelp";
-pub(crate) const MOUSE_WHEEL_ZOOM_LABEL: &str = "VERA:OptionsMouseWheelZoom";
-pub(crate) const MOUSE_WHEEL_ZOOM_HELP: &str = "VERA:OptionsMouseWheelZoomHelp";
-pub(crate) const RIGHT_CLICK_ORDERS_LABEL: &str = "VERA:OptionsRightClickOrders";
-pub(crate) const RIGHT_CLICK_ORDERS_HELP: &str = "VERA:OptionsRightClickOrdersHelp";
-pub(crate) const LOCK_CURSOR_LABEL: &str = "VERA:OptionsLockCursor";
-pub(crate) const LOCK_CURSOR_HELP: &str = "VERA:OptionsLockCursorHelp";
-pub(crate) const VERA_ICON_LABEL: &str = "VERA:OptionsVeraIcon";
-pub(crate) const VERA_ICON_HELP: &str = "VERA:OptionsVeraIconHelp";
-pub(crate) const HD_RADAR_LABEL: &str = "VERA:OptionsHdRadar";
-pub(crate) const HD_RADAR_HELP: &str = "VERA:OptionsHdRadarHelp";
-pub(crate) const SMOOTH_SIDEBAR_LABEL: &str = "VERA:OptionsSmoothSidebar";
-pub(crate) const SMOOTH_SIDEBAR_HELP: &str = "VERA:OptionsSmoothSidebarHelp";
+/// VERA's own captions and status help on this page. The retail string table
+/// has nothing for full screen, zoom, the battle shape or the Red Alert 2
+/// loading screen and menu movie, so these are English everywhere.
+pub(crate) const ZOOM_LABEL: &str = "Zoom";
+pub(crate) const ZOOM_HELP: &str =
+    "How big battles look. Auto picks the best size for your screen.";
+pub(crate) const SIDEBAR_LABEL: &str = "Sidebar";
+pub(crate) const SIDEBAR_HELP: &str = "How big the sidebar and bottom bar are in battles.";
+pub(crate) const FULL_SCREEN_LABEL: &str = "Full Screen";
+pub(crate) const FULL_SCREEN_HELP: &str = "Fill the whole screen. Untick it to play in a window.";
+pub(crate) const ORIGINAL_SHAPE_LABEL: &str = "Original 4:3 Shape";
+pub(crate) const ORIGINAL_SHAPE_HELP: &str =
+    "Battles keep the original 4:3 shape, with bars on wide screens.";
+pub(crate) const YR_ORIGINAL_STYLE_LABEL: &str = "Original YR Style";
+pub(crate) const YR_ORIGINAL_STYLE_HELP: &str = "Use Yuri's Revenge's loading screen and menu movie, plus the Skirmish and multiplayer lobby backgrounds.";
+pub(crate) const RENDER_INTERPOLATION_LABEL: &str = "Render Interpolation";
+pub(crate) const RENDER_INTERPOLATION_HELP: &str = "Smooth motion between simulation frames. Adds one frame of visual latency; does not increase simulation speed.";
+pub(crate) const MOUSE_WHEEL_ZOOM_LABEL: &str = "Mouse Wheel Zoom";
+pub(crate) const MOUSE_WHEEL_ZOOM_HELP: &str = "Use the mouse wheel to zoom battles in or out. Turning this off restores the normal view distance.";
+pub(crate) const RIGHT_CLICK_ORDERS_LABEL: &str = "Right-Click Orders";
+pub(crate) const RIGHT_CLICK_ORDERS_HELP: &str =
+    "Left-click to select; right-click to give orders.";
+pub(crate) const LOCK_CURSOR_LABEL: &str = "Lock Cursor to Window";
+pub(crate) const LOCK_CURSOR_HELP: &str =
+    "Keep the mouse inside the game window. Ctrl+Alt+L frees it until you click in the game.";
+pub(crate) const VERA_ICON_LABEL: &str = "VERA Icon";
+pub(crate) const VERA_ICON_HELP: &str =
+    "Show VERA's own icon instead of Red Alert 2's red star on the game window, taskbar and Dock.";
+pub(crate) const HD_RADAR_LABEL: &str = "HD Radar";
+pub(crate) const HD_RADAR_HELP: &str = "Draw the radar at the screen's full resolution when the sidebar is enlarged, so each map cell shows.";
+pub(crate) const SMOOTH_SIDEBAR_LABEL: &str = "Smooth Sidebar";
+pub(crate) const SMOOTH_SIDEBAR_HELP: &str = "Lightly smooth the sidebar's pictures and buttons with xBR when the sidebar is enlarged. Text stays sharp.";
 /// The Interface page's HD Map Previews (`app::map_picture`). The browser
 /// build cannot start the hidden run that draws a map's picture.
 pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
     !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
-pub(crate) const HD_MAP_PREVIEWS_LABEL: &str = "VERA:OptionsHdMapPreviews";
-pub(crate) const HD_MAP_PREVIEWS_HELP: &str = "VERA:OptionsHdMapPreviewsHelp";
-pub(crate) const SHIFT_QUEUE_LABEL: &str = "VERA:OptionsShiftQueue";
+pub(crate) const HD_MAP_PREVIEWS_LABEL: &str = "HD Map Previews";
+pub(crate) const HD_MAP_PREVIEWS_HELP: &str = "Show a sharp picture of the whole map in Skirmish, LAN and online games, drawn the first time each map is shown. Untick for the map's own small preview.";
+pub(crate) const SHIFT_QUEUE_LABEL: &str = "Shift-Click Batch Queue";
 /// The two category pages retail's string table has no band name for.
-pub(crate) const CONTROLS_LABEL: &str = "VERA:OptionsControls";
-pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "VERA:OptionsDeveloperOptions";
-pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "VERA:OptionsWolTestService";
-pub(crate) const WOL_TEST_SERVICE_HELP: &str = "VERA:OptionsWolTestServiceHelp";
-pub(crate) const SKIP_INTRO_LABEL: &str = "VERA:OptionsSkipIntro";
-pub(crate) const SKIP_INTRO_HELP: &str = "VERA:OptionsSkipIntroHelp";
-pub(crate) const FPS_COUNTER_LABEL: &str = "VERA:OptionsFpsCounter";
-pub(crate) const FPS_COUNTER_HELP: &str = "VERA:OptionsFpsCounterHelp";
+pub(crate) const CONTROLS_LABEL: &str = "Controls";
+pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "Developer Options";
+pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "Offline Internet Test Service";
+pub(crate) const WOL_TEST_SERVICE_HELP: &str =
+    "Internet opens with stand-in servers, lobbies and players, for testing its screens.";
+pub(crate) const SKIP_INTRO_LABEL: &str = "Skip Intro";
+pub(crate) const SKIP_INTRO_HELP: &str = "Start straight at the main menu, without the logo, the splash picture or the first-start intro movie. Applies at the next start.";
+pub(crate) const FPS_COUNTER_LABEL: &str = "FPS Counter";
+pub(crate) const FPS_COUNTER_HELP: &str = "Show frames per second in the top-left corner. Off at every start; Ctrl+Alt+F also switches it.";
 /// VERA's end-game switches, the pair of `[EndGameScreens]` presentation
 /// stages. The verdict is what the match shows where it is decided; the score
 /// page is the dialog after it. Each stage owns its picture *and* its music, so
 /// a player can keep one stage and drop the other.
-pub(crate) const CUSTOM_END_GAME_BANNER_LABEL: &str = "VERA:OptionsCustomEndGameBanner";
-pub(crate) const CUSTOM_END_GAME_BANNER_HELP: &str = "VERA:OptionsCustomEndGameBannerHelp";
-pub(crate) const CUSTOM_END_GAME_SCORE_LABEL: &str = "VERA:OptionsCustomEndGameScore";
-pub(crate) const CUSTOM_END_GAME_SCORE_HELP: &str = "VERA:OptionsCustomEndGameScoreHelp";
-pub(crate) const CUSTOM_END_GAME_MOVIE_LABEL: &str = "VERA:OptionsCustomEndGameMovie";
-pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "VERA:OptionsCustomEndGameMovieHelp";
-pub(crate) const SHIFT_QUEUE_HELP: &str = "VERA:OptionsShiftQueueHelp";
-pub(crate) const DISPLAY_LABEL: &str = "VERA:OptionsDisplay";
-pub(crate) const DISPLAY_HELP: &str = "VERA:OptionsDisplayHelp";
-/// VERA's health-bar list. The retail string table has nothing for it.
-pub(crate) const HEALTH_BARS_LABEL: &str = "VERA:OptionsHealthBars";
-pub(crate) const HEALTH_BARS_HELP: &str = "VERA:OptionsHealthBarsHelp";
+pub(crate) const CUSTOM_END_GAME_BANNER_LABEL: &str = "Custom End Game Banner";
+pub(crate) const CUSTOM_END_GAME_BANNER_HELP: &str = "Show the victory or defeat picture a rules set gives your country over the battlefield, and start its music with it. Untick to keep the standard banner and theme.";
+pub(crate) const CUSTOM_END_GAME_SCORE_LABEL: &str = "Custom End Game Score";
+pub(crate) const CUSTOM_END_GAME_SCORE_HELP: &str = "Use the same country picture as the score screen's background and its music as the score theme. Untick to keep the standard score screen.";
+pub(crate) const CUSTOM_END_GAME_MOVIE_LABEL: &str = "Custom End Game Movie";
+pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "Let a beaten computer commander's losing clip finish before the victory or defeat picture and the score screen. Skirmish only. Untick to show them at once, which cuts the clip.";
+pub(crate) const SHIFT_QUEUE_HELP: &str = "Unit cameos: Shift-click queues several, Ctrl-click builds endlessly, Alt-click builds next, Shift-right-click cancels all.";
+pub(crate) const DISPLAY_LABEL: &str = "Display";
+pub(crate) const DISPLAY_HELP: &str = "Which screen the game opens on. Auto follows the system.";
+/// VERA's health-bar list. The retail string table has nothing for it, so
+/// the caption and help are English everywhere.
+pub(crate) const HEALTH_BARS_LABEL: &str = "Health Bars";
+pub(crate) const HEALTH_BARS_HELP: &str = "When units show a health bar. Original is the hovered unit and the selection; All Units shows every unit you can see; All Units, Not Full hides the full-health ones.";
 /// VERA's strength slider for the `[Colors]` team-colour bands. Retail's
 /// string table has nothing for it.
-pub(crate) const HOUSE_COLOR_STRENGTH_LABEL: &str = "VERA:OptionsHouseColorStrength";
-pub(crate) const HOUSE_COLOR_STRENGTH_HELP: &str = "VERA:OptionsHouseColorStrengthHelp";
-/// The first row of the Zoom and Display lists: the best zoom for the
-/// window, or the window system's own screen.
-pub(crate) const AUTO_LABEL: &str = "VERA:OptionsAuto";
+pub(crate) const HOUSE_COLOR_STRENGTH_LABEL: &str = "Team Color Strength";
+pub(crate) const HOUSE_COLOR_STRENGTH_HELP: &str = "How strongly team colours stand out, from 1 for the original bands to 10 for the boldest. The next battle uses it.";
+/// The Display list's first row: the window system's own choice.
+pub(crate) const DISPLAY_AUTO_LABEL: &str = "Auto";
 /// The Developer page's Check for Updates: the desktop updater
 /// (`app::updater`) checks once the dialog has slid out. The browser build
 /// has no updater.
 pub(crate) const HAS_CHECK_FOR_UPDATES: bool =
     !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
-pub(crate) const CHECK_FOR_UPDATES_LABEL: &str = "VERA:OptionsCheckForUpdates";
-pub(crate) const CHECK_FOR_UPDATES_HELP: &str = "VERA:OptionsCheckForUpdatesHelp";
+pub(crate) const CHECK_FOR_UPDATES_LABEL: &str = "Check for Updates";
+pub(crate) const CHECK_FOR_UPDATES_HELP: &str =
+    "Check for a newer VERA20K now, even one you skipped.";
 
 /// A button of the dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -220,12 +226,11 @@ impl SidebarSize {
     /// The combo's rows, top to bottom, where the frame has room for them.
     const ALL: [Self; 3] = [Self::Normal, Self::Large, Self::ExtraLarge];
 
-    /// The row's `VERA:` label; its text is in VERA's language files.
     pub(crate) const fn label(self) -> &'static str {
         match self {
-            Self::Normal => "VERA:OptionsSidebarNormal",
-            Self::Large => "VERA:OptionsSidebarLarge",
-            Self::ExtraLarge => "VERA:OptionsSidebarExtraLarge",
+            Self::Normal => "Normal",
+            Self::Large => "Large",
+            Self::ExtraLarge => "XL",
         }
     }
 
@@ -308,12 +313,11 @@ impl HealthBarMode {
     /// The list's rows, top to bottom; the first is the default.
     const ALL: [Self; 3] = [Self::Vanilla, Self::Always, Self::AlwaysExceptFull];
 
-    /// The row's `VERA:` label; its text is in VERA's language files.
     pub(crate) const fn label(self) -> &'static str {
         match self {
-            Self::Vanilla => "VERA:OptionsHealthBarsOriginal",
-            Self::Always => "VERA:OptionsHealthBarsAllUnits",
-            Self::AlwaysExceptFull => "VERA:OptionsHealthBarsNotFull",
+            Self::Vanilla => "Original",
+            Self::Always => "All Units",
+            Self::AlwaysExceptFull => "All Units, Not Full",
         }
     }
 
@@ -355,25 +359,21 @@ pub(crate) struct DisplayChoice {
     pub(crate) refresh_millihertz: Option<u32>,
 }
 
-/// A Display row's `VERA:` label: `Screen {number}: {size}` in English.
-pub(crate) const SCREEN_LABEL: &str = "VERA:OptionsScreen";
-
 impl DisplayChoice {
-    /// The row's text for the `number`th screen of the list (1-based), from
-    /// [`SCREEN_LABEL`]'s text `screen`: `Screen 1: 1920x1080 60Hz`. The
-    /// window system's own name is not shown: macOS answers `Monitor #<model
-    /// number>`, which means nothing to a player and is the same for two
-    /// identical monitors. A screen that reports no refresh rate leaves it out
-    /// instead of guessing one.
-    pub(crate) fn label(&self, screen: &str, number: usize) -> String {
-        let mut size = format!("{}x{}", self.width, self.height);
-        // A rate the backend does not know, and the zero some virtual adapters
-        // report for a mode they do not drive, are both left out rather than
-        // shown as a refresh rate of zero.
-        if let Some(millihertz) = self.refresh_millihertz.filter(|&rate| rate > 0) {
-            size.push_str(&format!(" {}Hz", millihertz / 1000));
+    /// The row's text for the `number`th screen of the list (1-based),
+    /// `Screen 1: 1920x1080 60Hz`. The window system's own name is not shown:
+    /// macOS answers `Monitor #<model number>`, which means nothing to a
+    /// player and is the same for two identical monitors. A screen that
+    /// reports no refresh rate leaves it out instead of guessing one.
+    pub(crate) fn label(&self, number: usize) -> String {
+        let size = format!("Screen {number}: {}x{}", self.width, self.height);
+        match self.refresh_millihertz {
+            // A rate the backend does not know, and the zero some virtual
+            // adapters report for a mode they do not drive, are both left out
+            // rather than shown as a refresh rate of zero.
+            Some(millihertz) if millihertz > 0 => format!("{size} {}Hz", millihertz / 1000),
+            _ => size,
         }
-        crate::i18n::fill(screen, &[("number", &number), ("size", &size)])
     }
 }
 
@@ -445,62 +445,15 @@ pub(crate) struct LauncherOptionsLabels {
     normal: String,
     hard: String,
     scroll_tokens: [String; 7],
-    /// [`VERA_LABELS`]' text, in that order.
-    vera: [String; VERA_LABELS.len()],
 }
 
-/// VERA's own captions the page shows, resolved with retail's when it opens.
-/// The CSF answers first, then VERA's language files: the loader puts them
-/// behind it, and a CSF-less test resolver reads them directly.
-const VERA_LABELS: [&str; 28] = [
-    ZOOM_LABEL,
-    SIDEBAR_LABEL,
-    FULL_SCREEN_LABEL,
-    ORIGINAL_SHAPE_LABEL,
-    YR_ORIGINAL_STYLE_LABEL,
-    RENDER_INTERPOLATION_LABEL,
-    MOUSE_WHEEL_ZOOM_LABEL,
-    RIGHT_CLICK_ORDERS_LABEL,
-    LOCK_CURSOR_LABEL,
-    VERA_ICON_LABEL,
-    HD_RADAR_LABEL,
-    SMOOTH_SIDEBAR_LABEL,
-    HD_MAP_PREVIEWS_LABEL,
-    SHIFT_QUEUE_LABEL,
-    CONTROLS_LABEL,
-    DEVELOPER_OPTIONS_LABEL,
-    WOL_TEST_SERVICE_LABEL,
-    SKIP_INTRO_LABEL,
-    FPS_COUNTER_LABEL,
-    CUSTOM_END_GAME_BANNER_LABEL,
-    CUSTOM_END_GAME_SCORE_LABEL,
-    CUSTOM_END_GAME_MOVIE_LABEL,
-    DISPLAY_LABEL,
-    HEALTH_BARS_LABEL,
-    HOUSE_COLOR_STRENGTH_LABEL,
-    AUTO_LABEL,
-    SCREEN_LABEL,
-    CHECK_FOR_UPDATES_LABEL,
-];
-
 impl LauncherOptionsLabels {
-    /// A VERA caption's text; a label outside [`VERA_LABELS`] shows as is.
-    pub(crate) fn vera<'a>(&'a self, label: &'a str) -> &'a str {
-        VERA_LABELS
-            .iter()
-            .position(|known| *known == label)
-            .map_or(label, |index| self.vera[index].as_str())
-    }
-
     pub(crate) fn resolve(csf: &dyn Fn(&str) -> Option<String>) -> Self {
         let label = |index: usize| {
             let (key, fallback) = LAUNCHER_LABEL_SPECS[index];
             csf(key).unwrap_or_else(|| fallback.to_string())
         };
-        let vera = VERA_LABELS
-            .map(|label| csf(label).unwrap_or_else(|| crate::i18n::text(None, label).into_owned()));
         Self {
-            vera,
             options: label(0),
             main_menu: label(1),
             keyboard: label(2),
@@ -1462,26 +1415,30 @@ impl Category {
         }
     }
 
-    /// The `VERA:` label of the page button's status help. Retail's string
-    /// table has nothing for VERA's pages.
+    /// The status help for the page's button. Retail's string table has
+    /// nothing for VERA's pages, so it is English everywhere.
     pub(crate) const fn help(self) -> &'static str {
         match self {
-            Self::Display => "VERA:OptionsDisplayPageHelp",
-            Self::Gameplay => "VERA:OptionsGameplayPageHelp",
+            Self::Display => "Zoom, screen, window shape, team colours and how battles are drawn.",
+            Self::Gameplay => {
+                "Detail, difficulty, target lines, hidden objects, queueing and end-game screens."
+            }
             Self::Interface => {
                 if HAS_HD_MAP_PREVIEWS {
-                    "VERA:OptionsInterfacePageHelp"
+                    "Sidebar size and smoothing, HD radar and map previews, health bars, tooltips and the VERA icon."
                 } else {
-                    "VERA:OptionsInterfacePageHelpNoPreviews"
+                    "Sidebar size and smoothing, HD radar, health bars, tooltips and the VERA icon."
                 }
             }
-            Self::Audio => "VERA:OptionsAudioPageHelp",
-            Self::Controls => "VERA:OptionsControlsPageHelp",
+            Self::Audio => "Music, sound and voice volume.",
+            Self::Controls => {
+                "Scroll rate, right-click orders, mouse wheel zoom and the cursor lock."
+            }
             Self::Developer => {
                 if HAS_CHECK_FOR_UPDATES {
-                    "VERA:OptionsDeveloperPageHelp"
+                    "The frame counter, the intro skip and Check for Updates."
                 } else {
-                    "VERA:OptionsDeveloperPageHelpNoUpdates"
+                    "The frame counter and the intro skip."
                 }
             }
         }
@@ -1561,17 +1518,6 @@ mod tests {
         assert_eq!(labels.options, "Localized Options");
         assert_eq!(labels.main_menu, "Main Menu");
         assert_eq!(csf.text("GUI:MainMenu"), "MISSING:'GUI:MainMenu'");
-    }
-
-    /// VERA's captions resolve with retail's: the loaded table answers first
-    /// (the loader puts the selected language behind it), and VERA's English
-    /// fills a label it lacks.
-    #[test]
-    fn the_string_table_answers_vera_captions_first() {
-        let csf = crate::assets::csf_file::test_csf(&[(FPS_COUNTER_LABEL, "FPS 计数器")]);
-        let labels = LauncherOptionsLabels::resolve(&|key| csf.get(key).map(str::to_owned));
-        assert_eq!(labels.vera(FPS_COUNTER_LABEL), "FPS 计数器");
-        assert_eq!(labels.vera(ZOOM_LABEL), "Zoom");
     }
 
     /// VERA's strength slider holds positions 0..=9 and nothing else, and the
@@ -2014,14 +1960,13 @@ mod tests {
     #[test]
     fn display_rows_name_the_list_position_size_and_rate() {
         let choices = display_settings();
-        let screen = crate::i18n::text(None, SCREEN_LABEL);
         // The list position names the screen; the device name only persists.
-        assert_eq!(choices[0].label(&screen, 1), "Screen 1: 1920x1080 60Hz");
+        assert_eq!(choices[0].label(1), "Screen 1: 1920x1080 60Hz");
         // A rate that is not a whole number of hertz still reads as its
         // truncated figure, so a 143.999 Hz panel says 143Hz, not 144Hz.
-        assert_eq!(choices[1].label(&screen, 2), "Screen 2: 2560x1440 143Hz");
+        assert_eq!(choices[1].label(2), "Screen 2: 2560x1440 143Hz");
         // A screen that reports no rate leaves it out instead of inventing one.
-        assert_eq!(choices[2].label(&screen, 3), "Screen 3: 800x600");
+        assert_eq!(choices[2].label(3), "Screen 3: 800x600");
     }
 
     #[test]

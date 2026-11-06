@@ -359,9 +359,7 @@ impl DisplayControlsLayout {
     }
 }
 
-/// The group's heading, a `VERA:` label: display settings, unlike the
-/// Options page's Display list of screens.
-pub const DISPLAY_GROUP_CAPTION: &str = "VERA:OptionsDisplayGroup";
+pub const DISPLAY_GROUP_CAPTION: &str = "Display";
 const DISPLAY_COMBO_W: i32 = 180;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -6,27 +6,21 @@
 
 use super::{chrome::*, controls::*, *};
 use crate::app::AppState;
-use crate::assets::csf_file::CsfFile;
 use crate::render::batch::SpriteInstance;
 use crate::render::shell_text::{self, ShellAlign, ShellTextDraw, TextRect};
 use crate::render::shell_text_reveal::PathAReveal;
-use crate::ui::main_menu_dialogs::options::shell::{LauncherLabelAlign, LauncherOptionsLayout};
+use crate::ui::main_menu_dialogs::options::shell::{
+    LauncherLabelAlign, LauncherOptionsLayout, LauncherStatusHelp,
+};
 use crate::ui::main_menu_dialogs::options::{
-    AUTO_LABEL, HealthBarMode, LauncherButton, LauncherCheckboxId, LauncherComboId,
-    OptionsDialogState, Zoom,
+    HealthBarMode, LauncherButton, LauncherCheckboxId, LauncherComboId, OptionsDialogState, Zoom,
 };
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::util::time::Instant;
 
 /// A Zoom row: the zoom and the battle's size in game pixels in this window,
-/// what `App::sync_zoom_pass` will give the match. Auto's word is VERA's
-/// [`AUTO_LABEL`].
-pub(crate) fn zoom_label(
-    zoom: Zoom,
-    (width, height): (u32, u32),
-    original_shape: bool,
-    csf: Option<&CsfFile>,
-) -> String {
+/// what `App::sync_zoom_pass` will give the match.
+pub(crate) fn zoom_label(zoom: Zoom, (width, height): (u32, u32), original_shape: bool) -> String {
     use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
     let shape = if original_shape {
         FrameShape::Original
@@ -36,7 +30,7 @@ pub(crate) fn zoom_label(
     let geometry = ZoomGeometry::new(width, height, zoom.percent(width, height), shape);
     let size = format!("({}x{})", geometry.src_width, geometry.src_height);
     match zoom {
-        Zoom::Auto => format!("{} {size}", crate::i18n::text(csf, AUTO_LABEL)),
+        Zoom::Auto => format!("Auto {size}"),
         Zoom::Percent(percent) => format!("{percent}% {size}"),
     }
 }
@@ -161,7 +155,6 @@ fn build_controls(
 
 fn build_text(
     font: &BitFont,
-    csf: Option<&CsfFile>,
     layout: &LauncherOptionsLayout,
     dialog: &OptionsDialogState,
     title: Option<crate::ui::shell::static_reveal::Kind1RevealWindow>,
@@ -251,15 +244,10 @@ fn build_text(
                 dialog.shell_selected_zoom(layout),
                 layout.screen(),
                 dialog.shell_checkbox_checked(LauncherCheckboxId::OriginalShape),
-                csf,
             ),
-            LauncherComboId::Sidebar => {
-                crate::i18n::text(csf, dialog.shell_selected_sidebar(layout).label()).into_owned()
-            }
+            LauncherComboId::Sidebar => dialog.shell_selected_sidebar(layout).label().to_owned(),
             LauncherComboId::Display => dialog.shell_display_label(),
-            LauncherComboId::HealthBars => {
-                crate::i18n::text(csf, dialog.shell_selected_health_bars().label()).into_owned()
-            }
+            LauncherComboId::HealthBars => dialog.shell_selected_health_bars().label().to_owned(),
         };
         out.push(text_draw(
             font,
@@ -379,7 +367,12 @@ pub(crate) fn render_launcher_options(
             .options_dialog
             .as_ref()
             .and_then(|dialog| dialog.shell_status_help())
-            .map(|key| crate::app::frontend::shell_pass::resolve_csf(state, key).into_owned())
+            .map(|help| match help {
+                LauncherStatusHelp::Csf(key) => {
+                    crate::app::frontend::shell_pass::resolve_csf(state, key).into_owned()
+                }
+                LauncherStatusHelp::Text(text) => text.to_owned(),
+            })
             .unwrap_or_default();
         let status = crate::app::frontend::menu_page_render::paint_shell_status_line(
             state,
@@ -426,14 +419,7 @@ pub(crate) fn render_launcher_options(
     }
     if !leaving {
         instances.extend(build_controls(atlas, &layout, dialog, !sliding));
-        texts = build_text(
-            &state.renderer.bit_font,
-            state.process_assets.csf.as_ref(),
-            &layout,
-            dialog,
-            title,
-            !sliding,
-        );
+        texts = build_text(&state.renderer.bit_font, &layout, dialog, title, !sliding);
     }
     texts.extend(crate::render::shell_paint::paint_labels_scaled(
         &state.renderer.bit_font,
@@ -452,22 +438,21 @@ pub(crate) fn render_launcher_options(
         );
         let text_inset = (3.0 * scale.factor()).round() as i32;
         let original_shape = dialog.shell_checkbox_checked(LauncherCheckboxId::OriginalShape);
-        let csf = state.process_assets.csf.as_ref();
         let rows: Vec<String> = match popup.combo {
             LauncherComboId::Zoom => layout
                 .zoom_choices()
                 .into_iter()
-                .map(|zoom| zoom_label(zoom, layout.screen(), original_shape, csf))
+                .map(|zoom| zoom_label(zoom, layout.screen(), original_shape))
                 .collect(),
             LauncherComboId::Sidebar => layout
                 .sidebar_choices()
                 .into_iter()
-                .map(|size| crate::i18n::text(csf, size.label()).into_owned())
+                .map(|size| size.label().to_owned())
                 .collect(),
             LauncherComboId::Display => dialog.shell_display_rows(),
             LauncherComboId::HealthBars => HealthBarMode::choices()
                 .into_iter()
-                .map(|mode| crate::i18n::text(csf, mode.label()).into_owned())
+                .map(|mode| mode.label().to_owned())
                 .collect(),
         };
         for (i, row_text) in rows.iter().enumerate() {
@@ -621,7 +606,7 @@ mod tests {
         let hd = (1920, 1080);
         let rows: Vec<_> = Zoom::choices(hd.0, hd.1)
             .into_iter()
-            .map(|zoom| zoom_label(zoom, hd, false, None))
+            .map(|zoom| zoom_label(zoom, hd, false))
             .collect();
         assert_eq!(
             rows,
@@ -633,9 +618,6 @@ mod tests {
             ]
         );
         // The original 4:3 shape trims the width.
-        assert_eq!(
-            zoom_label(Zoom::Percent(150), hd, true, None),
-            "150% (960x720)"
-        );
+        assert_eq!(zoom_label(Zoom::Percent(150), hd, true), "150% (960x720)");
     }
 }
