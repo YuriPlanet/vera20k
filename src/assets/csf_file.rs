@@ -14,9 +14,10 @@
 //! - Part of assets/ — no dependencies on game modules.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 
 use crate::assets::error::AssetError;
+use crate::util::lookup_hash::LookupMap;
+use crate::util::native_string::with_ascii_uppercase;
 use crate::util::read_helpers::read_u32_le;
 
 #[cfg(feature = "ares")]
@@ -49,7 +50,7 @@ pub struct CsfFile {
     /// VERA's localization layer (`[VERA] Language=`), searched only for
     /// labels the table has no text for. Lookup-only: `len`/`entries` still
     /// describe the loaded files.
-    fallbacks: HashMap<String, CsfText>,
+    fallbacks: LookupMap<String, CsfText>,
 }
 
 /// Raw diagnostics retain the existing map semantics. The active Ares table
@@ -57,7 +58,7 @@ pub struct CsfFile {
 /// duplicate slots even when every supplemental file has unique labels.
 #[derive(Debug, Clone)]
 enum CsfEntries {
-    Raw(HashMap<String, Option<CsfText>>),
+    Raw(LookupMap<String, Option<CsfText>>),
     #[cfg(feature = "ares")]
     Ares(Vec<(String, Option<CsfText>)>),
 }
@@ -120,7 +121,10 @@ impl CsfFile {
         // so a malformed count cannot steer the allocation before any record
         // is parsed.
         let possible_entries = (data.len() / 22) as u32;
-        let mut entries = HashMap::with_capacity(label_count.min(possible_entries) as usize);
+        let mut entries = LookupMap::with_capacity_and_hasher(
+            label_count.min(possible_entries) as usize,
+            Default::default(),
+        );
         let mut offset: usize = 24;
 
         // Retail walks records until the next read/magic check fails;
@@ -141,7 +145,7 @@ impl CsfFile {
             version,
             language,
             entries: CsfEntries::Raw(entries),
-            fallbacks: HashMap::new(),
+            fallbacks: LookupMap::default(),
         })
     }
 
@@ -277,15 +281,17 @@ impl CsfFile {
     }
 
     fn lookup_text(&self, key: &str) -> Option<&CsfText> {
-        let key = key.to_ascii_uppercase();
-        let loaded = match &self.entries {
-            CsfEntries::Raw(entries) => entries.get(&key).and_then(Option::as_ref),
-            #[cfg(feature = "ares")]
-            CsfEntries::Ares(labels) => {
-                native_label_search(labels, &key).and_then(|slot| labels[slot].1.as_ref())
-            }
-        };
-        loaded.or_else(|| self.fallbacks.get(&key))
+        // The UI looks labels up every frame: fold the key on the stack.
+        with_ascii_uppercase(key, |key| {
+            let loaded = match &self.entries {
+                CsfEntries::Raw(entries) => entries.get(key).and_then(Option::as_ref),
+                #[cfg(feature = "ares")]
+                CsfEntries::Ares(labels) => {
+                    native_label_search(labels, key).and_then(|slot| labels[slot].1.as_ref())
+                }
+            };
+            loaded.or_else(|| self.fallbacks.get(key))
+        })
     }
 
     /// Native initialized-table lookup. Missing labels are visible, not an
@@ -639,6 +645,8 @@ pub fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "ares")]
+    use std::collections::HashMap;
 
     #[test]
     fn a_huge_header_label_count_cannot_steer_the_map_reservation() {

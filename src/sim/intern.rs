@@ -9,12 +9,13 @@
 //! The interner is part of `Simulation` — all peers intern the same strings
 //! from the same rules.ini + map data in the same order, producing identical IDs.
 
-use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::{RuleSet, TypeHandle};
 use crate::sim::type_handle_table::TypeHandleTable;
+use crate::util::lookup_hash::LookupMap;
+use crate::util::native_string::with_ascii_uppercase;
 
 /// Interned string handle — `Copy`, `Eq`, `Ord`, `Hash`. Zero-cost clones.
 #[derive(
@@ -56,8 +57,9 @@ impl fmt::Display for InternedId {
 /// The display string preserves the casing of the first call that created the entry.
 #[derive(Debug)]
 pub struct StringInterner {
-    /// Uppercase-normalized key → ID.
-    to_id: BTreeMap<String, InternedId>,
+    /// Uppercase-normalized key → ID. Only looked up, never walked, so it
+    /// takes the lookup hasher.
+    to_id: LookupMap<String, InternedId>,
     /// ID (index) → display string (first-seen casing).
     to_str: Vec<String>,
     /// Derived: each id's object handles in the bound rules
@@ -76,7 +78,7 @@ impl StringInterner {
     /// Create an empty interner.
     pub fn new() -> Self {
         Self {
-            to_id: BTreeMap::new(),
+            to_id: LookupMap::default(),
             to_str: Vec::new(),
             types: TypeHandleTable::default(),
             serial: next_interner_serial(),
@@ -174,19 +176,20 @@ impl StringInterner {
     /// Intern a string, returning its ID. If already interned (case-insensitive),
     /// returns the existing ID. Otherwise assigns the next sequential ID.
     pub fn intern(&mut self, s: &str) -> InternedId {
-        let key = s.to_ascii_uppercase();
-        if let Some(&id) = self.to_id.get(&key) {
+        if let Some(id) = self.get(s) {
             return id;
         }
         let id = InternedId(self.to_str.len() as u32);
         self.to_str.push(s.to_string());
-        self.to_id.insert(key, id);
+        self.to_id.insert(s.to_ascii_uppercase(), id);
         id
     }
 
     /// Look up an ID without inserting. Returns `None` if not yet interned.
+    /// The sidebar and the simulation ask many times a frame, so the key is
+    /// folded on the stack.
     pub fn get(&self, s: &str) -> Option<InternedId> {
-        self.to_id.get(&s.to_ascii_uppercase()).copied()
+        with_ascii_uppercase(s, |key| self.to_id.get(key).copied())
     }
 
     /// Resolve an ID back to its display string (first-seen casing).
@@ -243,7 +246,7 @@ impl serde::Serialize for StringInterner {
 impl<'de> serde::Deserialize<'de> for StringInterner {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let strings = Vec::<String>::deserialize(deserializer)?;
-        let mut to_id = BTreeMap::new();
+        let mut to_id = LookupMap::default();
         for (i, s) in strings.iter().enumerate() {
             to_id.insert(s.to_ascii_uppercase(), InternedId(i as u32));
         }
