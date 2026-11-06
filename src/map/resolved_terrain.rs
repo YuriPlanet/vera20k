@@ -121,6 +121,24 @@ pub(crate) fn recalc_zone_type(
     wheel_speed: Option<crate::util::native_x87::NativeF32Bits>,
     terrain_object_occupation: Option<i32>,
 ) -> u8 {
+    recalc_zone_type_for_wheel_block(
+        outside,
+        overlay_zone_type,
+        land_type,
+        wheel_speed_at_or_below_one_percent(wheel_speed),
+        terrain_object_occupation,
+    )
+}
+
+/// [`recalc_zone_type`] for a caller that holds the land row's
+/// `Wheel <= 1%` result (`0x00483D57..0x00483D69`) instead of the speed.
+pub(crate) fn recalc_zone_type_for_wheel_block(
+    outside: bool,
+    overlay_zone_type: Option<u8>,
+    land_type: u8,
+    wheel_blocked: bool,
+    terrain_object_occupation: Option<i32>,
+) -> u8 {
     if outside {
         zone_class::OUTSIDE
     } else if let Some(zone_type) = overlay_zone_type {
@@ -129,7 +147,7 @@ pub(crate) fn recalc_zone_type(
         zone_class::WATER
     } else if land_type == LandType::Beach.as_index() {
         zone_class::BEACH
-    } else if wheel_speed_at_or_below_one_percent(wheel_speed) {
+    } else if wheel_blocked {
         zone_class::IMPASSABLE
     } else if terrain_object_occupation == Some(7) {
         zone_class::WALL

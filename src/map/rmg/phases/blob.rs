@@ -136,6 +136,12 @@ fn directed_key(
 /// increments belong to the shape drivers).
 pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams) -> i32 {
     let blob_id = *blob_counter;
+    // 0x0059BBCC..0x0059BBF3: fewer than 401 cells read as 400, and the node
+    // pool and heap both take `8 * max_cells + 2` slots (at least 3,202).
+    // Neither can fill: the only inserts are the seed and at most four per
+    // pop (directions 0, 2, 4, 6) over at most `max_cells` pops, so at most
+    // `4 * max_cells + 1` nodes. The pool check and the heap's full-drop are
+    // kept as native writes them (the heap insert at 0x0059C23C).
     let max_cells = params.max_cells.max(400);
     let cap = (max_cells * 8 + 2).max(100) as usize;
 

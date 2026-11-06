@@ -12,12 +12,14 @@
 
 use crate::map::theater::TheaterData;
 use crate::rules::locomotor_type::SpeedType;
+use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::terrain_rules::TerrainRules;
 
 #[cfg(any(test, feature = "test-support"))]
 use super::executed_stages;
 use super::phases::shore::TileBlocks;
 use super::phases::tech_buildings::TechType;
+use super::phases::zones::OverlayZoneFacts;
 use super::pipeline::{self, LAND_TYPES, PipelineInputs};
 use super::rng::{RANGE_K_BITS, RmgRng};
 use super::scratch::RmgScratch;
@@ -52,6 +54,8 @@ pub struct ResolvedTheaterInputs {
     pub wheel_impassable: [bool; LAND_TYPES],
     /// Low byte of `[General] CliffBackImpassability=`.
     pub cliff_back_impassability: u8,
+    /// What the start-zone classifier reads from each overlay type, by id.
+    pub overlay_zones: Vec<OverlayZoneFacts>,
     /// Per-tile `Morphable=` flag, indexed by flat tile id.
     pub morphable: Vec<bool>,
     /// The generator's sine table: always the retail table in production.
@@ -64,6 +68,7 @@ impl ResolvedTheaterInputs {
     pub fn from_theater(
         theater: &TheaterData,
         rules: &TerrainRules,
+        overlays: &OverlayTypeRegistry,
         cliff_back_impassability: u8,
     ) -> Self {
         let morphable = (0..theater.lookup.len())
@@ -73,6 +78,7 @@ impl ResolvedTheaterInputs {
             ids: TileIds::resolve(theater),
             wheel_impassable: wheel_impassable_from_rules(rules),
             cliff_back_impassability,
+            overlay_zones: OverlayZoneFacts::from_registry(overlays),
             morphable,
             trig: Some(TrigTable::embedded()),
         }
@@ -203,6 +209,7 @@ pub fn generate_map_observed(
         morphable: &morphable,
         wheel_impassable: resolved.wheel_impassable,
         cliff_back_impassability: resolved.cliff_back_impassability,
+        overlay_zones: &resolved.overlay_zones,
         tech_types,
         trig: resolved.trig,
         map_type: options.map_type,
@@ -341,6 +348,7 @@ mod tests {
                 w
             },
             cliff_back_impassability: 2,
+            overlay_zones: Vec::new(),
             morphable: Vec::new(),
         }
     }
@@ -567,13 +575,12 @@ mod tests {
         let rules = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini")?;
         let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE")
             .expect("retail TEMPERATE theater");
+        let ruleset = crate::rules::ruleset::RuleSet::from_ini(&rules).expect("retail rules");
         let resolved = ResolvedTheaterInputs::from_theater(
             &theater,
             &TerrainRules::from_ini(&rules),
-            crate::rules::ruleset::RuleSet::from_ini(&rules)
-                .expect("retail rules")
-                .general
-                .cliff_back_impassability,
+            ruleset.overlay_registry(),
+            ruleset.general.cliff_back_impassability,
         );
         let blocks =
             crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {

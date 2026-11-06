@@ -61,6 +61,8 @@ pub struct PipelineInputs<'a> {
     /// Low byte of `[General] CliffBackImpassability=`, for the Recalc land
     /// type the zone classifier and tech foundation gate read.
     pub cliff_back_impassability: u8,
+    /// What the start-zone classifier reads from each overlay type, by id.
+    pub overlay_zones: &'a [super::phases::zones::OverlayZoneFacts],
     /// The resolved `NeutralTechBuildings` list.
     pub tech_types: &'a [TechType],
     /// The generator's sine table, for the river's heading.
@@ -313,6 +315,7 @@ pub fn run_pipeline(
             local_rect,
             wheel_impassable: inputs.wheel_impassable,
             cliff_back_impassability: inputs.cliff_back_impassability,
+            overlays: inputs.overlay_zones,
         };
         let zones = zones::compute(
             grid,
