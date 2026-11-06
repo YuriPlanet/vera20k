@@ -452,9 +452,12 @@ pub(crate) fn render_keyboard_shell(
             SHELL_CONTROL_TEXT_DEPTH,
         ));
     }
-    texts.extend(shell_paint::paint_labels(
+    // The status line is a family static like the heading: it scales with the
+    // page, as `paint_labels_scaled` does for every other family page.
+    texts.extend(shell_paint::paint_labels_scaled(
         font,
         &status_label.into_iter().collect::<Vec<_>>(),
+        layout.scale.factor(),
     ));
     let mut overlay = ShellFrameOverlay::default();
     if dialog.category_open {
