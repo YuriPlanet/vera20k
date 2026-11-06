@@ -88,3 +88,62 @@ Process. Independent restored/control Dummy cells continue through the next
 ordinary frames with equal hashes and retained cargo. The shared Cell
 getter regression also stamps Dummy onto a real cell with a different height
 to distinguish retained allocation identity from a coordinate re-lookup.
+
+## Building garrison deploy
+
+`building_garrison_deploy.json` contains three original-code components for an
+occupied stock CAHSE01: the selected Building D producer and resolved Event9
+receivers with NULL and an existing accepted Cell target. Its `.meta.json`
+records the runtime, entry points and command and points here for this
+human-readable evidence sidecar. Original `gamemd.exe` SHA256:
+`3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`.
+
+Prepare the existing
+[`building_death_anims` joined/garrison input directory](building_death_anims_joined.md),
+including its fixed `JOINED_EXTRA_ASSETS` sprite dependencies. This mode uses
+`garrison_fatal_inputs`: physical RULESMD.INI, optional LANGRULE.INI,
+MPBattleMD.ini, Hills.map and separate ARTMD.INI, existing sound/audio files,
+construction/Active sprites and E1/GI/debris/weapon sprites. The helper also
+reads CAHSE01's CTHSE01.SHP from the original TEMPERATE archive. A Hills.mmx
+source can be exposed as a same-byte Hills.map symlink; do not skip the map
+layer or substitute RA2 base INIs. Use existing asset extraction for missing
+named dependencies. The original executable, archives and extracted files
+are local inputs and are not committed.
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 \
+VERA20K_GAMEMD_EXE=/path/to/retail/gamemd.exe \
+VERA20K_BUILDING_DEATH_ASSETS=/path/to/extracted/inputs \
+python -m tools.spatial_oracle.transport_unload --building-garrison-deploy --check
+```
+
+Existing garrison readers, constructors, `joined_fixture`, original Building
+Unlimbo and Idle/body-transition owners establish CAHSE01 and E1. The original
+occupant-vector resize owns its storage; one-E1 garrison membership, stored
+position and Transporter are supplied priors. GameMode5, a successful allocator,
+flat 32-cell map, House and no radio contacts are fixture boundaries. Native
+unoccupied Guard dispatch establishes a 100-frame cadence before occupancy;
+the component observation frame is1. Selection/local House and the Event9
+resolved actor after token/planning resolution are supplied separately. This
+does not execute natural boarding, ownership transfer, whole placement/startup,
+UI encoding/delivery or a complete D frame.
+
+The unchanged730AF0 producer reaches original Building GetOccupantCount4581F0
+(Building vtable+408) and emits opcode9 at6FFE00. BuildingType instance+408 is
+UndeploysInto and is unrelated. The receiver4C76D7..4C7818 executes actual
+alive/nonlimbo/operational/factory gates and OVER_OUT3, destination455D50(NULL,1),
+target443B90(NULL), base target6FCDB0(NULL), then QueueMission5B35E0(16,0).
+The existing Cell(22,16) pretarget is accepted by original443B90, not raw-written.
+Both receiver rows end Target=NULL and pending Unload16 with one occupant.
+The App regression consumes only opcode, target, pending mission and occupant
+count; it exercises its own real Capture/D/ordinary-frame path separately.
+
+The generator additionally asserts preservation of current Guard5, status,
+ready, burst0, archive and native timer start/duration; all three full RNG
+streams and every executable section/Building and Infantry primary table stay
+unchanged. Its call observer admits no random or detach call in these
+no-contact controls. Raw timer auxiliary storage and actor pointers are not
+goldens. No post-event Commence, Mission_Unload or later world tick runs here;
+component clock preservation must not become a complete-frame timer assertion.
+Live-contact and fired/burst-positive effects remain outside these controls.
+Only Rust-consumed outcomes are retained, without replay bulk or run receipts.

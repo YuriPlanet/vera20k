@@ -4048,10 +4048,12 @@ fn deploy_key_command(
     let entity = sim.entities().get(entity_id)?;
     let obj = rules.and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
     match entity.category() {
-        // Absorbers and garrisons share unload admission.
-        EntityCategory::Structure => {
-            super::transport_orders::unload_command(entity, obj, local_owner)
-        }
+        // Selection730B28..730B5E sends Event9 for an occupied Building.
+        // Its native receiver owns NULL setters and Unload; self-click keeps
+        // the separate MEGAMISSION/absorber admission in transport_orders.
+        EntityCategory::Structure => (!entity.passenger_role.occupants().is_empty()
+            && local_owner.is_none_or(|owner| entity.owner() == owner))
+        .then_some(Command::DeployMcv { entity_id }),
         EntityCategory::Infantry => Some(Command::ToggleInfantryDeploy { entity_id }),
         // A unit in a tank bunker deploys out of it: its Unload's bunker arm
         // (`0x0073D63B`) runs before the transport arm.

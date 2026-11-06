@@ -3280,12 +3280,17 @@ fn combat_test_rules() -> RuleSet {
 }
 
 fn combat_test_rules_with_override(extra: &str) -> RuleSet {
-    combat_rules_with_keys("", "", extra)
+    combat_rules_with_keys("", "", extra, None)
 }
 
 /// [`combat_test_rules`] with the tank on Drive, so an order drives it.
 fn driving_combat_test_rules() -> RuleSet {
-    combat_rules_with_keys("", "Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n", "")
+    combat_rules_with_keys(
+        "",
+        "Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+        "",
+        None,
+    )
 }
 
 /// [`driving_combat_test_rules`] with E1 walking and animated, as retail
@@ -3293,22 +3298,30 @@ fn driving_combat_test_rules() -> RuleSet {
 /// seed, and without a death sequence a corpse neither refuses to fire
 /// (`0x0051C8B8`) nor leaves.
 fn walking_combat_test_rules() -> RuleSet {
-    let mut rules = combat_rules_with_keys(
-        "Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n",
-        "Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
-        "",
-    );
     let art = IniFile::from_str(
         "[GACNST]\nFoundation=4x3\n\
          [E1]\nSequence=E1Sequence\n\
          [E1Sequence]\nReady=0,1,1\nGuard=0,1,1\nProne=86,1,6\nWalk=8,6,6\n\
          FireUp=164,6,6\nFireProne=212,6,6\nDie1=56,15,0\n",
     );
+    // Infantry sequence banks are read during the rules passes. Late ART
+    // projection cannot install the walking/firing/death sequence records.
+    let mut rules = combat_rules_with_keys(
+        "Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n",
+        "Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+        "",
+        Some(&art),
+    );
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
     rules
 }
 
-fn combat_rules_with_keys(infantry_keys: &str, tank_keys: &str, extra: &str) -> RuleSet {
+fn combat_rules_with_keys(
+    infantry_keys: &str,
+    tank_keys: &str,
+    extra: &str,
+    fixed_art: Option<&IniFile>,
+) -> RuleSet {
     // Both warheads take the Die1 arm (`InfDeath=1`, retail [SA]'s): the
     // lethal-hit tests keep their victim's corpse through its die sequence.
     let mut ini: IniFile = IniFile::from_str(&format!(
@@ -3327,11 +3340,9 @@ fn combat_rules_with_keys(infantry_keys: &str, tank_keys: &str, extra: &str) -> 
          [Clear]\nBuildable=yes\n",
     ));
     ini.merge(&IniFile::from_str(extra));
-    RuleSet::from_ini_with_fixed_art_for_test(
-        &ini,
-        &IniFile::from_str("[GACNST]\nFoundation=4x3\n"),
-    )
-    .expect("combat test rules should parse")
+    let default_art = IniFile::from_str("[GACNST]\nFoundation=4x3\n");
+    RuleSet::from_ini_with_fixed_art_for_test(&ini, fixed_art.unwrap_or(&default_art))
+        .expect("combat test rules should parse")
 }
 
 fn sonic_wave_test_rules(range: u8) -> RuleSet {

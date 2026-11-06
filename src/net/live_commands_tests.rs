@@ -2907,6 +2907,8 @@ fn real_udp_mass_order_survives_backpressure_and_executes_one_shared_frame() {
     let started = Instant::now();
     let mut checksums = [BTreeMap::new(), BTreeMap::new()];
     let mut saw_backpressure = false;
+    let mut progress_frame = a.session().binary_frame().min(b.session().binary_frame());
+    let mut last_progress = started;
     // Advance peers independently: the peer that already committed frame zero
     // must still service its socket while the sender drains more than 32 packets.
     let mut until = 11;
@@ -2941,8 +2943,16 @@ fn real_udp_mass_order_survives_backpressure_and_executes_one_shared_frame() {
                     saw_backpressure = true;
                 }
             }
+            // Keep a 20-second guard on shared frame progress across both
+            // phases. The minimum frame leaves a stuck peer observable even
+            // while the other peer or its socket continues running.
+            let shared_frame = a.session().binary_frame().min(b.session().binary_frame());
+            if shared_frame > progress_frame {
+                progress_frame = shared_frame;
+                last_progress = Instant::now();
+            }
             assert!(
-                started.elapsed() < Duration::from_secs(20),
+                last_progress.elapsed() < Duration::from_secs(20),
                 "mass UDP exchange stalled: frames={:?}, local={:?}, waits={:?}, peers={:?}, queued={:?}",
                 [a.session().binary_frame(), b.session().binary_frame()],
                 [
