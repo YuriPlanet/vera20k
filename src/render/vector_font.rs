@@ -9,6 +9,9 @@
 //! configured entries in order and then through [`FALLBACK_FAMILIES`], which
 //! is what gives Latin, Cyrillic, Greek and CJK text a covering face even when
 //! a single font does not carry it.
+//! Colour emoji draw from COLR layers or colour bitmap strikes and keep their
+//! own RGB instead of the caller's UI tint. Emoji sequences (ZWJ, flags,
+//! skin-tone modifiers) are not composed: each code point is drawn on its own.
 //! There is no complex-script shaping and no bidirectional reordering: Arabic
 //! and indic text draws with isolated, unjoined glyphs.
 //!
@@ -24,8 +27,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use swash::scale::image::Image;
-use swash::scale::{Render, ScaleContext, Source};
+use swash::scale::image::{Content, Image};
+use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::{FontRef, GlyphId};
 
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
@@ -73,9 +76,16 @@ const FALLBACK_FAMILIES: &[&str] = &[
     "Noto Sans SC",
     "Source Han Sans SC",
     "WenQuanYi Micro Hei",
+    // Colour emoji before the monochrome symbol faces: Segoe UI Emoji also
+    // carries the BMP pictographs that Segoe UI Symbol would otherwise draw
+    // flat.
+    "Segoe UI Emoji",
+    "Apple Color Emoji",
+    "Noto Color Emoji",
     // Symbols that Latin text commonly reaches.
     "Segoe UI Symbol",
     "Segoe UI Historic",
+    "Noto Emoji",
     // South Asian and Thai.
     "Nirmala UI",
     "Noto Sans Devanagari",
@@ -119,6 +129,9 @@ struct RasterGlyph {
     rect: [u32; 4],
     /// Top-left corner relative to the pen position on the baseline.
     bearing: [f32; 2],
+    /// True for a colour emoji/symbol: the texels carry their own RGB, so the
+    /// caller's UI tint must not multiply them.
+    color: bool,
 }
 
 /// A glyph rectangle waiting for the next [`VectorFont::flush`].
@@ -382,7 +395,15 @@ impl VectorFont {
         let mut context = self.context.borrow_mut();
         let mut scaler = context.builder(font).size(PX_SIZE).hint(true).build();
         let mut image = Image::new();
-        let sources = [Source::Outline];
+        // Colour layers and colour bitmaps come first: a COLR glyph has no
+        // outline of its own, and the outline source would otherwise answer
+        // with an empty image. Plain glyphs fall through to the outline.
+        let sources = [
+            Source::ColorOutline(0),
+            Source::ColorBitmap(StrikeWith::BestFit),
+            Source::Outline,
+            Source::Bitmap(StrikeWith::BestFit),
+        ];
         let render = Render::new(&sources);
         if !render.render_into(&mut scaler, glyph, &mut image) {
             return None;
@@ -391,22 +412,36 @@ impl VectorFont {
         let (width, height) = (placement.width, placement.height);
         // zeno's bottom-left origin puts `top` above the baseline.
         let bearing = [placement.left as f32, -(placement.top as f32)];
+        let color = image.content == Content::Color;
         if width == 0 || height == 0 {
             return Some(RasterGlyph {
                 rect: [0, 0, 0, 0],
                 bearing,
+                color,
             });
         }
-        let expected = (width * height) as usize;
-        if image.data.len() < expected {
-            return None;
-        }
         let origin = self.atlas.borrow_mut().shelf.place(width, height)?;
-        let mut rgba = vec![0u8; expected * 4];
-        for (pixel, alpha) in image.data[..expected].iter().enumerate() {
-            let dst = pixel * 4;
-            rgba[dst..dst + 4].copy_from_slice(&[255, 255, 255, *alpha]);
-        }
+        let rgba = if image.content == Content::Mask {
+            // An 8-bit coverage mask draws in the caller's tint.
+            let expected = (width * height) as usize;
+            if image.data.len() < expected {
+                return None;
+            }
+            let mut rgba = vec![0u8; expected * 4];
+            for (pixel, alpha) in image.data[..expected].iter().enumerate() {
+                let dst = pixel * 4;
+                rgba[dst..dst + 4].copy_from_slice(&[255, 255, 255, *alpha]);
+            }
+            rgba
+        } else {
+            // Colour pixels already are RGBA; keep their RGB so the emoji
+            // draws in its own colours.
+            let expected = (width * height * 4) as usize;
+            if image.data.len() < expected {
+                return None;
+            }
+            image.data[..expected].to_vec()
+        };
         self.atlas.borrow_mut().pending.push(PendingUpload {
             origin,
             size: [width, height],
@@ -415,6 +450,7 @@ impl VectorFont {
         Some(RasterGlyph {
             rect: [origin[0], origin[1], width, height],
             bearing,
+            color,
         })
     }
 
@@ -448,7 +484,9 @@ impl VectorFont {
                 height as f32 / ATLAS_SIZE as f32,
             ],
             depth,
-            tint,
+            // Colour glyphs carry their own RGB; a UI tint would recolour an
+            // emoji, so they keep the neutral multiplier.
+            tint: if glyph.color { [1.0; 3] } else { tint },
             alpha: 1.0,
             ..Default::default()
         });
@@ -517,14 +555,34 @@ impl VectorFont {
         let mut cursor_x = x;
         let baseline = y + self.ascent * scale;
         let mut consumed = already_consumed;
-        for unit in text.encode_utf16() {
-            let Some(position) = consumed.checked_add(1) else {
+        let units: Vec<u16> = text.encode_utf16().collect();
+        let mut index = 0;
+        while index < units.len() {
+            let unit = units[index];
+            // A surrogate pair is one character but still consumes two reveal
+            // positions, because the native reveal counts UTF-16 units.
+            let (ch, width) = match char::from_u32(u32::from(unit)) {
+                Some(ch) => (Some(ch), 1usize),
+                None => match units
+                    .get(index + 1)
+                    .and_then(|low| std::char::decode_utf16([unit, *low]).next())
+                    .and_then(Result::ok)
+                {
+                    Some(ch) => (Some(ch), 2),
+                    None => (None, 1),
+                },
+            };
+            let Some(first) = consumed.checked_add(1) else {
                 break;
             };
-            let Some(encoded_rgb) = encoded_unit_rgb(position, reveal) else {
+            let Some(encoded_rgb) = encoded_unit_rgb(first, reveal) else {
                 break;
             };
-            consumed = position;
+            if width == 2 && encoded_unit_rgb(first + 1, reveal).is_none() {
+                break;
+            }
+            consumed = first + (width as u32 - 1);
+            index += width;
             if unit == u16::from(b'\r') || unit == u16::from(b'\n') {
                 continue;
             }
@@ -533,7 +591,7 @@ impl VectorFont {
                 continue;
             }
             let tint = encoded_rgb.map(|channel| f32::from(channel) / 255.0);
-            let resolved = char::from_u32(u32::from(unit))
+            let resolved = ch
                 .and_then(|ch| self.metrics_or_missing(ch))
                 .or_else(|| self.metrics_for('?').map(|metrics| (metrics, true)));
             let Some((metrics, missing)) = resolved else {
@@ -944,6 +1002,30 @@ mod tests {
         });
         if let Some((_, Some(rect))) = cjk {
             assert!(rect[2] > 0 && rect[3] > 0);
+        }
+        // Colour emoji: when a face covers U+1F600 it must rasterise from its
+        // colour layers/bitmaps, not as a tinted monochrome mask.
+        if let Some(metrics) = font.metrics_for('😀') {
+            if let Some(glyph) = font.rasterize(metrics.face, metrics.glyph) {
+                assert!(glyph.rect[2] > 0 && glyph.rect[3] > 0);
+                assert!(glyph.color, "an emoji should rasterise with its own RGB");
+                let atlas = font.atlas.borrow();
+                let upload = atlas
+                    .pending
+                    .iter()
+                    .find(|upload| {
+                        upload.origin == [glyph.rect[0], glyph.rect[1]]
+                            && upload.size == [glyph.rect[2], glyph.rect[3]]
+                    })
+                    .expect("the emoji's atlas upload is pending");
+                assert!(
+                    upload
+                        .rgba
+                        .chunks_exact(4)
+                        .any(|pixel| pixel[3] > 0 && (pixel[0] != pixel[1] || pixel[1] != pixel[2])),
+                    "the emoji texels should carry colour, not a white mask"
+                );
+            }
         }
         font.flush(&gpu.queue);
     }
