@@ -62,7 +62,10 @@ pub(crate) fn neighbour_ids(scratch: &RmgScratch, region: i32, region_count: i32
         .collect()
 }
 
-/// Cells belonging to `region` that touch a differently-owned in-bounds cell.
+/// Cells belonging to `region` that touch a differently-owned in-bounds cell,
+/// in row-major order: `RandomMapGenerator::CollectRegionBorderCells @
+/// 0x005A0700` sweeps the scratch records linearly (index `y * width + x`),
+/// not in the isometric order of [`RmgGrid::native_cells`].
 pub(crate) fn border_cells_of(scratch: &RmgScratch, region: i32) -> Vec<(i32, i32)> {
     let width = scratch.width() as i32;
     let mut border = Vec::new();
