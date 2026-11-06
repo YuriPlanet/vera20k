@@ -497,7 +497,7 @@ mod tests {
         .encode()
         .unwrap();
         let mut queues = NetworkCommandQueues::new(&mut sim);
-        let capacity = crate::sim::command_queue::SINGLE_PLAYER_COMMAND_CAPACITY;
+        let capacity = crate::sim::command_queue::SINGLE_PLAYER_DOLIST_CAPACITY;
         for _ in 0..capacity {
             assert!(queues.admit_received(record.clone()));
         }

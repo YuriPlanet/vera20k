@@ -490,7 +490,7 @@ impl<T: DoListEvent, const CAPACITY: usize> DoList<T, CAPACITY> {
             let stage_capacity = if mode == CommandDispatchMode::SinglePlayer {
                 // Sim-scale deviation: Execute_DoList64C380's 256-event
                 // stage must not discard the rest of an admitted army click.
-                super::SINGLE_PLAYER_COMMAND_CAPACITY
+                super::SINGLE_PLAYER_DOLIST_CAPACITY
             } else if mode == CommandDispatchMode::Network && CAPACITY > DO_LIST_CAPACITY {
                 super::NETWORK_SOURCE_DOLIST_CAPACITY
             } else {

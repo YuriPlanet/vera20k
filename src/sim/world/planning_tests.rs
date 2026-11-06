@@ -602,6 +602,34 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
 }
 
 #[test]
+fn plan_publication_fits_beside_a_whole_queued_click() {
+    use crate::sim::command::CommandEnvelope;
+    use crate::sim::mission::{MissionId, MissionType};
+    let (mut sim, rules, owner) = fixture();
+    sim.session.set_binary_frame_for_test(4);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .mission
+        .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
+    append(&mut sim, &rules, owner, 1, (12, 15));
+    let free = sim.available_local_command_slots();
+    let stop = CommandEnvelope::new(owner, 0, Command::Stop { entity_id: 999 });
+    assert!(sim.issue_local_commands(std::iter::repeat_n(stop, free)));
+    assert_eq!(sim.available_local_command_slots(), 0);
+    let commit = sim.encode_plan_commit_record(owner).unwrap();
+    apply(&mut sim, &rules, commit);
+    assert_eq!(
+        sim.pending_commands.native_len(),
+        1,
+        "EventClass::Add652230 checks only the DoList, not the queued click"
+    );
+    sim.transfer_local_commands();
+    assert_eq!(sim.pending_commands.native_len(), free + 1);
+}
+
+#[test]
 fn planning_restore_rejects_broken_graph_record_actor_and_house_references() {
     use crate::sim::snapshot::GameSnapshot;
     let (mut sim, rules, owner) = fixture();

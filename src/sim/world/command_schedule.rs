@@ -280,7 +280,8 @@ impl Simulation {
             if self.session.game_mode().is_network() {
                 crate::sim::command_queue::NETWORK_COMMAND_CAPACITY
             } else {
-                crate::sim::command_queue::SINGLE_PLAYER_COMMAND_CAPACITY
+                // Room stays for the queued input, so its transfer is never refused.
+                crate::sim::command_queue::SINGLE_PLAYER_DOLIST_CAPACITY
                     .saturating_sub(self.local_commands.native_len())
             },
             if self.session.game_mode().is_network() {

@@ -645,7 +645,7 @@ fn production_dolist_preserves_unknown_records_and_enforces_its_capacity() {
     let mut sim = native_dolist_world();
     sim.session.set_game_mode(ScenarioGameMode::Campaign);
     let record = crate::sim::command::CommandRecord::encode(0xff, -1, 10, &[0xaa]).unwrap();
-    let capacity = crate::sim::command_queue::SINGLE_PLAYER_COMMAND_CAPACITY;
+    let capacity = crate::sim::command_queue::SINGLE_PLAYER_DOLIST_CAPACITY;
     for _ in 0..capacity {
         assert!(sim.admit_native_command_record(record.clone()));
     }
