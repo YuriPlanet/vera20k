@@ -274,7 +274,7 @@ pub(crate) fn render_keyboard_shell(
     ));
     let mut texts = Vec::new();
     if let Some(window) = title {
-        texts.push(shell_text::draw_in_rect_path_a(
+        texts.push(shell_text::draw_in_rect_path_a_scaled(
             font,
             &title_text,
             rect_to_text_rect(layout.title),
@@ -287,6 +287,7 @@ pub(crate) fn render_keyboard_shell(
                 base_rgb: [255, 255, 0],
                 highlight_rgb: [255; 3],
             },
+            glyph_scale,
         ));
     }
     for (key, rect, centered) in layout.labels {
