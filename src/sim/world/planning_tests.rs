@@ -134,6 +134,15 @@ fn mixed_planning_selection_is_heterogeneous() {
         sim.planning_selection_check(&[1, 3]),
         PlanningSelectionCheck::Heterogeneous
     );
+    // Both directions: 1 and 2 move on, then 3 joins their old node. 1 is
+    // on 3's tail, but 3 is not on 1's.
+    append(&mut sim, &rules, owner, 1, (20, 15));
+    append(&mut sim, &rules, owner, 3, (12, 15));
+    assert_eq!(sim.planning.nodes[&0].live_members.len(), 3);
+    assert_eq!(
+        sim.planning_selection_check(&[3, 1]),
+        PlanningSelectionCheck::Heterogeneous
+    );
 }
 
 /// `0x00639A50`: an append from one member of a shared tail puts every member
@@ -149,9 +158,12 @@ fn appending_from_a_shared_tail_moves_the_whole_group() {
     let tail = *sim.planning.paths[&2].nodes.last().unwrap();
     let source = sim.planning.nodes[&tail].order(2).unwrap().payload()[0..4].to_vec();
     assert_eq!(source, 2i32.to_le_bytes());
+    sim.sound_events.clear_for_test();
     append(&mut sim, &rules, owner, 2, (16, 15));
     assert_eq!(sim.planning.paths[&2].nodes.len(), 2);
     assert_eq!(sim.planning.nodes.len(), 2);
+    // 0x00638210 jumps past the command sound for a joining member.
+    assert!(sim.sound_events.as_slice().is_empty());
 }
 
 fn fixture() -> (Simulation, RuleSet, InternedId) {

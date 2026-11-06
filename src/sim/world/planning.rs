@@ -114,6 +114,15 @@ struct PlanningPath {
     current: Option<CommandRecord>,
 }
 
+/// What `planning_append` did with one event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlanningAppend {
+    Refused,
+    /// The actor was already on the same-frame node at this coordinate.
+    Joined,
+    Added,
+}
+
 /// The outcome of [`Simulation::planning_selection_check`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlanningSelectionCheck {
@@ -1484,37 +1493,43 @@ impl Simulation {
                 true
             }
             4 if record.payload()[22] == 1 => {
-                let accepted = self.planning_append(owner, record);
-                if accepted {
-                    self.sound_events
-                        .emit(super::SimSoundEvent::PlanningNodeAdded { owner });
+                // 0x00638593..0x006385AE plays AddPlanningModeCommandSound only
+                // for a new node; an actor joining one jumps past it to
+                // 0x006385B3 (0x00638210).
+                match self.planning_append(owner, record) {
+                    PlanningAppend::Refused => false,
+                    PlanningAppend::Joined => true,
+                    PlanningAppend::Added => {
+                        self.sound_events
+                            .emit(super::SimSoundEvent::PlanningNodeAdded { owner });
+                        true
+                    }
                 }
-                accepted
             }
             _ => false,
         }
     }
 
-    fn planning_append(&mut self, owner: InternedId, record: &CommandRecord) -> bool {
+    fn planning_append(&mut self, owner: InternedId, record: &CommandRecord) -> PlanningAppend {
         let mut ordinary = record.clone();
         ordinary.payload_mut()[22] = 0;
         let Some(order) = MegaMissionRecord::decode(&ordinary) else {
-            return false;
+            return PlanningAppend::Refused;
         };
         let Ok(actor) = u64::try_from(order.source_id) else {
-            return false;
+            return PlanningAppend::Refused;
         };
         let Some(entity) = self.substrate.entities.get(actor) else {
-            return false;
+            return PlanningAppend::Refused;
         };
         let Some(target) = planning_record_target(record) else {
-            return false;
+            return PlanningAppend::Refused;
         };
         let Some(coord) = self.planning_target_coords(target) else {
-            return false;
+            return PlanningAppend::Refused;
         };
         let Some(cell) = coord_cell(coord) else {
-            return false;
+            return PlanningAppend::Refused;
         };
         // 0x0063819C..0x006381F3 reuses this house's node at the same XYZ and
         // frame. An actor already on it is accepted with nothing added
@@ -1534,7 +1549,7 @@ impl Simulation {
                 .values()
                 .any(|&member| member == actor)
         {
-            return true;
+            return PlanningAppend::Joined;
         }
         //638120 requires a resolved actor; ordinary-event admission is deferred
         // until its generated flag2 is dispatched, even after capture.
@@ -1560,14 +1575,14 @@ impl Simulation {
                 )
             })
         {
-            return false;
+            return PlanningAppend::Refused;
         }
         // PlanMgr638B70 rejects AreaGuard with no target or the actor's
         // current CellStruct; this is separate from commit admission.
         if matches!(order.order, MegaMissionOrder::AreaGuard { .. })
             && cell == (entity.position.rx(), entity.position.ry())
         {
-            return false;
+            return PlanningAppend::Refused;
         }
         // 6384DC compares 10h directly in this active append path.
         self.planning.register_token(actor);
@@ -1577,7 +1592,7 @@ impl Simulation {
             .get(&actor)
             .is_some_and(|path| path.nodes.len() == 16 || path.loop_start.is_some())
         {
-            return false;
+            return PlanningAppend::Refused;
         }
         // 0x00636EB0 reads the actor's tail before the new node joins it.
         let tail_members: Vec<u64> = self
@@ -1646,7 +1661,7 @@ impl Simulation {
             path.nodes.push(id);
         }
         self.planning.index_node(id);
-        true
+        PlanningAppend::Added
     }
 
     fn planning_connect(
