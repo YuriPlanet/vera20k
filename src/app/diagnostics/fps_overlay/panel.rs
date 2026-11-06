@@ -8,7 +8,6 @@ use crate::app::presentation::interpolation::SimulationReadout;
 use crate::app::presentation::render::RenderPhases;
 use crate::assets::csf_file::CsfFile;
 use crate::sim::frame_profile::PHASE_COUNT;
-use crate::util::logging::LoggedProblem;
 use crate::util::time::{Duration, Instant};
 
 /// The panel's green, and the yellow and red it marks hot spots with.
@@ -85,8 +84,6 @@ pub(super) struct Shown {
     /// wall time.
     pub(super) areas: Vec<(&'static str, f32)>,
     pub(super) core_loads: Option<Vec<f32>>,
-    /// The newest warning or error, and how long before the window closed.
-    pub(super) problem: Option<(log::Level, String, Duration)>,
 }
 
 /// The open window. Reset while the panel is hidden, so showing it measures
@@ -118,7 +115,6 @@ impl PanelStats {
         frame_ms: f32,
         simulation: Option<SimulationReadout>,
         sample: Option<MatchSample>,
-        problem: Option<LoggedProblem>,
     ) {
         let wall = self
             .window_start
@@ -135,13 +131,6 @@ impl PanelStats {
             units: sample.map(|sample| sample.units),
             areas: wall.map_or_else(Vec::new, |wall| most_cpu(wall, sim_spans.as_ref(), &render)),
             core_loads: self.cores.sample(),
-            problem: problem.map(|problem| {
-                (
-                    problem.level,
-                    problem.message,
-                    now.saturating_duration_since(problem.at),
-                )
-            }),
         };
     }
 }
@@ -192,9 +181,8 @@ pub(super) enum Part {
     Bars(Vec<f32>),
 }
 
-/// The panel in GAME.FNT: rates and units, Most CPU, Cores and the newest
-/// warning, each row only once it has something to say. The warning's
-/// message stays as logged; its level and age are labels like the rest.
+/// The panel in GAME.FNT: rates and units, Most CPU and Cores, each row only
+/// once it has something to say.
 pub(super) fn rows(shown: &Shown, csf: Option<&CsfFile>) -> Vec<Vec<Part>> {
     let mut rows = vec![vec![Part::Text(first_row(shown, csf), GREEN)]];
     if let Some((first, rest)) = shown.areas.split_first() {
@@ -218,22 +206,6 @@ pub(super) fn rows(shown: &Shown, csf: Option<&CsfFile>) -> Vec<Vec<Part>> {
             Part::Bars(loads.clone()),
             Part::Text(format!("   {average}"), GREEN),
         ]);
-    }
-    if let Some((level, message, age)) = &shown.problem {
-        let (level, color) = match level {
-            log::Level::Error => ("VERA:FpsPanelError", HOT),
-            _ => ("VERA:FpsPanelWarning", WARM),
-        };
-        let message = message.lines().next().unwrap_or("").replace('\t', " ");
-        rows.push(vec![Part::Text(
-            format!(
-                "{}{DOT}{}{DOT}{}",
-                label(csf, level),
-                ago(*age, csf),
-                message.trim()
-            ),
-            color,
-        )]);
     }
     rows
 }
@@ -316,15 +288,6 @@ fn thousands(value: usize) -> String {
     grouped
 }
 
-fn ago(age: Duration, csf: Option<&CsfFile>) -> String {
-    let (key, count) = match age.as_secs() {
-        seconds @ 0..60 => ("VERA:FpsPanelSecondsAgo", seconds),
-        seconds @ 60..3_600 => ("VERA:FpsPanelMinutesAgo", seconds / 60),
-        seconds => ("VERA:FpsPanelHoursAgo", seconds / 3_600),
-    };
-    label_with(csf, key, "count", &count)
-}
-
 fn readout_text(frame_ms: f32) -> String {
     if !frame_ms.is_finite() || frame_ms <= 0.0 {
         "FPS --".to_owned()
@@ -370,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn panel_rows_read_rates_costliest_areas_cores_and_the_newest_warning() {
+    fn panel_rows_read_rates_costliest_areas_and_cores() {
         let shown = Shown {
             frame_ms: 1000.0 / 60.0,
             simulation: Some(READOUT),
@@ -381,11 +344,6 @@ mod tests {
                 ("VERA:CpuVision", 11.0),
             ],
             core_loads: Some(vec![90.0, 10.0]),
-            problem: Some((
-                log::Level::Warn,
-                "missing art\tfor HTNK\nsecond line".to_owned(),
-                Duration::from_secs(75),
-            )),
         };
         let rows = rows(&shown, None);
         assert_eq!(
@@ -396,13 +354,7 @@ mod tests {
         assert_eq!(text(&rows[1][2]), "  ·  Draw world 27%  ·  Vision 11%");
         assert_eq!(rows[2][1], Part::Bars(vec![90.0, 10.0]));
         assert_eq!(text(&rows[2][2]), "   avg 50%");
-        assert_eq!(
-            rows[3][0],
-            Part::Text(
-                "Warning  ·  1 min ago  ·  missing art for HTNK".to_owned(),
-                WARM
-            )
-        );
+        assert_eq!(rows.len(), 3);
         // Shell screens: no match figures, no measured areas or cores yet.
         let shell = rows_of(
             Shown {
@@ -452,11 +404,6 @@ mod tests {
                     .map(|&key| (key, 1.0))
                     .collect(),
                 core_loads: Some(vec![40.0]),
-                problem: Some((
-                    log::Level::Error,
-                    "x".to_owned(),
-                    Duration::from_secs(7_200),
-                )),
                 ..Shown::default()
             },
             None,
@@ -464,23 +411,18 @@ mod tests {
         assert_eq!(rows[0], "FPS --  ·  Sim 30 TPS  ·  Interp off");
         assert!(rows[1].starts_with("Most CPU:  Commands in 1%  ·  Commands 1%"));
         assert_eq!(rows[2], "Cores     avg 40%");
-        assert_eq!(rows[3], "Error  ·  2 h ago  ·  x");
-        let bypass = SimulationReadout {
-            sampling: false,
-            ..READOUT
-        };
-        let rest = [
-            first_row(
-                &Shown {
-                    simulation: Some(bypass),
-                    ..Shown::default()
-                },
-                None,
-            ),
-            ago(Duration::from_secs(5), None),
-        ];
-        assert_eq!(rest, ["FPS --  ·  Sim 30 TPS  ·  Interp bypass", "5 s ago"]);
-        for text in rows.iter().chain(&rest) {
+        let bypass = first_row(
+            &Shown {
+                simulation: Some(SimulationReadout {
+                    sampling: false,
+                    ..READOUT
+                }),
+                ..Shown::default()
+            },
+            None,
+        );
+        assert_eq!(bypass, "FPS --  ·  Sim 30 TPS  ·  Interp bypass");
+        for text in rows.iter().chain([&bypass]) {
             assert!(!text.contains("MISSING:"), "{text}");
         }
     }

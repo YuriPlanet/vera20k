@@ -3,13 +3,13 @@
 //! line below it.
 //!
 //! The panel reads like the game's message line: GAME.FNT rows on black
-//! boxes, at the bottom left of the battlefield (above the command bar) at
-//! the match zoom, or of the window elsewhere; the status line keeps the top
-//! left. Its rows are in [`panel`]: rates and units, the engine
-//! areas that took the most of the last second, the load on each core and
-//! the newest logged warning or error. The rows and the status line are
-//! localized text ([`crate::i18n`]), so both draw with the caller's GAME.FNT
-//! font; before GAME.FNT loads, a built-in font draws the first row alone, in
+//! boxes, at the top left of the battlefield at the match zoom, or of the
+//! window elsewhere. While it shows, the status line and the match's message
+//! list start below it. Its rows are in [`panel`]:
+//! rates and units, the engine areas that took the most of the last second
+//! and the load on each core. The rows and the status line are localized
+//! text ([`crate::i18n`]), so both draw with the caller's GAME.FNT font;
+//! before GAME.FNT loads, a built-in font draws the first row alone, in
 //! English capitals. Both are independent of tactical cameras, optional dev
 //! overlays, and shell/offscreen composition.
 
@@ -28,10 +28,10 @@ use crate::render::gpu::GpuContext;
 use super::state::FrameTimer;
 use panel::{GREEN, HOT, PanelStats, Part, TRACK, WARM};
 
-/// The status line's top.
+/// The status line's top when the panel is hidden.
 const STATUS_TOP: f32 = 8.0;
-/// The gap between the panel and the battlefield's or window's left and
-/// bottom edges, in font pixels.
+/// The gap between the panel and the battlefield's or window's top and left
+/// edges, and below it to the match's messages, in font pixels.
 const EDGE: f32 = 4.0;
 /// A core bar, in font pixels: its width, the gap to the next, its height and
 /// its drop below the row's text top.
@@ -59,6 +59,11 @@ struct OverlayFrame {
     logged_first_frame: bool,
     simulation: Option<crate::app::presentation::interpolation::SimulationReadout>,
     stats: PanelStats,
+    /// Where the status line starts: below the panel while it shows.
+    status_top: f32,
+    /// In a match, how far down the battlefield the panel reaches: see
+    /// [`FpsOverlay::message_top`]. 0 elsewhere.
+    message_top: i32,
 }
 
 /// Where the panel draws, in window pixels.
@@ -66,8 +71,8 @@ struct OverlayFrame {
 pub(crate) struct PanelPlacement {
     /// The left edge of every row's box.
     pub(crate) left: f32,
-    /// The bottom edge of the last row's box.
-    pub(crate) bottom: f32,
+    /// The top edge of the first row's box.
+    pub(crate) top: f32,
     /// Window pixels per font pixel: the match zoom, as the game's messages.
     pub(crate) scale: f32,
     /// The widest a row may draw; a longer row loses its end.
@@ -75,15 +80,22 @@ pub(crate) struct PanelPlacement {
 }
 
 impl PanelPlacement {
-    /// `EDGE` in from the bottom left of a `width` by `height` area at
-    /// (`left`, `top`), at `scale` window pixels per font pixel.
-    fn bottom_left(left: f32, top: f32, [width, height]: [f32; 2], scale: f32) -> Self {
+    /// `EDGE` in from the top left of an area `width` wide at (`left`,
+    /// `top`), at `scale` window pixels per font pixel.
+    fn top_left(left: f32, top: f32, width: f32, scale: f32) -> Self {
         Self {
             left: left + EDGE * scale,
-            bottom: top + height - EDGE * scale,
+            top: top + EDGE * scale,
             scale,
             max_width: (width - 2.0 * (EDGE + 1.0) * scale).max(0.0),
         }
+    }
+
+    /// The battlefield's top rows, in frame pixels, that a match panel ending
+    /// at window y `bottom` takes, with an `EDGE` gap below it. A frame pixel
+    /// is one font pixel at the match zoom.
+    fn battlefield_rows(self, bottom: f32) -> i32 {
+        ((bottom - self.top) / self.scale + 2.0 * EDGE).ceil() as i32
     }
 }
 
@@ -100,17 +112,12 @@ pub(crate) fn match_panel(state: &crate::app::AppState) -> Option<MatchPanel<'_>
     }
     // The battlefield is the frame's top left, beside the sidebar column and
     // above the command bar's strip.
-    let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
+    let (width, _) = crate::app::input::camera::tactical_viewport_size(state);
     let (scale, (left, top)) = state.tactical_zoom().map_or((1.0, (0, 0)), |zoom| {
         (zoom.percent as f32 / 100.0, zoom.origin)
     });
     Some(MatchPanel {
-        placement: PanelPlacement::bottom_left(
-            left as f32,
-            top as f32,
-            [width as f32 * scale, height as f32 * scale],
-            scale,
-        ),
+        placement: PanelPlacement::top_left(left as f32, top as f32, width as f32 * scale, scale),
         simulation: state
             .match_state
             .sim_runtime
@@ -136,6 +143,8 @@ impl FpsOverlay {
                 logged_first_frame: false,
                 simulation: None,
                 stats: PanelStats::default(),
+                status_top: STATUS_TOP,
+                message_top: 0,
             }),
         }
     }
@@ -179,6 +188,19 @@ impl FpsOverlay {
         self.visible
     }
 
+    /// Where the match's message list starts, in frame pixels from the
+    /// battlefield's top: below the shown panel, from its last drawn frame,
+    /// and 0 while it is hidden.
+    pub(crate) fn message_top(&self) -> i32 {
+        if !self.visible {
+            return 0;
+        }
+        self.frame
+            .lock()
+            .expect("FPS overlay frame lock")
+            .message_top
+    }
+
     /// Call exactly once after all content has reached the acquired window
     /// surface, including synchronous loading repaints, before submission.
     /// `font` is the process GAME.FNT font and `csf` the loaded string table,
@@ -202,27 +224,26 @@ impl FpsOverlay {
         frame.timer.sample(now);
         if !self.visible {
             frame.stats = PanelStats::default();
+            frame.status_top = STATUS_TOP;
+            frame.message_top = 0;
             return;
         }
         let size = [destination.width(), destination.height()];
+        let over_battlefield = in_match.is_some();
         let (placement, simulation) = match in_match {
             Some(panel) => (panel.placement, panel.simulation),
             // Loading and menu screens: the window's own pixels.
             None => (
-                PanelPlacement::bottom_left(0.0, 0.0, size.map(|side| side as f32), 1.0),
+                PanelPlacement::top_left(0.0, 0.0, size[0] as f32, 1.0),
                 None,
             ),
         };
         if frame.stats.due(now) {
             let frame_ms = frame.timer.frame_ms_mean();
             let readout = frame.simulation;
-            frame.stats.close_window(
-                now,
-                frame_ms,
-                readout,
-                simulation.map(match_sample),
-                crate::util::logging::latest_problem(),
-            );
+            frame
+                .stats
+                .close_window(now, frame_ms, readout, simulation.map(match_sample));
         }
         // The 5x7 fallback has no darken strip: GAME.FNT has not loaded yet.
         let (font, scale, mut rows) = if font.darken_texture().is_some() {
@@ -236,13 +257,19 @@ impl FpsOverlay {
         };
         let mut instances = Vec::new();
         let mut glyphs = Vec::new();
-        layout_rows(
+        let bottom = layout_rows(
             font,
             &mut rows,
             PanelPlacement { scale, ..placement },
             &mut instances,
             &mut glyphs,
         );
+        frame.status_top = bottom + 4.0;
+        frame.message_top = if over_battlefield {
+            placement.battlefield_rows(bottom)
+        } else {
+            0
+        };
         let solid = instances.len() as u32;
         instances.append(&mut glyphs);
         if !frame.logged_first_frame {
@@ -283,6 +310,11 @@ impl FpsOverlay {
         text: &str,
     ) {
         let mut frame = self.frame.lock().expect("window status overlay frame lock");
+        let top = if self.visible {
+            frame.status_top
+        } else {
+            STATUS_TOP
+        };
         let mut instances = Vec::with_capacity(text.len() * 5);
         let layout = font.wrap_layout(text, destination.width().saturating_sub(16));
         let line_height = font.cell_height() + 4.0;
@@ -297,7 +329,7 @@ impl FpsOverlay {
                 instances.extend(font.build_text(
                     &text[line.start_byte..line.end_byte],
                     8.0 + dx,
-                    STATUS_TOP + line_index as f32 * line_height + dy,
+                    top + line_index as f32 * line_height + dy,
                     1.0,
                     0.0,
                     tint,
@@ -402,29 +434,25 @@ fn match_sample(simulation: &crate::sim::world::Simulation) -> panel::MatchSampl
     }
 }
 
-/// Lay `rows` out in reading order, each on its own black box as the game's
-/// message line draws text, left-aligned at `placement.left` with the last
-/// box ending at `placement.bottom`. Box and bar quads go to `solid`, text to
-/// `glyphs`.
+/// Lay `rows` out down from `placement.top` in reading order, each on its own
+/// black box as the game's message line draws text, left-aligned at
+/// `placement.left`, and return the last box's bottom edge. Box and bar quads
+/// go to `solid`, text to `glyphs`.
 fn layout_rows(
     font: &BitFont,
     rows: &mut [Vec<Part>],
     placement: PanelPlacement,
     solid: &mut Vec<SpriteInstance>,
     glyphs: &mut Vec<SpriteInstance>,
-) {
+) -> f32 {
     let scale = placement.scale;
     let row_height = (font.cell_height() + 2.0) * scale;
     let left = placement.left.round();
-    let mut box_top = (placement.bottom - rows.len() as f32 * row_height).round();
+    let mut box_top = placement.top.round();
     for row in rows.iter_mut() {
         fit_row(font, row, placement.max_width / scale);
-        let width = row_width(font, row) * scale;
-        solid.push(quad(
-            [left, box_top],
-            [width + 2.0 * scale, row_height],
-            [0; 3],
-        ));
+        let width = row_width(font, row) * scale + 2.0 * scale;
+        solid.push(quad([left, box_top], [width, row_height], [0; 3]));
         let text_top = box_top + scale;
         let mut x = left + scale;
         for part in row.iter() {
@@ -469,6 +497,7 @@ fn layout_rows(
         }
         box_top += row_height;
     }
+    box_top
 }
 
 /// A row's width in font pixels.
@@ -553,19 +582,25 @@ mod tests {
     }
 
     #[test]
-    fn rows_stack_up_to_the_bottom_left_corner() {
+    fn rows_hang_from_the_top_left_corner_above_the_messages() {
         let font = crate::render::bit_font::tests::make_test_font(&[(u16::from(b'a'), 4)], 3);
         let mut rows = vec![
             vec![Part::Text("aa".to_owned(), GREEN)],
             vec![Part::Text("aaaa".to_owned(), GREEN)],
         ];
-        let placement = PanelPlacement::bottom_left(100.0, 50.0, [400.0, 300.0], 2.0);
+        // A 400-pixel battlefield at (100, 50), zoomed 2x.
+        let placement = PanelPlacement::top_left(100.0, 50.0, 400.0, 2.0);
         let (mut boxes, mut glyphs) = (Vec::new(), Vec::new());
-        layout_rows(&font, &mut rows, placement, &mut boxes, &mut glyphs);
-        // EDGE font pixels in from the area's left and bottom, first row on top.
+        let bottom = layout_rows(&font, &mut rows, placement, &mut boxes, &mut glyphs);
+        // EDGE font pixels in from the top and left, the first row on top.
         let row_height = (font.cell_height() + 2.0) * 2.0;
-        assert_eq!(boxes[1].position, [108.0, 342.0 - row_height]);
-        assert_eq!(boxes[0].position, [108.0, 342.0 - 2.0 * row_height]);
+        for (index, quad) in boxes.iter().enumerate() {
+            assert_eq!(quad.position, [108.0, 58.0 + index as f32 * row_height]);
+        }
         assert!(boxes[0].size[0] < boxes[1].size[0]);
+        assert_eq!(bottom, 58.0 + 2.0 * row_height);
+        // The message list starts an EDGE below the last row.
+        let message_top = 50.0 + placement.battlefield_rows(bottom) as f32 * 2.0;
+        assert_eq!(message_top, bottom + EDGE * 2.0);
     }
 }
