@@ -114,6 +114,16 @@ struct PlanningPath {
     current: Option<CommandRecord>,
 }
 
+/// The outcome of [`Simulation::planning_selection_check`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanningSelectionCheck {
+    Admit,
+    /// No selected object is a Techno: refused without a message.
+    Refuse,
+    /// `MSG:PlanningModeHeteroSel` with ScoldSound (0x006390D0..0x0063911D).
+    Heterogeneous,
+}
+
 /// The refusals PlanMgr 0x0063A5A0 posts on a left press, each as its
 /// literal CSF key with ScoldSound.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -605,6 +615,43 @@ impl Simulation {
             })
             .count();
         retained.wrapping_add(additional as i32) <= 0x80
+    }
+
+    /// `Planning__ValidateHomogeneousSelection @ 0x00639040`, which LeftUp
+    /// runs at 0x004ABF78 before the capacity check 0x00639130. The first
+    /// selected Techno's token is the reference, and every selected object must
+    /// be a Techno whose token matches it under 0x00639E30: neither has a node,
+    /// or each owner is a member of the other's tail node. An empty selection
+    /// is admitted. A selection with no Techno is refused without a message.
+    pub fn planning_selection_check(&self, selected: &[u64]) -> PlanningSelectionCheck {
+        let is_techno = |id: &u64| self.substrate.entities.contains(*id);
+        if selected.is_empty() {
+            return PlanningSelectionCheck::Admit;
+        }
+        let Some(&first) = selected.iter().find(|id| is_techno(id)) else {
+            return PlanningSelectionCheck::Refuse;
+        };
+        let has_member = |node: &PlanningNode, actor: u64| {
+            node.live_members.values().any(|&member| member == actor)
+        };
+        let compatible = |actor: u64| match (
+            self.planning_tail_node(first),
+            self.planning_tail_node(actor),
+        ) {
+            (None, None) => true,
+            (Some(reference), Some(tail)) => {
+                has_member(reference, actor) && has_member(tail, first)
+            }
+            _ => false,
+        };
+        if selected
+            .iter()
+            .all(|&actor| is_techno(&actor) && compatible(actor))
+        {
+            PlanningSelectionCheck::Admit
+        } else {
+            PlanningSelectionCheck::Heterogeneous
+        }
     }
 
     pub fn encode_plan_commit_record(&self, owner: InternedId) -> Option<CommandRecord> {
@@ -1460,6 +1507,35 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(actor) else {
             return false;
         };
+        let Some(target) = planning_record_target(record) else {
+            return false;
+        };
+        let Some(coord) = self.planning_target_coords(target) else {
+            return false;
+        };
+        let Some(cell) = coord_cell(coord) else {
+            return false;
+        };
+        // 0x0063819C..0x006381F3 reuses this house's node at the same XYZ and
+        // frame. An actor already on it is accepted with nothing added
+        // (0x00638208, 0x00634290), before the disposition check 0x00638CE0:
+        // the other members' events of a group append reach this.
+        let frame = record.frame_stamp();
+        let shared = self
+            .planning_candidates(owner, cell)
+            .filter(|id| {
+                self.planning.nodes[id].frame == frame
+                    && self.planning_node_coords(*id) == Some(coord)
+            })
+            .min();
+        if let Some(id) = shared
+            && self.planning.nodes[&id]
+                .live_members
+                .values()
+                .any(|&member| member == actor)
+        {
+            return true;
+        }
         //638120 requires a resolved actor; ordinary-event admission is deferred
         // until its generated flag2 is dispatched, even after capture.
         // Append63821F accepts only disposition -1 from638CE0. A Cell
@@ -1486,15 +1562,6 @@ impl Simulation {
         {
             return false;
         }
-        let Some(target) = planning_record_target(record) else {
-            return false;
-        };
-        let Some(coord) = self.planning_target_coords(target) else {
-            return false;
-        };
-        let Some(cell) = coord_cell(coord) else {
-            return false;
-        };
         // PlanMgr638B70 rejects AreaGuard with no target or the actor's
         // current CellStruct; this is separate from commit admission.
         if matches!(order.order, MegaMissionOrder::AreaGuard { .. })
@@ -1512,16 +1579,11 @@ impl Simulation {
         {
             return false;
         }
-        let frame = record.frame_stamp();
-        let shared = self
-            .planning_candidates(owner, cell)
-            .filter(|id| {
-                let node = &self.planning.nodes[id];
-                node.frame == frame
-                    && !node.orders.contains_key(&actor)
-                    && self.planning_node_coords(*id) == Some(coord)
-            })
-            .min();
+        // 0x00636EB0 reads the actor's tail before the new node joins it.
+        let tail_members: Vec<u64> = self
+            .planning_tail_node(actor)
+            .map(|node| node.live_members.values().copied().collect())
+            .unwrap_or_default();
         let id = if let Some(id) = shared {
             id
         } else {
@@ -1546,25 +1608,44 @@ impl Simulation {
         {
             *charge = charge.wrapping_add(1);
         }
-        let node = self.planning.nodes.get_mut(&id).unwrap();
-        node.insert_order(actor, record.clone());
-        self.planning.index_node(id);
-        let path = self
-            .planning
-            .paths
-            .entry(actor)
-            .or_insert_with(|| PlanningPath {
-                nodes: Vec::new(),
-                pending: 0,
-                loop_start: None,
-                loop_changed: false,
-                executing: false,
-                current: None,
-            });
-        if path.pending == -1 {
-            path.pending = path.nodes.len() as i32;
+        // With no tail the actor joins alone (0x00633FA0). Otherwise
+        // 0x00639A50 gives every member of that tail, in encounter order, a
+        // copy of the event with itself as source (0x00639A8B..0x00639A9B)
+        // and the node on its path, whether it is selected or not.
+        let members = if tail_members.is_empty() {
+            vec![actor]
+        } else {
+            tail_members
+        };
+        for member in members {
+            let Ok(source) = i32::try_from(member) else {
+                continue;
+            };
+            let mut member_record = record.clone();
+            member_record.payload_mut()[0..4].copy_from_slice(&source.to_le_bytes());
+            self.planning
+                .nodes
+                .get_mut(&id)
+                .unwrap()
+                .insert_order(member, member_record);
+            let path = self
+                .planning
+                .paths
+                .entry(member)
+                .or_insert_with(|| PlanningPath {
+                    nodes: Vec::new(),
+                    pending: 0,
+                    loop_start: None,
+                    loop_changed: false,
+                    executing: false,
+                    current: None,
+                });
+            if path.pending == -1 {
+                path.pending = path.nodes.len() as i32;
+            }
+            path.nodes.push(id);
         }
-        path.nodes.push(id);
+        self.planning.index_node(id);
         true
     }
 

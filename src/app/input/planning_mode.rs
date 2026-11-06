@@ -7,7 +7,7 @@ use crate::audio::events::{GameSoundEvent, SoundEventQueue};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::CommandEnvelope;
 use crate::sim::selection::SelectionState;
-use crate::sim::world::{PlanningPressRefusal, Simulation};
+use crate::sim::world::{PlanningPressRefusal, PlanningSelectionCheck, Simulation};
 use winit::event::ElementState;
 use winit::keyboard::KeyCode;
 
@@ -160,29 +160,37 @@ pub(crate) enum PlanningRefusal {
     Scatter,
     Deploy,
     Capacity,
+    Heterogeneous,
+    /// Refused with no message, sound or latch (a selection with no Techno).
+    Silent,
     Press(PlanningPressRefusal),
 }
 
 impl PlanningRefusal {
-    fn csf_key(self) -> &'static str {
-        match self {
+    fn csf_key(self) -> Option<&'static str> {
+        Some(match self {
             Self::Guard => "MSG:PlanningModeNoGuardArea",
             Self::Stop => "MSG:PlanningModeNoStop",
             Self::Scatter => "MSG:PlanningModeNoScatter",
             Self::Deploy => "MSG:PlanningModeNoDeploy",
             Self::Capacity => "MSG:PlannerMaximum",
+            Self::Heterogeneous => "MSG:PlanningModeHeteroSel",
             // 0x0063A5A0 loads these literals; "X" is part of the key.
             Self::Press(PlanningPressRefusal::InvalidNode) => "MSG:PlanningModeInvalidNodeX",
             Self::Press(PlanningPressRefusal::NoAircraft) => "MSG:PlanningModeNoAircraft",
             Self::Press(PlanningPressRefusal::NoBuildings) => "MSG:PlanningModeNoBuildings",
             Self::Press(PlanningPressRefusal::NoUnknowns) => "MSG:PlanningModeNoUnknowns",
-        }
+            Self::Silent => return None,
+        })
     }
 }
 
 /// Guard730D60 ->63A0D0, ClickedEvent6FFE00 ->639FD0 and639130 share
 /// AC4C08, silent730A90 duration1E0, and Rules+700 ScoldSound.
 pub(crate) fn refuse(state: &mut AppState, action: PlanningRefusal) {
+    let Some(csf_key) = action.csf_key() else {
+        return;
+    };
     let Some(tick) = state
         .match_state
         .sim_runtime
@@ -194,7 +202,7 @@ pub(crate) fn refuse(state: &mut AppState, action: PlanningRefusal) {
     if !state.match_state.input.planning.admit_refusal(tick) {
         return;
     }
-    crate::app::input::messages::post_planning_refusal(state, action.csf_key());
+    crate::app::input::messages::post_planning_refusal(state, csf_key);
     let sound = state
         .rules()
         .and_then(|rules| rules.general.scold_sound.clone());
@@ -268,7 +276,17 @@ fn queue_orders_in_sim(
 ) -> Result<bool, PlanningRefusal> {
     //4ABF7F's selection-wide admission precedes4AE750 for primary clicks
     // and ordinary planned missions. It is not a receiver/encoding guard.
-    if !sim.planning_selection_has_capacity(owner, selected) {
+    // 0x004ABF78 runs both checks before testing either, so under the
+    // per-frame refusal latch the mixed-selection message wins.
+    let check = sim.planning_selection_check(selected);
+    let capacity = sim.planning_selection_has_capacity(owner, selected);
+    match check {
+        PlanningSelectionCheck::Admit => {}
+        PlanningSelectionCheck::Heterogeneous => return Err(PlanningRefusal::Heterogeneous),
+        PlanningSelectionCheck::Refuse if capacity => return Err(PlanningRefusal::Silent),
+        PlanningSelectionCheck::Refuse => {}
+    }
+    if !capacity {
         return Err(PlanningRefusal::Capacity);
     }
     let mut added = false;
@@ -805,7 +823,7 @@ mod tests {
         let admission = &corpus["planning_admission"];
         assert_eq!(
             PlanningRefusal::Capacity.csf_key(),
-            admission["csf"]["key"].as_str().unwrap()
+            admission["csf"]["key"].as_str()
         );
         for case in admission["controls"].as_array().unwrap() {
             let Some((mut sim, retail, first, second)) = retail_primary_planning_fixture() else {

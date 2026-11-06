@@ -4,7 +4,7 @@ use super::PlanningPath;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{Command, CommandRecord};
 use crate::sim::intern::InternedId;
-use crate::sim::world::Simulation;
+use crate::sim::world::{PlanningSelectionCheck, Simulation};
 use crate::util::save_codec;
 use serde_json::Value;
 
@@ -108,6 +108,50 @@ fn edit_append_commit_preserves_missions_and_shares_same_frame_nodes() {
     append(&mut sim, &rules, owner, 1, (16, 15));
     assert_eq!(sim.planning.paths[&1].pending, 1);
     assert_eq!(sim.planning_paths(owner)[0].cells, vec![(12, 15), (16, 15)]);
+}
+
+/// `0x00639040` with `0x00639E30`: a selection plans together only when no
+/// member has a node or each shares the first one's tail node.
+#[test]
+fn mixed_planning_selection_is_heterogeneous() {
+    let (mut sim, rules, owner) = fixture();
+    assert_eq!(
+        sim.planning_selection_check(&[1, 2]),
+        PlanningSelectionCheck::Admit
+    );
+    append(&mut sim, &rules, owner, 1, (12, 15));
+    assert_eq!(
+        sim.planning_selection_check(&[1, 2]),
+        PlanningSelectionCheck::Heterogeneous
+    );
+    append(&mut sim, &rules, owner, 2, (12, 15));
+    append(&mut sim, &rules, owner, 3, (16, 15));
+    assert_eq!(
+        sim.planning_selection_check(&[2, 1]),
+        PlanningSelectionCheck::Admit
+    );
+    assert_eq!(
+        sim.planning_selection_check(&[1, 3]),
+        PlanningSelectionCheck::Heterogeneous
+    );
+}
+
+/// `0x00639A50`: an append from one member of a shared tail puts every member
+/// on the new node with itself as source, and that member's own same-frame
+/// event then finds the node and adds nothing (`0x00638208`).
+#[test]
+fn appending_from_a_shared_tail_moves_the_whole_group() {
+    let (mut sim, rules, owner) = fixture();
+    append(&mut sim, &rules, owner, 1, (12, 15));
+    append(&mut sim, &rules, owner, 2, (12, 15));
+    append(&mut sim, &rules, owner, 1, (16, 15));
+    assert_eq!(sim.planning.paths[&2].nodes, sim.planning.paths[&1].nodes);
+    let tail = *sim.planning.paths[&2].nodes.last().unwrap();
+    let source = sim.planning.nodes[&tail].order(2).unwrap().payload()[0..4].to_vec();
+    assert_eq!(source, 2i32.to_le_bytes());
+    append(&mut sim, &rules, owner, 2, (16, 15));
+    assert_eq!(sim.planning.paths[&2].nodes.len(), 2);
+    assert_eq!(sim.planning.nodes.len(), 2);
 }
 
 fn fixture() -> (Simulation, RuleSet, InternedId) {
@@ -917,8 +961,10 @@ fn planning_target_priority_is_secondary_auxiliary_destination() {
 #[test]
 fn planning_append_rejects_exact_sixteen_and_any_loop() {
     let (mut sim, rules, owner) = fixture();
-    for _ in 0..16 {
-        append(&mut sim, &rules, owner, 1, (12, 15));
+    // Distinct cells: a same-frame append onto a node the actor is already on
+    // adds nothing (0x00638208).
+    for x in 4..20 {
+        append(&mut sim, &rules, owner, 1, (x, 10));
     }
     let record = sim
         .encode_planning_order_record(
@@ -1150,16 +1196,18 @@ fn captured_actor_path_commits_for_current_house_and_preserves_original_issuer()
         1,
         "same-coordinate firstmember house still matches the old issuer"
     );
-    append(&mut sim, &rules, owner, 1, (16, 15));
-    assert!(sim.planning_node_at_cell(new_owner, (16, 15)));
-    assert!(!sim.planning_node_at_cell(owner, (16, 15)));
-    assert_eq!(sim.planning_paths(new_owner).len(), 1);
+    // Detach the first member before the next leg: while it shares actor 1's
+    // tail, 0x00639A50 would put it on that leg too.
     sim.planning_detach_actor(2);
     assert!(
         sim.planning_node_at_cell(new_owner, (12, 15)),
         "removing the first member exposes the captured actor's current group"
     );
     assert!(!sim.planning_node_at_cell(owner, (12, 15)));
+    append(&mut sim, &rules, owner, 1, (16, 15));
+    assert!(sim.planning_node_at_cell(new_owner, (16, 15)));
+    assert!(!sim.planning_node_at_cell(owner, (16, 15)));
+    assert_eq!(sim.planning_paths(new_owner).len(), 1);
     sim.substrate
         .entities
         .get_mut(1)
@@ -1645,8 +1693,9 @@ fn delete_handoff_uses_first_member_successor_and_invalidates_retained_node() {
     let (mut sim, rules, owner) = fixture();
     append(&mut sim, &rules, owner, 2, (12, 15));
     append(&mut sim, &rules, owner, 2, (16, 15));
-    append(&mut sim, &rules, owner, 1, (12, 15));
+    // Actor 1's own leg first, so its later join of node 0 shares no tail.
     append(&mut sim, &rules, owner, 1, (20, 15));
+    append(&mut sim, &rules, owner, 1, (12, 15));
     sim.lifecycle_outputs.clear_for_test();
     let delete = sim.encode_plan_node_delete_record(owner, (12, 15)).unwrap();
     apply(&mut sim, &rules, delete);
