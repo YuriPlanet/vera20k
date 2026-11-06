@@ -13,6 +13,7 @@ use crate::app::types::{
     CursorFeedbackKind, CursorId, HoverTargetKind, ScrollDir, SoftwareCursorFrame,
     SoftwareCursorSequence,
 };
+use crate::render::cursor_atlas::CURSOR_TIMER_UNIT_MS;
 use crate::sim::combat;
 
 /// WWMouse's display depth, separate from Scenario's authoritative input
@@ -1653,20 +1654,29 @@ fn blocked_scroll_dir_to_cursor_id(dir: ScrollDir) -> CursorId {
     }
 }
 
-/// Phase of the animated software cursor.
+/// Phase of the animated software cursor: MouseClass's `CurrentCursor` /
+/// `CursorFrame` (+0x5560/+0x5568) and the cursor timer at `0x00ABF2A0`.
 ///
-/// The original keeps this in engine globals and the contract has two halves.
-/// Setting a new mouse shape zeroes the current frame and re-anchors the timer,
-/// so every cursor change restarts its sequence at frame 0 rather than dropping
-/// into the middle of a shared free-running phase. The per-frame update then
-/// advances by exactly **one** frame once the interval has elapsed and
-/// re-anchors again — never several — so a frame-rate stall makes the animation
-/// lag instead of skipping frames.
+/// `MouseClass::SetCursor` (`0x005BDC80`) does nothing when the shape and its
+/// small flag are unchanged; otherwise it zeroes `CursorFrame` and restarts the
+/// timer with the row's rate, so a cursor change restarts its sequence at
+/// frame 0. `MouseClass::Action` (`0x005BDDC0`), on every input pass, skips a
+/// rate-0 row; once the timer has run out it advances exactly **one** frame
+/// (`(CursorFrame + 1) % count`) and restarts the timer from now, so a stall
+/// makes the animation lag instead of skipping frames. The timer counts
+/// `WallClock__Get16msBucket` (`0x006C8C40`, `timeGetTime() >> 4`) buckets:
+/// it starts at the current bucket and runs out when `bucket - start >= rate`,
+/// so the first step after a change comes 1..16 ms early against plain
+/// milliseconds. In skirmish and campaign gamemd runs that input pass once per
+/// `Main_Tick` (`Main__ThrottleFrame` `0x0055E160` polls `GScreenClass::Input`
+/// only in network modes), so at slow game speeds a step waits for the next
+/// tick; VERA steps on the next drawn frame instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CursorAnimation {
     shape: Option<CursorId>,
     frame: usize,
-    anchor_ms: u64,
+    /// The 16 ms bucket the cursor timer last started in.
+    anchor_bucket: u64,
     /// When the next draw steps the frame; `None` for a still shape.
     next_step_ms: Option<u64>,
 }
@@ -1676,7 +1686,7 @@ impl CursorAnimation {
         Self {
             shape: None,
             frame: 0,
-            anchor_ms: 0,
+            anchor_bucket: 0,
             next_step_ms: None,
         }
     }
@@ -1689,23 +1699,25 @@ impl CursorAnimation {
         interval_ms: u64,
         now_ms: u64,
     ) -> usize {
-        let animated = frame_count > 1 && interval_ms > 0;
+        let now = now_ms / CURSOR_TIMER_UNIT_MS;
+        let rate = interval_ms / CURSOR_TIMER_UNIT_MS;
+        let animated = frame_count > 1 && rate > 0;
         if self.shape != Some(id) {
             self.shape = Some(id);
             self.frame = 0;
-            self.anchor_ms = now_ms;
-            self.next_step_ms = animated.then(|| now_ms.saturating_add(interval_ms));
+            self.anchor_bucket = now;
+            self.next_step_ms = animated.then(|| (now + rate) * CURSOR_TIMER_UNIT_MS);
             return 0;
         }
         if !animated {
             self.next_step_ms = None;
             return 0;
         }
-        if now_ms.saturating_sub(self.anchor_ms) >= interval_ms {
+        if now.saturating_sub(self.anchor_bucket) >= rate {
             self.frame = (self.frame + 1) % frame_count;
-            self.anchor_ms = now_ms;
+            self.anchor_bucket = now;
         }
-        self.next_step_ms = Some(self.anchor_ms.saturating_add(interval_ms));
+        self.next_step_ms = Some((self.anchor_bucket + rate) * CURSOR_TIMER_UNIT_MS);
         self.frame
     }
 }
@@ -1723,7 +1735,8 @@ thread_local! {
 }
 
 /// DisplayCancel4AEAD0 resets cursor shape through the existing animation
-/// owner. The next ordinary draw starts the default shape at frame0.
+/// owner (its `SetDefaultCursor(0, 0)`, `0x005BDA80`). The next ordinary draw
+/// starts the default shape at frame0.
 pub(crate) fn reset_cursor_shape() {
     CURSOR_ANIMATION.with(|animation| animation.set(CursorAnimation::new()));
 }
@@ -3867,9 +3880,22 @@ mod cursor_animation_tests {
         assert_eq!(anim.next_step_ms, Some(64));
         assert_eq!(anim.advance(CursorId::Move, 10, INTERVAL_MS, 64), 1);
         assert_eq!(anim.next_step_ms, Some(128));
-        // A 1-second stall still yields a single step.
+        // A 1-second stall still yields a single step; the timer restarts in
+        // the bucket of the stalled draw (1_064 ms is bucket 66).
         assert_eq!(anim.advance(CursorId::Move, 10, INTERVAL_MS, 1_064), 2);
-        assert_eq!(anim.next_step_ms, Some(1_128));
+        assert_eq!(anim.next_step_ms, Some(1_120));
+    }
+
+    /// The cursor timer counts `timeGetTime() >> 4` buckets
+    /// (`WallClock__Get16msBucket` `0x006C8C40`): a shape set 15 ms into
+    /// bucket 0 runs out at bucket 4, 49 ms later, not 64.
+    #[test]
+    fn animation_timer_counts_sixteen_millisecond_buckets() {
+        let mut anim = CursorAnimation::new();
+        anim.advance(CursorId::Move, 10, INTERVAL_MS, 15);
+        assert_eq!(anim.next_step_ms, Some(64));
+        assert_eq!(anim.advance(CursorId::Move, 10, INTERVAL_MS, 63), 0);
+        assert_eq!(anim.advance(CursorId::Move, 10, INTERVAL_MS, 64), 1);
     }
 
     #[test]
