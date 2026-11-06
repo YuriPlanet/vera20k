@@ -5454,13 +5454,15 @@ impl RuleSet {
                 object.project_explicit_factory(state);
             }
         }
-        for (category, name, references, image) in processed.techno_reference_states() {
+        for (category, name, references, image, crush_sound) in processed.techno_reference_states()
+        {
             if let Some(object) = rules
                 .object_list
                 .iter_mut()
                 .find(|object| object.category == category && object.id == name)
             {
                 object.project_image_state(image);
+                object.crush_sound = crush_sound.map(str::to_owned);
                 references.apply_to(object);
             }
         }
@@ -7605,6 +7607,19 @@ impl RuleSet {
         // OverlayRead5FE8BE / InitTheater5FE620 retain typed history that a
         // flattened Image key cannot recover; saved resource plans matter too.
         self.overlay_registry.hash_configuration(&mut hasher);
+        // ObjectTypeRead5F93D5 can retain a different Voc ID for identical
+        // current text. Keep concrete type identities distinct in the hash.
+        b"object-crush-sounds-v1".hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    &object.crush_sound,
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         // Fixed ART foundation state is not covered by the layered RULES
         // source hash. Include retained declared/list/outline geometry, also
         // when a later rules pass no longer authors the original custom key.

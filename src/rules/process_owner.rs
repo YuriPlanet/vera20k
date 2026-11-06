@@ -1305,6 +1305,151 @@ mod tests {
     use crate::rules::retail_sources::RetailRulesSources;
 
     #[test]
+    fn retail_crush_sounds_retain_fixed_catalog_bindings() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+        let loaded = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(Some(&IniFile::from_str(
+                    "[GASAND]\nCrushSound=\n[CAKRMW]\nCrushSound=Unknown\n",
+                ))),
+                &IniFile::from_str("[CAFNCB]\nCrushSound=Unknown\n"),
+            )
+            .unwrap();
+        let overlays = loaded.rules.overlay_registry();
+        for (name, sound) in [
+            ("GASAND", "WallCrushSandbag"),
+            ("CAFNCB", "WallCrushBlack"),
+            ("CAFNCW", "WallCrushWhite"),
+            ("CAKRMW", "WallCrushKremlin"),
+            ("CAFNCP", "WallCrushBlack"),
+        ] {
+            assert_eq!(
+                overlays
+                    .flags(overlays.id_for_name(name).unwrap())
+                    .unwrap()
+                    .crush_sound
+                    .as_deref(),
+                Some(sound),
+                "{name}: ObjectTypeRead5F938B retains the fixed Voc binding"
+            );
+        }
+        assert_eq!(
+            loaded.rules.object("E1").unwrap().crush_sound.as_deref(),
+            Some("InfantrySquish")
+        );
+    }
+
+    #[test]
+    fn object_crush_sound_history_survives_save_but_not_type_reset() {
+        let sounds = Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=First\n1=Second\n2=none\n3=<none>\n",
+        )));
+        let later = IniFile::from_str(
+            "[InfantryTypes]\n1=SAME\n[SAME]\nCrushSound=Unknown\n[E1]\nCrushSound=<none>\n",
+        );
+        let cue = |rules: &RuleSet| {
+            let overlays = rules.overlay_registry();
+            overlays
+                .flags(overlays.id_for_name("SAME").unwrap())
+                .unwrap()
+                .crush_sound
+                .clone()
+        };
+        let mut hashes = Vec::new();
+        for first in ["First", "Second"] {
+            let root = IniFile::from_str(&format!(
+                "[OverlayTypes]\n0=SAME\n1=EMPTY\n[InfantryTypes]\n0=E1\n\
+                 [SAME]\nCrushSound={first}\n[EMPTY]\nCrushSound=none\n[E1]\nCrushSound={first}\n",
+            ));
+            let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+                root,
+                None,
+                IniFile::empty(),
+                Arc::clone(&sounds),
+                Arc::default(),
+            )
+            .unwrap();
+            let loaded = owner
+                .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &later)
+                .unwrap();
+            assert_eq!(cue(&loaded.rules).as_deref(), Some(first));
+            assert_eq!(
+                loaded.rules.object("SAME").unwrap().crush_sound,
+                None,
+                "the newly allocated Infantry must not inherit the Overlay's history"
+            );
+            assert_eq!(
+                loaded.rules.object("E1").unwrap().crush_sound.as_deref(),
+                Some("<none>")
+            );
+            let overlays = loaded.rules.overlay_registry();
+            assert_eq!(
+                overlays
+                    .flags(overlays.id_for_name("EMPTY").unwrap())
+                    .unwrap()
+                    .crush_sound
+                    .as_deref(),
+                Some("none")
+            );
+            let bytes =
+                crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+            let restored = crate::util::save_codec::deserialize(&bytes).unwrap();
+            owner.install_saved_scenario_rules(restored);
+            let saved = owner
+                .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+                .unwrap();
+            assert_eq!(cue(&saved).as_deref(), Some(first));
+            assert_eq!(
+                saved.simulation_config_hash(),
+                loaded.rules.simulation_config_hash()
+            );
+
+            // Continue identical physical input from two different live
+            // histories. The source hash covers this incoming pass; only
+            // the effective configuration hash can distinguish the Voc IDs.
+            let state = owner.registry.take().unwrap().into_registry_state();
+            let reread = RulesLayerStack::new(later.clone())
+                .process_with_fixed_art_and_registry_state_recovering(
+                    &owner.sources.fixed_art,
+                    state,
+                    RulesProcessContext::Ordinary,
+                    &owner.sources.fixed_eva,
+                    &sounds,
+                )
+                .unwrap();
+            let rules = RuleSet::from_processed_rules(&reread).unwrap();
+            hashes.push((rules.source_ini_hash(), rules.simulation_config_hash()));
+            owner.install_saved_scenario_rules(reread);
+
+            owner
+                .load_scenario(
+                    NativeScenarioRulesPrefix::Campaign(None),
+                    &IniFile::from_str("[SAME]\nCrushSound=none\n"),
+                )
+                .unwrap();
+            let preview = owner
+                .random_map_preview_projection(None, "TEMPERATE")
+                .unwrap();
+            assert_eq!(
+                cue(&RuleSet::from_processed_rules(&preview).unwrap()).as_deref(),
+                Some(first)
+            );
+            let reset = owner
+                .load_scenario(NativeScenarioRulesPrefix::RandomMap(None), &later)
+                .unwrap();
+            assert_eq!(cue(&reset.rules).as_deref(), Some(first));
+        }
+        assert_eq!(
+            hashes[0].0, hashes[1].0,
+            "same final text, different retained Voc IDs"
+        );
+        assert_ne!(hashes[0].1, hashes[1].1);
+    }
+
+    #[test]
     fn rmg_land_reads_obey_cache_and_preserve_untouched_rows() {
         use crate::rules::terrain_rules::{LandType, test_speed_percent};
         let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
