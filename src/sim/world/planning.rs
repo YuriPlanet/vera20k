@@ -1332,20 +1332,35 @@ impl Simulation {
     /// `PlanningTokenClass::Clear @ 0x00636120`'s body inline, then the
     /// in-flight latch +0x1C clears. Callers apply its event +0x1D gate.
     pub(super) fn planning_detach_actor(&mut self, id: u64) {
-        if let Some(mut path) = self.planning.paths.remove(&id) {
-            if !path.nodes.is_empty() {
-                self.release_planning_charge(id);
-                path.pending = -1;
-                path.loop_start = None;
-                path.loop_changed = false;
-            }
-            for node in std::mem::take(&mut path.nodes) {
-                self.planning.remove_member(node, id);
-            }
-            path.executing = false;
-            if path.current.is_some() || path.loop_changed {
-                self.planning.paths.insert(id, path);
-            }
+        if self.planning_has_remaining_nodes(id) {
+            self.clear_planning_token(id);
+        }
+        let Some(path) = self.planning.paths.get_mut(&id) else {
+            return;
+        };
+        path.executing = false;
+        if path.current.is_none() && !path.loop_changed {
+            self.planning.paths.remove(&id);
+        }
+    }
+
+    /// `PlanningTokenClass::Clear @ 0x00636120`, whose body 0x006386E0 and
+    /// ChangeOwner 0x00638840 also run inline: a nonempty path releases the
+    /// house's charge, the future nodes lose this member and the cursors
+    /// reset; +1C/+1D stay.
+    fn clear_planning_token(&mut self, actor: u64) {
+        if self.planning_has_remaining_nodes(actor) {
+            self.release_planning_charge(actor);
+        }
+        let Some(path) = self.planning.paths.get_mut(&actor) else {
+            return;
+        };
+        let nodes = std::mem::take(&mut path.nodes);
+        path.pending = -1;
+        path.loop_start = None;
+        path.loop_changed = false;
+        for node in nodes {
+            self.planning.remove_member(node, actor);
         }
     }
 
@@ -1380,21 +1395,9 @@ impl Simulation {
     }
 
     /// ChangeOwner638840 runs `PlanningTokenClass::Clear @ 0x00636120`'s
-    /// body inline: future nodes/cursors clear, +1C/+1D stay.
+    /// body inline.
     pub(super) fn planning_change_owner(&mut self, actor: u64) {
-        if self.planning_has_remaining_nodes(actor) {
-            self.release_planning_charge(actor);
-        }
-        let Some(path) = self.planning.paths.get_mut(&actor) else {
-            return;
-        };
-        let nodes = std::mem::take(&mut path.nodes);
-        path.pending = -1;
-        path.loop_start = None;
-        path.loop_changed = false;
-        for node in nodes {
-            self.planning.remove_member(node, actor);
-        }
+        self.clear_planning_token(actor);
     }
 
     /// PlanMgr637270: after frame commit and deferred finalization, walk
