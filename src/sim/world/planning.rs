@@ -9,6 +9,18 @@
 //! have no references. Drawing (`Tactical::DrawWaypointPaths @ 0x006DAD60`) and
 //! following (`FootClass::ProceedToNextPlanningWaypoint @ 0x004DE580`) therefore
 //! only ever see empty paths.
+//!
+//! So VERA ports no `WaypointPathClass` member. Its only append
+//! (`0x007639A0`) and `WaypointExistsAt @ 0x00763A50` are reached only from
+//! those unreferenced adders, as is the ctor `0x00763810`, apart from
+//! `HouseClass::EnsurePlanningPathExists @ 0x00504740`. That function's one caller
+//! is the draw pass, and it makes an empty path. `SetWaypointMode`'s default
+//! ctor call (`0x005090A0`) needs a nonzero mode. The readers `GetWaypoint @
+//! 0x00763980` and `GetWaypointAfter @ 0x00763BA0` in `Enter_Idle_Mode
+//! @ 0x004D82B0` (`0x004D83F8`), `PerCellProcess @ 0x004D85D0` (`0x004D8DFF`) and the
+//! aircraft Move and Patrol missions (`0x004174B2`) are skipped while
+//! Foot+0x520 is -1, its start value (see `aircraft::move_mission`). Load, Save and CRC (`0x00763C70`,
+//! `0x00763D90`, `0x00763C00`) serve native saves, which VERA does not read.
 
 use super::Simulation;
 use crate::map::entities::EntityCategory;
