@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "9 whole original RmgRegion::PlaceStartingPoints calls (lane and cell draws, the 6x6 AreaIsPavedClear window over clear/rough/road/road-end/misc-pave/pave tiles, the level- and slope-corrected view region, SelectStartCandidates pair seed and farthest-point growth with the cross-region bonus, waypoint writes at an offset, start flags, quota-0 and duplicate-only selections, field-slot drain) and 4 whole MarkStartAreas calls (closest-first clear floods, stamp resets, accumulated locks, walls, the diamond edge, NumPlayers bound)",
+  "assumptions": [
+    "Existing CliffFixture and TiberiumFieldFixture own original-constructed Cell backing, admission, the stride-33 scratch, physical clear/cliff TMP registration, the native theater tile-set globals and the guarded arena; bounds 16..48, MapClass +F4 width 16. Scratch region and stamp 0, +45 lock 0 unless declared. Cells start tile 0, level 0, slope 0.",
+    "Declared scene: MapClass +FC local rect (2, 5, w, h) as InitMapFromSyntheticINI 599650 writes it; tile overrides by the CliffSet base and the native PavedRoads/PavedRoadEnds/MiscPaveTile/PaveTile globals; levels, slopes and scratch +38 owners. Not a complete Generate prefix.",
+    "PlaceStartingPoints rows: region record +0 field-slot vector null, +20 quota, +2C/+38 cell list; MapSeed ABDFD8 +50 start quota and +58 TiberiumLayout; stack argument the waypoint slot offset. ScenarioClass +632 waypoint slots preset to (-1, -1).",
+    "MarkStartAreas rows: MapSeed +50 NumPlayers and ScenarioClass +632 waypoints. FPCW 0E7F. All streams seeded by original 65C6D0."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS, with guard bytes after each block that refuse a pool overrun; native code bytes unchanged. No candidate, distance, waypoint, stamp or RNG result is supplied.",
+    "The scenario start-preview header ScenarioClass +11BC.. that PlaceStartingPoints also writes is not observed."
+  ],
+  "entry_points": {
+    "place_starting_points": "0x00594870",
+    "select_start_candidates": "0x00594F40",
+    "area_is_paved_clear": "0x005A7250",
+    "is_cell_in_view_region": "0x00578640",
+    "mark_start_areas": "0x005A1FB0",
+    "next": "0x0065C780"
+  },
+  "replay_command": "python -m tools.rmg_oracle.start_points",
+  "payload_sha256": "cf49cceb53358699ab5b3b3fc1a9b6a01a9a72d0859243afd7e38a4fde20185b"
+}
