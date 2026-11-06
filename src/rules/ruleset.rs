@@ -1526,17 +1526,15 @@ pub struct GeneralRules {
     /// `[AudioVisual] GUIBuildSound=` (`Rules+0x18C`, read at `0x006693C1`
     /// through `VocClass::FindByName`; retail `MenuClick`): the sidebar cameo
     /// click sound, played by `SelectClass::Action @ 0x006AAD00` for every
-    /// click that acts (e.g. `0x006AAE2A`, `0x006AB713`). Residual: gamemd
-    /// resolves the name as it reads it and keeps the previous layer's sound
-    /// when the name does not resolve; VERA stores the name and resolves it at
-    /// play time. Retail's `MenuClick` resolves.
+    /// click that acts (e.g. `0x006AAE2A`, `0x006AB713`). The retained
+    /// GlobalSoundReferences owner resolves against the fixed Voc catalog.
     pub gui_build_sound: Option<String>,
     /// `[AudioVisual] BuildingSlam=` (`Rules+0x6EC`, read at `0x0066AAA7`
     /// through `VocClass::FindByName`; retail `PlaceBuilding`): the PLACE
     /// event handler `HouseClass @ 0x004FB0E0` plays it centred at full
     /// volume (`0x004FB2FD..0x004FB314`) for the player's own house after the
-    /// building's Unlimbo succeeds. Same name-resolution residual as
-    /// `gui_build_sound`; retail's `PlaceBuilding` resolves.
+    /// building's Unlimbo succeeds. GlobalSoundReferences retains its fixed
+    /// Voc binding; constructor666009 starts at -1.
     pub building_slam: Option<String>,
     /// Sidebar tab click sound from [AudioVisual] GUITabSound (retail
     /// `MenuTab`; `Rules+0x190`, read at `0x00669402..0x0066942C`).
@@ -4081,15 +4079,11 @@ impl GeneralRules {
             ore_twinkle: defaults.ore_twinkle.clone(),
             ore_twinkle_chance: audio_visual
                 .read_int("OreTwinkleChance", defaults.ore_twinkle_chance),
-            gui_build_sound: audio_visual
-                .read_name("GUIBuildSound", 0x80)
-                .map(str::to_owned),
-            building_slam: audio_visual
-                .read_name("BuildingSlam", 0x80)
-                .map(str::to_owned),
-            gui_tab_sound: audio_visual
-                .read_name("GUITabSound", 0x80)
-                .map(str::to_owned),
+            // ReadAudioVisual owns these independently of ReadGeneral.
+            // The process projection supplies retained fixed Voc bindings.
+            gui_build_sound: None,
+            building_slam: None,
+            gui_tab_sound: None,
             // The fixed sound registry binds these readers below, including
             // current-ID retention through the actual Rules pass history.
             voice_ifv_repair: None,
@@ -6211,6 +6205,10 @@ impl RuleSet {
         general.bomb_attach_sound = processed.bomb_attach_sound().map(str::to_owned);
         general.psychic_reveal_activate_sound =
             processed.psychic_reveal_activate_sound().map(str::to_owned);
+        let [gui_build, gui_tab, building_slam] = processed.ui_sounds();
+        general.gui_build_sound = gui_build.map(str::to_owned);
+        general.gui_tab_sound = gui_tab.map(str::to_owned);
+        general.building_slam = building_slam.map(str::to_owned);
         let (_, color_indexes) = processed.color_add_state();
         general.laser_target_color = color_indexes.laser_target_color();
         general.iron_curtain_color = color_indexes.iron_curtain_color();
@@ -7539,6 +7537,12 @@ impl RuleSet {
         self.general.bomb_ticking_sound.hash(&mut hasher);
         self.general.bomb_attach_sound.hash(&mut hasher);
         self.general.psychic_reveal_activate_sound.hash(&mut hasher);
+        [
+            &self.general.gui_build_sound,
+            &self.general.gui_tab_sound,
+            &self.general.building_slam,
+        ]
+        .hash(&mut hasher);
         b"mind-control-sound-references-v1".hash(&mut hasher);
         (
             &self.mind_control.mind_control_sound,
@@ -11415,16 +11419,13 @@ SpawnCount=3
         // Rules+0xF0 MaximumQueuedObjects ([General], 0x00671DA7), +0x18C
         // GUIBuildSound, +0x6EC BuildingSlam and +0x700 ScoldSound
         // ([AudioVisual], 0x006693C1, 0x0066AAA7 and 0x0066ABE8).
-        let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
-            return;
-        };
-        let general = GeneralRules::from_ini(&ini);
-        assert_eq!(general.maximum_queued_objects, 29);
-        assert_eq!(general.gui_build_sound.as_deref(), Some("MenuClick"));
-        assert_eq!(general.building_slam.as_deref(), Some("PlaceBuilding"));
         let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
             return;
         };
+        let general = &retail.rules.general;
+        assert_eq!(general.maximum_queued_objects, 29);
+        assert_eq!(general.gui_build_sound.as_deref(), Some("MenuClick"));
+        assert_eq!(general.building_slam.as_deref(), Some("PlaceBuilding"));
         assert_eq!(
             retail.rules.general.scold_sound.as_deref(),
             Some("MenuScold")
