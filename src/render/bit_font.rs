@@ -846,23 +846,26 @@ impl BitFont {
     }
 
     /// Build the retail bitmap font and, when `[VERA] UiFont=` names installed
-    /// families, attach the vector face that replaces its glyph table. The
-    /// bitmap table and darken texture still exist, so a chain that fails to
-    /// build leaves the retail font fully in place.
+    /// families or font files, attach the vector face that replaces its glyph
+    /// table. Relative file entries resolve against `font_root`, the retail
+    /// game folder. The bitmap table and darken texture still exist, so a
+    /// chain that fails to build leaves the retail font fully in place.
     pub fn from_fnt_with_ui_font(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         batch: &BatchRenderer,
         fnt: &FntFile,
+        font_root: Option<&std::path::Path>,
         families: &[String],
     ) -> Self {
         let mut font = Self::from_fnt(device, queue, batch, fnt);
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         if !families.is_empty() {
-            font.vector = crate::render::vector_font::VectorFont::new(device, batch, families);
+            font.vector =
+                crate::render::vector_font::VectorFont::new(device, batch, font_root, families);
         }
         #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
-        let _ = families;
+        let _ = (font_root, families);
         font
     }
 }

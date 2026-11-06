@@ -3,9 +3,12 @@
 //!
 //! VERA extension, presentation only. `GAME.FNT` stays the default and the
 //! only font when the key is absent, so the retail look is unchanged. Each
-//! character is resolved through the configured families in order and then
-//! through [`FALLBACK_FAMILIES`], which is what gives Latin, Cyrillic, Greek
-//! and CJK text a covering face even when a single family does not carry it.
+//! entry is an installed family name or a font file: an absolute path loads
+//! from disk, and a relative path resolves against the retail game folder, so
+//! a font can ship beside the game. Each character is resolved through the
+//! configured entries in order and then through [`FALLBACK_FAMILIES`], which
+//! is what gives Latin, Cyrillic, Greek and CJK text a covering face even when
+//! a single font does not carry it.
 //! There is no complex-script shaping and no bidirectional reordering: Arabic
 //! and indic text draws with isolated, unjoined glyphs.
 //!
@@ -18,6 +21,7 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use swash::scale::image::Image;
@@ -91,6 +95,12 @@ struct FaceRef {
     id: fontdb::ID,
     index: u32,
     family: String,
+}
+
+/// One configured `[VERA] UiFont=` entry: an installed family or a font file.
+enum FontEntry<'a> {
+    File(PathBuf),
+    Family(&'a str),
 }
 
 /// A character's placement data, resolved once per character.
@@ -189,44 +199,39 @@ pub struct VectorFont {
 }
 
 impl VectorFont {
-    /// Resolve the configured families plus [`FALLBACK_FAMILIES`] and build
-    /// the empty atlas. `None` when nothing installed matched, in which case
-    /// the caller keeps `GAME.FNT`.
-    pub fn new(device: &wgpu::Device, batch: &BatchRenderer, families: &[String]) -> Option<Self> {
+    /// Resolve `[VERA] UiFont=` plus [`FALLBACK_FAMILIES`] and build the empty
+    /// atlas. Each configured entry is an installed family name or a font file
+    /// (`.ttf`, `.otf`, `.ttc`, `.otc`); a relative file path is resolved
+    /// against `font_root`, the retail game folder. `None` when nothing
+    /// matched, in which case the caller keeps `GAME.FNT`.
+    pub fn new(
+        device: &wgpu::Device,
+        batch: &BatchRenderer,
+        font_root: Option<&Path>,
+        families: &[String],
+    ) -> Option<Self> {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
         let mut faces = Vec::new();
         let mut seen = HashSet::new();
-        for name in families
-            .iter()
-            .map(String::as_str)
-            .chain(FALLBACK_FAMILIES.iter().copied())
-        {
-            let name = name.trim();
-            if name.is_empty() {
-                continue;
+        let mut loaded_files = HashSet::new();
+        for entry in families {
+            match classify_entry(entry, font_root) {
+                None => {}
+                Some(FontEntry::Family(name)) => {
+                    push_family(&db, &mut faces, &mut seen, name);
+                }
+                Some(FontEntry::File(path)) => {
+                    push_font_file(&mut db, &mut faces, &mut seen, &mut loaded_files, &path);
+                }
             }
-            let Some(id) = db.query(&fontdb::Query {
-                families: &[fontdb::Family::Name(name)],
-                ..Default::default()
-            }) else {
-                continue;
-            };
-            if !seen.insert(id) {
-                continue;
-            }
-            let Some(index) = db.face(id).map(|face| face.index) else {
-                continue;
-            };
-            faces.push(FaceRef {
-                id,
-                index,
-                family: name.to_owned(),
-            });
+        }
+        for family in FALLBACK_FAMILIES {
+            push_family(&db, &mut faces, &mut seen, family);
         }
         if faces.is_empty() {
             log::warn!(
-                "[VERA] UiFont= matched no installed font; the retail GAME.FNT stays in use"
+                "[VERA] UiFont= matched no installed family or font file; the retail GAME.FNT stays in use"
             );
             return None;
         }
@@ -582,6 +587,122 @@ impl VectorFont {
     }
 }
 
+/// Decide whether one configured entry names a font file or an installed
+/// family. An absolute path is always a file; a relative entry with a font
+/// extension or a path separator resolves against the retail game folder.
+fn classify_entry<'a>(entry: &'a str, font_root: Option<&Path>) -> Option<FontEntry<'a>> {
+    let entry = entry.trim();
+    if entry.is_empty() {
+        return None;
+    }
+    let path = Path::new(entry);
+    if path.is_absolute() {
+        return Some(FontEntry::File(path.to_path_buf()));
+    }
+    if is_font_file_name(entry) {
+        let resolved = match font_root {
+            Some(root) => root.join(path),
+            None => path.to_path_buf(),
+        };
+        return Some(FontEntry::File(resolved));
+    }
+    Some(FontEntry::Family(entry))
+}
+
+fn is_font_file_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [".ttf", ".otf", ".ttc", ".otc"]
+        .iter()
+        .any(|extension| lower.ends_with(extension))
+        || name.contains('/')
+        || name.contains('\\')
+}
+
+fn push_family(
+    db: &fontdb::Database,
+    faces: &mut Vec<FaceRef>,
+    seen: &mut HashSet<fontdb::ID>,
+    name: &str,
+) {
+    let name = name.trim();
+    if name.is_empty() {
+        return;
+    }
+    let Some(id) = db.query(&fontdb::Query {
+        families: &[fontdb::Family::Name(name)],
+        ..Default::default()
+    }) else {
+        return;
+    };
+    if !seen.insert(id) {
+        return;
+    }
+    let Some(index) = db.face(id).map(|face| face.index) else {
+        return;
+    };
+    faces.push(FaceRef {
+        id,
+        index,
+        family: name.to_owned(),
+    });
+}
+
+/// Load every face of one font file and append it to the chain. A collection
+/// (`.ttc`) contributes each face; a repeated path is loaded once.
+fn push_font_file(
+    db: &mut fontdb::Database,
+    faces: &mut Vec<FaceRef>,
+    seen: &mut HashSet<fontdb::ID>,
+    loaded_files: &mut HashSet<PathBuf>,
+    path: &Path,
+) {
+    if !loaded_files.insert(path.to_path_buf()) {
+        return;
+    }
+    let before = db.len();
+    if let Err(error) = db.load_font_file(path) {
+        log::warn!(
+            "[VERA] UiFont= cannot load font file {}: {error}",
+            path.display()
+        );
+        return;
+    }
+    let loaded: Vec<(fontdb::ID, u32, String)> = db
+        .faces()
+        .skip(before)
+        .map(|face| {
+            (
+                face.id,
+                face.index,
+                face.families
+                    .first()
+                    .map(|(name, _)| name.clone())
+                    .unwrap_or_default(),
+            )
+        })
+        .collect();
+    if loaded.is_empty() {
+        log::warn!(
+            "[VERA] UiFont= {} holds no usable font face",
+            path.display()
+        );
+    } else {
+        log::info!(
+            "[VERA] UiFont= loaded font file {} as {:?}",
+            path.display(),
+            loaded
+                .iter()
+                .map(|(_, _, family)| family.as_str())
+                .collect::<Vec<_>>()
+        );
+    }
+    for (id, index, family) in loaded {
+        if seen.insert(id) {
+            faces.push(FaceRef { id, index, family });
+        }
+    }
+}
+
 fn tab_advance(cursor_x: f32, origin: f32, scale: f32) -> f32 {
     let cell_x = ((cursor_x - origin) / scale) as u32;
     let advanced = cell_x + TAB_WIDTH;
@@ -772,6 +893,27 @@ mod tests {
     }
 
     #[test]
+    fn configured_entries_classify_as_families_or_font_files() {
+        let root = Path::new("H:/RA2");
+        assert!(matches!(
+            classify_entry("Segoe UI", Some(root)),
+            Some(FontEntry::Family("Segoe UI"))
+        ));
+        match classify_entry("Fonts/ui.ttf", Some(root)) {
+            Some(FontEntry::File(path)) => {
+                assert!(path.is_absolute() == Path::new("H:/RA2").is_absolute());
+                assert!(path.ends_with("Fonts/ui.ttf") || path.ends_with("Fonts\\ui.ttf"));
+            }
+            _ => panic!("a relative font file should resolve against the game folder"),
+        }
+        match classify_entry(r"C:\Fonts\ui.OTF", None) {
+            Some(FontEntry::File(path)) => assert_eq!(path, Path::new(r"C:\Fonts\ui.OTF")),
+            _ => panic!("an absolute font file should load as given"),
+        }
+        assert!(classify_entry("   ", Some(root)).is_none());
+    }
+
+    #[test]
     #[ignore = "requires a GPU and an installed system font; checks the swash path end to end"]
     fn rasterises_an_installed_family_through_swash() {
         let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
@@ -780,7 +922,8 @@ mod tests {
             &gpu.queue,
             wgpu::TextureFormat::Rgba8UnormSrgb,
         );
-        let Some(font) = VectorFont::new(&gpu.device, &batch, &["Segoe UI".to_owned()]) else {
+        let Some(font) = VectorFont::new(&gpu.device, &batch, None, &["Segoe UI".to_owned()])
+        else {
             return;
         };
         let Some(metrics) = font.metrics_for('A') else {

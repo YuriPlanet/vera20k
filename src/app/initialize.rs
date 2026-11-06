@@ -632,6 +632,9 @@ impl App {
                 &gpu.queue,
                 &batch_renderer,
                 fnt,
+                game_config
+                    .as_ref()
+                    .map(|config| config.paths.ra2_dir.as_path()),
                 &options_profile.ui_font,
             );
         }

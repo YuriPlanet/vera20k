@@ -255,11 +255,13 @@ pub(crate) struct RetailOptionsProfile {
     /// game last sat, so the next launch opens there. `None` until the player
     /// moves or resizes the window; a zero width reads as unset.
     pub(crate) window_placement: Option<WindowPlacement>,
-    /// `[VERA] UiFont=`: installed font families, in fallback order, that
-    /// replace `GAME.FNT`'s bitmap glyphs with rasterised TrueType/OpenType
-    /// outlines (`render::vector_font`). Empty keeps the retail font. A
-    /// configured family missing from the system is skipped; names after it
-    /// still join the chain.
+    /// `[VERA] UiFont=`: font entries, in fallback order, that replace
+    /// `GAME.FNT`'s bitmap glyphs with rasterised TrueType/OpenType outlines
+    /// (`render::vector_font`). Each entry is an installed family name or a
+    /// font file (`.ttf`, `.otf`, `.ttc`, `.otc`); an absolute file path loads
+    /// as given and a relative one resolves against the game folder, so a font
+    /// can ship with the game. Empty keeps the retail font. An entry that does
+    /// not resolve is skipped; later entries still join the chain.
     pub(crate) ui_font: Vec<String>,
 }
 
