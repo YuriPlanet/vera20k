@@ -936,6 +936,9 @@ pub struct ArtRegistry {
     anim_theater_flags: HashMap<String, (bool, bool)>,
     /// Full deterministic Next/Trailer closure reachable from scheduler-owned roots.
     scheduler_anim_types: BTreeSet<String>,
+    /// Phobos `[LaserTrailTypes]`, read from this ART layer at rules load.
+    #[cfg(feature = "phobos")]
+    laser_trail_types: crate::rules::phobos_laser_trail::LaserTrailTypeRegistry,
     damage_fire_offsets_valid: bool,
 }
 
@@ -1326,6 +1329,12 @@ impl ArtRegistry {
         }
 
         log::info!("ArtRegistry: {} entries loaded from art.ini", entries.len());
+        #[cfg(feature = "phobos")]
+        let laser_trail_types = if ini.section("LaserTrailTypes").is_some() {
+            crate::rules::phobos_laser_trail::LaserTrailTypeRegistry::from_ini(ini)
+        } else {
+            crate::rules::phobos_laser_trail::LaserTrailTypeRegistry::default()
+        };
         ArtRegistry {
             entries,
             entry_names,
@@ -1335,6 +1344,8 @@ impl ArtRegistry {
             anim_type_images: HashMap::new(),
             anim_theater_flags,
             scheduler_anim_types: BTreeSet::new(),
+            #[cfg(feature = "phobos")]
+            laser_trail_types,
             damage_fire_offsets_valid,
         }
     }
@@ -1350,8 +1361,19 @@ impl ArtRegistry {
             anim_type_images: HashMap::new(),
             anim_theater_flags: HashMap::new(),
             scheduler_anim_types: BTreeSet::new(),
+            #[cfg(feature = "phobos")]
+            laser_trail_types: Default::default(),
             damage_fire_offsets_valid: true,
         }
+    }
+
+    /// Phobos `[LaserTrailTypes]` entry by name.
+    #[cfg(feature = "phobos")]
+    pub fn laser_trail(
+        &self,
+        name: &str,
+    ) -> Option<&crate::rules::phobos_laser_trail::LaserTrailType> {
+        self.laser_trail_types.get(name)
     }
 
     /// Look up art entry for an image ID (case-insensitive).

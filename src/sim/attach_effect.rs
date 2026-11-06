@@ -87,6 +87,12 @@ pub struct AttachEffectInstance {
     #[cfg(feature = "phobos")]
     #[serde(default)]
     reflect_damage_timer: crate::sim::timer::CdTimer,
+    /// `LaserTrailClass::LastLocation`: the endpoint the next trail segment
+    /// starts from. The trail is created and retired with this instance
+    /// (`AttachEffectClass::AttachEffect` / destructor).
+    #[cfg(feature = "phobos")]
+    #[serde(default)]
+    trail_last_location: Option<[i32; 3]>,
 }
 
 impl AttachEffectInstance {
@@ -119,6 +125,8 @@ impl AttachEffectInstance {
             armor_multiplier_timer: crate::sim::timer::CdTimer::default(),
             #[cfg(feature = "phobos")]
             reflect_damage_timer: crate::sim::timer::CdTimer::default(),
+            #[cfg(feature = "phobos")]
+            trail_last_location: None,
         };
         instance.refresh(effect);
         instance
@@ -1722,6 +1730,111 @@ impl Simulation {
             .phobos_attach_effects_mut() = list;
     }
 
+    /// Phobos `TechnoExt::UpdateLaserTrails` (`Body.Update.cpp:526..570`):
+    /// every live instance whose type names a `[LaserTrailTypes]` entry draws
+    /// one laser segment once it moves `SegmentLength`. The trail state lives
+    /// on this instance, so it is created and retired with the effect.
+    /// RESIDUALS: only `DrawType=laser` draws (EBolt/RadBeam are parsed but
+    /// unported); `CloakVisible.DetectedOnly`, `DropPodOnly` and the
+    /// `HideLaserTrailEffects` config have no reader; this runs in the shared
+    /// techno AI phase, not after the foot locomotor process.
+    #[cfg(feature = "phobos")]
+    pub(crate) fn update_phobos_laser_trails(
+        &mut self,
+        id: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if entity.phobos_attach_effects().is_empty()
+            || entity.lifecycle.in_limbo()
+            || entity.passenger_role.inside_transport_id().is_some()
+            || entity.chrono_warp_latch()
+        {
+            return;
+        }
+        let location = crate::sim::movement::ground_pose::object_get_coords(
+            entity,
+            self.resolved_terrain.as_ref(),
+        );
+        let current = [location.x, location.y, location.z];
+        let owner = entity.owner();
+        let cloak_state = entity.cloak.as_ref().map_or(0, |cloak| cloak.state());
+        let effects = rules.attach_effect_types().types();
+        let art = rules.art();
+        let mut list = std::mem::take(
+            self.substrate
+                .entities
+                .get_mut(id)
+                .expect("the gated entity still exists")
+                .phobos_attach_effects_mut(),
+        );
+        for instance in &mut list.instances {
+            let Some(effect) = effects.get(instance.type_index) else {
+                continue;
+            };
+            let Some(name) = effect.laser_trail_type.as_deref() else {
+                continue;
+            };
+            let Some(trail) = art.laser_trail(name) else {
+                continue;
+            };
+            // `UpdateLaserTrails` while uncloaking and the type is not
+            // cloak-visible only moves `LastLocation` (`Body.Update.cpp:564..566`).
+            if cloak_state == 3 && !trail.cloak_visible {
+                instance.trail_last_location = Some(current);
+                continue;
+            }
+            let Some(last) = instance.trail_last_location else {
+                instance.trail_last_location = Some(current);
+                continue;
+            };
+            let dx = i64::from(current[0]) - i64::from(last[0]);
+            let dy = i64::from(current[1]) - i64::from(last[1]);
+            let dz = i64::from(current[2]) - i64::from(last[2]);
+            let segment = f64::from(trail.segment_length);
+            if (dx * dx + dy * dy + dz * dz) as f64 <= segment * segment {
+                continue;
+            }
+            instance.trail_last_location = Some(current);
+            // EBolt and RadBeam trail types parse but their drawing systems
+            // are unported, so they add no laser.
+            if trail.draw_type != crate::rules::phobos_laser_trail::LaserTrailDrawType::Laser {
+                continue;
+            }
+            if cloak_state == 2 && !trail.cloak_visible {
+                continue;
+            }
+            if trail.ignore_vertical && dx.abs() <= 16 && dy.abs() <= 16 {
+                continue;
+            }
+            // Native constructs the LaserDraw with `CurrentColor`, then forces
+            // `IsHouseColor = true` (`LaserTrailClass.cpp:29..36`): every trail
+            // draws through the house/Special arm, where `Thickness` and
+            // `IsIntense` take effect.
+            let color = crate::sim::combat::laser::LaserColor::House(owner);
+            let birth = crate::sim::combat::laser::construct(
+                &self.session,
+                &mut self.lifecycle_outputs,
+                crate::sim::projectile::ProjectileCoord::new(last[0], last[1], last[2]),
+                crate::sim::projectile::ProjectileCoord::new(current[0], current[1], current[2]),
+                0,
+                trail.fade_duration(),
+                color,
+                crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO,
+            );
+            birth.width = trail.thickness;
+            birth.supported = trail.is_intense;
+        }
+        let entity = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .expect("the gated entity still exists");
+        *entity.phobos_attach_effects_mut() = list;
+    }
+
     /// Phobos `TechnoClass_Limbo_Wrapper` (`Ext/Techno/Hooks.cpp:400..472`,
     /// call/vtable replacements): every effect with `DiscardOn=Entry` is reset
     /// or removed when the object enters limbo, except on an undeploying
@@ -1794,6 +1907,12 @@ impl Simulation {
                 expire_shots.push(shot);
             }
             list.instances.remove(index);
+        }
+        // Native clears every trail's `LastLocation` when the carrier enters
+        // Limbo or a transport (`Techno/Hooks.cpp` 0x71067B, `0x4D7221`), so a
+        // carried or re-placed object does not draw a segment across the gap.
+        for instance in &mut list.instances {
+            instance.trail_last_location = None;
         }
         let entity = self
             .substrate
@@ -3235,6 +3354,68 @@ mod tests {
         let mut effect = AttachEffectType::default();
         effect.duration = duration;
         effect
+    }
+
+    fn lasers(sim: &Simulation) -> Vec<crate::sim::combat::laser::LaserBirth> {
+        sim.lifecycle_outputs
+            .as_slice()
+            .iter()
+            .filter_map(|fact| match fact {
+                crate::sim::world::LifecycleOutput::LaserCreated(laser) => Some(*laser),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `LaserTrail.Type` resolves through the ART `[LaserTrailTypes]` catalog:
+    /// one segment per `SegmentLength` of movement, with the type's fade,
+    /// thickness and color.
+    #[test]
+    fn a_named_laser_trail_draws_one_segment_after_moving() {
+        let art = crate::rules::ini_parser::IniFile::from_str(
+            "[LaserTrailTypes]\n0=TRAIL\n[TRAIL]\nSegmentLength=64\nFadeDuration=5\n\
+             Thickness=2\nColor=1,2,3\n",
+        );
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nSpeed=5\n\
+                 AttachEffect.AttachTypes=AE\n\
+                 [AttachEffectTypes]\n0=AE\n[AE]\nDuration=100\nLaserTrail.Type=TRAIL\n\
+                 [Clear]\nBuildable=yes\n",
+            ),
+            &art,
+        )
+        .unwrap();
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+        let mut sim = Simulation::with_seed(3);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        let tank = sim
+            .spawn_object_at_height("TANK", "Neutral", 10, 10, 0, 0, &rules)
+            .expect("TANK spawns");
+        sim.update_phobos_laser_trails(tank, &rules);
+        assert!(
+            lasers(&sim).is_empty(),
+            "the first update only seeds LastLocation"
+        );
+        sim.substrate
+            .entities
+            .get_mut(tank)
+            .unwrap()
+            .position
+            .set_rx_for_test(11);
+        sim.update_phobos_laser_trails(tank, &rules);
+        let births = lasers(&sim);
+        assert_eq!(births.len(), 1, "one SegmentLength crossing");
+        assert_eq!(births[0].width, 2);
+        assert_eq!(births[0].duration, 5);
+        assert!(!births[0].supported);
+        assert!(matches!(
+            births[0].color,
+            crate::sim::combat::laser::LaserColor::House(_)
+        ));
+        assert_eq!(births[0].from.y, births[0].to.y, "moved along X");
+        sim.update_phobos_laser_trails(tank, &rules);
+        assert_eq!(lasers(&sim).len(), 1, "no movement adds no segment");
     }
 
     /// The initial delay gates everything, then the duration counts down and a

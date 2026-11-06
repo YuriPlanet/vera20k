@@ -60,7 +60,7 @@ DiscardOn.Missions=                 ; carrier enters one of these Missions
 DiscardOn.AIMissions=
 DiscardOn.LandTypes=
 DiscardOn.Sequences=
-LaserTrail.Type=                    ; reserved; no LaserTrail owner yet
+LaserTrail.Type=                    ; a [LaserTrailTypes] entry in artmd.ini
 ExpireWeapon=                       ; WeaponType fired when the effect ends;
                                     ; ExpireWeapon.TriggerOn=expire/remove/
                                     ; death/discard (comma-separated flags)
@@ -140,6 +140,12 @@ AttachEffect.SameSourceOnly=no            ; match only same-source instances
   and the animation each effect shows (`AttachEffectClass::AI`).
 - `sim/game_entity/attach_effect.rs`: the carrier-side attach sites
   (`CreateAndAttach` gate, stacking counts, source House).
+- `rules/phobos_laser_trail.rs` and the ART layer in `rules/art_data.rs`:
+  the `[LaserTrailTypes]` catalog, read from `artmd.ini` at rules load
+  (`LaserTrailTypeClass::LoadFromINI`, `Rules/Body.cpp:62`).
+- `sim/attach_effect.rs`: each effect's `LaserTrail` state (`LastLocation`) and
+  the per-frame segment emission into the existing LaserDraw lifecycle, driven
+  from the techno AI phase (`TechnoExt::UpdateLaserTrails`, `Body.Update.cpp:526`).
 - `sim/combat/world_receiver.rs`: damage-time arms — expire/revenge weapons
   on death (`0x702050`), reflect damage, and the per-target pass that runs
   AttachEffect lists and crit before the native area damage
@@ -154,8 +160,13 @@ AttachEffect.SameSourceOnly=no            ; match only same-source instances
 
 ## Residuals
 
-- `LaserTrail.Type` is retained as the raw key text: VERA20K has no
-  LaserTrail catalog or trail owner yet, so no trail is drawn.
+- `LaserTrail.Type` draws only `DrawType=laser` entries; `ebolt` and `radbeam`
+  parse (with their `Bolt.*` and `Beam.*` keys) but emit nothing yet.
+  `CloakVisible.DetectedOnly`, `DropPodOnly` and the global
+  `HideLaserTrailEffects` switch have no reader, and the trail update runs in
+  the shared techno AI phase rather than after the foot locomotor process.
+  Native forces `IsHouseColor` on the trail LaserDraw, so `Color` and
+  `IsHouseColor` parse but the segment draws in the owner's house color.
 - `AllowTransfer` is retained (`Nullable<bool>`, `AllowTransfer.Convert`
   alongside) but no transfer site consumes it yet.
 - `Duration.ApplyFirepowerMult` folds a firepower multiplier into the

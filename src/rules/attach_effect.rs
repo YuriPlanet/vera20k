@@ -1395,9 +1395,8 @@ AllowTransfer.Convert=yes
         assert_eq!(catalog.index_of("SECOND"), Some(1));
     }
 
-    /// `LaserTrail.Type` resolves through a trail catalog natively; until that
-    /// owner exists the raw key text is kept and an absent or blank key stays
-    /// `None`.
+    /// `LaserTrail.Type` keeps the ART catalog key text (`ValueableIdx` in
+    /// Phobos, resolved by name at use); an absent or blank key stays `None`.
     #[test]
     fn laser_trail_type_keeps_the_key_text() {
         let catalog = parse("[AttachEffectTypes]\n0=T\n[T]\nLaserTrail.Type=MyTrail\n");
