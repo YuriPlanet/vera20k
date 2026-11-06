@@ -12,7 +12,7 @@
 //! all piling onto the first few origins.
 //!
 //! Native: the tree loop of `RandomMapGenerator::PaintLatPatchesTreesRocks_Temperate
-//! @ 0x005A3AE0` (0x005A3F4A..0x005A40BD) and
+//! @ 0x005A3AE0` (0x005A3F41..0x005A40BD) and
 //! `PaintLatPatchesTrees_NonTemperate @ 0x005A4280`, each region grown by
 //! `RandomMapGenerator::PlaceTreeRegion @ 0x005A45E0`.
 

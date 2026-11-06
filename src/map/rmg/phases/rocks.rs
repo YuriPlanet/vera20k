@@ -79,6 +79,8 @@ pub fn run(ctx: &mut RockCtx<'_>, args: &RockArgs) -> i32 {
         };
         if overlay == -1 {
             // 0x005A4253: every overlay-free pick zeroes the density byte.
+            // Residual: its `Recalc_Attributes(-1)` (0x005A4259) is not ported;
+            // it matters only if a later generator pass reads those attributes.
             ctx.grid.get_mut(x, y).unwrap().density = 0;
             if is_sand_lat_transition(ctx.ids, tile) {
                 let variant = ctx.rng.uniform(0, ROCK_VARIANT_MAX);
