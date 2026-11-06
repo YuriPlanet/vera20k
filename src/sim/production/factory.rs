@@ -1143,7 +1143,13 @@ impl FactoryRegistry {
     /// Begin_Production, `0x004CA60A`, passes it as `shouldQueue`). So a
     /// PRODUCE reaching a Factory that holds nothing but still has a queue
     /// (a forced promotion that Begin_Production refused) joins that queue's
-    /// tail rather than jumping it. The create path leaves +5C alone: a cash
+    /// tail rather than jumping it. Two native create arms are left out:
+    /// a BuildingType always creates (`0x004C9C95`), which the caller covers
+    /// by abandoning first while building strips never queue, and Phobos
+    /// `BuildingProductionQueue` jumps past it (hook `0x4C9C7B` ->
+    /// `0x004C9C9E`) to this test; and a held, unsuspended object at rate 0
+    /// creates over itself, unreachable since a held build's rate is at least
+    /// 1. The create path leaves +5C alone: a cash
     /// stall from an abandoned build stays until the new build's first step.
     ///
     /// A freshly-armed build has no rate yet; the caller constructs its Techno
