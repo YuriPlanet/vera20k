@@ -153,7 +153,7 @@ fn scaled_range_matches_original_values_and_full_draw_states() {
     }
 }
 
-fn ranges(doc: &Value, input: &Value) -> TheaterCliffRanges {
+pub(super) fn ranges(doc: &Value, input: &Value) -> TheaterCliffRanges {
     let mut globals = doc["inputs"]["family_globals"].as_object().unwrap().clone();
     if input["all_unset"] == true {
         for value in globals.values_mut() {
@@ -212,7 +212,7 @@ impl TileBlocks for Blocks {
         self.0.get(&tile)
     }
 }
-fn blocks(doc: &Value) -> Blocks {
+pub(super) fn blocks(doc: &Value) -> Blocks {
     Blocks(
         doc["inputs"]["registered_tiles"]
             .as_array()

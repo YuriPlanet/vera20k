@@ -17,7 +17,6 @@
 //! the post-patch pass that produces the sand-LAT tiles the rock pass needs.
 
 use super::grid::RmgGrid;
-use super::phases::adjacency;
 use super::phases::blob::BlobCtx;
 use super::phases::carve::CarveCtx;
 use super::phases::carve_driver::{self, ConnectorRegion};
@@ -237,18 +236,7 @@ pub fn run_pipeline(
         };
         regions = island_passes::run(&mut ctx);
 
-        // Then the ramps. THREE SEPARATE PASSES over every region, in this
-        // order — adjacency for all of them, then carving for all of them,
-        // then the release. Fusing the first two would let a region see a
-        // neighbour's data before that neighbour had been measured, and the
-        // maps would drift apart from the original.
-        //
-        // The first pass is implicit here: `adjacency::neighbour_ids` reads
-        // the scratch grid directly rather than caching onto the region, and
-        // the grid is already final by this point, so every region sees the
-        // same finished partition the original's pre-pass would have built.
-        // The third pass — freeing the vectors — has no analogue: the lists
-        // are values and drop on their own.
+        // Then the ramps and low-bridge decks (step 6 of 0x0058EF10).
         let playfield = PlayfieldBounds::from_normalized_local_size(
             map_w,
             local_rect[0],
@@ -256,35 +244,21 @@ pub fn run_pipeline(
             gen_w,
             gen_h,
         );
-        let connector_regions: Vec<ConnectorRegion> = regions
-            .list
-            .iter()
-            .map(|r| ConnectorRegion {
-                id: r.id,
-                level: r.level,
-                waterish: r.active,
-                cell_count: adjacency::region_cell_count(scratch, r.id),
-                neighbours: adjacency::neighbour_ids(scratch, r.id, regions.id_counter),
-            })
-            .collect();
-        for region in &connector_regions {
-            let mut ctx = CarveCtx {
-                grid: &mut *grid,
-                scratch: &mut *scratch,
-                ids: inputs.ids,
-                blocks: inputs.blocks,
-                rng: &mut *rng,
-                playfield: &playfield,
-            };
-            carve_driver::carve_connectors_for_region(
-                &mut ctx,
-                &connector_regions,
-                region,
-                inputs.accessibility,
-                &mut structures,
-                &mut construction_trace,
-            );
-        }
+        let mut ctx = CarveCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            blocks: inputs.blocks,
+            rng: &mut *rng,
+            playfield: &playfield,
+        };
+        carve_driver::connect_regions(
+            &mut ctx,
+            &regions,
+            inputs.accessibility,
+            &mut structures,
+            &mut construction_trace,
+        );
         // Original Generate598D6E..598D82: after connectors, jitter the
         // ridge edges, repair/materialize faces, then restamp registered
         // cliff variants. Generate ignores the materializer's refusal result

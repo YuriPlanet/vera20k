@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "7 whole original SpreadGreenTerrain calls (green base and the 16-tile ClearToGreenLAT window with its edges, duplicate candidates, Dummy appends and paints at the diamond edge, a zero conversion count, no green) and 4 whole SeedLatPatchProbabilities_Temperate calls (Vegetation 0, 37, 50 and 100, the 42-piece ShorePieces window with its edges and diamond-edge 5x5 neighbourhoods, prior sand probabilities); every converted tile, the Dummy tile, the rough/green/sand probabilities of every record (as the common triple and the records that differ from it) and the exit RNG state",
+  "assumptions": [
+    "Existing CliffFixture, TiberiumFieldFixture and StartPointsFixture own original-constructed Cell backing, admission (equal to the declared 16..48 diamond), the stride-33 scratch, the physical temperate TMP registration, the native theater tile-set globals and the guarded arena. Scratch probabilities start 0.0 unless declared.",
+    "Declared scene: SpreadGreenTerrain rows put the CliffSet base on every in-diamond cell except declared clear (tile 0), GreenTile, ClearToGreenLAT and ShorePieces tiles; the Dummy starts with its constructor tile FFFF. SeedLatPatchProbabilities rows put tile 0 everywhere except declared ShorePieces tiles, MapSeed ABDFD8 +5C Vegetation. FPCW 0E7F. All streams seeded by original 65C6D0. Not a complete Generate prefix."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS, with guard bytes after each block that refuse a pool overrun; native code bytes unchanged. No candidate, draw, tile or probability is supplied."
+  ],
+  "entry_points": {
+    "spread_green_terrain": "0x0059B740",
+    "is_green_terrain_tile": "0x004867B0",
+    "is_clear_tile": "0x00486380",
+    "step_by_dir": "0x00481810",
+    "seed_lat_patch_probabilities": "0x005A38C0",
+    "next": "0x0065C780"
+  },
+  "replay_command": "python -m tools.rmg_oracle.terrain_paint",
+  "payload_sha256": "35077c969c46ef7438f1c54a59d2d2f6f57b12e19b433bfe207f3c8e24783315"
+}
