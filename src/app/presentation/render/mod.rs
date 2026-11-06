@@ -249,10 +249,11 @@ pub(crate) fn render_game(
         .sim_runtime
         .as_ref()
         .is_some_and(|runtime| {
-            runtime.simulation.entities().values().any(|entity| {
-                entity.category() == crate::map::entities::EntityCategory::Structure
-                    && entity.selection.is_selected()
-            })
+            runtime
+                .simulation
+                .entities()
+                .values_of_category(crate::map::entities::EntityCategory::Structure)
+                .any(|entity| entity.selection.is_selected())
         });
     // FileSystem52BE61..52BFCE's PALETTE.PAL plain N53 Convert is shared
     // by Bolt and the selected Building's15/12 bracket colors.

@@ -335,10 +335,16 @@ pub(crate) fn control_group_status_labels(
             slot_by_id.insert(stable_id, slot);
         }
     }
+    // Membership first: most drawn objects are in no group, and the
+    // admission below only reads, so its order changes no label.
+    if slot_by_id.is_empty() {
+        return Vec::new();
+    }
 
     crate::app::presentation::instances::tactical_entity_encounter_order(sim)
         .into_iter()
         .filter_map(|stable_id| {
+            let slot = *slot_by_id.get(&stable_id)?;
             let entity = sim.entities().get(stable_id)?;
             if entity.sinking.is_active()
                 || entity.passenger_role.is_inside_transport()
@@ -360,7 +366,6 @@ pub(crate) fn control_group_status_labels(
             {
                 return None;
             }
-            let slot = *slot_by_id.get(&stable_id)?;
             let digit = char::from(b'0' + slot as u8);
             Some((stable_id, digit))
         })
@@ -671,11 +676,10 @@ pub(crate) fn build_building_status_render_instances(
 ) -> BuildingStatusTextInstances {
     let mut labels = BuildingStatusTextInstances::default();
     let current_house = sim.interner().resolve(current_house_id);
-    for entity in sim.entities().values() {
+    for entity in sim.entities().values_of_category(EntityCategory::Structure) {
         //6D944D/9458 tests Mark+74 and body-opportunity+99.43E7C7
         //requires selected, including when the object is also hovered.
-        if entity.category() != EntityCategory::Structure
-            || !body_opportunities.contains(&entity.stable_id())
+        if !body_opportunities.contains(&entity.stable_id())
             || !entity.lifecycle.cell_marked()
             || !entity.selection.is_selected()
             || !crate::map::houses::is_allied_with(
