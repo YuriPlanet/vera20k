@@ -84,6 +84,6 @@ an Ares build: their only callers sit inside the code the hooks above skip.
   at bucket edges), `AttachedSystem` (`5F4FE7`) and the anim palette
   (`468379`). None is set by retail rules; retail's only `Airburst=`
   projectile (`V3AirburstP`) is fired by no weapon.
-- The original walk's oracle vectors (`line_walk_vectors.json`,
-  `shared_collision_vectors.json`) run in default builds only; the Ares
-  bodies are covered by their own tests.
+- The original shared probe's oracle vectors
+  (`shared_collision_vectors.json`, which include anchor-bit cliffs) run in
+  default builds only; the Ares bodies are covered by their own tests.
