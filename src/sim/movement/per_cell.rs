@@ -438,6 +438,13 @@ impl Simulation {
             return;
         };
         let at = (entity.position.rx(), entity.position.ry());
+        // Crush_Or_Prescatter_Cell 0x7416A0(own cell, 0) (0x73B077..0x73B089)
+        // reads the deck list when the cell has flag 0x100 and the Unit is
+        // OnBridge (0x7416C1..0x741733; its four-levels-above test cannot hold
+        // for the own cell). RESIDUAL: this follows OnBridge alone. Trigger: an
+        // OnBridge Unit whose own cell lacks 0x100, which every bridge deck
+        // cell carries; effect: deck occupants are crushed instead of ground
+        // ones. No path that leaves OnBridge set off a deck cell is known.
         let layer = if entity.on_bridge() {
             MovementLayer::Bridge
         } else {
