@@ -108,8 +108,9 @@ GitHub 用户名标注每个链条对应的合并 PR 作者：
   奖励、UnitDelivery、INI include 与继承（含 ra2-mono `IniFile` 改编）。
 - **libi** — Ares 的武器光束/电弧/波视觉、弹头伤害修正与效果（铁幕时长、
   永久心控、武器禁用、离子炮）、建筑渗透与破坏、隐形/PoweredBy/雷达干扰/
-  传感器阵列、超武通用键与 Battery/Protect/SonarPulse，以及晋升、学院、
-  建造时间与克隆。
+  传感器阵列、超武通用键与 Battery/Protect/SonarPulse、晋升、学院、建造
+  时间与克隆、恐怖分子炸弹与绑架者、建筑与单位类型键，以及时空传送、
+  核弹、心灵控制器与基因突变器超武类型。
 - **hrusten** — Ares 超武掩码/AI 模式原生读取、赏金标签的原生槽位、
   读档后的辐射衰减时钟修复。
 - **Krisztiaan** — 护盾伤害/恢复钩子顺序修复。

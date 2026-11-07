@@ -148,6 +148,29 @@ Supported extensions:
   `Promote.*`, `Experience.*`, `Academy.*`, `BuildTime.*`,
   `FactoryPlant.Multiplier`, `Cloneable`, `ClonedAt`, `ClonedAs` and
   `CloningFacility`.
+- [Ivan bombs, abductors and weapon extras](ares-ivan-bomb-abductor.md):
+  `IvanBomb.*` from the planting weapon, `Abductor.*` with `ImmuneToAbduction`,
+  `ApplyDamage` and `ProjectileRange`. The player's Detonate action
+  (`IvanBomb.CanDetonate*`) and `Cursor.Attack*` remain outside this chain.
+- [Building types](ares-building-types.md): advanced rubble (`Rubble.*`),
+  `EngineerRepairable`, urban combat and raidable garrisons (`UC.*`,
+  `Bunker.Raidable`, `CanBeOccupiedBy`), `IsPassable`, `EngineerDamage`,
+  `EngineerAlwaysCaptureTech`, and the second part's sell, return, degrade,
+  power-toggle and dock keys. `SolidHeight`/`SolidLevel` line-of-fire
+  blocking remains outside this chain.
+- [Techno types](ares-techno-types.md): custom missiles (`Missile.*`),
+  reload and empty-ammo keys, `Gattling.Cycle`, crush damage, berserk ROF,
+  passive acquisition, `CivilianEnemy`, damage smoke and sparks,
+  `CrashSpin`, `PassengerTurret`, self-healing rates and combat delay, fall
+  rates, `AirRate`, `NoManualUnload`/`NoManualEnter`, the Desolator, cow and
+  bomb roles, drain keys and building reload. Carryall totes, tunnels and
+  the HunterSeeker flight speeds remain outside this chain.
+- [Superweapon retail types](ares-superweapon-types.md): Ares handlers for
+  the Chronosphere and ChronoWarp (`Chronosphere.*`, `Chronoshift.*`), Nuke
+  (`Nuke.*`, `NukeFlash.Duration`, `PreImpactAnim`), Psychic Dominator
+  (`Dominator.*`) and Genetic Mutator (`Mutate.*`), with `Light.*`. Building
+  chronoshift and the remaining stock redirects (Lightning Storm, EMPulse,
+  SpyPlane, DropPod) remain separate.
 - [INI Include and inheritance](ini-directives.md). The read-only `asset ini-expand` probe works
   in every build.
 - [Extended authored House ally lists](../tools/input_oracle/ares_allies_reader.md).
@@ -183,7 +206,9 @@ the merged pull requests that carried each chain:
   modifiers and effects (curtain duration, permanent control, weapon lock,
   ion cannon), building infiltration and sabotage, cloak, PoweredBy, radar
   jammers and sensor arrays, the common superweapon keys with Battery,
-  Protect and SonarPulse, and veterancy, academies, build time and cloning.
+  Protect and SonarPulse, veterancy, academies, build time and cloning,
+  Ivan bombs and abductors, the building and techno type keys, and the
+  Chronosphere, Nuke, Dominator and Genetic Mutator superweapon types.
 
 ## Original project and authors
 
