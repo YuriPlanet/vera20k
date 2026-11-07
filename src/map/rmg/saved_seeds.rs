@@ -348,7 +348,7 @@ mod tests {
         let expected = RmgOptions {
             seed: 4660,
             water_amount: 73,
-            num_players: 8,
+            num_players: 30,
             description: "Localized random map".into(),
             ..current.clone()
         };

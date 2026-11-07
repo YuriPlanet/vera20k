@@ -1395,7 +1395,8 @@ mod tests {
             seed: 1,
             ..Default::default()
         };
-        shell.random_map_setup_modal = Some(RandomMapSetupModalState::open(options, None, false));
+        shell.random_map_setup_modal =
+            Some(RandomMapSetupModalState::open(options, None, false, true));
         assert_eq!(
             skirmish_slide_target(&shell),
             Some(ShellSlideKind::RandomMap)

@@ -84,7 +84,6 @@ const CANYON_STEP_DENSITY: f32 = 0.01;
 /// waterfall crossing's finish dilation, not the canyon's.
 const CANYON_DILATE_RINGS: i32 = 6;
 /// The canyon's clamp rect covers everything — it is not really a clamp.
-const WHOLE_MAP: i32 = 0x200;
 
 /// Steps a river must reach to survive.
 const MIN_STEPS: i32 = 0x28;
@@ -543,11 +542,12 @@ pub fn carve(
     }
 
     if !is_branch && walk.alive {
+        let whole = ctx.grid.whole_extent();
         if cut_a_canyon {
             let arm = meander::MeanderArgs {
                 tag: region,
                 step_density: CANYON_STEP_DENSITY,
-                rect: [0, 0, WHOLE_MAP, WHOLE_MAP],
+                rect: [0, 0, whole, whole],
                 reference: origin,
                 claim_frontier: true,
                 pool_dims: (args.playable.w, args.playable.h),
@@ -560,7 +560,7 @@ pub fn carve(
                     region,
                     CANYON_DILATE_RINGS,
                     None,
-                    [0, 0, WHOLE_MAP, WHOLE_MAP],
+                    [0, 0, whole, whole],
                 );
             }
             if walk.alive {
@@ -589,7 +589,7 @@ pub fn carve(
                 region,
                 PLAIN_DILATE_RINGS,
                 Some(base),
-                [0, 0, WHOLE_MAP, WHOLE_MAP],
+                [0, 0, whole, whole],
             );
         } else {
             walk.alive = lake::dilate_region_rings(ctx, region, PLAIN_DILATE_RINGS);

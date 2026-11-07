@@ -322,7 +322,8 @@ impl AcceptedRmgStartStaging {
     }
 
     fn from_generated(generated: &crate::map::rmg::GeneratedMap) -> Self {
-        let mut slots = [None; crate::skirmish_launch::SKIRMISH_PLAYER_SLOT_COUNT];
+        // VERA: every start of a random map for up to thirty players.
+        let mut slots = [None; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT];
         for &(slot, rx, ry) in &generated.start_waypoints {
             if let Some(entry) = slots.get_mut(usize::from(slot)) {
                 *entry = Some(crate::map::waypoints::Waypoint {
@@ -2182,6 +2183,7 @@ mod tests {
             },
             None,
             false,
+            true,
         ));
         modal
             .as_mut()
@@ -2243,7 +2245,7 @@ mod tests {
         let mut retention = RandomMapGenerationRetention::default();
         retention.finish_generation(generated_preview(0x412, 10));
         let mut modal = Some(crate::ui::skirmish_shell::RandomMapSetupModalState::open(
-            options, None, false,
+            options, None, false, true,
         ));
         modal
             .as_mut()
@@ -2280,6 +2282,7 @@ mod tests {
             },
             None,
             false,
+            true,
         ));
         cancel_modal
             .as_mut()
@@ -2566,7 +2569,7 @@ mod tests {
             ..Default::default()
         };
         let mut modal =
-            crate::ui::skirmish_shell::RandomMapSetupModalState::open(options, None, false);
+            crate::ui::skirmish_shell::RandomMapSetupModalState::open(options, None, false, true);
         modal.begin_generate();
         let mut runtime =
             crate::app::frontend::skirmish_session::MultiplayerShellRuntime::initialize(

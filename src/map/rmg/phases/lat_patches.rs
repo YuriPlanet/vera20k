@@ -141,7 +141,13 @@ fn paint_temperate(ctx: &mut PatchCtx<'_>) {
             SIZE_SCALE_TEMPERATE,
             SIZE_MAX_TEMPERATE,
         );
-        place_patch(ctx, (x, y), tile, size, patch_id(x, y));
+        place_patch(
+            ctx,
+            (x, y),
+            tile,
+            size,
+            patch_id(ctx.grid.whole_extent(), x, y),
+        );
     }
 }
 
@@ -158,7 +164,13 @@ fn paint_other(ctx: &mut PatchCtx<'_>) {
             continue;
         }
         let size = patch_size_other(ctx.gauss, ctx.rng);
-        place_patch(ctx, (x, y), ctx.ids.rough, size, patch_id(x, y));
+        place_patch(
+            ctx,
+            (x, y),
+            ctx.ids.rough,
+            size,
+            patch_id(ctx.grid.whole_extent(), x, y),
+        );
     }
 }
 
@@ -177,9 +189,10 @@ fn clear_paintable(ctx: &PatchCtx<'_>, x: i32, y: i32, temperate: bool) -> bool 
     true
 }
 
-/// The patch id for a cell — the packed `y*512 + x` the original uses.
-fn patch_id(x: i32, y: i32) -> i32 {
-    y * 0x200 + x
+/// The patch id for a cell — the packed `y*512 + x` the original uses, with
+/// `full` from [`RmgGrid::whole_extent`] so wider grids keep ids unique.
+fn patch_id(full: i32, x: i32, y: i32) -> i32 {
+    y * full + x
 }
 
 /// One size-mean draw: `ftol(rand * ~21·2⁻³² + 20)`, rejected above 40.
@@ -408,7 +421,7 @@ mod tests {
                 rng: &mut rng,
                 gauss: &mut gauss,
             };
-            place_patch(&mut ctx, (30, 26), 700, 20, patch_id(30, 26));
+            place_patch(&mut ctx, (30, 26), 700, 20, patch_id(0x200, 30, 26));
         }
         let count = grid
             .native_cells()
