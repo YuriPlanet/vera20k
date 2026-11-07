@@ -1,12 +1,23 @@
-# Optional Ares gameplay bugfixes (part 1)
+# Optional Ares gameplay bugfixes
 
 Build with `--features ares`. Ares 3.0 corrects a set of gamemd behaviours
-in `Misc/Bugfixes.cpp` and `Misc/Bugfixes.Safeguards.cpp`; these take no INI
+in `Misc/Bugfixes.cpp`, `Misc/Bugfixes.Safeguards.cpp`,
+`Misc/Bugfixes.Buffer.cpp` and `Misc/Bugfixes.Perf.cpp`; these take no INI
 keys. Default builds keep the original behaviour, bugs included. Each Rust
 port sits in the engine owner of the hooked gamemd function, behind
 `cfg(feature = "ares")` or `rules::ARES_ENABLED`, with the Ares.dll function
-and the gamemd hook cited next to it. `Bugfixes.Buffer.cpp` and
-`Bugfixes.Perf.cpp` are part 2.
+and the gamemd hook cited next to it. Part 2 (the Buffer and Perf rows at
+the end of the table) also has `sim::ares_bugfixes_buffer_tests` and
+`sim::combat::ares_cliff_tests`.
+
+The Buffer hooks read the Rules type lists through ParseList (`1005B340`
+and its instantiations): the 0x800 buffer, comma tokens and **Find, not
+FindOrAllocate**, so a list name no registry holds is dropped and no type is
+allocated for it. Retail registers its list names, except WCLBOLT2 (so the
+Weather Controller shows two bolts) and the systems only DamageParticleSystems
+names (SmallGreySmokeSys). Fixtures that relied on the allocation now
+register their names, and the oracle tests of the original allocation order
+are `cfg(not(feature = "ares"))`.
 
 Focused tests: `sim::ares_bugfixes_tests`, plus Ares cases in the owners'
 tests: `techno_ai` (airborne target), `capture_manager_tests` (building
@@ -115,3 +126,22 @@ as Ares in both builds); **residual** (gameplay, but its host is unported);
 | `0x41088D` | `1005E230` | Message for a type ID over 24 characters | n/a: diagnostics |
 | `0x42461D`, `0x42463A`, `0x48A507`, `0x6CF3CF`, `0x7077EE`, `0x71A922` | — | Ares 0.A hooks absent from the 3.0 DLL | n/a: not in Ares 3.0 |
 | `0x44A03C`, `0x739956`, `0x519FF8` | — | 0.A hooks moved out of Bugfixes.cpp in 3.0 | n/a here: now in `Ext/Techno/Hooks.cpp` and `Ext/Infantry/Hooks.Saboteur.cpp` |
+| `0x66D55E` | `1005BB00` | Buf_General: the `[General]` paradrop, AnimToInfantry, Secret*, HarvesterUnit, BaseUnit, PadAircraft, Shipyard, RepairBay, WeatherCon* and BridgeExplosions lists read first through ParseList: 0x800 buffer, Find-only (an unknown name is dropped, not allocated); `*ParaDropNum=` through ParseList<int> (`1005B030`), which drops a token that does not convert | ported: `native_processing::allocate_general_references`, `ParadropList::read_counts`; DefaultMirageDisguises' original read still follows and replaces it |
+| `0x67062F`, `0x66FA13`, `0x66F7C0`, `0x66F589`, `0x66F34B`, `0x66DD13`, `0x66DB93` | `1005BA30`, `1005BDF0`, `1005BDB0`, `1005BE00`, `1005BDD0`, `1005BE10`, `1005BA40` | Skip the original 0x80 FindOrAllocate reads of those lists (Buf_PPA restores PrerequisiteProcAlternate, Buf_RepairBay NoParachuteMaxFallRate) | ported with `0x66D55E` |
+| `0x66BC71` | `1005BA50` | Buf_CombatDamage: Scorches..Scorches4 and SplashList through ParseList | ported: `native_processing` CombatDamage (a Find-only Scorches read allocates nothing; VERA has no Scorches consumer) |
+| `0x672B0E` | `1005B830` | Buf_AI: the twenty `[AI]` building lists through ParseList, AIForcePredictionFudge through ParseList<int> | ported: `allocate_ai_references`, `GeneralRules::ai_force_prediction_fudge` |
+| `0x7125DF`, `0x713171`, `0x713C10` | `1005BF90`, `1005C020`, `1005C040` | TechnoType DamageParticleSystems, DestroyParticleSystems, Dock, DebrisMaximums, DebrisTypes, DebrisAnims through ParseList at `0x7125DF`; the later Dock and particle-system reads skipped | ported: `process_techno_base`, `ObjectType::debris_maximums` |
+| `0x75D660`, `0x75DAE6` | `1005C080`, `1005C0E0` | WarheadType AnimList, DebrisMaximums, DebrisTypes through ParseList at `0x75D660`; the later debris reads skipped | ported: `process_warhead_family`, `WarheadType::debris_maximums` |
+| `0x772462` | `1005C0F0` | WeaponType `Anim=` through ParseList | ported: `process_weapon_family` |
+| `0x511D16` | `1005BE70` | Country veteran lists through ParseList | ported earlier (`process_house_family`) |
+| `0x4750EC`, `0x475107` | `1005BED0`, `1005BEF0` | ReadHouseTypesList (Owner, RequiredHouses, ForbiddenHouses, SecretHouses) reads into the 0x800 buffer | ported: `object_type` house lists; residual: Phobos `SuperWeaponSidebar.*Houses` (same reader) keep 0x80 in an ares+phobos build |
+| `0x47527C`, `0x475297` | `1005BED0`, `1005BEF0` | GetAlliesBitfield buffer | ported earlier (`read_houses_list`) |
+| `0x7274AF`, `0x7274C8`, `0x727529`, `0x727544` | `1005BED0`, `1005BEF0`, `1005C070` | Trigger `[Events]`/`[Actions]` lines read into the 0x800 buffer | n/a: the INI loader (`0x00525A60`) keeps 511 bytes of a line, so a value never fills the original 512-byte buffer |
+| `0x6A9348` | `1005BF00` | Cameo tooltip formatted with `_TRUNCATE` | n/a: buffer guard; VERA builds the tooltip as a String |
+| `0x70CAD8` | `1005BF80` | A railgun line that meets the ground no longer rolls the destroyable-cliff collapse there | ported: `railgun::line_damage` |
+| `0x489562` | `1005BE20` | DamageArea rolls the impact cell's destroyable cliff (RandomRanged(0,99) < CollapseChance), after the airborne receivers and before the spread walk | ported: `world_receiver::collect_area` |
+| `0x48A634`, `0x5FF86E`, `0x422FCC`, `0x550BCA`, `0x62CEC9`, `0x6D7847`, `0x420F40` | `1005E090`, `1005E190`, `1005E020`, `1005E0B0`, `1005E170`, `1005E1B0`, `1005E000` | Detail effects (warhead flash, spotlights, anims, lasers, particles, pixel sparkles, alpha shapes) stay on while the frame rate meets the game speed's target (`RulesExt::DetailsCurrentlyEnabled` `1002A6C0`: `fps >= 60/clamp(GameSpeed,1,6)` before the Rules hysteresis is asked) | presentation: not ported; `app::presentation::detail::DetailState` has no game-speed input |
+| `0x551A30` | `1005E0D0` | The Ground layer's single adjacent Y-sort pass becomes a full `std::sort` of one fifteenth of the layer per frame (`CurrentFrame % 15`, a quarter chunk overlap, the last window to the end) | presentation: not ported; only draw order and the hashed Ground order change, and no gameplay reader depends on that order (crate recipients) |
+| `0x5F6612` | `1005E140` | UnInit announces the object's expiry only when Limbo fails; a successful Limbo's own Destroy(1) broadcast is the only one | residual: VERA keeps both broadcasts and their order around Limbo's steps; a difference shows only where a listener treats the repeat or the earlier broadcast differently (the dead-building anim slot); separate lifecycle mechanism |
+| `0x725A1F` | `1005E040` | A `[General] Behind=` anim's expiry is not announced to the anim listeners | n/a: only its owner holds a Behind anim, and the owner drops it before destroying it (`techno_ai` behind indicator) |
+| `0x6F90F8`, `0x707EEA`, `0x70133E`, `0x458E1E` | `1005E210`, `1005E1D0`, `1005E1F0`, `1005E070` | `max`/`min` macros no longer call GetWeaponRange / GetFoundationWidth twice | n/a: the same results (`70133E`'s second passenger scan recomputes the same minimum) |
