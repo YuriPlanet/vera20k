@@ -103,8 +103,9 @@ pub struct PowerState {
 /// (+0x0C), BatteryCount (+0x10), BatteryKeepOnline (+0x70) and
 /// BatteryOverpower (+0x7C), written only by SW_Battery's Activate
 /// (`0x1006EBD0`) and Deactivate (`0x1006EC40`) here. Lists hold one entry per
-/// active battery's BuildingType. Script action 0x41 and trigger action 0x92 also
-/// add AuxPower natively; neither is ported.
+/// active battery's BuildingType. Trigger action 0x92 also adds AuxPower
+/// ([`PowerState::add_aux_power`]); script action 0x41 does natively but is
+/// not ported.
 #[cfg(feature = "ares")]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AresHousePower {
@@ -307,6 +308,15 @@ impl PowerState {
         self.ares.aux_power = self.ares.aux_power.wrapping_add(power);
         self.ares.keep_online.extend_from_slice(keep_online);
         self.ares.overpower.extend_from_slice(overpower);
+        self.invalidate(false);
+    }
+
+    /// Ares trigger action 0x92 (TActionExt::Execute 100396C0, hook
+    /// 0x6DD8D7): HouseExt AuxPower += the action's Value2, then
+    /// RecheckPower (House+5778).
+    #[cfg(feature = "ares")]
+    pub(crate) fn add_aux_power(&mut self, power: i32) {
+        self.ares.aux_power = self.ares.aux_power.wrapping_add(power);
         self.invalidate(false);
     }
 

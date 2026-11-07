@@ -17,6 +17,8 @@ mod chronosphere;
 pub use chronosphere::CHRONO_WARP_SELECTION_INDEX;
 #[cfg(feature = "ares")]
 pub use chronosphere::ares_chrono_warp_for;
+#[cfg(feature = "ares")]
+pub(crate) use chronosphere::AresChronoWarps;
 pub mod airstrike_tint;
 #[cfg(all(test, feature = "ares"))]
 mod ares_charge_tests;
@@ -1714,7 +1716,7 @@ pub(crate) fn tick_house_superweapon_instances(
         // that ran out deactivates its new type.
         #[cfg(feature = "ares")]
         if drain_ended && let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) {
-            deactivate_ares_handler(sim, rules, owner, sw);
+            deactivate_ares_handler(sim, rules, owner, type_id, sw, FrameEffects::default());
         }
         if let Some([x, y, z]) = fade
             && let Some(sound_id) = rules
@@ -1776,19 +1778,58 @@ fn drain_money(
     true
 }
 
-/// SWTypeExt::Deactivate100325D0: the new type's Deactivate. Only Battery's
-/// (1006EC40) has a body among the ported types; the trigger event 0x4C it
-/// raises afterwards has no ported consumer.
+/// SWTypeExt::Deactivate100325D0: the new type's Deactivate (only Battery's,
+/// 1006EC40, has a body among the ported types), then trigger event 76
+/// (superweapon deactivated, source the Super) on the owner's House Tags.
+/// A stock type without a handler returns before both. The drain-expiry and
+/// hold passes reach this without the frame's effects and overlay table.
 #[cfg(feature = "ares")]
 pub(super) fn deactivate_ares_handler(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
+    typ: InternedId,
     sw: &SuperWeaponType,
+    effects: FrameEffects<'_>,
 ) {
+    if !sw.kind.has_ares_handler() {
+        return;
+    }
     if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Battery {
         battery::deactivate(sim, rules, owner, sw);
     }
+    sim.raise_ares_super_event(
+        owner,
+        76,
+        crate::sim::trigger_runtime::AresEventSource::Super(typ),
+        rules,
+        effects.overlay_registry(),
+        effects,
+    );
+}
+
+/// SWTypeExt::Activate10032020 after its Launch10032ED0 accepted the Super:
+/// trigger event 77 (fired near a waypoint, source the Super and its target
+/// Cell), then 75 (activated, source the Super), each on every House Tag of
+/// the owner.
+#[cfg(feature = "ares")]
+pub(super) fn raise_ares_activation_events(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    typ: InternedId,
+    (rx, ry): (u16, u16),
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    effects: FrameEffects<'_>,
+) {
+    use crate::sim::trigger_runtime::AresEventSource;
+    let launch = AresEventSource::Launch {
+        sw_type: typ,
+        cell: (rx as i16, ry as i16),
+    };
+    sim.raise_ares_super_event(owner, 77, launch, rules, overlay_registry, effects);
+    let activated = AresEventSource::Super(typ);
+    sim.raise_ares_super_event(owner, 75, activated, rules, overlay_registry, effects);
 }
 
 /// `HouseClass::HouseClass` builds the House's whole Supers vector, one
@@ -1860,6 +1901,8 @@ pub(crate) fn tick_active_superweapon_effects(
     let storm = lightning_storm::process(sim, rules, overlay_registry, frame_effects);
     #[cfg(feature = "ares")]
     unit_delivery::tick(sim, rules, overlay_registry, frame_effects);
+    #[cfg(feature = "ares")]
+    chronosphere::ares_tick_chrono_warps(sim, rules, overlay_registry, frame_effects);
     dominator || storm
 }
 
@@ -2331,7 +2374,7 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
         let (changed, deactivated) = changed;
         #[cfg(feature = "ares")]
         if deactivated {
-            deactivate_ares_handler(sim, rules, owner, sw);
+            deactivate_ares_handler(sim, rules, owner, type_id, sw, FrameEffects::default());
         }
         if changed {
             sim.houses.request_house_tech_tree_recheck(owner);

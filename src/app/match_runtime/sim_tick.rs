@@ -2395,6 +2395,15 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
             }
             // Consumed by the frame's existing bridge/terrain refresh.
             TriggerEffect::BridgeStateChanged => {}
+            #[cfg(feature = "ares")]
+            TriggerEffect::EvaVoice { index } => {
+                if let (Some(sfx), Some(catalog)) = (
+                    state.audio.sfx_player.as_mut(),
+                    state.process_assets.audio_catalog(),
+                ) {
+                    sfx.set_trigger_eva_voice(*index, catalog.eva());
+                }
+            }
             TriggerEffect::HomeCamera { coord } => {
                 crate::app::input::camera::apply_home_camera(state, *coord);
             }

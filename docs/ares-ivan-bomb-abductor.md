@@ -79,8 +79,9 @@ it to the hold.
   [General]`CanDetonateTimeBomb`/`CanDetonateDeathBomb`, the What_Action and
   Berzerk click hooks): not read, no action.
 - Abduction of a spawned or enslaved unit, a slave master's manager, the
-  locomotor reset, a Building abductor's Absorbed flag and the Ares trigger
-  events 0x47..0x4A (see `sim/abduction.rs`).
+  locomotor reset and a Building abductor's Absorbed flag (see
+  `sim/abduction.rs`). The trigger events 0x47..0x4A are in
+  [ares-triggers.md](ares-triggers.md).
 - `Cursor.Attack`/`Cursor.AttackOutOfRange`: there is no Ares
   `[MouseCursors]` table to name a cursor from.
 - When a sale's bomb destroys the sold object, the sale stops there.

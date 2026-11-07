@@ -502,6 +502,16 @@ impl crate::sim::world::Simulation {
                 && self.trigger_runtime.object_tag_is_transferable(victim_id);
             if !captor_has_tag {
                 for kind in [7, 48, 29] {
+                    // Ares 3.0 UnitClass_RegisterDestruction_Trigger
+                    // (100506D0, hook 0x744745): with a destroyer, 85
+                    // (destroyed by House) precedes 7, its source the
+                    // destroyer's House; no Alive test.
+                    #[cfg(feature = "ares")]
+                    if kind == 7
+                        && let KillSource::Techno(Some(destroyer)) = source
+                    {
+                        self.raise_ares_destroyed_by_house(victim_id, destroyer, context);
+                    }
                     if kind != 7 || source.is_present() {
                         self.dispatch_object_tag_event(
                             victim_id,
@@ -577,6 +587,24 @@ impl crate::sim::world::Simulation {
                 }
             }
         }
+        // Ares 3.0 TechnoClass_RegisterLoss_Trigger (10050690, hook 0x7032B0):
+        // E4 raises 85 with its incoming House after 4 and before the RTTI
+        // test below, so for every class, while the object is alive.
+        #[cfg(feature = "ares")]
+        if let KillSource::House(Some(house)) = source
+            && self
+                .substrate
+                .entities
+                .get(victim)
+                .is_some_and(|victim| victim.lifecycle.object_alive())
+        {
+            self.dispatch_object_ares_event(
+                victim,
+                85,
+                Some(crate::sim::trigger_runtime::AresEventSource::House(house)),
+                context,
+            );
+        }
         //702DCE/7032BE query WhatAmI once: Unit1 skips7/48/29,
         //after its earlier6/4 callbacks have already returned. Original
         //Unit vt7F5C70+2C ->746E20 returns1; Aircraft vt7E22A4+2C
@@ -586,6 +614,13 @@ impl crate::sim::world::Simulation {
         };
         if !entity.lifecycle.object_alive() || entity.category() == EntityCategory::Unit {
             return;
+        }
+        // Ares 3.0 TechnoClass_RegisterDestruction_Trigger (10050650, hook
+        // 0x702DD6): past the RTTI test, E0 raises 85 with the destroyer's
+        // House before 7.
+        #[cfg(feature = "ares")]
+        if let KillSource::Techno(Some(destroyer)) = source {
+            self.raise_ares_destroyed_by_house(victim, destroyer, context);
         }
         for kind in [7, 48, 29] {
             if kind == 7 && !source.is_present() {
@@ -600,6 +635,20 @@ impl crate::sim::world::Simulation {
                 self.dispatch_object_tag_event(victim, kind, Some(victim), None, context);
             }
         }
+    }
+
+    /// Event 85 from E0: the source slot holds `destroyer->Owner`, read now.
+    #[cfg(feature = "ares")]
+    fn raise_ares_destroyed_by_house(
+        &mut self,
+        victim: u64,
+        destroyer: u64,
+        context: crate::sim::world::UninitContext<'_>,
+    ) {
+        let house = self.substrate.entities.get(destroyer).map(|destroyer| {
+            crate::sim::trigger_runtime::AresEventSource::House(destroyer.owner())
+        });
+        self.dispatch_object_ares_event(victim, 85, house, context);
     }
 }
 

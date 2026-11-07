@@ -230,7 +230,7 @@ impl Simulation {
         if let Some(owner) = owner {
             self.ares_replace_driver(
                 event.target_id,
-                event.attacker_id,
+                Some(event.attacker_id),
                 owner,
                 settings.kill_driver().remove_veterancy(),
                 rules,
@@ -242,7 +242,12 @@ impl Simulation {
 
     /// CanKillDriver100434C0: live class/radio/type/XP/health facts. Cell
     /// lookup is canonical here (runtime), unlike cursor-only admission.
-    fn ares_can_kill_driver(&self, id: u64, threshold: NativeF64Bits, rules: &RuleSet) -> bool {
+    pub(crate) fn ares_can_kill_driver(
+        &self,
+        id: u64,
+        threshold: NativeF64Bits,
+        rules: &RuleSet,
+    ) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
@@ -325,27 +330,30 @@ impl Simulation {
 
     /// TechnoExt::KillDriver100456D0: the admitted vehicle changes driver,
     /// preserving the distinct operator-death, ejection and cleanup order.
-    fn ares_replace_driver(
+    /// `invoker` is the killer (none for trigger action 147). Answers whether
+    /// the owner changed: a vehicle already owned by `owner` only takes the
+    /// DriverKilled byte (100456F1..10045708).
+    pub(crate) fn ares_replace_driver(
         &mut self,
         target: u64,
-        invoker: u64,
+        invoker: Option<u64>,
         owner: crate::sim::intern::InternedId,
         remove_veterancy: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
-    ) {
+    ) -> bool {
         let Some(passive) = self.houses.get(&owner).map(|house| {
             rules.country_multiplay_passive(self.interner.resolve(house.house_type_id()))
         }) else {
-            return;
+            return false;
         };
         let Some(actor) = self.substrate.entities.get_mut(target) else {
-            return;
+            return false;
         };
         actor.vehicle_driver.set_killed_from_owner(passive);
         if actor.owner() == owner {
-            return;
+            return false;
         }
         let context = UninitContext::new(rules, registry).with_effects(effects);
         let operator = self
@@ -372,7 +380,7 @@ impl Simulation {
                     target,
                     DepartureRoute::DeathEscape,
                     |sim, id| {
-                        sim.record_kill_and_uninit(id, Some(invoker), context);
+                        sim.record_kill_and_uninit(id, invoker, context);
                         Ok(())
                     },
                     effects,
@@ -393,7 +401,7 @@ impl Simulation {
                         })
                     {
                         self.remove_cargo_passenger(target, Some(passenger), rules, effects);
-                        self.record_kill_and_uninit(passenger, Some(invoker), context);
+                        self.record_kill_and_uninit(passenger, invoker, context);
                         //100457D0 falls through to100457D6 after the first
                         //matching operator; only nonmatches advance the list.
                         break;
@@ -473,7 +481,7 @@ impl Simulation {
         let _ = self.assign_target_represented(target, None, rules, registry, effects);
         // ReplaceDriver10045995 passes mode 0; the later AI enforcement uses 1.
         let _ = self.assign_destination_keeping_queue(target, None, rules, registry, effects);
-        self.dispatch_object_tag_event(target, 68, Some(target), Some(invoker), context);
+        self.dispatch_object_tag_event(target, 68, Some(target), invoker, context);
         if self
             .substrate
             .entities
@@ -482,6 +490,7 @@ impl Simulation {
         {
             self.dispatch_object_tag_event(target, 67, Some(target), None, context);
         }
+        true
     }
 }
 

@@ -1928,11 +1928,22 @@ pub(super) fn event_ingress_damage(
 fn unit_record_kill_dispatches_its_virtual_prefix_before_the_base_events() {
     use crate::sim::combat::{KillCallback, KillSource};
     // Original Unit744720 -> Techno702D40; E4 stays703230 (vtable
-    //7F5C70+E0/E4). Repeating Tag keeps each callback observable.
+    //7F5C70+E0/E4). Repeating Tag keeps each callback observable. Ares
+    // adds 85 with a destroyer: before Unit's 7 (hook 0x744745) and after
+    // E4's 4 (hook 0x7032B0).
+    let ares = cfg!(feature = "ares");
     for (techno, present, expected) in [
-        (true, true, vec![7, 48, 29, 6, 4]),
+        (
+            true,
+            true,
+            if ares {
+                vec![85, 7, 48, 29, 6, 4]
+            } else {
+                vec![7, 48, 29, 6, 4]
+            },
+        ),
         (true, false, vec![48, 29]),
-        (false, true, vec![6, 4]),
+        (false, true, if ares { vec![6, 4, 85] } else { vec![6, 4] }),
         (false, false, vec![]),
     ] {
         let (mut sim, rules, overlays, houses) = event_ingress_fixture();
@@ -2328,18 +2339,20 @@ fn object_damage_tags_spring_before_techno_and_reread_the_source_house_index() {
         houses[1]
     );
     // Event6's Action14 changes both owners. Each Unit E0(null-killer)
-    // reaches original744720's48/29 prefix before the later damage44.
-    assert_eq!(
-        sim.trigger_runtime.dispatch_trace,
-        [
-            (tag, 6),
-            (tag, 48),
-            (tag, 29),
-            (tag, 48),
-            (tag, 29),
-            (tag, 44)
-        ]
-    );
+    // reaches original744720's48/29 prefix before the later damage44. Ares
+    // (hook 0x5F57B5) then raises 84 and 83 on the surviving object.
+    let mut expected = vec![
+        (tag, 6),
+        (tag, 48),
+        (tag, 29),
+        (tag, 48),
+        (tag, 29),
+        (tag, 44),
+    ];
+    if cfg!(feature = "ares") {
+        expected.extend([(tag, 84), (tag, 83)]);
+    }
+    assert_eq!(sim.trigger_runtime.dispatch_trace, expected);
     assert_eq!(sim.trigger_runtime.globals_set, BTreeSet::from([6, 44]));
     assert!(
         !sim.substrate
@@ -2829,10 +2842,7 @@ fn destroyed_house_predicates_match_original_independent_signed_counters() {
                 0,
                 TagEventInput {
                     kind: case["inputs"]["raised"].as_i64().unwrap() as i32,
-                    actor: None,
-                    source: None,
-                    cell: (0, 0),
-                    force: false,
+                    ..Default::default()
                 },
                 case["inputs"]["incoming_house"]
                     .as_u64()
@@ -4108,6 +4118,9 @@ fn techtype_exists_and_not_exists_query_simulation_world() {
     assert!(advance_trigger_frame(&mut sim, 2, Some(&rules), &HashMap::new()).is_empty());
 }
 
+// Ares replaces 60/61 (TEventExt::TechTypeExists 1004FE60): the ares tests
+// cover its case-insensitive first match and owned counts.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn techtype_events_resolve_exact_registered_names_before_counting_entities() {
     let rules =
@@ -4156,6 +4169,7 @@ fn techtype_events_resolve_exact_registered_names_before_counting_entities() {
     assert_eq!(&sim.global_variables()[9..13], &[false; 4]);
 }
 
+#[cfg(not(feature = "ares"))]
 #[test]
 fn techtype_events_count_the_last_registered_category_identity() {
     use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};

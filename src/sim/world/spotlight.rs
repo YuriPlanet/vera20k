@@ -685,6 +685,18 @@ impl Simulation {
                 });
             if seen {
                 self.dispatch_object_tag_event(parent_id, 35, Some(parent_id), None, context);
+                // Ares 3.0 BuildingLightClass_Update_Trigger (10050550, hook
+                // 0x4368C9): then 66 (in spotlight) on the same object while
+                // it is alive.
+                #[cfg(feature = "ares")]
+                if self
+                    .substrate
+                    .entities
+                    .get(parent_id)
+                    .is_some_and(|parent| parent.lifecycle.object_alive())
+                {
+                    self.dispatch_object_tag_event(parent_id, 66, Some(parent_id), None, context);
+                }
             }
         }
     }

@@ -379,19 +379,35 @@ pub(super) fn commit(
     {
         return result;
     }
-    if result != DamageState::Dead && source_present {
+    fn alive(host: &impl ObjectHealthHost) -> bool {
+        host.object()
+            .is_some_and(|target| target.lifecycle.object_alive())
+    }
+    // Ares 3.0 ObjectClass_ReceiveDamage_Trigger (100505A0, hook 0x5F57B5)
+    // raises 6 and 44 also without an attacker, then 84 and 83 (attacked or
+    // destroyed by House / by anybody) on every hit the object survives so
+    // far, each only while it is still alive.
+    let source_gate = cfg!(feature = "ares") || source_present;
+    if result != DamageState::Dead && source_gate {
         host.invoke(HealthCallback::Tag {
             kind: 6,
             with_source: true,
         });
-        if !host
-            .object()
-            .is_some_and(|target| target.lifecycle.object_alive())
-        {
+        if !alive(host) {
             return result;
         }
         host.invoke(HealthCallback::Tag {
             kind: 44,
+            with_source: true,
+        });
+    }
+    #[cfg(feature = "ares")]
+    for kind in [84, 83] {
+        if !alive(host) {
+            break;
+        }
+        host.invoke(HealthCallback::Tag {
+            kind,
             with_source: true,
         });
     }

@@ -27,8 +27,7 @@
 //!   locomotor's Force_Track and occupation re-mark, the piggyback end and
 //!   the fresh locomotor of the type's kind, and the magnetron latches: a
 //!   piggybacked or lifted abductee keeps that state in the hold.
-//! - A Building abductor's abductee is not marked Absorbed, and Ares's
-//!   trigger events 0x47..0x4A are not raised.
+//! - A Building abductor's abductee is not marked Absorbed.
 //! - A non-Foot target, which native casts to FootClass regardless, is
 //!   refused.
 
@@ -148,6 +147,11 @@ impl Simulation {
             .entities
             .get(owner)
             .map(|entity| entity.owner());
+        let previous_owner = self
+            .substrate
+            .entities
+            .get(target)
+            .map(|entity| entity.owner());
         if settings.change_owner
             && let Some(owner_house) = owner_house
             && !self.ares_psionics_immune(target, rules)
@@ -184,6 +188,29 @@ impl Simulation {
             .map_or(1.0, |object| object.size);
         let boarded = self.ares_abduct_into_hold(target, owner, size, rider, context);
         log::info!("ABDUCT {target} into {owner}: {boarded}");
+        // The trigger events after AddPassenger and Undiscover: 72 (abducted
+        // by House, source the abductor) and 71 on the abductee, then 74
+        // (abducts something of House, source its previous owner House) and
+        // 73 on the abductor; 71 and 73 only while their object is alive.
+        self.dispatch_object_tag_event(target, 72, Some(target), Some(owner), context);
+        let alive = |sim: &Self, id| {
+            sim.substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.lifecycle.object_alive())
+        };
+        if alive(self, target) {
+            self.dispatch_object_tag_event(target, 71, Some(target), None, context);
+        }
+        self.dispatch_object_ares_event(
+            owner,
+            74,
+            previous_owner.map(crate::sim::trigger_runtime::AresEventSource::House),
+            context,
+        );
+        if alive(self, owner) {
+            self.dispatch_object_tag_event(owner, 73, Some(owner), None, context);
+        }
         true
     }
 

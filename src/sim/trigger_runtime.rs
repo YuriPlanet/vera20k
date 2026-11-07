@@ -138,6 +138,13 @@ pub enum TriggerEffect {
         value: i32,
         duration: i32,
     },
+    /// Ares trigger action 148 (TActionExt::Execute 100396C0) selects the
+    /// announcer voice, VoxClass::EVAIndex: a process cache the client's
+    /// announcer owns, which applies the voice-count bound.
+    #[cfg(feature = "ares")]
+    EvaVoice {
+        index: i32,
+    },
 }
 
 /// Original definition pointers translated to retained registry ordinals.
@@ -573,13 +580,17 @@ impl RuntimeDefinitions {
 // Original jump-table bytes71F700/71F744/71F780/71F7C0 and6E3F08.
 // These are classification only, never substitutes for event predicates.
 fn event_classification(kind: i32) -> u8 {
-    // Ares3.0 GetFlags1004F6A0 (table1004F704): EMP62..65, driver killed
-    //67/68 and vehicle taken69/70 are attached object events. The table
-    // also flags 66 and 71..74, which VERA never raises. This is independent
-    // of the Persistable predicate.
+    // Ares 3.0 TEventExt::GetFlags 1004F6A0 (hook 0x71F683) answers its own
+    // events before the stock table: the object events 62..74, 79, 80, 83
+    // and 84 are attached-object (2); the superweapon, reverse-engineered
+    // type, owned type, destroyed-by-House and KeepAlive events are House
+    // Tags (8); 86 is a Logic Tag (16). Other kinds keep the stock flags.
     #[cfg(feature = "ares")]
-    if matches!(kind, 62..=65 | 67..=70) {
-        return 2;
+    match kind {
+        62..=74 | 79 | 80 | 83 | 84 => return 2,
+        75..=78 | 81 | 82 | 85 | 87 | 88 => return 8,
+        86 => return 16,
+        _ => {}
     }
     let mut flags = 0;
     if matches!(kind, 0 | 1 | 4 | 8 | 24 | 25 | 26 | 31 | 53 | 54 | 59) {
@@ -629,6 +640,13 @@ fn event_classification(kind: i32) -> u8 {
     flags
 }
 fn action_classification(kind: i32) -> u8 {
+    // Ares 3.0 TActionExt::GetFlags 10039930 (hook 0x6E3EE0): kill drivers
+    // (147) and set group (149) act on attached objects; AuxPower (146) and
+    // the EVA voice (148) answer 0, as the stock table does above 111.
+    #[cfg(feature = "ares")]
+    if matches!(kind, 147 | 149) {
+        return 2;
+    }
     if matches!(kind, 14 | 32 | 60 | 61 | 62 | 91 | 111) {
         2
     } else {
@@ -1123,6 +1141,28 @@ struct TagEventInput {
     source: Option<u64>,
     cell: (i16, i16),
     force: bool,
+    /// A non-Techno object Ares passes in the Techno source slot.
+    #[cfg(feature = "ares")]
+    ares_source: Option<AresEventSource>,
+}
+
+/// What Ares 3.0 passes as RaiseEvent's `TechnoClass*` source when it is not
+/// a Techno. TEventExt::HasOccured (1004F7A0) reads it only for the kind it
+/// was raised with.
+#[cfg(feature = "ares")]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum AresEventSource {
+    /// A HouseClass: an abductee's previous owner (74) or a destroyer's
+    /// House (85).
+    House(crate::sim::intern::InternedId),
+    /// The fired or deactivated SuperClass, by its type (75, 76).
+    Super(crate::sim::intern::InternedId),
+    /// SWTypeExt::Activate's SWLaunchEventData: the Super's type and its
+    /// target Cell (77).
+    Launch {
+        sw_type: crate::sim::intern::InternedId,
+        cell: (i16, i16),
+    },
 }
 
 /// The two native TeamClass event23 broadcasts use opposite array walks.
@@ -1837,6 +1877,51 @@ impl Simulation {
         self.trigger_runtime.freed_trace.push("tag");
     }
 
+    /// HasOccurred's House lookup of Event.value (Country502D30 at 71ED01,
+    /// 71ED33, 71F06C, 71F1C9 and 71F1ED). Ares 3.0 replaces each with
+    /// TEventExt::ResolveHouseParam (PlayerAtX1 10050430, PlayerAtX2
+    /// 10050460): 8997 names no House here, a Player@X selector its start
+    /// slot's House (HouseClass::FindByIndex), any other value a Country.
+    fn event_value_house(
+        &self,
+        value: i32,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Option<crate::sim::intern::InternedId> {
+        #[cfg(feature = "ares")]
+        {
+            (value != 0x2325)
+                .then(|| self.house_by_trigger_selector(value, rules))
+                .flatten()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            u16::try_from(value).ok().and_then(|country| {
+                self.house_by_country_index(crate::rules::ruleset::CountryIdx(country), rules)
+            })
+        }
+    }
+
+    /// The shared lookup at 71F069 continues with a null House in stock
+    /// gamemd. Ares PlayerAtX1 (10050430, hook 0x71F06C) instead returns
+    /// false (71F0D5) when Event.value is a Player@X selector without a House,
+    /// so events do not fire for players who are not in the game.
+    fn event_house_lookup_rejects(
+        &self,
+        value: i32,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            crate::rules::native_processing::HOUSE_TYPE_PLAYER_AT_SELECTORS.contains(&value)
+                && self.house_by_trigger_selector(value, rules).is_none()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            let _ = (value, rules);
+            false
+        }
+    }
+
     /// Selected HasOccurred71E940 predicates. Numeric/timer controls execute
     /// the retail body; shared +54 and mutable persistence belong to this owner.
     fn has_occurred(
@@ -1852,54 +1937,19 @@ impl Simulation {
         let condition = self.trigger_runtime.definitions.trigger_types[type_index].events[ordinal]
             .condition
             .clone();
+        // Ares 3.0 TEventExt::HasOccured (1004F7A0, hook 0x71E949) answers
+        // its own kinds before the stock switch.
+        #[cfg(feature = "ares")]
+        if let Some(occurred) = self.ares_has_occurred(&condition, input, incoming_house, rules) {
+            return occurred;
+        }
         match condition.kind {
-            #[cfg(feature = "ares")]
-            67..=70 => {
-                // Ares HasOccurred71E949 ->100503E0: driver killed
-                //1004F881..1004F8C7 and vehicle taken1004F8CA..1004F91F.
-                // Each requires the affected Techno;68 and70 additionally
-                // compare the source's raw House+30. No persistence write.
-                // Original71F950 stays false for these kinds, so they never latch.
-                input.kind == condition.kind
-                    && input
-                        .actor
-                        .is_some_and(|id| self.substrate.entities.contains(id))
-                    && (matches!(condition.kind, 67 | 69)
-                        || input
-                            .source
-                            .and_then(|id| self.substrate.entities.get(id))
-                            .and_then(|source| self.base_reservation_house_index(source.owner()))
-                            .is_some_and(|index| index == condition.value))
-            }
-            #[cfg(feature = "ares")]
-            62..=65 => {
-                // Installed HasOccurred71E949 ->100503E0/1004F7DC..870.
-                // The actor is the affected Techno. House-specific63/65
-                // compare the source's raw House+30, without Country/MP
-                // lookup; no mutable persistence or shared House is written.
-                if input.kind != condition.kind {
-                    return false;
-                }
-                let Some(actor) = input.actor.and_then(|id| self.substrate.entities.get(id)) else {
-                    return false;
-                };
-                if matches!(condition.kind, 63 | 65)
-                    && !input
-                        .source
-                        .and_then(|id| self.substrate.entities.get(id))
-                        .and_then(|source| self.base_reservation_house_index(source.owner()))
-                        .is_some_and(|index| index == condition.value)
-                {
-                    return false;
-                }
-                (actor.emp_remaining() > 0) == matches!(condition.kind, 62 | 63)
-            }
             // TEventClass::HasOccurred, original gamemd.exe:
             // 0x0071E950/0x0071EC83 bypass the raised-kind/editor gates for
             // negative or >=62 kinds; 0x0071F084 reaches AL1 at0x0071F1B4.
             // No persistence or retained-House write. Keep Ares' replacement
-            // dispatcher and the known0..61 predicates separate.
-            #[cfg(not(feature = "ares"))]
+            // dispatcher and the known0..61 predicates separate; in an Ares
+            // build only kinds outside 0..=88 get here.
             kind if !(0..=61).contains(&kind) => true,
             53 => {
                 // HasOccurred71ECF5..71ED56, original gamemd: raised53
@@ -1921,9 +1971,7 @@ impl Simulation {
                     .then(|| self.session.current_house())
                     .flatten();
                 let displayed = actor.disguise_house(true, viewer, false);
-                let selected = u16::try_from(condition.value).ok().and_then(|country| {
-                    self.house_by_country_index(crate::rules::ruleset::CountryIdx(country), rules)
-                });
+                let selected = self.event_value_house(condition.value, rules);
                 let matched = displayed.is_some() && displayed == selected;
                 if matched {
                     *persistence = true;
@@ -1970,7 +2018,7 @@ impl Simulation {
                     return false;
                 }
                 if incoming_house.is_none() {
-                    return true;
+                    return !self.event_house_lookup_rejects(condition.value, rules);
                 }
                 let team_type = match condition.team_name.as_deref() {
                     Some(name) => {
@@ -2025,7 +2073,7 @@ impl Simulation {
                 // No persistence, Event+54, timer, RNG or detach write.
                 // Executed controls: tag_lifecycle --no-factories-events.
                 let Some(owner) = incoming_house else {
-                    return true;
+                    return !self.event_house_lookup_rejects(condition.value, rules);
                 };
                 let Some(house) = self.houses.get(&owner) else {
                     return false;
@@ -2049,7 +2097,7 @@ impl Simulation {
                 // House takes the generic true tail without that write.
                 // Original execution: tag_lifecycle --build-type-events.
                 let Some(owner) = incoming_house else {
-                    return true;
+                    return !self.event_house_lookup_rejects(condition.value, rules);
                 };
                 use crate::rules::object_type::ObjectCategory;
                 let category = match condition.kind {
@@ -2076,7 +2124,7 @@ impl Simulation {
                 // Executed: tag_lifecycle --funds-events. The shared Economy
                 // getter retains its documented empty-silo coverage boundary.
                 let Some(owner) = incoming_house else {
-                    return true;
+                    return !self.event_house_lookup_rejects(condition.value, rules);
                 };
                 let funds = crate::sim::credit_income::available_money(&self.houses, owner);
                 if condition.kind == 12 {
@@ -2105,9 +2153,7 @@ impl Simulation {
                 if !self.houses.contains_key(&owner) {
                     return false;
                 }
-                let selected_house = u16::try_from(condition.value).ok().and_then(|country| {
-                    self.house_by_country_index(crate::rules::ruleset::CountryIdx(country), rules)
-                });
+                let selected_house = self.event_value_house(condition.value, rules);
                 if condition.value != -1 && selected_house != Some(owner) {
                     return false;
                 }
@@ -2121,7 +2167,7 @@ impl Simulation {
                 //The null incoming House reaches the original generic true
                 //tail without writing persistence.
                 let Some(owner) = incoming_house else {
-                    return true;
+                    return !self.event_house_lookup_rejects(condition.value, rules);
                 };
                 let Some(type_name) = usize::try_from(condition.value).ok().and_then(|index| {
                     rules
@@ -2151,7 +2197,7 @@ impl Simulation {
                 // the timer/retained House, draws RNG or detaches anything.
                 // Steam gamemd; tag_lifecycle --loss-threshold-events.
                 let Some(owner) = incoming_house else {
-                    return true;
+                    return !self.event_house_lookup_rejects(condition.value, rules);
                 };
                 let Some(house) = self.houses.get(&owner) else {
                     return false;
@@ -2186,14 +2232,10 @@ impl Simulation {
                 //56's TEST after SUB observes wrapping subtraction, not a
                 //signed comparison of the two source counts. These events
                 //read tracked scalars, unlike9's on-map CounterClass totals.
-                let owner = {
-                    u16::try_from(condition.value).ok().and_then(|country| {
-                        self.house_by_country_index(
-                            crate::rules::ruleset::CountryIdx(country),
-                            rules,
-                        )
-                    })
-                };
+                if self.event_house_lookup_rejects(condition.value, rules) {
+                    return false;
+                }
+                let owner = self.event_value_house(condition.value, rules);
                 owner.is_none_or(|owner| {
                     self.houses
                         .get(&owner)
@@ -2219,14 +2261,10 @@ impl Simulation {
             30 | 58 => {
                 //71F099/71F0BD select Event.value's Country, then the retained
                 //House power ratio. Neither branch writes persistence.
-                let owner = {
-                    u16::try_from(condition.value).ok().and_then(|country| {
-                        self.house_by_country_index(
-                            crate::rules::ruleset::CountryIdx(country),
-                            rules,
-                        )
-                    })
-                };
+                if self.event_house_lookup_rejects(condition.value, rules) {
+                    return false;
+                }
+                let owner = self.event_value_house(condition.value, rules);
                 owner.is_none_or(|owner| {
                     self.power_states
                         .get(&owner)
@@ -2243,11 +2281,26 @@ impl Simulation {
                 if input.kind != 44 || self.buildup_bypass_active() {
                     return false;
                 }
+                // Ares TEventClass_HasOccured_PlayerAtX3 (10050480, hook
+                // 0x71EE79) first turns a Player@X value into that House's
+                // index, -1 for an empty slot.
+                #[cfg(feature = "ares")]
+                let expected = if crate::rules::native_processing::HOUSE_TYPE_PLAYER_AT_SELECTORS
+                    .contains(&condition.value)
+                {
+                    self.house_by_trigger_selector(condition.value, rules)
+                        .and_then(|house| self.base_reservation_house_index(house))
+                        .unwrap_or(-1)
+                } else {
+                    condition.value
+                };
+                #[cfg(not(feature = "ares"))]
+                let expected = condition.value;
                 input
                     .source
                     .and_then(|source| self.substrate.entities.get(source))
                     .and_then(|source| self.base_reservation_house_index(source.owner()))
-                    .is_some_and(|index| index == condition.value)
+                    .is_some_and(|index| index == expected)
             }
             13 | 51 => self
                 .trigger_runtime
@@ -2269,9 +2322,17 @@ impl Simulation {
             //31: bridge575EE0 raises it on each tagged span cell. After this
             //gate,71EE91 routes it to71F069, whose Country502D30 lookup
             //selects only the71F1B1 true tail either way.
-            35 => input.kind == 35 && !self.buildup_bypass_active(),
+            //All of them then reach71F069's lookup of Event.value, which only
+            //an Ares Player@X selector without a House turns false.
+            35 => {
+                input.kind == 35
+                    && !self.buildup_bypass_active()
+                    && !self.event_house_lookup_rejects(condition.value, rules)
+            }
             2 | 4 | 6 | 7 | 29 | 31 | 33 | 38 | 39 | 40 | 41 | 42 | 43 | 48 | 49 | 50 => {
-                input.kind == condition.kind && !self.buildup_bypass_active()
+                input.kind == condition.kind
+                    && !self.buildup_bypass_active()
+                    && !self.event_house_lookup_rejects(condition.value, rules)
             }
             //71F28B selects the generic true tail71F1B4, no persistence write.
             EVENT_ANY => true,
@@ -2452,10 +2513,7 @@ impl Simulation {
                 tag,
                 TagEventInput {
                     kind: EVENT_ANY,
-                    actor: None,
-                    source: None,
-                    cell: (0, 0),
-                    force: false,
+                    ..Default::default()
                 },
                 &mut effects,
                 rules,
@@ -2489,6 +2547,29 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
+        self.raise_house_tags_forward(
+            house,
+            TagEventInput {
+                kind: EVENT_ATTACKED,
+                ..Default::default()
+            },
+            rules,
+            overlay_registry,
+            frame_effects,
+        );
+    }
+
+    /// The first-to-last House Tag walk that rereads the list and its count
+    /// for every slot: NotifyUnderAttack's above and the Ares superweapon
+    /// raises (`RaiseOwnerTagEvent`, Ares.dll 10032020/100325D0).
+    fn raise_house_tags_forward(
+        &mut self,
+        house: crate::sim::intern::InternedId,
+        input: TagEventInput,
+        rules: &crate::rules::ruleset::RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
         let mut effects = Vec::new();
         let mut slot = 0;
         while let Some(&tag) = self
@@ -2499,13 +2580,7 @@ impl Simulation {
         {
             self.dispatch_live_tag_event(
                 tag,
-                TagEventInput {
-                    kind: EVENT_ATTACKED,
-                    actor: None,
-                    source: None,
-                    cell: (0, 0),
-                    force: false,
-                },
+                input,
                 &mut effects,
                 rules,
                 overlay_registry,
@@ -2591,6 +2666,24 @@ impl Simulation {
         source: Option<u64>,
         context: crate::sim::world::UninitContext<'_>,
     ) -> bool {
+        self.dispatch_object_tag_input(
+            subject,
+            TagEventInput {
+                kind,
+                actor,
+                source,
+                ..Default::default()
+            },
+            context,
+        )
+    }
+
+    fn dispatch_object_tag_input(
+        &mut self,
+        subject: u64,
+        input: TagEventInput,
+        context: crate::sim::world::UninitContext<'_>,
+    ) -> bool {
         let Some(&tag) = self
             .trigger_runtime
             .attachments
@@ -2601,13 +2694,7 @@ impl Simulation {
         let mut effects = Vec::new();
         self.dispatch_live_tag_event(
             tag,
-            TagEventInput {
-                kind,
-                actor,
-                source,
-                cell: (0, 0),
-                force: false,
-            },
+            input,
             &mut effects,
             context.rules(),
             context.registry(),
@@ -2706,10 +2793,7 @@ impl Simulation {
             tag,
             TagEventInput {
                 kind: EVENT_BRIDGE_COLLAPSED,
-                actor: None,
-                source: None,
-                cell: (0, 0),
-                force: false,
+                ..Default::default()
             },
             &mut effects,
             rules,
@@ -2781,9 +2865,8 @@ impl Simulation {
                     TagEventInput {
                         kind,
                         actor: Some(actor),
-                        source: None,
                         cell,
-                        force: false,
+                        ..Default::default()
                     },
                     &mut effects,
                     context.rules(),
@@ -2885,9 +2968,8 @@ impl Simulation {
                     TagEventInput {
                         kind,
                         actor: Some(actor),
-                        source: None,
                         cell,
-                        force: false,
+                        ..Default::default()
                     },
                     &mut effects,
                     context.rules(),
@@ -3544,10 +3626,7 @@ impl Simulation {
                     tag,
                     TagEventInput {
                         kind: 50,
-                        actor: None,
-                        source: None,
-                        cell: (0, 0),
-                        force: false,
+                        ..Default::default()
                     },
                     &mut effects,
                     rules,
@@ -3561,10 +3640,7 @@ impl Simulation {
                         tag,
                         TagEventInput {
                             kind: event,
-                            actor: None,
-                            source: None,
-                            cell: (0, 0),
-                            force: false,
+                            ..Default::default()
                         },
                         &mut effects,
                         rules,
@@ -3582,10 +3658,7 @@ impl Simulation {
                         tag,
                         TagEventInput {
                             kind: event,
-                            actor: None,
-                            source: None,
-                            cell: (0, 0),
-                            force: false,
+                            ..Default::default()
                         },
                         &mut effects,
                         rules,
@@ -3602,10 +3675,7 @@ impl Simulation {
                     tag,
                     TagEventInput {
                         kind: 13,
-                        actor: None,
-                        source: None,
-                        cell: (0, 0),
-                        force: false,
+                        ..Default::default()
                     },
                     &mut effects,
                     rules,
@@ -3618,10 +3688,7 @@ impl Simulation {
                     tag,
                     TagEventInput {
                         kind: 51,
-                        actor: None,
-                        source: None,
-                        cell: (0, 0),
-                        force: false,
+                        ..Default::default()
                     },
                     &mut effects,
                     rules,
@@ -3636,10 +3703,7 @@ impl Simulation {
                     tag,
                     TagEventInput {
                         kind: 14,
-                        actor: None,
-                        source: None,
-                        cell: (0, 0),
-                        force: false,
+                        ..Default::default()
                     },
                     &mut effects,
                     rules,
@@ -3879,6 +3943,19 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
+        // Ares 3.0 TActionExt::Execute (100396C0, hook 0x6DD8D7) answers its
+        // own kinds before the stock switch.
+        #[cfg(feature = "ares")]
+        if let Some(handled) = self.ares_execute_action(
+            action,
+            context,
+            effects,
+            rules,
+            overlay_registry,
+            frame_effects,
+        ) {
+            return handled;
+        }
         let reference = action.reference;
         let value = action.value;
         let sound = action.sound.as_deref();
@@ -5804,6 +5881,14 @@ fn count_techtype(sim: &Simulation, object: &crate::rules::object_type::ObjectTy
         .filter(|e| e.category() == category && e.type_ref() == type_id)
         .count()
 }
+
+#[cfg(feature = "ares")]
+#[path = "trigger_runtime_ares.rs"]
+mod ares;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "trigger_runtime_ares_tests.rs"]
+mod ares_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_tests.rs"]

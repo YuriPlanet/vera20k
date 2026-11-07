@@ -1696,20 +1696,15 @@ impl Simulation {
     pub(crate) fn free_slaves_for_driver_change(
         &mut self,
         master: u64,
-        invoker: u64,
+        invoker: Option<u64>,
         passive: bool,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        let Some(mut manager) = self.free_slaves_retaining_storage(
-            master,
-            Some(invoker),
-            None,
-            rules,
-            registry,
-            effects,
-        ) else {
+        let Some(mut manager) =
+            self.free_slaves_retaining_storage(master, invoker, None, rules, registry, effects)
+        else {
             return;
         };
         let now = Self::now_frame(&self.session);

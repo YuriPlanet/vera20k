@@ -423,7 +423,14 @@ fn click_fire(
         // 10035130's draining arm calls SWTypeExt::Deactivate after the timer.
         #[cfg(feature = "ares")]
         if was_draining && !called_launch {
-            super::deactivate_ares_handler(sim, rules, owner, sw);
+            super::deactivate_ares_handler(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                sw,
+                frame_effects.with_overlay_registry(overlay_registry),
+            );
         }
         if called_launch {
             let effect_launched = launch(
@@ -442,6 +449,15 @@ fn click_fire(
             #[cfg(feature = "ares")]
             if effect_launched && sw.kind.has_ares_handler() {
                 super::ares_presentation::on_launch(sim, rules, owner, sw_type_id, cell);
+                super::raise_ares_activation_events(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    cell,
+                    overlay_registry,
+                    frame_effects,
+                );
             }
             #[cfg(not(feature = "ares"))]
             let _ = effect_launched;
@@ -515,6 +531,16 @@ fn click_fire(
         // Common Launch10032FDF..10033242 settles first, then constructs
         // animation/sound and finally removes the queued Ready announcement.
         super::ares_presentation::on_launch(sim, rules, owner, sw_type_id, cell);
+        // Activate10032020 raises its trigger events once Launch returned.
+        super::raise_ares_activation_events(
+            sim,
+            rules,
+            owner,
+            sw_type_id,
+            cell,
+            overlay_registry,
+            frame_effects,
+        );
     }
     #[cfg(not(feature = "ares"))]
     let _ = effect_launched;
@@ -623,6 +649,18 @@ fn launch(
             }
             SuperWeaponKind::PsychicDominator => {
                 super::psychic_dominator::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
+                true
+            }
+            SuperWeaponKind::SpyPlane => {
+                super::spy_plane::ares_launch(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    sw,
+                    (rx, ry),
+                    frame_effects,
+                );
                 true
             }
             SuperWeaponKind::GeneticConverter => {

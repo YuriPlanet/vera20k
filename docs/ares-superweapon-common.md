@@ -86,6 +86,7 @@ needs no target. By default it affects enemies on water only.
 `Type=DropPod` (needs the DropPod locomotor), `NoCursor`/`Cursor`
 (Ares `[MouseCursors]` cursor types), `Light.*`, `Message.Abort`
 and the retail-type redirects (`IronCurtain`/`ForceShield` through Protect and the
-other stock handlers) remain outside this port, as do the Ares trigger events
-raised on activation and the AI's Stealth and IronCurtain target pickers (a
-computer House does not fire SonarPulse or Protect on its own).
+other stock handlers) remain outside this port, as do the AI's Stealth and
+IronCurtain target pickers (a computer House does not fire SonarPulse or
+Protect on its own). The trigger events raised on activation and deactivation
+are in [ares-triggers.md](ares-triggers.md).

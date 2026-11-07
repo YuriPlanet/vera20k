@@ -522,6 +522,12 @@ pub struct HouseTracking {
     /// projection of active objects. Saved by1001F4D7 and loaded by1001F366.
     #[cfg(feature = "ares")]
     keep_alive: i32,
+    /// Ares HouseExt+1C KeepAliveBuildingCount: the KeepAlive part of
+    /// +18 that Buildings contribute (RegisterKeepAlive 10021F70, RTTI 6).
+    /// Only trigger event 88 reads it.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    keep_alive_buildings: i32,
 }
 
 impl HouseTracking {
@@ -544,6 +550,9 @@ impl HouseTracking {
         #[cfg(feature = "ares")]
         if facts.keep_alive {
             self.keep_alive = self.keep_alive.wrapping_add(delta);
+            if entity.category() == EntityCategory::Structure {
+                self.keep_alive_buildings = self.keep_alive_buildings.wrapping_add(delta);
+            }
         }
         if facts.insignificant || entity.tracking_facts.dont_score() {
             return;
@@ -750,6 +759,18 @@ impl HouseTracking {
             b"ares-house-keep-alive-v1".hash(hasher);
             self.keep_alive.hash(hasher);
         }
+        #[cfg(feature = "ares")]
+        if self.keep_alive_buildings != 0 {
+            b"ares-house-keep-alive-buildings-v1".hash(hasher);
+            self.keep_alive_buildings.hash(hasher);
+        }
+    }
+
+    /// Ares HouseExt+18 and +1C, which trigger events 87 and 88 read
+    /// (TEventExt::HasOccured 1004F7A0).
+    #[cfg(feature = "ares")]
+    pub(crate) const fn keep_alive_counts(&self) -> (i32, i32) {
+        (self.keep_alive, self.keep_alive_buildings)
     }
 
     /// Retained House+310, not AvailableStorage4F69D0 for nonempty stores.
@@ -1082,6 +1103,7 @@ impl HouseTracking {
         #[cfg(feature = "ares")]
         {
             self.keep_alive = buildings;
+            self.keep_alive_buildings = buildings;
         }
     }
 

@@ -615,6 +615,8 @@ fn sound_actions_resolve_the_selected_cell_coordinate_for_packed_waypoint_aliase
 
 /// Full original Execute98/IsWaypointValid/642740/Scenario RNG controls;
 ///Voc750E20 is the declared output sink. Hashes cover complete native RNG state.
+/// Ares replaces the selection (10039B60, hook 0x6E1780).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn waypoint_cue_random_sound_matches_original_selection_and_rng_without_terrain() {
     let cases: &[(u64, &[(u32, u16, u16)], [i32; 3], &str, &str)] = &[
