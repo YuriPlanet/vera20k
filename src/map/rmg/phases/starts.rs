@@ -77,8 +77,8 @@ pub struct StartsOutcome {
     /// Region-list indices in bucket order (ascending sort key), the order the
     /// map-type-0 tech coin flips walk.
     pub region_order: Vec<usize>,
-    /// How many waypoint slots a region could not fill because its selection
-    /// came up shorter than its quota.
+    /// How many waypoint slots no region filled: a selection shorter than its
+    /// quota, an empty one, or no region surviving the size threshold.
     ///
     /// Non-zero means the map is short of spawns: those slots stay `None` and
     /// no start is placed for them. Carried out to `GeneratedMap` so a release
@@ -326,8 +326,7 @@ fn place_region_starts(
             // contents follow the process's allocation history rather than the
             // seed, so even two generations in one session disagree. Neither is
             // reproducible, so stopping short is a deliberate divergence —
-            // counted and reported, never claimed as parity.
-            outcome.unfilled_start_slots += (quota - slot_index) as usize;
+            // counted by `run` and reported, never claimed as parity.
             break;
         };
         if let Some(way) = outcome.waypoints.get_mut(slot) {
