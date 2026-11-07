@@ -934,14 +934,18 @@ impl Simulation {
     /// destination, despite warp-in.
     /// Eaten51973C runs after the occupier arm and before ordinary Capture.
     /// RESIDUALS:
-    /// - the NavCom-building arms of ordinary Capture (`0x00519979..
-    ///   0x00519B14`) are not dispatched from here. Some have ports with
-    ///   their own owners (`capture_manager`, `passenger`); native runs them
-    ///   before the Foot body, with some early returns, which also skip the
-    ///   reveal (`0x0051A8D7`). Trigger: an infantry arriving on a mission
-    ///   cell.
-    ///   Risk: same-frame receiver ordering, and one more revealed footprint
-    ///   for an infantryman such an arm takes in.
+    /// - the NavCom arm of Capture, Area Guard and Patrol (`0x00519979..
+    ///   0x00519B14`) is not dispatched from here. It admits only a NavCom
+    ///   Building whose vt+0x80 (`0x00457620`) answers
+    ///   `BuildingTypeClass::Is1x1WithUndeploy` (`0x00465D40`:
+    ///   `UndeploysInto=` and a 1x1 foundation). DORMANT: retail sets
+    ///   `UndeploysInto=` only on the 4x4 Construction Yards and the 2x2
+    ///   YAREFN, so the arm falls through to the building receiver. With such
+    ///   a type, an infantryman in its cell would take it over (tag event,
+    ///   Detach_All, ChangeOwner `0x00519A27`, Techno `+0x338`, GotHijacked)
+    ///   and one stopped short would re-issue Set_Destination(NavCom)
+    ///   (`0x00519AFA`), with early returns that skip the reveal
+    ///   (`0x0051A8D7`).
     /// - the water and rock death (`0x0051A94F..0x0051A9E8`) is not ported:
     ///   a stationary infantryman whose type is not `C4=` and who has no C4
     ///   ability, off a bridge on Water or Rock, takes ReceiveDamage of his
