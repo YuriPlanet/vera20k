@@ -119,7 +119,9 @@ pub(crate) fn run_traced(
 /// with no start quota, draws `draw * K < 0.5`; heads place one building in
 /// that region at once, so its draws interleave with the later flips. It runs
 /// before `MarkStartAreas`, whose clearings the foundation gate would reject.
-pub(crate) fn run_start_flips_traced(
+/// Custom pipelines may call this after `starts::run`, using that outcome's
+/// `region_order` and the same region registry, before `starts::mark_start_areas`.
+pub fn run_start_flips_traced(
     ctx: &mut TechCtx<'_>,
     args: &TechArgs,
     region_order: &[usize],
