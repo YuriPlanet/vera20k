@@ -46,6 +46,9 @@ impl Simulation {
 
     /// ReceiveDamage_Aftermath1004AB50, after protected-Techno responses and
     /// before the native Uncloak70281D. Unlike EMP this is not a Bullet AoE.
+    /// Behind the EffectsRequireDamage/EffectsRequireVerses gates it applies
+    /// KillDriver (10052B40), then `Flash.Duration`. `Sonar.Duration` and
+    /// `DisableWeapons.Duration`, which it starts in between, are not ported.
     pub(crate) fn ares_driver_kill_aftermath(
         &mut self,
         event: &EntityDamageEvent,
@@ -59,12 +62,13 @@ impl Simulation {
         let Some(warhead) = rules.warhead(self.interner.resolve(event.warhead_ref)) else {
             return;
         };
-        let Some(settings) = warhead
-            .ares_rules()
-            .filter(|rules| rules.kill_driver().enabled())
-        else {
+        let Some(settings) = warhead.ares_rules() else {
             return;
         };
+        let flash = settings.combat().flash_duration();
+        if !settings.kill_driver().enabled() && flash <= 0 {
+            return;
+        }
         if state == DamageState::Unaffected
             && !event.receiver_flags.ignore_defenses
             && initially_positive
@@ -88,6 +92,43 @@ impl Simulation {
         {
             return;
         }
+        if settings.kill_driver().enabled() {
+            self.ares_apply_kill_driver(event, warhead, settings, rules, registry, effects);
+        }
+        // 1004AB50 last: a Flash.Duration above Flashing (+0xF0) calls vt+0x148.
+        if flash > 0
+            && self
+                .substrate
+                .entities
+                .get(event.target_id)
+                .is_some_and(|target| flash > target.flashing.frames())
+        {
+            Simulation::flash_object(
+                &self.interner,
+                &self.session,
+                &self.fog,
+                &self.house_alliances,
+                &mut self.substrate,
+                event.target_id,
+                flash,
+            );
+        }
+    }
+
+    /// WarheadTypeExt::applyKillDriver 10052B40 for an aftermath that passed
+    /// its gates.
+    fn ares_apply_kill_driver(
+        &mut self,
+        event: &EntityDamageEvent,
+        warhead: &crate::rules::warhead_type::WarheadType,
+        settings: &crate::rules::ares_warhead::AresWarheadRules,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(target) = self.substrate.entities.get(event.target_id) else {
+            return;
+        };
         //10052B4D/5F: no invoker or non-Foot target never attempts the draw.
         let Some(invoker) = (event.attacker_id != RAD_NO_ATTACKER)
             .then(|| self.substrate.entities.get(event.attacker_id))

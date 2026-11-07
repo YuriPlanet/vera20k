@@ -121,6 +121,11 @@ pub struct UnderAttackEvent {
     /// The VICTIM's owner — the player whose radar/EVA should react.
     pub owner: InternedId,
     pub victim_type: InternedId,
+    /// The victim house's own radar/EVA line. Ares
+    /// HouseClass_BuildingUnderAttack_Malicious (10053980, hook 0x4F94A5)
+    /// skips it for a building hit by a `Malicious=no` warhead; the ally
+    /// line and the House Tags still follow.
+    pub own_alert: bool,
 }
 
 /// `TechnoClass::Death_Announcement @ 0x004D98C0` input: a non-building

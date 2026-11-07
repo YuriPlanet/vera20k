@@ -9,6 +9,10 @@ use crate::sim::house_state::HouseState;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::SimSoundEvent;
 
+/// Experience awards an erase gives a Trainable head: the Update's
+/// (`0x0071A917`) and Record_The_Kill's; Ares 1004BBC0 replaces the first.
+const ERASE_AWARDS: usize = if cfg!(feature = "ares") { 1 } else { 2 };
+
 const RULES: &str = "\
 [General]
 WarpAway=WARPAWAY
@@ -608,7 +612,7 @@ fn native_update_corpus() {
                     add[2].as_i64().unwrap() as i32,
                     add[3].as_i64().unwrap() as i32,
                 );
-                for _ in 0..2 {
+                for _ in 0..ERASE_AWARDS {
                     expected.veterancy.award_kill(
                         owner_cost,
                         target_cost,
@@ -703,8 +707,8 @@ fn erase_awards_price_each_cost_by_its_house() {
     chain(&mut sim, tank, &[cleg], 1);
     let mut expected = entity(&sim, cleg).clone();
     // (legionnaire cost, tank cost): Russian and American Houses, then both
-    // American.
-    for (owner_cost, target_cost) in [(750, 450), (1500, 450)] {
+    // American. Ares 1004BBC0 drops the first (the Update's).
+    for (owner_cost, target_cost) in [(750, 450), (1500, 450)].into_iter().skip(2 - ERASE_AWARDS) {
         expected.veterancy.award_kill(
             owner_cost,
             target_cost,
@@ -1475,7 +1479,9 @@ fn a_chrono_legionnaire_erases_a_tank() {
     let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 13, 10);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
     let mut experienced = entity(&sim, cleg).clone();
-    for _ in 0..2 {
+    // Ares TemporalClass_Update_Erase (1004BBC0) drops the Update's award,
+    // leaving Record_The_Kill's.
+    for _ in 0..ERASE_AWARDS {
         experienced.veterancy.award_kill(
             1500,
             900,
@@ -2694,8 +2700,20 @@ fn native_initiate_warp_corpus() {
                 ),
                 "{name}: temporal{n} links"
             );
+            // Ares TemporalClass_Fire_HealthFactor (10053C20) gives a new
+            // head at least 1; the native 0 is the zero-Strength target's.
+            let expected = if cfg!(feature = "ares")
+                && n == 0
+                && link.target == Some(target)
+                && head_of(&sim, target) == Some(attackers[0])
+                && native.warp_remaining < 1
+            {
+                1
+            } else {
+                native.warp_remaining
+            };
             assert_eq!(
-                link.warp_remaining, native.warp_remaining,
+                link.warp_remaining, expected,
                 "{name}: temporal{n} WarpRemaining"
             );
         }
@@ -3113,4 +3131,36 @@ fn a_landing_aircraft_is_not_warped() {
             "height {height}"
         );
     }
+}
+
+/// Ares TemporalClass_Fire_HealthFactor (10053C20): the first head's warp
+/// shrinks with the target's missing health, scaled by the warp weapon's
+/// `Temporal.HealthFactor=`: 400 * 10 at a quarter health and factor 0.5
+/// leaves `(1 - 0.375) * 4000 = 2500`.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_health_factor_shortens_a_damaged_targets_warp() {
+    let warp = |extra: &str| {
+        let text = RULES.replace("Temporal=yes\n", &format!("Temporal=yes\n{extra}"));
+        let rules = rules_from(&text, ART);
+        let mut sim = sim(9);
+        let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+        let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+        sim.substrate
+            .entities
+            .get_mut(tank)
+            .unwrap()
+            .health
+            .set_for_test(100);
+        sim.temporal_initiate_warp(
+            cleg,
+            Some(tank),
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        link(&sim, cleg).warp_remaining
+    };
+    assert_eq!(warp(""), 4000);
+    assert_eq!(warp("Temporal.HealthFactor=0.5\n"), 2500);
 }

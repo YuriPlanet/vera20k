@@ -83,6 +83,8 @@ mod aegis_launch_tests;
 mod airstrike_target_tests;
 #[cfg(all(test, feature = "ares"))]
 mod ares_armor_tests;
+#[cfg(all(test, feature = "ares"))]
+mod ares_warhead_combat_tests;
 #[cfg(test)]
 mod bridge_cluster_tests;
 #[cfg(test)]

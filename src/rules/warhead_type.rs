@@ -511,6 +511,17 @@ impl WarheadType {
     pub(crate) fn ares_rules(&self) -> Option<&crate::rules::ares_warhead::AresWarheadRules> {
         self.ares.as_ref()
     }
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_rules_mut(
+        &mut self,
+    ) -> Option<&mut crate::rules::ares_warhead::AresWarheadRules> {
+        self.ares.as_mut()
+    }
+    /// The Ares 3.0 damage-modifier group of this warhead's WarheadTypeExt.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_combat(&self) -> Option<&crate::rules::ares_warhead::WarheadCombatRules> {
+        self.ares.as_ref().map(|ares| ares.combat())
+    }
     pub(crate) fn bind_ares_rules(
         &mut self,
         rules: Option<&crate::rules::ares_warhead::AresWarheadRules>,

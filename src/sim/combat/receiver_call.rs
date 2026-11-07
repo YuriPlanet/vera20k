@@ -30,6 +30,42 @@ pub(super) fn infantry_prone_raw_damage(
     X87::ftol_i32_low_masked(X87::mul(X87::load_i32(damage), multiplier)).max(1)
 }
 
+/// Ares InfantryClass_ReceiveDamage_DeployedDamage (100539A0, hook
+/// 0x517FC1) in place of the prone head: a deployed infantryman (vt+0x554,
+/// Doing 27..30) hit without ignoreDefenses takes
+/// `ftol(fild damage * Damage.Deployed)` of any sign, with no minimum, and
+/// resumes past the prone head (0x517FF9). `None` runs the prone head.
+#[cfg(feature = "ares")]
+fn infantry_deployed_raw_damage(
+    target: &GameEntity,
+    warhead: &WarheadType,
+    damage: i32,
+    flags: ReceiverCallFlags,
+) -> Option<i32> {
+    use crate::util::native_x87::MaskedX87Chop53 as X87;
+    let combat = warhead.ares_combat()?;
+    if target.category() != EntityCategory::Infantry
+        || flags.ignore_defenses
+        || !target.is_deployed()
+    {
+        return None;
+    }
+    Some(X87::ftol_i32_low_masked(X87::mul(
+        X87::load_i32(damage),
+        X87::load_f64(combat.deployed_damage()),
+    )))
+}
+
+#[cfg(not(feature = "ares"))]
+fn infantry_deployed_raw_damage(
+    _target: &GameEntity,
+    _warhead: &WarheadType,
+    _damage: i32,
+    _flags: ReceiverCallFlags,
+) -> Option<i32> {
+    None
+}
+
 /// InfantryClass::ReceiveDamage's next head (`0x00517FF5..0x00518010`): an
 /// `InfDeath=9` warhead (`+0x120`) does no damage to an infantryman above the
 /// ground or its deck (GetHeight, vt+0x1C8, `ObjectClass::GetHeight @
@@ -44,6 +80,27 @@ fn infantry_spared_mutation(
     target.category() == EntityCategory::Infantry
         && warhead.inf_death == MUTATE_INF_DEATH
         && crate::sim::movement::air_movement::current_fly_height(target, terrain) > 0
+}
+
+/// GetRelativeDamage's victim kind (installed 10051C50): a Unit whose live
+/// type is `ConsideredAircraft=` (+0xD96) counts as Aircraft, an `Organic=`
+/// one (+0xD97) as Infantry, any other as Vehicles.
+#[cfg(feature = "ares")]
+pub(super) fn relative_damage_kind(
+    target: &GameEntity,
+    target_type: Option<&crate::rules::object_type::ObjectType>,
+) -> Option<crate::rules::ares_warhead::RelativeDamageKind> {
+    use crate::rules::ares_warhead::RelativeDamageKind as Kind;
+    Some(match target.category() {
+        EntityCategory::Unit => match target_type {
+            Some(object) if object.considered_aircraft => Kind::Aircraft,
+            Some(object) if object.organic => Kind::Infantry,
+            _ => Kind::Vehicles,
+        },
+        EntityCategory::Structure => Kind::Buildings,
+        EntityCategory::Aircraft => Kind::Aircraft,
+        EntityCategory::Infantry => Kind::Infantry,
+    })
 }
 
 /// Sentinel attacker id for sourceless damage (the radiation field). Stable
@@ -282,6 +339,10 @@ pub(super) fn prepare_infantry_receiver(
     {
         prepared.damage = if infantry_spared_mutation(target, warhead, terrain) {
             0
+        } else if let Some(damage) =
+            infantry_deployed_raw_damage(target, warhead, event.damage, event.receiver_flags)
+        {
+            damage
         } else {
             infantry_prone_raw_damage(
                 target,
@@ -461,6 +522,16 @@ pub(super) fn resolve_receive_damage_with_input(
     let target_view = damage::TargetDamageView {
         current_hp: target.health.current(),
         object_immune: target_type.is_some_and(|object| object.immune),
+        #[cfg(feature = "ares")]
+        relative_damage: warhead.ares_combat().and_then(|combat| {
+            combat.relative_damage(
+                relative_damage_kind(target, target_type),
+                target.health.current(),
+                target_type.map(|object| object.strength),
+            )
+        }),
+        #[cfg(not(feature = "ares"))]
+        relative_damage: None,
     };
     // 70192B/701933 skip the entire defender/TypeImmune block for forced
     // damage and healing, before readiness is considered at701ADB.
@@ -556,23 +627,38 @@ pub(super) fn resolve_receive_damage_with_input(
         scenario_no_damage,
         rules.combat_damage.max_damage,
     );
-    let invulnerability_impact = outcome.invulnerability_impact_damage.map(|damage| {
-        let flags = match active_invulnerability
-            .expect("receiver gate retained active state")
-            .kind()
-        {
-            crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain => 1,
-            crate::sim::superweapon::invulnerability::InvulnKind::ForceShield => 6,
-        };
-        CombatLightRequest::Impact {
-            target_id: Some(target.stable_id()),
-            damage,
-            warhead_ref: event.warhead_ref,
-            coord: receiver_effect_coord(target, terrain),
-            force_create: true,
-            flags,
-        }
+    // Ares TechnoClass_ReceiveDamage_IronCurtainFlash (10053B50, hook
+    // 0x701A5C): `IronCurtain.Flash=` (default `[AudioVisual]
+    // IronCurtainFlash=`) off goes to 0x701A98, the zero packet without the
+    // flash.
+    #[cfg(feature = "ares")]
+    let invulnerability_flashes = warhead.ares_combat().is_none_or(|combat| {
+        combat
+            .iron_curtain_flash()
+            .unwrap_or(rules.ares_warhead_globals().iron_curtain_flash())
     });
+    #[cfg(not(feature = "ares"))]
+    let invulnerability_flashes = true;
+    let invulnerability_impact = outcome
+        .invulnerability_impact_damage
+        .filter(|_| invulnerability_flashes)
+        .map(|damage| {
+            let flags = match active_invulnerability
+                .expect("receiver gate retained active state")
+                .kind()
+            {
+                crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain => 1,
+                crate::sim::superweapon::invulnerability::InvulnKind::ForceShield => 6,
+            };
+            CombatLightRequest::Impact {
+                target_id: Some(target.stable_id()),
+                damage,
+                warhead_ref: event.warhead_ref,
+                coord: receiver_effect_coord(target, terrain),
+                force_create: true,
+                flags,
+            }
+        });
     Some(ResolvedReceiveDamage {
         outcome,
         invulnerability_impact,

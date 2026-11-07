@@ -117,6 +117,59 @@ pub fn health_category(current: i32, strength: i32, red: f64, yellow: f64) -> u8
     }
 }
 
+/// WarheadTypeExt::CanCull (installed Ares 10052590), shared by the Object
+/// receiver (10053A10, hook 0x5F5456) and the squid grapple (10053AC0, hook
+/// 0x629BC0). `Culling=` (+0x174) first; the attacker's veterancy float
+/// (+0x150, `< 1.0` Rookie, `< 2.0` Veteran, else Elite) selects
+/// `Culling.%sBelowHealth`/`%sChance`. A positive BelowHealth is the highest
+/// health percentage (`ftol(Health / Strength * 100.0)`) that culls; zero or
+/// `-N` needs GetHealthStatus (5F5DD0: Red 0, Yellow 1, Green 2) `<= N`
+/// unsigned. A negative chance always culls; otherwise one
+/// `Scenario.Random.RandomRanged(0, 99) < chance` draw decides.
+#[cfg(feature = "ares")]
+pub(crate) fn ares_can_cull(
+    warhead: &crate::rules::warhead_type::WarheadType,
+    attacker_veterancy: crate::util::native_x87::NativeF32Bits,
+    victim: Health,
+    victim_strength: i32,
+    condition_red: f64,
+    condition_yellow: f64,
+    scenario_rng: &mut crate::sim::rng::SimRng,
+) -> bool {
+    let Some(combat) = warhead.ares_combat().filter(|_| warhead.culling) else {
+        return false;
+    };
+    let veterancy = f32::from_bits(attacker_veterancy.bits());
+    let rank = if !(veterancy < 2.0) {
+        2
+    } else if veterancy < 1.0 {
+        0
+    } else {
+        1
+    };
+    let (below_health, chance) = combat.culling(rank);
+    if below_health > 0 {
+        let percent = X87::ftol_i32_low_masked(X87::mul(
+            victim.ratio(victim_strength),
+            X87::load_f64(NativeF64Bits::from_bits(100.0_f64.to_bits())),
+        ));
+        if percent > below_health {
+            return false;
+        }
+    } else {
+        let status = health_category(
+            victim.current(),
+            victim_strength,
+            condition_red,
+            condition_yellow,
+        );
+        if u32::from(status) > below_health.wrapping_neg() as u32 {
+            return false;
+        }
+    }
+    chance < 0 || scenario_rng.next_range_i32_inclusive(0, 99) < chance
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum HealthCallback {
     Changed,
@@ -132,6 +185,11 @@ pub(super) trait ObjectHealthHost {
     fn object_mut(&mut self) -> Option<&mut GameEntity>;
     fn current_strength(&self) -> Option<i32>;
     fn write_damage(&mut self, _damage: i32) {}
+    /// Ares ObjectClass_ReceiveDamage_Culling (10053A10): whether a positive
+    /// packet culls the object (CanCull 10052590, which may draw).
+    fn culls(&mut self) -> bool {
+        false
+    }
     fn invoke(&mut self, callback: HealthCallback);
 }
 
@@ -156,6 +214,12 @@ pub(super) fn commit(
     }
     if building_no_c4 {
         *packet = (*packet).max(1);
+        host.write_damage(*packet);
+    }
+    // Ares hook 0x5F5456 (10053A10), after the building minimum and before
+    // the dispatch on the packet: a culled object takes its full Health.
+    if *packet > 0 && host.culls() {
+        *packet = previous;
         host.write_damage(*packet);
     }
     if *packet == 0 {

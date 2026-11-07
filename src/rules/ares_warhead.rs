@@ -22,6 +22,9 @@ pub(crate) struct AresWarheadRules {
     #[cfg(feature = "ares")]
     #[serde(default = "default_effects_require_verses")]
     effects_require_verses: bool,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    combat: WarheadCombatRules,
 }
 impl Default for AresWarheadRules {
     fn default() -> Self {
@@ -38,6 +41,8 @@ impl Default for AresWarheadRules {
             effects_require_damage: false,
             #[cfg(feature = "ares")]
             effects_require_verses: true,
+            #[cfg(feature = "ares")]
+            combat: Default::default(),
         }
     }
 }
@@ -88,6 +93,16 @@ impl AresWarheadRules {
     #[cfg(feature = "ares")]
     pub(crate) fn effects_require_verses(&self) -> bool {
         self.effects_require_verses
+    }
+    #[cfg(feature = "ares")]
+    pub(crate) fn combat(&self) -> &WarheadCombatRules {
+        &self.combat
+    }
+    /// The two NullableIdx<Voc> overrides bind against the fixed sound
+    /// catalog after the type passes, like every other Voc reference.
+    #[cfg(feature = "ares")]
+    pub(crate) fn combat_mut(&mut self) -> &mut WarheadCombatRules {
+        &mut self.combat
     }
     #[cfg(feature = "ares")]
     pub(crate) fn read_pass(
@@ -209,6 +224,335 @@ impl KillDriverRules {
     pub(crate) fn remove_veterancy(&self) -> bool {
         self.remove_veterancy
     }
+}
+
+/// The RulesExt keys the warhead hooks read: LoadBeforeTypeData 1002AB60
+/// reads both with the Valueable<bool> reader on every Rules pass.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg(feature = "ares")]
+pub(crate) struct WarheadGlobalRules {
+    /// RulesExt+0x111 `[General] DamageAirConsiderBridges`, constructor false.
+    damage_air_consider_bridges: bool,
+    /// RulesExt+0x14D `[AudioVisual] IronCurtainFlash`, constructor true.
+    iron_curtain_flash: bool,
+}
+
+#[cfg(feature = "ares")]
+impl Default for WarheadGlobalRules {
+    fn default() -> Self {
+        Self {
+            damage_air_consider_bridges: false,
+            iron_curtain_flash: true,
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl WarheadGlobalRules {
+    pub(crate) fn read_before_type_data(&mut self, pass: &crate::rules::ini_parser::IniFile) {
+        if let Some(section) = pass.section("General") {
+            self.damage_air_consider_bridges = section
+                .read_ares_bool("DamageAirConsiderBridges", self.damage_air_consider_bridges);
+        }
+        if let Some(section) = pass.section("AudioVisual") {
+            self.iron_curtain_flash =
+                section.read_ares_bool("IronCurtainFlash", self.iron_curtain_flash);
+        }
+    }
+    pub(crate) fn damage_air_consider_bridges(&self) -> bool {
+        self.damage_air_consider_bridges
+    }
+    pub(crate) fn iron_curtain_flash(&self) -> bool {
+        self.iron_curtain_flash
+    }
+}
+
+/// Victim kinds of WarheadTypeExt::GetRelativeDamage (installed 10051C50),
+/// in RelativeDamage.* field order (+E4..+F4).
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RelativeDamageKind {
+    Buildings,
+    Aircraft,
+    Infantry,
+    Vehicles,
+    Terrain,
+}
+
+/// Ares 3.0 WarheadTypeExt damage modifiers and kill presentation. The
+/// constructor 10051890 owns the defaults; ReadINI 10051D80 reads each key
+/// once per Rules pass with the Valueable/Nullable readers named below.
+/// Every key is independent, so the read order inside this group is not
+/// observable; `IonCannon`, `IronCurtain.Duration`, `MindControl.Permanent`
+/// and the other effect keys this struct lacks are not read.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg(feature = "ares")]
+pub(crate) struct WarheadCombatRules {
+    /// +0x20 Nullable<bool> `IronCurtain.Flash`.
+    iron_curtain_flash: Option<bool>,
+    /// +0x38 Valueable<double> `Temporal.HealthFactor`.
+    temporal_health_factor: NativeF64Bits,
+    /// +0x40 Nullable<AnimTypeClass*> `Temporal.WarpAway`: `Some(None)` is
+    /// a successful `none`.
+    temporal_warp_away: Option<Option<String>>,
+    /// +0x30 `Damage.Deployed`, detail::read<double> (binary64 scan).
+    deployed_damage: NativeF64Bits,
+    /// +0x75 `Malicious`.
+    malicious: bool,
+    /// +0x76 `PreventScatter`.
+    prevent_scatter: bool,
+    /// +0x77 Nullable<bool> `BridgeAbsoluteDestroyer`.
+    bridge_absolute_destroyer: Option<bool>,
+    /// +0x7C `CellSpread.MaxAffect`.
+    cell_spread_max_affect: i32,
+    /// +0x80 `DamageAirThreshold`.
+    damage_air_threshold: i32,
+    /// +0xD0 `UnitLost.Suppress`.
+    unit_lost_suppress: bool,
+    /// +0xD1/+0xD2 `DeathWeapon.SuppressVehicles`/`.SuppressInfantry`.
+    death_weapon_suppress_vehicles: bool,
+    death_weapon_suppress_infantry: bool,
+    /// +0xD4 ValueableVector<TechnoTypeClass*> `DeathWeapon.Suppress`.
+    death_weapon_suppress: Vec<crate::rules::superweapon_type::TechnoTypeReference>,
+    /// +0xE0 `RelativeDamage` and +0xE4..+0xF4 its five kinds.
+    relative_damage: bool,
+    relative_damage_by_kind: [i32; 5],
+    /// +0x100 `Flash.Duration`.
+    flash_duration: i32,
+    /// +0x132 `AllowZeroDamage`.
+    allow_zero_damage: bool,
+    /// +0x134/+0x13C NullableIdx<VocClass> `DieSound.Override`/
+    /// `VoiceDie.Override`: `None` unset, `Some(None)` the -1 index.
+    die_sound_override: Option<Option<String>>,
+    voice_die_override: Option<Option<String>>,
+    /// +0x144/+0x150 Promotable<int> `Culling.%sBelowHealth`/
+    /// `Culling.%sChance`, Rookie/Veteran/Elite.
+    culling_below_health: [i32; 3],
+    culling_chance: [i32; 3],
+}
+
+#[cfg(feature = "ares")]
+impl Default for WarheadCombatRules {
+    fn default() -> Self {
+        Self {
+            iron_curtain_flash: None,
+            temporal_health_factor: NativeF64Bits::from_bits(0),
+            temporal_warp_away: None,
+            deployed_damage: NativeF64Bits::ONE,
+            malicious: true,
+            prevent_scatter: false,
+            bridge_absolute_destroyer: None,
+            cell_spread_max_affect: -1,
+            damage_air_threshold: 0,
+            unit_lost_suppress: false,
+            death_weapon_suppress_vehicles: false,
+            death_weapon_suppress_infantry: false,
+            death_weapon_suppress: Vec::new(),
+            relative_damage: false,
+            relative_damage_by_kind: [0; 5],
+            flash_duration: 0,
+            allow_zero_damage: false,
+            die_sound_override: None,
+            voice_die_override: None,
+            // Constructor 10051890: Culling_BelowHealth(0) with Elite (+0x14C)
+            // then set to -1; Culling_Chance(-1) for all three ranks.
+            culling_below_health: [0, 0, -1],
+            culling_chance: [-1; 3],
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl WarheadCombatRules {
+    /// The ReadINI 10051D80 reads of this group. `temporal_warp_away` is the
+    /// pass's resolved `Temporal.WarpAway` (Nullable<Anim> 1002D910: unknown
+    /// retains, `none` stores null) and `death_weapon_suppress` its
+    /// `DeathWeapon.Suppress` list (ValueableVector 1000EDD0: a reached read
+    /// replaces, unknown names are skipped).
+    pub(crate) fn read_pass(
+        &mut self,
+        section: &IniSection,
+        temporal_warp_away: Option<Option<String>>,
+        death_weapon_suppress: Option<Vec<crate::rules::superweapon_type::TechnoTypeReference>>,
+    ) {
+        self.iron_curtain_flash =
+            section.read_ares_nullable_bool("IronCurtain.Flash", self.iron_curtain_flash);
+        self.temporal_health_factor =
+            section.read_ares_double_bits("Temporal.HealthFactor", self.temporal_health_factor);
+        if temporal_warp_away.is_some() {
+            self.temporal_warp_away = temporal_warp_away;
+        }
+        self.deployed_damage =
+            section.read_ares_double_bits("Damage.Deployed", self.deployed_damage);
+        self.malicious = section.read_ares_bool("Malicious", self.malicious);
+        self.prevent_scatter = section.read_ares_bool("PreventScatter", self.prevent_scatter);
+        self.bridge_absolute_destroyer = section
+            .read_ares_nullable_bool("BridgeAbsoluteDestroyer", self.bridge_absolute_destroyer);
+        self.cell_spread_max_affect =
+            section.read_ares_int("CellSpread.MaxAffect", self.cell_spread_max_affect);
+        self.damage_air_threshold =
+            section.read_ares_int("DamageAirThreshold", self.damage_air_threshold);
+        self.unit_lost_suppress =
+            section.read_ares_bool("UnitLost.Suppress", self.unit_lost_suppress);
+        self.death_weapon_suppress_vehicles = section.read_ares_bool(
+            "DeathWeapon.SuppressVehicles",
+            self.death_weapon_suppress_vehicles,
+        );
+        self.death_weapon_suppress_infantry = section.read_ares_bool(
+            "DeathWeapon.SuppressInfantry",
+            self.death_weapon_suppress_infantry,
+        );
+        if let Some(list) = death_weapon_suppress {
+            self.death_weapon_suppress = list;
+        }
+        self.relative_damage = section.read_ares_bool("RelativeDamage", self.relative_damage);
+        for (slot, key) in [
+            "RelativeDamage.Buildings",
+            "RelativeDamage.Aircraft",
+            "RelativeDamage.Infantry",
+            "RelativeDamage.Vehicles",
+            "RelativeDamage.Terrain",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            self.relative_damage_by_kind[slot] =
+                section.read_ares_int(key, self.relative_damage_by_kind[slot]);
+        }
+        self.flash_duration = section.read_ares_int("Flash.Duration", self.flash_duration);
+        self.allow_zero_damage = section.read_ares_bool("AllowZeroDamage", self.allow_zero_damage);
+        self.culling_below_health = read_promotable_int(
+            section,
+            ["Culling.BelowHealth", "Culling.RookieBelowHealth"],
+            ["Culling.VeteranBelowHealth", "Culling.EliteBelowHealth"],
+            self.culling_below_health,
+        );
+        self.culling_chance = read_promotable_int(
+            section,
+            ["Culling.Chance", "Culling.RookieChance"],
+            ["Culling.VeteranChance", "Culling.EliteChance"],
+            self.culling_chance,
+        );
+    }
+
+    /// The Voc overrides, read with NullableIdx<Voc> 1000E9D0.
+    pub(crate) fn bind_sound_overrides(
+        &mut self,
+        section: Option<&IniSection>,
+        sounds: &crate::rules::sound_ini::SoundRegistry,
+    ) {
+        self.die_sound_override =
+            section.and_then(|section| sounds.read_ares_reference(section, "DieSound.Override"));
+        self.voice_die_override =
+            section.and_then(|section| sounds.read_ares_reference(section, "VoiceDie.Override"));
+    }
+
+    pub(crate) fn iron_curtain_flash(&self) -> Option<bool> {
+        self.iron_curtain_flash
+    }
+    pub(crate) fn temporal_health_factor(&self) -> NativeF64Bits {
+        self.temporal_health_factor
+    }
+    /// The erase anim: the Nullable's value, else `[General] WarpAway=`.
+    pub(crate) fn temporal_warp_away<'a>(&'a self, rules_warp_away: &'a str) -> Option<&'a str> {
+        match &self.temporal_warp_away {
+            Some(anim) => anim.as_deref(),
+            None => Some(rules_warp_away),
+        }
+    }
+    pub(crate) fn deployed_damage(&self) -> NativeF64Bits {
+        self.deployed_damage
+    }
+    pub(crate) fn malicious(&self) -> bool {
+        self.malicious
+    }
+    pub(crate) fn prevent_scatter(&self) -> bool {
+        self.prevent_scatter
+    }
+    /// DamageArea_BridgeAbsoluteDestroyer 10053880: the Nullable defaults to
+    /// "this warhead is `[CombatDamage] IonCannonWarhead`".
+    pub(crate) fn bridge_absolute_destroyer(&self, is_ion_cannon_warhead: bool) -> bool {
+        self.bridge_absolute_destroyer
+            .unwrap_or(is_ion_cannon_warhead)
+    }
+    pub(crate) fn cell_spread_max_affect(&self) -> i32 {
+        self.cell_spread_max_affect
+    }
+    pub(crate) fn damage_air_threshold(&self) -> i32 {
+        self.damage_air_threshold
+    }
+    pub(crate) fn unit_lost_suppress(&self) -> bool {
+        self.unit_lost_suppress
+    }
+    /// TechnoClass_ReceiveDamage_SuppressDeathWeapon (hook 0x702669): Units
+    /// by the vehicle flag, Infantry by the infantry flag, any type listed.
+    pub(crate) fn suppresses_death_weapon(
+        &self,
+        category: crate::rules::object_type::ObjectCategory,
+        type_id: &str,
+    ) -> bool {
+        use crate::rules::object_type::ObjectCategory;
+        (category == ObjectCategory::Vehicle && self.death_weapon_suppress_vehicles)
+            || (category == ObjectCategory::Infantry && self.death_weapon_suppress_infantry)
+            || self.death_weapon_suppress.iter().any(|listed| {
+                listed.category == category && listed.id.eq_ignore_ascii_case(type_id)
+            })
+    }
+    /// GetRelativeDamage (installed 10051C50) when `RelativeDamage=yes`: the
+    /// kind's value, positive as a percentage of the type's Strength,
+    /// negative of the current Health (32-bit products, C division toward
+    /// zero); 0 for a zero value, another kind (`None`) or no type.
+    pub(crate) fn relative_damage(
+        &self,
+        kind: Option<RelativeDamageKind>,
+        health: i32,
+        strength: Option<i32>,
+    ) -> Option<i32> {
+        if !self.relative_damage {
+            return None;
+        }
+        let value = kind.map_or(0, |kind| self.relative_damage_by_kind[kind as usize]);
+        Some(match value {
+            0 => 0,
+            value if value < 0 => health.wrapping_mul(value).wrapping_div(-100),
+            value => strength.map_or(0, |strength| strength.wrapping_mul(value) / 100),
+        })
+    }
+    pub(crate) fn flash_duration(&self) -> i32 {
+        self.flash_duration
+    }
+    pub(crate) fn allow_zero_damage(&self) -> bool {
+        self.allow_zero_damage
+    }
+    pub(crate) fn die_sound_override(&self) -> Option<Option<&str>> {
+        self.die_sound_override.as_ref().map(Option::as_deref)
+    }
+    pub(crate) fn voice_die_override(&self) -> Option<Option<&str>> {
+        self.voice_die_override.as_ref().map(Option::as_deref)
+    }
+    /// Promotable<int>::Get for a rank index (Rookie 0, Veteran 1, Elite 2).
+    pub(crate) fn culling(&self, rank: usize) -> (i32, i32) {
+        (self.culling_below_health[rank], self.culling_chance[rank])
+    }
+}
+
+/// Ares Promotable<int>::Read (TemplateDef.h, noinline): the format with ""
+/// (a trailing dot stripped) sets all three ranks when it parses, then the
+/// Rookie, Veteran and Elite keys each override one; failures retain.
+#[cfg(feature = "ares")]
+fn read_promotable_int(
+    section: &IniSection,
+    [common, rookie]: [&str; 2],
+    [veteran, elite]: [&str; 2],
+    current: [i32; 3],
+) -> [i32; 3] {
+    let mut value = section
+        .read_ares_nullable_int(common, None)
+        .map_or(current, |all| [all; 3]);
+    for (slot, key) in [rookie, veteran, elite].into_iter().enumerate() {
+        value[slot] = section.read_ares_int(key, value[slot]);
+    }
+    value
 }
 
 /// Shared descriptor: WarheadExt+88 (constructor10051890) and
@@ -479,5 +823,86 @@ mod tests {
                 cleared.simulation_config_hash()
             );
         }
+    }
+
+    /// WarheadTypeExt ReadINI 10051D80's combat group through the retained
+    /// production processor: constructor defaults, Promotable culling keys,
+    /// Nullable retention, the TechnoType list, the Voc overrides and the
+    /// two RulesExt keys of LoadBeforeTypeData 1002AB60.
+    #[test]
+    #[cfg(feature = "ares")]
+    fn combat_keys_use_the_ares_readers_and_constructor_defaults() {
+        use crate::rules::object_type::ObjectCategory;
+        let root = IniFile::from_str(
+            "[Warheads]\n0=CULL\n1=PLAIN\n[InfantryTypes]\n0=GI\n[VehicleTypes]\n0=MTNK\n\
+             [General]\nDamageAirConsiderBridges=yes\n[AudioVisual]\nIronCurtainFlash=no\n\
+             [CULL]\nCulling.BelowHealth=40\nCulling.EliteBelowHealth=-2\nCulling.VeteranChance=30\n\
+             RelativeDamage=yes\nRelativeDamage.Vehicles=-50\nRelativeDamage.Terrain=7\n\
+             Damage.Deployed=50%\nMalicious=no\nPreventScatter=yes\nBridgeAbsoluteDestroyer=yes\n\
+             CellSpread.MaxAffect=1\nDamageAirThreshold=300\nUnitLost.Suppress=yes\n\
+             DeathWeapon.SuppressInfantry=yes\nDeathWeapon.Suppress=MTNK,NOPE\n\
+             Flash.Duration=12\nAllowZeroDamage=yes\nIronCurtain.Flash=yes\n\
+             DieSound.Override=Boom\nVoiceDie.Override=none\n\
+             Temporal.HealthFactor=0.5\nTemporal.WarpAway=none\n\
+             [PLAIN]\nCellSpread=0\n",
+        );
+        let mut layers = RulesLayerStack::new(root);
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[CULL]\nBridgeAbsoluteDestroyer=junk\nDamageAirThreshold=\n"),
+        );
+        let processed = layers.process().unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        rules.bind_type_sound_references(
+            processed.ini(),
+            &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+                "[SoundList]\n0=Boom\n[Boom]\nSounds=boom\n",
+            )),
+        );
+        let combat = |name: &str| rules.warhead(name).unwrap().ares_combat().unwrap();
+        let cull = combat("CULL");
+        assert_eq!(cull.culling(0), (40, -1));
+        assert_eq!(cull.culling(1), (40, 30));
+        assert_eq!(cull.culling(2), (-2, -1));
+        assert_eq!(
+            cull.relative_damage(Some(RelativeDamageKind::Vehicles), 300, Some(1000)),
+            Some(150)
+        );
+        assert_eq!(
+            cull.relative_damage(Some(RelativeDamageKind::Terrain), 300, Some(1000)),
+            Some(70)
+        );
+        assert_eq!(
+            cull.deployed_damage(),
+            NativeF64Bits::from_bits(0.5_f64.to_bits())
+        );
+        assert!(!cull.malicious() && cull.prevent_scatter());
+        assert!(cull.bridge_absolute_destroyer(false), "junk retains yes");
+        assert_eq!(
+            (cull.cell_spread_max_affect(), cull.damage_air_threshold()),
+            (1, 300)
+        );
+        assert!(cull.unit_lost_suppress() && cull.allow_zero_damage());
+        assert!(cull.suppresses_death_weapon(ObjectCategory::Infantry, "GI"));
+        assert!(cull.suppresses_death_weapon(ObjectCategory::Vehicle, "MTNK"));
+        assert!(!cull.suppresses_death_weapon(ObjectCategory::Aircraft, "NOPE"));
+        assert_eq!(cull.flash_duration(), 12);
+        assert_eq!(cull.iron_curtain_flash(), Some(true));
+        assert_eq!(cull.die_sound_override(), Some(Some("Boom")));
+        assert_eq!(cull.voice_die_override(), Some(None));
+        assert_eq!(
+            cull.temporal_health_factor(),
+            NativeF64Bits::from_bits(0.5_f64.to_bits())
+        );
+        assert_eq!(cull.temporal_warp_away("WARPAWAY"), None);
+        assert_eq!(combat("PLAIN").temporal_warp_away("WARPAWAY"), Some("WARPAWAY"));
+        let plain = combat("PLAIN");
+        assert_eq!(plain, &WarheadCombatRules::default());
+        assert_eq!((plain.culling(0), plain.culling(2)), ((0, -1), (-1, -1)));
+        assert!(plain.malicious() && plain.bridge_absolute_destroyer(true));
+        assert_eq!(plain.relative_damage(None, 1, Some(1)), None);
+        assert_eq!(plain.die_sound_override(), None);
+        assert!(rules.ares_warhead_globals().damage_air_consider_bridges());
+        assert!(!rules.ares_warhead_globals().iron_curtain_flash());
     }
 }

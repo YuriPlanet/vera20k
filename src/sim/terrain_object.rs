@@ -986,6 +986,23 @@ impl TerrainObjectStore {
             return TerrainAreaReceiveResult::Ignored;
         }
 
+        // Ares ObjectClass_ReceiveDamage_Relative (10053A80, hook 0x5F53E5)
+        // runs for TerrainClass too: RelativeDamage.Terrain of the type's
+        // Strength or the current Health, with the packet's sign.
+        #[cfg(feature = "ares")]
+        if let Some(relative) = warhead.ares_combat().and_then(|combat| {
+            combat.relative_damage(
+                Some(crate::rules::ares_warhead::RelativeDamageKind::Terrain),
+                snapshot.health,
+                Some(snapshot.max_health),
+            )
+        }) {
+            *raw_damage = if *raw_damage < 0 {
+                relative.wrapping_neg()
+            } else {
+                relative
+            };
+        }
         // TerrainClass 0071B920 always checks Wood/Immune above, then forwards
         // ignore_defenses to ObjectClass 005F5390. BlowUpBridge 0047DD70 passes
         // true: current Health bypasses verses, falloff, NoDamage and MaxDamage.

@@ -131,6 +131,8 @@ use serde::{Deserialize, Serialize};
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
+#[cfg(feature = "ares")]
+use crate::rules::warhead_type::WarheadType;
 use crate::sim::anim_class::AnimWorldCoord;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::houses::Houses;
@@ -450,9 +452,12 @@ impl Simulation {
             None => {
                 // 0x0071AF98..0x0071AFB9: the first attacker heads the chain
                 // with Strength * 10 (`LEA x5; SHL 1`).
+                let warp = strength.wrapping_mul(10);
+                #[cfg(feature = "ares")]
+                let warp = self.ares_health_factor_warp(attacker, target, strength, warp, rules);
                 self.substrate.set_temporal_head(target, Some(attacker));
                 if let Some(link) = self.substrate.temporal_link_mut(attacker) {
-                    link.warp_remaining = strength.wrapping_mul(10);
+                    link.warp_remaining = warp;
                 }
                 self.temporal_warp_start_notice(target, rules, registry, effects);
             }
@@ -553,6 +558,7 @@ impl Simulation {
             ry,
             owner: entity.owner(),
             victim_type: entity.type_ref(),
+            own_alert: true,
         };
         if notify_house {
             self.notify_house_under_attack(event, rules, registry, effects);
@@ -731,15 +737,38 @@ impl Simulation {
             self.temporal_owner_idle(head, rules, effects);
             return;
         };
-        // 0x0071A8BD..0x0071A909: WarpAway at the target's Location.
-        if let Some(entity) = self.substrate.entities.get(target) {
+        // 0x0071A8BD..0x0071A909: WarpAway at the target's Location. Ares
+        // TemporalClass_Update_WarpAway (10053CE0, hook 0x71A900) takes the
+        // warp weapon's `Temporal.WarpAway=` first.
+        #[cfg(feature = "ares")]
+        let warp_combat = self
+            .ares_warp_warhead(head, rules)
+            .and_then(WarheadType::ares_combat);
+        #[cfg(feature = "ares")]
+        let warp_away = match warp_combat {
+            Some(combat) => combat.temporal_warp_away(&rules.general.warp_away.name),
+            None => Some(rules.general.warp_away.name.as_str()),
+        };
+        #[cfg(not(feature = "ares"))]
+        let warp_away = Some(rules.general.warp_away.name.as_str());
+        if let Some(entity) = self.substrate.entities.get(target)
+            && let Some(warp_away) = warp_away
+        {
             let location = location_coord(entity);
-            self.spawn_temporal_anim(&rules.general.warp_away.name, location, None, rules);
+            self.spawn_temporal_anim(warp_away, location, None, rules);
         }
         // 0x0071A917..0x0071A978: a Trainable attacker gains
         // `VeterancyStruct::Add(ownerCost, targetCost)` here, and again in
-        // Record_The_Kill below.
-        self.temporal_veterancy(head, target, rules);
+        // Record_The_Kill below. Ares TemporalClass_Update_Erase (1004BBC0)
+        // replaces the whole block (to 0x71A97D): no gain here, and the
+        // warp weapon's `UnitLost.Suppress=` silences the loss below.
+        #[cfg(feature = "ares")]
+        let unit_lost_suppressed = warp_combat.is_some_and(|combat| combat.unit_lost_suppress());
+        #[cfg(not(feature = "ares"))]
+        let unit_lost_suppressed = {
+            self.temporal_veterancy(head, target, rules);
+            false
+        };
         let Some(category) = self
             .substrate
             .entities
@@ -817,7 +846,8 @@ impl Simulation {
                     },
                 ]);
             }
-        } else if let Some(entity) = self.substrate.entities.get(target)
+        } else if !unit_lost_suppressed
+            && let Some(entity) = self.substrate.entities.get(target)
             && let Some(object) = self.object_type(entity.type_ref(), rules)
             && let Some(event) = crate::sim::combat::death_announcement_event(
                 object,
@@ -860,10 +890,96 @@ impl Simulation {
         self.temporal_owner_idle(head, rules, effects);
     }
 
+    /// Ares TechnoExt idxSlot_Warp (+0xA), written by the TechnoClass
+    /// constructor hook 1004A530: the first slot below `WeaponCount` (two
+    /// without `TurretCount`) whose weapon or elite weapon has a `Temporal=`
+    /// warhead. The warp hooks read `GetWeapon(idxSlot_Warp)`'s warhead for
+    /// the owner's current rank.
+    ///
+    /// RESIDUAL: native fixes the slot at construction; this reads the
+    /// owner's current type, which differs only after a type conversion
+    /// that moves its Temporal weapon to another slot.
+    #[cfg(feature = "ares")]
+    fn ares_warp_warhead<'r>(&self, owner: u64, rules: &'r RuleSet) -> Option<&'r WarheadType> {
+        let entity = self.substrate.entities.get(owner)?;
+        let object = self.object_type(entity.type_ref(), rules)?;
+        let count = if object.turret_count > 0 {
+            object.weapon_count.max(0) as usize
+        } else {
+            2
+        };
+        let temporal = |weapon: Option<&str>| {
+            weapon
+                .and_then(|weapon| rules.weapon(weapon))
+                .and_then(|weapon| weapon.warhead.as_deref())
+                .and_then(|warhead| rules.warhead(warhead))
+                .is_some_and(|warhead| warhead.temporal)
+        };
+        let slot = (0..count)
+            .find(|&slot| {
+                temporal(object.weapon_at(slot)) || temporal(object.elite_weapon_at(slot))
+            })
+            .unwrap_or(0);
+        let weapon = crate::sim::combat::combat_weapon::get_weapon(
+            entity,
+            object,
+            slot as i32,
+            &self.substrate.entities,
+            rules,
+            &self.interner,
+        )?;
+        rules.warhead(weapon.warhead.as_deref()?)
+    }
+
+    /// Ares TemporalClass_Fire_HealthFactor (10053C20, hook 0x71AFB2): the
+    /// head's warp is `(1 - f) * Strength * 10 + f * 0.0` with
+    /// `f = (1 - Health / Strength) * Temporal.HealthFactor`, in doubles,
+    /// truncated when above 1.0 and else 1.
+    #[cfg(feature = "ares")]
+    fn ares_health_factor_warp(
+        &self,
+        attacker: u64,
+        target: u64,
+        strength: i32,
+        warp: i32,
+        rules: &RuleSet,
+    ) -> i32 {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
+        let Some(combat) = self
+            .ares_warp_warhead(attacker, rules)
+            .and_then(WarheadType::ares_combat)
+        else {
+            return warp;
+        };
+        let health = self
+            .substrate
+            .entities
+            .get(target)
+            .map_or(0, |entity| entity.health.current());
+        let one = || X87::load_f64(NativeF64Bits::ONE);
+        let factor = X87::mul(
+            X87::sub(
+                one(),
+                X87::div(X87::load_i32(health), X87::load_i32(strength)),
+            ),
+            X87::load_f64(combat.temporal_health_factor()),
+        );
+        let value = X87::add(
+            X87::mul(factor, X87::load_f64(NativeF64Bits::from_bits(0))),
+            X87::mul(X87::sub(one(), factor), X87::load_i32(warp)),
+        );
+        if X87::compare(value, one()) == MaskedX87Ordering::Greater {
+            X87::ftol_i32_low_masked(value)
+        } else {
+            1
+        }
+    }
+
     /// `VeterancyStruct::Add(OwnerType cost, TargetType cost)` for a
     /// `Trainable=` attacker (`0x0071A917..0x0071A978`). Each cost is the
     /// type's Cost_Of for its own object's house: the target's
     /// (`0x0071A952`) and the attacker's (`0x0071A968`).
+    #[cfg(not(feature = "ares"))]
     fn temporal_veterancy(&mut self, attacker: u64, target: u64, rules: &RuleSet) {
         let (Some(attacker_entity), Some(target_entity)) = (
             self.substrate.entities.get(attacker),

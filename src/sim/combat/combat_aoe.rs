@@ -296,6 +296,26 @@ impl From<&str> for AoEDamageOrigin {
     }
 }
 
+/// Apply_area_damage's entry (`0x004892BE`): an inert scenario or a zero
+/// damage returns at once. Ares DamageArea_NullDamage (10053940) lets a
+/// warhead with `AllowZeroDamage=yes` take a zero damage through the area.
+pub(crate) fn area_damage_enters(
+    damage: i32,
+    warhead: &WarheadType,
+    scenario_no_damage: bool,
+) -> bool {
+    #[cfg(feature = "ares")]
+    let zero_admitted = warhead
+        .ares_combat()
+        .is_some_and(|combat| combat.allow_zero_damage());
+    #[cfg(not(feature = "ares"))]
+    let zero_admitted = {
+        let _ = warhead;
+        false
+    };
+    !scenario_no_damage && (damage != 0 || zero_admitted)
+}
+
 /// Lift the established whole-Level impact coordinate into native absolute
 /// lepton Z while preserving the exact XY subcell sample on slopes.
 fn air_impact_from_layer_z(
@@ -533,7 +553,7 @@ impl AoECollector {
         // Apply_area_damage returns at entry for signed zero. Nothing downstream
         // observes CellSpread, wall routing, object lists, target detach, or RNG.
         // Native ScenarioFlags bit 0x20 shares that transaction-wide early-out.
-        if base_damage == 0 || scenario_no_damage {
+        if !area_damage_enters(base_damage, warhead, scenario_no_damage) {
             return None;
         }
         let mut origin = origin;
@@ -603,7 +623,9 @@ impl AoECollector {
             // vector at all.
             if let Some(air_impact) = layer_context.air_impact
                 && layer_context.terrain.as_deref().is_some_and(|terrain| {
-                    impact_is_above_ground(terrain, impact_rx, impact_ry, air_impact)
+                    impact_is_above_ground(
+                        terrain, impact_rx, impact_ry, air_impact, warhead, rules,
+                    )
                 })
             {
                 // Native appends airborne receiver records before entering the
@@ -824,6 +846,7 @@ impl AoECollector {
         warhead: &WarheadType,
     ) -> AoEDamageResult {
         if self.native_occupancy {
+            limit_records_per_object(&mut self.result, warhead);
             return finalize_receiver_isolation_metadata(self.result, warhead);
         }
 
@@ -864,8 +887,85 @@ impl AoECollector {
             );
         }
 
+        limit_records_per_object(&mut self.result, warhead);
         finalize_receiver_isolation_metadata(self.result, warhead)
     }
+}
+
+/// Ares DamageArea_Damage_MaxAffect (10053400, hook 0x4899DA), after the
+/// spread loop: with `CellSpread.MaxAffect >= 0`, each object keeps only
+/// that many of its records (a building has one per foundation cell). In
+/// record order, the first unhandled record's object collects its records
+/// from there on; beyond the limit, a partial selection sort
+/// (`std::min_element`, first minimum) keeps the nearest and the rest are
+/// dropped, the survivors keeping their order.
+///
+/// RESIDUAL: VERA's near-center Iron Curtain pre-scan runs over the kept
+/// records, while native arms it during collection. Only a dropped record
+/// nearer than 85 leptons that arms while every kept one cannot differs,
+/// which a building's equal-distance records never produce.
+pub(super) fn limit_records_per_object(result: &mut AoEDamageResult, warhead: &WarheadType) {
+    #[cfg(feature = "ares")]
+    {
+        let Some(max_affect) = warhead
+            .ares_combat()
+            .map(|combat| combat.cell_spread_max_affect())
+            .filter(|&max_affect| max_affect >= 0)
+        else {
+            return;
+        };
+        let max_affect = max_affect as usize;
+        let key = |receiver: &AreaDamageReceiver| match receiver {
+            AreaDamageReceiver::Entity(event) => (false, event.target_id),
+            AreaDamageReceiver::Terrain(event) => (true, event.stable_id),
+        };
+        let distance = |receiver: &AreaDamageReceiver| match receiver {
+            AreaDamageReceiver::Entity(event) => event.distance_leptons,
+            AreaDamageReceiver::Terrain(event) => event.distance_leptons,
+        };
+        let records = &result.receivers;
+        let mut keep = vec![true; records.len()];
+        let mut handled = Vec::new();
+        for first in 0..records.len() {
+            let object = key(&records[first]);
+            if !keep[first] || handled.contains(&object) {
+                continue;
+            }
+            handled.push(object);
+            let mut members: Vec<usize> = (first..records.len())
+                .filter(|&index| key(&records[index]) == object)
+                .collect();
+            if members.len() <= max_affect {
+                continue;
+            }
+            for slot in 0..max_affect {
+                let nearest = (slot..members.len())
+                    .min_by_key(|&at| (distance(&records[members[at]]), at))
+                    .expect("a nonempty tail");
+                members.swap(slot, nearest);
+            }
+            for &dropped in &members[max_affect..] {
+                keep[dropped] = false;
+            }
+        }
+        let mut kept = keep.into_iter();
+        result
+            .receivers
+            .retain(|_| kept.next().expect("one flag per record"));
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            result.hits = result
+                .receivers
+                .iter()
+                .filter_map(|receiver| match receiver {
+                    AreaDamageReceiver::Entity(event) => Some(*event),
+                    AreaDamageReceiver::Terrain(_) => None,
+                })
+                .collect();
+        }
+    }
+    #[cfg(not(feature = "ares"))]
+    let _ = (result, warhead);
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -985,13 +1085,39 @@ fn impact_is_above_ground(
     impact_rx: u16,
     impact_ry: u16,
     impact: AoEAirImpact,
+    warhead: &WarheadType,
+    rules: &RuleSet,
 ) -> bool {
     let cells = NativeCellQuery::canonical(terrain);
-    crate::sim::movement::ground_pose::query_ground_height(
+    let Ok(floor) = crate::sim::movement::ground_pose::query_ground_height(
         &cells,
         impact.world_point(impact_rx, impact_ry),
-    )
-    .is_ok_and(|floor| floor < impact.z_leptons)
+    ) else {
+        return false;
+    };
+    // Ares DamageArea_DamageAir (100533A0, hook 0x4893BA): the height above
+    // the floor must exceed DamageAirThreshold (default 0, the native
+    // `floor < Z`); with `[General] DamageAirConsiderBridges=yes` a bridge
+    // cell (flag 0x100) measures from its 416-lepton deck once reached.
+    #[cfg(feature = "ares")]
+    if let Some(combat) = warhead.ares_combat() {
+        const BRIDGE_HEIGHT_LEPTONS: i32 = 416;
+        let mut height = impact.z_leptons.wrapping_sub(floor);
+        if height >= BRIDGE_HEIGHT_LEPTONS
+            && rules.ares_warhead_globals().damage_air_consider_bridges()
+            && CellBridgeView::from_query(
+                &cells,
+                cells.lookup((impact_rx as i16, impact_ry as i16)),
+            )
+            .is_bridge_cell()
+        {
+            height -= BRIDGE_HEIGHT_LEPTONS;
+        }
+        return height > combat.damage_air_threshold();
+    }
+    #[cfg(not(feature = "ares"))]
+    let _ = (warhead, rules);
+    floor < impact.z_leptons
 }
 
 fn push_airborne_aoe_damage(

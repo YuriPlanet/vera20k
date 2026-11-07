@@ -70,6 +70,41 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
         }
     }
 
+    /// 10053A10 culls only without ignoreDefenses, with a warhead and an
+    /// attacker object; it passes the attacker without a Techno check. An
+    /// observation-only commit never draws.
+    #[cfg(feature = "ares")]
+    fn culls(&mut self) -> bool {
+        let event = self.event;
+        if !self.execute_world_callbacks
+            || event.receiver_flags.ignore_defenses
+            || event.attacker_id == RAD_NO_ATTACKER
+        {
+            return false;
+        }
+        let rules = self.rules;
+        let Some(warhead) = rules.warhead(self.world.interner.resolve(event.warhead_ref)) else {
+            return false;
+        };
+        let (Some(attacker), Some(victim), Some(strength)) = (
+            self.world.substrate.entities.get(event.attacker_id),
+            self.world.substrate.entities.get(event.target_id),
+            self.current_strength(),
+        ) else {
+            return false;
+        };
+        let (veterancy, health) = (attacker.veterancy.raw(), victim.health);
+        super::object_health::ares_can_cull(
+            warhead,
+            veterancy,
+            health,
+            strength,
+            rules.general.condition_red,
+            rules.general.condition_yellow,
+            &mut self.world.scenario_rng,
+        )
+    }
+
     fn invoke(&mut self, callback: super::object_health::HealthCallback) {
         use super::object_health::HealthCallback;
         let id = self.event.target_id;
