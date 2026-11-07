@@ -80,7 +80,12 @@ pub(super) fn launch(
             .house_mut(owner)
             .start_blackout(frame, outage);
     }
-    for id in area_technos(sim, launch.range(), (rx, ry)) {
+    // GetRange10074AD0: the type's SW.Range, else a 3x3 rectangle.
+    let range = match launch.range() {
+        (width, height) if width < 0.0 && height < 0 => (3.0, 3),
+        range => range,
+    };
+    for id in area_technos(sim, range, (rx, ry)) {
         let Some(entity) = sim.substrate.entities.get(id) else {
             continue;
         };
@@ -107,15 +112,15 @@ pub(super) fn launch(
     }
 }
 
-/// Helpers::Alex::for_each_in_rect_or_range over GetRange10074AD0's area
-/// (`SW.Range`, else 3x3), collected by a DistinctCollector: the Technos
-/// in the cells' GetContent lists, each once, in UniqueID order.
-fn area_technos(sim: &Simulation, (width, height): (f32, i32), center: (u16, u16)) -> Vec<u64> {
-    let (width, height) = if width < 0.0 && height < 0 {
-        (3.0, 3)
-    } else {
-        (width, height)
-    };
+/// Helpers::Alex::for_each_in_rect_or_range over an SWRange, collected by a
+/// DistinctCollector: the Technos in the cells' GetContent lists, each once,
+/// in UniqueID order. An SWRange that is neither a rectangle nor a radius
+/// covers nothing.
+pub(super) fn area_technos(
+    sim: &Simulation,
+    (width, height): (f32, i32),
+    center: (u16, u16),
+) -> Vec<u64> {
     let (cx, cy) = (i32::from(center.0 as i16), i32::from(center.1 as i16));
     let mut cells = Vec::new();
     if height > 0 && (width as i32) > 0 {
@@ -167,7 +172,7 @@ fn area_technos(sim: &Simulation, (width, height): (f32, i32), center: (u16, u16
 /// SWTypeExt::IsTechnoAffected: the Techno's cell must match the land/water
 /// bits and its kind the content bits of `SW.AffectsTarget`, each only when
 /// the mask names any of them.
-fn techno_affected(
+pub(super) fn techno_affected(
     sim: &Simulation,
     entity: &crate::sim::game_entity::GameEntity,
     allowed: TargetMask,

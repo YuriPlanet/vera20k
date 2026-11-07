@@ -64,6 +64,8 @@ mod nuke_tests;
 pub mod paradrop;
 #[cfg(feature = "ares")]
 mod protect;
+#[cfg(feature = "ares")]
+mod sonar_pulse;
 #[cfg(all(test, feature = "phobos"))]
 mod phobos_techno_requirements_tests;
 pub mod psychic_dominator;

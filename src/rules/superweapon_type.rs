@@ -66,6 +66,9 @@ pub enum SuperWeaponKind {
     /// Ares 3.0 `Type=Battery` (SW_Battery, index 17): a charge-drain power
     /// that adds House power and keeps listed buildings online while active.
     Battery,
+    /// Ares `Type=SonarPulse` (SW_SonarPulse, index 0): decloaks Technos in
+    /// a range (or the whole map) and keeps them from cloaking for a while.
+    SonarPulse,
     /// Constructor Type=-1: no recognized name has replaced it. Launch's
     /// unsigned guard6CC3AC returns without a case; ordinary ClickFire still
     /// consumes readiness or its one-time grant. This is not an extension.
@@ -89,6 +92,7 @@ impl SuperWeaponKind {
                 | Self::HunterSeeker
                 | Self::Protect
                 | Self::Battery
+                | Self::SonarPulse
         )
     }
 
@@ -111,6 +115,7 @@ impl SuperWeaponKind {
             Self::HunterSeeker => 0x102,
             Self::Protect => 0x103,
             Self::Battery => 0x104,
+            Self::SonarPulse => 0x105,
             Self::GenericWarhead => -1,
             Self::NoEffect => -1,
         }
@@ -141,6 +146,8 @@ impl SuperWeaponKind {
             "protect" => Some(Self::Protect),
             #[cfg(feature = "ares")]
             "battery" => Some(Self::Battery),
+            #[cfg(feature = "ares")]
+            "sonarpulse" => Some(Self::SonarPulse),
             _ => None,
         }
     }
@@ -712,6 +719,17 @@ impl SuperWeaponType {
                 // and SW_Cursor=IronCurtain; VERA names that cursor by action.
                 #[cfg(feature = "ares")]
                 SuperWeaponKind::Protect => Some("IronCurtain".to_string()),
+                // SW_SonarPulse::LoadFromINI10075710: no action for a whole-map
+                // pulse (a read SW.Range below zero), else the custom action
+                // with the constructor's Attack cursor.
+                #[cfg(feature = "ares")]
+                SuperWeaponKind::SonarPulse => section
+                    .read_list("SW.Range", 0x800)
+                    .and_then(|tokens| tokens.first().copied())
+                    .is_none_or(|width| {
+                        crate::rules::ini_value::parse_leading_f64(width) as f32 >= 0.0
+                    })
+                    .then(|| "Attack".to_string()),
                 #[cfg(feature = "ares")]
                 SuperWeaponKind::UnitDelivery => Some(
                     section
@@ -970,6 +988,9 @@ pub(crate) struct AresSuperWeaponLaunch {
     protect_duration: Option<i32>,
     protect_power_outage: Option<i32>,
     protect_fade_sound_time: Option<i32>,
+    /// SW_SonarPulse: SonarPulse.Delay (+0x144, ctor 0, Initialize100756D0
+    /// 60), read by LoadFromINI10075710 with ReadInteger.
+    sonar_delay: i32,
     /// SW_Battery::LoadFromINI1006ECC0: Battery.Power (+0x184, ctor 0) and
     /// the Find-only BuildingType vectors KeepOnline (+0x188), Overpower
     /// (+0x194); a present list replaces, unknown names are skipped.
@@ -988,6 +1009,7 @@ impl Default for AresSuperWeaponLaunch {
             protect_duration: None,
             protect_power_outage: None,
             protect_fade_sound_time: None,
+            sonar_delay: 0,
             battery_power: 0,
             battery_keep_online: Vec::new(),
             battery_overpower: Vec::new(),
@@ -997,15 +1019,22 @@ impl Default for AresSuperWeaponLaunch {
 
 #[cfg(feature = "ares")]
 impl AresSuperWeaponLaunch {
-    /// One pass of this type's section. `battery` holds the caller's
-    /// Find-only resolution of the two Battery vectors (None: key absent).
+    /// One pass of this type's section; `initialized` when this pass ran the
+    /// handler's Initialize. `battery` holds the caller's Find-only
+    /// resolution of the two Battery vectors (None: key absent).
     pub(crate) fn read_pass(
         &mut self,
         section: &IniSection,
         kind: Option<&str>,
+        initialized: bool,
         battery: (Option<Vec<String>>, Option<Vec<String>>),
     ) {
         let is = |name: &str| kind.is_some_and(|kind| kind.eq_ignore_ascii_case(name));
+        if initialized && is("SonarPulse") {
+            // SW_SonarPulse::Initialize100756D0.
+            self.radar_event = false;
+            self.sonar_delay = 60;
+        }
         self.radar_event = section.read_ares_bool("SW.CreateRadarEvent", self.radar_event);
         // 10033698..100336F8: ReadString(0x800); a first ','-strtok token
         // stores atof as binary32 and Height 0, a second token atoi.
@@ -1030,6 +1059,8 @@ impl AresSuperWeaponLaunch {
                 section.read_ares_nullable_int("Protect.PowerOutage", self.protect_power_outage);
             self.protect_fade_sound_time = section
                 .read_ares_nullable_int("Protect.PlayFadeSoundTime", self.protect_fade_sound_time);
+        } else if is("SonarPulse") {
+            self.sonar_delay = section.read_int("SonarPulse.Delay", self.sonar_delay);
         } else if is("Battery") {
             self.battery_power = section.read_ares_int("Battery.Power", self.battery_power);
             let (keep_online, overpower) = battery;
@@ -1068,6 +1099,10 @@ impl AresSuperWeaponLaunch {
 
     pub(crate) fn protect_fade_sound_time(&self) -> Option<i32> {
         self.protect_fade_sound_time
+    }
+
+    pub(crate) fn sonar_delay(&self) -> i32 {
+        self.sonar_delay
     }
 
     pub(crate) fn battery_power(&self) -> i32 {

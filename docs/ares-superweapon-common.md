@@ -1,4 +1,4 @@
-# Optional Ares superweapon common keys, Battery and Protect
+# Optional Ares superweapon common keys, Battery, Protect and SonarPulse
 
 Requires an explicit `--features ares` build. Default builds do not read or execute
 these extensions; see [build capability](ares.md).
@@ -61,7 +61,7 @@ reader `0x10033370` and its hooks); no Ares DLL is loaded.
   does not load keeps CAMEO.PAL (hooks `6A9948`/`6A9A2A`). The `~~~` theater
   substitution is not applied.
 
-## Battery and Protect
+## Battery, Protect and SonarPulse
 
 `Type=Battery` is a charge-drain power with no target (`Action=None` and
 `UseChargeDrain` are forced). While draining, its House counts `Battery.Power` as
@@ -75,11 +75,17 @@ radius (default 3x3), `SW.AffectsHouse`/`SW.AffectsTarget` filters, the type's
 `StartSound=`, a `SpecialSound=` fade (`Protect.PlayFadeSoundTime`) and an optional
 `Protect.PowerOutage` blackout of its owner.
 
+`Type=SonarPulse` restarts the affected Technos' sonar timer with the longer of
+its time left and `SonarPulse.Delay` (default 60) and starts uncloaking any that
+are cloaked; while the timer runs they cannot cloak. It reaches the `SW.Range`
+area (default radius 10), or every Techno with a negative range, which also
+needs no target. By default it affects enemies on water only.
+
 ## Not included
 
-`Type=SonarPulse` (needs the TechnoExt sonar timer shared with warhead
-`Sonar.Duration`), `Type=DropPod` (needs the DropPod locomotor), `NoCursor`/`Cursor`
+`Type=DropPod` (needs the DropPod locomotor), `NoCursor`/`Cursor`
 (Ares `[MouseCursors]` cursor types), `Light.*`, `Message.Abort`
 and the retail-type redirects (`IronCurtain`/`ForceShield` through Protect and the
-other stock handlers) remain outside this port, as do `IronCurtain.Modifier` and
-the Ares trigger events raised on activation.
+other stock handlers) remain outside this port, as do the Ares trigger events
+raised on activation and the AI's Stealth and IronCurtain target pickers (a
+computer House does not fire SonarPulse or Protect on its own).

@@ -1900,6 +1900,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         entity.sensor_array_counter.hash(hasher);
     }
     #[cfg(feature = "ares")]
+    if entity.sonar_timer != crate::sim::timer::CdTimer::default() {
+        b"ares-sonar-timer-v1".hash(hasher);
+        entity.sonar_timer.hash(hasher);
+    }
+    #[cfg(feature = "ares")]
     if entity.ares_disable_weapons != crate::sim::timer::CdTimer::default() {
         b"ares-disable-weapons-timer-v1".hash(hasher);
         entity.ares_disable_weapons.hash(hasher);

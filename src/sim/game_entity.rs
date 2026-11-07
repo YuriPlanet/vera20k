@@ -609,6 +609,13 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) sensor_array_counter: i32,
+    /// Ares TechnoExt+0x44 SonarTimer (constructor stopped): while it runs,
+    /// CloakDisallowed (10043A40) keeps the object from cloaking.
+    /// SW_SonarPulse::Activate100753A0 extends it; the warhead
+    /// `Sonar.Duration` producer is not ported.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) sonar_timer: crate::sim::timer::CdTimer,
     /// HasEngineer (`BuildingClass+0x6CC`), a [`HasEngineer`] that
     /// `sim::building_art` owns.
     ///
@@ -2115,6 +2122,8 @@ impl GameEntity {
             radar_jam: Default::default(),
             #[cfg(feature = "ares")]
             sensor_array_counter: 0,
+            #[cfg(feature = "ares")]
+            sonar_timer: Default::default(),
             building_has_engineer: Default::default(),
             building_light: Default::default(),
             damage_fires: Default::default(),

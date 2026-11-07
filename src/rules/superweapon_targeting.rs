@@ -414,6 +414,13 @@ impl AresSuperWeaponTargetingState {
             if type_name.is_some_and(|name| name.eq_ignore_ascii_case("HunterSeeker")) {
                 self.affects_house = HouseMask::ENEMIES;
             }
+            // SW_SonarPulse::Initialize100756D0: enemies on water.
+            if type_name.is_some_and(|name| name.eq_ignore_ascii_case("SonarPulse")) {
+                self.affects_house = HouseMask::ENEMIES;
+                self.affects_target = TargetMask::WATER;
+                self.manual.target = TargetMask::WATER;
+                self.ai_target = Some(TargetMask::WATER);
+            }
         }
         self.initialized = true;
         // 1003341A..10033457

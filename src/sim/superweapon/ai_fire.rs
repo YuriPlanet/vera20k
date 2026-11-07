@@ -112,7 +112,8 @@ impl AiFireArm {
             | SuperWeaponKind::NoEffect
             | SuperWeaponKind::HunterSeeker
             | SuperWeaponKind::Protect
-            | SuperWeaponKind::Battery => Self::None,
+            | SuperWeaponKind::Battery
+            | SuperWeaponKind::SonarPulse => Self::None,
         }
     }
 }

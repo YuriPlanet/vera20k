@@ -622,7 +622,8 @@ fn launch(
         | SuperWeaponKind::UnitDelivery
         | SuperWeaponKind::HunterSeeker
         | SuperWeaponKind::Protect
-        | SuperWeaponKind::Battery => {}
+        | SuperWeaponKind::Battery
+        | SuperWeaponKind::SonarPulse => {}
         SuperWeaponKind::MultiMissile => {
             super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
         }
@@ -731,6 +732,12 @@ fn launch(
                 overlay_registry,
                 frame_effects,
             );
+            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            return true;
+        }
+        #[cfg(feature = "ares")]
+        SuperWeaponKind::SonarPulse => {
+            super::sonar_pulse::launch(sim, rules, owner, sw, (rx, ry));
             super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
             return true;
         }

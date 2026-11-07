@@ -232,3 +232,60 @@ fn protect_curtains_its_rectangle_with_its_duration_and_affected_houses() {
             if radar.event_type == crate::sim::radar::RadarEventType::ImpactSilent)));
     assert_eq!(sim.super_weapons[&owner][&sw].ares_launch_count, 1);
 }
+
+#[test]
+fn sonar_pulse_marks_affected_enemies_in_range_and_whole_map_pulses_need_no_target() {
+    let rules = rules(
+        "[SuperWeaponTypes]\n0=Sonar\n1=Wide\n\
+         [Sonar]\nType=SonarPulse\nRechargeTime=1\nIsPowered=no\nSonarPulse.Delay=100\n\
+         SW.AffectsTarget=all\nSW.RequiresTarget=land\n\
+         [Wide]\nType=SonarPulse\nRechargeTime=1\nIsPowered=no\nSW.Range=-1\n",
+    );
+    assert_eq!(
+        rules.super_weapon("Sonar").unwrap().action.as_deref(),
+        Some("Attack")
+    );
+    assert_eq!(
+        rules.super_weapon("Wide").unwrap().action,
+        None,
+        "10075710: a whole-map pulse has no action"
+    );
+    let (mut sim, owner, sw) = scene(&rules, "Sonar");
+    let near = sim
+        .spawn_object("TANK", "Russians", 16, 10, 0, &rules)
+        .unwrap();
+    let far = sim
+        .spawn_object("TANK", "Russians", 21, 10, 0, &rules)
+        .unwrap();
+    let own = sim
+        .spawn_object("TANK", "Americans", 11, 10, 0, &rules)
+        .unwrap();
+    sim.session.set_binary_frame_for_test(500);
+    grant(&mut sim, &rules, owner, sw);
+    sim.super_weapons
+        .instance_mut(&owner, &sw)
+        .unwrap()
+        .is_ready = true;
+    assert!(fire(&mut sim, &rules, owner, sw, (10, 10)));
+    let sonar = |sim: &Simulation, id: u64| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .sonar_timer
+            .remaining(500)
+    };
+    assert_eq!(sonar(&sim, near), 100, "radius 10 from GetRange10075680");
+    assert_eq!(sonar(&sim, far), 0, "11 cells away");
+    assert_eq!(sonar(&sim, own), 0, "Initialize100756D0: enemies only");
+    // The default water-only target mask leaves land units alone, even
+    // across the whole map.
+    let wide = sim.interner.get("Wide").unwrap();
+    grant(&mut sim, &rules, owner, wide);
+    sim.super_weapons
+        .instance_mut(&owner, &wide)
+        .unwrap()
+        .is_ready = true;
+    assert!(fire(&mut sim, &rules, owner, wide, (0, 0)));
+    assert_eq!(sonar(&sim, far), 0);
+}

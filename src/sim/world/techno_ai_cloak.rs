@@ -122,12 +122,22 @@ fn stock_cloak_tick_facts(
     } else {
         is_cloakable || intrinsic_cloak || rank_cloak
     };
+    // CloakDisallowed10043A40 also refuses while the SonarTimer runs.
+    #[cfg(feature = "ares")]
+    let sonar_active = entity.sonar_timer.start_frame() != -1
+        && entity
+            .sonar_timer
+            .remaining(sim.session.binary_frame() as i32)
+            > 0;
+    #[cfg(not(feature = "ares"))]
+    let sonar_active = false;
     let ares_admission = !crate::rules::ARES_ENABLED
         || (object.cloak_allowed()
             && entity.parachute_animation().is_none()
             && !emp_active
             && !paralyzed
-            && !chrono_active);
+            && !chrono_active
+            && !sonar_active);
     let state_zero_head_allows = if crate::rules::ARES_ENABLED {
         ares_admission && active_cloak
     } else {

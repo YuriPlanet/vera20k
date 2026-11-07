@@ -206,17 +206,12 @@ pub(super) fn check(
     }
     #[cfg(feature = "ares")]
     {
-        // Ares SW_HunterSeeker direct clicks go straight to Activate10072850,
-        // and Battery's (Action=None, 1006ECC0) to Activate1006EBD0: the
-        // sidebar sends SPECIAL_PLACE at (0,0) (6AAF10) without CanFireAt.
-        // Selected automatic cells still follow their shared CanFireAt path.
-        if !automatic
-            && matches!(
-                sw.kind,
-                crate::rules::superweapon_type::SuperWeaponKind::HunterSeeker
-                    | crate::rules::superweapon_type::SuperWeaponKind::Battery
-            )
-        {
+        // A new type without an action launches without a target: the
+        // sidebar sends SPECIAL_PLACE at (0,0) (6AAF10) and Activate never asks
+        // CanFireAt (HunterSeeker10072850, Battery1006EBD0, a whole-map
+        // SonarPulse100753A0). Selected automatic cells still follow their
+        // shared CanFireAt path.
+        if !automatic && sw.action.is_none() {
             return Ok(());
         }
         let data = prepare(sim, rules, owner, sw);

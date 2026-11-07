@@ -116,7 +116,8 @@ pub(super) fn follow_selection_writes(
                 | SuperWeaponKind::UnitDelivery
                 | SuperWeaponKind::HunterSeeker
                 | SuperWeaponKind::Protect
-                | SuperWeaponKind::Battery,
+                | SuperWeaponKind::Battery
+                | SuperWeaponKind::SonarPulse,
             ) => {
                 // Ares new-type cleanup only clears the fired selection:
                 // an automatic launch must not disarm a different SW.
