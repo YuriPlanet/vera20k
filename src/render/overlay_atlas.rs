@@ -10,6 +10,7 @@
 //! - Part of render/ — depends on assets/ (SHP/Palette), render/batch (GPU upload).
 //! - Reads overlay data from map/ (OverlayEntry, TerrainObject).
 
+use crate::util::lookup_hash::LookupMap;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::OnceLock;
 
@@ -378,8 +379,9 @@ pub struct OverlaySpriteEntry {
 pub struct OverlayAtlas {
     /// The packed GPU texture.
     pub texture: BatchTexture,
-    /// Lookup: (name, frame) → UV rectangle + offset data.
-    entries: HashMap<OverlaySpriteKey, OverlaySpriteEntry>,
+    /// Lookup: (name, frame) → UV rectangle + offset data. Every drawn
+    /// overlay, terrain object and smudge looks its sprite up here.
+    entries: LookupMap<OverlaySpriteKey, OverlaySpriteEntry>,
     /// Union of every entry's rectangle, fixed with `entries` at construction.
     art_extent: crate::render::cell_window::ArtExtent,
     zshapes: Option<OverlayZShapes>,
@@ -1243,7 +1245,7 @@ fn pack_overlay_sprites(
 struct PackedOverlaySprites {
     rgba: Vec<u8>,
     source_indices: Vec<u8>,
-    entries: HashMap<OverlaySpriteKey, OverlaySpriteEntry>,
+    entries: LookupMap<OverlaySpriteKey, OverlaySpriteEntry>,
     width: u32,
     height: u32,
 }
@@ -1275,8 +1277,8 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
 
     let mut rgba: Vec<u8> = vec![0u8; (atlas_width * atlas_height * 4) as usize];
     let mut source_indices = vec![0u8; (atlas_width * atlas_height) as usize];
-    let mut entries: HashMap<OverlaySpriteKey, OverlaySpriteEntry> =
-        HashMap::with_capacity(plan.placements.len());
+    let mut entries: LookupMap<OverlaySpriteKey, OverlaySpriteEntry> =
+        LookupMap::with_capacity_and_hasher(plan.placements.len(), Default::default());
     let aw: f32 = atlas_width as f32;
     let ah: f32 = atlas_height as f32;
 
@@ -1326,7 +1328,7 @@ impl OverlayAtlas {
     pub(crate) fn from_test_texture(texture: BatchTexture) -> Self {
         Self {
             texture,
-            entries: HashMap::new(),
+            entries: LookupMap::default(),
             art_extent: Default::default(),
             zshapes: None,
         }
