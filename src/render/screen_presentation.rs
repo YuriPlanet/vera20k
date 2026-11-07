@@ -408,19 +408,26 @@ mod tests {
         cache.commit_presented([1, -1]);
         let mut capture_encoder = gpu.device.create_command_encoder(&Default::default());
         let capture = cache
-            .capture_previous_if_requested(
+            .previous_composition(
                 true,
+                false,
                 &gpu.device,
                 &mut capture_encoder,
                 FORMAT,
                 WIDTH,
                 HEIGHT,
                 None,
+            )
+            .expect("copy shaken prior frame")
+            .expect("capture requested")
+            .read_back(
+                &gpu.device,
+                &mut capture_encoder,
+                FORMAT,
                 &mut pass,
                 [0, 0, CENTRAL_WIDTH, HEIGHT],
             )
-            .expect("capture shaken prior frame")
-            .expect("capture requested");
+            .expect("capture shaken prior frame");
         let submission = gpu.queue.submit([capture_encoder.finish()]);
         let captured = capture
             .finish(&gpu.device, submission, Duration::from_secs(5))

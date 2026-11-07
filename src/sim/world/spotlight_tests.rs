@@ -481,4 +481,15 @@ fn spotlight_tracking_selects_first_nearest_enemy_and_expiry_clears_the_pointer(
     assert_eq!(sim.substrate.spotlights.get(id).unwrap().target, Some(4));
     sim.notify_pointer_expired(4, UninitContext::new(&rules, None));
     assert_eq!(sim.substrate.spotlights.get(id).unwrap().target, None);
+    // AI436321: a lost target goes through SetBehaviour(1); the pose stays.
+    let light = sim.substrate.spotlights.get_mut(id).unwrap();
+    light.mode = 3;
+    light.angle = NativeF64Bits::from_bits(0x3ff0000000000000);
+    let before = light.coord;
+    sim.visit_spotlight(id, &rules, UninitContext::new(&rules, None));
+    let light = sim.substrate.spotlights.get(id).unwrap();
+    assert_eq!(
+        (light.mode, light.angle.bits(), light.coord),
+        (1, 0, before)
+    );
 }

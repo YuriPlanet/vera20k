@@ -6,13 +6,14 @@
     1,
     33621247
   ],
-  "scope": "Original joined Engineer Capture event/Walk/PerCell/ChangeOwner handoff to Sell_Back(1), plus cropped4492D7..44936E predicate/upgrade controls. Stops before Selling mission visits.",
+  "scope": "Original joined Engineer Capture handoff, cropped4492D7..44936E predicate/upgrade controls, and two original449C30 Selling visits for a provided top-Turret upgrade.",
   "assumptions": [
     "EngineerJoinedFixture supplies the existing active-retail rules/art/sound/map/allocator platform. Whole Building43B740 establishes Techno+14C at6F3241 before the explicit already-admitted damaged GAPOWR map prior. No initial-owner value is supplied after constructor execution.",
     "The issued AI order boundary supplies Capture8 with both target and destination naming the building, as original Engineer Hunt callers do. Original6FFBE0/event delivery/Commence execute. Whole Team/Hunt selection, cursor/UI, distant path search/payment and autonomous AI planning are not executed.",
     "Walk starts16leptons before an already-paid head, as the shared Engineer oracle. Whole75AEC0/519630/448260/7014A0 execute; live untagged owner state and ordinary building admission are supplied. Stops after capture returns, before the existing building_sale oracle owned Selling continuation.",
     "Tail controls enter original4492D7 with ESI=building and EBP=newowner, currentowner already transferred. Native IsControlledByHuman, GetRefund(owner,true), AddCredits, RemoveLastUpgrade, Sell_Back(1), QueueMission and Commence remain live. GAPOWR/GAPILE installed upgrades are explicit synthetic input slots, not a stock powerplant-upgrade claim.",
-    "House/Country copies, passive/human/player flags, game mode, C4, buildup, missions, credits and installed upgrade slots are explicit prior inputs. Constructor provenance survives the supplied current-owner changes. Pointer identity labels are fixture-relative."
+    "House/Country copies, passive/human/player flags, game mode, C4, buildup, missions, credits and installed upgrade slots are explicit prior inputs. Constructor provenance survives the supplied current-owner changes. Pointer identity labels are fixture-relative.",
+    "Turret controls explicitly supply selected BuildingType+CA1 bytes; stock GAPOWR/GAPILE values remain reported separately. Selling executes real temporary Building construction, refund, scalar destruction and451690, then the next host-sale stage-zero tail. Four actual CRT array constructors prepare destructor-only global prerequisites. It stops before reverse buildup and final host disposal."
   ],
   "substitutions": [
     "Only read-only observation hooks are added; inherited platform, allocator, presentation and file transport leaves are disclosed in inherited_fixture. No capture, sale, refund, upgrade-removal or mission decision is answered or original instruction/vtable patched.",
@@ -118,5 +119,5 @@
     }
   },
   "replay_command": "python -m tools.spatial_oracle.captured_building_sale",
-  "payload_sha256": "3ee2b783879e8f3a476894fa03c7486aef8dfee540dce7e80a279e63b1814ebd"
+  "payload_sha256": "61e5ae99f2def2895e1b70906470cc64c184ffd99ed02dc29ff74b70cd8442ae"
 }

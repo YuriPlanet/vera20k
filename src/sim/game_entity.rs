@@ -1354,16 +1354,20 @@ impl GameEntity {
         &self.building_upgrades
     }
 
-    pub(crate) fn advance_building_upgrade_level(&mut self, capacity: i32) -> bool {
-        self.building_upgrades.power_up(capacity)
+    pub(crate) fn advance_building_upgrade_level(
+        &mut self,
+        capacity: i32,
+        wall_tower: bool,
+    ) -> bool {
+        self.building_upgrades.power_up(capacity, wall_tower)
     }
 
     pub(crate) fn commit_building_upgrade_type(&mut self, type_id: InternedId) {
         self.building_upgrades.commit_type(type_id);
     }
 
-    pub(crate) fn remove_building_upgrade_level(&mut self) -> Option<usize> {
-        self.building_upgrades.power_down()
+    pub(crate) fn remove_building_upgrade_level(&mut self, removed_turret: bool) -> Option<usize> {
+        self.building_upgrades.power_down(removed_turret)
     }
 
     #[cfg(any(test, feature = "test-support"))]

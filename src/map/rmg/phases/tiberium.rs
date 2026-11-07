@@ -337,6 +337,12 @@ fn is_tiberium_overlay(overlay: i32) -> bool {
 /// Residual: native's pool is a fixed `10 * size` allocation; admissions past
 /// it write beyond the block (heap corruption). Here the pool grows. Reaching
 /// it needs more than ten admissions per placed cell since the last reset.
+/// The heap's own `count + 1 < 10 * size` refusal (0x005A2DEF) is reachable
+/// only after that overrun: every push uses a fresh node and every pass pops
+/// one, so the heap holds fewer nodes than the pool has handed out.
+///
+/// `tools/rmg_oracle/tiberium_field.py` replays whole original calls of this
+/// function and of `CreateTiberium` against it.
 fn place_field(
     ctx: &mut TiberiumCtx<'_>,
     args: &TiberiumArgs,
@@ -403,6 +409,10 @@ fn place_field(
                     //5A2C05, before painting5A2C12. Its Unlimbo clears an
                     // old resource first, including on overlapping/reseeded
                     // anchors, so the following empty-cell draw still occurs.
+                    // ObjectClass::Unlimbo 5F4EC0 admits it without
+                    // Can_Enter_Cell (5F4F1B): Generate holds ScenarioInit
+                    // A8E7AC raised from 598A9A to 59934A around this phase
+                    // (598EF4), so an ore cell does not refuse the tree.
                     if let Some(cell) = ctx.grid.get_mut(cur.0, cur.1) {
                         (cell.overlay, cell.density) =
                             crate::map::tiberium_cell::terrain_unlimbo_overlay_fields(
@@ -594,6 +604,215 @@ mod tests {
         let (x, y) = RmgGrid::step(first.0, first.1, 1);
         assert_eq!((x - origin.0).abs().max((y - origin.1).abs()), 2);
         assert_eq!(w.scratch.get(x, y).stamp, 5);
+    }
+
+    fn int(value: &serde_json::Value) -> i32 {
+        value.as_i64().unwrap() as i32
+    }
+
+    fn pair(value: &serde_json::Value) -> (i16, i16) {
+        (int(&value[0]) as i16, int(&value[1]) as i16)
+    }
+
+    /// The harness's declared scene: clear level-0 cells, optional non-clear
+    /// (CliffSet base) cells, `+0x45` locks and prior overlay/density pairs.
+    fn native_scene(input: &serde_json::Value, cliff: i32) -> (RmgGrid, RmgScratch) {
+        let mut grid = RmgGrid::new(33, 16, 48);
+        let mut scratch = RmgScratch::new(33, 16, 48);
+        for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+            let cell = grid.get_mut(x, y).unwrap();
+            (cell.tile, cell.sub_tile, cell.level) = (0, 0, 0);
+        }
+        let list = |key: &str| input.get(key).map_or(&[][..], |v| v.as_array().unwrap());
+        for c in list("rough") {
+            grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile = cliff;
+        }
+        for c in list("locked") {
+            scratch.get_mut(int(&c[0]), int(&c[1])).water_lock = true;
+        }
+        for c in list("ore") {
+            let cell = grid.get_mut(int(&c[0]), int(&c[1])).unwrap();
+            (cell.overlay, cell.density) = (int(&c[2]), int(&c[3]) as u8);
+        }
+        (grid, scratch)
+    }
+
+    /// `[x, y, overlay, density, stamp]` per in-diamond cell, row-major.
+    fn native_fields(grid: &RmgGrid, scratch: &RmgScratch) -> Vec<[i32; 5]> {
+        let mut out = Vec::new();
+        for y in 0..33 {
+            for x in 0..33 {
+                if scratch.in_diamond(x, y) {
+                    let cell = grid.get(x, y).unwrap();
+                    let stamp = scratch.get(x, y).stamp;
+                    out.push([x, y, cell.overlay, i32::from(cell.density), stamp]);
+                }
+            }
+        }
+        out
+    }
+
+    /// Compare the changed cells, the TIBTRE list and the exit RNG.
+    fn assert_native_row(
+        doc: &serde_json::Value,
+        row: &serde_json::Value,
+        prior: Vec<[i32; 5]>,
+        world: (&RmgGrid, &RmgScratch),
+        out: &TiberiumOutcome,
+        rng: RmgRng,
+    ) {
+        let context = row["input"]["id"].as_str().unwrap();
+        let trees: Vec<(String, i16, i16)> = row["trees"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| {
+                let name = t[0].as_str().unwrap().to_owned();
+                (name, int(&t[1]) as i16, int(&t[2]) as i16)
+            })
+            .collect();
+        assert_eq!(out.trees, trees, "{context}: trees");
+        let cells: Vec<[i32; 5]> = native_fields(world.0, world.1)
+            .into_iter()
+            .zip(prior)
+            .filter(|(now, before)| now != before)
+            .map(|(now, _)| now)
+            .collect();
+        let native: Vec<[i32; 5]> = row["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| std::array::from_fn(|i| int(&c[i])))
+            .collect();
+        assert_eq!(cells, native, "{context}: cells");
+        assert_eq!(
+            rng.into_continuation().into_native_parts(),
+            super::super::cliff_native_tests::native_state(doc, &row["rng_after"])
+                .into_native_parts(),
+            "{context}: exit RNG"
+        );
+    }
+
+    fn native_args(input: &serde_json::Value) -> TiberiumArgs {
+        let field = |key: &str| input.get(key).map_or(0, int);
+        let rect = input
+            .get("rect")
+            .map_or([0, 0, 16, 16], |r| std::array::from_fn(|i| int(&r[i])));
+        TiberiumArgs {
+            map_type: field("map_type"),
+            resources: field("resources"),
+            tib_option: field("tib_option"),
+            min_tib: field("min_tib"),
+            max_tib: field("max_tib"),
+            map_w: 16,
+            local_rect: rect,
+        }
+    }
+
+    /// Whole original `PlaceTiberiumField @ 0x005A28C0` calls from
+    /// `tools/rmg_oracle/tiberium_field.py`: overlays, densities, stamps,
+    /// TIBTRE names and cells, and the exit RNG.
+    #[test]
+    fn native_place_field_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/tiberium_field.json");
+        let (identity, _) = super::super::cliff_native_tests::physical_tiles();
+        let cliff = int(&doc["scene"]["cliff_base"]);
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 9);
+        for row in rows {
+            let input = &row["input"];
+            let (mut grid, mut scratch) = native_scene(input, cliff);
+            let prior = native_fields(&grid, &scratch);
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut gauss = Gaussian::default();
+            let mut out = TiberiumOutcome::default();
+            let origin = pair(&input["origin"]);
+            place_field(
+                &mut TiberiumCtx {
+                    grid: &mut grid,
+                    scratch: &mut scratch,
+                    ids: &identity,
+                    rng: &mut rng,
+                    gauss: &mut gauss,
+                    regions: &Regions::default(),
+                    waypoints: &[],
+                },
+                &native_args(input),
+                (i32::from(origin.0), i32::from(origin.1)),
+                int(&input["size"]),
+                int(&input["field"]),
+                int(&input["gem"]) != 0,
+                &mut out,
+            );
+            assert_native_row(doc, row, prior, (&grid, &scratch), &out, rng);
+        }
+    }
+
+    /// Whole original `CreateTiberium @ 0x005A23A0` calls from the same
+    /// harness: gem anchors, field-count formula, Gaussian jitter, pass-2
+    /// sizes and every field they place, plus the Gaussian cache left behind.
+    #[test]
+    fn native_create_tiberium_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/tiberium_field.json");
+        let (identity, _) = super::super::cliff_native_tests::physical_tiles();
+        let cliff = int(&doc["scene"]["cliff_base"]);
+        let rows = doc["drivers"].as_array().unwrap();
+        assert_eq!(rows.len(), 4);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let (mut grid, mut scratch) = native_scene(input, cliff);
+            let prior = native_fields(&grid, &scratch);
+            let pairs = |v: &serde_json::Value| -> Vec<(i16, i16)> {
+                v.as_array().unwrap().iter().map(pair).collect()
+            };
+            let mut regions = Regions::default();
+            for (id, region) in input["regions"].as_array().unwrap().iter().enumerate() {
+                let cells = pairs(&region["cells"]);
+                regions.list.push(RmgRegion {
+                    id: id as i32,
+                    level: 0,
+                    active: false,
+                    cell_count: cells.len() as i32,
+                    cells,
+                    start_quota: int(&region["quota"]),
+                    field_slots: (!region["slots"].is_null()).then(|| pairs(&region["slots"])),
+                });
+            }
+            let waypoints: Vec<Option<(i16, i16)>> =
+                pairs(&input["waypoints"]).into_iter().map(Some).collect();
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut gauss = Gaussian::default();
+            let out = run(
+                &mut TiberiumCtx {
+                    grid: &mut grid,
+                    scratch: &mut scratch,
+                    ids: &identity,
+                    rng: &mut rng,
+                    gauss: &mut gauss,
+                    regions: &regions,
+                    waypoints: &waypoints,
+                },
+                &native_args(input),
+            );
+            // A cached variate comes back without a draw.
+            let mut probe = RmgRng::new(0);
+            let value = gauss.next(&mut probe);
+            let cached = probe.next_u32() == RmgRng::new(0).next_u32();
+            assert_eq!(
+                cached,
+                row["gauss_cached"].as_u64().unwrap() != 0,
+                "{context}: cache"
+            );
+            if cached {
+                assert_eq!(
+                    value.to_bits(),
+                    row["gauss_value_bits"].as_u64().unwrap(),
+                    "{context}: cached variate"
+                );
+            }
+            assert_native_row(doc, row, prior, (&grid, &scratch), &out, rng);
+        }
     }
 
     /// The pass sizes round toward zero: the jittered size's add (0x005A25FF)

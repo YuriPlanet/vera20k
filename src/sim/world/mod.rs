@@ -156,7 +156,8 @@ pub(crate) use techno_ai::{can_fire_at, weapon_at_index};
 mod command_schedule;
 mod planning;
 pub use planning::{
-    PlanningBadgeKind, PlanningDrawSegment, PlanningPressRefusal, PlanningSelectionCheck,
+    PlanningAppendMessage, PlanningBadgeKind, PlanningDrawSegment, PlanningPressRefusal,
+    PlanningSelectionCheck,
 };
 mod selection_voice;
 pub(crate) mod techno_ai_cloak;
@@ -1293,10 +1294,8 @@ pub struct Simulation {
     #[serde(skip)]
     pub(crate) debug_tools: crate::sim::cheats::DebugToolsState,
     /// Opt-in wall-clock observations. Never part of saves, hashes, or gameplay.
-    #[cfg(feature = "telemetry")]
     #[serde(skip)]
     frame_profiling: bool,
-    #[cfg(feature = "telemetry")]
     #[serde(skip)]
     frame_profile: crate::sim::frame_profile::FrameProfile,
     /// Native A8E7AC is a synchronous, wrapping placement/destruction scope,
@@ -4418,9 +4417,7 @@ impl Simulation {
             session,
             #[cfg(feature = "debug-tools")]
             debug_tools: Default::default(),
-            #[cfg(feature = "telemetry")]
             frame_profiling: false,
-            #[cfg(feature = "telemetry")]
             frame_profile: Default::default(),
             object_placement_scope_depth: 0,
             buildup_bypass: false,
@@ -7835,7 +7832,7 @@ impl Simulation {
     /// Start or stop diagnostic wall-clock measurement. A transition starts a
     /// fresh sample window; repeated requests preserve the accumulated profile.
     /// New and deserialized simulations start disabled with an empty profile.
-    #[cfg(feature = "telemetry")]
+    /// The telemetry build and the in-game FPS panel turn it on.
     pub fn set_frame_profiling(&mut self, enabled: bool) {
         if self.frame_profiling != enabled {
             self.frame_profile.reset();
@@ -7843,7 +7840,6 @@ impl Simulation {
         }
     }
 
-    #[cfg(feature = "telemetry")]
     pub fn frame_profile(&self) -> &crate::sim::frame_profile::FrameProfile {
         &self.frame_profile
     }

@@ -9,6 +9,15 @@
 //! `656BE0` changes direction without resetting that timer. `653100` advances
 //! once per draw when four `timeGetTime() >> 4` buckets have elapsed, resets
 //! from the current bucket, and clamps at frames 0/32 in that same draw.
+//!
+//! Radar modes: native Mode (`+0x14B0`) is written only by the constructor,
+//! `Init_Clear @ 0x00652DE0` (0) and `SetRadarMode @ 0x00656CB0`, whose
+//! callers pass 1, 3, 4 or the saved PendingMode, itself only ever a prior
+//! Mode or one of those. Mode 2, the kills list, is therefore never entered
+//! in a live game: `Draw @ 0x00653100`'s case 2 and its `DrawKillsList @
+//! 0x00653FA0` do not run, `IsKillsListShown @ 0x00656E50` stays false, and
+//! the `MarkForRedraw @ 0x00656E90` that TechnoClass RecordKill and
+//! RegisterKill call behind it never runs. None of them is ported.
 
 use crate::render::batch::{BatchRenderer, BatchTexture, CameraUniform, SpriteInstance};
 use crate::render::shroud_buffer::InstanceUpload;
@@ -220,7 +229,9 @@ impl RadarPresentation {
         has_radar: bool,
     ) -> Option<RadarAvailabilityCue> {
         //656DF8..656E02 compares/stores the availability byte before any
-        //direction or mode request. Idle renders cannot replay a cue.
+        //direction or mode request. Idle renders cannot replay a cue. Its
+        //caller House508DF0 first compares the same byte through
+        //`RadarClass::IsTacticalMapAvailable @ 0x00656DE0` (`0x00508F34`).
         if self.pending_radar == has_radar {
             return None;
         }

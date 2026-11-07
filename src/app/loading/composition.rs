@@ -518,7 +518,7 @@ pub(crate) fn projected_playfield_bounds(map: &MapFile) -> Option<ProjectedPlayf
     })
 }
 
-/// `ComputeScenarioHeaderFromMap 0x0058B830` over a generated map: the
+/// `ComputeScenarioHeaderFromMap 0x0058B820` over a generated map: the
 /// leading defined start waypoints 0..7 (the loop stops at the first
 /// undefined one, `0x0058B858`) give the staged pairs through the same
 /// `0x006D62E0` projection divided by 60 and 30, and the playfield cells give

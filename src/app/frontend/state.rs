@@ -24,6 +24,9 @@ pub(crate) struct FrontendState {
     /// The decided network match's winners still in it, for the online
     /// lobby's `finish` (docs/lobby-protocol.md).
     pub(crate) match_winners: Option<Vec<String>>,
+    /// VERA: when `match_result` was decided, for the online lobby's
+    /// `finish` (`ended_ago`), which the score screen holds back.
+    pub(crate) match_result_at: Option<Instant>,
     /// Frames, duration and opponent departure for the launch report.
     pub(crate) external_progress: crate::app::cncnet::ExternalLaunchProgress,
     /// The game is closing and waits until this for its network goodbyes

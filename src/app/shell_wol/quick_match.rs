@@ -1569,6 +1569,7 @@ mod tests {
             source: SkirmishScenarioSource::MissionsMdPkt,
             file_name: file.into(),
             display_name: file.into(),
+            title_label: None,
             author: None,
             preview: Default::default(),
             multiplayer_start_waypoints: Vec::new(),

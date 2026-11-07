@@ -35,6 +35,7 @@ pub struct RmgSettings {
     pub vegetation_max: [i32; MAP_TYPE_BUCKETS],
 }
 
+/// `MapSeedClass::InitDefaults @ 0x00595740`.
 impl Default for RmgSettings {
     fn default() -> Self {
         Self {
@@ -69,12 +70,11 @@ impl RmgSettings {
     }
 
     /// Load from the asset manager, falling back per key to the defaults above.
+    /// `MapSeedClass::ReadINI @ 0x005981F0` opens `RMGMD.INI` alone
+    /// (0x0082BDCC); the RA2 `RMG.INI` is never read.
     pub fn load(assets: &AssetManager) -> Self {
         let mut settings = Self::default();
-        let Some(bytes) = assets
-            .get_ref("rmgmd.ini")
-            .or_else(|| assets.get_ref("rmg.ini"))
-        else {
+        let Some(bytes) = assets.get_ref("rmgmd.ini") else {
             return settings;
         };
         let Ok(ini) = IniFile::from_bytes(bytes) else {
@@ -188,6 +188,20 @@ mod tests {
             settings.max_trees, 500,
             "an absent RMGMD.INI must not mean zero trees"
         );
+    }
+
+    #[test]
+    fn load_reads_rmgmd_ini_only() {
+        use crate::assets::asset_manager::test_support::TestDirectory;
+        let ra2 = TestDirectory::new("rmg-settings-ra2-only");
+        std::fs::write(ra2.path().join("rmg.ini"), "[General]\nMaxTrees=42\n").unwrap();
+        let settings = RmgSettings::load(&AssetManager::from_loose_root_for_test(ra2.path()));
+        assert_eq!(settings.max_trees, 500, "the RA2 RMG.INI is not a fallback");
+
+        let yr = TestDirectory::new("rmg-settings-yr");
+        std::fs::write(yr.path().join("rmgmd.ini"), "[General]\nMaxTrees=42\n").unwrap();
+        let settings = RmgSettings::load(&AssetManager::from_loose_root_for_test(yr.path()));
+        assert_eq!(settings.max_trees, 42);
     }
 
     #[test]

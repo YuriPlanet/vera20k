@@ -22,7 +22,7 @@ pub(crate) enum CameoRequestState {
     Held,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct CameoRequest {
     state: CameoRequestState,
     progress: StageClass,
@@ -177,7 +177,7 @@ impl CameoKey {
 /// `Default` is the SidebarClass constructor 6A4E60 and StripClass
 /// constructor 6A80A0 / Init_Clear 6A81B0 state: no entries, TopRow 0, nothing
 /// queued. Their Stage and Unknown_40 drive nothing (Unknown_40 is only -1).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct CameoStrips {
     strips: [Vec<Cameo>; 4],
     scroll_rows: [usize; 4],

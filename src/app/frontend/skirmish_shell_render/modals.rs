@@ -117,6 +117,10 @@ pub(crate) fn render_saved_game_loading(
         align: super::text::validation_modal_body_text_align(),
         path_a_reveal: None,
     }];
+    // A zoomed match's text is drawn in the window (`window_ui`).
+    let raster = crate::app::presentation::window_ui::shell_raster(state, false)
+        .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
+    let frame_raster = state.renderer.bit_font.set_raster(raster);
     let modal = shell_paint::paint_modal_shp(
         &state.renderer.bit_font,
         atlas.mode_two_dialog_background(side),
@@ -127,7 +131,7 @@ pub(crate) fn render_saved_game_loading(
         ShellScale::RETAIL,
         VALIDATION_MODAL_SPRITE_DEPTHS,
     );
-    super::in_game_shell::render_shell_frame(
+    let painted = super::in_game_shell::render_shell_frame(
         state,
         encoder,
         destination,
@@ -140,7 +144,9 @@ pub(crate) fn render_saved_game_loading(
         art,
         ShellFrameOverlay::default(),
         ShellFrameCursor::Hidden,
-    )
+    );
+    state.renderer.bit_font.set_raster(frame_raster);
+    painted
 }
 
 /// Native owner-draw listboxes preserve a composed backing surface. On the

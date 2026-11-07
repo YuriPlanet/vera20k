@@ -7,9 +7,34 @@
 pub(crate) const WEBSITE: &str = "https://vera20k.org/";
 
 /// The player's ranked profile on the website, for a lobby player name
-/// ([`crate::ui::wol_account::valid_name`], so the path needs no escapes).
+/// ([`crate::ui::wol_account::valid_name`], so the path needs no escapes),
+/// in the game's language ([`crate::i18n::selected_language`]).
 pub(crate) fn profile_url(name: &str) -> Option<String> {
-    crate::ui::wol_account::valid_name(name).then(|| format!("{WEBSITE}players/{name}"))
+    profile_url_in(&crate::i18n::selected_language(), name)
+}
+
+/// vera20k.org's languages besides English, by VERA's language tag, with the
+/// prefix their pages live under (the website's `LOCALES`, site-locales.mjs).
+const WEBSITE_LANGUAGES: [(&str, &str); 9] = [
+    ("zh-CN", "zh/"),
+    ("de", "de/"),
+    ("es", "es/"),
+    ("pt-BR", "pt-br/"),
+    ("sv", "sv/"),
+    ("tr", "tr/"),
+    ("ru", "ru/"),
+    ("ar", "ar/"),
+    ("th", "th/"),
+];
+
+/// The profile in `language`: under the website's prefix for it, and in
+/// English, at the root, for a language the website lacks.
+fn profile_url_in(language: &str, name: &str) -> Option<String> {
+    let prefix = WEBSITE_LANGUAGES
+        .iter()
+        .find(|(tag, _)| tag.eq_ignore_ascii_case(language))
+        .map_or("", |(_, prefix)| prefix);
+    crate::ui::wol_account::valid_name(name).then(|| format!("{WEBSITE}{prefix}players/{name}"))
 }
 
 /// Open `url` in the player's browser: the system's opener on the desktop, a
@@ -51,4 +76,25 @@ pub(crate) fn open_in_browser(url: &str) {
     }
     #[cfg(all(not(feature = "wasm"), target_arch = "wasm32", target_os = "unknown"))]
     log::warn!("Cannot open {url}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_game_opens_the_profile_in_its_language_where_the_website_has_it() {
+        assert_eq!(
+            profile_url_in("zh-CN", "Tanya").as_deref(),
+            Some("https://vera20k.org/zh/players/Tanya")
+        );
+        assert_eq!(
+            profile_url_in("pt-BR", "Tanya").as_deref(),
+            Some("https://vera20k.org/pt-br/players/Tanya")
+        );
+        assert_eq!(
+            profile_url_in("fr", "Tanya").as_deref(),
+            Some("https://vera20k.org/players/Tanya")
+        );
+    }
 }

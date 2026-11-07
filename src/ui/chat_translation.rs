@@ -32,7 +32,10 @@ const LANGUAGES: [(ChatLanguage, &str, &str); 9] = [
     (ChatLanguage::Portuguese, "pt", "Português"),
 ];
 
-pub(crate) const USAGE: &str = "Use /translate en, zh, zh-tw, ja, ko, de, fr, es, pt or off.";
+/// The chat notice for a `/translate` with an unknown language.
+pub(crate) fn usage() -> String {
+    crate::i18n::tr("VERA:TranslateUsage")
+}
 
 impl ChatLanguage {
     fn entry(self) -> (ChatLanguage, &'static str, &'static str) {
@@ -117,13 +120,10 @@ pub(crate) fn parse_command(line: &[u16]) -> Option<TranslateCommand> {
 /// The chat notice for the current choice.
 pub(crate) fn notice(language: Option<ChatLanguage>) -> String {
     match language {
-        Some(language) => format!(
-            "Translating received chat into {}. Lines are sent to the VERA20k translation service; /translate off stops it.",
-            language.name()
-        ),
-        None => {
-            "Chat translation is off. Type /translate zh or /translate en to turn it on.".to_owned()
+        Some(language) => {
+            crate::i18n::tr_fill("VERA:TranslatingChat", &[("language", &language.name())])
         }
+        None => crate::i18n::tr("VERA:ChatTranslationOff"),
     }
 }
 
