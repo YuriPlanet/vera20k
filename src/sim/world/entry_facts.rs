@@ -4,7 +4,8 @@
 //! times a batch and each blocker read ~42 times, every time from scattered
 //! terrain, occupancy and entity records. The first ask copies what Infantry
 //! `0x0051BF90` / Unit `0x0073F0A0` read of the cell or blocker into a dense
-//! table and later asks read the copy. The world stays the source of truth:
+//! table and later asks read the copy; searches asking at once never wait
+//! for one another ([`EntryFacts::cell`]). The world stays the source of truth:
 //! the tables are emptied before each batch, never saved or hashed, and debug
 //! builds compare every reuse with a fresh read. Asks outside a batch read
 //! the world directly. A batch asks about a few thousand of the map's cells,
@@ -31,13 +32,16 @@ use crate::sim::world::Simulation;
 #[derive(Default)]
 pub(crate) struct EntryFacts {
     cells: Vec<OnceLock<CellFacts>>,
+    /// The real cells whose `cells` entry a search claimed this batch: the
+    /// one search that stores it ([`EntryFacts::keep`]).
+    cells_claimed: KeptBits,
     /// Each real cell's [`PlainCell`] bits, 0 until asked.
     plain: Vec<AtomicU32>,
+    /// The real cells whose `plain` entry this batch filled.
+    plain_kept: KeptBits,
     blockers: Vec<OnceLock<BlockerFacts>>,
-    /// The real cells whose `cells` or `plain` entry this batch filled.
-    cells_kept: KeptBits,
-    /// The slots whose `blockers` entry this batch filled.
-    blockers_kept: KeptBits,
+    /// The slots whose `blockers` entry a search claimed this batch.
+    blockers_claimed: KeptBits,
 }
 
 /// One bit per table entry, set when an ask fills it, so a reset empties only
@@ -47,10 +51,14 @@ struct KeptBits(Vec<AtomicU64>);
 
 impl KeptBits {
     fn mark(&self, index: usize) {
+        let _ = self.claim(index);
+    }
+
+    /// Set `index`'s bit, answering whether this call set it: of several
+    /// searches claiming one entry at once, exactly one does.
+    fn claim(&self, index: usize) -> bool {
         let (word, bit) = (&self.0[index / 64], 1u64 << (index % 64));
-        if word.load(Ordering::Relaxed) & bit == 0 {
-            word.fetch_or(bit, Ordering::Relaxed);
-        }
+        word.load(Ordering::Relaxed) & bit == 0 && word.fetch_or(bit, Ordering::Relaxed) & bit == 0
     }
 
     /// `empty` every marked entry and clear the marks, then fit them to `len`
@@ -80,15 +88,18 @@ impl EntryFacts {
     /// Forget every kept fact and fit the tables to `cells` real cells and
     /// `slots` entity slots, before a batch.
     pub(crate) fn reset(&mut self, cells: usize, slots: usize) {
-        let (kept_cells, plain) = (&mut self.cells, &mut self.plain);
-        self.cells_kept.empty_marked(cells, |index| {
+        let kept_cells = &mut self.cells;
+        self.cells_claimed.empty_marked(cells, |index| {
             kept_cells[index].take();
-            *plain[index].get_mut() = 0;
         });
         self.cells.resize_with(cells, OnceLock::new);
+        let plain = &mut self.plain;
+        self.plain_kept.empty_marked(cells, |index| {
+            *plain[index].get_mut() = 0;
+        });
         self.plain.resize_with(cells, AtomicU32::default);
         let blockers = &mut self.blockers;
-        self.blockers_kept.empty_marked(slots, |slot| {
+        self.blockers_claimed.empty_marked(slots, |slot| {
             blockers[slot].take();
         });
         self.blockers.resize_with(slots, OnceLock::new);
@@ -96,20 +107,16 @@ impl EntryFacts {
 
     /// Real cell `index`'s facts, kept from this batch's first ask
     /// ([`Self::keep`]).
-    pub(super) fn cell(&self, index: usize, read: impl Fn() -> CellFacts) -> &CellFacts {
-        let kept = &self.cells[index];
-        let kept = match kept.get() {
-            Some(kept) => kept,
-            None => {
-                self.cells_kept.mark(index);
-                Self::keep(kept, read())
-            }
+    pub(super) fn cell(&self, index: usize, read: impl Fn() -> CellFacts) -> CellFacts {
+        let facts = match self.cells[index].get() {
+            Some(&kept) => kept,
+            None => Self::keep(&self.cells[index], &self.cells_claimed, index, read()),
         };
         debug_assert!(
-            !crate::sim::touch_log::live_read_check_enabled() || *kept == read(),
+            !crate::sim::touch_log::live_read_check_enabled() || facts == read(),
             "real cell {index} changed during a path batch"
         );
-        kept
+        facts
     }
 
     /// Real cell `index`'s [`PlainCell`], kept from this batch's first ask.
@@ -120,7 +127,7 @@ impl EntryFacts {
         let cell = match kept.load(Ordering::Relaxed) {
             0 => {
                 let cell = read();
-                self.cells_kept.mark(index);
+                self.plain_kept.mark(index);
                 kept.store(cell.0, Ordering::Relaxed);
                 cell
             }
@@ -135,30 +142,29 @@ impl EntryFacts {
 
     /// The facts of the entity in `slot`, kept from this batch's first ask
     /// ([`Self::keep`]).
-    pub(super) fn blocker(&self, slot: usize, read: impl Fn() -> BlockerFacts) -> &BlockerFacts {
-        let kept = &self.blockers[slot];
-        let kept = match kept.get() {
-            Some(kept) => kept,
-            None => {
-                self.blockers_kept.mark(slot);
-                Self::keep(kept, read())
-            }
+    pub(super) fn blocker(&self, slot: usize, read: impl Fn() -> BlockerFacts) -> BlockerFacts {
+        let facts = match self.blockers[slot].get() {
+            Some(&kept) => kept,
+            None => Self::keep(&self.blockers[slot], &self.blockers_claimed, slot, read()),
         };
         debug_assert!(
-            !crate::sim::touch_log::live_read_check_enabled() || *kept == read(),
+            !crate::sim::touch_log::live_read_check_enabled() || facts == read(),
             "the entity in slot {slot} changed during a path batch"
         );
-        kept
+        facts
     }
 
-    /// Keep the `read` facts in `kept`, unless another search kept its own
-    /// first, and return the kept ones. Each search reads before the lock,
-    /// which then holds only for the copy, so searches asking at once read
-    /// side by side instead of waiting for one read. Every read sees the one
-    /// unchanged world, so the copies are equal and either may stay.
-    fn keep<T>(kept: &OnceLock<T>, read: T) -> &T {
-        let _ = kept.set(read);
-        kept.get().expect("kept just now")
+    /// A search's `read` of entry `index`, which it keeps when it is the one
+    /// to claim the entry. Only that search sets `kept`, so the set never
+    /// waits, and a search asking before the set lands answers from its own
+    /// read instead of waiting for it. Each search reads before it claims,
+    /// so searches asking at once read side by side. Every read sees the one
+    /// unchanged world, so the answers are equal.
+    fn keep<T: Copy>(kept: &OnceLock<T>, claimed: &KeptBits, index: usize, read: T) -> T {
+        if claimed.claim(index) {
+            let _ = kept.set(read);
+        }
+        read
     }
 }
 
@@ -433,7 +439,8 @@ mod tests {
 
     /// A reset empties what the last batch kept on both sides of a mark-word
     /// boundary, and a slot kept before the table shrinks comes back empty
-    /// when it regrows.
+    /// when it regrows. It forgets the claims too, so the next batch's first
+    /// asks keep their facts again.
     #[test]
     fn a_reset_forgets_every_fact_the_last_batch_kept() {
         let mut facts = EntryFacts::default();
@@ -447,12 +454,29 @@ mod tests {
         facts.reset(130, 70);
         for index in [0, 63, 64, 129] {
             assert_eq!(facts.cell(index, || cell_facts(2)).level, 2);
+            assert_eq!(facts.cells[index].get(), Some(&cell_facts(2)));
             assert_eq!(
                 facts.plain(index, || PlainCell(PlainCell::KNOWN | 2)),
                 PlainCell(PlainCell::KNOWN | 2)
             );
         }
         assert_eq!(facts.blocker(69, || blocker(2, 9)).rx, 9);
+        assert_eq!(facts.blockers[69].get(), Some(&blocker(2, 9)));
+    }
+
+    /// A search asking while another holds an entry's claim but has not kept
+    /// its facts answers from its own read at once and leaves the entry to
+    /// the claimer, so only the claimer ever sets it.
+    #[test]
+    fn an_ask_before_the_claimer_keeps_answers_from_its_own_read() {
+        let mut facts = EntryFacts::default();
+        facts.reset(1, 1);
+        assert!(facts.cells_claimed.claim(0));
+        assert!(facts.blockers_claimed.claim(0));
+        assert_eq!(facts.cell(0, || cell_facts(4)), cell_facts(4));
+        assert_eq!(facts.blocker(0, || blocker(1, 7)), blocker(1, 7));
+        assert!(facts.cells[0].get().is_none());
+        assert!(facts.blockers[0].get().is_none());
     }
 
     /// Two searches asking about one cell, or one blocker, at once both
@@ -491,7 +515,7 @@ mod tests {
                 }
                 cell_facts(3)
             });
-            assert_eq!(*kept, cell_facts(3));
+            assert_eq!(kept, cell_facts(3));
         });
         at_once(&|wait| {
             let first = std::cell::Cell::new(true);
@@ -501,7 +525,7 @@ mod tests {
                 }
                 blocker(1, 5)
             });
-            assert_eq!(*kept, blocker(1, 5));
+            assert_eq!(kept, blocker(1, 5));
         });
     }
 }
