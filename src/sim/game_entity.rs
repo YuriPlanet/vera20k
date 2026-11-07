@@ -811,13 +811,6 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) bounty_display: crate::sim::bounty::BountyDisplayState,
-    /// Shared Building C4/PostMortem detonation latch: the marker `+0x6DF`
-    /// with its C4Timer (`+0x528`) and C4AppliedBy (`+0x540`). The C4 plant
-    /// (`sim::c4_plant`) owns one producer; qualifying delayed-death receiver
-    /// results own the other. The Building LogicVector visit consumes expiry
-    /// synchronously (`Simulation::tick_pending_building_detonation`) and
-    /// keeps the marker, except a bridge repair hut's, which clears it.
-    /// IronCurtain/ForceShield entry cancels it. A [`C4Detonation`] that
     /// Ares TechnoExt+50 DisableWeaponTimer (allocator 10042CA0: StartTime
     /// -1, TimeLeft 0). The ReceiveDamage aftermath starts it with
     /// `DisableWeapons.Duration` (`vehicle_theft::driver_kill`); GetFireError
@@ -825,6 +818,13 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) ares_disable_weapons: crate::sim::timer::CdTimer,
+    /// Shared Building C4/PostMortem detonation latch: the marker `+0x6DF`
+    /// with its C4Timer (`+0x528`) and C4AppliedBy (`+0x540`). The C4 plant
+    /// (`sim::c4_plant`) owns one producer; qualifying delayed-death receiver
+    /// results own the other. The Building LogicVector visit consumes expiry
+    /// synchronously (`Simulation::tick_pending_building_detonation`) and
+    /// keeps the marker, except a bridge repair hut's, which clears it.
+    /// IronCurtain/ForceShield entry cancels it. A [`C4Detonation`] that
     /// `sim::c4_plant` owns.
     ///
     /// [`C4Detonation`]: crate::sim::c4_plant::C4Detonation
@@ -2176,6 +2176,8 @@ impl GameEntity {
             vehicle_driver: Default::default(),
             #[cfg(feature = "ares")]
             bounty_display: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_disable_weapons: Default::default(),
             pending_c4_detonation: Default::default(),
             #[cfg(feature = "ares")]
             display_production_to: Default::default(),
@@ -2185,8 +2187,6 @@ impl GameEntity {
             bunker: Default::default(),
             building_gate: None,
             door: crate::sim::door::DoorClass::at_frame(construction_frame),
-            #[cfg(feature = "ares")]
-            ares_disable_weapons: Default::default(),
             bunker_runtime: None,
             deploy_attachment: Default::default(),
             behind_anim: None,
