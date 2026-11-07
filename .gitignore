@@ -106,3 +106,8 @@ tools/vendor-eval/
 
 # Dashboard build dependencies; compiled JS is intentionally tracked.
 /tools/telemetry-dashboard/node_modules/
+
+# --- Yuri's Revenge clean retail staging: never commit the user's game data ---
+/data/
+/dist/
+

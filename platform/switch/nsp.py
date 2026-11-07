@@ -12,11 +12,11 @@ TITLE_ID = "0100f52556455241"
 # Application base ID: keep the lower 13 bits clear so control and program
 # content resolve to the same base (Eden file_sys/common_funcs.h).
 GPU_TITLE_ID = "0100f52556456000"
-CLIENT_TITLE_ID = "0100f52556458000"
+CLIENT_TITLE_ID = "0100f52556454000"  # 尤里的复仇（全数字ID；与共和国之辉 …58000、原版 …52000 区分）
 
 
 def icon_path(root: Path, sdk: Path, artifact: str) -> Path:
-    return root / "icon.jpg" if artifact == "vera20k-client" else sdk / "libnx/default_icon.jpg"
+    return root / "yuris-revenge-icon.jpg" if artifact == "vera20k-client" else sdk / "libnx/default_icon.jpg"
 
 
 def file_sha256(path: Path) -> str:
@@ -169,7 +169,7 @@ def package(root: Path, sdk: Path, elf: Path, nacp: Path, *,
     if artifact == "vera20k-gpu":
         metadata["name"] = "VeraGpuProbe"
     elif artifact == "vera20k-client":
-        metadata["name"] = "Vera20k"
+        metadata["name"] = "YurisRevenge"
         # The installed application goes through libnx's normal applet,
         # account, filesystem, audio and graphics initialization. A narrow
         # service list aborts in __appInit before rust_main runs.

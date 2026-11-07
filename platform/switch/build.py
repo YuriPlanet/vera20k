@@ -18,7 +18,9 @@ WORKSPACE = ROOT.parents[3]
 TOOLCHAIN = "nightly-2026-10-04"
 UPSTREAM_COMMIT = "3eac779b232ee47cd0eb957676c64386ac7b0f1d"
 DEFAULT_CLIENT_ASSETS = ROOT / "target/emulator/master-xdg-data/eden/sdmc/game"
-CLIENT_VERSION = "0.0.3 beta"
+CLIENT_VERSION = "0.0.1"
+# NACP application title shown in the Switch menu (Yuri's Revenge build).
+CLIENT_TITLE = "尤里的复仇"
 PROFILE_FEATURES = "horizon-frame-profile,telemetry"
 # Media that the client cannot substitute: a zero-byte or absent member here
 # silently removes in-game movies, music or subtitles from the installed NSP
@@ -357,7 +359,11 @@ def main():
     dist = ROOT / "dist"
     dist.mkdir(exist_ok=True)
     nacp = work / f"{artifact}.nacp"
-    title = "VERA20k" if args.client else "VERA20k GPU Probe" if args.gpu else "VERA20k Core Probe"
+    title = (
+        CLIENT_TITLE if args.client
+        else "VERA20k GPU Probe" if args.gpu
+        else "VERA20k Core Probe"
+    )
     title_id = CLIENT_TITLE_ID if args.client else GPU_TITLE_ID if args.gpu else TITLE_ID
     version = (CLIENT_VERSION + "-profile") if args.client and args.profile_sim else (
         CLIENT_VERSION if args.client else "0.1.0"
