@@ -257,6 +257,14 @@ pub(crate) struct FirerFacts {
     /// `+0x82`, `+0x11C`.
     pub in_open_transport: bool,
     pub transporter: Transporter,
+    /// Ares: the transport's type is `Gunner=` and `OpenTopped=`
+    /// (TechnoClass_CanFire_OpenToppedGunnerTemporal 1005D200).
+    #[cfg(feature = "ares")]
+    pub transporter_gunner_open_topped: bool,
+    /// Ares: the transport is not uncloaked (`+0x220`,
+    /// TechnoClass_GetWeaponState 1005D2B0).
+    #[cfg(feature = "ares")]
+    pub transporter_cloaked: bool,
     /// `+0x8C`, `+0xA4` (Location.Z, leptons).
     pub on_bridge: bool,
     pub z: i32,
@@ -342,6 +350,10 @@ impl Default for FirerFacts {
             falling: false,
             in_open_transport: false,
             transporter: Transporter::None,
+            #[cfg(feature = "ares")]
+            transporter_gunner_open_topped: false,
+            #[cfg(feature = "ares")]
+            transporter_cloaked: false,
             on_bridge: false,
             z: 0,
             #[cfg(feature = "ares")]
@@ -987,6 +999,17 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     }
     // T22 (IonSensitive) asks `0x0053A130`, which is `XOR AL,AL; RET`.
     let warhead = weapon.warhead.unwrap_or_default();
+    // Ares 3.0 TechnoClass_CanFire_OpenToppedGunnerTemporal (1005D200, hook
+    // 0x6FC339): a Temporal shot from inside a Gunner OpenTopped transport
+    // needs the firer's own TemporalImUsing (the gunner takes it).
+    #[cfg(feature = "ares")]
+    if firer.transporter != Transporter::None
+        && warhead.temporal
+        && firer.transporter_gunner_open_topped
+        && firer.temporal.is_none()
+    {
+        return Cant;
+    }
 
     // T23 `0x006FC356`: one drainer per victim, and only a drainable one.
     if weapon.drain_weapon && kind.is_techno() && (target.draining_me || !target_type.drainable) {
@@ -1152,6 +1175,13 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
         return Ammo;
     }
     // T48 `0x006FCA26`: an aircraft surfaces only from a full cloak.
+    // Ares 3.0 TechnoClass_GetWeaponState (1005D2B0, hook 0x6FCA30): a
+    // transport that is not uncloaked answers CLOAKED first.
+    #[cfg(feature = "ares")]
+    if weapon.decloak_to_fire && firer.transporter != Transporter::None && firer.transporter_cloaked
+    {
+        return Cloaked;
+    }
     if weapon.decloak_to_fire
         && firer.cloak_state != 0
         && (class != FirerClass::Aircraft || firer.cloak_state == 2)

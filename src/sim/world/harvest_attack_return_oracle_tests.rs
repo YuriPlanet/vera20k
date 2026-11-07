@@ -253,7 +253,11 @@ impl Replay {
             native["target"].as_str().unwrap(),
             "{context}: Target"
         );
-        if let Some(index) = native.get("burst_index") {
+        // The native rows reset the index at Assign_Target(NULL); Ares
+        // TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps it.
+        if let Some(index) = native.get("burst_index")
+            && !cfg!(feature = "ares")
+        {
             assert_eq!(e.weapon_burst.index(), int(index), "{context}: burst index");
         }
         assert_eq!(

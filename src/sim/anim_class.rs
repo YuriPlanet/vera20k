@@ -2321,6 +2321,7 @@ impl Simulation {
     /// 5. A refused Unlimbo steps the stage (`+0xAC`) back one and keeps the
     ///    anim (`0x00424B23`): its next completed frame tries again with a
     ///    new object. The refused one stays in limbo, as it does natively.
+    ///    With Ares the refused one is UnInit and the anim ends (below).
     /// 6. Placed where the anim's cell (GetCoords, `0x005657A0`) carries the
     ///    bridge flag (`+0x140 & 0x100`) and the Location is above the cell's
     ///    GetCoords Z (`0x00486840`), it moves onto the deck: Mark(UP),
@@ -2423,10 +2424,25 @@ impl Simulation {
             frame_effects,
         );
         if placed.is_none() {
-            if let Some(anim) = self.substrate.anims.get_mut(id) {
-                anim.runtime.current_frame = anim.runtime.current_frame.wrapping_sub(1);
+            // Ares 3.0 AnimClass_Update (1005C3E0, hook 0x424B23): the
+            // refused infantryman is UnInit and the anim ends (TimeToDie,
+            // UnInit) instead of trying again.
+            #[cfg(feature = "ares")]
+            {
+                self.uninit_with_context(
+                    infantry,
+                    crate::sim::world::UninitContext::new(rules, overlay_registry)
+                        .with_effects(frame_effects),
+                );
+                return true;
             }
-            return false;
+            #[cfg(not(feature = "ares"))]
+            {
+                if let Some(anim) = self.substrate.anims.get_mut(id) {
+                    anim.runtime.current_frame = anim.runtime.current_frame.wrapping_sub(1);
+                }
+                return false;
+            }
         }
         let at = self.anim_absolute_coord(id).unwrap_or(location);
         let lift = self.resolved_terrain.as_ref().is_some_and(|terrain| {
@@ -3115,6 +3131,11 @@ impl Simulation {
             Ok(damage) => damage as i32,
             Err(_) => return false,
         };
+        // Ares 3.0 AnimClass_UpdateBounce_Damage (1005C410, hook 0x4239F0):
+        // a negative DamageRadius or a Damage of zero damages nothing.
+        if crate::rules::ARES_ENABLED && (config.damage_radius < 0 || damage == 0) {
+            return false;
+        }
         let warhead_ref = self.interner.intern(warhead_name);
         self.apply_bounce_contact_damage(
             position,

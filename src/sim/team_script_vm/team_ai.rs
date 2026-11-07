@@ -96,7 +96,7 @@ pub(super) fn center_sample(
 
 /// `Calc_Center`'s arithmetic (`0x006EB225..0x006EB31B`): the mean XY of
 /// the samples (wrapping sums, signed truncating division), and the one
-/// nearest `focus` by squared XY distance (`0x005F6500`, wrapping; 0
+/// nearest `focus` by squared XY distance (`0x005F6500`, `native_coord::squared_xy_distance`; 0
 /// without a focus). A smaller distance, or any distance after a kept 0,
 /// replaces the one kept, so without a focus the last sample is closest.
 /// `None` without samples.
@@ -117,20 +117,15 @@ pub(super) fn center_of(
         if sample.naval_transport {
             continue;
         }
-        let distance = focus.map_or(0, |focus| squared_xy_distance(sample.xy, focus));
+        let distance = focus.map_or(0, |focus| {
+            crate::util::native_coord::squared_xy_distance(sample.xy, focus)
+        });
         if closest_distance == 0 || distance < closest_distance {
             closest_distance = distance;
             closest = Some(sample.id);
         }
     }
     (count != 0).then(|| ([sum[0] / count, sum[1] / count], closest))
-}
-
-/// `0x005F6500`/`0x005F6560`: the squared XY distance, wrapping.
-pub(super) fn squared_xy_distance(from: [i32; 2], to: [i32; 2]) -> i32 {
-    let dx = from[0].wrapping_sub(to[0]);
-    let dy = from[1].wrapping_sub(to[1]);
-    dx.wrapping_mul(dx).wrapping_add(dy.wrapping_mul(dy))
 }
 
 impl TeamScriptState {

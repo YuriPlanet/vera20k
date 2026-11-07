@@ -1148,7 +1148,7 @@ pub(crate) fn find_docking_bay_of_type(
 ///   0x004DEF20) — see [`dock_zone_reachable`];
 /// - `Receive_Radio(0xF)` must return 1 — the shared building radio receiver;
 /// - distance `FUN_005F6500`: `dx² + dy²` in leptons between both objects'
-///   `GetCoords` (Z ignored), 32-bit wrapping `IMUL`/`ADD`; the candidate
+///   `GetCoords` (Z ignored, `native_coord::squared_xy_distance`); the candidate
 ///   replaces the best when the best is still -1, when it is strictly
 ///   nearer (signed `JL`, so ties keep the earlier building) or when it is a
 ///   primary factory (`TechnoClass+0x3D3`, 0x004DF004).
@@ -1228,9 +1228,8 @@ fn scan_docking_type(
         {
             continue;
         }
-        let dx = own_x.wrapping_sub(centre.x);
-        let dy = own_y.wrapping_sub(centre.y);
-        let distance = dy.wrapping_mul(dy).wrapping_add(dx.wrapping_mul(dx));
+        let distance =
+            crate::util::native_coord::squared_xy_distance([own_x, own_y], [centre.x, centre.y]);
         if nearest == -1 || distance < nearest || sim.production.is_primary_factory(sid) {
             found = Some(sid);
             nearest = distance;

@@ -342,14 +342,22 @@ impl Simulation {
                     entity.category(),
                     EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
                 );
-                if foot
-                    && crate::sim::world::entity_layer(
+                if foot {
+                    use crate::sim::world::display_layers::DisplayLayer;
+                    let layer = crate::sim::world::entity_layer(
                         entity,
                         self.resolved_terrain.as_ref(),
                         Some((rules, &self.interner)),
-                    ) != crate::sim::world::display_layers::DisplayLayer::GROUND
-                {
-                    return;
+                    );
+                    // Ares 3.0 BulletClass_DetonateAt_CanTemporalTarget
+                    // (1005C600, hook 0x469467) also warps a Foot in the Air
+                    // or Top layer.
+                    let warpable_layer = layer == DisplayLayer::GROUND
+                        || crate::rules::ARES_ENABLED
+                            && (layer == DisplayLayer::AIR || layer == DisplayLayer::TOP);
+                    if !warpable_layer {
+                        return;
+                    }
                 }
                 match entity.bunker.link().installed_in() {
                     Some(bunker) if entity.category() == EntityCategory::Unit => {

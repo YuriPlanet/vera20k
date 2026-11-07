@@ -162,6 +162,8 @@ impl HasBeenCaptured {
 /// A building's NoSurvivor byte, `BuildingClass+0x6E0`. The constructor
 /// clears it (`0x0043B95A`) and DestructionEffects sets it from the killing
 /// ReceiveDamage's IgnoreDefenses (`0x00441EFC..0x00441F0B`, [`Self::mark`]).
+/// With Ares, Mission_Selling's stage-1 tail sets it once the sale's survivors
+/// are out (BuildingClass_Mi_Selling_Crew 1005C530, hook 0x44A8A2).
 /// How_Many_Survivors (`0x00451334`), SpawnSurvivors' absorbed passengers
 /// (`0x00442F2A`) and Mission_Selling (`0x0044A4CA`) read it, and the frame CRC
 /// hashes it (`0x00454407`). A building that outlives its killing blow at
@@ -1263,7 +1265,8 @@ impl Simulation {
     /// (How_Many_Survivors, counted before the passengers left). Each takes
     /// the building's crew type (`vt+0x30C`: the Engineer roll, then
     /// GetCrew), picked again while it names an Engineer once one has been
-    /// picked (`0x0044A5F0..0x0044A623`); is constructed (the TechnoClass
+    /// picked (`0x0044A5F0..0x0044A623`; with Ares at most nine times);
+    /// is constructed (the TechnoClass
     /// constructor's draw); picks a cell of the occupy list `cells` with
     /// `RandomRanged(0, n - 1)` (`0x0044A67A`) and places at its request
     /// there (PlaceInfantryInCell's draw); Unlimboes in priority mode
@@ -1300,7 +1303,7 @@ impl Simulation {
         let mut engineer_picked = false;
         let mut spawned = false;
         for _ in 0..count {
-            let Some(mut crew) = Self::building_crew_type(
+            let Some(crew) = Self::building_crew_type(
                 &self.interner,
                 &mut self.scenario_rng,
                 &self.substrate,
@@ -1310,6 +1313,38 @@ impl Simulation {
             ) else {
                 continue;
             };
+            // Ares 3.0 BuildingClass_Mi_Selling_EngineerFreeze (1005C550,
+            // hook 0x44A5F0): once an Engineer is out, at most nine more
+            // picks; a tenth Engineer, or no type, leaves this survivor out.
+            #[cfg(feature = "ares")]
+            let crew = if engineer_picked && is_engineer(&crew) {
+                let mut repick = None;
+                for _ in 0..9 {
+                    let Some(next) = Self::building_crew_type(
+                        &self.interner,
+                        &mut self.scenario_rng,
+                        &self.substrate,
+                        &self.houses,
+                        rules,
+                        building_id,
+                    ) else {
+                        break;
+                    };
+                    if !is_engineer(&next) {
+                        repick = Some(next);
+                        break;
+                    }
+                }
+                let Some(crew) = repick else {
+                    continue;
+                };
+                crew
+            } else {
+                crew
+            };
+            #[cfg(not(feature = "ares"))]
+            let mut crew = crew;
+            #[cfg(not(feature = "ares"))]
             while engineer_picked && is_engineer(&crew) {
                 match Self::building_crew_type(
                     &self.interner,

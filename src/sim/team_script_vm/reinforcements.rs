@@ -42,6 +42,28 @@ impl Simulation {
         }
     }
 
+    /// Ares 3.0 TeamTypeClass_ValidateHouse (1005D170, hooks 0x65D8FB and
+    /// 0x65EC4A), at the entry of both reinforcement owners: the TeamType's
+    /// House (GetHouse) must exist, and unless the TeamType names a Country
+    /// (`+0xC4`) or this is a campaign, must not be defeated.
+    #[cfg(feature = "ares")]
+    fn ares_reinforcement_house_valid(&self, team_type: InternedId, rules: &RuleSet) -> bool {
+        let Some(house) = self.team_type_house(team_type, rules) else {
+            return false;
+        };
+        let country = self
+            .team_script_vm
+            .team_type_ini
+            .get(&team_type)
+            .is_some_and(|metadata| matches!(metadata.house, Some(TeamTypeHouse::Country(_))));
+        country
+            || !self.session.game_mode_nonzero()
+            || !self
+                .houses
+                .get(&house)
+                .is_some_and(|state| state.is_defeated())
+    }
+
     fn team_initial_zone(&self, team_type: InternedId) -> Option<TeamTarget> {
         let waypoint = self.team_script_vm.team_type_ini.get(&team_type)?.waypoint;
         self.session
@@ -101,6 +123,10 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> (bool, Option<(i16, i16)>) {
+        #[cfg(feature = "ares")]
+        if !self.ares_reinforcement_house_valid(team_type, rules) {
+            return (false, None);
+        }
         let Some(definition) = self.team_script_vm.team_types.get(&team_type).copied() else {
             return (false, None);
         };
@@ -280,6 +306,10 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> (bool, Option<(i16, i16)>) {
+        #[cfg(feature = "ares")]
+        if !self.ares_reinforcement_house_valid(team_type, rules) {
+            return (false, None);
+        }
         let Some(definition) = self.team_script_vm.team_types.get(&team_type).copied() else {
             return (false, None);
         };

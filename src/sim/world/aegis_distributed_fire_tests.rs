@@ -181,11 +181,15 @@ fn distributed_guard_normal_and_elite_cycle_live_targets_and_reset_only_burst() 
                 !source.passive_scan.acquired(),
                 "class NULL assignment clears passive acquisition"
             );
-            assert_eq!(
-                source.weapon_burst.index(),
-                0,
-                "changed NULL target resets elite Burst2 too"
-            );
+            // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53)
+            // keeps the index instead.
+            if !cfg!(feature = "ares") {
+                assert_eq!(
+                    source.weapon_burst.index(),
+                    0,
+                    "changed NULL target resets elite Burst2 too"
+                );
+            }
             assert_eq!(
                 source.weapon_burst.radial_index(),
                 index + 1,

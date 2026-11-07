@@ -829,6 +829,41 @@ impl Simulation {
             .get(victim)
             .map_or(0, |v| v.body_facing_current(frame));
         let coords = self.parasite_release_coords(owner, victim, rules);
+        // Ares 3.0 ParasiteClass_PointerGotInvalid (1005CF20, hook
+        // 0x62A2F8): a non-naval Unit or an Infantry owner whose victim is
+        // at least two levels up (GetHeight 208) drops from the victim's
+        // Location as a bomb (+0x8D, +0x8F).
+        #[cfg(feature = "ares")]
+        let coords = {
+            let terrain = self.resolved_terrain.as_ref();
+            let falls =
+                self.substrate
+                    .entities
+                    .get(owner)
+                    .is_some_and(|eater| match eater.category() {
+                        EntityCategory::Unit => self
+                            .object_type(eater.type_ref(), rules)
+                            .is_some_and(|object| !object.naval),
+                        EntityCategory::Infantry => true,
+                        _ => false,
+                    });
+            let drop = self
+                .substrate
+                .entities
+                .get(victim)
+                .filter(|victim| {
+                    falls
+                        && crate::sim::movement::air_movement::current_fly_height(victim, terrain)
+                            >= 2 * crate::util::lepton::LEPTONS_PER_LEVEL as i32
+                })
+                .map(|victim| ground_pose::object_location(victim, terrain));
+            if drop.is_some()
+                && let Some(eater) = self.substrate.entities.get_mut(owner)
+            {
+                eater.begin_bomb_fall();
+            }
+            drop.or(coords)
+        };
         // 0x0062A2F8..0x0062A379: the 0xA8E7AC bracket around Unlimbo.
         let placed = coords.is_some_and(|coords| {
             self.with_object_placement_scope(|sim| {

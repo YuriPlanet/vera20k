@@ -185,12 +185,28 @@ fn arcing_reaches(
 }
 
 /// The non-arcing arm's reach, `0x006F7594..0x006F75F2`: the 3-D distance,
-/// approximated as MinimumRange measures it, at most `range`.
-fn direct_reaches(src: (i64, i64, i64), target: (i64, i64, i64), range: i64) -> bool {
-    i64::from(crate::util::native_x87::distance_3d_leptons(
-        [src.0 as i32, src.1 as i32, src.2 as i32],
-        [target.0 as i32, target.1 as i32, target.2 as i32],
-    )) <= range
+/// approximated as MinimumRange measures it, at most `range`. The arm's
+/// planar branch (`0x006F75B2`, `dx² + dy²`) tests the firer for
+/// AircraftType (`0x006F7561`), which no object is; Ares 3.0 Arcing_Aircraft
+/// (1005C450, hook 0x6F7561) takes it for an Aircraft firer (`planar`).
+fn direct_reaches(src: (i64, i64, i64), target: (i64, i64, i64), range: i64, planar: bool) -> bool {
+    let distance = if planar {
+        crate::util::native_x87::sqrt_approx_length([
+            (src.0 as i32).wrapping_sub(target.0 as i32),
+            (src.1 as i32).wrapping_sub(target.1 as i32),
+        ])
+    } else {
+        crate::util::native_x87::distance_3d_leptons(
+            [src.0 as i32, src.1 as i32, src.2 as i32],
+            [target.0 as i32, target.1 as i32, target.2 as i32],
+        )
+    };
+    i64::from(distance) <= range
+}
+
+/// The `planar` argument of [`direct_reaches`] for `attacker`.
+fn direct_reach_is_planar(attacker: &GameEntity) -> bool {
+    crate::rules::ARES_ENABLED && attacker.category() == EntityCategory::Aircraft
 }
 
 /// `0x006F727E..0x006F729F`: an occupied building
@@ -573,7 +589,12 @@ pub(crate) fn compute_range_target(
     if let RangeTarget::Techno(entity) = target {
         max_range_lep += foundation_reach_leptons(entity, rules, interner);
     }
-    if !direct_reaches(src, (tx, ty, tz), max_range_lep) {
+    if !direct_reaches(
+        src,
+        (tx, ty, tz),
+        max_range_lep,
+        direct_reach_is_planar(attacker),
+    ) {
         return false;
     }
 
@@ -1109,7 +1130,12 @@ pub fn mapless_in_range(
     let foundation = techno.map_or(0, |entity| {
         foundation_reach_leptons(entity, rules, interner)
     });
-    direct_reaches(src, target, range + foundation)
+    direct_reaches(
+        src,
+        target,
+        range + foundation,
+        direct_reach_is_planar(attacker),
+    )
 }
 
 #[cfg(test)]

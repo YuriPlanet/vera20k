@@ -575,10 +575,17 @@ impl Simulation {
             .houses
             .get(&actor.owner())
             .is_none_or(|h| h.is_controlled_by_human(self.session.game_mode_nonzero()));
+        // Ares 3.0 FootClass_ApproachTarget_Passive (1005C9F0, hook
+        // 0x4D5782): a passively acquired Target (`+0x50C`) is not chased
+        // either.
+        #[cfg(feature = "ares")]
+        let passive_target = actor.passive_scan.acquired();
+        #[cfg(not(feature = "ares"))]
+        let passive_target = false;
         let may_approach = object.can_approach_target
             && actor.drain.target().is_none()
             && actor.bunker.link().installed_in().is_none()
-            && !actor.passenger_role.in_open_transport();
+            && !(actor.passenger_role.in_open_transport() || passive_target);
         //4D5716..4D57E4: the drop arms ahead of the search. A Sticky mission,
         // or a mover that may not approach off Attack, a human's Area Guard or
         // a computer's Hunt, clears the Target and the destination.

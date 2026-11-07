@@ -1835,7 +1835,12 @@ fn idle_receiver_cancels_burst_through_the_shared_target_setter() {
                 crate::sim::world::FrameEffects::default(),
             );
             let entity = sim.substrate.entities.get(1).unwrap();
-            assert_eq!(entity.weapon_burst.index(), i32::from(has_destination));
+            // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53)
+            // keeps the index through the NULL target.
+            assert_eq!(
+                entity.weapon_burst.index(),
+                i32::from(has_destination || cfg!(feature = "ares"))
+            );
             assert_eq!(entity.passive_scan.acquired(), has_destination);
             assert_eq!(
                 entity.attack_target.target(),

@@ -4393,7 +4393,8 @@ impl Simulation {
                 // particular, Building442230 preserves Immune repair huts.
                 // Retain that immunity; skip only this call's nonprogressing
                 // receivers. Ordinary damage/cleanup order remains unchanged.
-                let mut refused = BTreeSet::new();
+                #[cfg_attr(feature = "ares", allow(unused_mut))]
+                let mut refused: BTreeSet<u64> = BTreeSet::new();
                 loop {
                     let mut visited_match = false;
                     let mut ordinal = 0;
@@ -4434,6 +4435,18 @@ impl Simulation {
                             event,
                             frame_effects,
                         );
+                        // Ares 3.0 TActionClass_DestroyAttached_Loop (1005D150,
+                        // hook 0x6E20D8): a receiver that survives (below
+                        // NowDead) is passed over; it neither counts nor
+                        // restarts the scan, so no refusal set is needed.
+                        #[cfg(feature = "ares")]
+                        if self.substrate.entities.get(id).is_some_and(|entity| {
+                            entity.health.current() > 0 && entity.lifecycle.object_alive()
+                        }) {
+                            ordinal += 1;
+                            continue;
+                        }
+                        #[cfg(not(feature = "ares"))]
                         if self
                             .substrate
                             .entities

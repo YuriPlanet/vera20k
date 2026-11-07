@@ -144,9 +144,10 @@ pub(crate) fn select_with_context(
     if damage == 0 && !create_zero_damage {
         return None;
     }
-    // Phobos `SelectDamageAnimation_NegativeZeroDamage` (`0x48A4F3`): a
-    // negative packet selects by its magnitude.
-    #[cfg(feature = "phobos")]
+    // Phobos `SelectDamageAnimation_NegativeZeroDamage` (`0x48A4F3`) and
+    // Ares 3.0 SelectDamageAnimation_FixNegatives (1005D070, hook 0x48A4F9):
+    // a negative packet selects by its magnitude (`std::abs`, wrapping).
+    #[cfg(any(feature = "phobos", feature = "ares"))]
     let damage = if damage < 0 {
         damage.wrapping_neg()
     } else {

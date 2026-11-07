@@ -258,5 +258,8 @@ pub mod particles;
 #[cfg(test)]
 #[path = "deploy_tests.rs"]
 mod deploy_tests;
+// Ares 3.0 Misc/Bugfixes.cpp gameplay fixes through their owners.
+#[cfg(all(test, feature = "ares"))]
+mod ares_bugfixes_tests;
 
 pub(crate) mod airstrike;

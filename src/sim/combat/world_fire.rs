@@ -438,15 +438,24 @@ fn admit_attacker_fire<'r>(
                         }
                     }
                     fire_error::FireError::Cloaked => {
-                        uncloak_to_fire(
-                            &world.session,
-                            &mut world.substrate,
-                            &mut world.sound_events,
-                            rules,
-                            obj,
-                            snap.stable_id,
-                            sound_enabled,
-                        );
+                        // Ares 3.0 InfantryClass_UpdateFiringState_Uncloak
+                        // (1005CDD0, hook 0x52070F): as the Unit's case 9,
+                        // only in range (`CanFireAt 0x006F77B0`).
+                        let mut in_range = !crate::rules::ARES_ENABLED;
+                        if !in_range {
+                            subject(&*world, &mut |s| in_range = s.in_range());
+                        }
+                        if in_range {
+                            uncloak_to_fire(
+                                &world.session,
+                                &mut world.substrate,
+                                &mut world.sound_events,
+                                rules,
+                                obj,
+                                snap.stable_id,
+                                sound_enabled,
+                            );
+                        }
                     }
                     _ => {}
                 }

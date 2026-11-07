@@ -670,6 +670,11 @@ pub(crate) fn sell_stage_one(
     if let Some(building) = sim.substrate.entities.get_mut(id) {
         let mut status = building.mission.handler_state();
         if building.building_down() {
+            // Ares 3.0 BuildingClass_Mi_Selling_Crew (1005C530, hook
+            // 0x44A8A2): the building remembers that its survivors are out
+            // (NoSurvivor), so its death during the pack-up spawns none.
+            #[cfg(feature = "ares")]
+            building.no_survivor.mark();
             building.begin_building_pack_up_stage_two(&mut status, now);
         }
         building.mission.set_handler_state(status);
@@ -682,8 +687,8 @@ pub(crate) fn sell_stage_one(
 /// (`vt+0x2D0`, How_Many_Survivors) taken first, then the absorbed
 /// passengers over the occupy list (`vt+0x108`), the garrison (SellBuilding
 /// `0x00457DE0` when occupied) and the crew (`sim::crew_survival`). The
-/// building is alive, so NoSurvivor (`+0x6E0`, written only by
-/// DestructionEffects) is clear.
+/// building is alive, so NoSurvivor (`+0x6E0`, written by DestructionEffects
+/// and, with Ares, after these survivors by [`sell_stage_one`]) is clear.
 fn sale_survivors(
     sim: &mut Simulation,
     rules: &RuleSet,

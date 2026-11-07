@@ -1609,12 +1609,18 @@ fn infantry_unload_full_original_handler_matches52_supplied_controls() {
         let result = sim
             .infantry_mission_unload(id, &rules, crate::sim::world::FrameEffects::default())
             .unwrap();
-        assert_eq!(
-            result as u32,
-            row["return_eax"].as_u64().unwrap() as u32,
-            "{}: native return",
-            row["input"]
-        );
+        // Ares InfantryClass_Mi_Unload_Undeploy (1005CD20, hook 0x51F716):
+        // a Deployer's deployed arm (Doing 27..30) returns 1, not 450.
+        let input = &row["input"];
+        let deployed_arm = input["kind"] == "unload"
+            && input["deployer"].as_i64().unwrap_or(1) != 0
+            && (27..=30).contains(&input["doing"].as_i64().unwrap_or(-1));
+        let expected = if cfg!(feature = "ares") && deployed_arm {
+            1
+        } else {
+            row["return_eax"].as_u64().unwrap() as u32
+        };
+        assert_eq!(result as u32, expected, "{}: native return", row["input"]);
         assert_native_deploy_state(&sim, id, row);
     }
     assert_eq!(corpus.as_array().unwrap().len(), 52);

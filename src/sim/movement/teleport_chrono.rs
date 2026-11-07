@@ -915,8 +915,20 @@ impl Simulation {
                 (
                     entity.category(),
                     object.naval,
-                    object.speed_type == SpeedType::Hover
-                        && !(object.powered_unit && !self.has_powered_center(entity.owner())),
+                    // Ares 3.0 TeleportLocomotionClass_UnfreezeObject_SinkOrSwim
+                    // (1005D420, hook 0x718871): an Amphibious,
+                    // AmphibiousCrusher, AmphibiousDestroyer or WaterBeach
+                    // MovementZone floats too, powered or not.
+                    crate::rules::ARES_ENABLED
+                        && matches!(
+                            object.movement_zone,
+                            MovementZone::Amphibious
+                                | MovementZone::AmphibiousCrusher
+                                | MovementZone::AmphibiousDestroyer
+                                | MovementZone::WaterBeach
+                        )
+                        || object.speed_type == SpeedType::Hover
+                            && !(object.powered_unit && !self.has_powered_center(entity.owner())),
                 )
             })
         }) else {

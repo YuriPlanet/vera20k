@@ -1534,6 +1534,21 @@ impl Simulation {
         {
             return;
         }
+        // Ares 3.0 CaptureManagerClass_DecideUnitFate_BuildingFate
+        // (1005C680, hook 0x47243F): a building queues Guard, with no roll;
+        // the other fates do nothing for a building.
+        #[cfg(feature = "ares")]
+        if !unit_is_foot {
+            let now = self.session.binary_frame();
+            let _ = self.mission_queue_exact(
+                unit_id,
+                MissionId::from_known(MissionType::Guard),
+                0,
+                now,
+                &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+            );
+            return;
+        }
         let Some(controller_owner) = self
             .substrate
             .entities

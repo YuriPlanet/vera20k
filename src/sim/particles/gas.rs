@@ -88,7 +88,7 @@ pub(super) fn tick_system(
             continue;
         };
         if rules.particle_type(p.type_id).behaves_like == ParticleBehavesLike::Gas {
-            tick_particle(&mut p, sim, rules, owner_house, context);
+            tick_particle(&mut p, sim, rules, owner_house, owner_entity, context);
             super::system_ai::finish_lifetime(&mut p);
         } else {
             super::system_ai::tick_particle(&mut p, sim, rules, owner_house, owner_entity);
@@ -146,6 +146,7 @@ pub(super) fn tick_particle(
     sim: &mut Simulation,
     rules: &RuleSet,
     owner_house: Option<InternedId>,
+    owner: Option<u64>,
     context: UninitContext<'_>,
 ) {
     if sim.session.binary_frame() & 1 == 0 {
@@ -206,7 +207,7 @@ pub(super) fn tick_particle(
     p.damage_counter = p.damage_counter.wrapping_sub(1);
     if p.damage_counter == 0 && pt.damage != 0 {
         p.damage_counter = pt.max_dc as i16;
-        apply_damage(p, sim, rules, owner_house, context);
+        apply_damage(p, sim, rules, owner_house, owner, context);
     }
     if super::system_ai::state_advance_due(p, pt.max_ec, pt.state_ai_advance) {
         p.animation_state = p.animation_state.wrapping_add(1);
@@ -220,11 +221,13 @@ pub(super) fn tick_particle(
     }
 }
 
+/// `owner` is the system's owner (`+0xE0`); only Ares reads it here.
 fn apply_damage(
     p: &Particle,
     sim: &mut Simulation,
     rules: &RuleSet,
     owner_house: Option<InternedId>,
+    #[cfg_attr(not(feature = "ares"), allow(unused_variables))] owner: Option<u64>,
     context: UninitContext<'_>,
 ) {
     let pt = rules.particle_type(p.type_id);
@@ -269,6 +272,17 @@ fn apply_damage(
                     .wrapping_abs()
                     .wrapping_add(p.coords.y.wrapping_sub(coords.y).wrapping_abs()),
             );
+            // Ares 3.0 ParticleClass_Update_Gas (1005CFE0, hook 0x62C2ED):
+            // a Techno system owner is the attacker and its house the source.
+            #[cfg(feature = "ares")]
+            let (attacker, owner_house) = match owner
+                .and_then(|id| sim.entities().get(id).map(|techno| (id, techno.owner())))
+            {
+                Some((id, house)) => (id, Some(house)),
+                None => (RAD_NO_ATTACKER, owner_house),
+            };
+            #[cfg(not(feature = "ares"))]
+            let attacker = RAD_NO_ATTACKER;
             match member {
                 CellObjectMember::Entity(id) => {
                     sim.commit_direct_damage_receiver(
@@ -278,7 +292,7 @@ fn apply_damage(
                             id,
                             pt.damage,
                             distance,
-                            RAD_NO_ATTACKER,
+                            attacker,
                             owner_house,
                             warhead,
                             ReceiverCallFlags {

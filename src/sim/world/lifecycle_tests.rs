@@ -8022,7 +8022,11 @@ fn wave_tail_consumes_wall_roll_before_mandatory_cliff_chance_roll() {
 
     sim.scenario_rng = crate::sim::rng::SimRng::new(0x57_41_4c_4c);
     let mut expected = sim.scenario_rng.clone();
-    let _wall_roll = expected.next_range_u32_inclusive(0, 100);
+    // Ares WaveClass_DamageCell_Wall (1005D7A0, hook 0x75F46E) leaves the
+    // wall to a `Wall=yes` warhead; WH is not one, so no wall roll.
+    if !cfg!(feature = "ares") {
+        let _wall_roll = expected.next_range_u32_inclusive(0, 100);
+    }
     let _cliff_chance_roll = expected.next_range_u32_inclusive(0, 99);
 
     assert!(sim.object_ai_visit_one(

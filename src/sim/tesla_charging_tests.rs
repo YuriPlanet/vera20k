@@ -242,7 +242,13 @@ fn impact_refreshes_order_without_damage_or_rearm_and_class_refusals_claim_it() 
     let tank_health = f.sim.substrate.entities.get(tank).unwrap().health.current();
     f.hit(tank, f.coil); // wrong firer class
     f.hit(a, tank); // wrong target class, still no ordinary area damage
-    assert_eq!(f.charge().chargers(), &[b, c, a]);
+    // Ares BulletClass_Fire_Overpower (1005C650, hook 0x4693B0) admits a
+    // Unit firer too.
+    if cfg!(feature = "ares") {
+        assert_eq!(f.charge().chargers(), &[b, c, a, tank]);
+    } else {
+        assert_eq!(f.charge().chargers(), &[b, c, a]);
+    }
     assert_eq!(
         f.sim.substrate.entities.get(tank).unwrap().health.current(),
         tank_health

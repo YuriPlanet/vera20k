@@ -167,12 +167,22 @@ pub(crate) fn line_damage(
     if let Some(warhead) = weapon.warhead.as_deref() {
         let warhead_ref = world.interner.intern(warhead);
         for id in struck {
+            // Ares 3.0 TechnoClass_DealParticleDamage (1005D260, hook
+            // 0x70CBDA) passes the firer's house as the source house.
+            #[cfg(feature = "ares")]
+            let house = world
+                .substrate
+                .entities
+                .get(firer_id)
+                .map(|firer| firer.owner());
+            #[cfg(not(feature = "ares"))]
+            let house = None;
             let event = EntityDamageEvent::direct_receiver(
                 id,
                 weapon.ambient_damage,
                 0,
                 firer_id,
-                None,
+                house,
                 warhead_ref,
                 ReceiverCallFlags {
                     ignore_defenses: false,

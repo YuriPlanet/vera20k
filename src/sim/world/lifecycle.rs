@@ -4036,6 +4036,32 @@ impl Simulation {
         // water state's constructor sentinel (`+0x6E8 = 2`), not prone
         // (`+0x6DB`) and Doing Ready (`+0x6C4`, stored without Do_Action).
         // A boarded man leaves his transport with these.
+        // Ares 3.0 InfantryClass_Remove_Teleport (1005CD50, hook 0x51DF27),
+        // first: a `Teleporter=` man's Teleport locomotor forgets its Marked
+        // coordinate (`+0x28`).
+        #[cfg(feature = "ares")]
+        {
+            let teleporter = self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| {
+                    entity.category() == EntityCategory::Infantry
+                        && self
+                            .object_type(entity.type_ref(), context.rules())
+                            .is_some_and(|object| object.teleporter)
+                });
+            if teleporter
+                && let Some(runtime) = self
+                    .substrate
+                    .entities
+                    .get_mut(stable_id)
+                    .and_then(|entity| entity.locomotor.as_mut())
+                    .and_then(|locomotor| locomotor.teleport_runtime_mut())
+            {
+                runtime.forget_resolved_destination();
+            }
+        }
         if let Some(entity) = self.substrate.entities.get_mut(stable_id)
             && entity.category() == EntityCategory::Infantry
         {
@@ -4260,6 +4286,30 @@ impl Simulation {
             crate::sim::radio::broadcast_break(self, stable_id, context.rules(), context.effects());
         }
         let outcome = self.object_conceal_with_context(stable_id, context);
+        // Ares 3.0 UnitClass_Remove (1005D610, hook 0x7440BD), after a Foot
+        // Limbo that removed the Unit: its Tank Bunker lets it go
+        // (`BuildingClass::ClearBunker @ 0x00459470`).
+        #[cfg(feature = "ares")]
+        if outcome == ConcealOutcome::Concealed
+            && let Some(bunker) = self
+                .substrate
+                .entities
+                .get(stable_id)
+                .filter(|entity| entity.category() == EntityCategory::Unit)
+                .and_then(|entity| entity.bunker.link().installed_in())
+            && self
+                .substrate
+                .entities
+                .get(bunker)
+                .is_some_and(|building| building.category() == EntityCategory::Structure)
+        {
+            crate::sim::docking::bunker_link::clear_bunker(
+                self,
+                bunker,
+                context.rules(),
+                context.effects(),
+            );
+        }
         // Building445DF4..445E14 follows the base Limbo, including the
         // already-limbo branch4458CE. This is one House/category callback,
         // never a global eligibility sweep or a boolean-transition latch.

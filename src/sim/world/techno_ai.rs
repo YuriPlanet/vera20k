@@ -1150,7 +1150,14 @@ fn techno_ai_shell(
         // gives a zero flags word, which the class gate (`0x006F821A`) refuses
         // for every candidate; the scan's Scenario draw and timer remain.
         EntityCategory::Aircraft => {
-            if !drop_airborne_target_step(sim, id, rules, ctx.effects) {
+            // Ares 3.0 AACombat (1005C190, hook 0x414D36) jumps past the
+            // airborne drop to the cloaked-target test: an aircraft keeps an
+            // airborne Target.
+            #[cfg(feature = "ares")]
+            let dropped = false;
+            #[cfg(not(feature = "ares"))]
+            let dropped = drop_airborne_target_step(sim, id, rules, ctx.effects);
+            if !dropped {
                 drop_unsensed_cloaked_target_step(sim, id, rules, ctx.effects);
             }
             if !techno_common_steps(sim, id, rules, ctx.overlay_registry, ctx.effects, None) {
@@ -1465,6 +1472,7 @@ fn self_heal_step(
 /// cloaked-target test below is skipped (`JMP 0x00414DA1`). Returns whether
 /// it dropped one. A Cell's slot (`0x00410530`) answers false, and so does a
 /// Terrain object on the ground.
+#[cfg(not(feature = "ares"))]
 fn drop_airborne_target_step(
     sim: &mut Simulation,
     id: u64,
@@ -4681,7 +4689,8 @@ mod tests {
     /// `AircraftClass::AI` drops a Target in the air every frame
     /// (`0x00414D2C..0x00414D4B`): another aircraft at the high-flight
     /// threshold (2 x 104 leptons) goes, one a lepton below it stays. The
-    /// production object visit runs the step.
+    /// production object visit runs the step. Ares AACombat (1005C190, hook
+    /// 0x414D36) skips it: the airborne Target stays.
     #[test]
     fn an_aircraft_drops_a_target_in_the_air() {
         let pair = |altitude: i32| {
@@ -4708,19 +4717,22 @@ mod tests {
                 .set_for_test(Some(TargetKind::Entity(2)));
             sim
         };
-        let kept = |altitude: i32| {
-            let mut sim = pair(altitude);
-            let dropped = drop_airborne_target_step(
-                &mut sim,
-                1,
-                RuleSet::empty_for_test(),
-                FrameEffects::empty(),
-            );
-            assert_eq!(dropped, target_of(&sim, 1).is_none());
-            !dropped
-        };
-        assert!(!kept(208));
-        assert!(kept(207));
+        #[cfg(not(feature = "ares"))]
+        {
+            let kept = |altitude: i32| {
+                let mut sim = pair(altitude);
+                let dropped = drop_airborne_target_step(
+                    &mut sim,
+                    1,
+                    RuleSet::empty_for_test(),
+                    FrameEffects::empty(),
+                );
+                assert_eq!(dropped, target_of(&sim, 1).is_none());
+                !dropped
+            };
+            assert!(!kept(208));
+            assert!(kept(207));
+        }
         // Off the sixteenth frame, so the illegal-target check stays out.
         let visited = |altitude: i32| {
             let mut sim = pair(altitude);
@@ -4728,7 +4740,8 @@ mod tests {
             sim.object_ai_visit_one(1, None, ObjectAiCtx::default());
             target_of(&sim, 1)
         };
-        assert_eq!(visited(208), None);
+        let airborne_kept = cfg!(feature = "ares").then_some(TargetKind::Entity(2));
+        assert_eq!(visited(208), airborne_kept);
         assert_eq!(visited(207), Some(TargetKind::Entity(2)));
     }
 
@@ -5238,7 +5251,12 @@ mod tests {
             "Assign_Target(NULL) on arrival"
         );
         assert!(!entity.passive_scan.acquired());
-        assert_eq!(entity.weapon_burst.index(), 0);
+        // Ares TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps
+        // the burst word through Assign_Target(NULL).
+        assert_eq!(
+            entity.weapon_burst.index(),
+            i32::from(cfg!(feature = "ares"))
+        );
         assert_eq!(
             entity.mission.dispatch_timer(),
             MissionDispatchTimer::from_raw(0, 1),

@@ -2833,7 +2833,13 @@ impl Simulation {
                     && let Some(flags) = registry.flags(overlay_id)
                 {
                     let _chain_reaction_no_op = flags.chain_reaction;
-                    if flags.wall {
+                    // Ares 3.0 WaveClass_DamageCell_Wall (1005D7A0, hook
+                    // 0x75F46E): only a weapon whose Warhead is `Wall=yes`
+                    // damages the wall.
+                    if flags.wall
+                        && (!crate::rules::ARES_ENABLED
+                            || rules.warhead(warhead_name).is_some_and(|warhead| warhead.wall))
+                    {
                         let _wall = {
                             let mut host = SimulationWallRuntimeHost {
                                 dirty_cells: &mut self.dirty_cells,

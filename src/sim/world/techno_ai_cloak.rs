@@ -41,7 +41,13 @@ fn has_stealth_ability(
     entity: &crate::sim::game_entity::GameEntity,
     object: &crate::rules::object_type::ObjectType,
 ) -> bool {
-    entity.stealth_ability.active(object.cloakable) || entity.phobos_cloakable()
+    entity
+        .stealth_ability
+        .active(crate::sim::cloak_disguise::type_seeds_stealth(
+            entity.category(),
+            object,
+        ))
+        || entity.phobos_cloakable()
 }
 
 /// `FootClass::IsCloakable @ 0x004DBDA0` (vtable +0x288) in Ares builds:
@@ -940,8 +946,9 @@ pub(super) fn tick_stock_cloak_producer(
     let rank_cloak = has_weapon_ability(rank_from_u16(veterancy), object, Ability::Cloak);
     // Native calls CloakingTick even after a temporary ability disappears.
     // Keep the existing clock alive until its uncloak transition finishes.
-    if !stealth_ability.active(object.cloakable)
-        && !rank_cloak
+    if !stealth_ability.active(crate::sim::cloak_disguise::type_seeds_stealth(
+        category, object,
+    )) && !rank_cloak
         && !active_transition
         && !phobos_cloakable
     {

@@ -1299,8 +1299,20 @@ pub(crate) fn commit_entities(
         }
         // `UnitClass::ReceiveDamage 0x00737CB6..0x00737D2E`: a unit still
         // inside its war factory returns 0 before FootClass::ReceiveDamage.
+        // Ares 3.0 UnitClass_ReceiveDamage_ShipyardRepair (1005D5E0, hook
+        // 0x737CE4) leaves a Naval factory out: a ship in its yard is hit.
         if !event.receiver_flags.ignore_defenses
-            && world.unit_in_contact_war_factory(target_id, rules)
+            && world
+                .unit_war_factory_contact(target_id, rules)
+                .is_some_and(|factory| {
+                    !crate::rules::ARES_ENABLED
+                        || !world
+                            .substrate
+                            .entities
+                            .get(factory)
+                            .and_then(|building| world.object_type(building.type_ref(), rules))
+                            .is_some_and(|object| object.naval)
+                })
         {
             continue;
         }

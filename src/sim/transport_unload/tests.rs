@@ -767,12 +767,34 @@ fn ejection_keeps_the_passengers_target_unless_it_leaves_another_houses_open_tra
             assert_eq!(pax.weapon_burst.index(), 1, "{case}");
         } else {
             // Through the class setter: its NULL arm resets the burst
-            // (`0x006FCF5B`), which a raw store would not.
+            // (`0x006FCF5B`), which a raw store would not. Ares
+            // TechnoClass_SetTarget_Burst (1005D320, hook 0x6FCF53) keeps it.
             assert_eq!(pax.attack_target.target(), None, "{case}");
             assert!(!pax.passive_scan.acquired(), "{case}");
-            assert_eq!(pax.weapon_burst.index(), 0, "{case}");
+            assert_eq!(
+                pax.weapon_burst.index(),
+                i32::from(cfg!(feature = "ares")),
+                "{case}"
+            );
         }
     }
+}
+
+/// Ares UnitClass_Mi_Unload_LastPassenger (1005D5B0, hook 0x73D81E) reads
+/// `Gunner=`: a turreted transport that is no gunner unloads everyone.
+#[cfg(feature = "ares")]
+#[test]
+fn a_turreted_transport_that_is_no_gunner_unloads_everyone() {
+    let mut fx = Fixture::new(|_, _| false);
+    fx.rules = rules_with_patch("[FV]\nGunner=no\n");
+    let fv = fx.spawn("FV", 20, 20, 0);
+    let pax = fx.board(fv, 3);
+    assert!(fx.apply(Command::UnloadPassengers { transport_id: fv }));
+    for _ in 0..160 {
+        fx.tick();
+    }
+    assert!(fx.cargo_ids(fv).is_empty());
+    assert!(pax.iter().all(|&id| fx.revealed(id)));
 }
 
 /// `TurretCount > 0`: `+0x6E4 = (cargo == 1 ? 0 : 1)` — the IFV keeps its

@@ -589,6 +589,14 @@ impl Simulation {
     /// that owner. This is an input producer, never an event-execution gate.
     pub fn area_guard_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
         let actor = self.substrate.entities.get(id)?;
+        // Ares 3.0 GuardCommandClass_Execute (1005CAF0, hook 0x730DB0): only
+        // the player's own controllable actor, the miner arm included.
+        #[cfg(feature = "ares")]
+        if Some(actor.owner()) != self.session.current_house()
+            || !self.techno_player_controllable(id, rules)
+        {
+            return None;
+        }
         if actor.category() == EntityCategory::Structure {
             return None;
         }
@@ -2834,6 +2842,15 @@ impl Simulation {
         }
         let target = self.resolve_event_token(target);
         if let Some(object) = self.substrate.entities.get_mut(entity_id) {
+            // Ares 3.0 Networking_RespondToEvent_Selling (1005CE40, hook
+            // 0x4C6DDB): an object on Selling (0x13) that has no archive
+            // yet keeps none.
+            #[cfg(feature = "ares")]
+            if object.mission.current().known() == Some(crate::sim::mission::MissionType::Selling)
+                && object.archive_target().is_none()
+            {
+                return true;
+            }
             object.set_archive_target(target);
         }
         true

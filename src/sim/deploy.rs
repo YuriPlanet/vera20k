@@ -317,8 +317,12 @@ impl Simulation {
                 // both AI Hunt deploy and Guard→Unload through this owner.
                 // Active-retail EMP producer reachability is not established;
                 // default builds retain their current constructor-zero path.
+                // Ares 3.0 TechnoClass_CanDeploySlashUnload_Immobile
+                // (1005D1C0, hook 0x700E47) also refuses a falling or
+                // warping-in unit, falling first.
                 #[cfg(feature = "ares")]
-                if entity.emp_remaining() > 0 {
+                if entity.is_falling_down() || entity.emp_remaining() > 0 || entity.is_warping_in()
+                {
                     return false;
                 }
                 if entity.low_bridge_tube_state.is_some() {
@@ -563,6 +567,12 @@ impl Simulation {
         if (27..=30).contains(&doing) {
             if object.undeploy_delay <= -1 {
                 self.infantry_do_action(id, 31, true, rules, effects)?;
+            }
+            // Ares 3.0 InfantryClass_Mi_Unload_Undeploy (1005CD20, hook
+            // 0x51F716): this arm returns 1 after Guard instead of reaching
+            // FootUnload's 450.
+            if crate::rules::ARES_ENABLED {
+                delay = 1;
             }
         } else {
             self.infantry_do_action(id, 27, true, rules, effects)?;

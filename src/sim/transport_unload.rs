@@ -894,9 +894,17 @@ pub(crate) fn unit_mission_unload(
                 // `FUN_0070DC60` → `Type+0x808 TurretCount > 0` (`0x00717880`):
                 // a turreted transport (the IFV) keeps its last passenger —
                 // `+0x6E4 = (cargo == 1 ? 0 : 1)` (`0x0073D82C`..`0x0073D83C`).
+                // Ares 3.0 UnitClass_Mi_Unload_LastPassenger (1005D5B0, hook
+                // 0x73D81E) reads the type's `Gunner=` instead.
                 let turreted = sim
                     .object_type(entity.type_ref(), rules)
-                    .is_some_and(|obj| obj.turret_count > 0);
+                    .is_some_and(|obj| {
+                        if crate::rules::ARES_ENABLED {
+                            obj.gunner
+                        } else {
+                            obj.turret_count > 0
+                        }
+                    });
                 if let Some(entity) = sim.substrate.entities.get_mut(id) {
                     if turreted {
                         entity.transport_unload_keep_count.count = if cargo == 1 { 0 } else { 1 };

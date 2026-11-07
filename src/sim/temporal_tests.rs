@@ -3110,14 +3110,15 @@ fn arena(seed: u64, rules: &RuleSet) -> (Simulation, crate::sim::pathfinding::Pa
 /// The Temporal arm skips a Foot outside the ground layer (`0x0046946C`,
 /// vt+0x78 != 2): an aircraft landing below two levels answers Top (Fly
 /// `0x004CFCF0`) though it is not high flying, so it is not warped; landed,
-/// it is.
+/// it is. Ares BulletClass_DetonateAt_CanTemporalTarget (1005C600, hook
+/// 0x469467) admits the Air and Top layers, so there it is warped too.
 #[test]
 fn a_landing_aircraft_is_not_warped() {
     let rules = rules();
     let (mut sim, _) = arena(12, &rules);
     let plane = spawn(&mut sim, &rules, "HTNK", "Americans", 13, 10);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
-    for (height, warped) in [(100, false), (0, true)] {
+    for (height, warped) in [(100, cfg!(feature = "ares")), (0, true)] {
         let entity = sim.substrate.entities.get_mut(plane).unwrap();
         entity.set_category_for_test(EntityCategory::Aircraft);
         entity.locomotor = Some(

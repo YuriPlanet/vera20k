@@ -3101,12 +3101,14 @@ impl Simulation {
             sid,
             super::UninitContext::new(rules, overlay_registry).with_effects(frame_effects),
         );
+        // Ares 3.0 BuildingClass_Mi_Selling_PutMcv (1005C5D0, hook 0x449FF8)
+        // puts the unit with A8E7AC raised, so no Can_Enter_Cell refuses it.
         let (new_sid, outcome) = self.unlimbo_constructed_parent(
             new_sid,
             position,
             rules,
             overlay_registry,
-            false,
+            crate::rules::ARES_ENABLED,
             frame_effects,
         );
         if !matches!(
@@ -3116,7 +3118,13 @@ impl Simulation {
             //44A16B..44A176 pays the cached signed amount to the live owner.
             //The following tail never deletes the new Unit: its existing
             //limbo identity/Tracking remain, including ShortGame's BaseUnit count.
-            if let Some(refund) = failed_unlimbo_refund
+            // 1005C5D0 ignores the result: no refund, and the building goes
+            // with the unit left in limbo. RESIDUAL: Ares runs the rest of
+            // the conversion (health, veterancy, archive, attackers) on that
+            // limbo unit; VERA stops here. Trigger: a forced Put that still
+            // fails (no cell under the yard). Effect: none visible.
+            if !crate::rules::ARES_ENABLED
+                && let Some(refund) = failed_unlimbo_refund
                 && let Some(owner) = self
                     .substrate
                     .entities

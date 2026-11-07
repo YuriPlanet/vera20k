@@ -298,6 +298,19 @@ impl<'a> FireSubject<'a> {
                 }
                 Some(_) => Transporter::Plain,
             },
+            #[cfg(feature = "ares")]
+            transporter_gunner_open_topped: transport.is_some_and(|transport| {
+                self.world
+                    .object_type(transport.type_ref(), self.rules)
+                    .is_some_and(|object| object.gunner && object.open_topped)
+            }),
+            #[cfg(feature = "ares")]
+            transporter_cloaked: transport.is_some_and(|transport| {
+                transport
+                    .cloak
+                    .as_ref()
+                    .is_some_and(|cloak| cloak.state() != 0)
+            }),
             wave_live: self.world.active_wave_id(firer.stable_id()).is_some(),
             // FireError reads the actual Techno+304 Fire pointer.
             fire_particles_live: firer.fire_particle_system.system().is_some(),
