@@ -96,7 +96,8 @@ impl GameRenderInstanceCounts {
     }
 }
 
-/// Wall-clock spans of one in-game render, in `render_game`'s phase order.
+/// Wall-clock spans of one in-game render, in `render_game`'s phase order,
+/// and of handing that frame to the driver.
 ///
 /// Sampled by the frame owner into the dashboard's meter and the FPS panel's;
 /// readers only ever see a window's totals or means, never one frame's spans.
@@ -114,14 +115,28 @@ pub(crate) struct RenderPhases {
     pub sidebar: Duration,
     /// Phase 6 — instance upload to the GPU buffer pool.
     pub upload: Duration,
-    /// Prep before phase 1 and everything after phase 6 (combat lights, terrain
-    /// prep, draw records) — the part no single phase owns.
+    /// Combat lights and spotlights: their draw records and instance upload.
+    pub lights: Duration,
+    /// Effect lines and rings (lasers, bolts, trails, beams, range circles,
+    /// target and airstrike lines) and ion blasts: the composites' Main
+    /// draws, line rasters and their uploads.
+    pub effects: Duration,
+    /// Phase 7 — recording the frame's render passes, without the
+    /// submissions made on the way (those are `handoff`).
+    pub draw_calls: Duration,
+    /// Encoding the recorded passes, submitting them and presenting: the
+    /// bounded mid-frame submissions, plus the frame owner's final one.
+    pub handoff: Duration,
+    /// Prep before phase 1 and between the lights and the effects (sidebar
+    /// surfaces, terrain targets) — the part no named span owns.
     pub other: Duration,
 }
 
 impl RenderPhases {
-    /// The seven spans in declaration order, for the meter and the wire.
-    pub(crate) fn spans(&self) -> [Duration; 7] {
+    pub(crate) const COUNT: usize = 11;
+
+    /// The spans in declaration order, for the meter and the wire.
+    pub(crate) fn spans(&self) -> [Duration; Self::COUNT] {
         [
             self.world,
             self.debug,
@@ -129,6 +144,10 @@ impl RenderPhases {
             self.ui,
             self.sidebar,
             self.upload,
+            self.lights,
+            self.effects,
+            self.draw_calls,
+            self.handoff,
             self.other,
         ]
     }
@@ -450,6 +469,7 @@ pub(crate) fn render_game(
         ],
         world_camera.zoom,
     );
+    let after_lights = render_started.map(|_| Instant::now());
     let composition_view = state.renderer.combat_light_renderer.composition_view();
     let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
     // Shader row coordinates are unscaled world pixels; scissor uses target
@@ -488,6 +508,7 @@ pub(crate) fn render_game(
             .map_or(&state.renderer.depth_view, |zoom| zoom.depth_view()),
         state.renderer.batch_renderer.camera_uniform(),
     );
+    let effects_started = render_started.map(|_| Instant::now());
 
     // Tactical6D4673 -> LineTrail556D40 updates once per actual composite.
     // It reads committed Bullet coordinates even when no simulation tick ran.
@@ -773,6 +794,7 @@ pub(crate) fn render_game(
         &ion_blasts,
         world_camera.zoom,
     );
+    let after_effects = render_started.map(|_| Instant::now());
 
     // Phase 7: Dispatch draw calls in render order.
     draw_passes::dispatch_draw_passes(
@@ -796,9 +818,10 @@ pub(crate) fn render_game(
             software_cursor: ui.software_cursor_draw,
         },
     );
-    // Prep before phase 1 plus everything after phase 6 is the `other` row:
-    // combat lights and terrain prep are real work, just not a named phase.
     let finished = render_started.map(|_| Instant::now());
+    // The bounded submissions made while recording belong to the hand-off;
+    // the frame owner adds its final submission and present.
+    let submitted = state.renderer.terrain_draw_renderer.frame_submit_time();
     let phases = render_started.map(|render_started| RenderPhases {
         world: after_world.unwrap().duration_since(phase1_started.unwrap()),
         debug: after_debug.unwrap().duration_since(after_world.unwrap()),
@@ -806,8 +829,19 @@ pub(crate) fn render_game(
         ui: after_ui.unwrap().duration_since(after_shroud.unwrap()),
         sidebar: after_sidebar.unwrap().duration_since(after_ui.unwrap()),
         upload: after_upload.unwrap().duration_since(after_sidebar.unwrap()),
+        lights: after_lights.unwrap().duration_since(after_upload.unwrap()),
+        effects: after_effects
+            .unwrap()
+            .duration_since(effects_started.unwrap()),
+        draw_calls: finished
+            .unwrap()
+            .duration_since(after_effects.unwrap())
+            .saturating_sub(submitted),
+        handoff: submitted,
         other: phase1_started.unwrap().duration_since(render_started)
-            + finished.unwrap().duration_since(after_upload.unwrap()),
+            + effects_started
+                .unwrap()
+                .duration_since(after_lights.unwrap()),
     });
     Ok(GameRenderOutput {
         instance_counts: sidebar.emitted_instance_counts(),

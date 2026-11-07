@@ -234,6 +234,10 @@ const en: Record<string, string> = {
   "rnd.ui": "minimap + UI",
   "rnd.sidebar": "sidebar",
   "rnd.upload": "GPU upload",
+  "rnd.lights": "combat lights",
+  "rnd.effects": "effect lines",
+  "rnd.drawCalls": "draw calls",
+  "rnd.handoff": "hand to driver",
   "rnd.other": "other",
 
   "rep.phaseHint": "Separate means per tick and per render; percentages stay within each group.",
@@ -578,6 +582,10 @@ const zh: Record<string, string> = {
   "rnd.ui": "小地图 / UI",
   "rnd.sidebar": "侧边栏",
   "rnd.upload": "GPU 上传",
+  "rnd.lights": "战斗灯光",
+  "rnd.effects": "特效线条",
+  "rnd.drawCalls": "绘制调用",
+  "rnd.handoff": "提交驱动",
   "rnd.other": "其它",
 
   "rep.phaseHint": "tick 与渲染分别计算均值，百分比仅在各组内计算。",
@@ -922,6 +930,10 @@ const de: Record<string, string> = {
   "rnd.ui": "Minimap / UI",
   "rnd.sidebar": "Seitenleiste",
   "rnd.upload": "GPU-Upload",
+  "rnd.lights": "Kampflichter",
+  "rnd.effects": "Effektlinien",
+  "rnd.drawCalls": "Zeichenaufrufe",
+  "rnd.handoff": "Übergabe an Treiber",
   "rnd.other": "Sonstiges",
 
   "rep.phaseHint": "Getrennte Mittelwerte pro Tick und Renderaufruf; Anteile gelten nur innerhalb ihrer Gruppe.",
@@ -1267,6 +1279,10 @@ const fr: Record<string, string> = {
   "rnd.ui": "Minicarte / UI",
   "rnd.sidebar": "Barre latérale",
   "rnd.upload": "Envoi GPU",
+  "rnd.lights": "Lumières de combat",
+  "rnd.effects": "Lignes d'effet",
+  "rnd.drawCalls": "Appels de dessin",
+  "rnd.handoff": "Remise au pilote",
   "rnd.other": "Autres",
 
   "rep.phaseHint": "Moyennes distinctes par tick et par rendu ; pourcentages calculés dans chaque groupe.",
