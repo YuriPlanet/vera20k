@@ -250,7 +250,8 @@ fn ally_writes_reach_the_remembered_reveal_viewers() {
         (direct.to_vec(), allied.to_vec())
     };
     let (alone, with_ally) = (vec![ids[1]], vec![ids[1], ids[2]]);
-    sim.reveal_viewers.begin();
+    let clients = sim.fog_viewers();
+    sim.reveal_viewers.begin(clients);
     assert_eq!(viewers(&mut sim), (alone.clone(), alone.clone()));
     sim.make_ally(ids[1], ids[2], &rules, None, FrameEffects::default(), false);
     assert_eq!(viewers(&mut sim), (with_ally.clone(), with_ally));
