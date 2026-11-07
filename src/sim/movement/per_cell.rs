@@ -195,9 +195,21 @@ impl Simulation {
             rules,
             effects,
         );
-        // 0x0073A5CE..0x0073A5E4: an answer other than 1 or 5 scatters the unit
-        // (a refinery being sold) — RESIDUAL, module doc.
-        let _ = reply;
+        // 0x0073A5CE..0x0073A5E4: an answer other than 1 or 5 Scatters the
+        // Unit, vt+0x174(&0xB1CFE8, 1, 0). A dock in its Selling mission
+        // answers NEGATORY (Building `0x0043C6FC`) and a building that is no
+        // dock answers 0 (the Techno fallback); no receiver answers DOCK_NOW
+        // with 5.
+        if reply != crate::sim::radio::RadioResponse::Roger {
+            let _ = self.scatter(
+                id,
+                None,
+                super::scatter::ScatterFlags::new(true, false),
+                rules,
+                registry,
+                effects,
+            );
+        }
         false
     }
 
