@@ -111,6 +111,64 @@ clears slot 2 and becomes count 2; a null last slot still decrements; count zero
 does nothing. No pointer compaction occurs. Cloaking and superweapon PowerDown
 arms remain outside these ordinary power-up controls.
 
+## WallTower first installation
+
+PowerUp's `0x4514F3` identity check precedes the ordinary capacity gate. When
+the host is Rules `WallTower`, `0x45150B..0x4515E8` advances the retained
+Building `+0x5FC` image variant and increments the count even at capacity zero.
+The Building constructor `0x43B768/0x43B7BF` initializes that variant to -1;
+the normal cycle is -1, 0, 1, 2, 0. This is separate from the gunner's turret
+index. A voxel turret skips the art/variant change but still increments count.
+The selected non-voxel arm clears slot9 with `0x451E40`, requests
+`Image + '_' + ('B' + variant)` directly through `0x451890`, then stores the
+variant. The raw next=-1 arm skips both allocation and the variant store.
+
+Reproduce a zero-capacity component control with the existing fixture:
+
+```sh
+VERA20K_GAMEMD_EXE='<original-gamemd.exe>' python - <<'PY'
+from tools.spatial_oracle.building_upgrades import UpgradeFixture, UPGRADE_TYPE
+from tools.spatial_oracle.object_health import OBJ, TYPE, RULES, dwords
+f = UpgradeFixture()
+f.prepare_upgrade(slots=0, host='GADUMY', requested='GADUMY')
+u = f.u
+u.mem_write(TYPE + 0x1F8, b'NTIRON\0')
+u.mem_write(RULES + 0x87C, dwords(TYPE))
+u.mem_write(TYPE + 0x16C5, b'\0')
+u.mem_write(OBJ + 0x5FC, dwords(-1))
+u.mem_write(OBJ + 0x55C, bytes(21 * 4))
+assert f.admit()
+result = f.install()
+assert result['count'] == 1 and result['slots'][0] == UPGRADE_TYPE
+assert f.read(OBJ + 0x5FC) == 0
+f.unchanged()
+PY
+```
+
+These component values and the ordinary/voxel contrasts are pinned in
+`building_upgrades::tests::wall_tower_identity_bypasses_only_the_ordinary_power_up_capacity_check`.
+This fixture supplies the type identity and replaces animation allocation,
+House refresh and temporary-object UnInit; it does not execute retail startup.
+
+The retail-backed GADUMY/GAPILL authored-map test uses production layered
+Rules and fixed ART: General.WallTower is GADUMY, Image is NTIRON, capacity is
+zero, and NTIRON_B is unregistered. The original allocator synchronizes6E6
+before its failed AnimType lookup; absence of an animation cannot suppress
+the count/variant change. Rust's existing allocator, animation deletion and
+temporary-object lifecycle remain their single owners. The new variant uses
+BuildingArt serialization and world_hash; codec roundtrips do not certify
+production PreparedLoad asset restoration.
+
+Registering a dynamic turret animation in a map/mod reaches the separate
+Rules slot9/SHP-turret reader and asset-binding residual. Its placement or
+recreation can still be wrong or absent; the selected unregistered NTIRON_B
+does not consume those coordinates. The full WallTower/SHP-turret mechanism
+and whole451400 remain open. PowerDown451690 resets the variant only when
+the final upgrade type has `Turret=true`; its ordinary branch preserves it.
+GAPILL's native-default `Turret=false` does not reach that reset; the
+turret-removal branch of `power_down_building_upgrade` applies it through
+`BuildingArt`.
+
 ## Coverage limits
 
 `451690` tests the removed top type's own `Turret` byte (`+CA1`). When true,
