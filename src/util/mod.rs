@@ -8,6 +8,7 @@
 //! - Any module may depend on util/.
 
 pub mod base64;
+pub(crate) mod bit_span;
 pub mod case_insensitive_path;
 pub mod config;
 pub mod direction;

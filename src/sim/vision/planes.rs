@@ -6,7 +6,9 @@ use std::ops::Range;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use super::{DummyVisibility, InternedId, MapCellEdgeCache, OwnerVisibility, ShroudKnowledge};
+use super::{
+    CellBounds, DummyVisibility, InternedId, MapCellEdgeCache, OwnerVisibility, ShroudKnowledge,
+};
 use crate::map::resolved_terrain::NativeCellQuery;
 
 /// Every viewer's [`OwnerVisibility`], keyed by viewer.
@@ -86,8 +88,9 @@ struct Plane {
 pub(super) enum PlaneWrite {
     /// [`OwnerVisibility::reveal_source_cells`]: a source's sight walk.
     Reveal { final_pass: bool },
-    /// [`OwnerVisibility::refresh_ground_frames`]: a sight border's refresh.
-    Border,
+    /// [`OwnerVisibility::refresh_ground_frames`]: a sight border's refresh,
+    /// its cells within `bounds`.
+    Border { bounds: CellBounds },
     /// [`OwnerVisibility::count_sources`]: a retained footprint's source
     /// counts, `local` for its owner's own plane.
     Sources { local: bool, add: bool },
@@ -104,7 +107,9 @@ impl OwnerVisibility {
             PlaneWrite::Reveal { final_pass } => {
                 self.reveal_source_cells(cells, final_pass, native_cells);
             }
-            PlaneWrite::Border => self.refresh_ground_frames(cells, native_cells),
+            PlaneWrite::Border { bounds } => {
+                self.refresh_ground_frames(cells, bounds, native_cells);
+            }
             PlaneWrite::Sources { local, add } => self.count_sources(cells, local, add),
         }
     }
@@ -309,7 +314,7 @@ impl Planes {
             .planes
             .entry(viewer)
             .or_insert_with(|| Plane::new(OwnerVisibility::new(width, height)));
-        let looks_up = matches!(write, PlaneWrite::Reveal { .. } | PlaneWrite::Border);
+        let looks_up = matches!(write, PlaneWrite::Reveal { .. } | PlaneWrite::Border { .. });
         if defer
             && (!looks_up
                 || cells
@@ -362,7 +367,7 @@ impl<'de> Deserialize<'de> for Planes {
 
 #[cfg(test)]
 mod tests {
-    use super::{PlaneWrite, Planes};
+    use super::{CellBounds, PlaneWrite, Planes};
     use crate::map::cell_index::NativeCellIdentity;
     use crate::map::resolved_terrain::{NativeCellQuery, test_flat_cell, test_grid};
     use crate::sim::intern::test_intern;
@@ -380,18 +385,22 @@ mod tests {
     fn script() -> Vec<(PlaneWrite, Vec<(u16, u16)>)> {
         let sources = |add| PlaneWrite::Sources { local: true, add };
         let walk = |final_pass| PlaneWrite::Reveal { final_pass };
+        let border = |cells: Vec<(u16, u16)>| {
+            let bounds = CellBounds::of(&cells).unwrap();
+            (PlaneWrite::Border { bounds }, cells)
+        };
         vec![
             (sources(true), square(5, 11, 2)),
             (walk(false), square(5, 11, 2)),
-            (PlaneWrite::Border, square(5, 11, 3)),
+            border(square(5, 11, 3)),
             (walk(false), square(9, 6, 1)),
             (sources(true), square(6, 11, 2)),
             (walk(false), square(6, 11, 2)),
-            (PlaneWrite::Border, square(8, 6, 2)),
+            border(square(8, 6, 2)),
             (walk(false), square(2, 3, 2)),
             (sources(false), square(5, 11, 2)),
             (walk(true), square(5, 11, 2)),
-            (PlaneWrite::Border, square(6, 11, 3)),
+            border(square(6, 11, 3)),
             (walk(false), square(7, 11, 2)),
         ]
     }
