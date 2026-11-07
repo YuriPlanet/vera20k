@@ -11800,8 +11800,11 @@ fn phobos_radiation_color_ignores_the_theater() {
 
 /// The retail owner keeps native `RadSite65B5EA..65B684`: on SNOW the light
 /// substitutes signed -128 for red and blue and keeps only `RadColor`'s
-/// green, so the theater decides which channels the field uses.
-#[cfg(not(feature = "phobos"))]
+/// green, so the theater decides which channels the field uses. Ares's
+/// RadSiteClass_Radiate_UnhardcodeSnow (10056DB0, hook 0x65B5FB) jumps past
+/// this substitution; `radiation::ares_radiation_keeps_rad_color_on_snow`
+/// covers that build.
+#[cfg(not(any(feature = "phobos", feature = "ares")))]
 #[test]
 fn retail_snow_theater_substitutes_red_and_blue() {
     let rules = radiation_rules();
