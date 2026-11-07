@@ -101,14 +101,17 @@ const fn item(key: &'static str, fallback: &'static str, value: i32) -> SetupCom
     }
 }
 
-/// Landform entries. Note the values start at 1, not 0: archipelago (0) is
-/// deliberately absent from the list, so a map type of 0 leaves the combo
-/// showing nothing at all rather than falling back to the first entry.
-const MAP_TYPE_ITEMS: [SetupComboItem; 4] = [
+/// Landform entries. The original lists values 1..4 only: archipelago (0)
+/// is absent, though the generator builds it and the string table names it.
+/// VERA lists it last in an offline Skirmish dialog, as it does the larger
+/// sizes, so the original four keep their rows; network dialogs keep four.
+const NATIVE_MAP_TYPE_ITEMS: usize = 4;
+const MAP_TYPE_ITEMS: [SetupComboItem; 5] = [
     item("TXT_MAP_CONTINENT", "Continent", 1),
     item("TXT_MAP_TEAM_CONTINENTS", "Team Continents", 2),
     item("TXT_MAP_INLAND", "Inland", 3),
     item("TXT_MAP_MOUNTAINOUS", "Mountainous", 4),
+    item("TXT_MAP_ARCHIPELAGO", "Archipelago", 0),
 ];
 
 const TIME_ITEMS: [SetupComboItem; 4] = [
@@ -118,11 +121,18 @@ const TIME_ITEMS: [SetupComboItem; 4] = [
     item("TXT_TIME_NIGHT", "Night", 3),
 ];
 
-/// Only two theaters are offered, and their labels come from the theater table's
-/// own name strings rather than the dialog's string list.
-const THEATER_ITEMS: [SetupComboItem; 2] = [
+/// The original offers two theaters, labelled from the theater table's own
+/// name strings rather than the dialog's string list. VERA also offers the
+/// generator's URBAN and DESERT (`rmg::emit::theater_name` 2 and 3), which
+/// the string table names. LUNAR is not offered: it authors no water, shore,
+/// cliff or road tiles for the generator to place. Like the larger sizes,
+/// the added theaters are offered only in an offline Skirmish dialog.
+const NATIVE_THEATER_ITEMS: usize = 2;
+const THEATER_ITEMS: [SetupComboItem; 4] = [
     item("Name:Temperate", "Temperate", 0),
     item("Name:Snow", "Snow", 1),
+    item("Name:Urban", "Urban", 2),
+    item("TXT_BIOME_DESERT", "Desert", 3),
 ];
 
 /// The original's four sizes, then VERA's larger ones (`rmg::EXTENDED_SIZES`).
@@ -148,9 +158,11 @@ const RESOURCE_ITEMS: [SetupComboItem; 4] = [
 /// maps only for an `extended` (offline Skirmish) dialog.
 pub fn setup_combo_items(combo: SetupCombo, extended: bool) -> &'static [SetupComboItem] {
     match combo {
-        SetupCombo::MapType => &MAP_TYPE_ITEMS,
+        SetupCombo::MapType if extended => &MAP_TYPE_ITEMS,
+        SetupCombo::MapType => &MAP_TYPE_ITEMS[..NATIVE_MAP_TYPE_ITEMS],
         SetupCombo::Time => &TIME_ITEMS,
-        SetupCombo::Theater => &THEATER_ITEMS,
+        SetupCombo::Theater if extended => &THEATER_ITEMS,
+        SetupCombo::Theater => &THEATER_ITEMS[..NATIVE_THEATER_ITEMS],
         SetupCombo::Size if extended => &SIZE_ITEMS,
         SetupCombo::Size => &SIZE_ITEMS[..=crate::map::rmg::NATIVE_MAX_SIZE_OPTION as usize],
         SetupCombo::Resources => &RESOURCE_ITEMS,
@@ -252,6 +264,11 @@ impl RandomMapSetupModalState {
             self.options.num_players = self.options.num_players.min(NATIVE_MAX_PLAYERS);
             self.options.width = self.options.width.min(NATIVE_MAX_SIZE_OPTION);
             self.options.height = self.options.height.min(NATIVE_MAX_SIZE_OPTION);
+            // The options record is shared with offline Skirmish, so a theater
+            // only that dialog offers falls back to the first native entry.
+            if self.options.theater >= NATIVE_THEATER_ITEMS as i32 {
+                self.options.theater = 0;
+            }
         }
     }
 
@@ -605,18 +622,30 @@ mod tests {
             num_players: 30,
             width: 7,
             height: 7,
+            theater: 3,
             ..Default::default()
         };
         let mut network = RandomMapSetupModalState::open(options.clone(), None, false, false);
-        assert_eq!((network.options.num_players, network.options.width), (8, 3));
+        assert_eq!(
+            (
+                network.options.num_players,
+                network.options.width,
+                network.options.theater
+            ),
+            (8, 3, 0)
+        );
         assert_eq!(network.combo_items(SetupCombo::Size).len(), 4);
         network.set_num_players(12);
         assert_eq!(network.options.num_players, 8);
 
         let skirmish = RandomMapSetupModalState::open(options, None, false, true);
         assert_eq!(
-            (skirmish.options.num_players, skirmish.options.width),
-            (30, 7)
+            (
+                skirmish.options.num_players,
+                skirmish.options.width,
+                skirmish.options.theater
+            ),
+            (30, 7, 3)
         );
         assert_eq!(skirmish.combo_items(SetupCombo::Size).len(), 8);
     }
@@ -744,8 +773,8 @@ mod tests {
     }
 
     #[test]
-    fn map_type_entries_start_at_one_and_omit_archipelago() {
-        let items = setup_combo_items(SetupCombo::MapType, true);
+    fn map_type_entries_outside_offline_skirmish_start_at_one_and_omit_archipelago() {
+        let items = setup_combo_items(SetupCombo::MapType, false);
         assert_eq!(items.len(), 4);
         assert_eq!(
             items.iter().map(|entry| entry.value).collect::<Vec<_>>(),
@@ -754,16 +783,39 @@ mod tests {
     }
 
     #[test]
-    fn an_unlisted_map_type_clears_the_selection() {
+    fn every_map_type_selects_its_entry_once_archipelago_is_listed() {
         let mut state = opened();
         state.set_map_type(0);
         assert_eq!(
             state.selected_item_index(SetupCombo::MapType),
-            None,
-            "archipelago has no entry, so nothing is shown as selected"
+            Some(4),
+            "VERA lists archipelago last"
+        );
+        state.set_map_type(9);
+        assert_eq!(
+            state.selected_item_index(SetupCombo::MapType),
+            Some(3),
+            "an out-of-range value clamps to mountainous"
         );
         state.set_map_type(3);
         assert_eq!(state.selected_item_index(SetupCombo::MapType), Some(2));
+    }
+
+    #[test]
+    fn archipelago_and_the_added_theaters_are_listed_after_the_original_entries() {
+        let values = |combo, extended| {
+            setup_combo_items(combo, extended)
+                .iter()
+                .map(|item| item.value)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(values(SetupCombo::MapType, true), [1, 2, 3, 4, 0]);
+        assert_eq!(values(SetupCombo::Theater, true), [0, 1, 2, 3]);
+        assert_eq!(
+            values(SetupCombo::Theater, false),
+            [0, 1],
+            "network dialogs"
+        );
     }
 
     #[test]
