@@ -1687,6 +1687,13 @@ impl Simulation {
             // EventClass::Execute @ 0x004C6CB0, SELL arm 0x004C6F20:
             // PlanningDetach precedes the target's alive/owner refusal.
             | Command::SellBuilding { entity_id } => Some(*entity_id),
+            // The VERA-only bunker-eject record is Event9 DEPLOY on the
+            // bunker's occupant: 0x004C76CA detaches that Unit's planning.
+            Command::EjectBunker { bunker_id } => self
+                .substrate
+                .entities
+                .get(*bunker_id)
+                .and_then(|bunker| bunker.bunker.occupant()),
             _ => cmd.megamission_actor(),
         };
         if !planned && let Some(actor) = ordinary_actor {
@@ -4496,6 +4503,20 @@ mod tests {
         assert_eq!(unit.radio_contacts.slot(0), None);
         assert!(unit.navigation.nav_com().is_none());
         assert!(unit.attack_target.target().is_none());
+    }
+
+    /// Event9 detaches the deployed object's planning (`0x004C76CA`), so the
+    /// eject record detaches the occupant's path, not the bunker's.
+    #[test]
+    fn eject_bunker_record_detaches_the_occupants_planning() {
+        let (mut sim, rules) = installed_bunker_fixture();
+        sim.start_empty_planning_path_for_test(1);
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::EjectBunker { bunker_id: 2 },
+            Some(&rules),
+        ));
+        assert!(!sim.has_planning_path_for_test(1));
     }
 
     /// The command-time release only checked ownership and an occupant.

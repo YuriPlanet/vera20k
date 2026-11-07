@@ -686,15 +686,7 @@ impl OwnerVisibility {
             }
             self.publish_knowledge(index);
         }
-        // `0x567CEE..0x567CF8`: a source reveal that reaches a cell the map
-        // already holds as initialized and visible leaves its cached120/121
-        // frames alone (retail GoldSt, vera20k#3900). The counter and ground
-        // writes below are unchanged.
-        let frames = if projection == MapRevealProjection::Source && !fresh {
-            old.frames
-        } else {
-            self.store_map_cell_frames(lookup, cell, before, native_cells)
-        };
+        let frames = self.store_map_cell_frames(lookup, cell, before, native_cells);
         if !fresh && old.frames == frames {
             return None;
         }

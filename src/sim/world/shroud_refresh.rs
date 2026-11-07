@@ -2344,7 +2344,7 @@ impl Simulation {
             // receives the call and returns at `0x00567D88`; every client
             // map runs its own instance, so each is called once.
             let radius = geometry.radius.clamp(0, i32::from(vision::MAX_SIGHT_RANGE)) as u16;
-            for _client in &clients {
+            for _client in clients.iter() {
                 let _ = self.reveal_area(
                     &[],
                     (geometry.origin.0, geometry.origin.1),
