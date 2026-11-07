@@ -222,6 +222,8 @@ fn runtime_low_bridge_sprite_keys(
 /// TiberiumClass's retained primary and extra images while
 /// retaining the Cell data byte. Preload the same range owner the display
 /// selector uses, including images absent from the current map pack.
+/// PlaceTiberium487266..48728C can also create any of its twelve flat slots
+/// as a live unflagged overlay, whose later draw takes the ordinary palette.
 fn runtime_tiberium_sprite_keys(
     overlay_registry: &OverlayTypeRegistry,
     tiberium_types: &TiberiumTypeRegistry,
@@ -229,12 +231,22 @@ fn runtime_tiberium_sprite_keys(
     let mut keys = HashSet::new();
     for ty in tiberium_types.types() {
         let variant_ids = overlay_registry.tiberium_display_variant_ids(ty);
-        for overlay_id in variant_ids {
+        for (variant, overlay_id) in variant_ids.enumerate() {
             let Some(name) = overlay_registry.name(overlay_id as u8).map(str::to_owned) else {
                 continue;
             };
+            let ordinary_placement = variant < 12
+                && overlay_registry
+                    .flags(overlay_id as u8)
+                    .is_some_and(|flags| !flags.tiberium);
             for frame in 0..ty.image().density_levels() {
                 keys.insert(tiberium_image_key(&name, frame));
+                if ordinary_placement {
+                    keys.insert(OverlaySpriteKey {
+                        name: name.clone(),
+                        frame,
+                    });
+                }
             }
         }
     }
@@ -1924,7 +1936,8 @@ mod tests {
             }
         }
         for name in resource_names {
-            text.push_str(&format!("[{name}]\nTiberium=yes\n"));
+            let flag = if name == "GEM01" { "no" } else { "yes" };
+            text.push_str(&format!("[{name}]\nTiberium={flag}\n"));
         }
         let ini = IniFile::from_str(&text);
         let overlays = OverlayTypeRegistry::from_ini(&ini, None);
@@ -1932,7 +1945,18 @@ mod tests {
 
         let keys = runtime_tiberium_sprite_keys(&overlays, &tiberiums);
 
-        assert_eq!(keys.len(), 288, "2 types * 12 images * 12 densities");
+        // PlaceTiberium487286 may select this unflagged flat slot. Its later
+        // DrawOverlay takes the ordinary branch, independently of resource
+        // cells that select the same SHP through their Image binding.
+        assert!(keys.contains(&OverlaySpriteKey {
+            name: "GEM01".into(),
+            frame: 11
+        }));
+        assert_eq!(
+            keys.len(),
+            300,
+            "288 resource keys plus 12 ordinary flat frames"
+        );
         for (name, frame) in [("TIB05", 8), ("GEM01", 11)] {
             assert!(keys.contains(&tiberium_image_key(name, frame)));
         }

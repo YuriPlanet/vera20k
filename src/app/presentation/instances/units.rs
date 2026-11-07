@@ -2766,7 +2766,7 @@ fn gather_animation<'a>(
     entity: &crate::sim::game_entity::GameEntity,
 ) -> Result<Option<(Option<&'a str>, i32)>, crate::rules::overlay_types::TiberiumImageError> {
     let gathering = object.ore_gathering();
-    let Some(grid) = sim.overlay_grid().as_ref() else {
+    let Some(grid) = sim.overlay_grid() else {
         return Ok(None);
     };
     let Some(resource) = crate::sim::tiberium::tiberium_cell_view(
