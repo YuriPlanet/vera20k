@@ -134,11 +134,14 @@ impl OreGrowthConfig {
     /// GameMode != 0 (`Full_Init @ 0x00687C23` overwrites the scenario dword
     /// with the session dword every skirmish/multiplayer start forces to
     /// `| 0xC0`) and from the map `[SpecialFlags]` only in GameMode 0
-    /// (`0x006B8CA0`, default = the pre-existing bit; VERA keeps `true` there,
-    /// gamemd's pre-read campaign default UNCHECKED). `[General]
-    /// TiberiumGrows/TiberiumSpreads` have no gamemd reader (the only readers of
-    /// those key strings are `[SpecialFlags]` I/O at `0x006B8B30`/`0x006B8CA0`
-    /// and `[MultiplayerDialogSettings]` at `0x006720AA`) and no longer gate.
+    /// (`0x006B8CA0`, default = the pre-existing bit). The loader fills that
+    /// default first ([`crate::map::basic::SpecialFlagsSection::resolve_campaign_defaults`]:
+    /// the retained scenario's bits, else the cold ctor's grows off, spreads
+    /// on), so the `true` fallbacks below serve only fixtures that skip it.
+    /// `[General] TiberiumGrows/TiberiumSpreads` have no gamemd reader (the
+    /// only readers of those key strings are `[SpecialFlags]` I/O at
+    /// `0x006B8B30`/`0x006B8CA0` and `[MultiplayerDialogSettings]` at
+    /// `0x006720AA`).
     pub fn resolve(
         basic: &BasicSection,
         special_flags: &SpecialFlagsSection,
@@ -2461,20 +2464,13 @@ SpreadPercentage=.06
 
     /// `OreGrowthConfig::resolve`: GameMode != 0 takes the session bits and
     /// ignores the map `[SpecialFlags]` keys (never read there, `0x006B8CA0`);
-    /// GameMode 0 reads the map keys; `[General] TiberiumGrows/TiberiumSpreads`
-    /// gate nothing; `[Basic] TiberiumGrowthEnabled` gates in every mode.
+    /// GameMode 0 reads the map keys; `[Basic] TiberiumGrowthEnabled` gates in
+    /// every mode.
     #[test]
     fn gsi_09_04_config_resolves_flag_bits_from_session_in_nonzero_game_mode() {
         use crate::map::basic::{BasicSection, SpecialFlagsSection};
-        use crate::rules::ini_parser::IniFile;
         use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioSession};
 
-        let general = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nTiberiumGrows=no\nTiberiumSpreads=no\n",
-        ))
-        .expect("rules")
-        .general;
-        assert!(!general.tiberium_grows && !general.tiberium_spreads);
         let map_off = SpecialFlagsSection {
             tiberium_grows: Some(false),
             tiberium_spreads: Some(false),

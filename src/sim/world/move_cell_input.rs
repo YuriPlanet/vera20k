@@ -117,9 +117,12 @@ impl Simulation {
     /// (Ctrl's forced shot, and [`Self::cell_attack_rung_admits`]); a tube
     /// entrance (Unit `0x007406CF`, Infantry `0x0051F9AC`); a JumpJet
     /// soldier over a tube's neighbourhood, which answers 0
-    /// (`0x0051F860..0x0051F8A6`); the fogged-object scans, among them the
-    /// harvest rungs' fogged overlay (`0x0074052A..0x0074056C`); and
+    /// (`0x0051F860..0x0051F8A6`); the fogged-object scans; and
     /// DirectRocker (`+0x2A8`, `0x00700617`), which nothing in retail sets.
+    /// The harvest rungs' FogOfWar scan (`0x0074052A..0x0074056C`) needs a fog
+    /// record of WhatAmI 0x14 (Overlay), which only FoggedObjectClass's overlay
+    /// constructor (`0x004D0980`) makes, and nothing calls it. The rungs then
+    /// read the live Cell, as here.
     pub fn cell_move_action(
         &self,
         viewer: InternedId,
@@ -478,9 +481,10 @@ impl Simulation {
     /// The planning rung before it (`0x00700840`) never answers in YR; see
     /// [`Self::cell_move_action`]. Residuals: the fogged-object scan
     /// behind the scenario's FogOfWar flag
-    /// (`0x00700761..0x0070080F`: a fogged overlay replaces the live one and
-    /// a fogged enemy building admits the rung) and the veinhole monster
-    /// (`0x00700990`, no VERA owner) are not modelled.
+    /// (`0x00700761..0x0070080F`: a fogged enemy building admits the rung)
+    /// and the veinhole monster (`0x00700990`, no VERA owner) are not
+    /// modelled. The scan's fogged-overlay arm never fires: no overlay fog
+    /// record exists (`0x004D0980` has no caller).
     pub fn cell_attack_rung_admits(
         &self,
         id: u64,
