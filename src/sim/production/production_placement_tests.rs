@@ -4196,6 +4196,9 @@ fn stock_yuri_cloning_vat_duplicates_a_successfully_placed_infantry() {
 /// nested-exit guard from its type flag. The shared `FreeRadio @ 0x0065ADC0`
 /// admission rejects the full vat before candidate selection, but the created
 /// infantry remains in limbo rather than being deleted or refunded.
+// Ares KickOutClones100127C0 deletes a refused clone instead
+// (`ares_kick_out_clones_follow_cloneable_cloned_as_and_delete_refusals`).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn cloning_vat_keeps_a_refused_copy_in_limbo() {
     let scenario = IniFile::from_str("[NACLON]\nFactory=InfantryType\n");
@@ -4570,5 +4573,95 @@ fn an_airfield_puts_each_aircraft_it_builds_on_its_own_pad() {
         assert_eq!(plane.mission.current().known(), Some(MissionType::Guard));
         let pad = sim.substrate.entities.get(airfield).unwrap();
         assert_eq!(pad.radio_contacts.slot(slot), Some(built));
+    }
+}
+
+/// Ares KickOutClones (`100127C0`) at the stock Yuri barracks: a product
+/// without `Cloneable` makes no copy, `ClonedAs` swaps the copy's type, and
+/// a copy the vat refuses (a `Factory=` vat whose radio is full) is deleted.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_kick_out_clones_follow_cloneable_cloned_as_and_delete_refusals() {
+    for (scenario, refuse, expected_e1, expected_init) in [
+        ("[E1]\nCloneable=no\n", false, 1, 0),
+        ("[E1]\nClonedAs=INIT\n", false, 1, 1),
+        ("[NACLON]\nFactory=InfantryType\n", true, 1, 0),
+    ] {
+        let Some((mut sim, rules, registry, owner)) =
+            stock_yuri_cloning_world_with_scenario(IniFile::from_str(scenario))
+        else {
+            return;
+        };
+        let barracks = sim
+            .spawn_object_at_height_with_overlay_registry(
+                "YABRCK",
+                "YuriCountry",
+                14,
+                14,
+                64,
+                0,
+                &rules,
+                &registry,
+            )
+            .expect("stock Yuri barracks");
+        let vat = sim
+            .spawn_object_at_height_with_overlay_registry(
+                "NACLON",
+                "YuriCountry",
+                22,
+                14,
+                64,
+                0,
+                &rules,
+                &registry,
+            )
+            .expect("stock Yuri Cloning Vats");
+        if refuse {
+            sim.substrate
+                .entities
+                .get_mut(vat)
+                .unwrap()
+                .radio_contacts
+                .set_slot(0, barracks);
+        }
+        assert!(super::enqueue_by_type(
+            &mut sim,
+            &rules,
+            "YuriCountry",
+            "E1",
+            crate::sim::world::FrameEffects::default(),
+            false,
+        ));
+        let category = ProductionCategory::Infantry;
+        let cost = sim.cost_of(owner, rules.object("E1").unwrap(), &rules);
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .economy_mut()
+            .spend_money(cost);
+        assert!(
+            sim.production
+                .factories_mut()
+                .test_arm_ready(owner, category)
+        );
+        assert!(super::dispatch_production_changes_for_tests(
+            &mut sim,
+            &rules,
+            Some(&registry),
+        ));
+        let count = |name: &str| {
+            let id = sim.interner.get(name).unwrap();
+            sim.substrate
+                .entities
+                .values()
+                .filter(|entity| {
+                    entity.category() == EntityCategory::Infantry
+                        && entity.owner() == owner
+                        && entity.type_ref() == id
+                })
+                .count()
+        };
+        assert_eq!(count("E1"), expected_e1, "{scenario}");
+        assert_eq!(count("INIT"), expected_init, "{scenario}");
     }
 }

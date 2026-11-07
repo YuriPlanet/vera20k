@@ -439,6 +439,10 @@ fn exit_naval(
     else {
         return BuildingExit::Failed;
     };
+    // Ares BuildingClass_KickOutUnit_Clone_NavalUnit (hook 0x0044441A ->
+    // 10041590) clones before the rally, inside the current scope.
+    #[cfg(feature = "ares")]
+    kick_out_ares_clones(sim, rules, producer_id, spawned, overlay_registry, effects);
     // 0x0044441A..0x00444439: with a rally (the producer's ArchiveTarget,
     // `+0x218`) the arm calls the class setter Assign_Destination(rally, 1)
     // (vt+0x480), then Queue_Mission(Move, 0) (vt+0x1E8).
@@ -628,6 +632,13 @@ fn exit_land(
             sim.session.binary_frame(),
             &crate::sim::mission::authority::LiveReadyInputProvider { rules },
         );
+        // Ares BuildingClass_KickOutUnit_Clone_NonNavalUnit (hook
+        // 0x004445F6 -> 100415B0) clones outside the A8E7AC scope, then
+        // resumes at the common return 0x00444971.
+        #[cfg(feature = "ares")]
+        sim.without_object_placement_scope(|sim| {
+            kick_out_ares_clones(sim, rules, producer_id, spawned, overlay_registry, effects);
+        });
         Some(spawned)
     });
     if placed.is_some() {
@@ -680,6 +691,10 @@ fn exit_at_dock(
     ) else {
         return BuildingExit::Failed;
     };
+    // Ares BuildingClass_KickOutUnit_PreventClone (hook 0x004449DF ->
+    // 10041690) jumps past this loop to 0x00444A53; its clones come from
+    // `kick_out_ares_clones` in the tail.
+    #[cfg(not(feature = "ares"))]
     if arm == ExitArm::Infantry {
         // The coordinate and facing `dock_exit` derived read only the
         // producer and the dock Cell (`0x00444A53..0x00444C7C`), which the
@@ -734,6 +749,127 @@ fn exit_at_dock(
     }
 }
 
+/// Ares `BuildingExt::ExtData::KickOutClones` (`100127C0`) for `product`,
+/// which `producer` just placed. It replaces the stock Cloning Vat loop
+/// ([`exit_cloning_vat_copies`]) and also clones vehicles:
+/// - a `Cloning=` producer, one that is neither `Factory=InfantryType` nor
+///   `UnitType`, and a product type without `Cloneable` make none; the clone
+///   type is `ClonedAs`, which must be of the product's class, else the
+///   product's own;
+/// - an infantry producer whose product lists no `ClonedAt` clones at its
+///   House's Cloning Vats (House+68 filtered by `Cloning=`); otherwise each
+///   building of the House (House+68 order) whose type `ClonedAt` lists or,
+///   with none listed, a `CloningFacility` of the vehicle producer's `Naval=`;
+/// - the lambda (`100112D0`) skips a source in limbo, dead, not operational
+///   (`0x004555D0`) or warped out; the clone belongs to the PRODUCER's House
+///   (not the source's, as the stock loop) and is deleted when the source
+///   does not place it (`KickOutUnit` other than Succeeded).
+#[cfg(feature = "ares")]
+fn kick_out_ares_clones(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    producer_id: u64,
+    product_id: u64,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    effects: FrameEffects<'_>,
+) {
+    use crate::rules::object_type::{FactoryType, ObjectCategory};
+    let Some(producer) = sim.substrate.entities.get(producer_id) else {
+        return;
+    };
+    let owner = producer.owner();
+    let Some(producer_type) = sim.entity_object_type(producer, rules) else {
+        return;
+    };
+    let factory = producer_type.factory_type();
+    let vehicle_factory = factory == Some(FactoryType::UnitType);
+    if producer_type.cloning || !(vehicle_factory || factory == Some(FactoryType::InfantryType)) {
+        return;
+    }
+    let Some(product_type) = sim
+        .substrate
+        .entities
+        .get(product_id)
+        .and_then(|product| sim.entity_object_type(product, rules))
+    else {
+        return;
+    };
+    let ext = product_type.ares_production();
+    if !ext.cloneable() {
+        return;
+    }
+    let clone_type = match ext.cloned_as() {
+        Some(target) => rules.object_in_category(target.category, &target.id),
+        None => Some(product_type),
+    };
+    let Some(clone_type) = clone_type.filter(|clone| clone.category == product_type.category)
+    else {
+        return;
+    };
+    let sources: Vec<u64> = sim
+        .houses
+        .get(&owner)
+        .map(|house| house.base_projection().buildings().to_vec())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|&id| {
+            sim.substrate
+                .entities
+                .get(id)
+                .and_then(|building| sim.entity_object_type(building, rules))
+                .is_some_and(|source| {
+                    if !ext.cloned_at().is_empty() {
+                        source.category == ObjectCategory::Building
+                            && ext
+                                .cloned_at()
+                                .iter()
+                                .any(|listed| listed.eq_ignore_ascii_case(&source.id))
+                    } else if vehicle_factory {
+                        source.naval == producer_type.naval
+                            && source.ares_production().cloning_facility()
+                    } else {
+                        source.cloning
+                    }
+                })
+        })
+        .collect();
+    let owner_name = sim.interner.resolve(owner).to_owned();
+    for source in sources {
+        let admitted = sim.substrate.entities.get(source).is_some_and(|building| {
+            !building.lifecycle.in_limbo()
+                && building.lifecycle.object_alive()
+                && !building.is_warped_out()
+        }) && sim.building_operational_state(source, rules) == Some(true);
+        if !admitted {
+            continue;
+        }
+        let Some(clone_id) = sim.construct_resolved_object_limbo_at_height(
+            clone_type,
+            &owner_name,
+            0,
+            0,
+            0,
+            0,
+            rules,
+            effects,
+        ) else {
+            continue;
+        };
+        let exit = exit_produced_object(
+            sim,
+            rules,
+            source,
+            clone_id,
+            (0, 0),
+            overlay_registry,
+            effects,
+        );
+        if exit != crate::sim::ai_base_building::BuildingExit::Placed {
+            let _ = sim.discard_constructed_limbo(clone_id, rules, effects);
+        }
+    }
+}
+
 /// The Infantry arm's Cloning Vat loop (`0x004449D9..0x00444A53`), between
 /// its GetDock (`0x004449AF`) and its Unlimbo (`0x00444C95`). A
 /// `Factory=InfantryType` producer without `Cloning=` (`+0xEB8`, `+0x16AC`)
@@ -747,6 +883,7 @@ fn exit_at_dock(
 /// through `0x004FB9B0` (`0x004FBB6D`) and ChangeOwner (`0x00448939`), the
 /// same events that move a building through House+68, so House+68 filtered by
 /// `Cloning=` holds the same vats in the same order.
+#[cfg_attr(feature = "ares", allow(dead_code))]
 fn exit_cloning_vat_copies(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -864,6 +1001,12 @@ fn infantry_exit_tail(
         }
     }
     infantry_exit_post(sim, rules, producer_id, spawned, overlay_registry, effects);
+    // Ares BuildingClass_KickOutUnit_Infantry (hook 0x00444DBC -> 10041660)
+    // clones before the HELLO, with the A8E7AC scope lowered around them.
+    #[cfg(feature = "ares")]
+    sim.without_object_placement_scope(|sim| {
+        kick_out_ares_clones(sim, rules, producer_id, spawned, overlay_registry, effects);
+    });
     // Shared radio owner supplies HELLO bookkeeping and the
     // literal9 receiver; neither is an invented contact write.
     if crate::sim::radio::transmit(

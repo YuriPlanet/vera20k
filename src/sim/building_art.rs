@@ -356,6 +356,12 @@ impl Simulation {
             rules.general.condition_yellow,
         );
         let garrisoned = !entity.passenger_role.occupants().is_empty();
+        // Ares BuildingClass_Place_Academy (hook 0x00446366 -> 10023750),
+        // inside the first-opening block: an academy joins its owner's list.
+        #[cfg(feature = "ares")]
+        if first_opening {
+            self.update_ares_academy_membership(id, true, rules);
+        }
         // 0x00446382..0x004463B4: the built type's InfantryGainSelfHeal and
         // UnitsGainSelfHeal join the owner's house. Natively a capture of a
         // placed building skips this add (0x00445FD0) and ChangeOwner's tail

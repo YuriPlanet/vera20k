@@ -778,8 +778,13 @@ pub enum SimSoundEvent {
         owner: InternedId,
         sound_id: Option<InternedId>,
         /// The object's Location (`0x006FA092..0x006FA0BC`,
-        /// `0x006FA0FF..0x006FA12A`).
+        /// `0x006FA0FF..0x006FA12A`); with Ares, its Transporter's when it
+        /// rides in one (UpdateVeterancy10046D2F..10046D40).
         world: crate::sim::anim_class::AnimWorldCoord,
+        /// Ares `EVA.VeteranPromoted`/`EVA.ElitePromoted`
+        /// (VoxClass::PlayIndex at10046D54); `None` is the silent -1 index.
+        #[cfg(feature = "ares")]
+        eva: Option<InternedId>,
     },
     /// A building / harvester admitted a damage or first Temporal-head warning.
     /// For the local owner the app admits `radar` (type 3 base / type 4 miner) on its client
@@ -6442,6 +6447,10 @@ impl Simulation {
         }
         if category == EntityCategory::Structure {
             self.houses.leave_house_base_lists(stable_id, old_owner);
+            // Ares BuildingClass_ChangeOwnership_Remove_Academy (hook
+            // 0x00448AB2 -> 10023690) follows the House+68 removal.
+            #[cfg(feature = "ares")]
+            self.update_ares_academy_membership(stable_id, false, rules);
         }
         // TechnoClass::ChangeOwner (`0x007014B9..0x007014CF`): the local
         // player's selected object is deselected first (vt+0x150, every
@@ -6721,6 +6730,10 @@ impl Simulation {
         }
         if category == EntityCategory::Structure {
             self.join_house_base_lists(stable_id, old_owner, new_owner, rules);
+            // Ares BuildingClass_ChangeOwnership_Add_Academy (hook 0x004491D5
+            // -> 10023650) follows the new House+68 append.
+            #[cfg(feature = "ares")]
+            self.update_ares_academy_membership(stable_id, true, rules);
         }
         // `TechnoClass::ChangeOwner` closes with the mission half (the
         // `+0x484` call at 0x00701849 reads the NEW owner's

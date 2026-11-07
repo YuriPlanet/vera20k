@@ -189,6 +189,10 @@ pub(crate) mod ares_bounty;
 pub(crate) mod ares_infiltration;
 #[cfg(feature = "ares")]
 pub mod ares_cloak_power;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_veterancy;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_production;
 pub mod armor;
 pub mod alpha_image_assets;
 pub mod country_loading;

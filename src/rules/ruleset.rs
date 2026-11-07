@@ -191,10 +191,50 @@ impl HouseCostFactors {
     /// `TechnoTypeClass::Cost_Of @ 0x00711F00` past its null-House arm:
     /// `ftol(cost * plant * country)` for factor `slot`
     /// (`0x00711F35..0x00711F41`).
+    #[cfg_attr(feature = "ares", allow(dead_code))]
     pub(crate) fn adjust(&self, cost: i32, slot: usize) -> i32 {
         use crate::util::native_x87::MaskedX87Chop53 as X87;
         X87::ftol_i32_low_masked(X87::mul(
             X87::mul(X87::load_i32(cost), X87::load_f32(self.factory_plant[slot])),
+            X87::load_f32(self.country[slot]),
+        ))
+    }
+
+    /// Ares `HouseClass_GetCostMult` (`10041780`, hook `0x0050BEB0`,
+    /// resuming at its `ret 4` `0x0050BF1E`), the FactoryPlant factor every
+    /// caller stores as a float: `1 - (1 - product) * FactoryPlant.Multiplier`,
+    /// spilled as binary64 (`10041833`). A multiplier of 1.0 returns the
+    /// stock product.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_factory_plant(
+        &self,
+        slot: usize,
+        multiplier: crate::util::native_x87::NativeF64Bits,
+    ) -> NativeF32Bits {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
+        let one = X87::load_f64(NativeF64Bits::ONE);
+        let discount = X87::sub(one, X87::load_f32(self.factory_plant[slot]));
+        let factor = X87::store_f64_masked_chop(X87::sub(
+            one,
+            X87::mul(discount, X87::load_f64(multiplier)),
+        ));
+        X87::store_f32_masked_chop(X87::load_f64(factor))
+    }
+
+    /// [`Self::adjust`] through [`Self::ares_factory_plant`].
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_adjust(
+        &self,
+        cost: i32,
+        slot: usize,
+        multiplier: crate::util::native_x87::NativeF64Bits,
+    ) -> i32 {
+        use crate::util::native_x87::MaskedX87Chop53 as X87;
+        X87::ftol_i32_low_masked(X87::mul(
+            X87::mul(
+                X87::load_i32(cost),
+                X87::load_f32(self.ares_factory_plant(slot, multiplier)),
+            ),
             X87::load_f32(self.country[slot]),
         ))
     }
@@ -4978,6 +5018,12 @@ impl RuleSet {
         self.ares_global_controls.cloak_power()
     }
 
+    /// RulesExt `[AudioVisual] VeteranFlashTimer` (`rules::ares_veterancy`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_veterancy(&self) -> &crate::rules::ares_veterancy::VeterancyGlobalRules {
+        self.ares_global_controls.veterancy()
+    }
+
     /// RulesExt DamageAirConsiderBridges and IronCurtainFlash.
     #[cfg(feature = "ares")]
     pub(crate) fn ares_warhead_globals(&self) -> &crate::rules::ares_warhead::WarheadGlobalRules {
@@ -5220,6 +5266,7 @@ impl RuleSet {
             cloak_allowed,
             turret_rot,
             aircraft_crashable,
+            curtain_modifiers,
         ) in processed.ares_techno_states()
         {
             if let Some(object) = rules
@@ -5234,6 +5281,7 @@ impl RuleSet {
                     cloak_allowed,
                     turret_rot,
                     aircraft_crashable,
+                    curtain_modifiers,
                 );
             }
         }
@@ -5266,7 +5314,6 @@ impl RuleSet {
             if let Some(handle) = rules
                 .object_category_index
                 .get(&(category, name.to_ascii_uppercase()))
-            curtain_modifiers,
                 .copied()
             {
                 rules.object_list[handle.0 as usize].bind_selection_group(group);
@@ -5281,7 +5328,6 @@ impl RuleSet {
             {
                 rules.object_list[handle.0 as usize].bind_driver_rules(driver);
             }
-                    curtain_modifiers,
         }
         #[cfg(feature = "ares")]
         for (category, name, bounty) in processed.bounty_states() {
@@ -5311,6 +5357,56 @@ impl RuleSet {
                 .copied()
             {
                 rules.object_list[handle.0 as usize].bind_infiltration_rules(infiltration);
+            }
+        }
+        #[cfg(feature = "ares")]
+        for (category, name, veterancy) in processed.veterancy_states() {
+            if let Some(handle) = rules
+                .object_category_index
+                .get(&(category, name.to_ascii_uppercase()))
+                .copied()
+            {
+                rules.object_list[handle.0 as usize].bind_ares_veterancy(veterancy);
+            }
+        }
+        #[cfg(feature = "ares")]
+        {
+            for (category, name, production) in processed.production_states() {
+                if let Some(handle) = rules
+                    .object_category_index
+                    .get(&(category, name.to_ascii_uppercase()))
+                    .copied()
+                {
+                    rules.object_list[handle.0 as usize].bind_ares_production(production);
+                }
+            }
+            // Ares ValidateThings100677B0 (hook687C16), after every INI
+            // read: a Factory= building cannot be a ClonedAt source nor a
+            // CloningFacility.
+            let factories: HashSet<String> = rules
+                .object_list
+                .iter()
+                .filter(|object| {
+                    object.category == ObjectCategory::Building && object.factory_type().is_some()
+                })
+                .map(|object| object.id.to_ascii_uppercase())
+                .collect();
+            for object in &mut rules.object_list {
+                let factory =
+                    object.category == ObjectCategory::Building && object.factory_type().is_some();
+                object.ares_production_mut().validate(factory, |source| {
+                    factories.contains(&source.to_ascii_uppercase())
+                });
+            }
+        }
+        #[cfg(feature = "ares")]
+        for (name, academy) in processed.academy_states() {
+            if let Some(handle) = rules
+                .object_category_index
+                .get(&(ObjectCategory::Building, name.to_ascii_uppercase()))
+                .copied()
+            {
+                rules.object_list[handle.0 as usize].bind_academy(academy);
             }
         }
         #[cfg(feature = "ares")]
@@ -6201,6 +6297,17 @@ impl RuleSet {
                 "EVA.SelectTarget",
                 "EVA_SelectTarget",
             );
+        }
+        #[cfg(feature = "ares")]
+        for object in &mut self.object_list {
+            // TypeExt LoadFromINI1003DFB0 reads both ValueableIdx<VoxClass>
+            // after the promotion sounds; Initialize1003DEC0 seeds each with
+            // FindIndex("EVA_UnitPromoted").
+            let section = ini.section(&object.id);
+            object.bind_promotion_eva([
+                eva.read_rules_reference(section, "EVA.VeteranPromoted", "EVA_UnitPromoted"),
+                eva.read_rules_reference(section, "EVA.ElitePromoted", "EVA_UnitPromoted"),
+            ]);
         }
     }
 
@@ -7242,6 +7349,15 @@ impl RuleSet {
     /// `0x00711F00` over the type's virtual `+0xAC` cost ([`Self::type_cost`]).
     fn adjusted_cost(&self, object: &ObjectType, house: Option<&HouseCostFactors>) -> i32 {
         let cost = self.type_cost(object);
+        #[cfg(feature = "ares")]
+        return house.map_or(cost, |house| {
+            house.ares_adjust(
+                cost,
+                object.factor_slot(),
+                object.ares_production().factory_plant_multiplier(),
+            )
+        });
+        #[cfg(not(feature = "ares"))]
         house.map_or(cost, |house| house.adjust(cost, object.factor_slot()))
     }
 
@@ -8137,6 +8253,23 @@ impl RuleSet {
                 b"ares-aircraft-crashable-v1".hash(&mut hasher);
                 aircraft_crash_overrides.hash(&mut hasher);
             }
+            // TypeExt IronCurtain.Modifier/ForceShield.Modifier scale every
+            // curtain TechnoClass::IronCurtain (hook 70E2B0) applies.
+            let curtain_modifiers = self
+                .object_list
+                .iter()
+                .filter(|object| object.ares_curtain_modifiers() != [NativeF64Bits::ONE; 2])
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.ares_curtain_modifiers(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !curtain_modifiers.is_empty() {
+                b"ares-curtain-modifiers-v1".hash(&mut hasher);
+                curtain_modifiers.hash(&mut hasher);
+            }
             let cloak_power = self
                 .object_list
                 .iter()
@@ -8154,6 +8287,49 @@ impl RuleSet {
             if !cloak_power.is_empty() {
                 b"ares-cloak-power-rules-v1".hash(&mut hasher);
                 cloak_power.hash(&mut hasher);
+            }
+            // TypeExt BuildTime.*, FactoryPlant.Multiplier and cloning
+            // decide build times, prices and clones.
+            let production = self
+                .object_list
+                .iter()
+                .filter(|object| {
+                    object.ares_production()
+                        != &crate::rules::ares_production::ProductionTypeRules::default()
+                })
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.ares_production(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !production.is_empty() {
+                b"ares-production-rules-v1".hash(&mut hasher);
+                production.hash(&mut hasher);
+            }
+            // TypeExt Experience.*/Promote.* and BuildingTypeExt Academy.*
+            // decide who gains experience and what a promotion converts to.
+            let veterancy = self
+                .object_list
+                .iter()
+                .filter(|object| {
+                    object.ares_veterancy()
+                        != &crate::rules::ares_veterancy::VeterancyTypeRules::default()
+                        || object.academy()
+                            != &crate::rules::ares_veterancy::AcademyTypeRules::default()
+                })
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        (object.ares_veterancy(), object.academy()),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !veterancy.is_empty() || self.ares_veterancy().veteran_flash_timer() != 0 {
+                b"ares-veterancy-rules-v1".hash(&mut hasher);
+                veterancy.hash(&mut hasher);
+                self.ares_veterancy().hash(&mut hasher);
             }
             let crews = self
                 .object_list
@@ -8253,23 +8429,6 @@ impl RuleSet {
             let extensions: Vec<_> = self
                 .object_list
                 .iter()
-            // TypeExt IronCurtain.Modifier/ForceShield.Modifier scale every
-            // curtain TechnoClass::IronCurtain (hook 70E2B0) applies.
-            let curtain_modifiers = self
-                .object_list
-                .iter()
-                .filter(|object| object.ares_curtain_modifiers() != [NativeF64Bits::ONE; 2])
-                .map(|object| {
-                    (
-                        (object.category, object.id.to_ascii_uppercase()),
-                        object.ares_curtain_modifiers(),
-                    )
-                })
-                .collect::<BTreeMap<_, _>>();
-            if !curtain_modifiers.is_empty() {
-                b"ares-curtain-modifiers-v1".hash(&mut hasher);
-                curtain_modifiers.hash(&mut hasher);
-            }
                 .filter(|object| {
                     object.has_spotlight || object.spotlight_rules() != Default::default()
                 })

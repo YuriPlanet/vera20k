@@ -115,6 +115,11 @@ impl Simulation {
             rules,
             ComponentOrigin::Runtime,
         );
+        // Ares ApplyAcademy10020750 closes each class's InitFromType hook,
+        // after the spy veterancy above; a map's authored objects are read
+        // inside the A8E7AC scope, which skips it.
+        #[cfg(feature = "ares")]
+        self.apply_ares_academy(&mut ge, obj, rules);
         Ok(Some(ge))
     }
 

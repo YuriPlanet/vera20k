@@ -53,6 +53,7 @@ use crate::sim::intern::StringInterner;
 use crate::sim::mission::MissionType;
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
+#[cfg(not(feature = "ares"))]
 use crate::sim::world::FrameChannel;
 use crate::sim::world::SimSoundEvent;
 
@@ -1158,6 +1159,8 @@ fn techno_ai_shell(
 /// `owner == g_PlayerPtr` in a skirmish). The flash's existing signed dword
 /// counter is stepped later by4CC770 at6FAC4D, through flash_step; a
 /// newly promoted object's timer therefore loses one on this same visit.
+/// Ares replaces this whole block (`Simulation::update_ares_veterancy`).
+#[cfg(not(feature = "ares"))]
 fn veterancy_promotion_step(
     interner: &mut StringInterner,
     substrate: &mut ObjectSubstrate,
@@ -1185,20 +1188,6 @@ fn veterancy_promotion_step(
             rules.general.upgrade_veteran_sound.as_deref()
         }
     };
-    // Installed Ares promotion10046AF0: veteran10046BBA..10046BD6,
-    // elite10046C12..10046C2D choose the TypeExt NullableIdx<Voc> before
-    // the same ordered sound/EVA dispatch10046D2F..10046D56. Unset uses
-    // Rules+228/+22C; an explicit -1 suppresses sound, not the EVA.
-    #[cfg(feature = "ares")]
-    let sound = interner
-        .object_type_in_category(entity.type_ref(), entity.category().into(), rules)
-        .and_then(|object| {
-            object.promotion_sound_override(matches!(
-                promotion,
-                crate::sim::combat::veterancy::Promotion::Elite
-            ))
-        })
-        .unwrap_or(sound);
     let sound_id = sound.map(|name| interner.intern(name));
     sound_events.emit(super::SimSoundEvent::UnitPromoted {
         owner,
@@ -1680,6 +1669,7 @@ fn techno_common_steps(
             );
         }
     }
+    #[cfg(not(feature = "ares"))]
     veterancy_promotion_step(
         &mut sim.interner,
         &mut sim.substrate,
@@ -1688,6 +1678,9 @@ fn techno_common_steps(
         id,
         rules,
     );
+    // Ares TechnoClass_Update_Veterancy1004F2E0 (hook6FA054..6FA14B).
+    #[cfg(feature = "ares")]
+    sim.update_ares_veterancy(id, false, true, rules, effects);
     crate::sim::credit_income::drain_common_step(sim, id, rules);
     // Techno6FA224..6FA244: only a valid loaded main VXL reaches
     // RockingUpdate70B570 and its immediate Alive guard. This precedes

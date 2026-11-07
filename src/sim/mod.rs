@@ -60,6 +60,8 @@ pub(crate) mod vehicle_theft;
 pub(crate) mod powered_by; // Ares PoweredBy= power sources (PoweredUnitClass 1006A6F0)
 #[cfg(feature = "ares")]
 pub(crate) mod radar_jammer; // Ares RadarJamRadius= jammers (JammerClass 10068500)
+#[cfg(feature = "ares")]
+pub(crate) mod ares_veterancy; // Ares UpdateVeterancy 10046AF0 and academies
 pub mod economy; // per-house wallet/storage/statistics value-type (production+economy substrate)
 #[cfg(feature = "ares")]
 pub(crate) mod factory_owners;

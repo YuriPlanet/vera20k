@@ -32,7 +32,7 @@ mod wall_placement;
 pub use self::factory::{
     CancelOutcome, Factory, FactoryHolder, FactoryRegistry, FactoryView, PRODUCTION_STEPS,
     PendingObject, STEP_RATE_MAX, STEP_RATE_MIN, StepOutcome, TimeToBuildInputs,
-    category_for_object, time_to_build, type_base_build_time,
+    category_for_object, time_to_build, type_base_build_time, type_build_time,
 };
 pub(crate) use self::factory_lifecycle::enqueue_selected;
 pub(crate) use self::factory_lifecycle::suspend_production;

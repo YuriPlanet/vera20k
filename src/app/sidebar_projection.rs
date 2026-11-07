@@ -1031,16 +1031,13 @@ impl SidebarProjectionState {
                         )
                         .is_some()
                     {
-                        let mut duration = crate::sim::production::type_base_build_time(
-                            object.cost,
-                            rules.production.build_speed,
-                        );
+                        let mut duration = crate::sim::production::type_build_time(object, rules);
                         // Select6AB8B6..6AB8DA: Building Wall's coefficient
                         // follows the shared type vt+88 duration. The actual
                         // Time_To_Build has its own later wall arm6F4917.
-                        if object.category == crate::rules::object_type::ObjectCategory::Building
-                            && object.wall
-                        {
+                        // Ares SelectClass_ProcessInput_BuildTime (hook
+                        // 6AB8BB ->10041950) skips it with BuildTime.Speed.
+                        if object.wall_build_speed_applies() {
                             use crate::util::native_x87::MaskedX87Chop53 as X87;
                             duration = X87::ftol_i32_low_masked(X87::mul(
                                 X87::load_i32(duration),

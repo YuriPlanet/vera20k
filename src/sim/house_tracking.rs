@@ -384,6 +384,30 @@ pub struct ForceValueFacts {
     cost: i32,
     /// [`ObjectType::factor_slot`].
     factor_slot: u8,
+    /// Ares `FactoryPlant.Multiplier`, which `Cost_Of`'s plant factor
+    /// reads (`HouseCostFactors::ares_factory_plant`).
+    #[cfg(feature = "ares")]
+    #[serde(default = "crate::sim::house_tracking::neutral_plant_multiplier")]
+    factory_plant_multiplier: crate::util::native_x87::NativeF64Bits,
+}
+
+#[cfg(feature = "ares")]
+fn neutral_plant_multiplier() -> crate::util::native_x87::NativeF64Bits {
+    crate::util::native_x87::NativeF64Bits::ONE
+}
+
+impl ForceValueFacts {
+    /// `Cost_Of` for this House's `factors`.
+    fn priced(self, factors: &HouseCostFactors) -> i32 {
+        #[cfg(feature = "ares")]
+        return factors.ares_adjust(
+            self.cost,
+            self.factor_slot.into(),
+            self.factory_plant_multiplier,
+        );
+        #[cfg(not(feature = "ares"))]
+        factors.adjust(self.cost, self.factor_slot.into())
+    }
 }
 
 impl ForceValueFacts {
@@ -402,6 +426,8 @@ impl ForceValueFacts {
             kind,
             cost: ty.cost,
             factor_slot: ty.factor_slot() as u8,
+            #[cfg(feature = "ares")]
+            factory_plant_multiplier: ty.ares_production().factory_plant_multiplier(),
         })
     }
 }
@@ -822,7 +848,7 @@ impl HouseTracking {
         }
         if let Some(value) = entity.tracking_facts.force_value {
             let total = self.force_values.total(value.kind);
-            *total = total.wrapping_add(factors.adjust(value.cost, value.factor_slot.into()));
+            *total = total.wrapping_add(value.priced(factors));
         }
         let dont_score = entity.tracking_facts.dont_score();
         let counts = match entity.category() {
@@ -869,7 +895,7 @@ impl HouseTracking {
         }
         if let Some(value) = entity.tracking_facts.force_value {
             let total = self.force_values.total(value.kind);
-            *total = total.wrapping_sub(factors.adjust(value.cost, value.factor_slot.into()));
+            *total = total.wrapping_sub(value.priced(factors));
         }
         if entity.tracking_facts.dont_score() {
             return;

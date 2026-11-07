@@ -114,7 +114,12 @@ pub(crate) fn type_refund(
         X87::store_f32_masked_chop(X87::load_f64(rules.general.refund_percent))
     };
     let slot = object.factor_slot();
-    let (m1, m2) = (factors.country[slot], factors.factory_plant[slot]);
+    let m1 = factors.country[slot];
+    #[cfg(not(feature = "ares"))]
+    let m2 = factors.factory_plant[slot];
+    // Ares HouseClass_GetCostMult10041780 replaces 0x0050BEB0 here too.
+    #[cfg(feature = "ares")]
+    let m2 = factors.ares_factory_plant(slot, object.ares_production().factory_plant_multiplier());
     if object.soylent != 0 {
         return X87::ftol_i32_low_masked(X87::mul(
             X87::load_i32(object.soylent),

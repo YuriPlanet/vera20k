@@ -1176,6 +1176,24 @@ pub struct ObjectType {
     /// from the retained rules reader (`rules::ares_infiltration`).
     #[cfg(feature = "ares")]
     infiltration: crate::rules::ares_infiltration::InfiltrationTypeRules,
+    /// TechnoTypeExt Experience.* and Promote.* (TypeExt+17B..+1B0,
+    /// +503..+540), projected from the retained rules reader
+    /// (`rules::ares_veterancy`).
+    #[cfg(feature = "ares")]
+    veterancy: crate::rules::ares_veterancy::VeterancyTypeRules,
+    /// TypeExt+524/+528 `EVA.VeteranPromoted`/`EVA.ElitePromoted`
+    /// (ValueableIdx<VoxClass>): Initialize1003DEC0 seeds both with
+    /// `EVA_UnitPromoted`; `none` silences the cue.
+    #[cfg(feature = "ares")]
+    promotion_eva: [Option<String>; 2],
+    /// BuildingTypeExt Academy.* (+138..+170), projected from the retained
+    /// rules reader (`rules::ares_veterancy`).
+    #[cfg(feature = "ares")]
+    academy: crate::rules::ares_veterancy::AcademyTypeRules,
+    /// TechnoTypeExt BuildTime.*, FactoryPlant.Multiplier and cloning and
+    /// BuildingTypeExt CloningFacility (`rules::ares_production`).
+    #[cfg(feature = "ares")]
+    production: crate::rules::ares_production::ProductionTypeRules,
     /// Ares3.0 TypeExt+646/+647. Unset uses the class/score default at the
     /// Add/Remove_Tracking owner; an explicit false is a distinct retained input.
     #[cfg(feature = "ares")]
@@ -1548,6 +1566,11 @@ pub struct ObjectType {
     /// independent of original Unit TechnoType+D95 (10048CB5..10048CDB).
     #[cfg(feature = "ares")]
     aircraft_crashable: Option<bool>,
+    /// Ares TypeExt+150 `IronCurtain.Modifier` and +158
+    /// `ForceShield.Modifier` (constructor 1.0), projected from the retained
+    /// rules reader.
+    #[cfg(feature = "ares")]
+    curtain_modifiers: [NativeF64Bits; 2],
     /// `TiltCrashJumpjet=` (`TechnoTypeClass+0xD22`, constructor false at
     /// `0x007114CA`, `TechnoTypeClass::ReadINI 0x00713377..0x00713391`, key
     /// string `0x00844118`): the Jumpjet Draw_Matrix tilts the body by its
@@ -1566,11 +1589,6 @@ pub struct ObjectType {
     /// `TargetLaser=` (TechnoType+0xC90; the constructor stores 0 at
     /// `0x0071139B`, ReadINI `0x00714C8D..0x00714CA1` reads the key string at
     /// `0x00843898`). A human player's shot starts the firer's 15-frame laser
-    /// Ares TypeExt+150 `IronCurtain.Modifier` and +158
-    /// `ForceShield.Modifier` (constructor 1.0), projected from the retained
-    /// rules reader.
-    #[cfg(feature = "ares")]
-    curtain_modifiers: [NativeF64Bits; 2],
     /// timer (`Fire_At 0x006FF48D..0x006FF4C9`); only `UnitClass::Draw_It`
     /// draws it. Stock sets it on the Apocalypse.
     pub target_laser: bool,
@@ -2812,6 +2830,12 @@ impl ObjectType {
         self.aircraft_crashable
     }
 
+    /// Ares `IronCurtain.Modifier` and `ForceShield.Modifier`, in that order.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_curtain_modifiers(&self) -> [NativeF64Bits; 2] {
+        self.curtain_modifiers
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn crew_rules(&self) -> &crate::rules::ares_crew::CrewTypeRules {
         &self.crew
@@ -2830,12 +2854,6 @@ impl ObjectType {
     #[cfg(feature = "ares")]
     pub(crate) fn bind_cloak_power_rules(
         &mut self,
-    /// Ares `IronCurtain.Modifier` and `ForceShield.Modifier`, in that order.
-    #[cfg(feature = "ares")]
-    pub(crate) fn ares_curtain_modifiers(&self) -> [NativeF64Bits; 2] {
-        self.curtain_modifiers
-    }
-
         rules: &crate::rules::ares_cloak_power::CloakPowerTypeRules,
     ) {
         self.cloak_power = rules.clone();
@@ -2903,6 +2921,7 @@ impl ObjectType {
         cloak_allowed: bool,
         turret_rot_override: Option<i32>,
         aircraft_crashable: Option<bool>,
+        curtain_modifiers: [NativeF64Bits; 2],
     ) {
         self.emp = emp.cloned();
         #[cfg(feature = "ares")]
@@ -2912,6 +2931,7 @@ impl ObjectType {
             self.cloak_allowed = cloak_allowed;
             self.turret_rot_override = turret_rot_override;
             self.aircraft_crashable = aircraft_crashable;
+            self.curtain_modifiers = curtain_modifiers;
         }
         #[cfg(not(feature = "ares"))]
         let _ = (
@@ -2920,8 +2940,8 @@ impl ObjectType {
             cloak_allowed,
             turret_rot_override,
             aircraft_crashable,
+            curtain_modifiers,
         );
-        curtain_modifiers: [NativeF64Bits; 2],
     }
 
     #[cfg(feature = "ares")]
@@ -2931,7 +2951,6 @@ impl ObjectType {
         self.convert_script.as_ref()
     }
 
-            self.curtain_modifiers = curtain_modifiers;
     /// Retained nullable input; preserve presence independently of ROT.
     #[cfg(feature = "ares")]
     pub(crate) fn turret_rot_override(&self) -> Option<i32> {
@@ -2940,7 +2959,6 @@ impl ObjectType {
 
     /// Ares conversion1004380E..10043839 selects the optional secondary ROT.
     #[cfg(feature = "ares")]
-            curtain_modifiers,
     pub(crate) fn secondary_turn_rate(&self) -> i32 {
         self.turret_rot_override.unwrap_or(self.turret_rot)
     }
@@ -3036,6 +3054,78 @@ impl ObjectType {
         infiltration: &crate::rules::ares_infiltration::InfiltrationTypeRules,
     ) {
         self.infiltration = infiltration.clone();
+    }
+
+    /// Ares Experience.*/Promote.* (`rules::ares_veterancy`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_veterancy(&self) -> &crate::rules::ares_veterancy::VeterancyTypeRules {
+        &self.veterancy
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_ares_veterancy(
+        &mut self,
+        veterancy: &crate::rules::ares_veterancy::VeterancyTypeRules,
+    ) {
+        self.veterancy = veterancy.clone();
+    }
+
+    /// The EVA cue a promotion to veteran or elite queues, `None` silent.
+    #[cfg(feature = "ares")]
+    pub(crate) fn promotion_eva(&self, elite: bool) -> Option<&str> {
+        self.promotion_eva[usize::from(elite)].as_deref()
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_promotion_eva(&mut self, eva: [Option<String>; 2]) {
+        self.promotion_eva = eva;
+    }
+
+    /// Ares BuildingTypeExt Academy.* (`rules::ares_veterancy`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn academy(&self) -> &crate::rules::ares_veterancy::AcademyTypeRules {
+        &self.academy
+    }
+
+    /// Ares BuildTime.*, FactoryPlant.Multiplier and cloning
+    /// (`rules::ares_production`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_production(&self) -> &crate::rules::ares_production::ProductionTypeRules {
+        &self.production
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_ares_production(
+        &mut self,
+        production: &crate::rules::ares_production::ProductionTypeRules,
+    ) {
+        self.production = production.clone();
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_production_mut(
+        &mut self,
+    ) -> &mut crate::rules::ares_production::ProductionTypeRules {
+        &mut self.production
+    }
+
+    /// Whether `[General] WallBuildSpeedCoefficient=` scales this type's
+    /// build time: a `Wall=` BuildingType (Time_To_Build6F4917,
+    /// Select6AB8BB), with Ares only while `BuildTime.Speed` is unset
+    /// (10041C6C..10041C87, 10041950).
+    pub fn wall_build_speed_applies(&self) -> bool {
+        let wall = self.category == ObjectCategory::Building && self.wall;
+        #[cfg(feature = "ares")]
+        let wall = wall && self.production.build_time_speed().is_none();
+        wall
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_academy(
+        &mut self,
+        academy: &crate::rules::ares_veterancy::AcademyTypeRules,
+    ) {
+        self.academy = academy.clone();
     }
 
     pub const fn no_manual_fire(&self) -> bool {
@@ -4009,6 +4099,20 @@ impl ObjectType {
             Some(FactoryType::InfantryType | FactoryType::UnitType)
         ) || self.unit_repair
             || self.cloning
+            || self.ares_cloning_facility()
+    }
+
+    /// Ares BuildingClass_IsFactory_CloningFacility (hook `0x00455DA0` ->
+    /// `10041560`): a `CloningFacility=` building answers true.
+    fn ares_cloning_facility(&self) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.production.cloning_facility()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            false
+        }
     }
 
     /// Parse an ObjectType from a rules.ini section.
@@ -4540,6 +4644,14 @@ impl ObjectType {
             #[cfg(feature = "ares")]
             infiltration: Default::default(),
             #[cfg(feature = "ares")]
+            veterancy: Default::default(),
+            #[cfg(feature = "ares")]
+            promotion_eva: [None, None],
+            #[cfg(feature = "ares")]
+            academy: Default::default(),
+            #[cfg(feature = "ares")]
+            production: Default::default(),
+            #[cfg(feature = "ares")]
             keep_alive: section.read_ares_nullable_bool("KeepAlive", None),
             #[cfg(feature = "ares")]
             convert_script: None,
@@ -4731,6 +4843,8 @@ impl ObjectType {
             crashable: section.read_bool("Crashable", false),
             #[cfg(feature = "ares")]
             aircraft_crashable: None,
+            #[cfg(feature = "ares")]
+            curtain_modifiers: [NativeF64Bits::ONE; 2],
             teleporter: section.read_bool("Teleporter", false),
             move_to_shroud: section.read_bool("MoveToShroud", category != ObjectCategory::Aircraft),
             hover_attack: section.read_bool("HoverAttack", false),
@@ -4843,8 +4957,6 @@ impl ObjectType {
             anti_armor_value: building_int(section, category, "AntiArmorValue"),
             anti_infantry_value: building_int(section, category, "AntiInfantryValue"),
             factory_rtti: if category == ObjectCategory::Building {
-            #[cfg(feature = "ares")]
-            curtain_modifiers: [NativeF64Bits::ONE; 2],
                 section.read_factory("Factory", 0)
             } else {
                 0

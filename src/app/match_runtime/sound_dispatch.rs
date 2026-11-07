@@ -237,6 +237,8 @@ pub(super) fn dispatch_sim_sound_events(
                 owner,
                 sound_id,
                 world,
+                #[cfg(feature = "ares")]
+                eva,
             } => {
                 // `HouseClass::IsHumanPlayer @ 0x0050B6F0` (`0x006FA089` /
                 // `0x006FA0F6`): only a human player's promotion is audible.
@@ -258,10 +260,20 @@ pub(super) fn dispatch_sim_sound_events(
                 // `0x006FA0C6 MOV ECX,0x843138 ("EVA_UnitPromoted") ; OR
                 // EDX,-1 ; CALL VoxClass::PlayEVA`: the voice slot, with
                 // the entry's own type (STANDARD LOW on stock data).
+                #[cfg(not(feature = "ares"))]
                 output.push(GameSoundEvent::Eva {
                     event: "EVA_UnitPromoted".to_string(),
                     type_override: None,
                 });
+                // Ares UpdateVeterancy10046D4B..10046D54 queues the type's
+                // EVA.*Promoted index instead; -1 queues nothing.
+                #[cfg(feature = "ares")]
+                if let Some(eva) = eva {
+                    output.push(GameSoundEvent::Eva {
+                        event: sim.interner().resolve(eva).to_string(),
+                        type_override: None,
+                    });
+                }
                 continue;
             }
             SimSoundEvent::CloakSound {
@@ -1314,7 +1326,8 @@ pub(crate) fn superweapon_launch_cue(
         | K::UnitDelivery
         | K::HunterSeeker
         | K::Protect
-        | K::Battery => SuperWeaponLaunchCue::default(),
+        | K::Battery
+        | K::SonarPulse => SuperWeaponLaunchCue::default(),
     }
 }
 
@@ -1943,6 +1956,8 @@ mod tests {
         sim.session_mut_for_test()
             .set_current_house_for_test(Some(local));
         let sound = sim.intern("Promotion");
+        #[cfg(feature = "ares")]
+        let eva = sim.intern("EVA_UnitPromoted");
         let promotion = |owner| SimSoundEvent::UnitPromoted {
             owner,
             sound_id: Some(sound),
@@ -1952,6 +1967,8 @@ mod tests {
                 y: 7 * 256 + 128,
                 z: 0,
             },
+            #[cfg(feature = "ares")]
+            eva: Some(eva),
         };
         use crate::sim::radar::{RadarEventRequest, RadarEventType};
         // The scripted client radar refuses every request at column 99.

@@ -840,6 +840,14 @@ pub struct HouseState {
     /// `BuildingClass::Infiltrate` (`sim::spy_infiltration`).
     #[serde(default)]
     spy_gains: SpyGains,
+    /// Ares HouseExt `+0x58` Academies: this house's on-map buildings whose
+    /// type has a positive `Academy.*Veterancy`, in the order
+    /// `HouseExt::UpdateAcademy` (`10022760`) appended them. Placement
+    /// (hook `0x00446366`) adds, Limbo (`0x00445905`) and a capture's old
+    /// owner (`0x00448AB2`) remove, the captor (`0x004491D5`) adds.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_academies: Vec<u64>,
     /// House+2D8: how many of this house's `PowersUnit=` buildings are
     /// counted as operational (each building's `+0x662`). The constructor
     /// clears it; `sim::powered_unit` is its only writer.
@@ -2291,6 +2299,32 @@ impl HouseState {
             std::hash::Hash::hash(b"house-spy-gains-v1", hasher);
             std::hash::Hash::hash(&self.spy_gains, hasher);
         }
+        // The other veterancy grant a house holds, folded while it has one.
+        #[cfg(feature = "ares")]
+        if !self.ares_academies.is_empty() {
+            std::hash::Hash::hash(b"ares-house-academies-v1", hasher);
+            std::hash::Hash::hash(&self.ares_academies, hasher);
+        }
+    }
+
+    /// `HouseExt::ExtData::UpdateAcademy` (`10022760`): append an academy
+    /// not yet listed, or remove a listed one; anything else is a no-op.
+    #[cfg(feature = "ares")]
+    pub(crate) fn update_ares_academy(&mut self, building: u64, added: bool) {
+        let listed = self.ares_academies.iter().position(|&id| id == building);
+        match (added, listed) {
+            (true, None) => self.ares_academies.push(building),
+            (false, Some(index)) => {
+                self.ares_academies.remove(index);
+            }
+            _ => {}
+        }
+    }
+
+    /// Ares HouseExt Academies, which `ApplyAcademy` (`10020750`) walks.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_academies(&self) -> &[u64] {
+        &self.ares_academies
     }
 
     /// Folded only while set, so a house that never lost a building hashes as
@@ -2805,6 +2839,8 @@ impl HouseState {
             produced_type_counts: Default::default(),
             lost_building: None,
             spy_gains: SpyGains::default(),
+            #[cfg(feature = "ares")]
+            ares_academies: Vec::new(),
             powered_unit_centers: 0,
             discovered_by_current_house: false,
             economy: Economy::new(credits),
