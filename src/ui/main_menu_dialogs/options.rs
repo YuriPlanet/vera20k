@@ -111,6 +111,9 @@ pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "VERA:CustomEndGameMovieHelp
 pub(crate) const DETAILED_EVA_TEXT_LABEL: &str = "VERA:DetailedEvaText";
 pub(crate) const DETAILED_EVA_TEXT_HELP: &str = "VERA:DetailedEvaTextHelp";
 pub(crate) const SHIFT_QUEUE_HELP: &str = "VERA:ShiftQueueHelp";
+/// VERA's terrain deformation box (`docs/terrain-deformation.md`).
+pub(crate) const TERRAIN_DEFORMATION_LABEL: &str = "VERA:TerrainDeformation";
+pub(crate) const TERRAIN_DEFORMATION_HELP: &str = "VERA:TerrainDeformationHelp";
 pub(crate) const DISPLAY_LABEL: &str = "VERA:Display";
 pub(crate) const DISPLAY_HELP: &str = "VERA:DisplayHelp";
 /// VERA's health-bar list. The retail string table has nothing for it.
@@ -582,6 +585,10 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's own box: Shift + left click on a mobile build cameo queues
     /// several copies instead of gamemd's one. It applies at once.
     ShiftQueue,
+    /// VERA's own box: explosions dent open ground as in Tiberian Sun and a
+    /// nuke leaves a crater. Saved; the next game's rules read it, so a match
+    /// already running keeps its own.
+    TerrainDeformation,
     /// VERA's developer box: Internet answers from the stand-in WOL test
     /// service instead of showing that WOLAPI is missing. The next Internet
     /// visit reads it.
@@ -677,6 +684,7 @@ pub(crate) enum LauncherOptionsEvent {
     OriginalShapeChanged(bool),
     YrOriginalStyleChanged(bool),
     ShiftQueueChanged(bool),
+    TerrainDeformationChanged(bool),
     WolTestServiceChanged(bool),
     RenderInterpolationChanged(bool),
     MouseWheelZoomChanged(bool),
@@ -738,6 +746,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) smooth_sidebar: bool,
     pub(crate) hd_map_previews: bool,
     pub(crate) shift_queue: bool,
+    pub(crate) terrain_deformation: bool,
     pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) performance_stats: bool,
@@ -790,6 +799,7 @@ impl Default for LauncherOptionsValues {
             smooth_sidebar: false,
             hd_map_previews: true,
             shift_queue: false,
+            terrain_deformation: false,
             wol_test_service: false,
             performance_stats: false,
             skip_intro: false,
@@ -1183,6 +1193,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::OriginalShape => &mut self.values.original_shape,
             LauncherCheckboxId::YrOriginalStyle => &mut self.values.yr_original_style,
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
+            LauncherCheckboxId::TerrainDeformation => &mut self.values.terrain_deformation,
             LauncherCheckboxId::WolTestService => &mut self.values.wol_test_service,
             LauncherCheckboxId::RenderInterpolation => &mut self.values.render_interpolation,
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
@@ -1216,6 +1227,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShiftQueue => self
                 .pending_events
                 .push(LauncherOptionsEvent::ShiftQueueChanged(checked)),
+            LauncherCheckboxId::TerrainDeformation => self
+                .pending_events
+                .push(LauncherOptionsEvent::TerrainDeformationChanged(checked)),
             LauncherCheckboxId::WolTestService => self
                 .pending_events
                 .push(LauncherOptionsEvent::WolTestServiceChanged(checked)),
@@ -1466,6 +1480,7 @@ impl Category {
                 Setting::Checkbox(Check::TargetLines),
                 Setting::Checkbox(Check::ShowHidden),
                 Setting::Checkbox(Check::ShiftQueue),
+                Setting::Checkbox(Check::TerrainDeformation),
                 Setting::Checkbox(Check::CustomEndGameBanner),
                 Setting::Checkbox(Check::CustomEndGameScore),
                 Setting::Checkbox(Check::CustomEndGameMovie),
@@ -2180,6 +2195,7 @@ mod tests {
                 Check::SmoothSidebar,
                 Check::HdMapPreviews,
                 Check::ShiftQueue,
+                Check::TerrainDeformation,
                 Check::PerformanceStats,
                 Check::SkipIntro,
                 Check::CustomEndGameBanner,

@@ -1,8 +1,13 @@
 # Terrain deformation
 
-Explosions can dent the ground, as in Tiberian Sun. It is off by default and changes nothing until
-the rules switch it on, for example in your [personal rules](personal-rules.md)
-(`VERARULES.INI`):
+Explosions can dent the ground, as in Tiberian Sun. It is off by default. Tick **Options → Game
+Options → Terrain Deformation** to switch it on for the next game; a nuke then leaves a crater too.
+In an online game every player needs the same setting, which the rules compatibility check
+compares, and a save keeps the rules it was started with.
+
+The box switches on this rules key for each new game. A mod, a map or your
+[personal rules](personal-rules.md) (`VERARULES.INI`) can set it as well, and a map can switch it
+off for its own game:
 
 ```ini
 [CombatDamage]
@@ -12,16 +17,15 @@ DeformLowestLevel=-4     ; the lowest Level a crater digs to, default -4
 
 gamemd still reads each warhead's `Deform=` and `DeformThreshhold=` but never uses them. Once this
 is on, the retail warheads that set them (HE, V3WH, DMISLWH, CMISLWH, ARTYHE, SCHOPWH, ORCAHE and
-IonCannonWH) dent the ground. The nuclear missile's `NUKE` warhead sets neither, so a nuke leaves a
-crater only when you give it one:
+IonCannonWH) dent the ground. The nuclear missile's `NUKE` warhead sets neither, so the box also
+gives it `Deform=100%` unless the rules already set one. With the rules key alone, give it one
+yourself:
 
 ```ini
 [NUKE]
 Deform=100%
 ```
 
-A map or mod can set the same keys. In a network game every player needs the same personal rules,
-which the rules compatibility check compares, and a save keeps the rules it was started with.
 Switched off, no extra random draw is spent, no extra tiles load and zones read cell Levels as
 gamemd does.
 

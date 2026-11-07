@@ -123,6 +123,12 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
     }
+    fn store_terrain_deformation(&mut self, enabled: bool) {
+        // The next game's rules and every later network agreement read it;
+        // Options' accept writes it out.
+        self.persistence.options_profile.terrain_deformation = enabled;
+        self.process_assets.set_terrain_deformation(enabled);
+    }
     fn store_detailed_eva_text(&mut self, enabled: bool) {
         // Presentation only: the next EVA text line reads it.
         self.persistence.options_profile.detailed_eva_text = enabled;

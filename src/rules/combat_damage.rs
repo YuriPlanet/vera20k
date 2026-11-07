@@ -46,7 +46,8 @@ pub struct CombatDamageDefaults {
     /// ground they explode on (see `docs/terrain-deformation.md`). gamemd
     /// still reads `Deform=` and `DeformThreshhold=` but nothing uses them,
     /// so retail warheads that set them stay inert unless this is on.
-    /// Default no.
+    /// Default no; the Options page's Terrain Deformation box switches it on
+    /// in each new scenario's root (`PersonalRules::scenario_root`).
     pub terrain_deformation: bool,
     /// VERA's `DeformLowestLevel=`: the lowest Level deformation lowers a
     /// corner to, a signed int clamped to a cell Level's `-128..=127`.
