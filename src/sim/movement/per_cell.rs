@@ -241,7 +241,9 @@ impl Simulation {
     ///
     /// A miner on its refinery's pad never gets here: the pad is the east
     /// column of a `Bib=` foundation, which Can_Enter_Cell admits whatever
-    /// the radio contact (`0x0073F7D3..0x0073F821`).
+    /// the radio contact (`0x0073F7D3..0x0073F821`). Nor does a warp
+    /// arrival: Teleport Process calls this Per_Cell_Process (`0x0071971C`)
+    /// before its own Stop_Moving (`0x00719725`), so Is_Moving is still set.
     fn unit_per_cell_own_cell_refusal(
         &mut self,
         id: u64,
