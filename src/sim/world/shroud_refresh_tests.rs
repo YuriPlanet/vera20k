@@ -1949,3 +1949,39 @@ fn initial_house_sight_pending_survives_snapshot_and_current_house_change() {
         assert_eq!(restored.state_hash(), after, "repeat is inert");
     }
 }
+
+/// `0x005678E0`'s house gate (`0x00567AB0..0x00567B12`) still receives the
+/// source's reveal even when it rejects the Owner: the call returns at
+/// `0x00567D88` before any cell, so the client's map is entered once and
+/// changes nothing (vera20k#3900).
+#[test]
+fn a_rejected_owner_still_enters_the_client_map_once() {
+    use crate::rules::ini_parser::IniFile;
+    let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+        "[General]\n[VehicleTypes]\n0=TANK\n[InfantryTypes]\n[BuildingTypes]\n\
+         [AircraftTypes]\n[TANK]\nStrength=300\nSight=6\n",
+    ))
+    .expect("rejected-owner fixture rules");
+    let mut sim = Simulation::with_seed(7);
+    let player = sim.interner.intern("Player");
+    let enemy = sim.interner.intern("Enemy");
+    sim.session.set_current_house_for_test(Some(player));
+    for (owner, human) in [(player, true), (enemy, false)] {
+        sim.houses
+            .register(HouseState::new(owner, 0, None, human, 0, 10));
+    }
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    sim.fog = crate::sim::vision::FogState::new(32, 32);
+    let id = sim
+        .spawn_object("TANK", "Enemy", 8, 8, 0, &rules)
+        .expect("the computer house's tank");
+    let ((), trace) = trace_reveal_calls(|| {
+        sim.reveal_uncached_object_sight(id, false, false, None, UninitContext::with_rules(&rules));
+    });
+    assert_eq!(trace.map_calls, 1, "the rejected call still happens");
+    assert!(trace.notifications.is_empty(), "and writes no cell");
+    assert!(
+        !sim.fog.is_cell_visible(player, 8, 8),
+        "a computer house opens no client map"
+    );
+}

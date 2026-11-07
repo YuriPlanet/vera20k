@@ -1034,3 +1034,33 @@ fn border_refresh_interior_matches_native_lookup_fallback() {
     assert_eq!(interior.shroud_knowledge[65].counter(), -3);
     assert_eq!(interior.shroud_knowledge[65].gap_counter(), 2);
 }
+
+/// `0x567CEE..0x567CF8`: a source reveal that reaches a cell the map already
+/// holds as initialized and visible leaves cached120/121 alone, where an
+/// ordinary reveal recomputes them (retail GoldSt, vera20k#3900).
+#[test]
+fn a_repeated_source_reveal_keeps_the_cells_cached_frames() {
+    let viewer = crate::sim::intern::test_intern("Player");
+    let mut fog = FogState::new(12, 12);
+    let frames = |fog: &FogState| {
+        let view = &fog.by_owner[&viewer];
+        view.map_cell_edge_cache_for_test((5, 5))
+    };
+    fog.reveal_map_cell(viewer, (5, 5), false, None, MapRevealProjection::Source);
+    let first = frames(&fog);
+    // Initializing the east neighbour changes the cell's fog edge mask, so a
+    // full store would give another frame.
+    fog.reveal_map_cell(viewer, (6, 5), false, None, MapRevealProjection::Source);
+    fog.reveal_map_cell(viewer, (5, 5), false, None, MapRevealProjection::Source);
+    assert_eq!(
+        frames(&fog),
+        first,
+        "a repeated source reveal keeps 120/121"
+    );
+    fog.reveal_map_cell(viewer, (5, 5), false, None, MapRevealProjection::Transient);
+    assert_ne!(
+        frames(&fog),
+        first,
+        "an ordinary reveal recomputes both frames"
+    );
+}
