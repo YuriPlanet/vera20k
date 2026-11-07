@@ -5,8 +5,8 @@
 //! Any window other than the two sizes gamemd's shell runs at shows it fitted
 //! like the menus, so it lines up with the menu that follows it.
 //!
-//! It also carries VERA20K's own legal notices, which gamemd's splash lacks; see
-//! [`legal_notice`] and [`ffmpeg_notice`].
+//! It also carries VERA20K's own legal notice, which gamemd's splash lacks; see
+//! [`legal_notice`].
 
 use crate::util::time::{Duration, Instant};
 
@@ -90,23 +90,17 @@ const LOADING_FALLBACK: &str = "Loading...";
 /// VERA20K's GPLv3 "Appropriate Legal Notices" (sections 0 and 5(d)): the
 /// copyright, the right to share under the license, no warranty, and where to
 /// read the license and get the source (a release build names its commit;
-/// build.rs), in the language in use. Drawn bottom left, under FFmpeg's notice.
-/// Because the program shows them, modified versions must keep showing such a
-/// notice.
+/// build.rs), in the language in use. Drawn bottom left. Because the program
+/// shows them, modified versions must keep showing such a notice. The Bink
+/// decoder and the sidebar's xBR scaler, ported from FFmpeg, are under the GPLv3
+/// too, as section 3 of FFmpeg's LGPL 2.1 allows, so FFmpeg's copyright needs no
+/// line of its own here.
 fn legal_notice() -> [String; 3] {
     [
         crate::i18n::tr("VERA:LegalCopyright"),
         crate::i18n::tr("VERA:LegalShare"),
         crate::i18n::tr_fill("VERA:LegalSource", &[("source", &env!("VERA20K_SOURCE"))]),
     ]
-}
-
-/// The LGPL 2.1 (section 6) of the code ported from FFmpeg, the Bink decoder and
-/// the sidebar's xBR scaler, puts FFmpeg's copyright, as FFmpeg shows it, and a
-/// reference to that license's text among the copyright notices a program
-/// shows. Drawn bottom left, over VERA20K's notice.
-fn ffmpeg_notice() -> String {
-    crate::i18n::tr("VERA:LegalFfmpeg")
 }
 
 /// The minimum on-screen hold, anchored at the first successful present.
@@ -406,10 +400,10 @@ fn compose_startup_splash(
 /// composition, anchored to its corners: the copyright and brand bottom right
 /// and "Loading..." top left. gamemd also draws its trademark lines
 /// (`GUI:TradeMarkTop`, `GUI:TradeMarkBottom`) bottom left; VERA leaves them
-/// out, the maintainer's choice, and stacks FFmpeg's notice and VERA20K's there
-/// instead. The stack ends on the brand's row and moves up a row at a time while
-/// one of its lines would come within 10 px of EA's line on its row, as long
-/// translations and the 640x480 composition do.
+/// out, the maintainer's choice, and puts VERA20K's notice there instead. It
+/// ends on the brand's row and moves up a row at a time while one of its lines
+/// would come within 10 px of EA's line on its row, as long translations and
+/// the 640x480 composition do.
 fn splash_lines(
     csf: Option<&CsfFile>,
     font: &BitFont,
@@ -435,10 +429,7 @@ fn splash_lines(
         line(&copyright, right(&copyright), first_bottom_y),
         line(&brand, right(&brand), second_bottom_y),
     ];
-    let notices: Vec<String> = [ffmpeg_notice()]
-        .into_iter()
-        .chain(legal_notice())
-        .collect();
+    let notices = legal_notice();
     let clear_of_ea_lines = |top: i32| {
         notices.iter().enumerate().all(|(index, notice)| {
             let y = top + index as i32 * row;
@@ -509,10 +500,10 @@ mod tests {
     use super::*;
     use crate::assets::asset_manager::MediaArchiveMode;
 
-    /// FFmpeg's notice, then VERA20K's, fill the bottom left down to the brand's
-    /// row in place of gamemd's trademark lines; "Loading..." stays top left.
+    /// VERA20K's notice fills the bottom left down to the brand's row in place
+    /// of gamemd's trademark lines; "Loading..." stays top left.
     #[test]
-    fn legal_notices_stack_bottom_left_down_to_the_brands_row() {
+    fn legal_notice_fills_the_bottom_left_down_to_the_brands_row() {
         let font = crate::render::bit_font::tests::make_test_font(&[], 4);
         let lines = splash_lines(None, &font, 800, 600);
         let mut left: Vec<_> = lines
@@ -522,13 +513,11 @@ mod tests {
             .collect();
         left.sort_by_key(|&(_, y)| y);
 
-        let ffmpeg = ffmpeg_notice();
         let [copyright, share, source] = legal_notice();
         assert_eq!(
             left,
             [
                 (LOADING_FALLBACK, 10),
-                (ffmpeg.as_str(), 520),
                 (copyright.as_str(), 540),
                 (share.as_str(), 560),
                 (source.as_str(), 580),
@@ -537,9 +526,9 @@ mod tests {
     }
 
     /// At 640x480 the share line would run into EA's copyright on its row, so
-    /// the stack moves up until each notice keeps 10 px clear of EA's line.
+    /// the notice moves up until each of its lines keeps 10 px clear of EA's.
     #[test]
-    fn legal_notices_move_up_rather_than_run_into_eas_lines() {
+    fn legal_notice_moves_up_rather_than_run_into_eas_lines() {
         let font = crate::render::bit_font::tests::make_test_font(&[], 4);
         let lines = splash_lines(None, &font, 640, 480);
         let find = |text: &str| lines.iter().find(|line| line.text == text).expect(text);
