@@ -238,6 +238,7 @@ pub(crate) trait AuthoredOverlayLoadHost {
 
 #[derive(Debug)]
 pub enum AuthoredOverlayFinalizeError<E> {
+    Tiberium(crate::rules::overlay_types::TiberiumImageError),
     InvalidMapShape {
         width: i32,
         height: i32,
@@ -278,6 +279,7 @@ pub enum AuthoredOverlayFinalizeError<E> {
 impl<E: std::fmt::Display> std::fmt::Display for AuthoredOverlayFinalizeError<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Tiberium(error) => std::fmt::Display::fmt(error, f),
             Self::InvalidMapShape { width, height } => {
                 write!(f, "invalid authored overlay map shape {width}x{height}")
             }
@@ -330,6 +332,7 @@ where
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Host(error) => Some(error),
+            Self::Tiberium(error) => Some(error),
             _ => None,
         }
     }
@@ -717,6 +720,10 @@ struct FinalizerMarkHost<'a, 'resources, H: AuthoredOverlayLoadHost> {
 
 impl<H: AuthoredOverlayLoadHost> OverlayMarkHost for FinalizerMarkHost<'_, '_, H> {
     type Error = AuthoredOverlayFinalizeError<H::Error>;
+
+    fn tiberium_error(error: crate::rules::overlay_types::TiberiumImageError) -> Self::Error {
+        AuthoredOverlayFinalizeError::Tiberium(error)
+    }
 
     fn cell(&mut self, coord: (i16, i16)) -> NativeOverlayCellTarget {
         self.cells.target(coord.0, coord.1)

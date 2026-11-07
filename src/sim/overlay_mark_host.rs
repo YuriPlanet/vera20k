@@ -11,8 +11,6 @@
 //! ## Dependency rules
 //! Part of `sim/` — depends on `rules/`, `map/` and other `sim/` modules only.
 
-use std::convert::Infallible;
-
 use crate::map::bridge_facts::{BridgeFlagStamp, BridgeStampFamily, BridgeStampSlot};
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::overlay_mark::{OverlayCellAnim, OverlayMarkHost};
@@ -26,6 +24,27 @@ use crate::sim::pathfinding::zone_incremental::ZoneRepairKind;
 use crate::sim::world::{Simulation, SimulationWallRuntimeHost};
 use crate::util::fixed_math::SimFixed;
 
+/// Synchronous failure of the shared runtime Overlay constructor/Mark chain.
+/// Earlier writes and native-ID/RNG draws remain. Frame owners stop the
+/// timeline; optional action owners report and refuse the failed operation.
+#[derive(Debug, thiserror::Error)]
+pub enum RuntimeOverlayError {
+    #[error(transparent)]
+    Tiberium(#[from] crate::rules::overlay_types::TiberiumImageError),
+    #[error(transparent)]
+    Anim(#[from] AnimSpawnError),
+    #[error(transparent)]
+    Lifecycle(#[from] crate::sim::world::LoadOverlayLifecycleError),
+}
+
+/// Existing ore batching defers only the plain Mark tail's attribute refresh.
+/// All structural/CellAnim callbacks and constructor effects stay synchronous.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OverlayRecalc {
+    Immediate,
+    DeferOrdinary,
+}
+
 /// [`OverlayMarkHost`] over the live Simulation. Callers admit a cell of the
 /// CellClass array before revealing, so the terrain is present.
 pub(crate) struct SimulationMarkHost<'a> {
@@ -34,6 +53,8 @@ pub(crate) struct SimulationMarkHost<'a> {
     /// they refuse walls and construct no CellAnim.
     rules: &'a RuleSet,
     registry: &'a OverlayTypeRegistry,
+    recalc: OverlayRecalc,
+    effects: crate::sim::world::FrameEffects<'a>,
 }
 
 impl<'a> SimulationMarkHost<'a> {
@@ -41,11 +62,15 @@ impl<'a> SimulationMarkHost<'a> {
         sim: &'a mut Simulation,
         rules: &'a RuleSet,
         registry: &'a OverlayTypeRegistry,
+        recalc: OverlayRecalc,
+        effects: crate::sim::world::FrameEffects<'a>,
     ) -> Self {
         Self {
             sim,
             rules,
             registry,
+            recalc,
+            effects,
         }
     }
 
@@ -95,7 +120,11 @@ impl<'a> SimulationMarkHost<'a> {
 }
 
 impl OverlayMarkHost for SimulationMarkHost<'_> {
-    type Error = Infallible;
+    type Error = RuntimeOverlayError;
+
+    fn tiberium_error(error: crate::rules::overlay_types::TiberiumImageError) -> Self::Error {
+        error.into()
+    }
 
     fn cell(&mut self, coord: (i16, i16)) -> NativeCellIdentity {
         self.terrain().native_cell_identity(coord)
@@ -105,7 +134,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
         self.terrain().native_cell_coord(cell)
     }
 
-    fn in_bounds(&mut self, coord: (i16, i16)) -> Result<bool, Infallible> {
+    fn in_bounds(&mut self, coord: (i16, i16)) -> Result<bool, RuntimeOverlayError> {
         Ok(self.sim.map_cell_in_bounds(coord))
     }
 
@@ -150,7 +179,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
         &mut self,
         cell: NativeCellIdentity,
         overlay_id: u8,
-    ) -> Result<(), Infallible> {
+    ) -> Result<(), RuntimeOverlayError> {
         match self.real_coord(cell) {
             Some((x, y)) => {
                 if let (Some(grid), Some(terrain)) = (
@@ -168,7 +197,11 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
         Ok(())
     }
 
-    fn write_data(&mut self, cell: NativeCellIdentity, data: u8) -> Result<(), Infallible> {
+    fn write_data(
+        &mut self,
+        cell: NativeCellIdentity,
+        data: u8,
+    ) -> Result<(), RuntimeOverlayError> {
         match self.real_coord(cell) {
             Some((x, y)) => {
                 if let Some(grid) = self.sim.overlay_grid.as_mut() {
@@ -193,7 +226,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
         cell: NativeCellIdentity,
         speed: SpeedType,
         ignore_occupants: bool,
-    ) -> Result<bool, Infallible> {
+    ) -> Result<bool, RuntimeOverlayError> {
         Ok(mark_cell_passable(self.sim, cell, speed, ignore_occupants))
     }
 
@@ -202,7 +235,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
         anchor: NativeCellIdentity,
         family: BridgeStampFamily,
         direction: u8,
-    ) -> Result<(), Infallible> {
+    ) -> Result<(), RuntimeOverlayError> {
         let (x, y) = self.coord(anchor);
         let stamp = BridgeFlagStamp::new((x as u16, y as u16), direction, true);
         let Some(slots) = stamp.slots() else {
@@ -244,7 +277,10 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
         Ok(())
     }
 
-    fn wall_clear_to_build(&mut self, anchor: NativeCellIdentity) -> Result<bool, Infallible> {
+    fn wall_clear_to_build(
+        &mut self,
+        anchor: NativeCellIdentity,
+    ) -> Result<bool, RuntimeOverlayError> {
         let rules = self.rules;
         let cells = NativeCellQuery::canonical(self.terrain());
         Ok(crate::sim::build_site::is_clear_to_build(
@@ -260,7 +296,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
         ))
     }
 
-    fn wall_cleanup(&mut self, anchor: NativeCellIdentity) -> Result<(), Infallible> {
+    fn wall_cleanup(&mut self, anchor: NativeCellIdentity) -> Result<(), RuntimeOverlayError> {
         let (x, y) = self.coord(anchor);
         let registry = self.registry;
         self.with_wall_host(|grid, terrain, host| {
@@ -276,7 +312,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
         Ok(())
     }
 
-    fn merge_wall_zones(&mut self, anchor: NativeCellIdentity) -> Result<(), Infallible> {
+    fn merge_wall_zones(&mut self, anchor: NativeCellIdentity) -> Result<(), RuntimeOverlayError> {
         let (x, y) = self.coord(anchor);
         self.with_wall_host(|grid, terrain, host| {
             use crate::sim::overlay_grid::WallDamageTransactionHost;
@@ -294,7 +330,7 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
     fn increment_wall_neighbor_count(
         &mut self,
         cell: NativeCellIdentity,
-    ) -> Result<(), Infallible> {
+    ) -> Result<(), RuntimeOverlayError> {
         if let (Some(grid), Some(terrain)) = (
             self.sim.overlay_grid.as_mut(),
             self.sim.resolved_terrain.as_ref(),
@@ -304,24 +340,20 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
         Ok(())
     }
 
-    fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<(), Infallible> {
+    fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<(), RuntimeOverlayError> {
         let rules = self.rules;
         let ground = OverlayCellAnimGround::read(self.terrain(), &request);
-        if let Err(error) = self.sim.construct_overlay_cell_anim(
+        self.sim.construct_overlay_cell_anim(
             rules,
             request,
             ground,
             AnimConstructorInput::Runtime,
-        ) {
-            panic!(
-                "Overlay CellAnim [{}] must be bound before OverlayClass::Mark: {error}",
-                request.anim
-            );
-        }
+            self.effects,
+        )?;
         Ok(())
     }
 
-    fn recalc(&mut self, cell: NativeCellIdentity) -> Result<(), Infallible> {
+    fn recalc(&mut self, cell: NativeCellIdentity) -> Result<(), RuntimeOverlayError> {
         // The shared dummy's derived attributes are not modeled.
         if let Some((x, y)) = self.real_coord(cell)
             && let (Some(grid), Some(terrain)) = (
@@ -330,6 +362,13 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
             )
         {
             grid.recalculate_runtime_cell(terrain, self.registry, (x, y));
+        }
+        Ok(())
+    }
+
+    fn recalc_ordinary(&mut self, cell: NativeCellIdentity) -> Result<(), RuntimeOverlayError> {
+        if self.recalc == OverlayRecalc::Immediate {
+            self.recalc(cell)?;
         }
         Ok(())
     }
@@ -424,6 +463,7 @@ impl Simulation {
         request: OverlayCellAnim<'_>,
         ground: OverlayCellAnimGround,
         constructor: AnimConstructorInput,
+        effects: crate::sim::world::FrameEffects<'_>,
     ) -> Result<AnimId, AnimSpawnError> {
         let [x, y] = request.anim_xy;
         let ground_z = ground.z;
@@ -446,7 +486,7 @@ impl Simulation {
             descriptor,
             AnimWorldCoord { x, y, z: ground_z },
             constructor,
-            crate::sim::world::FrameEffects::default(),
+            effects,
         )?;
         let Some(tiberium) = request
             .tiberium
@@ -496,11 +536,17 @@ impl Simulation {
             crate_images: MarkCrateImages::resolve(&rules.crate_rules, registry),
         };
         match mark_overlay(
-            &mut SimulationMarkHost::new(self, rules, registry),
+            &mut SimulationMarkHost::new(
+                self,
+                rules,
+                registry,
+                OverlayRecalc::Immediate,
+                crate::sim::world::FrameEffects::default(),
+            ),
             &request,
         ) {
             Ok(outcome) => outcome,
-            Err(never) => match never {},
+            Err(error) => panic!("fixture Overlay Mark failed: {error}"),
         }
     }
 }

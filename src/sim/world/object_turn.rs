@@ -812,7 +812,7 @@ impl Simulation {
             .get(stable_id)
             .is_some_and(|entity| entity.category() == EntityCategory::Structure);
         let mut ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
-        if let Some(error) = ai.fall_error.take() {
+        if let Some(error) = ai.frame_error.take() {
             return Err(error);
         }
         outcome.bridge_state_changed |= ai.bridge_state_changed;

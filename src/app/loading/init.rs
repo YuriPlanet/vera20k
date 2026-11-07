@@ -2375,7 +2375,8 @@ impl MapLoadInitial {
             overlay_grid,
             &house_roster,
             Some(&match_launch_descriptor),
-        );
+        )
+        .expect("generated scenario post-map initialization");
         let crate_name_id =
             |name: Option<&str>| name.and_then(|name| overlay_registry.id_for_name(name));
         let mut presented = Vec::new();
@@ -3574,7 +3575,7 @@ fn load_map_first_step(
                                                 map_data.header.width as u16,
                                                 map_data.header.height as u16,
                                             ),
-                                        );
+                                        )?;
                                             if let Some(stats) = queue_stats {
                                                 log::info!(
                                                     "Initialized generated native tiberium queues before germination: {} growth, {} spread",
@@ -3589,7 +3590,7 @@ fn load_map_first_step(
                 &overlay_registry,
                 map_data.header.width as u16,
                 map_data.header.height as u16,
-            );
+            )?;
                                             log::info!(
                                                 "Generated final InitCellAttributes(1): {} of {} real cells germinated (value total {})",
                                                 germination.germinated_cells,
@@ -3955,7 +3956,7 @@ fn load_map_first_step(
             overlay_grid,
             &house_roster,
             match_launch_descriptor.as_ref(),
-        );
+        )?;
                                                                             if !output.navigation_published {
             log::error!("Initial navigation rebuild failed: resolved terrain is unavailable");
         }

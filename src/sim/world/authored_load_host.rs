@@ -250,6 +250,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
             request,
             ground,
             AnimConstructorInput::AssignedIdentity(native_unique_id),
+            super::FrameEffects::default(),
         )?;
         Ok(())
     }

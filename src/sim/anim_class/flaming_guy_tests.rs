@@ -181,7 +181,8 @@ fn compare_state(actual: &Value, expected: &Value, label: &str) {
 
 fn visit(sim: &mut Simulation, rules: &RuleSet, id: AnimId, frame: u32) {
     sim.session.set_binary_frame_for_test(frame);
-    sim.visit_anim(id, rules, None, FrameEffects::default());
+    sim.visit_anim(id, rules, None, FrameEffects::default())
+        .unwrap();
 }
 
 #[test]

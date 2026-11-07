@@ -1242,12 +1242,27 @@ fn unread_cell_anim_loads_its_own_retail_shape_without_replaying_construction() 
     use crate::sim::native_identity::NativeUniqueIdCursor;
     use crate::util::fixed_math::SIM_ZERO;
 
-    let Some(mut save) = incoming_save("TEMPERATE", "[GEM01]\nCellAnim=SEAL\n") else {
+    let Some(mut save) = incoming_save(
+        "TEMPERATE",
+        "[Tiberiums]\n0=Riparius\n[Riparius]\nImage=2\n[GEM01]\nCellAnim=SEAL\n",
+    ) else {
         return;
     };
     // A same-named Infantry type/ART section does not perform an Anim read.
     let rules = &save.incoming.resources.rules;
     let overlay = rules.overlay_registry();
+    // ReadINI721C49 retains the stock Image1 slope count when Image2 binds
+    // GEM01. Save7220D0/Load721E80 must preserve that history, rather than
+    // reconstructing a fresh Image2 descriptor from the last map text.
+    let image = rules.tiberium_types.types()[0].image();
+    assert_eq!(
+        (
+            image.base_overlay(),
+            image.primary_count(),
+            image.slope_count()
+        ),
+        (Some(27), 12, 8)
+    );
     assert_eq!(
         overlay
             .flags(overlay.id_for_name("GEM01").unwrap())
@@ -1295,6 +1310,10 @@ fn unread_cell_anim_loads_its_own_retail_shape_without_replaying_construction() 
         .assets
         .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(&bytes, &view, assets))
         .unwrap();
+    assert_eq!(
+        prepared.resources.rules.tiberium_types.types()[0].image(),
+        image
+    );
     // AnimTypeLoad428855 supplies image residency without ReadINI427D00
     // or LoadImageAndResolveFrameBounds427B50: all ctor bounds stay zero.
     let config = prepared
@@ -1343,6 +1362,10 @@ fn unread_cell_anim_loads_its_own_retail_shape_without_replaying_construction() 
         .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(&bytes, &view, assets))
         .unwrap();
     assert_eq!(again.resources.rules.simulation_config_hash(), loaded_hash);
+    assert_eq!(
+        again.resources.rules.tiberium_types.types()[0].image(),
+        image
+    );
     assert_eq!(again.world.simulation.native_identity_cursor(), cursor);
     assert_eq!(again.world.simulation.anim(id).unwrap().runtime(), &runtime);
     let PreparedSavedResources {

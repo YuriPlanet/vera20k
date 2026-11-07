@@ -288,7 +288,9 @@ fn retail_trigger_anim_and_retained_no_effects_next_match_original_until_cleanup
             for current in [&mut sim, &mut restored] {
                 current.session.set_binary_frame_for_test(frame);
                 current.sound_events.clear_for_test();
-                current.visit_anim(id, &rules, None, FrameEffects::default());
+                current
+                    .visit_anim(id, &rules, None, FrameEffects::default())
+                    .unwrap();
                 assert_state(current, id, &visit["state"], label);
                 assert_sound_calls(current, &visit["calls"], label);
                 assert_eq!(

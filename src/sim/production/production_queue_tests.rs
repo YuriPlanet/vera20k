@@ -2842,7 +2842,8 @@ fn a_computer_barracks_sends_its_infantry_to_a_listed_post() {
                 product,
                 &rules,
                 crate::sim::world::ObjectAiCtx::default(),
-            );
+            )
+            .unwrap();
             let e1 = sim.substrate.entities.get(product).unwrap();
             assert_eq!(e1.navigation.nav_com(), Some(post), "{context}");
             assert_eq!(e1.navigation.nav_list(), [], "{context}");

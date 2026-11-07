@@ -4730,7 +4730,12 @@ impl Simulation {
                     registry,
                     cell,
                     (value != 20).then_some(value as u8),
-                );
+                    frame_effects,
+                )
+                .unwrap_or_else(|error| {
+                    log::error!("Trigger crate placement failed: {error}");
+                    false
+                });
             }
             101 => {
                 let Some(waypoint) = value else {

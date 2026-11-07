@@ -431,7 +431,8 @@ mod tests {
             &rules,
             None,
             crate::sim::world::FrameEffects::default(),
-        );
+        )
+        .unwrap();
         assert_eq!(sim.anim(anim).unwrap().runtime().current_frame, 0);
         assert_eq!(
             sim.anim(anim).unwrap().runtime().frame_timer.start_frame(),
@@ -452,7 +453,8 @@ mod tests {
             &rules,
             None,
             crate::sim::world::FrameEffects::default(),
-        );
+        )
+        .unwrap();
         assert_eq!(sim.anim(anim).unwrap().runtime().current_frame, 1);
         assert_eq!(
             sim.anim(anim).unwrap().runtime().frame_timer.start_frame(),

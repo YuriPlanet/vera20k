@@ -459,7 +459,8 @@ fn stock_opening_matches_original_building_and_same_pass_anim_visits() {
                             rules,
                             None,
                             crate::sim::world::FrameEffects::default(),
-                        );
+                        )
+                        .unwrap();
                     } else {
                         // Execute the same bounded join as the native corpus.
                         // Its header/mission/body slices exclude damage fires,

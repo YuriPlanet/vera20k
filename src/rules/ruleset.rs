@@ -8657,6 +8657,7 @@ impl RuleSet {
                 &tiberium.section,
                 tiberium.color_scheme(),
                 tiberium.debris(),
+                tiberium.image(),
             )
                 .hash(&mut hasher);
         }

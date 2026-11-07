@@ -133,6 +133,10 @@ pub(crate) struct OverlayCellAnim<'a> {
 pub(crate) trait OverlayMarkHost {
     type Error;
 
+    /// A reached native Tiberium pointer/division failure follows the host's
+    /// ordinary synchronous error path, preserving preceding Mark writes.
+    fn tiberium_error(error: crate::rules::overlay_types::TiberiumImageError) -> Self::Error;
+
     /// `MapClass::Get_CellClass @ 0x005657A0` on a packed cell. A miss stamps
     /// the shared dummy's coordinate and returns the dummy.
     fn cell(&mut self, coord: (i16, i16)) -> NativeCellIdentity;
@@ -194,6 +198,11 @@ pub(crate) trait OverlayMarkHost {
     fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<(), Self::Error>;
     /// `CellClass::RecalcAttributes @ 0x0047D2B0` with -1.
     fn recalc(&mut self, cell: NativeCellIdentity) -> Result<(), Self::Error>;
+    /// Ordinary ore batches may publish this final Recalc together before
+    /// the next object. Structural and CellAnim arms always use `recalc`.
+    fn recalc_ordinary(&mut self, cell: NativeCellIdentity) -> Result<(), Self::Error> {
+        self.recalc(cell)
+    }
 }
 
 /// Run `OverlayClass::Mark @ 0x005FC570` after the base Mark and the
@@ -283,15 +292,16 @@ pub(crate) fn mark_overlay<H: OverlayMarkHost>(
 
     // 0x005FD112..0x005FD1F4: reached written or not.
     if let Some(anim) = flags.cell_anim.as_deref() {
-        let tiberium = request.tiberium_types.and_then(|tiberium_types| {
-            u8::try_from(host.identity(anchor))
-                .ok()
-                .and_then(|identity| {
-                    request
-                        .registry
-                        .tiberium_type_for_overlay(tiberium_types, identity)
-                })
-        });
+        let tiberium = match (
+            request.tiberium_types,
+            u8::try_from(host.identity(anchor)).ok(),
+        ) {
+            (Some(types), Some(identity)) => request
+                .registry
+                .tiberium_type_for_overlay(types, identity)
+                .map_err(H::tiberium_error)?,
+            _ => None,
+        };
         host.spawn_cell_anim(OverlayCellAnim {
             anim,
             location: request.location,
@@ -303,7 +313,12 @@ pub(crate) fn mark_overlay<H: OverlayMarkHost>(
             tiberium,
         })?;
     }
-    finish(host, anchor)
+    if high.is_none() && flags.cell_anim.is_none() {
+        host.recalc_ordinary(anchor)?;
+        Ok(OverlayMarkOutcome::Marked)
+    } else {
+        finish(host, anchor)
+    }
 }
 
 /// `0x005FD1FA`: the common Recalc of the retained CellClass. The lifecycle
@@ -341,7 +356,8 @@ fn germinate<H: OverlayMarkHost>(
                 host.data(neighbor),
             )
         },
-    );
+    )
+    .map_err(H::tiberium_error)?;
     match germinated {
         Some(germinated) => host.write_data(anchor, germinated.density),
         None => Ok(()),
@@ -587,6 +603,10 @@ mod tests {
 
     impl OverlayMarkHost for MockHost {
         type Error = &'static str;
+
+        fn tiberium_error(_error: crate::rules::overlay_types::TiberiumImageError) -> Self::Error {
+            "invalid Tiberium image"
+        }
 
         fn cell(&mut self, coord: (i16, i16)) -> NativeCellIdentity {
             match self.index(coord) {

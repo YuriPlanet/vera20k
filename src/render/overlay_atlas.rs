@@ -101,6 +101,26 @@ fn resolve_body_frame(requested: u8, frame_sizes: &[(u16, u16)]) -> Option<usize
 /// so the prefix can never drift between sides.
 pub const SMUDGE_KEY_PREFIX: &str = "__smudge::";
 
+const TIBERIUM_IMAGE_PREFIX: &str = "__tiberium::";
+
+/// DrawOverlay47F860..47F963 selects the SHP by Tiberium Image, but keeps
+/// the resource Convert (87F6B8) and the live resource draw offset. A selected
+/// sprite such as TRACKS01 may also be drawn ordinarily with another palette.
+pub fn tiberium_image_key(name: &str, frame: i32) -> OverlaySpriteKey {
+    OverlaySpriteKey {
+        name: format!("{TIBERIUM_IMAGE_PREFIX}{name}"),
+        frame,
+    }
+}
+
+fn overlay_body_key(name: String, frame: i32, tiberium: bool) -> OverlaySpriteKey {
+    if tiberium {
+        tiberium_image_key(&name, frame)
+    } else {
+        OverlaySpriteKey { name, frame }
+    }
+}
+
 /// Source identity for Terrain DrawIt's body frame, apart from overlay keys:
 /// a TerrainType draws its own image even when an OverlayType shares its name.
 pub fn terrain_body_key(name: &str, frame: i32) -> OverlaySpriteKey {
@@ -184,10 +204,13 @@ fn runtime_low_bridge_sprite_keys(
             continue;
         };
         for &frame in &frames {
-            keys.insert(OverlaySpriteKey {
-                name: name.clone(),
-                frame: i32::from(frame),
-            });
+            keys.insert(overlay_body_key(
+                name.clone(),
+                i32::from(frame),
+                overlay_registry
+                    .flags(overlay_id)
+                    .is_some_and(|flags| flags.tiberium),
+            ));
         }
     }
     keys
@@ -196,7 +219,7 @@ fn runtime_low_bridge_sprite_keys(
 /// Atlas keys reachable through the native flat/sloped resource selector.
 ///
 /// Active YR `CellClass__DrawOverlay_Body @ 0x0047F6A0` may draw any of the
-/// TiberiumClass's12 primary and8 extra images (no extras for Image2) while
+/// TiberiumClass's retained primary and extra images while
 /// retaining the Cell data byte. Preload the same range owner the display
 /// selector uses, including images absent from the current map pack.
 fn runtime_tiberium_sprite_keys(
@@ -207,14 +230,11 @@ fn runtime_tiberium_sprite_keys(
     for ty in tiberium_types.types() {
         let variant_ids = overlay_registry.tiberium_display_variant_ids(ty);
         for overlay_id in variant_ids {
-            let Some(name) = overlay_registry.name(overlay_id).map(str::to_owned) else {
+            let Some(name) = overlay_registry.name(overlay_id as u8).map(str::to_owned) else {
                 continue;
             };
-            for frame in 0..ty.max_density {
-                keys.insert(OverlaySpriteKey {
-                    name: name.clone(),
-                    frame: i32::from(frame),
-                });
+            for frame in 0..ty.image().density_levels() {
+                keys.insert(tiberium_image_key(&name, frame));
             }
         }
     }
@@ -247,10 +267,11 @@ fn runtime_crate_sprite_keys(
             && crate::map::bridge_facts::high_bridge_stamp_for_overlay(overlay_id).is_none()
             && let Some(name) = resolve_overlay_name_for_render(overlay_registry, overlay_id)
         {
-            keys.insert(OverlaySpriteKey {
+            keys.insert(overlay_body_key(
                 name,
-                frame: i32::from(CRATE_BODY_FRAME),
-            });
+                i32::from(CRATE_BODY_FRAME),
+                flags.tiberium,
+            ));
         }
     }
 
@@ -345,10 +366,13 @@ fn runtime_crate_sprite_keys(
                 continue;
             };
             for frame in frames {
-                keys.insert(OverlaySpriteKey {
-                    name: name.clone(),
-                    frame: i32::from(frame),
-                });
+                keys.insert(overlay_body_key(
+                    name.clone(),
+                    i32::from(frame),
+                    overlay_registry
+                        .flags(overlay_id)
+                        .is_some_and(|flags| flags.tiberium),
+                ));
             }
         }
     }
@@ -524,15 +548,16 @@ pub(crate) fn build_overlay_atlas_on_device(
         if let Some(mapped_name) =
             resolve_overlay_name_for_render(overlay_registry, entry.overlay_id)
         {
-            needed.insert(OverlaySpriteKey {
-                name: mapped_name.clone(),
-                frame: i32::from(entry.frame),
-            });
+            let tiberium = overlay_registry
+                .flags(entry.overlay_id)
+                .is_some_and(|flags| flags.tiberium);
+            needed.insert(overlay_body_key(
+                mapped_name.clone(),
+                i32::from(entry.frame),
+                tiberium,
+            ));
             // Retain frame0 alongside the authored byte; lookups stay exact.
-            needed.insert(OverlaySpriteKey {
-                name: mapped_name,
-                frame: 0,
-            });
+            needed.insert(overlay_body_key(mapped_name, 0, tiberium));
         }
     }
 
@@ -581,10 +606,11 @@ pub(crate) fn build_overlay_atlas_on_device(
             let frame_count: u32 = wall_body_frame_count(flags.damage_levels);
             wall_frames_loaded += frame_count;
             for frame in 0..frame_count {
-                needed.insert(OverlaySpriteKey {
-                    name: mapped_name.clone(),
-                    frame: frame as i32,
-                });
+                needed.insert(overlay_body_key(
+                    mapped_name.clone(),
+                    frame as i32,
+                    flags.tiberium,
+                ));
             }
         }
     }
@@ -635,10 +661,16 @@ pub(crate) fn build_overlay_atlas_on_device(
     let mut load_fail_count: u32 = 0;
 
     for key in &needed {
-        let flags: OverlayTypeFlags = overlay_registry
-            .flags_by_name(&key.name)
+        let resource_image = key.name.strip_prefix(TIBERIUM_IMAGE_PREFIX);
+        let mut flags: OverlayTypeFlags = overlay_registry
+            .flags_by_name(resource_image.unwrap_or(&key.name))
             .cloned()
             .unwrap_or_default();
+        if resource_image.is_some() {
+            // The stored cell, not the selected type's flags, chose this
+            // drawing branch. This also keeps its -12 pixel body offset.
+            flags.tiberium = true;
+        }
         // Palette selection:
         // - Tiberium overlays → tiberium palette (e.g., temperat.pal), NO remap
         // - Walls/veins/veinhole → unit palette
@@ -841,7 +873,9 @@ fn render_overlay_sprite(
         load_overlay_shape(
             asset_manager,
             overlay_registry,
-            &key.name,
+            key.name
+                .strip_prefix(TIBERIUM_IMAGE_PREFIX)
+                .unwrap_or(&key.name),
             theater_ext,
             theater_name,
         )
@@ -1450,7 +1484,7 @@ mod tests {
     use super::{
         MAX_OVERLAY_FRAME_COUNT, OverlaySpriteKey, resolve_body_frame, runtime_crate_sprite_keys,
         runtime_low_bridge_sprite_keys, runtime_tiberium_sprite_keys, stored_frame_offset,
-        wall_body_frame_count,
+        tiberium_image_key, wall_body_frame_count,
     };
     use crate::map::overlay::OverlayEntry;
     use crate::rules::crate_rules::CrateRules;
@@ -1707,15 +1741,9 @@ mod tests {
         };
         let resource_keys = runtime_crate_sprite_keys(&resource_registry, &resource_rules);
         for frame in 0..=11 {
-            assert!(resource_keys.contains(&OverlaySpriteKey {
-                name: "TIBBOX".to_owned(),
-                frame,
-            }));
+            assert!(resource_keys.contains(&tiberium_image_key("TIBBOX", frame)));
         }
-        assert!(resource_keys.contains(&OverlaySpriteKey {
-            name: "ROADTIB".to_owned(),
-            frame: 0,
-        }));
+        assert!(resource_keys.contains(&tiberium_image_key("ROADTIB", 0)));
         assert_eq!(resource_keys.len(), 13);
     }
 
@@ -1906,10 +1934,7 @@ mod tests {
 
         assert_eq!(keys.len(), 288, "2 types * 12 images * 12 densities");
         for (name, frame) in [("TIB05", 8), ("GEM01", 11)] {
-            assert!(keys.contains(&OverlaySpriteKey {
-                name: name.to_string(),
-                frame,
-            }));
+            assert!(keys.contains(&tiberium_image_key(name, frame)));
         }
     }
 }

@@ -141,7 +141,8 @@ impl Fixture {
             source,
             &self.rules,
             ObjectAiCtx::default(),
-        );
+        )
+        .unwrap();
     }
 }
 

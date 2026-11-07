@@ -9,9 +9,7 @@ use crate::sim::terrain_spawn::{
 };
 // Direct stock-context spreads remain stock in a Phobos build; only an
 // active terrain-spawner context selects the replacement scan.
-use crate::sim::tiberium::{
-    NewTiberiumAdmission, PlaceTiberiumContext, TiberiumPlacementObjectContext, spread_tiberium,
-};
+use crate::sim::tiberium::spread_tiberium;
 use crate::util::native_x87::NativeF32Bits;
 use serde_json::{Value, json};
 
@@ -214,6 +212,8 @@ fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {
     // Native controls supply already-constructed adjacent objects and seed
     // Scenario at the measured boundary; exclude Rust fixture constructors.
     s.sim.scenario_rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap_or(1));
+    s.sim.native_unique_ids =
+        Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(0));
     (s, coords)
 }
 
@@ -305,7 +305,9 @@ fn terrain_ai_timelines_match_native_stage_timers_ore_queues_and_rng() {
                 id,
                 &s.rules,
                 Some(registry()),
-            );
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
             compare(
                 &s,
                 &coords,
@@ -332,42 +334,25 @@ fn forced_spread_matches_original_admission_placement_queues_and_rng() {
     let stock = &corpus["retail_inputs"]["rows"][0];
     for case in corpus["spread_cases"].as_array().unwrap() {
         let (mut s, coords) = fixture(&case["input"], stock);
-        let objects = TiberiumPlacementObjectContext::new(
-            &s.sim.substrate.entities,
-            &s.sim.substrate.occupancy,
-            &s.sim.substrate.raw_cell_occupation,
-            &s.rules,
-            &s.sim.interner,
-            s.sim.terrain_objects.cell_index(),
+        s.sim
+            .session
+            .set_binary_frame_for_test(case["input"]["frame"].as_u64().unwrap_or(200) as u32);
+        s.sim.ore_growth_config = crate::sim::ore_growth::OreGrowthConfig::for_test(
+            true,
+            case["input"]["spreads"] != false,
+            s.sim.ore_growth_config.tiberium_grows_flag(),
         );
-        let terrain = s.sim.resolved_terrain.as_ref().unwrap();
         let result = spread_tiberium(
-            &mut PlaceTiberiumContext {
-                overlay_grid: s.sim.overlay_grid.as_mut().unwrap(),
-                ore_growth_state: &mut s.sim.ore_growth_state,
-                overlay_registry: registry(),
-                tiberium_types: &s.rules.tiberium_types,
-                resolved_terrain: Some(terrain),
-                source_object_cells: s.sim.terrain_objects.spawning_cells(),
-                new_cell_admission: Some(NewTiberiumAdmission::runtime(terrain, objects)),
-                live_objects: Some(objects.object_view()),
-                rng: &mut s.sim.scenario_rng,
-                binary_frame: case["input"]["frame"].as_u64().unwrap_or(200) as u32,
-                growth_enabled: true,
-                spread_enabled: case["input"]["spreads"] != false,
-                dirty_cells: None,
-            },
+            &mut s.sim,
+            &s.rules,
+            registry(),
             coords[0],
             true,
             None,
-        );
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
         let succeeded = result.is_some();
-        crate::sim::world::Simulation::publish_overlay_constructions(
-            &mut s.sim.native_unique_ids,
-            &mut s.sim.load_objects,
-            &mut s.sim.substrate,
-            result.and_then(crate::sim::tiberium::TiberiumPlacement::into_overlay_construction),
-        );
         assert_eq!(
             json!(u8::from(succeeded)),
             case["result"],
@@ -444,7 +429,14 @@ fn same_frame_ore_terrain_ai_publishes_the_path_view_before_return() {
         .find(|(_, object)| object.cell() == (16, 16))
         .map(|(&id, _)| id)
         .unwrap();
-    crate::sim::terrain_spawn::tick_terrain_object_ai(&mut s.sim, tree, &s.rules, Some(&registry));
+    crate::sim::terrain_spawn::tick_terrain_object_ai(
+        &mut s.sim,
+        tree,
+        &s.rules,
+        Some(&registry),
+        crate::sim::world::FrameEffects::default(),
+    )
+    .unwrap();
     let (x, y, _) = s
         .sim
         .overlay_grid

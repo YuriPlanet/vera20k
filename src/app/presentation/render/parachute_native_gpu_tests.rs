@@ -178,12 +178,15 @@ impl Scene {
                 .simulation
                 .session_mut_for_test()
                 .set_binary_frame_for_test(1000 + self.visits);
-            self.runtime.simulation.visit_anim(
-                self.canopy,
-                &self.runtime.resources.rules,
-                None,
-                FrameEffects::default(),
-            );
+            self.runtime
+                .simulation
+                .visit_anim(
+                    self.canopy,
+                    &self.runtime.resources.rules,
+                    None,
+                    FrameEffects::default(),
+                )
+                .unwrap();
         }
         assert_eq!(self.visits, requested);
         assert_eq!(

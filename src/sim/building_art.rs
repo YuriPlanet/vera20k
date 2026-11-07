@@ -1725,7 +1725,8 @@ mod slot_tests {
                 &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
-            );
+            )
+            .unwrap();
             assert!(!sim.anim(missing).unwrap().runtime().first_ai_guard);
             assert!(!sim.anim(missing).unwrap().runtime().inactive);
             sim.session
@@ -1735,7 +1736,8 @@ mod slot_tests {
                 &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
-            );
+            )
+            .unwrap();
             assert!(sim.substrate.pending_delete.contains_object(&missing));
             assert!(!sim.anim(missing).unwrap().in_logic_vector());
             assert_eq!(

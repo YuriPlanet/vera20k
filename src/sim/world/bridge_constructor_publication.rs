@@ -136,6 +136,10 @@ struct BridgeMarkHost<'p, 'a> {
 impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
     type Error = String;
 
+    fn tiberium_error(error: crate::rules::overlay_types::TiberiumImageError) -> Self::Error {
+        error.to_string()
+    }
+
     fn cell(&mut self, coord: (i16, i16)) -> Cell {
         self.publication.lookup(coord)
     }
@@ -248,6 +252,7 @@ impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
             request,
             ground,
             crate::sim::anim_class::AnimConstructorInput::Runtime,
+            self.publication.frame_effects,
         )
         .map(|_| ())
         .map_err(|error| error.to_string())
