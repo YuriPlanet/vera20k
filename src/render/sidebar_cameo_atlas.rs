@@ -375,6 +375,15 @@ fn render_superweapon_cameo(
         cameo.kind = CameoKind::SuperWeapon;
         return Some(cameo);
     }
+    // Ares SidebarPalette (hooks 6A9948/6A9A2A): the type's own palette for
+    // its SHP cameo when the file loads, else CAMEO.PAL.
+    #[cfg(feature = "ares")]
+    let custom = sw
+        .sidebar_palette()
+        .and_then(|name| asset_manager.get_ref(name))
+        .and_then(|data| Palette::from_bytes(data).ok());
+    #[cfg(feature = "ares")]
+    let palette = custom.as_ref().unwrap_or(palette);
     if let Some(image_name) = sw.sidebar_image.as_deref() {
         let shp_name = format!("{image_name}.SHP");
         if let Some(data) = asset_manager.get_ref(&shp_name)
@@ -1018,6 +1027,37 @@ mod tests {
         #[cfg(not(feature = "phobos"))]
         {
             assert!(image.is_none());
+        }
+    }
+
+    /// Ares SidebarPalette (hooks 6A9948/6A9A2A): a loadable palette draws the
+    /// SW cameo SHP; a missing file keeps CAMEO.PAL.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn superweapon_sidebar_palette_draws_its_cameo() {
+        use crate::{
+            assets::asset_manager::AssetManager, assets::pal_file::Palette,
+            map::source::test_support::TestDirectory, rules::ini_parser::IniFile,
+            rules::ruleset::RuleSet,
+        };
+        let dir = TestDirectory::new("sw-sidebar-palette");
+        write_small_shp(&dir, "swicon.shp");
+        let mut pal = vec![0u8; 768];
+        pal[3..6].copy_from_slice(&[10, 20, 30]);
+        dir.write("swicon.pal", &pal);
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let cameo = Palette::from_rgb(|_| [1, 2, 3]);
+        let custom = Palette::from_bytes(&pal).unwrap();
+        for (key, palette) in [("swicon.pal", &custom), ("missing.pal", &cameo)] {
+            let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[SuperWeaponTypes]\n0=Cell\n[Cell]\nSidebarImage=SWICON\nSidebarPalette={key}\n"
+            )))
+            .unwrap();
+            let sw = rules.super_weapon("Cell").unwrap();
+            let drawn = super::render_superweapon_cameo(sw, &assets, &cameo, &rules).unwrap();
+            let shp = assets.get_ref("SWICON.SHP").unwrap();
+            let expected = super::render_shp_frame0("Cell", shp, palette).unwrap();
+            assert_eq!(drawn.rgba, expected.rgba, "{key}");
         }
     }
 

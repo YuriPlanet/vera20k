@@ -516,6 +516,10 @@ pub struct SuperWeaponType {
     /// Optional Ares PCX; the existing SHP remains the loading fallback.
     #[cfg(feature = "ares")]
     sidebar_pcx: Option<String>,
+    /// Ares `SidebarPalette` (CustomPalette +0x490): the palette file the
+    /// cameo SHP draws with instead of CAMEO.PAL.
+    #[cfg(feature = "ares")]
+    sidebar_palette: Option<String>,
     /// Whether to show the charge timer countdown on the sidebar.
     pub show_timer: bool,
     /// Whether this SW can be disabled from the game lobby.
@@ -635,6 +639,15 @@ impl SuperWeaponType {
         self.sidebar_pcx.as_deref()
     }
 
+    /// CustomPalette::LoadFromINI over `SidebarPalette` (10033370's end): a
+    /// nonempty read replaces the palette, which StripClass_Draw_SuperWeapon
+    /// (hook 6A9948, 1005E3F0) hands the cameo draw; an unloadable file
+    /// leaves CAMEO.PAL (hook 6A9A2A).
+    #[cfg(feature = "ares")]
+    pub fn sidebar_palette(&self) -> Option<&str> {
+        self.sidebar_palette.as_deref()
+    }
+
     /// Parse a SuperWeaponType from a rules.ini section
     /// (`SuperWeaponTypeClass::ReadINI`, reads `0x006CEA6D`-`0x006CEDB1`).
     /// Ares extensions require the explicit `ares` build feature.
@@ -716,6 +729,8 @@ impl SuperWeaponType {
                 .map(|name| truncate_native_bytes(name, 0x18).to_string()),
             #[cfg(feature = "ares")]
             sidebar_pcx: section.read_ares_pcx_filename("SidebarPCX"),
+            #[cfg(feature = "ares")]
+            sidebar_palette: section.read_name("SidebarPalette", 2048).map(str::to_owned),
             show_timer: section.read_bool("ShowTimer", false),
             disableable_from_shell: section.read_bool("DisableableFromShell", false),
             // SW_Battery::LoadFromINI1006ECC0 forces UseChargeDrain each pass.

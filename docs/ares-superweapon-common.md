@@ -57,6 +57,9 @@ reader `0x10033370` and its hooks); no Ares DLL is loaded.
   readiness, launch and UnitDelivery arrival hooks, in the Ares colour rules.
 - `Text.Preparing`, `.Hold`, `.Ready`, `.Charging`, `.Active` replace the cameo
   status labels of every type (`0x100356A0`); an empty label shows none.
+- `SidebarPalette` names the palette the type's SHP cameo draws with; a file that
+  does not load keeps CAMEO.PAL (hooks `6A9948`/`6A9A2A`). The `~~~` theater
+  substitution is not applied.
 
 ## Battery and Protect
 
@@ -76,7 +79,7 @@ radius (default 3x3), `SW.AffectsHouse`/`SW.AffectsTarget` filters, the type's
 
 `Type=SonarPulse` (needs the TechnoExt sonar timer shared with warhead
 `Sonar.Duration`), `Type=DropPod` (needs the DropPod locomotor), `NoCursor`/`Cursor`
-(Ares `[MouseCursors]` cursor types), `SidebarPalette`, `Light.*`, `Message.Abort`
+(Ares `[MouseCursors]` cursor types), `Light.*`, `Message.Abort`
 and the retail-type redirects (`IronCurtain`/`ForceShield` through Protect and the
 other stock handlers) remain outside this port, as do `IronCurtain.Modifier` and
 the Ares trigger events raised on activation.
