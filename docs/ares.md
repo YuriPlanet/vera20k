@@ -169,8 +169,27 @@ Supported extensions:
   the Chronosphere and ChronoWarp (`Chronosphere.*`, `Chronoshift.*`), Nuke
   (`Nuke.*`, `NukeFlash.Duration`, `PreImpactAnim`), Psychic Dominator
   (`Dominator.*`) and Genetic Mutator (`Mutate.*`), with `Light.*`. Building
-  chronoshift and the remaining stock redirects (Lightning Storm, EMPulse,
-  SpyPlane, DropPod) remain separate.
+  chronoshift, the SpyPlane and the Lightning Storm (`Lightning.*`,
+  `LightningRod.Modifier`) follow in parts 2 and 3; EMPulse and DropPod
+  remain separate.
+- [Prism forwarding](ares-prism-forwarding.md): `PrismForwarding.*` networks
+  with support weapons, chain and network limits, damage bonus, charge delay,
+  allied feeds and support breaking. Radiation-beam and electric-bolt support
+  visuals remain outside this chain.
+- [Trigger events and actions](ares-triggers.md): events 62..88 with
+  TechTypeExists and the Player@X lookups, their damage, kill, spotlight,
+  abduction and superweapon raise sites, and actions 98 and 146..149.
+  Reverse-engineering events and the Firestorm actions remain outside it.
+- [Tiberium, ore and harvesters](ares-tiberium.md): TiberiumExt heal,
+  explosion and debris keys, tiberium damage and healing toggles,
+  `TiberiumProof`/`Remains`/`Spill`, the explosive harvester, harvester and
+  slave-miner scans, `RandomCrateMoney` and `RepairStopOnInsufficientFunds`.
+  Refinery storage, chain-reacting overlays and visceroids remain outside it.
+- [Line of fire and bullet types](ares-line-of-fire.md): the Ares obstacle
+  walk with `SolidHeight`, `SolidLevel` and `AlliedSolidTransparency`,
+  BulletTypeExt `SubjectToBuildings`, `SolidLevel`, `SubjectToTrenches` and
+  `BallisticScatter.*`, inviso impacts and shrapnel weapons. Airburst splits,
+  parachuted bullets and `AnimLength` remain outside this chain.
 - [INI Include and inheritance](ini-directives.md). The read-only `asset ini-expand` probe works
   in every build.
 - [Extended authored House ally lists](../tools/input_oracle/ares_allies_reader.md).
@@ -208,7 +227,9 @@ the merged pull requests that carried each chain:
   jammers and sensor arrays, the common superweapon keys with Battery,
   Protect and SonarPulse, veterancy, academies, build time and cloning,
   Ivan bombs and abductors, the building and techno type keys, and the
-  Chronosphere, Nuke, Dominator and Genetic Mutator superweapon types.
+  Chronosphere, Nuke, Dominator, Genetic Mutator, SpyPlane and Lightning
+  Storm superweapon types with building chronoshift, prism forwarding,
+  trigger events and actions, tiberium and harvesters, and the line of fire.
 
 ## Original project and authors
 
