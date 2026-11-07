@@ -707,8 +707,16 @@ fn erase_awards_price_each_cost_by_its_house() {
     chain(&mut sim, tank, &[cleg], 1);
     let mut expected = entity(&sim, cleg).clone();
     // (legionnaire cost, tank cost): Russian and American Houses, then both
-    // American. Ares 1004BBC0 drops the first (the Update's).
-    for (owner_cost, target_cost) in [(750, 450), (1500, 450)].into_iter().skip(2 - ERASE_AWARDS) {
+    // American. Ares 1004BBC0 drops the first (the Update's), and its
+    // RegisterDestruction AddExperience (1004EE30) prices the recipient by
+    // its own House, so the remaining award is again Russian and American.
+    let awards = if cfg!(feature = "ares") {
+        &[(750, 450)][..]
+    } else {
+        &[(750, 450), (1500, 450)][..]
+    };
+    assert_eq!(awards.len(), ERASE_AWARDS);
+    for &(owner_cost, target_cost) in awards {
         expected.veterancy.award_kill(
             owner_cost,
             target_cost,

@@ -2964,6 +2964,13 @@ mod tests {
             if int(&row["pixel_format"]) != 2 {
                 continue;
             }
+            // Ares 1004CEA0 (hook 0x73C143) replaces the stock deactivated
+            // halving with the DeactivateDim factors, which
+            // `unit_light_tests::ares_deactivate_dims_replace_the_stock_unit_halving`
+            // checks; these rows record the stock halving.
+            if cfg!(feature = "ares") && row["deactivated"].as_bool().unwrap() {
+                continue;
+            }
             let mut unit = GameEntity::test_default(1, "HTNK", "Russians", 10, 10);
             unit.berserk
                 .set_active_for_test(row["berzerk"].as_bool().unwrap());
@@ -3012,7 +3019,7 @@ mod tests {
             );
             compared += 1;
         }
-        assert_eq!(compared, 51);
+        assert_eq!(compared, if cfg!(feature = "ares") { 49 } else { 51 });
     }
 
     /// Retail `[AudioVisual] IronCurtainColor=0;4` reads 0 through ReadInt
