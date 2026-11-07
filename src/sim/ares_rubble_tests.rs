@@ -9,7 +9,8 @@ use crate::sim::world::{EngineerBuildingAction, FrameEffects, Simulation};
 const RULES: &str = "[InfantryTypes]\n0=ENGI\n\
     [ENGI]\nStrength=75\nSpeed=4\nSpeedType=Foot\nEngineer=yes\n\
     Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
-    [BuildingTypes]\n0=BLDG\n1=RUIN\n2=SHED\n\
+    [BuildingTypes]\n0=BLDG\n1=RUIN\n2=SHED\n3=PASS\n\
+    [PASS]\nStrength=100\nIsPassable=yes\n\
     [BLDG]\nStrength=1000\nRepairable=yes\nCapturable=yes\n\
     Rubble.Destroyed=RUIN\nRubble.Destroyed.Strength=-50\n\
     [RUIN]\nStrength=400\nRepairable=yes\nRubble.Intact=BLDG\n\
@@ -237,4 +238,33 @@ fn engineer_damage_decides_a_hostile_building_above_the_capture_level() {
             .get(engineer)
             .is_some_and(|engineer| engineer.is_object_alive())
     );
+}
+
+/// Ares `InfantryClass_IsCellOccupied @ 10014D70` (hook `0x51C4C8`): an
+/// `IsPassable=yes` building does not block an infantryman's entry into its
+/// cell, while an ordinary friendly building does.
+#[test]
+fn an_is_passable_building_does_not_block_entry() {
+    let (mut sim, rules) = arena();
+    sim.spawn_object("PASS", "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    sim.spawn_object("SHED", "Americans", 14, 10, 0, &rules)
+        .unwrap();
+    let engineer = sim
+        .spawn_object("ENGI", "Americans", 12, 12, 0, &rules)
+        .unwrap();
+    let entry = |sim: &Simulation, cell: (i16, i16)| {
+        let terrain = sim.resolved_terrain.as_ref().unwrap();
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        sim.foot_can_enter(
+            engineer,
+            cells.lookup(cell),
+            crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
+            &rules,
+            None,
+        )
+        .unwrap()
+    };
+    assert_eq!(entry(&sim, (10, 10)), 0);
+    assert_ne!(entry(&sim, (14, 10)), 0);
 }

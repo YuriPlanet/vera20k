@@ -10,6 +10,8 @@
 //!   engineer's repair action and arrival (`sim::world::world_orders`).
 //! - Urban combat and garrisons (`UC.*`, `Bunker.Raidable`,
 //!   `CanBeOccupiedBy`, `+0x68..+0x80`, `+0xD0`): `sim::ares_garrison`.
+//! - `IsPassable` (`+0x5E`): the Infantry and Unit `Can_Enter_Cell` and
+//!   InfantryAI building arms (`sim::world::object_entry`, `object_turn`).
 //! - RulesExt `EngineerDamage` and `EngineerAlwaysCaptureTech`
 //!   ([`BuildingGlobalRules`]): an engineer entering a hostile building.
 
@@ -87,6 +89,9 @@ pub(crate) struct BuildingTypeExtRules {
     /// any when empty (Find-only `ValueableVector<InfantryTypeClass*>`
     /// `1000ED90`).
     pub(crate) allowed_occupiers: Vec<String>,
+    /// `IsPassable` (`+0x5E`, Valueable<bool>): Foots ignore the building
+    /// when they enter its cells and when they idle in one.
+    pub(crate) is_passable: bool,
 }
 
 impl Default for BuildingTypeExtRules {
@@ -100,6 +105,7 @@ impl Default for BuildingTypeExtRules {
             uc_damage_multiplier: NativeF64Bits::ONE,
             bunker_raidable: false,
             allowed_occupiers: Vec::new(),
+            is_passable: false,
         }
     }
 }
@@ -169,6 +175,7 @@ impl BuildingTypeExtRules {
         if let Some(occupiers) = references.allowed_occupiers {
             self.allowed_occupiers = occupiers;
         }
+        self.is_passable = section.read_ares_bool("IsPassable", self.is_passable);
         self.engineer_repairable =
             section.read_ares_nullable_bool("EngineerRepairable", self.engineer_repairable);
     }

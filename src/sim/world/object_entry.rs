@@ -1371,6 +1371,12 @@ fn full_foot_entry<'a>(
             if infantry && bt.invisible_in_game {
                 continue;
             }
+            // Ares 3.0 10014D70 (hook 0x51C4C8): an `IsPassable` building
+            // is ignored.
+            #[cfg(feature = "ares")]
+            if infantry && bt.building_type_ext().is_passable {
+                continue;
+            }
             if bt.gate {
                 if b.open_gate {
                     continue;
@@ -1408,6 +1414,12 @@ fn full_foot_entry<'a>(
                     continue;
                 }
                 if bt.invisible_in_game {
+                    continue;
+                }
+                // Ares 3.0 10015100 (hook 0x73F7B0): an `IsPassable`
+                // building is ignored.
+                #[cfg(feature = "ares")]
+                if bt.building_type_ext().is_passable {
                     continue;
                 }
                 if bt.bib

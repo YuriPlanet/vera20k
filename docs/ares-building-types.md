@@ -18,6 +18,7 @@ Rubble.Destroyed.Owner=Default          ; Default, Invoker, Killer, Victim, Civi
 Rubble.Destroyed.Strength=0             ; 0: full; >0: capped; -100..-1: percent
 Rubble.Destroyed.Remove=no              ; yes: leave nothing
 EngineerRepairable=yes                  ; unset: Repairable=
+IsPassable=no                           ; yes: Foots walk through its cells
 
 [GAPOWR_R]
 Rubble.Intact=GAPOWR                    ; what a friendly engineer rebuilds
@@ -64,6 +65,10 @@ EngineerAlwaysCaptureTech=yes
   `0x458729` and a pass-through hit). The raided owner is saved and
   hashed with the building; `production::can_sell_building` refuses a
   raided building (`10017200`, hook `0x4494D2`).
+- `sim/world/object_entry.rs` and `object_turn.rs`: `IsPassable` in the
+  Infantry and Unit `Can_Enter_Cell` building arms (`10014D70`, hook
+  `0x51C4C8`; `10015100`, hook `0x73F7B0`) and the idle infantryman's
+  scatter from a building (`10014DB0`, hook `0x51BD4C`).
 - `sim/combat/world_receiver.rs`: `DamageOccupants` (`10019AC0`) in
   `BulletClass_Detonate`'s Ares effects (`100536E0`, hook `0x46920B`),
   for snapped shots only, after AttachEffect and before the permanent
@@ -80,7 +85,8 @@ EngineerAlwaysCaptureTech=yes
   the client's selection.
 - The occupant's TechnoExt `GarrisonedIn` (only Ares trenches read it) and
   the `Assaulter=` arms the original admission already leaves out.
-- `SolidHeight`, `SolidLevel`, `IsPassable`, `SubjectToBuildings` and
-  `AlliedSolidTransparency` (the Ares trajectory helpers and pathfinding
-  hooks), and the remaining BuildingTypeExt sale, capture, degrade and
-  sound keys.
+- `SolidHeight`, `SolidLevel`, `SubjectToBuildings` and
+  `AlliedSolidTransparency`: Ares replaces the line-of-fire walk
+  (`0x4CC100`, `0x4CC310`, `0x4CC360`) and the bullet obstacle hooks
+  wholesale, which `combat::line_of_fire` does not follow yet.
+- The remaining BuildingTypeExt sale, capture, degrade and sound keys.

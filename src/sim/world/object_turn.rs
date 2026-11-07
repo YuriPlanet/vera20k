@@ -177,6 +177,12 @@ impl Simulation {
         if object.invisible_in_game || (object.gate && building.is_open_gate()) {
             return Ok(false);
         }
+        // Ares 3.0 InfantryClass_Update 10014DB0 (hook 0x51BD4C): an `IsPassable`
+        // building is ignored (0x51BD7D).
+        #[cfg(feature = "ares")]
+        if object.building_type_ext().is_passable {
+            return Ok(false);
+        }
         // RESIDUAL: specialized fence state. This prefix compares LaserFence+618
         // with8/12 and reads its owner's Firestorm+1FA. Their runtime
         // owners are absent. Such types retain the prior no-Scatter behavior
