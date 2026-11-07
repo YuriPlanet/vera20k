@@ -38,6 +38,38 @@ pub(crate) struct AresTechnoTypeRules {
     ammo: AmmoTypeRules,
     combat: CombatTypeRules,
     damage: DamagePresentationRules,
+    movement: MovementTypeRules,
+}
+
+/// TechnoTypeExt+0x27C `PassengerTurret` (false) and +0x325 `CrashSpin`
+/// (true).
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct MovementTypeRules {
+    passenger_turret: bool,
+    crash_spin: bool,
+}
+
+impl Default for MovementTypeRules {
+    fn default() -> Self {
+        Self {
+            passenger_turret: false,
+            crash_spin: true,
+        }
+    }
+}
+
+impl MovementTypeRules {
+    /// `PassengerTurret`: the current turret follows the passenger count
+    /// (TechnoClass_Update, Ares.dll 1004B320, hook 0x6F9E50, `#1208`).
+    pub(crate) fn passenger_turret(&self) -> bool {
+        self.passenger_turret
+    }
+
+    /// `CrashSpin=no` skips Crash's spin and its three draws
+    /// (FootClass_Crash_Spin, Ares.dll 10049050, hook 0x4DECAE).
+    pub(crate) fn crash_spin(&self) -> bool {
+        self.crash_spin
+    }
 }
 
 /// TechnoTypeExt+0x3A0..+0x3B0 and +0x3F0: the damaged-aircraft smoke and
@@ -326,6 +358,7 @@ impl AresTechnoTypeRules {
     ) {
         if !self.initialized {
             self.initialized = true;
+            // 1003DEC0 also seeds the EVA cues, DESO and COW (other chains).
             if aircraft {
                 let mut missile = CustomMissileRules::new(type_name);
                 missile.trailer_anim = find("V3TRAIL");
@@ -334,6 +367,9 @@ impl AresTechnoTypeRules {
                 self.damage.smoke_anim = find("SGRYSMK1");
             }
         }
+        // #1208, read after RadarJamRadius.
+        self.movement.passenger_turret =
+            section.read_ares_bool("PassengerTurret", self.movement.passenger_turret);
         self.gattling_cyclic = section.read_ares_bool("Gattling.Cycle", self.gattling_cyclic);
         // 1003DFB0: "#245 custom missiles", after Gattling.Cycle.
         if let Some(missile) = self.missile.as_deref_mut() {
@@ -366,6 +402,8 @@ impl AresTechnoTypeRules {
             pointer("Missile.Weapon", TypeRef::Weapon, weapon);
             pointer("Missile.EliteWeapon", TypeRef::Weapon, elite_weapon);
         }
+        // After Missile.* and Crashable.
+        self.movement.crash_spin = section.read_ares_bool("CrashSpin", self.movement.crash_spin);
         // After the Drain.* keys: the smoke.
         let damage = &mut self.damage;
         if let Some(anim) = resolve("Smoke.Anim", TypeRef::Animation) {
@@ -433,6 +471,10 @@ impl AresTechnoTypeRules {
 
     pub(crate) fn damage(&self) -> &DamagePresentationRules {
         &self.damage
+    }
+
+    pub(crate) fn movement(&self) -> &MovementTypeRules {
+        &self.movement
     }
 
     /// `Gattling.Cycle`: a charge at the cap restarts the stages

@@ -224,11 +224,23 @@ impl Simulation {
             UninitContext::new(rules, registry).with_effects(frame_effects),
         );
         // RTTI is read after the synchronous tail calls at 0x004DECA2.
+        // Ares FootClass_Crash_Spin (Ares.dll 10049050, hook 0x4DECAE):
+        // `CrashSpin=no` skips the spin and its draws.
+        #[cfg(feature = "ares")]
+        let crash_spin = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| self.object_type(entity.type_ref(), rules))
+            .is_none_or(|object| object.techno_combat().movement().crash_spin());
+        #[cfg(not(feature = "ares"))]
+        let crash_spin = true;
         if self
             .substrate
             .entities
             .get(id)
             .is_some_and(|entity| entity.category() != EntityCategory::Infantry)
+            && crash_spin
             && !self.object_placement_scope_active()
         {
             let sideways = self.scenario_rng.next_range_i32_inclusive(0, 0x7FFF_FFFE);

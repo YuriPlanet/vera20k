@@ -1617,8 +1617,22 @@ fn techno_common_steps(
 ) -> bool {
     // Ares TechnoClass_Update1004B348..1004B397 converts for the current
     // surface before the same visit updates self-attached effects1004B434.
+    // The hook reads the type before converting and keeps it for the
+    // PassengerTurret step after.
+    #[cfg(feature = "ares")]
+    let hook_type = sim
+        .substrate
+        .entities
+        .get(id)
+        .map(|entity| entity.type_ref());
     #[cfg(feature = "ares")]
     sim.update_ares_surface_conversion(id, rules, effects);
+    #[cfg(feature = "ares")]
+    if let Some(object) = hook_type.and_then(|type_ref| sim.interner.object_type(type_ref, rules))
+        && let Some(entity) = sim.substrate.entities.get_mut(id)
+    {
+        entity.update_passenger_turret(object);
+    }
     // Ares1004B320 updates a PoweredBy object's power source next. Its
     // TechnoExt::Destroy kills the object; native continues the hook's
     // extension updates on the corpse, which this visit skips instead.

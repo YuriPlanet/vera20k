@@ -40,6 +40,19 @@ impl GameEntity {
         self.turret_selection.current_turret_index
     }
 
+    /// Ares TechnoClass_Update (Ares.dll 1004B320, hook 0x6F9E50, `#1208`):
+    /// a `PassengerTurret=` type's current turret (`+0x124`) is its passenger
+    /// count, at most 17 and `TurretCount - 1`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn update_passenger_turret(&mut self, object: &ObjectType) {
+        if object.techno_combat().movement().passenger_turret() {
+            let passengers =
+                i32::try_from(self.passenger_role.passenger_count()).unwrap_or(i32::MAX);
+            self.turret_selection.current_turret_index =
+                passengers.min(17).min(object.turret_count.wrapping_sub(1));
+        }
+    }
+
     /// TechnoClass::SetGunnerWeapon70DC70 -> TechnoType7178B0.
     /// Charge types retain both words; out-of-range signed modes select mode0.
     /// This changes no timer, attachment or RNG state.

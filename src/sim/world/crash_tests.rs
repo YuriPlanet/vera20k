@@ -1310,6 +1310,35 @@ fn ares_smoke_keys_replace_the_aircraft_smoke() {
     assert!(drawn > 0);
 }
 
+/// Ares FootClass_Crash_Spin (Ares.dll 10049050, hook 0x4DECAE):
+/// `CrashSpin=no` crashes without the spin and its three draws.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_crash_spin_no_skips_the_spin_draws() {
+    let row = oracle()["crash"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            row["draws"].as_array().unwrap().len() == 3 && int(&row["input"], "i_know", 0) == 0
+        })
+        .unwrap();
+    let mut input = row["input"].clone();
+    input["crashing"] = serde_json::json!(0);
+    input["type_extra"] = serde_json::json!("CrashSpin=no");
+    let (mut sim, rules) = fixture(&input);
+    let before = sim.scenario_rng.state();
+    assert!(sim.foot_crash(
+        1,
+        None,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default()
+    ));
+    assert!(sim.substrate.entities.get(1).unwrap().rocking.is_none());
+    assert_eq!(sim.scenario_rng.state(), before);
+}
+
 /// A save in mid-fall restores the latch, its seen edge, the fall counter and
 /// the spin: the loaded and the continuing worlds fall frame for frame to the
 /// same impact.
