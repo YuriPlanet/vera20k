@@ -13,8 +13,9 @@
 //! included). So every draw goes to the earliest stage after every earlier
 //! draw it overlaps. Same-kind draws that already compose in sequence inside
 //! one transaction (ordinary draws in one render pass, read-only edits in one
-//! reduction interval) may share a stage even when they overlap; their order
-//! inside the stage stays parent order. Stages replay in index order.
+//! reduction interval, combat lights in one replayed pass) may share a stage
+//! even when they overlap; their order inside the stage stays parent order.
+//! Stages replay in index order.
 //! Footprints are tested on a tile grid: a false overlap only costs a stage.
 
 const TILE: u32 = 16;
@@ -32,7 +33,7 @@ pub(super) enum StageKind {
     EditReadOnly,
     /// One read-write edit wave, pairwise disjoint.
     EditReadWrite,
-    /// Combat lights edited from one scratch copy, pairwise disjoint.
+    /// Combat lights; overlapping ones edit in order within each pass.
     Light,
     /// Surface-line ranges sharing each snapshot/blend pair, pairwise disjoint.
     Lines,
@@ -43,7 +44,9 @@ impl StageKind {
     fn composes_in_order(self, next: Self) -> bool {
         matches!(
             (self, next),
-            (Self::Ordinary, Self::Ordinary) | (Self::EditReadOnly, Self::EditReadOnly)
+            (Self::Ordinary, Self::Ordinary)
+                | (Self::EditReadOnly, Self::EditReadOnly)
+                | (Self::Light, Self::Light)
         )
     }
 
@@ -203,5 +206,23 @@ mod tests {
         // The grid is cleared with the plan.
         plan.push(StageKind::Ordinary, [0, 0, 64, 64], 6);
         assert_eq!(stage_items(&mut plan), [(StageKind::Ordinary, vec![6])]);
+    }
+
+    #[test]
+    fn overlapping_lights_share_a_stage_until_another_draw_meets_them() {
+        let light = StageKind::Light;
+        let mut plan = ObjectStages::new([64, 64]);
+        plan.push(light, [0, 0, 20, 20], 0);
+        plan.push(light, [10, 10, 20, 20], 1);
+        plan.push(StageKind::Ordinary, [12, 12, 4, 4], 2);
+        plan.push(light, [14, 14, 4, 4], 3);
+        assert_eq!(
+            stage_items(&mut plan),
+            [
+                (light, vec![0, 1]),
+                (StageKind::Ordinary, vec![2]),
+                (light, vec![3]),
+            ]
+        );
     }
 }

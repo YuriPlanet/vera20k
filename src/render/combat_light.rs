@@ -25,14 +25,29 @@ const MASK_WIDTH: u32 = 256;
 const MASK_HEIGHT: u32 = 128;
 const NORMAL_MASK_LAYER_COUNT: u32 = 64;
 const MASK_LAYER_COUNT: u32 = 74;
-const INITIAL_CAPACITY: usize = 16;
+/// Lights one pass draws: combat_light.wgsl's `lights` array.
+const PASS_LIGHTS: usize = 64;
+/// Bytes of one pass's bound `lights` array.
+const PASS_WINDOW: u64 = (PASS_LIGHTS * std::mem::size_of::<PassLight>()) as u64;
 
+/// One light of a pass, as combat_light.wgsl's `Light` holds it.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct GpuLightInstance {
+struct PassLight {
     center: [i32; 2],
     surface_index: u32,
     flags: u32,
+    /// A bit for every earlier light of the pass whose bounds meet these.
+    earlier: [u32; 2],
+    pad: [u32; 2],
+}
+
+/// This frame's pass light arrays, each at its own dynamic offset: queue
+/// writes all land before the next submit, so no two passes share one.
+struct PassSlots {
+    buffer: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
+    used: u64,
 }
 
 struct CompositionTargets {
@@ -56,13 +71,16 @@ pub(crate) struct CombatLightRenderer {
     mask_texture: wgpu::Texture,
     spotlight_radius: Option<i32>,
     scene_bind_group_layout: wgpu::BindGroupLayout,
-    instance_buffer: wgpu::Buffer,
-    capacity: usize,
-    /// Frame-local logical record -> uploaded instance. Unsupported native
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    pass_layout: wgpu::BindGroupLayout,
+    pass_alignment: u64,
+    pass_slots: std::cell::RefCell<PassSlots>,
+    /// Frame-local logical record -> prepared light. Unsupported native
     /// indices remain holes rather than shifting subsequent Display commands.
     prepared_indices: Vec<Option<u32>>,
-    instances: Vec<GpuLightInstance>,
-    /// Conservative target-space bounds aligned with the uploaded instances.
+    instances: Vec<PassLight>,
+    /// Conservative target-space bounds aligned with the prepared lights.
     /// Rebuilt with the camera, resolution and logical map on every prepare.
     copy_bounds: Vec<[u32; 4]>,
     surface_format: wgpu::TextureFormat,
@@ -85,7 +103,7 @@ impl CombatLightRenderer {
             label: Some("Combat Light Camera Layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -163,6 +181,20 @@ impl CombatLightRenderer {
             }],
         });
 
+        let pass_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Combat Light Pass Lights Layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: true,
+                    min_binding_size: wgpu::BufferSize::new(PASS_WINDOW),
+                },
+                count: None,
+            }],
+        });
+        let pass_alignment = u64::from(device.limits().min_uniform_buffer_offset_alignment);
         let source =
             super::webgl::camera_source(device, shader_source(super::gpu::webgl_fallback(device)));
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -175,21 +207,17 @@ impl CombatLightRenderer {
                 Some(&camera_layout),
                 Some(&scene_bind_group_layout),
                 Some(&mask_layout),
+                Some(&pass_layout),
             ],
             immediate_size: 0,
         });
-        let attributes = wgpu::vertex_attr_array![0 => Sint32x2, 1 => Uint32, 2 => Uint32];
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Combat Light Exact RGB565 Pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<GpuLightInstance>() as u64,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &attributes,
-                })],
+                buffers: &[],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -209,7 +237,7 @@ impl CombatLightRenderer {
             cache: None,
         });
 
-        let instance_buffer = allocate_instance_buffer(device, INITIAL_CAPACITY);
+        let pass_slots = allocate_pass_slots(device, &pass_layout, 16 * PASS_WINDOW);
         let targets = create_composition_targets(
             device,
             &scene_bind_group_layout,
@@ -226,8 +254,11 @@ impl CombatLightRenderer {
             mask_texture,
             spotlight_radius: None,
             scene_bind_group_layout,
-            instance_buffer,
-            capacity: INITIAL_CAPACITY,
+            device: device.clone(),
+            queue: queue.clone(),
+            pass_layout,
+            pass_alignment,
+            pass_slots: std::cell::RefCell::new(pass_slots),
             prepared_indices: Vec::new(),
             instances: Vec::new(),
             copy_bounds: Vec::new(),
@@ -340,30 +371,19 @@ impl CombatLightRenderer {
             }
             self.prepared_indices
                 .push(Some(self.instances.len() as u32));
-            let instance = GpuLightInstance {
+            let instance = PassLight {
                 center: project_combat_light_anchor(record.coord),
                 surface_index: record.surface_index as u32,
                 flags: record.flags,
+                earlier: [0; 2],
+                pad: [0; 2],
             };
             self.copy_bounds
                 .push(light_copy_bounds(instance.center, &camera, [width, height]));
             self.instances.push(instance);
         }
-        if self.instances.is_empty() {
-            return;
-        }
-        if self.instances.len() > self.capacity {
-            self.capacity = self.instances.len().next_power_of_two();
-            self.instance_buffer = allocate_instance_buffer(device, self.capacity);
-        }
-        // Upload the entire immutable frame before any draw is encoded.
-        // Queue writes precede the next submit; rewriting a single slot
-        // between parent draws would make all of them read the last value.
-        queue.write_buffer(
-            &self.instance_buffer,
-            0,
-            bytemuck::cast_slice(&self.instances),
-        );
+        // The previous frame has been submitted, so its pass slots are free.
+        self.pass_slots.get_mut().used = 0;
     }
 
     pub(crate) fn composition_view(&self) -> wgpu::TextureView {
@@ -393,91 +413,125 @@ impl CombatLightRenderer {
         (left < right && top < bottom).then(|| [left, top, right - left, bottom - top])
     }
 
-    /// Spotlight5FF850 edits each prepared record's current destination.
-    /// Records drawn together must have pairwise disjoint footprints: every
-    /// one reads the scratch copied before their shared pass, so none may
-    /// observe another's edit. The caller retains Display slot or
-    /// persistent-vector order between overlapping records, and accounts the
-    /// pass, when this returns true, through the shared submission owner.
+    /// Spotlight5FF850 edits each prepared record's current destination, in
+    /// `records` order. A pass draws up to [`PASS_LIGHTS`] of them from one
+    /// scratch copy: each light first replays, per pixel, the earlier lights
+    /// of its pass whose bounds meet its own, so overlapping lights compose
+    /// exactly as one pass each would (VERA scheduling only). The caller
+    /// retains Display slot or persistent-vector order and accounts the
+    /// returned passes through the shared submission owner.
     pub(crate) fn draw_records(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         tactical: [u32; 4],
         records: &[usize],
-    ) -> bool {
-        let mut drawn = false;
-        for &record in records {
-            let Some([left, top, width, height]) = self.footprint(record, tactical) else {
-                continue;
-            };
-            drawn = true;
-            // The shader loads only this fragment's global destination texel,
-            // without filtering or neighbours. Keep both origins identical:
-            // stale scratch outside the quad/scissor cannot be sampled. wgpu27
-            // permits partial copies for these single-sample RGBA/BGRA textures:
-            // https://github.com/gfx-rs/wgpu/blob/d61dc3af8856f0cd9023c5e888b791d1b7118559/wgpu-core/src/command/transfer.rs#L489-L574
-            let origin = wgpu::Origin3d {
-                x: left,
-                y: top,
-                z: 0,
-            };
-            encoder.copy_texture_to_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.targets.texture,
-                    mip_level: 0,
-                    origin,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::TexelCopyTextureInfo {
-                    texture: &self.targets.scratch_texture,
-                    mip_level: 0,
-                    origin,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-            );
-        }
-        if !drawn {
-            return false;
-        }
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Combat Light Native Surface Edit"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &self.targets.encoded_view,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        pass.set_bind_group(1, &self.targets.scene_bind_group, &[]);
-        pass.set_bind_group(2, &self.mask_bind_group, &[]);
-        pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
-        pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
-        for &record in records {
-            if self.footprint(record, tactical).is_some()
-                && let Some(index) = self.prepared_indices[record]
-            {
-                pass.draw(0..6, index..index + 1);
+    ) -> usize {
+        let drawn: Vec<_> = records
+            .iter()
+            .filter_map(|&record| {
+                let footprint = self.footprint(record, tactical)?;
+                Some((self.prepared_indices[record]? as usize, footprint))
+            })
+            .collect();
+        let mut passes = 0;
+        for chunk in drawn.chunks(PASS_LIGHTS) {
+            let mut lights = Vec::with_capacity(chunk.len());
+            for (ordinal, &(index, [left, top, width, height])) in chunk.iter().enumerate() {
+                // The shader loads only this fragment's global destination
+                // texel, without filtering or neighbours. Keep both origins
+                // identical: stale scratch outside the bounds cannot be
+                // sampled. wgpu27 permits partial copies for these
+                // single-sample RGBA/BGRA textures:
+                // https://github.com/gfx-rs/wgpu/blob/d61dc3af8856f0cd9023c5e888b791d1b7118559/wgpu-core/src/command/transfer.rs#L489-L574
+                let origin = wgpu::Origin3d {
+                    x: left,
+                    y: top,
+                    z: 0,
+                };
+                encoder.copy_texture_to_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &self.targets.texture,
+                        mip_level: 0,
+                        origin,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &self.targets.scratch_texture,
+                        mip_level: 0,
+                        origin,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                let mut earlier = 0_u64;
+                for (bit, &(_, other)) in chunk[..ordinal].iter().enumerate() {
+                    if intersects([left, top, width, height], other) {
+                        earlier |= 1 << bit;
+                    }
+                }
+                lights.push(PassLight {
+                    earlier: [earlier as u32, (earlier >> 32) as u32],
+                    ..self.instances[index]
+                });
             }
+            let (bind_group, offset) = self.pass_slot(&lights);
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Combat Light Native Surface Edit"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.targets.encoded_view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            pass.set_bind_group(1, &self.targets.scene_bind_group, &[]);
+            pass.set_bind_group(2, &self.mask_bind_group, &[]);
+            pass.set_bind_group(3, &bind_group, &[offset]);
+            pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
+            // One instance per light: instances rasterize in order.
+            pass.draw(0..6, 0..lights.len() as u32);
+            passes += 1;
         }
-        true
+        passes
+    }
+
+    /// Write one pass's `lights` to a fresh slot of this frame: the slots'
+    /// binding and its dynamic offset. Grows the slots when they are full;
+    /// earlier passes keep the buffer they bound.
+    fn pass_slot(&self, lights: &[PassLight]) -> (wgpu::BindGroup, u32) {
+        let mut slots = self.pass_slots.borrow_mut();
+        if slots.used + PASS_WINDOW > slots.buffer.size() {
+            let size = slots.buffer.size() * 2;
+            *slots = allocate_pass_slots(&self.device, &self.pass_layout, size);
+        }
+        let offset = slots.used;
+        self.queue
+            .write_buffer(&slots.buffer, offset, bytemuck::cast_slice(lights));
+        slots.used =
+            (offset + std::mem::size_of_val(lights) as u64).next_multiple_of(self.pass_alignment);
+        (slots.bind_group.clone(), offset as u32)
     }
 }
 
-/// Bounds of combat_light.wgsl's uploaded quad, after its existing integer
+/// Whether two `[x, y, width, height]` rectangles share a pixel.
+fn intersects(a: [u32; 4], b: [u32; 4]) -> bool {
+    a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]
+}
+
+/// Bounds of combat_light.wgsl's light surface, after its existing integer
 /// world projection. Zoom moves the centre; the mask remains 256x128 pixels.
 fn light_copy_bounds(center: [i32; 2], camera: &CameraUniform, target: [u32; 2]) -> [u32; 4] {
     let full = [0, 0, target[0], target[1]];
@@ -540,13 +594,34 @@ fn project_combat_light_anchor(coord: crate::sim::projectile::ProjectileCoord) -
     ]
 }
 
-fn allocate_instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
-    device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Combat Light Instances"),
-        size: (capacity * std::mem::size_of::<GpuLightInstance>()) as u64,
-        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+fn allocate_pass_slots(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    size: u64,
+) -> PassSlots {
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Combat Light Pass Lights"),
+        size,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
-    })
+    });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Combat Light Pass Lights"),
+        layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer: &buffer,
+                offset: 0,
+                size: wgpu::BufferSize::new(PASS_WINDOW),
+            }),
+        }],
+    });
+    PassSlots {
+        buffer,
+        bind_group,
+        used: 0,
+    }
 }
 
 /// The WebGL2 fallback reads and writes encoded bytes through sRGB views
@@ -845,9 +920,9 @@ mod tests {
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
                 if !records.is_empty() {
                     let clip = fixture::array::<4>(&input["clip"]).map(|value| value as u32);
-                    assert!(!renderer.draw_records(&mut encoder, clip, &[0]));
-                    assert!(renderer.draw_records(&mut encoder, clip, &[1]));
-                    assert!(!renderer.draw_records(&mut encoder, clip, &[2]));
+                    assert_eq!(renderer.draw_records(&mut encoder, clip, &[0]), 0);
+                    assert_eq!(renderer.draw_records(&mut encoder, clip, &[1]), 1);
+                    assert_eq!(renderer.draw_records(&mut encoder, clip, &[2]), 0);
                 }
                 let read = gpu.read(&mut encoder, renderer.composition_texture());
                 let output = gpu.finish(encoder, &[read], size);
@@ -1051,9 +1126,11 @@ mod tests {
                         // pass; the far record is outside every view.
                         assert_eq!(
                             renderer.draw_records(&mut encoder, tactical, &[record]),
-                            (0..64).contains(&light.surface_index)
-                                && visible
-                                && light.coord.x < 4096,
+                            usize::from(
+                                (0..64).contains(&light.surface_index)
+                                    && visible
+                                    && light.coord.x < 4096
+                            ),
                             "{name} {format:?} logical{record}"
                         );
                         reads.push(gpu.read(&mut encoder, renderer.composition_texture()));
@@ -1080,6 +1157,101 @@ mod tests {
                     assert_eq!(changed_draws, 0, "offscreen records change no pixel");
                 }
             }
+        }
+    }
+
+    #[test]
+    #[ignore = "requires GPU; overlapping lights drawn by one call against one call each"]
+    fn overlapping_lights_in_one_call_match_one_call_each() {
+        use crate::render::terrain_draw_gpu_tests::{Gpu, encoded};
+
+        let gpu = Gpu::new();
+        let format = wgpu::TextureFormat::Bgra8UnormSrgb;
+        let size = [512_u32, 256];
+        let tactical = [7, 5, 490, 240];
+        // Seventy lights around one spot with brightening, darkening and
+        // channel-disabling flags: a full pass, whose later lights replay
+        // earlier ones past bit 32, then a pass of six.
+        let records: Vec<_> = (0..70)
+            .map(|light: i32| CombatLightDrawRecord {
+                coord: crate::sim::projectile::ProjectileCoord::new(
+                    1024 + 7 * light,
+                    768 + 3 * light,
+                    128,
+                ),
+                surface_index: (light * 37) % 64,
+                flags: [0, 1, 6, 8][light as usize % 4],
+            })
+            .collect();
+        let all: Vec<_> = (0..records.len()).collect();
+        let anchor = project_combat_light_anchor(records[0].coord).map(|value| value as f32);
+        let initial: Vec<u8> = (0..size[1])
+            .flat_map(|y| {
+                (0..size[0]).flat_map(move |x| {
+                    encoded(
+                        0x5269_u16.wrapping_add(((x * 17 + y * 31) & 0x0fff) as u16),
+                        format,
+                    )
+                })
+            })
+            .collect();
+        for (zoom, offset) in [(1.0_f32, [256.0_f32, 128.0]), (1.25, [180.375, 125.625])] {
+            let camera = std::array::from_fn(|axis| anchor[axis] - offset[axis] / zoom);
+            let mut renderers = std::array::from_fn::<_, 2, _>(|_| {
+                CombatLightRenderer::new_with_device(&gpu.device, &gpu.queue, format)
+            });
+            for renderer in &mut renderers {
+                renderer.prepare_with_device(
+                    &gpu.device,
+                    &gpu.queue,
+                    &records,
+                    size.map(|value| value as f32),
+                    camera,
+                    zoom,
+                );
+                gpu.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: renderer.composition_texture(),
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &initial,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(size[0] * 4),
+                        rows_per_image: Some(size[1]),
+                    },
+                    renderer.composition_texture().size(),
+                );
+            }
+            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            let [each, together] = &renderers;
+            let each_passes: usize = all
+                .iter()
+                .map(|&record| each.draw_records(&mut encoder, tactical, &[record]))
+                .sum();
+            assert_eq!(
+                each_passes,
+                records.len(),
+                "zoom {zoom}: every light is visible"
+            );
+            assert_eq!(
+                together.draw_records(&mut encoder, tactical, &all),
+                2,
+                "zoom {zoom}"
+            );
+            let reads = [
+                gpu.read(&mut encoder, each.composition_texture()),
+                gpu.read(&mut encoder, together.composition_texture()),
+            ];
+            let output = gpu.finish(encoder, &reads, size);
+            assert_ne!(output[0], initial, "zoom {zoom}: the lights edit pixels");
+            assert_eq!(
+                output[0].iter().zip(&output[1]).position(|(a, b)| a != b),
+                None,
+                "zoom {zoom}: one call equals one call per light"
+            );
         }
     }
 
@@ -1204,7 +1376,7 @@ mod tests {
                         renderer.composition_texture().size(),
                     );
                     let mut encoder = gpu.device.create_command_encoder(&Default::default());
-                    assert!(renderer.draw_records(&mut encoder, clip, &[0]));
+                    assert_eq!(renderer.draw_records(&mut encoder, clip, &[0]), 1);
                     let read = gpu.read(&mut encoder, renderer.composition_texture());
                     let output = gpu.finish(encoder, &[read], size);
                     let mut expected = vec![background; (size[0] * size[1]) as usize];
@@ -1312,7 +1484,7 @@ mod tests {
                     renderer.composition_texture().size(),
                 );
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
-                assert!(renderer.draw_records(&mut encoder, clip, &[0]));
+                assert_eq!(renderer.draw_records(&mut encoder, clip, &[0]), 1);
                 let read = gpu.read(&mut encoder, renderer.composition_texture());
                 let output = gpu.finish(encoder, &[read], size);
                 let mut expected = vec![background; (size[0] * size[1]) as usize];

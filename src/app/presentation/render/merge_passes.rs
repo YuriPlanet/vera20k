@@ -485,9 +485,8 @@ impl StageReplay<'_> {
                         })
                         .collect();
                     let lights = self.lights.expect("a planned light has its renderer");
-                    if lights.draw_records(encoder, self.tactical, &records) {
-                        terrain.note_external_passes(encoder, 1);
-                    }
+                    let passes = lights.draw_records(encoder, self.tactical, &records);
+                    terrain.note_external_passes(encoder, passes);
                 }
                 StageKind::Lines => {
                     let ranges: Vec<_> = items

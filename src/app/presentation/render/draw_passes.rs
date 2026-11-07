@@ -764,25 +764,17 @@ pub(super) fn dispatch_draw_passes(
     }
     // Original6D4664 -> Spotlight5FFFA0 edits the destination after the first
     // rally pass. Preserve this overlap, including the rally's black shadow.
-    // Overlapping lights keep persistent-vector order; disjoint ones share
-    // one scratch copy and pass (`object_stages`, VERA scheduling only).
-    let lights = &state.renderer.combat_light_renderer;
-    let tactical = [tac_x, tac_y, tac_w, tac_h];
-    let screen = state.renderer.batch_renderer.camera_uniform().screen_size;
-    let mut waves = super::object_stages::ObjectStages::new(screen.map(|extent| extent as u32));
-    for record in data.persistent_lights.clone() {
-        if let Some(rect) = lights.footprint(record, tactical) {
-            waves.push(super::object_stages::StageKind::Light, rect, record);
-        }
-    }
-    for (_, records) in waves.take() {
-        if lights.draw_records(encoder, tactical, &records) {
-            state
-                .renderer
-                .terrain_draw_renderer
-                .note_external_passes(encoder, 1);
-        }
-    }
+    // The lights edit in persistent-vector order, many to a pass.
+    let records: Vec<_> = data.persistent_lights.clone().collect();
+    let passes = state.renderer.combat_light_renderer.draw_records(
+        encoder,
+        [tac_x, tac_y, tac_w, tac_h],
+        &records,
+    );
+    state
+        .renderer
+        .terrain_draw_renderer
+        .note_external_passes(encoder, passes);
 
     // Tactical LaserDraw550240, EBolt, LineTrail556D40, then selected
     // radial indicators6D467F edit the destination and
@@ -1555,7 +1547,7 @@ mod tests {
         let ion_blasts = source_offset(".draw_ion_blasts(encoder, view)");
         let building_bases = source_offset("ObjectDrawPhase::BuildingBase");
         let objects = source_offset("for layer in 0..=3 {");
-        let combat_lights = source_offset("for record in data.persistent_lights.clone()");
+        let combat_lights = source_offset("data.persistent_lights.clone().collect()");
         let second_rally = source_offset("\"factory_rally_second\"");
         let target_lines = source_offset("\"target_lines\"");
         let tactical_lines = source_offset("&[data.tactical_lines]");
