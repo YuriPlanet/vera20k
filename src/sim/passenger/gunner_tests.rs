@@ -419,6 +419,11 @@ fn retail_vehicle_enter_keeps_live_transport_target() {
 /// Unit ReceiveDamage calls each escaped passenger's Scatter(&EmptyCoord, 1, 0)
 /// at 0x00738130..0x0073813D. For a tank, Unit Scatter installs a cell NavCom
 /// through its ordinary destination setter and Drive Move_To.
+// Stock Unit tail (737F97..73838A); installed Ares 1004C0E0 (hook 0x737F97)
+// replaces it with SpawnSurvivors100464C0, which ejects each passenger through
+// EjectRandomly100445E0 instead of Scatter. Ares coverage:
+// `crew_survival_tests::ares_fatal_vehicle_returns_saved_captor_pilot_and_existing_passenger`.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_tanks_scatter_after_their_transport_is_destroyed() {
     use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
