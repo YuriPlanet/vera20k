@@ -89,4 +89,100 @@ EngineerAlwaysCaptureTech=yes
   `AlliedSolidTransparency`: Ares replaces the line-of-fire walk
   (`0x4CC100`, `0x4CC310`, `0x4CC360`) and the bullet obstacle hooks
   wholesale, which `combat::line_of_fire` does not follow yet.
-- The remaining BuildingTypeExt sale, capture, degrade and sound keys.
+- The sale, capture, degrade and power keys: part 2 below.
+
+## Part 2: sale, return, capture, power and AI keys
+
+```ini
+[GAPOWR]                                ; rulesmd.ini BuildingType
+BuildupTime=0.1                         ; minutes; unset: [General] BuildupTime=
+SellTime=0.05                           ; minutes; unset: the build-up's
+Returnable=yes                          ; unset: [General] ReturnStructures=
+LostEvaEvent=EVA_TechBuildingLost       ; the default; none: silent
+Message.Capture=MSG:OilCaptured         ; CSF labels, printed for the player
+Message.Lost=MSG:OilLost
+Degrade.Amount=5                        ; unset: Degrade.AmountConsumer/Normal
+Degrade.Percentage=50%                  ; unset: [General] Degrade.Percentage
+AIBuildCounts=3,2,1                     ; per AI difficulty, hardest first
+AIExtraCounts=1,1,0                     ; up to this many more, at random
+AIBaseNormal=yes                        ; unset: the stock BaseNormal test
+
+[GAREFN]                                ; artmd.ini, the type's Image=
+DockUnloadCell=3,1                      ; the pad offset (default 3,1)
+DockUnloadFacing=8                      ; 0..31 (default 8, east)
+
+[Americans]                             ; a country
+Degrades=no                             ; unset: not MultiplayPassive=
+
+[General]
+ReturnStructures=no
+Degrade.Enabled=no
+Degrade.Percentage=                     ; unset: ConditionYellow=
+Degrade.AmountNormal=0
+Degrade.AmountConsumer=1
+TogglePowerAllowed=no
+TogglePowerDelay=45
+
+[IQ]
+TogglePower=-1                          ; the IQ a computer needs to balance
+```
+
+- `rules/ares_building_type.rs` reads the BuildingTypeExt keys (`1000DD40`,
+  the art ones through `1000FAE0` and `1000FBF0`) and the RulesExt ones
+  (`LoadBeforeTypeData 1002AB60`, `LoadAfterTypeData 1002A800`);
+  `LostEvaEvent` binds against EVAMD in `RuleSet::bind_type_eva_references`
+  and the country `Degrades` is read with the other CountryExt keys
+  (`1001C5D0`, inherited by `1001BDC0`) in `native_processing.rs`.
+- `rules/buildup_asset_catalog.rs`: `UpdateBuildupFrames` (`1000F450`,
+  hooks `0x45F2B4`, `0x465A48`, `0x45EAA5`) rates the build-up in Ares'
+  divide-first order from `BuildupTime` and the sale from `SellTime`;
+  `sim/building_construction.rs` starts any body mode at that sale rate
+  while the mission is Selling (`100144E0`, hook `0x447A63`).
+- `sim/world/house_defeat.rs`: Blowup_All returns a building first owned
+  by a passive house to it (`10024150`, hook `0x4FC731`), killing its
+  occupants, handing it back unannounced, resetting it to Guard and
+  disabling a `NeedsEngineer=` one.
+- `sim/world/world_orders.rs` and the app's `sound_dispatch`,
+  `eva_producers` and `input::messages`: a captured tech building's
+  `LostEvaEvent` and its `Message.Lost`/`Message.Capture` lines for the
+  player (`10013E40`, hook `0x44840B`).
+- `sim/ares_degrade.rs`: low-power degrading on each `DamageDelay`
+  (`100247A0`, hook `0x4F8B08`); the timer's expiries are derived from the
+  frame (the House constructor starts it at frame 0 and the hook restarts
+  it on each expiry).
+- `sim/ares_toggle_power.rs`: computer power balancing
+  (`UpdateTogglePower 100228A0`, hook `0x4F8440`) through `GoOffline` and
+  `GoOnline`.
+- `sim/base_plan_generation.rs`: `AIBuildCounts`/`AIExtraCounts` copies in
+  the AI build list (`10023940`, hook `0x505C95`).
+- `ObjectType::base_reservation_writer_eligible`: `AIBaseNormal` decides
+  whether the AI base reservation counts the building (`IsBaseNormal
+  10011810`, hooks `0x440C08`, `0x445A72`, `0x456370`).
+- `sim/radio/receive.rs` and `sim/miner/refinery_dock.rs`: the dock pad at
+  `DockUnloadCell` (`10014540`, hook `0x43CA80`) and the facing a unit
+  docks and unloads at (`GetDockUnloadFacing 10044C00`, hooks `0x7376D9`,
+  `0x73DF66`); Mission_Unload then compares the facing exactly and lets a
+  mid-swing turret through.
+
+### Not covered in part 2
+
+- `UnitSell` and `UnitsUnsellable`: VERA has no unit sale on a repair depot
+  (`FootClass::CanBeSold 0x004D9E70`, `FootClass::Sell 0x004D9F70`, the
+  SELL event's unit arm `0x004C6F5A`), which `10048FD0` (hook `0x4D9EBD`)
+  gates.
+- `SecretLab.GenerateOnCapture`: part of the Ares Secret Lab rework
+  (`SecretLab.PossibleBoons`, `UpdateSecretLab`), which VERA does not port.
+- HouseExt `Degrades=` in a map's house section (`10021A70`): a house takes
+  its country's answer.
+- `GateUpSound`, `GateDownSound`: the gate sounds themselves are not
+  played yet (`sim::gate_runtime`).
+- `SlamSound` (`10010290`, hook `0x4FB2FD`) and `MassSelectable`
+  (`10013CF0`, hook `0x459C03`): the stock `BuildingSlam` and the stock
+  band-selection test stay.
+- `ProduceCashDisplay` (`100117C0`): it rides Ares' replaced ProduceCash
+  payout (`100146E0`, `10013D40`, `10014490`: hooks `0x43FD2C`, `0x4482BD`,
+  `0x4409F4`, with the upgrades' cash timers), which VERA does not port.
+- `AIInnerBase` (`10023860`, hook `0x506306`): its `CloakGenerator=` arm of
+  `FindBaseBuildingSite` is not ported (`sim::ai_base_site`).
+- `IsBaseNormal`'s per-building `NoBaseNormal` (a `Deliver.BaseNormal=no`
+  delivery) is the superweapon chain's.

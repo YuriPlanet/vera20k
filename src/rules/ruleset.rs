@@ -5751,7 +5751,12 @@ impl RuleSet {
                     .get(&(ObjectCategory::Building, name.to_ascii_uppercase()))
                     .copied()
                 {
-                    *rules.object_list[handle.0 as usize].building_type_ext_mut() = ext.clone();
+                    let building = &mut rules.object_list[handle.0 as usize];
+                    *building.building_type_ext_mut() = ext.clone();
+                    // AIBaseNormal joins the base-reservation gate above.
+                    building.base_reservation_spacing = building
+                        .base_reservation_writer_eligible()
+                        .then_some(rules.ai_base_spacing);
                 }
             }
             // Ares CompleteInitialization 1000D380 (hook 0x679CAF), once the
@@ -6376,6 +6381,15 @@ impl RuleSet {
                 eva.read_rules_reference(section, "EVA.VeteranPromoted", "EVA_UnitPromoted"),
                 eva.read_rules_reference(section, "EVA.ElitePromoted", "EVA_UnitPromoted"),
             ]);
+            // BuildingTypeExt LoadFromINIFile 1000DD40 reads LostEvaEvent;
+            // the Initialize of 1000DCF0 seeds FindIndex("EVA_TechBuildingLost").
+            if object.category == crate::rules::object_type::ObjectCategory::Building {
+                object.bind_lost_eva(eva.read_rules_reference(
+                    section,
+                    "LostEvaEvent",
+                    "EVA_TechBuildingLost",
+                ));
+            }
         }
     }
 

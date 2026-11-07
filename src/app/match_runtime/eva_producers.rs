@@ -270,7 +270,8 @@ pub(crate) fn super_weapon_detected_allowed(
 
 /// The lines the capture block speaks on the local machine
 /// (`BuildingClass::ChangeOwner 0x004483FB..0x0044848F`), in native order:
-/// a `NeedsEngineer=` building says `EVA_TechBuildingLost` when the OLD
+/// a `NeedsEngineer=` building says `tech_lost_event` (`EVA_TechBuildingLost`,
+/// in Ares builds the type's `LostEvaEvent`, hook `0x0044840B`) when the OLD
 /// owner is local (`0x00448415`) and then queues the type's
 /// `CaptureEvaEvent=` when the NEW owner is local (`0x0044842F..0x00448459`);
 /// any other building says `EVA_BuildingCaptured` once the radar event was
@@ -280,6 +281,7 @@ pub(crate) fn capture_eva_events(
     tech_building: bool,
     radar_accepted: bool,
     capture_eva_event: Option<&str>,
+    tech_lost_event: Option<&str>,
     local_is_old_owner: bool,
     local_is_new_owner: bool,
 ) -> Vec<String> {
@@ -288,8 +290,8 @@ pub(crate) fn capture_eva_events(
         return lines;
     }
     if tech_building {
-        if local_is_old_owner {
-            lines.push(EVA_TECH_BUILDING_LOST.to_string());
+        if local_is_old_owner && let Some(event) = tech_lost_event {
+            lines.push(event.to_string());
         }
         if local_is_new_owner && let Some(event) = capture_eva_event {
             lines.push(event.to_string());
@@ -603,27 +605,73 @@ mod tests {
     fn capture_lines_follow_the_change_owner_block() {
         // Ordinary building: the radar result gates one line for either side.
         assert_eq!(
-            capture_eva_events(false, true, None, false, true),
+            capture_eva_events(false, true, None, Some(EVA_TECH_BUILDING_LOST), false, true),
             vec![EVA_BUILDING_CAPTURED.to_string()]
         );
         assert_eq!(
-            capture_eva_events(false, true, None, true, false),
+            capture_eva_events(false, true, None, Some(EVA_TECH_BUILDING_LOST), true, false),
             vec![EVA_BUILDING_CAPTURED.to_string()]
         );
-        assert!(capture_eva_events(false, false, None, true, false).is_empty());
-        assert!(capture_eva_events(false, true, None, false, false).is_empty());
+        assert!(
+            capture_eva_events(
+                false,
+                false,
+                None,
+                Some(EVA_TECH_BUILDING_LOST),
+                true,
+                false
+            )
+            .is_empty()
+        );
+        assert!(
+            capture_eva_events(
+                false,
+                true,
+                None,
+                Some(EVA_TECH_BUILDING_LOST),
+                false,
+                false
+            )
+            .is_empty()
+        );
         // Tech building: lost line for a local old owner, per-type line for a
         // local new owner, no radar-gated line at all.
         assert_eq!(
-            capture_eva_events(true, false, Some("EVA_OilRefineryCaptured"), false, true),
+            capture_eva_events(
+                true,
+                false,
+                Some("EVA_OilRefineryCaptured"),
+                Some(EVA_TECH_BUILDING_LOST),
+                false,
+                true
+            ),
             vec!["EVA_OilRefineryCaptured".to_string()]
         );
         assert_eq!(
-            capture_eva_events(true, false, Some("EVA_OilRefineryCaptured"), true, false),
+            capture_eva_events(
+                true,
+                false,
+                Some("EVA_OilRefineryCaptured"),
+                Some(EVA_TECH_BUILDING_LOST),
+                true,
+                false
+            ),
             vec![EVA_TECH_BUILDING_LOST.to_string()]
         );
-        assert!(capture_eva_events(true, false, None, false, true).is_empty());
-        assert!(capture_eva_events(true, true, None, false, false).is_empty());
+        assert!(
+            capture_eva_events(true, false, None, Some(EVA_TECH_BUILDING_LOST), false, true)
+                .is_empty()
+        );
+        assert!(
+            capture_eva_events(true, true, None, Some(EVA_TECH_BUILDING_LOST), false, false)
+                .is_empty()
+        );
+        // Ares LostEvaEvent: the type's cue, or none at all.
+        assert_eq!(
+            capture_eva_events(true, false, None, Some("EVA_OurOilLost"), true, false),
+            vec!["EVA_OurOilLost".to_string()]
+        );
+        assert!(capture_eva_events(true, false, None, None, true, false).is_empty());
     }
 
     #[test]

@@ -568,6 +568,16 @@ impl IniSection {
         })
     }
 
+    /// Ares `Valueable<CSFText>::Read` (CsfText::Read 10076510 over
+    /// ReadString 2048): a present value replaces the label with its first
+    /// 31 bytes; absent or empty keeps it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_ares_csf_label(&self, key: &str, current: &str) -> String {
+        self.read_string_with(key, 2048, current.to_owned(), |_, name| {
+            truncate_native_bytes(name, 31).to_owned()
+        })
+    }
+
     /// Ares `Nullable<ColorStruct>::Read` 10008D20 -> detail::read<ColorStruct>
     /// 10008EE0: ReadString(2048), then `detail::parse<unsigned char>`
     /// 100089C0 must convert all three channels. Only then are the color and

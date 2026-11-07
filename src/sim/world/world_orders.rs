@@ -1371,6 +1371,28 @@ impl Simulation {
             .map(|obj| (obj.needs_engineer, obj.capture_eva_event.clone()))
             .unwrap_or((false, None));
         let capture_eva_event = capture_eva_event.map(|name| self.interner.intern(&name));
+        // Ares 3.0 10013E40 (hook 0x0044840B): the tech block's LostEvaEvent
+        // and Message.Lost/Message.Capture labels.
+        #[cfg(feature = "ares")]
+        let ares_tech = {
+            let (lost_eva, labels) = self
+                .object_type(type_ref, rules)
+                .map(|obj| {
+                    let ext = obj.building_type_ext();
+                    (
+                        obj.lost_eva().map(str::to_owned),
+                        [ext.message_lost.clone(), ext.message_capture.clone()],
+                    )
+                })
+                .unwrap_or_default();
+            let [lost, capture] =
+                labels.map(|label| (!label.is_empty()).then(|| self.interner.intern(&label)));
+            crate::sim::world::AresTechCaptureLines {
+                lost_eva_event: lost_eva.map(|name| self.interner.intern(&name)),
+                message_lost: lost,
+                message_capture: capture,
+            }
+        };
         let radar = (!tech_building).then(|| {
             crate::sim::radar::RadarEventRequest::new(
                 crate::sim::radar::RadarEventType::BuildingCaptured,
@@ -1384,6 +1406,8 @@ impl Simulation {
             tech_building,
             radar,
             capture_eva_event,
+            #[cfg(feature = "ares")]
+            ares_tech,
         });
     }
 

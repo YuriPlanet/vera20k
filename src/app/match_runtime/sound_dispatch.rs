@@ -892,6 +892,8 @@ pub(super) fn dispatch_sim_sound_events(
                 tech_building,
                 radar,
                 capture_eva_event,
+                #[cfg(feature = "ares")]
+                ares_tech,
             } => {
                 // `BuildingClass::ChangeOwner 0x004483C6/0x004483D1
                 // CALL 0x0050B6F0` on the old and the new owner; the
@@ -906,10 +908,19 @@ pub(super) fn dispatch_sim_sound_events(
                 let radar_accepted =
                     (local_is_old || local_is_new) && radar.is_some_and(&mut *admit_radar);
                 let capture_event = capture_eva_event.map(|id| sim.interner().resolve(id));
+                // Ares 3.0 10013E40 (hook 0x0044840B) plays the type's
+                // LostEvaEvent instead.
+                #[cfg(feature = "ares")]
+                let tech_lost = ares_tech
+                    .lost_eva_event
+                    .map(|id| sim.interner().resolve(id));
+                #[cfg(not(feature = "ares"))]
+                let tech_lost = Some(eva_producers::EVA_TECH_BUILDING_LOST);
                 for event in eva_producers::capture_eva_events(
                     tech_building,
                     radar_accepted,
                     capture_event,
+                    tech_lost,
                     local_is_old,
                     local_is_new,
                 ) {
@@ -1083,6 +1094,43 @@ fn super_weapon_detection_admitted(
         sim.session().game_mode_nonzero(),
         aux_satisfied,
     )
+}
+
+/// Ares 3.0 `BuildingClass_ChangeOwnership_Tech @ 10013E40` (hook
+/// `0x0044840B`): a captured tech building prints `Message.Lost` when the
+/// old owner is the player (`HouseClass::Player` outside a campaign), then
+/// `Message.Capture` when the new owner is; an empty label prints nothing.
+#[cfg(feature = "ares")]
+pub(super) fn ares_tech_capture_messages(
+    events: &[SimSoundEvent],
+    sim: &crate::sim::world::Simulation,
+    local_owner_name: Option<&str>,
+) -> Vec<crate::app::input::messages::HudMessage> {
+    use crate::app::input::messages::HudMessage;
+    let local = local_owner_name.and_then(|name| sim.interner().get(name));
+    let mut lines = Vec::new();
+    for event in events {
+        if let SimSoundEvent::BuildingCaptured {
+            old_owner,
+            new_owner,
+            tech_building: true,
+            ares_tech,
+            ..
+        } = *event
+        {
+            for (owner, label) in [
+                (old_owner, ares_tech.message_lost),
+                (new_owner, ares_tech.message_capture),
+            ] {
+                if let Some(label) = label
+                    && Some(owner) == local
+                {
+                    lines.push(HudMessage::AresTechCaptureLabel(label));
+                }
+            }
+        }
+    }
+    lines
 }
 
 /// The SWTypeExt::PrintMessage10033BD0 lines the frame's Super facts print,
@@ -2909,6 +2957,45 @@ mod tests {
                 line(M::Ready, Some(local)),
                 line(M::Launch, Some(remote)),
                 line(M::InsufficientFunds, Some(local)),
+            ]
+        );
+    }
+
+    /// Ares `10013E40`: the local loser reads `Message.Lost` and the local
+    /// captor `Message.Capture`; another client's capture and an ordinary
+    /// building print nothing.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_tech_capture_labels_print_for_the_local_sides() {
+        use crate::app::input::messages::HudMessage;
+        let mut sim = Simulation::new();
+        let local = sim.intern("Local");
+        let remote = sim.intern("Remote");
+        let lost = sim.intern("MSG:OilLost");
+        let captured = sim.intern("MSG:OilCaptured");
+        let capture = |old_owner, new_owner, tech_building| SimSoundEvent::BuildingCaptured {
+            old_owner,
+            new_owner,
+            tech_building,
+            radar: None,
+            capture_eva_event: None,
+            ares_tech: crate::sim::world::AresTechCaptureLines {
+                lost_eva_event: None,
+                message_lost: Some(lost),
+                message_capture: Some(captured),
+            },
+        };
+        let events = [
+            capture(local, remote, true),
+            capture(remote, local, true),
+            capture(remote, remote, true),
+            capture(local, remote, false),
+        ];
+        assert_eq!(
+            ares_tech_capture_messages(&events, &sim, Some("Local")),
+            [
+                HudMessage::AresTechCaptureLabel(lost),
+                HudMessage::AresTechCaptureLabel(captured),
             ]
         );
     }

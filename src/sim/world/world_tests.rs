@@ -9275,6 +9275,7 @@ fn captured_events(
                 tech_building,
                 radar,
                 capture_eva_event,
+                ..
             } => Some((
                 *old_owner,
                 *new_owner,

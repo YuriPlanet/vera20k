@@ -1199,6 +1199,11 @@ pub struct ObjectType {
     /// `EVA_UnitPromoted`; `none` silences the cue.
     #[cfg(feature = "ares")]
     promotion_eva: [Option<String>; 2],
+    /// BuildingTypeExt+184 `LostEvaEvent` (ValueableIdx<VoxClass>): the
+    /// Initialize of `1000DCF0` seeds it with `EVA_TechBuildingLost`; `none`
+    /// silences the cue.
+    #[cfg(feature = "ares")]
+    lost_eva: Option<String>,
     /// BuildingTypeExt Academy.* (+138..+170), projected from the retained
     /// rules reader (`rules::ares_veterancy`).
     #[cfg(feature = "ares")]
@@ -3135,6 +3140,17 @@ impl ObjectType {
         self.promotion_eva = eva;
     }
 
+    /// Ares BuildingTypeExt `LostEvaEvent`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn lost_eva(&self) -> Option<&str> {
+        self.lost_eva.as_deref()
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_lost_eva(&mut self, eva: Option<String>) {
+        self.lost_eva = eva;
+    }
+
     /// Ares BuildingTypeExt Academy.* (`rules::ares_veterancy`).
     #[cfg(feature = "ares")]
     pub(crate) fn academy(&self) -> &crate::rules::ares_veterancy::AcademyTypeRules {
@@ -4141,8 +4157,16 @@ impl ObjectType {
         }
     }
 
-    /// BuildingType gate used by the native base-reservation setter.
+    /// BuildingType gate used by the native base-reservation setter. In Ares
+    /// builds `BuildingExt::ExtData::IsBaseNormal @ 10011810` (hooks
+    /// `0x00440C08` Unlimbo, `0x00445A72` Limbo, `0x00456370` the neighbour
+    /// repair) answers `AIBaseNormal=` when set; a delivery's per-building
+    /// `NoBaseNormal` belongs to the superweapon chain.
     pub fn base_reservation_writer_eligible(&self) -> bool {
+        #[cfg(feature = "ares")]
+        if let Some(normal) = self.building_type_ext.ai_base_normal {
+            return self.category == ObjectCategory::Building && normal;
+        }
         self.category == ObjectCategory::Building
             && (self.undeploys_into.is_none() || !self.resource_gatherer)
             && !self.is_1x1_with_undeploy()
@@ -4721,6 +4745,8 @@ impl ObjectType {
             veterancy: Default::default(),
             #[cfg(feature = "ares")]
             promotion_eva: [None, None],
+            #[cfg(feature = "ares")]
+            lost_eva: None,
             #[cfg(feature = "ares")]
             academy: Default::default(),
             #[cfg(feature = "ares")]

@@ -550,6 +550,19 @@ impl AllianceEva {
     }
 }
 
+/// The lines Ares 3.0 `10013E40` gives a captured tech building in place of
+/// `0x0044840B..0x0044848F`: the old owner's player hears the type's
+/// `LostEvaEvent` (default `EVA_TechBuildingLost`; `None` is silent) and
+/// reads `Message.Lost`, the new owner's player hears `CaptureEvaEvent=`
+/// and reads `Message.Capture` (`None`: an empty label prints nothing).
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AresTechCaptureLines {
+    pub lost_eva_event: Option<InternedId>,
+    pub message_lost: Option<InternedId>,
+    pub message_capture: Option<InternedId>,
+}
+
 /// A sound event produced during simulation (combat, death, production).
 /// Pure data — no audio library dependency. Drained by the app layer each frame.
 #[derive(Debug, Clone)]
@@ -868,6 +881,10 @@ pub enum SimSoundEvent {
         tech_building: bool,
         radar: Option<RadarEventRequest>,
         capture_eva_event: Option<InternedId>,
+        /// Ares 3.0 `BuildingClass_ChangeOwnership_Tech @ 10013E40` (hook
+        /// `0x0044840B`) replaces the tech building's block with these.
+        #[cfg(feature = "ares")]
+        ares_tech: AresTechCaptureLines,
     },
     /// `BuildingClass::Infiltrate @ 0x004571E0`'s announcements
     /// (`sim::spy_infiltration`). When the building's owner or the spy's

@@ -250,6 +250,12 @@ pub(crate) enum HudMessage {
         message: crate::rules::superweapon_type::AresSuperWeaponMessage,
         firer: Option<crate::sim::intern::InternedId>,
     },
+    /// A captured tech building's `Message.Lost`/`Message.Capture` label
+    /// (Ares `BuildingClass_ChangeOwnership_Tech @ 10013E40`'s PrintMessage
+    /// lambda): PlayerPtr's colour, MessageDelay through the CRT `_ftol2`
+    /// (`100772B0`), silent 0.
+    #[cfg(feature = "ares")]
+    AresTechCaptureLabel(crate::sim::intern::InternedId),
     /// MPlayer_Defeated's line for a non-observer House (`0x004FC271`,
     /// `0x004FC34F`).
     PlayerDefeated(crate::sim::intern::InternedId),
@@ -271,7 +277,9 @@ impl HudMessage {
     fn csf_key(self) -> Option<&'static str> {
         Some(match self {
             #[cfg(feature = "ares")]
-            Self::AresSuperWeaponRefused(_) | Self::AresSuperWeaponMessage { .. } => return None,
+            Self::AresSuperWeaponRefused(_)
+            | Self::AresSuperWeaponMessage { .. }
+            | Self::AresTechCaptureLabel(_) => return None,
             Self::LowPower => "TXT_LOW_POWER", // original House4F8D4A
             Self::SuperWeapon(key) | Self::BeaconHelp(key) => key,
             Self::PlayerDefeated(_) => "TXT_PLAYER_DEFEATED",
@@ -289,7 +297,9 @@ impl HudMessage {
             }
             Self::SuperWeapon(_) => Some(SUPER_WEAPON_MESSAGE_TIMEOUT_MS),
             #[cfg(feature = "ares")]
-            Self::AresSuperWeaponRefused(_) | Self::AresSuperWeaponMessage { .. } => {
+            Self::AresSuperWeaponRefused(_)
+            | Self::AresSuperWeaponMessage { .. }
+            | Self::AresTechCaptureLabel(_) => {
                 ares_message_delay_timeout_ms(rules.general.message_delay_minutes)
             }
             Self::BeaconHelp(_) => Some(BEACON_HELP_TIMEOUT_MS),
@@ -468,6 +478,34 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         if let Some((section, firer)) = names {
             post_ares_superweapon_message(state, &section, message, firer.as_deref());
         }
+        return;
+    }
+    #[cfg(feature = "ares")]
+    if let HudMessage::AresTechCaptureLabel(label) = message {
+        let Some(label) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+            runtime
+                .simulation
+                .interner()
+                .try_resolve(label)
+                .map(str::to_owned)
+        }) else {
+            return;
+        };
+        let Some(rules) = state.rules() else {
+            return;
+        };
+        let post = crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &label,
+            rgb: house_message_rgb(
+                crate::app::input::commands::preferred_local_owner_name(state).as_deref(),
+                &state.match_state.match_presentation.house_color_map,
+                Some(&rules.color_schemes),
+            ),
+            timeout_ms: message.timeout_ms(rules),
+            silent: false,
+        };
+        post_localized_message(state, &post);
         return;
     }
     let Some(key) = message.csf_key() else {

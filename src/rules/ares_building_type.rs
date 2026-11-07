@@ -122,6 +122,15 @@ pub(crate) struct BuildingTypeExtRules {
     /// `Degrade.Percentage` (`+0x1D8`, Nullable<double>): the health ratio
     /// the degrading stops at, else the RulesExt one.
     pub(crate) degrade_percentage: Option<NativeF64Bits>,
+    /// `Message.Capture` (`+0x188`, CSF label): printed for the player who
+    /// captures this tech building.
+    pub(crate) message_capture: String,
+    /// `Message.Lost` (`+0x1AC`, CSF label): printed for the player who loses
+    /// it.
+    pub(crate) message_lost: String,
+    /// `AIBaseNormal` (`+0x235`, Nullable<bool>): whether the building counts
+    /// for the AI base reservation, else the stock BaseNormal test.
+    pub(crate) ai_base_normal: Option<bool>,
 }
 
 impl Default for BuildingTypeExtRules {
@@ -145,6 +154,9 @@ impl Default for BuildingTypeExtRules {
             dock_unload_facing: 8,
             degrade_amount: None,
             degrade_percentage: None,
+            message_capture: String::new(),
+            message_lost: String::new(),
+            ai_base_normal: None,
         }
     }
 }
@@ -229,6 +241,9 @@ impl BuildingTypeExtRules {
             self.allowed_occupiers = occupiers;
         }
         self.returnable = section.read_ares_nullable_bool("Returnable", self.returnable);
+        self.message_capture =
+            section.read_ares_csf_label("Message.Capture", &self.message_capture);
+        self.message_lost = section.read_ares_csf_label("Message.Lost", &self.message_lost);
         self.degrade_amount = section.read_ares_nullable_int("Degrade.Amount", self.degrade_amount);
         self.degrade_percentage =
             section.read_ares_nullable_double_bits("Degrade.Percentage", self.degrade_percentage);
@@ -244,6 +259,7 @@ impl BuildingTypeExtRules {
         self.sell_time = section.read_ares_nullable_double_bits("SellTime", self.sell_time);
         self.engineer_repairable =
             section.read_ares_nullable_bool("EngineerRepairable", self.engineer_repairable);
+        self.ai_base_normal = section.read_ares_nullable_bool("AIBaseNormal", self.ai_base_normal);
     }
 
     /// `BuildingTypeExt::ExtData::UpdateBuildupFrames @ 1000F450`'s two
@@ -540,6 +556,53 @@ mod tests {
         rules.read_pass(ini.section("B").unwrap(), art, Default::default());
         let two = NativeF64Bits::from_bits(2.0f64.to_bits());
         assert_eq!(rules.buildup_and_sell_time(general), (half, two));
+    }
+
+    /// `Message.Capture`/`Message.Lost` keep 31 bytes of their CSF label
+    /// (`1000DD40`), and `LostEvaEvent` binds against EVAMD: the
+    /// Initialize's `EVA_TechBuildingLost` unless set, `none` silences it.
+    #[test]
+    fn capture_lines_read_labels_and_bind_the_lost_eva() {
+        let ini = IniFile::from_str(
+            "[BuildingTypes]\n0=OIL\n1=LAB\n\
+             [OIL]\nMessage.Capture=MSG:0123456789012345678901234567890123\nLostEvaEvent=none\n\
+             [LAB]\nMessage.Lost=MSG:Lost\n",
+        );
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+        let eva = crate::rules::sound_ini::EvaRegistry::from_ini(&IniFile::from_str(
+            "[DialogList]\n0=EVA_TechBuildingLost\n[EVA_TechBuildingLost]\nAllied=LOST\n",
+        ));
+        rules.bind_type_eva_references(&ini, &eva);
+        let oil = rules.object("OIL").unwrap();
+        assert_eq!(
+            oil.building_type_ext().message_capture,
+            "MSG:012345678901234567890123456"
+        );
+        assert_eq!(oil.lost_eva(), None);
+        let lab = rules.object("LAB").unwrap();
+        assert_eq!(lab.building_type_ext().message_lost, "MSG:Lost");
+        assert_eq!(lab.building_type_ext().message_capture, "");
+        assert_eq!(lab.lost_eva(), Some("EVA_TechBuildingLost"));
+    }
+
+    /// `AIBaseNormal` (`10011810`) replaces the stock BaseNormal test of
+    /// the AI base reservation both ways.
+    #[test]
+    fn ai_base_normal_overrides_the_base_reservation_gate() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[AI]\nAIBaseSpacing=3\n[VehicleTypes]\n0=MCV\n[BuildingTypes]\n0=POD\n1=PLAIN\n2=WALLS\n\
+             [POD]\nUndeploysInto=MCV\nAIBaseNormal=yes\n[PLAIN]\nAIBaseNormal=no\n\
+             [WALLS]\nUndeploysInto=MCV\n",
+        ))
+        .unwrap();
+        let spacing = |id: &str| rules.object(id).unwrap().base_reservation_spacing;
+        assert_eq!(spacing("POD"), Some(3));
+        assert_eq!(spacing("PLAIN"), None);
+        assert_eq!(
+            spacing("WALLS"),
+            None,
+            "a 1x1 UndeploysInto type is strange"
+        );
     }
 
     /// The art `DockUnloadCell` (`1000FAE0`) takes two values, and
