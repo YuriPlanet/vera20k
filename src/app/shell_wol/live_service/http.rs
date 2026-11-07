@@ -354,6 +354,40 @@ enum RequestFailure {
     },
 }
 
+/// What the shell hears when a sign-in gets no session. A 409 is the name
+/// in use (0x8004_0064, TXT_LOGIN_USED); code 0 is no usable answer.
+fn sign_in_failure(attempt: u64, failure: RequestFailure) -> Response {
+    match failure {
+        RequestFailure::Status(401 | 403) => Response::LoginFailed {
+            attempt,
+            code: 0x8004_0073,
+        },
+        RequestFailure::Status(409) => Response::LoginFailed {
+            attempt,
+            code: 0x8004_0064,
+        },
+        RequestFailure::UpgradeRequired(message) => Response::UpgradeRequired { attempt, message },
+        error @ (RequestFailure::Maintenance(_)
+        | RequestFailure::Full(_)
+        | RequestFailure::Account { .. }
+        | RequestFailure::Status(429)) => {
+            let bad_credential = matches!(
+                error,
+                RequestFailure::Account {
+                    bad_credential: true,
+                    ..
+                }
+            );
+            Response::SignInRefused {
+                attempt,
+                message: sign_in_refusal(error),
+                bad_credential,
+            }
+        }
+        _ => Response::LoginFailed { attempt, code: 0 },
+    }
+}
+
 /// What a lobby refusal of a sign-in tells the player: its own plain
 /// message when it gave one.
 fn sign_in_refusal(failure: RequestFailure) -> String {
@@ -459,12 +493,17 @@ impl RequestFailure {
     /// An answer to `path`: an `/v1/accounts/` request's refusals all
     /// carry their message, since `name_unavailable` there names an account,
     /// and so do a sign-in's wrong passwords from one network and its
-    /// accounts being unavailable.
+    /// accounts being unavailable. A sign-in's `name_unavailable` is a name
+    /// already online or reserved: the plain 409 that [`sign_in_failure`]
+    /// shows as the name in use, not a room's code.
     fn answer(path: &str, status: u16, bytes: &[u8]) -> Self {
         let value = serde_json::from_slice::<Value>(bytes).ok();
         let code = value
             .as_ref()
             .and_then(|value| value["error"]["code"].as_str());
+        if path == "/v1/sessions" && status == 409 && code == Some("name_unavailable") {
+            return Self::Status(409);
+        }
         let sign_in = path == "/v1/sessions"
             && matches!(
                 (status, code),
@@ -1128,41 +1167,8 @@ macro_rules! serial_driver {
                             break;
                         }
                     }
-                    Err(RequestFailure::Status(0)) => {
-                        let _ = output.send(Response::LoginFailed { attempt, code: 0 });
-                    }
-                    Err(RequestFailure::Status(401 | 403)) => {
-                        let _ = output.send(Response::LoginFailed {
-                            attempt,
-                            code: 0x8004_0073,
-                        });
-                    }
-                    Err(RequestFailure::Status(409)) => {
-                        let _ = output.send(Response::LoginFailed {
-                            attempt,
-                            code: 0x8004_0064,
-                        });
-                    }
-                    Err(RequestFailure::UpgradeRequired(message)) => {
-                        let _ = output.send(Response::UpgradeRequired { attempt, message });
-                    }
-                    Err(error @ (RequestFailure::Maintenance(_)
-                    | RequestFailure::Full(_)
-                    | RequestFailure::Account { .. }
-                    | RequestFailure::Status(429))) => {
-                        let bad_credential = matches!(
-                            error,
-                            RequestFailure::Account { bad_credential: true, .. }
-                        );
-                        let message = sign_in_refusal(error);
-                        let _ = output.send(Response::SignInRefused {
-                            attempt,
-                            message,
-                            bad_credential,
-                        });
-                    }
-                    Err(_) => {
-                        let _ = output.send(Response::LoginFailed { attempt, code: 0 });
+                    Err(failure) => {
+                        let _ = output.send(sign_in_failure(attempt, failure));
                     }
                 }
             }
@@ -1666,6 +1672,26 @@ mod tests {
         assert_eq!(sign_in_refusal(full), reason);
         assert!(sign_in_refusal(RequestFailure::Full(None)).contains("full"));
         assert!(sign_in_refusal(RequestFailure::Status(429)).contains("busy"));
+    }
+
+    /// A sign-in under a name that is already online or reserved (the
+    /// lobby's 409 `name_unavailable`) says the name is in use, not that the
+    /// lobby could not be reached; a room's `name_unavailable` keeps its code.
+    #[test]
+    fn a_sign_in_name_in_use_is_not_a_failed_connection() {
+        let taken = br#"{"error":{"code":"name_unavailable","message":"That player name is already in use. Choose another username."}}"#;
+        let failure = RequestFailure::answer("/v1/sessions", 409, taken);
+        assert!(matches!(
+            sign_in_failure(7, failure),
+            Response::LoginFailed {
+                attempt: 7,
+                code: 0x8004_0064
+            }
+        ));
+        assert_eq!(
+            RequestFailure::answer("/v1/commands", 409, taken).command_failure("create"),
+            CommandFailure::Rejected(crate::app::shell_wol::lobby::ROOM_NAME_TAKEN)
+        );
     }
 
     /// An account's refusals show the lobby's words; only `wrong_password`
