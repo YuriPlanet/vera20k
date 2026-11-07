@@ -106,8 +106,6 @@
 //!     House4F92D2→Building4456D0 membership pass does honor the online latch:
 //!     existing cameos may stay dark while new additions wait for release.
 //!     `0x0044017E` reads660 for Tesla charging, not construction options.
-//! - SlaveManager release with the attacker as liberator (`0x006B0AE0`):
-//!   VERA models no slave release on any master death.
 //! - `WarpPerStep` (`+0x4C`, written each step, read by no sim function) and
 //!   the `+0x2C` timer and `+0x38`/`+0x3C` fields (no writer) are not kept.
 //! - An engineer turned away from a warped building (`0x00519EF2`) is not

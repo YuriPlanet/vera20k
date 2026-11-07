@@ -1,6 +1,9 @@
 //! Base Techno GetPipFillLevel708C30, including Unit740E50's direct thunk.
-//! Building44D700 has a distinct House-storage Tiberium override; this base
-//! query does not reproduce that override. No RNG or timers; the one state
+//! Building44D700 overrides it for PipScale=Tiberium only: a Weeder reads the
+//! House's weed storage (`0x0044D71F..0x0044D754`; no retail type sets
+//! `Weeder=`) and any other building answers 0. DrawPipScalePips draws no
+//! Tiberium pips for a Building (`0x00709B4E..0x00709B68`), so this base query
+//! does not reproduce that override. No RNG or timers; the one state
 //! write is [`GameEntity::add_storage_bales`], AddAmount on the hold the
 //! Tiberium pips read.
 

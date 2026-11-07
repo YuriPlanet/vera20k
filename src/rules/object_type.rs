@@ -1454,8 +1454,9 @@ pub struct ObjectType {
     /// `TechnoType+0xD4C`, `SlaveReloadRate=`: frames a slave waits inside
     /// after paying its load. ReadInt at `0x00714E4A`; constructor 0.
     pub slave_reload_rate: i32,
-    /// Whether this infantry is a slave unit (Slaved=yes in rules.ini).
-    /// Slave units are bound to a master (Slave Miner) and have restricted AI.
+    /// `Slaved=` (TechnoType `+0xD3E`). gamemd reads the key, but no gameplay
+    /// code reads the field, natively or here: a slave's ties to its master
+    /// come from the master's `Enslaves=` and SlaveManager.
     pub slaved: bool,
     /// `Fearless=yes` on InfantryType. Suppresses fear/prone panic changes.
     pub fearless: bool,

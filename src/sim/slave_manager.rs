@@ -66,22 +66,11 @@
 //!   idle slaves and hunts.
 //!
 //! ## Residuals
-//! - FootClass::Mission_Hunt's reset when it picks a destination
-//!   (`0x004D553D..0x004D5547`) has no VERA anchor: VERA's Hunt port has no
-//!   destination step. Trigger: a Slave Miner on Hunt (an AI's failed Unload
-//!   deploy). Effect: retail resets the hunt, VERA does not. Frequency: rare.
-//!   Downstream: none.
 //! - The Slave Miner carries a Miner component (`MinerKind::Slave`) as
 //!   VERA's order marker: input issues the Harvest order for it where native
 //!   `UnitClass::What_Action` gives the Harvest action to a
 //!   ResourceGatherer/ResourceDestination type. The dispatch treats it as
 //!   the plain Unit it is natively (`techno_ai/mission_handlers.rs`).
-//! - FreeSlaves callers other than the death arm (`0x00702065`), the Temporal
-//!   erase (`0x0071AAA7`) and the destructor (`0x006F4571`): the Teleport
-//!   post-warp (`0x00718998`, `0x00718AEF`) and the Jumpjet crash
-//!   (`0x0054CEDF`) pass their own killer; VERA's destructor fallback hands
-//!   those slaves to the Civilian house instead. No stock Slave Miner warps or
-//!   flies.
 //!
 //! ## Dependency rules
 //! - Part of sim/; sim/ never depends on render/, ui/, audio/, net/.
@@ -1043,7 +1032,7 @@ impl Simulation {
     /// order that takes a Slave Miner off its hunt runs it: a MEGAMISSION
     /// other than Attack (`0x004C73E1..0x004C73EA`), the IDLE event
     /// (`0x004C769C..0x004C76AC`) and FootClass::Mission_Hunt's new
-    /// destination (`0x004D553D..0x004D5547`).
+    /// destination (`0x004D553D..0x004D5547`, `hunt_march_on_player`).
     pub(crate) fn reset_slave_manager(
         &mut self,
         master: u64,
