@@ -530,25 +530,16 @@ fn retail_garrison_deploy_key_clears_target_before_releasing_real_occupants() {
         );
         let mut actual_opcodes = Vec::new();
         for command in commands {
-            // Follow the current D producer exactly. Dedicated deploy DTOs
-            // use its Event9 encoder; a legacy unload DTO still traverses the
-            // ordinary local codec, so RED observes real authoritative state.
-            let (payload, opcode) = if let Command::DeployMcv { entity_id } = command {
-                let record = runtime
-                    .simulation
-                    .encode_deploy_record(owner, entity_id)
-                    .expect("the actual D handler's dedicated record");
-                let opcode = record.opcode();
-                (Command::SynchronizedRecord { record }, opcode)
-            } else {
-                let record = runtime
-                    .simulation
-                    .encode_megamission_record(owner, &command)
-                    .expect("current ordinary D command has a native record");
-                (command, record.opcode())
+            // The D producer's dedicated deploy DTO uses its Event9 encoder.
+            let Command::DeployMcv { entity_id } = command else {
+                panic!("the D route issues only deploy commands: {command:?}");
             };
-            actual_opcodes.push(u64::from(opcode));
-            issue(&mut runtime, payload);
+            let record = runtime
+                .simulation
+                .encode_deploy_record(owner, entity_id)
+                .expect("the actual D handler's dedicated record");
+            actual_opcodes.push(u64::from(record.opcode()));
+            issue(&mut runtime, Command::SynchronizedRecord { record });
         }
         let mut received = false;
         for _ in 0..240 {

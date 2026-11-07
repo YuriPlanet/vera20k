@@ -95,8 +95,7 @@ to distinguish retained allocation identity from a coordinate re-lookup.
 occupied stock CAHSE01: the selected Building D producer and resolved Event9
 receivers with NULL and an existing accepted Cell target. Its `.meta.json`
 records the runtime, entry points and command and points here for this
-human-readable evidence sidecar. Original `gamemd.exe` SHA256:
-`3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`.
+human-readable evidence sidecar.
 
 Prepare the existing
 [`building_death_anims` joined/garrison input directory](building_death_anims_joined.md),
