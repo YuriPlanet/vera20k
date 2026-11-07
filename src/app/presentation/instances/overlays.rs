@@ -288,6 +288,16 @@ fn anim_draw_point(
     // image offsets or the parent Building's viewport/body visibility.
     let anim_coord = sim.anim_absolute_coord(id)?;
     let (mut center_x, mut center_y, rx, ry, _, mut lift_px) = anim_world_render_coords(anim_coord);
+    if let Some(building) = anim
+        .building_slot()
+        .and_then(|(id, _)| sim.entities().get(id))
+    {
+        let correction = crate::render::locomotor_visual::building_terrain_correction(i32::from(
+            building.position.z() as i8,
+        ));
+        center_y -= correction as f32;
+        lift_px += correction;
+    }
     let mut drawn_coord = [anim_coord.x, anim_coord.y, anim_coord.z];
     // Slot preparation uses the committed coordinate; retain that geometry.
     // Free Anims keep their existing sampled point for admission and drawing.
