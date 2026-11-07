@@ -1083,14 +1083,15 @@ pub enum SimSoundEvent {
         sw_type: InternedId,
     },
     /// Common Ares Launch10033201..10033242: Ready queue cleanup after FX.
-    /// Every client also prints the type's Message.Launch (10033153).
-    /// `sw_type` is the type whose SWTypeExt the Launch read (a PostClick
-    /// Super's source); a handler whose Flags hold both NoMessage and
-    /// NoCleanup sends none.
+    /// With `message`, every client also prints the type's Message.Launch
+    /// (10033153), which a handler's NoMessage Flag skips. `sw_type` is the
+    /// type whose SWTypeExt the Launch read (a PostClick Super's source); a
+    /// handler whose Flags hold both NoMessage and NoCleanup sends none.
     #[cfg(feature = "ares")]
     AresSuperWeaponFinished {
         owner: InternedId,
         sw_type: InternedId,
+        message: bool,
     },
     /// Common Ares Launch10032FC3: every client plays `sw_type`'s
     /// `EVA_Activated` (the PostClick source's for a PostClick Super),
@@ -1121,9 +1122,18 @@ pub enum SimSoundEvent {
         sw_type: InternedId,
     },
     /// A new type's deferred activation (UnitDelivery's state machine
-    /// Update10075DE0): every client prints Message.Activate.
+    /// Update10075DE0, the Ares Lightning Storm's start 10036B00): every
+    /// client prints Message.Activate.
     #[cfg(feature = "ares")]
     AresSuperWeaponActivated {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
+    /// An Ares Lightning Storm's countdown reached a multiple of 225 under
+    /// `Lightning.PrintText` (hook 53A6CF, 10037330): every client prints
+    /// the type's Message.Launch, with no EVA line.
+    #[cfg(feature = "ares")]
+    AresLightningStormApproaching {
         owner: InternedId,
         sw_type: InternedId,
     },
@@ -5524,6 +5534,8 @@ impl Simulation {
                     .push((stable_id, inviso, projectile));
             }
             if inviso {
+                #[cfg(feature = "ares")]
+                let placement = self.ares_inviso_obstacle(stable_id, placement, rules);
                 self.projectiles.fire_inviso(stable_id, placement, false);
             }
         }

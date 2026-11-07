@@ -2994,9 +2994,8 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                     sim.resolved_terrain().unwrap(),
                     Some(sim.house_alliances()),
                     &LineOfFireInputs {
-                        overlay_grid: None,
-                        overlay_registry: None,
-                        alliances: Some(sim.house_alliances())
+                        alliances: Some(sim.house_alliances()),
+                        ..Default::default()
                     }
                 ),
                 expected

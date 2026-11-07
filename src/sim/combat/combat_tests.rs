@@ -6373,9 +6373,8 @@ fn gsi_08_01_a_shared_cell_offers_only_its_list_head() {
         crate::sim::combat::ScanMission::Guard,
         None,
         crate::sim::combat::line_of_fire::LineOfFireInputs {
-            overlay_grid: None,
-            overlay_registry: None,
             alliances: Some(&HouseAlliances::default()),
+            ..Default::default()
         },
         None,
         None,
@@ -6420,9 +6419,8 @@ fn mapless_guard_pick(shell: &str) -> Option<u64> {
         crate::sim::combat::ScanMission::Guard,
         None,
         crate::sim::combat::line_of_fire::LineOfFireInputs {
-            overlay_grid: None,
-            overlay_registry: None,
             alliances: Some(&HouseAlliances::default()),
+            ..Default::default()
         },
         None,
         None,
@@ -6466,9 +6464,8 @@ fn ares_guarding_pick(art: &str, target: &str) -> Option<u64> {
         crate::sim::combat::ScanMission::Guard,
         None,
         crate::sim::combat::line_of_fire::LineOfFireInputs {
-            overlay_grid: None,
-            overlay_registry: None,
             alliances: Some(&HouseAlliances::default()),
+            ..Default::default()
         },
         None,
         None,
@@ -6528,9 +6525,8 @@ fn gsi_08_01_unarmed_building_loses_to_a_tank_at_equal_distance() {
         crate::sim::combat::ScanMission::Guard,
         None,
         crate::sim::combat::line_of_fire::LineOfFireInputs {
-            overlay_grid: None,
-            overlay_registry: None,
             alliances: Some(&HouseAlliances::default()),
+            ..Default::default()
         },
         None,
         None,
@@ -7120,11 +7116,7 @@ fn an_illegal_shot_is_still_in_range() {
         &target,
         sim.resolved_terrain.as_ref().unwrap(),
         None,
-        &crate::sim::combat::line_of_fire::LineOfFireInputs {
-            overlay_grid: None,
-            overlay_registry: None,
-            alliances: None,
-        },
+        &crate::sim::combat::line_of_fire::LineOfFireInputs::default(),
     ));
     let range = selected_weapon_range(
         tank,

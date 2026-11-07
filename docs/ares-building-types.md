@@ -47,7 +47,7 @@ EngineerAlwaysCaptureTech=yes
   rules registry), the rubble foundation check of `CompleteInitialization`
   (`1000D380`) and the RulesExt engineer keys (`LoadAfterTypeData
   1002A800`). `SubjectToTrenches=` is read with the projectile
-  (`rules/projectile_type.rs`, BulletTypeExt `100193C0`).
+  (`rules/ares_bullet_type.rs`, BulletTypeExt `100193C0`).
 - `sim/ares_rubble.rs`: `SwitchRubble` (`1000F2B0`), the destruction hooks
   (`10017160` at `0x441F12` before SpawnSurvivors, `10017130` and
   `KickOutOfRubble 10012970` at `0x441F2C` after KillPassengers, both from
@@ -86,9 +86,8 @@ EngineerAlwaysCaptureTech=yes
 - The occupant's TechnoExt `GarrisonedIn` (only Ares trenches read it) and
   the `Assaulter=` arms the original admission already leaves out.
 - `SolidHeight`, `SolidLevel`, `SubjectToBuildings` and
-  `AlliedSolidTransparency`: Ares replaces the line-of-fire walk
-  (`0x4CC100`, `0x4CC310`, `0x4CC360`) and the bullet obstacle hooks
-  wholesale, which `combat::line_of_fire` does not follow yet.
+  `AlliedSolidTransparency` belong to the
+  [line-of-fire chain](ares-line-of-fire.md).
 - The sale, capture, degrade and power keys: part 2 below.
 
 ## Part 2: sale, return, capture, power and AI keys

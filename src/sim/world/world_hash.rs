@@ -977,6 +977,10 @@ impl Simulation {
             projectile.collision().elasticity_bits.hash(hasher);
             projectile.on_bridge().hash(hasher);
             projectile.collision().arcing.hash(hasher);
+            #[cfg(feature = "ares")]
+            if projectile.collision().subject_to_solid {
+                b"ares-bullet-subject-to-solid-v1".hash(hasher);
+            }
             if let Some(house) = projectile.firer_house() {
                 b"bullet-firer-scheme-v1".hash(hasher);
                 house.index().hash(hasher);

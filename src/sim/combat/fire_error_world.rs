@@ -666,6 +666,8 @@ impl FireQuery for WorldQuery<'_, '_> {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
                         overlay_registry: subject.overlay_registry,
                         alliances: subject.fog.map(|fog| fog.alliances),
+                        #[cfg(feature = "ares")]
+                        buildings: Some(line_of_fire::CellBuildings::of(subject.world)),
                     },
                     Some(&subject.world.substrate.entities),
                 )
@@ -693,6 +695,8 @@ impl FireQuery for WorldQuery<'_, '_> {
                         overlay_grid: subject.world.overlay_grid.as_ref(),
                         overlay_registry: subject.overlay_registry,
                         alliances: subject.fog.map(|fog| fog.alliances),
+                        #[cfg(feature = "ares")]
+                        buildings: Some(line_of_fire::CellBuildings::of(subject.world)),
                     },
                 )
             }),

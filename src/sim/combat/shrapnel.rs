@@ -230,6 +230,8 @@ pub(super) fn emit_projectile_shrapnel(
                 gravity: child_projectile.gravity(),
                 elasticity_bits: child_projectile.elasticity.to_bits(),
                 arcing: child_projectile.arcing,
+                #[cfg(feature = "ares")]
+                subject_to_solid: child_projectile.bullet_type_ext.subject_to_solid,
             },
         };
         world.admit_projectile_spawns([spawn], rules);

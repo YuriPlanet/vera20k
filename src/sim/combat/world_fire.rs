@@ -1692,9 +1692,20 @@ pub(super) fn emit_admitted_fire(
                         )
                     },
                 );
+                let bounds = crate::sim::projectile::launch::fireat_scatter_bounds(
+                    flak,
+                    rules.combat_damage.ballistic_scatter,
+                );
+                // Ares TechnoClass_Fire_BallisticScatter1/2 (10019930 at
+                // 0x6FE709, 10019980 at 0x6FE7FE).
+                #[cfg(feature = "ares")]
+                let bounds = projectile_type.map_or(bounds, |kind| {
+                    kind.bullet_type_ext
+                        .launch_scatter_bounds(flak, rules.combat_damage.ballistic_scatter)
+                });
                 crate::sim::projectile::launch::fireat_launch_scatter(
                     delta,
-                    rules.combat_damage.ballistic_scatter,
+                    bounds,
                     range,
                     flak,
                     &mut world.scenario_rng,

@@ -465,7 +465,16 @@ impl ProjectileCollisionWorld<'_> {
 
     fn shared(&self, projectile: &Projectile, candidate: ProjectileCoord) -> bool {
         let cell = self.cell(candidate);
-        if (projectile.collision().subject_to_cliffs || projectile.collision().subject_to_walls)
+        // Ares BulletClass_ShouldDetonate_Obstacle 1001AB10 (hook 0x468BE2)
+        // adds SubjectToBuildings to the gate and passes the bullet's owner
+        // and target to GetObstacle 1006E540.
+        #[cfg(feature = "ares")]
+        let solid = projectile.collision().subject_to_solid;
+        #[cfg(not(feature = "ares"))]
+        let solid = false;
+        if (projectile.collision().subject_to_cliffs
+            || projectile.collision().subject_to_walls
+            || solid)
             && self.cliff_wall(projectile, candidate)
         {
             return true;
@@ -547,7 +556,8 @@ impl ProjectileCollisionWorld<'_> {
 
     fn cliff_wall(&self, projectile: &Projectile, candidate: ProjectileCoord) -> bool {
         use crate::sim::combat::line_of_fire::{
-            CellObstructionProbe, LineOfFireInputs, cell_blocks_line_of_fire,
+            CellObstructionProbe, LineOfFireInputs, LineOfFireParties, LineOfFireShot,
+            cell_blocks_line_of_fire,
         };
         // Shared468BB0 resolves the three retained inputs before4CC360.
         // Source/target use565730; previous and sampled queries use5657A0.
@@ -572,7 +582,13 @@ impl ProjectileCollisionWorld<'_> {
             overlay_grid: self.overlays,
             overlay_registry: self.overlay_registry,
             alliances: Some(self.alliances),
+            #[cfg(feature = "ares")]
+            buildings: Some(crate::sim::combat::line_of_fire::CellBuildings {
+                occupancy: self.occupancy,
+                entities: self.entities,
+            }),
         };
+        let owner = self.entities.get(projectile.source_id());
         cell_blocks_line_of_fire(
             CellObstructionProbe {
                 source,
@@ -583,15 +599,26 @@ impl ProjectileCollisionWorld<'_> {
                     y: candidate.y,
                     z: candidate.z,
                 },
-                subject_to_cliffs: projectile.collision().subject_to_cliffs,
-                subject_to_walls: projectile.collision().subject_to_walls,
-                firing_house: self
-                    .entities
-                    .get(projectile.source_id())
-                    .map(|source| source.owner()),
+                shot: LineOfFireShot {
+                    subject_to_cliffs: projectile.collision().subject_to_cliffs,
+                    subject_to_walls: projectile.collision().subject_to_walls,
+                    #[cfg(feature = "ares")]
+                    subject_to_solid: projectile.collision().subject_to_solid,
+                    parties: LineOfFireParties {
+                        firing_house: owner.map(|source| source.owner()),
+                        // The bullet's Owner (+0xB0) and Target (+0x10C).
+                        #[cfg(feature = "ares")]
+                        source_object: owner.map(|source| source.stable_id()),
+                        #[cfg(feature = "ares")]
+                        target_object: match projectile.target() {
+                            ProjectileTarget::Entity(id) => Some(id),
+                            _ => None,
+                        },
+                    },
+                },
             },
             self.interner,
-            self.rules.allied_wall_transparency,
+            self.rules,
             &los,
             |(x, y)| {
                 self.packed_cell(ProjectileCoord::new(
@@ -1136,6 +1163,12 @@ mod tests {
         }
     }
 
+    /// The original 468BB0/4CC360 bodies. Ares replaces the obstacle probe
+    /// (GetObstacle 1006E540: no geometry tail, the bridge bit 0x100 instead
+    /// of 4CC360's anchor bit 0x80); its own tests are
+    /// `ares_shared_probe_stops_at_a_solid_building_except_its_target` here
+    /// and `line_of_fire::tests::ares_cliff_counts_the_bridge_bit`.
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn shared_probe_matches_original_bodies_and_receivers() {
         use crate::rules::ini_parser::IniFile;
@@ -1307,6 +1340,104 @@ mod tests {
                 "dummy query order row {index}: {row}"
             );
         }
+    }
+
+    /// A flat 8x8 map with building 2 (`SolidHeight=1`) on cell (4, 2), and
+    /// the `SubjectToBuildings=` projectile `PROBE`.
+    #[cfg(feature = "ares")]
+    fn solid_building_scene() -> (Simulation, RuleSet) {
+        use crate::rules::ini_parser::IniFile;
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[BuildingTypes]\n0=BLDG\n[BLDG]\nName=Bldg\n\
+                 [VehicleTypes]\n0=TANK\n[TANK]\nPrimary=GUN\n\
+                 [GUN]\nDamage=1\nRange=8\nProjectile=PROBE\nWarhead=WH\n\
+                 [PROBE]\nInviso=yes\nSubjectToBuildings=yes\n[WH]\nVerses=100%\n",
+            ),
+            &IniFile::from_str("[BLDG]\nSolidHeight=1\n"),
+        )
+        .unwrap();
+        let mut sim = Simulation::new();
+        install_common_raw_terrain(&mut sim, 8, 8, 0, None);
+        place(
+            &mut sim,
+            2,
+            ProjectileCoord::new(4 * 256 + 128, 2 * 256 + 128, 0),
+            EntityCategory::Structure,
+        );
+        let type_ref = sim.interner.intern("BLDG");
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .set_type_ref_for_test(type_ref);
+        sim.substrate.occupancy.add(
+            4,
+            2,
+            2,
+            MovementLayer::Ground,
+            None,
+            CellListInsertion::AppendBuilding,
+        );
+        (sim, rules)
+    }
+
+    /// Ares `BulletClass_ShouldDetonate_Obstacle 1001AB10` (hook 0x468BE2):
+    /// a `SubjectToBuildings=` bullet detonates in a cell whose building's
+    /// `SolidHeight=` reaches it (`GetObstacle 1006E540`), but not over its
+    /// own target building, nor above that height.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_shared_probe_stops_at_a_solid_building_except_its_target() {
+        let (sim, rules) = solid_building_scene();
+        let detonates = |target, z| {
+            let mut spawn = gsi_05_02_projectile(1, None);
+            spawn.origin = ProjectileCoord::new(128, 2 * 256 + 128, 0);
+            spawn.initial_target_position = ProjectileCoord::new(7 * 256 + 128, 2 * 256 + 128, 0);
+            spawn.target = target;
+            spawn.collision.subject_to_solid = true;
+            let mut projectiles = crate::sim::projectile::ProjectileStore::default();
+            projectiles.spawn(100, spawn);
+            let mut projectile = projectiles.get(100).unwrap().clone();
+            let candidate = ProjectileCoord::new(4 * 256 + 128, 2 * 256 + 128, z);
+            projectile.set_position_for_test(candidate);
+            projectile.set_previous_cell_for_test((3, 2));
+            let mut world = world(&sim);
+            world.rules = &rules;
+            world.shared(&projectile, candidate)
+        };
+        let cell = ProjectileTarget::Cell { rx: 7, ry: 2 };
+        assert!(detonates(cell, 256), "SolidHeight=1 reaches 256 leptons");
+        assert!(!detonates(cell, 257), "the bullet passes over it");
+        assert!(!detonates(ProjectileTarget::Entity(2), 0), "its own target");
+    }
+
+    /// Ares `BulletClass_SetMovement_Obstacle 1001A940` (hook 0x4688BD): an
+    /// Inviso bullet stands on the first obstacle between its launch and its
+    /// placement, at that cell's vt+0x48 (`FindFirstObstacle 1006E2B0`).
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_inviso_bullet_stands_on_the_first_solid_building() {
+        let (mut sim, rules) = solid_building_scene();
+        let placement = ProjectileCoord::new(7 * 256 + 128, 2 * 256 + 128, 0);
+        let mut admit = |id, projectile_type: &str| {
+            let mut spawn = gsi_05_02_projectile(1, None);
+            spawn.origin = ProjectileCoord::new(128, 2 * 256 + 128, 0);
+            spawn.payload = crate::sim::projectile::ProjectilePayload::new(
+                1,
+                sim.interner.intern("WH"),
+                Some(sim.interner.intern(projectile_type)),
+                false,
+            );
+            sim.admit_projectile(id, spawn);
+        };
+        admit(100, "PROBE");
+        admit(101, "NONE");
+        assert_eq!(
+            sim.ares_inviso_obstacle(100, placement, &rules),
+            ProjectileCoord::new(4 * 256 + 128, 2 * 256 + 128, 0)
+        );
+        assert_eq!(sim.ares_inviso_obstacle(101, placement, &rules), placement);
     }
 
     #[test]

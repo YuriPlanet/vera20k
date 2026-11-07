@@ -1299,6 +1299,8 @@ impl SpawnHost for WorldSpawn<'_, '_> {
                 overlay_grid: sim.overlay_grid.as_ref(),
                 overlay_registry: self.context.registry(),
                 alliances: Some(&sim.house_alliances),
+                #[cfg(feature = "ares")]
+                buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(sim)),
             },
         )
     }

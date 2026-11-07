@@ -558,6 +558,7 @@ pub(crate) fn compute_range_target(
         // `Arcing=true` AND `SubjectToWalls=yes`/`SubjectToCliffs=yes`.
         return line_of_fire_clear(
             attacker,
+            target,
             src,
             (tx, ty, tz),
             weapon,
@@ -584,6 +585,7 @@ pub(crate) fn compute_range_target(
     // means a blocking cell is a refusal, not a warning.
     line_of_fire_clear(
         attacker,
+        target,
         src,
         (tx, ty, tz),
         weapon,
@@ -596,9 +598,12 @@ pub(crate) fn compute_range_target(
 
 /// `CALL 0x004CC310` at 0x006F7642 with `InRange`'s own source and target
 /// coordinates, the weapon from `[EBP+0x10]`, and the firer's house from
-/// `this->+0x21C` (loaded at 0x006F7631 / 0x006F7511).
+/// `this->+0x21C` (loaded at 0x006F7631 / 0x006F7511). Ares replaces the
+/// call at those two loads (`TechnoClass_IsCloseEnoughToTarget_Obstacle
+/// 1004D120`) and also passes the firer and the target `[EBP+0xC]`.
 fn line_of_fire_clear(
     attacker: &GameEntity,
+    target: RangeTarget<'_>,
     src: (i64, i64, i64),
     target_xyz: (i64, i64, i64),
     weapon: &WeaponType,
@@ -607,11 +612,22 @@ fn line_of_fire_clear(
     cells: &NativeCellQuery<'_>,
     los: &LineOfFireInputs<'_>,
 ) -> bool {
+    #[cfg(not(feature = "ares"))]
+    let _ = target;
     line_of_fire::line_of_fire_blocking_cell(
         src,
         target_xyz,
         weapon,
-        Some(attacker.owner()),
+        line_of_fire::LineOfFireParties {
+            firing_house: Some(attacker.owner()),
+            #[cfg(feature = "ares")]
+            source_object: Some(attacker.stable_id()),
+            #[cfg(feature = "ares")]
+            target_object: match target {
+                RangeTarget::Techno(target) => Some(target.stable_id()),
+                _ => None,
+            },
+        },
         rules,
         cells,
         interner,
@@ -957,6 +973,8 @@ impl crate::sim::world::Simulation {
                     overlay_grid: self.overlay_grid.as_ref(),
                     overlay_registry: registry,
                     alliances: Some(&self.house_alliances),
+                    #[cfg(feature = "ares")]
+                    buildings: Some(line_of_fire::CellBuildings::of(self)),
                 },
             )
         })
@@ -2583,6 +2601,76 @@ mod tests {
             ),
             "the arcing arm must run the walk (0x006F7519 -> 0x006F763C)"
         );
+    }
+
+    /// Ares InRange hooks 0x6F7511/0x6F7631 (`1004D120`) hand the firer and
+    /// its target to `FindFirstImpenetrableObstacle 1006E1F0`: a solid
+    /// building refuses a `SubjectToBuildings=` shot past it, while its own
+    /// cells never block a shot at it.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_a_solid_building_refuses_shots_past_it_but_not_at_it() {
+        use crate::sim::movement::locomotor::MovementLayer;
+        use crate::sim::occupancy::CellListInsertion;
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[VehicleTypes]\n0=ATKR\n1=TGT\n[BuildingTypes]\n0=BLDG\n\
+                 [ATKR]\nPrimary=GUN\n[TGT]\nStrength=300\n[BLDG]\nStrength=300\n\
+                 [GUN]\nDamage=1\nROF=20\nRange=8\nWarhead=WH\nProjectile=SHOT\n\
+                 [SHOT]\nSubjectToBuildings=yes\n[WH]\nVerses=100%\n",
+            ),
+            &IniFile::from_str("[BLDG]\nSolidHeight=2\n"),
+        )
+        .unwrap();
+        let weapon = rules.weapon("GUN").expect("weapon");
+        let attacker = ground_attacker(2, 2, 0, "ATKR");
+        let mut world = Simulation::new();
+        world
+            .substrate
+            .entities
+            .insert(ground_target(6, 2, 0, "TGT"));
+        world
+            .substrate
+            .entities
+            .insert(GameEntity::test_default_of_category(
+                300,
+                "BLDG",
+                "Defenders",
+                4,
+                2,
+                EntityCategory::Structure,
+            ));
+        // Its cells: the shot at it samples (3, 2) before reaching (4, 2).
+        for rx in [3, 4] {
+            world.substrate.occupancy.add(
+                rx,
+                2,
+                300,
+                MovementLayer::Ground,
+                None,
+                CellListInsertion::AppendBuilding,
+            );
+        }
+        let interner = test_interner();
+        let terrain = flat_terrain(16, 16);
+        let in_range = |target| {
+            compute_in_range(
+                &attacker,
+                src_at_cell(2, 2, 0),
+                &TargetKind::Entity(target),
+                weapon,
+                &rules,
+                &interner,
+                &world,
+                &terrain,
+                &LineOfFireInputs {
+                    buildings: Some(line_of_fire::CellBuildings::of(&world)),
+                    ..Default::default()
+                },
+            )
+        };
+        assert!(!in_range(200), "the building between them refuses the shot");
+        assert!(in_range(300), "a shot at the building itself");
     }
 
     /// The `-512` always-in-range sentinel is tested first (0x006F724E,

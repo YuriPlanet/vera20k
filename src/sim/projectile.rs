@@ -382,6 +382,11 @@ pub struct ProjectileCollisionPolicy {
     /// (`0x00468ECF`) skips the detector-reference arm for it.
     #[serde(default)]
     pub arcing: bool,
+    /// Ares BulletTypeExt `SubjectToBuildings` (`+0x8`): the shared probe's
+    /// GetObstacle also stops at a solid building (`0x468BE2`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub subject_to_solid: bool,
 }
 
 impl ProjectileCollisionPolicy {
@@ -401,6 +406,8 @@ impl ProjectileCollisionPolicy {
         gravity: None,
         elasticity_bits: 0x3fe8_0000_0000_0000,
         arcing: false,
+        #[cfg(feature = "ares")]
+        subject_to_solid: false,
     };
 
     /// `0x468D80`'s airburst gate, with the pre-feature fallback.
@@ -4222,7 +4229,7 @@ mod tests {
 
         let scattered = launch::fireat_launch_scatter(
             ProjectileCoord::new(1024, 0, 77),
-            256,
+            launch::fireat_scatter_bounds(false, 256),
             1280,
             false,
             &mut rng,
@@ -4245,7 +4252,7 @@ mod tests {
         let _ = flak_reference.next_range_u32_inclusive(0, 0x7fff_fffe);
         let flak = launch::fireat_launch_scatter(
             ProjectileCoord::new(1280, 0, 0),
-            256,
+            launch::fireat_scatter_bounds(true, 256),
             1280,
             true,
             &mut flak_rng,

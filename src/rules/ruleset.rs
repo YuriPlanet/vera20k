@@ -2052,6 +2052,19 @@ pub struct GeneralRules {
     /// that serviced a contact (`0x0044C92F`).
     pub reload_rate: f64,
 
+    // -- Tiberium heal and transmogrify (read by gamemd, consumed by Ares) --
+    /// `[General] TiberiumHeal=` (`RulesClass::TiberiumHeal`), minutes:
+    /// constructor 1/60 (`0x3F91111111111111`), ReadDouble over the current
+    /// value at `0x0066E6D2`. Ares' Foot heal (`10014BA0`) is its consumer.
+    #[cfg(feature = "ares")]
+    pub tiberium_heal_minutes: f64,
+    /// `[General] TiberiumTransmogrify=` (`Rules+0x1688`), ReadInt over the
+    /// current value at `0x00670F62`. gamemd's constructor leaves it unset;
+    /// Ares 1002C990 (hook `0x66748A`) zeroes it. The visceroid chance of
+    /// Ares' tiberium damage (`10049280`).
+    #[cfg(feature = "ares")]
+    pub tiberium_transmogrify: i32,
+
     // -- Movement delay timers --
     /// Retained [AI] PathDelay double, in minutes (Rules+1760).
     /// Convert at the timer producer with the native PC53 multiply/ftol.
@@ -2992,6 +3005,10 @@ impl Default for GeneralRules {
             prone_speed_no_crawls: 1.5,
             // RulesClass constructor 0x0066738F.
             reload_rate: 0.05,
+            #[cfg(feature = "ares")]
+            tiberium_heal_minutes: f64::from_bits(0x3F91_1111_1111_1111),
+            #[cfg(feature = "ares")]
+            tiberium_transmogrify: 0,
             // PathDelay=.01 min = 0.6 sec = 9 ticks at 15 Hz.
             path_delay: 0.016,
             // BlockagePathDelay=60 frames (directly in frames, not minutes).
@@ -4312,6 +4329,12 @@ impl GeneralRules {
             infantry_repair_step: defaults.infantry_repair_step,
             infantry_repair_rate: defaults.infantry_repair_rate,
             reload_rate: general.read_double("ReloadRate", defaults.reload_rate),
+            #[cfg(feature = "ares")]
+            tiberium_heal_minutes: general
+                .read_double("TiberiumHeal", defaults.tiberium_heal_minutes),
+            #[cfg(feature = "ares")]
+            tiberium_transmogrify: general
+                .read_int("TiberiumTransmogrify", defaults.tiberium_transmogrify),
             path_delay,
             blockage_path_delay_ticks,
             // ReadGeneral670235..670267 uses the same475D70 signed vector
@@ -5051,6 +5074,15 @@ impl RuleSet {
     #[cfg(feature = "ares")]
     pub(crate) fn ares_warhead_globals(&self) -> &crate::rules::ares_warhead::WarheadGlobalRules {
         self.ares_global_controls.warhead()
+    }
+
+    /// RulesExt TiberiumDamageEnabled, TiberiumHealEnabled, the explosive
+    /// warhead and anim, and OverlayExplodeThreshold.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_tiberium_globals(
+        &self,
+    ) -> &crate::rules::ares_tiberium::TiberiumGlobalRules {
+        self.ares_global_controls.tiberium()
     }
 
     /// Ares RulesExt+70, used by SW_HunterSeeker::Activate100728EB.
@@ -8856,18 +8888,21 @@ impl RuleSet {
             b"airburst-retained-flag-v1".hash(&mut hasher);
             airburst_flags.hash(&mut hasher);
         }
-        // Ares BulletTypeExt SubjectToTrenches=no decides garrison hits.
+        // Ares BulletTypeExt keys: solidity, trenches and launch scatter.
         #[cfg(feature = "ares")]
         {
-            let trench_immune = self
+            let bullet_type_ext = self
                 .projectiles
                 .iter()
-                .filter(|(_, projectile)| !projectile.ares_subject_to_trenches)
-                .map(|(id, _)| id.to_ascii_uppercase())
-                .collect::<std::collections::BTreeSet<_>>();
-            if !trench_immune.is_empty() {
-                b"ares-subject-to-trenches-v1".hash(&mut hasher);
-                trench_immune.hash(&mut hasher);
+                .filter(|(_, projectile)| {
+                    projectile.bullet_type_ext
+                        != crate::rules::ares_bullet_type::BulletTypeExtRules::default()
+                })
+                .map(|(id, projectile)| (id.to_ascii_uppercase(), &projectile.bullet_type_ext))
+                .collect::<std::collections::BTreeMap<_, _>>();
+            if !bullet_type_ext.is_empty() {
+                b"ares-bullet-type-ext-v1".hash(&mut hasher);
+                bullet_type_ext.hash(&mut hasher);
             }
         }
         // Phobos airburst/splits inputs. Defaults leave the stock hash
@@ -9084,6 +9119,34 @@ impl RuleSet {
                 tiberium.debris(),
             )
                 .hash(&mut hasher);
+        }
+        // Ares TiberiumExt and the TechnoTypeExt tiberium/harvester keys keep
+        // retained reads. Defaults leave the stock hash unchanged.
+        #[cfg(feature = "ares")]
+        {
+            let tiberium_ext = self
+                .tiberium_types
+                .types()
+                .iter()
+                .filter(|tiberium| tiberium.ares() != &Default::default())
+                .map(|tiberium| (&tiberium.section, tiberium.ares()))
+                .collect::<Vec<_>>();
+            let techno_tiberium = self
+                .object_list
+                .iter()
+                .filter(|object| object.techno_combat().tiberium() != &Default::default())
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.techno_combat().tiberium(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !tiberium_ext.is_empty() || !techno_tiberium.is_empty() {
+                b"ares-tiberium-rules-v1".hash(&mut hasher);
+                tiberium_ext.hash(&mut hasher);
+                techno_tiberium.hash(&mut hasher);
+            }
         }
         self.general.barrel_explode.hash(&mut hasher);
         self.general.barrel_debris.hash(&mut hasher);

@@ -3338,7 +3338,16 @@ fn continue_area_damage(
         z: context.impact.z,
     };
     let position = glam::IVec3::new(coord.x, coord.y, coord.z);
+    // Ares 3.0 1002C8E0 (hook 0x48A2D9): an Explodes= overlay also needs the
+    // call's damage at or above [General] OverlayExplodeThreshold.
+    #[cfg(feature = "ares")]
+    let threshold_met = rules
+        .ares_tiberium_globals()
+        .overlay_explodes(context.damage);
+    #[cfg(not(feature = "ares"))]
+    let threshold_met = true;
     if let (Some(cell), Some(registry)) = (cell, overlay_registry)
+        && threshold_met
         && world.remove_exploding_overlay(cell, rules, registry, run.effects())
     {
         //48A34D: loop1/600h/z0/delay0 at the unchanged impact. The shared
@@ -3526,7 +3535,7 @@ fn ares_damage_occupants(
         .payload
         .projectile_type()
         .and_then(|id| rules.projectile(world.interner.resolve(id)))
-        .is_none_or(|projectile| projectile.ares_subject_to_trenches);
+        .is_none_or(|projectile| projectile.bullet_type_ext.subject_to_trenches);
     if subject_to_trenches && world.scenario_rng.random_double() >= pass_through {
         return false;
     }

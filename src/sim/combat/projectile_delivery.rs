@@ -155,6 +155,8 @@ fn classify_projectile_type(
             gravity: projectile.gravity(),
             elasticity_bits: projectile.elasticity.to_bits(),
             arcing: projectile.arcing,
+            #[cfg(feature = "ares")]
+            subject_to_solid: projectile.bullet_type_ext.subject_to_solid,
         },
         ballistic,
         vertical: projectile
@@ -406,9 +408,79 @@ pub(crate) fn admit_fired_bullet(
             bullet.origin,
             bullet.target_position,
         );
+        #[cfg(feature = "ares")]
+        let placement = world.ares_inviso_obstacle(bullet_id, placement, rules);
         world
             .projectiles
             .fire_inviso(bullet_id, placement, on_bridge);
+    }
+}
+
+impl Simulation {
+    /// Ares `BulletClass_SetMovement_Obstacle @ 1001A940` (hook `0x4688BD`),
+    /// `BulletClass::Fire`'s Inviso arm: the bullet stands on the first
+    /// obstacle between the coordinate Fire was given (its Unlimbo location)
+    /// and `placement`, at that cell's GetCoords (vt+0x48), else on
+    /// `placement` (`FindFirstObstacle 1006E2B0`, with the bullet's Owner
+    /// and Target as GetObstacle's pSource/pTarget). Fire's original walk
+    /// result is overwritten (`0x0046897D`), so default builds stand it on
+    /// `placement` even through a wall.
+    ///
+    /// RESIDUAL: the hook's `MapClass::FindFirstFirestorm` arm, which
+    /// immolates the bullet at an active Ares firestorm wall; VERA has no
+    /// active firestorm wall.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_inviso_obstacle(
+        &self,
+        bullet_id: u64,
+        placement: ProjectileCoord,
+        rules: &RuleSet,
+    ) -> ProjectileCoord {
+        use crate::sim::combat::line_of_fire::{
+            CellBuildings, LineOfFireInputs, LineOfFireParties, LineOfFireShot,
+            walk_line_for_blocking_cell,
+        };
+        let (Some(bullet), Some(terrain)) = (
+            self.projectiles.get(bullet_id),
+            self.resolved_terrain.as_ref(),
+        ) else {
+            return placement;
+        };
+        let projectile_type = bullet
+            .payload()
+            .projectile_type()
+            .and_then(|id| rules.projectile(self.interner.resolve(id)));
+        let owner = self.substrate.entities.get(bullet.source_id());
+        let point =
+            |coord: ProjectileCoord| (i64::from(coord.x), i64::from(coord.y), i64::from(coord.z));
+        walk_line_for_blocking_cell(
+            point(bullet.position()),
+            point(placement),
+            LineOfFireShot::of(
+                projectile_type,
+                LineOfFireParties {
+                    firing_house: owner.map(|owner| owner.owner()),
+                    source_object: owner.map(|owner| owner.stable_id()),
+                    target_object: match bullet.target() {
+                        crate::sim::projectile::ProjectileTarget::Entity(id) => Some(id),
+                        _ => None,
+                    },
+                },
+            ),
+            rules,
+            &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+            &self.interner,
+            &LineOfFireInputs {
+                overlay_grid: self.overlay_grid.as_ref(),
+                overlay_registry: Some(rules.overlay_registry()),
+                alliances: Some(&self.house_alliances),
+                buildings: Some(CellBuildings::of(self)),
+            },
+        )
+        .map_or(placement, |cell| {
+            let coord = cell.get_coords();
+            ProjectileCoord::new(coord.x, coord.y, coord.z)
+        })
     }
 }
 

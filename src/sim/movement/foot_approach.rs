@@ -540,6 +540,8 @@ impl Simulation {
             overlay_grid: self.overlay_grid.as_ref(),
             overlay_registry: registry,
             alliances: Some(&self.house_alliances),
+            #[cfg(feature = "ares")]
+            buildings: Some(combat::line_of_fire::CellBuildings::of(self)),
         };
         let can_fire = match (weapon, identity) {
             //0x006F7242: In_Range answers false ahead of any map query when
@@ -1140,6 +1142,8 @@ impl Simulation {
                     overlay_grid: self.overlay_grid.as_ref(),
                     overlay_registry: registry,
                     alliances: Some(&self.house_alliances),
+                    #[cfg(feature = "ares")]
+                    buildings: Some(combat::line_of_fire::CellBuildings::of(self)),
                 },
             )
         });

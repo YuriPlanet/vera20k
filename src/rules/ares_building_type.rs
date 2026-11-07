@@ -16,6 +16,11 @@
 //!   sale rates (`rules::buildup_asset_catalog`, `sim::building_construction`).
 //! - RulesExt `EngineerDamage` and `EngineerAlwaysCaptureTech`
 //!   ([`BuildingGlobalRules`]): an engineer entering a hostile building.
+//! - `LightningRod.Modifier` (`+0x60`) with TechnoType `LightningRod=`: the
+//!   Ares Lightning Storm's strikes (`sim::superweapon::lightning_storm`).
+//! - `SolidHeight` and `SolidLevel` (`+0x8`, `+0xC`) and RulesExt
+//!   `AlliedSolidTransparency`: the building on a `SubjectToBuildings=`
+//!   shot's line of fire (`sim::combat::line_of_fire`).
 
 use crate::rules::ares_warhead::HouseSelector;
 use crate::rules::foundation::Foundation;
@@ -135,6 +140,33 @@ pub(crate) struct BuildingTypeExtRules {
     /// first by `1000DD40` through the registry.
     #[serde(default)]
     prism_forwarding: crate::rules::ares_prism_forwarding::PrismForwardingRules,
+    /// `SolidHeight` (`+0x8`, Valueable<int>, constructor 0): how many levels
+    /// of 256 leptons over its cell's floor the building stops shots; 0 never,
+    /// negative its `Height=`. Read from art, then rules.
+    #[serde(default)]
+    pub(crate) solid_height: i32,
+    /// `SolidLevel` (`+0xC`, Valueable<int>, constructor 1): the projectile
+    /// `SolidLevel=` that shoots through it.
+    #[serde(default = "default_solid_level")]
+    pub(crate) solid_level: i32,
+    /// TechnoType `LightningRod=` (`+0xD26`, ctor false), which
+    /// `TechnoTypeClass::ReadINI @ 0x00712170` reads with ReadBool for every
+    /// type. Only the Ares storm reads it (of a BuildingType), so only Ares
+    /// builds keep it.
+    #[serde(default)]
+    pub(crate) lightning_rod: bool,
+    /// `LightningRod.Modifier` (`+0x60`, Valueable<double>, ctor 1.0): the
+    /// Ares storm's damage factor on a struck lightning rod.
+    #[serde(default = "default_lightning_rod_modifier")]
+    pub(crate) lightning_rod_modifier: NativeF64Bits,
+}
+
+fn default_lightning_rod_modifier() -> NativeF64Bits {
+    NativeF64Bits::ONE
+}
+
+fn default_solid_level() -> i32 {
+    1
 }
 
 impl Default for BuildingTypeExtRules {
@@ -162,6 +194,10 @@ impl Default for BuildingTypeExtRules {
             message_lost: String::new(),
             ai_base_normal: None,
             prism_forwarding: Default::default(),
+            solid_height: 0,
+            solid_level: default_solid_level(),
+            lightning_rod: false,
+            lightning_rod_modifier: NativeF64Bits::ONE,
         }
     }
 }
@@ -205,12 +241,20 @@ impl BuildingTypeExtRules {
                     .unwrap_or(current)
             },
         );
+        // The Ares <= 0.9 art key, then the rules key (1000DD40 after the
+        // dock keys).
+        self.solid_height = art.read_ares_int("SolidHeight", self.solid_height);
+        self.solid_height = section.read_ares_int("SolidHeight", self.solid_height);
+        self.solid_level = section.read_ares_int("SolidLevel", self.solid_level);
         self.uc_pass_through =
             section.read_ares_double_bits("UC.PassThrough", self.uc_pass_through);
         self.uc_fatal_rate = section.read_ares_double_bits("UC.FatalRate", self.uc_fatal_rate);
         self.uc_damage_multiplier =
             section.read_ares_double_bits("UC.DamageMultiplier", self.uc_damage_multiplier);
         self.bunker_raidable = section.read_ares_bool("Bunker.Raidable", self.bunker_raidable);
+        self.lightning_rod = section.read_bool("LightningRod", self.lightning_rod);
+        self.lightning_rod_modifier =
+            section.read_ares_double_bits("LightningRod.Modifier", self.lightning_rod_modifier);
         let [destroyed_type, intact_type] = references.rubble_types;
         let [destroyed_anim, intact_anim] = references.rubble_anims;
         if let Some(name) = destroyed_type {
@@ -405,6 +449,11 @@ pub(crate) struct BuildingGlobalRules {
     pub(crate) toggle_power_delay: i32,
     /// `[IQ] TogglePower` (`+0x24`, constructor -1): the IQ a house needs.
     pub(crate) toggle_power_iq: i32,
+    /// `[CombatDamage] AlliedSolidTransparency` (`+0x110`, Valueable<bool>,
+    /// constructor false): a building lets its owner's allies' shots
+    /// through.
+    #[serde(default)]
+    pub(crate) allied_solid_transparency: bool,
 }
 
 impl Default for BuildingGlobalRules {
@@ -420,13 +469,14 @@ impl Default for BuildingGlobalRules {
             toggle_power_allowed: false,
             toggle_power_delay: 45,
             toggle_power_iq: -1,
+            allied_solid_transparency: false,
         }
     }
 }
 
 impl BuildingGlobalRules {
-    /// `1002AB60`'s `[General] ReturnStructures` and `Degrade.*` reads,
-    /// before the types.
+    /// `1002AB60`'s `[General] ReturnStructures` and `Degrade.*` reads and
+    /// `[CombatDamage] AlliedSolidTransparency`, before the types.
     pub(crate) fn read_before_type_data(&mut self, pass: &crate::rules::ini_parser::IniFile) {
         if let Some(section) = pass.section("General") {
             self.return_structures =
@@ -438,6 +488,11 @@ impl BuildingGlobalRules {
                 section.read_ares_int("Degrade.AmountNormal", self.degrade_amount_normal);
             self.degrade_amount_consumer =
                 section.read_ares_int("Degrade.AmountConsumer", self.degrade_amount_consumer);
+        }
+        // After the Degrade.* keys.
+        if let Some(section) = pass.section("CombatDamage") {
+            self.allied_solid_transparency =
+                section.read_ares_bool("AlliedSolidTransparency", self.allied_solid_transparency);
         }
     }
 

@@ -287,13 +287,13 @@ pub fn high_arc_root(
 /// for an `Inaccurate=` `Arcing=` projectile: it moves the target delta by a
 /// drawn magnitude in a drawn direction, leaving Z. Two Scenario draws,
 /// magnitude then angle. The flak arm (`FlakScatter=` and not `Inviso=`;
-/// stock `FlakTProj`) scales `RandomRanged(0, BallisticScatter)` by the
-/// delta's length over the weapon's range (vt+0x168, `0x007012C0`); the plain
-/// arm draws the magnitude from `RandomRanged(BallisticScatter / 2,
-/// BallisticScatter)`. A zero range faults natively; here it scatters by zero.
+/// stock `FlakTProj`) scales its `RandomRanged(bounds)` draw by the delta's
+/// length over the weapon's range (vt+0x168, `0x007012C0`); the plain arm
+/// draws the magnitude itself ([`fireat_scatter_bounds`]). A zero range
+/// faults natively; here it scatters by zero.
 pub(crate) fn fireat_launch_scatter(
     delta: ProjectileCoord,
-    ballistic_scatter: i32,
+    bounds: (i32, i32),
     weapon_range: i32,
     flak: bool,
     rng: &mut SimRng,
@@ -301,7 +301,7 @@ pub(crate) fn fireat_launch_scatter(
     let trig = TrigTable::embedded();
     launch_scatter_with(
         delta,
-        ballistic_scatter,
+        bounds,
         weapon_range,
         flak,
         |low, high| rng.next_range_i32_inclusive(low, high),
@@ -309,20 +309,32 @@ pub(crate) fn fireat_launch_scatter(
     )
 }
 
+/// The magnitude draw's `RandomRanged` bounds: `0, BallisticScatter` for
+/// the flak arm (`0x006FE709`), `BallisticScatter / 2, BallisticScatter`
+/// for the plain arm (`0x006FE815..0x006FE81C`: the halving is CDQ/SUB/SAR,
+/// toward zero). Ares builds take the projectile's `BallisticScatter.Min`
+/// and `.Max` over these (`rules::ares_bullet_type`).
+pub(crate) fn fireat_scatter_bounds(flak: bool, ballistic_scatter: i32) -> (i32, i32) {
+    if flak {
+        (0, ballistic_scatter)
+    } else {
+        (ballistic_scatter / 2, ballistic_scatter)
+    }
+}
+
 /// The scatter with its two `Random__RandomRanged` draws supplied.
 fn launch_scatter_with(
     delta: ProjectileCoord,
-    ballistic_scatter: i32,
+    bounds: (i32, i32),
     weapon_range: i32,
     flak: bool,
     mut random_ranged: impl FnMut(i32, i32) -> i32,
     trig: &TrigTable,
 ) -> ProjectileCoord {
     let magnitude = if flak {
-        flak_magnitude(delta, ballistic_scatter, weapon_range, &mut random_ranged)
+        flak_magnitude(delta, bounds, weapon_range, &mut random_ranged)
     } else {
-        // 0x006FE815..0x006FE81C: the halving is CDQ/SUB/SAR, toward zero.
-        random_ranged(ballistic_scatter / 2, ballistic_scatter)
+        random_ranged(bounds.0, bounds.1)
     };
     let raw = random_ranged(0, 0x7fff_fffe);
     scatter_delta(delta, magnitude, raw, trig)
@@ -372,7 +384,7 @@ fn flak_placement_with(
     );
     let magnitude = flak_magnitude(
         delta,
-        ballistic_scatter << 1,
+        (0, ballistic_scatter << 1),
         weapon_range,
         &mut random_ranged,
     );
@@ -381,16 +393,16 @@ fn flak_placement_with(
 }
 
 /// Both flak arms' magnitude (`0x006FE6AD..0x006FE73D`, again at
-/// `0x0046874E..0x004687E5`): `RandomRanged(0, ceiling)` times the delta's
+/// `0x0046874E..0x004687E5`): `RandomRanged(bounds)` times the delta's
 /// length ([`flak_scatter_distance`]), `IMUL` then `IDIV` by the range.
 fn flak_magnitude(
     delta: ProjectileCoord,
-    ceiling: i32,
+    bounds: (i32, i32),
     range: i32,
     random_ranged: &mut impl FnMut(i32, i32) -> i32,
 ) -> i32 {
     let distance = flak_scatter_distance(delta);
-    random_ranged(0, ceiling)
+    random_ranged(bounds.0, bounds.1)
         .wrapping_mul(distance)
         .checked_div(range)
         .unwrap_or(0)
@@ -1144,7 +1156,7 @@ mod tests {
             let mut bounds = Vec::new();
             let result = launch_scatter_with(
                 coord(&input["delta"]),
-                int("scatter"),
+                fireat_scatter_bounds(flak, int("scatter")),
                 int("range"),
                 flak,
                 |low, high| {

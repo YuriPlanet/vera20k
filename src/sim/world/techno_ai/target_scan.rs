@@ -915,6 +915,8 @@ impl Simulation {
                 overlay_grid: self.overlay_grid.as_ref(),
                 overlay_registry,
                 alliances: Some(&self.house_alliances),
+                #[cfg(feature = "ares")]
+                buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(self)),
             },
             Some(self),
             scan_coord,
