@@ -1,7 +1,7 @@
 //! Ares 3.0 WarheadTypeExt effects part 2 through the production detonation,
 //! receiver, curtain and fire-error owners: IronCurtain.Duration/Cap with the
 //! TechnoType curtain modifiers, MindControl.Permanent,
-//! DisableWeapons.Duration and InfDeathAnim.
+//! Sonar.Duration, DisableWeapons.Duration and InfDeathAnim.
 
 use super::fire_error::FireError;
 use super::world_receiver::{ReceiverRun, commit_projectiles};
@@ -206,6 +206,48 @@ fn disable_weapons_duration_holds_fire_with_rearm() {
     assert_eq!(fire_error(&sim), FireError::Rearm);
     let timer = sim.entities().get(target).unwrap().ares_disable_weapons;
     assert_eq!(timer.remaining(sim.session.binary_frame() as i32), 40);
+}
+
+/// The same aftermath (1004AB50) restarts the SonarTimer with
+/// `Sonar.Duration` only while that is longer than the time left, which
+/// CloakDisallowed (10043A40) then reads.
+#[test]
+fn sonar_duration_extends_the_sonar_timer() {
+    let rules = rules("Sonar.Duration=60\n", "", "");
+    let (mut sim, firer, target) = scene(&rules);
+    let hit = |sim: &mut Simulation| {
+        let event = EntityDamageEvent::direct_receiver(
+            target,
+            10,
+            0,
+            firer,
+            None,
+            sim.interner.intern("WH"),
+            ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        );
+        let _ = sim.commit_direct_damage_receiver(&rules, None, event, FrameEffects::default());
+    };
+    let left = |sim: &Simulation| {
+        let frame = sim.session.binary_frame() as i32;
+        sim.entities()
+            .get(target)
+            .unwrap()
+            .sonar_timer
+            .remaining(frame)
+    };
+    hit(&mut sim);
+    assert_eq!(left(&sim), 60);
+    sim.substrate
+        .entities
+        .get_mut(target)
+        .unwrap()
+        .sonar_timer
+        .start(sim.session.binary_frame() as i32, 90);
+    hit(&mut sim);
+    assert_eq!(left(&sim), 90, "a longer running timer is kept");
 }
 
 /// InfantryClass_ReceiveDamage_InfDeath (10025DE0, hook 0x5185C8): a killed

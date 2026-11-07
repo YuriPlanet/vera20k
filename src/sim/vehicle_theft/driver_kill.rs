@@ -47,9 +47,8 @@ impl Simulation {
     /// ReceiveDamage_Aftermath1004AB50, after protected-Techno responses and
     /// before the native Uncloak70281D. Unlike EMP this is not a Bullet AoE.
     /// Behind the EffectsRequireDamage/EffectsRequireVerses gates it applies
-    /// KillDriver (10052B40), then `DisableWeapons.Duration`, then
-    /// `Flash.Duration`. `Sonar.Duration`, which it starts between KillDriver
-    /// and DisableWeapons, is not ported here.
+    /// KillDriver (10052B40), then `Sonar.Duration`, `DisableWeapons.Duration`
+    /// and `Flash.Duration`.
     pub(crate) fn ares_driver_kill_aftermath(
         &mut self,
         event: &EntityDamageEvent,
@@ -68,7 +67,8 @@ impl Simulation {
         };
         let flash = settings.combat().flash_duration();
         let disable_weapons = settings.combat().disable_weapons_duration();
-        if !settings.kill_driver().enabled() && flash <= 0 && disable_weapons <= 0 {
+        let sonar = settings.combat().sonar_duration();
+        if !settings.kill_driver().enabled() && flash <= 0 && disable_weapons <= 0 && sonar <= 0 {
             return;
         }
         if state == DamageState::Unaffected
@@ -97,9 +97,16 @@ impl Simulation {
         if settings.kill_driver().enabled() {
             self.ares_apply_kill_driver(event, warhead, settings, rules, registry, effects);
         }
-        // DisableWeapons.Duration (WarheadExt+FC) restarts DisableWeaponTimer
-        // (TechnoExt+50) when it is longer than the timer's GetTimeLeft.
+        // Sonar.Duration (WarheadExt+F8) and then DisableWeapons.Duration
+        // (+FC) restart SonarTimer (TechnoExt+44) and DisableWeaponTimer
+        // (+50) when longer than the timer's GetTimeLeft.
         let frame = self.session.binary_frame() as i32;
+        if sonar > 0
+            && let Some(target) = self.substrate.entities.get_mut(event.target_id)
+            && target.sonar_timer.remaining(frame) < sonar
+        {
+            target.sonar_timer.start(frame, sonar);
+        }
         if disable_weapons > 0
             && let Some(target) = self.substrate.entities.get_mut(event.target_id)
             && target.ares_disable_weapons.remaining(frame) < disable_weapons

@@ -301,6 +301,9 @@ pub(crate) struct WarheadCombatRules {
     /// clears).
     #[serde(default)]
     inf_death_anim: Option<String>,
+    /// +0xF8 `Sonar.Duration` (Valueable<int>, constructor 0).
+    #[serde(default)]
+    sonar_duration: i32,
     /// +0xFC `DisableWeapons.Duration`.
     #[serde(default)]
     disable_weapons_duration: i32,
@@ -358,6 +361,7 @@ impl Default for WarheadCombatRules {
             iron_curtain_duration: 0,
             iron_curtain_cap: default_iron_curtain_cap(),
             inf_death_anim: None,
+            sonar_duration: 0,
             disable_weapons_duration: 0,
             ion_cannon: IonCannonRules::default(),
             iron_curtain_flash: None,
@@ -416,6 +420,8 @@ impl WarheadCombatRules {
         if let Some(anim) = inf_death_anim {
             self.inf_death_anim = anim;
         }
+        // LoadFromINIFile reads Sonar.Duration right before DisableWeapons.
+        self.sonar_duration = section.read_ares_int("Sonar.Duration", self.sonar_duration);
         self.disable_weapons_duration =
             section.read_ares_int("DisableWeapons.Duration", self.disable_weapons_duration);
         self.iron_curtain_flash =
@@ -499,6 +505,9 @@ impl WarheadCombatRules {
     }
     pub(crate) fn inf_death_anim(&self) -> Option<&str> {
         self.inf_death_anim.as_deref()
+    }
+    pub(crate) fn sonar_duration(&self) -> i32 {
+        self.sonar_duration
     }
     pub(crate) fn disable_weapons_duration(&self) -> i32 {
         self.disable_weapons_duration
