@@ -91,20 +91,11 @@ pub(crate) fn issue_order(
     }) {
         return false;
     }
-    // Event9 4C771C..4C7756 checks the current cell's slope before the
-    // Techno70C620 terrain projection query. It does not test health/dying.
-    // EMP504 has no active state producer in this engine yet.
-    if let Some(terrain) = sim.resolved_terrain.as_ref() {
-        let actor = sim.substrate.entities.get(id).expect("admitted actor");
-        if !actor.on_bridge() {
-            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-            let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&actor.position);
-            if cells.ground_fields(cells.lookup_world(x, y)).1 == 0
-                && crate::sim::movement::ground_pose::terrain_projection_differs(&cells, [x, y])
-            {
-                return false;
-            }
-        }
+    // Event9 checks the current cell's slope before the Techno70C620 terrain
+    // projection query. It does not test health/dying. EMP504 has no active
+    // state producer in this engine yet.
+    if crate::sim::movement::ground_pose::event_hidden_flat_cell(sim, id) {
+        return false;
     }
     //4C7768..4C7774 follows the projection query and its map lookup effects.
     if matches!(
