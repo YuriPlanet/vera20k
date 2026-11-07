@@ -1845,7 +1845,17 @@ impl Simulation {
                 // compares the sender's House with the actor's owner; sender
                 // eligibility belongs to Execute_DoList's House scan.
                 // Source: original gamemd.exe instructions.
-                if !self.order_actor_admits(*entity_id) {
+                // `0x004C74DE..0x004C74FE`: IDLE admits an actor that exists,
+                // is alive (`+0x90`) and is out of limbo (`+0x81`). Unlike the
+                // MEGAMISSION gate (`order_actor_admits`) it reads no
+                // strength, so an object at 0 strength still stops. VERA's
+                // dying mark stands for the UnInit that clears `+0x90`.
+                if !self
+                    .substrate
+                    .entities
+                    .get(*entity_id)
+                    .is_some_and(|e| e.is_active() && !e.lifecycle.in_limbo())
+                {
                     return false;
                 }
                 // The IDLE arm returns at `0x004C7504..0x004C750C` when the
@@ -3684,6 +3694,53 @@ mod tests {
             };
             assert_eq!(mission, expected, "hidden={hidden}");
         }
+    }
+
+    /// Event IDLE admits its actor on `+0x90` and `+0x81` alone
+    /// (`0x004C74E8..0x004C74FE`), with no strength test: a live miner at 0
+    /// strength still stops and goes on Guard. VERA's dying mark, native's
+    /// UnInit, refuses it.
+    #[test]
+    fn stop_admits_a_live_actor_at_zero_strength() {
+        use crate::sim::mission::MissionType;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=HARV\n[HARV]\nStrength=600\nSpeed=4\nHarvester=yes\n\
+             MovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+        ))
+        .expect("HARV rules");
+        let mut sim = Simulation::new();
+        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+            32,
+            32,
+            crate::map::resolved_terrain::test_flat_cell,
+        ));
+        spawn_rule_backed_unit(&mut sim, 42, "HARV", &rules);
+        let miner = sim.substrate.entities.get_mut(42).unwrap();
+        miner.miner = Some(crate::sim::miner::Miner::new(
+            crate::sim::miner::MinerKind::War,
+            &crate::sim::miner::MinerConfig::default(),
+            40,
+        ));
+        miner.health = crate::sim::combat::Health::new(0);
+        sim.substrate
+            .mission_assign_exact(42, MissionId::from_known(MissionType::Harvest), 0)
+            .expect("miner");
+        assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 42 }, Some(&rules)));
+        let mission = sim.substrate.entities.get(42).unwrap().mission.current();
+        assert_eq!(mission, MissionId::from_known(MissionType::Guard));
+
+        sim.substrate
+            .entities
+            .get_mut(42)
+            .unwrap()
+            .death
+            .set_dying_for_test(true);
+        sim.substrate
+            .mission_assign_exact(42, MissionId::from_known(MissionType::Harvest), 0)
+            .expect("miner");
+        assert!(!sim.apply_command("Americans", &Command::Stop { entity_id: 42 }, Some(&rules)));
+        let mission = sim.substrate.entities.get(42).unwrap().mission.current();
+        assert_eq!(mission, MissionId::from_known(MissionType::Harvest));
     }
 
     #[test]
