@@ -4,40 +4,46 @@
 //! Match-lifetime diagnostic replay lives in `app::match_diagnostics`; this
 //! owner is process-scoped tooling state.
 
-use std::collections::VecDeque;
+use crate::app::presentation::render::RenderPhases;
 use crate::util::time::{Duration, Instant};
+use std::collections::VecDeque;
 
 const FRAME_TIMER_WINDOW: usize = 60;
 
-/// Means of in-game render phase spans during one observation window.
+/// In-game render phase spans during one observation window: their means for
+/// the dashboard's report, their totals for the FPS panel's Most CPU row.
 ///
 /// The spans are wall time from `presentation::render::render_game`; this meter
-/// only averages them, so a single slow frame cannot mislead the report.
-#[cfg(feature = "telemetry-dashboard")]
+/// only sums them, so a single slow frame cannot mislead the report.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct RenderTimingMeter {
     frames: u32,
-    sums: [Duration; 7],
+    sums: [Duration; RenderPhases::COUNT],
 }
 
-#[cfg(feature = "telemetry-dashboard")]
 impl RenderTimingMeter {
     /// Fold one finished render into the totals.
-    pub(crate) fn record(&mut self, phases: crate::app::presentation::render::RenderPhases) {
+    pub(crate) fn record(&mut self, phases: RenderPhases) {
         self.frames = self.frames.saturating_add(1);
         for (sum, span) in self.sums.iter_mut().zip(phases.spans()) {
             *sum += span;
         }
     }
 
+    /// Each phase's summed span, in `RenderPhases::spans` order.
+    pub(crate) fn totals(&self) -> [Duration; RenderPhases::COUNT] {
+        self.sums
+    }
+
     /// Mean span of each phase in milliseconds, or `None` before the first
     /// render. Order matches `RenderPhases::spans`.
-    pub(crate) fn mean_ms(&self) -> Option<[f32; 7]> {
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) fn mean_ms(&self) -> Option<[f32; RenderPhases::COUNT]> {
         if self.frames == 0 {
             return None;
         }
         let frames = self.frames as f32;
-        let mut means = [0.0f32; 7];
+        let mut means = [0.0f32; RenderPhases::COUNT];
         for (mean, sum) in means.iter_mut().zip(self.sums) {
             *mean = sum.as_secs_f32() * 1000.0 / frames;
         }
@@ -45,6 +51,7 @@ impl RenderTimingMeter {
     }
 
     /// The wire form: per-render means, or `None` before the first render.
+    #[cfg(feature = "telemetry-dashboard")]
     pub(crate) fn report(&self) -> Option<crate::sim::telemetry::RenderTimingReport> {
         let means = self.mean_ms()?;
         Some(crate::sim::telemetry::RenderTimingReport {
@@ -55,7 +62,11 @@ impl RenderTimingMeter {
             ui_ms: means[3],
             sidebar_ms: means[4],
             upload_ms: means[5],
-            other_ms: means[6],
+            lights_ms: means[6],
+            effects_ms: means[7],
+            draw_calls_ms: means[8],
+            handoff_ms: means[9],
+            other_ms: means[10],
         })
     }
 }

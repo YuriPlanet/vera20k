@@ -23,6 +23,7 @@ mod live_service;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) use live_service::lobby_base_url;
 pub(crate) mod lobby;
+mod lobby_phrases;
 mod login;
 pub(crate) mod login_info;
 pub(crate) mod my_info;

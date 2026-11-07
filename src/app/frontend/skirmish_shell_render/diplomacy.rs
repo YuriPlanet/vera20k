@@ -67,8 +67,8 @@ pub(crate) fn render_diplomacy_shell(
     );
     if view.page_count > 1 {
         for (index, button, label) in [
-            (0, DiplomacyButton::PreviousPage, "Previous"),
-            (1, DiplomacyButton::NextPage, "Next"),
+            (0, DiplomacyButton::PreviousPage, "VERA:Previous"),
+            (1, DiplomacyButton::NextPage, "VERA:Next"),
         ] {
             let pressed = interaction.button.is_pressed(button);
             let frame = button_frame(PauseMenuButtonState {
@@ -82,7 +82,7 @@ pub(crate) fn render_diplomacy_shell(
             }
             text(
                 &mut texts,
-                label,
+                &crate::i18n::tr(label),
                 button_text_rect(layout.paging[index], pressed),
                 SHELL_LABEL_TEXT_RGB,
                 ShellAlign::H_CENTER | ShellAlign::V_CENTER,
@@ -91,7 +91,13 @@ pub(crate) fn render_diplomacy_shell(
         let first = layout.paging[0];
         text(
             &mut texts,
-            &format!("Page {}/{}", view.page_index + 1, view.page_count),
+            &crate::i18n::tr_fill(
+                "VERA:PageOf",
+                &[
+                    ("page", &(view.page_index + 1)),
+                    ("pages", &view.page_count),
+                ],
+            ),
             RectPx::new(first.x, first.y - 24, first.w, 20),
             SHELL_LABEL_TEXT_RGB,
             ShellAlign::H_CENTER,
@@ -103,7 +109,7 @@ pub(crate) fn render_diplomacy_shell(
         &localized_label(state, TITLE_LABEL.0, TITLE_LABEL.1),
         layout.title,
         SHELL_LABEL_TEXT_RGB,
-        ShellAlign::H_CENTER,
+        ShellAlign::PANEL_TITLE,
     );
     for header in DiplomacyHeader::ALL {
         let shown = match header {

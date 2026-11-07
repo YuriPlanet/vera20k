@@ -135,6 +135,8 @@ pub(crate) struct RoundTripReport {
 pub(crate) struct PerformanceReport {
     pub(crate) tick_ms_p50: Option<f32>,
     pub(crate) tick_ms_p99: Option<f32>,
+    /// Presents per second while the picture keeps moving; a standing
+    /// picture ends an interval (`NetworkQualityStats::picture_stood`).
     pub(crate) fps_p50: Option<f32>,
     /// The slowest twentieth of presented frames.
     pub(crate) fps_p5: Option<f32>,
@@ -208,6 +210,13 @@ impl NetworkQualityStats {
         if self.active {
             self.tick_ms.record(tick_ms);
         }
+    }
+
+    /// The presented picture stood through a pass (`redraw_gate`): the next
+    /// present follows a picture that needed no draw, not a slow one, so it
+    /// starts a new interval.
+    pub(crate) fn picture_stood(&mut self) {
+        self.last_present = None;
     }
 
     /// One presented battlefield picture.
@@ -394,6 +403,27 @@ mod tests {
         frames.record(100.0);
         assert_eq!(frames.quantile(0.95), Some(100.25));
         assert_eq!(MsHistogram::default().quantile(0.5), None);
+    }
+
+    /// A present after a standing picture starts a new interval, so the
+    /// frame rate reads how fast a moving picture draws, not how long one
+    /// stood.
+    #[test]
+    fn a_standing_picture_starts_a_new_present_interval() {
+        let mut stats = NetworkQualityStats {
+            active: true,
+            ..NetworkQualityStats::default()
+        };
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+        stats.record_present(start);
+        stats.record_present(at(16));
+        stats.picture_stood();
+        stats.record_present(at(500));
+        stats.record_present(at(516));
+        let performance = stats.summarize().performance;
+        assert_eq!(performance.fps_p5, Some(61.5));
+        assert_eq!(performance.fps_p50, Some(61.5));
     }
 
     /// The lobby reads `finish`'s report by these names

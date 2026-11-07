@@ -37,9 +37,9 @@ impl Lifecycle {
         self.may_restart(external) || (!self.started && !self.terminal)
     }
 
-    pub(crate) fn start(&mut self, external: bool) -> Result<(), &'static str> {
+    pub(crate) fn start(&mut self, external: bool) -> Result<(), String> {
         if !self.may_start(external) {
-            return Err("Game already started; reload to restart");
+            return Err(crate::i18n::tr("VERA:GameAlreadyStarted"));
         }
         *self = Self::default();
         self.started = true;

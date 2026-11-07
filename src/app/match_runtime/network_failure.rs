@@ -56,31 +56,26 @@ pub(crate) fn labels(
 /// the checksum box's own out-of-sync text.
 pub(crate) fn vera_body(state: &AppState) -> Option<String> {
     if state.match_state.frame_stopped {
-        let mut body = String::from(
-            "VERA20k ran into an internal error, so this match cannot continue. \
-             The players did not go out of sync.",
-        );
+        let mut body = crate::i18n::tr("VERA:MatchInternalError");
         if let Some(path) = crate::util::logging::log_file() {
-            body.push_str(&format!(
-                "\n\nThe log file has the details:\n{}",
-                path.display()
+            body.push_str("\n\n");
+            body.push_str(&crate::i18n::tr_fill(
+                "VERA:LogFileDetails",
+                &[("path", &path.display())],
             ));
         }
         return Some(body);
     }
     match interruption(state)? {
-        NetworkInterruption::NewerClientRequired => Some(format!(
-            "This online match needs a newer VERA20k. Download it from {}",
-            crate::app::shell_wol::RELEASES_URL
+        NetworkInterruption::NewerClientRequired => Some(crate::i18n::tr_fill(
+            "VERA:MatchNeedsNewerVera",
+            &[("url", &crate::app::shell_wol::RELEASES_URL)],
         )),
         NetworkInterruption::ConnectionFailed
             if state.match_state.session_mode()
                 == crate::app::match_runtime::session::SessionMode::Wol =>
         {
-            Some(
-                "The connection to the VERA20k game server failed, so this match cannot continue."
-                    .to_owned(),
-            )
+            Some(crate::i18n::tr("VERA:GameServerConnectionFailed"))
         }
         _ => None,
     }

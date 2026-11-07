@@ -11,6 +11,7 @@
 use crate::app::AppState;
 use crate::app::presentation::sidebar_render::current_sidebar_chrome;
 use crate::render::batch::SpriteInstance;
+use crate::render::bit_font::{BitFont, Fit};
 use crate::render::sidebar_chrome::{SidebarChromeAtlas, SidebarChromeEntry};
 use crate::ui::sidebar::power_bar_anim::PowerBarAnimState;
 use crate::ui::sidebar::{
@@ -296,6 +297,23 @@ fn push_chrome_sized(
 pub(crate) const READY_PAD_X: f32 = 2.0;
 /// Vertical padding around the ready text (each side, in native pixels).
 pub(crate) const READY_PAD_Y: f32 = 1.0;
+
+/// VERA's own: the [`Fit`] that keeps a cameo's status label on one line on
+/// its cameo, `slot_w` less the strip's padding and less any queue `badge`
+/// sharing its row, so that a longer translation squeezes instead of running
+/// off the cameo or under the badge. Retail's labels fit at [`Fit::NONE`].
+/// The label's strip and its text take the same fit.
+pub(crate) fn status_label_fit(
+    font: &BitFont,
+    text: &str,
+    slot_w: f32,
+    badge: Option<&str>,
+) -> Fit {
+    let badge_w = badge.map_or(0.0, |badge| {
+        font.text_width(badge) as f32 + QUEUE_COUNT_PAD_X
+    });
+    font.fit_line(text, (slot_w - READY_PAD_X * 2.0 - badge_w).max(1.0) as u32)
+}
 
 /// Horizontal padding for queue count badge (native pixels, matches ComputeTextRect x_pad=2).
 const QUEUE_COUNT_PAD_X: f32 = 2.0;
@@ -708,13 +726,19 @@ pub(crate) fn build_sidebar_cameo_instances(
         if let Some(status_text) = cameo_status_text(item, labels)
             && state.renderer.bit_font.darken_texture().is_some()
         {
-            let text_w = state.renderer.bit_font.text_width(status_text) as f32;
+            let font = &state.renderer.bit_font;
+            let shifts_left = status_text_shifts_left(item, has_queue_badge);
+            let badge = shifts_left
+                .then(|| queue_badge_text(state, item, has_queue_badge))
+                .flatten();
+            let fit = status_label_fit(font, status_text, slot.w, badge.as_deref());
+            let text_w = font.fitted(fit, |font| font.text_width(status_text)) as f32;
             let strip_w = text_w + READY_PAD_X * 2.0;
             // gamemd `ComputeTextRect` uses `cell_height + 2*y_pad` for the
             // strip height (cell_height includes the 1 px inter-line gap that
             // gamemd extends below the glyphs).
-            let strip_h = state.renderer.bit_font.cell_height() + READY_PAD_Y * 2.0;
-            let strip_x = if status_text_shifts_left(item, has_queue_badge) {
+            let strip_h = font.cell_height() + READY_PAD_Y * 2.0;
+            let strip_x = if shifts_left {
                 slot.x + co[0]
             } else {
                 slot.x + (slot.w - strip_w) * 0.5 + co[0]
@@ -811,8 +835,14 @@ pub(crate) fn build_sidebar_text_instances(
         // Only the Hold label moves to the left edge, and only beside a queue
         // badge; see `status_text_shifts_left`.
         if let Some(status_text) = cameo_status_text(item, labels) {
-            let text_w = state.renderer.bit_font.text_width(status_text) as f32;
-            let text_x = if status_text_shifts_left(item, has_queue_badge) {
+            let font = &state.renderer.bit_font;
+            let shifts_left = status_text_shifts_left(item, has_queue_badge);
+            let badge = shifts_left
+                .then(|| queue_badge_text(state, item, has_queue_badge))
+                .flatten();
+            let fit = status_label_fit(font, status_text, slot.w, badge.as_deref());
+            let text_w = font.fitted(fit, |font| font.text_width(status_text)) as f32;
+            let text_x = if shifts_left {
                 slot.x + READY_PAD_X
             } else {
                 slot.x + (slot.w - text_w) * 0.5
@@ -825,15 +855,9 @@ pub(crate) fn build_sidebar_text_instances(
             } else {
                 &mut instances
             };
-            glyphs.extend(state.renderer.bit_font.build_text(
-                status_text,
-                text_x,
-                text_y,
-                1.0,
-                0.00042,
-                ready_tint,
-                co,
-            ));
+            glyphs.extend(font.fitted(fit, |font| {
+                font.build_text(status_text, text_x, text_y, 1.0, 0.00042, ready_tint, co)
+            }));
         }
 
         // Queue count badge — right-aligned at top-right of cameo.
@@ -1104,6 +1128,32 @@ mod tests {
         );
         assert!(draw(&item).is_none());
         assert_eq!(super::cameo_status_text(&item, labels), None);
+    }
+
+    /// A status label wider than its cameo squeezes onto it, also clear of a
+    /// queue badge beside it; one that fits keeps its width.
+    #[test]
+    fn a_long_status_label_squeezes_onto_its_cameo_beside_the_badge() {
+        use super::{QUEUE_COUNT_PAD_X, READY_PAD_X, status_label_fit};
+        use crate::render::bit_font::Fit;
+        let font = crate::render::bit_font::tests::make_vector_test_font();
+        let text = "[Ôñ Ĥöļð ~~~~~~~~]";
+        let natural = font.text_width(text) as f32;
+        let fits = natural + READY_PAD_X * 2.0;
+        assert_eq!(status_label_fit(&font, text, fits, None), Fit::NONE);
+        let slot_w = natural * 0.9 + READY_PAD_X * 2.0;
+        for badge in [None, Some("3")] {
+            let fit = status_label_fit(&font, text, slot_w, badge);
+            let badge_w = badge.map_or(0.0, |badge| {
+                font.text_width(badge) as f32 + QUEUE_COUNT_PAD_X
+            });
+            let width = font.fitted(fit, |font| font.text_width(text)) as f32;
+            assert!(fit > Fit::NONE, "{badge:?}");
+            assert!(
+                width <= slot_w - READY_PAD_X * 2.0 - badge_w,
+                "{badge:?}: {width}"
+            );
+        }
     }
 
     /// The cameo status slot carries `TXT_HOLD` for suspended production, the

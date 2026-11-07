@@ -75,7 +75,10 @@ use crate::sim::world::Simulation;
 /// running binary's version stamp.
 /// v30: `network` — an online relay match's backlog, catch-up state, skipped
 /// draws and relay slowdown.
-pub const TELEMETRY_SCHEMA_VERSION: u32 = 30;
+/// v31: `render` splits the old catch-all `other_ms` into combat lights, effect
+/// lines, draw calls and handing the frame to the driver; `other_ms` keeps the
+/// remainder.
+pub const TELEMETRY_SCHEMA_VERSION: u32 = 31;
 
 /// One house row of a [`ReportPoint`]: just what the report's party table and
 /// pie captions read.
@@ -495,7 +498,15 @@ pub struct RenderTimingReport {
     pub sidebar_ms: f32,
     /// Phase 6 — instance upload to the GPU buffer pool.
     pub upload_ms: f32,
-    /// Prep before phase 1 and everything after phase 6.
+    /// Combat lights and spotlights.
+    pub lights_ms: f32,
+    /// Effect lines and rings, and ion blasts.
+    pub effects_ms: f32,
+    /// Phase 7 — recording the render passes.
+    pub draw_calls_ms: f32,
+    /// Encoding, submitting and presenting the frame.
+    pub handoff_ms: f32,
+    /// Prep before phase 1 and between the lights and the effects.
     pub other_ms: f32,
 }
 

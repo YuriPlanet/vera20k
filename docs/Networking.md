@@ -100,8 +100,13 @@ schedule earlier, so no hold exceeds that reserve. Stable delivery gradually
 reduces the reserve. The relay still owns the clock; local pacing never changes
 commands, simulation order or another player's progress. A stalled or slow client
 catches up through at most eight ordinary simulation transactions or eight
-milliseconds per service wake, then yields to input/rendering. It never skips
-simulation ticks, and pacing never interrupts an already-started frame transaction.
+milliseconds per service wake, then yields to input. It draws once no frame is
+due, so a client that draws slower than the match rate shows a steady number of
+frames per picture instead of falling behind and catching up in bursts. A
+picture stands at most four recent draw times (at least 50 ms): the simulation
+may take the four fifths of the time the relay expects a player's tick cost to
+hold. It never skips simulation ticks, and pacing never interrupts an
+already-started frame transaction.
 An agreed resume resets the local playout clock so paused time creates no catch-up debt.
 
 A player whose PC cannot keep up slows the match, within limits. Each client

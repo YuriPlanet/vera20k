@@ -1109,18 +1109,12 @@ pub(super) fn verify_setup_agreement(state: &mut AppState) -> anyhow::Result<()>
     let actual = match super::shell_network_setup::agreement::local(state) {
         Ok(actual) => actual,
         Err(error) => {
-            reject_setup_compatibility(
-                state,
-                "The selected multiplayer retail rules or generated-map inputs are unavailable.",
-            );
+            reject_setup_compatibility(state, &crate::i18n::tr("VERA:LanRulesUnavailable"));
             return Err(error);
         }
     };
     if expected != actual {
-        reject_setup_compatibility(
-            state,
-            "VERA20k build, gameplay features or selected-mode rules differ between LAN clients.",
-        );
+        reject_setup_compatibility(state, &crate::i18n::tr("VERA:LanClientsDiffer"));
         anyhow::bail!("LAN selected-mode agreement mismatch");
     }
     Ok(())
@@ -1207,10 +1201,7 @@ pub(crate) fn open(state: &mut AppState) {
         return;
     }
     if online_retirement_pending(state) {
-        super::shell_lan::report_error(
-            state,
-            "Waiting to confirm departure from the previous online match.",
-        );
+        super::shell_lan::report_error(state, "VERA:WaitingForOnlineDeparture");
         return;
     }
     if state.match_state.lan_service.is_some() {
@@ -1244,7 +1235,7 @@ pub(crate) fn report_ports_unavailable(state: &mut AppState) {
         if state.frontend.native_shell_ui {
             "TXT_UNABLE_TO_CONNECT"
         } else {
-            "Could not open the LAN network ports (UDP 1234 and 1236). Another program, perhaps another copy of VERA20k, may be using them. Close it, then try again."
+            "VERA:LanPortsUnavailable"
         },
     );
 }
@@ -1884,7 +1875,7 @@ fn receive(state: &mut AppState, incoming: GlobalMessage, now: u32) -> anyhow::R
         );
         super::loading::pump::cancel_network_loading(
             state,
-            "A player left while the map was loading.",
+            &crate::i18n::tr("VERA:PlayerLeftWhileLoading"),
         );
         return Ok(());
     }

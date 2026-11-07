@@ -267,6 +267,7 @@ pub(super) enum Response {
         operation: &'static str,
         failure: CommandFailure,
     },
+    /// A notice for the lobby's chat, by its `VERA:` label.
     Failure(&'static str),
     Offline,
     /// The first event poll of an outage failed; polling keeps retrying.
@@ -357,21 +358,29 @@ enum RequestFailure {
 /// message when it gave one.
 fn sign_in_refusal(failure: RequestFailure) -> String {
     match failure {
-        RequestFailure::Maintenance(message) => message.unwrap_or_else(|| {
-            "VERA20k Online is down for maintenance. Please try again later.".to_owned()
-        }),
-        RequestFailure::Full(message) => message.unwrap_or_else(|| {
-            "VERA20k Online is full right now. Please try again later.".to_owned()
-        }),
+        RequestFailure::Maintenance(message) => {
+            message.unwrap_or_else(|| crate::i18n::tr("VERA:OnlineMaintenance"))
+        }
+        RequestFailure::Full(message) => {
+            message.unwrap_or_else(|| crate::i18n::tr("VERA:OnlineFull"))
+        }
         RequestFailure::Account { message, .. } => message,
-        _ => "VERA20k Online is busy right now. Please try again in a minute.".to_owned(),
+        _ => crate::i18n::tr("VERA:OnlineBusy"),
     }
 }
 
-/// The lobby's `error.message` when it is one short line of plain text.
+/// The lobby's `error.message` when it is one short line of plain text: in
+/// the language in use when the lobby said it as phrases that VERA's language
+/// files hold.
 fn plain_message(value: Option<&Value>) -> Option<String> {
-    value
-        .and_then(|value| value["error"]["message"].as_str())
+    let error = &value?["error"];
+    let said = serde_json::from_value::<Vec<crate::app::shell_wol::lobby_phrases::Phrase>>(
+        error["phrases"].clone(),
+    )
+    .ok()
+    .and_then(|phrases| crate::app::shell_wol::lobby_phrases::localized(&phrases));
+    said.as_deref()
+        .or_else(|| error["message"].as_str())
         .map(str::trim)
         .filter(|message| {
             !message.is_empty()
@@ -467,25 +476,19 @@ impl RequestFailure {
         Self::account(status, code, value.as_ref())
     }
 
-    /// An account refusal with the lobby's plain message, or one for its code.
+    /// An account refusal with the lobby's plain message, or VERA's for its
+    /// code.
     fn account(status: u16, code: Option<&str>, value: Option<&Value>) -> Self {
         let message = plain_message(value).unwrap_or_else(|| {
-            match code {
-                Some("name_claimed") => {
-                    "That name has an account. Enter its password, or choose another username."
-                }
-                Some("wrong_password") => "Wrong password.",
-                Some("no_account") => "No account has that name.",
-                Some("account_locked") => {
-                    "Too many wrong passwords. Try again later, or use Forgot Password."
-                }
-                _ if status == 429 => "Too many tries. Please try again later.",
-                _ if status == 0 || status >= 500 => {
-                    "VERA20k Online is busy right now. Please try again in a minute."
-                }
-                _ => "VERA20k Online refused that. Check what you entered.",
-            }
-            .to_owned()
+            crate::i18n::tr(match code {
+                Some("name_claimed") => "VERA:NameHasAccount",
+                Some("wrong_password") => "VERA:WrongPassword",
+                Some("no_account") => "VERA:NoSuchAccount",
+                Some("account_locked") => "VERA:AccountLocked",
+                _ if status == 429 => "VERA:TooManyTries",
+                _ if status == 0 || status >= 500 => "VERA:OnlineBusy",
+                _ => "VERA:OnlineRefusedEntry",
+            })
         });
         Self::Account {
             status,
@@ -655,9 +658,12 @@ impl Client {
             if path == "/v1/sessions" {
                 // Its relay CONFIRM carries a federation roster, and it plays
                 // Quick Match; see docs/lobby-protocol.md.
+                // The operator's welcome, notice and maintenance message
+                // come in the player's language when the operator wrote it.
                 request = request
                     .header("Vera-Relay-Federation", "1")
-                    .header("Vera-Quick-Match", "1");
+                    .header("Vera-Quick-Match", "1")
+                    .header("Vera-Language", crate::i18n::selected_language());
             }
             if let Some(token) = &self.token {
                 request = request.header("Authorization", format!("Bearer {token}"));
@@ -1194,8 +1200,7 @@ macro_rules! serial_driver {
                     }
                     Err(error) => {
                         if !platform_await!(client.session_failed(error, &output)) {
-                            let _ = output
-                                .send(Response::Failure("Could not refresh the online lobby."));
+                            let _ = output.send(Response::Failure("VERA:OnlineRefreshFailed"));
                         }
                     }
                 }

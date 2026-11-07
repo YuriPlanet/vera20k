@@ -389,6 +389,19 @@ impl GpuContext {
                 downlevel.flags
             );
         }
+        // The packed sprite stencil and its destination snapshot share a pass
+        // with per-attachment write masks (terrain_packed.rs).
+        if !webgl
+            && !downlevel
+                .flags
+                .contains(wgpu::DownlevelFlags::INDEPENDENT_BLEND)
+        {
+            bail!(
+                "native sprite drawing requires per-attachment write masks, \
+                 adapter downlevel flags are {:?}",
+                downlevel.flags
+            );
+        }
         let surface_format: wgpu::TextureFormat = surface_caps
             .formats
             .iter()

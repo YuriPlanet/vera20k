@@ -275,7 +275,7 @@ impl SavedTerrainTemplate {
             cells: self.cells,
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Vec::new(),
-            native_tmp_draw_heights: HashMap::new(),
+            native_tmp_draw_heights: LookupMap::default(),
             shared_cell_dummy,
             mutation_epoch: 0,
             native_allocated: self.native_allocated,

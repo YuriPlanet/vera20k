@@ -52,8 +52,8 @@ impl CrushImmunity {
 }
 
 /// Event9 DEPLOY4C76BC..4C7812. MCV conversion, simple deployment, the
-/// deploy-fire arm, Unit transports and a tank bunker's occupant share this
-/// event; Infantry uses its existing Mission_Unload deployment branch too.
+/// deploy-fire arm, Unit transports, garrison Buildings and a tank bunker's
+/// occupant share this event. Each class uses its existing Unload branch.
 /// Each concrete Mission_Unload branch owns its effects. A transport's
 /// empty hold does not suppress this event: it still stops and queues Unload.
 /// Native controls: tools/spatial_oracle/transport_unload.py --deploy-event.
@@ -63,12 +63,12 @@ impl CrushImmunity {
 /// sends OVER_OUT to its radio contact 0 (vt+0x274(3), `0x004C77E4`).
 ///
 /// RESIDUAL: native refuses only an aircraft (`0x004C777E`) and the
-/// Construction/Selling missions below; VERA admits Infantry and the Unit kinds
-/// whose Unload arms it ports: an MCV, a simple deployer, a deploy-fire unit, a
-/// Unit transport and a unit in a tank bunker. Other Units fail the deploy key's
-/// CanDeploySlashUnload query; their externally supplied DEPLOY events remain
-/// outside these represented Unload arms. Self-click still uses its separate
-/// clicked-Mission owner and requires cargo for a transport.
+/// Construction/Selling missions below; VERA admits Buildings, Infantry and
+/// the Unit kinds whose Unload arms it ports: an MCV, a simple deployer, a
+/// deploy-fire unit, a Unit transport and a unit in a tank bunker. Other Units
+/// fail the deploy key's CanDeploySlashUnload query; their externally supplied
+/// DEPLOY events remain outside these represented Unload arms. Self-click uses
+/// its separate clicked-Mission owner and requires cargo for a transport.
 pub(crate) fn issue_order(
     sim: &mut Simulation,
     id: u64,
@@ -79,7 +79,9 @@ pub(crate) fn issue_order(
         e.lifecycle.object_alive()
             && !e.lifecycle.in_limbo()
             && e.tether.partner().is_none()
-            && (e.category() == EntityCategory::Infantry
+            // Event9 has no occupant/cargo gate. Selection730B28 owns the
+            // garrison D admission; an accepted Building event may be empty.
+            && (matches!(e.category(), EntityCategory::Structure | EntityCategory::Infantry)
                 || crate::sim::mcv_deploy::is_mcv(sim, e, rules)
                 || crate::sim::unit_simple_deploy::is_simple_deployer(sim, e, rules)
                 || unit_fires_on_deploy(sim, e, rules)
@@ -93,7 +95,7 @@ pub(crate) fn issue_order(
     // Techno70C620 terrain projection query. It does not test health/dying.
     // EMP504 has no active state producer in this engine yet.
     if let Some(terrain) = sim.resolved_terrain.as_ref() {
-        let actor = sim.substrate.entities.get(id).expect("admitted Unit");
+        let actor = sim.substrate.entities.get(id).expect("admitted actor");
         if !actor.on_bridge() {
             let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
             let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&actor.position);
@@ -109,7 +111,7 @@ pub(crate) fn issue_order(
         sim.substrate
             .entities
             .get(id)
-            .expect("admitted Unit")
+            .expect("admitted actor")
             .mission
             .current()
             .known(),
@@ -117,7 +119,7 @@ pub(crate) fn issue_order(
     ) {
         return false;
     }
-    // `0x004C778A..0x004C77DE`: the event is ignored while the Unit's cell
+    // `0x004C778A..0x004C77DE`: the event is ignored while the actor's cell
     // holds a WeaponsFactory= building (Cell_Building `0x0047C520`), so an
     // MCV still leaving its factory stays. Only the first ground Building's
     // type is tested; Mark owns membership independently of death state.
@@ -136,8 +138,8 @@ pub(crate) fn issue_order(
         return false;
     }
     // Event DEPLOY: OVER_OUT to radio contact 0 (`0x004C77E4`), then the
-    // Unit's class setter takes a null destination (`0x004C77F8`, Unit
-    // `0x00741970`) and its class target setter a null target (`0x004C7804`)
+    // actor's class setter takes a null destination (`0x004C77F8`, Building
+    // `0x00455D50` / Unit `0x00741970`) and a null target (`0x004C7804`)
     // before Queue_Mission(Unload) (`0x004C7812`).
     crate::sim::radio::transmit_to_contact(
         sim,

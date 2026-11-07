@@ -3,8 +3,17 @@
 //! This is presentation state, deliberately not simulation state. Active YR's
 //! registered byte (`TechnoClass+0x423`) and discovery/visibility decisions are
 //! local-client facts: they read `g_PlayerPtr` and that client's shroud. The
-//! tracker is also recreated by `FUN_00655990` and on load. Serializing or
+//! tracker is also recreated by `FUN_00655990` and on load. Its dots are
+//! drawn by `RadarClass::RenderCellPixel @ 0x00655C50` (RefreshRadar
+//! `0x00657D77`, Update `0x006574C3`/`0x00657520`). `RenderTrackedObjects @
+//! 0x00656150`, which draws every tracked pixel without RenderCellPixel's
+//! eligibility tests, is RefreshRadar's windowless branch (`g_hWnd` null,
+//! `0x00657D30`) and does not run in a windowed game. Serializing or
 //! world-hashing it would therefore make a local view cache part of lockstep.
+//!
+//! `RadarClass::MarkPixelDirty @ 0x006562D0` queues one pixel for Update's
+//! RenderCellPixel pass; this owner recomputes every dot on each minimap
+//! update instead, so its callers' requests are subsumed.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -255,6 +264,10 @@ pub(super) struct RetainedRadarTracker {
     action40_building_tail_pending: bool,
 }
 
+/// `RadarClass::CreateTracker @ 0x006558D0` (its sole caller is the random
+/// map generator, `0x0059A51A`) allocates the same 256 empty buckets. Its
+/// teardown, `FreeBuffers @ 0x00655A90` from the destructor `0x00652C00`, is
+/// this value's drop.
 impl Default for RetainedRadarTracker {
     fn default() -> Self {
         Self {
@@ -539,6 +552,10 @@ fn tracker_bucket(x: i32, y: i32) -> usize {
 /// Building radar brush constructor @ 0x006563B0. Native scales the foundation
 /// width/height by radar zoom, rounds with +0.5, applies the 1-vs-2 minimum,
 /// then emits this ordered isometric diamond rather than an occupancy square.
+/// Native builds it once per Foundation index from the foundation size
+/// tables; `RadarClass::GetFoundationPixels @ 0x00656580` returns the entry
+/// for a building's type. Computing it from the same width and height here
+/// gives the same pixels.
 pub(super) fn radar_foundation_brush(
     foundation_width: u32,
     foundation_height: u32,

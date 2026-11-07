@@ -389,7 +389,7 @@ impl App {
             }
             // VERA: map archives are optional, so the list can be empty.
             crate::skirmish_launch::LaunchValidationError::NoSelectedMap => {
-                "No maps were found. Add map files to the game folder.".to_string()
+                crate::i18n::tr("VERA:NoMapsFound")
             }
             _ => return None,
         };
