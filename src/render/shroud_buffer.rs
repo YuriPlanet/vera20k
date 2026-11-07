@@ -1854,6 +1854,7 @@ mod tests {
     /// each byte rescaling A (254 doubles, 0 zeroes). A changed glow list
     /// redraws a plane whose fog is unchanged; an equal one does not.
     #[test]
+    #[ignore = "requires GPU; glow A rescaling and its redraw"]
     fn a_glow_rescales_a_under_frame_zero_and_redraws_when_it_changes() {
         let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
         let owner = intern::test_intern("Americans");
