@@ -489,6 +489,11 @@ impl TerrainDrawRenderer {
         self.submission.note_closed_passes(encoder, passes);
     }
 
+    /// Wall time of the bounded submissions made since the last `prepare`.
+    pub(crate) fn frame_submit_time(&self) -> crate::util::time::Duration {
+        self.submission.submit_time()
+    }
+
     #[cfg(test)]
     pub(crate) fn submissions(&self) -> usize {
         self.submission.submissions()

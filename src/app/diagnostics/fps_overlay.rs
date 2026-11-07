@@ -8,9 +8,9 @@
 //! list start below it. Its rows are in [`panel`]:
 //! rates and units, the engine areas that took the most of the last second
 //! and the load on each core. The rows and the status line are localized
-//! text ([`crate::i18n`]), so both draw with the process font in the chosen
-//! font option, which is the bundled fonts alone until GAME.FNT loads
-//! ([`BitFont::vector_only`]). Both are independent of tactical cameras,
+//! text ([`crate::i18n`]), so both draw with the process font, which draws
+//! GAME.FNT's style without GAME.FNT until it loads ([`BitFont::without_fnt`]).
+//! Both are independent of tactical cameras,
 //! optional dev overlays, and shell/offscreen composition.
 
 mod panel;

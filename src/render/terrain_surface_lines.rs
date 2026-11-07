@@ -353,6 +353,103 @@ struct Prepared {
     instance_capacity: usize,
     count: u32,
     scissor: [u32; 4],
+    /// The rectangles the snapshot copies ([`SnapshotCover::snapshot_rects`]).
+    snapshot: Vec<[u32; 4]>,
+}
+
+/// Edge of the square tiles a surface-line snapshot copies, in target pixels.
+const SNAPSHOT_TILE: u32 = 32;
+
+/// The target pixels a batch's blends read from the snapshot (`fs_main`'s
+/// `old_words` and `old_depth` loads): each output pixel, and the gate and
+/// source pixels its stores test or copy. Their bounds scissor the blends.
+/// The snapshot copies only the tiles of those bounds that hold such a
+/// pixel, so effects far apart do not copy the picture between them; every
+/// other reader of the snapshot copies its own pixels first.
+#[derive(Default)]
+struct SnapshotCover {
+    size: [u32; 2],
+    columns: u32,
+    /// Left, top, right and bottom, before clipping to the target.
+    bounds: [u32; 4],
+    tiles: Vec<u64>,
+}
+
+impl SnapshotCover {
+    fn reset(&mut self, size: [u32; 2]) {
+        self.size = size;
+        self.columns = size[0].div_ceil(SNAPSHOT_TILE);
+        self.bounds = [size[0], size[1], 0, 0];
+        let tiles = self.columns as usize * size[1].div_ceil(SNAPSHOT_TILE) as usize;
+        self.tiles.clear();
+        self.tiles.resize(tiles.div_ceil(64), 0);
+    }
+
+    /// Add the target pixels `left..right` by `top..bottom`.
+    fn add(&mut self, left: u32, top: u32, right: u32, bottom: u32) {
+        let [l, t, r, b] = &mut self.bounds;
+        *l = (*l).min(left);
+        *t = (*t).min(top);
+        *r = (*r).max(right);
+        *b = (*b).max(bottom);
+        let (right, bottom) = (right.min(self.size[0]), bottom.min(self.size[1]));
+        if left >= right || top >= bottom {
+            return;
+        }
+        for row in top / SNAPSHOT_TILE..=(bottom - 1) / SNAPSHOT_TILE {
+            for column in left / SNAPSHOT_TILE..=(right - 1) / SNAPSHOT_TILE {
+                let tile = (row * self.columns + column) as usize;
+                self.tiles[tile / 64] |= 1 << (tile % 64);
+            }
+        }
+    }
+
+    /// The blends' scissor: the bounds, clipped to the target.
+    fn scissor(&self) -> [u32; 4] {
+        let [left, top, right, bottom] = self.bounds;
+        let (right, bottom) = (right.min(self.size[0]), bottom.min(self.size[1]));
+        [
+            left,
+            top,
+            right.saturating_sub(left),
+            bottom.saturating_sub(top),
+        ]
+    }
+
+    /// One rectangle per run of read tiles in a tile row, within the scissor.
+    fn snapshot_rects(&self, rects: &mut Vec<[u32; 4]>) {
+        rects.clear();
+        let [x, y, width, height] = self.scissor();
+        if width == 0 || height == 0 {
+            return;
+        }
+        let read = |row: u32, column: u32| {
+            let tile = (row * self.columns + column) as usize;
+            self.tiles[tile / 64] & (1 << (tile % 64)) != 0
+        };
+        let (last_row, last_column) = (
+            (y + height - 1) / SNAPSHOT_TILE,
+            (x + width - 1) / SNAPSHOT_TILE,
+        );
+        for row in y / SNAPSHOT_TILE..=last_row {
+            let mut column = x / SNAPSHOT_TILE;
+            while column <= last_column {
+                if !read(row, column) {
+                    column += 1;
+                    continue;
+                }
+                let first = column;
+                while column <= last_column && read(row, column) {
+                    column += 1;
+                }
+                let left = (first * SNAPSHOT_TILE).max(x);
+                let top = (row * SNAPSHOT_TILE).max(y);
+                let right = (column * SNAPSHOT_TILE).min(x + width);
+                let bottom = ((row + 1) * SNAPSHOT_TILE).min(y + height);
+                rects.push([left, top, right - left, bottom - top]);
+            }
+        }
+    }
 }
 
 pub(super) struct SurfaceLineGpu {
@@ -375,6 +472,7 @@ pub(super) struct SurfaceLineGpu {
     written: std::collections::HashSet<[i32; 2]>,
     operations: Vec<Operation>,
     instances: Vec<PixelInstance>,
+    cover: SnapshotCover,
 }
 
 fn a_binding(
@@ -509,6 +607,7 @@ impl SurfaceLineGpu {
             written: Default::default(),
             operations: Vec::new(),
             instances: Vec::new(),
+            cover: SnapshotCover::default(),
         }
     }
 
@@ -523,11 +622,8 @@ impl SurfaceLineGpu {
         self.work.sort_by_key(|(point, _)| (point[1], point[0]));
         self.operations.clear();
         self.instances.clear();
+        self.cover.reset(size);
         let mut start = 0;
-        let mut left = size[0];
-        let mut top = size[1];
-        let mut right = 0;
-        let mut bottom = 0;
         while start < self.work.len() {
             let point = self.work[start].0;
             let mut end = start + 1;
@@ -547,27 +643,34 @@ impl SurfaceLineGpu {
                 ],
                 span: [start as u32, (end - start) as u32],
             });
-            left = left.min(x.floor().max(0.) as u32);
-            top = top.min(y.floor().max(0.) as u32);
-            right = right.max((x + zoom).ceil().max(0.) as u32);
-            bottom = bottom.max((y + zoom).ceil().max(0.) as u32);
+            self.cover.add(
+                x.floor().max(0.) as u32,
+                y.floor().max(0.) as u32,
+                (x + zoom).ceil().max(0.) as u32,
+                (y + zoom).ceil().max(0.) as u32,
+            );
+            let pixel = |x: i32, y: i32| {
+                [
+                    x.max(0) as u32,
+                    y.max(0) as u32,
+                    x.saturating_add(1).max(0) as u32,
+                    y.saturating_add(1).max(0) as u32,
+                ]
+            };
             // Snapshot the shared primary gate as well as output coverage.
             //Cross-source pairs remain atomic across every chunk boundary.
             for (_, operation) in &self.work[start..end] {
                 if operation.mode == 3 || operation.mode == 5 {
-                    left = left.min(operation.gate_x.max(0) as u32);
-                    top = top.min(operation.gate_y.max(0) as u32);
-                    right = right.max(operation.gate_x.saturating_add(1).max(0) as u32);
-                    bottom = bottom.max(operation.gate_y.saturating_add(1).max(0) as u32);
+                    let [l, t, r, b] = pixel(operation.gate_x, operation.gate_y);
+                    self.cover.add(l, t, r, b);
                 }
-                if matches!(operation.mode, 7 | 9) {
-                    //7601FB reads a displaced old word, which can lie outside
-                    //this chunk's output rect. Snapshot its actual address,
-                    //not an invented clamped neighbor or stale scratch word.
-                    left = left.min(operation.source_x.max(0) as u32);
-                    top = top.min(operation.source_y.max(0) as u32);
-                    right = right.max(operation.source_x.saturating_add(1).max(0) as u32);
-                    bottom = bottom.max(operation.source_y.saturating_add(1).max(0) as u32);
+                // 7601FB reads a displaced old word, which can lie outside
+                // this chunk's output rect: snapshot its actual address, not
+                // an invented clamped neighbor or stale scratch word. The
+                // X-major pair (mode 5) reads the other OLD destination.
+                if matches!(operation.mode, 5 | 7 | 9) {
+                    let [l, t, r, b] = pixel(operation.source_x, operation.source_y);
+                    self.cover.add(l, t, r, b);
                 }
             }
             start = end;
@@ -628,6 +731,7 @@ impl SurfaceLineGpu {
                 instance_capacity,
                 count: 0,
                 scissor: [0; 4],
+                snapshot: Vec::new(),
             };
             if index == self.batches.len() {
                 self.batches.push(prepared);
@@ -647,15 +751,9 @@ impl SurfaceLineGpu {
             ),
         }
         queue.write_buffer(&batch.instances, 0, bytemuck::cast_slice(&self.instances));
-        right = right.min(size[0]);
-        bottom = bottom.min(size[1]);
         batch.count = self.instances.len() as u32;
-        batch.scissor = [
-            left,
-            top,
-            right.saturating_sub(left),
-            bottom.saturating_sub(top),
-        ];
+        batch.scissor = self.cover.scissor();
+        self.cover.snapshot_rects(&mut batch.snapshot);
         self.active += 1;
         self.work.clear();
         self.written.clear();
@@ -898,10 +996,13 @@ impl TerrainDrawRenderer {
                     occlusion_query_set: None,
                     multiview_mask: None,
                 });
-                pass.set_scissor_rect(x, y, w, h);
                 pass.set_pipeline(&self.snapshot_pipeline);
                 pass.set_bind_group(0, &targets.source, &[]);
-                pass.draw(0..3, 0..1);
+                // Only the tiles the blends read (`SnapshotCover`).
+                for &[x, y, w, h] in &batch.snapshot {
+                    pass.set_scissor_rect(x, y, w, h);
+                    pass.draw(0..3, 0..1);
+                }
             }
             {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

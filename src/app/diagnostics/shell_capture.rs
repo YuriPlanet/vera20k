@@ -1171,10 +1171,6 @@ pub struct ShellCaptureRequest {
     timeout: Option<Duration>,
     live_lan: Option<LiveLanConfig>,
     live_online: Option<LiveOnlineConfig>,
-    /// `--modern-font`: draw text in VERA's vector fonts, as unticking the
-    /// Original Font option does; the sealed capture profile otherwise draws
-    /// GAME.FNT.
-    modern_font: bool,
     /// `--language <tag>`: VERA's interface language, such as `zh-CN` or the
     /// pseudo-language `qps-ploc`; English otherwise, whatever the system's.
     language: Option<String>,
@@ -1428,7 +1424,6 @@ where
     let mut online_loading_cancel_checkpoint = None;
     let mut observe_loading = false;
     let mut profile_check = false;
-    let mut modern_font = false;
     let mut language = None;
 
     while let Some(flag) = args.next() {
@@ -1616,10 +1611,6 @@ where
             "--network-profile-check" => {
                 ensure!(!profile_check, "duplicate --network-profile-check");
                 profile_check = true;
-            }
-            "--modern-font" => {
-                ensure!(!modern_font, "duplicate --modern-font");
-                modern_font = true;
             }
             "--language" => set_once(
                 &mut language,
@@ -2133,7 +2124,6 @@ where
         timeout,
         live_lan,
         live_online,
-        modern_font,
         language,
     }))
 }
@@ -2582,13 +2572,6 @@ impl ShellCaptureSession {
         state.match_state.input.cursor_x = self.request.cursor_x as f32;
         state.match_state.input.cursor_y = self.request.cursor_y as f32;
         state.frontend.native_shell_ui = self.request.native_shell_ui();
-        if self.request.modern_font {
-            state.persistence.options_profile.original_font = false;
-            state
-                .renderer
-                .bit_font
-                .set_mode(state.persistence.options_profile.font_mode());
-        }
         // As the Language list applies a pick; a language no file provides
         // fails the capture instead of drawing English under its name.
         let language = self
