@@ -22,10 +22,8 @@ the original strip.
 
 The strip follows the shroud plane the bodies use: the object's cell must be
 explored and not covered by a hostile gap, for every house alike, so an object
-pre-placed on unrevealed ground gets no strip either. `FogOfWar` does not
-tighten this to current sight — a trigger can leave an explored cell with no
-sustained sight source (`TActionClass::RevealAroundWaypoint`), and the body is
-still drawn there. `MultiplayPassive` houses (stock Neutral and Special) get no
+pre-placed on unrevealed ground gets no strip either. Under the `FogOfWar` game
+option the cell must also be in current sight. `MultiplayPassive` houses (stock Neutral and Special) get no
 automatic strip in modes 1 and 2; selecting or hovering one still draws gamemd's
 own strip. gamemd's disguise rule still applies: an enemy Mirage worn as a tree
 draws no strip until it is selected, in every mode.
