@@ -4117,6 +4117,15 @@ impl Simulation {
         }
         self.substrate
             .release_foot_air_tracker_before_limbo(stable_id);
+        // Ares Remove1004B140 frees the jammer (UnjamAll) and the PoweredBy
+        // source before the attached effects.
+        #[cfg(feature = "ares")]
+        {
+            self.remove_radar_jammer(stable_id);
+            if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+                entity.powered_by = None;
+            }
+        }
         #[cfg(feature = "ares")]
         self.limbo_ares_attach_effects(stable_id, context.rules());
         // Phobos `TechnoClass_Limbo_Wrapper` replaces the Limbo entry
@@ -5844,10 +5853,8 @@ impl Simulation {
 
         // BuildingLight436A00; Ares1004EBC0 preserves a cloaking parent's
         // link on control0, while the target clear remains unconditional.
-        self.substrate.spotlights_pointer_expired(
-            expired_id,
-            control == PointerExpiryControl::Uninit,
-        );
+        self.substrate
+            .spotlights_pointer_expired(expired_id, control == PointerExpiryControl::Uninit);
 
         #[cfg(any(test, feature = "test-support"))]
         if let Some(smudge) = self

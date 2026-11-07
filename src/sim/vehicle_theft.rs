@@ -425,7 +425,7 @@ impl Simulation {
     /// IsOperated10045440, inlined in admission10045097 (installed Ares).
     /// Ext+9D caches only the unrestricted case. Recompute this derived query
     /// from the authoritative type and Cargo instead of adding another latch.
-    pub(crate) fn ares_is_operated(&self, id: u64, rules: &RuleSet) -> bool {
+    pub fn ares_is_operated(&self, id: u64, rules: &RuleSet) -> bool {
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };

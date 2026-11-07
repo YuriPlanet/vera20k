@@ -23,7 +23,8 @@ impl Default for EmpState {
     }
 }
 impl GameEntity {
-    pub(crate) fn emp_remaining(&self) -> i32 {
+    /// Techno+504, the signed EMP counter (positive while under EMP).
+    pub fn emp_remaining(&self) -> i32 {
         self.emp.remaining
     }
     #[cfg(any(test, feature = "test-support"))]
@@ -47,6 +48,22 @@ impl GameEntity {
         if self.emp.sparkle == Some(expired) {
             self.emp.sparkle = None;
         }
+    }
+    /// Ares TechnoExt+14 EMPLastMission, which EnableEMPEffect2 (10062980,
+    /// `sim::powered_by`) also writes and DisableEMPEffect2 reads.
+    #[cfg(feature = "ares")]
+    pub(crate) fn emp_last_mission(&self) -> i32 {
+        self.emp.last_mission
+    }
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_emp_last_mission(&mut self, raw: i32) {
+        self.emp.last_mission = raw;
+    }
+    /// Installed IsDeactivationAdvisable10062D60, shared by the EMP and
+    /// PoweredBy (`sim::powered_by`) deactivations.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_deactivation_advisable(&self) -> bool {
+        receiver::advisable(self)
     }
     pub(crate) fn hash_emp_state<H: Hasher>(&self, hasher: &mut H) {
         if self.emp != EmpState::default() {
@@ -108,7 +125,7 @@ mod receiver {
             }),
         ))
     }
-    fn advisable(entity: &GameEntity) -> bool {
+    pub(super) fn advisable(entity: &GameEntity) -> bool {
         // Installed10062D60 calls vt184: original5B3040 returns current+AC,
         // or queued+B4 when current is NONE. LastMission separately saves rawAC.
         !matches!(

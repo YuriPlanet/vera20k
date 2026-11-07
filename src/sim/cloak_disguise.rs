@@ -293,6 +293,11 @@ pub(crate) fn building_stage_visual_character(
 }
 
 impl CloakTickFacts {
+    /// The object's progress stages (Ares per-type Cloakable.Stages).
+    pub(crate) fn cloaking_stages(&self) -> i32 {
+        self.cloaking_stages
+    }
+
     /// Capture live owner inputs once at the native AI visit.
     pub fn new(
         current_frame: i32,

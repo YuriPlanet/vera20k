@@ -105,13 +105,27 @@ impl Simulation {
             .retain(|_, linked_wave_id| *linked_wave_id != wave_id);
     }
 
+    /// `overlay_registry` reaches the range query an Ares Magnetron asks.
     pub(crate) fn wave_update_context(
         &self,
         wave: &crate::sim::wave::Wave,
         rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> crate::sim::wave::WaveUpdateContext {
         use crate::sim::combat::TargetKind;
         use crate::sim::projectile::ProjectileCoord;
+        #[cfg(not(feature = "ares"))]
+        let _ = overlay_registry;
+        #[cfg(feature = "ares")]
+        let ares_weapon = self.ares_wave_weapon(wave, rules);
+        // Ares WaveClass_Update_Beam (Ares.dll 10057290) asks GetFLH for the
+        // owner's wave slot (TechnoExt+8), not index 0.
+        #[cfg(feature = "ares")]
+        let flh_index = |entity: &crate::sim::game_entity::GameEntity| {
+            ares_weapon.map_or(0, |_| i32::from(entity.ares_wave_weapon_slot()))
+        };
+        #[cfg(not(feature = "ares"))]
+        let flh_index = |_: &crate::sim::game_entity::GameEntity| 0;
 
         // WaveClass keeps raw owner/target pointers through the represented
         // dying interval. Only PointerExpired makes either identity null.
@@ -139,7 +153,7 @@ impl Simulation {
                     rules,
                     &crate::sim::combat::fire_coord::FireSource::of_entity(entity),
                     object,
-                    0,
+                    flh_index(entity),
                     burst_index,
                     crate::rules::flh::Flh::default(),
                 )
@@ -168,13 +182,90 @@ impl Simulation {
                 .is_some_and(|entity| entity.category() == EntityCategory::Unit),
             _ => false,
         };
+        #[cfg(feature = "ares")]
+        let ares = ares_weapon.map(|weapon| {
+            use crate::rules::ares_weapon::WaveReverseTarget;
+            let target_class = match wave.target_ref() {
+                Some(TargetKind::Entity(id)) => {
+                    self.substrate
+                        .entities
+                        .get(id)
+                        .map(|entity| match entity.category() {
+                            EntityCategory::Unit => WaveReverseTarget::Vehicle,
+                            EntityCategory::Aircraft => WaveReverseTarget::Aircraft,
+                            EntityCategory::Structure => WaveReverseTarget::Building,
+                            EntityCategory::Infantry => WaveReverseTarget::Infantry,
+                        })
+                }
+                _ => None,
+            };
+            let in_range = match (owner, wave.target_ref(), target_position) {
+                (Some(entity), Some(target), Some(target_position)) => {
+                    if wave.wave_type() == 3 {
+                        target_scan::can_fire_at(
+                            self,
+                            rules,
+                            entity.stable_id(),
+                            target,
+                            i32::from(entity.ares_wave_weapon_slot()),
+                            overlay_registry,
+                        )
+                    } else {
+                        // Owner GetCoords (vt+0x48) to the target's vt+0x58:
+                        // Range >= sqrt(dx²+dy²+dz²) / sqrt(2), compared
+                        // exactly as 2*Range² >= d² (x87 ulp ties aside).
+                        crate::sim::movement::ground_pose::target_get_coords(
+                            TargetKind::Entity(entity.stable_id()),
+                            self,
+                            self.resolved_terrain
+                                .as_ref()
+                                .map(crate::map::resolved_terrain::NativeCellQuery::canonical)
+                                .as_ref(),
+                        )
+                        .is_some_and(|owner| {
+                            let squared = [
+                                owner.x - target_position.x,
+                                owner.y - target_position.y,
+                                owner.z - target_position.z,
+                            ]
+                            .map(|axis| i64::from(axis).pow(2))
+                            .iter()
+                            .sum::<i64>();
+                            let range = i64::from(weapon.range_leptons);
+                            range >= 0 && 2 * range * range >= squared
+                        })
+                    }
+                }
+                _ => false,
+            };
+            crate::sim::wave::AresWaveTracking {
+                in_range,
+                reversed: weapon
+                    .ares_visuals
+                    .wave_reversed_against(target_class.unwrap_or(WaveReverseTarget::Other)),
+            }
+        });
+        #[cfg(not(feature = "ares"))]
+        let ares = None;
         crate::sim::wave::WaveUpdateContext {
             owner_position,
             owner_fire_coordinate,
             owner_current_target,
             target_position,
             target_is_unit,
+            ares,
         }
+    }
+
+    /// The weapon CreateWave (Ares.dll 10055160) registered in WaveExt for
+    /// `wave`; every hooked wave reads it. `None` for a wave without one.
+    #[cfg(feature = "ares")]
+    pub fn ares_wave_weapon<'r>(
+        &self,
+        wave: &crate::sim::wave::Wave,
+        rules: &'r RuleSet,
+    ) -> Option<&'r crate::rules::weapon_type::WeaponType> {
+        rules.weapon(self.interner.resolve(wave.ares_weapon()?))
     }
 }
 
@@ -417,8 +508,28 @@ impl Simulation {
         rules: &RuleSet,
         ctx: ObjectAiCtx<'_>,
     ) -> ObjectAiOutcome {
-        let context =
-            self.wave_update_context(self.waves.get(id).expect("represented Wave"), rules);
+        // Ares WaveClass_Update (Ares.dll 100571A0, hook 0x760F50) replaces
+        // WaveClass::AI: a wave whose weapon has AmbientDamage first damages
+        // the cells of its previous update, whatever its type; the update and
+        // lifecycle follow with the post-damage world.
+        #[cfg(feature = "ares")]
+        if let Some(request) = self
+            .ares_wave_weapon(self.waves.get(id).expect("represented Wave"), rules)
+            .filter(|weapon| weapon.ambient_damage != 0)
+            .and_then(|_| self.waves.ares_damage_request(id))
+        {
+            self.commit_logic_wave_damage_request(
+                rules,
+                ctx.overlay_registry,
+                &request,
+                ctx.effects,
+            );
+        }
+        let context = self.wave_update_context(
+            self.waves.get(id).expect("represented Wave"),
+            rules,
+            ctx.overlay_registry,
+        );
         let terrain = self.resolved_terrain.as_ref();
         let (request, result) = self
             .waves
@@ -1486,6 +1597,15 @@ fn techno_common_steps(
     // surface before the same visit updates self-attached effects1004B434.
     #[cfg(feature = "ares")]
     sim.update_ares_surface_conversion(id, rules, effects);
+    // Ares1004B320 updates a PoweredBy object's power source next. Its
+    // TechnoExt::Destroy kills the object; native continues the hook's
+    // extension updates on the corpse, which this visit skips instead.
+    #[cfg(feature = "ares")]
+    if !sim.update_ares_powered_by(id, rules, overlay_registry, effects)
+        || !ai_alive(&sim.substrate, id)
+    {
+        return false;
+    }
     // Ares1004B434 updates attachments before1004B528 EMP recovery.
     #[cfg(feature = "ares")]
     sim.update_ares_attach_effects(id, rules);
@@ -1499,6 +1619,9 @@ fn techno_common_steps(
     //the stock head. EMP expiry itself must not invent a future-power sweep.
     #[cfg(feature = "ares")]
     sim.update_ares_emp_operability(id, rules, effects);
+    // Ares1004B320 then unjams a deactivated jammer or updates an active one.
+    #[cfg(feature = "ares")]
+    sim.update_ares_radar_jammer(id, rules);
     #[cfg(feature = "ares")]
     sim.update_ares_driver_killed_mission(id, rules, overlay_registry, effects);
     // Ares1004B64B..1004B658 follows the extension updates and precedes
@@ -2070,15 +2193,15 @@ fn screen_visual_character(
     let viewer = sim.session.current_house();
     let owner = entity.owner();
     let allied = |a, b| is_ally_by_object(Some(&sim.house_alliances), &sim.interner, a, b);
-    let invisible = sim
-        .interner
-        .object_type(entity.type_ref(), rules)
-        .is_some_and(|object| {
-            object.invisible
-                || entity.category() == EntityCategory::Structure && object.invisible_in_game
-        });
+    let object = sim.interner.object_type(entity.type_ref(), rules);
+    let invisible = object.is_some_and(|object| {
+        object.invisible
+            || entity.category() == EntityCategory::Structure && object.invisible_in_game
+    });
     entity.visual_character(
-        rules.general.cloaking_stages,
+        object.map_or(rules.general.cloaking_stages, |object| {
+            object.cloaking_stages(rules.general.cloaking_stages)
+        }),
         invisible,
         sim.shared_owned_by_current_house(entity),
         crate::sim::cloak_disguise::VisualCharacterQuery::screen(
@@ -2770,7 +2893,8 @@ mod tests {
         assert_eq!(
             sim.wave_update_context(
                 sim.waves.get(3).unwrap(),
-                crate::rules::ruleset::RuleSet::empty_for_test()
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                None
             )
             .target_position,
             Some(retained)
@@ -2785,7 +2909,8 @@ mod tests {
         assert_eq!(
             sim.wave_update_context(
                 sim.waves.get(3).unwrap(),
-                crate::rules::ruleset::RuleSet::empty_for_test()
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                None
             )
             .target_position,
             Some(retained)
@@ -2794,7 +2919,8 @@ mod tests {
         assert_eq!(
             sim.wave_update_context(
                 sim.waves.get(3).unwrap(),
-                crate::rules::ruleset::RuleSet::empty_for_test()
+                crate::rules::ruleset::RuleSet::empty_for_test(),
+                None
             )
             .target_position,
             None

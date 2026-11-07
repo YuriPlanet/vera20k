@@ -56,6 +56,10 @@ pub(crate) mod conversion_health;
 pub(crate) mod crew_survival; // building SpawnSurvivors and vehicle crew escape
 #[cfg(feature = "ares")]
 pub(crate) mod vehicle_theft;
+#[cfg(feature = "ares")]
+pub(crate) mod powered_by; // Ares PoweredBy= power sources (PoweredUnitClass 1006A6F0)
+#[cfg(feature = "ares")]
+pub(crate) mod radar_jammer; // Ares RadarJamRadius= jammers (JammerClass 10068500)
 pub mod economy; // per-house wallet/storage/statistics value-type (production+economy substrate)
 #[cfg(feature = "ares")]
 pub(crate) mod factory_owners;

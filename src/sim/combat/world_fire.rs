@@ -706,12 +706,12 @@ fn uncloak_to_fire(
             cloak.start_uncloaking(
                 binary_frame as i32,
                 obj.cloaking_speed,
-                rules.general.cloaking_stages,
+                obj.cloaking_stages(rules.general.cloaking_stages),
                 false,
             )
         });
     if start.is_some_and(|result| result.play_sound) && sound_enabled {
-        emit_configured_cloak_sound(substrate, sound_events, id, rules);
+        emit_configured_cloak_sound(substrate, sound_events, id, rules, Some(obj), true);
     }
 }
 
@@ -2030,12 +2030,20 @@ pub(super) fn emit_admitted_fire(
     // FireAt6FF1FB..6FF26E: an IsRailgun weapon with no live +314 system runs
     // the line damage from the launch source, then builds the Railgun system
     // from there to the coordinate it returns, with no target and no House.
-    if weapon.is_railgun
-        && world
-            .substrate
-            .entities
-            .get(snap.stable_id)
-            .is_some_and(|firer| firer.railgun_particle_system.system().is_none())
+    // Ares TechnoClass_Fire_DetachedRailgun (Ares.dll 1004D0C0, hook
+    // 0x6FF1FB) enters for IsDetachedRailgun regardless of both tests, and
+    // DetachedRailgun2 (1004D0F0, hook 0x6FF26E) then skips the +314 store.
+    #[cfg(feature = "ares")]
+    let detached = weapon.ares_visuals.is_detached_railgun;
+    #[cfg(not(feature = "ares"))]
+    let detached = false;
+    if detached
+        || weapon.is_railgun
+            && world
+                .substrate
+                .entities
+                .get(snap.stable_id)
+                .is_some_and(|firer| firer.railgun_particle_system.system().is_none())
     {
         let end = super::railgun::line_damage(
             world,
@@ -2067,7 +2075,7 @@ pub(super) fn emit_admitted_fire(
                     rules,
                 )
             });
-        if let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
+        if !detached && let Some(firer) = world.substrate.entities.get_mut(snap.stable_id) {
             firer.railgun_particle_system.bind(system);
         }
     }
@@ -2140,7 +2148,7 @@ pub(super) fn emit_admitted_fire(
         crate::sim::world::damage_consequences::admit_muzzle_anim(world, rules, &event);
         // Sonic6FF470 precedes the independent later-effect ladder.
         if weapon.is_sonic && callbacks_enabled(world) {
-            world.commit_fired_wave(rules, &event, 0);
+            world.commit_fired_wave(rules, &event, 0, selected.index, overlay_registry);
         }
     }
     // 6FF4CC..6FF54B: successful FireAt only, after burst advance and before
@@ -2155,7 +2163,14 @@ pub(super) fn emit_admitted_fire(
         prism_support_count,
     );
     super::electric_bolt::fired(world, rules, snap.stable_id, snap.target, weapon);
-    super::radiation_beam::fired(world, rules, snap.stable_id, snap.target, weapon);
+    super::radiation_beam::fired(
+        world,
+        rules,
+        snap.stable_id,
+        snap.target,
+        weapon,
+        selected.index,
+    );
     super::radiation_beam::erupted(world, rules, snap.stable_id, weapon);
     // Mag6FF5F5..6FF650 admits at most one linked Wave. The native Unit
     // constructor/update can reverse its endpoints before returning here.
@@ -2164,7 +2179,7 @@ pub(super) fn emit_admitted_fire(
         && callbacks_enabled(world)
         && let Some(event) = out.fire_events.last().cloned()
     {
-        world.commit_fired_wave(rules, &event, 3);
+        world.commit_fired_wave(rules, &event, 3, selected.index, overlay_registry);
     }
     // FireAt6FF65A: shared DecreaseAmmo70D670 (+390) debits only signed>0.
     // Aircraft's override is RET41B900; release/dock retain their own writes.

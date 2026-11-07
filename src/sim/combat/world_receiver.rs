@@ -506,6 +506,40 @@ fn respond_to_base_attack(
     base_defense_response::respond_to_base_attack(world, rules, victim_id, attacker_id, effects);
 }
 
+/// Apply_area_damage's bridge flag (`0x00489E9F`, `sete` on the warhead
+/// being `IonCannonWarhead`), which its four bridge tests (`0x00489FD8`,
+/// `0x0048A15D`, `0x0048A229`, `0x0048A283`) read. Ares
+/// DamageArea_BridgeAbsoluteDestroyer (10053880..10053920) stores the
+/// warhead's `BridgeAbsoluteDestroyer=`, defaulting to that identity.
+/// Ares WarheadTypeExt `Malicious` (+0x75, default yes): whether this hit
+/// raises the victim's under-attack alert (hooks 0x7384BD and 0x4F94A5).
+pub(crate) fn warhead_is_malicious(
+    rules: &RuleSet,
+    interner: &StringInterner,
+    event: &EntityDamageEvent,
+) -> bool {
+    #[cfg(feature = "ares")]
+    if let Some(combat) = rules
+        .warhead(interner.resolve(event.warhead_ref))
+        .and_then(WarheadType::ares_combat)
+    {
+        return combat.malicious();
+    }
+    #[cfg(not(feature = "ares"))]
+    let _ = (rules, interner, event);
+    true
+}
+
+fn bridge_absolute_destroyer(warhead: &WarheadType, is_ion_cannon_warhead: bool) -> bool {
+    #[cfg(feature = "ares")]
+    if let Some(combat) = warhead.ares_combat() {
+        return combat.bridge_absolute_destroyer(is_ion_cannon_warhead);
+    }
+    #[cfg(not(feature = "ares"))]
+    let _ = warhead;
+    is_ion_cannon_warhead
+}
+
 pub(crate) fn collect_area(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -856,7 +890,7 @@ fn collect_area_at<'r>(
         origin,
     );
     let (rx, ry, sub_x, sub_y, z_leptons) = projectile_impact_cell(impact);
-    let entered = damage != 0 && !world.session.no_damage();
+    let entered = combat_aoe::area_damage_enters(damage, warhead, world.session.no_damage());
     let routed_wall = entered && area_routes_to_wall(world, overlay_registry, (rx, ry), warhead);
     let aoe = collect_area(
         world,
@@ -1788,15 +1822,28 @@ pub(crate) fn commit_entities(
             } else {
                 DamageRetaliation::Refused
             };
-            match world.receive_damage_scatter(
-                target_id,
-                retaliation,
-                rules,
-                overlay_registry,
-                run.effects(),
-            ) {
-                Ok(changed) => death.bridge_state_changed |= changed,
-                Err(cause) => log::debug!("damaged {target_id} did not scatter: {cause}"),
+            // Ares TechnoClass_ReceiveDamage_PreventScatter (hook 0x702CFE)
+            // replaces the Scatter call itself: a `PreventScatter=yes`
+            // warhead leaves the admitted object in place. The admission
+            // before it only reads.
+            #[cfg(feature = "ares")]
+            let prevent_scatter = rules
+                .warhead(world.interner.resolve(event.warhead_ref))
+                .and_then(WarheadType::ares_combat)
+                .is_some_and(|combat| combat.prevent_scatter());
+            #[cfg(not(feature = "ares"))]
+            let prevent_scatter = false;
+            if !prevent_scatter {
+                match world.receive_damage_scatter(
+                    target_id,
+                    retaliation,
+                    rules,
+                    overlay_registry,
+                    run.effects(),
+                ) {
+                    Ok(changed) => death.bridge_state_changed |= changed,
+                    Err(cause) => log::debug!("damaged {target_id} did not scatter: {cause}"),
+                }
             }
         }
 
@@ -2056,7 +2103,10 @@ pub(crate) fn commit_entities(
             // UnitClass7384B9..738530 submits the Harvester warning before
             // its AI response/return, with or without a source. Keep this at
             // the Unit receiver; Infantry/Aircraft do not own this class tail.
-            if let Some(target) = world.substrate.entities.get(target_id)
+            // Ares UnitClass_ReceiveDamage_OreMinerUnderAttack (hook
+            // 0x7384BD) skips it to 0x738535 for a `Malicious=no` warhead.
+            if warhead_is_malicious(rules, &world.interner, event)
+                && let Some(target) = world.substrate.entities.get(target_id)
                 && target.category() == EntityCategory::Unit
                 && world
                     .interner
@@ -2068,6 +2118,7 @@ pub(crate) fn commit_entities(
                     ry: target.position.ry(),
                     owner: target.owner(),
                     victim_type: target.type_ref(),
+                    own_alert: true,
                 };
                 world.submit_under_attack_warning(event, rules, run.effects());
             }
@@ -2107,6 +2158,7 @@ pub(crate) fn commit_entities(
                 target_id,
                 (attacker_id != RAD_NO_ATTACKER).then_some(attacker_id),
                 receive_state,
+                warhead_is_malicious(rules, &world.interner, event),
                 rules,
                 overlay_registry,
                 run.effects(),
@@ -2246,8 +2298,37 @@ pub(crate) fn handle_death(
                 } else {
                     &[]
                 };
-                for choices in [voice, obj.die_sounds.as_slice()] {
-                    if let Some(sound) = select_death_sound(choices, &world.main_rng) {
+                // The killing hit's warhead: what Techno's death arm reads
+                // from its own ReceiveDamage arguments (stack +0xD0).
+                #[cfg(feature = "ares")]
+                let killing_combat = damage_events
+                    .iter()
+                    .rfind(|event| event.target_id == dead_id)
+                    .and_then(|event| rules.warhead(world.interner.resolve(event.warhead_ref)))
+                    .and_then(WarheadType::ares_combat);
+                // Ares TechnoClass_ReceiveDamage_OverrideVoiceDie (1004ADA0,
+                // hook 0x702185) and _OverrideDieSound (1004AD60, hook
+                // 0x7021F5) replace the cue at its PlayAt, after the draw:
+                // a set override plays instead, its -1 index plays nothing.
+                #[cfg(feature = "ares")]
+                let overrides = [
+                    killing_combat.and_then(|combat| combat.voice_die_override()),
+                    killing_combat.and_then(|combat| combat.die_sound_override()),
+                ];
+                #[cfg(not(feature = "ares"))]
+                let overrides: [Option<Option<&str>>; 2] = [None, None];
+                for (choices, sound_override) in [voice, obj.die_sounds.as_slice()]
+                    .into_iter()
+                    .zip(overrides)
+                {
+                    if let Some(sound) =
+                        select_death_sound(choices, &world.main_rng).and_then(|sound| {
+                            match sound_override {
+                                Some(cue) => cue.map(str::to_owned),
+                                None => Some(sound),
+                            }
+                        })
+                    {
                         if callbacks_enabled(world) {
                             if sound_enabled(world) {
                                 world.sound_events.emit(SimSoundEvent::voc_at_world_coord(
@@ -2354,7 +2435,15 @@ pub(crate) fn handle_death(
                 // DetonateAtCoord every bullet takes. An IvanBomb warhead (the
                 // Crazy Ivan's own bomber) plants a bomb on the dying object
                 // instead of damaging (`0x00469343`), which goes off below.
+                // Ares TechnoClass_ReceiveDamage_SuppressDeathWeapon (hook
+                // 0x702669) skips only this Fire_Death_Weapon call.
+                #[cfg(feature = "ares")]
+                let death_weapon_suppressed = killing_combat
+                    .is_some_and(|combat| combat.suppresses_death_weapon(obj.category, &obj.id));
+                #[cfg(not(feature = "ares"))]
+                let death_weapon_suppressed = false;
                 if explodes
+                    && !death_weapon_suppressed
                     && let Some(detonation) = super::death_weapon_detonation(
                         &mut world.interner,
                         &world.substrate,
@@ -2502,7 +2591,21 @@ fn finish_concrete_death(
         // types at `0x004D98DD`. Its owner gate (`0x0050B6F0`) and
         // the `CreateRadarEvent(7)` dedupe (`0x004D98FE`) need the
         // house table and radar queue, which the world owns.
-        if let Some(event) = death_announcement_event(obj, category, rx, ry, owner) {
+        // Ares TechnoClass_ReceiveDamage_SuppressUnitLost (1004B020, hook
+        // 0x702050) marks the victim of a `UnitLost.Suppress=yes` kill;
+        // FootClass_Destroyed (10049080) then stays silent.
+        #[cfg(feature = "ares")]
+        let unit_lost_suppressed = damage_events
+            .iter()
+            .rfind(|event| event.target_id == dead_id)
+            .and_then(|event| rules.warhead(world.interner.resolve(event.warhead_ref)))
+            .and_then(WarheadType::ares_combat)
+            .is_some_and(|combat| combat.unit_lost_suppress());
+        #[cfg(not(feature = "ares"))]
+        let unit_lost_suppressed = false;
+        if !unit_lost_suppressed
+            && let Some(event) = death_announcement_event(obj, category, rx, ry, owner)
+        {
             effects.unit_lost_events.push(event);
         }
     }
@@ -3179,7 +3282,10 @@ fn continue_area_damage(
             ry: context.cell.1,
             damage: context.damage,
             warhead_ref: context.warhead_ref,
-            is_ion_cannon: context.warhead_ref == world.rule_handles().ion_cannon,
+            is_ion_cannon: bridge_absolute_destroyer(
+                context.warhead,
+                context.warhead_ref == world.rule_handles().ion_cannon,
+            ),
             impact_z_leptons: context.impact.z,
         };
         death.bridge_state_changed |= crate::sim::world::bridge_orchestrator::apply_bridge_damage_events_with_overlay_registry(
@@ -4053,22 +4159,30 @@ fn start_uncloaking_for_damage(
     sound_enabled: bool,
 ) {
     let now = current_tick as i32;
-    let cloaking_speed = world
+    let object = world
         .substrate
         .entities
         .get(target_id)
-        .and_then(|target| world.interner.object_type(target.type_ref(), rules))
-        .map_or(1, |object| object.cloaking_speed);
+        .and_then(|target| world.interner.object_type(target.type_ref(), rules));
+    let cloaking_speed = object.map_or(1, |object| object.cloaking_speed);
+    let cloaking_stages = object.map_or(rules.general.cloaking_stages, |object| {
+        object.cloaking_stages(rules.general.cloaking_stages)
+    });
     let surfaced = world
         .substrate
         .entities
         .get_mut(target_id)
         .and_then(|target| target.cloak.as_mut())
-        .map(|cloak| {
-            cloak.start_uncloaking(now, cloaking_speed, rules.general.cloaking_stages, false)
-        });
+        .map(|cloak| cloak.start_uncloaking(now, cloaking_speed, cloaking_stages, false));
     if surfaced.is_some_and(|result| result.play_sound) && sound_enabled {
-        emit_configured_cloak_sound(&world.substrate, &mut world.sound_events, target_id, rules);
+        emit_configured_cloak_sound(
+            &world.substrate,
+            &mut world.sound_events,
+            target_id,
+            rules,
+            object,
+            true,
+        );
     }
 }
 

@@ -93,6 +93,25 @@ pub struct PowerState {
     /// and owned buildings; the projection updates only at the reached
     /// House+5779 receiver.
     radar_available: bool,
+    /// Ares HouseExt power the Battery super weapon lends.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares: AresHousePower,
+}
+
+/// Ares HouseExt's battery fields (`src/Ext/House/Body.h`): AuxPower
+/// (+0x0C), BatteryCount (+0x10), BatteryKeepOnline (+0x70) and
+/// BatteryOverpower (+0x7C), written only by SW_Battery's Activate
+/// (`0x1006EBD0`) and Deactivate (`0x1006EC40`) here. Lists hold one entry per
+/// active battery's BuildingType. Script action 0x41 and trigger action 0x92 also
+/// add AuxPower natively; neither is ported.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresHousePower {
+    aux_power: i32,
+    battery_count: i32,
+    keep_online: Vec<String>,
+    overpower: Vec<String>,
 }
 
 impl Default for PowerState {
@@ -113,6 +132,8 @@ impl Default for PowerState {
             radar_dirty: true,
             radar_outage_timer: crate::sim::timer::CdTimer::started(0, 0),
             radar_available: false,
+            #[cfg(feature = "ares")]
+            ares: AresHousePower::default(),
         }
     }
 }
@@ -266,6 +287,75 @@ impl PowerState {
             b"radar-outage-v1".hash(hasher);
             self.radar_outage_timer.hash(hasher);
         }
+        // Likewise a House no battery ever reached.
+        #[cfg(feature = "ares")]
+        if self.ares != AresHousePower::default() {
+            b"ares-house-power-v1".hash(hasher);
+            self.ares.hash(hasher);
+        }
+    }
+
+    /// SW_Battery::Activate1006EBD0's House writes, then RecheckPower.
+    #[cfg(feature = "ares")]
+    pub(crate) fn activate_battery(
+        &mut self,
+        power: i32,
+        keep_online: &[String],
+        overpower: &[String],
+    ) {
+        self.ares.battery_count = self.ares.battery_count.wrapping_add(1);
+        self.ares.aux_power = self.ares.aux_power.wrapping_add(power);
+        self.ares.keep_online.extend_from_slice(keep_online);
+        self.ares.overpower.extend_from_slice(overpower);
+        self.invalidate(false);
+    }
+
+    /// SW_Battery::Deactivate1006EC40: the reverse writes; each list item
+    /// erases its first equal entry (1006EB70), then RecheckPower.
+    #[cfg(feature = "ares")]
+    pub(crate) fn deactivate_battery(
+        &mut self,
+        power: i32,
+        keep_online: &[String],
+        overpower: &[String],
+    ) {
+        self.ares.battery_count = self.ares.battery_count.wrapping_sub(1);
+        self.ares.aux_power = self.ares.aux_power.wrapping_sub(power);
+        for (list, items) in [
+            (&mut self.ares.keep_online, keep_online),
+            (&mut self.ares.overpower, overpower),
+        ] {
+            for item in items {
+                if let Some(index) = list.iter().position(|entry| entry == item) {
+                    list.remove(index);
+                }
+            }
+        }
+        self.invalidate(false);
+    }
+
+    /// HouseExt BatteryCount > 0: the radar hook508E66 (Ares.dll 10024780).
+    #[cfg(feature = "ares")]
+    pub(crate) fn has_battery(&self) -> bool {
+        self.ares.battery_count > 0
+    }
+
+    /// BatteryKeepOnline holds this BuildingType (hook4555D5, 100140B0).
+    #[cfg(feature = "ares")]
+    pub(crate) fn keeps_online(&self, building_type: &str) -> bool {
+        self.ares
+            .keep_online
+            .iter()
+            .any(|id| id.eq_ignore_ascii_case(building_type))
+    }
+
+    /// BatteryOverpower holds this BuildingType (hook44019D, 10014690).
+    #[cfg(feature = "ares")]
+    pub(crate) fn overpowers(&self, building_type: &str) -> bool {
+        self.ares
+            .overpower
+            .iter()
+            .any(|id| id.eq_ignore_ascii_case(building_type))
     }
 
     /// House4FCE30 and508D99..DC9: produced>=drained or drained==0 gives1;
@@ -448,6 +538,9 @@ pub(crate) struct OperationalFacts {
     /// Building `+0x660` online latch and `+0x67C` Tesla charger count.
     pub online: bool,
     pub tesla_chargers: i32,
+    /// The charger count that bypasses power (`0x004555D5` EDI = 2). Ares's
+    /// hook there (100140B0) passes 0 for a `Battery.KeepOnline` type.
+    pub charger_bypass: i32,
     /// `+0x504` EMP time and `+0x6C` Health.
     pub emp_remaining: i32,
     pub health: i32,
@@ -473,13 +566,17 @@ pub(crate) fn is_operational_for_output(
     facts: &OperationalFacts,
     power_below_full: impl FnOnce() -> bool,
 ) -> bool {
-    if !facts.online && facts.tesla_chargers < 2 {
+    if !facts.online && facts.tesla_chargers < facts.charger_bypass {
         return false;
     }
     if facts.emp_remaining > 0 || facts.health == 0 {
         return false;
     }
-    if facts.powered && facts.power_drain > 0 && power_below_full() && facts.tesla_chargers < 2 {
+    if facts.powered
+        && facts.power_drain > 0
+        && power_below_full()
+        && facts.tesla_chargers < facts.charger_bypass
+    {
         return false;
     }
     if facts.powered_special && facts.owner_outage {
@@ -609,8 +706,16 @@ fn recalculate_power_for_owner(
     binary_frame: u32,
     require_discovery: bool,
 ) {
-    let mut produced: i32 = 0;
-    let mut drained: i32 = 0;
+    // Ares HouseClass_UpdatePower_Auxiliary10024650 (hook 508C7F) starts
+    // the counters from HouseExt AuxPower: positive as output, negative as
+    // drain (the 32-bit negation wraps).
+    #[cfg(feature = "ares")]
+    let (mut produced, mut drained) = (
+        state.ares.aux_power.max(0),
+        state.ares.aux_power.wrapping_neg().max(0),
+    );
+    #[cfg(not(feature = "ares"))]
+    let (mut produced, mut drained): (i32, i32) = (0, 0);
     let mut has_drained_power_source = false;
     // Phobos `HouseExt::PowerPlantEnhancers`: this owner's active registered
     // enhancer buildings. The list is derived from the same building order the
@@ -871,7 +976,13 @@ fn radar_provider_available(
     interner: &crate::sim::intern::StringInterner,
     require_discovery: bool,
 ) -> bool {
-    if state.low_power() {
+    // Ares HouseClass_UpdateRadar_Battery10024780 (hook 508E66): on low
+    // power the radar buildings are checked only while a battery is active.
+    #[cfg(feature = "ares")]
+    let low_power_blocks = !state.has_battery();
+    #[cfg(not(feature = "ares"))]
+    let low_power_blocks = true;
+    if state.low_power() && low_power_blocks {
         return false;
     }
     // Native House+68 order chooses the first otherwise eligible provider;
@@ -893,6 +1004,18 @@ fn radar_provider_available(
                 .is_some_and(|obj| obj.radar)
         {
             continue;
+        }
+        // Ares Radar_Update_CheckEligible10024550 (hook508EBC) skips a
+        // jammed or EMPed (+504 > 0) radar to the next one; a remaining
+        // nonzero counter still ends the scan as508F12 does.
+        #[cfg(feature = "ares")]
+        {
+            if entity.radar_jam.is_jammed() || entity.emp_remaining() > 0 {
+                continue;
+            }
+            if entity.emp_remaining() != 0 {
+                return false;
+            }
         }
         // Building+504 EMP starts zero. VERA has no EMP writer yet; its
         // online latch has independent map/trigger and Temporal writers.

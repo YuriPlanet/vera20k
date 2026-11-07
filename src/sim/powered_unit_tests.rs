@@ -33,7 +33,9 @@ fn spark_rules() -> RuleSet {
 /// `UnitClass::AI`'s spark block (`0x007360C9..0x007361A4`) through
 /// [`Simulation::deactivated_unit_sparks`]: the phase over the Location, the
 /// Frame and the ID, the two Scenario draws (Y, then X) and the system's
-/// constructor arguments.
+/// constructor arguments. Ares hook736135 adds an IsPowered veto to this
+/// stock block (`powered_by_tests`), which these untyped rows would hit.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn offline_sparks_match_original_execution() {
     let vectors: serde_json::Value =

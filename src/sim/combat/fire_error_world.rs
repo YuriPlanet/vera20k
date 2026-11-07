@@ -750,7 +750,7 @@ impl FireQuery for WorldQuery<'_, '_> {
             )
         });
         i32::from(target.visual_character(
-            subject.rules.general.cloaking_stages,
+            obj.cloaking_stages(subject.rules.general.cloaking_stages),
             invisible,
             subject.world.shared_owned_by_current_house(target),
             crate::sim::cloak_disguise::VisualCharacterQuery::sensor(true, sensed, false),
