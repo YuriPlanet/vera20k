@@ -989,12 +989,6 @@ pub struct GeneralRules {
     /// `WallTower=` (Rules `+0x86C..+0x87C`) and the four power plants
     /// (`+0x89C..+0x8A8`).
     pub building_types: GeneralBuildingTypes,
-    /// Whether ore cells grow denser over time (TiberiumGrows= in [General]).
-    /// Default true. Can be overridden per-map in [SpecialFlags].
-    pub tiberium_grows: bool,
-    /// Whether rich ore spreads to adjacent empty cells (TiberiumSpreads= in [General]).
-    /// Default true. Can be overridden per-map in [SpecialFlags].
-    pub tiberium_spreads: bool,
     /// `GrowthRate=` in [General], in minutes. Fallback 2.0 matches the engine
     /// constructor default; retail rulesmd.ini always supplies its own (5), so
     /// the fallback only fires for a non-retail INI missing the key. Parsed for
@@ -2675,8 +2669,6 @@ impl Default for GeneralRules {
             prerequisite_proc_alternate: None,
             prism_support: PrismSupportRules::default(),
             building_types: GeneralBuildingTypes::default(),
-            tiberium_grows: true,
-            tiberium_spreads: true,
             growth_rate_minutes: 2.0,
             // The RulesClass constructor's null pointers (+338..+344, +94 and
             // +BB4: `0x00665B02..0x00665B14`, `0x0066572F`, `0x006665CF`).
@@ -3908,8 +3900,6 @@ impl GeneralRules {
             // Only the ordered Process projection binds these references/reads.
             drop_zone_anim: defaults.drop_zone_anim,
             drop_zone_radius: defaults.drop_zone_radius,
-            tiberium_grows: general.read_bool("TiberiumGrows", true),
-            tiberium_spreads: general.read_bool("TiberiumSpreads", true),
             growth_rate_minutes: general.read_double("GrowthRate", 2.0) as f32,
             // Published from the retained General pass owner.
             attack_cursor_on_disguise: defaults.attack_cursor_on_disguise,
