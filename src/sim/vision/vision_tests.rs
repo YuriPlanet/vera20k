@@ -2129,8 +2129,8 @@ fn source_release_and_zero_sight_gate_preserve_original_cached_metadata() {
     assert_eq!(cache_hash(&restored), cache_hash(&world.fog));
 }
 
-/// A client whose +0x250 is set takes no part in UpdateReveal
-/// (`0x0070AF50`): a second publish leaves its cache as it was.
+/// `retain_source_sight` publishes a client's +0x250/+0x254/+0x260 cache only
+/// while its +0x250 is clear: a second publish leaves the cache as it was.
 #[test]
 fn a_latched_source_cache_is_published_once() {
     let viewer = intern::test_intern("Americans");

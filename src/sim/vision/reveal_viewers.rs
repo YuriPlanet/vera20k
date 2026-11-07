@@ -24,8 +24,8 @@ use crate::sim::intern::{InternedId, StringInterner};
 /// a fresh one. Never saved or hashed.
 #[derive(Debug, Default)]
 pub(crate) struct RevealViewers {
-    remembering: bool,
-    /// The pass's client maps, from `begin` to `end`.
+    /// The pass's client maps, from `begin` to `end`; answers are remembered
+    /// while it is set.
     pass_clients: Option<Arc<[InternedId]>>,
     /// The interned names the answers were computed with.
     names: usize,
@@ -38,17 +38,15 @@ pub(crate) struct RevealViewers {
 impl RevealViewers {
     /// Start remembering the pass's `clients`, and answers from none.
     pub(crate) fn begin(&mut self, clients: Arc<[InternedId]>) {
-        debug_assert!(!self.remembering, "one pass remembers at a time");
+        debug_assert!(self.pass_clients.is_none(), "one pass remembers at a time");
         self.forget();
         self.pass_clients = Some(clients);
-        self.remembering = true;
     }
 
     /// Stop remembering, and drop the client maps and the answers.
     pub(crate) fn end(&mut self) {
         self.forget();
         self.pass_clients = None;
-        self.remembering = false;
     }
 
     /// The client maps [`Self::begin`] remembered, while the pass runs.
@@ -109,7 +107,7 @@ impl RevealViewers {
     /// Whether answers are remembered now, after dropping any computed with
     /// fewer names than there are or among other client maps.
     fn current(&mut self, interner: &StringInterner, clients: &[InternedId]) -> bool {
-        if !self.remembering {
+        if self.pass_clients.is_none() {
             return false;
         }
         if interner.len() != self.names || *self.clients != *clients {
