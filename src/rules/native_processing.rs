@@ -3565,6 +3565,11 @@ struct AresCountryState {
     presentation: crate::rules::ares_country_presentation::AresCountryPresentation,
     paradrop: crate::rules::ares_country_paradrop::AresCountryParadrop,
     power_plants: Vec<String>,
+    /// CountryExt+1BA/+1BB `Degrades`: the constructor leaves it unset; the
+    /// common reader 1001C5D0 reads it before CanBeDriven, and the parent
+    /// copy 1001BDC0 copies the pair.
+    #[serde(default)]
+    degrades: Option<bool>,
     /// CountryExt+1BC/+1BD: ctor1001B8DA leaves it unset;
     /// nullable CanBeDriven reader1001C70A..1001C71B. Parent copy
     /// 1001BDC0..1001C0D6 deliberately does not copy this pair.
@@ -3598,6 +3603,7 @@ impl Default for AresCountryState {
             presentation: Default::default(),
             paradrop: Default::default(),
             power_plants: Vec::new(),
+            degrades: None,
             can_be_driven: None,
             gives_bounty: default_gives_bounty(),
         }
@@ -3613,6 +3619,10 @@ impl Hash for AresCountryState {
         self.buildings.hash(state);
         self.paradrop.hash(state);
         self.power_plants.hash(state);
+        if let Some(value) = self.degrades {
+            b"ares-country-degrades-v1".hash(state);
+            value.hash(state);
+        }
         if let Some(value) = self.can_be_driven {
             b"ares-country-driving-v1".hash(state);
             value.hash(state);
@@ -3630,6 +3640,11 @@ impl CountryVeterancyState {
     #[cfg(feature = "ares")]
     pub(crate) fn can_be_driven_override(&self) -> Option<bool> {
         self.ares.can_be_driven
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn degrades_override(&self) -> Option<bool> {
+        self.ares.degrades
     }
 
     #[cfg(feature = "ares")]
@@ -3795,7 +3810,7 @@ impl AresGlobalControls {
         self.veterancy.read_before_type_data(pass);
         //1002AB60 also reads BerserkROFMultiplier, AutoRepel, PlayerAutoRepel.
         self.techno_combat.read_before_type_data(pass);
-        //1002AB60 also reads ReturnStructures in General.
+        //1002AB60 also reads ReturnStructures and Degrade.* in General.
         self.building.read_before_type_data(pass);
         if let Some(mission) = pass
             .section("CombatDamage")
@@ -7050,6 +7065,7 @@ impl RulesPassProcessor {
                 current.presentation.inherit_from(&inherited.presentation);
                 current.paradrop.inherit_from(&inherited.paradrop);
                 current.power_plants = inherited.power_plants;
+                current.degrades = inherited.degrades;
             }
             //1001C0CB consumes the attempt even when Find failed. Empty
             // and case-insensitive self references above do not consume it.
@@ -7110,6 +7126,15 @@ impl RulesPassProcessor {
                 .loading
                 .clone();
             loading.read_color(section, |name| self.loading_color_index(name));
+            // Degrades1001C5D0 precedes CanBeDriven.
+            let degrades = self.families[&RulesTypeFamily::Country][index]
+                .country_veterancy
+                .ares
+                .degrades;
+            self.family_mut(RulesTypeFamily::Country)[index]
+                .country_veterancy
+                .ares
+                .degrades = section.read_ares_nullable_bool("Degrades", degrades);
             let current = self.families[&RulesTypeFamily::Country][index]
                 .country_veterancy
                 .ares

@@ -63,9 +63,13 @@ pub(crate) mod powered_by; // Ares PoweredBy= power sources (PoweredUnitClass 10
 #[cfg(feature = "ares")]
 pub(crate) mod radar_jammer; // Ares RadarJamRadius= jammers (JammerClass 10068500)
 #[cfg(feature = "ares")]
+pub(crate) mod ares_degrade; // Ares low-power degrading (DamageDelay 100247A0)
+#[cfg(feature = "ares")]
 pub(crate) mod ares_garrison; // Ares urban combat and raidable garrisons
 #[cfg(feature = "ares")]
 pub(crate) mod ares_rubble; // Ares advanced rubble (SwitchRubble 1000F2B0)
+#[cfg(feature = "ares")]
+pub(crate) mod ares_toggle_power; // Ares computer power balancing (100228A0)
 #[cfg(feature = "ares")]
 pub(crate) mod ares_veterancy; // Ares UpdateVeterancy 10046AF0 and academies
 pub mod economy; // per-house wallet/storage/statistics value-type (production+economy substrate)

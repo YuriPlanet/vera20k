@@ -239,6 +239,10 @@ impl Simulation {
             let kind = if let Some(kind) = resumed_kind.take() {
                 Some(kind)
             } else {
+                // Ares 3.0 10024B40 (hook 0x004F8440): UpdateTogglePower
+                // 100228A0 at the head of HouseClass::Update.
+                #[cfg(feature = "ares")]
+                self.ares_update_toggle_power(owner, rules, frame_effects);
                 self.assess_house_derived_state(owner, rules, frame_effects);
                 self.update_house_anger_and_activation(owner, rules);
                 self.houses.get(&owner).and_then(|house| {
@@ -286,6 +290,9 @@ impl Simulation {
                 power.clamp_negative_totals();
             }
             crate::sim::ai_team_creation::update_team_creation(self, rules, owner, frame_effects);
+            // Ares 3.0 100247A0 (hook 0x004F8B08), ahead of the player block.
+            #[cfg(feature = "ares")]
+            self.ares_degrade_buildings(owner, rules, registry, frame_effects);
             crate::sim::house_eva::update_house_eva(self, rules, owner);
             crate::sim::superweapon::tick_house_superweapon_instances(self, rules, owner);
             if defeat_gate && self.house_holds_nothing(owner, rules) {

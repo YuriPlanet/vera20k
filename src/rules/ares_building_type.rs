@@ -116,6 +116,12 @@ pub(crate) struct BuildingTypeExtRules {
     /// Art `DockUnloadFacing` (`+0x250`, Valueable<Facing32>, 0..31): the
     /// facing a unit docks and unloads at.
     pub(crate) dock_unload_facing: i32,
+    /// `Degrade.Amount` (`+0x1D0`, Nullable<int>): the low-power damage per
+    /// `DamageDelay`, else the RulesExt consumer or normal amount.
+    pub(crate) degrade_amount: Option<i32>,
+    /// `Degrade.Percentage` (`+0x1D8`, Nullable<double>): the health ratio
+    /// the degrading stops at, else the RulesExt one.
+    pub(crate) degrade_percentage: Option<NativeF64Bits>,
 }
 
 impl Default for BuildingTypeExtRules {
@@ -137,6 +143,8 @@ impl Default for BuildingTypeExtRules {
             ai_extra_counts: Vec::new(),
             dock_unload_cell: [3, 1],
             dock_unload_facing: 8,
+            degrade_amount: None,
+            degrade_percentage: None,
         }
     }
 }
@@ -221,6 +229,9 @@ impl BuildingTypeExtRules {
             self.allowed_occupiers = occupiers;
         }
         self.returnable = section.read_ares_nullable_bool("Returnable", self.returnable);
+        self.degrade_amount = section.read_ares_nullable_int("Degrade.Amount", self.degrade_amount);
+        self.degrade_percentage =
+            section.read_ares_nullable_double_bits("Degrade.Percentage", self.degrade_percentage);
         self.is_passable = section.read_ares_bool("IsPassable", self.is_passable);
         if let Some(counts) = section.read_ares_int_list("AIBuildCounts") {
             self.ai_build_counts = counts;
@@ -325,7 +336,10 @@ impl BuildingTypeExtRules {
 /// The building chain's RulesExt globals, read by `LoadBeforeTypeData`
 /// (`1002AB60`) and `LoadAfterTypeData` (`1002A800`). The constructor
 /// (`1002A360`) sets `EngineerDamage` to 0.0, `EngineerAlwaysCaptureTech`
-/// to true and `ReturnStructures` to false.
+/// to true, `ReturnStructures` and `Degrade.Enabled` to false,
+/// `Degrade.AmountNormal` to 0 and `Degrade.AmountConsumer` to 1, and leaves
+/// `Degrade.Percentage` unset, `TogglePowerAllowed` false, `TogglePowerDelay`
+/// 45 and `[IQ] TogglePower` -1.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BuildingGlobalRules {
     /// `[General] EngineerDamage` (RulesExt `+0x10`, Valueable<double>): the
@@ -338,6 +352,25 @@ pub(crate) struct BuildingGlobalRules {
     /// `[General] ReturnStructures` (`+0x4A`, Valueable<bool>): the
     /// `Returnable=` default.
     pub(crate) return_structures: bool,
+    /// `[General] Degrade.Enabled` (`+0xD4`): low power wears buildings down.
+    pub(crate) degrade_enabled: bool,
+    /// `[General] Degrade.Percentage` (`+0xD8`, Nullable<double>): the
+    /// `Degrade.Percentage=` default, else `ConditionYellow=`.
+    pub(crate) degrade_percentage: Option<NativeF64Bits>,
+    /// `[General] Degrade.AmountNormal` (`+0xE8`): the amount for a
+    /// building without `Power=` drain.
+    pub(crate) degrade_amount_normal: i32,
+    /// `[General] Degrade.AmountConsumer` (`+0xEC`): the amount for a
+    /// power consumer.
+    pub(crate) degrade_amount_consumer: i32,
+    /// `[General] TogglePowerAllowed` (`+0x1C`): computer houses switch
+    /// their buildings off and on to balance their power.
+    pub(crate) toggle_power_allowed: bool,
+    /// `[General] TogglePowerDelay` (`+0x20`, constructor 45): the frames
+    /// between two balancing passes.
+    pub(crate) toggle_power_delay: i32,
+    /// `[IQ] TogglePower` (`+0x24`, constructor -1): the IQ a house needs.
+    pub(crate) toggle_power_iq: i32,
 }
 
 impl Default for BuildingGlobalRules {
@@ -346,20 +379,36 @@ impl Default for BuildingGlobalRules {
             engineer_damage: NativeF64Bits::POSITIVE_ZERO,
             engineer_always_capture_tech: true,
             return_structures: false,
+            degrade_enabled: false,
+            degrade_percentage: None,
+            degrade_amount_normal: 0,
+            degrade_amount_consumer: 1,
+            toggle_power_allowed: false,
+            toggle_power_delay: 45,
+            toggle_power_iq: -1,
         }
     }
 }
 
 impl BuildingGlobalRules {
-    /// `1002AB60`'s `[General] ReturnStructures` read, before the types.
+    /// `1002AB60`'s `[General] ReturnStructures` and `Degrade.*` reads,
+    /// before the types.
     pub(crate) fn read_before_type_data(&mut self, pass: &crate::rules::ini_parser::IniFile) {
         if let Some(section) = pass.section("General") {
             self.return_structures =
                 section.read_ares_bool("ReturnStructures", self.return_structures);
+            self.degrade_enabled = section.read_ares_bool("Degrade.Enabled", self.degrade_enabled);
+            self.degrade_percentage = section
+                .read_ares_nullable_double_bits("Degrade.Percentage", self.degrade_percentage);
+            self.degrade_amount_normal =
+                section.read_ares_int("Degrade.AmountNormal", self.degrade_amount_normal);
+            self.degrade_amount_consumer =
+                section.read_ares_int("Degrade.AmountConsumer", self.degrade_amount_consumer);
         }
     }
 
-    /// `1002A800`'s two `[General]` reads, ahead of `HSBuilding`.
+    /// `1002A800`'s `[General]` engineer reads, ahead of `HSBuilding`, and
+    /// its later TogglePower keys.
     pub(crate) fn read_after_type_data(&mut self, pass: &crate::rules::ini_parser::IniFile) {
         if let Some(section) = pass.section("General") {
             self.engineer_damage =
@@ -368,6 +417,14 @@ impl BuildingGlobalRules {
                 "EngineerAlwaysCaptureTech",
                 self.engineer_always_capture_tech,
             );
+            // Later in 1002A800, after the drop pod keys.
+            self.toggle_power_allowed =
+                section.read_ares_bool("TogglePowerAllowed", self.toggle_power_allowed);
+            self.toggle_power_delay =
+                section.read_ares_int("TogglePowerDelay", self.toggle_power_delay);
+        }
+        if let Some(section) = pass.section("IQ") {
+            self.toggle_power_iq = section.read_ares_int("TogglePower", self.toggle_power_iq);
         }
     }
 }

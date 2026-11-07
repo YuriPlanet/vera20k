@@ -9882,6 +9882,15 @@ impl RuleSet {
         })
     }
 
+    /// Ares `HouseClass_Update_DamageDelay @ 100247A0`: CountryExt+1BA
+    /// `Degrades=` when set; `None` leaves the HouseType's
+    /// `!MultiplayPassive` default to the caller.
+    #[cfg(feature = "ares")]
+    pub(crate) fn country_degrades(&self, id: &str) -> Option<bool> {
+        self.country_rules(id)
+            .and_then(|country| country.veteran_types.degrades_override())
+    }
+
     /// Victim CountryExt+1D1 gate in Ares bounty payout10043279..10043289.
     #[cfg(feature = "ares")]
     pub(crate) fn country_gives_bounty(&self, id: &str) -> bool {
