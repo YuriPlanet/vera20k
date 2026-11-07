@@ -989,7 +989,15 @@ impl Simulation {
             return None;
         }
         let object = self.object_type(target.type_ref(), rules)?;
-        if object.is_1x1_with_undeploy() || !object.repairable {
+        // Ares 3.0 10014850 (hook 0x51E4ED): `EngineerRepairable`, default
+        // `Repairable=`.
+        #[cfg(feature = "ares")]
+        let repairable = object
+            .building_type_ext()
+            .engineer_repairable(object.repairable);
+        #[cfg(not(feature = "ares"))]
+        let repairable = object.repairable;
+        if object.is_1x1_with_undeploy() || !repairable {
             return None;
         }
         if !object.bridge_repair_hut {
@@ -1030,6 +1038,18 @@ impl Simulation {
                     .is_full(self.object_type(actor.type_ref(), rules)?.strength)
             {
                 return Some(EngineerBuildingAction::EnterHospital);
+            }
+            // Ares 3.0 10025420 (hook 0x51E635): over a rubble its house is
+            // allied with (the building's owner asks), the repair action at
+            // any health. RESIDUAL: Ares' RepairTrench cursor (0x5E) has no
+            // VERA cursor; the ordinary repair cursor shows.
+            #[cfg(feature = "ares")]
+            if object.building_type_ext().rubble_intact.applies()
+                && self
+                    .house_alliances
+                    .is_allied(&self.interner, target.owner(), actor.owner())
+            {
+                return Some(EngineerBuildingAction::Repair(true));
             }
             let full = matches!(
                 target.health.compare_ratio(object.strength, 1.0),
@@ -1538,6 +1558,41 @@ impl Simulation {
                     bridge_state_changed: receipt.bridge_state_changed,
                     return_before_foot: true,
                 });
+            }
+            // Ares 3.0 100257A0 (hook 0x519FAF), in the repair arm ahead of
+            // its full-health test: a rubble is rebuilt (sim::ares_rubble),
+            // and only an `EngineerRepairable` (default `Repairable=`)
+            // building is repaired; any other turns him away (0x519FB9).
+            #[cfg(feature = "ares")]
+            if repair {
+                let ext = object.building_type_ext();
+                let turned_away = if ext.rubble_intact.applies() {
+                    Some(!self.ares_engineer_rebuilds_rubble(
+                        engineer_id,
+                        building_id,
+                        &ext.rubble_intact,
+                        rules,
+                        registry,
+                        frame_effects,
+                    ))
+                } else {
+                    (!ext.engineer_repairable(object.repairable)).then_some(true)
+                };
+                if let Some(turned_away) = turned_away {
+                    if turned_away {
+                        self.turn_away_from_building(
+                            engineer_id,
+                            building_id,
+                            rules,
+                            registry,
+                            frame_effects,
+                        )?;
+                    }
+                    return Ok(BuildingEntryResult {
+                        return_before_foot: true,
+                        ..Default::default()
+                    });
+                }
             }
             if (repair && full) || (!repair && capturable && refused_capture) {
                 //519FB9/519EBB/519EFC, then an immediate return before

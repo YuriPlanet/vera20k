@@ -2369,6 +2369,21 @@ impl ProcessedRulesLayers {
             .filter_map(|(family, members)| {
                 family.object_category().map(|category| (category, members))
             })
+    /// The retained BuildingTypeExt rubble and repair reads, by BuildingType.
+    #[cfg(feature = "ares")]
+    pub(crate) fn building_type_ext_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &str,
+            &crate::rules::ares_building_type::BuildingTypeExtRules,
+        ),
+    > {
+        self.member_states(RulesTypeFamily::Building, |member| {
+            &member.building_type_ext
+        })
+    }
+
             .flat_map(|(category, members)| {
                 members.iter().map(move |member| {
                     (
@@ -4862,6 +4877,10 @@ struct ProcessedType {
     #[cfg(feature = "ares")]
     #[serde(default = "default_curtain_modifiers")]
     curtain_modifiers: [NativeF64Bits; 2],
+    /// BuildingTypeExt rubble and repair keys (`rules::ares_building_type`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    building_type_ext: crate::rules::ares_building_type::BuildingTypeExtRules,
     /// ObjectType4753F0 -> Ares10006E10 binds at each reached body read.
     armor_id: ArmorId,
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
@@ -5459,6 +5478,8 @@ impl ProcessedType {
             super_weapon_influence: Default::default(),
             #[cfg(feature = "ares")]
             super_weapon_presentation: AresSuperWeaponPresentation::default(),
+            #[cfg(feature = "ares")]
+            building_type_ext: Default::default(),
             #[cfg(feature = "ares")]
             super_weapon_targeting: AresSuperWeaponTargetingState::default(),
             #[cfg(feature = "ares")]
@@ -7906,6 +7927,29 @@ impl RulesPassProcessor {
                             derived.set("Invisible", "yes");
                             derived.set("RadarVisible", "no");
                             body.overlay_rules_pass(&derived);
+                            // 1000DD40: Rubble.Destroyed/Intact through the
+                            // Find-only BuildingType reader 1000CA20 and their
+                            // anims through the AnimType reader 1000C9C0.
+                            let rubble_types = ["Rubble.Destroyed", "Rubble.Intact"].map(|key| {
+                                self.resolve_existing_type_from(
+                                    &raw,
+                                    key,
+                                    RulesTypeFamily::Building,
+                                )
+                            });
+                            let rubble_anims =
+                                ["Rubble.Destroyed.Anim", "Rubble.Intact.Anim"].map(|key| {
+                                    self.resolve_existing_type_from(
+                                        &raw,
+                                        key,
+                                        RulesTypeFamily::Animation,
+                                    )
+                                });
+                            self.family_mut(family)[index].building_type_ext.read_pass(
+                                &raw,
+                                rubble_types,
+                                rubble_anims,
+                            );
                         }
                         // ToOverlay's ART section is +1F8 (0x004610DE).
                         if let Some(overlay) = self.resolve_fixed_art_reference(

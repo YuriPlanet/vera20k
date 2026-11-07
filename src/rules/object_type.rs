@@ -1185,6 +1185,10 @@ pub struct ObjectType {
     /// from the retained rules reader (`rules::ares_infiltration`).
     #[cfg(feature = "ares")]
     infiltration: crate::rules::ares_infiltration::InfiltrationTypeRules,
+    /// BuildingTypeExt's rubble and repair keys, projected from the retained
+    /// rules reader (`rules::ares_building_type`).
+    #[cfg(feature = "ares")]
+    building_type_ext: crate::rules::ares_building_type::BuildingTypeExtRules,
     /// TechnoTypeExt Experience.* and Promote.* (TypeExt+17B..+1B0,
     /// +503..+540), projected from the retained rules reader
     /// (`rules::ares_veterancy`).
@@ -3091,6 +3095,21 @@ impl ObjectType {
     }
 
     /// Ares BuildingTypeExt Academy.* (`rules::ares_veterancy`).
+    /// Ares BuildingTypeExt rubble and repair keys (`rules::ares_building_type`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn building_type_ext(
+        &self,
+    ) -> &crate::rules::ares_building_type::BuildingTypeExtRules {
+        &self.building_type_ext
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn building_type_ext_mut(
+        &mut self,
+    ) -> &mut crate::rules::ares_building_type::BuildingTypeExtRules {
+        &mut self.building_type_ext
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn academy(&self) -> &crate::rules::ares_veterancy::AcademyTypeRules {
         &self.academy
@@ -4683,6 +4702,8 @@ impl ObjectType {
             selection_group: String::new(),
             #[cfg(feature = "ares")]
             bounty: Default::default(),
+            #[cfg(feature = "ares")]
+            building_type_ext: Default::default(),
             #[cfg(feature = "ares")]
             crew: Default::default(),
             #[cfg(feature = "ares")]

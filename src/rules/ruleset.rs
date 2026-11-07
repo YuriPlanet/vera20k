@@ -5727,6 +5727,38 @@ impl RuleSet {
                 .iter_mut()
                 .find(|o| o.category == ObjectCategory::Building && o.id == name)
             {
+        #[cfg(feature = "ares")]
+        {
+            for (name, ext) in processed.building_type_ext_states() {
+                if let Some(handle) = rules
+                    .object_category_index
+                    .get(&(ObjectCategory::Building, name.to_ascii_uppercase()))
+                    .copied()
+                {
+                    *rules.object_list[handle.0 as usize].building_type_ext_mut() = ext.clone();
+                }
+            }
+            // Ares CompleteInitialization 1000D380 (hook 0x679CAF), once the
+            // foundations above are final: a rubble pair shares one foundation.
+            let foundations: HashMap<String, crate::rules::foundation::Foundation> = rules
+                .object_list
+                .iter()
+                .filter(|object| object.category == ObjectCategory::Building)
+                .map(|object| (object.id.to_ascii_uppercase(), object.foundation.clone()))
+                .collect();
+            for object in rules
+                .object_list
+                .iter_mut()
+                .filter(|object| object.category == ObjectCategory::Building)
+            {
+                let (id, foundation) = (object.id.clone(), object.foundation.clone());
+                object
+                    .building_type_ext_mut()
+                    .complete_initialization(&id, &foundation, |name| {
+                        foundations.get(&name.to_ascii_uppercase())
+                    });
+            }
+        }
                 building.has_spotlight = flag;
             }
         }

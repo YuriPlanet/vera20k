@@ -2908,6 +2908,11 @@ fn finish_concrete_death(
                     frame_effects,
                 );
                 if callbacks_enabled(world) {
+                    // Ares 3.0 10017160 (hook 0x441F12): after NoSurvivor,
+                    // before SpawnSurvivors, the building turns into its
+                    // Rubble.Destroyed.
+                    #[cfg(feature = "ares")]
+                    world.ares_destroy_into_rubble(dead_id, rules, overlay_registry, frame_effects);
                     let deferred = &mut effects.smudge_spawn_requests;
                     world.spawn_building_survivors(
                         rules,
@@ -2934,6 +2939,10 @@ fn finish_concrete_death(
                         crate::sim::world::UninitContext::new(rules, overlay_registry)
                             .with_effects(frame_effects),
                     );
+                    // Ares 3.0 10017130 (hook 0x441F2C): the Foots on the
+                    // foundation leave the rubble.
+                    #[cfg(feature = "ares")]
+                    world.ares_kick_out_of_rubble(dead_id, rules, overlay_registry, frame_effects);
                 }
             }
         }
