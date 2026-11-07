@@ -496,6 +496,12 @@ impl Simulation {
         {
             self.team_script_vm.mark_member_team_leaving_map(id);
         }
+        // Not ported: 51BE59..51BEBE removes a teamless infantryman on Guard
+        // whose Location fails MapClass::CoordinatesLegal 568350 (vt+0x3A0,
+        // then UnInit, returning before the thief capture). UNREACHABLE: the
+        // test is the map Size diamond that every cell lies in, as for the
+        // Unit's Guard map exit (movement/per_cell.rs), and an infantryman
+        // running AI always stands or flies over a map cell.
         // InfantryClass::AI51BEC0 calls TryThiefVehicleCapture5202F0 before
         // the second Ready/Commence. Success returns before Fear/Fire/Doing.
         let capture = self.infantry_try_thief_capture(id, rules, registry, effects)?;

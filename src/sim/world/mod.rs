@@ -868,7 +868,7 @@ pub enum SimSoundEvent {
     },
     /// `BuildingClass::ChangeOwner @ 0x00448260` announce block
     /// (`0x004483C0..0x0044848F`) for an engineer capture
-    /// (`InfantryClass::PerCellProcess 0x00519A27 PUSH 1` = announce). Native
+    /// (`InfantryClass::PerCellProcess 0x00519F79 PUSH 1` = announce). Native
     /// gate: the OLD or the NEW owner is the local player (`0x004483C6` /
     /// `0x004483D1 CALL 0x0050B6F0`), the new owner's type not
     /// `MultiplayPassive` (`0x004483E1`). `tech_building` is `NeedsEngineer=`
