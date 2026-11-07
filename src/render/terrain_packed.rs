@@ -1048,8 +1048,6 @@ pub(super) fn union(a: [u32; 4], b: [u32; 4]) -> [u32; 4] {
     ]
 }
 
-/// A signed word offset can wrap rows. Snapshot every in-surface endpoint and
-/// retain the whole intervening rectangle; this is conservative read coverage.
 /// A pass over the packed transaction's stencil and destination scratch.
 fn scratch_pass<'e>(
     encoder: &'e mut wgpu::CommandEncoder,
@@ -1066,6 +1064,8 @@ fn scratch_pass<'e>(
     })
 }
 
+/// A signed word offset can wrap rows. Snapshot every in-surface endpoint and
+/// retain the whole intervening rectangle; this is conservative read coverage.
 fn read_halo(rect: [u32; 4], offset: i32, width: u32, height: u32) -> [u32; 4] {
     let mut result = rect;
     for y in rect[1]..rect[1] + rect[3] {
