@@ -288,9 +288,10 @@ struct PooledBuffer {
 /// Pool of named GPU instance buffers that persist across frames.
 ///
 /// Instead of creating and destroying GPU buffers every frame (expensive driver
-/// round-trips), this pool keeps buffers alive and overwrites their contents
-/// with `queue.write_buffer()`. Buffers grow automatically when needed (2x strategy)
-/// but never shrink, avoiding repeated reallocations.
+/// round-trips), this pool keeps buffers alive and overwrites their contents,
+/// with `queue.write_buffer()` or, for a frame's uploads, copies recorded from
+/// reused staging chunks ([`Self::record_uploads`]). Buffers grow automatically
+/// when needed (2x strategy) but never shrink, avoiding repeated reallocations.
 ///
 /// Usage pattern:
 /// 1. Call `upload()` for each named buffer (mutably borrows pool).
@@ -302,11 +303,67 @@ pub struct InstanceBufferPool {
     /// Instance counts for each buffer written this frame.
     /// Stored separately so `get()` can return count without needing the data.
     counts: HashMap<(&'static str, usize), u32>,
+    /// The staging chunks [`Self::record_uploads`] copies from, created on its
+    /// first use. A chunk is reused once the GPU has copied out of it.
+    belt: Option<wgpu::util::StagingBelt>,
 }
 
 /// Minimum buffer capacity in elements. Avoids tiny buffers that immediately
 /// need reallocation. 64 instances × 48 bytes = 3 KB — negligible VRAM.
 const MIN_POOL_CAPACITY: usize = 64;
+
+/// Bytes in one staging chunk of recorded uploads: a frame's streams at
+/// 1080p with a few hundred objects fit in one. A larger single upload gets
+/// a chunk of its own size.
+const UPLOAD_CHUNK_BYTES: u64 = 1 << 20;
+
+/// Where an upload's bytes go.
+enum UploadPath<'a> {
+    /// `Queue::write_buffer`, which lands before everything in the next
+    /// submission, and creates a staging buffer for each call.
+    Queue(&'a wgpu::Queue),
+    /// A copy recorded into the encoder from the pool's staging chunks.
+    Recorded(&'a mut wgpu::CommandEncoder),
+}
+
+/// A frame's uploads recorded into one encoder
+/// ([`InstanceBufferPool::record_uploads`]). Dropping it closes the staging
+/// chunks it wrote, to be reused after `encoder`'s submission completes.
+pub(crate) struct RecordedUploads<'a> {
+    pool: &'a mut InstanceBufferPool,
+    device: &'a wgpu::Device,
+    encoder: &'a mut wgpu::CommandEncoder,
+}
+
+impl RecordedUploads<'_> {
+    pub(crate) fn upload(&mut self, key: &'static str, instances: &[SpriteInstance]) {
+        self.upload_page(key, 0, instances);
+    }
+
+    /// One page of a stream split per atlas page, read with
+    /// [`InstanceBufferPool::get_page`].
+    pub(crate) fn upload_page(
+        &mut self,
+        key: &'static str,
+        page: usize,
+        instances: &[SpriteInstance],
+    ) {
+        self.pool.upload_keyed(
+            self.device,
+            UploadPath::Recorded(self.encoder),
+            (key, page),
+            instances,
+        );
+    }
+}
+
+impl Drop for RecordedUploads<'_> {
+    fn drop(&mut self) {
+        if let Some(belt) = self.pool.belt.as_mut() {
+            belt.finish_and_recall_on_submit(self.encoder);
+        }
+    }
+}
 
 impl Default for InstanceBufferPool {
     fn default() -> Self {
@@ -320,6 +377,25 @@ impl InstanceBufferPool {
         Self {
             buffers: HashMap::new(),
             counts: HashMap::new(),
+            belt: None,
+        }
+    }
+
+    /// Record uploads into `encoder` as copies out of the pool's reused
+    /// staging chunks: `Queue::write_buffer` creates a staging buffer for
+    /// each call, about half of what a frame's uploads cost. A copy takes
+    /// effect where it sits among `encoder`'s commands, while a queue write
+    /// lands before everything in the next submission, so record the uploads
+    /// before any pass that draws them. `encoder` must then be submitted.
+    pub(crate) fn record_uploads<'a>(
+        &'a mut self,
+        device: &'a wgpu::Device,
+        encoder: &'a mut wgpu::CommandEncoder,
+    ) -> RecordedUploads<'a> {
+        RecordedUploads {
+            pool: self,
+            device,
+            encoder,
         }
     }
 
@@ -344,7 +420,12 @@ impl InstanceBufferPool {
         page: usize,
         instances: &[SpriteInstance],
     ) {
-        self.upload_keyed(&gpu.device, &gpu.queue, (key, page), instances);
+        self.upload_keyed(
+            &gpu.device,
+            UploadPath::Queue(&gpu.queue),
+            (key, page),
+            instances,
+        );
     }
 
     pub(crate) fn upload_on_device(
@@ -354,13 +435,13 @@ impl InstanceBufferPool {
         key: &'static str,
         instances: &[SpriteInstance],
     ) {
-        self.upload_keyed(device, queue, (key, 0), instances);
+        self.upload_keyed(device, UploadPath::Queue(queue), (key, 0), instances);
     }
 
     fn upload_keyed(
         &mut self,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        path: UploadPath<'_>,
         key: (&'static str, usize),
         instances: &[SpriteInstance],
     ) {
@@ -386,7 +467,17 @@ impl InstanceBufferPool {
         }
 
         let byte_data: &[u8] = bytemuck::cast_slice(instances);
-        queue.write_buffer(&entry.buffer, 0, byte_data);
+        match path {
+            UploadPath::Queue(queue) => queue.write_buffer(&entry.buffer, 0, byte_data),
+            UploadPath::Recorded(encoder) => {
+                let belt = self.belt.get_or_insert_with(|| {
+                    wgpu::util::StagingBelt::new(device.clone(), UPLOAD_CHUNK_BYTES)
+                });
+                let size = wgpu::BufferSize::new(byte_data.len() as u64).expect("instances");
+                belt.write_buffer(encoder, &entry.buffer, 0, size)
+                    .copy_from_slice(byte_data);
+            }
+        }
         self.counts.insert(key, needed as u32);
     }
 
@@ -495,6 +586,8 @@ pub struct BatchRenderer {
     /// Camera uniform buffer (group 0) — world camera with zoom.
     // Exact bytes last written by the camera owner; scissor consumers read
     // this record instead of independently reconstructing scroll/zoom/origin.
+    // It is what the two buffers hold, from their creation on, so a write of
+    // the same bytes is skipped.
     uploaded_camera: std::sync::RwLock<UploadedCameras>,
     camera_buffer: wgpu::Buffer,
     /// World blitters use the shared A texture for source palette selection.
@@ -1614,6 +1707,14 @@ impl BatchRenderer {
     /// scrolling. The argument uses unscaled native rows, not target pixels.
     pub(crate) fn update_native_z_origin(&self, queue: &wgpu::Queue, origin_y: f32) {
         let mut uploaded = self.uploaded_camera.write().expect("camera owner lock");
+        // Each queue write costs a staging buffer, and a frame's origin is
+        // usually the one `write_camera` already uploaded.
+        if [uploaded.world, uploaded.ui]
+            .iter()
+            .all(|camera| camera.native_z_origin_y.to_bits() == origin_y.to_bits())
+        {
+            return;
+        }
         uploaded.world.native_z_origin_y = origin_y;
         uploaded.ui.native_z_origin_y = origin_y;
         let offset = std::mem::offset_of!(CameraUniform, native_z_origin_y) as u64;
@@ -1714,11 +1815,20 @@ impl BatchRenderer {
     }
 
     pub(crate) fn write_camera(&self, queue: &wgpu::Queue, uniform: CameraUniform) {
-        let mut uploaded = self.uploaded_camera.write().expect("camera owner lock");
-        uploaded.world = uniform;
-        uploaded.ui = ui_camera(uniform);
-        queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
-        queue.write_buffer(&self.ui_camera_buffer, 0, bytemuck::bytes_of(&uploaded.ui));
+        let mut guard = self.uploaded_camera.write().expect("camera owner lock");
+        let uploaded = &mut *guard;
+        let ui = ui_camera(uniform);
+        // Each queue write costs a staging buffer; a camera that has not
+        // moved is already in its buffer.
+        for (buffer, held, camera) in [
+            (&self.camera_buffer, &mut uploaded.world, uniform),
+            (&self.ui_camera_buffer, &mut uploaded.ui, ui),
+        ] {
+            if bytemuck::bytes_of(held) != bytemuck::bytes_of(&camera) {
+                queue.write_buffer(buffer, 0, bytemuck::bytes_of(&camera));
+                *held = camera;
+            }
+        }
     }
 
     /// Create a standalone instance buffer (not stored in the renderer).

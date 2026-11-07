@@ -766,7 +766,11 @@ impl App {
     pub fn spawn_hidden_window_requested() -> bool {
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
-            std::env::var_os("VERA20K_SPAWN_HIDDEN_WINDOW").is_some_and(|value| value == "1")
+            // Read once: a launch sets it, and every pass asks.
+            static REQUESTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            *REQUESTED.get_or_init(|| {
+                std::env::var_os("VERA20K_SPAWN_HIDDEN_WINDOW").is_some_and(|value| value == "1")
+            })
         }
         #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
         {

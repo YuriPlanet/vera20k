@@ -1923,7 +1923,12 @@ fn forbidden_houses_leave_americans_one_airforce_command() {
     let americans = build_options_for_owner(&sim, &rules, "Americans");
     let airforce: Vec<_> = americans
         .iter()
-        .filter(|opt| opt.display_name == "Airforce Command")
+        .filter(|opt| {
+            rules
+                .object(sim.interner.resolve(opt.type_id))
+                .and_then(|obj| obj.name.as_deref())
+                == Some("Airforce Command")
+        })
         .collect();
 
     assert_eq!(

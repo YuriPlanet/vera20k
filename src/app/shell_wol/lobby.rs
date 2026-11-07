@@ -4096,6 +4096,8 @@ fn play(state: &mut AppState, press: Press) {
 /// The runner's timeouts, the wait box reveal, the dialog's timers (only
 /// while it is the current window) and the shared scrollbar repeats.
 pub(super) fn poll(state: &mut AppState) -> Option<Instant> {
+    // Every pass polls: build the layout only while a lobby runs.
+    lobby(state)?;
     let now = Instant::now();
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();

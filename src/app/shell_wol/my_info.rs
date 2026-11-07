@@ -404,6 +404,10 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
 
 /// The drop list's scrollbar repeats.
 pub(super) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
+    // Every pass polls: build the layout only while the page is open.
+    if !page_open(state) {
+        return None;
+    }
     let layout = layout(state);
     let (x, y) = state.match_state.input.cursor_px();
     let page = page_mut(state)?;

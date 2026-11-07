@@ -65,7 +65,6 @@ pub(crate) use crate::app::types::*;
 
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner_name;
-use crate::render::batch::InstanceBufferPool;
 use crate::ui::sidebar::SidebarView;
 
 pub(crate) use build_instances::tactical_world_viewport;
@@ -429,7 +428,7 @@ pub(crate) fn render_game(
     let after_sidebar = render_started.map(|_| Instant::now());
 
     // Phase 6: Upload all instances to GPU buffer pool.
-    upload_to_gpu(state, &world, &debug, &ui, &sidebar);
+    upload_to_gpu(state, encoder, &world, &debug, &ui, &sidebar);
     let after_upload = render_started.map(|_| Instant::now());
     state
         .match_state
@@ -878,6 +877,7 @@ pub(crate) fn tactical_surface_line_viewport(
 /// Buffer names here must match the keys used in `draw_passes::dispatch_draw_passes`.
 fn upload_to_gpu(
     state: &mut AppState,
+    encoder: &mut wgpu::CommandEncoder,
     world: &WorldInstances,
     debug: &DebugInstances,
     ui: &UiInstances,
@@ -957,173 +957,95 @@ fn upload_to_gpu(
         }
     };
 
-    let pool: &mut InstanceBufferPool = &mut state.renderer.instance_pool;
+    // Recorded ahead of every pass that draws them (`InstanceBufferPool::
+    // record_uploads`).
+    let renderer = &mut state.renderer;
+    let mut pool = renderer
+        .instance_pool
+        .record_uploads(&renderer.gpu.device, encoder);
 
     // Debug overlays
-    pool.upload(&state.renderer.gpu, "debug_pathgrid", &debug.pathgrid);
-    pool.upload(&state.renderer.gpu, "debug_cell_grid", &debug.cell_grid);
-    pool.upload(&state.renderer.gpu, "debug_path", &debug.path);
-    pool.upload(&state.renderer.gpu, "debug_foot_stroke", &debug.foot_stroke);
-    pool.upload(&state.renderer.gpu, "debug_foot_nodes", &debug.foot_nodes);
-    pool.upload(&state.renderer.gpu, "debug_foot_text", &debug.foot_text);
-    pool.upload(&state.renderer.gpu, "debug_heightmap", &debug.heightmap);
+    pool.upload("debug_pathgrid", &debug.pathgrid);
+    pool.upload("debug_cell_grid", &debug.cell_grid);
+    pool.upload("debug_path", &debug.path);
+    pool.upload("debug_foot_stroke", &debug.foot_stroke);
+    pool.upload("debug_foot_nodes", &debug.foot_nodes);
+    pool.upload("debug_foot_text", &debug.foot_text);
+    pool.upload("debug_heightmap", &debug.heightmap);
 
     // Terrain + overlays
-    pool.upload(&state.renderer.gpu, "terrain", &world.terrain.normal);
-    pool.upload(&state.renderer.gpu, "cell_body", &world.cell_bodies);
+    pool.upload("terrain", &world.terrain.normal);
+    pool.upload("cell_body", &world.cell_bodies);
     pool.upload(
-        &state.renderer.gpu,
         "building_status_text",
         &world.building_status_text.instances,
     );
-    pool.upload(
-        &state.renderer.gpu,
-        "fogged_objects",
-        &world.fogged_objects.instances,
-    );
+    pool.upload("fogged_objects", &world.fogged_objects.instances);
     for (layer, objects) in world.object_layers.iter().enumerate() {
-        pool.upload_page(
-            &state.renderer.gpu,
-            "object_layer",
-            layer,
-            &objects.instances,
-        );
-        pool.upload_page(
-            &state.renderer.gpu,
-            "object_extras",
-            layer,
-            &objects.extras_instances,
-        );
+        pool.upload_page("object_layer", layer, &objects.instances);
+        pool.upload_page("object_extras", layer, &objects.extras_instances);
     }
-    pool.upload(
-        &state.renderer.gpu,
-        "overlay_bridge_body_shadow",
-        &world.bridge_body_shadow,
-    );
+    pool.upload("overlay_bridge_body_shadow", &world.bridge_body_shadow);
     // Smudges: drawn inside the terrain layer, before the cell bodies,
     // matching the native per-cell tile-then-smudge dispatch.
-    pool.upload(&state.renderer.gpu, "smudge", &world.smudge);
+    pool.upload("smudge", &world.smudge);
 
     // Residual effects keep their existing uploads and pass ownership.
-    pool.upload(&state.renderer.gpu, "cell_sparkles", &world.cell_sparkles);
-    pool.upload(&state.renderer.gpu, "super_timer_fill", &super_timer_fill);
-    pool.upload(&state.renderer.gpu, "super_timer_text", &super_timer_text);
-    pool.upload(&state.renderer.gpu, "build_text_fill", &build_text_fill);
-    pool.upload(&state.renderer.gpu, "build_text_text", &build_text_text);
+    pool.upload("cell_sparkles", &world.cell_sparkles);
+    pool.upload("super_timer_fill", &super_timer_fill);
+    pool.upload("super_timer_text", &super_timer_text);
+    pool.upload("build_text_fill", &build_text_fill);
+    pool.upload("build_text_text", &build_text_text);
     #[cfg(feature = "ares")]
-    pool.upload(&state.renderer.gpu, "bounty_text", &bounty_text);
+    pool.upload("bounty_text", &bounty_text);
 
     // UI overlays
     for (house, beacons) in ui.beacons.iter().enumerate() {
-        pool.upload_page(&state.renderer.gpu, "beacons", house, beacons);
+        pool.upload_page("beacons", house, beacons);
     }
-    pool.upload(&state.renderer.gpu, "drag", &ui.drag);
-    pool.upload(&state.renderer.gpu, "software_cursor", &software_cursor);
-    pool.upload(&state.renderer.gpu, "placement", &ui.placement);
+    pool.upload("drag", &ui.drag);
+    pool.upload("software_cursor", &software_cursor);
+    pool.upload("placement", &ui.placement);
     #[cfg(feature = "phobos")]
-    pool.upload(&state.renderer.gpu, "placement_ghost", &ui.placement_ghost);
-    pool.upload(
-        &state.renderer.gpu,
-        "factory_rally_first",
-        &ui.factory_rally_first,
-    );
-    pool.upload(&state.renderer.gpu, "target_lines", &ui.target_line);
-    pool.upload(
-        &state.renderer.gpu,
-        "factory_rally_second",
-        &ui.factory_rally_second,
-    );
+    pool.upload("placement_ghost", &ui.placement_ghost);
+    pool.upload("factory_rally_first", &ui.factory_rally_first);
+    pool.upload("target_lines", &ui.target_line);
+    pool.upload("factory_rally_second", &ui.factory_rally_second);
 
     // Sidebar + minimap
-    pool.upload(&state.renderer.gpu, "minimap", &sidebar.minimap);
-    pool.upload(&state.renderer.gpu, "viewport_rect", &sidebar.viewport_rect);
-    pool.upload(
-        &state.renderer.gpu,
-        "radar_content_boundary",
-        &sidebar.content_boundary,
-    );
-    pool.upload(&state.renderer.gpu, "sidebar_chrome", &sidebar.chrome);
-    pool.upload(&state.renderer.gpu, "command_bar", &sidebar.command_bar);
-    pool.upload(&state.renderer.gpu, "radar_anim", &sidebar.radar_anim);
-    pool.upload(&state.renderer.gpu, "sidebar_cameo", &sidebar.cameo);
-    pool.upload(
-        &state.renderer.gpu,
-        "sidebar_cameo_hover",
-        &sidebar.cameo_hover,
-    );
-    pool.upload(
-        &state.renderer.gpu,
-        "sidebar_unavailable",
-        &sidebar.unavailable,
-    );
-    pool.upload(&state.renderer.gpu, "sidebar_flash", &sidebar.flash);
-    pool.upload(&state.renderer.gpu, "sidebar_gclock", &sidebar.gclock);
-    pool.upload(
-        &state.renderer.gpu,
-        "sidebar_queue_overlay",
-        &sidebar.queue_overlay,
-    );
-    pool.upload(
-        &state.renderer.gpu,
-        "sidebar_queue_text",
-        &sidebar.queue_text,
-    );
-    pool.upload(
-        &state.renderer.gpu,
-        "sidebar_label_overlay",
-        &sidebar.label_overlay,
-    );
-    pool.upload(
-        &state.renderer.gpu,
-        "sidebar_label_text",
-        &sidebar.label_text,
-    );
-    pool.upload(
-        &state.renderer.gpu,
-        "sidebar_cameo_overlay",
-        &sidebar.cameo_overlay,
-    );
-    pool.upload(&state.renderer.gpu, "sidebar_text", &sidebar.text);
+    pool.upload("minimap", &sidebar.minimap);
+    pool.upload("viewport_rect", &sidebar.viewport_rect);
+    pool.upload("radar_content_boundary", &sidebar.content_boundary);
+    pool.upload("sidebar_chrome", &sidebar.chrome);
+    pool.upload("command_bar", &sidebar.command_bar);
+    pool.upload("radar_anim", &sidebar.radar_anim);
+    pool.upload("sidebar_cameo", &sidebar.cameo);
+    pool.upload("sidebar_cameo_hover", &sidebar.cameo_hover);
+    pool.upload("sidebar_unavailable", &sidebar.unavailable);
+    pool.upload("sidebar_flash", &sidebar.flash);
+    pool.upload("sidebar_gclock", &sidebar.gclock);
+    pool.upload("sidebar_queue_overlay", &sidebar.queue_overlay);
+    pool.upload("sidebar_queue_text", &sidebar.queue_text);
+    pool.upload("sidebar_label_overlay", &sidebar.label_overlay);
+    pool.upload("sidebar_label_text", &sidebar.label_text);
+    pool.upload("sidebar_cameo_overlay", &sidebar.cameo_overlay);
+    pool.upload("sidebar_text", &sidebar.text);
     #[cfg(feature = "phobos")]
     {
-        pool.upload(
-            &state.renderer.gpu,
-            "sw_sidebar_chrome",
-            &sidebar.sw_sidebar_chrome,
-        );
-        pool.upload(
-            &state.renderer.gpu,
-            "sw_sidebar_cameo",
-            &sidebar.sw_sidebar_cameo,
-        );
-        pool.upload(
-            &state.renderer.gpu,
-            "sw_sidebar_gclock",
-            &sidebar.sw_sidebar_gclock,
-        );
-        pool.upload(
-            &state.renderer.gpu,
-            "sw_sidebar_hover",
-            &sidebar.sw_sidebar_hover,
-        );
-        pool.upload(
-            &state.renderer.gpu,
-            "sw_sidebar_overlay",
-            &sidebar.sw_sidebar_overlay,
-        );
-        pool.upload(
-            &state.renderer.gpu,
-            "sw_sidebar_text",
-            &sidebar.sw_sidebar_text,
-        );
+        pool.upload("sw_sidebar_chrome", &sidebar.sw_sidebar_chrome);
+        pool.upload("sw_sidebar_cameo", &sidebar.sw_sidebar_cameo);
+        pool.upload("sw_sidebar_gclock", &sidebar.sw_sidebar_gclock);
+        pool.upload("sw_sidebar_hover", &sidebar.sw_sidebar_hover);
+        pool.upload("sw_sidebar_overlay", &sidebar.sw_sidebar_overlay);
+        pool.upload("sw_sidebar_text", &sidebar.sw_sidebar_text);
     }
-    pool.upload(&state.renderer.gpu, "message_text", &message_text);
-    pool.upload(&state.renderer.gpu, "message_fill", &message_fill);
-    pool.upload(&state.renderer.gpu, "outcome_shape", &outcome_shape);
-    pool.upload(&state.renderer.gpu, "outcome_text", &outcome_text);
-    pool.upload(&state.renderer.gpu, "tooltip_fill", &tooltip_fill);
-    pool.upload(&state.renderer.gpu, "tooltip_border", &tooltip_border);
-    pool.upload(&state.renderer.gpu, "tooltip_text", &tooltip_text);
+    pool.upload("message_text", &message_text);
+    pool.upload("message_fill", &message_fill);
+    pool.upload("outcome_shape", &outcome_shape);
+    pool.upload("outcome_text", &outcome_text);
+    pool.upload("tooltip_fill", &tooltip_fill);
+    pool.upload("tooltip_border", &tooltip_border);
+    pool.upload("tooltip_text", &tooltip_text);
 }
 
 #[cfg(test)]
