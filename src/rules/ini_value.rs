@@ -632,6 +632,22 @@ impl IniSection {
         })
     }
 
+    /// Ares `Nullable<Leptons>::Read @ 10019660` over the same
+    /// `detail::read<Leptons> @ 1000A6D0` as [`Self::read_ares_leptons`]:
+    /// only a successful parse sets the value and its presence.
+    #[cfg(feature = "ares")]
+    pub fn read_ares_nullable_leptons(&self, key: &str, current: Option<i32>) -> Option<i32> {
+        self.read_string_with(key, 2048, current, |current, value| {
+            parse_ares_double_bits(value)
+                .map(|cells| {
+                    crate::util::native_x87::X87Chop53::ftol_f64_low_masked(
+                        f64::from_bits(cells.bits()) * 256.0,
+                    )
+                })
+                .or(current)
+        })
+    }
+
     /// Ares Valueable<float>1000EAE0 -> detail::read<float>1000FA90 ->
     /// Parser<float>10076B00: the same binary64 scan and percent scale as
     /// [`Self::read_ares_double_bits`], stored to the float field (`FSTP
@@ -2091,9 +2107,10 @@ mod tests {
         use crate::rules::ruleset::RuleSet;
 
         // ReadAction474EE0, called by SuperWeaponType ReadINI6CEA9B. A Type no
-        // Ares handler takes keeps the stock read in every build.
+        // Ares handler takes keeps the stock read in every build (Ares builds
+        // redirect the Lightning Storm, whose Initialize installs its action).
         let mut layers = RulesLayerStack::new(sec(
-            "[SuperWeaponTypes]\n0=Strike\n[Strike]\nType=LightningStorm\nAction=nUkE\n",
+            "[SuperWeaponTypes]\n0=Strike\n[Strike]\nType=PsychicReveal\nAction=nUkE\n",
         ));
         let action = |layers: &RulesLayerStack| {
             let processed = layers.process_with_fixed_art(&IniFile::empty()).unwrap();
