@@ -408,12 +408,12 @@ impl App {
         // and the match zoom follows it. A sealed capture keeps its exact,
         // fixed, hidden physical surface.
         let capture = capture_dimensions.is_some();
-        // A player window reopens at the size it was last left at.
+        // A player window opens at that size on every launch, as gamemd's
+        // shell does (`WinMain` 006BD9B5, `RetailOptionsLoad`), however large
+        // it was left; only its corner is kept.
         let placement = options_profile.window_placement.filter(|_| !capture);
         let inner_size: winit::dpi::Size = if capture {
             PhysicalSize::new(window_width, window_height).into()
-        } else if let Some(placement) = placement {
-            winit::dpi::LogicalSize::new(placement.width, placement.height).into()
         } else {
             winit::dpi::LogicalSize::new(window_width, window_height).into()
         };
@@ -443,10 +443,6 @@ impl App {
             .with_inner_size(inner_size)
             .with_resizable(!capture)
             .with_fullscreen(fullscreen)
-            // A player window reopens maximised when it was left so.
-            .with_maximized(
-                window_visible && !options_profile.full_screen && options_profile.window_maximized,
-            )
             .with_visible(window_visible)
             .with_active(window_visible);
         // A player window shrinks no further than gamemd's smallest mode,
