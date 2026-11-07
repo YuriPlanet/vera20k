@@ -1,9 +1,11 @@
 # VERA's interface fonts
 
-The vector fonts VERA draws its interface text with (`src/render/text_engine/`).
-All are Noto fonts under the SIL Open Font License 1.1, taken unmodified:
-`OFL.txt` covers the Noto Sans families and `OFL-CJK.txt` Noto Sans CJK.
-The licence lets them ship inside the program; it must travel with them.
+The fonts VERA draws its interface text with (`src/render/text_engine/`), all
+under the SIL Open Font License 1.1, which lets them ship inside the program
+and must travel with them. The Noto fonts are taken unmodified: `OFL.txt`
+(Noto Sans's copy; every Noto Sans family carries the same licence) covers the
+Noto Sans families and `OFL-CJK.txt` Noto Sans CJK. `Unifont-CJK-15.bin` comes
+from GNU Unifont, under `OFL-Unifont.txt` ([below](#unifont-cjk-15bin)).
 
 | File | Source |
 | --- | --- |
@@ -41,6 +43,23 @@ cca4f3b3a8cb12fb261f1b43baf5d2f7f59d90fe123d41f0065ed3a183997ec9  NotoSansKannad
 aa3a9b321f4b0bb2c40203ffbde9af89713227866e0e13f76e5b9eeea727cf88  NotoSansTamil-VF.ttf
 3f6d917852921b1abfa9c6d3616e7d413e27b8e0f431adce9676b9089c1992d3  NotoSansTelugu-VF.ttf
 db2bc1c62fae2df814edff7705ddb560d47d742274ed9947b7ddf1a6cb1c17b6  NotoSansThai-VF.ttf
+7a1f721aaf8acd1fecc14f2daf7e1dbf5a6998c2b6cba9d8cfd0b75b2af2ee0f  Unifont-CJK-15.bin
 ```
 
 How each script is sized against GAME.FNT is in `text_engine/fonts.rs`.
+
+## Unifont-CJK-15.bin
+
+Pixel Chinese, Japanese and Korean characters for the Original font option,
+which draws them where retail GAME.FNT has none (`text_engine/fnt_fill.rs`):
+GNU Unifont 18.0.01's 16x16 glyphs for the 4,766 characters of those scripts
+that retail GAME.FNT lacks, each trimmed to GAME.FNT's 15x15 hanzi box.
+Unifont, its Wen Quan Yi CJK glyphs included, is dual-licensed under the GNU
+GPL 2 or later with the font embedding exception and the SIL Open Font License
+1.1; VERA takes it under the OFL, and this file stays under it.
+
+Rebuild it from the checkout root with
+`python -m tools.unifont_cjk unifont-18.0.01.hex.gz GAME.FNT`, from
+`unifont-18.0.01.hex.gz` at
+https://unifoundry.com/pub/unifont/unifont-18.0.01/font-builds/ and retail
+GAME.FNT written out by `asset extract GAME.FNT`.

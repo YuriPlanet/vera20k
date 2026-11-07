@@ -45,11 +45,18 @@ macro_rules! font {
     };
 }
 
+/// Noto Sans, first in [`bundled`]; [`super::fnt_fill`] also draws GAME.FNT's
+/// missing Latin, Greek and Cyrillic letters from it.
+pub(crate) const NOTO_SANS: &[u8] = include_bytes!("../fonts/NotoSans-VF.ttf");
+
 /// Fallback order. Noto Sans first, so Latin, Greek, Cyrillic, digits and
 /// common punctuation inside any script take its forms.
 pub(crate) fn bundled() -> [BundledFont; 21] {
     [
-        font!("NotoSans-VF.ttf"),
+        BundledFont {
+            data: NOTO_SANS,
+            baseline_shift: 0.0,
+        },
         // GAME.FNT's hanzi fill rows 1..15 around its row-13 baseline, centred
         // 4.5 px above it; Noto's ideographic box at 15 px centres 5.9 px up.
         font!("NotoSansCJKsc-Regular.otf", 1.4),

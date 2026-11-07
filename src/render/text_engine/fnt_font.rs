@@ -11,8 +11,10 @@
 //! Units: `UNITS_PER_EM` makes a font pixel a whole number of units at both
 //! sizes the engine asks for, 400 at the Latin size and 336 at the CJK size
 //! ([`super::fonts`]), so the full-cell CJK glyphs draw 1:1 beside Latin ones.
-//! The shared placeholder box is left unmapped, so those characters fall back
-//! to the bundled fonts; glyph 0 is native's missing-glyph stand-in.
+//! Characters GAME.FNT lacks (no glyph, or one of its shared placeholders)
+//! take [`super::fnt_fill`]'s glyphs in its style where it has one, and
+//! otherwise fall back to the bundled fonts; glyph 0 is native's
+//! missing-glyph stand-in.
 //!
 //! GAME.FNT has no width axis, so it is also built narrowed to each width a
 //! squeeze asks for ([`super::Fit`]), one family per width: text too long for
@@ -61,9 +63,11 @@ impl FntFont {
     /// `baseline_row`: the first bitmap row below the baseline.
     /// `missing`: native's missing-glyph stand-in, drawn for glyph 0.
     pub(crate) fn build(fnt: &FntFile, baseline_row: u32, missing: Option<&FntGlyph>) -> Self {
+        let fill_ins = super::fnt_fill::glyphs(fnt, baseline_row);
         let mut codepoints: Vec<(u16, &FntGlyph)> = fnt
             .drawn_codepoints()
             .filter(|&(cp, _)| cp >= 0x20)
+            .chain(fill_ins.iter().map(|(cp, glyph)| (*cp, glyph)))
             .collect();
         codepoints.sort_unstable_by_key(|&(cp, _)| cp);
 

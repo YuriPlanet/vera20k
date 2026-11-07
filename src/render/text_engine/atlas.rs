@@ -18,12 +18,16 @@ pub(crate) struct GlyphKey {
     pub(crate) font: u16,
     pub(crate) coords: u16,
     pub(crate) glyph: u16,
-    /// Pixel size in 1/16 px.
+    /// Pixel size in 1/[`SIZE_STEPS`] px.
     pub(crate) size: u32,
     /// Horizontal offset in 1/[`SUBPIXEL_STEPS`] px.
     pub(crate) subpixel: u8,
 }
 
+/// Size steps per pixel: the text sizes ([`super::fonts`]) are whole steps,
+/// so GAME.FNT's glyphs draw on whole pixels at 1:1 ([`super::fnt_font`]).
+/// In 1/16 px, 12.6 px drew at 12.625, its pixels 0.2% wide.
+pub(crate) const SIZE_STEPS: f32 = 80.0;
 pub(crate) const SUBPIXEL_STEPS: u8 = 4;
 
 /// Where a rasterised glyph sits in the atlas and how it hangs from its pen
