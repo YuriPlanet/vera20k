@@ -22,6 +22,12 @@ pub(crate) struct GlyphKey {
     pub(crate) size: u32,
     /// Horizontal offset in 1/[`SUBPIXEL_STEPS`] px.
     pub(crate) subpixel: u8,
+    /// The size its native pixels are drawn at, in 1/[`SIZE_STEPS`] px,
+    /// before they scale to `size` (`super::pixels`).
+    pub(crate) native: u32,
+    /// The pen's phase in its native pixel, x in the low four bits and y in
+    /// the high four (`super::split_phase`).
+    pub(crate) phase: u8,
 }
 
 /// Size steps per pixel: the text sizes ([`super::fonts`]) are whole steps,
@@ -224,6 +230,8 @@ mod tests {
             glyph,
             size: 16 * 16,
             subpixel: 0,
+            native: 0,
+            phase: 0,
         }
     }
 

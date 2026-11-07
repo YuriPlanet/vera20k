@@ -1,5 +1,7 @@
-//! The fonts VERA's interface text draws with, and how each script is sized
-//! against GAME.FNT.
+//! The fonts behind GAME.FNT in VERA's interface text, for what it and its
+//! drawn-in letters lack, and how each script is sized against GAME.FNT.
+//! Their glyphs draw in whole native pixels, as GAME.FNT's do
+//! ([`super::pixels`]).
 //!
 //! All are Noto faces under the SIL Open Font License 1.1 (`fonts/OFL.txt`,
 //! and `fonts/OFL-CJK.txt` for Noto Sans CJK), taken unmodified from
@@ -7,18 +9,18 @@
 //! Registration order is fallback order: a character draws from the first
 //! font that has it.
 //!
-//! Sizes are native (800x600) pixels; a draw at scale `s` rasterises at
-//! `size * s`. They were fitted to retail GAME.FNT by measurement:
+//! Sizes are native (800x600) pixels; a draw at scale `s` scales each native
+//! pixel to `s` window pixels. They were fitted to retail GAME.FNT by
+//! measurement:
 //! - Latin, Greek and Cyrillic: GAME.FNT's capitals are 9 rows tall ('H'
 //!   rows 4..12) with 2-pixel stems, and a string advances by its glyph
 //!   widths plus 1 pixel a character. Noto Sans at 12.6 px has a 9.0 px cap
 //!   height; at weight 700 and width 82 it measures 0.99 of GAME.FNT's
-//!   width over the 5,345 lines of retail `ra2md.csf` and puts down 0.98
-//!   of its ink, so text fills the same boxes at the same darkness.
+//!   width over the 5,345 lines of retail `ra2md.csf`, so text fills the
+//!   same boxes.
 //! - Chinese, Japanese and Korean: GAME.FNT's hanzi are 1-pixel monoline
-//!   strokes on a 14 + 1 pixel advance. Noto Sans CJK SC Regular at 15 px
-//!   keeps that advance and lays down 0.99 of the same strings' ink
-//!   (DemiLight 0.91, Medium 1.19).
+//!   strokes on a 14 + 1 pixel advance, which Noto Sans CJK SC Regular at
+//!   15 px keeps.
 //! - Other scripts have no GAME.FNT reference; they take a size that reads
 //!   at the Latin text's height and weight 600.
 

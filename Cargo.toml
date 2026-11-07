@@ -121,10 +121,10 @@ log = { workspace = true }
 # `system` feature (CoreText, DirectWrite, fontconfig) stays off. See
 # src/render/text_engine/mod.rs.
 parley = { version = "0.12", default-features = false, features = ["std", "complex-scripts"] }
-# Glyph rasterisation from the outlines parley's runs name, through the same
-# skrifa parley reads them with; exact-area coverage is what scales GAME.FNT's
-# pixels evenly.
-swash = { version = "0.2.10", default-features = false, features = ["std", "scale", "render"] }
+# Glyph outlines for the runs parley shapes, through the same skrifa parley
+# reads them with; VERA draws them as whole pixels itself
+# (src/render/text_engine/pixels.rs).
+swash = { version = "0.2.10", default-features = false, features = ["std", "scale"] }
 # CLDR plural rules for the language files' plural forms (src/i18n), from the
 # ICU4X release parley's line breaking already uses.
 icu_plurals = { version = "2.4", default-features = false, features = ["compiled_data"] }

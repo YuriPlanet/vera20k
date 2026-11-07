@@ -57,13 +57,17 @@ const SIM_AREAS: [&str; PHASE_COUNT] = [
 ];
 
 /// The labels of the render's phases, in `RenderPhases::spans` order.
-const RENDER_AREAS: [&str; 7] = [
+const RENDER_AREAS: [&str; RenderPhases::COUNT] = [
     "VERA:CpuDrawWorld",
     "VERA:CpuDrawDebug",
     "VERA:CpuDrawShroud",
     "VERA:CpuDrawUI",
     "VERA:CpuDrawSidebar",
     "VERA:CpuGpuUpload",
+    "VERA:CpuDrawLights",
+    "VERA:CpuDrawEffects",
+    "VERA:CpuDrawCalls",
+    "VERA:CpuDriverHandoff",
     "VERA:CpuDrawOther",
 ];
 
@@ -156,7 +160,7 @@ fn profile_delta(
 fn most_cpu(
     wall: Duration,
     sim: Option<&[u128; PHASE_COUNT]>,
-    render: &[Duration; 7],
+    render: &[Duration; RenderPhases::COUNT],
 ) -> Vec<(&'static str, f32)> {
     let wall_ns = wall.as_nanos().max(1) as f64;
     let sim = sim
@@ -338,13 +342,14 @@ mod tests {
         let mut sim = [0u128; PHASE_COUNT];
         sim[crate::sim::frame_profile::phase::OBJECTS] = 300_000_000;
         sim[crate::sim::frame_profile::phase::VISION] = 5_000_000;
-        let mut render = [Duration::ZERO; 7];
+        let mut render = [Duration::ZERO; RenderPhases::COUNT];
         render[0] = Duration::from_millis(200);
-        render[6] = Duration::from_millis(400);
+        render[9] = Duration::from_millis(400);
+        render[10] = Duration::from_millis(5);
         assert_eq!(
             most_cpu(Duration::from_secs(1), Some(&sim), &render),
             [
-                ("VERA:CpuDrawOther", 40.0),
+                ("VERA:CpuDriverHandoff", 40.0),
                 ("VERA:CpuObjects", 30.0),
                 ("VERA:CpuDrawWorld", 20.0)
             ]

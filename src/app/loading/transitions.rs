@@ -254,8 +254,14 @@ pub(crate) fn install_world_presentation(
         }
     }
     // GAME.FNT is process artwork, so retain the established process fallback
-    // when optional font preparation did not produce a replacement.
-    if let Some(ref fnt) = assets.fnt_file {
+    // when optional font preparation did not produce a replacement, and keep
+    // the font itself, with the text it has laid out and drawn, when the
+    // scenario read the same bytes: a new font would build GAME.FNT's
+    // outline faces again (`FntFont::build`) and draw every glyph into an
+    // empty atlas.
+    if let Some(ref fnt) = assets.fnt_file
+        && !state.renderer.bit_font.is_built_from(fnt)
+    {
         let mut font = crate::render::bit_font::BitFont::from_fnt(
             &state.renderer.gpu.device,
             &state.renderer.gpu.queue,
