@@ -184,14 +184,15 @@ fn animated_base_replays_in_fixed_passes_with_strict_order_pixels() {
     // Ordinary buildings, packed bodies of every selector and Z policy (one
     // wave: 2 passes, 3 where WebGL2 snapshots apart), Z-tested shadows (a
     // 4-pass read-only interval), no-Z shadows (packed), the last sprite: one
-    // transaction each, independent of the Anim count.
+    // transaction each, independent of the Anim count. The no-Z shadows'
+    // resolve joins the last sprite's pass.
     let packed = if crate::render::gpu::webgl_fallback(&gpu.device) {
         3
     } else {
         2
     };
     assert!(serial > GROUPS * 5, "strict order: {serial}");
-    assert_eq!(staged, 1 + packed + 4 + packed + 1);
+    assert_eq!(staged, 1 + packed + 4 + (packed - 1) + 1);
 }
 
 /// One light record whose quad centre projects to `center` under a zero
