@@ -3826,17 +3826,7 @@ impl Simulation {
 
     #[cfg(any(test, feature = "test-support"))]
     pub fn bomb_attach_for_test(&mut self, planter: u64, target: Option<u64>, rules: &RuleSet) {
-        Self::bomb_attach(
-            &self.interner,
-            &self.session,
-            &mut self.substrate,
-            &mut self.sound_events,
-            &self.resolved_terrain,
-            &mut self.bombs,
-            planter,
-            target,
-            rules,
-        );
+        self.bomb_attach(planter, target, None, rules);
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -6358,6 +6348,10 @@ impl Simulation {
         if category == EntityCategory::Structure {
             self.clear_registered_jammers(stable_id);
         }
+        // Ares BuildingClass_ChangeOwner_PrismForwardAndLeaveBomb (100163B0)
+        // always resumes at 0x448293, past the defuse: a captured building
+        // keeps its bomb.
+        #[cfg(not(feature = "ares"))]
         if category == EntityCategory::Structure
             && let Some(entity) = self.substrate.entities.get(stable_id)
             && !self

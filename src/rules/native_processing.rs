@@ -1768,6 +1768,8 @@ impl ProcessedRulesLayers {
                     attached_particle_system: member.weapon.attached_particle_system.as_deref(),
                     #[cfg(feature = "ares")]
                     ares_bolt_particle_system: &member.weapon.ares_bolt_particle_system,
+                    #[cfg(feature = "ares")]
+                    ares_ivan_bomb_warhead: &member.weapon.ares_ivan_bomb_warhead,
                 }
             })
     }
@@ -5266,6 +5268,8 @@ pub(crate) struct WeaponState<'a> {
     pub(crate) attached_particle_system: Option<&'a str>,
     #[cfg(feature = "ares")]
     pub(crate) ares_bolt_particle_system: &'a Option<Option<String>>,
+    #[cfg(feature = "ares")]
+    pub(crate) ares_ivan_bomb_warhead: &'a Option<Option<String>>,
 }
 
 /// Fields needed by Weapon7729F0, retained on the same live Weapon object.
@@ -5309,6 +5313,11 @@ struct WeaponReadState {
     #[cfg(feature = "ares")]
     #[serde(default)]
     ares_bolt_particle_system: Option<Option<String>>,
+    /// Ares `IvanBomb.Warhead` (WeaponTypeExt +0x8C), the same
+    /// non-allocating Nullable Find over the Warhead family.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_ivan_bomb_warhead: Option<Option<String>>,
 }
 
 impl ProcessedType {
@@ -8413,6 +8422,20 @@ impl RulesPassProcessor {
                     self.family_mut(RulesTypeFamily::Weapon)[index]
                         .weapon
                         .ares_bolt_particle_system = system;
+                    let current = &self.families[&RulesTypeFamily::Weapon][index]
+                        .weapon
+                        .ares_ivan_bomb_warhead;
+                    let warhead = read_ares_type_ref(&raw, "IvanBomb.Warhead", current, |name| {
+                        self.find_existing(RulesTypeFamily::Warhead, name)
+                            .map(|warhead| {
+                                self.families[&RulesTypeFamily::Warhead][warhead]
+                                    .native_stored_id
+                                    .clone()
+                            })
+                    });
+                    self.family_mut(RulesTypeFamily::Weapon)[index]
+                        .weapon
+                        .ares_ivan_bomb_warhead = warhead;
                 }
             }
             index += 1;

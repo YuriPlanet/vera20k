@@ -2926,8 +2926,13 @@ impl Simulation {
         // 0x00739956: a Slave Miner's manager moves to its refinery (the
         // hand-off 0x006B0D10, then SetOwner 0x006AF580) before the unit
         // leaves; the refinery's own fresh slaves are freed.
+        // Ares UnitClass_Deploy_Transfer (10048E90 -> 10045A80): the bomb,
+        // then the original owner.
         #[cfg(feature = "ares")]
-        self.transfer_factory_country(stable_id, new_sid);
+        {
+            self.transfer_ivan_bomb(stable_id, new_sid);
+            self.transfer_factory_country(stable_id, new_sid);
+        }
         self.transfer_slave_manager(stable_id, new_sid, true, rules, registry, frame_effects);
         self.uninit_with_context(
             stable_id,
@@ -3149,8 +3154,12 @@ impl Simulation {
             // the unit's own.
             unit.veterancy.inherit(&veterancy);
         }
+        // Ares BuildingClass_Mi_Selling_Transfer (10048E90 -> 10045A80).
         #[cfg(feature = "ares")]
-        self.transfer_factory_country(sid, new_sid);
+        {
+            self.transfer_ivan_bomb(sid, new_sid);
+            self.transfer_factory_country(sid, new_sid);
+        }
         self.transfer_slave_manager(sid, new_sid, false, rules, overlay_registry, frame_effects);
         // Cell clicks, object clicks (event 0x1E) and the SlaveManager
         // relocation share ArchiveTarget; conversion sends the new Unit to

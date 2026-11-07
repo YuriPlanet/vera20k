@@ -311,6 +311,8 @@ fn facts(input: &Value) -> FireFacts {
         target: TargetFacts {
             kind: target_kind(t["kind"].as_str().unwrap()),
             bomb: flag(&t["bomb"]),
+            #[cfg(feature = "ares")]
+            bomb_fixed: false,
             in_limbo: flag(&t["in_limbo"]),
             on_bridge: flag(&t["on_bridge"]),
             z: int(&t["z"]),

@@ -77,6 +77,9 @@ pub struct WeaponType {
     /// `IsDetachedRailgun` ([`crate::rules::ares_weapon`]).
     #[cfg(feature = "ares")]
     pub ares_visuals: crate::rules::ares_weapon::AresWeaponVisuals,
+    /// Ares WeaponTypeExt custom Ivan bombs ([`crate::rules::ares_weapon`]).
+    #[cfg(feature = "ares")]
+    pub ares_ivan_bomb: crate::rules::ares_weapon::AresIvanBomb,
     /// `RevealOnFire=` (`+0x137`, default yes): a launched shot reveals the
     /// firer to a human victim (FireAt `0x006FF66C`). Retail turns it off on
     /// the sniper, Virus, disguise and Mirage weapons.
@@ -450,6 +453,8 @@ impl WeaponType {
                 section,
                 section.read_bool("IsMagBeam", false),
             ),
+            #[cfg(feature = "ares")]
+            ares_ivan_bomb: crate::rules::ares_weapon::AresIvanBomb::read(section),
             // Constructor 1 (`0x00771DBB`); ReadINI passes it as the default
             // (`0x00772182..0x00772196`).
             reveal_on_fire: section.read_bool("RevealOnFire", true),

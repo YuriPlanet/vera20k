@@ -1427,14 +1427,17 @@ pub(crate) fn techno_extras_for_parent(
             )
             .then_some(instance)
         };
+        // Ares hook 0x6F523C (10056CC0) draws the bomb weapon's
+        // `IvanBomb.Image` in place of BOMBCURS.SHP, and hook 0x438A00
+        // (100568C0) counts the frame over that image.
+        #[cfg(feature = "ares")]
+        let images = rules.map_or(&[][..], |rules| sim.bomb_images(entity.stable_id(), rules));
+        #[cfg(not(feature = "ares"))]
+        let images: &[String] = &[];
         if bomb_visible
-            && let (Some(bomb), Some(rules), Some(shape)) =
-                (entity.bomb.as_ref(), rules, overlay.bomb_clock())
-            && let Some(frame) = bomb.clock_frame(
-                sim.session().binary_frame() as i32,
-                rules.combat_damage.ivan_timed_delay,
-                rules.combat_damage.ivan_icon_flicker_rate,
-            )
+            && let (Some(rules), Some(shape)) = (rules, overlay.bomb_image(images))
+            && let Some(frame) =
+                sim.bomb_clock_frame(entity.stable_id(), rules, shape.frame_count())
             && let Ok(frame) = usize::try_from(frame)
         {
             strip.bomb_clock = prefix(shape, frame);

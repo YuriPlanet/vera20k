@@ -5749,8 +5749,16 @@ impl Simulation {
         // `BombListClass::PointerGotInvalid @ 0x00439150` after its listener
         // loop (0x00725961) whatever the control, so a cloaking planter loses
         // its bombs' credit as a removed one does. No listener reads a planter,
-        // so running it first changes nothing.
-        Self::bomb_planter_expired(&mut self.substrate, &self.bombs, expired_id);
+        // so running it first changes nothing. Ares
+        // AnnounceInvalidPointer_BombCloak (10056750, hook 0x725961) skips it
+        // unless the object is removed: a cloaking planter keeps its credit.
+        #[cfg(feature = "ares")]
+        let announce_to_bombs = control == PointerExpiryControl::Uninit;
+        #[cfg(not(feature = "ares"))]
+        let announce_to_bombs = true;
+        if announce_to_bombs {
+            Self::bomb_planter_expired(&mut self.substrate, &self.bombs, expired_id);
+        }
         // `TeamClass::PointerExpired @ 0x006EAE60`, each team a listener.
         self.team_script_vm
             .pointer_expired(expired_id, control == PointerExpiryControl::Uninit);

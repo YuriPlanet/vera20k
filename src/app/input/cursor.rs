@@ -820,6 +820,8 @@ pub(super) fn capability_cursor_for_hover(
             .and_then(|rules| sim.interner().object_type(actor.type_ref(), rules))
             .is_some_and(|object| object.engineer)
         && hovered_entity.is_some_and(|target| target.bomb.is_some())
+        // Ares hook 0x51E488 (10056C00): an undetachable bomb is skipped.
+        && rules.is_some_and(|rules| sim.bomb_detachable(hover.stable_id, rules))
         && sim.bomb_seen_by(hover.stable_id, actor.owner())
     {
         return CursorFeedbackKind::DisarmBomb;

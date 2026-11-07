@@ -4185,7 +4185,9 @@ fn disarm_bomb_engineers(
         .entities()
         .get(target)
         .is_some_and(|entity| entity.bomb.is_some());
-    if !bombed || !sim.bomb_seen_by(target, player) {
+    // Ares InfantryClass_GetActionOnObject2 (10056C00, hook 0x51E488) skips
+    // a bomb that is not `IvanBomb.Detachable`.
+    if !bombed || !sim.bomb_detachable(target, rules) || !sim.bomb_seen_by(target, player) {
         return Vec::new();
     }
     selected

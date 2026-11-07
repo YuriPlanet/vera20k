@@ -6133,6 +6133,17 @@ impl RuleSet {
             weapon.down_report = section.map_or_else(Vec::new, |section| {
                 sounds.read_rules_sound_list(section, "DownReport")
             });
+            // WeaponTypeExt LoadFromINIFile10055520: NullableIdx<Voc>
+            // 1000E9D0 reads of the custom Ivan bomb's two cues.
+            #[cfg(feature = "ares")]
+            {
+                weapon.ares_ivan_bomb.ticking_sound = section.and_then(|section| {
+                    sounds.read_ares_reference(section, "IvanBomb.TickingSound")
+                });
+                weapon.ares_ivan_bomb.attach_sound = section.and_then(|section| {
+                    sounds.read_ares_reference(section, "IvanBomb.AttachSound")
+                });
+            }
         }
         for sw in self.super_weapons.values_mut() {
             let section = ini.section(&sw.id);
@@ -6661,6 +6672,7 @@ impl RuleSet {
             #[cfg(feature = "ares")]
             {
                 weapon.ares_visuals.bolt_particle_system = state.ares_bolt_particle_system.clone();
+                weapon.ares_ivan_bomb.warhead = state.ares_ivan_bomb_warhead.clone();
             }
             // A repeated ID replaces the earlier weapon under its key. The
             // reserve is `insert`'s, so the keys iterate in the order they

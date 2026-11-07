@@ -3049,17 +3049,11 @@ fn run_special_detonation_arm(
         }
         SpecialDetonationAction::IvanBomb => {
             // 0x00469343..0x00469375: the bullet's owner plants on a Techno.
-            Simulation::bomb_attach(
-                &world.interner,
-                &world.session,
-                &mut world.substrate,
-                &mut world.sound_events,
-                &world.resolved_terrain,
-                &mut world.bombs,
-                owner,
-                object,
-                rules,
-            );
+            #[cfg(not(feature = "ares"))]
+            world.bomb_attach(owner, object, None, rules);
+            // Ares replaces the arm (hook 0x46934D, Ares.dll 10056AF0).
+            #[cfg(feature = "ares")]
+            world.ares_ivan_bomb_detonation(detonation, rules);
         }
         SpecialDetonationAction::BombDisarm => {
             // 0x004699C4..0x004699FE: a bombed Object target is defused.

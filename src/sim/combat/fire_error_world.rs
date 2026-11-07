@@ -432,6 +432,9 @@ impl<'a> FireSubject<'a> {
                             EntityCategory::Structure => FireTargetKind::Building,
                         },
                         bomb: entity.bomb.is_some(),
+                        #[cfg(feature = "ares")]
+                        bomb_fixed: entity.bomb.is_some()
+                            && !self.world.bomb_detachable(entity.stable_id(), self.rules),
                         in_limbo: entity.lifecycle.in_limbo(),
                         sinking: entity.sinking.is_active(),
                         on_bridge: entity.on_bridge(),

@@ -447,12 +447,29 @@ impl Default for FirerTypeFacts {
     }
 }
 
+/// Ares TechnoClass_CanFire_IvanBomb (Ares.dll 10056C60, hook 0x6FCBAD,
+/// between the two stock bomb gates): a BombDisarm warhead may not fire at a
+/// bomb that is not `IvanBomb.Detachable` (ILLEGAL, `0x6FCBBE`).
+fn ares_bomb_fixed(bomb_disarm: bool, target: &TargetFacts) -> bool {
+    #[cfg(feature = "ares")]
+    return bomb_disarm && target.bomb_fixed;
+    #[cfg(not(feature = "ares"))]
+    {
+        let _ = (bomb_disarm, target);
+        false
+    }
+}
+
 /// The target's fields (techno fields are read only for a techno target).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct TargetFacts {
     pub kind: FireTargetKind,
     /// `+0x38` an attached bomb (any ObjectClass).
     pub bomb: bool,
+    /// Ares: that bomb's weapon says `IvanBomb.Detachable=no`
+    /// ([`crate::sim::world::Simulation::bomb_detachable`]).
+    #[cfg(feature = "ares")]
+    pub bomb_fixed: bool,
     pub in_limbo: bool,          // +0x81
     pub on_bridge: bool,         // +0x8C
     pub z: i32,                  // +0xA4
@@ -1146,6 +1163,7 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
             || (warhead.mind_control && !query.can_capture())
             || warhead.armor_rejects_fire
             || (warhead.bomb_disarm && !target.bomb)
+            || ares_bomb_fixed(warhead.bomb_disarm, &target)
             || (warhead.ivan_bomb && target.bomb)
             || target.sinking
         {

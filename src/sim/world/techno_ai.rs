@@ -1854,6 +1854,17 @@ fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         return;
     }
     let weapon = target_scan::select_weapon(sim, rules, id, Some(target));
+    // Ares TechnoClass_Update_ZeroOutTarget (10056D80, hook 0x6FA4C6) skips
+    // the clear for an Aircraft, resuming at 0x6FA4D1.
+    #[cfg(feature = "ares")]
+    if sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| entity.category() == EntityCategory::Aircraft)
+    {
+        return;
+    }
     let code = target_scan::fire_error_at(sim, rules, id, Some(target), weapon, false, None);
     if matches!(code, FireError::Illegal | FireError::Cant) {
         //6FA4CB dispatches class+3C8 before this object's mission handler:

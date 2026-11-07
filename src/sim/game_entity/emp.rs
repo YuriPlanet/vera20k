@@ -230,24 +230,68 @@ mod receiver {
             spread: f64,
             rules: &RuleSet,
         ) -> Vec<u64> {
-            use crate::map::{cell_index::NativeCellIdentity, resolved_terrain::NativeCellQuery};
-            use crate::sim::movement::{ground_pose, locomotor::MovementLayer};
-            let radius = (X87::fistp_i32_masked(X87::add(
+            use crate::sim::movement::ground_pose;
+            let range = X87::fistp_i32_masked(X87::add(
                 X87::load_f64(NativeF64Bits::from_bits(spread.to_bits())),
                 X87::load_f64(NativeF64Bits::from_bits(0.99f64.to_bits())),
-            )) as u32)
-                .min(256) as i32;
+            )) as u32;
             let cells = self
                 .resolved_terrain
                 .as_ref()
-                .map(NativeCellQuery::canonical);
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
             let center = crate::sim::movement::coord_cell(crate::sim::components::DriveCoord {
                 x: impact.x,
                 y: impact.y,
                 z: impact.z,
             });
             let mut candidates = Vec::new();
-            visit_emp_cells(center, radius, |requested| {
+            self.ares_cell_spread_technos(center, range, |occupant| {
+                let Some(entity) = self.substrate.entities.get(occupant) else {
+                    return;
+                };
+                if entity.category() == EntityCategory::Structure
+                    && self
+                        .interner
+                        .object_type(entity.type_ref(), rules)
+                        .is_some_and(|kind| kind.invisible_in_game)
+                {
+                    return;
+                }
+                let Some(coord) = ground_pose::target_get_coords(
+                    crate::sim::combat::TargetKind::Entity(occupant),
+                    self,
+                    cells.as_ref(),
+                ) else {
+                    return;
+                };
+                if emp_ground_in_range(impact, [coord.x, coord.y, coord.z], spread) {
+                    candidates.push((entity.native_unique_id(), occupant));
+                }
+            });
+            // Native set comparator10035BA8/100765BA uses signed Abstract+10,
+            // including equality: two references to the same UID deliver once.
+            candidates.sort_by_key(|(uid, _)| *uid);
+            candidates.dedup_by_key(|(uid, _)| *uid);
+            candidates.into_iter().map(|(_, id)| id).collect()
+        }
+        /// Ares `CellSpreadIterator<TechnoClass>`, the walk getCellSpreadItems
+        /// (10035C26..10035D74) and the IvanBombs spread (10056550) share:
+        /// each object, in list order, on the ground list of every cell
+        /// within `range` rings of `center` (the range clamped to 256), or on
+        /// the bridge list of a bridge cell (`+0x100`).
+        pub(crate) fn ares_cell_spread_technos(
+            &self,
+            center: (i16, i16),
+            range: u32,
+            mut visit: impl FnMut(u64),
+        ) {
+            use crate::map::{cell_index::NativeCellIdentity, resolved_terrain::NativeCellQuery};
+            use crate::sim::movement::locomotor::MovementLayer;
+            let cells = self
+                .resolved_terrain
+                .as_ref()
+                .map(NativeCellQuery::canonical);
+            visit_emp_cells(center, range.min(256) as i32, |requested| {
                 let (rx, ry, layer) = if let Some(cells) = cells.as_ref() {
                     //10035B2A..10035B48 indexes the fixed cell array and
                     // skips null, rather than stamping MapClass's Dummy.
@@ -277,35 +321,10 @@ mod receiver {
                 };
                 if let Some(occupancy) = self.substrate.occupancy.get(rx, ry) {
                     for occupant in occupancy.iter_layer(layer) {
-                        let Some(entity) = self.substrate.entities.get(occupant.entity_id) else {
-                            continue;
-                        };
-                        if entity.category() == EntityCategory::Structure
-                            && self
-                                .interner
-                                .object_type(entity.type_ref(), rules)
-                                .is_some_and(|kind| kind.invisible_in_game)
-                        {
-                            continue;
-                        }
-                        let Some(coord) = ground_pose::target_get_coords(
-                            crate::sim::combat::TargetKind::Entity(occupant.entity_id),
-                            self,
-                            cells.as_ref(),
-                        ) else {
-                            continue;
-                        };
-                        if emp_ground_in_range(impact, [coord.x, coord.y, coord.z], spread) {
-                            candidates.push((entity.native_unique_id(), occupant.entity_id));
-                        }
+                        visit(occupant.entity_id);
                     }
                 }
             });
-            // Native set comparator10035BA8/100765BA uses signed Abstract+10,
-            // including equality: two references to the same UID deliver once.
-            candidates.sort_by_key(|(uid, _)| *uid);
-            candidates.dedup_by_key(|(uid, _)| *uid);
-            candidates.into_iter().map(|(_, id)| id).collect()
         }
         /// One actual10062320 delivery. Supported victims are human
         /// Drive/Walk and ordinary AI Drive, with no Team/managers/harvester/positive death threshold.

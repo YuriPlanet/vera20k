@@ -8,9 +8,113 @@
 //! (first load) seeds `Wave.ReverseAgainstVehicles` with IsMagBeam.
 //! `Bolt.ParticleSystem` is a type lookup and is resolved by the ordered
 //! Rules processor ([`crate::rules::native_processing`]).
+//!
+//! The same reader holds the custom Ivan bomb keys ([`AresIvanBomb`]), whose
+//! consumers are the bomb owner (`sim::bomb`); `IvanBomb.Warhead` resolves
+//! in the ordered processor and the two sounds bind with the other Rules
+//! sounds.
 
 use crate::rules::ini_parser::IniSection;
 use crate::util::native_x87::NativeF64Bits;
+
+/// Ares WeaponTypeExt custom Ivan bombs (ExtData +0x68..+0xA8, constructor
+/// 100548B0). `PlantBomb` (Ares.dll 10055AE0) remembers the planting weapon
+/// on its bomb (`WeaponTypeExt::BombExt`), and every bomb hook reads these
+/// settings through it. The two `IvanBomb.CanDetonate*` keys gate the
+/// player's Detonate action, which VERA does not represent; they are not read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AresIvanBomb {
+    /// `IvanBomb.DeathBomb` (+0x68): a bomb planted on a victim the planter's
+    /// house does not count an ally is a death bomb (BombClass+0x30 = 1): it
+    /// has no fuse and goes off only with its carrier.
+    pub(crate) death_bomb: bool,
+    /// `IvanBomb.DeathBombOnAllies` (+0x69): the same for an allied victim.
+    pub(crate) death_bomb_on_allies: bool,
+    /// `IvanBomb.DestroysBridges` (+0x6A, yes): a `BridgeRepairHut=`
+    /// carrier's blast drops its bridge (BombClass_Detonate3, hook 0x438879).
+    pub(crate) destroys_bridges: bool,
+    /// `IvanBomb.Detachable` (+0x6B, yes): an Engineer may defuse it (hooks
+    /// 0x6FCBAD, 0x51E488).
+    pub(crate) detachable: bool,
+    /// `IvanBomb.Damage` (+0x6C), else `[CombatDamage] IvanDamage`.
+    pub(crate) damage: Option<i32>,
+    /// `IvanBomb.Delay` (+0x74), else `[CombatDamage] IvanTimedDelay`.
+    pub(crate) delay: Option<i32>,
+    /// `IvanBomb.FlickerRate` (+0x9C), else `IvanIconFlickerRate`.
+    pub(crate) flicker_rate: Option<i32>,
+    /// `IvanBomb.TickingSound` (+0x7C) and `IvanBomb.AttachSound` (+0x84),
+    /// NullableIdx<VocClass>, else `[AudioVisual] BombTickingSound` /
+    /// `BombAttachSound`; `Some(None)` is an explicit silence. Bound against
+    /// the fixed sound catalog by `RuleSet::bind_type_sound_references`.
+    pub(crate) ticking_sound: Option<Option<String>>,
+    pub(crate) attach_sound: Option<Option<String>>,
+    /// `IvanBomb.Warhead` (+0x8C), a Nullable<WarheadTypeClass*> whose Find
+    /// never allocates, else `IvanWarhead`; `Some(None)` is an explicit none.
+    pub(crate) warhead: Option<Option<String>>,
+    /// `IvanBomb.Image` (+0x94), Nullable<SHPStruct*> (`read<SHPStruct*>`
+    /// 10040640): each pass's `<value>.shp` (at most 255 bytes), in pass
+    /// order. Native keeps the last one that loads; the app, which owns the
+    /// art, picks it, else BOMBCURS.SHP.
+    pub(crate) image: Vec<String>,
+    /// `IvanBomb.DetonateOnSell` (+0xA8, yes): a bomb on a sold object goes
+    /// off (`WeaponTypeExt::OnSell` 10055A80).
+    pub(crate) detonate_on_sell: bool,
+}
+
+impl AresIvanBomb {
+    /// The constructor's values (100548B0: +0x68 = 0x01010000, +0xA8 = 1),
+    /// also what a bomb without a planting weapon reads.
+    pub(crate) const CONSTRUCTED: Self = Self {
+        death_bomb: false,
+        death_bomb_on_allies: false,
+        destroys_bridges: true,
+        detachable: true,
+        damage: None,
+        delay: None,
+        flicker_rate: None,
+        ticking_sound: None,
+        attach_sound: None,
+        warhead: None,
+        image: Vec::new(),
+        detonate_on_sell: true,
+    };
+
+    /// The `IvanBomb.Image` file names in pass order, for the art owner.
+    pub fn image_names(&self) -> &[String] {
+        &self.image
+    }
+
+    /// LoadFromINIFile 10055520's reads of these keys, in its order. The
+    /// warhead and the two sounds are bound by their own owners.
+    pub(crate) fn read(section: &IniSection) -> Self {
+        let mut bomb = Self::CONSTRUCTED;
+        bomb.death_bomb = section.read_ares_bool("IvanBomb.DeathBomb", bomb.death_bomb);
+        bomb.death_bomb_on_allies =
+            section.read_ares_bool("IvanBomb.DeathBombOnAllies", bomb.death_bomb_on_allies);
+        bomb.destroys_bridges =
+            section.read_ares_bool("IvanBomb.DestroysBridges", bomb.destroys_bridges);
+        bomb.detachable = section.read_ares_bool("IvanBomb.Detachable", bomb.detachable);
+        bomb.damage = section.read_ares_nullable_int("IvanBomb.Damage", bomb.damage);
+        bomb.delay = section.read_ares_nullable_int("IvanBomb.Delay", bomb.delay);
+        bomb.flicker_rate =
+            section.read_ares_nullable_int("IvanBomb.FlickerRate", bomb.flicker_rate);
+        bomb.image =
+            section.read_string_with("IvanBomb.Image", 2048, Vec::new(), |mut images, name| {
+                // `_snprintf_s(flag, _TRUNCATE, "%s.shp")` into char[256].
+                let mut file = format!("{name}.shp");
+                let mut end = file.len().min(255);
+                while !file.is_char_boundary(end) {
+                    end -= 1;
+                }
+                file.truncate(end);
+                images.push(file);
+                images
+            });
+        bomb.detonate_on_sell =
+            section.read_ares_bool("IvanBomb.DetonateOnSell", bomb.detonate_on_sell);
+        bomb
+    }
+}
 
 /// The `Wave.ReverseAgainst*` slots (ExtData +0x5C..+0x60), chosen by the
 /// target's What_Am_I in `IsWaveReversedAgainst`.
@@ -217,6 +321,37 @@ mod tests {
         };
         assert_eq!(system("ZAP"), Some(Some("SPARKY".to_string())));
         assert_eq!(system("OFF"), Some(None));
+    }
+
+    /// The Ivan bomb keys over two passes: constructor defaults, Nullable
+    /// presence, the `.shp` image names in pass order, and the warhead's
+    /// non-allocating Find (`none` stores null, an unknown name retains).
+    #[test]
+    fn ivan_bomb_keys_read_over_passes() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[InfantryTypes]\n0=PROBE\n[PROBE]\nPrimary=BOOM\nSecondary=DUD\n\
+             [Warheads]\n0=BLAST\n[BLAST]\n\
+             [BOOM]\nIvanBomb.Warhead=blast\nIvanBomb.Damage=x\nIvanBomb.Delay=90\n\
+             IvanBomb.Image=CLOCK\nIvanBomb.Detachable=no\n\
+             [DUD]\nIvanBomb.Warhead=none\n",
+        ));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[BOOM]\nIvanBomb.Warhead=Missing\nIvanBomb.Image=MAPCLOCK\n"),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        let bomb = |weapon| rules.weapon(weapon).unwrap().ares_ivan_bomb.clone();
+        let boom = bomb("BOOM");
+        assert_eq!(boom.warhead, Some(Some("BLAST".to_string())));
+        assert_eq!((boom.damage, boom.delay), (None, Some(90)));
+        assert_eq!(boom.image, ["CLOCK.shp", "MAPCLOCK.shp"]);
+        assert!(!boom.detachable && boom.destroys_bridges && boom.detonate_on_sell);
+        assert_eq!(bomb("DUD").warhead, Some(None));
+        let read = AresIvanBomb::read(IniFile::from_str("[W]\nDamage=1\n").section("W").unwrap());
+        assert_eq!(read, AresIvanBomb::CONSTRUCTED);
     }
 
     #[test]

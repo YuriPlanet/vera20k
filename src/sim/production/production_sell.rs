@@ -184,6 +184,13 @@ pub(crate) fn sell_useless_repair_contact(
     {
         return false;
     }
+    // Ares FootClass_Sell_Detonate (hook 0x4D9F7B), On_Sold's first step.
+    // RESIDUAL: a blast that destroys the unit ends the sale here; native
+    // runs the rest of On_Sold on the destroyed unit.
+    #[cfg(feature = "ares")]
+    if !sim.bomb_detonate_on_sell(id, rules, context.registry(), context.effects()) {
+        return true;
+    }
     let Some(refund) = techno_refund(sim, rules, id) else {
         return false;
     };
@@ -326,6 +333,12 @@ pub(crate) fn sell_back(
         return false;
     };
     if !buildup {
+        // Ares BuildingClass_Sell_DetonateNoBuildup (hook 0x4471D5) before
+        // the wall's removal; a wall its blast destroys is not removed twice.
+        #[cfg(feature = "ares")]
+        if firestorm_wall && !sim.bomb_detonate_on_sell(id, rules, registry, frame_effects) {
+            return true;
+        }
         if firestorm_wall {
             let context = UninitContext::new(rules, registry).with_effects(frame_effects);
             let _ = sim.techno_limbo_with_context(id, context);
@@ -780,6 +793,13 @@ pub(crate) fn sell_complete(
         KillCallback::Terminal,
         context,
     );
+    // Ares BuildingClass_Mi_Selling_DetonatePostBuildup (hook 0x44A1FF),
+    // after vt+0xE0. RESIDUAL: a blast that destroys the building ends the
+    // sale with no refund; native runs the refund and UnInit on it.
+    #[cfg(feature = "ares")]
+    if !sim.bomb_detonate_on_sell(id, rules, registry, frame_effects) {
+        return false;
+    }
     sim.lighting_sources.set_building_light_active(id, false);
     //44A215 queries the live receiver's refund;44A21B re-reads its owner.
     // Pending removal is not an Alive/health gate: the retained receiver's
