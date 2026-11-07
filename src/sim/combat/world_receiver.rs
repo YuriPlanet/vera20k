@@ -2630,6 +2630,20 @@ fn finish_concrete_death(
         // `InfantryClass::ReceiveDamage` on result 4 (`0x00518077..0x0051808E`):
         // a dying slave leaves its master's node (RemoveSlave).
         Simulation::remove_slave(&world.session, &mut world.substrate, dead_id);
+        // `0x00518093..0x005180E2`: a dying rider whose `Transporter`
+        // (`+0x11C`) is a Unit whose type has `Gunner=yes` (`GetType()->+0x805`)
+        // calls that Unit's RemoveGunner (vtable `+0x4D8`, `0x007464E0`).
+        // Retail reaches it only for a rider that can take damage while its
+        // Transporter is set, i.e. in an `OpenTopped=` transport, and the only
+        // such Unit, BFRT, has no `Gunner=`.
+        if let Some(transporter) = world
+            .substrate
+            .entities
+            .get(dead_id)
+            .and_then(|entity| entity.passenger_role.transporter())
+        {
+            world.remove_gunner(rules, transporter, Some(dead_id));
+        }
         // The house InfDeath 8 and 9 give their anim (`0x0051887B`,
         // `0x00518A96`): the source's owner (`+0x21C`), else the house
         // argument.

@@ -117,6 +117,10 @@ pub(crate) enum MapRevealProjection {
     Fire,
     /// Map5673A0/5678E0 skipReveal: clear pending fog without mapping.
     FogProtect,
+    /// `MapClass::RevealArea @ 0x005678E0` entered for a source its house
+    /// gate rejects (`0x00567AB0..0x00567B12`): the call happens and returns
+    /// at `0x00567D88` before collecting or walking any cell.
+    Rejected,
 }
 
 /// Synchronous MapCell receiver arguments. The coordinate is read after both

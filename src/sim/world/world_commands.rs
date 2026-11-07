@@ -1687,6 +1687,13 @@ impl Simulation {
             // EventClass::Execute @ 0x004C6CB0, SELL arm 0x004C6F20:
             // PlanningDetach precedes the target's alive/owner refusal.
             | Command::SellBuilding { entity_id } => Some(*entity_id),
+            // The VERA-only bunker-eject record is Event9 DEPLOY on the
+            // bunker's occupant: 0x004C76CA detaches that Unit's planning.
+            Command::EjectBunker { bunker_id } => self
+                .substrate
+                .entities
+                .get(*bunker_id)
+                .and_then(|bunker| bunker.bunker.occupant()),
             _ => cmd.megamission_actor(),
         };
         if !planned && let Some(actor) = ordinary_actor {
@@ -2768,25 +2775,27 @@ impl Simulation {
                     Some(*selection),
                 )
             }
+            // VERA-only opcode 0x31: keep the record decodable for old
+            // recordings, but never release the tank here. Native
+            // `BuildingClass::EmptyBunker @ 0x004595C0` has one caller, the
+            // linked Unit's `Mission_Unload @ 0x0073D66D`, whose DEPLOY
+            // receiver (`Event9` `0x004C76BC..0x004C7812`) owns the radio
+            // Break, null destination/target, Unload queue and the actor's
+            // alive/limbo admission. The release then happens in that Unit's
+            // Logic update, not during command execution (#3675).
             Command::EjectBunker { bunker_id } => {
                 if !self.entity_owned_by_id(command_owner, *bunker_id) {
                     return false;
                 }
-                let has_occupant = self
+                let Some(unit_id) = self
                     .substrate
                     .entities
                     .get(*bunker_id)
-                    .is_some_and(|b| b.bunker.occupant().is_some());
-                if !has_occupant {
+                    .and_then(|b| b.bunker.occupant())
+                else {
                     return false;
-                }
-                crate::sim::docking::bunker_link::release_normal(
-                    self,
-                    *bunker_id,
-                    rules,
-                    frame_effects,
-                );
-                true
+                };
+                crate::sim::deploy::issue_order(self, unit_id, rules, frame_effects)
             }
         }
     }
@@ -3219,13 +3228,11 @@ impl Simulation {
     ///
     /// Residuals on this gate, recorded not fixed:
     ///
-    /// * **EjectBunker is ungated.** `Simulation::command_uses_megamission`
-    ///   enumerates which VERA commands are MEGAMISSION-shaped — it is what
-    ///   splits due commands into the non-MEGAMISSION pass and the staged
-    ///   batch, mirroring opcode 0x04 in `net::lockstep`. Checked against it,
-    ///   `EjectBunker` carries only the ownership test. Trigger: issuing it to
-    ///   a dying or limboed bunker. Player effect: the order runs where retail
-    ///   abandons it. Frequency: low per order.
+    /// * Event9 DEPLOY orders (`deploy::issue_order`,
+    ///   `0x004C76BC..0x004C7812`) carry their own alive/limbo/tether gate
+    ///   rather than this one. `Command::EjectBunker` shares that route
+    ///   (#3675): the bunker-eject residual about an ungated command-time
+    ///   release is gone with it.
     /// * Aircraft reservation teardown remains a legacy command policy.
     /// * **The manager abandon** at 0x004C73E1-0x004C73EA calls 0x006B0C80 on
     ///   `[actor+0x2D8]`, the SlaveManagerClass (not a spawn manager), whenever
@@ -3235,8 +3242,9 @@ impl Simulation {
     ///   through `Simulation::reset_slave_manager`; the other orders outside
     ///   the funnel do not yet.
     /// * **`TeamClass__Remove_Member`** runs in the MEGAMISSION funnel
-    ///   and in its shared prefix; EjectBunker and the dormant aircraft Unload
-    ///   arm bypass that prefix and keep a team member in its team.
+    ///   and in its shared prefix; the Event9 DEPLOY route and the dormant
+    ///   aircraft Unload arm bypass that prefix and keep a team member in
+    ///   its team.
     pub(crate) fn order_actor_admits(&self, stable_id: u64) -> bool {
         self.substrate.entities.get(stable_id).is_some_and(|e| {
             e.lifecycle.object_alive() && e.health.current() > 0 && !e.lifecycle.in_limbo()
@@ -4450,6 +4458,156 @@ mod tests {
         }
     }
 
+    /// A compact installed bunker: the VERA-only eject record names the
+    /// building, so both the occupant's link and its radio contact must be
+    /// real production state.
+    fn installed_bunker_fixture() -> (Simulation, RuleSet) {
+        let rules = bunker_rules();
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        spawn_bunker_struct(&mut sim, 2, "Americans", 10, 10);
+        spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 10, 10);
+        crate::sim::docking::bunker_link::install_bunker_link(&mut sim, 2, 1, &rules);
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.radio_contacts.set_slot(0, 2);
+        unit.navigation
+            .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(2)));
+        (sim, rules)
+    }
+
+    /// `UnitClass::Mission_Unload @ 0x0073D630` is the only caller of
+    /// `BuildingClass::EmptyBunker @ 0x004595C0` (`0x0073D66D`). Opcode 0x31
+    /// must therefore publish Event9's DEPLOY order, not release the tank
+    /// while the command executes (#3675).
+    #[test]
+    fn eject_bunker_record_queues_unload_instead_of_releasing_at_command_time() {
+        let (mut sim, rules) = installed_bunker_fixture();
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::EjectBunker { bunker_id: 2 },
+            Some(&rules),
+        ));
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            Some(1),
+            "EmptyBunker belongs to the Unload mission's Logic update"
+        );
+        assert_eq!(
+            sim.substrate.entities.get(1).unwrap().bunker.link(),
+            crate::sim::docking::bunker_link::BunkerLink::Installed(2)
+        );
+        let unit = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(unit.mission.queued().known(), Some(MissionType::Unload));
+        // Event9 `0x004C77E4` breaks contact 0 before the null destination
+        // (`0x004C77F8`) and null target (`0x004C7804`) setters.
+        assert_eq!(unit.radio_contacts.slot(0), None);
+        assert!(unit.navigation.nav_com().is_none());
+        assert!(unit.attack_target.target().is_none());
+    }
+
+    /// Event9 detaches the deployed object's planning (`0x004C76CA`), so the
+    /// eject record detaches the occupant's path, not the bunker's.
+    #[test]
+    fn eject_bunker_record_detaches_the_occupants_planning() {
+        let (mut sim, rules) = installed_bunker_fixture();
+        sim.start_empty_planning_path_for_test(1);
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::EjectBunker { bunker_id: 2 },
+            Some(&rules),
+        ));
+        assert!(!sim.has_planning_path_for_test(1));
+    }
+
+    /// The command-time release only checked ownership and an occupant.
+    /// Event9's admission (`0x004C76BC`) refuses a limboed actor, so a dead
+    /// or limboed tank keeps its bunker and gets no Unload mission.
+    #[test]
+    fn eject_bunker_record_refuses_a_limboed_occupant() {
+        let (mut sim, rules) = installed_bunker_fixture();
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .lifecycle
+            .set_in_limbo_for_test(true);
+        assert!(!sim.apply_command(
+            "Americans",
+            &Command::EjectBunker { bunker_id: 2 },
+            Some(&rules),
+        ));
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            Some(1)
+        );
+        assert_ne!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .mission
+                .queued()
+                .known(),
+            Some(MissionType::Unload)
+        );
+    }
+
+    /// Drive the record through real frames: `Mission_Unload @ 0x0073D630`
+    /// promotes, its head calls `EmptyBunker @ 0x004595C0`, and only then do
+    /// the links clear. Without the fix the very first command execution
+    /// would already have released the tank.
+    #[test]
+    fn eject_bunker_record_releases_on_the_unload_logic_visit() {
+        let (mut sim, rules) = installed_bunker_fixture();
+        // `unit_unload_empties_bunker` looks the building up in the Unit's
+        // cell (`Look_up_building_in_cell @ 0x0047C520`).
+        for (rx, ry) in
+            crate::sim::occupancy::entity_occupancy_cells(sim.substrate.entities.get(2).unwrap())
+        {
+            sim.substrate.occupancy.add(
+                rx,
+                ry,
+                2,
+                crate::sim::movement::locomotor::MovementLayer::Ground,
+                None,
+                crate::sim::occupancy::CellListInsertion::AppendBuilding,
+            );
+        }
+        assert!(sim.register_live_object(1));
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::EjectBunker { bunker_id: 2 },
+            Some(&rules),
+        ));
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            Some(1)
+        );
+        for _ in 0..16 {
+            sim.advance_tick(&[], Some(&rules), None, None, 33);
+            if sim
+                .substrate
+                .entities
+                .get(2)
+                .unwrap()
+                .bunker
+                .occupant()
+                .is_none()
+            {
+                break;
+            }
+        }
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            None,
+            "the Unload Logic visit must empty the bunker"
+        );
+        assert_eq!(
+            sim.substrate.entities.get(1).unwrap().bunker.link(),
+            crate::sim::docking::bunker_link::BunkerLink::None
+        );
+    }
+
     #[test]
     fn bunker_full_lifecycle_enter_install_then_eject() {
         use crate::sim::docking::bunker_install::{BunkerState, update_bunker};
@@ -4633,13 +4791,38 @@ mod tests {
             "one walls-up event on install"
         );
 
-        // 3) Eject: Force starts without teleporting, links clear, walls lower.
+        // 3) Eject: opcode 0x31 publishes the Unload mission. Its Logic
+        // visit owns `EmptyBunker @ 0x004595C0` (`0x0073D66D`), so the
+        // release, Force, links and walls happen there, not at command time.
         sim.bunker_wall_events.clear();
         assert!(sim.apply_command(
             "Americans",
             &Command::EjectBunker { bunker_id: 2 },
             Some(&rules),
         ));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .mission
+                .queued()
+                .known(),
+            Some(MissionType::Unload)
+        );
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            Some(1),
+            "no command-time release"
+        );
+        assert!(
+            crate::sim::docking::bunker_link::unit_unload_empties_bunker(
+                &mut sim,
+                1,
+                &rules,
+                FrameEffects::default(),
+            )
+        );
         assert_eq!(
             sim.substrate.entities.get(2).unwrap().bunker.occupant(),
             None
