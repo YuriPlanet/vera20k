@@ -467,6 +467,19 @@ impl PackedSpriteGpu {
 }
 
 impl TerrainDrawRenderer {
+    /// Conservative clip of one sprite group, `[x, y, width, height]`, as
+    /// ordinary sprite draws reach it; `None` when no instance is visible.
+    pub(crate) fn sprites_footprint(
+        &self,
+        group: &[SpriteInstance],
+        tactical: [u32; 4],
+    ) -> Option<[u32; 4]> {
+        group
+            .iter()
+            .filter_map(|instance| piece_scissor(instance, self.camera, tactical))
+            .reduce(union)
+    }
+
     /// Longest adjacent prefix whose complete sprite groups have disjoint
     /// conservative clips. The accumulated union deliberately over-fences;
     /// overlap retains source order, including stores outside a packed marker.
@@ -478,11 +491,7 @@ impl TerrainDrawRenderer {
         let mut bounds: Option<[u32; 4]> = None;
         let mut count = 0;
         for group in groups {
-            let rect = group
-                .iter()
-                .filter_map(|instance| piece_scissor(instance, self.camera, tactical))
-                .reduce(union);
-            if let Some(rect) = rect {
+            if let Some(rect) = self.sprites_footprint(group, tactical) {
                 if let Some(prior) = bounds {
                     if rect[0] < prior[0] + prior[2]
                         && prior[0] < rect[0] + rect[2]
@@ -960,7 +969,8 @@ fn composite_rect(
         .reduce(union)
 }
 
-fn union(a: [u32; 4], b: [u32; 4]) -> [u32; 4] {
+/// Bounding rectangle of two `[x, y, width, height]` rectangles.
+pub(super) fn union(a: [u32; 4], b: [u32; 4]) -> [u32; 4] {
     let x = a[0].min(b[0]);
     let y = a[1].min(b[1]);
     [

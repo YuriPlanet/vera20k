@@ -2,17 +2,19 @@
 //!
 //! VERA scheduling only; no native counterpart. gamemd blits each Display
 //! parent in order into one software surface, where switching blitters is
-//! free. Here an ordinary GPU draw, a packed composite and a destination edit
-//! each need their own render passes, so replaying them strictly in parent
-//! order closes and reopens passes around every Anim body and shadow.
+//! free. Here an ordinary GPU draw, a packed composite, a destination edit, a
+//! combat light and a surface-line range each need their own render passes,
+//! so replaying them strictly in parent order closes and reopens passes
+//! around every Anim body, shadow, light and Spark.
 //!
 //! Draws whose pixel footprints are disjoint commute exactly: each pipeline
 //! reads and writes colour and Z only inside its footprint (the packed read
-//! halo included). So every draw goes to the earliest stage after every
-//! earlier draw it overlaps. Same-kind draws that already compose in sequence
-//! inside one transaction (ordinary draws in one render pass, read-only edits
-//! in one reduction interval) may share a stage even when they overlap; their
-//! order inside the stage stays parent order. Stages replay in index order.
+//! halo, a light's copied scratch and a line range's gate and source reads
+//! included). So every draw goes to the earliest stage after every earlier
+//! draw it overlaps. Same-kind draws that already compose in sequence inside
+//! one transaction (ordinary draws in one render pass, read-only edits in one
+//! reduction interval) may share a stage even when they overlap; their order
+//! inside the stage stays parent order. Stages replay in index order.
 //! Footprints are tested on a tile grid: a false overlap only costs a stage.
 
 use crate::render::tactical_draw_plan::RenderZPolicy;
@@ -32,6 +34,10 @@ pub(super) enum StageKind {
     EditReadOnly,
     /// One read-write edit wave, pairwise disjoint.
     EditReadWrite,
+    /// Combat lights edited from one scratch copy, pairwise disjoint.
+    Light,
+    /// Surface-line ranges sharing each snapshot/blend pair, pairwise disjoint.
+    Lines,
 }
 
 impl StageKind {
@@ -48,7 +54,7 @@ impl StageKind {
     }
 }
 
-/// Stages of one replay segment. Barrier commands end a segment: the caller
+/// Stages of one replay segment. A barrier command ends a segment: the caller
 /// replays [`Self::take`] and starts again from an empty plan.
 pub(super) struct ObjectStages<T> {
     columns: u32,

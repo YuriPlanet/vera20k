@@ -99,7 +99,7 @@ fn production_line_trail_matches_original_full_line_pixels() {
             );
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
             clear(&mut encoder, &cv, &dv, old_z, wgpu::LoadOp::Load);
-            terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
+            terrain.draw_surface_lines(&mut encoder, &cv, &[prepared_lines]);
             let reads = [
                 gpu.read(&mut encoder, &color),
                 gpu.read(&mut encoder, &depth),
@@ -210,7 +210,7 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
                     65535,
                     wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                 );
-                terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
+                terrain.draw_surface_lines(&mut encoder, &cv, &[prepared_lines]);
                 let reads = [
                     gpu.read(&mut encoder, &color),
                     gpu.read(&mut encoder, &depth),
@@ -389,11 +389,11 @@ fn line_trail_native_fixture_submission_timings() {
                 // One immutable light upload and the same bounded submission
                 // accounting are used by production retained-object replay.
                 for index in 0..light_records.len() {
-                    if lights.draw_record(&mut encoder, [0, 0, size[0], size[1]], index) {
+                    if lights.draw_records(&mut encoder, [0, 0, size[0], size[1]], &[index]) {
                         terrain.note_external_passes(&mut encoder, 1);
                     }
                 }
-                terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
+                terrain.draw_surface_lines(&mut encoder, &cv, &[prepared_lines]);
                 submissions = terrain.submissions();
                 if light_records.len() >= 256 {
                     assert!(
