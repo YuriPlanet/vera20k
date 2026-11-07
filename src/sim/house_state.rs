@@ -2064,9 +2064,10 @@ impl HouseState {
         self.super_weapon_targets.emp_target
     }
 
-    /// Ares SW_EMPulse::Activate (10071200) and the cannon hook 44CCE7.
+    /// SW_EMPulse::Activate (Ares 3.0 `100711C0`) and the EMP cannon's
+    /// Missile hook (`10036570`, hook 0x44CCE7) aim the cannons at `cell`.
     #[cfg(feature = "ares")]
-    pub(crate) fn set_emp_target(&mut self, cell: (u16, u16)) {
+    pub(crate) fn aim_emp_cannons(&mut self, cell: (u16, u16)) {
         self.super_weapon_targets.emp_target = cell;
     }
 
@@ -2370,9 +2371,10 @@ impl HouseState {
         self.ares_last_super
     }
 
-    /// The common Launch's write (10032F99).
+    /// The common Launch's write (10032F99): the House remembers the Super
+    /// it launched last.
     #[cfg(feature = "ares")]
-    pub(crate) fn set_ares_last_super(&mut self, index: i32) {
+    pub(crate) fn remember_ares_last_super(&mut self, index: i32) {
         self.ares_last_super = index;
     }
 

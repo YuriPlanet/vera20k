@@ -978,28 +978,17 @@ fn fire_laser(sim: &mut Simulation, rules: &RuleSet, id: u64, to: ProjectileCoor
     let Some(from) = crate::sim::combat::laser::support_source(sim, rules, id) else {
         return;
     };
-    let laser = match weapon {
-        None => crate::sim::combat::laser::support(sim, rules, id, to),
-        Some(weapon) if weapon.is_laser => Some(crate::sim::combat::laser::support_beam(
+    if weapon.is_none_or(|weapon| weapon.is_laser) {
+        crate::sim::combat::laser::support_beam(
             sim,
             rules,
             owner,
             from,
             to,
-            Some(weapon),
-        )),
-        Some(_) => None,
-    };
-    if let Some(laser) = laser
-        && supporting > 0
-    {
-        let intensity = prism.intensity();
-        if intensity < 0 {
-            laser.width = laser.width.wrapping_sub(intensity);
-        } else if intensity > 0 {
-            laser.width = laser.width.wrapping_add(intensity.wrapping_mul(supporting));
-        }
-        laser.supported = laser.width > 5;
+            weapon,
+            supporting,
+            prism.intensity(),
+        );
     }
     let rearm = match weapon {
         Some(weapon) => {

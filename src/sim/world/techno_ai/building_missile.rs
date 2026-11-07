@@ -202,7 +202,7 @@ fn emp_cannon(
                 if let Some(cell) = super_target
                     && let Some(house) = sim.houses.get_mut(&owner)
                 {
-                    house.set_emp_target(cell);
+                    house.aim_emp_cannons(cell);
                 }
             } else {
                 let Some(target) =

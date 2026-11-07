@@ -952,7 +952,7 @@ fn ares_begin_building_chronoshift(
     sim.stop_all_targeting_on_detach(id, rules, overlay_registry, frame_effects);
     sim.lose_projectile_targets(id, rules);
     let entity = sim.substrate.entities.get_mut(id)?;
-    entity.set_ares_chronoshifting(true);
+    entity.begin_ares_chronoshift();
     let owner = entity.owner();
     let (rx, ry) = (entity.position.rx() as i16, entity.position.ry() as i16);
     sim.houses.request_house_tech_tree_recheck(owner);
@@ -1161,7 +1161,7 @@ fn ares_chrono_warp_put_back(
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return;
     };
-    entity.set_ares_chronoshifting(false);
+    entity.end_ares_chronoshift();
     let building_owner = entity.owner();
     Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, building_owner, false);
     sim.houses.request_house_tech_tree_recheck(building_owner);

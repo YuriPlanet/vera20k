@@ -1064,9 +1064,16 @@ impl GameEntity {
         }
     }
 
+    /// The ChronoWarp's Building arm (Ares 3.0 `1006F4D0`) warps it out.
     #[cfg(feature = "ares")]
-    pub(crate) fn set_ares_chronoshifting(&mut self, shifting: bool) {
-        self.ares_chronoshifting = shifting;
+    pub(crate) fn begin_ares_chronoshift(&mut self) {
+        self.ares_chronoshifting = true;
+    }
+
+    /// ChronoWarpStateMachine::Update (Ares 3.0 `10070230`) puts it back.
+    #[cfg(feature = "ares")]
+    pub(crate) fn end_ares_chronoshift(&mut self) {
+        self.ares_chronoshifting = false;
     }
 
     #[cfg(feature = "ares")]

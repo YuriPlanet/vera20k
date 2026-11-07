@@ -356,6 +356,18 @@ pub(crate) fn start(
             .house_mut(house)
             .start_radar_outage(frame, duration);
     }
+    recheck_viewer_radar(sim);
+    sim.update_lighting();
+    if rules.general.lightning_print_text {
+        sim.sound_events.emit(SimSoundEvent::LightningStormBegan);
+    }
+    // The full-screen redraw (`0x0053A082`) is presentation.
+}
+
+/// Start's player radar recheck (`PlayerPtr+0x5779`), shared with the Ares
+/// redirect. A network game rechecks every human House's radar, so no
+/// peer's state depends on which House is its own.
+fn recheck_viewer_radar(sim: &mut Simulation) {
     let radar_viewers = if sim.session.game_mode().is_network() {
         sim.houses
             .order()
@@ -373,11 +385,6 @@ pub(crate) fn start(
     for viewer in radar_viewers {
         sim.power_states.house_mut(viewer).recheck_radar();
     }
-    sim.update_lighting();
-    if rules.general.lightning_print_text {
-        sim.sound_events.emit(SimSoundEvent::LightningStormBegan);
-    }
-    // The full-screen redraw (`0x0053A082`) is presentation.
 }
 
 /// `LightningStorm::Process @ 0x0053A6C0` from its storm work (`0x0053A74C`)

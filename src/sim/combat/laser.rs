@@ -290,15 +290,24 @@ pub(crate) fn construct<'a>(
 
 /// Building44ABD0's delayed support emission is unconditional once due.
 /// It uses weapon0's current FLH and the copied endpoint stored when armed.
-pub(crate) fn support<'w>(
-    world: &'w mut Simulation,
+pub(crate) fn support(
+    world: &mut Simulation,
     rules: &RuleSet,
     source_id: u64,
     to: ProjectileCoord,
-) -> Option<&'w mut LaserBirth> {
-    let from = support_source(world, rules, source_id)?;
-    let owner = world.substrate.entities.get(source_id)?.owner();
-    Some(support_beam(world, rules, owner, from, to, None))
+) {
+    let Some(from) = support_source(world, rules, source_id) else {
+        return;
+    };
+    let Some(owner) = world
+        .substrate
+        .entities
+        .get(source_id)
+        .map(|source| source.owner())
+    else {
+        return;
+    };
+    support_beam(world, rules, owner, from, to, None, 0, 0);
 }
 
 /// The support beam's source, the building's current weapon-0 FLH.
@@ -326,15 +335,20 @@ pub(crate) fn support_source(
 /// The support beam's LaserDraw, 3 wide: the House colour for
 /// `PrismSupportDuration=` frames, or, for an Ares Prism `SupportWeapon`
 /// (`10016490`), that weapon's colours (the House's for `IsHouseColor=`)
-/// for its `LaserDuration=`.
-pub(crate) fn support_beam<'w>(
-    world: &'w mut Simulation,
+/// for its `LaserDuration=`. Ares FireLaser's tail (`10016490`) then
+/// thickens the beam of a tower with `supporting_prisms` by `-intensity` (a
+/// negative one) or `intensity` per link (a positive one), supported above
+/// 5; with none (every stock beam) it stays as drawn.
+pub(crate) fn support_beam(
+    world: &mut Simulation,
     rules: &RuleSet,
     owner: InternedId,
     from: ProjectileCoord,
     to: ProjectileCoord,
     weapon: Option<&WeaponType>,
-) -> &'w mut LaserBirth {
+    supporting_prisms: i32,
+    intensity: i32,
+) {
     let (color, duration) = match weapon {
         None => (
             LaserColor::House(owner),
@@ -361,5 +375,14 @@ pub(crate) fn support_beam<'w>(
         NativeF32Bits::POSITIVE_ZERO,
     );
     birth.width = 3;
-    birth
+    if supporting_prisms > 0 {
+        if intensity < 0 {
+            birth.width = birth.width.wrapping_sub(intensity);
+        } else if intensity > 0 {
+            birth.width = birth
+                .width
+                .wrapping_add(intensity.wrapping_mul(supporting_prisms));
+        }
+        birth.supported = birth.width > 5;
+    }
 }

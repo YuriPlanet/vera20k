@@ -60,7 +60,7 @@ pub(super) fn launch(
         return true;
     };
     if let Some(house) = sim.houses.get_mut(&owner) {
-        house.set_emp_target(cell);
+        house.aim_emp_cannons(cell);
     }
     let count = usize::try_from(emp.max_count).unwrap_or(usize::MAX);
     let ignore_range = emp.linked || emp.target_self;

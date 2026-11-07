@@ -14,20 +14,20 @@ pub(crate) mod ai_fire;
 pub mod cell_grid;
 pub mod chrono_screen;
 mod chronosphere;
+#[cfg(feature = "ares")]
+pub(crate) use chronosphere::AresChronoWarps;
 pub use chronosphere::CHRONO_WARP_SELECTION_INDEX;
 #[cfg(feature = "ares")]
 pub use chronosphere::ares_chrono_warp_for;
-#[cfg(feature = "ares")]
-pub(crate) use chronosphere::AresChronoWarps;
 pub mod airstrike_tint;
 #[cfg(all(test, feature = "ares"))]
 mod ares_charge_tests;
 #[cfg(all(test, feature = "ares"))]
-mod ares_stock_types_tests;
-#[cfg(all(test, feature = "ares"))]
 mod ares_common_keys_tests;
 #[cfg(feature = "ares")]
 mod ares_presentation;
+#[cfg(all(test, feature = "ares"))]
+mod ares_stock_types_tests;
 #[cfg(all(test, feature = "ares"))]
 mod ares_super_anims_tests;
 #[cfg(all(test, feature = "ares"))]
@@ -2256,7 +2256,7 @@ fn finish_ares_launch(
         && let Some(index) = rules.super_weapon_index(&data_name)
         && let Some(house) = sim.houses.get_mut(&owner)
     {
-        house.set_ares_last_super(index as i32);
+        house.remember_ares_last_super(index as i32);
     }
     // Common Launch10032F15 records success before its activation EVA.
     // Emit once here, after Activate has finished all immediate payloads.

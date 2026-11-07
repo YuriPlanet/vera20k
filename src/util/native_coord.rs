@@ -33,7 +33,7 @@ pub(crate) fn interpolate<const N: usize>(
 pub(crate) fn squared_xy_distance(from: [i32; 2], to: [i32; 2]) -> i32 {
     let dx = from[0].wrapping_sub(to[0]);
     let dy = from[1].wrapping_sub(to[1]);
-    if crate::rules::ARES_ENABLED {
+    if cfg!(feature = "ares") {
         let (dx, dy) = (i64::from(dx), i64::from(dy));
         i32::try_from(dy * dy + dx * dx).unwrap_or(i32::MAX)
     } else {

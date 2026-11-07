@@ -241,23 +241,7 @@ pub(super) fn start(
                 .start_radar_outage(frame, outage);
         }
     }
-    let radar_viewers = if sim.session.game_mode().is_network() {
-        sim.houses
-            .order()
-            .iter()
-            .copied()
-            .filter(|owner| sim.houses.get(owner).is_some_and(|house| house.is_human()))
-            .collect::<Vec<_>>()
-    } else {
-        sim.session
-            .current_house()
-            .filter(|owner| sim.houses.contains_key(owner))
-            .into_iter()
-            .collect()
-    };
-    for viewer in radar_viewers {
-        sim.power_states.house_mut(viewer).recheck_radar();
-    }
+    super::recheck_viewer_radar(sim);
     sim.update_lighting();
     if lightning.print_text.unwrap_or(general.lightning_print_text) {
         sim.sound_events

@@ -425,7 +425,9 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/techno_ai.rs", 1),
                 ("sim/world/techno_ai/mission_handlers.rs", 1),
                 ("sim/world/techno_ai_cloak.rs", 3),
-                ("sim/world/world_commands.rs", 6),
+                // Includes the Ares Guard key's own-actor check (1005CAF0)
+                // in the input producer `area_guard_key_command`.
+                ("sim/world/world_commands.rs", 7),
                 ("sim/world/world_orders.rs", 2),
                 ("sim/world/world_spawn.rs", 1),
                 ("sim/world/world_spawn/construction.rs", 1),
