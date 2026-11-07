@@ -42,14 +42,6 @@ struct PassLight {
     pad: [u32; 2],
 }
 
-/// This frame's pass light arrays, each at its own dynamic offset: queue
-/// writes all land before the next submit, so no two passes share one.
-struct PassSlots {
-    buffer: wgpu::Buffer,
-    bind_group: wgpu::BindGroup,
-    used: u64,
-}
-
 struct CompositionTargets {
     texture: wgpu::Texture,
     render_view: wgpu::TextureView,
@@ -71,11 +63,8 @@ pub(crate) struct CombatLightRenderer {
     mask_texture: wgpu::Texture,
     spotlight_radius: Option<i32>,
     scene_bind_group_layout: wgpu::BindGroupLayout,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    pass_layout: wgpu::BindGroupLayout,
-    pass_alignment: u64,
-    pass_slots: std::cell::RefCell<PassSlots>,
+    /// This frame's pass light arrays, each at its own dynamic offset.
+    pass_lights: super::uniform_windows::UniformWindows,
     /// Frame-local logical record -> prepared light. Unsupported native
     /// indices remain holes rather than shifting subsequent Display commands.
     prepared_indices: Vec<Option<u32>>,
@@ -181,20 +170,15 @@ impl CombatLightRenderer {
             }],
         });
 
-        let pass_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Combat Light Pass Lights Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: true,
-                    min_binding_size: wgpu::BufferSize::new(PASS_WINDOW),
-                },
-                count: None,
-            }],
-        });
-        let pass_alignment = u64::from(device.limits().min_uniform_buffer_offset_alignment);
+        let pass_lights = super::uniform_windows::UniformWindows::new(
+            device,
+            queue,
+            "Combat Light Pass Lights",
+            0,
+            wgpu::ShaderStages::VERTEX_FRAGMENT,
+            PASS_WINDOW,
+            16,
+        );
         let source =
             super::webgl::camera_source(device, shader_source(super::gpu::webgl_fallback(device)));
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -207,7 +191,7 @@ impl CombatLightRenderer {
                 Some(&camera_layout),
                 Some(&scene_bind_group_layout),
                 Some(&mask_layout),
-                Some(&pass_layout),
+                Some(pass_lights.layout()),
             ],
             immediate_size: 0,
         });
@@ -237,7 +221,6 @@ impl CombatLightRenderer {
             cache: None,
         });
 
-        let pass_slots = allocate_pass_slots(device, &pass_layout, 16 * PASS_WINDOW);
         let targets = create_composition_targets(
             device,
             &scene_bind_group_layout,
@@ -254,11 +237,7 @@ impl CombatLightRenderer {
             mask_texture,
             spotlight_radius: None,
             scene_bind_group_layout,
-            device: device.clone(),
-            queue: queue.clone(),
-            pass_layout,
-            pass_alignment,
-            pass_slots: std::cell::RefCell::new(pass_slots),
+            pass_lights,
             prepared_indices: Vec::new(),
             instances: Vec::new(),
             copy_bounds: Vec::new(),
@@ -382,8 +361,8 @@ impl CombatLightRenderer {
                 .push(light_copy_bounds(instance.center, &camera, [width, height]));
             self.instances.push(instance);
         }
-        // The previous frame has been submitted, so its pass slots are free.
-        self.pass_slots.get_mut().used = 0;
+        // The previous frame has been submitted, so its pass windows are free.
+        self.pass_lights.begin_frame();
     }
 
     pub(crate) fn composition_view(&self) -> wgpu::TextureView {
@@ -478,7 +457,7 @@ impl CombatLightRenderer {
                     ..self.instances[index]
                 });
             }
-            let (bind_group, offset) = self.pass_slot(&lights);
+            let (bind_group, offset) = self.pass_lights.write(bytemuck::cast_slice(&lights));
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Combat Light Native Surface Edit"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -506,23 +485,6 @@ impl CombatLightRenderer {
             passes += 1;
         }
         passes
-    }
-
-    /// Write one pass's `lights` to a fresh slot of this frame: the slots'
-    /// binding and its dynamic offset. Grows the slots when they are full;
-    /// earlier passes keep the buffer they bound.
-    fn pass_slot(&self, lights: &[PassLight]) -> (wgpu::BindGroup, u32) {
-        let mut slots = self.pass_slots.borrow_mut();
-        if slots.used + PASS_WINDOW > slots.buffer.size() {
-            let size = slots.buffer.size() * 2;
-            *slots = allocate_pass_slots(&self.device, &self.pass_layout, size);
-        }
-        let offset = slots.used;
-        self.queue
-            .write_buffer(&slots.buffer, offset, bytemuck::cast_slice(lights));
-        slots.used =
-            (offset + std::mem::size_of_val(lights) as u64).next_multiple_of(self.pass_alignment);
-        (slots.bind_group.clone(), offset as u32)
     }
 }
 
@@ -592,36 +554,6 @@ fn project_combat_light_anchor(coord: crate::sim::projectile::ProjectileCoord) -
             .wrapping_sub(crate::util::native_x87::adjust_for_z_standard(coord.z))
             .wrapping_add(15),
     ]
-}
-
-fn allocate_pass_slots(
-    device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
-    size: u64,
-) -> PassSlots {
-    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("Combat Light Pass Lights"),
-        size,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Combat Light Pass Lights"),
-        layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                buffer: &buffer,
-                offset: 0,
-                size: wgpu::BufferSize::new(PASS_WINDOW),
-            }),
-        }],
-    });
-    PassSlots {
-        buffer,
-        bind_group,
-        used: 0,
-    }
 }
 
 /// The WebGL2 fallback reads and writes encoded bytes through sRGB views

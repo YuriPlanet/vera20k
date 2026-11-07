@@ -94,6 +94,7 @@ pub(crate) mod terrain_draw_gpu_tests;
 pub mod terrain_instances;
 pub mod text_engine;
 pub mod tile_atlas;
+pub(crate) mod uniform_windows;
 pub mod unit_atlas;
 pub mod unit_pose_cache;
 pub(crate) mod unit_shadow;
