@@ -248,16 +248,14 @@ pub(crate) struct RetailOptionsProfile {
     /// stays here and opens on the system's choice, like [`Self::zoom`]'s
     /// unknown steps.
     pub(crate) display: crate::ui::main_menu_dialogs::options::DisplayTarget,
+    /// `[VERA] DetailedEvaText=`: VERA-only accessibility text. When on, the
+    /// app posts a line naming the unit or building behind EVA lines whose
+    /// voice never names it. Client presentation only: no sim, audio, state
+    /// hash or network protocol reads it. Off by default.
+    pub(crate) detailed_eva_text: bool,
     /// `[VERA] WindowX/WindowY/WindowWidth/WindowHeight`: where the windowed
     /// game last sat, so the next launch opens there. `None` until the player
     /// moves or resizes the window; a zero width reads as unset.
-    /// `[VERA] DetailedEvaText=`: VERA-only accessibility enhancement. When
-    /// on, the app posts a text row naming the concrete object behind EVA
-    /// lines whose voice never names it (construction complete, unit ready)
-    /// and behind a selection's VoiceSelect. Client presentation only: no sim
-    /// predicate, audio, state hash or network protocol reads it. Off by
-    /// default, so the retail behaviour stays exactly as it is.
-    pub(crate) detailed_eva_text: bool,
     pub(crate) window_placement: Option<WindowPlacement>,
 }
 

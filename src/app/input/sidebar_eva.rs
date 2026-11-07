@@ -326,21 +326,6 @@ mod tests {
     use super::*;
     use crate::sim::intern::StringInterner;
 
-    /// A plain ABANDON removed exactly the clicked type; ABANDON_ALL removed
-    /// a set the voice never names, so the row would be half a fact.
-    #[test]
-    fn only_a_single_abandon_can_name_the_canceled_type() {
-        assert!(cancel_names_clicked_type(Some(CameoOrder::Abandon {
-            all: false
-        })));
-        assert!(!cancel_names_clicked_type(Some(CameoOrder::Abandon {
-            all: true
-        })));
-        assert!(!cancel_names_clicked_type(Some(CameoOrder::Produce)));
-        assert!(!cancel_names_clicked_type(Some(CameoOrder::Suspend)));
-        assert!(!cancel_names_clicked_type(None));
-    }
-
     #[test]
     fn a_right_press_holds_a_requested_infantry_head_without_a_factory_link() {
         let mut interner = StringInterner::new();

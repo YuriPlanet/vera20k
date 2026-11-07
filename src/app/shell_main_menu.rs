@@ -124,7 +124,7 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.persistence.options_profile.shift_queue = shift_queue;
     }
     fn store_detailed_eva_text(&mut self, enabled: bool) {
-        // Presentation only: the next EVA or selection row reads it.
+        // Presentation only: the next EVA text line reads it.
         self.persistence.options_profile.detailed_eva_text = enabled;
     }
     fn store_render_interpolation(&mut self, enabled: bool) {

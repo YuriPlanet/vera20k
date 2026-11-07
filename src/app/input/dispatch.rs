@@ -2782,10 +2782,6 @@ fn apply_selection_mutation(
     }
     state.match_state.input.selection_order = ordered.clone();
     state.match_state.input.selection_order_pending = true;
-    // VERA-only accessibility row: the VoiceSelect audio never names what was
-    // selected. Post once per changed selection; the switch short-circuits
-    // before aggregating anything.
-    crate::app::input::messages::post_eva_selection(state, &ordered);
     let Some(owner) = preferred_local_owner(state) else {
         return true;
     };

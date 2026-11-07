@@ -81,6 +81,20 @@ pub(crate) fn deploy_order_voice_event(
     })
 }
 
+/// Collect one VERA-only accessibility row on an arm whose EVA voice has
+/// already been admitted. `label` selects the VERA i18n template; `type_id`
+/// is the sim's resolved object type, never a lookup or a guess. A disabled
+/// switch passes `None`, so no row and no name lookup follows.
+fn collect_eva_object(
+    hud_text: &mut Option<&mut Vec<crate::app::input::messages::HudMessage>>,
+    label: &'static str,
+    type_id: crate::sim::intern::InternedId,
+) {
+    if let Some(messages) = hud_text.as_deref_mut() {
+        messages.push(crate::app::input::messages::HudMessage::EvaObjectLine { label, type_id });
+    }
+}
+
 /// Append each already-admitted event in producer order, including multi-cue
 /// events. Simulation owns feedback admission and its Main draws at damage
 /// time; this adapter never advances a random stream.
@@ -109,46 +123,11 @@ pub(crate) fn deploy_order_voice_event(
 /// SHAD transport with no `DeploysInto=`) have such a house; no map gives one
 /// an object by placement, TeamType, Change House (actions 14 and 36) or
 /// Create Building (125). Of these maps only ALL03 places crates (action 108).
+///
+/// `hud_text` collects VERA's optional detailed EVA text rows on the same
+/// arms that admit the voice, so text and voice share every gate; `None`
+/// (the switch off, tests, child bridges) builds no row.
 pub(super) fn dispatch_sim_sound_events(
-    events: impl IntoIterator<Item = SimSoundEvent>,
-    sim: &Simulation,
-    rules: &RuleSet,
-    local_owner_name: Option<&str>,
-    admit_radar: &mut dyn FnMut(crate::sim::radar::RadarEventRequest) -> bool,
-    output: &mut SoundEventQueue,
-) {
-    dispatch_sim_sound_events_with_hud_text(
-        events,
-        sim,
-        rules,
-        local_owner_name,
-        admit_radar,
-        output,
-        None,
-    );
-}
-
-/// Collect one VERA-only accessibility row on an arm whose EVA voice has
-/// already been admitted. `label` selects the VERA i18n template; `type_id`
-/// is the sim's resolved object type, never a lookup or a guess. A disabled
-/// switch passes `None`, so no row and no name lookup follows.
-fn collect_eva_object(
-    hud_text: &mut Option<&mut Vec<crate::app::input::messages::HudMessage>>,
-    label: &'static str,
-    type_id: crate::sim::intern::InternedId,
-) {
-    if let Some(messages) = hud_text.as_deref_mut() {
-        messages.push(crate::app::input::messages::HudMessage::EvaObjectLine { label, type_id });
-    }
-}
-
-/// The frame's local listener also collects the accessibility text facts for
-/// EVA lines it actually admitted. Keeping the collector on the audio dispatch
-/// means `owner_is_local` / `house_is_human_player` / `admit_radar` decide the
-/// text exactly as they decide the voice; no gate runs twice, and the disabled
-/// switch passes `None` so no fact or lookup happens at all. `None` also keeps
-/// every non-frame caller (tests, child bridges) on the original signature.
-pub(super) fn dispatch_sim_sound_events_with_hud_text(
     events: impl IntoIterator<Item = SimSoundEvent>,
     sim: &Simulation,
     rules: &RuleSet,
@@ -303,14 +282,7 @@ pub(super) fn dispatch_sim_sound_events_with_hud_text(
                     event: "EVA_UnitPromoted".to_string(),
                     type_override: None,
                 });
-                // `Unit promoted` never names the object; the sim already
-                // knows its type. Collect the fact only on the arm that
-                // admitted the voice, so the human-player gate is shared.
-                if let Some(messages) = hud_text.as_deref_mut() {
-                    messages.push(crate::app::input::messages::HudMessage::EvaUnitPromoted(
-                        type_id,
-                    ));
-                }
+                collect_eva_object(&mut hud_text, "VERA:EvaUnitPromoted", type_id);
                 continue;
             }
             SimSoundEvent::CloakSound {
@@ -408,11 +380,7 @@ pub(super) fn dispatch_sim_sound_events_with_hud_text(
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
                 }
-                if let Some(messages) = hud_text.as_deref_mut() {
-                    messages.push(
-                        crate::app::input::messages::HudMessage::EvaConstructionComplete(type_id),
-                    );
-                }
+                collect_eva_object(&mut hud_text, "VERA:EvaConstructionComplete", type_id);
                 // `StripClass::AI 0x006A8E2F`: `PlayEVA` with type -1.
                 GameSoundEvent::Eva {
                     event: "EVA_ConstructionComplete".to_string(),
@@ -552,11 +520,7 @@ pub(super) fn dispatch_sim_sound_events_with_hud_text(
                 if !admit_radar(radar) {
                     continue;
                 }
-                if let Some(messages) = hud_text.as_deref_mut() {
-                    messages.push(crate::app::input::messages::HudMessage::EvaUnitReady(
-                        type_id,
-                    ));
-                }
+                collect_eva_object(&mut hud_text, "VERA:EvaUnitReady", type_id);
                 GameSoundEvent::Eva {
                     event: "EVA_UnitReady".to_string(),
                     type_override: None,
@@ -1430,6 +1394,7 @@ mod tests {
                 Some("Americans"),
                 &mut |_| true,
                 &mut output,
+                None,
             );
             output.drain()
         };
@@ -1549,6 +1514,7 @@ mod tests {
                 Some("Americans"),
                 &mut |_| panic!("money refusal must not create a radar event"),
                 &mut output,
+                None,
             );
             let events = output.drain();
             let cues: Vec<_> = events
@@ -1617,6 +1583,7 @@ mod tests {
             None,
             &mut |_| panic!("original TAction21 does not create or gate on a radar event"),
             &mut output,
+            None,
         );
         let observed: Vec<_> = output
             .drain()
@@ -1721,6 +1688,7 @@ mod tests {
                     Some(local_name),
                     &mut gate,
                     &mut output,
+                    None,
                 );
                 for emitted in output.drain() {
                     match emitted {
@@ -1802,6 +1770,7 @@ mod tests {
             Some("LOCAL"),
             &mut gate,
             &mut output,
+            None,
         );
         assert_eq!(admitted.len(), suffix.len());
         let emitted = output.drain();
@@ -1841,6 +1810,7 @@ mod tests {
             Some("LOCAL"),
             &mut |_| true,
             &mut output,
+            None,
         );
         let emitted = output.drain();
         assert_eq!(emitted.len(), 1);
@@ -1878,6 +1848,7 @@ mod tests {
             Some("LOCAL"),
             &mut |_| panic!("planning add is not a radar event"),
             &mut output,
+            None,
         );
         assert!(matches!(output.drain().as_slice(),
             [GameSoundEvent::UiSound { sound_id }] if *sound_id == expected));
@@ -1888,6 +1859,7 @@ mod tests {
             None,
             &mut |_| panic!("planning add is not a radar event"),
             &mut output,
+            None,
         );
         assert!(output.drain().is_empty());
         rules.general.add_planning_mode_command_sound = None;
@@ -1898,6 +1870,7 @@ mod tests {
             Some("Local"),
             &mut |_| panic!("planning add is not a radar event"),
             &mut output,
+            None,
         );
         assert!(output.drain().is_empty());
     }
@@ -1974,6 +1947,7 @@ mod tests {
             Some("LOCAL"),
             &mut admit_radar,
             &mut output,
+            None,
         );
         assert_eq!(
             admitted,
@@ -2045,6 +2019,7 @@ mod tests {
                 request.rx != 99
             },
             &mut output,
+            None,
         );
         assert_eq!(
             admitted,
@@ -2100,6 +2075,7 @@ mod tests {
                     true
                 },
                 &mut output,
+                None,
             );
             let spoken: Vec<String> = output
                 .drain()
@@ -2153,6 +2129,7 @@ mod tests {
                     row["radar_accepted"].as_bool().unwrap()
                 },
                 &mut output,
+                None,
             );
             let expected = row["expected"]["events"].as_array().unwrap();
             let of_kind = |kind: &str| -> Vec<serde_json::Value> {
@@ -2207,6 +2184,7 @@ mod tests {
             Some("DifferentListener"),
             &mut |_| panic!("these cues have no radar gate"),
             &mut output,
+            None,
         );
         let events = output.drain();
         assert_eq!(
@@ -2299,6 +2277,7 @@ mod tests {
                 true
             },
             &mut output,
+            None,
         );
         assert_eq!(admitted, [(21, 21), (40, 40)]);
         let emitted = output.drain();
@@ -2413,6 +2392,7 @@ mod tests {
                     Some("LOCAL"),
                     &mut |_| true,
                     &mut output,
+                    None,
                 );
                 let mut lines: Vec<String> = output
                     .drain()
@@ -2493,6 +2473,7 @@ mod tests {
                 Some("LOCAL"),
                 &mut |_| true,
                 &mut output,
+                None,
             );
             let emitted = output.drain();
             assert!(
@@ -2656,6 +2637,7 @@ mod tests {
                 Some("LOCAL"),
                 &mut |_| panic!("ForceShield sound has no radar admission"),
                 &mut output,
+                None,
             );
             output.drain()
         };
@@ -2741,6 +2723,7 @@ mod tests {
             Some("Local"),
             &mut |_| panic!("a refusal is not a radar event"),
             &mut output,
+            None,
         );
         assert!(output.drain().is_empty());
     }
@@ -2774,6 +2757,7 @@ mod tests {
             Some("Local"),
             &mut |_| panic!("a defeat is not a radar event"),
             &mut output,
+            None,
         );
         let evas: Vec<String> = output
             .drain()
@@ -2826,6 +2810,7 @@ mod tests {
                 Some("Americans"),
                 &mut |_| false,
                 &mut output,
+                None,
             );
             output.drain()
         }
@@ -2996,6 +2981,7 @@ mod tests {
                 Some("Americans"),
                 &mut |_| false,
                 &mut output,
+                None,
             );
             output.drain()
         };
@@ -3113,6 +3099,7 @@ mod tests {
                 Some("Americans"),
                 &mut |_| false,
                 &mut sounds,
+                None,
             );
             let voice_count = sounds
                 .drain()
@@ -3209,6 +3196,7 @@ mod tests {
                 local,
                 &mut |_| panic!("the storm's lines are not radar events"),
                 &mut output,
+                None,
             );
         }
         let played = output.drain();
@@ -3283,7 +3271,7 @@ mod tests {
         let mut facts = Vec::new();
         let mut output = SoundEventQueue::new();
         let mut admit = |_| true;
-        dispatch_sim_sound_events_with_hud_text(
+        dispatch_sim_sound_events(
             admitted_events,
             &sim,
             &rules,
@@ -3295,9 +3283,18 @@ mod tests {
         assert_eq!(
             facts,
             vec![
-                HudMessage::EvaConstructionComplete(building),
-                HudMessage::EvaUnitReady(unit),
-                HudMessage::EvaUnitPromoted(unit),
+                HudMessage::EvaObjectLine {
+                    label: "VERA:EvaConstructionComplete",
+                    type_id: building
+                },
+                HudMessage::EvaObjectLine {
+                    label: "VERA:EvaUnitReady",
+                    type_id: unit
+                },
+                HudMessage::EvaObjectLine {
+                    label: "VERA:EvaUnitPromoted",
+                    type_id: unit
+                },
             ]
         );
 
@@ -3305,7 +3302,7 @@ mod tests {
         let mut refused_facts = Vec::new();
         let mut refused_output = SoundEventQueue::new();
         let mut refuse = |_| false;
-        dispatch_sim_sound_events_with_hud_text(
+        dispatch_sim_sound_events(
             [SimSoundEvent::UnitComplete {
                 owner: local,
                 radar,
@@ -3368,7 +3365,7 @@ mod tests {
         let mut facts = Vec::new();
         let mut output = SoundEventQueue::new();
         let mut admit = |_| true;
-        dispatch_sim_sound_events_with_hud_text(
+        dispatch_sim_sound_events(
             events,
             &sim,
             &rules,
@@ -3398,7 +3395,7 @@ mod tests {
         let mut refused = Vec::new();
         let mut refused_output = SoundEventQueue::new();
         let mut refuse = |_| false;
-        dispatch_sim_sound_events_with_hud_text(
+        dispatch_sim_sound_events(
             [
                 SimSoundEvent::UnitLost {
                     owner: remote,
@@ -3436,7 +3433,7 @@ mod tests {
         let mut plain = Vec::new();
         let mut plain_output = SoundEventQueue::new();
         let mut allow = |_| true;
-        dispatch_sim_sound_events_with_hud_text(
+        dispatch_sim_sound_events(
             [SimSoundEvent::UnitRepaired {
                 owner: local,
                 radar,
@@ -3453,45 +3450,6 @@ mod tests {
             plain_output.drain().len(),
             1,
             "an out-of-scope EVA keeps its voice"
-        );
-    }
-
-    /// With the accessibility switch off the frame passes no collector; the
-    /// ordinary dispatch and the new entry point must produce identical audio.
-    #[test]
-    fn disabled_eva_text_switch_leaves_the_audio_dispatch_untouched() {
-        let rules = dispatch_rules();
-        let mut sim = Simulation::new();
-        let local = sim.intern("Local");
-        let building = sim.intern("GAPOWR");
-        let event = |type_id| SimSoundEvent::BuildingComplete {
-            owner: local,
-            type_id,
-        };
-        let mut plain = SoundEventQueue::new();
-        let mut admit_plain = |_| true;
-        dispatch_sim_sound_events(
-            [event(building)],
-            &sim,
-            &rules,
-            Some("Local"),
-            &mut admit_plain,
-            &mut plain,
-        );
-        let mut without_collector = SoundEventQueue::new();
-        let mut admit_none = |_| true;
-        dispatch_sim_sound_events_with_hud_text(
-            [event(building)],
-            &sim,
-            &rules,
-            Some("Local"),
-            &mut admit_none,
-            &mut without_collector,
-            None,
-        );
-        assert_eq!(
-            format!("{:?}", plain.drain()),
-            format!("{:?}", without_collector.drain())
         );
     }
 }

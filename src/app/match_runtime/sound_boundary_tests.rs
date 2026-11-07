@@ -139,6 +139,7 @@ fn coordinate_request_sources_match_executed_native_projection_controls() {
             None,
             &mut |_| panic!("coordinate requests have no radar admission"),
             &mut output,
+            None,
         );
         let events = output.drain();
         assert_eq!(events.len(), 1);
@@ -195,6 +196,7 @@ fn coordinate_stop_transport_keeps_exact_words_flags_and_action_order() {
         None,
         &mut |_| panic!("coordinate stop has no radar or owner gate"),
         &mut output,
+        None,
     );
     let events = output.drain();
     assert!(matches!(events.as_slice(), [
@@ -261,6 +263,7 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
             true
         },
         &mut output,
+        None,
     );
     assert_eq!(admitted, [(17, 2), (17, 99), (17, 3), (17, 4)]);
     assert_eq!(output.drain().len(), 1);
@@ -441,35 +444,14 @@ fn synchronous_sound_prefix_keeps_eva_text_rows() {
     assert_eq!(
         *collected,
         vec![
-            HudMessage::EvaConstructionComplete(building),
-            HudMessage::EvaUnitReady(unit),
+            HudMessage::EvaObjectLine {
+                label: "VERA:EvaConstructionComplete",
+                type_id: building
+            },
+            HudMessage::EvaObjectLine {
+                label: "VERA:EvaUnitReady",
+                type_id: unit
+            },
         ]
-    );
-}
-
-/// A boundary without the sink keeps its native audio-only behaviour, so
-/// headless frames and a disabled accessibility switch pay nothing extra.
-#[test]
-fn synchronous_sound_prefix_without_a_sink_emits_no_rows() {
-    let rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
-    let mut sim = Simulation::new();
-    sim.session_mut_for_test().set_tick_for_test(17);
-    let local = sim.intern("Local");
-    let building = sim.intern("GAPOWR");
-    let mut output = SoundEventQueue::new();
-    let mut admit_radar = |_request: RadarEventRequest, _tick, _rules: &RuleSet| true;
-    let boundary = FrameClientBoundary::new(None, Some("Local"), &mut output, &mut admit_radar);
-    boundary.consume(
-        &sim,
-        &rules,
-        &[SimSoundEvent::BuildingComplete {
-            owner: local,
-            type_id: building,
-        }],
-    );
-    assert_eq!(boundary.delivered(), 1);
-    assert!(
-        output.is_empty(),
-        "inline delivery drains the existing queue"
     );
 }

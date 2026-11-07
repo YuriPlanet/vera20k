@@ -814,6 +814,7 @@ mod tests {
                         radar_accepted
                     },
                     &mut output,
+                    None,
                 );
                 assert_eq!(admitted, [radar], "one real local radar admission request");
                 let sounds = output.drain();

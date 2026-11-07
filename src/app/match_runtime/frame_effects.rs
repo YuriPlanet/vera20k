@@ -4,7 +4,7 @@
 
 use std::cell::{Cell, RefCell};
 
-use super::sound_dispatch::dispatch_sim_sound_events_with_hud_text;
+use super::sound_dispatch::dispatch_sim_sound_events;
 use crate::app::input::messages::HudMessage;
 use crate::app::input::planning_mode::PlanningInputState;
 use crate::app::presentation::building_anim::SoundPlaybackInputs;
@@ -407,7 +407,7 @@ impl SoundBoundary for FrameClientBoundary<'_> {
         let mut eva_text = self.eva_text.map(|sink| sink.borrow_mut());
         {
             let mut admit_radar = self.admit_radar.borrow_mut();
-            dispatch_sim_sound_events_with_hud_text(
+            dispatch_sim_sound_events(
                 pending.iter().cloned().filter(|event| {
                     // The router says this line after the clip: see
                     // [`FrameClientBoundary::defer_verdict_to_clip`].

@@ -122,7 +122,7 @@ fn retail_landing_child_reports_release_instead_of_cutting_samples() {
         assert!(!sim.anim(id).unwrap().in_logic_vector(), "{name}");
         let events = sim.take_sound_events_for_test();
         let mut output = SoundEventQueue::default();
-        dispatch_sim_sound_events(events, &sim, &rules, None, &mut |_| true, &mut output);
+        dispatch_sim_sound_events(events, &sim, &rules, None, &mut |_| true, &mut output, None);
         let events = output.drain();
         assert!(
             matches!(events.as_slice(), [

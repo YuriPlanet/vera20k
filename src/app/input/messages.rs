@@ -257,21 +257,11 @@ pub(crate) enum HudMessage {
     /// (`0x00430CF9..0x00430D69`): PlayerPtr's scheme `+0x16054`, style
     /// 4046, `0xE1` buckets, silent 0.
     BeaconHelp(&'static str),
-    /// VERA-only accessibility line: `EVA_ConstructionComplete` names the
-    /// product whose type the sim already resolved. Collected by the audio
-    /// dispatch arm that actually admitted the voice, so the gates match.
-    /// Default off; never changes the native voice or message list behaviour.
-    EvaConstructionComplete(crate::sim::intern::InternedId),
-    /// VERA-only accessibility line: `EVA_UnitReady` names the delivered unit.
-    EvaUnitReady(crate::sim::intern::InternedId),
-    /// VERA-only accessibility line: `EVA_UnitPromoted` names the object that
-    /// crossed a veterancy rank. Same transient type reference as the
-    /// production rows, collected on the arm that admitted the voice.
-    EvaUnitPromoted(crate::sim::intern::InternedId),
-    /// VERA-only accessibility line for the remaining L2 events whose voice
-    /// never names its object (unit loss, repair, sale, garrison, on/offline,
-    /// primary factory). `label` selects the VERA i18n template; `type_id` is
-    /// the sim's already-resolved type, never a lookup or a guess.
+    /// VERA's optional detailed EVA text (`[VERA] DetailedEvaText=`, default
+    /// off): one line naming the object an EVA voice spoke about without
+    /// naming it. The audio dispatch arm that admitted the voice collects it,
+    /// so text and voice share every gate. `label` selects the VERA template;
+    /// `type_id` is the sim's own type, never a lookup or a guess.
     EvaObjectLine {
         label: &'static str,
         type_id: crate::sim::intern::InternedId,
@@ -288,12 +278,7 @@ impl HudMessage {
             Self::PlayerDefeated(_) => "TXT_PLAYER_DEFEATED",
             Self::Alliance { formed: true, .. } => "TXT_HAS_ALLIED",
             Self::Alliance { formed: false, .. } => "TXT_AT_WAR",
-            Self::EvaConstructionComplete(_)
-            | Self::EvaUnitReady(_)
-            | Self::EvaUnitPromoted(_)
-            | Self::EvaObjectLine { .. } => {
-                return None;
-            }
+            Self::EvaObjectLine { .. } => return None,
         })
     }
 
@@ -310,12 +295,8 @@ impl HudMessage {
                 ares_message_delay_timeout_ms(rules.general.message_delay_minutes)
             }
             Self::BeaconHelp(_) => Some(BEACON_HELP_TIMEOUT_MS),
-            Self::EvaConstructionComplete(_)
-            | Self::EvaUnitReady(_)
-            | Self::EvaUnitPromoted(_)
-            | Self::EvaObjectLine { .. } => {
-                message_delay_timeout_ms(rules.general.message_delay_minutes)
-            }
+            // `post_hud_message` posts these through `post_eva_text`.
+            Self::EvaObjectLine { .. } => None,
         }
     }
 
@@ -457,52 +438,11 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
         }
         return;
     }
-    // The switch short-circuits before any rules/CSF lookup, so a disabled
-    // option costs nothing beyond this one bool read.
-    if matches!(
-        message,
-        HudMessage::EvaConstructionComplete(_)
-            | HudMessage::EvaUnitReady(_)
-            | HudMessage::EvaUnitPromoted(_)
-            | HudMessage::EvaObjectLine { .. }
-    ) && !state.persistence.options_profile.detailed_eva_text
-    {
+    if let HudMessage::EvaObjectLine { label, type_id } = message {
+        if let Some(name) = eva_text_product_name(state, type_id) {
+            post_eva_text(state, label, &name);
+        }
         return;
-    }
-    match message {
-        HudMessage::EvaConstructionComplete(type_id) => {
-            if let Some(name) = eva_text_product_name(state, type_id) {
-                post_eva_text(state, "VERA:EvaConstructionComplete", &[("name", &name)]);
-            } else {
-                log::warn!("[VERA] EVA text: no product name for ConstructionComplete");
-            }
-            return;
-        }
-        HudMessage::EvaUnitReady(type_id) => {
-            if let Some(name) = eva_text_product_name(state, type_id) {
-                post_eva_text(state, "VERA:EvaUnitReady", &[("name", &name)]);
-            } else {
-                log::warn!("[VERA] EVA text: no product name for UnitReady");
-            }
-            return;
-        }
-        HudMessage::EvaUnitPromoted(type_id) => {
-            if let Some(name) = eva_text_product_name(state, type_id) {
-                post_eva_text(state, "VERA:EvaUnitPromoted", &[("name", &name)]);
-            } else {
-                log::warn!("[VERA] EVA text: no product name for UnitPromoted");
-            }
-            return;
-        }
-        HudMessage::EvaObjectLine { label, type_id } => {
-            if let Some(name) = eva_text_product_name(state, type_id) {
-                post_eva_text(state, label, &[("name", &name)]);
-            } else {
-                log::warn!("[VERA] EVA text: no product name for {label}");
-            }
-            return;
-        }
-        _ => {}
     }
     let Some(key) = message.csf_key() else {
         return;
@@ -528,17 +468,13 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
     }
 }
 
-/// Resolve the game's own visible type name for a produced object.
-///
-/// `CsfFile::text` answers `MISSING:'<key>'` for a label the loaded table does
-/// not carry, so read `get` first: an absent `UIName=` falls back to the
-/// authored type key (e.g. `HTNK`) instead of showing a diagnostic string.
-/// VERA never invents a translation for the object's name.
+/// The visible name of a sim type, through the owner every tooltip uses
+/// ([`crate::assets::csf_file::type_ui_name`]); a type with no `UIName=`
+/// keeps its rules key (e.g. `HTNK`).
 fn eva_text_product_name(
     state: &AppState,
     type_id: crate::sim::intern::InternedId,
 ) -> Option<String> {
-    let rules = state.rules()?;
     let section = state
         .match_state
         .sim_runtime
@@ -546,7 +482,7 @@ fn eva_text_product_name(
         .simulation
         .interner()
         .resolve(type_id);
-    eva_text_name(section, rules, state.process_assets.csf.as_ref())
+    eva_text_name(section, state.rules()?, state.process_assets.csf.as_ref())
 }
 
 fn eva_text_name(
@@ -555,88 +491,65 @@ fn eva_text_name(
     csf: Option<&crate::assets::csf_file::CsfFile>,
 ) -> Option<String> {
     let object = rules.object(section)?;
-    Some(
-        object
-            .ui_name
-            .as_deref()
-            .and_then(|key| csf.and_then(|table| table.get(key)))
-            .unwrap_or(section)
-            .to_owned(),
-    )
+    let name = crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf);
+    Some(if name.is_empty() {
+        section.to_owned()
+    } else {
+        name
+    })
 }
 
-/// The sidebar speaks `EVA_Building` ("Building.") / `EVA_Training`
-/// ("Training.") without naming the object, while the clicked cameo carries
-/// its type key. Only these two lines get a row, so the text follows the
-/// voice admission exactly: hold/resume arms speak the same line and name the
-/// resumed type, while on-hold, unable-to-comply and select-target arms speak
-/// other lines and stay silent. The cancel line has its own row; see
-/// [`post_eva_cancel`].
+/// The sidebar speaks `EVA_Building` / `EVA_Training` without naming the
+/// object, while the clicked cameo carries its type key. Only these two lines
+/// get a row: hold/resume arms speak the same line and name the resumed type,
+/// while on-hold, unable-to-comply and select-target arms speak other lines.
+/// The cancel line has its own row; see [`post_eva_cancel`].
 pub(crate) fn post_eva_production_start(state: &mut AppState, eva_line: &str, type_key: &str) {
-    if !state.persistence.options_profile.detailed_eva_text {
-        return;
-    }
-    let Some(label) = eva_production_start_label(eva_line) else {
-        return;
+    let label = match eva_line {
+        crate::app::input::sidebar_eva::EVA_BUILDING => "VERA:EvaBuildingStarted",
+        crate::app::input::sidebar_eva::EVA_TRAINING => "VERA:EvaTrainingStarted",
+        _ => return,
     };
-    let Some(rules) = state.rules() else {
-        return;
-    };
-    let Some(name) = eva_text_name(type_key, rules, state.process_assets.csf.as_ref()) else {
-        log::warn!("[VERA] EVA text: no product name for {type_key}");
-        return;
-    };
-    post_eva_text(state, label, &[("name", &name)]);
+    post_eva_type_line(state, label, type_key);
 }
 
-fn eva_production_start_label(eva_line: &str) -> Option<&'static str> {
-    match eva_line {
-        crate::app::input::sidebar_eva::EVA_BUILDING => Some("VERA:EvaBuildingStarted"),
-        crate::app::input::sidebar_eva::EVA_TRAINING => Some("VERA:EvaTrainingStarted"),
-        _ => None,
-    }
-}
-
-/// `EVA_Canceled` (`SelectClass::Action @ 0x006AAD00`, `0x006AAE39`) also
-/// names nothing, and the clicked cameo's type is exactly what a single
-/// `ABANDON` removed. `structure` comes from the strip that owns the click so
-/// the row keeps the same build/training split as the two start lines.
+/// `EVA_Canceled` (`SelectClass::Action @ 0x006AAD00`, `0x006AAE39`) names
+/// nothing either, and a single `ABANDON` removed exactly the clicked cameo's
+/// type. `structure` comes from the strip that owns the click.
 pub(crate) fn post_eva_cancel(state: &mut AppState, type_key: &str, structure: bool) {
-    if !state.persistence.options_profile.detailed_eva_text {
-        return;
-    }
-    let Some(rules) = state.rules() else {
-        return;
-    };
-    let Some(name) = eva_text_name(type_key, rules, state.process_assets.csf.as_ref()) else {
-        log::warn!("[VERA] EVA text: no product name for {type_key}");
-        return;
-    };
-    post_eva_text(state, eva_cancel_label(structure), &[("name", &name)]);
-}
-
-fn eva_cancel_label(structure: bool) -> &'static str {
-    if structure {
+    let label = if structure {
         "VERA:EvaBuildingCanceled"
     } else {
         "VERA:EvaTrainingCanceled"
-    }
+    };
+    post_eva_type_line(state, label, type_key);
 }
 
-/// Post one VERA-only accessibility row from a localized template. The label
-/// lives in `src/i18n/`; `fill()` substitutes only sim facts, never prose.
-/// A missing template (or a missing English fallback) posts nothing.
-fn post_eva_text(state: &mut AppState, label: &str, values: &[(&str, &dyn std::fmt::Display)]) {
+fn post_eva_type_line(state: &mut AppState, label: &str, type_key: &str) {
     if !state.persistence.options_profile.detailed_eva_text {
         return;
     }
-    let template = crate::i18n::text(state.process_assets.csf.as_ref(), label).into_owned();
-    if template.starts_with("MISSING:") {
-        log::warn!("[VERA] EVA text: missing template {label}");
+    let Some(name) = state
+        .rules()
+        .and_then(|rules| eva_text_name(type_key, rules, state.process_assets.csf.as_ref()))
+    else {
+        return;
+    };
+    post_eva_text(state, label, &name);
+}
+
+/// Post one detailed EVA text row from the VERA template `label`, with the
+/// object's `{name}` filled in. The rows are subtitles, not chat: `silent`
+/// skips the `IncomingMessage` insert sound and the typing reveal, so the
+/// EVA voice stays the only sound.
+fn post_eva_text(state: &mut AppState, label: &str, name: &str) {
+    if !state.persistence.options_profile.detailed_eva_text {
         return;
     }
-    let text = crate::i18n::fill(&template, values);
-    log::info!("[VERA] EVA text: {text}");
+    let Some(template) = crate::i18n::find(label) else {
+        return;
+    };
+    let text = crate::i18n::fill(&template, &[("name", &name)]);
     let Some(rules) = state.rules() else {
         return;
     };
@@ -646,89 +559,16 @@ fn post_eva_text(state: &mut AppState, label: &str, values: &[(&str, &dyn std::f
         &state.match_state.match_presentation.house_color_map,
         Some(&rules.color_schemes),
     );
-    post_resolved_message(state, &eva_text_post(&text, rgb, timeout_ms));
-}
-
-/// VERA-only accessibility rows are subtitles, not chat messages. `silent`
-/// suppresses both the `[AudioVisual] IncomingMessage` insert sound and the
-/// typing reveal (which replays `MessageCharTyped` once per glyph). The EVA
-/// voice is the only audio this feature is allowed to accompany — see the
-/// "only fill in the missing object, never embellish" rule.
-fn eva_text_post<'a>(
-    text: &'a str,
-    rgb: [f32; 3],
-    timeout_ms: Option<u64>,
-) -> crate::ui::messages::MessagePost<'a> {
-    crate::ui::messages::MessagePost {
-        prefix: None,
-        text,
-        rgb,
-        timeout_ms,
-        silent: true,
-    }
-}
-
-/// Selection announcement (not an EVA event): aggregate the selected objects
-/// into `N × <UIName>` groups in selection encounter order. The count is
-/// always printed, including 1, so the row stays structured for a future
-/// text-to-speech consumer. Re-selecting the same group posts nothing.
-pub(crate) fn post_eva_selection(state: &mut AppState, entity_ids: &[u64]) {
-    if !state.persistence.options_profile.detailed_eva_text {
-        return;
-    }
-    let list = eva_selection_list(state, entity_ids);
-    if list.is_empty() {
-        state.match_state.input.eva_selection_line = None;
-        return;
-    }
-    if state.match_state.input.eva_selection_line.as_deref() == Some(list.as_str()) {
-        return;
-    }
-    state.match_state.input.eva_selection_line = Some(list.clone());
-    post_eva_text(state, "VERA:EvaSelection", &[("list", &list)]);
-}
-
-/// Aggregate one selection into type groups. Names come from the same
-/// `UIName=` CSF lookup as the production rows, never from a VERA name table.
-fn eva_selection_list(state: &AppState, entity_ids: &[u64]) -> String {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
-        return String::new();
-    };
-    let groups = eva_selection_group_counts(entity_ids.iter().filter_map(|&id| {
-        runtime
-            .simulation
-            .entities()
-            .get(id)
-            .map(|entity| entity.type_ref())
-    }));
-    let separator = if state.persistence.options_profile.language.starts_with("zh") {
-        "、"
-    } else {
-        ", "
-    };
-    groups
-        .iter()
-        .filter_map(|(type_id, count)| {
-            eva_text_product_name(state, *type_id).map(|name| format!("{count} × {name}"))
-        })
-        .collect::<Vec<_>>()
-        .join(separator)
-}
-
-/// Count selection members per type, keeping the order types first appear.
-/// Pure data: the caller owns entity lookup and the name table.
-fn eva_selection_group_counts(
-    types: impl IntoIterator<Item = crate::sim::intern::InternedId>,
-) -> Vec<(crate::sim::intern::InternedId, usize)> {
-    let mut groups: Vec<(crate::sim::intern::InternedId, usize)> = Vec::new();
-    for type_id in types {
-        if let Some(group) = groups.iter_mut().find(|(existing, _)| *existing == type_id) {
-            group.1 += 1;
-        } else {
-            groups.push((type_id, 1));
-        }
-    }
-    groups
+    post_resolved_message(
+        state,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &text,
+            rgb,
+            timeout_ms,
+            silent: true,
+        },
+    );
 }
 
 /// The colour of a House-named line.
@@ -1789,146 +1629,14 @@ mod tests {
         }
     }
 
-    /// The VERA templates exist, carry a placeholder, and `fill()` replaces
-    /// only the sim fact. No wording is invented in Rust.
+    /// An EVA row names the type by its `UIName=` text, as tooltips do; a
+    /// type with no `UIName=` keeps its rules key, and an unknown type posts
+    /// nothing.
     #[test]
-    fn eva_text_templates_exist_and_fill_only_sim_facts() {
-        let complete = crate::i18n::text(None, "VERA:EvaConstructionComplete").into_owned();
-        assert!(!complete.starts_with("MISSING:"));
-        assert!(complete.contains("{name}"));
-        let filled = crate::i18n::fill(&complete, &[("name", &"GAPOWR")]);
-        assert!(filled.contains("GAPOWR"));
-        assert!(!filled.contains("{name}"));
-        for label in [
-            "VERA:EvaUnitReady",
-            "VERA:EvaSelection",
-            "VERA:EvaBuildingStarted",
-            "VERA:EvaTrainingStarted",
-            "VERA:EvaBuildingCanceled",
-            "VERA:EvaTrainingCanceled",
-            "VERA:EvaUnitPromoted",
-            "VERA:EvaUnitLost",
-            "VERA:EvaRepairing",
-            "VERA:EvaStructureSold",
-            "VERA:EvaStructureGarrisoned",
-            "VERA:EvaStructureAbandoned",
-        ] {
-            let template = crate::i18n::text(None, label);
-            assert!(!template.starts_with("MISSING:"), "{label}");
-        }
-        let selection = crate::i18n::text(None, "VERA:EvaSelection").into_owned();
-        assert!(crate::i18n::fill(&selection, &[("list", &"1 × HTNK")]).contains("1 × HTNK"));
-        // Every object row fills exactly one sim fact: the game's own name.
-        for label in [
-            "VERA:EvaConstructionComplete",
-            "VERA:EvaUnitReady",
-            "VERA:EvaBuildingStarted",
-            "VERA:EvaTrainingStarted",
-            "VERA:EvaBuildingCanceled",
-            "VERA:EvaTrainingCanceled",
-            "VERA:EvaUnitPromoted",
-            "VERA:EvaUnitLost",
-            "VERA:EvaRepairing",
-            "VERA:EvaStructureSold",
-            "VERA:EvaStructureGarrisoned",
-            "VERA:EvaStructureAbandoned",
-        ] {
-            let template = crate::i18n::text(None, label).into_owned();
-            assert!(template.contains("{name}"), "{label}");
-            let filled = crate::i18n::fill(&template, &[("name", &"HTNK")]);
-            assert!(
-                filled.contains("HTNK") && !filled.contains("{name}"),
-                "{label}"
-            );
-        }
-    }
-
-    /// `EVA_Canceled` covers both strips, so the row splits the two like the
-    /// start lines do and each one fills the clicked type.
-    #[test]
-    fn eva_cancel_rows_split_build_from_training() {
-        assert_eq!(eva_cancel_label(true), "VERA:EvaBuildingCanceled");
-        assert_eq!(eva_cancel_label(false), "VERA:EvaTrainingCanceled");
-        for label in [eva_cancel_label(true), eva_cancel_label(false)] {
-            let template = crate::i18n::text(None, label).into_owned();
-            assert!(!template.starts_with("MISSING:"), "{label}");
-            let filled = crate::i18n::fill(&template, &[("name", &"GAPOWR")]);
-            assert!(
-                filled.contains("GAPOWR") && !filled.contains("{name}"),
-                "{label} must fill its only placeholder"
-            );
-        }
-    }
-
-    /// The sidebar's two start lines are the only ones the start row names;
-    /// cancel has its own row ([`eva_cancel_label`]), and the hold, refusal
-    /// and target-select lines stay text-free.
-    #[test]
-    fn eva_production_start_rows_follow_only_building_and_training_lines() {
-        use crate::app::input::sidebar_eva::{
-            EVA_BUILDING, EVA_CANCELED, EVA_NEW_CONSTRUCTION_OPTIONS, EVA_ON_HOLD,
-            EVA_SELECT_TARGET, EVA_TRAINING, EVA_UNABLE_TO_COMPLY,
-        };
-        assert_eq!(
-            eva_production_start_label(EVA_BUILDING),
-            Some("VERA:EvaBuildingStarted")
-        );
-        assert_eq!(
-            eva_production_start_label(EVA_TRAINING),
-            Some("VERA:EvaTrainingStarted")
-        );
-        for other in [
-            EVA_ON_HOLD,
-            EVA_CANCELED,
-            EVA_UNABLE_TO_COMPLY,
-            EVA_SELECT_TARGET,
-            EVA_NEW_CONSTRUCTION_OPTIONS,
-        ] {
-            assert_eq!(eva_production_start_label(other), None, "{other}");
-        }
-        for label in ["VERA:EvaBuildingStarted", "VERA:EvaTrainingStarted"] {
-            let template = crate::i18n::text(None, label);
-            assert!(!template.starts_with("MISSING:"), "{label}");
-            assert!(
-                crate::i18n::fill(&template, &[("name", &"GAPOWR")]).contains("GAPOWR"),
-                "{label} must fill its only placeholder"
-            );
-        }
-    }
-
-    /// Accessibility rows are subtitles, not chat messages. `silent=0` would
-    /// play `IncomingMessage` on insert and type the row out one glyph at a
-    /// time (one `MessageCharTyped` sound per glyph); the EVA voice has none
-    /// of that, so the text equivalent must not add it either.
-    #[test]
-    fn eva_text_rows_are_silent_subtitles_without_insert_or_typing_sound() {
-        let rgb = [0.25, 0.5, 0.75];
-        let post = eva_text_post("Construction complete: GAPOWR", rgb, Some(4_000));
-        assert!(post.silent);
-        assert_eq!(post.text, "Construction complete: GAPOWR");
-        assert_eq!(post.rgb, rgb);
-        assert_eq!(post.timeout_ms, Some(4_000));
-
-        let mut list = crate::ui::messages::MessageList::new(3, 0, 6, 1_000);
-        let outcome = list.add_message(&post, 1_200, &|s| s.chars().count() as i32 * 8);
-        assert_eq!(outcome.added, 1);
-        assert!(!outcome.play_sound, "no IncomingMessage insert sound");
-        assert_eq!(list.messages()[0].text, "Construction complete: GAPOWR");
-        assert_eq!(
-            list.advance_reveal(u32::MAX),
-            0,
-            "silent rows never request per-glyph typing sounds"
-        );
-    }
-
-    /// A product name is the game's own `UIName=` CSF value. A missing label
-    /// falls back to the authored type key, never to `MISSING:` or a VERA
-    /// translation, and an unknown type posts nothing.
-    #[test]
-    fn eva_text_name_uses_the_games_own_csf_label_and_falls_back_to_the_type_key() {
+    fn eva_text_names_a_type_by_its_ui_name() {
         let rules = crate::rules::ruleset::RuleSet::from_ini(
             &crate::rules::ini_parser::IniFile::from_str(
-                "[General]\nFixtureOnly=1\n[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n0=GAPOWR\n[GAPOWR]\nUIName=Name:GAPOWR\n[AudioVisual]\nBaseUnderAttackSound=Siren\n",
+                "[General]\nFixtureOnly=1\n[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n0=GAPOWR\n1=GAREFN\n[GAPOWR]\nUIName=Name:GAPOWR\n[GAREFN]\n[AudioVisual]\nBaseUnderAttackSound=Siren\n",
             ),
         )
         .unwrap();
@@ -1937,33 +1645,11 @@ mod tests {
             eva_text_name("GAPOWR", &rules, Some(&csf)).as_deref(),
             Some("發電廠")
         );
-        let unrelated = test_csf("Unrelated", "x");
         assert_eq!(
-            eva_text_name("GAPOWR", &rules, Some(&unrelated)).as_deref(),
-            Some("GAPOWR")
+            eva_text_name("GAREFN", &rules, Some(&csf)).as_deref(),
+            Some("GAREFN")
         );
-        assert_eq!(
-            eva_text_name("GAPOWR", &rules, None).as_deref(),
-            Some("GAPOWR")
-        );
-        assert_eq!(eva_text_name("UNKNOWN", &rules, None), None);
-    }
-
-    /// Selection rows aggregate by type in first-seen order, and always carry
-    /// a count (including 1) for a future text-to-speech consumer.
-    #[test]
-    fn eva_selection_groups_count_each_type_in_first_seen_order() {
-        let mut interner = crate::sim::intern::StringInterner::new();
-        let tank = interner.intern("HTNK");
-        let gi = interner.intern("E1");
-        let groups = eva_selection_group_counts([tank, gi, tank, tank, gi, tank]);
-        assert_eq!(groups, vec![(tank, 4), (gi, 2)]);
-        assert_eq!(
-            eva_selection_group_counts([tank]),
-            vec![(tank, 1)],
-            "a single unit still carries its count"
-        );
-        assert!(eva_selection_group_counts([]).is_empty());
+        assert_eq!(eva_text_name("UNKNOWN", &rules, Some(&csf)), None);
     }
 }
 

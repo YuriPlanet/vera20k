@@ -20,6 +20,7 @@ use crate::sim::world::ObjectSubstrate;
 /// `UnInit` at `AircraftClass::AI 0x00414F93/0x00414FD1`) must not call it.
 pub(crate) fn death_announcement_event(
     obj: &crate::rules::object_type::ObjectType,
+    type_id: InternedId,
     category: EntityCategory,
     rx: u16,
     ry: u16,
@@ -29,7 +30,7 @@ pub(crate) fn death_announcement_event(
         rx,
         ry,
         owner,
-        type_key: obj.id.clone(),
+        type_id,
     })
 }
 

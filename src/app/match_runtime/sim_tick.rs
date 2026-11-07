@@ -1953,7 +1953,7 @@ fn advance_one_simulation_frame(
             // option is on. A disabled switch passes None, so the dispatch
             // never builds a fact and no rules/CSF lookup follows.
             let mut eva_text_messages = Vec::new();
-            super::sound_dispatch::dispatch_sim_sound_events_with_hud_text(
+            super::sound_dispatch::dispatch_sim_sound_events(
                 frame_sound_events
                     .into_iter()
                     .skip(sound_events_delivered)

@@ -15,6 +15,7 @@
 //! - `techno_ai.rs` — per-object AI dispatch within each turn
 
 pub(crate) mod authored_load_host;
+mod bounce_terrain;
 pub mod bridge_orchestrator;
 #[cfg(any(test, feature = "test-support"))]
 pub mod bridge_test_evidence;
@@ -25,7 +26,6 @@ pub(crate) mod building_anim;
 mod building_scatter;
 mod building_upgrade_art;
 mod camera_home;
-mod bounce_terrain;
 mod cell_content;
 mod crash;
 mod disk_laser;
@@ -37,8 +37,8 @@ pub(crate) mod entry_test_fixture;
 mod frame_channel;
 mod frame_effects;
 mod network_commands;
-mod queued_command;
 mod object_entry;
+mod queued_command;
 mod sinking;
 mod time_warp;
 mod trigger_chrono;
@@ -47,13 +47,19 @@ mod voxel_anim_effects;
 pub(crate) use voxel_anim_effects::BounceContactDamage;
 mod unit_repair_seek;
 pub(crate) use frame_channel::FrameChannel;
-pub use network_commands::{NetworkCommandQueues, NetworkQueueError, NetworkQueueContext, NetworkQueuePass, NetworkInterruption};
-pub use frame_effects::{FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError, SoundBoundary, OutcomeWaitBoundary, TacticalRadarBoundary};
+pub use frame_effects::{
+    FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError,
+    OutcomeWaitBoundary, SoundBoundary, TacticalRadarBoundary,
+};
+pub use network_commands::{
+    NetworkCommandQueues, NetworkInterruption, NetworkQueueContext, NetworkQueueError,
+    NetworkQueuePass,
+};
 pub(crate) use type_tech_levels::TypeTechLevels;
 #[cfg(test)]
-mod unit_unlimbo_tests;
-#[cfg(test)]
 mod unit_follows_tests;
+#[cfg(test)]
+mod unit_unlimbo_tests;
 pub(crate) use sinking::{LivingSinkTrigger, SinkingState};
 pub mod edge_cell;
 mod gap_generator;
@@ -124,9 +130,9 @@ pub use world_orders::UnitRepairAction;
 #[cfg(feature = "ares")]
 pub(crate) use world_orders::VehicleCaptureOutcome;
 pub use world_orders::{EntryBaseAction, EntryClickAction};
+mod fog_objects;
 mod projectile_collision;
 mod shroud_refresh;
-mod fog_objects;
 mod substrate;
 mod techno_ai;
 mod track_cell_recalc;
@@ -181,9 +187,9 @@ mod aircraft_deployment_tests;
 #[cfg(test)]
 mod area_rocker_tests;
 #[cfg(test)]
-mod finite_ammo_tests;
-#[cfg(test)]
 mod brute_smash_debris_tests;
+#[cfg(test)]
+mod building_discovery_services_tests;
 #[cfg(test)]
 mod building_fatal_lifecycle_tests;
 #[cfg(test)]
@@ -199,7 +205,7 @@ mod engineer_building_repair_tests;
 #[cfg(test)]
 mod engineer_power_consumer_tests;
 #[cfg(test)]
-mod building_discovery_services_tests;
+mod finite_ammo_tests;
 #[cfg(test)]
 mod fly_height_tests;
 #[cfg(any(test, feature = "test-support"))]
@@ -227,24 +233,24 @@ mod suicide_fire_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terrain_cell;
 #[cfg(test)]
-mod team_script_vm_tests;
+mod overlay_explodes_tests;
 #[cfg(test)]
-mod voxel_water_expiry_tests;
+mod team_script_vm_tests;
 #[cfg(test)]
 pub(in crate::sim) mod voxel_meteor_tests;
 #[cfg(test)]
-mod overlay_explodes_tests;
+mod voxel_water_expiry_tests;
 
 pub(crate) use crash::CrashLatch;
 pub(crate) use display_registry::entity_layer;
 pub use lifecycle::LifecycleOutput;
+pub(crate) use lifecycle::object_get_coords_cell;
 pub use lifecycle::{
     BuildingLight, ConcealOutcome, ObjectLifecycle, PlacementEvidence, RemovalFacts, RevealOutcome,
     RevealPosition, RevealRequest, TechnoDiscoveryHistory, TerminalLifetime, UninitContext,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use lifecycle::{LifecycleTestEvent, RevealFailure};
-pub(crate) use lifecycle::object_get_coords_cell;
 pub(crate) use load_object_lifecycle::{LoadObjectLifecycle, OverlayConstructionReceipt};
 pub(crate) use logic_vector::{LogicMembership, LogicVector};
 pub(crate) use object_entry::{EntryFacts, FootEntryReceiver};
@@ -2702,7 +2708,7 @@ impl Simulation {
                             );
                             crate::sim::combat::combat_aoe::AreaDamageReceiver::Terrain(
                                 crate::sim::combat::TerrainDamageEvent {
-                    damage_writeback: None,
+                                    damage_writeback: None,
                                     stable_id,
                                     rx,
                                     ry,
@@ -2856,7 +2862,11 @@ impl Simulation {
                 for &coord in &mutation.original_footprint {
                     // Map5814D4/581BE6:70D4A0 then radar, per old footprint cell.
                     let _receipt = self.stop_all_targeting_cell(
-                        coord.0, coord.1, rules, overlay_registry, frame_effects,
+                        coord.0,
+                        coord.1,
+                        rules,
+                        overlay_registry,
+                        frame_effects,
                     );
                     #[cfg(any(test, feature = "test-support"))]
                     effects.cell_target_detaches.extend(_receipt.cell_detaches);
@@ -2874,10 +2884,8 @@ impl Simulation {
                     .map(|name| self.interner.intern(name));
                 for &(cell_x, cell_y) in &mutation.animation_cells {
                     for _ in 0..2 {
-                        let type_index =
-                            self.scenario_rng.next_range_u32_inclusive(0, 2) as usize;
-                        let jitter_x =
-                            self.scenario_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
+                        let type_index = self.scenario_rng.next_range_u32_inclusive(0, 2) as usize;
+                        let jitter_x = self.scenario_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
                         let jitter_y =
                             self.scenario_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
                         let level = self
@@ -2897,15 +2905,14 @@ impl Simulation {
                                 .wrapping_add(jitter_y),
                             z: i32::from(level).wrapping_mul(104),
                         };
-                        let mut descriptor =
-                            crate::sim::components::AnimClassSpawnDescriptor::new(
-                                anim_types[type_index],
-                                cell_x as u16,
-                                cell_y as u16,
-                                SimFixed::from_num(128 + jitter_x),
-                                SimFixed::from_num(128 + jitter_y),
-                                level as u8,
-                            );
+                        let mut descriptor = crate::sim::components::AnimClassSpawnDescriptor::new(
+                            anim_types[type_index],
+                            cell_x as u16,
+                            cell_y as u16,
+                            SimFixed::from_num(128 + jitter_x),
+                            SimFixed::from_num(128 + jitter_y),
+                            level as u8,
+                        );
                         descriptor.delay = delay;
                         descriptor.loop_count = 1;
                         descriptor.draw_flags = 0x600;
@@ -3241,11 +3248,10 @@ impl Simulation {
             if !self.owner_is_human(event.owner) {
                 continue;
             }
-            let type_id = self.interner.intern(&event.type_key);
             self.sound_events.emit(SimSoundEvent::UnitLost {
                 owner: event.owner,
                 radar: RadarEventRequest::new(RadarEventType::UnitLost, event.rx, event.ry),
-                type_id,
+                type_id: event.type_id,
             });
         }
     }
@@ -3330,7 +3336,9 @@ impl Simulation {
             return Err("replay startup must precede the first ordinary frame".into());
         }
         if !self.session.started() {
-            return Err("replay startup requires the completed loader's started publication".into());
+            return Err(
+                "replay startup requires the completed loader's started publication".into(),
+            );
         }
         if session.seed() != self.session.seed() || session.map_name() != self.session.map_name() {
             return Err("replay startup seed/map differs from its constructed world".into());

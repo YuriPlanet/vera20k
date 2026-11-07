@@ -128,15 +128,14 @@ pub struct UnderAttackEvent {
 /// 0x00416613`, infantry `0x005180F4`, `UnitClass 0x00737DC9/0x00737E39/
 /// 0x00737E68`, all vtable slot `+0x3B8`) and its type is not `Spawned=`.
 /// The world applies the owner-is-human gate and the radar type-7 dedupe.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct UnitLostEvent {
     pub rx: u16,
     pub ry: u16,
     pub owner: InternedId,
-    /// The dead techno's own `ObjectType::id` (rules section name, e.g.
-    /// `MTNK`), already resolved at the death site. The app names it in the
-    /// optional accessibility line; a transient fact, never a state input.
-    pub type_key: String,
+    /// The dead techno's interned type, for the optional detailed EVA text;
+    /// a transient fact, never a state input.
+    pub type_id: InternedId,
 }
 
 /// One ordered accumulator for weapon emission and recursive receiver effects.
