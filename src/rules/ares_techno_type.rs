@@ -37,6 +37,46 @@ pub(crate) struct AresTechnoTypeRules {
     missile: Option<Box<CustomMissileRules>>,
     ammo: AmmoTypeRules,
     combat: CombatTypeRules,
+    damage: DamagePresentationRules,
+}
+
+/// TechnoTypeExt+0x3A0..+0x3B0 and +0x3F0: the damaged-aircraft smoke and
+/// the damage sparks.
+#[derive(Debug, Clone, Default, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DamagePresentationRules {
+    /// `Smoke.ChanceRed` (Nullable<int> +0x3A0) and `Smoke.ChanceDead`
+    /// (+0x3A8), unset: 10 and 80.
+    smoke_chance_red: Option<i32>,
+    smoke_chance_dead: Option<i32>,
+    /// `Smoke.Anim` (+0x3B0); Initialize seeds an AircraftType's with
+    /// `Find("SGRYSMK1")`, other types keep null.
+    smoke_anim: Option<String>,
+    /// `DamageSparks` (Nullable<bool> +0x3F0), unset: the type's own
+    /// `TechnoTypeClass+0xC8F`.
+    damage_sparks: Option<bool>,
+}
+
+impl DamagePresentationRules {
+    /// An airborne aircraft below ConditionRed draws a `RandomRanged(0, 99)`
+    /// and puffs `Smoke.Anim` under `Smoke.ChanceRed` while alive or
+    /// `Smoke.ChanceDead` at zero health (AircraftClass_Update_DamageSmoke,
+    /// Ares.dll 10047B60, hook 0x415085). `None`: no anim, and no draw.
+    pub(crate) fn smoke(&self, alive: bool) -> Option<(&str, i32)> {
+        let anim = self.smoke_anim.as_deref()?;
+        let chance = if alive {
+            self.smoke_chance_red.unwrap_or(10)
+        } else {
+            self.smoke_chance_dead.unwrap_or(80)
+        };
+        Some((anim, chance))
+    }
+
+    /// Whether a damaged techno makes spark systems: `DamageSparks`, else
+    /// the type's own flag (TechnoClass_Update_DamageSparks, Ares.dll
+    /// 1004B760, hook 0x6FACD9).
+    pub(crate) fn damage_sparks(&self, type_default: bool) -> bool {
+        self.damage_sparks.unwrap_or(type_default)
+    }
 }
 
 /// TechnoTypeExt combat tweaks: +0x32C, +0x418, +0x430..+0x440 and
@@ -291,6 +331,7 @@ impl AresTechnoTypeRules {
                 missile.trailer_anim = find("V3TRAIL");
                 missile.takeoff_anim = find("V3TAKOFF");
                 self.missile = Some(Box::new(missile));
+                self.damage.smoke_anim = find("SGRYSMK1");
             }
         }
         self.gattling_cyclic = section.read_ares_bool("Gattling.Cycle", self.gattling_cyclic);
@@ -325,10 +366,21 @@ impl AresTechnoTypeRules {
             pointer("Missile.Weapon", TypeRef::Weapon, weapon);
             pointer("Missile.EliteWeapon", TypeRef::Weapon, elite_weapon);
         }
-        // After HunterSeeker.*: CivilianEnemy; after the DamageSparks reads,
-        // the berserk, Assaulter and crush blocks.
+        // After the Drain.* keys: the smoke.
+        let damage = &mut self.damage;
+        if let Some(anim) = resolve("Smoke.Anim", TypeRef::Animation) {
+            damage.smoke_anim = anim;
+        }
+        damage.smoke_chance_red =
+            section.read_ares_nullable_int("Smoke.ChanceRed", damage.smoke_chance_red);
+        damage.smoke_chance_dead =
+            section.read_ares_nullable_int("Smoke.ChanceDead", damage.smoke_chance_dead);
+        // After HunterSeeker.*: CivilianEnemy, then DamageSparks; after the
+        // particle-system lists, the berserk, Assaulter and crush blocks.
         let combat = &mut self.combat;
         combat.civilian_enemy = section.read_ares_bool("CivilianEnemy", combat.civilian_enemy);
+        damage.damage_sparks =
+            section.read_ares_nullable_bool("DamageSparks", damage.damage_sparks);
         combat.berserk_rof_multiplier = section
             .read_ares_nullable_double_bits("Berserk.ROFMultiplier", combat.berserk_rof_multiplier);
         combat.omni_crusher_aggressive =
@@ -377,6 +429,10 @@ impl AresTechnoTypeRules {
 
     pub(crate) fn combat(&self) -> &CombatTypeRules {
         &self.combat
+    }
+
+    pub(crate) fn damage(&self) -> &DamagePresentationRules {
+        &self.damage
     }
 
     /// `Gattling.Cycle`: a charge at the cap restarts the stages
