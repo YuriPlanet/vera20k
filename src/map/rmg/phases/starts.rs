@@ -90,9 +90,19 @@ pub struct StartsOutcome {
 
 pub fn run(ctx: &mut StartsCtx<'_>, args: &StartsArgs, zones: &ZoneField) -> StartsOutcome {
     // Survival threshold: max(genH * genW * 0.03, 400), truncated.
-    let area = TruncF64::from_f64(f64::from(args.gen_h))
+    let mut area = TruncF64::from_f64(f64::from(args.gen_h))
         .mul(TruncF64::from_f64(f64::from(args.gen_w)))
         .mul(TruncF64::from_f64(AREA_FRACTION));
+    // VERA extension: past the original's eight starts the 3% share is per
+    // eight players, so thirty players' islands (archipelago) are judged as
+    // eight players' are rather than all falling under it. 2..=8 unchanged.
+    if args.start_quota > crate::map::rmg::NATIVE_MAX_PLAYERS {
+        area = area
+            .mul(TruncF64::from_f64(f64::from(
+                crate::map::rmg::NATIVE_MAX_PLAYERS,
+            )))
+            .div(TruncF64::from_f64(f64::from(args.start_quota)));
+    }
     let floor = TruncF64::from_f64(MIN_REGION_CELLS);
     let threshold =
         X87Chop53::ftol_f64_low_masked(if area.lt(floor) { floor } else { area }.to_f64());
@@ -113,6 +123,13 @@ pub fn run(ctx: &mut StartsCtx<'_>, args: &StartsArgs, zones: &ZoneField) -> Sta
         place_region_starts(ctx, args, index, offset, &mut outcome);
         offset += ctx.regions.list[index].start_quota;
     }
+    // Every slot no region filled, including all of them when no region
+    // survives the threshold, so a map short of starts is always reported.
+    outcome.unfilled_start_slots = outcome
+        .waypoints
+        .iter()
+        .filter(|slot| slot.is_none())
+        .count();
 
     // The original ends by publishing start/extent preview metadata into the
     // scenario (packed cells plus isometric pixel mins/extents). Nothing in

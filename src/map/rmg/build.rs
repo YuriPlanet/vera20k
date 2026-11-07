@@ -439,6 +439,33 @@ mod tests {
         assert_eq!(slots, (0..30).collect::<Vec<u8>>());
     }
 
+    /// VERA extension: thirty players' islands survive the start threshold,
+    /// so an archipelago seats every player at the default and largest size.
+    #[test]
+    #[ignore = "slow; run when changing what it covers"]
+    fn thirty_player_archipelagos_place_every_start() {
+        let Some((settings, resolved, blocks)) = retail_inputs() else {
+            return;
+        };
+        for size in [0, crate::map::rmg::MAX_SIZE_OPTION] {
+            let options = RmgOptions {
+                num_players: 30,
+                width: size,
+                height: size,
+                ..options(0, 0)
+            };
+            let generated = generate_map(&options, &settings, &resolved, &blocks, &[]);
+            assert_eq!(
+                (
+                    generated.unfilled_start_slots,
+                    generated.start_waypoints.len()
+                ),
+                (0, 30),
+                "size option {size}"
+            );
+        }
+    }
+
     /// VERA extension: the largest size option generates a 500x500 interior.
     #[test]
     #[ignore = "slow; run when changing what it covers"]
