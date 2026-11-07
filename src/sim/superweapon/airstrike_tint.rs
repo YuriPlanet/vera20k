@@ -33,15 +33,15 @@ impl AirstrikeTintState {
         self.timer.start(frame, 0);
     }
 
-    /// 0070E920 admits only a building with a marker whose manager targets
-    /// that building. Losing admission resets only the phase. Stage two
-    /// draws Scenario RandomRanged(-5,5) once (0070EA4B); no other stage draws.
     /// Whether [`Self::update_tint`] can change anything: an admitted
     /// building, or a phase to reset.
     pub(crate) fn updates(&self, active: bool) -> bool {
         active || self.tint_stage != 0
     }
 
+    /// 0070E920 admits only a building with a marker whose manager targets
+    /// that building. Losing admission resets only the phase. Stage two
+    /// draws Scenario RandomRanged(-5,5) once (0070EA4B); no other stage draws.
     pub fn update_tint(&mut self, frame: i32, active: bool, rng: &mut SimRng) {
         if !active {
             self.tint_stage = 0;
