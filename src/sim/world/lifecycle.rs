@@ -5844,10 +5844,8 @@ impl Simulation {
 
         // BuildingLight436A00; Ares1004EBC0 preserves a cloaking parent's
         // link on control0, while the target clear remains unconditional.
-        self.substrate.spotlights_pointer_expired(
-            expired_id,
-            control == PointerExpiryControl::Uninit,
-        );
+        self.substrate
+            .spotlights_pointer_expired(expired_id, control == PointerExpiryControl::Uninit);
 
         #[cfg(any(test, feature = "test-support"))]
         if let Some(smudge) = self

@@ -145,7 +145,7 @@ fn sounds(sim: &Simulation, owner: crate::sim::intern::InternedId) -> Vec<Value>
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
-            SimSoundEvent::Repairing { owner: speaker } => {
+            SimSoundEvent::Repairing { owner: speaker, .. } => {
                 assert_eq!(*speaker, owner);
                 Some(json!(["eva", "EVA_Repairing", -1, -1]))
             }

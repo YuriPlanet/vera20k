@@ -193,7 +193,10 @@ impl<'a> FrameEffects<'a> {
         self,
         boundary: &'a dyn Fn(&Simulation, &RuleSet, crate::sim::bounty::BountyText),
     ) -> Self {
-        Self { bounty_text: Some(boundary), ..self }
+        Self {
+            bounty_text: Some(boundary),
+            ..self
+        }
     }
 
     #[cfg(feature = "ares")]

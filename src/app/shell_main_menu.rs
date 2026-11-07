@@ -123,6 +123,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
     }
+    fn store_detailed_eva_text(&mut self, enabled: bool) {
+        // Presentation only: the next EVA text line reads it.
+        self.persistence.options_profile.detailed_eva_text = enabled;
+    }
     fn store_render_interpolation(&mut self, enabled: bool) {
         self.persistence.options_profile.render_interpolation = enabled;
         self.match_state

@@ -1560,6 +1560,13 @@ fn advance_one_simulation_frame(
         let mut trigger_effects: Vec<TriggerEffect> = Vec::new();
         let mut camera_logic_frame: Option<u32> = None;
         let mut hud_messages = Vec::new();
+        // VERA-only accessibility rows. The frame's synchronously delivered
+        // sound prefix is played by FrameClientBoundary, whose pass also fills
+        // this sink; the frame tail handles the suffix. Both must be merged so
+        // an EVA row is never lost just because its voice played early.
+        let detailed_eva_text = state.persistence.options_profile.detailed_eva_text;
+        let prefix_eva_text: std::cell::RefCell<Vec<crate::app::input::messages::HudMessage>> =
+            std::cell::RefCell::new(Vec::new());
         // Carried out of the sim borrow so the census can read `state` freely below.
         let mut census_tick: Option<u64> = None;
         let fps_panel_shown = state.renderer.performance_overlay.is_visible();
@@ -1704,7 +1711,8 @@ fn advance_one_simulation_frame(
                     other_local_pause,
                 )
                 .with_outcome_wait(&mut state.match_state.scenario_outcome)
-                .with_deferred_verdict(defer_verdict_to_clip);
+                .with_deferred_verdict(defer_verdict_to_clip)
+                .with_eva_text(detailed_eva_text.then_some(&prefix_eva_text));
                 let effects = FrameEffects::for_sound(&boundary)
                     .with_tactical_radar(&boundary)
                     .with_local_planning(&boundary)
@@ -1941,6 +1949,10 @@ fn advance_one_simulation_frame(
                     minimap.admit_radar_event(request, radar_frame, Some(&resources.rules))
                 })
             };
+            // VERA-only accessibility text: collect the EVA rows only when the
+            // option is on. A disabled switch passes None, so the dispatch
+            // never builds a fact and no rules/CSF lookup follows.
+            let mut eva_text_messages = Vec::new();
             super::sound_dispatch::dispatch_sim_sound_events(
                 frame_sound_events
                     .into_iter()
@@ -1959,7 +1971,12 @@ fn advance_one_simulation_frame(
                 local_owner_name.as_deref(),
                 &mut admit_radar,
                 &mut state.match_state.match_audio.sound_events,
+                detailed_eva_text.then_some(&mut eva_text_messages),
             );
+            // Frame order: the synchronously delivered prefix precedes the
+            // frame-tail suffix. Both passes follow the same voice gates.
+            hud_messages.extend(prefix_eva_text.borrow_mut().drain(..));
+            hud_messages.extend(eva_text_messages);
             super::super_selection::hide_placement_anims(
                 &mut state.match_state.match_presentation.hidden_super_anims,
                 sim,

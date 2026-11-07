@@ -248,6 +248,11 @@ pub(crate) struct RetailOptionsProfile {
     /// stays here and opens on the system's choice, like [`Self::zoom`]'s
     /// unknown steps.
     pub(crate) display: crate::ui::main_menu_dialogs::options::DisplayTarget,
+    /// `[VERA] DetailedEvaText=`: VERA-only accessibility text. When on, the
+    /// app posts a line naming the unit or building behind EVA lines whose
+    /// voice never names it. Client presentation only: no sim, audio, state
+    /// hash or network protocol reads it. Off by default.
+    pub(crate) detailed_eva_text: bool,
     /// `[VERA] WindowX/WindowY/WindowWidth/WindowHeight`: where the windowed
     /// game last sat, so the next launch opens there. `None` until the player
     /// moves or resizes the window; a zero width reads as unset.
@@ -345,6 +350,7 @@ impl Default for RetailOptionsProfile {
             online_name: String::new(),
             online_locale: 0,
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
+            detailed_eva_text: false,
             window_placement: None,
         }
     }
@@ -362,7 +368,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 31],
+    pub(crate) vera: [(&'static str, String); 32],
 }
 
 impl RetailOptionsLoad {
@@ -592,6 +598,7 @@ impl RetailOptionsProfile {
                 vera.read_bool("CustomEndGameScore", self.custom_end_game_score);
             self.custom_end_game_movie =
                 vera.read_bool("CustomEndGameMovie", self.custom_end_game_movie);
+            self.detailed_eva_text = vera.read_bool("DetailedEvaText", self.detailed_eva_text);
             // Absent keeps the current value; a value this build does not know
             // reads as the native rule instead of hiding the original strip.
             self.health_bars = crate::ui::main_menu_dialogs::options::HealthBarMode::from_ini_value(
@@ -779,6 +786,10 @@ impl RetailOptionsProfile {
                     format_bool(self.hd_map_previews).to_string(),
                 ),
                 ("Language", self.language.clone().unwrap_or_default()),
+                (
+                    "DetailedEvaText",
+                    format_bool(self.detailed_eva_text).to_string(),
+                ),
             ],
         }
     }
@@ -2305,5 +2316,34 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
                 assert_eq!(decode_net_id(&network), value);
             }
         }
+    }
+
+    /// The accessibility switch is off by default and survives the VERA.INI
+    /// transaction in both directions, exactly like the other VERA-only boxes.
+    #[test]
+    fn detailed_eva_text_defaults_off_and_round_trips_through_the_vera_section() {
+        let startup = RetailStartupOptions::default();
+        assert!(
+            !load_snapshot(&startup, b"")
+                .retained_profile
+                .detailed_eva_text
+        );
+        let input = b"[VERA]\nDetailedEvaText=yes\nUnowned=keep\n";
+        let mut profile = load_snapshot(&startup, input).retained_profile;
+        assert!(profile.detailed_eva_text);
+        let written = profile.transform_settings(input);
+        assert!(
+            load_snapshot(&startup, &written)
+                .retained_profile
+                .detailed_eva_text
+        );
+        profile.detailed_eva_text = false;
+        let written = profile.transform_settings(&written);
+        assert!(
+            !load_snapshot(&startup, &written)
+                .retained_profile
+                .detailed_eva_text
+        );
+        assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
     }
 }

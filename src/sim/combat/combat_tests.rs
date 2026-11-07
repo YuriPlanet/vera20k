@@ -9217,6 +9217,11 @@ fn unit_lost_events_come_from_damage_kills_of_unspawned_non_buildings() {
         test_intern("Defender")
     );
     assert_eq!(
+        result.consequences.effects().unit_lost_events[0].type_id,
+        test_intern("MTNK"),
+        "the loss carries the dead techno's own type, not a coordinate guess"
+    );
+    assert_eq!(
         (
             result.consequences.effects().unit_lost_events[0].rx,
             result.consequences.effects().unit_lost_events[0].ry

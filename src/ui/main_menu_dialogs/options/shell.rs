@@ -10,7 +10,7 @@
 use super::{
     CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP,
     CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL,
-    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, DEVELOPER_OPTIONS_LABEL,
+    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, DETAILED_EVA_TEXT_HELP, DETAILED_EVA_TEXT_LABEL, DEVELOPER_OPTIONS_LABEL,
     DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FULL_SCREEN_HELP,
     FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL,
     HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
@@ -514,6 +514,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameBanner => CUSTOM_END_GAME_BANNER_LABEL,
             LauncherCheckboxId::CustomEndGameScore => CUSTOM_END_GAME_SCORE_LABEL,
             LauncherCheckboxId::CustomEndGameMovie => CUSTOM_END_GAME_MOVIE_LABEL,
+            LauncherCheckboxId::DetailedEvaText => DETAILED_EVA_TEXT_LABEL,
         }))
     }
 
@@ -579,6 +580,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameBanner => self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => self.values.custom_end_game_score,
             LauncherCheckboxId::CustomEndGameMovie => self.values.custom_end_game_movie,
+            LauncherCheckboxId::DetailedEvaText => self.values.detailed_eva_text,
         }
     }
 
@@ -828,6 +830,9 @@ impl OptionsDialogState {
                 }
                 LauncherCheckboxId::CustomEndGameMovie => {
                     LauncherStatusHelp::Vera(CUSTOM_END_GAME_MOVIE_HELP)
+                }
+                LauncherCheckboxId::DetailedEvaText => {
+                    LauncherStatusHelp::Vera(DETAILED_EVA_TEXT_HELP)
                 }
             });
         }

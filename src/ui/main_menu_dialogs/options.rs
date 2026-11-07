@@ -106,6 +106,9 @@ pub(crate) const CUSTOM_END_GAME_SCORE_LABEL: &str = "VERA:CustomEndGameScore";
 pub(crate) const CUSTOM_END_GAME_SCORE_HELP: &str = "VERA:CustomEndGameScoreHelp";
 pub(crate) const CUSTOM_END_GAME_MOVIE_LABEL: &str = "VERA:CustomEndGameMovie";
 pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "VERA:CustomEndGameMovieHelp";
+/// VERA's accessibility box: retail's string table has nothing for it.
+pub(crate) const DETAILED_EVA_TEXT_LABEL: &str = "VERA:DetailedEvaText";
+pub(crate) const DETAILED_EVA_TEXT_HELP: &str = "VERA:DetailedEvaTextHelp";
 pub(crate) const SHIFT_QUEUE_HELP: &str = "VERA:ShiftQueueHelp";
 pub(crate) const DISPLAY_LABEL: &str = "VERA:Display";
 pub(crate) const DISPLAY_HELP: &str = "VERA:DisplayHelp";
@@ -621,6 +624,8 @@ pub(crate) enum LauncherCheckboxId {
     /// losing clip before the score page opens and the battle is torn down.
     /// Read when the match ends, so it needs no live apply either.
     CustomEndGameMovie,
+    /// VERA-only accessibility box: detailed EVA text rows, default off.
+    DetailedEvaText,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -673,6 +678,7 @@ pub(crate) enum LauncherOptionsEvent {
     CustomEndGameBannerChanged(bool),
     CustomEndGameScoreChanged(bool),
     CustomEndGameMovieChanged(bool),
+    DetailedEvaTextChanged(bool),
     /// VERA's team-colour strength, as the level the profile stores.
     HouseColorStrengthChanged(u8),
     ScorePreview(f32),
@@ -732,6 +738,8 @@ pub(crate) struct LauncherOptionsValues {
     /// The exit waits for the closing commander clip; see
     /// [`LauncherCheckboxId::CustomEndGameMovie`].
     pub(crate) custom_end_game_movie: bool,
+    /// The accessibility box; see [`LauncherCheckboxId::DetailedEvaText`].
+    pub(crate) detailed_eva_text: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
     pub(crate) sidebar: SidebarSize,
     /// The Health Bars list's choice; like Sidebar, it applies at once.
@@ -772,6 +780,7 @@ impl Default for LauncherOptionsValues {
             custom_end_game_banner: false,
             custom_end_game_score: false,
             custom_end_game_movie: false,
+            detailed_eva_text: false,
             sidebar: SidebarSize::Normal,
             health_bars: HealthBarMode::Vanilla,
             house_color_position: 0,
@@ -1171,6 +1180,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => &mut self.values.custom_end_game_score,
             LauncherCheckboxId::CustomEndGameMovie => &mut self.values.custom_end_game_movie,
+            LauncherCheckboxId::DetailedEvaText => &mut self.values.detailed_eva_text,
         };
         *slot = !*slot;
         let checked = *slot;
@@ -1231,6 +1241,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameMovie => self
                 .pending_events
                 .push(LauncherOptionsEvent::CustomEndGameMovieChanged(checked)),
+            LauncherCheckboxId::DetailedEvaText => self
+                .pending_events
+                .push(LauncherOptionsEvent::DetailedEvaTextChanged(checked)),
             LauncherCheckboxId::Tooltips
             | LauncherCheckboxId::TargetLines
             | LauncherCheckboxId::ShowHidden => {}
@@ -1447,6 +1460,7 @@ impl Category {
                 Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
+                Setting::Checkbox(Check::DetailedEvaText),
             ],
             Self::Interface => &[
                 Setting::List(List::Language),
@@ -1457,6 +1471,7 @@ impl Category {
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
                 Setting::Checkbox(Check::HdMapPreviews),
+                Setting::Checkbox(Check::DetailedEvaText),
             ],
             Self::Audio => &[
                 Setting::Slider(Slider::Score),
@@ -2149,6 +2164,7 @@ mod tests {
                 Check::CustomEndGameBanner,
                 Check::CustomEndGameScore,
                 Check::CustomEndGameMovie,
+                Check::DetailedEvaText,
             ]
             .map(Setting::Checkbox),
         )

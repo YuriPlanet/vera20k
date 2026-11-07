@@ -821,6 +821,7 @@ impl Simulation {
             && let Some(object) = self.object_type(entity.type_ref(), rules)
             && let Some(event) = crate::sim::combat::death_announcement_event(
                 object,
+                entity.type_ref(),
                 category,
                 entity.position.rx(),
                 entity.position.ry(),
