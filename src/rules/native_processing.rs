@@ -2282,6 +2282,28 @@ impl ProcessedRulesLayers {
         })
     }
 
+    /// The retained TechnoTypeExt combat and movement keys.
+    #[cfg(feature = "ares")]
+    pub(crate) fn techno_combat_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            &crate::rules::ares_techno_type::AresTechnoTypeRules,
+        ),
+    > {
+        let registry = self.native_type_construction_trace.registry_state();
+        registry.techno_type_order.iter().map(|&(family, index)| {
+            let member = &registry.families[&family][index];
+            (
+                family.object_category().expect("TechnoType category"),
+                member.native_stored_id.as_str(),
+                &member.techno_combat,
+            )
+        })
+    }
+
     /// The retained TechnoTypeExt Experience.*/Promote.* reads.
     #[cfg(feature = "ares")]
     pub(crate) fn veterancy_states(
@@ -4876,6 +4898,10 @@ struct ProcessedType {
     /// `ForceShield.Modifier`, Valueable<double>, constructor 1.0.
     #[cfg(feature = "ares")]
     #[serde(default = "default_curtain_modifiers")]
+    /// TechnoTypeExt combat and movement keys (`rules::ares_techno_type`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    techno_combat: crate::rules::ares_techno_type::AresTechnoTypeRules,
     curtain_modifiers: [NativeF64Bits; 2],
     /// BuildingTypeExt rubble and repair keys (`rules::ares_building_type`).
     #[cfg(feature = "ares")]
@@ -5463,6 +5489,8 @@ impl ProcessedType {
             #[cfg(feature = "ares")]
             curtain_modifiers: default_curtain_modifiers(),
             armor_id: ArmorId::NONE,
+            techno_combat: Default::default(),
+            #[cfg(feature = "ares")]
             holds_what: None,
             particle_read: Default::default(),
             particle_next: None,
@@ -7721,6 +7749,30 @@ impl RulesPassProcessor {
                         .emp_type
                         .as_mut()
                         .expect("TechnoType EMP extension")
+                    // TechnoTypeExt Initialize (1003DEC0) and the chain's
+                    // LoadFromINIFile reads (1003DFB0): Find-only pointers.
+                    let mut techno_combat = std::mem::take(&mut member.techno_combat);
+                    techno_combat.read_pass(
+                        &raw,
+                        &native_stored_id,
+                        family == RulesTypeFamily::Aircraft,
+                        |key, kind| {
+                            use crate::rules::ares_techno_type::TypeRef;
+                            let family = match kind {
+                                TypeRef::Animation => RulesTypeFamily::Animation,
+                                TypeRef::Warhead => RulesTypeFamily::Warhead,
+                                TypeRef::Weapon => RulesTypeFamily::Weapon,
+                            };
+                            self.resolve_existing_type_from(&raw, key, family)
+                        },
+                        |name| {
+                            self.find_existing(RulesTypeFamily::Animation, name)
+                                .map(|index| {
+                                    self.resolved_type_key(RulesTypeFamily::Animation, index)
+                                })
+                        },
+                    );
+                    self.family_mut(family)[index].techno_combat = techno_combat;
                         .read_pass(&raw, sparkle);
                     // TechnoTypeExt::LoadFromINI1003DEC0 calls the shared
                     // descriptor reader10058A50 at1003E8D4, before subclasses.

@@ -5346,6 +5346,16 @@ impl RuleSet {
                 .get(&(category, name.to_ascii_uppercase()))
                 .copied()
             {
+        for (category, name, retained) in processed.techno_combat_states() {
+            if let Some(handle) = rules
+                .object_category_index
+                .get(&(category, name.to_ascii_uppercase()))
+                .copied()
+            {
+                rules.object_list[handle.0 as usize].bind_techno_combat_rules(retained);
+            }
+        }
+        #[cfg(feature = "ares")]
                 rules.object_list[handle.0 as usize].bind_crew_rules(crew);
             }
         }
@@ -7208,6 +7218,84 @@ impl RuleSet {
             .as_deref()
             .is_some_and(|prism_type| object.id.eq_ignore_ascii_case(prism_type))
     }
+    /// The RocketStruct a Rocket owner of this type flies by and whether its
+    /// Type is the CMisl type ([`MissileSpawnRules::rocket_block`]). Ares
+    /// builds take a `Missile.Custom` AircraftType's own block first: hooks
+    /// 0x6622E0 (Ares.dll 100610F0), 0x66305A (10060FA0), 0x6632F2
+    /// (100610C0) and 0x6634F6 (10061090). That block's Type is the type
+    /// itself, which Process's Boomer arms compare with CMislType.
+    ///
+    /// [`MissileSpawnRules::rocket_block`]: crate::rules::missile_spawn::MissileSpawnRules::rocket_block
+    pub fn rocket_block(
+        &self,
+        type_name: &str,
+    ) -> (&crate::rules::missile_spawn::MissileSpawnParams, bool) {
+        #[cfg(feature = "ares")]
+        if let Some(block) = self
+            .ares_missile(type_name)
+            .and_then(|missile| missile.custom_block())
+        {
+            let cmisl = block
+                .type_name
+                .eq_ignore_ascii_case(&self.missile_spawn.cmisl.type_name);
+            return (block, cmisl);
+        }
+        self.missile_spawn.rocket_block(type_name)
+    }
+
+    /// The puffs and impact weapon of a Rocket owner of this type. Ares
+    /// reads them for every AircraftType (`Missile.TakeOffAnim`,
+    /// `Missile.TrailerAnim`, `Missile.TrailerSeparation`, hooks 0x66238A,
+    /// 0x662512, 0x6627E5 and 0x662D85; the weapons only for
+    /// `Missile.Custom`, 0x663218).
+    pub fn rocket_type_ext(
+        &self,
+        type_name: &str,
+    ) -> crate::rules::missile_spawn::RocketTypeExt<'_> {
+        #[cfg(feature = "ares")]
+        if let Some(missile) = self.ares_missile(type_name) {
+            return crate::rules::missile_spawn::RocketTypeExt {
+                takeoff_anim: missile.takeoff_anim(),
+                trailer_anim: missile.trailer_anim(),
+                trailer_separation: missile.trailer_separation(),
+                weapons: [missile.weapon(false), missile.weapon(true)],
+            };
+        }
+        let _ = type_name;
+        crate::rules::missile_spawn::RocketTypeExt::STOCK
+    }
+
+    /// Frames a launched missile node of a `Spawns=` pool of this type waits
+    /// before it expires its child, or `None` when the pool's nodes are not
+    /// missiles. The node flag is set for the three Rules families
+    /// (`0x006B6D60`, `0x006B78F8`) and the wait reads their frames
+    /// (`0x006B7A72`); Ares adds a `Missile.Custom` type with its own
+    /// PauseFrames + TiltFrames (SpawnManagerClass_CTOR_CustomMissile
+    /// 10061320, Update_CustomMissile 100613A0, Update_CustomMissile2
+    /// 100613C0).
+    pub(crate) fn spawn_missile_wait_frames(&self, type_name: &str) -> Option<u32> {
+        #[cfg(feature = "ares")]
+        if let Some(block) = self
+            .ares_missile(type_name)
+            .and_then(|missile| missile.custom_block())
+        {
+            return Some(block.tilt_frames.wrapping_add(block.pause_frames).max(0) as u32);
+        }
+        self.missile_spawn
+            .family_of(type_name)
+            .map(|family| self.missile_spawn.kamikaze_wait_frames(family))
+    }
+
+    #[cfg(feature = "ares")]
+    fn ares_missile(
+        &self,
+        type_name: &str,
+    ) -> Option<&crate::rules::ares_techno_type::CustomMissileRules> {
+        self.object_in_category(ObjectCategory::Aircraft, type_name)?
+            .techno_combat()
+            .missile()
+    }
+
 
     /// Resolve one name within a specific native TechnoType registry.
     /// Category plus case-insensitive ID is the stable analogue of the

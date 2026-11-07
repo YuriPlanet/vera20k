@@ -1404,7 +1404,6 @@ fn rocket_draw_key_bits(
     let rocket = entity.locomotor.as_ref()?.rocket_runtime()?;
     let (block, _) = state
         .rules()?
-        .missile_spawn
         .rocket_block(sim.interner().resolve(entity.type_ref()));
     rocket.draw_key_bits(block)
 }

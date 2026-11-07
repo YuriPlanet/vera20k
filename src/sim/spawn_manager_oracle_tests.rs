@@ -294,6 +294,10 @@ impl SpawnHost for Replay<'_> {
         self.row["input"]["family"].as_str() == Some("cmisl")
     }
 
+    fn pool_is_spawn_missile(&self) -> bool {
+        self.manager_ref().missile_family.is_some()
+    }
+
     fn owner_is_moving(&mut self) -> bool {
         self.log(json!(["is_moving"]));
         self.owner_int("moving") != 0

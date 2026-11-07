@@ -195,6 +195,8 @@ pub mod ares_cloak_power;
 pub(crate) mod ares_veterancy;
 #[cfg(feature = "ares")]
 pub(crate) mod ares_production;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_techno_type;
 pub mod armor;
 pub mod alpha_image_assets;
 pub mod country_loading;

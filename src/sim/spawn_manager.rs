@@ -479,7 +479,10 @@ pub fn init_spawn_manager(
     )?;
 
     let missile_family = rules.missile_spawn.family_of(spawn_type_name);
-    let is_missile_spawn = missile_family.is_some();
+    // The node flag and the post-launch wait: the three Rules families, and
+    // in Ares builds a `Missile.Custom` type ([`RuleSet::spawn_missile_wait_frames`]).
+    let kamikaze_wait_frames = rules.spawn_missile_wait_frames(spawn_type_name);
+    let is_missile_spawn = kamikaze_wait_frames.is_some();
     let frame = frame as i32;
     let slots = (0..obj.spawns_number.max(0) as usize)
         .map(|_| SpawnSlot {
@@ -498,9 +501,7 @@ pub fn init_spawn_manager(
         missile_family,
         regen_rate: obj.spawn_regen_rate,
         reload_rate: obj.spawn_reload_rate,
-        kamikaze_wait_frames: missile_family
-            .map(|family| rules.missile_spawn.kamikaze_wait_frames(family))
-            .unwrap_or(0),
+        kamikaze_wait_frames: kamikaze_wait_frames.unwrap_or(0),
         slots,
         update_timer: CdTimer::started(frame, FIRST_UPDATE_DELAY_FRAMES),
         spawn_timer: CdTimer::started(frame, 0),
@@ -541,6 +542,11 @@ trait SpawnHost {
     fn is_owner(&self, id: u64) -> bool;
     /// The pool's type is Rules' `CMislType=` (`0x006B74BC`, `0x006B7513`).
     fn pool_is_cmisl(&self) -> bool;
+    /// The pool's nodes are missiles: its type is one of the three Rules
+    /// families (`0x006B78F8..0x006B790E`), or in Ares builds a
+    /// `Missile.Custom` type (SpawnManagerClass_Update_CustomMissile
+    /// 100613A0).
+    fn pool_is_spawn_missile(&self) -> bool;
     /// The owner's locomotor Is_Moving (ILocomotion `+0x10`, `0x006B731E`).
     fn owner_is_moving(&mut self) -> bool;
     /// The owner's locomotor Is_Moving_Now (ILocomotion `+0x80`, `0x006B7349`).
@@ -717,6 +723,10 @@ fn launch_slot(host: &mut impl SpawnHost, index: usize, child: u64, frame: i32) 
         return;
     }
     // HouseClass::IonSensitivesShouldBeOffline (`0x0053A130`) answers false.
+    // The owner's locomotor queries (`0x006B72FE..0x006B7357`): a Building
+    // owner has none and answers false, the arm Ares'
+    // SpawnManagerClass_Update_Buildings (Ares.dll 10061350, hook 0x6B72F9)
+    // skips to instead of gamemd's E_POINTER.
     if missile && (host.owner_is_moving() || host.owner_is_moving_now()) {
         return;
     }
@@ -759,9 +769,9 @@ fn fill_slot(host: &mut impl SpawnHost, index: usize) {
     let Some(child) = host.create_child() else {
         return;
     };
-    let manager = host.manager();
-    let missile = manager.missile_family.is_some();
-    let slot = &mut manager.slots[index];
+    // `0x006B78F8..0x006B792C`: the node's IsSpawnMissile from the pool type.
+    let missile = host.pool_is_spawn_missile();
+    let slot = &mut host.manager().slots[index];
     slot.spawn = Some(child);
     slot.is_missile_spawn = missile;
     host.limbo(child);
@@ -1185,6 +1195,13 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         cmisl_pool(self.sim, rules, self.manager_ref().spawn_type)
     }
 
+    fn pool_is_spawn_missile(&self) -> bool {
+        let rules = self.context.rules();
+        rules
+            .spawn_missile_wait_frames(self.sim.interner.resolve(self.manager_ref().spawn_type))
+            .is_some()
+    }
+
     fn owner_is_moving(&mut self) -> bool {
         self.sim
             .substrate
@@ -1405,17 +1422,27 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         // `AnimClass(V3TAKOFF, &Location, 2, 1, 0x600, -10, 0)`; `[0x00840098]`
         // names it too. The constructor draws only for `RandomRate=`,
         // `IsMeteor=` or `Bouncer=`, which retail `[V3TAKOFF]` leaves unset.
+        // Ares names the child type's `Missile.TakeOffAnim` and puffs nothing
+        // for a null one (SpawnManagerClass_Update_CustomMissileTakeoff
+        // 10061410, hook 0x6B752E).
         let rules = self.context.rules();
-        let Some(location) =
-            self.sim.substrate.entities.get(child).map(|child| {
-                crate::sim::movement::ground_pose::position_world_coord(&child.position)
-            })
+        let Some((location, type_ref)) = self.sim.substrate.entities.get(child).map(|child| {
+            (
+                crate::sim::movement::ground_pose::position_world_coord(&child.position),
+                child.type_ref(),
+            )
+        }) else {
+            return;
+        };
+        let Some(anim) = rules
+            .rocket_type_ext(self.sim.interner.resolve(type_ref))
+            .takeoff_anim
         else {
             return;
         };
         self.sim.spawn_named_anim(
             rules,
-            crate::rules::effect_asset_catalog::ROCKET_TAKEOFF_ANIM,
+            anim,
             crate::sim::anim_class::AnimWorldCoord {
                 x: location.x,
                 y: location.y,
