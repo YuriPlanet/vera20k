@@ -12,6 +12,8 @@
 //!   `CanBeOccupiedBy`, `+0x68..+0x80`, `+0xD0`): `sim::ares_garrison`.
 //! - `IsPassable` (`+0x5E`): the Infantry and Unit `Can_Enter_Cell` and
 //!   InfantryAI building arms (`sim::world::object_entry`, `object_turn`).
+//! - `BuildupTime` and `SellTime` (`+0x208`, `+0x218`): the build-up and
+//!   sale rates (`rules::buildup_asset_catalog`, `sim::building_construction`).
 //! - RulesExt `EngineerDamage` and `EngineerAlwaysCaptureTech`
 //!   ([`BuildingGlobalRules`]): an engineer entering a hostile building.
 
@@ -92,6 +94,12 @@ pub(crate) struct BuildingTypeExtRules {
     /// `IsPassable` (`+0x5E`, Valueable<bool>): Foots ignore the building
     /// when they enter its cells and when they idle in one.
     pub(crate) is_passable: bool,
+    /// `BuildupTime` (`+0x208`, Nullable<double>, minutes): the build-up's
+    /// duration, else `[General] BuildupTime=`.
+    pub(crate) buildup_time: Option<NativeF64Bits>,
+    /// `SellTime` (`+0x218`, Nullable<double>, minutes): the sale's
+    /// pack-up duration, else the build-up's.
+    pub(crate) sell_time: Option<NativeF64Bits>,
 }
 
 impl Default for BuildingTypeExtRules {
@@ -106,6 +114,8 @@ impl Default for BuildingTypeExtRules {
             bunker_raidable: false,
             allowed_occupiers: Vec::new(),
             is_passable: false,
+            buildup_time: None,
+            sell_time: None,
         }
     }
 }
@@ -176,8 +186,22 @@ impl BuildingTypeExtRules {
             self.allowed_occupiers = occupiers;
         }
         self.is_passable = section.read_ares_bool("IsPassable", self.is_passable);
+        self.buildup_time =
+            section.read_ares_nullable_double_bits("BuildupTime", self.buildup_time);
+        self.sell_time = section.read_ares_nullable_double_bits("SellTime", self.sell_time);
         self.engineer_repairable =
             section.read_ares_nullable_bool("EngineerRepairable", self.engineer_repairable);
+    }
+
+    /// `BuildingTypeExt::ExtData::UpdateBuildupFrames @ 1000F450`'s two
+    /// durations in minutes: `BuildupTime.Get(Rules BuildupTime)` and
+    /// `SellTime.Get(that)`.
+    pub(crate) fn buildup_and_sell_time(
+        &self,
+        rules_buildup_time: NativeF64Bits,
+    ) -> (NativeF64Bits, NativeF64Bits) {
+        let buildup = self.buildup_time.unwrap_or(rules_buildup_time);
+        (buildup, self.sell_time.unwrap_or(buildup))
     }
 
     /// `CompleteInitialization @ 1000D380` (lambda `1000D1C0`): a rubble
@@ -328,5 +352,23 @@ mod tests {
             },
         );
         assert_eq!(rules.rubble_destroyed.building_type, None);
+    }
+
+    /// `UpdateBuildupFrames` (`1000F450`): `SellTime` falls back to the
+    /// type's `BuildupTime`, which falls back to the Rules one; `none` is
+    /// no number, so it keeps the earlier value.
+    #[test]
+    fn sell_time_falls_back_to_the_buildup_time() {
+        let general = NativeF64Bits::from_bits(0.06f64.to_bits());
+        let mut rules = BuildingTypeExtRules::default();
+        assert_eq!(rules.buildup_and_sell_time(general), (general, general));
+        let ini = IniFile::from_str("[B]\nBuildupTime=0.5\n");
+        rules.read_pass(ini.section("B").unwrap(), Default::default());
+        let half = NativeF64Bits::from_bits(0.5f64.to_bits());
+        assert_eq!(rules.buildup_and_sell_time(general), (half, half));
+        let ini = IniFile::from_str("[B]\nSellTime=2\nBuildupTime=none\n");
+        rules.read_pass(ini.section("B").unwrap(), Default::default());
+        let two = NativeF64Bits::from_bits(2.0f64.to_bits());
+        assert_eq!(rules.buildup_and_sell_time(general), (half, two));
     }
 }

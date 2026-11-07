@@ -377,14 +377,17 @@ pub(crate) fn begin_selling(sim: &mut Simulation, rules: &RuleSet, id: u64, unde
     {
         return;
     }
-    let Some(control) = sim
+    let Some(type_id) = sim
         .substrate
         .entities
         .get(id)
-        .map(|entity| rules.buildup_control(sim.interner.resolve(entity.type_ref())))
+        .map(|entity| sim.interner.resolve(entity.type_ref()))
     else {
         return;
     };
+    let control = rules.buildup_control(type_id);
+    #[cfg(feature = "ares")]
+    let sell_rate = rules.buildup_sell_rate(type_id);
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return;
     };
@@ -392,6 +395,8 @@ pub(crate) fn begin_selling(sim: &mut Simulation, rules: &RuleSet, id: u64, unde
         return;
     }
     entity.bind_building_construction_control(control);
+    #[cfg(feature = "ares")]
+    entity.bind_building_sell_rate(sell_rate);
     entity.install_building_down(BuildingDown::commenced(now as i32, undeploy_order));
 }
 

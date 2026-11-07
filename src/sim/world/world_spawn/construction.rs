@@ -262,6 +262,8 @@ impl Simulation {
         // no Buildup SHP clears the AI sale byte (`0x00442CBC`).
         if category == EntityCategory::Structure {
             ge.bind_building_construction_control(rules.buildup_control(&obj.id));
+            #[cfg(feature = "ares")]
+            ge.bind_building_sell_rate(rules.buildup_sell_rate(&obj.id));
             if matches!(origin, ComponentOrigin::Authored { .. }) {
                 ge.initialize_building_idle_body(session.binary_frame() as i32);
             }

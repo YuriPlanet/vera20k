@@ -11224,6 +11224,13 @@ impl RuleSet {
         self.buildup_assets.control(type_id)
     }
 
+    /// Ares: a building type's sale frame rate (`SellFrameDuration`, 0 while
+    /// its Buildup SHP is unbound).
+    #[cfg(feature = "ares")]
+    pub fn buildup_sell_rate(&self, type_id: &str) -> i32 {
+        self.buildup_assets.sell_rate(type_id)
+    }
+
     /// Whether a building type's Buildup SHP is bound (`+0x6E9`,
     /// [`crate::rules::buildup_asset_catalog::BuildupAssetCatalog::has_buildup`]).
     pub fn has_buildup(&self, type_id: &str) -> bool {
@@ -11235,6 +11242,12 @@ impl RuleSet {
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_buildup_control_for_test(&mut self, type_id: &str, control: [i32; 3]) {
         self.buildup_assets.insert_for_test(type_id, control);
+    }
+
+    /// Install one building type's Ares sale rate (fixtures without assets).
+    #[cfg(all(feature = "ares", any(test, feature = "test-support")))]
+    pub fn set_buildup_sell_rate_for_test(&mut self, type_id: &str, rate: i32) {
+        self.buildup_assets.insert_sell_rate_for_test(type_id, rate);
     }
 
     /// Raw SHP header count used by `TerrainClass::AI` midpoint timing.

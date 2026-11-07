@@ -151,3 +151,22 @@ fn selling_a_sparse_top_slot_stays_safe_without_compacting_or_refunding() {
     assert!(!sim.power_states[&owner].power_recheck_for_test());
     assert!(!sim.power_states[&owner].radar_recheck_for_test());
 }
+
+/// Ares 3.0 `SellTime` (`100144E0`, hook `0x447A63`): stage 1's
+/// `Begin_Mode(0)` runs under the Selling mission at the sale rate bound
+/// when the sale started, not the build-up's rate 1.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_pack_up_starts_at_the_bound_sale_rate() {
+    let (mut sim, mut rules, _) = sale_world();
+    rules.set_buildup_sell_rate_for_test("HOST", 3);
+    begin_selling(&mut sim, &rules, 1, false);
+    for frame in [1, 2] {
+        sim.session.set_binary_frame_for_test(frame);
+        sim.visit_building_down(1, &rules, None, FrameEffects::default());
+    }
+    let host = sim.entities().get(1).unwrap();
+    assert_eq!(host.mission.handler_state(), 2);
+    assert_eq!(host.building_body_state(), Some(0));
+    assert_eq!(host.native_stage().rate(), 3);
+}
