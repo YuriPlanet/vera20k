@@ -376,28 +376,41 @@ impl CombatLightRenderer {
         &self.targets.texture
     }
 
-    /// Spotlight5FF850 edits this one prepared record's current destination.
-    /// The caller retains its Display slot or later persistent-vector order,
-    /// and accounts each closed pass through the shared submission owner.
-    pub(crate) fn draw_record(
-        &self,
-        encoder: &mut wgpu::CommandEncoder,
-        tactical: [u32; 4],
-        record: usize,
-    ) -> bool {
-        let Some(index) = *self
+    /// Target pixels one prepared record reads and writes inside the
+    /// `tactical` scissor, `[x, y, width, height]`: its copied destination,
+    /// which contains its quad. `None` for an unsupported native index or a
+    /// record wholly outside the scissor; neither edit changes a pixel.
+    pub(crate) fn footprint(&self, record: usize, tactical: [u32; 4]) -> Option<[u32; 4]> {
+        let index = (*self
             .prepared_indices
             .get(record)
-            .expect("light draw references this frame's prepared record")
-        else {
-            return false;
-        };
+            .expect("light draw references this frame's prepared record"))?;
         let [left, top, right, bottom] = self.copy_bounds[index as usize];
         let left = left.max(tactical[0]);
         let top = top.max(tactical[1]);
         let right = right.min(tactical[0].saturating_add(tactical[2]));
         let bottom = bottom.min(tactical[1].saturating_add(tactical[3]));
-        if left < right && top < bottom {
+        (left < right && top < bottom).then(|| [left, top, right - left, bottom - top])
+    }
+
+    /// Spotlight5FF850 edits each prepared record's current destination.
+    /// Records drawn together must have pairwise disjoint footprints: every
+    /// one reads the scratch copied before their shared pass, so none may
+    /// observe another's edit. The caller retains Display slot or
+    /// persistent-vector order between overlapping records, and accounts the
+    /// pass, when this returns true, through the shared submission owner.
+    pub(crate) fn draw_records(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        tactical: [u32; 4],
+        records: &[usize],
+    ) -> bool {
+        let mut drawn = false;
+        for &record in records {
+            let Some([left, top, width, height]) = self.footprint(record, tactical) else {
+                continue;
+            };
+            drawn = true;
             // The shader loads only this fragment's global destination texel,
             // without filtering or neighbours. Keep both origins identical:
             // stale scratch outside the quad/scissor cannot be sampled. wgpu27
@@ -422,14 +435,15 @@ impl CombatLightRenderer {
                     aspect: wgpu::TextureAspect::All,
                 },
                 wgpu::Extent3d {
-                    width: right - left,
-                    height: bottom - top,
+                    width,
+                    height,
                     depth_or_array_layers: 1,
                 },
             );
         }
-        // Even an offscreen supported record retains its ordered closed pass
-        // and the caller's PassSubmission accounting; only its copy is empty.
+        if !drawn {
+            return false;
+        }
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Combat Light Native Surface Edit"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -452,7 +466,13 @@ impl CombatLightRenderer {
         pass.set_bind_group(2, &self.mask_bind_group, &[]);
         pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
         pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
-        pass.draw(0..6, index..index + 1);
+        for &record in records {
+            if self.footprint(record, tactical).is_some()
+                && let Some(index) = self.prepared_indices[record]
+            {
+                pass.draw(0..6, index..index + 1);
+            }
+        }
         true
     }
 }
@@ -825,9 +845,9 @@ mod tests {
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
                 if !records.is_empty() {
                     let clip = fixture::array::<4>(&input["clip"]).map(|value| value as u32);
-                    assert!(!renderer.draw_record(&mut encoder, clip, 0));
-                    assert!(renderer.draw_record(&mut encoder, clip, 1));
-                    assert!(!renderer.draw_record(&mut encoder, clip, 2));
+                    assert!(!renderer.draw_records(&mut encoder, clip, &[0]));
+                    assert!(renderer.draw_records(&mut encoder, clip, &[1]));
+                    assert!(!renderer.draw_records(&mut encoder, clip, &[2]));
                 }
                 let read = gpu.read(&mut encoder, renderer.composition_texture());
                 let output = gpu.finish(encoder, &[read], size);
@@ -1027,9 +1047,13 @@ mod tests {
                                 renderer.composition_texture().size(),
                             );
                         }
+                        // Only a supported record inside the scissor closes a
+                        // pass; the far record is outside every view.
                         assert_eq!(
-                            renderer.draw_record(&mut encoder, tactical, record),
-                            (0..64).contains(&light.surface_index),
+                            renderer.draw_records(&mut encoder, tactical, &[record]),
+                            (0..64).contains(&light.surface_index)
+                                && visible
+                                && light.coord.x < 4096,
                             "{name} {format:?} logical{record}"
                         );
                         reads.push(gpu.read(&mut encoder, renderer.composition_texture()));
@@ -1053,10 +1077,7 @@ mod tests {
                         "{name} must exercise sequential overlapping edits"
                     );
                 } else {
-                    assert_eq!(
-                        changed_draws, 0,
-                        "offscreen records retain their closed passes"
-                    );
+                    assert_eq!(changed_draws, 0, "offscreen records change no pixel");
                 }
             }
         }
@@ -1183,7 +1204,7 @@ mod tests {
                         renderer.composition_texture().size(),
                     );
                     let mut encoder = gpu.device.create_command_encoder(&Default::default());
-                    assert!(renderer.draw_record(&mut encoder, clip, 0));
+                    assert!(renderer.draw_records(&mut encoder, clip, &[0]));
                     let read = gpu.read(&mut encoder, renderer.composition_texture());
                     let output = gpu.finish(encoder, &[read], size);
                     let mut expected = vec![background; (size[0] * size[1]) as usize];
@@ -1291,7 +1312,7 @@ mod tests {
                     renderer.composition_texture().size(),
                 );
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
-                assert!(renderer.draw_record(&mut encoder, clip, 0));
+                assert!(renderer.draw_records(&mut encoder, clip, &[0]));
                 let read = gpu.read(&mut encoder, renderer.composition_texture());
                 let output = gpu.finish(encoder, &[read], size);
                 let mut expected = vec![background; (size[0] * size[1]) as usize];
