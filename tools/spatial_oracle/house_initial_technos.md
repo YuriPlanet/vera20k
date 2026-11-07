@@ -38,9 +38,7 @@ completion, other types and the whole458A80 input domain remain outside scope.
 Inherited arena allocation/free, TLS/interlocked, OS/audio and presentation
 boundaries are described in the producer metadata and the shared fixture.
 
-The reference was executed from the original retail `gamemd.exe` with SHA-256
-`3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`.
-This identifies the evidence source; it is not an executable version gate.
+The reference was executed from the original retail `gamemd.exe`.
 Configure `VERA20K_GAMEMD_EXE` using the
 [shared native runner](../native_oracle.md) and set
 `VERA20K_ENGINEER_REPAIR_ASSETS` to the physical input directory documented by
