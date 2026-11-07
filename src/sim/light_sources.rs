@@ -333,6 +333,17 @@ impl Simulation {
         } else {
             ScenarioLightingProfile::Normal
         };
+        // Ares hook 53C280 (10037B50): the active Dominator's type
+        // (CurrentPsyDom) answers its Light.*; CurrentNukeType is kept only
+        // for the flash's own ChangeLighting, and no Ares storm is ported.
+        #[cfg(feature = "ares")]
+        {
+            let light = (profile == ScenarioLightingProfile::Dominator)
+                .then(|| self.psychic_dominator.ares_light())
+                .flatten();
+            self.session.lighting_mut().select_ares(profile, light);
+        }
+        #[cfg(not(feature = "ares"))]
         self.session.lighting_mut().select(profile);
         self.publish_global_lighting(PaletteUpdate::from_scenario(&self.session.lighting()));
     }

@@ -360,10 +360,6 @@ pub(crate) struct WarheadCombatRules {
     pre_impact_anim: Option<String>,
     #[serde(default)]
     pre_impact_anim_moves: bool,
-    /// Extension<WarheadTypeClass>::LoadFromINI 10051D10 has left its first
-    /// state (which ran the `NUKE` Initialize).
-    #[serde(default)]
-    nuke_initialized: bool,
 }
 
 #[cfg(feature = "ares")]
@@ -403,7 +399,6 @@ impl Default for WarheadCombatRules {
             nuke_flash_duration: None,
             pre_impact_anim: None,
             pre_impact_anim_moves: false,
-            nuke_initialized: false,
         }
     }
 }
@@ -501,19 +496,13 @@ impl WarheadCombatRules {
         );
     }
 
-    /// The first call of Extension<WarheadTypeClass>::LoadFromINI 10051D10,
-    /// with or without a section: a warhead whose ID is `NUKE` (strcmpi)
-    /// takes `PreImpactAnim` = FindIndex("NUKEBALL") and
+    /// The `NUKE` Initialize of Extension<WarheadTypeClass>::LoadFromINI
+    /// 10051D10's first call (with or without a section; the caller keeps
+    /// that state): `PreImpactAnim` = FindIndex("NUKEBALL") and
     /// `NukeFlash.Duration` = 30.
-    pub(crate) fn initialize_once(&mut self, nuke: bool, nuke_ball: Option<String>) {
-        if self.nuke_initialized {
-            return;
-        }
-        self.nuke_initialized = true;
-        if nuke {
-            self.pre_impact_anim = nuke_ball;
-            self.nuke_flash_duration = Some(30);
-        }
+    pub(crate) fn initialize_nuke(&mut self, nuke_ball: Option<String>) {
+        self.pre_impact_anim = nuke_ball;
+        self.nuke_flash_duration = Some(30);
     }
 
     /// LoadFromINIFile 10051D80's NukeFlash.Duration, PreImpactAnim (a

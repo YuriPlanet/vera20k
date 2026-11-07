@@ -207,6 +207,12 @@ pub struct ScenarioLightingState {
     /// supplies untouched inputs; retirement returns writes to the process
     /// Rules owner before its next prefix/read/reset sequence.
     ambient_change_overrides: [Option<NativeF64Bits>; 2],
+    /// Ares UpdateLightingColor's `Light.Ambient`/`.Red`/`.Green`/`.Blue`
+    /// over the selected profile (SWTypeExt of the active superweapon), set
+    /// by [`Self::select_ares`]; `None` after a stock [`Self::select`].
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_light: Option<[Option<i32>; 4]>,
 }
 
 impl ScenarioLightingState {
@@ -299,6 +305,8 @@ impl ScenarioLightingState {
             nuke_change_rate,
             nuke_flash: NukeFlash::OFF,
             ambient_change_overrides: [None; 2],
+            #[cfg(feature = "ares")]
+            ares_light: None,
         }
     }
 
@@ -448,6 +456,36 @@ impl ScenarioLightingState {
     pub fn select(&mut self, profile: ScenarioLightingProfile) {
         self.selected_profile = profile;
         self.target_ambient = self.profile(profile).ambient_percent;
+        #[cfg(feature = "ares")]
+        {
+            self.ares_light = None;
+        }
+    }
+
+    /// Ares SWTypeExt::GetLightingColor (hook 53C280, 10037B50) for a special
+    /// `profile` whose superweapon type has `light`: `Light.Enabled=no`
+    /// leaves no value, so the default lighting returns (the target is the
+    /// normal ambient, RecalcLighting restores); otherwise the type's set,
+    /// nonnegative overrides replace the profile's ambient (x1) and RGB
+    /// (x10 in RecalcLighting).
+    #[cfg(feature = "ares")]
+    pub(crate) fn select_ares(
+        &mut self,
+        profile: ScenarioLightingProfile,
+        light: Option<crate::rules::superweapon_type::AresSuperWeaponLighting>,
+    ) {
+        match light {
+            Some(light) if !light.enabled() => self.select(ScenarioLightingProfile::Normal),
+            Some(light) => {
+                self.select(profile);
+                let overrides = light.overrides();
+                if let Some(ambient) = overrides[0] {
+                    self.target_ambient = ambient;
+                }
+                self.ares_light = Some(overrides);
+            }
+            None => self.select(profile),
+        }
     }
 
     /// Execute1426E2E60 /1436E2EB0 /1446E2F00 retains the raw signed
@@ -523,8 +561,19 @@ impl ScenarioLightingState {
     /// alternate profile's percentages times 10, none for the ordinary one
     /// (`-1, -1, -1`).
     pub fn alternate_rgb(&self) -> Option<[i32; 3]> {
-        (self.selected_profile != ScenarioLightingProfile::Normal)
-            .then(|| self.profile(self.selected_profile).alternate_rgb())
+        (self.selected_profile != ScenarioLightingProfile::Normal).then(|| {
+            #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
+            let mut rgb = self.profile(self.selected_profile).alternate_rgb();
+            #[cfg(feature = "ares")]
+            if let Some([_, red, green, blue]) = self.ares_light {
+                for (slot, value) in rgb.iter_mut().zip([red, green, blue]) {
+                    if let Some(value) = value {
+                        *slot = value.wrapping_mul(10);
+                    }
+                }
+            }
+            rgb
+        })
     }
 
     /// Restart the ambient fade timer (`ScenarioClass+0x1248`), as
@@ -1886,6 +1935,11 @@ impl ScenarioSession {
         if lighting.ambient_change_overrides != [None; 2] {
             0x1668u16.hash(hasher);
             lighting.ambient_change_overrides.hash(hasher);
+        }
+        #[cfg(feature = "ares")]
+        if let Some(light) = lighting.ares_light {
+            b"ares-sw-light-v1".hash(hasher);
+            light.hash(hasher);
         }
     }
 

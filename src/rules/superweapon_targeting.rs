@@ -419,8 +419,9 @@ impl AresSuperWeaponTargetingState {
             |name: &str| type_name.is_some_and(|type_name| type_name.eq_ignore_ascii_case(name));
         if initialize {
             self.mode = type_name.map_or(0, handler_initial_mode);
-            // SW_ChronoSphere::Initialize1006EF10: infantry and units (0x18).
-            if is("ChronoSphere") {
+            // SW_ChronoSphere::Initialize1006EF10 and SW_PsychicDominator's
+            // (10070990): infantry and units (0x18).
+            if is("ChronoSphere") || is("PsychicDominator") {
                 self.affects_target = TargetMask(0x18);
             }
             if type_name.is_some_and(|name| name.eq_ignore_ascii_case("HunterSeeker")) {
@@ -500,6 +501,10 @@ impl AresSuperWeaponTargetingState {
             }
             self.chrono_affect_buildings = self.affects_target.intersects(TargetMask::BUILDING);
             self.affects_target = TargetMask(self.affects_target.0 | TargetMask::BUILDING.0);
+        }
+        // SW_GeneticMutator::LoadFromINI10072100: always every Techno.
+        if is("GeneticConverter") {
+            self.affects_target = TargetMask(self.affects_target.0 | TargetMask::ALL_TECHNOS.0);
         }
         initialize
     }

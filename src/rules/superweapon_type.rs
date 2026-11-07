@@ -114,7 +114,8 @@ impl SuperWeaponKind {
 
     /// A stock Type that Ares hands to its NewSWType (`FindHandler`
     /// 1006CFB0 asks each type's HandlesType): SW_ChronoSphere (1006EF00),
-    /// SW_ChronoWarp (100700A0), SW_NuclearMissile (10073350). Its
+    /// SW_ChronoWarp (100700A0), SW_NuclearMissile (10073350),
+    /// SW_GeneticMutator (10072080), SW_PsychicDominator (10070980). Its
     /// handler's Initialize, LoadFromINI,
     /// Activate and Flags replace the stock reads and Launch case; the other
     /// stock Types keep their stock owners in this port.
@@ -122,12 +123,17 @@ impl SuperWeaponKind {
     pub(crate) const fn is_ares_redirect(self) -> bool {
         matches!(
             self,
-            Self::ChronoSphere | Self::ChronoWarp | Self::MultiMissile
+            Self::ChronoSphere
+                | Self::ChronoWarp
+                | Self::MultiMissile
+                | Self::GeneticConverter
+                | Self::PsychicDominator
         )
     }
 
     /// The handler's Flags: SW_ChronoSphere 1006EE70 (0xFD), SW_ChronoWarp
-    /// 10070040 (0x105), SW_NuclearMissile the shared 4 (100708C0); the new
+    /// 10070040 (0x105), SW_NuclearMissile and SW_PsychicDominator the shared
+    /// 4 (100708C0); the new
     /// types answer the shared zero (10003650).
     #[cfg(feature = "ares")]
     pub(crate) const fn ares_flags(self) -> AresSuperWeaponFlags {
@@ -141,7 +147,7 @@ impl SuperWeaponKind {
                 .with(F::NO_MESSAGE)
                 .with(F::PRE_CLICK),
             Self::ChronoWarp => F::NO_ANIM.with(F::NO_EVENT).with(F::POST_CLICK),
-            Self::MultiMissile => F::NO_EVENT,
+            Self::MultiMissile | Self::PsychicDominator => F::NO_EVENT,
             _ => F::NONE,
         }
     }
@@ -289,6 +295,18 @@ impl AresSuperWeaponEva {
                 "EVA_ChronosphereActivated",
                 "EVA_ChronosphereDetected",
             ],
+            // SW_PsychicDominator::Initialize10070990.
+            Some(kind) if kind.eq_ignore_ascii_case("PsychicDominator") => [
+                "EVA_PsychicDominatorReady",
+                "EVA_PsychicDominatorActivated",
+                "EVA_PsychicDominatorDetected",
+            ],
+            // SW_GeneticMutator::Initialize10072090.
+            Some(kind) if kind.eq_ignore_ascii_case("GeneticConverter") => [
+                "EVA_GeneticMutatorReady",
+                "EVA_GeneticMutatorActivated",
+                "EVA_GeneticMutatorDetected",
+            ],
             // SW_NuclearMissile::Initialize10073360.
             Some(kind) if kind.eq_ignore_ascii_case("MultiMissile") => [
                 "EVA_NuclearMissileReady",
@@ -413,6 +431,13 @@ impl AresSuperWeaponMessages {
     }
     pub fn color_scheme(&self) -> i32 {
         self.color_scheme
+    }
+
+    /// SW_PsychicDominator::Initialize10070990's `Message.Abort`.
+    pub(crate) fn initialize_for_kind(&mut self, kind: Option<&str>) {
+        if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("PsychicDominator")) {
+            self.abort = "Msg:DominatorActive".to_owned();
+        }
     }
 
     /// The retained CSF label of one PrintMessage caller; empty prints nothing.
@@ -837,6 +862,12 @@ impl SuperWeaponType {
                 // SW_NuclearMissile::Initialize10073360: SW_Cursor 0x35, Nuke.
                 #[cfg(feature = "ares")]
                 SuperWeaponKind::MultiMissile => Some("Nuke".to_string()),
+                // SW_GeneticMutator::Initialize10072090: the GeneticMutator cursor.
+                #[cfg(feature = "ares")]
+                SuperWeaponKind::GeneticConverter => Some("GeneticConverter".to_string()),
+                // SW_PsychicDominator::Initialize10070990: its cursor.
+                #[cfg(feature = "ares")]
+                SuperWeaponKind::PsychicDominator => Some("PsychicDominator".to_string()),
                 _ => section.read_action_name("Action").map(str::to_string),
             },
             // ReadString 0x100, then a 24-byte copy (`0x006CEDB1`,
@@ -1125,6 +1156,107 @@ pub(crate) struct AresSuperWeaponLaunch {
     /// `Light.*` (+0x286..+0x2A0), read by every type.
     #[serde(default)]
     lighting: AresSuperWeaponLighting,
+    /// SW_GeneticMutator's fields (Initialize 10072090, LoadFromINI 10072100).
+    #[serde(default)]
+    mutate: AresMutateRules,
+    /// `SW.Deferment` (Nullable<int> +0x254), read by every type; the
+    /// Dominator's state machine waits it out (Activate 100707C0).
+    #[serde(default)]
+    deferment: Option<i32>,
+    /// SW_PsychicDominator's fields (Initialize 10070990, LoadFromINI 10070A40).
+    #[serde(default)]
+    dominator: AresDominatorRules,
+}
+
+/// SW_PsychicDominator's SWTypeExt fields (+0x112..+0x140), clear in the
+/// constructor: `Dominator.Capture`, `.FireAtPercentage` (Nullable<int>),
+/// `.FirstAnimHeight`, `.SecondAnimHeight`, the Nullable<Anim> `.FirstAnim`,
+/// `.SecondAnim`, `.ControlAnim`, `.Ripple`, `.CaptureMindControlled`,
+/// `.CapturePermaMindControlled`, `.CaptureImmuneToPsionics` and
+/// `.PermanentCapture`.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresDominatorRules {
+    pub(crate) capture: bool,
+    pub(crate) fire_at_percentage: Option<i32>,
+    pub(crate) first_anim_height: i32,
+    pub(crate) second_anim_height: i32,
+    pub(crate) first_anim: Option<Option<String>>,
+    pub(crate) second_anim: Option<Option<String>>,
+    pub(crate) control_anim: Option<Option<String>>,
+    pub(crate) ripple: bool,
+    pub(crate) capture_mind_controlled: bool,
+    pub(crate) capture_perma_mind_controlled: bool,
+    pub(crate) capture_immune_to_psionics: bool,
+    pub(crate) permanent_capture: bool,
+}
+
+#[cfg(feature = "ares")]
+impl AresDominatorRules {
+    /// SW_PsychicDominator::Initialize10070990.
+    fn initialize(&mut self) {
+        self.first_anim_height = 750;
+        self.second_anim_height = 0;
+        self.ripple = true;
+        self.capture = true;
+        self.capture_mind_controlled = true;
+        self.capture_perma_mind_controlled = true;
+        self.capture_immune_to_psionics = false;
+        self.permanent_capture = true;
+    }
+
+    /// LoadFromINI10070A40's reads, in its order.
+    fn read_pass(&mut self, section: &IniSection, anims: [Option<Option<String>>; 3]) {
+        self.first_anim_height =
+            section.read_ares_int("Dominator.FirstAnimHeight", self.first_anim_height);
+        self.second_anim_height =
+            section.read_ares_int("Dominator.SecondAnimHeight", self.second_anim_height);
+        let [first, second, control] = anims;
+        for (read, field) in [
+            (first, &mut self.first_anim),
+            (second, &mut self.second_anim),
+            (control, &mut self.control_anim),
+        ] {
+            if read.is_some() {
+                *field = read;
+            }
+        }
+        self.fire_at_percentage =
+            section.read_ares_nullable_int("Dominator.FireAtPercentage", self.fire_at_percentage);
+        for (key, field) in [
+            ("Dominator.Capture", &mut self.capture),
+            ("Dominator.Ripple", &mut self.ripple),
+            (
+                "Dominator.CaptureMindControlled",
+                &mut self.capture_mind_controlled,
+            ),
+            (
+                "Dominator.CapturePermaMindControlled",
+                &mut self.capture_perma_mind_controlled,
+            ),
+            (
+                "Dominator.CaptureImmuneToPsionics",
+                &mut self.capture_immune_to_psionics,
+            ),
+            ("Dominator.PermanentCapture", &mut self.permanent_capture),
+        ] {
+            *field = section.read_ares_bool(key, *field);
+        }
+    }
+}
+
+/// SW_GeneticMutator's SWTypeExt fields: `Mutate.Explosion` (Nullable<bool>
+/// +0x10D), `.IgnoreCyborg` (+0x10F), `.IgnoreNotHuman` (+0x110) and
+/// `.KillNatural` (+0x111), clear in the constructor.
+#[cfg(feature = "ares")]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub(crate) struct AresMutateRules {
+    pub(crate) explosion: Option<bool>,
+    pub(crate) ignore_cyborg: bool,
+    pub(crate) ignore_not_human: bool,
+    pub(crate) kill_natural: bool,
 }
 
 /// SWTypeExt `Light.Enabled` (Valueable<bool> +0x286, ctor true) and
@@ -1274,6 +1406,8 @@ pub(crate) struct AresHandlerReads {
     pub(crate) battery_overpower: Option<Vec<String>>,
     /// `Chronosphere.BlastSrc`/`.BlastDest`.
     pub(crate) chrono_blasts: [Option<Option<String>>; 2],
+    /// `Dominator.FirstAnim`, `.SecondAnim`, `.ControlAnim` (Find reads).
+    pub(crate) dominator_anims: [Option<Option<String>>; 3],
     /// `SW.Warhead`, resolved through the Warhead factory.
     pub(crate) warhead: Option<Option<String>>,
     /// SW_NuclearMissile::Initialize's `FindOrAllocate("NukePayload")` and
@@ -1303,6 +1437,9 @@ impl Default for AresSuperWeaponLaunch {
             damage: None,
             nuke: AresNukeRules::default(),
             lighting: AresSuperWeaponLighting::default(),
+            mutate: AresMutateRules::default(),
+            deferment: None,
+            dominator: AresDominatorRules::default(),
         }
     }
 }
@@ -1327,6 +1464,15 @@ impl AresSuperWeaponLaunch {
         }
         if initialized && is("ChronoSphere") {
             self.chronosphere.initialize();
+        }
+        if initialized && is("PsychicDominator") {
+            self.dominator.initialize();
+        }
+        if initialized && is("GeneticConverter") {
+            // SW_GeneticMutator::Initialize10072090.
+            self.mutate.kill_natural = true;
+            self.mutate.ignore_cyborg = false;
+            self.mutate.ignore_not_human = false;
         }
         if initialized
             && is("MultiMissile")
@@ -1367,9 +1513,22 @@ impl AresSuperWeaponLaunch {
             self.warhead = reads.warhead;
         }
         self.damage = section.read_ares_nullable_int("SW.Damage", self.damage);
+        self.deferment = section.read_ares_nullable_int("SW.Deferment", self.deferment);
         self.group = section.read_ares_int("SW.Group", self.group);
         if is("ChronoSphere") {
             self.chronosphere.read_pass(section, reads.chrono_blasts);
+        } else if is("PsychicDominator") {
+            self.dominator.read_pass(section, reads.dominator_anims);
+        } else if is("GeneticConverter") {
+            // 10072100: Explosion, IgnoreCyborg, IgnoreNotHuman, KillNatural.
+            let mutate = &mut self.mutate;
+            mutate.explosion =
+                section.read_ares_nullable_bool("Mutate.Explosion", mutate.explosion);
+            mutate.ignore_cyborg =
+                section.read_ares_bool("Mutate.IgnoreCyborg", mutate.ignore_cyborg);
+            mutate.ignore_not_human =
+                section.read_ares_bool("Mutate.IgnoreNotHuman", mutate.ignore_not_human);
+            mutate.kill_natural = section.read_ares_bool("Mutate.KillNatural", mutate.kill_natural);
         } else if is("MultiMissile") {
             // 10073410: Payload, TakeOff, PsiWarning, SiloLaunch.
             let [payload, take_off, psi_warning] = reads.nuke;
@@ -1436,6 +1595,21 @@ impl AresSuperWeaponLaunch {
     /// `Light.*`.
     pub(crate) fn lighting(&self) -> AresSuperWeaponLighting {
         self.lighting
+    }
+
+    /// SW_GeneticMutator's fields.
+    pub(crate) fn mutate(&self) -> AresMutateRules {
+        self.mutate
+    }
+
+    /// `SW.Deferment`.
+    pub(crate) fn deferment(&self) -> Option<i32> {
+        self.deferment
+    }
+
+    /// SW_PsychicDominator's fields.
+    pub(crate) fn dominator(&self) -> &AresDominatorRules {
+        &self.dominator
     }
 
     /// SW.CreateRadarEvent.

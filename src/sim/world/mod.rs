@@ -1078,6 +1078,13 @@ pub enum SimSoundEvent {
     /// unless the handler's Flags hold NoEVA.
     #[cfg(feature = "ares")]
     AresSuperWeaponActivatedEva { sw_type: InternedId },
+    /// A new type's AbortFire refused a click (SW_PsychicDominator
+    /// 10070780): the owner's client prints the type's `Message.Abort`.
+    #[cfg(feature = "ares")]
+    AresSuperWeaponAborted {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
     /// A type-13 radar event only the clients whose player `owner` counts as
     /// an ally see (SW_NuclearMissile::Activate 10072FF0: "allies can see
     /// the target location before the enemy does").

@@ -96,6 +96,15 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
             sim.session
                 .lighting_mut()
                 .start_nuke_flash_for(frame, duration);
+            // SWTypeExt::ChangeLighting(NukeSW): the type's Light.* overrides.
+            let light = ball
+                .nuke_sw
+                .and_then(|sw| rules.super_weapon_metadata(sim.interner.resolve(sw)))
+                .map(|metadata| metadata.launch().lighting());
+            sim.session.lighting_mut().select_ares(
+                crate::sim::scenario_session::ScenarioLightingProfile::Nuke,
+                light,
+            );
             sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
                 sim.session.lighting(),
             ));

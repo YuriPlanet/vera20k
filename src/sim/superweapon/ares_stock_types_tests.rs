@@ -360,3 +360,209 @@ fn ares_nuke_impact_follows_the_bullet_and_its_warhead() {
     let plain = ball(&mut sim, "Blast", None);
     assert_eq!((plain.flash, plain.pre_impact_anim), (None, false));
 }
+
+/// SW_PsychicDominator::Initialize (10070990) and LoadFromINI (10070A40),
+/// SW_GeneticMutator's (10072090, 10072100), and the common `SW.Deferment`.
+#[test]
+fn ares_dominator_and_mutator_read_their_handler_keys() {
+    let processed = RulesLayerStack::new(IniFile::from_str(
+        "[Animations]\n0=RING\n[RING]\nRate=1\n\
+         [SuperWeaponTypes]\n0=Dom\n1=Mut\n\
+         [Dom]\nType=PsychicDominator\nDominator.FirstAnimHeight=300\n\
+         Dominator.ControlAnim=RING\nDominator.FireAtPercentage=40\n\
+         Dominator.PermanentCapture=no\nSW.Deferment=6\n\
+         [Mut]\nType=GeneticConverter\nMutate.Explosion=yes\nMutate.IgnoreCyborg=yes\n\
+         SW.AffectsTarget=land\n",
+    ))
+    .process_with_fixed_art(&IniFile::empty())
+    .unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let dom = rules.super_weapon_metadata("Dom").unwrap();
+    let fields = dom.launch().dominator();
+    assert_eq!(
+        (
+            fields.first_anim_height,
+            fields.second_anim_height,
+            fields.fire_at_percentage,
+            fields.control_anim.clone(),
+            fields.first_anim.clone(),
+        ),
+        (300, 0, Some(40), Some(Some("RING".to_owned())), None)
+    );
+    assert_eq!(
+        (
+            fields.capture,
+            fields.ripple,
+            fields.capture_mind_controlled,
+            fields.capture_perma_mind_controlled,
+            fields.capture_immune_to_psionics,
+            fields.permanent_capture,
+        ),
+        (true, true, true, true, false, false)
+    );
+    assert_eq!(dom.launch().deferment(), Some(6));
+    let dominator = rules.super_weapon("Dom").unwrap();
+    assert_eq!(
+        dominator
+            .ares_messages()
+            .label(crate::rules::superweapon_type::AresSuperWeaponMessage::Abort),
+        "Msg:DominatorActive"
+    );
+    let kinds = |mask: TargetMask| {
+        [TargetMask::INFANTRY, TargetMask::UNIT, TargetMask::BUILDING]
+            .map(|kind| mask.intersects(kind))
+    };
+    assert_eq!(kinds(dom.targeting().affects_target()), [true, true, false]);
+    let mutator = rules.super_weapon_metadata("Mut").unwrap();
+    let mutate = mutator.launch().mutate();
+    assert_eq!(
+        (
+            mutate.explosion,
+            mutate.ignore_cyborg,
+            mutate.ignore_not_human,
+            mutate.kill_natural
+        ),
+        (Some(true), true, false, true)
+    );
+    assert!(
+        mutator
+            .targeting()
+            .affects_target()
+            .intersects(TargetMask::LAND)
+            && kinds(mutator.targeting().affects_target()) == [true, true, true],
+        "LoadFromINI adds every Techno to the authored land"
+    );
+    assert_eq!(rules.super_weapon("Mut").unwrap().presentation.height, 5);
+}
+
+/// SW_PsychicDominator::Activate (100707C0), its state machine (10070BA0)
+/// and the PsyDom_Fire hook (10037840) on retail rules: without anims the
+/// strike follows at once; an enemy tank joins the firer without permanent
+/// control, an ImmuneToPsionics one stays, and a second launch while active
+/// is refused by AbortFire (10070780). `Light.*` tints the scenario.
+#[test]
+fn ares_dominator_captures_through_its_state_machine() {
+    let Some(rules) = retail_ares_rules(
+        "[PsychicDominatorSpecial]\nDominator.FirstAnim=none\nDominator.SecondAnim=none\n\
+         Dominator.Ripple=no\nDominator.PermanentCapture=no\nSW.Damage=0\n\
+         Light.Ambient=12\nLight.Red=7\n\
+         [HTNK]\nImmuneToPsionics=yes\n",
+    ) else {
+        return;
+    };
+    let (rules, mut sim, americans) = world_with(rules, 64, &[]);
+    let russians = sim.interner.intern("Russians");
+    let cell = (30, 30);
+    let spawn = |sim: &mut Simulation, kind: &str, at: (u16, u16)| {
+        sim.spawn_object_at_height(kind, "Russians", at.0, at.1, 0, 0, &rules)
+            .unwrap()
+    };
+    let tank = spawn(&mut sim, "MTNK", cell);
+    let immune = spawn(&mut sim, "HTNK", (cell.0 + 1, cell.1));
+    let typ = crate::sim::superweapon::chronosphere_tests::charge_super(
+        &mut sim,
+        americans,
+        "PsychicDominatorSpecial",
+    );
+    let fire = |sim: &mut Simulation| {
+        sim.fire_super_weapon(
+            &rules,
+            americans,
+            typ,
+            cell,
+            None,
+            crate::sim::world::FrameEffects::default(),
+            false,
+        )
+    };
+    assert!(fire(&mut sim));
+    let tick = |sim: &mut Simulation| {
+        crate::sim::superweapon::tick_active_superweapon_effects(
+            sim,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+    };
+    tick(&mut sim);
+    // UpdateLighting (hook 53C280): CurrentPsyDom's Light.* over the
+    // Dominator profile.
+    let lighting = sim.session.lighting();
+    assert_eq!(
+        lighting.selected_profile(),
+        crate::sim::scenario_session::ScenarioLightingProfile::Dominator
+    );
+    assert_eq!(lighting.target_ambient(), 12);
+    assert_eq!(lighting.alternate_rgb().unwrap()[0], 70);
+    tick(&mut sim);
+    assert_eq!(sim.psychic_dominator.status_number(), 3);
+    let captured = sim.substrate.entities.get(tank).unwrap();
+    assert_eq!(captured.owner(), americans);
+    assert!(!captured.mind_control.permanent());
+    assert_eq!(
+        sim.substrate.entities.get(immune).unwrap().owner(),
+        russians
+    );
+    crate::sim::superweapon::chronosphere_tests::charge_super(
+        &mut sim,
+        americans,
+        "PsychicDominatorSpecial",
+    );
+    sim.take_sound_events_for_test();
+    assert!(!fire(&mut sim), "AbortFire refuses while one is active");
+    assert!(
+        sim.take_sound_events_for_test()
+            .iter()
+            .any(|event| matches!(
+                event,
+                SimSoundEvent::AresSuperWeaponAborted { owner, sw_type }
+                    if *owner == americans && *sw_type == typ
+            ))
+    );
+}
+
+/// SW_GeneticMutator::Activate (10071C60) on retail rules in its ranged
+/// mode (`Mutate.Explosion=no` over retail's `MutateExplosion=yes`): a `Natural=` infantryman dies to `C4Warhead=` under
+/// `Mutate.KillNatural`, a `Cyborg=` one is spared by `Mutate.IgnoreCyborg`.
+#[test]
+fn ares_mutator_spares_cyborgs_and_kills_natural_infantry() {
+    let Some(rules) = retail_ares_rules(
+        "[GeneticConverterSpecial]\nMutate.Explosion=no\nMutate.IgnoreCyborg=yes\n\
+         [E1]\nNatural=yes\n[ENGINEER]\nCyborg=yes\n",
+    ) else {
+        return;
+    };
+    let (rules, mut sim, americans) = world_with(rules, 64, &[]);
+    let cell = (30, 30);
+    let spawn = |sim: &mut Simulation, kind: &str, at: (u16, u16)| {
+        sim.spawn_object_at_height(kind, "Russians", at.0, at.1, 0, 0, &rules)
+            .unwrap()
+    };
+    let natural = spawn(&mut sim, "E1", cell);
+    let cyborg = spawn(&mut sim, "ENGINEER", (cell.0 + 1, cell.1));
+    let strength = sim.substrate.entities.get(cyborg).unwrap().health.current();
+    let typ = crate::sim::superweapon::chronosphere_tests::charge_super(
+        &mut sim,
+        americans,
+        "GeneticConverterSpecial",
+    );
+    assert!(sim.fire_super_weapon(
+        &rules,
+        americans,
+        typ,
+        cell,
+        None,
+        crate::sim::world::FrameEffects::default(),
+        false,
+    ));
+    assert!(
+        sim.substrate
+            .entities
+            .get(natural)
+            .is_none_or(|entity| entity.health.current() == 0 || entity.death.is_dying())
+    );
+    assert_eq!(
+        sim.substrate.entities.get(cyborg).unwrap().health.current(),
+        strength
+    );
+}

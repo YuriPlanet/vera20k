@@ -1076,6 +1076,45 @@ impl Simulation {
         true
     }
 
+    /// The capture of SW_PsychicDominator's Dominate lambda (Ares 3.0
+    /// `10035FE0`, from the PsyDom_Fire hook 53B080): a controller lets the
+    /// object go (FreeUnit), it joins `house` (SetOwningHouse), its `+0x2C4`
+    /// takes `permanent` (`Dominator.PermanentCapture`), the ring it wears is
+    /// UnInit and `ring` (`Dominator.ControlAnim`, else
+    /// `PermaControlledAnimationType=`) rings it through
+    /// CreateMindControlRingAnim. Unlike ApplyPermaMC it queues nothing.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_dominate(
+        &mut self,
+        id: u64,
+        house: InternedId,
+        permanent: bool,
+        ring: Option<&str>,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        if let Some(controller) = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|object| object.mind_control.controller)
+        {
+            self.free_unit(controller, id, rules, registry, frame_effects);
+        }
+        self.change_owner_with_rules(id, house, rules, registry, frame_effects);
+        let old_ring = self.substrate.entities.get_mut(id).and_then(|object| {
+            object.mind_control.permanent = permanent;
+            object.mind_control.ring_anim.take()
+        });
+        if let Some(old_ring) = old_ring {
+            self.destroy_anim(old_ring, rules);
+        }
+        if let Some(ring) = ring {
+            self.attach_control_ring(id, ring, rules);
+        }
+    }
+
     /// Installed Ares capture10045C03..10045C1C clears permanent control
     /// and UnInit's the ring after any controller's FreeUnit has finished.
     #[cfg(feature = "ares")]

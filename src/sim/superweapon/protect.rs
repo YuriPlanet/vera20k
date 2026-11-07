@@ -116,14 +116,36 @@ pub(super) fn launch(
 /// DistinctCollector: the Technos in the cells' GetContent lists, each once,
 /// in UniqueID order. An SWRange that is neither a rectangle nor a radius
 /// covers nothing.
-pub(super) fn area_technos(
+pub(super) fn area_technos(sim: &Simulation, range: (f32, i32), center: (u16, u16)) -> Vec<u64> {
+    area_technos_with(sim, range, center, false)
+}
+
+/// Helpers::Alex::for_each_in_rect_or_spread (the Dominator's,
+/// `10037840`): the same rectangle, else for a height of 0 or less the
+/// CellSpread of `max(int(width), 0)` when positive.
+pub(super) fn area_technos_in_spread(
+    sim: &Simulation,
+    range: (f32, i32),
+    center: (u16, u16),
+) -> Vec<u64> {
+    area_technos_with(sim, range, center, true)
+}
+
+fn area_technos_with(
     sim: &Simulation,
     (width, height): (f32, i32),
     center: (u16, u16),
+    spread: bool,
 ) -> Vec<u64> {
     let (cx, cy) = (i32::from(center.0 as i16), i32::from(center.1 as i16));
     let mut cells = Vec::new();
-    if height > 0 && (width as i32) > 0 {
+    if spread && !(height > 0 && (width as i32) > 0) {
+        if height <= 0 && (width as i32) > 0 {
+            for &(dx, dy) in crate::sim::combat::cell_spread::sweep(width as i32 as usize) {
+                cells.push((cx + i32::from(dx), cy + i32::from(dy)));
+            }
+        }
+    } else if height > 0 && (width as i32) > 0 {
         // for_each_in_rect: width x height cells from center - size/2.
         let width = width as i32;
         let (left, top) = (cx - width / 2, cy - height / 2);

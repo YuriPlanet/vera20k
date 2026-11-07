@@ -752,7 +752,8 @@ pub(super) fn dispatch_sim_sound_events(
             #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponRefused { .. } => continue,
             #[cfg(feature = "ares")]
-            SimSoundEvent::AresSuperWeaponActivated { .. } => continue,
+            SimSoundEvent::AresSuperWeaponActivated { .. }
+            | SimSoundEvent::AresSuperWeaponAborted { .. } => continue,
             // 100731FD..10073236: IsAlliedWith(PlayerPtr) on the owner.
             #[cfg(feature = "ares")]
             SimSoundEvent::AresAlliedRadarEvent { owner, radar } => {
@@ -1139,6 +1140,10 @@ pub(super) fn ares_superweapon_messages(
             }
             SimSoundEvent::AresSuperWeaponActivated { owner, sw_type } => {
                 line(sw_type, M::Activate, Some(owner))
+            }
+            // SW_PsychicDominator::AbortFire10070780: only for IsPlayer.
+            SimSoundEvent::AresSuperWeaponAborted { owner, sw_type } if Some(owner) == local => {
+                line(sw_type, M::Abort, Some(owner))
             }
             _ => None,
         })
@@ -2323,12 +2328,12 @@ mod tests {
     /// (`EVA_ChronosphereActivated`) for every launcher, then for the
     /// launching player only `RemoveFromQueues(EVA_ChronosphereReady)`; its
     /// two radar events reach the client's radar and play nothing.
+    // Installed Ares hands ChronoWarp and PsychicDominator to their handlers
+    // (hook 6CC390), whose line and cleanup are the common Launch's own facts
+    // (`ares_launch_eva_follows_the_data_type_and_skips_the_stock_tail`).
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn launch_drops_the_ready_line_for_its_player_only() {
-        // Installed Ares hands ChronoWarp to SW_ChronoWarp (hook 6CC390),
-        // whose line and cleanup are the common Launch's own facts
-        // (`ares_launch_eva_follows_the_data_type_and_skips_the_stock_tail`).
-        #[cfg(not(feature = "ares"))]
         launch_drops_the_ready_line(
             "ChronoWarpSpecial",
             "EVA_ChronosphereActivated",
@@ -2413,6 +2418,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "ares"))]
     fn launch_drops_the_ready_line(name: &str, activated: &str, ready: &str) {
         use crate::sim::radar::{RadarEventRequest, RadarEventType};
 
@@ -2518,6 +2524,7 @@ mod tests {
             #[cfg(not(feature = "ares"))]
             ("nuke_launch", "NukeSpecial", "NukeSiren", 12),
             ("iron_curtain_launch", "IronCurtainSpecial", "", 18),
+            #[cfg(not(feature = "ares"))]
             (
                 "genetic_launch",
                 "GeneticConverterSpecial",

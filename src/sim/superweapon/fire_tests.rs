@@ -170,6 +170,9 @@ fn click_fire_matches_native() {
             .filter_map(|event| match *event {
                 SimSoundEvent::LightningStormRefused { owner } => Some(("storm", owner)),
                 SimSoundEvent::PsychicDominatorRefused { owner } => Some(("dominator", owner)),
+                // Installed Ares: SW_PsychicDominator::AbortFire (10070780).
+                #[cfg(feature = "ares")]
+                SimSoundEvent::AresSuperWeaponAborted { owner, .. } => Some(("dominator", owner)),
                 _ => None,
             })
             .collect();

@@ -2080,9 +2080,10 @@ mod tests {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
         use crate::rules::ruleset::RuleSet;
 
-        // ReadAction474EE0, called by SuperWeaponType ReadINI6CEA9B.
+        // ReadAction474EE0, called by SuperWeaponType ReadINI6CEA9B. A Type no
+        // Ares handler takes keeps the stock read in every build.
         let mut layers = RulesLayerStack::new(sec(
-            "[SuperWeaponTypes]\n0=Strike\n[Strike]\nType=MultiMissile\nAction=nUkE\n",
+            "[SuperWeaponTypes]\n0=Strike\n[Strike]\nType=LightningStorm\nAction=nUkE\n",
         ));
         let action = |layers: &RulesLayerStack| {
             let processed = layers.process_with_fixed_art(&IniFile::empty()).unwrap();

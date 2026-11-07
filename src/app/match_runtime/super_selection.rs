@@ -116,6 +116,28 @@ pub(super) fn follow_selection_writes(
             }
             continue;
         }
+        // Installed Ares (SWTypeExt::Launch 10033201) clears a redirected
+        // Nuke's, Dominator's or Genetic Mutator's selection only when it is
+        // the fired type.
+        #[cfg(feature = "ares")]
+        if rules
+            .super_weapon(sim.interner().resolve(*sw_type))
+            .is_some_and(|sw| {
+                matches!(
+                    sw.kind,
+                    SuperWeaponKind::MultiMissile
+                        | SuperWeaponKind::PsychicDominator
+                        | SuperWeaponKind::GeneticConverter
+                )
+            })
+        {
+            if selected
+                .is_some_and(|name| name.eq_ignore_ascii_case(sim.interner().resolve(*sw_type)))
+            {
+                *targeting = None;
+            }
+            continue;
+        }
         match rules
             .super_weapon(sim.interner().resolve(*sw_type))
             .map(|sw| sw.kind)
@@ -483,8 +505,12 @@ mod tests {
             serde_json::from_str(crate::test_fixture::text("tools/superweapon_oracle.json"))
                 .unwrap();
         for (section, name) in [
+            // Installed Ares clears only the fired type's selection for its
+            // redirected Nuke and Genetic Mutator (SWTypeExt::Launch 10033201).
+            #[cfg(not(feature = "ares"))]
             ("nuke_launch", "NukeSpecial"),
             ("iron_curtain_launch", "IronCurtainSpecial"),
+            #[cfg(not(feature = "ares"))]
             ("genetic_launch", "GeneticConverterSpecial"),
             ("psychic_launch", "PsychicRevealSpecial"),
         ] {

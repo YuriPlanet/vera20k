@@ -2032,7 +2032,26 @@ fn retail_rulesmd_artmd_constructor_trace_matches_verified_base_oracle() {
     // stream. The count and FNV hash first appear in 2df8bef0e without a
     // producer (#745).
     assert_eq!(events.len(), 1_975);
-    assert_eq!(native_type_event_oracle_hash(events), 0x24516fbd1a096a12);
+    // Installed Ares's SW_NuclearMissile::Initialize (10073360), run at the end
+    // of NukeSpecial's ReadINI (hook 6CEE43), allocates NukePayload right after
+    // the NukeCarrier that read allocated; the stream is otherwise the same.
+    #[cfg(feature = "ares")]
+    {
+        let carrier = events
+            .iter()
+            .position(|event| {
+                event.family() == NativeTypeConstructorFamily::WeaponType
+                    && event.native_stored_id() == "NukeCarrier"
+            })
+            .unwrap();
+        assert_eq!(events[carrier + 1].native_stored_id(), "NukePayload");
+    }
+    let pinned = if cfg!(feature = "ares") {
+        0xff7ef335ba26c6c8
+    } else {
+        0x24516fbd1a096a12
+    };
+    assert_eq!(native_type_event_oracle_hash(events), pinned);
 
     let explicit_boundary = events[1_699..1_704]
         .iter()

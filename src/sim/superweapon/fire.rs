@@ -564,6 +564,11 @@ fn click_fire_admission(
             .emit(SimSoundEvent::LightningStormRefused { owner });
         return false;
     }
+    // Installed Ares asks the handler's AbortFire (10070780) instead.
+    #[cfg(feature = "ares")]
+    if sw.kind == SuperWeaponKind::PsychicDominator {
+        return !super::psychic_dominator::ares_abort_fire(sim, owner, sw_type_id);
+    }
     if sw.kind == SuperWeaponKind::PsychicDominator && super::psychic_dominator::active(sim) {
         sim.sound_events
             .emit(SimSoundEvent::PsychicDominatorRefused { owner });
@@ -615,6 +620,23 @@ fn launch(
             ),
             SuperWeaponKind::MultiMissile => {
                 super::nuke::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry))
+            }
+            SuperWeaponKind::PsychicDominator => {
+                super::psychic_dominator::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
+                true
+            }
+            SuperWeaponKind::GeneticConverter => {
+                super::genetic_converter::ares_launch(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    sw,
+                    (rx, ry),
+                    overlay_registry,
+                    frame_effects,
+                );
+                true
             }
             _ => false,
         };

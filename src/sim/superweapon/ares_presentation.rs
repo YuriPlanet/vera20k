@@ -46,6 +46,10 @@ pub(super) fn on_launch(
         None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Protect => {
             Some(rules.general.iron_curtain_invoke_anim.clone())
         }
+        // SW_GeneticMutator::GetAnim10071F30: `[General] IonBlast=`.
+        None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::GeneticConverter => {
+            Some(rules.general.ion_blast_anim.clone())
+        }
         None => None,
     };
     if let Some(name) = &animation {
@@ -57,8 +61,17 @@ pub(super) fn on_launch(
     // Launch10033106..1003314E, GetSound1006D1C0: play only the resolved
     // nonnegative cue. Bridge10033BB0 calls VocClass::PlayAtCoord750E20,
     // using the signed coordinates the animation just raised, with flags0.
+    // SW_GeneticMutator::GetSound10072000 falls back to `[AudioVisual]
+    // GeneticMutatorActivateSound=`.
+    let sound = match &presentation.sound {
+        Some(sound) => sound.clone(),
+        None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::GeneticConverter => {
+            rules.general.genetic_mutator_activate_sound.clone()
+        }
+        None => None,
+    };
     if !flags.has(F::NO_SOUND)
-        && let Some(Some(sound)) = &presentation.sound
+        && let Some(sound) = &sound
     {
         sim.sound_events.emit(SimSoundEvent::VocAtCoord {
             sound_id: sound.clone(),
