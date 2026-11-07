@@ -104,6 +104,9 @@ pub struct Factory {
     /// StartProduction seeds it with the type's Cost_Of for the owner
     /// (`0x004C9DE1..0x004C9DEA`).
     balance: i32,
+    /// Factory `+0x58`. `FactoryClass::SetObject @ 0x004C9E10` has no caller
+    /// or data reference in gamemd (only YRpp names it), so nothing outside
+    /// StartProduction stores a held object and it has no port.
     object: Option<PendingObject>,
     /// The last step could not be afforded (Factory `+0x5C`); the step was
     /// rewound and the next one retries at the same rate.
@@ -186,6 +189,8 @@ impl Factory {
         self.object.as_ref()
     }
 
+    /// `FactoryClass::IsWaitingForFunds @ 0x004C9C50` (+5C), read by
+    /// StripAI6A8F99 to stop the cameo's predicted clock.
     pub fn on_hold(&self) -> bool {
         self.on_hold
     }
@@ -304,8 +309,8 @@ impl Factory {
     }
 
     /// The step rate for a build of `time_to_build` frames: `clamp(total / 54,
-    /// 1, 255)`, the division truncating. The build start `0x004C9EA0` (Ghidra
-    /// label `FactoryClass__SetRate`; it also resumes a suspended build)
+    /// 1, 255)`, the division truncating. The build start
+    /// `FactoryClass::ResumeProduction @ 0x004C9EA0`
     /// computes it at `0x004C9EEF..0x004C9F28`; the house power pass
     /// (`0x004CA6E0`, from `0x00508D88`) rewrites only this rate.
     fn set_rate(&mut self, time_to_build: i32) {
@@ -758,7 +763,7 @@ impl<'a> FactoryView<'a> {
         self.construction_order
     }
 
-    /// `FactoryClass::GetRate @ 0x004C9FB0` recomputes the held Techno's
+    /// `FactoryClass::CalcRate @ 0x004C9FB0` recomputes the held Techno's
     /// current duration; it does not read the stored (possibly suspended)
     /// rate. Select6AB5B3 adds one when resuming its presentation clock.
     /// An empty Factory supplies zero duration, which the shared clamp maps
@@ -795,7 +800,9 @@ impl<'a> FactoryView<'a> {
     /// Rate and suspension are caller guards, not part of IsComplete.
     /// Its special-item arm (`+0x68`) is
     /// dormant: FactoryClass's own writers store only -1 there (`0x004C990D`,
-    /// `0x004CA058`, `0x004CA1F0`).
+    /// `0x004CA058`, `0x004CA1F0`), so `FactoryClass::GetSpecialItem @
+    /// 0x004CA170`, read by Select6AB2D9 only after IsComplete with no held
+    /// object, is never reached and has no port.
     pub fn complete_object(&self) -> Option<&'a PendingObject> {
         self.object.filter(|_| self.progress == PRODUCTION_STEPS)
     }
@@ -847,6 +854,7 @@ impl FactoryRegistry {
             enqueue_order,
             cost,
             i32::MAX,
+            false,
             false,
         ) == EnqueueOutcome::Started
     }
@@ -1052,6 +1060,10 @@ impl FactoryRegistry {
         }
     }
 
+    /// The Factory delete (`vt+0x20`, `FactoryClass::ScalarDeletingDestructor
+    /// @ 0x004CA770` around `FactoryClass::Destructor @ 0x004C9A10`). Its
+    /// in-game AbandonProduction (`0x004C9A8A`) finds no object here: every
+    /// caller has already abandoned or released the held product.
     pub(super) fn remove_factory(&mut self, holder: FactoryHolder) {
         self.factories.remove(&holder);
     }
@@ -1121,14 +1133,29 @@ impl FactoryRegistry {
     /// `FactoryClass::StartProduction @ 0x004C9C70` for a PRODUCE that is not
     /// a resume. With no factory for `(owner, category)` or an idle one, arm
     /// the active build (object held, progress 0, balance seeded from `cost`).
-    /// With an active object held, append a `QueueEntry` unless the queue
-    /// already holds `max_queued` builds (`0x004C9CD5..0x004C9CE4`) or
-    /// `at_build_limit` (the caller's `HouseClass::CheckBuildLimit`,
-    /// `0x004C9CEA`, asked before the append).
+    /// Otherwise append a `QueueEntry` unless the queue already holds
+    /// `max_queued` builds (`0x004C9CD5..0x004C9CE4`) or `at_build_limit`
+    /// (the caller's `HouseClass::CheckBuildLimit`, `0x004C9CEA`, asked
+    /// before the append).
+    ///
+    /// Idle means `0x004C9C95..0x004C9CCF`: no held object, rate clear or
+    /// +70 set, and an empty queue, unless `force` (StartNextQueued's
+    /// Begin_Production, `0x004CA60A`, passes it as `shouldQueue`). So a
+    /// PRODUCE reaching a Factory that holds nothing but still has a queue
+    /// (a forced promotion that Begin_Production refused) joins that queue's
+    /// tail rather than jumping it. Two native create arms are left out:
+    /// a BuildingType always creates (`0x004C9C95`), which the caller covers
+    /// by abandoning first while building strips never queue, and Phobos
+    /// `BuildingProductionQueue` jumps past it (hook `0x4C9C7B` ->
+    /// `0x004C9C9E`) to this test; and a held, unsuspended object at rate 0
+    /// creates over itself, unreachable since a held build's rate is at least
+    /// 1. The create path leaves +5C alone: a cash
+    /// stall from an abandoned build stays until the new build's first step.
     ///
     /// A freshly-armed build has no rate yet; the caller constructs its Techno
     /// and [`Factory::resume`] arms it. `cost` is resolved by the caller
     /// (which holds `&rules`) so this stays `&sim`-free.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn enqueue(
         &mut self,
         owner: InternedId,
@@ -1138,10 +1165,13 @@ impl FactoryRegistry {
         cost: i32,
         max_queued: i32,
         at_build_limit: bool,
+        force: bool,
     ) -> EnqueueOutcome {
         let holder = FactoryHolder::House(owner, category);
         if let Some(f) = self.factories.get_mut(&holder) {
-            if f.object.is_some() {
+            let idle = f.object.is_none()
+                && (force || (f.queue.is_empty() && (f.step_rate_frames == 0 || f.suspended)));
+            if !idle {
                 if i32::try_from(f.queue.len()).unwrap_or(i32::MAX) >= max_queued || at_build_limit
                 {
                     return EnqueueOutcome::AppendRefused;
@@ -1152,7 +1182,7 @@ impl FactoryRegistry {
                 });
                 return EnqueueOutcome::Queued;
             }
-            // Idle-but-registered (object None, empty queue) -> re-arm the active build.
+            // Idle-but-registered -> re-arm the active build (4C9CD5..4C9DEA).
             f.progress = 0;
             f.step_rate_frames = 0;
             f.step_timer = CdTimer::default();
@@ -1162,7 +1192,6 @@ impl FactoryRegistry {
                 entity_id: None,
                 completion_accounted: false,
             });
-            f.on_hold = false;
             // StartProduction4C9D72 stops the new head until Resume.
             f.suspended = true;
             f.changed = true;
@@ -1392,7 +1421,7 @@ impl FactoryRegistry {
         visits
     }
 
-    /// `FactoryClass::Update_Build_Rate @ 0x004CA6E0`, called by the
+    /// `HouseClass::RecalcFactoryRates @ 0x004CA6E0`, called by the
     /// reached House power assessment at508D88. The whole global Factory
     /// array is walked in construction order, filtering only Owner. Held,
     /// suspended and completed objects still receive SetRate; a null object
@@ -1450,6 +1479,12 @@ impl FactoryRegistry {
             let owner = f.owner;
             // Only an armed, in-flight build steps: object held, not complete
             // (held for delivery), with the one suspension authority clear.
+            // RESIDUAL: AI4C9B20 also steps a running Factory whose held
+            // product PointerExpired4CA580 cleared, charging 0 per stage and
+            // the whole Balance at stage 54. Trigger: a running product's
+            // expiry; VERA destroys a product only through Abandon, which
+            // suspends first, so no path reaches it. Effect if reached: the
+            // build would freeze instead of finishing empty and charging.
             if f.object.is_none() || f.suspended || f.progress >= PRODUCTION_STEPS {
                 continue;
             }
@@ -1579,6 +1614,8 @@ impl FactoryRegistry {
             && type_id.is_some()
             && !f.queue.is_empty();
         let mut removed = false;
+        // `FactoryClass::RemoveFromQueue @ 0x004CA620` (4FAAEE, and 4FAB04 per
+        // copy for ABANDON_ALL) removes the first queued copy, keeping order.
         if let Some(type_id) = type_id
             && removes_queued_copies
         {
@@ -2813,6 +2850,46 @@ mod tests {
         assert!(f.queue.is_empty());
     }
 
+    /// StartProduction4C9CC9 creates only with an empty queue unless forced.
+    /// A Factory left holding nothing after a refused promotion appends a
+    /// PRODUCE behind its queue; a forced promotion still creates. The create
+    /// path keeps the abandoned build's +5C cash stall.
+    #[test]
+    fn produce_on_an_empty_factory_with_a_queue_joins_its_tail() {
+        let (owner, queued, produced) = (
+            InternedId::from_index(1),
+            InternedId::from_index(2),
+            InternedId::from_index(3),
+        );
+        let category = ProductionCategory::Vehicle;
+        let empty = Factory {
+            object: None,
+            suspended: true,
+            on_hold: true,
+            queue: VecDeque::from(vec![qe(queued)]),
+            ..Factory::default()
+        };
+        let mut reg = reg_with(owner, category, empty.clone());
+        assert_eq!(
+            reg.enqueue(owner, category, produced, 5, 700, 5, false, false),
+            EnqueueOutcome::Queued
+        );
+        let f = &reg.factories[&FactoryHolder::House(owner, category)];
+        assert!(f.object.is_none());
+        let tail: Vec<_> = f.queue.iter().map(|entry| entry.type_id).collect();
+        assert_eq!(tail, vec![queued, produced]);
+
+        let mut reg = reg_with(owner, category, empty);
+        assert_eq!(
+            reg.enqueue(owner, category, produced, 5, 700, 5, false, true),
+            EnqueueOutcome::Started
+        );
+        let f = &reg.factories[&FactoryHolder::House(owner, category)];
+        assert_eq!(f.object.as_ref().map(|o| o.type_id), Some(produced));
+        assert_eq!(f.queue.len(), 1);
+        assert!(f.on_hold, "4C9C95..4C9DEA never writes +5C");
+    }
+
     /// `LogicClass` runs `FactoryClass::AI` in the order the factories were made
     /// (`0x0055B66A..`), and a promotion keeps its factory. With money for one of
     /// two steps due on the same frame, the older factory pays, even after it
@@ -2825,22 +2902,22 @@ mod tests {
         let (vehicle, infantry) = (ProductionCategory::Vehicle, ProductionCategory::Infantry);
         let mut reg = FactoryRegistry::default();
         assert_eq!(
-            reg.enqueue(owner, vehicle, tank, 0, 700, 5, false),
+            reg.enqueue(owner, vehicle, tank, 0, 700, 5, false, false),
             EnqueueOutcome::Started
         );
         assert_eq!(
-            reg.enqueue(owner, infantry, soldier, 1, 200, 5, false),
+            reg.enqueue(owner, infantry, soldier, 1, 200, 5, false, false),
             EnqueueOutcome::Started
         );
         assert_eq!(
-            reg.enqueue(owner, vehicle, tank, 2, 700, 5, false),
+            reg.enqueue(owner, vehicle, tank, 2, 700, 5, false, false),
             EnqueueOutcome::Queued
         );
         reg.reset_for_abandon(FactoryHolder::House(owner, vehicle), 0);
         reg.finish_abandon(FactoryHolder::House(owner, vehicle));
         assert_eq!(reg.start_next_queued(owner, vehicle), Some(tank));
         assert_eq!(
-            reg.enqueue(owner, vehicle, tank, 2, 700, 5, false),
+            reg.enqueue(owner, vehicle, tank, 2, 700, 5, false, true),
             EnqueueOutcome::Started
         );
         reg.resume(FactoryHolder::House(owner, vehicle), 540, 100, false, 13);

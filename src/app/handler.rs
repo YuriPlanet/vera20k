@@ -5,6 +5,7 @@
 
 use super::frame::{FramePass, FrameRenderOutcome};
 use super::input::dispatch;
+use super::input::hotkeys::HotkeyCommand;
 use super::input::precedence::{InputLayer, ModalPage, ScreenPage};
 use super::{
     ActiveEventLoop, App, AppState, ApplicationHandler, ControlFlow, GameScreen, Instant, KeyCode,
@@ -226,39 +227,30 @@ impl App {
         )));
     }
 
-    /// Note where the windowed window sits for the next launch, and whether it
-    /// is maximised. Full screen, maximised and minimised windows keep the last
-    /// ordinary placement, so leaving those states restores it. winit reports full screen until the
-    /// exit animation's last resize, so the animation's sizes are skipped too.
+    /// Note where the windowed window sits for the next launch, which opens it
+    /// there at gamemd's startup size. Full screen, maximised and minimised
+    /// windows keep the last ordinary corner. winit reports full screen until
+    /// the exit animation's last resize, so the animation's corners are
+    /// skipped too.
     fn remember_window_placement(state: &mut AppState) {
         let window = &state.platform.window;
         if state.platform.capture_client_size.is_some()
             || window.fullscreen().is_some()
             || window.is_minimized().unwrap_or(false)
+            || window.is_maximized()
         {
             return;
         }
-        let maximized = window.is_maximized();
-        if state.persistence.options_profile.window_maximized != maximized {
-            state.persistence.options_profile.window_maximized = maximized;
-            state.platform.window_placement_unsaved = true;
-        }
-        if maximized {
-            return;
-        }
-        let window = &state.platform.window;
         let Ok(corner) = window.outer_position() else {
             return;
         };
-        let size = window.inner_size().to_logical::<u32>(window.scale_factor());
+        let size = window.inner_size();
         if size.width == 0 || size.height == 0 {
             return;
         }
         let placement = crate::app::persistence::options_profile::WindowPlacement {
             x: corner.x,
             y: corner.y,
-            width: size.width,
-            height: size.height,
         };
         let profile = &mut state.persistence.options_profile;
         if profile.window_placement != Some(placement) {
@@ -459,10 +451,11 @@ impl App {
                 }
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 crate::web::status(
-                    self.state
+                    &self
+                        .state
                         .as_ref()
-                        .and_then(|state| state.frontend.main_menu_shell_error.as_deref())
-                        .unwrap_or("Ready"),
+                        .and_then(|state| state.frontend.main_menu_shell_error.clone())
+                        .unwrap_or_else(|| crate::i18n::tr("VERA:EngineReady")),
                 );
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 if let (Some(error), Some(state)) = (browser_spawn_failure, self.state.as_mut()) {
@@ -473,8 +466,13 @@ impl App {
             Err(err) => {
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 {
+                    // The lifecycle event keeps its English for the host; the
+                    // page's status line is the player's.
                     crate::web::request_exit(Some(&format!("Startup failed: {err:#}")));
-                    crate::web::status(&format!("Startup failed: {err:#}"));
+                    crate::web::status(&crate::i18n::tr_fill(
+                        "VERA:StartupFailed",
+                        &[("error", &format!("{err:#}"))],
+                    ));
                 }
                 log::error!("Failed to initialize: {:#}", err);
                 if self.spawn_request.is_some() || self.replay_request.is_some() {
@@ -1149,59 +1147,55 @@ impl ApplicationHandler for App {
                     state.match_state.input.keys_held.remove(&code);
                     return;
                 }
-                // Cursor lock toggle: flip the window cursor clip so the
-                // pointer cannot leave the game (and back). Works on every
-                // screen, like the rest of the lock feature. Scroll Lock, or
-                // Ctrl+Alt+L for keyboards without one (every Mac's).
+                // VERA's every-screen keys, as the Keyboard page's VERA section
+                // binds them: Lock Cursor to Window (Ctrl+Alt+L), Full Screen
+                // (Alt+Enter) and Performance Stats (Ctrl+Alt+F) by default. Scroll
+                // Lock and, on macOS, the system's Ctrl+Cmd+F stay fixed
+                // extras ahead of the bindings. All are consumed before retail
+                // key dispatch, but a key the Keyboard page is capturing goes
+                // to the page.
                 let modifiers = state.platform.live_modifiers;
-                let lock_key = match event.physical_key {
-                    PhysicalKey::Code(KeyCode::ScrollLock) => true,
-                    PhysicalKey::Code(KeyCode::KeyL) => {
-                        modifiers.control_key() && modifiers.alt_key()
-                    }
-                    _ => false,
-                };
-                if lock_key {
-                    if event.state.is_pressed() && !event.repeat {
-                        crate::app::input::cursor::toggle_cursor_confinement(state);
-                        state.platform.window.request_redraw();
-                    }
-                    return;
-                }
-                // Full screen toggle: Alt+Enter, and on macOS also the
-                // system's own Ctrl+Cmd+F. A capture keeps its fixed surface.
-                let full_screen_key = match event.physical_key {
-                    PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter) => {
-                        modifiers.alt_key() && !modifiers.control_key()
-                    }
-                    PhysicalKey::Code(KeyCode::KeyF) => {
-                        cfg!(target_os = "macos")
+                let fixed = match event.physical_key {
+                    PhysicalKey::Code(KeyCode::ScrollLock) => Some(HotkeyCommand::LockCursor),
+                    PhysicalKey::Code(KeyCode::KeyF)
+                        if cfg!(target_os = "macos")
                             && modifiers.control_key()
                             && modifiers.super_key()
-                            && !modifiers.alt_key()
+                            && !modifiers.alt_key() =>
+                    {
+                        Some(HotkeyCommand::FullScreen)
                     }
-                    _ => false,
+                    _ => None,
                 };
-                if full_screen_key && state.platform.capture_client_size.is_none() {
-                    if event.state.is_pressed() && !event.repeat {
-                        let full_screen = state.platform.window.fullscreen().is_none();
-                        Self::set_full_screen(state, full_screen);
+                let capturing = state
+                    .frontend
+                    .keyboard_dialog
+                    .as_ref()
+                    .is_some_and(|dialog| dialog.capture_focused);
+                let window_command = fixed.or_else(|| {
+                    if capturing {
+                        return None;
                     }
-                    return;
-                }
-                // VERA's FPS readout toggle. Like the cursor lock it works on
-                // every screen and is consumed before retail key dispatch.
-                if let PhysicalKey::Code(KeyCode::KeyF) = event.physical_key
-                    && state.platform.live_modifiers.control_key()
-                    && state.platform.live_modifiers.alt_key()
+                    let unmodified = event.key_without_modifiers();
+                    let logical = crate::app::input::hotkeys::binding_logical_key(
+                        &event.logical_key,
+                        &unmodified,
+                        event.location,
+                    );
+                    state.match_state.input.hotkey_bindings.window_command(
+                        logical,
+                        event.location,
+                        modifiers,
+                    )
+                });
+                // A capture keeps its fixed surface, and its Full Screen key
+                // goes on to the screen.
+                if let Some(command) = window_command
+                    && (command != HotkeyCommand::FullScreen
+                        || state.platform.capture_client_size.is_none())
                 {
                     if event.state.is_pressed() && !event.repeat {
-                        let shown = state.renderer.fps_overlay.toggle();
-                        if let Some(dialog) = state.frontend.options_dialog.as_mut() {
-                            dialog.sync_fps_counter(shown);
-                        }
-                        log::info!("FPS overlay: {}", if shown { "shown" } else { "hidden" });
-                        state.platform.window.request_redraw();
+                        dispatch::run_window_command(state, command);
                     }
                     return;
                 }

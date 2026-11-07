@@ -159,6 +159,7 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
         Some("Local"),
         &mut |_| false,
         &mut events,
+        None,
     );
     playback.consume(&mut player, &events.drain(), Some(&sim), Some("Local"));
     assert!(player.pending_unit_voice_owners().contains(&1));
@@ -187,6 +188,7 @@ fn pack_voice_destroyed_before_a_head_is_forgotten_by_the_production_consumer() 
         Some("Local"),
         &mut |_| false,
         &mut events,
+        None,
     );
     playback.consume(&mut player, &events.drain(), Some(&sim), Some("Local"));
     assert!(!player.pending_unit_voice_owners().contains(&1));

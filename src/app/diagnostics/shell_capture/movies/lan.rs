@@ -1131,7 +1131,7 @@ impl LanCapture {
     }
     /// The controlled host generates its random map from its own `.Sed`
     /// through the production loader, and computes the `'W'` staging the
-    /// way its Generate does (`0x0058B830`).
+    /// way its Generate does (`0x0058B820`).
     fn prepare_controlled_random_map(&mut self, state: &mut AppState) -> Result<()> {
         struct Silent;
         impl crate::app::loading::pump::LoadingProgressSink for Silent {

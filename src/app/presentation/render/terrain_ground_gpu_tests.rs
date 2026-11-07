@@ -565,10 +565,10 @@ fn tree_transactions_preserve_tmp_shp_voxel_overlap_and_coalesced_order() {
             .filter(|step| matches!(step.0, ObjectTexture::TerrainShp(_)))
             .count();
         assert_eq!(stats.pieces, tree_steps * 3);
-        assert_eq!(
-            stats.waves, tree_steps,
-            "each native step has three disjoint members, with ordinary fences and overlapping later steps"
-        );
+        // Each native step has three disjoint members; overlapping later
+        // steps join an earlier in-order interval unless an ordinary draw
+        // fences them.
+        assert!(stats.waves <= tree_steps, "{stats:?}");
         let reads = [
             gpu.read(&mut encoder, &color),
             gpu.read(&mut encoder, &depth),

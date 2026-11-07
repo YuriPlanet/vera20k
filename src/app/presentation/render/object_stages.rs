@@ -2,20 +2,22 @@
 //!
 //! VERA scheduling only; no native counterpart. gamemd blits each Display
 //! parent in order into one software surface, where switching blitters is
-//! free. Here an ordinary GPU draw, a packed composite and a destination edit
-//! each need their own render passes, so replaying them strictly in parent
-//! order closes and reopens passes around every Anim body and shadow.
+//! free. Here an ordinary GPU draw, a packed composite, a destination edit, a
+//! combat light and a surface-line range each need their own render passes,
+//! so replaying them strictly in parent order closes and reopens passes
+//! around every Anim body, shadow, light and Spark.
 //!
 //! Draws whose pixel footprints are disjoint commute exactly: each pipeline
 //! reads and writes colour and Z only inside its footprint (the packed read
-//! halo included). So every draw goes to the earliest stage after every
-//! earlier draw it overlaps. Same-kind draws that already compose in sequence
-//! inside one transaction (ordinary draws in one render pass, read-only edits
-//! in one reduction interval) may share a stage even when they overlap; their
-//! order inside the stage stays parent order. Stages replay in index order.
+//! halo, a light's copied scratch and a line range's gate and source reads
+//! included). So every draw goes to the earliest stage after every earlier
+//! draw it overlaps. Same-kind draws that already compose in sequence inside
+//! one transaction (ordinary draws in one render pass, read-only edits in one
+//! reduction interval, read-write edits in one interval, combat lights in one
+//! replayed pass) may share a stage even when they overlap; their order inside
+//! the stage stays parent order.
+//! Stages replay in index order.
 //! Footprints are tested on a tile grid: a false overlap only costs a stage.
-
-use crate::render::tactical_draw_plan::RenderZPolicy;
 
 const TILE: u32 = 16;
 
@@ -24,14 +26,19 @@ const TILE: u32 = 16;
 pub(super) enum StageKind {
     /// One ordinary render pass; draws compose in submission order.
     Ordinary,
-    /// One packed wave: equal selector and Z policy, pairwise disjoint.
-    Packed(u32, RenderZPolicy),
+    /// One packed wave: pairwise disjoint, of any selectors and Z policies.
+    Packed,
     /// A packed composite with displaced reads, replayed alone.
     PackedAlone,
     /// One read-only reduction interval; overlapping edits reduce in order.
     EditReadOnly,
-    /// One read-write edit wave, pairwise disjoint.
+    /// One read-write interval; overlapping edits keep their order inside it
+    /// (waves, replays or the live depth test, `TerrainDrawRenderer::draw_span`).
     EditReadWrite,
+    /// Combat lights; overlapping ones edit in order within each pass.
+    Light,
+    /// Surface-line ranges sharing each snapshot/blend pair, pairwise disjoint.
+    Lines,
 }
 
 impl StageKind {
@@ -39,7 +46,10 @@ impl StageKind {
     fn composes_in_order(self, next: Self) -> bool {
         matches!(
             (self, next),
-            (Self::Ordinary, Self::Ordinary) | (Self::EditReadOnly, Self::EditReadOnly)
+            (Self::Ordinary, Self::Ordinary)
+                | (Self::EditReadOnly, Self::EditReadOnly)
+                | (Self::EditReadWrite, Self::EditReadWrite)
+                | (Self::Light, Self::Light)
         )
     }
 
@@ -48,7 +58,7 @@ impl StageKind {
     }
 }
 
-/// Stages of one replay segment. Barrier commands end a segment: the caller
+/// Stages of one replay segment. A barrier command ends a segment: the caller
 /// replays [`Self::take`] and starts again from an empty plan.
 pub(super) struct ObjectStages<T> {
     columns: u32,
@@ -151,7 +161,7 @@ mod tests {
 
     #[test]
     fn disjoint_anims_share_stages_and_overlaps_keep_parent_order() {
-        let packed = StageKind::Packed(2, RenderZPolicy::ReadOnly);
+        let packed = StageKind::Packed;
         let mut plan = ObjectStages::new([256, 64]);
         // Building, its translucent Anim on top, its shadow; then a second
         // building group far to the right; then a sprite clear of both groups
@@ -178,11 +188,9 @@ mod tests {
     #[test]
     fn exclusive_waves_never_take_an_overlapping_member() {
         let mut plan = ObjectStages::new([64, 64]);
-        let packed = StageKind::Packed(2, RenderZPolicy::None);
+        let packed = StageKind::Packed;
         plan.push(packed, [0, 0, 20, 20], 0);
         plan.push(packed, [10, 10, 20, 20], 1);
-        plan.push(StageKind::EditReadWrite, [0, 0, 8, 8], 2);
-        plan.push(StageKind::EditReadWrite, [4, 4, 8, 8], 3);
         plan.push(StageKind::PackedAlone, [48, 48, 4, 4], 4);
         plan.push(StageKind::PackedAlone, [56, 56, 4, 4], 5);
         assert_eq!(
@@ -190,8 +198,6 @@ mod tests {
             [
                 (packed, vec![0]),
                 (packed, vec![1]),
-                (StageKind::EditReadWrite, vec![2]),
-                (StageKind::EditReadWrite, vec![3]),
                 (StageKind::PackedAlone, vec![4]),
                 (StageKind::PackedAlone, vec![5]),
             ]
@@ -199,5 +205,44 @@ mod tests {
         // The grid is cleared with the plan.
         plan.push(StageKind::Ordinary, [0, 0, 64, 64], 6);
         assert_eq!(stage_items(&mut plan), [(StageKind::Ordinary, vec![6])]);
+    }
+
+    /// Overlapping trees share a read-write interval, in order, until an
+    /// ordinary draw they overlap comes between.
+    #[test]
+    fn overlapping_read_write_edits_share_a_stage_until_another_draw_meets_them() {
+        let edit = StageKind::EditReadWrite;
+        let mut plan = ObjectStages::new([64, 64]);
+        plan.push(edit, [0, 0, 8, 8], 0);
+        plan.push(edit, [4, 4, 8, 8], 1);
+        plan.push(StageKind::Ordinary, [6, 6, 8, 8], 2);
+        plan.push(edit, [10, 10, 8, 8], 3);
+        plan.push(edit, [40, 40, 8, 8], 4);
+        assert_eq!(
+            stage_items(&mut plan),
+            [
+                (edit, vec![0, 1, 4]),
+                (StageKind::Ordinary, vec![2]),
+                (edit, vec![3]),
+            ]
+        );
+    }
+
+    #[test]
+    fn overlapping_lights_share_a_stage_until_another_draw_meets_them() {
+        let light = StageKind::Light;
+        let mut plan = ObjectStages::new([64, 64]);
+        plan.push(light, [0, 0, 20, 20], 0);
+        plan.push(light, [10, 10, 20, 20], 1);
+        plan.push(StageKind::Ordinary, [12, 12, 4, 4], 2);
+        plan.push(light, [14, 14, 4, 4], 3);
+        assert_eq!(
+            stage_items(&mut plan),
+            [
+                (light, vec![0, 1]),
+                (StageKind::Ordinary, vec![2]),
+                (light, vec![3]),
+            ]
+        );
     }
 }

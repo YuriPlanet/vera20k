@@ -2502,7 +2502,7 @@ fn finish_concrete_death(
         // types at `0x004D98DD`. Its owner gate (`0x0050B6F0`) and
         // the `CreateRadarEvent(7)` dedupe (`0x004D98FE`) need the
         // house table and radar queue, which the world owns.
-        if let Some(event) = death_announcement_event(obj, category, rx, ry, owner) {
+        if let Some(event) = death_announcement_event(obj, type_id, category, rx, ry, owner) {
             effects.unit_lost_events.push(event);
         }
     }

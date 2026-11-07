@@ -9,6 +9,24 @@ use super::build::{
 use super::tubes::auto_tube_direction_for_tile;
 use super::*;
 
+/// The CliffBack neighbour test of `CellClass::RecalcAttributes @
+/// 0x0047D2B0` (all three writer sites share it): a cell is behind a cliff
+/// when one of six neighbours, probed in this order and stopping at the first
+/// hit, stands at least four levels above it. `level_at` reads a neighbour's
+/// signed level, a missing cell's through the shared Dummy.
+pub(crate) fn is_behind_cliff(
+    x: i16,
+    y: i16,
+    level: i8,
+    mut level_at: impl FnMut(i16, i16) -> i8,
+) -> bool {
+    const OFFSETS: [(i16, i16); 6] = [(0, -1), (-1, 0), (2, 2), (1, 1), (-1, 1), (1, -1)];
+    let threshold = i16::from(level).wrapping_add(4);
+    OFFSETS
+        .into_iter()
+        .any(|(dx, dy)| i16::from(level_at(x.wrapping_add(dx), y.wrapping_add(dy))) >= threshold)
+}
+
 /// Non-Clone input adapter for `CellClass::RecalcAttributes`. Authored loading
 /// owns its lazy asset cache and animation latch; the admitted runtime bridge
 /// path borrows immutable resident inputs and supplies current playfield bounds.
@@ -673,27 +691,21 @@ impl ResolvedTerrainGrid {
     }
 
     pub(super) fn authored_load_cell_is_behind_cliff(&self, index: usize) -> bool {
-        const OFFSETS: [(i16, i16); 6] = [(0, -1), (-1, 0), (2, 2), (1, 1), (-1, 1), (1, -1)];
         let cell = &self.cells[index];
-        let x = cell.rx as i16;
-        let y = cell.ry as i16;
-        let threshold = i16::from(cell.level as i8).wrapping_add(4);
-        for (dx, dy) in OFFSETS {
-            let nx = x.wrapping_add(dx);
-            let ny = y.wrapping_add(dy);
-            let neighbor_level = if let Some(neighbor_index) = self.native_fixed_cell_index(nx, ny)
-            {
-                self.cells[neighbor_index].level as i8
-            } else {
-                self.shared_cell_dummy
-                    .stamp_coord(i32::from(nx), i32::from(ny));
-                self.shared_cell_dummy.snapshot().level
-            };
-            if i16::from(neighbor_level) >= threshold {
-                return true;
-            }
-        }
-        false
+        is_behind_cliff(
+            cell.rx as i16,
+            cell.ry as i16,
+            cell.level as i8,
+            |nx, ny| {
+                if let Some(neighbor_index) = self.native_fixed_cell_index(nx, ny) {
+                    self.cells[neighbor_index].level as i8
+                } else {
+                    self.shared_cell_dummy
+                        .stamp_coord(i32::from(nx), i32::from(ny));
+                    self.shared_cell_dummy.snapshot().level
+                }
+            },
+        )
     }
 
     fn apply_authored_load_cliff_back_rock(

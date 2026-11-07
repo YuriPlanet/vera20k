@@ -8,11 +8,12 @@
 //! neighbor instead of becoming regions.
 
 use crate::map::rmg::grid::RmgGrid;
+use crate::map::rmg::phases::adjacency::border_cells_of;
 use crate::map::rmg::phases::blob::{CellHeap, by_key};
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{Gaussian, TruncF64, approx_sqrt, narrow_to_f32};
+use crate::map::rmg::x87::{self, Gaussian, TruncF64, approx_sqrt};
 use crate::util::direction_tables::native_atan_from_table;
 use crate::util::native_x87::X87Chop53;
 
@@ -89,25 +90,16 @@ fn region_class(ids: &TileIds, tile: i32) -> bool {
     water_ish(ids, tile) || ids.is_green_lat(tile)
 }
 
+/// The region teardown, then `RandomMapGenerator::Generate @ 0x00598960`
+/// 0x00598C89..0x00598D01: [`partition`], ring expansion and water
+/// propagation of every class region, then [`flood_unowned`].
 pub fn run(ctx: &mut RegionCtx<'_>) -> Regions {
     let mut regions = Regions::default();
     ctx.scratch.reset_region_ids();
+    partition(ctx, &mut regions);
 
-    // Seed scan: linear scratch order, class cells only.
-    let width = ctx.scratch.width();
-    for index in 0..width * width {
-        let record = ctx.scratch.cells()[index];
-        let coord = (i32::from(record.x), i32::from(record.y));
-        if record.region != -1 || coord == (0, 0) {
-            continue;
-        }
-        let tile = ctx.grid.cell_native(coord.0, coord.1).tile;
-        if region_class(ctx.ids, tile) {
-            flood_fill(ctx, &mut regions, coord);
-        }
-    }
-
-    // Expansion over the snapshot of seeded regions.
+    // 0x00598C94..0x00598CF8: the list count is re-read per region, but
+    // neither call adds one.
     let mode34 = matches!(ctx.map_type, 3 | 4);
     let seeded = regions.list.len();
     for index in 0..seeded {
@@ -122,20 +114,51 @@ pub fn run(ctx: &mut RegionCtx<'_>) -> Regions {
     }
 
     // Fallback: every remaining unassigned cell seeds a region.
+    flood_unowned(ctx, &mut regions);
+
+    regions
+}
+
+/// `RandomMapGenerator::PartitionRegions @ 0x0058CF90`: one [`flood_fill`]
+/// per unowned scratch slot, in linear slot order, whose cell is of the
+/// region class; unused slots keep the coordinate (0, 0).
+fn partition(ctx: &mut RegionCtx<'_>, regions: &mut Regions) {
+    let width = ctx.scratch.width();
     for index in 0..width * width {
         let record = ctx.scratch.cells()[index];
         let coord = (i32::from(record.x), i32::from(record.y));
         if record.region != -1 || coord == (0, 0) {
             continue;
         }
-        flood_fill(ctx, &mut regions, coord);
+        let tile = ctx.grid.cell_native(coord.0, coord.1).tile;
+        if region_class(ctx.ids, tile) {
+            flood_fill(ctx, regions, coord);
+        }
     }
+}
 
-    regions
+/// One [`flood_fill`] per scratch slot still unowned, in linear slot order;
+/// unused slots keep the coordinate (0, 0). The partition's fallback scan,
+/// and step 5 of `RandomMapGenerator::BridgeAndConnectorPass @ 0x0058EF10`.
+/// `RandomMapGenerator::FloodUnownedRegions @ 0x0058D010`; both callers pass 0
+/// for the regions' finalised flag (+0x1A), as the constructor already sets it.
+pub(crate) fn flood_unowned(ctx: &mut RegionCtx<'_>, regions: &mut Regions) {
+    let width = ctx.scratch.width();
+    for index in 0..width * width {
+        let record = ctx.scratch.cells()[index];
+        let coord = (i32::from(record.x), i32::from(record.y));
+        if record.region != -1 || coord == (0, 0) {
+            continue;
+        }
+        flood_fill(ctx, regions, coord);
+    }
 }
 
 /// The flood-fill constructor: LIFO stack, claim-at-enqueue, level+class
 /// matched growth, small-blob dissolve/merge, and the registry append.
+/// `RandomMapGenerator::FloodBuildRegion @ 0x0058C800`. A dissolve whose
+/// border pick finds no qualifying neighbour falls through to construction
+/// (0x0058CC70 -> 0x0058CDF6).
 fn flood_fill(ctx: &mut RegionCtx<'_>, regions: &mut Regions, seed: (i32, i32)) {
     let id = regions.id_counter;
     let seed_tile = ctx.grid.cell_native(seed.0, seed.1).tile;
@@ -219,22 +242,10 @@ fn flood_fill(ctx: &mut RegionCtx<'_>, regions: &mut Regions, seed: (i32, i32)) 
 /// differently-leveled non-water neighbor, and if found dissolve the whole
 /// blob back to unassigned clear land at that neighbor's level.
 fn dissolve_first_region(ctx: &mut RegionCtx<'_>) -> bool {
-    let width = ctx.scratch.width();
-    let mut border: Vec<(i32, i32)> = Vec::new();
-    for index in 0..width * width {
-        let record = ctx.scratch.cells()[index];
-        let coord = (i32::from(record.x), i32::from(record.y));
-        if coord == (0, 0) || record.region != 0 {
-            continue;
-        }
-        let is_border = (0..8).any(|dir| {
-            let (nx, ny) = RmgGrid::step(coord.0, coord.1, dir);
-            ctx.scratch.in_diamond(nx, ny) && ctx.scratch.get(nx, ny).region != 0
-        });
-        if is_border {
-            border.push(coord);
-        }
-    }
+    let border = border_cells_of(ctx.scratch, 0);
+    // Residual: on an empty border native draws once and reads entry 0
+    // through the list's null array (0x0058CB27), a fault; that needs a
+    // <= 0x4A-cell blob covering the whole diamond, which no generated map has.
     if border.is_empty() {
         return false;
     }
@@ -283,6 +294,8 @@ fn rewrite_blob(ctx: &mut RegionCtx<'_>, blob_id: i32, adopt_id: i32, adopt_leve
 /// later passes from the previous pass's claims. Returns false on the abort
 /// conditions (foreign region contact, or an unclaimed level-matching
 /// neighbor failing the clear/green class test).
+/// `RandomMapGenerator::ExpandRegionRings @ 0x0058E740`; an abort keeps the
+/// claims made so far.
 fn expand(ctx: &mut RegionCtx<'_>, id: i32, level: u8, passes: i32) -> bool {
     let mut frontier = boundary(ctx, id);
     for _ in 0..passes {
@@ -319,6 +332,8 @@ fn expand(ctx: &mut RegionCtx<'_>, id: i32, level: u8, passes: i32) -> bool {
 
 /// The boundary collector: region cells with at least one in-diamond
 /// neighbor owned by a different region, in native scan order.
+/// `RandomMapGenerator::CollectRegionBorderCellsForRegion @ 0x0058D410`, which
+/// walks the cell iterator, unlike `CollectRegionBorderCells @ 0x005A0700`.
 fn boundary(ctx: &mut RegionCtx<'_>, id: i32) -> Vec<(i32, i32)> {
     let mut out = Vec::new();
     for (x, y) in ctx.grid.native_cells().collect::<Vec<_>>() {
@@ -339,12 +354,11 @@ fn boundary(ctx: &mut RegionCtx<'_>, id: i32) -> Vec<(i32, i32)> {
 /// The water-propagation pass: claims unassigned water-flagged cells
 /// reachable from the region's boundary. A no-op on the base path (nothing
 /// sets the flag before the mode-3/4 carvers).
+/// `RandomMapGenerator::PropagateRegionWater @ 0x0058E9B0`: a LIFO stack seeded
+/// with the boundary, claiming at push.
 fn water_propagate(ctx: &mut RegionCtx<'_>, id: i32) {
-    let mut queue = boundary(ctx, id);
-    let mut cursor = 0;
-    while cursor < queue.len() {
-        let (x, y) = queue[cursor];
-        cursor += 1;
+    let mut stack = boundary(ctx, id);
+    while let Some((x, y)) = stack.pop() {
         for dir in 0..8 {
             let (nx, ny) = RmgGrid::step(x, y, dir);
             if !ctx.scratch.in_diamond(nx, ny) {
@@ -353,7 +367,7 @@ fn water_propagate(ctx: &mut RegionCtx<'_>, id: i32) {
             let record = ctx.scratch.get(nx, ny);
             if record.water_region && record.region == -1 {
                 ctx.scratch.get_mut(nx, ny).region = id;
-                queue.push((nx, ny));
+                stack.push((nx, ny));
             }
         }
     }
@@ -707,7 +721,7 @@ fn split_frontier_cost(
         .mul(tf(f64::from_bits(RANGE_K_BITS)))
         .mul(tf(2.5));
     let cost = noise.add(tf(1.5).mul(off)).add(tf(0.15).mul(distance));
-    narrow_to_f32(cost).to_f64() as f32
+    x87::store_f32(cost)
 }
 
 #[cfg(test)]
@@ -770,6 +784,284 @@ mod tests {
         }
     }
 
+    /// The native MapGen stream bytes, as the oracles publish them.
+    fn native_state_hex(rng: RmgRng) -> String {
+        let (locked, words, a, b) = rng.into_continuation().into_native_parts();
+        let mut bytes = vec![locked, 0, 0, 0];
+        bytes.extend_from_slice(&(a as u32).to_le_bytes());
+        bytes.extend_from_slice(&(b as u32).to_le_bytes());
+        for word in words {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    /// The oracles' stride-33 grid, bounds 16..48, in row-major order.
+    fn oracle_diamond() -> Vec<(i32, i32)> {
+        let scratch = RmgScratch::new(33, 16, 48);
+        (0..33)
+            .flat_map(|y| (0..33).map(move |x| (x, y)))
+            .filter(|&(x, y)| scratch.in_diamond(x, y))
+            .collect()
+    }
+
+    fn hex_bytes(text: &str) -> Vec<u8> {
+        (0..text.len())
+            .step_by(2)
+            .map(|at| u8::from_str_radix(&text[at..at + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// The Generate region slice 0x00598C89..0x00598D01 from
+    /// `tools/rmg_oracle/region_partition.py`: declared scenes (not a full
+    /// Generate prefix) and the state the original left after
+    /// `PartitionRegions`, after each `ExpandRegionRings` and
+    /// `PropagateRegionWater`, and after `FloodUnownedRegions`, with its
+    /// draws. Each stage is replayed on its own, then the whole [`run`].
+    #[test]
+    fn native_partition_stage_controls() {
+        use serde_json::Value;
+        let doc = crate::test_fixture::json("tools/rmg_oracle/region_partition.json");
+        let scene = &doc["scene"];
+        let int = |v: &Value| v.as_i64().unwrap() as i32;
+        let tiles = &scene["tiles"];
+        let mut identity = ids();
+        identity.water_base = int(&tiles["water"]);
+        identity.shore = int(&tiles["shore"]);
+        identity.green = int(&tiles["green"]);
+        identity.green_lat = int(&tiles["green_lat"]);
+        let falls: Vec<Option<u16>> = tiles["waterfalls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| u16::try_from(int(v)).ok())
+            .collect();
+        identity.cliffs.waterfall_north = falls[0];
+        identity.cliffs.waterfall_east = falls[1];
+        identity.cliffs.waterfall_south = falls[2];
+        identity.cliffs.waterfall_west = falls[3];
+        let codes: Vec<(char, i32)> = scene["codes"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(code, tile)| (code.chars().next().unwrap(), int(tile)))
+            .collect();
+        let tile_of = |code: char| codes.iter().find(|(c, _)| *c == code).unwrap().1;
+        let code_of = |tile: i32| codes.iter().find(|(_, t)| *t == tile).unwrap().0;
+        let default_level = int(&scene["default_level"]) as u8;
+        let diamond = oracle_diamond();
+        let coords = |v: &Value| -> Vec<(i32, i32)> {
+            v.as_array()
+                .unwrap()
+                .iter()
+                .map(|xy| (int(&xy[0]), int(&xy[1])))
+                .collect()
+        };
+        let owners = |scratch: &RmgScratch| -> Vec<i32> {
+            diamond
+                .iter()
+                .map(|&(x, y)| scratch.get(x, y).region)
+                .collect()
+        };
+        let native_owners = |v: &Value| -> Vec<i32> {
+            hex_bytes(v.as_str().unwrap())
+                .iter()
+                .map(|&b| i32::from(b as i8))
+                .collect()
+        };
+        let listed = |regions: &Regions| -> Vec<[i64; 4]> {
+            regions
+                .list
+                .iter()
+                .map(|r| {
+                    [
+                        i64::from(r.id),
+                        i64::from(r.cell_count),
+                        i64::from(r.level as i8),
+                        i64::from(r.active),
+                    ]
+                })
+                .collect()
+        };
+        let native_listed = |v: &Value| -> Vec<[i64; 4]> {
+            v.as_array()
+                .unwrap()
+                .iter()
+                .map(|r| std::array::from_fn(|i| r[i].as_i64().unwrap()))
+                .collect()
+        };
+        let changed = |before: &[i32], after: &[i32]| -> Vec<(i32, i32)> {
+            diamond
+                .iter()
+                .zip(before.iter().zip(after))
+                .filter(|(_, (a, b))| a != b)
+                .map(|(&xy, _)| xy)
+                .collect()
+        };
+
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 9);
+        for row in rows {
+            let input = &row["input"];
+            let label = input["id"].as_str().unwrap();
+            let plane = &doc["scenes"][input["scene"].as_str().unwrap()];
+            let build = || {
+                let mut grid = RmgGrid::new(33, 16, 48);
+                let mut scratch = RmgScratch::new(33, 16, 48);
+                let levels = hex_bytes(plane["levels_hex"].as_str().unwrap());
+                let codes = plane["tiles"].as_str().unwrap().chars();
+                for ((&(x, y), code), level) in diamond.iter().zip(codes).zip(levels) {
+                    let cell = grid.get_mut(x, y).unwrap();
+                    (cell.tile, cell.sub_tile, cell.level) = (tile_of(code), 0, level);
+                }
+                for (x, y) in coords(&plane["water"]) {
+                    scratch.get_mut(x, y).water_region = true;
+                }
+                (grid, scratch)
+            };
+            let seed = input["seed"].as_u64().unwrap() as u16;
+            assert_eq!(
+                native_state_hex(RmgRng::new(seed)),
+                doc["rng_states_hex"][row["rng_before"].as_u64().unwrap() as usize],
+                "{label}: entry RNG"
+            );
+            let check_final = |grid: &RmgGrid,
+                               scratch: &RmgScratch,
+                               regions: &Regions,
+                               rng: RmgRng,
+                               pass: &str| {
+                let fin = &row["final"];
+                assert_eq!(
+                    owners(scratch),
+                    native_owners(&fin["owners_hex"]),
+                    "{label} {pass}: owners"
+                );
+                let levels: Vec<u8> = diamond
+                    .iter()
+                    .map(|&(x, y)| grid.get(x, y).unwrap().level)
+                    .collect();
+                assert_eq!(
+                    levels,
+                    hex_bytes(fin["levels_hex"].as_str().unwrap()),
+                    "{label} {pass}: levels"
+                );
+                let tiles: String = diamond
+                    .iter()
+                    .map(|&(x, y)| code_of(grid.get(x, y).unwrap().tile))
+                    .collect();
+                assert_eq!(
+                    tiles,
+                    fin["tiles"].as_str().unwrap(),
+                    "{label} {pass}: tiles"
+                );
+                let water: Vec<(i32, i32)> = diamond
+                    .iter()
+                    .copied()
+                    .filter(|&(x, y)| scratch.get(x, y).water_region)
+                    .collect();
+                assert_eq!(water, coords(&fin["water"]), "{label} {pass}: water flags");
+                assert_eq!(
+                    listed(regions),
+                    native_listed(&fin["listed"]),
+                    "{label} {pass}: region list"
+                );
+                assert_eq!(
+                    i64::from(regions.id_counter),
+                    fin["next_region_id"].as_i64().unwrap(),
+                    "{label} {pass}: next id"
+                );
+                assert_eq!(
+                    native_state_hex(rng),
+                    doc["rng_states_hex"][row["rng_after"].as_u64().unwrap() as usize],
+                    "{label} {pass}: exit RNG"
+                );
+            };
+
+            // Stage by stage.
+            let (mut grid, mut scratch) = build();
+            let mut rng = RmgRng::new(seed);
+            let mut regions = Regions::default();
+            let mut ctx = RegionCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                rng: &mut rng,
+                map_type: int(&input["map_type"]),
+                default_level,
+            };
+            ctx.scratch.reset_region_ids();
+            partition(&mut ctx, &mut regions);
+            let native = &row["partition"];
+            assert_eq!(
+                owners(ctx.scratch),
+                native_owners(&native["owners_hex"]),
+                "{label}: partition owners"
+            );
+            assert_eq!(
+                listed(&regions),
+                native_listed(&native["listed"]),
+                "{label}: partition list"
+            );
+            assert_eq!(
+                i64::from(regions.id_counter),
+                native["next_region_id"].as_i64().unwrap(),
+                "{label}: partition next id"
+            );
+            let mut expansions = row["expansions"].as_array().unwrap().iter();
+            for region in regions.list.iter().filter(|r| r.active) {
+                let native = expansions
+                    .next()
+                    .expect("one native expansion per class region");
+                assert_eq!(
+                    region.id,
+                    int(&native["region"]),
+                    "{label}: expansion order"
+                );
+                let before = owners(ctx.scratch);
+                let done = expand(&mut ctx, region.id, region.level, int(&native["passes"]));
+                assert_eq!(
+                    i64::from(done),
+                    native["result"].as_i64().unwrap(),
+                    "{label}: region {} rings result",
+                    region.id
+                );
+                let ringed = owners(ctx.scratch);
+                assert_eq!(
+                    changed(&before, &ringed),
+                    coords(&native["rings"]),
+                    "{label}: region {} rings",
+                    region.id
+                );
+                water_propagate(&mut ctx, region.id);
+                assert_eq!(
+                    changed(&ringed, &owners(ctx.scratch)),
+                    coords(&native["water"]),
+                    "{label}: region {} water",
+                    region.id
+                );
+            }
+            assert!(
+                expansions.next().is_none(),
+                "{label}: native expanded more regions"
+            );
+            flood_unowned(&mut ctx, &mut regions);
+            check_final(&grid, &scratch, &regions, rng, "stages");
+
+            // The whole partition, with Generate's own pass counts.
+            let (mut grid, mut scratch) = build();
+            let mut rng = RmgRng::new(seed);
+            let regions = run(&mut RegionCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                rng: &mut rng,
+                map_type: int(&input["map_type"]),
+                default_level,
+            });
+            check_final(&grid, &scratch, &regions, rng, "run");
+        }
+    }
+
     #[test]
     fn partition_is_deterministic() {
         let outcome = |seed| {
@@ -802,19 +1094,6 @@ mod tests {
     #[test]
     fn native_split_oversized_controls() {
         let doc = crate::test_fixture::json("tools/rmg_oracle/region_split.json");
-        let state = |rng: RmgRng| {
-            let (locked, words, a, b) = rng.into_continuation().into_native_parts();
-            let mut bytes = vec![locked, 0, 0, 0];
-            bytes.extend_from_slice(&(a as u32).to_le_bytes());
-            bytes.extend_from_slice(&(b as u32).to_le_bytes());
-            for word in words {
-                bytes.extend_from_slice(&word.to_le_bytes());
-            }
-            bytes
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-        };
         let cliff = doc["scene"]["cliff_base"].as_i64().unwrap() as i32;
         let rows = doc["rows"].as_array().unwrap();
         assert_eq!(rows.len(), 8);
@@ -825,10 +1104,7 @@ mod tests {
             let mut grid = RmgGrid::new(33, 16, 48);
             let mut scratch = RmgScratch::new(33, 16, 48);
             scratch.reset_region_ids();
-            let diamond: Vec<(i32, i32)> = (0..33)
-                .flat_map(|y| (0..33).map(move |x| (x, y)))
-                .filter(|&(x, y)| scratch.in_diamond(x, y))
-                .collect();
+            let diamond = oracle_diamond();
             // The oracle's declared scene: region, level and tile per cell.
             for &(x, y) in &diamond {
                 let (region, level, tile) = if !banded {
@@ -880,7 +1156,7 @@ mod tests {
             let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
             let before = row["rng_before"].as_u64().unwrap() as usize;
             assert_eq!(
-                state(rng.clone()),
+                native_state_hex(rng.clone()),
                 doc["rng_states_hex"][before],
                 "{context}: entry RNG"
             );
@@ -905,7 +1181,7 @@ mod tests {
 
             let after = row["rng_after"].as_u64().unwrap() as usize;
             assert_eq!(
-                state(rng),
+                native_state_hex(rng),
                 doc["rng_states_hex"][after],
                 "{context}: exit RNG"
             );

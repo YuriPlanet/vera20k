@@ -17,6 +17,7 @@
 //! own seed rejection draws and conditional end-piece coins; dry regions keep
 //! the ramp order described above.
 
+use crate::map::rmg::grid::CellRef;
 use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::x87::TruncF64;
 use crate::util::native_x87::X87Chop53;
@@ -24,7 +25,8 @@ use crate::util::native_x87::X87Chop53;
 use super::adjacency;
 use super::bridge_deck;
 use super::carve::{CarveCtx, CarveRegions, try_carve_connector_at_cell};
-use super::connector::LENIENCY_STEP;
+use super::connector::leniency;
+use super::regions::Regions;
 use crate::map::rmg::RmgConstructionTrace;
 
 /// `101 * (1 + 2^-32) * 2^-32` — the accessibility roll, pre-divided.
@@ -32,9 +34,6 @@ const ACCESS_ROLL_SCALE_BITS: u64 = 0x3E59_4000_0019_4000;
 /// `2 * (1 + 2^-32) * 2^-32` — the extra-connections roll, which then has 1.0
 /// added before truncation.
 const EXTRA_ROLL_SCALE_BITS: u64 = 0x3E00_0000_0010_0000;
-/// `(1 + 2^-32) * 2^-32` — the border-cell pick, which multiplies by the span
-/// separately rather than folding it in.
-const BORDER_PICK_SCALE_BITS: u64 = 0x3DF0_0000_0010_0000;
 
 /// Highest value the accessibility roll may take.
 const ACCESS_ROLL_MAX: i32 = 100;
@@ -99,19 +98,7 @@ fn connection_count(rng: &mut RmgRng, accessibility: i32) -> i32 {
 
 /// Pick one cell from the shared border, uniformly.
 fn pick_border_cell(rng: &mut RmgRng, count: i32) -> usize {
-    let scale = TruncF64::from_f64(f64::from_bits(BORDER_PICK_SCALE_BITS));
-    let span = TruncF64::from_f64(f64::from(count));
-    loop {
-        let v = X87Chop53::ftol_f64_low_masked(
-            TruncF64::from_f64(f64::from(rng.next_u32()))
-                .mul(span)
-                .mul(scale)
-                .to_f64(),
-        );
-        if v < count {
-            return v as usize;
-        }
-    }
+    rng.uniform(0, count - 1) as usize
 }
 
 /// Cut ramps between `region` and each higher-id neighbour at a different
@@ -164,9 +151,13 @@ pub(crate) fn carve_connectors_for_region(
             continue;
         }
 
+        // The carve runs on the uphill region, whichever of the pair is
+        // iterating: 0x00590960 loads it into EBP, the `this` of both the
+        // border collector (0x0058D410) and TryCarveConnectorAtCell
+        // (0x00590970), with the downhill id as the lower region.
         let carve_regions = CarveRegions {
-            region: region.id,
-            level: region.level,
+            region: uphill.id,
+            level: uphill.level,
             lower_region: downhill.id,
             lower_level: downhill.level,
         };
@@ -177,8 +168,8 @@ pub(crate) fn carve_connectors_for_region(
             let cell = border[pick_border_cell(ctx.rng, border.len() as i32)];
             // Leniency runs 0.00, 0.01 ... 0.99 off the ZERO-based attempt
             // index, so the first try is the strictest.
-            let leniency = attempt as f32 * LENIENCY_STEP;
-            if ctx.playfield.contains_geometry_packed(cell.0, cell.1)
+            let leniency = leniency(attempt);
+            if in_playfield_at_level(ctx, cell)
                 && try_carve_connector_at_cell(ctx, carve_regions, cell, leniency)
             {
                 successes += 1;
@@ -188,6 +179,58 @@ pub(crate) fn carve_connectors_for_region(
         carved_any |= successes > 0;
     }
     carved_any
+}
+
+/// `MapClass::Is_Cell_In_Playfield @ 0x00578460` with `checkLevel` set, as
+/// 0x005908CC asks: the band rises with the cell's level and slope. An
+/// invalid coordinate reads the Dummy's (its coordinate stamp is not kept).
+pub(super) fn in_playfield_at_level(ctx: &CarveCtx<'_>, (x, y): (i32, i32)) -> bool {
+    let cell = ctx
+        .grid
+        .get(x, y)
+        .unwrap_or_else(|| ctx.grid.ref_cell(CellRef::Border));
+    ctx.playfield
+        .contains_height_aware_packed(x, y, cell.level as i8, cell.slope)
+}
+
+/// Step 6 of `RandomMapGenerator::BridgeAndConnectorPass @ 0x0058EF10`:
+/// three separate passes over every rebuilt region, in this order —
+/// `BuildNeighbourListAndCellCount @ 0x0058F0C0` for all of them, then
+/// `CarveConnectorsOrBridges @ 0x005905D0` for all of them, then the release.
+/// Fusing the first two would let a region see a neighbour's data before that
+/// neighbour had been measured.
+///
+/// The first pass captures every region's neighbours and cell count before
+/// any connector mutates the grid. The third — freeing the vectors — has no
+/// analogue: the lists are values and drop on their own.
+pub(crate) fn connect_regions(
+    ctx: &mut CarveCtx<'_>,
+    regions: &Regions,
+    accessibility: i32,
+    structures: &mut Vec<(String, i16, i16)>,
+    trace: &mut RmgConstructionTrace,
+) {
+    let connector_regions: Vec<ConnectorRegion> = regions
+        .list
+        .iter()
+        .map(|r| ConnectorRegion {
+            id: r.id,
+            level: r.level,
+            waterish: r.active,
+            cell_count: adjacency::region_cell_count(ctx.scratch, r.id),
+            neighbours: adjacency::neighbour_ids(ctx.scratch, r.id, regions.id_counter),
+        })
+        .collect();
+    for region in &connector_regions {
+        carve_connectors_for_region(
+            ctx,
+            &connector_regions,
+            region,
+            accessibility,
+            structures,
+            trace,
+        );
+    }
 }
 
 fn qualified_deck_pairs(regions: &[ConnectorRegion], flood: &ConnectorRegion) -> Vec<(i32, i32)> {

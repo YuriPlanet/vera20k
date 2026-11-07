@@ -1330,9 +1330,16 @@ pub fn add_garrison_occupant(
     }
     sim.refresh_spatial_threat(building_id, rules, None);
     if count == 1 {
+        let type_id = sim
+            .substrate
+            .entities
+            .get(building_id)
+            .map(|building| building.type_ref());
         let _ = Simulation::mark_entity_refresh(&sim.substrate, building_id);
-        sim.sound_events
-            .emit(SimSoundEvent::StructureGarrisoned { owner });
+        if let Some(type_id) = type_id {
+            sim.sound_events
+                .emit(SimSoundEvent::StructureGarrisoned { owner, type_id });
+        }
         sim.sound_events
             .emit(SimSoundEvent::BuildingGarrisonedSfx { owner, world });
     }
@@ -1748,6 +1755,7 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
             let building = sim.substrate.entities.get(building_id).unwrap();
             sim.sound_events.emit(SimSoundEvent::StructureAbandoned {
                 owner: current_owner,
+                type_id: building.type_ref(),
                 radar: crate::sim::radar::RadarEventRequest::new(
                     crate::sim::radar::RadarEventType::StructureAbandoned,
                     building.position.rx(),

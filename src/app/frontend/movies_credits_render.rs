@@ -424,7 +424,7 @@ fn movie_list_composition<'a>(
         labels.push(PaintLabel {
             text: resolve_csf(state, spec.csf_key),
             rect: owner_draw_button_label_rect(button.rect, pressed == Some(button.id)),
-            align: ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0),
+            align: ShellAlign::BUTTON_CAPTION,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: None,
         });
@@ -433,7 +433,7 @@ fn movie_list_composition<'a>(
         labels.push(PaintLabel {
             text: resolve_csf(state, MOVIE_LIST_PAGE.title_key),
             rect: layout.page.title,
-            align: ShellAlign::H_CENTER,
+            align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: Some(
                 crate::app::frontend::main_menu_shell_render::shell_reveal_path_a(window),

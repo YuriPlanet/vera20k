@@ -12,6 +12,8 @@
 //!
 //! Derived: never saved, compared or hashed. A restored display keeps nothing.
 
+use std::ops::Range;
+
 use crate::sim::touch_log::{Touched, live_read_check_enabled};
 use crate::util::lookup_hash::LookupMap;
 
@@ -140,15 +142,61 @@ impl GroundKeys {
 
     /// The first index whose member's key is greater than `key`, else the
     /// member count: a Ground submit's insertion point.
+    ///
+    /// The members are tested 64 at a time against the plain keys beside
+    /// their slots, and only a member that is not plain, or whose plain key
+    /// is greater, is read through [`Self::key`]. A one-by-one scan reads
+    /// exactly those members before it stops, so the index and what the
+    /// reads keep are the same.
     pub(crate) fn first_greater(
         &mut self,
         members: &[u64],
         key: i32,
         keys: &impl GroundSortKeys,
     ) -> usize {
-        (0..members.len())
-            .find(|&index| self.key(index, members[index], keys) > key)
-            .unwrap_or(members.len())
+        for start in (0..members.len()).step_by(64) {
+            let end = members.len().min(start + 64);
+            let mut candidates = self.candidates(start..end, key);
+            while candidates != 0 {
+                let index = start + candidates.trailing_zeros() as usize;
+                if self.key(index, members[index], keys) > key {
+                    self.check_passed(members, start..index, keys);
+                    return index;
+                }
+                candidates &= candidates - 1;
+            }
+            self.check_passed(members, start..end, keys);
+        }
+        members.len()
+    }
+
+    /// One bit per member in `range` (at most 64), set for a member that is
+    /// not plain or whose plain key is greater than `key`.
+    fn candidates(&self, range: Range<usize>, key: i32) -> u64 {
+        let slots = &self.slots[range.clone()];
+        let plain_keys = &self.key_at[range];
+        let mut candidates = 0;
+        for (bit, (&slot, &plain_key)) in slots.iter().zip(plain_keys).enumerate() {
+            let plain = (self.plain[slot as usize / 64] >> (slot % 64)) & 1;
+            candidates |= ((plain ^ 1) | u64::from(plain_key > key)) << bit;
+        }
+        candidates
+    }
+
+    /// Debug builds compare the plain keys a scan passed in `range` with live
+    /// reads, as [`Self::key`] does for each member it reads.
+    fn check_passed(&self, members: &[u64], range: Range<usize>, keys: &impl GroundSortKeys) {
+        if !live_read_check_enabled() {
+            return;
+        }
+        for index in range {
+            debug_assert!(
+                !self.is_plain(self.slots[index] as usize)
+                    || self.key_at[index] == keys.read(members[index]).0,
+                "the kept Ground key of {} diverged from a live read",
+                members[index]
+            );
+        }
     }
 
     fn is_plain(&self, slot: usize) -> bool {
@@ -368,6 +416,42 @@ mod tests {
             }
             assert!(kept.ground_keys_aligned(), "step {step}");
         }
+    }
+
+    /// A submit tests the members 64 at a time and inserts where a live scan
+    /// does: before a forgotten member that opens the second block, whose
+    /// stale key would let the scan pass it, at the first block's last
+    /// member, before the first member, and after the last one in a partial
+    /// block.
+    #[test]
+    fn block_scan_inserts_where_a_live_scan_does() {
+        let mut scene = Scene::default();
+        let mut kept = DisplayLayers::default();
+        let mut live = DisplayLayers::default();
+        kept.forget_changed_ground_keys(CONTEXT, []);
+        for id in 1..=130u64 {
+            scene.own.insert(id, id as i32 * 10);
+            kept.submit(id, Some(DisplayLayer::GROUND), &scene);
+            live.submit(id, Some(DisplayLayer::GROUND), &|id| scene.live(id));
+        }
+        // Member 65 opens the second block and moves from 650 past every
+        // other member; only the touch log says so.
+        *scene.own.get_mut(&65).unwrap() = 2000;
+        kept.forget_changed_ground_keys(CONTEXT, [Touched::Ids(vec![65])]);
+        for (id, own) in [(200, 655), (201, 639), (202, -5), (203, 2000)] {
+            scene.own.insert(id, own);
+            kept.submit(id, Some(DisplayLayer::GROUND), &scene);
+            live.submit(id, Some(DisplayLayer::GROUND), &|id| scene.live(id));
+            assert_eq!(
+                kept.members(DisplayLayer::GROUND),
+                live.members(DisplayLayer::GROUND),
+                "{id}"
+            );
+        }
+        let ground = kept.members(DisplayLayer::GROUND);
+        assert_eq!(ground[..2], [202, 1]);
+        assert_eq!(ground[63..68], [63, 201, 64, 200, 65]);
+        assert_eq!(ground.last(), Some(&203));
     }
 
     /// A different read context, or a store reporting everything, forgets

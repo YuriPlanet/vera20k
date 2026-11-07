@@ -133,6 +133,9 @@ pub struct UnitLostEvent {
     pub rx: u16,
     pub ry: u16,
     pub owner: InternedId,
+    /// The dead techno's interned type, for the optional detailed EVA text;
+    /// a transient fact, never a state input.
+    pub type_id: InternedId,
 }
 
 /// One ordered accumulator for weapon emission and recursive receiver effects.

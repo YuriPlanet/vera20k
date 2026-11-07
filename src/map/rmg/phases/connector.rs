@@ -20,7 +20,7 @@
 
 use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
-use crate::map::rmg::x87::TruncF64;
+use crate::map::rmg::x87::{self, TruncF64};
 use crate::util::native_x87::X87Chop53;
 
 /// Side of the 5x5 window grid: nine windows, three per axis.
@@ -42,8 +42,17 @@ const THRESHOLD_AT_LENIENT: f64 = 5.0;
 /// `carve::try_carve_connector_at_cell` makes the comparison.
 pub(crate) const FALLBACK_LENIENCY: f32 = 0.5;
 
-/// Leniency added per failed attempt.
-pub const LENIENCY_STEP: f32 = 0.01;
+/// Leniency added per failed attempt (`0x007EAAE0`, the float nearest 0.01).
+const LENIENCY_STEP: f32 = 0.01;
+
+/// The zero-based attempt's leniency: `FILD attempt; FMUL float [0x007EAAE0];
+/// FSTP float` (`RmgRegion::CarveConnectorsOrBridges` 0x005908D5..0x005908EA),
+/// a chopped single-precision store.
+pub(crate) fn leniency(attempt: i32) -> f32 {
+    x87::store_f32(
+        TruncF64::from_f64(f64::from(attempt)).mul(TruncF64::from_f64(f64::from(LENIENCY_STEP))),
+    )
+}
 
 /// `2 * (1 + 2^-32) * 2^-32` — the endpoint jitter's uniform over `{0, 1}`,
 /// pre-divided so the draw is one multiply and a truncation. Not
@@ -87,6 +96,9 @@ pub enum RampShape {
 ///
 /// Stops the moment the bar is met, so it is a threshold test and never a
 /// count. Cells outside the diamond are skipped, not counted as misses.
+///
+/// Native: `RmgGrid::CountRegionCellsInRect @ 0x005A1E50`, which also ignores
+/// its lower-region argument.
 pub(crate) fn region_meets_quota_in_rect(
     scratch: &RmgScratch,
     rect: (i32, i32, i32, i32),
@@ -115,12 +127,12 @@ pub(crate) fn region_meets_quota_in_rect(
 
 /// The per-window cell-count bar for this attempt: `trunc(10 * (1 - l) + 5)`.
 ///
-/// The subtraction happens in single precision because the leniency arrives as
-/// a float — at leniency 0.99 that is what puts the result a hair above 5
-/// rather than a hair below, so the bar lands on 5 and not 4.
+/// `BuildRampOrientationMask` 0x00590FD0: `FLD float 1.0; FSUB float [l]`
+/// subtracts the float leniency at the 53-bit chop precision, not in single
+/// precision.
 fn window_threshold(leniency: f32) -> i32 {
     let span = TruncF64::from_f64(THRESHOLD_AT_STRICT - THRESHOLD_AT_LENIENT);
-    let remaining = TruncF64::from_f64(f64::from(1.0f32 - leniency));
+    let remaining = TruncF64::from_f64(1.0).sub(TruncF64::from_f64(f64::from(leniency)));
     X87Chop53::ftol_f64_low_masked(
         span.mul(remaining)
             .add(TruncF64::from_f64(THRESHOLD_AT_LENIENT))
@@ -215,21 +227,16 @@ mod tests {
         // The whole point of leniency: not more shapes, a lower bar. Pinning
         // both ends and the step catches a sign flip or a swapped pair.
         assert_eq!(window_threshold(0.0), 15, "first attempt is strictest");
-        assert_eq!(window_threshold(99.0 * LENIENCY_STEP), 5, "last attempt");
-        assert_eq!(window_threshold(50.0 * LENIENCY_STEP), 10, "halfway");
+        assert_eq!(window_threshold(leniency(99)), 5, "last attempt");
+        assert_eq!(window_threshold(leniency(50)), 10, "halfway");
     }
 
     #[test]
-    fn the_leniency_subtraction_happens_in_single_precision() {
-        // Attempt 10 is the ONE index in the whole run where doing
-        // `1 - leniency` in double instead of float changes the answer: ten
-        // steps of the float nearest 0.01 land a hair below 0.1, so the float
-        // subtraction gives just under 0.9 and the bar drops to 13, while
-        // widening first gives just over and it stays at 14. Every other
-        // attempt agrees, which is exactly why this needs pinning — the bug
-        // would hide in a spot check.
-        assert_eq!(window_threshold(10.0 * LENIENCY_STEP), 13);
-        assert_eq!(window_threshold(9.0 * LENIENCY_STEP), 14, "the step before");
+    fn the_leniency_subtraction_happens_in_double_precision() {
+        // Attempt 10's leniency is 0.099999994. Native subtracts it from 1.0
+        // at 53-bit precision (0x00590FE5), leaving just over 0.9 and a bar of
+        // 14; a single-precision subtraction lands just under and gives 13.
+        assert_eq!(window_threshold(leniency(10)), 14);
     }
 
     #[test]
@@ -273,7 +280,7 @@ mod tests {
         paint(&mut s, (38, 48, 3, 3), 7); // 9 cells: under 15, over 5
         assert_eq!(ring_orientation_mask(&s, (40, 50), 7, 0.0), None);
         assert_eq!(
-            ring_orientation_mask(&s, (40, 50), 7, 99.0 * LENIENCY_STEP),
+            ring_orientation_mask(&s, (40, 50), 7, leniency(99)),
             Some(0)
         );
     }

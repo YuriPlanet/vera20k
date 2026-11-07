@@ -260,6 +260,7 @@ pub(crate) fn enqueue_selected(
         cost,
         rules.general.maximum_queued_objects,
         at_build_limit,
+        force,
     );
     if outcome == EnqueueOutcome::AppendRefused {
         sim.sound_events
@@ -302,7 +303,7 @@ pub(crate) fn suspend_production(
 /// Start the build an active factory head holds. `HouseClass::Begin_Production
 /// @ 0x004FA350` runs `FactoryClass::StartProduction @ 0x004C9C70`, which calls
 /// `type->CreateInstance(owner)` and stores the result at `Factory+0x58`, then
-/// the build start `0x004C9EA0` (Ghidra label `FactoryClass__SetRate`) at
+/// the build start `FactoryClass::ResumeProduction @ 0x004C9EA0` at
 /// `0x004FA628`, which arms the step rate and timer from that object's
 /// `Time_To_Build`. Queued tail entries start only when
 /// `FactoryClass::StartNextQueued @ 0x004CA5A0` promotes them, which runs the
@@ -771,7 +772,7 @@ pub(super) fn publish_completion(
         .object_type_in_category(type_id, category.object_category(), rules)
         .is_some_and(|object| object.category == ObjectCategory::Building)
     {
-        sound_events.emit(SimSoundEvent::BuildingComplete { owner });
+        sound_events.emit(SimSoundEvent::BuildingComplete { owner, type_id });
     }
 }
 

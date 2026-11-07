@@ -154,6 +154,25 @@ pub fn approx_sqrt(value: TruncF64) -> TruncF64 {
     TruncF64::from_f64(f64::from(f32::from_bits(result_bits)))
 }
 
+/// Store to a priority-heap node's `f32` key: `FSTP m32real` under the
+/// generator's chop control word, so the value truncates toward zero where a
+/// Rust `as f32` would round to nearest.
+pub fn store_f32(value: TruncF64) -> f32 {
+    f32::from_bits(narrow_to_f32_bits(value))
+}
+
+/// The jittered-distance heap key that blob, LAT-patch, tree and tiberium
+/// growth share: `sqrt(d²) + draw * 5.0 * K`, stored with [`store_f32`].
+/// Each original reads its own 5.0: `CarveBlob` 0x0059C1DB..0x0059C229
+/// (0x007ED808), 0x005A4E5F..0x005A4EA2 (0x007ED808), 0x005A49AC..0x005A49EB
+/// (0x007ED800) and 0x005A2D7E..0x005A2DB6 (0x007ED7C0).
+pub fn jittered_distance_key(squared_distance: i32, draw: u32) -> f32 {
+    let jitter = TruncF64::from_f64(f64::from(draw))
+        .mul(TruncF64::from_f64(5.0))
+        .mul(TruncF64::from_f64(f64::from_bits(super::rng::RANGE_K_BITS)));
+    store_f32(approx_sqrt(TruncF64::from_f64(f64::from(squared_distance))).add(jitter))
+}
+
 /// The generator's square root of an integer squared-distance, as the `f32`
 /// the start/tiberium phases store in their priority heaps.
 pub fn approx_sqrt_f32(squared_distance: i32) -> f32 {
@@ -247,6 +266,13 @@ mod tests {
         (16383, 0x007F_FDFF),
     ];
 
+    /// The heap stores with `FSTP m32` under chop: a key just below 5.0 stays
+    /// below it, where round-to-nearest would store 5.0 and win ties it loses.
+    #[test]
+    fn jittered_key_store_truncates() {
+        let key = jittered_distance_key(0, u32::MAX);
+        assert_eq!(key, f32::from_bits(5.0f32.to_bits() - 1));
+    }
     #[test]
     fn sqrt_table_matches_retail_at_the_pinned_points() {
         for &(index, retail) in RETAIL_SQRT_SPOT {

@@ -161,6 +161,17 @@ impl App {
             .frontend
             .random_map_retention
             .take_acceptance_for_loading(session.selected_map_file.as_deref());
+        // A rematch of the same random map: the first launch consumed the
+        // accepted setup, so the shell's retained staging supplies the starts.
+        let rematch_staging = accepted_random_map
+            .is_none()
+            .then(|| {
+                crate::app::shell_random_map::AcceptedRmgStartStaging::from_retained_staging(
+                    &state.frontend.multiplayer_shell_runtime.start_staging(),
+                    session.selected_map_file.as_deref(),
+                )
+            })
+            .flatten();
         let request = match crate::app::match_bootstrap::classify_startup_session(&session) {
             crate::app::match_bootstrap::StartupSessionClassification::AcceptedExplicitFixedBattle(
                 accepted,
@@ -181,7 +192,8 @@ impl App {
                 crate::app::loading::pump::LoadingRequest::unverified_legacy_skirmish(session, seed)
             }
         }
-        .with_accepted_random_map(accepted_random_map);
+        .with_accepted_random_map(accepted_random_map)
+        .with_start_staging(rematch_staging);
         state
             .frontend
             .skirmish_shell_state
@@ -377,7 +389,7 @@ impl App {
             }
             // VERA: map archives are optional, so the list can be empty.
             crate::skirmish_launch::LaunchValidationError::NoSelectedMap => {
-                "No maps were found. Add map files to the game folder.".to_string()
+                crate::i18n::tr("VERA:NoMapsFound")
             }
             _ => return None,
         };
@@ -1134,11 +1146,19 @@ impl App {
             .random_map_options_for_setup();
         let available = Self::random_map_dir(state)
             .is_some_and(|dir| crate::map::rmg::saved_seeds::saved_seeds_available(&dir));
+        // VERA extension: only offline Skirmish offers more than eight players
+        // and the larger sizes; LAN and online keep the original limits.
+        let extended = !matches!(
+            state.match_state.session_mode(),
+            crate::app::match_runtime::session::SessionMode::Lan
+                | crate::app::match_runtime::session::SessionMode::Wol
+        );
         state.frontend.skirmish_shell_state.random_map_setup_modal =
             Some(crate::ui::skirmish_shell::RandomMapSetupModalState::open(
                 options,
                 Some(previous),
                 available,
+                extended,
             ));
     }
 

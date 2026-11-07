@@ -62,6 +62,9 @@ pub(super) fn load(
         left_cap: std::array::from_fn(|i| render("LENDCAP.SHP", i)),
         right_cap: render("RENDCAP.SHP", 0),
         background: render("BTTNBKGD.SHP", 0),
+        // TabClass::LoadSHPs @ 0x006D02B0 loads Button00..Button24.SHP
+        // (FreeSHPs @ 0x006D0270 frees them), indexed by command; only the
+        // 11 command names (6CFCC0) can take a slot, so 11..24 never draw.
         buttons: std::array::from_fn(|id| {
             std::array::from_fn(|frame| render(&format!("Button{id:02}.SHP"), frame))
         }),

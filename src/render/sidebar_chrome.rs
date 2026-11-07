@@ -228,6 +228,22 @@ pub struct SidebarChromeEntry {
     pub pixel_size: [f32; 2],
 }
 
+impl SidebarChromeEntry {
+    /// Source columns `x..x + w` as a piece of their own; all of them are
+    /// this piece unchanged.
+    pub fn columns(self, x: f32, w: f32) -> Self {
+        if x == 0.0 && w == self.pixel_size[0] {
+            return self;
+        }
+        let per_pixel = self.uv_size[0] / self.pixel_size[0];
+        Self {
+            uv_origin: [self.uv_origin[0] + x * per_pixel, self.uv_origin[1]],
+            uv_size: [w * per_pixel, self.uv_size[1]],
+            pixel_size: [w, self.pixel_size[1]],
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SidebarChromeExtraEntry {
     pub id: i32,
@@ -877,6 +893,8 @@ fn build_theme_atlas(
         *slot = entry;
     }
 
+    // `RadarClass::FreeButtonShapes @ 0x00652D90` frees both shapes again
+    // before Init_For_House reloads them; dropping this table does the same.
     // 652E90 + 653010: both top controls use the generic SIDEBAR.PAL
     // converter (87F6CC), including Yuri. Native mask5, plain toggle kind0.
     let top_button_entries: [[Option<RenderedChromeEntry>; 2]; 2] = ["diplobtn.shp", "optbtn.shp"]

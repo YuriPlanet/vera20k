@@ -795,11 +795,24 @@ pub struct ParticleSystemStore {
     /// ordinary UnInit then conceals it, clears Alive and queues destruction.
     /// The shared DeferredDeleteQueue owns ordering until the725C70 drain.
     detached_particles: BTreeMap<u64, DetachedParticle>,
-    /// Which systems may have changed since [`Self::take_touched`]. One
-    /// reader: the pointer-expiry listener index. Transient: never saved,
-    /// compared or hashed.
+    /// Which systems may have changed since a reader last took its log
+    /// ([`Self::take_touched`]). Transient: never saved, compared or hashed.
     #[serde(skip)]
-    touched: TouchLogs<1>,
+    touched: TouchLogs<{ ParticleTouchReader::COUNT }>,
+}
+
+/// A product derived from the particle systems that re-derives from the touch
+/// log. Each reads its own log, so one reader's take leaves the others' intact.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ParticleTouchReader {
+    /// The kept Ground display sort keys.
+    GroundKeys = 0,
+    /// The pointer-expiry broadcast's listener index.
+    ExpiryListeners = 1,
+}
+
+impl ParticleTouchReader {
+    const COUNT: usize = 2;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1057,9 +1070,9 @@ impl ParticleSystemStore {
         removed
     }
 
-    /// Take the touch log, leaving it empty.
-    pub(crate) fn take_touched(&mut self) -> Touched {
-        self.touched.take(0)
+    /// Take `reader`'s touch log, leaving it empty.
+    pub(crate) fn take_touched(&mut self, reader: ParticleTouchReader) -> Touched {
+        self.touched.take(reader as usize)
     }
 
     pub(crate) fn contains_key(&self, id: u64) -> bool {

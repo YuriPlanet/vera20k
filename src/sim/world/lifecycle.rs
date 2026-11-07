@@ -719,6 +719,18 @@ pub enum LifecycleOutput {
         node_id: u64,
         next_node: Option<u64>,
     },
+    /// PlanMgr append 0x00638120 refused `owner`'s event with a message
+    /// (latched with ScoldSound) that only the local house shows.
+    PlanningAppendRefused {
+        owner: InternedId,
+        message: super::planning::PlanningAppendMessage,
+    },
+    /// Append 0x006383BF set AC4C90 for `owner`: if local, PlanMgr637270's
+    /// next frame pass deselects all and posts `message`.
+    PlanningFramePassQueued {
+        owner: InternedId,
+        message: super::planning::PlanningAppendMessage,
+    },
     /// HouseBegin4FA41C clears the category prediction gate before builder
     /// admission, including a refused Begin. The strip's request survives.
     /// Source: tools/sidebar_oracle/pending_production.md.
@@ -5832,10 +5844,8 @@ impl Simulation {
 
         // BuildingLight436A00; Ares1004EBC0 preserves a cloaking parent's
         // link on control0, while the target clear remains unconditional.
-        self.substrate.spotlights_pointer_expired(
-            expired_id,
-            control == PointerExpiryControl::Uninit,
-        );
+        self.substrate
+            .spotlights_pointer_expired(expired_id, control == PointerExpiryControl::Uninit);
 
         #[cfg(any(test, feature = "test-support"))]
         if let Some(smudge) = self

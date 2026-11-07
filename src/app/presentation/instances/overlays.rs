@@ -1237,6 +1237,11 @@ pub(crate) fn build_overlay_instances(
         let lift_px = crate::util::native_x87::adjust_for_z_standard(coord.z);
         let screen_x = point.0 - TILE_WIDTH / 2.0;
         let screen_y = point.1 - TILE_HEIGHT / 2.0;
+        // `TerrainClass::Get_Render_Rect @ 0x0071D160` unions frame0 and the
+        // shadow frame for Render71CC50's cull and Take_Damage's dirty rect.
+        // VERA redraws every frame; this box spans -150..+210 px across and
+        // -135..+225 px down from the draw point, past every retail Terrain
+        // SHP (widest frame0/shadow extents: 97 up, 67 left, 86 right).
         if !in_view(
             screen_x, screen_y, 120.0, 120.0, cam_x, cam_y, sw, sh, 120.0,
         ) {
@@ -1336,7 +1341,11 @@ pub(crate) fn build_overlay_instances(
 /// Terrain DrawIt (0x71C1B0) frame: an IsAnimated type's stage, else frame 1
 /// below 2 health, else 0. Its crumbling arm never draws: Take_Damage
 /// (0x71B920) starts crumbling on a lethal hit and uninits the object in the
-/// same call.
+/// same call. `TerrainClass::DrawAgain @ 0x0071C360` (slot +0x118) has one
+/// virtual caller, BuildingPlacement_OverlayRenderer at 0x006D53C5, which
+/// draws the pending placement object only under the map-editor flag
+/// 0x00A8ED6B (test at 0x006D5297; set only by Parse_Command_Line), so it
+/// has no port.
 fn terrain_draw_frame(stage: Option<i32>, health: i32) -> i32 {
     // Original71C208 keeps the whole signed Stage; frame bounds belong to
     // the image/atlas, not the cell overlay-data byte's0..255 domain.

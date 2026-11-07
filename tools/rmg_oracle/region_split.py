@@ -82,19 +82,47 @@ class SplitFixture:
     def record(self, x, y):
         return self.terrain.scratch + (y * STRIDE + x) * 0x50
 
-    def prepare(self, case):
+    def reset(self, seed):
+        """A fresh control: the CliffFixture priors with every stream seeded
+        by `seed`, an empty arena and region list, next region id 0, scratch
+        coordinates stamped for in-diamond records only, regions and stamps
+        -1, and the stride-33 neighbour offsets."""
         from tools.rmg_oracle.cliff_materialization import words
-        f, m, u = self.terrain, self.m, self.u
-        f.reset(dict(kind='split', seed=case['seed']))
+        f, u = self.terrain, self.u
+        f.reset(dict(kind='split', seed=seed))
         u.mem_write(ARENA, bytes(self.cursor - ARENA))
         self.cursor = ARENA
-        cliff = f.bases['cliff']
-        at = scene(case['scene'])
         for index in range(STRIDE * STRIDE):
             x, y = index % STRIDE, index // STRIDE
             coord = (x, y) if in_diamond(x, y) else (0, 0)
             u.mem_write(f.scratch + index * 0x50, struct.pack('<hh', *coord))
             u.mem_write(f.scratch + index * 0x50 + 0x38, words(-1, -1))
+        u.mem_write(REGION_LIST, words(REGION_LIST_VTABLE, self.items, LIST_SLOTS))
+        u.mem_write(REGION_LIST + 0x10, words(0, 10))
+        u.mem_write(REGION_LIST + 0xD, b'\0')
+        u.mem_write(NEXT_REGION_ID, words(0))
+        # PathfinderClass::ResizeMapArrays @ 0x0042AC00 writes the linear
+        # width and these eight neighbour offsets together; in game it runs
+        # from Generate's map setup. Split stamps through them (0x0058DA41).
+        w = STRIDE
+        u.mem_write(LINEAR_OFFSETS, words(-w, 1 - w, 1, w + 1, w, w - 1, -1, -1 - w))
+
+    def listed(self):
+        """Each listed region's id, cell count, level and class flag."""
+        m, u = self.m, self.u
+        listed = []
+        for slot in range(m.read32(REGION_LIST + 0x10)):
+            obj = m.read32(self.items + slot * 4)
+            listed.append([struct.unpack('<i', u.mem_read(obj + off, 4))[0]
+                           for off in (8, 0xC, 0x10)] + [u.mem_read(obj + 0x14, 1)[0]])
+        return listed
+
+    def prepare(self, case):
+        from tools.rmg_oracle.cliff_materialization import words
+        f, m, u = self.terrain, self.m, self.u
+        self.reset(case['seed'])
+        cliff = f.bases['cliff']
+        at = scene(case['scene'])
         seeds = {}
         for (x, y), cell in f.cells.items():
             if not in_diamond(x, y):
@@ -105,10 +133,6 @@ class SplitFixture:
             u.mem_write(self.record(x, y) + 0x38, words(region))
             if family == 'clear':
                 seeds.setdefault(region, (x, y))
-        u.mem_write(REGION_LIST, words(REGION_LIST_VTABLE, self.items, LIST_SLOTS))
-        u.mem_write(REGION_LIST + 0x10, words(0, 10))
-        u.mem_write(REGION_LIST + 0xD, b'\0')
-        u.mem_write(NEXT_REGION_ID, words(0))
         regions = []
         for region in sorted(seeds):
             obj = m.alloc(0x50)
@@ -118,11 +142,6 @@ class SplitFixture:
             u.mem_write(obj + 0x14, bytes([int(water)]))  # the fill's class bit
             regions.append(obj)
         assert m.read32(REGION_LIST + 0x10) == len(regions)
-        # PathfinderClass::ResizeMapArrays @ 0x0042AC00 writes the linear
-        # width and these eight neighbour offsets together; in game it runs
-        # from Generate's map setup. Split stamps through them (0x0058DA41).
-        w = STRIDE
-        u.mem_write(LINEAR_OFFSETS, words(-w, 1 - w, 1, w + 1, w, w - 1, -1, -1 - w))
         u.mem_write(MAP_TYPE, words(3))
         u.mem_write(REGION_SIZE, words(case['region_size']))
         u.mem_write(GEN_W, words(case['gen'][0], case['gen'][1]))
@@ -137,13 +156,8 @@ class SplitFixture:
         records = [struct.unpack('<ii', u.mem_read(self.record(x, y) + 0x38, 8))
                    for y in range(STRIDE) for x in range(STRIDE) if in_diamond(x, y)]
         assert all(stamp == -1 for _, stamp in records), 'Split leaves every stamp at -1'
-        listed = []
-        for slot in range(m.read32(REGION_LIST + 0x10)):
-            obj = m.read32(self.items + slot * 4)
-            listed.append([struct.unpack('<i', u.mem_read(obj + off, 4))[0]
-                           for off in (8, 0xC, 0x10)] + [u.mem_read(obj + 0x14, 1)[0]])
         return dict(levels_hex=bytes(levels).hex(), regions=[r for r, _ in records],
-                    listed=listed, next_region_id=m.read32(NEXT_REGION_ID))
+                    listed=self.listed(), next_region_id=m.read32(NEXT_REGION_ID))
 
     def run(self, case, pool):
         from tools import native_oracle as native

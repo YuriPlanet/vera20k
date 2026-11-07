@@ -15,6 +15,7 @@
 //! - `techno_ai.rs` — per-object AI dispatch within each turn
 
 pub(crate) mod authored_load_host;
+mod bounce_terrain;
 pub mod bridge_orchestrator;
 #[cfg(any(test, feature = "test-support"))]
 pub mod bridge_test_evidence;
@@ -25,7 +26,6 @@ pub(crate) mod building_anim;
 mod building_scatter;
 mod building_upgrade_art;
 mod camera_home;
-mod bounce_terrain;
 mod cell_content;
 mod crash;
 mod disk_laser;
@@ -37,8 +37,8 @@ pub(crate) mod entry_test_fixture;
 mod frame_channel;
 mod frame_effects;
 mod network_commands;
-mod queued_command;
 mod object_entry;
+mod queued_command;
 mod sinking;
 mod time_warp;
 mod trigger_chrono;
@@ -47,13 +47,19 @@ mod voxel_anim_effects;
 pub(crate) use voxel_anim_effects::BounceContactDamage;
 mod unit_repair_seek;
 pub(crate) use frame_channel::FrameChannel;
-pub use network_commands::{NetworkCommandQueues, NetworkQueueError, NetworkQueueContext, NetworkQueuePass, NetworkInterruption};
-pub use frame_effects::{FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError, SoundBoundary, OutcomeWaitBoundary, TacticalRadarBoundary};
+pub use frame_effects::{
+    FrameEffects, LocalPlanningBoundary, NetworkCommandBoundary, NetworkCommandError,
+    OutcomeWaitBoundary, SoundBoundary, TacticalRadarBoundary,
+};
+pub use network_commands::{
+    NetworkCommandQueues, NetworkInterruption, NetworkQueueContext, NetworkQueueError,
+    NetworkQueuePass,
+};
 pub(crate) use type_tech_levels::TypeTechLevels;
 #[cfg(test)]
-mod unit_unlimbo_tests;
-#[cfg(test)]
 mod unit_follows_tests;
+#[cfg(test)]
+mod unit_unlimbo_tests;
 pub(crate) use sinking::{LivingSinkTrigger, SinkingState};
 pub mod edge_cell;
 mod gap_generator;
@@ -124,9 +130,9 @@ pub use world_orders::UnitRepairAction;
 #[cfg(feature = "ares")]
 pub(crate) use world_orders::VehicleCaptureOutcome;
 pub use world_orders::{EntryBaseAction, EntryClickAction};
+mod fog_objects;
 mod projectile_collision;
 mod shroud_refresh;
-mod fog_objects;
 mod substrate;
 mod techno_ai;
 mod track_cell_recalc;
@@ -155,7 +161,10 @@ pub use techno_ai::{BuildingDelayedFire, DelayedFire};
 pub(crate) use techno_ai::{can_fire_at, weapon_at_index};
 mod command_schedule;
 mod planning;
-pub use planning::{PlanningBadgeKind, PlanningDrawSegment, PlanningPressRefusal};
+pub use planning::{
+    PlanningAppendMessage, PlanningBadgeKind, PlanningDrawSegment, PlanningPressRefusal,
+    PlanningSelectionCheck,
+};
 mod selection_voice;
 pub(crate) mod techno_ai_cloak;
 pub(crate) mod unit_post;
@@ -178,9 +187,9 @@ mod aircraft_deployment_tests;
 #[cfg(test)]
 mod area_rocker_tests;
 #[cfg(test)]
-mod finite_ammo_tests;
-#[cfg(test)]
 mod brute_smash_debris_tests;
+#[cfg(test)]
+mod building_discovery_services_tests;
 #[cfg(test)]
 mod building_fatal_lifecycle_tests;
 #[cfg(test)]
@@ -196,7 +205,7 @@ mod engineer_building_repair_tests;
 #[cfg(test)]
 mod engineer_power_consumer_tests;
 #[cfg(test)]
-mod building_discovery_services_tests;
+mod finite_ammo_tests;
 #[cfg(test)]
 mod fly_height_tests;
 #[cfg(any(test, feature = "test-support"))]
@@ -224,24 +233,24 @@ mod suicide_fire_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terrain_cell;
 #[cfg(test)]
-mod team_script_vm_tests;
+mod overlay_explodes_tests;
 #[cfg(test)]
-mod voxel_water_expiry_tests;
+mod team_script_vm_tests;
 #[cfg(test)]
 pub(in crate::sim) mod voxel_meteor_tests;
 #[cfg(test)]
-mod overlay_explodes_tests;
+mod voxel_water_expiry_tests;
 
 pub(crate) use crash::CrashLatch;
 pub(crate) use display_registry::entity_layer;
 pub use lifecycle::LifecycleOutput;
+pub(crate) use lifecycle::object_get_coords_cell;
 pub use lifecycle::{
     BuildingLight, ConcealOutcome, ObjectLifecycle, PlacementEvidence, RemovalFacts, RevealOutcome,
     RevealPosition, RevealRequest, TechnoDiscoveryHistory, TerminalLifetime, UninitContext,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use lifecycle::{LifecycleTestEvent, RevealFailure};
-pub(crate) use lifecycle::object_get_coords_cell;
 pub(crate) use load_object_lifecycle::{LoadObjectLifecycle, OverlayConstructionReceipt};
 pub(crate) use logic_vector::{LogicMembership, LogicVector};
 pub(crate) use object_entry::{EntryFacts, FootEntryReceiver};
@@ -658,13 +667,21 @@ pub enum SimSoundEvent {
         world: crate::sim::anim_class::AnimWorldCoord,
     },
     /// A building finished construction — play EVA "Construction complete".
-    BuildingComplete { owner: InternedId },
+    /// `type_id` is the factory's already-resolved completed product; the app
+    /// names it in the optional accessibility text line. Transient event only:
+    /// drained each frame, never a gameplay hash or persisted identity input.
+    BuildingComplete {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// `HouseClass::Place_Production 0x004FB5C6..0x004FB644`: a unit left the
     /// factory of a human-controlled house. `EVA_UnitReady` plays for the
-    /// local owner once its client admits `radar` (type 6).
+    /// local owner once its client admits `radar` (type 6). `type_id` is the
+    /// held product the factory completed, carried for the optional text line.
     UnitComplete {
         owner: InternedId,
         radar: RadarEventRequest,
+        type_id: InternedId,
     },
     /// One accepted HouseClass win/loss transition. The app resolves the
     /// local owner's faction-specific STANDARD EVA; this edge is transient so
@@ -763,9 +780,13 @@ pub enum SimSoundEvent {
     /// skirmish that is `owner == the local player`, which the app resolves.
     /// `sound_id` is `None` when the rules key is absent or empty (native's
     /// invalid Voc index is silence).
+    /// `type_id` is the promoted object's already-resolved type reference; the
+    /// app names it in the optional accessibility text line. Transient event
+    /// only: drained each frame, never a gameplay hash or persisted identity.
     UnitPromoted {
         owner: InternedId,
         sound_id: Option<InternedId>,
+        type_id: InternedId,
         /// The object's Location (`0x006FA092..0x006FA0BC`,
         /// `0x006FA0FF..0x006FA12A`).
         world: crate::sim::anim_class::AnimWorldCoord,
@@ -793,10 +814,12 @@ pub enum SimSoundEvent {
     /// `TechnoClass::Death_Announcement @ 0x004D98C0` fired for a unit of
     /// `owner` (a human house) that is not `Spawned=`. The app plays
     /// `EVA_UnitLost` for the local owner once its client admits `radar`
-    /// (`CreateRadarEvent(7, cell)`, 8-cell dedupe).
+    /// (`CreateRadarEvent(7, cell)`, 8-cell dedupe). `type_id` is the dead
+    /// techno's own interned type, resolved at the death site; transient.
     UnitLost {
         owner: InternedId,
         radar: RadarEventRequest,
+        type_id: InternedId,
     },
     /// A `PlayEVA` line native speaks only for the player's house: the
     /// `HouseClass::Update` advice (`EVA_InsufficientFunds` `0x004F8BA0`,
@@ -812,8 +835,13 @@ pub enum SimSoundEvent {
     /// `+0x6DD`): `TechnoClass+0x41A` (owner is the local player) and no
     /// `UndeploysInto=` (`Type+0x408`) — an undeploying building stays
     /// silent. Each removed upgrade uses the same event at
-    /// `0x0044AB22..0x0044AB36`. App plays `EVA_StructureSold`.
-    StructureSold { owner: InternedId },
+    /// `0x0044AB22..0x0044AB36`. App plays `EVA_StructureSold`. `type_id`
+    /// names the building that was sold (or whose upgrade was removed); the
+    /// emit site already resolved it. Transient accessibility fact only.
+    StructureSold {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// A sale order's click (`BuildingClass::Sell_Back @ 0x00447110`:
     /// `VocClass::PlayAtPos` of `[AudioVisual] GenericClick=`) for the
     /// owner's player (`HouseClass::IsHumanPlayer @ 0x0050B6F0`; the app
@@ -823,8 +851,14 @@ pub enum SimSoundEvent {
     /// switched on while `Health != Type.Strength` (`0x00447059`) and the
     /// owner is the local player (`0x004470A4 CALL 0x0050B6F0`). App plays
     /// `EVA_Repairing` for the local owner. Depot MissionRepair44C507 emits
-    /// the same request when its first paid service step starts.
-    Repairing { owner: InternedId },
+    /// the same request when its first paid service step starts. `type_id` is
+    /// the building being repaired (ToggleRepair) or the depot that began the
+    /// service (MissionRepair); both are already resolved at the emit site.
+    /// Transient accessibility fact only.
+    Repairing {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// Depot MissionRepair44BDB2 reaches CreateRadarEvent8 after a service
     /// request completes. The app resolves the local-owner+41A gate and
     /// existing client radar admission before playing EVA_UnitRepaired.
@@ -990,13 +1024,19 @@ pub enum SimSoundEvent {
     /// Owner is the building owner at AddGarrisonOccupant time; civilian
     /// ownership transfer is reported separately from building reconciliation.
     /// App layer plays EVA_StructureGarrisoned if owner is local human.
-    StructureGarrisoned { owner: InternedId },
+    /// `type_id` is the occupied building, already resolved at the emit site.
+    StructureGarrisoned {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// CheckAutoSellOrCivilian458200 abandoned an empty map garrison.
     /// House50B6F0 already admitted the old owner. The sound precedes radar
     /// admission; EVA plays only when CreateRadarEvent accepts the request.
     StructureAbandoned {
         owner: InternedId,
         radar: crate::sim::radar::RadarEventRequest,
+        /// The abandoned building, already resolved at the emit site.
+        type_id: InternedId,
     },
     /// First-occupant SFX from rulesmd [AudioVisual] BuildingGarrisonedSound.
     /// Positional cue gated on owner == local human, at the occupant's
@@ -1291,10 +1331,8 @@ pub struct Simulation {
     #[serde(skip)]
     pub(crate) debug_tools: crate::sim::cheats::DebugToolsState,
     /// Opt-in wall-clock observations. Never part of saves, hashes, or gameplay.
-    #[cfg(feature = "telemetry")]
     #[serde(skip)]
     frame_profiling: bool,
-    #[cfg(feature = "telemetry")]
     #[serde(skip)]
     frame_profile: crate::sim::frame_profile::FrameProfile,
     /// Native A8E7AC is a synchronous, wrapping placement/destruction scope,
@@ -2670,7 +2708,7 @@ impl Simulation {
                             );
                             crate::sim::combat::combat_aoe::AreaDamageReceiver::Terrain(
                                 crate::sim::combat::TerrainDamageEvent {
-                    damage_writeback: None,
+                                    damage_writeback: None,
                                     stable_id,
                                     rx,
                                     ry,
@@ -2824,7 +2862,11 @@ impl Simulation {
                 for &coord in &mutation.original_footprint {
                     // Map5814D4/581BE6:70D4A0 then radar, per old footprint cell.
                     let _receipt = self.stop_all_targeting_cell(
-                        coord.0, coord.1, rules, overlay_registry, frame_effects,
+                        coord.0,
+                        coord.1,
+                        rules,
+                        overlay_registry,
+                        frame_effects,
                     );
                     #[cfg(any(test, feature = "test-support"))]
                     effects.cell_target_detaches.extend(_receipt.cell_detaches);
@@ -2842,10 +2884,8 @@ impl Simulation {
                     .map(|name| self.interner.intern(name));
                 for &(cell_x, cell_y) in &mutation.animation_cells {
                     for _ in 0..2 {
-                        let type_index =
-                            self.scenario_rng.next_range_u32_inclusive(0, 2) as usize;
-                        let jitter_x =
-                            self.scenario_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
+                        let type_index = self.scenario_rng.next_range_u32_inclusive(0, 2) as usize;
+                        let jitter_x = self.scenario_rng.next_range_u32_inclusive(0, 16) as i32 - 8;
                         let jitter_y =
                             self.scenario_rng.next_range_u32_inclusive(0, 24) as i32 - 12;
                         let level = self
@@ -2865,15 +2905,14 @@ impl Simulation {
                                 .wrapping_add(jitter_y),
                             z: i32::from(level).wrapping_mul(104),
                         };
-                        let mut descriptor =
-                            crate::sim::components::AnimClassSpawnDescriptor::new(
-                                anim_types[type_index],
-                                cell_x as u16,
-                                cell_y as u16,
-                                SimFixed::from_num(128 + jitter_x),
-                                SimFixed::from_num(128 + jitter_y),
-                                level as u8,
-                            );
+                        let mut descriptor = crate::sim::components::AnimClassSpawnDescriptor::new(
+                            anim_types[type_index],
+                            cell_x as u16,
+                            cell_y as u16,
+                            SimFixed::from_num(128 + jitter_x),
+                            SimFixed::from_num(128 + jitter_y),
+                            level as u8,
+                        );
                         descriptor.delay = delay;
                         descriptor.loop_count = 1;
                         descriptor.draw_flags = 0x600;
@@ -3212,6 +3251,7 @@ impl Simulation {
             self.sound_events.emit(SimSoundEvent::UnitLost {
                 owner: event.owner,
                 radar: RadarEventRequest::new(RadarEventType::UnitLost, event.rx, event.ry),
+                type_id: event.type_id,
             });
         }
     }
@@ -3296,7 +3336,9 @@ impl Simulation {
             return Err("replay startup must precede the first ordinary frame".into());
         }
         if !self.session.started() {
-            return Err("replay startup requires the completed loader's started publication".into());
+            return Err(
+                "replay startup requires the completed loader's started publication".into(),
+            );
         }
         if session.seed() != self.session.seed() || session.map_name() != self.session.map_name() {
             return Err("replay startup seed/map differs from its constructed world".into());
@@ -4416,9 +4458,7 @@ impl Simulation {
             session,
             #[cfg(feature = "debug-tools")]
             debug_tools: Default::default(),
-            #[cfg(feature = "telemetry")]
             frame_profiling: false,
-            #[cfg(feature = "telemetry")]
             frame_profile: Default::default(),
             object_placement_scope_depth: 0,
             buildup_bypass: false,
@@ -7833,7 +7873,7 @@ impl Simulation {
     /// Start or stop diagnostic wall-clock measurement. A transition starts a
     /// fresh sample window; repeated requests preserve the accumulated profile.
     /// New and deserialized simulations start disabled with an empty profile.
-    #[cfg(feature = "telemetry")]
+    /// The telemetry build and the in-game performance panel turn it on.
     pub fn set_frame_profiling(&mut self, enabled: bool) {
         if self.frame_profiling != enabled {
             self.frame_profile.reset();
@@ -7841,7 +7881,6 @@ impl Simulation {
         }
     }
 
-    #[cfg(feature = "telemetry")]
     pub fn frame_profile(&self) -> &crate::sim::frame_profile::FrameProfile {
         &self.frame_profile
     }

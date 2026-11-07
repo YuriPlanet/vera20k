@@ -384,43 +384,39 @@ mod first_launch {
             .map(|entry| entry.path())
     }
 
-    /// The dialogs' words, in Chinese when that is the player's first
-    /// language and in English otherwise.
+    /// The dialogs' words from VERA's language files, in the system's
+    /// language: before the game folder is known there is no settings folder,
+    /// so neither the player's pick nor a dropped-in language file applies.
     struct Text {
-        found: &'static str,
-        found_at: &'static str,
-        use_folder: &'static str,
-        choose_another: &'static str,
-        quit: &'static str,
-        choose: &'static str,
-        retry: &'static str,
+        found: String,
+        found_at: String,
+        use_folder: String,
+        choose_another: String,
+        quit: String,
+        choose: String,
+        retry: String,
     }
 
-    const ENGLISH: Text = Text {
-        found: "Use this Yuri's Revenge folder?",
-        found_at: "VERA20k found the game here:",
-        use_folder: "Use This Folder",
-        choose_another: "Choose Another…",
-        quit: "Quit",
-        choose: "Choose your Yuri's Revenge folder, the one holding ra2md.mix and ra2.mix.",
-        retry: "That folder has no ra2md.mix and ra2.mix. Choose your Yuri's Revenge folder.",
-    };
-
-    const CHINESE: Text = Text {
-        found: "使用这个《尤里的复仇》游戏文件夹吗？",
-        found_at: "VERA20k 在这里找到了游戏：",
-        use_folder: "使用此文件夹",
-        choose_another: "选择其他文件夹…",
-        quit: "退出",
-        choose: "请选择《尤里的复仇》游戏文件夹（包含 ra2md.mix 和 ra2.mix 的文件夹）。",
-        retry: "该文件夹中没有 ra2md.mix 和 ra2.mix。请重新选择《尤里的复仇》游戏文件夹。",
-    };
+    impl Text {
+        fn new() -> Self {
+            use crate::i18n::tr;
+            Self {
+                found: tr("VERA:GameFolderFound"),
+                found_at: tr("VERA:GameFolderFoundAt"),
+                use_folder: tr("VERA:UseThisFolder"),
+                choose_another: tr("VERA:ChooseAnotherFolder"),
+                quit: tr("VERA:Quit"),
+                choose: tr("VERA:ChooseGameFolder"),
+                retry: tr("VERA:ChooseGameFolderAgain"),
+            }
+        }
+    }
 
     /// The system's alert and folder chooser, run modally by this process.
     #[cfg(target_os = "macos")]
     struct SystemDialogs {
         mtm: MainThreadMarker,
-        text: &'static Text,
+        text: Text,
     }
 
     #[cfg(target_os = "macos")]
@@ -428,12 +424,9 @@ mod first_launch {
         fn new() -> Result<Self> {
             let mtm = MainThreadMarker::new()
                 .context("The game folder questions need the main thread")?;
-            let chinese = objc2_foundation::NSLocale::preferredLanguages()
-                .firstObject()
-                .is_some_and(|language| language.to_string().starts_with("zh"));
             Ok(Self {
                 mtm,
-                text: if chinese { &CHINESE } else { &ENGLISH },
+                text: Text::new(),
             })
         }
     }
@@ -448,12 +441,12 @@ mod first_launch {
             let response = crate::app::system_dialog::alert(
                 self.mtm,
                 NSAlertStyle::Warning,
-                self.text.found,
+                &self.text.found,
                 &format!("{}\n{}", self.text.found_at, folder.display()),
                 &[
-                    self.text.use_folder,
-                    self.text.choose_another,
-                    self.text.quit,
+                    self.text.use_folder.as_str(),
+                    &self.text.choose_another,
+                    &self.text.quit,
                 ],
             );
             Ok(if response == NSAlertFirstButtonReturn {
@@ -475,11 +468,11 @@ mod first_launch {
             panel.setAllowsMultipleSelection(false);
             // Porting Kit and Wineskin keep the game inside their wrapper app.
             panel.setTreatsFilePackagesAsDirectories(true);
-            panel.setPrompt(Some(&NSString::from_str(self.text.use_folder)));
+            panel.setPrompt(Some(&NSString::from_str(&self.text.use_folder)));
             let message = if retry {
-                self.text.retry
+                &self.text.retry
             } else {
-                self.text.choose
+                &self.text.choose
             };
             panel.setMessage(Some(&NSString::from_str(message)));
             if let Some(start) = start.and_then(NSURL::from_directory_path) {
@@ -503,7 +496,7 @@ mod first_launch {
     #[cfg(target_os = "linux")]
     struct SystemDialogs {
         tool: Option<DialogTool>,
-        text: &'static Text,
+        text: Text,
     }
 
     #[cfg(target_os = "linux")]
@@ -516,14 +509,9 @@ mod first_launch {
             if tool.is_none() {
                 log::warn!("Neither zenity nor kdialog is installed to ask for the game folder");
             }
-            // gettext's order: the first of LANGUAGE's list, then the locale.
-            let language = ["LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"]
-                .into_iter()
-                .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()));
-            let chinese = language.is_some_and(|language| language.starts_with("zh"));
             Ok(Self {
                 tool,
-                text: if chinese { &CHINESE } else { &ENGLISH },
+                text: Text::new(),
             })
         }
     }
@@ -544,7 +532,7 @@ mod first_launch {
         fn offer(&mut self, folder: &Path) -> Result<Offer> {
             use std::process::Command;
 
-            let text = self.text;
+            let text = &self.text;
             let question = format!("{}\n\n{}\n{}", text.found, text.found_at, folder.display());
             Ok(match self.tool {
                 None => Offer::Use,
@@ -570,12 +558,12 @@ mod first_launch {
                 }
                 Some(DialogTool::Kdialog) => {
                     let status = Command::new("kdialog")
-                        .args(["--title", "VERA20k", "--yes-label", text.use_folder])
+                        .args(["--title", "VERA20k", "--yes-label", &text.use_folder])
                         .args([
                             "--no-label",
-                            text.choose_another,
+                            &text.choose_another,
                             "--cancel-label",
-                            text.quit,
+                            &text.quit,
                         ])
                         .arg("--yesnocancel")
                         .arg(question)
@@ -595,9 +583,9 @@ mod first_launch {
             use std::process::Command;
 
             let message = if retry {
-                self.text.retry
+                &self.text.retry
             } else {
-                self.text.choose
+                &self.text.choose
             };
             let (program, output) = match self.tool {
                 None => anyhow::bail!("There is no folder chooser to ask for the game folder"),

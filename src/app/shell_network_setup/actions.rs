@@ -431,17 +431,12 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
             None,
         )
     } else {
-        let random_map = selected.as_deref().is_some_and(|file| {
-            file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED)
-        });
-        let staging = state.frontend.multiplayer_shell_runtime.start_staging();
         (
             None,
-            (random_map && staging.defined_cells().next().is_some()).then(|| {
-                crate::app::shell_random_map::AcceptedRmgStartStaging::from_scenario_staging(
-                    &staging,
-                )
-            }),
+            crate::app::shell_random_map::AcceptedRmgStartStaging::from_retained_staging(
+                &state.frontend.multiplayer_shell_runtime.start_staging(),
+                selected.as_deref(),
+            ),
         )
     };
     if accepted_random_map.is_none()

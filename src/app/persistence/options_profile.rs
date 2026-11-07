@@ -161,9 +161,6 @@ pub(crate) struct RetailOptionsProfile {
     /// own drawing of the whole map (`app::map_picture`) in place of
     /// the map's `[PreviewPack]` picture. On by default; presentation only.
     pub(crate) hd_map_previews: bool,
-    /// `[VERA] WindowMaximized=`: whether the window was last left maximised.
-    /// [`Self::window_placement`] keeps the size it returns to.
-    pub(crate) window_maximized: bool,
     /// `[VERA] HouseColorStrength=`: how strongly VERA boosts the `[Colors]`
     /// team-color bands, 1 (gamemd's own ramps) through 10. Presentation only:
     /// it never reaches simulation state, and a battle reads it when its
@@ -225,10 +222,10 @@ pub(crate) struct RetailOptionsProfile {
     /// translated into, or `None`, the default, for off. Only the `/translate`
     /// chat command changes it ([`Self::commit_chat_translation`]).
     pub(crate) translate_chat: Option<crate::ui::chat_translation::ChatLanguage>,
-    /// `[VERA] Language=`: the language tag of VERA's own text
-    /// ([`crate::i18n`]), `en` by default. Edited in VERA.INI only, so the
-    /// writer leaves the player's line as it is; read once at startup.
-    pub(crate) language: String,
+    /// `[VERA] Language=`: the tag of the interface language the player chose
+    /// ([`crate::i18n`]); `None`, the default, follows the system's languages.
+    /// Only the Language list changes it; Options' accept writes it out.
+    pub(crate) language: Option<String>,
     /// `[VERA] SkipUpdate=`: the release the player chose to skip when the
     /// updater offered it; empty, the default, offers every newer release.
     /// Only the updater changes it ([`Self::commit_skipped_update`]).
@@ -248,22 +245,24 @@ pub(crate) struct RetailOptionsProfile {
     /// stays here and opens on the system's choice, like [`Self::zoom`]'s
     /// unknown steps.
     pub(crate) display: crate::ui::main_menu_dialogs::options::DisplayTarget,
-    /// `[VERA] WindowX/WindowY/WindowWidth/WindowHeight`: where the windowed
-    /// game last sat, so the next launch opens there. `None` until the player
-    /// moves or resizes the window; a zero width reads as unset.
+    /// `[VERA] DetailedEvaText=`: VERA-only accessibility text. When on, the
+    /// app posts a line naming the unit or building behind EVA lines whose
+    /// voice never names it. Client presentation only: no sim, audio, state
+    /// hash or network protocol reads it. Off by default.
+    pub(crate) detailed_eva_text: bool,
+    /// `[VERA] WindowX/WindowY`: where the windowed game last sat, so the next
+    /// launch opens there. `None`, with neither key written, until the window
+    /// has sat somewhere. Its size is not kept: a windowed launch always opens
+    /// at gamemd's startup size ([`RetailOptionsLoad::startup_shell_screen`]).
     pub(crate) window_placement: Option<WindowPlacement>,
 }
 
-/// The windowed game's last placement: the outer top-left corner in the
-/// desktop's physical pixels (the frame monitors report theirs in) and the
-/// drawable size in logical units, so a screen of another scale opens it as
-/// large as it looked.
+/// The windowed game's last placement: its outer top-left corner in the
+/// desktop's physical pixels, the frame monitors report theirs in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct WindowPlacement {
     pub(crate) x: i32,
     pub(crate) y: i32,
-    pub(crate) width: u32,
-    pub(crate) height: u32,
 }
 
 /// The two process-start products obtained from one physical `VERA.INI`
@@ -328,7 +327,6 @@ impl Default for RetailOptionsProfile {
             hd_radar: false,
             smooth_sidebar: false,
             hd_map_previews: true,
-            window_maximized: false,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
@@ -340,11 +338,12 @@ impl Default for RetailOptionsProfile {
             custom_end_game_movie: false,
             health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode::Vanilla,
             translate_chat: None,
-            language: crate::i18n::DEFAULT_LANGUAGE.to_owned(),
+            language: None,
             skipped_update: String::new(),
             online_name: String::new(),
             online_locale: 0,
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
+            detailed_eva_text: false,
             window_placement: None,
         }
     }
@@ -362,7 +361,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 30],
+    pub(crate) vera: [(&'static str, String); 27],
 }
 
 impl RetailOptionsLoad {
@@ -571,7 +570,6 @@ impl RetailOptionsProfile {
             self.hd_radar = vera.read_bool("HdRadar", self.hd_radar);
             self.smooth_sidebar = vera.read_bool("SmoothSidebar", self.smooth_sidebar);
             self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
-            self.window_maximized = vera.read_bool("WindowMaximized", self.window_maximized);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
             self.house_color_strength = crate::rules::house_colors::clamped_strength(
@@ -592,6 +590,7 @@ impl RetailOptionsProfile {
                 vera.read_bool("CustomEndGameScore", self.custom_end_game_score);
             self.custom_end_game_movie =
                 vera.read_bool("CustomEndGameMovie", self.custom_end_game_movie);
+            self.detailed_eva_text = vera.read_bool("DetailedEvaText", self.detailed_eva_text);
             // Absent keeps the current value; a value this build does not know
             // reads as the native rule instead of hiding the original strip.
             self.health_bars = crate::ui::main_menu_dialogs::options::HealthBarMode::from_ini_value(
@@ -600,8 +599,10 @@ impl RetailOptionsProfile {
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 self.translate_chat = crate::ui::chat_translation::ChatLanguage::from_tag(value);
             }
+            // Empty, as a profile that never picked one writes it, follows
+            // the system again.
             if let Some(value) = vera.read_name("Language", 16) {
-                self.language = value.to_owned();
+                self.language = Some(value).filter(|tag| !tag.is_empty()).map(str::to_owned);
             }
             if let Some(value) = vera.read_name("SkipUpdate", 16) {
                 self.skipped_update = value.to_owned();
@@ -619,14 +620,16 @@ impl RetailOptionsProfile {
                 self.display =
                     crate::ui::main_menu_dialogs::options::DisplayTarget::from_ini_value(value);
             }
-            let width = vera.read_int("WindowWidth", 0);
-            let height = vera.read_int("WindowHeight", 0);
-            if width > 0 && height > 0 {
+            // Earlier builds also saved the window's size and wrote a window
+            // never placed as 0x0, which still reads as unset; the writer
+            // drops those keys.
+            let unplaced = ["WindowWidth", "WindowHeight"]
+                .iter()
+                .any(|key| vera.is_present(key) && vera.read_int(key, 0) <= 0);
+            if vera.is_present("WindowX") && vera.is_present("WindowY") && !unplaced {
                 self.window_placement = Some(WindowPlacement {
                     x: vera.read_int("WindowX", 0),
                     y: vera.read_int("WindowY", 0),
-                    width: width as u32,
-                    height: height as u32,
                 });
             }
         }
@@ -653,7 +656,6 @@ impl RetailOptionsProfile {
         // Retail provenance: Options/Video/Audio write set, order, and lexical
         // forms — `OptionsClass__WriteToINI` @ `0x005FAD10`, helpers
         // `0x005275C0`, `0x00529560`, and `0x005285B0`.
-        let placement = self.window_placement;
         FormattedProfileSections {
             options: [
                 ("GameSpeed", self.game_speed.to_string()),
@@ -753,17 +755,6 @@ impl RetailOptionsProfile {
                 ),
                 ("HouseColorStrength", self.house_color_strength.to_string()),
                 ("Display", self.display.ini_value().to_owned()),
-                ("WindowX", placement.map_or(0, |p| p.x).to_string()),
-                ("WindowY", placement.map_or(0, |p| p.y).to_string()),
-                ("WindowWidth", placement.map_or(0, |p| p.width).to_string()),
-                (
-                    "WindowHeight",
-                    placement.map_or(0, |p| p.height).to_string(),
-                ),
-                (
-                    "WindowMaximized",
-                    format_bool(self.window_maximized).to_string(),
-                ),
                 ("LockCursor", format_bool(self.lock_cursor).to_string()),
                 ("VeraIcon", format_bool(self.vera_icon).to_string()),
                 ("HealthBars", self.health_bars.ini_value().to_string()),
@@ -775,6 +766,11 @@ impl RetailOptionsProfile {
                 (
                     "HdMapPreviews",
                     format_bool(self.hd_map_previews).to_string(),
+                ),
+                ("Language", self.language.clone().unwrap_or_default()),
+                (
+                    "DetailedEvaText",
+                    format_bool(self.detailed_eva_text).to_string(),
                 ),
             ],
         }
@@ -808,10 +804,34 @@ impl RetailOptionsProfile {
         let output =
             crate::util::ini_writer::set_ini_byte_values(&output, NETWORK_SECTION, &network);
         let output = apply_formatted_section(&output, VERA_SECTION, &formatted.vera);
+        // The corner is written only once the window has one, so a profile
+        // without it opens the window as a first launch does.
+        let output = match self.window_placement {
+            Some(placement) => {
+                let (x, y) = (placement.x.to_string(), placement.y.to_string());
+                set_ini_values(
+                    &output,
+                    VERA_SECTION,
+                    &[("WindowX", x.as_str()), ("WindowY", y.as_str())],
+                )
+            }
+            None => crate::util::ini_writer::remove_ini_keys(
+                &output,
+                VERA_SECTION,
+                &["WindowX", "WindowY"],
+            ),
+        };
         crate::util::ini_writer::remove_ini_keys(
             &output,
             VERA_SECTION,
-            &["RA2Look", "SoundDefaultsApplied", "SkipStartupLogo"],
+            &[
+                "RA2Look",
+                "SoundDefaultsApplied",
+                "SkipStartupLogo",
+                "WindowWidth",
+                "WindowHeight",
+                "WindowMaximized",
+            ],
         )
     }
 
@@ -1596,36 +1616,49 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         );
     }
 
+    /// The window keeps only its corner. The size and maximised keys earlier
+    /// builds wrote are dropped, and their 0x0 for a window never placed
+    /// still reads as unset, as no corner at all does.
     #[test]
-    fn window_state_round_trips_and_a_zero_width_reads_unset() {
+    fn window_corner_round_trips_and_the_saved_size_retires() {
         let startup = RetailStartupOptions::default();
+        let window_keys = |bytes: &[u8]| -> Vec<String> {
+            let ini = IniFile::from_bytes(bytes).unwrap();
+            let vera = ini.section(VERA_SECTION).unwrap();
+            vera.keys()
+                .filter(|key| key.starts_with("Window"))
+                .map(str::to_owned)
+                .collect()
+        };
         let placed = RetailOptionsProfile {
-            window_placement: Some(WindowPlacement {
-                x: -1200,
-                y: 40,
-                width: 1280,
-                height: 720,
-            }),
+            window_placement: Some(WindowPlacement { x: -1200, y: 40 }),
             ..RetailOptionsProfile::default()
         };
-        let output = placed.transform_settings(b"");
+        let output = placed.transform_settings(
+            b"[VERA]\nWindowX=5\nWindowY=6\nWindowWidth=1280\nWindowHeight=720\n\
+              WindowMaximized=yes\n",
+        );
+        assert_eq!(window_keys(&output), ["WindowX", "WindowY"]);
         assert_eq!(
             load_snapshot(&startup, &output)
                 .retained_profile
                 .window_placement,
             placed.window_placement
         );
-        let unset = RetailOptionsProfile::default().transform_settings(b"");
+        let unplaced = b"[VERA]\nWindowX=0\nWindowY=0\nWindowWidth=0\nWindowHeight=0\n";
+        let profile = load_snapshot(&startup, unplaced).retained_profile;
+        assert_eq!(profile.window_placement, None);
+        let unset = profile.transform_settings(unplaced);
+        assert!(window_keys(&unset).is_empty());
         let unset = load_snapshot(&startup, &unset).retained_profile;
         assert_eq!(unset.window_placement, None);
-        // The lock starts off, a window starts unmaximised, its icon is the
-        // red star, the radar is native and the sidebar sharp, and map
-        // previews are VERA's own; all six round-trip.
-        assert!(!unset.lock_cursor && !unset.window_maximized && !unset.vera_icon);
+        // The lock starts off, its icon is the red star, the radar is native
+        // and the sidebar sharp, and map previews are VERA's own; all five
+        // round-trip.
+        assert!(!unset.lock_cursor && !unset.vera_icon);
         assert!(!unset.hd_radar && !unset.smooth_sidebar && unset.hd_map_previews);
         let changed = RetailOptionsProfile {
             lock_cursor: true,
-            window_maximized: true,
             vera_icon: true,
             hd_radar: true,
             smooth_sidebar: true,
@@ -1634,7 +1667,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         }
         .transform_settings(b"");
         let changed = load_snapshot(&startup, &changed).retained_profile;
-        assert!(changed.lock_cursor && changed.window_maximized && changed.vera_icon);
+        assert!(changed.lock_cursor && changed.vera_icon);
         assert!(changed.hd_radar && changed.smooth_sidebar && !changed.hd_map_previews);
     }
 
@@ -2302,5 +2335,34 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
                 assert_eq!(decode_net_id(&network), value);
             }
         }
+    }
+
+    /// The accessibility switch is off by default and survives the VERA.INI
+    /// transaction in both directions, exactly like the other VERA-only boxes.
+    #[test]
+    fn detailed_eva_text_defaults_off_and_round_trips_through_the_vera_section() {
+        let startup = RetailStartupOptions::default();
+        assert!(
+            !load_snapshot(&startup, b"")
+                .retained_profile
+                .detailed_eva_text
+        );
+        let input = b"[VERA]\nDetailedEvaText=yes\nUnowned=keep\n";
+        let mut profile = load_snapshot(&startup, input).retained_profile;
+        assert!(profile.detailed_eva_text);
+        let written = profile.transform_settings(input);
+        assert!(
+            load_snapshot(&startup, &written)
+                .retained_profile
+                .detailed_eva_text
+        );
+        profile.detailed_eva_text = false;
+        let written = profile.transform_settings(&written);
+        assert!(
+            !load_snapshot(&startup, &written)
+                .retained_profile
+                .detailed_eva_text
+        );
+        assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
     }
 }

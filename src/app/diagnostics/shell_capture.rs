@@ -1171,6 +1171,9 @@ pub struct ShellCaptureRequest {
     timeout: Option<Duration>,
     live_lan: Option<LiveLanConfig>,
     live_online: Option<LiveOnlineConfig>,
+    /// `--language <tag>`: VERA's interface language, such as `zh-CN` or the
+    /// pseudo-language `qps-ploc`; English otherwise, whatever the system's.
+    language: Option<String>,
 }
 
 /// Nonsecret username and match inputs for an ordinary online UI run.
@@ -1421,6 +1424,7 @@ where
     let mut online_loading_cancel_checkpoint = None;
     let mut observe_loading = false;
     let mut profile_check = false;
+    let mut language = None;
 
     while let Some(flag) = args.next() {
         let flag = flag
@@ -1608,6 +1612,11 @@ where
                 ensure!(!profile_check, "duplicate --network-profile-check");
                 profile_check = true;
             }
+            "--language" => set_once(
+                &mut language,
+                next_utf8(&mut args, "value after --language")?,
+                "--language",
+            )?,
             "--online-exit-checkpoint" => set_once(
                 &mut online_exit_checkpoint,
                 next_utf8(&mut args, "value after --online-exit-checkpoint")?,
@@ -1635,17 +1644,30 @@ where
     let cursor_y = cursor_y.context("missing required --cursor-y")?;
     let output_dir = output_dir.context("missing required --output")?;
 
+    // The settled main menu also captures in any larger window, to compare
+    // its scaled drawing, with the pointer resting at the window's centre.
+    let scaled_main_menu = checkpoint == ShellCaptureCheckpoint::MainMenu0xE2Steady
+        && (width, height) != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
+        && width >= 640
+        && height >= 480;
     ensure!(
         (width == EXPECTED_WIDTH && height == EXPECTED_HEIGHT)
-            || (online_latency && width == 640 && height == 480),
-        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (640x480 also allowed for --online-latency), got {width}x{height}",
+            || (online_latency && width == 640 && height == 480)
+            || scaled_main_menu,
+        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (640x480 also allowed for --online-latency, a larger window for the main menu), got {width}x{height}",
         checkpoint.as_str()
     );
+    let neutral = if scaled_main_menu {
+        (width / 2, height / 2)
+    } else {
+        (EXPECTED_CURSOR_X, EXPECTED_CURSOR_Y)
+    };
     ensure!(
-        cursor_x == EXPECTED_CURSOR_X && cursor_y == EXPECTED_CURSOR_Y,
-        "checkpoint {} requires neutral cursor ({EXPECTED_CURSOR_X},{EXPECTED_CURSOR_Y}), got \
-         ({cursor_x},{cursor_y})",
-        checkpoint.as_str()
+        (cursor_x, cursor_y) == neutral,
+        "checkpoint {} requires neutral cursor ({},{}), got ({cursor_x},{cursor_y})",
+        checkpoint.as_str(),
+        neutral.0,
+        neutral.1
     );
     validate_new_output_dir(&output_dir)?;
     let online = matches!(checkpoint, ShellCaptureCheckpoint::Lan(target) if target.online());
@@ -2102,6 +2124,7 @@ where
         timeout,
         live_lan,
         live_online,
+        language,
     }))
 }
 
@@ -2549,6 +2572,18 @@ impl ShellCaptureSession {
         state.match_state.input.cursor_x = self.request.cursor_x as f32;
         state.match_state.input.cursor_y = self.request.cursor_y as f32;
         state.frontend.native_shell_ui = self.request.native_shell_ui();
+        // As the Language list applies a pick; a language no file provides
+        // fails the capture instead of drawing English under its name.
+        let language = self
+            .request
+            .language
+            .clone()
+            .unwrap_or_else(|| crate::i18n::DEFAULT_LANGUAGE.to_owned());
+        if !state.use_language(&language) {
+            self.fail(format!(
+                "--language {language}: no language file provides it"
+            ));
+        }
         self.started_at = Some(Instant::now());
     }
 
@@ -2630,7 +2665,23 @@ impl ShellCaptureSession {
         }
         match &self.skirmish {
             Some(capture) => capture.ready(state),
-            None => steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state)),
+            None => {
+                let mut snapshot = MainMenuCaptureSnapshot::from_state(state);
+                let window = (self.request.width, self.request.height);
+                // A scaled main-menu capture: its own window and centred
+                // pointer stand for the reference surface and neutral point.
+                if window != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
+                    && (snapshot.width, snapshot.height) == window
+                    && (snapshot.cursor_x, snapshot.cursor_y)
+                        == ((window.0 / 2) as f32, (window.1 / 2) as f32)
+                {
+                    snapshot.width = EXPECTED_WIDTH;
+                    snapshot.height = EXPECTED_HEIGHT;
+                    snapshot.cursor_x = EXPECTED_CURSOR_X as f32;
+                    snapshot.cursor_y = EXPECTED_CURSOR_Y as f32;
+                }
+                steady_main_menu_capture_ready(snapshot)
+            }
         }
     }
 
@@ -5015,9 +5066,29 @@ mod tests {
             .iter()
             .position(|value| value == "--width")
             .expect("width");
-        values[width + 1] = OsString::from("1024");
+        values[width + 1] = OsString::from("600");
         let err = parse_launch_args(values).expect_err("must reject");
         assert!(err.to_string().contains("requires exactly 800x600"));
+    }
+
+    #[test]
+    fn a_scaled_main_menu_capture_rests_the_pointer_at_the_window_centre() {
+        let set = |values: &mut Vec<OsString>, flag: &str, value: &str| {
+            let at = values.iter().position(|v| v == flag).expect("flag");
+            values[at + 1] = OsString::from(value);
+        };
+        let output = new_output_path("scaled");
+        let mut values = valid_args(&output);
+        set(&mut values, "--width", "1440");
+        set(&mut values, "--height", "1080");
+        let err = parse_launch_args(values.clone()).expect_err("off-centre pointer");
+        assert!(
+            err.to_string()
+                .contains("requires neutral cursor (720,540)")
+        );
+        set(&mut values, "--cursor-x", "720");
+        set(&mut values, "--cursor-y", "540");
+        assert!(parse_launch_args(values).is_ok());
     }
 
     #[test]

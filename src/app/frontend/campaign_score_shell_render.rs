@@ -215,7 +215,7 @@ pub(crate) fn render_campaign_score_page(
                 layout.continue_button,
                 pressed == Some(continue_id),
             ),
-            align: ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0),
+            align: ShellAlign::BUTTON_CAPTION,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: None,
         });

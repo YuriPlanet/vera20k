@@ -37,7 +37,8 @@ const REGION_SIZE_MAX: [i32; MAP_TYPES] = [100, 100, 100, 100, 50];
 /// The resource option is scaled by this to produce the tiberium amount.
 const TIBERIUM_PER_RESOURCE_STEP: i32 = 0x14;
 
-/// Fill the derived fields from the map type, exactly in the original's order.
+/// Fill the derived fields from the map type, exactly in the original's order
+/// (`MapSeedClass::RandomizeDerivedFields @ 0x00597260`).
 ///
 /// Consumes eight RNG draws — water, ruggedness, urban, accessibility, region
 /// size, tiberium layout, vegetation, seed — and the order is load-bearing:
@@ -75,7 +76,9 @@ pub fn derive_from_map_type(
 /// randomizer only ever produces the first two theaters.
 const THEATER_THRESHOLD: i32 = 0x31;
 
-/// Randomize the option set the way the dialog's Surprise Me button does.
+/// Randomize the option set the way the dialog's Surprise Me button does: the
+/// draws inline in `RandomMapSetupDialog::Proc` (0x00596786..0x00596841), the
+/// same as the unreferenced `MapSeedClass::RandomizeAllOptions @ 0x00597380`.
 ///
 /// Draw order: theater, map type, time, resources, size, then the derived
 /// fields, then a second seed draw that supersedes the one the derived pass

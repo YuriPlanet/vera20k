@@ -242,7 +242,10 @@ pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(object) = sim.object_type(entity.type_ref(), rules) else {
         return;
     };
-    let has_turret = object.has_turret;
+    // UpdateAnimation451149 calls the same Building HasTurret query as firing.
+    let has_turret = entity
+        .building_upgrades()
+        .has_turret(object, rules, &sim.interner);
     let archive_less_sale =
         crate::sim::production::archive_less_sale(rules.into(), &object.id, entity);
     let now = sim.session.binary_frame() as i32;
@@ -1559,7 +1562,11 @@ fn voxel_turret_snaps(sim: &mut Simulation, id: u64, rules: &RuleSet, target: Ta
     let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
         return false;
     };
-    if !(obj.has_turret && obj.turret_anim_is_voxel) {
+    if !(entity
+        .building_upgrades()
+        .has_turret(obj, rules, &sim.interner)
+        && obj.turret_anim_is_voxel)
+    {
         return false;
     }
     let Some(direction) = fire_coord::building_direction_to(sim, rules, entity, target) else {

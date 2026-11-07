@@ -235,7 +235,7 @@ fn allegiance_matches_native_decisions_for_valid_rosters() {
             "{name}"
         );
         let event = sim.sound_events.iter().find_map(|event| match event {
-            SimSoundEvent::StructureAbandoned { owner, radar } => Some((*owner, *radar)),
+            SimSoundEvent::StructureAbandoned { owner, radar, .. } => Some((*owner, *radar)),
             _ => None,
         });
         assert_eq!(event.is_some(), called("radar_event"), "{name}");

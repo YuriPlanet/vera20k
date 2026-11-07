@@ -2439,11 +2439,15 @@ pub(crate) fn load_csf(
 ) -> anyhow::Result<crate::assets::csf_file::CsfFile> {
     let (mut csf, supplements) =
         crate::assets::csf_file::CsfFile::load_active(|name| asset_manager.get_ref(name)).map_err(
+            // The startup error card shows these, before any string table.
             |err| match err {
                 crate::assets::error::AssetError::AssetNotFound { .. } => {
-                    anyhow::anyhow!("required retail string table ra2md.csf is missing")
+                    anyhow::anyhow!(crate::i18n::tr("VERA:CsfMissing"))
                 }
-                err => anyhow::anyhow!("could not parse required ra2md.csf: {err:#}"),
+                err => anyhow::anyhow!(crate::i18n::tr_fill(
+                    "VERA:CsfUnreadable",
+                    &[("error", &format!("{err:#}"))],
+                )),
             },
         )?;
     log::info!("Loaded CSF string table: ra2md.csf; supplements={supplements:?}");
@@ -2588,8 +2592,16 @@ pub(crate) fn load_map_initial_with_assets(
             full_init_entry_mode != crate::app::match_runtime::session::SessionMode::Campaign,
         )?;
         let terrain_rules = &generated_rules.native.rules().terrain_rules;
-        let resolved =
-            crate::map::rmg::build::ResolvedTheaterInputs::from_theater(&theater, terrain_rules);
+        let resolved = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
+            &theater,
+            terrain_rules,
+            generated_rules.native.rules().overlay_registry(),
+            generated_rules
+                .native
+                .rules()
+                .general
+                .cliff_back_impassability,
+        );
 
         // Tile-block layouts (sub-cell height/terrain grids) from the theater's
         // real TMP data — the shore tiler and zone classifier read these.
@@ -3959,7 +3971,9 @@ fn load_map_first_step(
                                                                             (None, None)
                                                                         };
 
-                                                                    // Campaigns open on the shared post-map owner's HomeCell (684C30),
+                                                                    // Campaigns open on the shared post-map owner's HomeCell (684C30,
+                                                                    // through `RadarClass::SetTacticalPosition @ 0x00653F70`, a plain
+                                                                    // SetViewToCoordInstant, at `0x00684D42`),
                                                                     // other scenarios on its CenterCameraOnPlayerTechnos coordinate
                                                                     // (4AC4F0). Without either (no current player, or an observer
                                                                     // with nothing), a multiplayer waypoint or the playable centre.

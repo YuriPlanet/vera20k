@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "5 runs of CreateStartingPoints 594B50..594C47 (region teardown, the rebuild scan and its eight-neighbour floods over walls, typed cells, levels, diagonal islands and a water seed) and 6 runs of 594C47..594E52 (small-region deletion, score sort, cumulative quota split with rounding, equal sizes, every region deleted, quota 0); every region record, cell list, scratch region and stamp, survivor, order and quota",
+  "assumptions": [
+    "Existing CliffFixture, TiberiumFieldFixture and StartPointsFixture own original-constructed Cell backing, admission, the stride-33 scratch, the physical clear/cliff TMP registration and the guarded arena; bounds 16..48. The region list is built as region_split builds it (vtable 7ED858, empty, next id 0). Generated size 12x12, so the threshold is the 400 floor.",
+    "Declared zones: RebuildZoneConnectivity returns 0 and every zone type table holds the reference zone 7 at index 0; GetZoneID returns 7 for declared ground cells and 9 elsewhere. Cell +4C zone type 0 unless declared 1. Declared levels and WaterSet tiles. Map type selects the zone type the calls pass (5 for types 0..2, 0 for 3, 4).",
+    "The split slice starts at 594C47 on a fresh frame with the threshold in [ESP+18] and EBX 0; region records come from the original constructor with declared ids and cell counts. Start quota in MapSeed +50. FPCW 0E7F. Not a complete Generate prefix."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS; native code bytes unchanged.",
+    "MapClass::RebuildZoneConnectivity 56C510 and MapClass::GetZoneID 56D230 return the declared zones without running: the zone computation itself is not compared here."
+  ],
+  "entry_points": {
+    "create_starting_points": "0x00594B50",
+    "rebuilt": "0x00594C47",
+    "split_end": "0x00594E52",
+    "clear_all": "0x0058CE90",
+    "flood": "0x00594420",
+    "region_ctor": "0x0058BF70",
+    "region_dtor": "0x0058C070",
+    "rebuild_zones": "0x0056C510",
+    "get_zone": "0x0056D230"
+  },
+  "replay_command": "python -m tools.rmg_oracle.create_starting_points",
+  "payload_sha256": "5bce0a7cc24024711ffb1d913fe5de4cb5d22927280f0f76d6792145b6a1af6a"
+}

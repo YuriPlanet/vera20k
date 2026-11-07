@@ -20,6 +20,7 @@ use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::x87::{self, TruncF64};
 use crate::util::native_x87::X87Chop53;
 
+use super::adjacency::border_cells_of;
 use super::blob::{BlobCtx, CellHeap, by_key, seed_draw};
 use super::shore::{self, ShoreCtx};
 use super::water::WaterArgs;
@@ -125,41 +126,12 @@ fn water_target(args: &WaterArgs) -> i32 {
     )
 }
 
-/// Cells of `region` that touch a cell of any other region
-/// (`RandomMapGenerator::CollectRegionBorderCells @ 0x005A0700`).
-///
-/// The original scans every scratch slot and skips the ones whose stored
-/// coordinate is the invalid `(0, 0)`; walking the diamond covers the same set,
-/// because `(0, 0)` is never inside it.
-fn region_border(scratch: &RmgScratch, grid_cells: &[(i32, i32)], region: i32) -> Vec<(i32, i32)> {
-    let mut border = Vec::new();
-    for &(x, y) in grid_cells {
-        if scratch.get(x, y).region != region {
-            continue;
-        }
-        for dir in 0..8usize {
-            let (nx, ny) = crate::map::rmg::grid::RmgGrid::step(x, y, dir);
-            if scratch.in_diamond(nx, ny) && scratch.get(nx, ny).region != region {
-                border.push((x, y));
-                break;
-            }
-        }
-    }
-    border
-}
-
 /// Peel `rings` border rings off `region`, retagging them and flattening their
 /// tiles. Consumes no randomness and always succeeds.
 /// `RandomMapGenerator::RetagBorderBand @ 0x005A0410`.
-fn retag_border_band(
-    ctx: &mut BlobCtx<'_>,
-    cells: &[(i32, i32)],
-    region: i32,
-    rings: i32,
-    new_id: i32,
-) {
+fn retag_border_band(ctx: &mut BlobCtx<'_>, region: i32, rings: i32, new_id: i32) {
     for _ in 0..rings {
-        let border = region_border(ctx.scratch, cells, region);
+        let border = border_cells_of(ctx.scratch, region);
         for &(x, y) in &border {
             ctx.scratch.get_mut(x, y).region = new_id;
             let cell = ctx.grid.get_mut(x, y).expect("native cell");
@@ -181,7 +153,8 @@ fn retag_border_band(
 /// re-collected the region's whole border every ring; the original chains, and
 /// the difference shows from the second ring on.
 pub(crate) fn dilate_region_rings(ctx: &mut BlobCtx<'_>, region: i32, rings: i32) -> bool {
-    super::meander::dilate_chained(ctx, region, rings, None, [0, 0, 0x200, 0x200])
+    let full = ctx.grid.whole_extent();
+    super::meander::dilate_chained(ctx, region, rings, None, [0, 0, full, full])
 }
 
 /// The growth key (`GrowLake` 0x0059D01C..0x0059D053): `(draw*K)*10` plus
@@ -198,7 +171,7 @@ fn growth_key(distance: f32, draw: u32, placed: i32) -> f32 {
         TruncF64::from_f64(f64::from(distance)).mul(TruncF64::from_f64(f64::from(KEY_DIST)));
     let decay_term =
         TruncF64::from_f64(f64::from(placed)).mul(TruncF64::from_f64(f64::from(KEY_DECAY)));
-    x87::narrow_to_f32(random_term.add(dist_term).sub(decay_term)).to_f64() as f32
+    x87::store_f32(random_term.add(dist_term).sub(decay_term))
 }
 
 /// Derive the allow mask, then pick a seed cell (`GrowLake @ 0x0059C920`,
@@ -218,7 +191,7 @@ fn prepare_and_seed(
         ctx.scratch.get_mut(x, y).lake_allow = false;
     }
 
-    retag_border_band(ctx, cells, 0, BAND_RINGS, BAND_TAG);
+    retag_border_band(ctx, 0, BAND_RINGS, BAND_TAG);
 
     for &(x, y) in cells {
         let region = ctx.scratch.get(x, y).region;
@@ -611,12 +584,13 @@ mod tests {
                 .collect::<String>()
         };
         let scene = &doc["scene"];
-        let mut identity = ids();
+        // The driver's shore pass needs the fixture's physical shore TMPs.
+        let (mut identity, blocks) = super::super::cliff_native_tests::physical_tiles();
         identity.water_base = scene["water_base"].as_i64().unwrap() as i32;
+        identity.green = scene["green"].as_i64().unwrap() as i32;
         let cliff = scene["cliff_base"].as_i64().unwrap() as i32;
-        let blocks = blocks();
         let rows = doc["rows"].as_array().unwrap();
-        assert_eq!(rows.len(), 9);
+        assert_eq!(rows.len(), 11);
         for row in rows {
             let input = &row["input"];
             let context = input["id"].as_str().unwrap();
@@ -631,7 +605,8 @@ mod tests {
             let mut grid = RmgGrid::new(33, 16, 48);
             let mut scratch = RmgScratch::new(33, 16, 48);
             for (x, y) in grid.native_cells().collect::<Vec<_>>() {
-                grid.get_mut(x, y).unwrap().tile = 0;
+                let cell = grid.get_mut(x, y).unwrap();
+                (cell.tile, cell.sub_tile, cell.level) = (0, 0, 0);
             }
             for (x, y) in coords("water") {
                 grid.get_mut(x, y).unwrap().tile = identity.water_base;
@@ -654,6 +629,20 @@ mod tests {
                     }
                 }
             }
+            let fields = |grid: &RmgGrid, scratch: &RmgScratch| {
+                let mut out = Vec::new();
+                for y in 0..33 {
+                    for x in 0..33 {
+                        if scratch.in_diamond(x, y) {
+                            let cell = grid.get(x, y).unwrap();
+                            let (sub, level) = (i32::from(cell.sub_tile), i32::from(cell.level));
+                            out.push([x, y, cell.tile, sub, level, scratch.get(x, y).region]);
+                        }
+                    }
+                }
+                out
+            };
+            let prior = fields(&grid, &scratch);
             let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
             let mut gauss = Gaussian::default();
             let size = &input["gen"];
@@ -714,29 +703,18 @@ mod tests {
                 doc["rng_states_hex"][after],
                 "{context}: exit RNG"
             );
-            let mut cells = Vec::new();
-            for y in 0..33 {
-                for x in 0..33 {
-                    if !scratch.in_diamond(x, y) {
-                        continue;
-                    }
-                    let water = grid.get(x, y).unwrap().tile == identity.water_base;
-                    let region = scratch.get(x, y).region;
-                    if water || region != 0 {
-                        cells.push([
-                            i64::from(x),
-                            i64::from(y),
-                            i64::from(water),
-                            i64::from(region),
-                        ]);
-                    }
-                }
-            }
-            let native: Vec<[i64; 4]> = row["cells"]
+            // Only cells the call changed, as the producer records them.
+            let cells: Vec<[i32; 6]> = fields(&grid, &scratch)
+                .into_iter()
+                .zip(prior)
+                .filter(|(now, before)| now != before)
+                .map(|(now, _)| now)
+                .collect();
+            let native: Vec<[i32; 6]> = row["cells"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .map(|c| std::array::from_fn(|i| c[i].as_i64().unwrap()))
+                .map(|c| std::array::from_fn(|i| c[i].as_i64().unwrap() as i32))
                 .collect();
             assert_eq!(cells, native, "{context}: cells");
         }
