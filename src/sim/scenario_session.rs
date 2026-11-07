@@ -349,10 +349,17 @@ impl ScenarioLightingState {
     /// with its RGB times 10 and 1): [`Self::select`] of
     /// [`ScenarioLightingProfile::Nuke`]. The caller publishes the relight.
     pub(crate) fn start_nuke_flash(&mut self, frame: i32) {
+        self.start_nuke_flash_for(frame, 30);
+    }
+
+    /// [`Self::start_nuke_flash`] fading in for `duration` frames: Ares's
+    /// impact hook (467E59, 10036960) writes the status, start and duration
+    /// itself.
+    pub(crate) fn start_nuke_flash_for(&mut self, frame: i32, duration: i32) {
         self.nuke_flash = NukeFlash {
             status: NukeFlashStatus::FadingIn,
             start: frame,
-            duration: 30,
+            duration,
         };
         self.transition_timer.start(frame, 1);
         self.select(ScenarioLightingProfile::Nuke);

@@ -4888,6 +4888,10 @@ struct ProcessedType {
     #[cfg(feature = "ares")]
     #[serde(default)]
     infiltration: crate::rules::ares_infiltration::InfiltrationTypeRules,
+    /// BuildingTypeExt rubble and repair keys (`rules::ares_building_type`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    building_type_ext: crate::rules::ares_building_type::BuildingTypeExtRules,
     /// TechnoTypeExt Experience.* and Promote.* (`rules::ares_veterancy`).
     #[cfg(feature = "ares")]
     #[serde(default)]
@@ -4905,19 +4909,15 @@ struct ProcessedType {
     #[cfg(feature = "ares")]
     #[serde(default)]
     aircraft_crashable: Option<bool>,
-    /// Ares TypeExt+150 `IronCurtain.Modifier` and +158
-    /// `ForceShield.Modifier`, Valueable<double>, constructor 1.0.
-    #[cfg(feature = "ares")]
-    #[serde(default = "default_curtain_modifiers")]
     /// TechnoTypeExt combat and movement keys (`rules::ares_techno_type`).
     #[cfg(feature = "ares")]
     #[serde(default)]
     techno_combat: crate::rules::ares_techno_type::AresTechnoTypeRules,
-    curtain_modifiers: [NativeF64Bits; 2],
-    /// BuildingTypeExt rubble and repair keys (`rules::ares_building_type`).
+    /// Ares TypeExt+150 `IronCurtain.Modifier` and +158
+    /// `ForceShield.Modifier`, Valueable<double>, constructor 1.0.
     #[cfg(feature = "ares")]
-    #[serde(default)]
-    building_type_ext: crate::rules::ares_building_type::BuildingTypeExtRules,
+    #[serde(default = "default_curtain_modifiers")]
+    curtain_modifiers: [NativeF64Bits; 2],
     /// ObjectType4753F0 -> Ares10006E10 binds at each reached body read.
     armor_id: ArmorId,
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
@@ -5490,6 +5490,8 @@ impl ProcessedType {
             #[cfg(feature = "ares")]
             infiltration: Default::default(),
             #[cfg(feature = "ares")]
+            building_type_ext: Default::default(),
+            #[cfg(feature = "ares")]
             veterancy: Default::default(),
             #[cfg(feature = "ares")]
             academy: Default::default(),
@@ -5498,10 +5500,10 @@ impl ProcessedType {
             #[cfg(feature = "ares")]
             aircraft_crashable: None,
             #[cfg(feature = "ares")]
-            curtain_modifiers: default_curtain_modifiers(),
-            armor_id: ArmorId::NONE,
             techno_combat: Default::default(),
             #[cfg(feature = "ares")]
+            curtain_modifiers: default_curtain_modifiers(),
+            armor_id: ArmorId::NONE,
             holds_what: None,
             particle_read: Default::default(),
             particle_next: None,
@@ -5517,8 +5519,6 @@ impl ProcessedType {
             super_weapon_influence: Default::default(),
             #[cfg(feature = "ares")]
             super_weapon_presentation: AresSuperWeaponPresentation::default(),
-            #[cfg(feature = "ares")]
-            building_type_ext: Default::default(),
             #[cfg(feature = "ares")]
             super_weapon_targeting: AresSuperWeaponTargetingState::default(),
             #[cfg(feature = "ares")]
@@ -7242,6 +7242,13 @@ impl RulesPassProcessor {
                         if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("Protect")) {
                             presentation.height = 5;
                         }
+                        // SW_ChronoSphere::Initialize1006EF10: the anims show
+                        // to the owner's team (3), 5 leptons up.
+                        if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("ChronoSphere")) {
+                            presentation.height = 5;
+                            presentation.visibility =
+                                crate::rules::superweapon_targeting::HouseMask::TEAM;
+                        }
                     }
                     presentation.eva.read_pass(&raw, _fixed_eva);
                     let animation = self.resolve_existing_type_from(
@@ -7360,41 +7367,76 @@ impl RulesPassProcessor {
                     // SW.CreateRadarEvent, SW.Range and SW.Group, then the
                     // Protect/Battery LoadFromINI (10074C20/1006ECC0) after
                     // the common reads; Battery's vectors use Find only.
-                    let battery_lists =
-                        if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("Battery")) {
-                            (
-                                self.resolve_existing_list_from(
+                    let is = |name: &str| kind.is_some_and(|kind| kind.eq_ignore_ascii_case(name));
+                    let mut reads = crate::rules::superweapon_type::AresHandlerReads::default();
+                    if is("Battery") {
+                        reads.battery_keep_online = self.resolve_existing_list_from(
+                            &raw,
+                            "Battery.KeepOnline",
+                            RulesTypeFamily::Building,
+                            0x800,
+                        );
+                        reads.battery_overpower = self.resolve_existing_list_from(
+                            &raw,
+                            "Battery.Overpower",
+                            RulesTypeFamily::Building,
+                            0x800,
+                        );
+                    } else if is("ChronoSphere") {
+                        // 1006EF90: Nullable<AnimTypeClass*>, Find only.
+                        reads.chrono_blasts = ["Chronosphere.BlastSrc", "Chronosphere.BlastDest"]
+                            .map(|key| {
+                                self.resolve_existing_type_from(
                                     &raw,
-                                    "Battery.KeepOnline",
-                                    RulesTypeFamily::Building,
-                                    0x800,
-                                ),
-                                self.resolve_existing_list_from(
-                                    &raw,
-                                    "Battery.Overpower",
-                                    RulesTypeFamily::Building,
-                                    0x800,
-                                ),
-                            )
-                        } else {
-                            (None, None)
-                        };
+                                    key,
+                                    RulesTypeFamily::Animation,
+                                )
+                            });
+                    } else if is("MultiMissile") {
+                        // SW_NuclearMissile::Initialize10073360 allocates its
+                        // payload weapon and finds PSIWARN; LoadFromINI
+                        // 10073410's reads look the types up only (1000A370).
+                        if initialized {
+                            let payload = self
+                                .find_or_allocate(RulesTypeFamily::Weapon, "NukePayload")
+                                .map(|index| {
+                                    self.resolved_type_key(RulesTypeFamily::Weapon, index)
+                                });
+                            let psi_warning = self
+                                .find_existing(
+                                    RulesTypeFamily::Animation,
+                                    crate::rules::effect_asset_catalog::PSI_WARNING_ANIM,
+                                )
+                                .map(|index| {
+                                    self.resolved_type_key(RulesTypeFamily::Animation, index)
+                                });
+                            reads.nuke_defaults = Some((payload, psi_warning));
+                        }
+                        reads.nuke = [
+                            ("Nuke.Payload", RulesTypeFamily::Weapon),
+                            ("Nuke.TakeOff", RulesTypeFamily::Animation),
+                            ("Nuke.PsiWarning", RulesTypeFamily::Animation),
+                        ]
+                        .map(|(key, family)| self.resolve_existing_type_from(&raw, key, family));
+                    }
+                    // 10033670: Nullable<WarheadTypeClass*> through the
+                    // Warhead factory, for every type.
+                    reads.warhead = self.resolve_scalar_from(
+                        &raw,
+                        "SW.Warhead",
+                        RulesTypeFamily::Warhead,
+                        0x80,
+                    );
+                    let generic_warhead_read = reads.warhead.clone();
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_launch
-                        .read_pass(&raw, kind, initialized, battery_lists);
+                        .read_pass(&raw, kind, initialized, reads);
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_charge
                         .read_pass(&raw);
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_availability = availability;
-                    if generic_warhead
-                        && let Some(warhead) = self.resolve_scalar_from(
-                            &raw,
-                            "SW.Warhead",
-                            RulesTypeFamily::Warhead,
-                            0x80,
-                        )
-                    {
+                    if generic_warhead && let Some(warhead) = generic_warhead_read {
                         self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                             .generic_super_weapon_warhead = warhead;
                     }
@@ -8793,13 +8835,38 @@ impl RulesPassProcessor {
                     pass.section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
                         .and_then(|raw| self.resolve_existing_type_from(raw, key, family))
                 });
+                // 10051D10's first call finds NUKEBALL for a NUKE warhead;
+                // PreImpactAnim is a ValueableIdx<Anim> FindIndex read.
+                let nuke_ball = self
+                    .find_existing(
+                        RulesTypeFamily::Animation,
+                        crate::rules::effect_asset_catalog::NUKE_BALL_ANIM,
+                    )
+                    .map(|index| self.resolved_type_key(RulesTypeFamily::Animation, index));
+                let pre_impact_anim = pass
+                    .section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
+                    .and_then(|raw| {
+                        self.resolve_existing_type_from(
+                            raw,
+                            "PreImpactAnim",
+                            RulesTypeFamily::Animation,
+                        )
+                    });
                 let member = &mut self
                     .families
                     .get_mut(&RulesTypeFamily::Warhead)
                     .expect("Warhead family exists during its reader")[index];
+                let nuke = member.native_stored_id.eq_ignore_ascii_case("NUKE");
+                member
+                    .ares_warhead
+                    .as_mut()
+                    .expect("WH Ares extension")
+                    .combat_mut()
+                    .initialize_once(nuke, nuke_ball);
                 let section = pass.section(&member.native_stored_id);
                 if let Some(section) = section {
                     let ares = member.ares_warhead.as_mut().expect("WH Ares extension");
+                    ares.combat_mut().read_nuke_pass(section, pre_impact_anim);
                     ares.read_pass(section, sparkle, animation);
                     ares.combat_mut().read_pass(
                         section,

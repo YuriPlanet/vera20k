@@ -351,6 +351,19 @@ pub(crate) struct WarheadCombatRules {
     /// `Culling.%sChance`, Rookie/Veteran/Elite.
     culling_below_health: [i32; 3],
     culling_chance: [i32; 3],
+    /// +0x50 Nullable<int> `NukeFlash.Duration`, +0x58 ValueableIdx<Anim>
+    /// `PreImpactAnim` (constructor -1: none) and +0x5C `PreImpactAnim.Moves`,
+    /// which the Bullet hooks 467E59 (10036960) and 46670F (1001AC10) read.
+    #[serde(default)]
+    nuke_flash_duration: Option<i32>,
+    #[serde(default)]
+    pre_impact_anim: Option<String>,
+    #[serde(default)]
+    pre_impact_anim_moves: bool,
+    /// Extension<WarheadTypeClass>::LoadFromINI 10051D10 has left its first
+    /// state (which ran the `NUKE` Initialize).
+    #[serde(default)]
+    nuke_initialized: bool,
 }
 
 #[cfg(feature = "ares")]
@@ -387,6 +400,10 @@ impl Default for WarheadCombatRules {
             // then set to -1; Culling_Chance(-1) for all three ranks.
             culling_below_health: [0, 0, -1],
             culling_chance: [-1; 3],
+            nuke_flash_duration: None,
+            pre_impact_anim: None,
+            pre_impact_anim_moves: false,
+            nuke_initialized: false,
         }
     }
 }
@@ -482,6 +499,53 @@ impl WarheadCombatRules {
             ["Culling.VeteranChance", "Culling.EliteChance"],
             self.culling_chance,
         );
+    }
+
+    /// The first call of Extension<WarheadTypeClass>::LoadFromINI 10051D10,
+    /// with or without a section: a warhead whose ID is `NUKE` (strcmpi)
+    /// takes `PreImpactAnim` = FindIndex("NUKEBALL") and
+    /// `NukeFlash.Duration` = 30.
+    pub(crate) fn initialize_once(&mut self, nuke: bool, nuke_ball: Option<String>) {
+        if self.nuke_initialized {
+            return;
+        }
+        self.nuke_initialized = true;
+        if nuke {
+            self.pre_impact_anim = nuke_ball;
+            self.nuke_flash_duration = Some(30);
+        }
+    }
+
+    /// LoadFromINIFile 10051D80's NukeFlash.Duration, PreImpactAnim (a
+    /// ValueableIdx: a found name or `none` replaces, an unknown keeps) and
+    /// PreImpactAnim.Moves.
+    pub(crate) fn read_nuke_pass(
+        &mut self,
+        section: &IniSection,
+        pre_impact_anim: Option<Option<String>>,
+    ) {
+        self.nuke_flash_duration =
+            section.read_ares_nullable_int("NukeFlash.Duration", self.nuke_flash_duration);
+        if let Some(anim) = pre_impact_anim {
+            self.pre_impact_anim = anim;
+        }
+        self.pre_impact_anim_moves =
+            section.read_ares_bool("PreImpactAnim.Moves", self.pre_impact_anim_moves);
+    }
+
+    /// `NukeFlash.Duration`, unset or a frame count.
+    pub(crate) fn nuke_flash_duration(&self) -> Option<i32> {
+        self.nuke_flash_duration
+    }
+
+    /// `PreImpactAnim`, none for index -1.
+    pub(crate) fn pre_impact_anim(&self) -> Option<&str> {
+        self.pre_impact_anim.as_deref()
+    }
+
+    /// `PreImpactAnim.Moves`.
+    pub(crate) fn pre_impact_anim_moves(&self) -> bool {
+        self.pre_impact_anim_moves
     }
 
     /// The Voc overrides, read with NullableIdx<Voc> 1000E9D0.

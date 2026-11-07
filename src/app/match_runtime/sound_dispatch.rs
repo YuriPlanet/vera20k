@@ -422,7 +422,15 @@ pub(super) fn dispatch_sim_sound_events(
                 // ForceShield's cue was dispatched at its early activation
                 // boundary; this later fact still reaches the shared Ready
                 // cleanup below without playing the cue twice.
-                let cue = if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield
+                // A handler's launch (hook 6CC390) skips the stock case: its
+                // EVA and cleanup are the common Launch's own facts, its
+                // sounds the handler's.
+                #[cfg(feature = "ares")]
+                let ares_handler = sw.ares_eva().is_some();
+                #[cfg(not(feature = "ares"))]
+                let ares_handler = false;
+                let cue = if ares_handler
+                    || sw.kind == crate::rules::superweapon_type::SuperWeaponKind::ForceShield
                 {
                     SuperWeaponLaunchCue::default()
                 } else {
@@ -431,13 +439,17 @@ pub(super) fn dispatch_sim_sound_events(
                 // The EVA column is picked for the *listening* client's
                 // side, not the launcher's: `VoxClass::PlayEVA` takes
                 // only the event name; the consumer resolves the side.
-                let eva_event = eva_producers::resolved_superweapon_eva(
-                    sw,
-                    eva_producers::SuperWeaponEvaStage::Activated,
-                    cue.eva_event,
-                )
-                .filter(|_| local_owner_name.is_some() && !sim.local_player_defeated())
-                .map(str::to_string);
+                let eva_event = (!ares_handler)
+                    .then(|| {
+                        eva_producers::resolved_superweapon_eva(
+                            sw,
+                            eva_producers::SuperWeaponEvaStage::Activated,
+                            cue.eva_event,
+                        )
+                    })
+                    .flatten()
+                    .filter(|_| local_owner_name.is_some() && !sim.local_player_defeated())
+                    .map(str::to_string);
                 let activated = (cue.sound_id.is_some() || eva_event.is_some()).then(|| {
                     GameSoundEvent::SuperWeaponActivated {
                         sound_id: cue.sound_id.unwrap_or_default(),
@@ -447,7 +459,7 @@ pub(super) fn dispatch_sim_sound_events(
                 });
                 // The player's tail ([`launch_drops_ready_line`]): after
                 // the case's line, the queued Ready line is dropped.
-                if let Some(ready) = launch_drops_ready_line(sw.kind)
+                if let Some(ready) = launch_drops_ready_line(sw.kind).filter(|_| !ares_handler)
                     && owner_is_local(sim.interner(), owner, local_owner_name)
                 {
                     if let Some(activated) = activated {
@@ -741,6 +753,42 @@ pub(super) fn dispatch_sim_sound_events(
             SimSoundEvent::AresSuperWeaponRefused { .. } => continue,
             #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponActivated { .. } => continue,
+            // 100731FD..10073236: IsAlliedWith(PlayerPtr) on the owner.
+            #[cfg(feature = "ares")]
+            SimSoundEvent::AresAlliedRadarEvent { owner, radar } => {
+                let local = local_owner_name.and_then(|name| {
+                    sim.houses()
+                        .order()
+                        .iter()
+                        .copied()
+                        .find(|&house| sim.interner().resolve(house).eq_ignore_ascii_case(name))
+                });
+                if local.is_some_and(|local| {
+                    sim.house_alliances()
+                        .is_allied(sim.interner(), owner, local)
+                }) {
+                    let _ = admit_radar(radar);
+                }
+                continue;
+            }
+            // Common Launch10032FC3: VoxClass::PlayIndex of the data type's
+            // EVA_Activated, on every client behind the launch-mute byte.
+            #[cfg(feature = "ares")]
+            SimSoundEvent::AresSuperWeaponActivatedEva { sw_type } => {
+                let Some(event) = rules
+                    .super_weapon(sim.interner().resolve(sw_type))
+                    .and_then(|sw| sw.ares_eva())
+                    .and_then(|eva| eva.activated())
+                    .filter(|_| local_owner_name.is_some() && !sim.local_player_defeated())
+                else {
+                    continue;
+                };
+                GameSoundEvent::SuperWeaponActivated {
+                    sound_id: String::new(),
+                    source: None,
+                    eva_event: Some(event.to_string()),
+                }
+            }
             // SuperClass_Update_DrainMoney100358A0 plays the cue on every
             // client while the House is ControlledByHuman (the sim's gate).
             #[cfg(feature = "ares")]
@@ -2277,20 +2325,92 @@ mod tests {
     /// two radar events reach the client's radar and play nothing.
     #[test]
     fn launch_drops_the_ready_line_for_its_player_only() {
-        for (name, activated, ready) in [
-            (
-                "ChronoWarpSpecial",
-                "EVA_ChronosphereActivated",
-                "EVA_ChronosphereReady",
+        // Installed Ares hands ChronoWarp to SW_ChronoWarp (hook 6CC390),
+        // whose line and cleanup are the common Launch's own facts
+        // (`ares_launch_eva_follows_the_data_type_and_skips_the_stock_tail`).
+        #[cfg(not(feature = "ares"))]
+        launch_drops_the_ready_line(
+            "ChronoWarpSpecial",
+            "EVA_ChronosphereActivated",
+            "EVA_ChronosphereReady",
+        );
+        launch_drops_the_ready_line(
+            "PsychicDominatorSpecial",
+            "EVA_PsychicDominatorActivated",
+            "EVA_PsychicDominatorReady",
+        );
+    }
+
+    /// Common Ares Launch (10032ED0) for a redirected ChronoWarp: the stock
+    /// case's line and Ready drop stay out of the launch fact; the
+    /// activation line is the data type's (the ChronoSphere's), heard on
+    /// every client, and its Ready leaves the launching player's queue.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_launch_eva_follows_the_data_type_and_skips_the_stock_tail() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
+        use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
+        use std::sync::Arc;
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            IniFile::from_str(
+                "[SuperWeaponTypes]\n0=Sphere\n1=Warp\n\
+                 [Sphere]\nType=ChronoSphere\n[Warp]\nType=ChronoWarp\n",
             ),
-            (
-                "PsychicDominatorSpecial",
-                "EVA_PsychicDominatorActivated",
-                "EVA_PsychicDominatorReady",
+            None,
+            IniFile::empty(),
+            Arc::new(SoundRegistry::from_ini(&IniFile::empty())),
+            Arc::new(EvaRegistry::from_ini(&IniFile::from_str(
+                "[DialogList]\n0=EVA_ChronosphereReady\n1=EVA_ChronosphereActivated\n",
+            ))),
+        )
+        .unwrap();
+        let (rules, ..) = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::empty(),
+            )
+            .unwrap()
+            .into_parts();
+        let mut sim = Simulation::new();
+        let local = sim.intern("Local");
+        let remote = sim.intern("Remote");
+        let (sphere, warp) = (sim.intern("Sphere"), sim.intern("Warp"));
+        let mut output = SoundEventQueue::new();
+        dispatch_sim_sound_events(
+            [
+                SimSoundEvent::SuperWeaponLaunched {
+                    owner: local,
+                    sw_type: warp,
+                    world: crate::sim::components::DriveCoord::cell(40, 40, 0).into(),
+                },
+                SimSoundEvent::AresSuperWeaponActivatedEva { sw_type: sphere },
+                SimSoundEvent::AresSuperWeaponFinished {
+                    owner: remote,
+                    sw_type: sphere,
+                },
+                SimSoundEvent::AresSuperWeaponFinished {
+                    owner: local,
+                    sw_type: sphere,
+                },
+            ],
+            &sim,
+            &rules,
+            Some("LOCAL"),
+            &mut |_| true,
+            &mut output,
+        );
+        let emitted = output.drain();
+        assert!(
+            matches!(
+                emitted.as_slice(),
+                [
+                    GameSoundEvent::SuperWeaponActivated { eva_event: Some(line), .. },
+                    GameSoundEvent::EvaRemove { event },
+                ] if line == "EVA_ChronosphereActivated" && event == "EVA_ChronosphereReady"
             ),
-        ] {
-            launch_drops_the_ready_line(name, activated, ready);
-        }
+            "{emitted:?}"
+        );
     }
 
     fn launch_drops_the_ready_line(name: &str, activated: &str, ready: &str) {
@@ -2393,6 +2513,9 @@ mod tests {
             serde_json::from_str(crate::test_fixture::text("tools/superweapon_oracle.json"))
                 .unwrap();
         for (section, name, sound, expected) in [
+            // Installed Ares hands MultiMissile to SW_NuclearMissile, whose
+            // cue and line are its own facts (`ares_stock_types_tests`).
+            #[cfg(not(feature = "ares"))]
             ("nuke_launch", "NukeSpecial", "NukeSiren", 12),
             ("iron_curtain_launch", "IronCurtainSpecial", "", 18),
             (

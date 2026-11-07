@@ -1236,6 +1236,13 @@ pub struct Projectile {
     #[cfg(feature = "phobos")]
     #[serde(default)]
     phobos_firer_house: Option<InternedId>,
+    /// Ares BulletExt `+0x8` NukeSW: the superweapon type whose nuke this
+    /// bullet is, set by SW_NuclearMissile::Activate (10072FF0), the silo's
+    /// take-off hook (44CB4C, 10036660) and NukeMaker's propagation (46B423,
+    /// 10036930); read by NukeMaker (46B371) and the impact hook (467E59).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_nuke_sw: Option<InternedId>,
     /// Bullet `+0x158`: set at a `NUKE` impact (`0x00467F3C`), cleared when
     /// the wait ends (`0x0046676A`).
     #[serde(default)]
@@ -1459,6 +1466,12 @@ impl Projectile {
         self.phobos_firer_house
     }
 
+    /// Ares BulletExt NukeSW.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_nuke_sw(&self) -> Option<InternedId> {
+        self.ares_nuke_sw
+    }
+
     /// Waiting on its anim after a `NUKE` impact (`+0x158`); the draw skips
     /// such a bullet (`BulletClass::DrawSHPOrVoxel`, `0x004680F6`).
     pub fn awaiting_anim(&self) -> bool {
@@ -1484,6 +1497,31 @@ impl Projectile {
         shared_cell_dummy: &SharedCellDummy,
         candidate: ProjectileCoord,
     ) -> Option<ProjectileNukeImpact> {
+        // Ares hook 467E59 (10036960) replaces the `NUKE` test for every
+        // bullet: a superweapon's bullet whose warhead is no NukeMaker rises
+        // to the ground; a flash or a PreImpactAnim makes the impact.
+        #[cfg(feature = "ares")]
+        if let Some(ares) = nuke.ares {
+            let ball = ares(self.payload.warhead, self.ares_nuke_sw);
+            if !ball.sw_bullet && ball.flash.is_none() && !ball.pre_impact_anim {
+                return None;
+            }
+            if ball.sw_bullet {
+                self.position =
+                    raise_to_ground(self.position, terrain, shared_cell_dummy, self.on_bridge);
+            }
+            let waits = ball.pre_impact_anim;
+            if waits {
+                self.awaiting_anim = true;
+                self.awaited_anim = None;
+                self.previous_cell = ((candidate.x / 256) as i16, (candidate.y / 256) as i16);
+            }
+            return Some(ProjectileNukeImpact {
+                projectile_id: self.id,
+                waits,
+                ares: Some(ball),
+            });
+        }
         if !nuke
             .interner
             .resolve(self.payload.warhead)
@@ -1501,6 +1539,8 @@ impl Projectile {
         Some(ProjectileNukeImpact {
             projectile_id: self.id,
             waits,
+            #[cfg(feature = "ares")]
+            ares: None,
         })
     }
 
@@ -1563,6 +1603,26 @@ pub struct ProjectileDetonation {
 pub(crate) struct ProjectileNukeImpact {
     projectile_id: u64,
     waits: bool,
+    /// The Ares impact hook's decision, when it made this impact.
+    #[cfg(feature = "ares")]
+    ares: Option<AresNukeBall>,
+}
+
+/// What Ares's BulletClass impact hook (467E59, 10036960) decides for one
+/// bullet: `sw_bullet` for a superweapon's nuke (BulletExt NukeSW) whose
+/// warhead is no `NukeMaker=` (rise to the ground, the type's radar event
+/// while `SW.CreateRadarEvent`), the flash's frames (the warhead's
+/// `NukeFlash.Duration`, else 30 for a superweapon's bullet and none for
+/// another, kept only above 0 and while the type's `Light.Enabled`), and the
+/// warhead's `PreImpactAnim` to wait on.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AresNukeBall {
+    pub(crate) sw_bullet: bool,
+    pub(crate) radar: bool,
+    pub(crate) flash: Option<i32>,
+    pub(crate) pre_impact_anim: bool,
+    pub(crate) nuke_sw: Option<InternedId>,
 }
 
 impl ProjectileNukeImpact {
@@ -1575,6 +1635,12 @@ impl ProjectileNukeImpact {
     pub(crate) fn waits(self) -> bool {
         self.waits
     }
+
+    /// The Ares impact hook's decision.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares(self) -> Option<AresNukeBall> {
+        self.ares
+    }
 }
 
 /// What `BulletClass::AI`'s `NUKE` block and the wait it starts read
@@ -1582,6 +1648,8 @@ impl ProjectileNukeImpact {
 pub struct NukeImpactContext<'a> {
     interner: &'a StringInterner,
     nuke_ball_type: &'a dyn Fn() -> bool,
+    #[cfg(feature = "ares")]
+    ares: Option<&'a dyn Fn(InternedId, Option<InternedId>) -> AresNukeBall>,
 }
 
 impl<'a> NukeImpactContext<'a> {
@@ -1593,6 +1661,20 @@ impl<'a> NukeImpactContext<'a> {
         Self {
             interner,
             nuke_ball_type,
+            #[cfg(feature = "ares")]
+            ares: None,
+        }
+    }
+
+    /// The Ares impact hook's decision for (warhead, BulletExt NukeSW).
+    #[cfg(feature = "ares")]
+    pub(crate) fn with_ares(
+        self,
+        ares: &'a dyn Fn(InternedId, Option<InternedId>) -> AresNukeBall,
+    ) -> Self {
+        Self {
+            ares: Some(ares),
+            ..self
         }
     }
 }
@@ -1986,6 +2068,8 @@ impl ProjectileStore {
                 firer_house: None,
                 #[cfg(feature = "phobos")]
                 phobos_firer_house: None,
+                #[cfg(feature = "ares")]
+                ares_nuke_sw: None,
                 awaiting_anim: false,
                 awaited_anim: None,
             },
@@ -2047,6 +2131,33 @@ impl ProjectileStore {
     pub(crate) fn set_firer_house(&mut self, id: u64, house: Option<InternedId>) {
         if let Some(projectile) = self.get_mut(id) {
             projectile.firer_house = house;
+        }
+    }
+
+    /// Ares hook 46670F (1001AC10): while a bullet waits on its anim, a
+    /// `PreImpactAnim.Moves` warhead's bullet takes the anim's coordinates as
+    /// its Location (written directly) and the cell there as its target.
+    #[cfg(feature = "ares")]
+    pub(crate) fn follow_awaited_anim(
+        &mut self,
+        id: u64,
+        at: ProjectileCoord,
+        target: ProjectileTarget,
+    ) {
+        if let Some(projectile) = self.get_mut(id)
+            && projectile.awaiting_anim
+            && projectile.awaited_anim.is_some()
+        {
+            projectile.position = at;
+            projectile.target = target;
+        }
+    }
+
+    /// Ares BulletExt NukeSW's writers.
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_ares_nuke_sw(&mut self, id: u64, sw_type: Option<InternedId>) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.ares_nuke_sw = sw_type;
         }
     }
 

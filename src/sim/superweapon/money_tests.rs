@@ -484,24 +484,32 @@ fn superweapon_money_two_stage_source_never_changes_wallet_across_ticks() {
 #[path = "money_two_stage_tests.rs"]
 mod two_stage_tests;
 
+/// Ares LoadFromINIFile (10033370's tail) takes the Chronosphere pair's
+/// click tags from the handlers' Flags (1006EE70, 10070040), so clearing
+/// them leaves a paid Chronosphere a two-stage source.
 #[test]
 fn superweapon_money_two_stage_kinds_cannot_bypass_exclusion_by_clearing_flags() {
-    for (name, flags) in [("Sphere", "PreClick=no"), ("Warp", "PostClick=no")] {
-        let rules = rules(&format!("[{name}]\n{flags}\nMoney.Amount=500\n"));
-        let (mut sim, owner) = world(&rules, 1000, true);
-        let id = ready(&mut sim, &rules, owner, name, false);
-        let before = sim.state_hash();
-        assert!(!fire(&mut sim, &rules, owner, id, (10, 10)));
-        assert_eq!(sim.state_hash(), before);
-        assert!(sim.sound_events.is_empty());
-    }
+    let rules = rules("[Sphere]\nPreClick=no\nMoney.Amount=500\n[Warp]\nPostClick=no\n");
+    let (sphere, warp) = (
+        rules.super_weapon("Sphere").unwrap(),
+        rules.super_weapon("Warp").unwrap(),
+    );
+    assert!(sphere.pre_click && !sphere.post_click && warp.post_click && !warp.pre_click);
+    let (mut sim, owner) = world(&rules, 1000, true);
+    let id = ready(&mut sim, &rules, owner, "Sphere", false);
+    assert!(fire(&mut sim, &rules, owner, id, (10, 10)));
+    assert_eq!(sim.houses[&owner].economy().credits(), 1000);
+    assert!(sim.paid_super_weapon_selection(owner).is_some());
 }
 
 #[test]
 fn superweapon_money_postclick_rejects_paid_predecessor_with_single_stage_flags() {
     for amount in [-500, 500] {
+        // A PreDependent pair the Ares handlers do not take: the warp is
+        // an unredirected PostClick type.
         let rules = rules(&format!(
-            "[Sphere]\nType=PsychicReveal\nPreClick=no\nMoney.Amount={amount}\n"
+            "[Sphere]\nType=PsychicReveal\nPreClick=no\nMoney.Amount={amount}\n\
+             [Warp]\nType=PsychicReveal\nAction=PsychicReveal\n"
         ));
         let (mut sim, owner) = world(&rules, 1000, true);
         let source = ready(&mut sim, &rules, owner, "Sphere", false);

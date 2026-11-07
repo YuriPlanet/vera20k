@@ -214,6 +214,12 @@ const fn last_attacker_house_index_default() -> i32 {
     -1
 }
 
+/// Ares HouseExt constructor's SWLastIndex.
+#[cfg(feature = "ares")]
+fn no_super_index() -> i32 {
+    -1
+}
+
 /// [`HouseState::strategy_timer`]'s constructor value: started at frame 0
 /// with no delay, so expired.
 pub(crate) const fn strategy_timer_at_construction() -> CdTimer {
@@ -848,6 +854,15 @@ pub struct HouseState {
     #[cfg(feature = "ares")]
     #[serde(default)]
     ares_academies: Vec<u64>,
+    /// Ares HouseExt `+0x14` SWLastIndex (constructor -1): the
+    /// `[SuperWeaponTypes]` index of the last Super a new-type handler
+    /// launched that was neither PostClick nor `SW.AutoFire` (common Launch
+    /// 10032ED0). Fire_SW's PostClick pairing (hook 4FAE72, 10034C90), the
+    /// ChronoWarp's source (1006FB60) and the PostClick presentation of the
+    /// common Launch read it.
+    #[cfg(feature = "ares")]
+    #[serde(default = "no_super_index")]
+    ares_last_super: i32,
     /// House+2D8: how many of this house's `PowersUnit=` buildings are
     /// counted as operational (each building's `+0x662`). The constructor
     /// clears it; `sim::powered_unit` is its only writer.
@@ -2327,6 +2342,30 @@ impl HouseState {
         &self.ares_academies
     }
 
+    /// Ares HouseExt SWLastIndex, -1 when no Super set it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_last_super(&self) -> i32 {
+        self.ares_last_super
+    }
+
+    /// The common Launch's write (10032F99).
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_ares_last_super(&mut self, index: i32) {
+        self.ares_last_super = index;
+    }
+
+    /// Folded only once a launch set it, so other houses hash as earlier
+    /// schemas did.
+    pub(crate) fn hash_ares_last_super(&self, hasher: &mut impl std::hash::Hasher) {
+        #[cfg(not(feature = "ares"))]
+        let _ = hasher;
+        #[cfg(feature = "ares")]
+        if self.ares_last_super != no_super_index() {
+            std::hash::Hash::hash(b"ares-house-last-super-v1", hasher);
+            std::hash::Hash::hash(&self.ares_last_super, hasher);
+        }
+    }
+
     /// Folded only while set, so a house that never lost a building hashes as
     /// earlier schemas did.
     pub(crate) fn hash_lost_building(&self, hasher: &mut impl std::hash::Hasher) {
@@ -2841,6 +2880,8 @@ impl HouseState {
             spy_gains: SpyGains::default(),
             #[cfg(feature = "ares")]
             ares_academies: Vec::new(),
+            #[cfg(feature = "ares")]
+            ares_last_super: no_super_index(),
             powered_unit_centers: 0,
             discovered_by_current_house: false,
             economy: Economy::new(credits),

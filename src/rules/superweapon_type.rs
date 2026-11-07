@@ -75,11 +75,75 @@ pub enum SuperWeaponKind {
     NoEffect,
 }
 
+/// Ares `SuperWeaponFlags` (`Utilities/Enums.h`), what a NewSWType's Flags
+/// (vtable +0x34) answers: the common Launch steps it skips and the click
+/// tags `LoadFromINIFile` forces.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AresSuperWeaponFlags(u16);
+
+#[cfg(feature = "ares")]
+impl AresSuperWeaponFlags {
+    pub(crate) const NONE: Self = Self(0);
+    pub(crate) const NO_ANIM: Self = Self(0x1);
+    pub(crate) const NO_SOUND: Self = Self(0x2);
+    pub(crate) const NO_EVENT: Self = Self(0x4);
+    pub(crate) const NO_EVA: Self = Self(0x8);
+    pub(crate) const NO_MONEY: Self = Self(0x10);
+    pub(crate) const NO_CLEANUP: Self = Self(0x20);
+    pub(crate) const NO_MESSAGE: Self = Self(0x40);
+    pub(crate) const PRE_CLICK: Self = Self(0x80);
+    pub(crate) const POST_CLICK: Self = Self(0x100);
+
+    const fn with(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    pub(crate) const fn has(self, flag: Self) -> bool {
+        self.0 & flag.0 != 0
+    }
+}
+
 impl SuperWeaponKind {
-    /// The implemented NewSWType Activate owners, absent from retail builds.
+    /// The implemented NewSWType Activate owners, absent from retail builds:
+    /// the new types and the stock Types whose redirect is ported.
     #[cfg(feature = "ares")]
     pub(crate) const fn has_ares_handler(self) -> bool {
-        self.is_extension()
+        self.is_extension() || self.is_ares_redirect()
+    }
+
+    /// A stock Type that Ares hands to its NewSWType (`FindHandler`
+    /// 1006CFB0 asks each type's HandlesType): SW_ChronoSphere (1006EF00),
+    /// SW_ChronoWarp (100700A0), SW_NuclearMissile (10073350). Its
+    /// handler's Initialize, LoadFromINI,
+    /// Activate and Flags replace the stock reads and Launch case; the other
+    /// stock Types keep their stock owners in this port.
+    #[cfg(feature = "ares")]
+    pub(crate) const fn is_ares_redirect(self) -> bool {
+        matches!(
+            self,
+            Self::ChronoSphere | Self::ChronoWarp | Self::MultiMissile
+        )
+    }
+
+    /// The handler's Flags: SW_ChronoSphere 1006EE70 (0xFD), SW_ChronoWarp
+    /// 10070040 (0x105), SW_NuclearMissile the shared 4 (100708C0); the new
+    /// types answer the shared zero (10003650).
+    #[cfg(feature = "ares")]
+    pub(crate) const fn ares_flags(self) -> AresSuperWeaponFlags {
+        use AresSuperWeaponFlags as F;
+        match self {
+            Self::ChronoSphere => F::NO_ANIM
+                .with(F::NO_EVA)
+                .with(F::NO_MONEY)
+                .with(F::NO_EVENT)
+                .with(F::NO_CLEANUP)
+                .with(F::NO_MESSAGE)
+                .with(F::PRE_CLICK),
+            Self::ChronoWarp => F::NO_ANIM.with(F::NO_EVENT).with(F::POST_CLICK),
+            Self::MultiMissile => F::NO_EVENT,
+            _ => F::NONE,
+        }
     }
 
     /// An Ares new-type identity. Default builds never parse one, but forged
@@ -173,6 +237,11 @@ pub(crate) struct AresSuperWeaponPresentation {
     pub(crate) height: i32,
     pub(crate) visibility: crate::rules::superweapon_targeting::HouseMask,
     pub(crate) sound: Option<Option<String>>,
+    /// `SW.ActivationSound` (NullableIdx<VocClass> +0x1CC), bound like
+    /// `SW.Sound`: the handler's own launch cue (the Nuke's falls back to
+    /// `DigSound=`).
+    #[serde(default)]
+    pub(crate) activation_sound: Option<Option<String>>,
     #[serde(default)]
     pub(crate) messages: AresSuperWeaponMessages,
     #[serde(default)]
@@ -209,10 +278,23 @@ impl AresSuperWeaponEva {
         eva: &crate::rules::sound_ini::EvaRegistry,
     ) {
         // SWTypeExt ctor100316C5/CF/D9 initializes all three ordinals to -1.
-        // HunterSeeker Initialize10072990 and Protect's non-ForceShield arm
-        // (10074B60) resolve their three literal names. GenericWarhead
-        // 10071860, UnitDelivery100759D0 and Battery1006ECA0 set only AI mode.
+        // HunterSeeker Initialize10072990, Protect's non-ForceShield arm
+        // (10074B60) and ChronoSphere's (1006EF10) resolve their three
+        // literal names, as does MultiMissile's (10073360). GenericWarhead
+        // 10071860, UnitDelivery100759D0 and
+        // Battery1006ECA0 set only AI mode; ChronoWarp's (100700B0) none.
         let names = match kind {
+            Some(kind) if kind.eq_ignore_ascii_case("ChronoSphere") => [
+                "EVA_ChronosphereReady",
+                "EVA_ChronosphereActivated",
+                "EVA_ChronosphereDetected",
+            ],
+            // SW_NuclearMissile::Initialize10073360.
+            Some(kind) if kind.eq_ignore_ascii_case("MultiMissile") => [
+                "EVA_NuclearMissileReady",
+                "EVA_NuclearMissileLaunched",
+                "EVA_NuclearSiloDetected",
+            ],
             Some(kind) if kind.eq_ignore_ascii_case("HunterSeeker") => [
                 "EVA_HunterSeekerReady",
                 "EVA_HunterSeekerLaunched",
@@ -452,6 +534,7 @@ impl Default for AresSuperWeaponPresentation {
             height: 0,
             visibility: crate::rules::superweapon_targeting::HouseMask::ALL,
             sound: None,
+            activation_sound: None,
             messages: AresSuperWeaponMessages::default(),
             eva: AresSuperWeaponEva::default(),
             texts: AresSuperWeaponTexts::default(),
@@ -674,8 +757,13 @@ impl SuperWeaponType {
             .unwrap_or(SuperWeaponKind::NoEffect);
         #[cfg(feature = "ares")]
         let extension_kind = kind.has_ares_handler();
+        #[cfg(feature = "ares")]
+        let ares_click_flags = (
+            kind.ares_flags().has(AresSuperWeaponFlags::PRE_CLICK),
+            kind.ares_flags().has(AresSuperWeaponFlags::POST_CLICK),
+        );
         #[cfg(not(feature = "ares"))]
-        let extension_kind = false;
+        let (extension_kind, ares_click_flags) = (false, (false, false));
         Self {
             #[cfg(feature = "ares")]
             presentation: AresSuperWeaponPresentation::default(),
@@ -738,6 +826,17 @@ impl SuperWeaponType {
                         .unwrap_or("ParaDrop")
                         .to_string(),
                 ),
+                // SWTypeExt::Initialize (10033250's first call) installs the
+                // custom action for a redirected type whatever Action= says;
+                // its Initialize names the cursor (SW_Cursor 0x3A, Chronosphere,
+                // at 1006EF10 and 100700B0). VERA names that cursor by action.
+                #[cfg(feature = "ares")]
+                SuperWeaponKind::ChronoSphere => Some("ChronoSphere".to_string()),
+                #[cfg(feature = "ares")]
+                SuperWeaponKind::ChronoWarp => Some("ChronoWarp".to_string()),
+                // SW_NuclearMissile::Initialize10073360: SW_Cursor 0x35, Nuke.
+                #[cfg(feature = "ares")]
+                SuperWeaponKind::MultiMissile => Some("Nuke".to_string()),
                 _ => section.read_action_name("Action").map(str::to_string),
             },
             // ReadString 0x100, then a 24-byte copy (`0x006CEDB1`,
@@ -759,10 +858,19 @@ impl SuperWeaponType {
                 let battery = false;
                 battery || section.read_bool("UseChargeDrain", false)
             },
-            // Ares LoadFromINIFile derives these from the new type's Flags,
-            // not user tags. GenericWarhead is an ordinary one-click type.
-            pre_click: !extension_kind && section.read_bool("PreClick", false),
-            post_click: !extension_kind && section.read_bool("PostClick", false),
+            // Ares LoadFromINIFile (10033370's tail) derives these from the
+            // handler's Flags, not user tags: only the Chronosphere pair has
+            // them. GenericWarhead is an ordinary one-click type.
+            pre_click: if extension_kind {
+                ares_click_flags.0
+            } else {
+                section.read_bool("PreClick", false)
+            },
+            post_click: if extension_kind {
+                ares_click_flags.1
+            } else {
+                section.read_bool("PostClick", false)
+            },
             // ReadINI6CEC98..6CECE9 keeps the prior pair index when its
             // 0x28-byte ReadString does not match one of the 12 native names.
             pre_dependent: if extension_kind {
@@ -997,6 +1105,182 @@ pub(crate) struct AresSuperWeaponLaunch {
     battery_power: i32,
     battery_keep_online: Vec<String>,
     battery_overpower: Vec<String>,
+    /// `SW.PostDependent` (AresFixedString<0x19> +0x1F4, ctor empty), read by
+    /// every type: the warp a ChronoSphere's player click selects (1006ED30).
+    #[serde(default)]
+    post_dependent: String,
+    /// SW_ChronoSphere's fields (Initialize 1006EF10, LoadFromINI 1006EF90).
+    #[serde(default)]
+    chronosphere: AresChronosphereRules,
+    /// `SW.Warhead` (Nullable<WarheadTypeClass*> +0x244) and `SW.Damage`
+    /// (Nullable<int> +0x24C), read by every type (10033670..10033684); a
+    /// handler's GetWarhead/GetDamage supply the fallbacks.
+    #[serde(default)]
+    warhead: Option<Option<String>>,
+    #[serde(default)]
+    damage: Option<i32>,
+    /// SW_NuclearMissile's fields (Initialize 10073360, LoadFromINI 10073410).
+    #[serde(default)]
+    nuke: AresNukeRules,
+    /// `Light.*` (+0x286..+0x2A0), read by every type.
+    #[serde(default)]
+    lighting: AresSuperWeaponLighting,
+}
+
+/// SWTypeExt `Light.Enabled` (Valueable<bool> +0x286, ctor true) and
+/// `Light.Ambient`/`.Red`/`.Green`/`.Blue` (Nullable<int> +0x288..+0x2A0),
+/// read by LoadFromINI 10033370 after `SW.Range`. UpdateLightingColor
+/// (SWTypeExt) applies them to the scenario light a running nuke flash,
+/// Lightning Storm or Psychic Dominator selects.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresSuperWeaponLighting {
+    enabled: bool,
+    ambient: Option<i32>,
+    red: Option<i32>,
+    green: Option<i32>,
+    blue: Option<i32>,
+}
+
+#[cfg(feature = "ares")]
+impl Default for AresSuperWeaponLighting {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            ambient: None,
+            red: None,
+            green: None,
+            blue: None,
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl AresSuperWeaponLighting {
+    fn read_pass(&mut self, section: &IniSection) {
+        self.enabled = section.read_ares_bool("Light.Enabled", self.enabled);
+        self.ambient = section.read_ares_nullable_int("Light.Ambient", self.ambient);
+        self.red = section.read_ares_nullable_int("Light.Red", self.red);
+        self.green = section.read_ares_nullable_int("Light.Green", self.green);
+        self.blue = section.read_ares_nullable_int("Light.Blue", self.blue);
+    }
+
+    /// `Light.Enabled`.
+    pub(crate) fn enabled(self) -> bool {
+        self.enabled
+    }
+
+    /// The overrides UpdateLightingColor writes: (ambient, red, green, blue),
+    /// each only when set and nonnegative.
+    pub(crate) fn overrides(self) -> [Option<i32>; 4] {
+        [self.ambient, self.red, self.green, self.blue]
+            .map(|value| value.filter(|&value| value >= 0))
+    }
+}
+
+/// SW_NuclearMissile's SWTypeExt fields: `Nuke.Payload` (Valueable<Weapon>
+/// +0x9C), `Nuke.PsiWarning` (Valueable<Anim> +0xA0), `Nuke.TakeOff`
+/// (Nullable<Anim> +0xA4) and `Nuke.SiloLaunch` (+0xAC), all clear in the
+/// constructor.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresNukeRules {
+    pub(crate) payload: Option<String>,
+    pub(crate) psi_warning: Option<String>,
+    pub(crate) take_off: Option<Option<String>>,
+    pub(crate) silo_launch: bool,
+}
+
+/// SW_ChronoSphere's SWTypeExt bytes +0x104..+0x10C (the constructor clears
+/// them) and the Nullable<AnimTypeClass*> blasts +0xF4/+0xFC.
+/// `Chronosphere.AffectsBuildings` (+0x108) is the targeting owner's, as
+/// LoadFromINI derives it from `SW.AffectsTarget`.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresChronosphereRules {
+    pub(crate) kill_organic: bool,
+    pub(crate) kill_teleporters: bool,
+    pub(crate) kill_cargo: bool,
+    pub(crate) affect_undeployable: bool,
+    pub(crate) affect_unwarpable: bool,
+    pub(crate) affect_iron_curtain: bool,
+    pub(crate) blow_unplaceable: bool,
+    pub(crate) reconsider_buildings: bool,
+    /// `Chronosphere.BlastSrc`/`.BlastDest`: unset falls back to `[General]
+    /// ChronoBlast=`/`ChronoBlastDest=`; `Some(None)` is an explicit none.
+    pub(crate) blast_src: Option<Option<String>>,
+    pub(crate) blast_dest: Option<Option<String>>,
+}
+
+#[cfg(feature = "ares")]
+impl AresChronosphereRules {
+    /// SW_ChronoSphere::Initialize 1006EF10: the dword 1 at +0x104
+    /// (KillOrganic), the dword 0x01010001 at +0x109 (AffectsUnwarpable,
+    /// BlowUnplaceable, ReconsiderBuildings).
+    fn initialize(&mut self) {
+        self.kill_organic = true;
+        self.kill_teleporters = false;
+        self.kill_cargo = false;
+        self.affect_undeployable = false;
+        self.affect_unwarpable = true;
+        self.affect_iron_curtain = false;
+        self.blow_unplaceable = true;
+        self.reconsider_buildings = true;
+    }
+
+    /// LoadFromINI 1006EF90's reads, in its order.
+    fn read_pass(&mut self, section: &IniSection, blasts: [Option<Option<String>>; 2]) {
+        for (key, field) in [
+            ("Chronosphere.KillOrganic", &mut self.kill_organic),
+            ("Chronosphere.KillTeleporters", &mut self.kill_teleporters),
+            ("Chronosphere.KillCargo", &mut self.kill_cargo),
+            (
+                "Chronosphere.AffectsIronCurtain",
+                &mut self.affect_iron_curtain,
+            ),
+            (
+                "Chronosphere.AffectsUnwarpable",
+                &mut self.affect_unwarpable,
+            ),
+            (
+                "Chronosphere.AffectsUndeployable",
+                &mut self.affect_undeployable,
+            ),
+            ("Chronosphere.BlowUnplaceable", &mut self.blow_unplaceable),
+            (
+                "Chronosphere.ReconsiderBuildings",
+                &mut self.reconsider_buildings,
+            ),
+        ] {
+            *field = section.read_ares_bool(key, *field);
+        }
+        let [source, destination] = blasts;
+        if source.is_some() {
+            self.blast_src = source;
+        }
+        if destination.is_some() {
+            self.blast_dest = destination;
+        }
+    }
+}
+
+/// The type references a handler's LoadFromINI resolves, which the ordered
+/// Rules processor looks up for the pass (None: key absent or unknown).
+#[cfg(feature = "ares")]
+#[derive(Debug, Default)]
+pub(crate) struct AresHandlerReads {
+    /// Battery's Find-only BuildingType vectors KeepOnline and Overpower.
+    pub(crate) battery_keep_online: Option<Vec<String>>,
+    pub(crate) battery_overpower: Option<Vec<String>>,
+    /// `Chronosphere.BlastSrc`/`.BlastDest`.
+    pub(crate) chrono_blasts: [Option<Option<String>>; 2],
+    /// `SW.Warhead`, resolved through the Warhead factory.
+    pub(crate) warhead: Option<Option<String>>,
+    /// SW_NuclearMissile::Initialize's `FindOrAllocate("NukePayload")` and
+    /// `Find("PSIWARN")`, present when this pass ran it.
+    pub(crate) nuke_defaults: Option<(Option<String>, Option<String>)>,
+    /// `Nuke.Payload`, `Nuke.TakeOff`, `Nuke.PsiWarning` (Find reads).
+    pub(crate) nuke: [Option<Option<String>>; 3],
 }
 
 #[cfg(feature = "ares")]
@@ -1013,6 +1297,12 @@ impl Default for AresSuperWeaponLaunch {
             battery_power: 0,
             battery_keep_online: Vec::new(),
             battery_overpower: Vec::new(),
+            post_dependent: String::new(),
+            chronosphere: AresChronosphereRules::default(),
+            warhead: None,
+            damage: None,
+            nuke: AresNukeRules::default(),
+            lighting: AresSuperWeaponLighting::default(),
         }
     }
 }
@@ -1020,20 +1310,31 @@ impl Default for AresSuperWeaponLaunch {
 #[cfg(feature = "ares")]
 impl AresSuperWeaponLaunch {
     /// One pass of this type's section; `initialized` when this pass ran the
-    /// handler's Initialize. `battery` holds the caller's Find-only
-    /// resolution of the two Battery vectors (None: key absent).
+    /// handler's Initialize. `reads` holds the caller's resolution of the
+    /// handler's type references.
     pub(crate) fn read_pass(
         &mut self,
         section: &IniSection,
         kind: Option<&str>,
         initialized: bool,
-        battery: (Option<Vec<String>>, Option<Vec<String>>),
+        reads: AresHandlerReads,
     ) {
         let is = |name: &str| kind.is_some_and(|kind| kind.eq_ignore_ascii_case(name));
         if initialized && is("SonarPulse") {
             // SW_SonarPulse::Initialize100756D0.
             self.radar_event = false;
             self.sonar_delay = 60;
+        }
+        if initialized && is("ChronoSphere") {
+            self.chronosphere.initialize();
+        }
+        if initialized
+            && is("MultiMissile")
+            && let Some((payload, psi_warning)) = reads.nuke_defaults
+        {
+            self.nuke.payload = payload;
+            self.nuke.psi_warning = psi_warning;
+            self.nuke.silo_launch = true;
         }
         self.radar_event = section.read_ares_bool("SW.CreateRadarEvent", self.radar_event);
         // 10033698..100336F8: ReadString(0x800); a first ','-strtok token
@@ -1047,8 +1348,43 @@ impl AresSuperWeaponLaunch {
                 .map_or(0, |token| crate::rules::ini_value::crt_atoi(token));
             self.range = (width.to_bits(), height);
         }
+        // 1003371E..10033780, after SW.Range.
+        self.lighting.read_pass(section);
+        // 10033988: AresFixedString::Read over the shared buffer: a blank
+        // (`none`) value empties it, an absent key keeps it.
+        self.post_dependent =
+            section.read_string_with("SW.PostDependent", 0x19, self.post_dependent.clone(), {
+                |_, value| {
+                    if crate::rules::ini_parser::is_native_none_type_name(value) {
+                        String::new()
+                    } else {
+                        value.to_owned()
+                    }
+                }
+            });
+        // 10033670/10033684: Nullable reads; `none` sets a null warhead.
+        if reads.warhead.is_some() {
+            self.warhead = reads.warhead;
+        }
+        self.damage = section.read_ares_nullable_int("SW.Damage", self.damage);
         self.group = section.read_ares_int("SW.Group", self.group);
-        if is("HunterSeeker") {
+        if is("ChronoSphere") {
+            self.chronosphere.read_pass(section, reads.chrono_blasts);
+        } else if is("MultiMissile") {
+            // 10073410: Payload, TakeOff, PsiWarning, SiloLaunch.
+            let [payload, take_off, psi_warning] = reads.nuke;
+            if let Some(payload) = payload {
+                self.nuke.payload = payload;
+            }
+            if take_off.is_some() {
+                self.nuke.take_off = take_off;
+            }
+            if let Some(psi_warning) = psi_warning {
+                self.nuke.psi_warning = psi_warning;
+            }
+            self.nuke.silo_launch =
+                section.read_ares_bool("Nuke.SiloLaunch", self.nuke.silo_launch);
+        } else if is("HunterSeeker") {
             // SW_HunterSeeker::LoadFromINI10072A30 hard-codes it each pass,
             // after the common read (and Initialize10072990 already did).
             self.radar_event = false;
@@ -1063,14 +1399,43 @@ impl AresSuperWeaponLaunch {
             self.sonar_delay = section.read_int("SonarPulse.Delay", self.sonar_delay);
         } else if is("Battery") {
             self.battery_power = section.read_ares_int("Battery.Power", self.battery_power);
-            let (keep_online, overpower) = battery;
-            if let Some(keep_online) = keep_online {
+            if let Some(keep_online) = reads.battery_keep_online {
                 self.battery_keep_online = keep_online;
             }
-            if let Some(overpower) = overpower {
+            if let Some(overpower) = reads.battery_overpower {
                 self.battery_overpower = overpower;
             }
         }
+    }
+
+    /// `SW.PostDependent`, empty when unset.
+    pub(crate) fn post_dependent(&self) -> &str {
+        &self.post_dependent
+    }
+
+    /// SW_ChronoSphere's fields.
+    pub(crate) fn chronosphere(&self) -> &AresChronosphereRules {
+        &self.chronosphere
+    }
+
+    /// `SW.Warhead`: unset, an explicit null, or a warhead.
+    pub(crate) fn warhead(&self) -> Option<Option<&str>> {
+        self.warhead.as_ref().map(Option::as_deref)
+    }
+
+    /// `SW.Damage`.
+    pub(crate) fn damage(&self) -> Option<i32> {
+        self.damage
+    }
+
+    /// SW_NuclearMissile's fields.
+    pub(crate) fn nuke(&self) -> &AresNukeRules {
+        &self.nuke
+    }
+
+    /// `Light.*`.
+    pub(crate) fn lighting(&self) -> AresSuperWeaponLighting {
+        self.lighting
     }
 
     /// SW.CreateRadarEvent.

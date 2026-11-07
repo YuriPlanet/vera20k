@@ -297,6 +297,9 @@ fn retail_chrono_rules() {
         (SuperWeaponKind::ChronoSphere, true, false)
     );
     let warp = rules.super_weapon("ChronoWarpSpecial").unwrap();
+    // Ares LoadFromINIFile (10033370's tail) writes -1 for a handled type;
+    // Fire_SW pairs it with the House's last Super (hook 4FAE72).
+    let pre_dependent = if cfg!(feature = "ares") { -1 } else { 3 };
     assert_eq!(
         (
             warp.kind,
@@ -304,7 +307,7 @@ fn retail_chrono_rules() {
             warp.post_click,
             warp.pre_dependent
         ),
-        (SuperWeaponKind::ChronoWarp, false, true, 3)
+        (SuperWeaponKind::ChronoWarp, false, true, pre_dependent)
     );
     assert_eq!(rules.super_weapon_order[3], "ChronoSphereSpecial");
     assert_eq!(
@@ -356,10 +359,12 @@ fn retail_chrono_warp_moves_the_source_block() {
     let anim = sim.substrate.anims.get(placement[0].1).unwrap();
     assert_eq!(sim.interner.resolve(anim.type_id()), "CHRONOAR");
     // Case 3 lifts the cell 5 leptons and CreateChronoAnim 5 more
-    // (`0x006CC423`, `0x006CB43B`).
+    // (`0x006CC423`, `0x006CB43B`); Ares's Activate (1006ED30) lifts it by
+    // SW.AnimationHeight (Initialize 5) only.
+    let lift = if cfg!(feature = "ares") { 5 } else { 10 };
     assert_eq!(
         anim.world_coord().z,
-        super::deck_coords(&sim, SOURCE)[2] + 10
+        super::deck_coords(&sim, SOURCE)[2] + lift
     );
     step(&mut sim, &rules);
     assert!(sim.super_weapons[&americans][&sphere].is_ready);
@@ -602,6 +607,11 @@ fn chain(sim: &Simulation, id: u64) -> Vec<LocomotorKind> {
 /// Drive's refused own-cell search clears its destination, so the Foot AI
 /// tail ends it at the landing. Its next order drives it, and it ends back
 /// on its Teleport at the stop.
+// Stock Launch case 4's arming (0x006CC91D..0x006CCCA8); installed Ares
+// replaces it with SW_ChronoWarp's lambda 1006F4D0, which forces every Foot's
+// track to its own coordinates and moves those by the cell offset. Ares
+// coverage: `ares_stock_types_tests`.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_chrono_warp_carries_a_driving_chrono_miner() {
     use LocomotorKind::{Drive, Teleport};
@@ -684,6 +694,11 @@ fn retail_chrono_warp_carries_a_driving_chrono_miner() {
 /// refuses (AStar returns no route for a goal in its start cell,
 /// `0x00429BF3..0x00429C0A`): the destination clears, the head stays, and
 /// the ship stays where it landed.
+// Stock Launch case 4's arming (0x006CC91D..0x006CCCA8); installed Ares
+// replaces it with SW_ChronoWarp's lambda 1006F4D0, which forces every Foot's
+// track to its own coordinates and moves those by the cell offset. Ares
+// coverage: `ares_stock_types_tests`.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_chrono_warp_forces_a_sailing_ships_track_to_its_landing() {
     use LocomotorKind::{Ship, Teleport};
@@ -1304,6 +1319,11 @@ fn retail_chrono_update_position_matches_native_rows() {
 /// `chrono_destination` rows: a Grizzly (Unit) or a Chrono Legionnaire in
 /// the source block, on the row's levels and bridge flags, warped from
 /// (21, 21) to (40, 40).
+// Stock Launch case 4's arming (0x006CC91D..0x006CCCA8); installed Ares
+// replaces it with SW_ChronoWarp's lambda 1006F4D0, which forces every Foot's
+// track to its own coordinates and moves those by the cell offset. Ares
+// coverage: `ares_stock_types_tests`.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_chrono_warp_destinations_match_native_rows() {
     if retail_rules().is_none() {

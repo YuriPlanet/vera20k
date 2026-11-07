@@ -3177,6 +3177,25 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
     let warhead = weapon
         .and_then(|weapon| weapon.warhead.as_deref())
         .and_then(|name| rules.warhead(name));
+    let damage = weapon.map_or(0, |weapon| weapon.damage);
+    // Ares hook 46B371 (10036880): a superweapon's falling nuke takes that
+    // type's `Nuke.Payload` (its speed and BulletType) with its GetDamage
+    // and GetWarhead; without a payload it logs and keeps NukePayload.
+    #[cfg(feature = "ares")]
+    let nuke_sw = world
+        .projectiles
+        .get(detonation.projectile_id)
+        .and_then(|bullet| bullet.ares_nuke_sw());
+    #[cfg(feature = "ares")]
+    let (weapon, warhead, damage) = match nuke_sw
+        .and_then(|sw| rules.super_weapon(world.interner.resolve(sw)))
+        .and_then(|sw| crate::sim::superweapon::nuke::ares_payload_hit(rules, sw))
+    {
+        Some((payload, payload_warhead, payload_damage)) => {
+            (Some(payload), payload_warhead, payload_damage)
+        }
+        None => (weapon, warhead, damage),
+    };
     let (Some(target_coords), Some(weapon), Some(warhead)) = (target_coords, weapon, warhead)
     else {
         return;
@@ -3191,7 +3210,7 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
     let native_unique_id = world.next_native_runtime_id();
     let velocity = crate::sim::projectile::launch::missile_launch_velocity(FALL_SCALE);
     let payload = ProjectilePayload::new(
-        weapon.damage,
+        damage,
         world.interner.intern(&warhead.id),
         weapon
             .projectile
@@ -3213,6 +3232,9 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
     ) {
         super::admit_fired_bullet(world, rules, weapon, bullet_id, bullet);
     }
+    // Hook 46B423 (10036930): the falling nuke keeps the superweapon type.
+    #[cfg(feature = "ares")]
+    world.projectiles.set_ares_nuke_sw(bullet_id, nuke_sw);
 }
 
 /// The weapon NukeMaker drops, named by the literal `0x0081AFA0`.

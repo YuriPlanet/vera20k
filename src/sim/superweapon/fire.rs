@@ -176,9 +176,21 @@ impl Simulation {
         {
             return false;
         }
+        // Ares hook 4FAE72 (10034C90) pairs a handler's PostClick type with
+        // the House's last Super instead of its PreDependent.
+        #[cfg(feature = "ares")]
+        let post_click_source = |sim: &Self| {
+            if sw.kind.has_ares_handler() {
+                super::ares_post_click_source(sim, rules, owner)
+            } else {
+                super::pre_dependent(rules, sw)
+            }
+        };
+        #[cfg(not(feature = "ares"))]
+        let post_click_source = |_: &Self| super::pre_dependent(rules, sw);
         let paired = sw
             .post_click
-            .then(|| super::pre_dependent(rules, sw))
+            .then(|| post_click_source(self))
             .flatten()
             .and_then(|(name, pre)| Some((self.interner.get(name)?, pre)));
         #[cfg(feature = "ares")]
@@ -484,8 +496,13 @@ fn click_fire(
     // Keep one wallet/settlement owner shared with the other extension kinds.
     #[cfg(feature = "ares")]
     if extension_effect && effect_launched {
+        // 10032FDF: skipped when the handler's Flags hold NoMoney.
         if let Some((money_type, money_sw)) = payment
             && money_sw.money_amount != 0
+            && !sw
+                .kind
+                .ares_flags()
+                .has(crate::rules::superweapon_type::AresSuperWeaponFlags::NO_MONEY)
         {
             super::money::transact(
                 &mut sim.sound_events,
@@ -569,6 +586,46 @@ fn launch(
     frame_effects: FrameEffects<'_>,
 ) -> bool {
     use super::paradrop::ParaDropKind;
+    // Hook 6CC390 (100355C0) -> SWTypeExt::Activate (10032020): a
+    // redirected Type's handler Activate runs first; an accepted one ends
+    // Launch through the common tail, a refused one falls through to the
+    // stock case, which then reports no Ares activation.
+    #[cfg(feature = "ares")]
+    let redirect_refused = if sw.kind.is_ares_redirect() {
+        let activated = match sw.kind {
+            SuperWeaponKind::ChronoSphere => {
+                super::chronosphere::ares_launch_source(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    sw,
+                    (rx, ry),
+                );
+                true
+            }
+            SuperWeaponKind::ChronoWarp => super::chronosphere::ares_launch_warp(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            ),
+            SuperWeaponKind::MultiMissile => {
+                super::nuke::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry))
+            }
+            _ => false,
+        };
+        if activated {
+            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            return true;
+        }
+        true
+    } else {
+        false
+    };
     // Every native stock case except ChronoWarp begins with rawReady+6F
     // (ForceShield6CD072..6CD077; case4 starts6CC4B2 with radar production).
     // Drain ClickFire can reach Launch after Reset retained state1 but cleared
@@ -747,6 +804,10 @@ fn launch(
             super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
             return true;
         }
+    }
+    #[cfg(feature = "ares")]
+    if redirect_refused {
+        return false;
     }
     true
 }

@@ -461,6 +461,19 @@ fn the_try_fire_arms_match_native() {
     assert_eq!(rows.len(), 26);
     for row in rows {
         let kinds = row["kinds"].as_array().unwrap();
+        // Installed Ares's AI (hook 5098F0, 10038E10) aims a redirected
+        // type through its own targeting mode, not the stock arm; such rows
+        // are the stock AI's only (`ai_fire.rs`'s Ares selector coverage).
+        #[cfg(feature = "ares")]
+        if kinds.iter().any(|kind| {
+            flag(&kind[1])
+                && crate::rules::superweapon_type::SuperWeaponKind::from_ini_str(
+                    TYPE_NAMES[int(&kind[0]) as usize],
+                )
+                .is_some_and(|kind| kind.is_ares_redirect())
+        }) {
+            continue;
+        }
         let mut extra = String::from("[SuperWeaponTypes]\n");
         for index in 0..kinds.len() {
             extra += &format!("{index}=SW{index}\n");

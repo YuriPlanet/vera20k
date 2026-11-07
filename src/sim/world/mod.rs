@@ -1065,10 +1065,26 @@ pub enum SimSoundEvent {
     },
     /// Common Ares Launch10033201..10033242: Ready queue cleanup after FX.
     /// Every client also prints the type's Message.Launch (10033153).
+    /// `sw_type` is the type whose SWTypeExt the Launch read (a PostClick
+    /// Super's source); a handler whose Flags hold both NoMessage and
+    /// NoCleanup sends none.
     #[cfg(feature = "ares")]
     AresSuperWeaponFinished {
         owner: InternedId,
         sw_type: InternedId,
+    },
+    /// Common Ares Launch10032FC3: every client plays `sw_type`'s
+    /// `EVA_Activated` (the PostClick source's for a PostClick Super),
+    /// unless the handler's Flags hold NoEVA.
+    #[cfg(feature = "ares")]
+    AresSuperWeaponActivatedEva { sw_type: InternedId },
+    /// A type-13 radar event only the clients whose player `owner` counts as
+    /// an ally see (SW_NuclearMissile::Activate 10072FF0: "allies can see
+    /// the target location before the enemy does").
+    #[cfg(feature = "ares")]
+    AresAlliedRadarEvent {
+        owner: InternedId,
+        radar: RadarEventRequest,
     },
     /// Ares SuperClass_Update_DrainMoney100358A0 refused a draining Super's
     /// money for a ControlledByHuman House: every client plays

@@ -5310,11 +5310,7 @@ impl RuleSet {
                 .get(&(category, name.to_ascii_uppercase()))
                 .copied()
             {
-                rules.object_list[handle.0 as usize].bind_super_weapon_techno_rules(
-                    retained.designator_range,
-                    retained.inhibitor_range,
-                    retained.hunter_seeker_ignore,
-                );
+                rules.object_list[handle.0 as usize].bind_super_weapon_techno_rules(retained);
             }
         }
         #[cfg(feature = "ares")]
@@ -6204,6 +6200,9 @@ impl RuleSet {
                 // retains. Read against fixed SOUNDMD, in rules-pass order.
                 sw.presentation.sound =
                     section.and_then(|section| sounds.read_ares_reference(section, "SW.Sound"));
+                // 10033538: SW.ActivationSound, the same NullableIdx<Voc> read.
+                sw.presentation.activation_sound = section
+                    .and_then(|section| sounds.read_ares_reference(section, "SW.ActivationSound"));
             }
             // Original6CEB74..6CEBD8 keeps each current Voc ID when
             // ReadString128 or FindIndex7514D0 finds no replacement.
@@ -8224,6 +8223,21 @@ impl RuleSet {
             if !influence_types.is_empty() {
                 b"ares-sw-influence-types-v2".hash(&mut hasher);
                 influence_types.hash(&mut hasher);
+            }
+            let chronoshift = self
+                .object_list
+                .iter()
+                .filter(|object| object.ares_chronoshift() != Default::default())
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.ares_chronoshift(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !chronoshift.is_empty() {
+                b"ares-chronoshift-types-v1".hash(&mut hasher);
+                chronoshift.hash(&mut hasher);
             }
             self.object_list
                 .iter()

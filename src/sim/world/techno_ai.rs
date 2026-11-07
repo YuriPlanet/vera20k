@@ -380,6 +380,27 @@ impl Simulation {
         ctx: ObjectAiCtx<'_>,
     ) -> ObjectAiOutcome {
         let mut outcome = ObjectAiOutcome::visited();
+        // Ares hook 46670F (1001AC10), at the wait test (0x0046670F).
+        #[cfg(feature = "ares")]
+        if let Some(bullet) = self.projectiles.get(id)
+            && let Some(anim) = bullet.awaited_anim().filter(|_| bullet.awaiting_anim())
+            && rules
+                .warhead(self.interner.resolve(bullet.payload().warhead))
+                .and_then(|warhead| warhead.ares_rules())
+                .is_some_and(|ares| ares.combat().pre_impact_anim_moves())
+            && let Some(at) = self.anim_absolute_coord(anim)
+        {
+            let target = crate::sim::projectile::ProjectileTarget::looked_up_cell(
+                self.resolved_terrain.as_ref(),
+                (at.x / 256) as u16,
+                (at.y / 256) as u16,
+            );
+            self.projectiles.follow_awaited_anim(
+                id,
+                crate::sim::projectile::ProjectileCoord::new(at.x, at.y, at.z),
+                target,
+            );
+        }
         let head = self
             .projectiles
             .begin_ai_visit(id)
@@ -458,10 +479,16 @@ impl Simulation {
             map_size: self.map_size_diamond(),
         };
         let nuke_ball_type = || crate::sim::superweapon::nuke::nuke_ball_type(rules);
+        #[cfg(feature = "ares")]
+        let ares_ball = |warhead, nuke_sw| {
+            crate::sim::superweapon::nuke::ares_nuke_ball(rules, interner, warhead, nuke_sw)
+        };
         let nuke = Some(crate::sim::projectile::NukeImpactContext::new(
             interner,
             &nuke_ball_type,
         ));
+        #[cfg(feature = "ares")]
+        let nuke = nuke.map(|nuke| nuke.with_ares(&ares_ball));
         let result = self
             .projectiles
             .advance_after_head(

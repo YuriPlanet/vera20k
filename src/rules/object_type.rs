@@ -2208,6 +2208,9 @@ pub struct ObjectType {
     /// Ares TechnoTypeExt+3DC; AcquireHunterSeekerTarget10042E40 checks1004306C.
     #[cfg(feature = "ares")]
     hunter_seeker_ignore: bool,
+    /// Ares TechnoTypeExt `Chronoshift.*` (+0x160..+0x162).
+    #[cfg(feature = "ares")]
+    chronoshift: crate::rules::superweapon_influence::ChronoshiftRules,
     pub non_vehicle: bool,
     pub jumpjet_turn: bool,
     pub emp_pulse_cannon: bool,
@@ -3005,13 +3008,18 @@ impl ObjectType {
     #[cfg(feature = "ares")]
     pub(crate) fn bind_super_weapon_techno_rules(
         &mut self,
-        designator: Option<i32>,
-        inhibitor: Option<i32>,
-        hunter_seeker_ignore: bool,
+        retained: &crate::rules::superweapon_influence::TechnoSuperWeaponRules,
     ) {
-        self.designator_range = designator;
-        self.inhibitor_range = inhibitor;
-        self.hunter_seeker_ignore = hunter_seeker_ignore;
+        self.designator_range = retained.designator_range;
+        self.inhibitor_range = retained.inhibitor_range;
+        self.hunter_seeker_ignore = retained.hunter_seeker_ignore;
+        self.chronoshift = retained.chronoshift;
+    }
+
+    /// TechnoTypeExt `Chronoshift.Allow`/`.IsVehicle`/`.Crushable`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_chronoshift(&self) -> crate::rules::superweapon_influence::ChronoshiftRules {
+        self.chronoshift
     }
 
     #[cfg(feature = "ares")]
@@ -3087,6 +3095,21 @@ impl ObjectType {
         self.infiltration = infiltration.clone();
     }
 
+    /// Ares BuildingTypeExt rubble and repair keys (`rules::ares_building_type`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn building_type_ext(
+        &self,
+    ) -> &crate::rules::ares_building_type::BuildingTypeExtRules {
+        &self.building_type_ext
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn building_type_ext_mut(
+        &mut self,
+    ) -> &mut crate::rules::ares_building_type::BuildingTypeExtRules {
+        &mut self.building_type_ext
+    }
+
     /// Ares Experience.*/Promote.* (`rules::ares_veterancy`).
     #[cfg(feature = "ares")]
     pub(crate) fn ares_veterancy(&self) -> &crate::rules::ares_veterancy::VeterancyTypeRules {
@@ -3110,21 +3133,6 @@ impl ObjectType {
     #[cfg(feature = "ares")]
     pub(crate) fn bind_promotion_eva(&mut self, eva: [Option<String>; 2]) {
         self.promotion_eva = eva;
-    }
-
-    /// Ares BuildingTypeExt rubble and repair keys (`rules::ares_building_type`).
-    #[cfg(feature = "ares")]
-    pub(crate) fn building_type_ext(
-        &self,
-    ) -> &crate::rules::ares_building_type::BuildingTypeExtRules {
-        &self.building_type_ext
-    }
-
-    #[cfg(feature = "ares")]
-    pub(crate) fn building_type_ext_mut(
-        &mut self,
-    ) -> &mut crate::rules::ares_building_type::BuildingTypeExtRules {
-        &mut self.building_type_ext
     }
 
     /// Ares BuildingTypeExt Academy.* (`rules::ares_veterancy`).
@@ -4695,6 +4703,8 @@ impl ObjectType {
             #[cfg(feature = "ares")]
             infiltration: Default::default(),
             #[cfg(feature = "ares")]
+            building_type_ext: Default::default(),
+            #[cfg(feature = "ares")]
             veterancy: Default::default(),
             #[cfg(feature = "ares")]
             promotion_eva: [None, None],
@@ -4720,8 +4730,6 @@ impl ObjectType {
             selection_group: String::new(),
             #[cfg(feature = "ares")]
             bounty: Default::default(),
-            #[cfg(feature = "ares")]
-            building_type_ext: Default::default(),
             #[cfg(feature = "ares")]
             crew: Default::default(),
             #[cfg(feature = "ares")]
@@ -5138,6 +5146,8 @@ impl ObjectType {
             hunter_seeker: section.read_bool("HunterSeeker", false),
             #[cfg(feature = "ares")]
             designator_range: None,
+            #[cfg(feature = "ares")]
+            chronoshift: Default::default(),
             #[cfg(feature = "ares")]
             inhibitor_range: None,
             #[cfg(feature = "ares")]

@@ -5,7 +5,10 @@
 //! 1006D0C0 (null fallback), GetSound1006D1C0 (-1 fallback), and Flags
 //! 10003650 (zero); none suppresses the common animation/sound/Ready cleanup.
 //! Battery shares them too; Protect's GetAnim (10074A90) falls back to
-//! `IronCurtainInvokeAnim=`.
+//! `IronCurtainInvokeAnim=`. The ChronoSphere's Flags (1006EE70) skip the
+//! anim, EVA, money, radar event, message and cleanup; the ChronoWarp's
+//! (10070040) the anim and radar event, its other steps reading the source
+//! Super's type.
 
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_targeting::HouseMask;
@@ -20,16 +23,25 @@ pub(super) fn on_launch(
     typ: InternedId,
     cell: (u16, u16),
 ) {
-    let Some(sw) = rules.super_weapon(sim.interner.resolve(typ)) else {
+    use crate::rules::superweapon_type::AresSuperWeaponFlags as F;
+    let Some(fired) = rules.super_weapon(sim.interner.resolve(typ)) else {
         return;
     };
-    let presentation = &super::financial_type(rules, sw).presentation;
+    // The fired type's handler answers the Flags; the PostClick switch
+    // (10032F2B) hands the rest the source Super's type.
+    let flags = fired.kind.ares_flags();
+    let data = super::ares_launch_data_type(sim, rules, owner, typ);
+    let Some(sw) = rules.super_weapon(sim.interner.resolve(data)) else {
+        return;
+    };
+    let presentation = &sw.presentation;
     let mut coord = super::deck_coords(sim, cell);
     // Launch10033068..100330F9: GetAnim (base Nullable fallback nullptr;
     // SW_Protect::GetAnim10074A90 falls back to IronCurtainInvokeAnim), add
     // the signed height, construct regardless of visibility, then write
     // Hidden. No OwnerHouse store is made by this producer.
     let animation = match &presentation.animation {
+        _ if flags.has(F::NO_ANIM) => None,
         Some(animation) => animation.clone(),
         None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Protect => {
             Some(rules.general.iron_curtain_invoke_anim.clone())
@@ -39,34 +51,15 @@ pub(super) fn on_launch(
     if let Some(name) = &animation {
         coord[2] = coord[2].wrapping_add(presentation.height);
         if let Some(anim) = super::spawn_super_anim(sim, rules, name, coord) {
-            let mask = presentation.visibility;
-            if mask == HouseMask::ALL || mask == HouseMask::NONE {
-                sim.substrate.set_anim_hidden(anim, mask == HouseMask::NONE);
-            } else {
-                let viewers = sim
-                    .houses
-                    .order()
-                    .iter()
-                    .copied()
-                    .map(|viewer| {
-                        (
-                            viewer,
-                            !mask.intersects(sim.ares_house_relation(owner, viewer)),
-                        )
-                    })
-                    .collect();
-                sim.substrate.set_anim_viewer_hidden(
-                    anim,
-                    viewers,
-                    !mask.intersects(HouseMask::ENEMIES),
-                );
-            }
+            hide_from_unaffected_viewers(sim, anim, owner, presentation.visibility);
         }
     }
     // Launch10033106..1003314E, GetSound1006D1C0: play only the resolved
     // nonnegative cue. Bridge10033BB0 calls VocClass::PlayAtCoord750E20,
     // using the signed coordinates the animation just raised, with flags0.
-    if let Some(Some(sound)) = &presentation.sound {
+    if !flags.has(F::NO_SOUND)
+        && let Some(Some(sound)) = &presentation.sound
+    {
         sim.sound_events.emit(SimSoundEvent::VocAtCoord {
             sound_id: sound.clone(),
             coordinate: DriveCoord {
@@ -78,10 +71,11 @@ pub(super) fn on_launch(
         });
     }
     // Launch10033153..10033167: a type-13 radar event at the launch cell
-    // while SW.CreateRadarEvent holds; none of these handlers sets NoEvent.
-    if rules
-        .super_weapon_metadata(&sw.id)
-        .is_some_and(|metadata| metadata.launch().radar_event())
+    // while SW.CreateRadarEvent holds, unless the Flags hold NoEvent.
+    if !flags.has(F::NO_EVENT)
+        && rules
+            .super_weapon_metadata(&sw.id)
+            .is_some_and(|metadata| metadata.launch().radar_event())
     {
         sim.sound_events.emit(SimSoundEvent::RadarEvent {
             radar: crate::sim::radar::RadarEventRequest::new(
@@ -93,10 +87,43 @@ pub(super) fn on_launch(
     }
     // SWTypeExt::Launch10033201..10033242 removes Ready only after the
     // common sound and Message.Launch (printed by every client from this
-    // fact). The client supplies Fire_SW's local-player predicate.
-    sim.sound_events
-        .emit(SimSoundEvent::AresSuperWeaponFinished {
-            owner,
-            sw_type: typ,
-        });
+    // fact). The client supplies Fire_SW's local-player predicate. No ported
+    // handler holds only one of NoMessage and NoCleanup (ChronoSphere holds
+    // both), so one fact carries both steps.
+    if !(flags.has(F::NO_MESSAGE) && flags.has(F::NO_CLEANUP)) {
+        sim.sound_events
+            .emit(SimSoundEvent::AresSuperWeaponFinished {
+                owner,
+                sw_type: data,
+            });
+    }
+}
+
+/// `AnimClass+0x19D` (Invisible) per viewer: hidden from each House the
+/// type's `SW.AnimationVisibility` excludes (IsAnimVisible, inlined in
+/// CreateChronoAnim 10032470 and Launch 10033060), from the owner's view.
+pub(super) fn hide_from_unaffected_viewers(
+    sim: &mut Simulation,
+    anim: crate::sim::anim_class::AnimId,
+    owner: InternedId,
+    mask: HouseMask,
+) {
+    if mask == HouseMask::ALL || mask == HouseMask::NONE {
+        sim.substrate.set_anim_hidden(anim, mask == HouseMask::NONE);
+        return;
+    }
+    let viewers = sim
+        .houses
+        .order()
+        .iter()
+        .copied()
+        .map(|viewer| {
+            (
+                viewer,
+                !mask.intersects(sim.ares_house_relation(owner, viewer)),
+            )
+        })
+        .collect();
+    sim.substrate
+        .set_anim_viewer_hidden(anim, viewers, !mask.intersects(HouseMask::ENEMIES));
 }

@@ -358,6 +358,11 @@ pub(crate) struct AresSuperWeaponTargetingState {
     ai_house: Option<HouseMask>,
     range_minimum: NativeF64Bits,
     range_maximum: NativeF64Bits,
+    /// `Chronosphere.AffectsBuildings` (+0x108, ctor false): SW_ChronoSphere's
+    /// LoadFromINI (1006EF90) splits the Building bit of `SW.AffectsTarget`
+    /// off into it, then keeps the bit set.
+    #[serde(default)]
+    chrono_affect_buildings: bool,
 }
 
 #[cfg(feature = "ares")]
@@ -388,6 +393,7 @@ impl Default for AresSuperWeaponTargetingState {
             ai_house: None,
             range_minimum: unbounded,
             range_maximum: unbounded,
+            chrono_affect_buildings: false,
         }
     }
 }
@@ -409,8 +415,14 @@ impl AresSuperWeaponTargetingState {
     /// on a successful read.
     pub(crate) fn read_pass(&mut self, section: &IniSection, type_name: Option<&str>) -> bool {
         let initialize = !self.initialized;
+        let is =
+            |name: &str| type_name.is_some_and(|type_name| type_name.eq_ignore_ascii_case(name));
         if initialize {
             self.mode = type_name.map_or(0, handler_initial_mode);
+            // SW_ChronoSphere::Initialize1006EF10: infantry and units (0x18).
+            if is("ChronoSphere") {
+                self.affects_target = TargetMask(0x18);
+            }
             if type_name.is_some_and(|name| name.eq_ignore_ascii_case("HunterSeeker")) {
                 self.affects_house = HouseMask::ENEMIES;
             }
@@ -474,7 +486,27 @@ impl AresSuperWeaponTargetingState {
         // 10033942/10033958
         self.range_minimum = section.read_ares_double_bits("SW.RangeMinimum", self.range_minimum);
         self.range_maximum = section.read_ares_double_bits("SW.RangeMaximum", self.range_maximum);
+        if is("ChronoSphere") {
+            // SW_ChronoSphere::LoadFromINI1006EF90 after the common reads:
+            // rebuild the authored mask (clear Building unless buildings are
+            // affected), re-read it, take the Building bit as
+            // AffectsBuildings and set the bit again, so a later pass
+            // without SW.AffectsTarget keeps its earlier answer.
+            if !self.chrono_affect_buildings {
+                self.affects_target = TargetMask(self.affects_target.0 & !TargetMask::BUILDING.0);
+            }
+            if let Some(mask) = TargetMask::read_ares(section, "SW.AffectsTarget") {
+                self.affects_target = mask;
+            }
+            self.chrono_affect_buildings = self.affects_target.intersects(TargetMask::BUILDING);
+            self.affects_target = TargetMask(self.affects_target.0 | TargetMask::BUILDING.0);
+        }
         initialize
+    }
+
+    /// `Chronosphere.AffectsBuildings`.
+    pub(crate) fn chrono_affect_buildings(self) -> bool {
+        self.chrono_affect_buildings
     }
 
     /// A pass without this type's section still ends the first call

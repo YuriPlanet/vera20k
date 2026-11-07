@@ -15,9 +15,13 @@ pub mod cell_grid;
 pub mod chrono_screen;
 mod chronosphere;
 pub use chronosphere::CHRONO_WARP_SELECTION_INDEX;
+#[cfg(feature = "ares")]
+pub use chronosphere::ares_chrono_warp_for;
 pub mod airstrike_tint;
 #[cfg(all(test, feature = "ares"))]
 mod ares_charge_tests;
+#[cfg(all(test, feature = "ares"))]
+mod ares_stock_types_tests;
 #[cfg(all(test, feature = "ares"))]
 mod ares_common_keys_tests;
 #[cfg(feature = "ares")]
@@ -138,8 +142,22 @@ pub fn paid_pair_source<'r>(
         if !sw.post_click {
             return None;
         }
-        pre_dependent(rules, sw)
-            .filter(|(_, source)| source.money_amount != 0 || sw.money_amount != 0)
+        // A handler's PostClick type has no PreDependent (LoadFromINIFile
+        // writes -1); Fire_SW pairs it with the House's last Super. The
+        // ticket pairs it with the first ChronoSphere whose player click
+        // selects it (1006ED30), the source that click leaves last.
+        let source = if sw.kind.has_ares_handler() {
+            rules.super_weapon_order.iter().find_map(|name| {
+                let source = rules.super_weapon(name)?;
+                (source.kind == crate::rules::superweapon_type::SuperWeaponKind::ChronoSphere
+                    && chronosphere::ares_chrono_warp_for(rules, source)
+                        .is_some_and(|warp| warp.eq_ignore_ascii_case(&sw.id)))
+                .then_some((name.as_str(), source))
+            })
+        } else {
+            pre_dependent(rules, sw)
+        };
+        source.filter(|(_, source)| source.money_amount != 0 || sw.money_amount != 0)
     }
 }
 
@@ -2092,7 +2110,55 @@ pub(crate) fn first_available_building_super<'a>(
     sim.super_weapons.get(&building.owner())?.get(&id)
 }
 
-/// Accepted Ares handler -> HouseExt100226D0. Do not call this for merely
+/// The Super whose type's SWTypeExt the common Launch (10032ED0) reads for
+/// `typ`: a PostClick handler's (10032F2B..10032F45) is the owner's Super at
+/// HouseExt SWLastIndex when that index is above 0 (3.0's test; index 0 never
+/// qualifies), any other type's its own.
+#[cfg(feature = "ares")]
+pub(super) fn ares_launch_data_type(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    typ: InternedId,
+) -> InternedId {
+    use crate::rules::superweapon_type::AresSuperWeaponFlags as F;
+    let post_click = rules
+        .super_weapon(sim.interner.resolve(typ))
+        .is_some_and(|sw| sw.kind.ares_flags().has(F::POST_CLICK));
+    if !post_click {
+        return typ;
+    }
+    sim.houses
+        .get(&owner)
+        .map(|house| house.ares_last_super())
+        .filter(|&index| index > 0)
+        .and_then(|index| rules.super_weapon_order.get(index as usize))
+        .and_then(|name| sim.interner.get(name))
+        .filter(|data| {
+            sim.super_weapons
+                .get(&owner)
+                .is_some_and(|weapons| weapons.contains_key(data))
+        })
+        .unwrap_or(typ)
+}
+
+/// Fire_SW's PostClick source in an Ares build (hook 4FAE72, 10034C90): the
+/// owner's Super at HouseExt SWLastIndex, which only a negative index
+/// leaves unset; the type's PreDependent is not read. Paired only for a
+/// handler's PostClick type; the unported stock redirects keep PreDependent.
+#[cfg(feature = "ares")]
+pub(super) fn ares_post_click_source<'r>(
+    sim: &Simulation,
+    rules: &'r RuleSet,
+    owner: InternedId,
+) -> Option<(&'r str, &'r SuperWeaponType)> {
+    let index = sim.houses.get(&owner)?.ares_last_super();
+    let name = rules.super_weapon_order.get(usize::try_from(index).ok()?)?;
+    Some((name.as_str(), rules.super_weapon(name)?))
+}
+
+/// Accepted Ares handler -> HouseExt100226D0, then the common Launch's
+/// bookkeeping up to its EVA (10032ED0). Do not call this for merely
 /// selected, refused or unsupported stock-redirected Activate paths.
 #[cfg(feature = "ares")]
 fn finish_ares_launch(
@@ -2102,25 +2168,48 @@ fn finish_ares_launch(
     typ: InternedId,
     cell: (u16, u16),
 ) {
+    use crate::rules::superweapon_type::AresSuperWeaponFlags as F;
     let frame = sim.session.binary_frame() as i32;
-    let recheck = if let Some(instance) = sim.super_weapons.instance_mut(&owner, &typ) {
+    let flags = rules
+        .super_weapon(sim.interner.resolve(typ))
+        .map_or(F::NONE, |sw| sw.kind.ares_flags());
+    // 100226D0 counts the fired Super's shot before the PostClick switch.
+    if let Some(instance) = sim.super_weapons.instance_mut(&owner, &typ) {
         instance.record_ares_launch(frame);
-        instance.one_time
-            || rules
-                .super_weapon_metadata(sim.interner.resolve(typ))
-                .is_some_and(|metadata| {
-                    !metadata
-                        .availability()
-                        .allows_shots(instance.ares_launch_count)
-                })
-    } else {
-        false
-    };
+    }
+    let data = ares_launch_data_type(sim, rules, owner, typ);
+    let data_name = sim.interner.resolve(data).to_owned();
+    let recheck = sim
+        .super_weapons
+        .get(&owner)
+        .and_then(|weapons| weapons.get(&data))
+        .is_some_and(|instance| {
+            instance.one_time
+                || rules
+                    .super_weapon_metadata(&data_name)
+                    .is_some_and(|metadata| {
+                        !metadata
+                            .availability()
+                            .allows_shots(instance.ares_launch_count)
+                    })
+        });
     // Common Launch10032F54..10032F8F dirties House+1FC when one-time or
     // the successful write reaches its limit; normal provider/hold ownership
     // performs revocation at the reached House tail.
     if recheck && let Some(house) = sim.houses.get_mut(&owner) {
         house.request_tech_recheck();
+    }
+    // 10032F91..10032FBB: neither a PostClick type nor an SW.AutoFire one
+    // becomes the House's last Super (the type index of the data Super).
+    let auto_fire = rules
+        .super_weapon_target_policy(&data_name)
+        .is_some_and(|policy| policy.auto_fire());
+    if !flags.has(F::POST_CLICK)
+        && !auto_fire
+        && let Some(index) = rules.super_weapon_index(&data_name)
+        && let Some(house) = sim.houses.get_mut(&owner)
+    {
+        house.set_ares_last_super(index as i32);
     }
     // Common Launch10032F15 records success before its activation EVA.
     // Emit once here, after Activate has finished all immediate payloads.
@@ -2130,6 +2219,11 @@ fn finish_ares_launch(
         sw_type: typ,
         world: crate::sim::components::DriveCoord { x, y, z }.into(),
     });
+    // 10032FC3: the data type's EVA_Activated unless the Flags hold NoEVA.
+    if !flags.has(F::NO_EVA) {
+        sim.sound_events
+            .emit(SimSoundEvent::AresSuperWeaponActivatedEva { sw_type: data });
+    }
 }
 
 /// Shared provider facts for one reached House pass. Source authority is the

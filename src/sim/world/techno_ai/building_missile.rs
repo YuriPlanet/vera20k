@@ -38,14 +38,17 @@ use crate::sim::projectile::{
     ProjectileCoord, ProjectilePayload, ProjectileTarget, cell_ground_coord,
 };
 use crate::sim::world::Simulation;
+#[cfg(not(feature = "ares"))]
 use crate::util::native_x87::NativeF64Bits;
 
 /// `PSIWARN`, the warning anim's type (`0x0081907C`, found by name at
 /// `0x0044C9FA`).
+#[cfg(not(feature = "ares"))]
 const WARNING_ANIM: &str = crate::rules::effect_asset_catalog::PSI_WARNING_ANIM;
 /// The missile's Construct speed, pushed as an immediate (`0x0044CAC8`).
 const MISSILE_SPEED: i32 = 0xFF;
 /// `[0x007E44A8]` = 10.0, the missile's launch velocity scale.
+#[cfg(not(feature = "ares"))]
 const MISSILE_VELOCITY_SCALE: NativeF64Bits = NativeF64Bits::from_bits(0x4024_0000_0000_0000);
 /// The take-off anim's ZAdjust, written after its constructor
 /// (`0x0044CC9D`).
@@ -139,7 +142,13 @@ fn spawn_warning(
     let owner = sim.substrate.entities.get(id)?.owner();
     let (rx, ry) = sim.houses.get(&owner)?.nuke_target();
     let coord = cell_ground_coord(sim.resolved_terrain.as_ref(), rx, ry);
-    let anim = spawn_anim(sim, rules, WARNING_ANIM, coord, true)?;
+    // Ares hook 44C9FF (10036750): the firing type's `Nuke.PsiWarning`;
+    // none skips the warning (0x0044CA7A).
+    #[cfg(feature = "ares")]
+    let warning = firing_nuke(sim, rules, id)?.psi_warning.clone()?;
+    #[cfg(not(feature = "ares"))]
+    let warning = WARNING_ANIM.to_owned();
+    let anim = spawn_anim(sim, rules, &warning, coord, true)?;
     sim.substrate.set_anim_owner_house(anim, owner);
     Some(anim)
 }
@@ -202,6 +211,24 @@ fn launch_missile(
         sim.substrate
             .set_anim_attached_bullet(warning, Some(bullet_id));
     }
+    // Ares hook 44CB4C (10036660) replaces the vanilla velocity with (0, 0,
+    // 10) for a `Vertical=` BulletType, else (0, 0, 100).
+    #[cfg(feature = "ares")]
+    let velocity = crate::sim::projectile::ProjectileVelocity::new(
+        0,
+        0,
+        if weapon
+            .projectile
+            .as_deref()
+            .and_then(|name| rules.projectile(name))
+            .is_some_and(|projectile| projectile.vertical)
+        {
+            10
+        } else {
+            100
+        },
+    );
+    #[cfg(not(feature = "ares"))]
     let velocity = crate::sim::projectile::launch::missile_launch_velocity(MISSILE_VELOCITY_SCALE);
     // The target is the CellClass `Map[NukeTarget]` gives (`0x0044CAB0..0x0044CAB5`,
     // then CreateBullet at `0x0044CAED`): the shared dummy for a cell off the map.
@@ -229,14 +256,60 @@ fn launch_missile(
     ) {
         admit_fired_bullet(sim, rules, weapon, bullet_id, bullet);
     }
-    let take_off = rules.general.nuke_take_off.clone();
-    if let Some(anim) = spawn_anim(sim, rules, &take_off, origin, false) {
-        sim.substrate.set_anim_z_adjust(anim, TAKE_OFF_Z_ADJUST);
+    // The hook also remembers the firing type on the missile (BulletExt
+    // NukeSW) and takes its `Nuke.TakeOff`, else `[General] NukeTakeOff=`,
+    // whose ZAdjust becomes -100 only while still 0.
+    #[cfg(feature = "ares")]
+    let take_off = {
+        let firing_type = usize::try_from(firing)
+            .ok()
+            .and_then(|index| rules.super_weapon_order.get(index))
+            .map(|name| sim.interner.intern(name));
+        sim.projectiles.set_ares_nuke_sw(bullet_id, firing_type);
+        firing_nuke(sim, rules, id)
+            .and_then(|nuke| nuke.take_off.clone())
+            .unwrap_or_else(|| Some(rules.general.nuke_take_off.clone()))
+    };
+    #[cfg(not(feature = "ares"))]
+    let take_off = Some(rules.general.nuke_take_off.clone());
+    if let Some(anim) = take_off.and_then(|name| spawn_anim(sim, rules, &name, origin, false)) {
+        #[cfg(feature = "ares")]
+        let unset = sim
+            .substrate
+            .anims
+            .get(anim)
+            .is_some_and(|anim| anim.z_adjust() == 0);
+        #[cfg(not(feature = "ares"))]
+        let unset = true;
+        if unset {
+            sim.substrate.set_anim_z_adjust(anim, TAKE_OFF_Z_ADJUST);
+        }
     }
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.mission.set_handler_state(3);
     }
     1
+}
+
+/// The SWTypeExt Nuke fields of the type the silo fires (`+0x5F8`, the
+/// type's `[SuperWeaponTypes]` index SW_NuclearMissile::Activate stores).
+#[cfg(feature = "ares")]
+fn firing_nuke<'r>(
+    sim: &Simulation,
+    rules: &'r RuleSet,
+    id: u64,
+) -> Option<&'r crate::rules::superweapon_type::AresNukeRules> {
+    let firing = sim
+        .substrate
+        .entities
+        .get(id)?
+        .mission_leaf
+        .as_building()?
+        .firing_super_weapon();
+    let name = rules
+        .super_weapon_order
+        .get(usize::try_from(firing).ok()?)?;
+    Some(rules.super_weapon_metadata(name)?.launch().nuke())
 }
 
 /// `AnimClass::AnimClass @ 0x00421EA0` with (delay 0, loop 1, flags 0x600,
@@ -459,6 +532,9 @@ mod tests {
                 .iter()
                 .map(|bits| bits.as_u64().unwrap())
                 .collect();
+            // Ares hook 44CB4C (10036660): (0, 0, 10) for the Vertical carrier.
+            #[cfg(feature = "ares")]
+            let native_velocity = [0.0_f64, 0.0, 10.0].map(f64::to_bits).to_vec();
             assert_eq!(velocity_bits(bullet.velocity()), native_velocity, "{row}");
             // Construct's damage and speed; the carrier's BulletType.
             let construct = events
@@ -516,6 +592,42 @@ mod tests {
                 assert_eq!(anim.draw_flags(), u32::try_from(int(&native[5])).unwrap());
             }
         }
+    }
+
+    /// Ares hooks 44C9FF (10036750) and 44CB4C (10036660): the firing
+    /// type's `Nuke.PsiWarning=none` skips the warning, its `Nuke.TakeOff`
+    /// plays at the launch point, and the missile remembers the type.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_silo_missile_takes_the_firing_types_anims() {
+        let art = IniFile::from_str(&format!("{ART}[FLAME]\n"));
+        let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
+        ini.merge(&IniFile::from_str(
+            "[NukeSpecial]\nNuke.PsiWarning=none\nNuke.TakeOff=FLAME\n\
+             [Animations]\n0=PSIWARN\n1=NUKETO\n2=FLAME\n",
+        ));
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+        let (mut sim, silo) = world(&rules, "NAMISL", (50, 60), 0);
+        sim.substrate
+            .entities
+            .get_mut(silo)
+            .unwrap()
+            .mission
+            .set_handler_state(0);
+        mission_missile(&mut sim, silo, &rules);
+        let names: Vec<_> = sim
+            .substrate
+            .anims
+            .iter()
+            .map(|(_, anim)| sim.interner.resolve(anim.type_id()).to_owned())
+            .collect();
+        assert_eq!(names, ["FLAME"]);
+        let (_, bullet) = sim.projectiles.iter().next().unwrap();
+        assert_eq!(
+            bullet.ares_nuke_sw().map(|id| sim.interner.resolve(id)),
+            Some("NukeSpecial")
+        );
     }
 
     /// A building that is not a silo only waits its mission rate: the
