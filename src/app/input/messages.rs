@@ -609,6 +609,25 @@ pub(crate) fn post_chat_line(state: &mut AppState, name: &str, text: &str, rgb: 
     );
 }
 
+/// Lua `Engine.PrintMessage`: literal text (WolfCTOS does not localize it), no
+/// sender prefix, system colour, and the native MessageDelay*900 timeout.
+pub(crate) fn post_lua_message(state: &mut AppState, text: &str) {
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    post_resolved_message(
+        state,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text,
+            rgb: MESSAGE_RGB_SYSTEM,
+            timeout_ms,
+            silent: false,
+        },
+    );
+}
+
 /// Radar subtitle callback `0x005BF360`: literal text, scheme 0 and native
 /// MessageList duration buckets; cue Position/RGB belong to full-screen movies.
 pub(crate) fn post_movie_subtitle(state: &mut AppState, text: &str, duration: u32) {

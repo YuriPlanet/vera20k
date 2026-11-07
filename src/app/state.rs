@@ -32,6 +32,9 @@ pub(crate) struct AppState {
     pub(crate) audio: crate::app::audio_runtime::AppAudioRuntime,
     /// Save repository, cached listing, and last save/load metadata.
     pub(crate) persistence: crate::app::persistence::PersistenceState,
+    /// Process-wide Lua mod host (WolfCTOS-compatible). One VM per run, like
+    /// the native DLL; inert when the `lua` feature is off or on wasm.
+    pub(crate) lua: crate::app::lua::LuaHost,
 }
 
 /// Drop app-owned scenario-exit runtime and failure modal after a successful world replacement.
