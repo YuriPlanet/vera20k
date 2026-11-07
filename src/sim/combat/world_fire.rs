@@ -1873,6 +1873,15 @@ pub(super) fn emit_admitted_fire(
             )
             .with_installed_weapon(Some(world.interner.intern(selected.weapon_id)))
             .with_damage_multiplier(damage_multiplier);
+            // Ares TechnoClass_Fire_CreateBullet (1001ADE0, hook 0x6FE53F):
+            // the bullet's Range is the weapon's ProjectileRange, which only
+            // a `Ranged=` type spends.
+            #[cfg(feature = "ares")]
+            let payload = payload.with_ares_range(
+                projectile_type
+                    .filter(|kind| kind.ranged)
+                    .map(|_| weapon.ares_projectile_range),
+            );
             #[cfg(feature = "phobos")]
             let payload =
                 payload.with_firepower_multiplier(phobos_firepower_multiplier(&damage_stages));

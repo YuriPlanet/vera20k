@@ -89,6 +89,12 @@ pub struct WeaponType {
     /// Ares WeaponTypeExt abduction ([`crate::rules::ares_weapon`]).
     #[cfg(feature = "ares")]
     pub ares_abductor: crate::rules::ares_weapon::AresAbductor,
+    /// Ares `ProjectileRange=` (WeaponTypeExt +0xC8, Valueable<Leptons>,
+    /// 100000): the leptons a FireAt bullet of a `Ranged=` type may travel
+    /// (TechnoClass_Fire_CreateBullet 1001ADE0, BulletClass_Update_Ranged
+    /// 1001AC90).
+    #[cfg(feature = "ares")]
+    pub ares_projectile_range: i32,
     /// `RevealOnFire=` (`+0x137`, default yes): a launched shot reveals the
     /// firer to a human victim (FireAt `0x006FF66C`). Retail turns it off on
     /// the sniper, Virus, disguise and Mirage weapons.
@@ -480,6 +486,8 @@ impl WeaponType {
             ares_apply_damage: section.read_ares_nullable_bool("ApplyDamage", None),
             #[cfg(feature = "ares")]
             ares_abductor: crate::rules::ares_weapon::AresAbductor::read(section),
+            #[cfg(feature = "ares")]
+            ares_projectile_range: section.read_ares_leptons("ProjectileRange", 100000),
             // Constructor 1 (`0x00771DBB`); ReadINI passes it as the default
             // (`0x00772182..0x00772196`).
             reveal_on_fire: section.read_bool("RevealOnFire", true),
@@ -630,6 +638,26 @@ fn sound_list(section: &IniSection, key: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_projectile_range_reads_cells_as_leptons_and_apply_damage_decides_zeroing() {
+        let read = |text: &str| {
+            let file = IniFile::from_str(text);
+            WeaponType::from_ini_section("W", file.section("W").unwrap())
+        };
+        let plain = read("[W]\nDamage=5\n");
+        assert_eq!(plain.ares_projectile_range, 100000);
+        assert!(!plain.fire_damage_zeroed());
+        let sonic = read("[W]\nIsSonic=yes\nProjectileRange=1.5\nApplyDamage=yes\n");
+        assert_eq!(sonic.ares_projectile_range, 384);
+        assert!(!sonic.fire_damage_zeroed(), "ApplyDamage=yes keeps it");
+        assert!(read("[W]\nApplyDamage=no\n").fire_damage_zeroed());
+        assert_eq!(
+            read("[W]\nProjectileRange=x\n").ares_projectile_range,
+            100000
+        );
+    }
+
     #[test]
     fn weapon_ammo_cost_uses_ares_retained_integer_reader_only_when_enabled() {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};

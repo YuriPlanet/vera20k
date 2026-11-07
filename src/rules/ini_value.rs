@@ -608,6 +608,20 @@ impl IniSection {
         })
     }
 
+    /// Ares `read<Leptons>` (Utilities/TemplateDef.h): INI_EX::ReadDouble
+    /// (the [`Self::read_ares_double_bits`] scan, cells), then
+    /// `Game::F2I(cells * 256.0)`. A failed read keeps the current leptons.
+    #[cfg(feature = "ares")]
+    pub fn read_ares_leptons(&self, key: &str, current: i32) -> i32 {
+        self.read_string_with(key, 2048, current, |current, value| {
+            parse_ares_double_bits(value).map_or(current, |cells| {
+                crate::util::native_x87::X87Chop53::ftol_f64_low_masked(
+                    f64::from_bits(cells.bits()) * 256.0,
+                )
+            })
+        })
+    }
+
     /// Ares Valueable<float>1000EAE0 -> detail::read<float>1000FA90 ->
     /// Parser<float>10076B00: the same binary64 scan and percent scale as
     /// [`Self::read_ares_double_bits`], stored to the float field (`FSTP

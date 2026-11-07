@@ -983,6 +983,15 @@ pub struct ProjectilePayload {
     /// (`0x004697FC..0x0046980C`, not ported: dormant in retail, see
     /// [`SpecialDetonationAction::DirectRocker`]).
     damage_multiplier: i32,
+    /// Ares BulletClass Range: the leptons left to a FireAt bullet of a
+    /// `Ranged=` type, from its weapon's `ProjectileRange=`
+    /// (TechnoClass_Fire_CreateBullet 1001ADE0, hook 0x6FE53F). `None` for
+    /// every other bullet, whose Range starts at INT_MAX
+    /// (BulletClass_Initialize_Ranged 1001A920, hook 0x4664FB) and never runs
+    /// out. Not part of the world hash.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_range: Option<i32>,
 }
 
 #[cfg(feature = "phobos")]
@@ -1012,6 +1021,8 @@ impl ProjectilePayload {
             firepower_multiplier: crate::util::native_x87::NativeF64Bits::ONE,
             #[cfg(feature = "phobos")]
             source_house: None,
+            #[cfg(feature = "ares")]
+            ares_range: None,
         }
     }
 
@@ -1025,6 +1036,12 @@ impl ProjectilePayload {
 
     pub fn bright(&self) -> bool {
         self.bright
+    }
+
+    /// The FireAt bullet's Ares Range ([`Self::ares_range`]).
+    #[cfg(feature = "ares")]
+    pub(crate) fn with_ares_range(self, ares_range: Option<i32>) -> Self {
+        Self { ares_range, ..self }
     }
 
     /// The sole +130 mutation, corresponding to SetWeaponType46B260.
@@ -2470,6 +2487,26 @@ impl ProjectileStore {
         // 467B9E commits the selected candidate before the shared probe.
         // Every admitted impact bypasses 468BB0, irrespective of ROT.
         let selected_candidate = snap_impact.unwrap_or(candidate);
+        // Ares BulletClass_Update_Ranged (1001AC90, hook 0x467B94), before
+        // that commit: a `Ranged=` bullet spends `F2I(DistanceFrom)` from its
+        // Location to the new one, and impacts once none is left.
+        #[cfg(feature = "ares")]
+        if let Some(range) = projectile.payload.ares_range.as_mut() {
+            let square = |a: i32, b: i32| {
+                let delta = f64::from(a.wrapping_sub(b));
+                delta * delta
+            };
+            let distance = (square(selected_candidate.x, projectile.position.x)
+                + square(selected_candidate.y, projectile.position.y)
+                + square(selected_candidate.z, projectile.position.z))
+            .sqrt();
+            *range = range.wrapping_sub(crate::util::native_x87::X87Chop53::ftol_f64_low_masked(
+                distance,
+            ));
+            if *range <= 0 {
+                impact_flag = true;
+            }
+        }
         projectile.position = selected_candidate;
         let collision_impact = (!impact_flag)
             .then(|| {
@@ -3342,6 +3379,31 @@ mod tests {
             target_expiry: TargetExpiryPolicy::DetonateAtLastKnown,
             collision: ProjectileCollisionPolicy::NONE,
         }
+    }
+
+    /// Ares BulletClass_Update_Ranged (1001AC90, hook 0x467B94): a FireAt
+    /// bullet of a `Ranged=` type spends its ProjectileRange along its
+    /// flight and impacts once none is left, short of its target.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_a_ranged_bullet_impacts_when_its_projectile_range_runs_out() {
+        let mut store = ProjectileStore::new();
+        let mut shot = spawn(ProjectileTarget::Cell { rx: 20, ry: 0 });
+        shot.payload = shot.payload.with_ares_range(Some(100));
+        store.spawn(1, shot);
+        let advance = |store: &mut ProjectileStore, frame| {
+            store.advance(
+                frame,
+                &BTreeMap::new(),
+                None,
+                &SharedCellDummy::fresh(),
+                |_, _| None,
+            )
+        };
+        assert!(advance(&mut store, 0).detonations.is_empty(), "64 spent");
+        let result = advance(&mut store, 1);
+        assert_eq!(result.detonations.len(), 1, "128 spent of 100");
+        assert!(result.detonations[0].impact.x < 256);
     }
 
     #[test]
