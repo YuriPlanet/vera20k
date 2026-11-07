@@ -1146,11 +1146,19 @@ impl App {
             .random_map_options_for_setup();
         let available = Self::random_map_dir(state)
             .is_some_and(|dir| crate::map::rmg::saved_seeds::saved_seeds_available(&dir));
+        // VERA extension: only offline Skirmish offers more than eight players
+        // and the larger sizes; LAN and online keep the original limits.
+        let extended = !matches!(
+            state.match_state.session_mode(),
+            crate::app::match_runtime::session::SessionMode::Lan
+                | crate::app::match_runtime::session::SessionMode::Wol
+        );
         state.frontend.skirmish_shell_state.random_map_setup_modal =
             Some(crate::ui::skirmish_shell::RandomMapSetupModalState::open(
                 options,
                 Some(previous),
                 available,
+                extended,
             ));
     }
 

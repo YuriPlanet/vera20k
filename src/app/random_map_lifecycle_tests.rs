@@ -202,6 +202,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         options.clone(),
         Some(previous_selection),
         false,
+        true,
     ));
     generated_modal
         .as_mut()
@@ -296,6 +297,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         options.clone(),
         Some(previous_selection),
         false,
+        true,
     ));
     assert_eq!(
         empty_modal.as_ref().expect("empty modal").accept(),
@@ -347,6 +349,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         options.clone(),
         Some(previous_selection),
         false,
+        true,
     ));
     cancel_modal
         .as_mut()
@@ -418,6 +421,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         runtime.random_map_options_for_setup(),
         Some(previous_selection),
         false,
+        true,
     );
     assert_eq!(reopened.options, options);
     assert_eq!(reopened.previous_selection, Some(previous_selection));
@@ -688,64 +692,4 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
     std::fs::remove_file(seed_dir.join(seed_name)).expect("remove lifecycle .SED");
     std::fs::remove_file(randmap_img).expect("remove common-teardown preview");
     std::fs::remove_dir(seed_dir).expect("remove lifecycle seed directory");
-}
-
-/// VERA extension: the production generator, over the retail theater, seats
-/// thirty players on the largest (Colossal, 500x500) size.
-#[test]
-#[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
-fn a_colossal_thirty_player_retail_map_places_every_start() {
-    let retail_dir = std::path::PathBuf::from(
-        std::env::var("RA2_DIR").expect("set RA2_DIR to the active-retail YR directory"),
-    );
-    let mut assets = crate::assets::asset_manager::AssetManager::new(
-        &retail_dir,
-        crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
-    )
-    .expect("active-retail AssetManager");
-    let audio = crate::rules::audio_sources::AudioDefinitions::select(&assets);
-    let (_, _, mut native_rules) = crate::rules::retail_sources::load_startup_rules(
-        &assets,
-        std::sync::Arc::clone(audio.sounds()),
-        std::sync::Arc::clone(audio.eva()),
-    )
-    .expect("retail startup Rules")
-    .into_parts();
-    let options = RmgOptions {
-        map_type: 1,
-        num_players: 30,
-        width: crate::map::rmg::MAX_SIZE_OPTION,
-        height: crate::map::rmg::MAX_SIZE_OPTION,
-        water_amount: 30,
-        tiberium: 50,
-        vegetation: 30,
-        seed: 3030,
-        ..Default::default()
-    };
-    let mut runtime = MultiplayerShellRuntime::initialize(
-        0x0030_0030,
-        &mut crate::app::process_assets::ProcessAssets::new(
-            crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
-            false,
-        ),
-        None,
-        None,
-        None,
-        skirmish_global_defaults(&SkirmishShellState::default()),
-    );
-    let started = std::time::Instant::now();
-    let receiver = start_production_worker(
-        &mut assets,
-        &options,
-        &mut native_rules,
-        &mut runtime,
-        &mut RandomMapGenerationRetention::default(),
-        &crate::map::resolved_terrain::SharedCellDummy::fresh(),
-    );
-    let (_, generated) = receive_production_generation(receiver);
-    eprintln!("retail colossal generation took {:?}", started.elapsed());
-    assert_eq!(generated.unfilled_start_slots, 0);
-    let mut slots: Vec<u8> = generated.start_waypoints.iter().map(|w| w.0).collect();
-    slots.sort_unstable();
-    assert_eq!(slots, (0..30).collect::<Vec<u8>>());
 }

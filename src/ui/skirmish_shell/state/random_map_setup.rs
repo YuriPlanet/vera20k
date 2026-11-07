@@ -144,13 +144,15 @@ const RESOURCE_ITEMS: [SetupComboItem; 4] = [
     item("TXT_RESOURCE_EXTREME", "Extreme", 3),
 ];
 
-/// The entries a combo is filled with, in list order.
-pub const fn setup_combo_items(combo: SetupCombo) -> &'static [SetupComboItem] {
+/// The entries a combo is filled with, in list order. Size lists VERA's larger
+/// maps only for an `extended` (offline Skirmish) dialog.
+pub fn setup_combo_items(combo: SetupCombo, extended: bool) -> &'static [SetupComboItem] {
     match combo {
         SetupCombo::MapType => &MAP_TYPE_ITEMS,
         SetupCombo::Time => &TIME_ITEMS,
         SetupCombo::Theater => &THEATER_ITEMS,
-        SetupCombo::Size => &SIZE_ITEMS,
+        SetupCombo::Size if extended => &SIZE_ITEMS,
+        SetupCombo::Size => &SIZE_ITEMS[..=crate::map::rmg::NATIVE_MAX_SIZE_OPTION as usize],
         SetupCombo::Resources => &RESOURCE_ITEMS,
     }
 }
@@ -166,8 +168,10 @@ pub enum AcceptOutcome {
 
 /// The Players slider's range, 2..8 in steps of 1 (`TBM_SETRANGE` at
 /// `0x0059722C`; no `0x4AB`).
-/// The original trackbar spans 2..=8; VERA's generator seats up to thirty.
 pub const PLAYERS_RANGE: TrackbarRange =
+    TrackbarRange::new(2, crate::map::rmg::NATIVE_MAX_PLAYERS, 1);
+/// VERA extension: an offline Skirmish dialog's slider runs to thirty players.
+pub const EXTENDED_PLAYERS_RANGE: TrackbarRange =
     TrackbarRange::new(2, crate::map::rmg::MAX_PLAYERS, 1);
 
 /// The Create Random Map dialog.
@@ -199,6 +203,10 @@ pub struct RandomMapSetupModalState {
     /// Heading `0x694` and status line `0x695`, alive while the seed browser
     /// hides the dialog.
     pub(crate) statics: DialogStatics,
+    /// VERA extension: offline Skirmish offers more than eight players and the
+    /// sizes past Very Large. A LAN or online dialog keeps the original limits,
+    /// which every peer and the lobby accept.
+    pub extended: bool,
 }
 
 impl RandomMapSetupModalState {
@@ -208,16 +216,16 @@ impl RandomMapSetupModalState {
     /// before opening this presentation state. Accept starts disabled: the
     /// player must generate first.
     pub fn open(
-        mut options: RmgOptions,
+        options: RmgOptions,
         previous_selection: Option<ChooseMapSelection>,
         saved_seeds_available: bool,
+        extended: bool,
     ) -> Self {
         assert_ne!(
             options.seed, -1,
             "random-map options must be initialized by the app Scenario owner"
         );
-        options.normalize();
-        Self {
+        let mut modal = Self {
             options,
             generated: false,
             generating: false,
@@ -229,7 +237,36 @@ impl RandomMapSetupModalState {
             preview_generation: 0,
             previous_selection,
             statics: DialogStatics::default(),
+            extended,
+        };
+        modal.normalize_options();
+        modal
+    }
+
+    /// [`RmgOptions::normalize`], then the original 8-player and Very Large
+    /// ceilings unless the dialog is `extended`.
+    fn normalize_options(&mut self) {
+        self.options.normalize();
+        if !self.extended {
+            use crate::map::rmg::{NATIVE_MAX_PLAYERS, NATIVE_MAX_SIZE_OPTION};
+            self.options.num_players = self.options.num_players.min(NATIVE_MAX_PLAYERS);
+            self.options.width = self.options.width.min(NATIVE_MAX_SIZE_OPTION);
+            self.options.height = self.options.height.min(NATIVE_MAX_SIZE_OPTION);
         }
+    }
+
+    /// The Players slider's range for this dialog.
+    pub const fn players_range(&self) -> TrackbarRange {
+        if self.extended {
+            EXTENDED_PLAYERS_RANGE
+        } else {
+            PLAYERS_RANGE
+        }
+    }
+
+    /// The entries `combo` lists in this dialog.
+    pub fn combo_items(&self, combo: SetupCombo) -> &'static [SetupComboItem] {
+        setup_combo_items(combo, self.extended)
     }
 
     /// Whether a control is currently interactive. Every control is inert
@@ -285,7 +322,9 @@ impl RandomMapSetupModalState {
     /// the value changed; the slider then clicks (GenericClick, `0x0061E6DD`),
     /// since `0x105` never turns its cue off (`0x4AE`).
     pub fn press_players(&mut self, x: i32, y: i32, window: RectPx, scale: ShellScale) -> bool {
-        let press = PLAYERS_RANGE.press_in(self.options.num_players, x, y, window, scale);
+        let press = self
+            .players_range()
+            .press_in(self.options.num_players, x, y, window, scale);
         self.players_hold = press.hold(());
         match press {
             TrackbarPress::Jump(value) => self.change_num_players(value),
@@ -297,7 +336,7 @@ impl RandomMapSetupModalState {
     /// device `x`. Returns whether the value changed.
     pub fn drag_players(&mut self, x: i32, window: RectPx, scale: ShellScale) -> bool {
         self.players_hold.is_some_and(|hold| hold.dragging)
-            && self.change_num_players(PLAYERS_RANGE.value_at_in(x, window, scale))
+            && self.change_num_players(self.players_range().value_at_in(x, window, scale))
     }
 
     /// The slider notifies (`WM_HSCROLL`, case `0x00596B04`) only when its
@@ -327,7 +366,7 @@ impl RandomMapSetupModalState {
     /// unlisted value simply clears the selection instead of clamping.
     pub fn selected_item_index(&self, combo: SetupCombo) -> Option<usize> {
         let value = self.combo_value(combo);
-        setup_combo_items(combo)
+        self.combo_items(combo)
             .iter()
             .position(|entry| entry.value == value)
     }
@@ -354,7 +393,7 @@ impl RandomMapSetupModalState {
         y: i32,
     ) -> Option<super::SkirmishShellUiSound> {
         let press = if let Some(combo) = self.open_combo {
-            let items = setup_combo_items(combo);
+            let items = self.combo_items(combo);
             let press = super::super::layout::random_map_setup_dropdown_row_at(
                 layout,
                 combo.row(),
@@ -383,7 +422,7 @@ impl RandomMapSetupModalState {
     }
 
     fn on_option_changed(&mut self) {
-        self.options.normalize();
+        self.normalize_options();
         self.generated = false;
         self.generated_preview = None;
     }
@@ -490,6 +529,7 @@ mod tests {
             },
             None,
             false,
+            true,
         )
     }
 
@@ -509,6 +549,7 @@ mod tests {
             },
             None,
             false,
+            true,
         );
         assert_eq!(process_main.logical_state(), reference_main.logical_state());
 
@@ -548,6 +589,7 @@ mod tests {
                 ..Default::default()
             },
             None,
+            true,
             true,
         );
         assert!(some.is_enabled(RandomMapSetupControl::Load0x6c2));
@@ -678,7 +720,7 @@ mod tests {
 
     #[test]
     fn map_type_entries_start_at_one_and_omit_archipelago() {
-        let items = setup_combo_items(SetupCombo::MapType);
+        let items = setup_combo_items(SetupCombo::MapType, true);
         assert_eq!(items.len(), 4);
         assert_eq!(
             items.iter().map(|entry| entry.value).collect::<Vec<_>>(),
@@ -741,7 +783,7 @@ mod tests {
         let list = super::super::super::layout::random_map_setup_dropdown_rect(
             &layout,
             SetupCombo::Time.row(),
-            setup_combo_items(SetupCombo::Time).len(),
+            setup_combo_items(SetupCombo::Time, true).len(),
         );
         let dusk_row = list.y + list.h * 5 / 8;
         assert_eq!(

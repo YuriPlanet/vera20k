@@ -994,7 +994,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     let open_list: Vec<RectPx> = modal
         .open_combo
         .map(|combo| {
-            random_map_setup_dropdown_rect(layout, combo.row(), setup_combo_items(combo).len())
+            random_map_setup_dropdown_rect(layout, combo.row(), modal.combo_items(combo).len())
         })
         .into_iter()
         .collect();
@@ -1003,7 +1003,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     // type 0, which the list omits -- leaves the face blank, as the original's
     // match-the-entry selection does.
     for (row, combo) in SETUP_COMBO_ROWS.iter().enumerate() {
-        let items = setup_combo_items(*combo);
+        let items = modal.combo_items(*combo);
         let Some(selected) = modal.selected_item_index(*combo) else {
             continue;
         };
@@ -1055,7 +1055,7 @@ pub(super) fn push_random_map_setup_modal_text_draws(
     // Matches the sprite pass: the open list is drawn over everything else.
     if let Some(combo) = modal.open_combo {
         let row = combo.row();
-        let items = setup_combo_items(combo);
+        let items = modal.combo_items(combo);
         let list = random_map_setup_dropdown_rect(layout, row, items.len());
         let metrics = DropdownMetrics::scaled(scale);
         let inset = (COMBO_TEXT_LEFT_INSET as f32 * scale.factor()).round() as i32;
@@ -1756,7 +1756,7 @@ mod tests {
                 let list = random_map_setup_dropdown_rect(
                     &layout,
                     combo.row(),
-                    setup_combo_items(combo).len(),
+                    setup_combo_items(combo, true).len(),
                 );
                 for text in &texts {
                     let inside = text.x >= list.x

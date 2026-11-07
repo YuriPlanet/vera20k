@@ -28,13 +28,12 @@ pub(crate) fn checked_staging(
     text: &str,
     capacity: i32,
 ) -> Result<crate::map::preview::ScenarioStartStaging> {
-    // 512 bytes held the native 8-slot record; thirty slots need more.
-    ensure!(text.len() <= 2048, "generated start staging is too large");
+    ensure!(text.len() <= 512, "generated start staging is too large");
     let staging = crate::map::preview::ScenarioStartStaging::parse_w_text(text)
         .ok_or_else(|| anyhow!("generated start staging is missing"))?;
     ensure!(
         staging.to_w_text() == text
-            && (2..=crate::map::rmg::MAX_PLAYERS).contains(&staging.count)
+            && (2..=8).contains(&staging.count)
             && staging.count == capacity
             && staging.width > 0
             && staging.height > 0

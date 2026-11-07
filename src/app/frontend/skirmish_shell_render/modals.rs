@@ -9,11 +9,10 @@ use crate::ui::shell::geom::{LOWER_STRIP_H, ShellScale};
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::modal::BodyOkLayout;
 use crate::ui::skirmish_shell::{
-    ChooseMapModalButton, ChooseMapModalLayout, DropdownMetrics, PLAYERS_RANGE,
-    RandomMapSetupControl, RandomMapSetupLayout, RandomMapSetupModalState, RectPx,
-    SETUP_COMBO_ROWS, SavedSeedBrowserState, SavedSeedControl, SavedSeedLayout,
-    SkirmishShellLayout, SkirmishShellState, combo_face_rect, random_map_setup_dropdown_rect,
-    setup_combo_items,
+    ChooseMapModalButton, ChooseMapModalLayout, DropdownMetrics, RandomMapSetupControl,
+    RandomMapSetupLayout, RandomMapSetupModalState, RectPx, SETUP_COMBO_ROWS,
+    SavedSeedBrowserState, SavedSeedControl, SavedSeedLayout, SkirmishShellLayout,
+    SkirmishShellState, combo_face_rect, random_map_setup_dropdown_rect, setup_combo_items,
 };
 
 use super::chrome::{
@@ -502,7 +501,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         &chrome,
         ControlPaint::Trackbar {
             rect: players,
-            thumb_left: PLAYERS_RANGE.thumb_left_in(
+            thumb_left: modal.players_range().thumb_left_in(
                 modal.options.num_players,
                 players,
                 layout.scale,
@@ -602,7 +601,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     // An open list paints last so it covers the rows beneath it.
     if let Some(combo) = modal.open_combo {
         let row = combo.row();
-        let items = setup_combo_items(combo);
+        let items = modal.combo_items(combo);
         let list = random_map_setup_dropdown_rect(layout, row, items.len());
         let row_h = DropdownMetrics::scaled(layout.scale).row_h;
         push_solid_rect(

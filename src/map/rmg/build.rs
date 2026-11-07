@@ -449,7 +449,6 @@ mod tests {
             height: crate::map::rmg::MAX_SIZE_OPTION,
             ..options(1, 0)
         };
-        let started = std::time::Instant::now();
         let generated = generate_map(
             &options,
             &RmgSettings::default(),
@@ -457,7 +456,6 @@ mod tests {
             &one_by_one(),
             &[],
         );
-        eprintln!("colossal generation took {:?}", started.elapsed());
         assert_eq!(generated.unfilled_start_slots, 0);
         assert_eq!(generated.start_waypoints.len(), 30);
         assert_eq!(
