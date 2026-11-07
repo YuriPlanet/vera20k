@@ -2475,19 +2475,11 @@ impl Simulation {
                         // (`BuildingClass::Mission_Unload @ 0x0044D880`),
                         // commenced at the building's ready checks.
                         //
-                        // RESIDUAL: this payload stands for two native events.
-                        // The self-click sends a MEGAMISSION Unload whose
-                        // target token is the building itself
-                        // (`BuildingClass::ClickedAction_Object @ 0x00443410`
-                        // -> ClickedMission `0x006FFBE0`); the deploy key
-                        // sends DEPLOY (`0x00730AF0`, vt+0x374(9)). Here the
-                        // order queues Unload through the MEGAMISSION prefix
-                        // alone, without the event's target and destination
-                        // setters. Trigger: every garrison unload. Effect:
-                        // the building's target is not run through
-                        // BuildingClass::SetTarget with the event's token.
-                        // Risk: low; Mission_Unload empties it either way.
-                        // The self-click's flash of its own token is kept.
+                        // Ordinary self-click is encoded as MEGAMISSION with
+                        // its own target and NULL destination before dispatch.
+                        // This direct DTO adapter remains for internal/test
+                        // callers. D uses the separate Event9 receiver, whose
+                        // class setters clear both target and destination.
                         if !self.order_actor_admits(*transport_id) {
                             return false;
                         }
@@ -3388,9 +3380,9 @@ impl Simulation {
     /// transport's Unload and Enter, Capture and Sabotage onto their object
     /// and Harvest run here. A tank bunker's Enter uses the same destination
     /// and radio owners.
-    /// A garrison's ordinary Unload (one command
-    /// for the self-click and the deploy key's DEPLOY event) and the dormant
-    /// aircraft Unload retain their adapters. In native order:
+    /// A garrison's self-click Unload uses this event's self-target codec;
+    /// its D key uses the separate DEPLOY event. Direct semantic Unload and
+    /// dormant aircraft Unload retain their adapters. In native order:
     ///
     /// 1. The actor gate (`0x004C71F6..0x004C721F`,
     ///    [`Self::order_actor_admits`]), then each object token's (target

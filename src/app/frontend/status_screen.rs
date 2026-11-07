@@ -2,8 +2,9 @@
 //! and missing modal artwork. These are VERA presentation, not retail parity.
 //!
 //! The card is drawn from three sources only: a one-pixel fill texture for its
-//! frame and rules, a baked radial-gradient texture for the buttons, and VERA's
-//! bundled vector fonts ([`crate::render::text_engine`]) for its type. Nothing
+//! frame and rules, a baked radial-gradient texture for the buttons, and the
+//! interface font for its type ([`crate::render::text_engine`]), which draws
+//! GAME.FNT's style without GAME.FNT too ([`BitFont::without_fnt`]). Nothing
 //! here reads a retail asset, so the card renders correctly when the game
 //! installation is missing or incomplete — the situation it exists for.
 //!
@@ -19,7 +20,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use crate::app::input::precedence::{InputLayer, ModalPage, ScreenPage};
 use crate::app::{App, AppState, BUILD_STAMP};
 use crate::render::batch::{BatchRenderer, BatchTexture, DepthAxis, SpriteInstance};
-use crate::render::bit_font::{BitFont, FontMode};
+use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
 use crate::render::text_engine::fonts::{BASELINE, CAP_HEIGHT};
 use crate::ui::pause_menu::{InGameMenuState, ModalOutcome};
@@ -402,8 +403,9 @@ fn push_frame(out: &mut Vec<SpriteInstance>, rect: RectPx, thickness: i32, color
     );
 }
 
-/// One type size on the card: VERA's vector fonts scaled so their capitals
-/// stand `cap_px` tall.
+/// One type size on the card: the interface font at the whole multiple of
+/// its native pixels whose capitals stand nearest `cap_px` tall, so each of
+/// its pixels draws as a solid block.
 #[derive(Clone, Copy)]
 struct CardType {
     scale: f32,
@@ -413,7 +415,7 @@ struct CardType {
 impl CardType {
     fn new(cap_px: f32, gap: f32) -> Self {
         Self {
-            scale: cap_px / CAP_HEIGHT,
+            scale: (cap_px / CAP_HEIGHT).round().max(1.0),
             gap,
         }
     }
@@ -428,6 +430,17 @@ impl CardType {
 
     fn text_width(self, font: &BitFont, text: &str) -> f32 {
         font.text_width(text) as f32 * self.scale
+    }
+
+    /// This size, or the largest whole scale under it at which each of
+    /// `texts` is at most `max_width` pixels wide; never under 1.
+    fn fitting(self, font: &BitFont, texts: &[String], max_width: f32) -> Self {
+        let widest = texts.iter().map(|text| font.text_width(text)).max();
+        let fits = (max_width / widest.unwrap_or(0).max(1) as f32).floor();
+        Self {
+            scale: self.scale.min(fits).max(1.0),
+            ..self
+        }
     }
 
     /// `text` broken into lines no wider than `max_width` pixels.
@@ -451,8 +464,8 @@ impl CardType {
     ) {
         out.extend(font.build_text(
             text,
-            x,
-            baseline - BASELINE * self.scale,
+            x.round(),
+            (baseline - BASELINE * self.scale).round(),
             self.scale,
             TYPE_DEPTH,
             tint,
@@ -547,9 +560,8 @@ pub(crate) fn render(
     let stamp_cap = (layout.small_cap * 0.9).max(7.0);
     let stamp = CardType::new(stamp_cap, gap_for(stamp_cap));
 
-    // The card keeps VERA's vector fonts whatever the font option says: it
-    // shows before, or without, the game's own files.
-    let text = renderer.bit_font.with_mode(FontMode::Modern, |font| {
+    let text = {
+        let font = &renderer.bit_font;
         let mut text = Vec::new();
         let baseline = layout.pad as f32 + heading.cap_px() + 2.0 * layout.scale;
         heading.push_text(
@@ -658,19 +670,25 @@ pub(crate) fn render(
             }
         }
 
-        // Button labels, centred in their panels. The label uses the body
-        // size: a heading-sized label overruns the button it sits in at every
-        // window size.
+        // Button labels, centred in their panels, at the body size or the
+        // largest whole scale under it at which they all fit: a heading-sized
+        // label overruns its button. One too long even at 1:1 squeezes as the
+        // menus' labels do.
+        let room = layout.button_w as f32 - 8.0 * layout.scale;
+        let face = body.fitting(font, &labels, room);
         for (rect, label) in button_rects.iter().zip(&labels) {
-            let width = body.text_width(font, label);
-            body.push_text(
-                font,
-                &mut text,
-                label,
-                rect.x as f32 + (rect.w as f32 - width) / 2.0,
-                rect.y as f32 + (rect.h as f32 + body.cap_px()) / 2.0,
-                TEXT_YELLOW,
-            );
+            let fit = font.fit_line(label, (room / face.scale) as u32);
+            font.fitted(fit, |font| {
+                let width = face.text_width(font, label);
+                face.push_text(
+                    font,
+                    &mut text,
+                    label,
+                    rect.x as f32 + (rect.w as f32 - width) / 2.0,
+                    rect.y as f32 + (rect.h as f32 + face.cap_px()) / 2.0,
+                    TEXT_YELLOW,
+                );
+            });
         }
 
         // Build stamp at the bottom right, clear of the frame.
@@ -684,7 +702,7 @@ pub(crate) fn render(
             TEXT_DIM,
         );
         text
-    });
+    };
 
     let fill: &BatchTexture = &renderer.status_screen_fill;
     let glow: &BatchTexture = &renderer.status_card_glow;
@@ -772,6 +790,20 @@ mod tests {
             assert!(rect.y + rect.h <= layout.height - layout.margin);
             assert!(rect.x >= layout.margin);
         }
+    }
+
+    #[test]
+    fn labels_take_the_largest_whole_scale_that_fits() {
+        // Ten letters 9 pixels wide, each with GAME.FNT's 1-pixel spacing.
+        let font = crate::render::bit_font::tests::make_test_font(&[(u16::from(b'W'), 9)], 4);
+        let labels = ["WWWWWWWWWW".to_owned()];
+        let body = CardType {
+            scale: 3.0,
+            gap: 0.0,
+        };
+        assert_eq!(body.fitting(&font, &labels, 300.0).scale, 3.0);
+        assert_eq!(body.fitting(&font, &labels, 299.0).scale, 2.0);
+        assert_eq!(body.fitting(&font, &labels, 50.0).scale, 1.0);
     }
 
     #[test]

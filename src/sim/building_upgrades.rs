@@ -5,7 +5,7 @@
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{ObjectCategory, ObjectType};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::intern::InternedId;
+use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::world::{Simulation, UninitContext};
 use std::collections::BTreeMap;
 
@@ -52,6 +52,27 @@ mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
     use crate::sim::game_entity::GameEntity;
+
+    #[test]
+    fn turret_query_uses_the_retained_prefix_even_for_an_unarmed_upgrade() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=HOST\n1=TURRET\n[HOST]\nTurret=no\n[TURRET]\nTurret=yes\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let turret = sim.interner.intern("TURRET");
+        let host = rules.object("HOST").unwrap();
+        assert!(rules.object("TURRET").unwrap().primary().is_none());
+        let slots = [None, Some(turret), None];
+        assert!(BuildingUpgrades::fixture(2, slots).has_turret(host, &rules, &sim.interner));
+        assert!(!BuildingUpgrades::fixture(1, slots).has_turret(host, &rules, &sim.interner));
+        assert!(!BuildingUpgrades::fixture(-1, slots).has_turret(host, &rules, &sim.interner));
+        assert!(BuildingUpgrades::default().has_turret(
+            rules.object("TURRET").unwrap(),
+            &rules,
+            &sim.interner,
+        ));
+    }
 
     fn fixture(inputs: &serde_json::Value) -> (Simulation, RuleSet, u64, u64) {
         let host = inputs["host"].as_str().unwrap_or("POWER");
@@ -305,6 +326,27 @@ impl BuildingUpgrades {
 
     pub fn types(&self) -> &[Option<InternedId>; 3] {
         &self.types
+    }
+
+    /// BuildingClass::HasTurret (gamemd.exe 0x004527D0): the host flag,
+    /// then any turret in the signed positive installed prefix, skipping holes.
+    /// Weapon availability is independent; retained types outlive temporaries.
+    pub(crate) fn has_turret(
+        &self,
+        host: &ObjectType,
+        rules: &RuleSet,
+        interner: &StringInterner,
+    ) -> bool {
+        host.has_turret
+            || self
+                .types
+                .iter()
+                .take(usize::try_from(self.count).unwrap_or(0))
+                .flatten()
+                .filter_map(|&id| {
+                    interner.object_type_in_category(id, ObjectCategory::Building, rules)
+                })
+                .any(|upgrade| upgrade.has_turret)
     }
 
     /// Native4515E9 checks equality, then increments the signed byte. The
