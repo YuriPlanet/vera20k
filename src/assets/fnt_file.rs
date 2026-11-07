@@ -187,6 +187,21 @@ impl FntFile {
         })
     }
 
+    /// A font of GAME.FNT's `cell_height` and `bitmap_rows` that draws
+    /// nothing, for interface text before, or without, the game's files: the
+    /// interface then draws every letter in GAME.FNT's style instead.
+    pub fn blank(cell_height: u32, bitmap_rows: u32) -> Self {
+        Self {
+            source_identity: None,
+            cell_height,
+            bitmap_rows,
+            bytes_per_row: 3,
+            glyph_stride: 1 + 3 * bitmap_rows,
+            glyphs: HashMap::new(),
+            placeholder_slots: Vec::new(),
+        }
+    }
+
     /// Every codepoint as one solid `width`-pixel, one-row glyph, so tests can
     /// place text without retail GAME.FNT.
     #[cfg(any(test, feature = "test-support"))]

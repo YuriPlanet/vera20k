@@ -358,6 +358,10 @@ impl<'a> FireSubject<'a> {
                 .map_or(-1, |leaf| leaf.doing()),
             effective_mission: firer.mission.effective().raw(),
             delayed_fire_counter: firer.pending_building_fire.remaining_ticks(),
+            building_has_turret: class == FirerClass::Building
+                && firer
+                    .building_upgrades()
+                    .has_turret(obj, self.rules, &self.world.interner),
             ..FirerFacts::default()
         };
         let firer_type = FirerTypeFacts {

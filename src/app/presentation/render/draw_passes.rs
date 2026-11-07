@@ -764,18 +764,17 @@ pub(super) fn dispatch_draw_passes(
     }
     // Original6D4664 -> Spotlight5FFFA0 edits the destination after the first
     // rally pass. Preserve this overlap, including the rally's black shadow.
-    for record in data.persistent_lights.clone() {
-        if state.renderer.combat_light_renderer.draw_record(
-            encoder,
-            [tac_x, tac_y, tac_w, tac_h],
-            record,
-        ) {
-            state
-                .renderer
-                .terrain_draw_renderer
-                .note_external_passes(encoder, 1);
-        }
-    }
+    // The lights edit in persistent-vector order, many to a pass.
+    let records: Vec<_> = data.persistent_lights.clone().collect();
+    let passes = state.renderer.combat_light_renderer.draw_records(
+        encoder,
+        [tac_x, tac_y, tac_w, tac_h],
+        &records,
+    );
+    state
+        .renderer
+        .terrain_draw_renderer
+        .note_external_passes(encoder, passes);
 
     // Tactical LaserDraw550240, EBolt, LineTrail556D40, then selected
     // radial indicators6D467F edit the destination and
@@ -784,7 +783,7 @@ pub(super) fn dispatch_draw_passes(
     state
         .renderer
         .terrain_draw_renderer
-        .draw_surface_lines(encoder, view, data.surface_effects);
+        .draw_surface_lines(encoder, view, &[data.surface_effects]);
     let mut pass = begin_main_load_pass(encoder, view, &world_depth);
     pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
 
@@ -857,10 +856,11 @@ pub(super) fn dispatch_draw_passes(
     // batch contains action rectangles and the beams between object visits.
     if !data.tactical_lines.is_empty() {
         drop(pass);
-        state
-            .renderer
-            .terrain_draw_renderer
-            .draw_surface_lines(encoder, view, data.tactical_lines);
+        state.renderer.terrain_draw_renderer.draw_surface_lines(
+            encoder,
+            view,
+            &[data.tactical_lines],
+        );
         pass = begin_main_load_pass(encoder, view, &world_depth);
         pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
     }
@@ -1547,11 +1547,10 @@ mod tests {
         let ion_blasts = source_offset(".draw_ion_blasts(encoder, view)");
         let building_bases = source_offset("ObjectDrawPhase::BuildingBase");
         let objects = source_offset("for layer in 0..=3 {");
-        let combat_lights = source_offset("for record in data.persistent_lights.clone()");
+        let combat_lights = source_offset("data.persistent_lights.clone().collect()");
         let second_rally = source_offset("\"factory_rally_second\"");
         let target_lines = source_offset("\"target_lines\"");
-        let tactical_lines =
-            source_offset(".draw_surface_lines(encoder, view, data.tactical_lines)");
+        let tactical_lines = source_offset("&[data.tactical_lines]");
         let status = source_offset("super::object_extras::draw_object_extras(");
         let placement = source_offset("pool.get(\"placement\")");
         let sparkle = source_offset("pool.get(\"cell_sparkles\")");

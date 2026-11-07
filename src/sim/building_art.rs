@@ -107,6 +107,11 @@ impl BuildingArt {
         self.wall_tower_variant
     }
 
+    /// PowerDown451690's turret branch writes Building+5FC = -1 (4516EE).
+    pub(crate) fn reset_wall_tower_variant(&mut self) {
+        self.wall_tower_variant = -1;
+    }
+
     /// The light a relight gives the slot anims
     /// ([`crate::sim::world::ObjectSubstrate::relight_building_anims`]).
     pub fn capture_tint_sample(

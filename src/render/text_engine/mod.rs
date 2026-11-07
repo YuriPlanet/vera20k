@@ -1,17 +1,22 @@
 //! VERA's interface text engine beneath [`crate::render::bit_font::BitFont`].
 //!
 //! Text is shaped, bidi-ordered, line-broken and given fallback fonts by
-//! `parley`, in native (800x600) pixels; each glyph is then rasterised by
-//! `swash` at the size the draw scales it to and placed one texel to one
-//! window pixel from a shared atlas. Layout does not depend on the draw
-//! scale, so one cached layout serves every scale.
+//! `parley`, in native (800x600) pixels; each glyph is then rasterised for
+//! the scale it draws at and placed one texel to one window pixel from a
+//! shared atlas. Layout does not depend on the draw scale, so one cached
+//! layout serves every scale.
 //!
-//! Two font stacks:
-//! - [`FontMode::Modern`]: the bundled Noto fonts ([`fonts`]), sized against
-//!   GAME.FNT.
-//! - [`FontMode::Original`]: GAME.FNT itself, as an outline font
-//!   ([`fnt_font`]), ahead of the same Noto fonts, which draw only what
-//!   GAME.FNT lacks.
+//! One font stack, all of it drawn in whole pixels as GAME.FNT is:
+//! - GAME.FNT itself, as an outline font of pixel squares ([`fnt_font`]),
+//!   with its missing letters drawn in its style ([`fnt_fill`]); without the
+//!   game's files, those drawn letters alone.
+//! - Behind it, the bundled Noto fonts ([`fonts`]) for what it lacks, such as
+//!   Arabic and Thai: shaped as vector fonts, so letters join and marks
+//!   stack.
+//!
+//! Every glyph, GAME.FNT's own too, draws as hard pixels on the line's native
+//! grid ([`pixels`]), so a glyph off that grid, squeezed narrower or shrunk
+//! still lights whole pixels.
 //!
 //! Presentation only: nothing here reaches the simulation.
 
@@ -19,6 +24,7 @@ mod atlas;
 mod fnt_fill;
 pub(crate) mod fnt_font;
 pub(crate) mod fonts;
+mod pixels;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -35,19 +41,6 @@ use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 pub(crate) use atlas::SUBPIXEL_STEPS;
 use atlas::{GlyphAtlas, GlyphKey, SIZE_STEPS};
 use fonts::{BASELINE, CJK_WEIGHT, LATIN_WEIGHT, LATIN_WIDTH_PERCENT, OTHER_WEIGHT, TextClass};
-
-/// Which face interface text draws in. The options profile picks it at
-/// startup from `[VERA] OriginalFont=`, which is on by default; `Default` is
-/// only the face a font starts in until then.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum FontMode {
-    /// The bundled vector fonts, drawn at window resolution.
-    #[default]
-    Modern,
-    /// Retail GAME.FNT, scaled evenly, with the bundled fonts for the
-    /// characters it lacks.
-    Original,
-}
 
 /// How far a text is squeezed to fit the box it draws in: narrower letters
 /// first, along the bundled fonts' width axis, then smaller ones. VERA's own:
@@ -146,10 +139,9 @@ struct FontSlot {
     data: Blob<u8>,
     index: u32,
     baseline_shift: f32,
-    /// Grid-fit vertical stems. Off for GAME.FNT, whose pixel squares
-    /// already sit on the grid at 1:1 and must scale evenly otherwise.
-    hint: bool,
-    /// The GAME.FNT font: glyph 0 is native's missing-glyph stand-in.
+    /// The GAME.FNT font, whose outlines are already pixel squares on the
+    /// native grid: glyph 0 is native's missing-glyph stand-in. The bundled
+    /// fonts' glyphs draw through [`pixels`] instead.
     original: bool,
 }
 
@@ -163,13 +155,13 @@ pub(crate) struct TextEngine {
     slot_of: HashMap<(u64, u32), u16>,
     coords: Vec<Vec<i16>>,
     /// Family names: the bundled fallback order.
-    modern_stack: Vec<String>,
+    bundled_stack: Vec<String>,
     /// GAME.FNT's family at each width a [`Fit`] narrows to, as designed
     /// first ([`fnt_font`]).
     original_families: Vec<(f32, String)>,
     /// GAME.FNT's slot and the glyph each of its code points draws with.
     original_slot: Option<u16>,
-    layouts: HashMap<(FontMode, u32, Fit), HashMap<String, Arc<ShapedText>>>,
+    layouts: HashMap<(u32, Fit), HashMap<String, Arc<ShapedText>>>,
     cached_layouts: usize,
     atlas: GlyphAtlas,
     locale: Option<String>,
@@ -207,7 +199,7 @@ impl TextEngine {
             slots: Vec::new(),
             slot_of: HashMap::new(),
             coords: vec![Vec::new()],
-            modern_stack: Vec::new(),
+            bundled_stack: Vec::new(),
             original_families: Vec::new(),
             original_slot: None,
             layouts: HashMap::new(),
@@ -218,23 +210,31 @@ impl TextEngine {
         };
         for font in fonts::bundled() {
             let blob = Blob::new(Arc::new(font.data));
-            for family in engine.register(blob, font.baseline_shift, true, false) {
-                if !engine.modern_stack.contains(&family) {
-                    engine.modern_stack.push(family);
+            for family in engine.register(blob, font.baseline_shift, false) {
+                if !engine.bundled_stack.contains(&family) {
+                    engine.bundled_stack.push(family);
                 }
             }
         }
         engine
     }
 
+    /// The engine without GAME.FNT (no game files yet, or a damaged
+    /// archive): the letters it lacks, drawn in its style ([`fnt_fill`]),
+    /// stand in for all of its own.
+    pub(crate) fn without_fnt(gpu: Option<(&wgpu::Device, &wgpu::Queue, &BatchRenderer)>) -> Self {
+        use crate::render::bit_font::{BITMAP_ROWS, CELL_HEIGHT};
+        let mut engine = Self::new(gpu);
+        engine.set_original_font(fnt_font::FntFont::build(
+            &crate::assets::fnt_file::FntFile::blank(CELL_HEIGHT, BITMAP_ROWS),
+            BASELINE as u32,
+            None,
+        ));
+        engine
+    }
+
     /// Register a font's faces; returns their family names.
-    fn register(
-        &mut self,
-        blob: Blob<u8>,
-        baseline_shift: f32,
-        hint: bool,
-        original: bool,
-    ) -> Vec<String> {
+    fn register(&mut self, blob: Blob<u8>, baseline_shift: f32, original: bool) -> Vec<String> {
         let registered = self.fonts.collection.register_fonts(blob.clone(), None);
         let mut families = Vec::new();
         for (family, faces) in registered {
@@ -248,7 +248,6 @@ impl TextEngine {
                     data: blob.clone(),
                     index,
                     baseline_shift,
-                    hint,
                     original,
                 });
                 self.slot_of.insert((blob.id(), index), slot);
@@ -257,12 +256,12 @@ impl TextEngine {
         families
     }
 
-    /// Put GAME.FNT ahead of the bundled fonts for [`FontMode::Original`].
+    /// Put GAME.FNT ahead of the bundled fonts.
     pub(crate) fn set_original_font(&mut self, font: fnt_font::FntFont) {
         let first_slot = self.slots.len() as u16;
         self.original_families.clear();
         for (width, data) in font.faces {
-            let families = self.register(Blob::new(Arc::new(data)), 0.0, false, true);
+            let families = self.register(Blob::new(Arc::new(data)), 0.0, true);
             if let Some(family) = families.into_iter().next() {
                 self.original_families.push((width, family));
             }
@@ -305,47 +304,30 @@ impl TextEngine {
         self.atlas.begin_frame(gpu);
     }
 
-    /// Shape `text` in `mode` at `fit`, wrapping at `max_width` native pixels
-    /// (0: one line per paragraph). Cached.
-    pub(crate) fn shape(
-        &mut self,
-        mode: FontMode,
-        text: &str,
-        max_width: u32,
-        fit: Fit,
-    ) -> Arc<ShapedText> {
-        let mode = if mode == FontMode::Original && self.original_families.is_empty() {
-            FontMode::Modern
-        } else {
-            mode
-        };
+    /// Shape `text` at `fit`, wrapping at `max_width` native pixels (0: one
+    /// line per paragraph). Cached.
+    pub(crate) fn shape(&mut self, text: &str, max_width: u32, fit: Fit) -> Arc<ShapedText> {
         if let Some(shaped) = self
             .layouts
-            .get(&(mode, max_width, fit))
+            .get(&(max_width, fit))
             .and_then(|layouts| layouts.get(text))
         {
             return Arc::clone(shaped);
         }
         crate::render::text_audit::laid_out(text);
-        let shaped = Arc::new(self.shape_uncached(mode, text, max_width, fit));
+        let shaped = Arc::new(self.shape_uncached(text, max_width, fit));
         if self.cached_layouts >= LAYOUT_CACHE_LIMIT {
             self.clear_layouts();
         }
         self.cached_layouts += 1;
         self.layouts
-            .entry((mode, max_width, fit))
+            .entry((max_width, fit))
             .or_default()
             .insert(text.to_owned(), Arc::clone(&shaped));
         shaped
     }
 
-    fn shape_uncached(
-        &mut self,
-        mode: FontMode,
-        text: &str,
-        max_width: u32,
-        fit: Fit,
-    ) -> ShapedText {
+    fn shape_uncached(&mut self, text: &str, max_width: u32, fit: Fit) -> ShapedText {
         let mut lines = Vec::new();
         for (start, end) in paragraphs(text) {
             let paragraph = &text[start..end];
@@ -358,10 +340,10 @@ impl TextEngine {
                 continue;
             }
             if max_width == 0 && paragraph.contains('\t') {
-                lines.push(self.shape_tabbed(mode, paragraph, start, fit));
+                lines.push(self.shape_tabbed(paragraph, start, fit));
             } else {
                 let paragraph = paragraph.replace('\t', " ");
-                self.shape_paragraph(mode, &paragraph, start, max_width, fit, &mut lines);
+                self.shape_paragraph(&paragraph, start, max_width, fit, &mut lines);
             }
         }
         ShapedText { lines }
@@ -369,13 +351,7 @@ impl TextEngine {
 
     /// GAME.FNT's tab stops: every [`crate::render::bit_font::TAB_WIDTH`]
     /// pixels from the line start.
-    fn shape_tabbed(
-        &mut self,
-        mode: FontMode,
-        paragraph: &str,
-        start: usize,
-        fit: Fit,
-    ) -> ShapedLine {
+    fn shape_tabbed(&mut self, paragraph: &str, start: usize, fit: Fit) -> ShapedLine {
         let tab = crate::render::bit_font::TAB_WIDTH as f32;
         let mut line = ShapedLine {
             start,
@@ -389,7 +365,7 @@ impl TextEngine {
                 x = ((x / tab).floor() + 1.0) * tab;
             }
             let mut segment_lines = Vec::new();
-            self.shape_paragraph(mode, segment, offset, 0, fit, &mut segment_lines);
+            self.shape_paragraph(segment, offset, 0, fit, &mut segment_lines);
             for segment_line in segment_lines {
                 line.rtl |= segment_line.rtl;
                 line.glyphs
@@ -409,21 +385,18 @@ impl TextEngine {
     /// `base` is the paragraph's byte offset in the caller's text.
     fn shape_paragraph(
         &mut self,
-        mode: FontMode,
         paragraph: &str,
         base: usize,
         max_width: u32,
         fit: Fit,
         lines: &mut Vec<ShapedLine>,
     ) {
-        let mut stack: Vec<FontFamilyName<'_>> = Vec::with_capacity(self.modern_stack.len() + 1);
-        if mode == FontMode::Original
-            && let Some(family) = original_family(&self.original_families, fit)
-        {
+        let mut stack: Vec<FontFamilyName<'_>> = Vec::with_capacity(self.bundled_stack.len() + 1);
+        if let Some(family) = original_family(&self.original_families, fit) {
             stack.push(FontFamilyName::Named(Cow::Borrowed(family)));
         }
         stack.extend(
-            self.modern_stack
+            self.bundled_stack
                 .iter()
                 .map(|family| FontFamilyName::Named(Cow::Borrowed(family.as_str()))),
         );
@@ -563,14 +536,18 @@ impl TextEngine {
         for glyph in &line.glyphs {
             let Some(color) = tint(glyph) else { continue };
             let slot = &self.slots[usize::from(glyph.font)];
-            let x = origin[0] + glyph.x * scale;
-            let y = origin[1] + (BASELINE + slot.baseline_shift + glyph.y) * scale;
+            // A glyph draws on the line's native pixel grid: its pen's whole
+            // native pixel places it, and the rest of the pen position goes
+            // into which pixels it lights.
+            let (x, phase_x) = split_phase(glyph.x);
+            let (y, phase_y) = split_phase(BASELINE + slot.baseline_shift + glyph.y);
             if let Some(instance) = self.place_glyph(
                 glyph.font,
                 glyph.coords,
                 glyph.id,
                 glyph.size * scale,
-                [x, y],
+                (glyph.size, phase_x | phase_y << 4),
+                [origin[0] + x * scale, origin[1] + y * scale],
                 depth,
                 color,
             ) {
@@ -579,13 +556,17 @@ impl TextEngine {
         }
     }
 
-    /// One glyph with its pen at `pen` (device pixels, on the baseline).
-    pub(crate) fn place_glyph(
+    /// One glyph drawn `pixel_size` pixels tall, `native` its native size and
+    /// pen phase ([`split_phase`]), with `pen` (device pixels, on the
+    /// baseline) at the corner of the native pixel the pen lies in.
+    #[allow(clippy::too_many_arguments)]
+    fn place_glyph(
         &mut self,
         font: u16,
         coords: u16,
         id: u16,
         pixel_size: f32,
+        (native_size, phase): (f32, u8),
         pen: [f32; 2],
         depth: f32,
         tint: [f32; 3],
@@ -597,6 +578,8 @@ impl TextEngine {
             glyph: id,
             size: (pixel_size * SIZE_STEPS).round() as u32,
             subpixel,
+            native: (native_size * SIZE_STEPS).round() as u32,
+            phase,
         };
         let placed = match self.atlas.get(&key) {
             Some(placed) => placed,
@@ -628,33 +611,21 @@ impl TextEngine {
         }
     }
 
-    /// `key`'s coverage bitmap and where it hangs from the pen, or `None`
-    /// for a glyph with no outline.
+    /// `key`'s native pixels scaled to its size ([`pixels`]) and where they
+    /// hang from the pen, or `None` for a glyph with no pixels.
     fn render_glyph(&mut self, key: GlyphKey) -> Option<RasterGlyph> {
-        use swash::scale::{Render, Source};
-        use swash::zeno::{Format, Vector};
         let slot = &self.slots[usize::from(key.font)];
         let font = swash::FontRef::from_index(slot.data.as_ref(), slot.index as usize)?;
         let mut scaler = self
             .scale_cx
             .builder(font)
-            .size(key.size as f32 / SIZE_STEPS)
-            .hint(slot.hint)
+            .size(key.native as f32 / SIZE_STEPS)
             .normalized_coords(self.coords[usize::from(key.coords)].iter())
             .build();
-        let image = Render::new(&[Source::Outline])
-            .format(Format::Alpha)
-            .offset(Vector::new(
-                f32::from(key.subpixel) / f32::from(SUBPIXEL_STEPS),
-                0.0,
-            ))
-            .render(&mut scaler, key.glyph)?;
-        let placement = image.placement;
-        Some(RasterGlyph {
-            size: [placement.width, placement.height],
-            offset: [placement.left, -placement.top],
-            alpha: image.data,
-        })
+        let phase = [key.phase & 0xF, key.phase >> 4].map(|p| f32::from(p) / PHASE_STEPS);
+        let lit = pixels::of_outline(&scaler.scale_outline(key.glyph)?, phase);
+        let subpixel = f32::from(key.subpixel) / f32::from(SUBPIXEL_STEPS);
+        pixels::scaled(&lit, key.size as f32 / key.native as f32, subpixel)
     }
 
     /// GAME.FNT's outline font's slot.
@@ -685,6 +656,7 @@ impl TextEngine {
             0,
             id,
             size * scale,
+            (size, 0),
             [pen[0], pen[1] + BASELINE * scale],
             depth,
             tint,
@@ -698,6 +670,21 @@ struct RasterGlyph {
     size: [u32; 2],
     offset: [i32; 2],
     alpha: Vec<u8>,
+}
+
+/// Pen phase steps per native pixel, each way.
+const PHASE_STEPS: f32 = 8.0;
+
+/// A native coordinate split into its whole pixel and the nearest
+/// [`PHASE_STEPS`] step past it.
+fn split_phase(at: f32) -> (f32, u8) {
+    let whole = at.floor();
+    let step = ((at - whole) * PHASE_STEPS).round();
+    if step == PHASE_STEPS {
+        (whole + 1.0, 0)
+    } else {
+        (whole, step as u8)
+    }
 }
 
 /// A device x split into its whole pixel and the nearest sub-pixel step.
@@ -778,15 +765,20 @@ mod tests {
 
     /// Alpha of an `w` x `h` canvas after drawing `text` at (2, 0): the
     /// glyph quads the engine emits, filled from its atlas texel for pixel.
-    fn draw(
+    fn draw(engine: &mut TextEngine, text: &str, scale: f32, w: usize, h: usize) -> Vec<u8> {
+        draw_fit(engine, text, Fit::NONE, scale, w, h)
+    }
+
+    /// [`draw`] squeezed to `fit`.
+    fn draw_fit(
         engine: &mut TextEngine,
-        mode: FontMode,
         text: &str,
+        fit: Fit,
         scale: f32,
         w: usize,
         h: usize,
     ) -> Vec<u8> {
-        let shaped = engine.shape(mode, text, 0, Fit::NONE);
+        let shaped = engine.shape(text, 0, fit);
         let mut quads = Vec::new();
         for line in &shaped.lines {
             engine.emit_line(line, [2.0, 0.0], scale, 0.0, |_| Some([1.0; 3]), &mut quads);
@@ -816,7 +808,7 @@ mod tests {
     #[test]
     fn original_font_draws_game_fnt_pixels_exactly_at_1_to_1() {
         let mut engine = engine_with_tiny_fnt();
-        let alpha = draw(&mut engine, FontMode::Original, "A", 1.0, 8, 16);
+        let alpha = draw(&mut engine, "A", 1.0, 8, 16);
         // Baseline at row 13; the glyph's row 0 sits 3 rows above it.
         let lit: Vec<(usize, usize)> = (0..16)
             .flat_map(|y| (0..8).map(move |x| (x, y)))
@@ -830,12 +822,12 @@ mod tests {
     fn original_font_scales_every_pixel_evenly() {
         let mut engine = engine_with_tiny_fnt();
         // Whole scale: each font pixel is a solid 2x2 block.
-        let alpha = draw(&mut engine, FontMode::Original, "A", 2.0, 16, 32);
+        let alpha = draw(&mut engine, "A", 2.0, 16, 32);
         assert_eq!(alpha.iter().filter(|&&a| a == 255).count(), 6 * 4);
         assert_eq!(alpha.iter().filter(|&&a| a != 0 && a != 255).count(), 0);
         // Fractional scale: coverage is area, so every font pixel adds the
         // same 1.5 x 1.5 pixels of ink, with only the seams blended.
-        let alpha = draw(&mut engine, FontMode::Original, "A", 1.5, 16, 32);
+        let alpha = draw(&mut engine, "A", 1.5, 16, 32);
         let ink: f32 = alpha.iter().map(|&a| f32::from(a) / 255.0).sum();
         assert!((ink - 6.0 * 2.25).abs() < 0.1, "ink {ink}");
     }
@@ -846,8 +838,8 @@ mod tests {
     fn a_squeeze_narrows_game_fnt_letters() {
         let mut engine = engine_with_tiny_fnt();
         let narrowest = Fit(2);
-        let designed = engine.shape(FontMode::Original, "AAAA", 0, Fit::NONE);
-        let narrowed = engine.shape(FontMode::Original, "AAAA", 0, narrowest);
+        let designed = engine.shape("AAAA", 0, Fit::NONE);
+        let narrowed = engine.shape("AAAA", 0, narrowest);
         let slots = &engine.slots;
         assert!(
             narrowed.lines[0]
@@ -866,7 +858,7 @@ mod tests {
     #[test]
     fn original_font_falls_back_for_characters_game_fnt_lacks() {
         let mut engine = engine_with_tiny_fnt();
-        let shaped = engine.shape(FontMode::Original, "AБ中", 0, Fit::NONE);
+        let shaped = engine.shape("AБ中", 0, Fit::NONE);
         let glyphs = &shaped.lines[0].glyphs;
         assert_eq!(glyphs.len(), 3);
         let original = engine.original_slot().expect("GAME.FNT registered");
@@ -882,11 +874,55 @@ mod tests {
     #[test]
     fn original_font_draws_letters_game_fnt_lacks_as_its_pixels() {
         let mut engine = engine_with_tiny_fnt();
-        let latin = draw(&mut engine, FontMode::Original, "A", 1.0, 16, 16);
+        let latin = draw(&mut engine, "A", 1.0, 16, 16);
         for twin in ["А", "Α"] {
-            assert_eq!(draw(&mut engine, FontMode::Original, twin, 1.0, 16, 16), latin);
+            assert_eq!(draw(&mut engine, twin, 1.0, 16, 16), latin);
         }
-        let alpha = draw(&mut engine, FontMode::Original, "Б", 1.0, 16, 16);
+        let alpha = draw(&mut engine, "Б", 1.0, 16, 16);
+        assert!(alpha.contains(&255) && alpha.iter().all(|&a| a == 0 || a == 255));
+    }
+
+    /// The bundled fonts' glyphs draw as GAME.FNT's do: whole pixels at 1:1,
+    /// each a solid block when scaled by a whole number.
+    #[test]
+    fn bundled_fonts_draw_in_whole_pixels() {
+        let mut engine = TextEngine::new(None);
+        for text in ["مرحبا", "สวัสดี", "中"] {
+            let one = draw(&mut engine, text, 1.0, 64, 24);
+            assert!(one.contains(&255), "{text}");
+            assert!(one.iter().all(|&a| a == 0 || a == 255), "{text}");
+            let two = draw(&mut engine, text, 2.0, 128, 48);
+            assert!(two.iter().all(|&a| a == 0 || a == 255), "{text}");
+            let ink = |alpha: &[u8]| alpha.iter().filter(|&&a| a == 255).count();
+            assert_eq!(ink(&two), 4 * ink(&one), "{text}");
+        }
+    }
+
+    /// GAME.FNT's own letters keep whole pixels off its grid: squeezed
+    /// narrower or smaller, or after a bundled glyph's fractional advance.
+    #[test]
+    fn game_fnt_letters_stay_whole_pixels_off_the_grid() {
+        let mut engine = engine_with_tiny_fnt();
+        let after_thai = engine.shape("กA", 0, Fit::NONE);
+        assert!(after_thai.lines[0].glyphs[1].x.fract() != 0.0);
+        for (text, fit) in [("AAAA", Fit(2)), ("AAAA", Fit::TIGHTEST), ("กA", Fit::NONE)] {
+            let alpha = draw_fit(&mut engine, text, fit, 1.0, 64, 16);
+            assert!(alpha.contains(&255), "{text} {fit:?}");
+            assert!(alpha.iter().all(|&a| a == 0 || a == 255), "{text} {fit:?}");
+        }
+    }
+
+    /// Without the game's files, text still draws in GAME.FNT's style: every
+    /// letter as [`fnt_fill`] draws the ones it lacks, in whole pixels.
+    #[test]
+    fn without_game_fnt_text_draws_in_its_style() {
+        let mut engine = TextEngine::without_fnt(None);
+        let text = "Import the game files: 1.001";
+        let original = engine.original_slot().expect("drawn letters registered");
+        let shaped = engine.shape(text, 0, Fit::NONE);
+        let glyphs = &shaped.lines[0].glyphs;
+        assert!(glyphs.iter().all(|g| g.font == original && g.id != 0));
+        let alpha = draw(&mut engine, text, 1.0, 200, 24);
         assert!(alpha.contains(&255) && alpha.iter().all(|&a| a == 0 || a == 255));
     }
 
@@ -899,7 +935,7 @@ mod tests {
             "مرحبا שלום नमस्ते হ্যালো สวัสดี வணக்கம் ສະບາຍດີ ជំរាបសួរ",
             "ಹಲೋ ഹലോ నమస్కారం ਸਤ ਸ੍ਰੀ ਅਕਾਲ નમસ્તે ନମସ୍କାର ආයුබෝවන් မင်္ဂလာပါ Բարեւ გამარჯობა ሰላም",
         ] {
-            let shaped = engine.shape(FontMode::Modern, text, 0, Fit::NONE);
+            let shaped = engine.shape(text, 0, Fit::NONE);
             let missing: Vec<u32> = shaped.lines[0]
                 .glyphs
                 .iter()
@@ -913,7 +949,7 @@ mod tests {
     #[test]
     fn arabic_runs_right_to_left() {
         let mut engine = TextEngine::new(None);
-        let shaped = engine.shape(FontMode::Modern, "مرحبا 42", 0, Fit::NONE);
+        let shaped = engine.shape("مرحبا 42", 0, Fit::NONE);
         let line = &shaped.lines[0];
         assert!(line.rtl);
         let first = line
@@ -952,7 +988,7 @@ mod tests {
     fn a_right_to_left_language_reads_a_sentence_from_the_right() {
         let mut engine = TextEngine::new(None);
         let name_on_the_right = |engine: &mut TextEngine, text: &str| {
-            let shaped = engine.shape(FontMode::Modern, text, 0, Fit::NONE);
+            let shaped = engine.shape(text, 0, Fit::NONE);
             let line = &shaped.lines[0];
             let x = |at: usize| {
                 line.glyphs
@@ -976,7 +1012,7 @@ mod tests {
         let mut engine = TextEngine::new(None);
         // Chinese breaks between any two ideographs.
         let text = "这是一个没有空格的很长的句子";
-        let shaped = engine.shape(FontMode::Modern, text, 5 * 15, Fit::NONE);
+        let shaped = engine.shape(text, 5 * 15, Fit::NONE);
         assert!(shaped.lines.len() >= 3);
         for line in &shaped.lines {
             assert!(line.width <= 75.0, "{line:?}");
@@ -985,7 +1021,7 @@ mod tests {
         // Thai breaks at word boundaries from the dictionary, never before a
         // combining vowel or tone mark.
         let text = "ภาษาไทยไม่มีช่องว่างระหว่างคำ";
-        let shaped = engine.shape(FontMode::Modern, text, 60, Fit::NONE);
+        let shaped = engine.shape(text, 60, Fit::NONE);
         assert!(shaped.lines.len() >= 2);
         for line in &shaped.lines[1..] {
             let first = text[line.start..].chars().next().unwrap() as u32;
@@ -1000,7 +1036,7 @@ mod tests {
     fn wrapped_lines_report_their_text_without_the_break_space() {
         let mut engine = TextEngine::new(None);
         let text = "Pause requested - waiting for the relay";
-        let shaped = engine.shape(FontMode::Modern, text, 120, Fit::NONE);
+        let shaped = engine.shape(text, 120, Fit::NONE);
         assert!(shaped.lines.len() >= 2);
         for pair in shaped.lines.windows(2) {
             assert_eq!(&text[pair[0].end..pair[1].start], " ");

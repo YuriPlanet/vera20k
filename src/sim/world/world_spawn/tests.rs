@@ -2454,6 +2454,7 @@ fn generated_projection_validates_the_whole_table_before_any_mutation() {
 fn authored_retail_upgrade_scene(
     upgrade_keys: &str,
     weapon_sections: &str,
+    target_type: &str,
 ) -> Option<(Simulation, RuleSet, u64)> {
     // ReadScenarioBuildings44FD50 -> Unlimbo440871 -> GetWeapon4526F0.
     // The map must admit a real upgrade; its selector alone cannot install one.
@@ -2468,7 +2469,7 @@ fn authored_retail_upgrade_scene(
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
     sim.session
         .set_current_house_for_test(sim.interner.get("Americans"));
-    // This bounded arena gives the opponent a tank, without a starting base.
+    // This bounded arena gives the opponent a vehicle, without a starting base.
     sim.session.game_options_mut_for_test().short_game = false;
     let placements = crate::map::entities::parse_map_entities(&map, 4);
     assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 2);
@@ -2481,7 +2482,7 @@ fn authored_retail_upgrade_scene(
     );
     assert!(!sim.substrate.entities.get(2).unwrap().is_object_alive());
     let target = sim
-        .spawn_object("HTNK", "Russians", 14, 12, 0, &rules)
+        .spawn_object(target_type, "Russians", 14, 12, 0, &rules)
         .unwrap();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
@@ -2579,7 +2580,7 @@ fn authored_retail_wall_tower_zero_capacity_upgrade_is_retained() {
 
 #[test]
 fn authored_retail_upgrade_lends_its_weapon_and_fire_offset() {
-    let Some((mut sim, rules, target)) = authored_retail_upgrade_scene("", "") else {
+    let Some((mut sim, rules, target)) = authored_retail_upgrade_scene("", "", "HTNK") else {
         return;
     };
     let host = sim.substrate.entities.get(1).unwrap();
@@ -2730,7 +2731,7 @@ fn authored_upgrade_attack_uses_fixed_slots_and_live_target() {
         ("", "[Vulcan2]\nBurst=2\n", &["Vulcan2"][..], false),
     ] {
         let Some((mut sim, rules, target)) =
-            authored_retail_upgrade_scene(upgrade_keys, weapon_sections)
+            authored_retail_upgrade_scene(upgrade_keys, weapon_sections, "HTNK")
         else {
             return;
         };
@@ -2809,6 +2810,114 @@ fn authored_upgrade_attack_uses_fixed_slots_and_live_target() {
             "the admitted upgrade must reach its firing arm: {upgrade_keys}"
         );
     }
+}
+
+#[test]
+fn authored_upgrade_turret_waits_for_the_host_to_aim_before_firing() {
+    use crate::sim::combat::{TargetKind, combat_weapon, fire_coord, fire_error::FireError};
+
+    // HasTurret4527D0 -> GetFireError447FE3 -> MissionAttack44B187:
+    // a real retained upgrade lends its flag, but the host keeps its facing/ROT.
+    let Some((mut sim, rules, target)) = authored_retail_upgrade_scene(
+        "Turret=yes\nSecondary=Vulcan2\n",
+        "[GAPOWR]\nTurret=no\nTurretAnimIsVoxel=no\nROT=10\n",
+        "SMCV",
+    ) else {
+        return;
+    };
+    let host = sim.substrate.entities.get(1).unwrap();
+    let object = rules.object("GAPOWR").unwrap();
+    assert!(!object.has_turret && !object.turret_anim_is_voxel);
+    assert_eq!(object.turret_rot, 10);
+    assert!(object.turret_anim.is_none());
+    assert_eq!(object.building_upgrade().slots(), 2);
+    assert_eq!(host.building_upgrades().count(), 1);
+    assert_eq!(
+        host.building_upgrades().types()[0],
+        sim.interner.get("GAPILL")
+    );
+    assert!(rules.object("GAPILL").unwrap().has_turret);
+    let enemy = sim.substrate.entities.get(target).unwrap();
+    assert!(!combat_weapon::is_armed(
+        enemy,
+        rules.object("SMCV").unwrap(),
+        &sim.substrate.entities,
+        &rules,
+        &sim.interner,
+    ));
+    let target = TargetKind::Entity(target);
+    let initial = host.body_facing_current(sim.session.binary_frame());
+    let desired = fire_coord::building_direction_to(&sim, &rules, host, target).unwrap();
+    assert!(i32::from(initial.wrapping_sub(desired) as i16).abs() > 0x0800);
+    assert_eq!(
+        sim.selected_weapon_fire_error(&rules, 1, target, true, None),
+        FireError::Facing,
+        "an installed turret must admit the native facing gate",
+    );
+
+    let mut turned = false;
+    for frame in 1..=360 {
+        sim.session.set_binary_frame_for_test(frame);
+        let current = sim
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .body_facing_current(frame);
+        turned |= current != initial;
+        let host = sim.substrate.entities.get(1).unwrap();
+        let desired = fire_coord::building_direction_to(&sim, &rules, host, target).unwrap();
+        if host.attack_target.target() == Some(target) {
+            let fire = fire_coord::fire_coordinate(
+                &sim,
+                &rules,
+                &fire_coord::FireSource::of_entity(host),
+                object,
+                0,
+                0,
+                crate::rules::flh::Flh::default(),
+            );
+            assert_eq!(
+                fire.aim_facing16,
+                u16::from(crate::util::direction_tables::step32_from_facing16(current)) << 11,
+                "GetFireFacing44D80A must use the host Current for an installed turret",
+            );
+        }
+        let before = sim.selected_weapon_fire_error(&rules, 1, target, true, None);
+        let output = sim
+            .advance_app_frame(
+                &[],
+                &rules,
+                None,
+                33,
+                crate::sim::world::TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        let shots: Vec<_> = output
+            .fire_events
+            .iter()
+            .filter(|event| event.attacker_id == 1)
+            .collect();
+        if before == FireError::Facing {
+            assert!(
+                shots.is_empty(),
+                "frame{frame}: fired before the host aimed"
+            );
+        }
+        if shots.is_empty() {
+            continue;
+        }
+        assert!(
+            turned,
+            "the existing host facing must turn through ordinary frames"
+        );
+        assert!(i32::from(current.wrapping_sub(desired) as i16).abs() <= 0x0800);
+        assert_eq!(shots.len(), 2, "712130 admits the shared-record pair");
+        assert!(shots.iter().all(|shot| shot.target == target));
+        return;
+    }
+    panic!("the installed turret never reached its firing arm");
 }
 
 #[test]
