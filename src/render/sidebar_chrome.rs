@@ -228,6 +228,22 @@ pub struct SidebarChromeEntry {
     pub pixel_size: [f32; 2],
 }
 
+impl SidebarChromeEntry {
+    /// Source columns `x..x + w` as a piece of their own; all of them are
+    /// this piece unchanged.
+    pub fn columns(self, x: f32, w: f32) -> Self {
+        if x == 0.0 && w == self.pixel_size[0] {
+            return self;
+        }
+        let per_pixel = self.uv_size[0] / self.pixel_size[0];
+        Self {
+            uv_origin: [self.uv_origin[0] + x * per_pixel, self.uv_origin[1]],
+            uv_size: [w * per_pixel, self.uv_size[1]],
+            pixel_size: [w, self.pixel_size[1]],
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SidebarChromeExtraEntry {
     pub id: i32,

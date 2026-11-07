@@ -99,6 +99,49 @@ impl CommandBarLayout {
     }
 }
 
+/// One piece of LSPACER along the bar's strip: source columns
+/// `source_x..source_x + source_w` drawn over `x..x + w`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpacerPiece {
+    pub source_x: u32,
+    pub source_w: u32,
+    pub x: u32,
+    pub w: u32,
+}
+
+/// How LSPACER covers a strip `strip_w` pixels wide, from its left. gamemd
+/// draws the canvas once at its own size (`6D0A20`, and `72F540` under the
+/// in-battle menus), which reaches a closed bar's caps only in frames up to
+/// 1080 pixels wide, beyond which a gap stays black. VERA's frames take any
+/// size, so a wider strip keeps the left half, the rail's riveted end, at its
+/// size and stretches the right half, plain rail, to the strip's end.
+pub fn spacer_pieces(strip_w: u32, spacer_w: u32) -> [Option<SpacerPiece>; 2] {
+    if strip_w <= spacer_w {
+        let whole = SpacerPiece {
+            source_x: 0,
+            source_w: spacer_w,
+            x: 0,
+            w: spacer_w,
+        };
+        return [Some(whole), None];
+    }
+    let half = spacer_w / 2;
+    [
+        Some(SpacerPiece {
+            source_x: 0,
+            source_w: half,
+            x: 0,
+            w: half,
+        }),
+        Some(SpacerPiece {
+            source_x: half,
+            source_w: spacer_w - half,
+            x: half,
+            w: strip_w - half,
+        }),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

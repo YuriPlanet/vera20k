@@ -14,6 +14,7 @@ use crate::ui::shell::geom::{self, RectPx};
 use crate::ui::shell::in_game_options::{build_in_game_options_descriptor, control};
 use crate::ui::shell::in_game_shell::{InGameShellLayout, InGameShellSizes};
 use crate::ui::shell::layout::{InGameOptionsAnchor, layout_pass_in_game_options};
+use crate::ui::sidebar::command_bar::spacer_pieces;
 
 pub(super) fn shell_layout(
     atlas: &SidebarChromeAtlas,
@@ -126,7 +127,7 @@ pub(crate) fn current_in_game_shell_layout(state: &AppState) -> Option<InGameShe
 }
 
 /// Native blit at canvas size, with an optional source-preserving clip. Only
-/// the background is stretched ([`push_art_scaled`]); no other art is.
+/// the background and LSPACER are stretched ([`push_art_scaled`]).
 pub(super) fn push_art(
     out: &mut Vec<SpriteInstance>,
     entry: SidebarChromeEntry,
@@ -211,8 +212,20 @@ pub(super) fn background_instances(
     if let Some(entry) = atlas.unknown_top_housing {
         push_art(&mut out, entry, layout.addon, screen);
     }
+    // LSPACER covers the strip as the match's bar lays it out (`spacer_pieces`).
     if let Some(entry) = atlas.command_bar.spacer {
-        push_art(&mut out, entry, layout.bottom_spacer, layout.bottom_clip);
+        let strip = layout.bottom_clip;
+        let pieces = spacer_pieces(strip.w.max(0) as u32, entry.pixel_size[0] as u32);
+        for piece in pieces.into_iter().flatten() {
+            let rect = RectPx::new(
+                layout.bottom_spacer.x + piece.x as i32,
+                layout.bottom_spacer.y,
+                piece.w as i32,
+                layout.bottom_spacer.h,
+            );
+            let columns = entry.columns(piece.source_x as f32, piece.source_w as f32);
+            push_art_scaled(&mut out, columns, rect, strip);
+        }
     }
     // 621FCE passes false: closed LENDCAP frame2, without BTTNBKGD repeats.
     if let Some(entry) = atlas.command_bar.left_cap[2] {
