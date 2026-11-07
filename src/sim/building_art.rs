@@ -699,19 +699,10 @@ impl Simulation {
         let new_id = match spawned {
             Ok(new_id) => new_id,
             Err(error) => {
-                // A registered AnimType whose sprite no archive holds. Native
-                // still constructs the object, with no image to draw; VERA's
-                // store refuses a type with no loader bounds, so the slot is
-                // emptied and nothing is drawn. The native id above is spent
-                // either way.
-                //
-                // RESIDUAL: natively the slot stays occupied by that invisible
-                // object. `set_building_damage_state` revisits occupied slots
-                // only, so a building whose damaged animation is unbound does
-                // not get its normal animation back after repair, and the
-                // unbound type takes no stable id. Retail reach: `CAMOV01`,
-                // `CAMOV02`, `NAPSYA` (all `TechLevel=-1`); none authors
-                // `RandomRate=`, so no draw is skipped.
+                // A spawn error leaves this slot empty. For a read
+                // AnimType, the shared asset binder represents a missing
+                // SHP with Some(0) frame metadata, which admits construction.
+                // AnimClass owns that object's loop/effect/expiry behavior.
                 log::debug!("building {id} slot {slot} animation [{canonical}] not shown: {error}");
                 self.clear_building_anim_slot(id, slot);
                 return None;
