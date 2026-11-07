@@ -2104,6 +2104,7 @@ impl ProcessedRulesLayers {
             &str,
             bool,
             bool,
+            bool,
             &[String],
             &[String],
             &[NativeF64Bits; 11],
@@ -2121,6 +2122,7 @@ impl ProcessedRulesLayers {
                     &*member.native_stored_id,
                     member.warhead_anim.conventional,
                     member.warhead_anim.em_effect,
+                    member.warhead_anim.sparky,
                     member.warhead_anim.anim_list.as_slice(),
                     member.warhead_anim.debris_types.as_slice(),
                     &member.warhead_verses,
@@ -4418,6 +4420,9 @@ struct SelectAnimRulesState {
 struct WarheadAnimReadState {
     conventional: bool,
     em_effect: bool,
+    /// WarheadCtor75CF77 starts false. ReadINI75D576..75D58A reads the
+    /// current byte; Save75E2D1/Load75E0F0 retain it in the 1D0-byte object.
+    sparky: bool,
     anim_list: Vec<String>,
     /// `DebrisTypes=` (+18C, `0x0075DAF5`): ReadString128, then each `strtok`
     /// token's non-null VoxelAnimType replaces the list.
@@ -8221,6 +8226,9 @@ impl RulesPassProcessor {
                 // original reader uses the live field as its ReadBool default.
                 let current = &mut self.family_mut(RulesTypeFamily::Warhead)[index].warhead_anim;
                 current.conventional = raw.read_bool("Conventional", current.conventional);
+                // WarheadTypeClass::ReadINI75D576..75D58A: the current
+                // +14A byte is the default, including malformed values.
+                current.sparky = raw.read_bool("Sparky", current.sparky);
                 if let Some(list) =
                     self.resolve_list_from(&raw, "AnimList", RulesTypeFamily::Animation, 0x80)
                 {
@@ -8778,9 +8786,12 @@ impl RulesPassProcessor {
         for key in ["DropPodPuff", "VeinAttack", "Dig", "AtmosphereEntry"] {
             let _ = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
         }
-        for key in ["TreeFire", "OnFire"] {
-            self.allocate_list_from(section, key, RulesTypeFamily::Animation, 0x80);
-        }
+        self.allocate_list_from(section, "TreeFire", RulesTypeFamily::Animation, 0x80);
+        // ReadAudioVisual66B0E4..66B1CF: ReadString128 and comma-only
+        // strtok replace OnFire with the resolved Anim pointers. Empty
+        // reads retain the vector; null tokens are omitted without padding.
+        let on_fire = self.resolve_list_from(section, "OnFire", RulesTypeFamily::Animation, 0x80);
+        self.rules_type_references.read_list("OnFire", on_fire);
         let _ = self.resolve_scalar_from(section, "Smoke", RulesTypeFamily::Animation, 0x80);
         let _ = self.resolve_scalar_from(section, "Smoke", RulesTypeFamily::Animation, 0x80);
         for key in ["SmallFire", "LargeFire"] {

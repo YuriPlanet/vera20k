@@ -328,6 +328,12 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     for name in &rules.general.dead_bodies {
         insert(name);
     }
+    // BuildingReceiveDamage442832..4428F4 constructs an OnFire Anim before
+    // attaching it. Keep each resolved slot key, including unread late AV
+    // allocations, in the ordinary AnimClass asset-binding closure.
+    for name in &rules.general.on_fire {
+        insert(name);
+    }
     for name in &rules.general.metallic_debris {
         insert(name);
     }

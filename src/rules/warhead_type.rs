@@ -74,18 +74,6 @@ pub struct WarheadType {
     /// at `0x0075d47c`, key string `0x00847e54`).
     pub delay_kill_at_max_f64: f64,
     /// Whether this warhead can damage walls/bridges (Wall=yes).
-    /// `Sparky=`, `Bullets=`, `Deform=` and `DeformThreshhold=` are retained
-    /// from their WarheadTypeClass ReadINI fields; their gameplay effects are
-    /// outside these state-retention issues. `Sparky` has one consumer:
-    /// `BuildingClass::ReceiveDamage @ 0x00442230` tests it for each
-    /// foundation cell of its NowYellow/NowRed loop (`0x00442785`) and, by
-    /// Scenario `RandomRanged` draws (`0x004427C0`, `0x00442804`), may build
-    /// one of Rules' `OnFire` anims (`+0xB78`) there. That arm is dormant:
-    /// the constructor stores `false` (`0x0075CF77`), and all 28 stock
-    /// `Sparky=` entries are `no`, including `[Fire]` and `[Fire2]`. The
-    /// `Apply_area_damage @ 0x00489280` helper does not read the retained
-    /// metadata above.
-    ///
     /// The field itself is `WarheadTypeClass+0x144` (ReadINI `0x0075d508`,
     /// key string `0x0081ac58`).
     pub wall: bool,
@@ -94,6 +82,11 @@ pub struct WarheadType {
     /// `WarheadTypeClass+0x147` (ReadINI `0x0075d556`, key string
     /// `0x00847e00`).
     pub wood: bool,
+    /// BuildingReceiveDamage442785 tests +14A for the per-foundation-cell
+    /// OnFire loop after NowYellow/NowRed. WarheadCtor75CF77 starts false;
+    /// ReadINI75D576..75D58A and Save75E2D1/Load75E0F0 retain the byte.
+    /// The ordered Rules processor owns its current-default read.
+    pub sparky: bool,
     /// `Fire=` -> `WarheadTypeClass+0x14C` (ReadINI `0x0075d5f2`, key string
     /// `0x00836f04`) over the constructor's 0 (`0x0075cf83`). Techno
     /// What_Action on a Cell keeps a Fire warhead off a destroyable cliff
@@ -620,6 +613,7 @@ impl WarheadType {
             delay_kill_at_max_f64,
             wall: section.read_bool("Wall", false),
             wood: section.read_bool("Wood", false),
+            sparky: false,
             fire: section.read_bool("Fire", false),
             penetrates_bunker: section.read_bool("PenetratesBunker", false),
             affects_allies: section.read_bool("AffectsAllies", true),
@@ -629,9 +623,9 @@ impl WarheadType {
             affects_enemies: section.read_bool("AffectsEnemies", true),
             affects_neutral: section.read_bool("AffectsNeutral", true),
             psychic_damage: section.read_bool("PsychicDamage", false),
-            // Conventional, AnimList and EMEffect keep the constructor's false
-            // and empty values (`0x0075CF89`, `0x0075CFB3`): the ordered Rules
-            // processor owns those reads and RuleSet publishes its result.
+            // Conventional, Sparky, AnimList and EMEffect keep constructor
+            // defaults here: the ordered Rules processor owns those reads
+            // and RuleSet publishes its result.
             anim_list: Vec::new(),
             inf_death: section.read_int("InfDeath", Self::DEFAULT_INF_DEATH),
             deform_f64: section.read_double("Deform", 0.0),
