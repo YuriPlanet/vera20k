@@ -432,6 +432,34 @@ fn ares_owned_build_limit_count(
     }))
 }
 
+/// Ares `HouseExt::BuildLimitRemaining` (inlined in CanBuild at
+/// `10021BEB..10021C46` and in HouseClass_CanInstantiateTeam `100240D0`):
+/// signed wrapping capacity left under `BuildLimit=`. A negative limit
+/// counts what the house produced, zero or more what it owns now.
+#[cfg(feature = "ares")]
+pub(crate) fn ares_build_limit_remaining(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> i32 {
+    let limit = obj.build_limit;
+    if limit < 0 {
+        let produced = rules
+            .type_array_index(obj.category, &obj.id)
+            .zip(sim.houses.get(&owner))
+            .map_or(0, |(index, house)| {
+                house.produced_count(obj.category, index)
+            });
+        limit.wrapping_add(produced).wrapping_neg()
+    } else {
+        let owned = sim.houses.get(&owner).map_or(0, |house| {
+            ares_owned_build_limit_count(sim, rules, house, obj)
+        });
+        limit.wrapping_sub(owned)
+    }
+}
+
 /// CanBuild's build limit (`0x004F7F9E..0x004F8357`): a type at or over
 /// its positive `BuildLimit=` by the house's tracked count
 /// (`HouseTracking::owned_count`) is at its limit, unless
@@ -465,6 +493,7 @@ fn build_limit(
                 .owned_count(EntityCategory::from(obj.category), type_id)
         })
         .wrapping_add(captured_vehicle_thief_count(sim, rules, owner, obj));
+    #[cfg(not(feature = "ares"))]
     let produced = || {
         rules
             .type_array_index(obj.category, &obj.id)
@@ -490,17 +519,10 @@ fn build_limit(
     #[cfg(feature = "ares")]
     {
         // Installed CanBuild10021BEB..10021C46 uses signed wrapping
-        // remaining capacity for every class. Negative limits count produced;
-        // zero uses owned. Its held-object exception also admits Infantry above
-        // the limit, unlike the original gamemd-specific class branch below.
-        let remaining = if limit < 0 {
-            limit.wrapping_add(produced()).wrapping_neg()
-        } else {
-            let owned = sim.houses.get(&owner).map_or(0, |house| {
-                ares_owned_build_limit_count(sim, rules, house, obj)
-            });
-            limit.wrapping_sub(owned)
-        };
+        // remaining capacity for every class. Its held-object exception also
+        // admits Infantry above the limit, unlike the original
+        // gamemd-specific class branch below.
+        let remaining = ares_build_limit_remaining(sim, rules, owner, obj);
         if limit > 0 && remaining <= 0 {
             return if count_in_production && held_in_factory() {
                 CanBuild::Yes

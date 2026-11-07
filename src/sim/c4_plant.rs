@@ -298,10 +298,16 @@ impl Simulation {
         let Some(infantry) = self.substrate.entities.get(id) else {
             return Ok(C4Arrival::default());
         };
+        // Ares 3.0 InfantryClass_UpdatePosition_C4Ability 10025730 (hook
+        // 0x0051A4D2) also admits a rank holding the C4 ability.
+        #[cfg(feature = "ares")]
+        let c4 = |object: &crate::rules::object_type::ObjectType| {
+            crate::sim::combat::veterancy::holds_c4(infantry.veterancy.rank_kind(), object)
+        };
+        #[cfg(not(feature = "ares"))]
+        let c4 = |object: &crate::rules::object_type::ObjectType| object.c4;
         if infantry.mission.effective().known() != Some(MissionType::Sabotage)
-            || !self
-                .object_type(infantry.type_ref(), rules)
-                .is_some_and(|object| object.c4)
+            || !self.object_type(infantry.type_ref(), rules).is_some_and(c4)
         {
             return Ok(C4Arrival::default());
         }

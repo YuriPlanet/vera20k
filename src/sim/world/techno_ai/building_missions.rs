@@ -453,6 +453,40 @@ fn mission_unload(
         crate::sim::passenger::garrison_eject::GarrisonEjectMode::Release,
         ctx.effects,
     );
+    // Ares 3.0 BuildingClass_UnloadPassengers_Unload 100145B0 (hook
+    // 0x0044D8A1, BuildingExt::KickOutHospitalArmory): a `Hospital=` or
+    // `Armory=` building pops its first passenger and kicks it out through
+    // ExitObject (0x00443C60) at the empty cell, ignoring the answer, as the
+    // Hospital's own release does (`docking::hospital`).
+    #[cfg(feature = "ares")]
+    if sim
+        .substrate
+        .entities
+        .get(id)
+        .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+        .is_some_and(|object| object.hospital || object.armory())
+    {
+        let _ = crate::sim::passenger::depart_cargo_head(
+            sim,
+            rules,
+            ctx.overlay_registry,
+            id,
+            crate::sim::passenger::DepartureRoute::Hospital,
+            |sim, patient| {
+                let _ = crate::sim::production::exit_produced_object(
+                    sim,
+                    rules,
+                    id,
+                    patient,
+                    (0, 0),
+                    ctx.overlay_registry,
+                    ctx.effects,
+                );
+                Ok(())
+            },
+            ctx.effects,
+        );
+    }
     let entity = sim.substrate.entities.get(id)?;
     let object = sim.object_type(entity.type_ref(), rules)?;
     let holds_passengers = entity

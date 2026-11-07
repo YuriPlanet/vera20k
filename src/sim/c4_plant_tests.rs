@@ -916,3 +916,45 @@ fn the_sourceless_blasts_kill_a_c4_infantryman_standing_in_its_cell() {
     assert_eq!(tanya.health.current(), 0);
     assert!(tanya.lifecycle.object_alive());
 }
+
+/// Ares 10025730 (hook 0x51A4D2): a veteran whose rank holds the C4 ability
+/// plants on a Sabotage arrival though its type is not `C4=`; a rookie of
+/// the same type does not.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_a_veteran_c4_ability_plants_the_charge() {
+    let art = IniFile::from_str(ART);
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(&RULES.replace(
+            "[E1]\nStrength=125\n",
+            "[E1]\nStrength=125\nVeteranAbilities=C4\n",
+        )),
+        &art,
+    )
+    .unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    for (rank, planted) in [(0, false), (100, true)] {
+        let (mut sim, _) = arena(&rules);
+        let building = spawn(&mut sim, &rules, "GAPILE", "Russians", 16, 10);
+        let actor = spawn(&mut sim, &rules, "E1", "Americans", 15, 10);
+        sim.substrate
+            .entities
+            .get_mut(actor)
+            .unwrap()
+            .veterancy
+            .set_rank_for_test(rank);
+        stand_in(&mut sim, actor, building);
+        let arrival = sim
+            .infantry_per_cell_c4(actor, &rules, None, FrameEffects::default())
+            .unwrap();
+        assert_eq!(arrival.returns, planted, "rank {rank}");
+        let charge = sim
+            .substrate
+            .entities
+            .get(building)
+            .unwrap()
+            .pending_c4_detonation
+            .pending();
+        assert_eq!(charge.is_some(), planted, "rank {rank}");
+    }
+}

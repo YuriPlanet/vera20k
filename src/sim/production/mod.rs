@@ -85,11 +85,13 @@ pub use self::production_types::*;
 
 // Re-exports for external consumers (files outside production/ that previously
 // imported private submodules directly).
+#[cfg(feature = "ares")]
+pub(crate) use self::can_build::ares_build_limit_remaining;
+#[cfg(feature = "ares")]
+pub(crate) use self::can_build::owns_prerequisites;
 pub(crate) use self::can_build::{
     CanBuild, can_build, initialize_factory_primary, toggle_factory_primary,
 };
-#[cfg(feature = "ares")]
-pub(crate) use self::can_build::owns_prerequisites;
 pub use self::can_build::{can_select_factory_primary, find_factory, object_find_factory};
 pub(crate) use self::factory_ai::{
     AiPlacementTimer, detach_all as detach_building_factory, factory_ai,
@@ -117,7 +119,9 @@ mod tests;
 #[cfg(test)]
 mod industrial_plant_retail_tests;
 
-#[cfg(test)]
+// Ares 3.0 10014390 (hook 0x446E9F) gives a non-harvester FreeUnit
+// Area_Guard instead (`production_placement_tests`).
+#[cfg(all(test, not(feature = "ares")))]
 mod free_unit_harvest_retail_tests;
 
 #[cfg(test)]

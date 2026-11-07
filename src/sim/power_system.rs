@@ -836,6 +836,16 @@ fn recalculate_power_for_owner(
             }
             (output_contribution, 0)
         };
+        // Ares 3.0 BuildingClass_PowerProduced_EMP 10014440 (hook
+        // 0x0044E855): an EMP'd plant (`+0x504` > 0) skips the positive sum
+        // to 0x0044E873 and outputs nothing; Ares EMP leaves its online latch
+        // set. Phobos' replacement above already zeroes it.
+        #[cfg(all(feature = "ares", not(feature = "phobos")))]
+        let (power, extra_power) = if entity.emp_remaining() > 0 {
+            (0, 0)
+        } else {
+            (power, extra_power)
+        };
         if power.wrapping_add(extra_power) > 0 {
             // Original44E85F calls5F5C60, then FIMUL and _ftol; House508CFF
             // adds the signed returned dword with wrapping ADD. No max(1),
@@ -1639,7 +1649,7 @@ BuildSpeed=0.02
 
     // -------- ExtraPower (Yuri Bio-Reactor) bonus tests -----------------
 
-    #[cfg(feature = "phobos")]
+    #[cfg(any(feature = "phobos", feature = "ares"))]
     fn building_at(id: u64, type_ref: &str, owner: &str, rx: u16, ry: u16, hp: i32) -> GameEntity {
         let mut e = GameEntity::test_default_of_category(
             id,
@@ -1656,7 +1666,7 @@ BuildSpeed=0.02
         e
     }
 
-    #[cfg(feature = "phobos")]
+    #[cfg(any(feature = "phobos", feature = "ares"))]
     fn output_for(rules: &RuleSet, buildings: Vec<GameEntity>) -> i32 {
         let interner = test_interner();
         let owner = buildings[0].owner();
@@ -1667,6 +1677,19 @@ BuildSpeed=0.02
         let mut states = PowerStates::default();
         tick_power_states(&mut states, &mut store, rules, &interner, 0);
         states[&owner].total_output
+    }
+
+    /// Ares 10014440 (hook 0x44E855): a plant under EMP keeps its online
+    /// latch but outputs nothing.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_emp_power_plant_outputs_nothing() {
+        let rules = rules_from_ini("[BuildingTypes]\n0=PLANT\n[PLANT]\nPower=100\nStrength=100\n");
+        let plant = || building_at(1, "PLANT", "A", 10, 10, 100);
+        assert_eq!(output_for(&rules, vec![plant()]), 100);
+        let mut emp = plant();
+        emp.set_emp_remaining_for_test(10);
+        assert_eq!(output_for(&rules, vec![emp]), 0);
     }
 
     /// Phobos `GetEnhancedPower`: a registered enhancer naming the plant adds

@@ -327,6 +327,7 @@ pub(super) fn commit_receiver_health(
                 victim_owner,
                 source_owner,
                 delta,
+                world.session.game_mode_nonzero(),
             );
         }
         Some(delta)

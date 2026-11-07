@@ -1059,7 +1059,7 @@ struct ExitProducer {
     /// That House is not controlled by a human (`0x0050B730`); a missing
     /// House counts as human.
     computer: bool,
-    /// BuildingType `Hospital=` (`+0x16C1`).
+    /// BuildingType `Hospital=` (`+0x16C1`); with Ares also `Armory=`.
     hospital: bool,
     /// BuildingType `Factory=` (`+0xEB8`) is set.
     factory: bool,
@@ -1075,6 +1075,12 @@ impl ExitProducer {
             computer: sim.houses.get(&house).is_some_and(|house| {
                 !house.is_controlled_by_human(sim.session.game_mode_nonzero())
             }),
+            // Ares 3.0 BuildingClass_KickOutUnit_ArmoryExitBug 10014100
+            // (hook 0x00444D26) tests `Hospital= || Armory=` here, so an
+            // Armory's trainee also takes the post.
+            #[cfg(feature = "ares")]
+            hospital: object.is_some_and(|object| object.hospital || object.armory()),
+            #[cfg(not(feature = "ares"))]
             hospital: object.is_some_and(|object| object.hospital),
             factory: object.is_some_and(|object| object.has_factory()),
         })
