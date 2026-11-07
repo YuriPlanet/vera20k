@@ -1526,10 +1526,7 @@ fn restore_object_references(
         }
 
         for (field, system_id) in [
-            (
-                "fire_particle_system",
-                entity.fire_particle_system.system(),
-            ),
+            ("fire_particle_system", entity.fire_particle_system.system()),
             (
                 "spark_particle_system",
                 entity.spark_particle_system.system(),
@@ -4860,6 +4857,7 @@ mod tests {
                 owner_fire_coordinate: Some(active_source),
                 owner_current_target: Some(active_target),
                 target_position: Some(active_endpoint),
+                ares: None,
                 target_is_unit: false,
             },
             None,
@@ -4872,6 +4870,7 @@ mod tests {
                 owner_fire_coordinate: Some(active_source),
                 owner_current_target: Some(active_target),
                 target_position: Some(moved_endpoint),
+                ares: None,
                 target_is_unit: false,
             },
             None,

@@ -46,6 +46,47 @@ pub(crate) struct WaveDraw {
     pub phase: i32,
     pub direction: u8,
     pub clip_path: WaveClipPath,
+    pub blend: WaveBlend,
+}
+
+/// Ares 3.0 `WaveColorData` (GetWaveColorData 10055270, computed once per
+/// DrawIt by WaveClass_Draw_Colors 10057080 at hook 0x75FA29): the R, G, B
+/// Intensity scales and added Color of the wave's weapon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(feature = "ares"), allow(dead_code))]
+pub(crate) struct WaveColor {
+    pub intensity: [i32; 3],
+    pub color: [i32; 3],
+}
+
+impl WaveColor {
+    /// ModifyWaveColor 10055920's per-channel terms for pixel intensity
+    /// `strength`: `channel + added + ((channel * scale) >> 16)`, with
+    /// `added = (Color * strength) >> 8` and `scale = Intensity * strength`
+    /// (32-bit wrapping, as the native multiplies).
+    pub(crate) fn terms(self, strength: i32) -> ([i32; 3], [i32; 3]) {
+        (
+            self.color.map(|color| color.wrapping_mul(strength) >> 8),
+            self.intensity
+                .map(|intensity| intensity.wrapping_mul(strength)),
+        )
+    }
+}
+
+/// How the per-pixel functions colour a displaced word. Default builds
+/// construct only [`WaveBlend::Native`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(feature = "ares"), allow(dead_code))]
+pub(crate) enum WaveBlend {
+    /// The stock Sonic75EEB2/MagBeam760247 blends.
+    Native,
+    /// Ares ModifyWaveColor (WaveClass_Draw_Sonic 10057140 at 0x75EE57,
+    /// WaveClass_Draw_Magnetron2 100570D0 at 0x7601FB) with enabled data.
+    Ares(WaveColor),
+    /// Ares with all six values zero: Sonic keeps the stock blend, while
+    /// MagBeam stores nothing (WaveClass_Draw_Magnetron3 10057110 at
+    /// 0x760286 always skips the stock store).
+    AresDisabled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -416,6 +457,10 @@ impl WaveDraw {
             .wrapping_abs()
             .wrapping_mul(300)
             .wrapping_add(x.wrapping_sub(self.source_point[0]).wrapping_abs());
+        // Ares WaveClass_Draw_Green/Draw_Magnetron (Ares.dll 100570B0, hooks
+        // 0x75EE2E/0x7601C7) clamp the table index above 89999.
+        #[cfg(feature = "ares")]
+        let distance_index = distance_index.min(89_999);
         let distance = usize::try_from(distance_index)
             .ok()
             .and_then(|i| tables.distance.get(i))

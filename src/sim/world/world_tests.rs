@@ -3360,6 +3360,7 @@ fn sonic_wave_test_rules(range: u8) -> RuleSet {
     .expect("Sonic Wave fixture")
 }
 
+#[cfg(not(feature = "ares"))]
 fn sonic_tail_order_test_rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=DLPH\n1=LATER\n2=TARGET\n\n\
@@ -3379,7 +3380,7 @@ fn admit_test_wave(sim: &mut Simulation, rules: &RuleSet, event: &SimFireEvent) 
     let wave = sim
         .prepare_fired_wave(rules, event, 0)
         .expect("wave prepared");
-    sim.admit_fired_wave(event.attacker_id, wave, rules);
+    sim.admit_fired_wave(event.attacker_id, wave, rules, None);
 }
 
 fn sonic_fire_event(
@@ -3486,19 +3487,117 @@ fn target_coord_offset_moves_initial_wave_endpoint_but_not_tracking() {
     );
     let event = sonic_fire_event(&mut sim, &rules, dolphin, yard);
     let wave = sim.prepare_fired_wave(&rules, &event, 0).unwrap();
+    // Ares CreateWave passes the launch source first instead.
+    #[cfg(not(feature = "ares"))]
     assert_eq!(
         wave.source(),
         crate::sim::projectile::ProjectileCoord::new(centre.x + 300, centre.y + 200, centre.z,)
     );
+    #[cfg(feature = "ares")]
+    let _ = (wave, centre);
     admit_test_wave(&mut sim, &rules, &event);
     let id = sim.active_wave_links[&dolphin];
     assert_eq!(
-        sim.wave_update_context(sim.waves.get(id).unwrap(), &rules)
+        sim.wave_update_context(sim.waves.get(id).unwrap(), &rules, None)
             .target_position,
         Some(crate::sim::projectile::ProjectileCoord::new(
             centre.x, centre.y, centre.z
         ))
     );
+}
+
+#[cfg(feature = "ares")]
+fn ares_sonic_rules(weapon_keys: &str) -> RuleSet {
+    RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[VehicleTypes]\n0=DLPH\n1=TARGET\n\n\
+         [DLPH]\nStrength=200\nArmor=light\nSpeed=8\nPrimary=SonicZap\nElitePrimary=SonicZapE\n\n\
+         [TARGET]\nStrength=100\nArmor=wood\n\n\
+         [SonicZap]\nDamage=4\nROF=20\nRange=10\nProjectile=Sonic\nSpeed=100\nWarhead=SonicWH\nIsSonic=yes\n{weapon_keys}\n\n\
+         [SonicZapE]\nDamage=8\nAmbientDamage=15\nROF=20\nRange=10\nProjectile=Sonic\nSpeed=100\nWarhead=SonicWH\nIsSonic=yes\n\n\
+         [Sonic]\nLevel=yes\n\n\
+         [SonicWH]\nWood=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
+    )))
+    .expect("Ares Sonic Wave fixture")
+}
+
+/// Ares WaveClass_Update_Beam (Ares.dll 10057290, hook 0x762B62): a Sonic
+/// wave keeps tracking within its weapon's Range (here ten cells, beyond the
+/// stock 2172 leptons) and draws from the target end for a reversing class.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_wave_tracks_within_weapon_range_and_reverses_by_target_class() {
+    for reverse in [false, true] {
+        let rules = ares_sonic_rules(if reverse {
+            "Wave.ReverseAgainstVehicles=yes"
+        } else {
+            ""
+        });
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x5EED_A2E5);
+        let dolphin = sim
+            .spawn_object("DLPH", "Americans", 6, 10, 64, &rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("TARGET", "Russians", 16, 10, 0, &rules)
+            .unwrap();
+        let event = sonic_fire_event(&mut sim, &rules, dolphin, target);
+        sim.commit_fired_wave(&rules, &event, 0, 0, None);
+        let wave = sim.waves.get(sim.active_wave_links[&dolphin]).unwrap();
+        assert!(
+            wave.active_geometry() && !wave.decaying(),
+            "reverse={reverse}"
+        );
+        let aim = sim
+            .wave_update_context(wave, &rules, None)
+            .target_position
+            .unwrap();
+        let expected = if reverse { aim } else { event.fire_coord };
+        assert_eq!(wave.source(), expected, "reverse={reverse}");
+    }
+}
+
+/// Ares WaveClass_Update (Ares.dll 100571A0, hook 0x760F50) and
+/// WaveClass_DamageCell (10056FA0, hook 0x75F38F): the recorded cells take
+/// the fired weapon's AmbientDamage, not the elite owner's GetWeapon(0), and
+/// a weapon without AmbientDamage damages nothing.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_wave_damage_uses_the_fired_weapon_and_its_ambient_damage() {
+    for ambient in [10, 0] {
+        let rules = ares_sonic_rules(&format!("AmbientDamage={ambient}"));
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x5EED_A2E6);
+        let dolphin = sim
+            .spawn_object("DLPH", "Americans", 6, 10, 64, &rules)
+            .unwrap();
+        let receiver = sim
+            .spawn_object("TARGET", "Russians", 7, 10, 0, &rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("TARGET", "Russians", 12, 10, 0, &rules)
+            .unwrap();
+        let event = sonic_fire_event(&mut sim, &rules, dolphin, target);
+        sim.commit_fired_wave(&rules, &event, 0, 0, None);
+        sim.substrate
+            .entities
+            .get_mut(dolphin)
+            .unwrap()
+            .veterancy
+            .set_rank_for_test(200);
+        let health = |sim: &Simulation| {
+            sim.substrate
+                .entities
+                .get(receiver)
+                .unwrap()
+                .health
+                .current()
+        };
+        for _ in 0..20 {
+            sim.visit_combat_tail(0, &rules, None, crate::sim::world::FrameEffects::default());
+            if health(&sim) != 100 {
+                break;
+            }
+        }
+        assert_eq!(health(&sim), 100 - ambient, "AmbientDamage={ambient}");
+    }
 }
 
 #[test]
@@ -3599,7 +3698,7 @@ fn sonic_cell_target_uses_persistent_dummy_gettargetcoords_on_create_and_refresh
     assert_eq!(process_dummy.snapshot().coord, (-1, 7));
 
     process_dummy.stamp_coord(-9, -9);
-    let context = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules);
+    let context = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules, None);
     assert_eq!(process_dummy.snapshot().coord, (-1, 7));
     assert_eq!(
         context.target_position,
@@ -3797,6 +3896,8 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
     assert!(survivor.attack_target.target().is_none());
 }
 
+// Ares WaveClass_Update damages before the update; see the ares_wave tests.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai() {
     let rules = sonic_tail_order_test_rules();
@@ -3948,6 +4049,8 @@ fn sonic_fire_registers_immediately_but_later_techno_fires_before_wave_tail_ai()
     );
 }
 
+// Ares WaveClass_Update damages before the update; see the ares_wave tests.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
     // Range6 cannot reach this six-cell horizontal separation plus the

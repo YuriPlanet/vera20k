@@ -102,6 +102,10 @@ pub struct WaveDamageRequest {
     pub firer_id: u64,
     pub recorded_cells: Vec<WaveRecordedCell>,
     pub wave_z: i32,
+    /// Ares WaveClass_DamageCell (Ares.dll 10056FA0, hook 0x75F38F): the
+    /// wave's own weapon replaces the owner's GetWeapon(0). Always `None` in
+    /// default builds.
+    pub ares_weapon: Option<crate::sim::intern::InternedId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -153,6 +157,24 @@ pub struct WaveUpdateContext {
     pub target_position: Option<ProjectileCoord>,
     /// Native What_Am_I==1 reverses type3's geometry arguments.
     pub target_is_unit: bool,
+    /// Ares WaveClass_Update_Beam's verdict for a wave with WaveExt data;
+    /// always `None` in default builds.
+    pub ares: Option<AresWaveTracking>,
+}
+
+/// Ares 3.0 WaveClass_Update_Beam (Ares.dll 10057290, hook 0x762B62)
+/// replaces Update_Wave's target checks and drawing: the wave keeps tracking
+/// while `in_range`, and draws from the owner's GetFLH for its wave slot
+/// (`owner_fire_coordinate`) to the target, swapped when `reversed`. It
+/// supersedes the 2172-lepton rule and the type3 Unit reversal.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AresWaveTracking {
+    /// Magnetron: the owner's IsCloseEnough (vt+0x3A8) for its wave slot;
+    /// other types: the wave weapon's Range at least the owner-target 3D
+    /// distance over sqrt(2).
+    pub in_range: bool,
+    /// `IsWaveReversedAgainst` (100553F0) for the target's class.
+    pub reversed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -182,6 +204,11 @@ pub struct Wave {
     direction_octant: i32,
     intensity: i32,
     recorded_cells: Vec<WaveRecordedCell>,
+    /// Ares `WeaponTypeExt::WaveExt[this]`: the weapon CreateWave (Ares.dll
+    /// 10055160) registered for this wave before its constructor.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_weapon: Option<crate::sim::intern::InternedId>,
 }
 
 impl Wave {
@@ -342,7 +369,21 @@ impl Wave {
             direction_octant: 0,
             intensity: Self::DEFAULT_LASER_INTENSITY,
             recorded_cells: Vec::new(),
+            #[cfg(feature = "ares")]
+            ares_weapon: None,
         }
+    }
+
+    /// CreateWave 10055160 registers the firing weapon in WaveExt.
+    #[cfg(feature = "ares")]
+    pub(crate) fn with_ares_weapon(mut self, weapon: crate::sim::intern::InternedId) -> Self {
+        self.ares_weapon = Some(weapon);
+        self
+    }
+
+    #[cfg(feature = "ares")]
+    pub const fn ares_weapon(&self) -> Option<crate::sim::intern::InternedId> {
+        self.ares_weapon
     }
 
     pub const fn new_owned(
@@ -450,6 +491,10 @@ impl Wave {
 
     /// gamemd-derived: `WaveClass::AI @ 0x00760F50` and lifecycle owner
     /// `0x00762AF0`.
+    /// Ares WaveClass_Update (Ares.dll 100571A0, hook 0x760F50) keeps the
+    /// lifecycle but moves the cell damage ahead of the update
+    /// (`Simulation::ares_wave_damage_request`), so a tracked wave requests
+    /// none here.
     pub fn advance(
         &mut self,
         context: WaveUpdateContext,
@@ -457,8 +502,9 @@ impl Wave {
     ) -> WaveTickResult {
         match self.wave_type {
             0 | 3 => {
+                let ares = context.ares.is_some();
                 let terminal_from_fade = self.update_geometry_and_cells(context, terrain);
-                let damage_recorded_cells = self.wave_type == 0;
+                let damage_recorded_cells = self.wave_type == 0 && !ares;
                 self.lifetime = self.lifetime.wrapping_sub(1);
                 let terminal_from_lifetime = self.lifetime < 0;
                 WaveTickResult {
@@ -509,16 +555,17 @@ impl Wave {
             self.type3_cycle_count = self.type3_cycle_count.wrapping_add(1);
         }
 
-        if context.target_position.is_none()
-            || context.owner_position.is_none()
-            || self.lifetime == stop_phase
-            || self.target_ref != context.owner_current_target
-        {
+        let tracking = context.target_position.is_some()
+            && context.owner_position.is_some()
+            && self.lifetime != stop_phase
+            && self.target_ref == context.owner_current_target;
+        if !tracking || context.ares.is_some_and(|ares| !ares.in_range) {
             self.active_geometry = false;
             self.decaying = true;
         }
 
-        if self.wave_type != 3
+        if context.ares.is_none()
+            && self.wave_type != 3
             && let (Some(owner), Some(target)) = (context.owner_position, context.target_position)
             && distance_3d_leptons([owner.x, owner.z, owner.y], [target.x, target.z, target.y])
                 > MAX_TRACKING_DISTANCE_LEPTONS
@@ -531,7 +578,11 @@ impl Wave {
             if let (Some(owner), Some(target)) =
                 (context.owner_fire_coordinate, context.target_position)
             {
-                let (first, second) = if self.wave_type == 3 && context.target_is_unit {
+                let reversed = match context.ares {
+                    Some(ares) => ares.reversed,
+                    None => self.wave_type == 3 && context.target_is_unit,
+                };
+                let (first, second) = if reversed {
                     (target, owner)
                 } else {
                     (owner, target)
@@ -695,6 +746,11 @@ impl std::hash::Hash for Wave {
         self.direction_octant.hash(state);
         self.intensity.hash(state);
         self.recorded_cells.hash(state);
+        #[cfg(feature = "ares")]
+        if let Some(weapon) = self.ares_weapon {
+            b"ares-wave-weapon-v1".hash(state);
+            weapon.hash(state);
+        }
     }
 }
 
@@ -771,6 +827,22 @@ impl WaveStore {
         id
     }
 
+    /// Ares WaveClass_Update (Ares.dll 100571A0, hook 0x760F50): the cells
+    /// the previous update recorded, for the damage it runs before updating.
+    /// A wave without an owner damages nothing (DamageArea's +0x1D4 test).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_damage_request(&self, id: u64) -> Option<WaveDamageRequest> {
+        let wave = self.get(id)?;
+        Some(WaveDamageRequest {
+            wave_id: id,
+            firer_id: wave.owner_id?,
+            recorded_cells: wave.recorded_cells.clone(),
+            // DamageArea75F3C6 reads B4.Z, here still the previous update's.
+            wave_z: wave.source.z,
+            ares_weapon: wave.ares_weapon,
+        })
+    }
+
     pub(crate) fn advance_one(
         &mut self,
         id: u64,
@@ -786,6 +858,7 @@ impl WaveStore {
                 recorded_cells: wave.recorded_cells.clone(),
                 // DamageArea75F3C6 reads B4.Z, not the C0+50 endpoint.
                 wave_z: wave.source.z,
+                ares_weapon: None,
             })
         } else {
             None

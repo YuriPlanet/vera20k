@@ -7179,7 +7179,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
     sim.admit_wave(wave_id, wave);
     sim.active_wave_links.insert(owner_id, wave_id);
 
-    let represented = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules);
+    let represented = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules, None);
     assert_eq!(
         represented.target_position,
         Some(ProjectileCoord::new(4 * 256 + 128, 128, 0)),
@@ -7202,7 +7202,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
         "UnInit synchronously expires +0xAC"
     );
     assert_eq!(sim.active_wave_links.get(&owner_id), Some(&wave_id));
-    let expired = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules);
+    let expired = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), &rules, None);
     assert_eq!(expired.target_position, None);
     let _ = sim
         .waves
@@ -7256,11 +7256,13 @@ fn wave_pointer_expiry_owner_allows_dying_damage_then_uninit_nulls_later_calls()
         firer_id: owner_id,
         recorded_cells: vec![WaveRecordedCell::real(4, 5)],
         wave_z: 0,
+        ares_weapon: None,
     };
     assert!(
         sim.wave_update_context(
             sim.waves.get(wave_id).unwrap(),
-            crate::rules::ruleset::RuleSet::empty_for_test()
+            crate::rules::ruleset::RuleSet::empty_for_test(),
+            None
         )
         .owner_position
         .is_some(),

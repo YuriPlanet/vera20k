@@ -32,13 +32,49 @@ fn weapon_wave_visible(
     )
 }
 
+/// Ares GetWaveColorData (Ares.dll 10055270), which WaveClass_Draw_Colors
+/// (10057080, hook 0x75FA29) computes once per DrawIt: the colours of the
+/// weapon CreateWave registered, with `Wave.IsHouseColor` taking the
+/// owner's House+56F9 through the shared colour-map lookup.
+#[cfg(feature = "ares")]
+pub(crate) fn ares_wave_blend(
+    sim: &Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    house_colors: &crate::map::houses::HouseColorMap,
+    wave: &crate::sim::wave::Wave,
+) -> crate::render::wave_geometry::WaveBlend {
+    use crate::render::wave_geometry::{WaveBlend, WaveColor};
+    let Some(weapon) = sim.ares_wave_weapon(wave, rules) else {
+        return WaveBlend::Native;
+    };
+    let owner_rgb = wave
+        .owner_id()
+        .and_then(|owner| sim.entities().get(owner))
+        .map(|owner| {
+            let index = house_colors
+                .get(sim.interner().resolve(owner.owner()))
+                .copied()
+                .unwrap_or(crate::rules::house_colors::NO_REMAP);
+            crate::render::palette_light::house_color_rgb(&rules.house_color_ramps, index)
+        });
+    match weapon
+        .ares_visuals
+        .wave_color_data(weapon.is_mag_beam, weapon.is_sonic, owner_rgb)
+    {
+        Some((intensity, color)) => WaveBlend::Ares(WaveColor { intensity, color }),
+        None => WaveBlend::AresDisabled,
+    }
+}
+
 /// Native type0/3 geometry is owned by WaveClass, including projected fade
 /// and the type3 Unit endpoint reversal. Rendering translates it once and supplies the
 /// current packed destination; it never rebuilds a quad from world endpoints.
+/// `blend` answers each wave's pixel colouring.
 pub(crate) fn build_weapon_wave_draws(
     sim: &Simulation,
     observer: Option<crate::sim::intern::InternedId>,
     camera: [i32; 2],
+    blend: impl Fn(&crate::sim::wave::Wave) -> crate::render::wave_geometry::WaveBlend,
 ) -> Vec<(u64, crate::render::wave_geometry::WaveDraw)> {
     use crate::render::wave_geometry::{WaveClipPath, WaveDraw, WavePolygon};
 
@@ -74,6 +110,7 @@ pub(crate) fn build_weapon_wave_draws(
                     // fallback can differ by one clipping-edge pixel; C32's
                     // production footprints remain inside both margins.
                     clip_path: WaveClipPath::Fast,
+                    blend: blend(wave),
                 },
             ))
         })

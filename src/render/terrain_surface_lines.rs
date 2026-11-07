@@ -118,27 +118,41 @@ fn raster_draw(
                 logical_size[0],
                 viewport.z_origin_y,
                 |pixel| {
+                    use crate::render::wave_geometry::{WaveBlend, WavePolygon};
                     let source = pixel
                         .source
                         .map(|v| ((v as f32 + 0.5) * viewport.zoom).floor() as i32);
-                    emit(&[(
-                        pixel.point,
-                        Operation {
-                            z: u32::from(pixel.candidate_z),
-                            strength: pixel.brightness,
-                            mode: if matches!(
-                                wave.polygon,
-                                crate::render::wave_geometry::WavePolygon::Sonic(_)
-                            ) {
-                                9
-                            } else {
-                                7
-                            },
-                            source_x: source[0],
-                            source_y: source[1],
-                            ..Default::default()
-                        },
-                    )]);
+                    let sonic = matches!(wave.polygon, WavePolygon::Sonic(_));
+                    let operation = Operation {
+                        z: u32::from(pixel.candidate_z),
+                        strength: pixel.brightness,
+                        mode: if sonic { 9 } else { 7 },
+                        source_x: source[0],
+                        source_y: source[1],
+                        ..Default::default()
+                    };
+                    let operation = match wave.blend {
+                        WaveBlend::Native => operation,
+                        WaveBlend::AresDisabled if sonic => operation,
+                        WaveBlend::AresDisabled => return,
+                        // Mode 11 carries ModifyWaveColor's folded terms:
+                        // added R/G/B in rgb/a_sample/gate_y, scales in
+                        // strength/destination_weight/gate_x.
+                        WaveBlend::Ares(color) => {
+                            let (added, scale) = color.terms(pixel.brightness);
+                            Operation {
+                                mode: 11,
+                                rgb: added[0] as u32,
+                                a_sample: added[1] as u32,
+                                gate_y: added[2],
+                                strength: scale[0],
+                                destination_weight: scale[1],
+                                gate_x: scale[2],
+                                ..operation
+                            }
+                        }
+                    };
+                    emit(&[(pixel.point, operation)]);
                 },
             )?;
             return Ok(());
@@ -668,7 +682,7 @@ impl SurfaceLineGpu {
                 // this chunk's output rect: snapshot its actual address, not
                 // an invented clamped neighbor or stale scratch word. The
                 // X-major pair (mode 5) reads the other OLD destination.
-                if matches!(operation.mode, 5 | 7 | 9) {
+                if matches!(operation.mode, 5 | 7 | 9 | 11) {
                     let [l, t, r, b] = pixel(operation.source_x, operation.source_y);
                     self.cover.add(l, t, r, b);
                 }

@@ -1437,9 +1437,28 @@ pub(crate) fn build_weapon_wave_instances(
     ]
     .map(|value| value.floor() as i32);
     let cache = &state.match_state.match_presentation.interpolation;
-    for (id, draw) in
-        crate::app::presentation::fire_effects::build_weapon_wave_draws(sim, observer, [0, 0])
-    {
+    #[cfg(feature = "ares")]
+    let blend = {
+        let rules = &state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .expect("the wave owner's runtime")
+            .resources
+            .rules;
+        let colors = &state.match_state.match_presentation.house_color_map;
+        move |wave: &crate::sim::wave::Wave| {
+            crate::app::presentation::fire_effects::ares_wave_blend(sim, rules, colors, wave)
+        }
+    };
+    #[cfg(not(feature = "ares"))]
+    let blend = |_: &crate::sim::wave::Wave| crate::render::wave_geometry::WaveBlend::Native;
+    for (id, draw) in crate::app::presentation::fire_effects::build_weapon_wave_draws(
+        sim,
+        observer,
+        [0, 0],
+        blend,
+    ) {
         let draw = sample_weapon_wave_draw(draw, id, cache, sim.session().binary_frame(), camera);
         use crate::app::presentation::render::draw_plan_lowering::{
             ObjectBodyDraw, PlannedObjectInstance,
@@ -1553,6 +1572,7 @@ mod tests {
             phase: 3,
             direction: 0,
             clip_path: WaveClipPath::Fast,
+            blend: crate::render::wave_geometry::WaveBlend::Native,
         };
         let current = WaveDraw {
             polygon: WavePolygon::Magnetic([[0, -5], [-3, 3], [-2, 6], [5, 10]]),
@@ -1601,6 +1621,7 @@ mod tests {
                 phase: 3,
                 direction: 2,
                 clip_path: WaveClipPath::Fast,
+                blend: crate::render::wave_geometry::WaveBlend::Native,
             };
             let mut sim = Simulation::new();
             sim.session_mut_for_test().set_binary_frame_for_test(1);

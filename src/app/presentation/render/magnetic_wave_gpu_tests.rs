@@ -79,6 +79,7 @@ fn draw(value: &Value) -> WaveDraw {
             "fallback" => WaveClipPath::Fallback,
             other => panic!("unknown native clip branch {other}"),
         },
+        blend: crate::render::wave_geometry::WaveBlend::Native,
     }
 }
 
@@ -216,6 +217,7 @@ fn original_pixel_linear_aliases_and_initialized_adjacent_window_are_consumed() 
             phase: integer(&input["phase"]),
             direction: integer(&input["direction"]).try_into().unwrap(),
             clip_path: WaveClipPath::Fast,
+            blend: crate::render::wave_geometry::WaveBlend::Native,
         };
         let pixel = wave
             .pixel_operation(
@@ -379,16 +381,38 @@ fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
         let z = words(&input["z_words"]);
         let alpha = words(&input["alpha_words"]);
         let expected = expected_words(row);
-        let waves = row["draws"]
+        let stock = row["draws"]
             .as_array()
             .unwrap()
             .iter()
             .map(draw)
             .collect::<Vec<_>>();
-        for format in [
-            wgpu::TextureFormat::Bgra8UnormSrgb,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-        ] {
+        // Ares ModifyWaveColor (Ares.dll 10055920) with each kind's
+        // GetWaveColorData defaults (Sonic 0,256,256; MagBeam 128,0,1024; no
+        // Color) reproduces both stock blends, so the folded mode 11 must
+        // produce the same native planes.
+        let ares = stock
+            .iter()
+            .map(|&wave| WaveDraw {
+                blend: crate::render::wave_geometry::WaveBlend::Ares(
+                    crate::render::wave_geometry::WaveColor {
+                        intensity: match wave.polygon {
+                            WavePolygon::Sonic(_) => [0, 256, 256],
+                            WavePolygon::Magnetic(_) => [128, 0, 1024],
+                        },
+                        color: [0; 3],
+                    },
+                ),
+                ..wave
+            })
+            .collect::<Vec<_>>();
+        for (waves, format) in [stock, ares].into_iter().flat_map(|waves| {
+            [
+                wgpu::TextureFormat::Bgra8UnormSrgb,
+                wgpu::TextureFormat::Rgba8UnormSrgb,
+            ]
+            .map(|format| (waves.clone(), format))
+        }) {
             let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
             batch.write_camera(&gpu.queue, camera(size));
             let color = gpu.target(size, format);

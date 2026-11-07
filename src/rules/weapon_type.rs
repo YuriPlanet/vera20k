@@ -73,6 +73,10 @@ pub struct WeaponType {
     /// Valueable<int> retains failed/missing reads; default one round.
     #[cfg(feature = "ares")]
     ares_ammo_cost: i32,
+    /// Ares WeaponTypeExt rad beam, bolt and wave visuals and
+    /// `IsDetachedRailgun` ([`crate::rules::ares_weapon`]).
+    #[cfg(feature = "ares")]
+    pub ares_visuals: crate::rules::ares_weapon::AresWeaponVisuals,
     /// `RevealOnFire=` (`+0x137`, default yes): a launched shot reveals the
     /// firer to a human victim (FireAt `0x006FF66C`). Retail turns it off on
     /// the sniper, Virus, disguise and Mirage weapons.
@@ -441,6 +445,11 @@ impl WeaponType {
             burst: section.read_int("Burst", 1),
             #[cfg(feature = "ares")]
             ares_ammo_cost: section.read_ares_int("Ammo", 1),
+            #[cfg(feature = "ares")]
+            ares_visuals: crate::rules::ares_weapon::AresWeaponVisuals::read(
+                section,
+                section.read_bool("IsMagBeam", false),
+            ),
             // Constructor 1 (`0x00771DBB`); ReadINI passes it as the default
             // (`0x00772182..0x00772196`).
             reveal_on_fire: section.read_bool("RevealOnFire", true),
