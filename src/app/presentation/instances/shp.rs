@@ -1814,8 +1814,13 @@ fn emit_building_anims(
         let Some(coord) = sim.anim_absolute_coord(anim_id) else {
             continue;
         };
-        let (screen_x, screen_y, _, _, _, lift_px) =
+        let (screen_x, mut screen_y, _, _, _, mut lift_px) =
             super::overlays::anim_world_render_coords(coord);
+        let correction = crate::render::locomotor_visual::building_terrain_correction(i32::from(
+            building.position.z() as i8,
+        ));
+        screen_y -= correction as f32;
+        lift_px += correction;
         // Original451988 copies the slot's ZAdjust even when it is zero;
         // the constructor's AnimType ZAdjust is not a zero-value fallback.
         let z_adjust_px = instance.z_adjust() + ANIM_DRAW_DEPTH_BIAS_PX;
