@@ -436,6 +436,23 @@ pub struct AnimTypeRuntimeConfig {
     pub spawns_particle: Option<String>,
     /// art.ini `NumParticles=`, `AnimTypeClass+0x2D0`.
     pub num_particles: i32,
+    /// Ares AnimTypeExt+0x18/+0x1C `SpawnsParticle.RangeMinimum` and
+    /// `SpawnsParticle.RangeMaximum` (Valueable<Leptons>, constructor 0;
+    /// LoadFromINI 1000A4B0 through 1000A5D0): either nonzero spreads the
+    /// SpawnsParticle particles around the anim (`Simulation::anim_middle`).
+    #[cfg(feature = "ares")]
+    pub(crate) ares_spawns_particle_range: [i32; 2],
+    /// Ares AnimTypeExt+0x24 `Damage.Delay` (Valueable<int>, constructor 0):
+    /// above zero, an anim whose `Damage=` is at least 1 delivers its whole
+    /// Damage once every this many frames.
+    #[cfg(feature = "ares")]
+    pub(crate) ares_damage_delay: i32,
+    /// Ares AnimTypeExt+0x20 `Weapon` (Valueable<WeaponTypeClass*>, Find
+    /// only, constructor null): the weapon whose bullet the anim's damage
+    /// detonates instead of the area damage. The ordered Rules processor
+    /// resolves it with the ART body (`AnimTypeReferences`).
+    #[cfg(feature = "ares")]
+    pub(crate) ares_weapon: Option<String>,
     /// art.ini `ShouldFogRemove=`, `AnimTypeClass+0x374`.
     /// Constructor default **true**.
     pub should_fog_remove: bool,
@@ -817,6 +834,17 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         flamer: section.read_bool("Flamer", false),
         spawns_particle: None,
         num_particles: section.read_int("NumParticles", 0),
+        // AnimTypeExt::LoadFromINIFile (1000A4B0) reads both Leptons through
+        // INI_EX's double (1000A6D0: cells * 256), then Damage.Delay.
+        #[cfg(feature = "ares")]
+        ares_spawns_particle_range: [
+            section.read_ares_leptons("SpawnsParticle.RangeMinimum", 0),
+            section.read_ares_leptons("SpawnsParticle.RangeMaximum", 0),
+        ],
+        #[cfg(feature = "ares")]
+        ares_damage_delay: section.read_ares_int("Damage.Delay", 0),
+        #[cfg(feature = "ares")]
+        ares_weapon: None,
         // Both constructor defaults are 1, not 0.
         should_fog_remove: section.read_bool("ShouldFogRemove", true),
         should_use_cell_drawer: section.read_bool("ShouldUseCellDrawer", true),

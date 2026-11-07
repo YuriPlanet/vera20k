@@ -585,6 +585,28 @@ pub(crate) fn collect_area(
     ) else {
         return combat_aoe::AoEDamageResult::default();
     };
+    // Ares 3.0 DamageArea_DestroyCliff (1005BE20, hook 0x489562): after the
+    // airborne receivers and before the cell spread walk, the impact cell's
+    // destroyable cliff spends one Scenario draw against CollapseChance. The
+    // ground/deck list choice `begin` made is unaffected: a cliff cell has
+    // no bridge deck.
+    #[cfg(feature = "ares")]
+    {
+        let mut cliff_effects = crate::sim::combat::DeathEffects::default();
+        world.roll_cliff_collapse(
+            cell.0,
+            cell.1,
+            rules,
+            overlay_registry,
+            effects,
+            &mut cliff_effects,
+        );
+        #[cfg(any(test, feature = "test-support"))]
+        collector
+            .result
+            .cell_target_detaches
+            .append(&mut cliff_effects.cell_target_detaches);
+    }
     for &(dx, dy) in cell_spread::splash_cells(warhead.cell_spread_f64) {
         let (spread_cell, detached_cell) = {
             let mut prelude = crate::sim::world::simulation_area_damage_cell_prelude(

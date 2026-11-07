@@ -596,8 +596,14 @@ impl WarheadType {
         let percent_at_max_f64 = f64::from(percent_at_max_native);
         let delay_kill_at_max_f64 = f64::from(section.read_float("DelayKillAtMax", 1.0));
 
-        // The IntVector reader (`0x0075DD22` -> `0x00475D70`).
-        let debris_maximums: Vec<i32> = section.read_int_list("DebrisMaximums").unwrap_or_default();
+        // The IntVector reader (`0x0075DD22` -> `0x00475D70`). Ares 3.0
+        // WarheadTypeClass_LoadFromINI_ListLength (1005C080, hook 0x75D660)
+        // reads it through ParseList<int> (1005B030) instead.
+        #[cfg(feature = "ares")]
+        let debris_maximums = section.read_ares_int_list("DebrisMaximums");
+        #[cfg(not(feature = "ares"))]
+        let debris_maximums = section.read_int_list("DebrisMaximums");
+        let debris_maximums: Vec<i32> = debris_maximums.unwrap_or_default();
 
         // `WarheadTypeClass::ReadINI @ 0x0075DA95..0x0075DAE6`: MaxDebris is
         // read first (`0x0075DA95 PUSH 0x84439C` -> `0x0075DAB1` +0x1C4),
@@ -999,7 +1005,8 @@ mod tests {
         // only reader is `TiberiumClass::ReadINI_Fields @ 0x00721B4F`. The
         // warhead key is "DebrisTypes" @ 0x0075DAF5.
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
-            "[Warheads]\n0=W\n[W]\nDebris=CRYSTAL1\nDebrisTypes=TIRE\n",
+            // TIRE is registered for Ares's Find-only DebrisTypes read.
+            "[VoxelAnims]\n0=TIRE\n[Warheads]\n0=W\n[W]\nDebris=CRYSTAL1\nDebrisTypes=TIRE\n",
         ))
         .unwrap();
         assert_eq!(rules.warhead("W").unwrap().debris_types, ["TIRE"]);

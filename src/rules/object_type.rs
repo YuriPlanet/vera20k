@@ -3119,10 +3119,23 @@ impl ObjectType {
     }
 
     #[cfg(feature = "ares")]
-    pub(crate) fn building_type_ext_mut(
+    pub(crate) fn bind_building_type_ext(
         &mut self,
-    ) -> &mut crate::rules::ares_building_type::BuildingTypeExtRules {
-        &mut self.building_type_ext
+        ext: &crate::rules::ares_building_type::BuildingTypeExtRules,
+    ) {
+        self.building_type_ext = ext.clone();
+    }
+
+    /// Ares CompleteInitialization (`1000D380`, hook 0x679CAF) over this
+    /// building's final foundation; `foundation_of` resolves a BuildingType
+    /// by name.
+    #[cfg(feature = "ares")]
+    pub(crate) fn complete_building_type_ext<'a>(
+        &mut self,
+        foundation_of: impl Fn(&str) -> Option<&'a crate::rules::foundation::Foundation>,
+    ) {
+        self.building_type_ext
+            .complete_initialization(&self.id, &self.foundation, foundation_of);
     }
 
     /// Ares Experience.*/Promote.* (`rules::ares_veterancy`).
@@ -6372,10 +6385,14 @@ mod tests {
 
         let harvester = rules.object("MODHARV").unwrap();
         assert!(harvester.harvester);
-        assert_eq!(
-            harvester.dock,
-            vec!["MODPROC".to_string(), "NAREFN".to_string()]
-        );
+        // Ares reads Dock= Find-only (TechnoTypeClass_LoadFromINI_ListLength
+        // 1005BF90, hook 0x7125DF): the unregistered NAREFN is dropped.
+        let dock: &[&str] = if cfg!(feature = "ares") {
+            &["MODPROC"]
+        } else {
+            &["MODPROC", "NAREFN"]
+        };
+        assert_eq!(harvester.dock, dock);
     }
 
     #[test]
@@ -6880,7 +6897,9 @@ mod tests {
         // A death spends a count drawn from [MinDebris, MaxDebris] on
         // DebrisTypes VoxelAnims and DebrisAnims SHP anims.
         let rules = rules(
-            "[BuildingTypes]\n0=GAPOWR\n1=NAPOWR\n\
+            // Registered for Ares's Find-only debris lists.
+            "[VoxelAnims]\n0=TIRE\n[Animations]\n0=DBRIS1LG\n1=DBRIS1SM\n2=DBRIS4LG\n\
+             [BuildingTypes]\n0=GAPOWR\n1=NAPOWR\n\
              [GAPOWR]\n\
              MinDebris=4\nMaxDebris=9\n\
              DebrisTypes=TIRE\nDebrisMaximums=3\n\
@@ -6966,6 +6985,8 @@ mod tests {
     }
     /// `0x00713C37`: ReadString 0x80, then each `strtok` token as written to
     /// `ParticleSystemTypeClass::FindOrAllocate` (`0x00644890`).
+    // Ares reads these lists Find-only through ParseList (Misc/Bugfixes.Buffer.cpp).
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn techno_type_parses_damage_particle_systems_csv() {
         let rules = rules(

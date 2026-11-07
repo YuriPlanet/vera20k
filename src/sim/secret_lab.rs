@@ -127,23 +127,33 @@ mod tests {
             .iter()
             .chain(corpus["authored_startup"].as_array().unwrap())
         {
-            let mut ini = String::from(
-                "[BuildingTypes]\n0=LAB\n[LAB]\nStrength=100\nSecretLab=yes\n[General]\n",
-            );
-            for (slot, (key, prefix)) in [
-                ("SecretInfantry", "infantry"),
-                ("SecretUnits", "unit"),
-                ("SecretBuildings", "building"),
+            let mut ini = String::from("[LAB]\nStrength=100\nSecretLab=yes\n[General]\n");
+            // The choices are registered types, which Ares's Find-only read
+            // (Buf_General 1005BB00, hook 0x66D55E) needs.
+            let mut registry = String::new();
+            for (slot, (key, prefix, list)) in [
+                ("SecretInfantry", "infantry", "InfantryTypes"),
+                ("SecretUnits", "unit", "VehicleTypes"),
+                ("SecretBuildings", "building", "BuildingTypes"),
             ]
             .into_iter()
             .enumerate()
             {
                 let count = row["counts"][slot].as_u64().unwrap();
                 let names: Vec<_> = (0..count).map(|index| format!("{prefix}{index}")).collect();
+                let first = usize::from(list == "BuildingTypes");
+                registry += &format!("[{list}]\n");
+                if first == 1 {
+                    registry += "0=LAB\n";
+                }
+                for (index, name) in names.iter().enumerate() {
+                    registry += &format!("{}={name}\n", index + first);
+                }
                 if !names.is_empty() {
                     ini += &format!("{key}={}\n", names.join(","));
                 }
             }
+            ini = registry + &ini;
             if let Some(overridden) = row["override"].as_array() {
                 let family = overridden[0].as_u64().unwrap() as usize;
                 let (key, prefix) = [

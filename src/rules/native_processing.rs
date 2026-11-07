@@ -5384,6 +5384,12 @@ pub(crate) struct AnimTypeReferences {
     trailer_anim: Option<String>,
     warhead: Option<String>,
     spawns_particle: Option<String>,
+    /// Ares AnimTypeExt `Weapon` (1000A590 -> 1000A370: WeaponType Find,
+    /// no allocation), read last by the LoadFromINI hook (0x4287DC/0x4287E9).
+    /// `none` clears it; an unknown name keeps it.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    weapon: Option<String>,
 }
 
 impl AnimTypeReferences {
@@ -5399,6 +5405,10 @@ impl AnimTypeReferences {
         config.trailer_anim = upper(&self.trailer_anim);
         config.warhead = upper(&self.warhead);
         config.spawns_particle = upper(&self.spawns_particle);
+        #[cfg(feature = "ares")]
+        {
+            config.ares_weapon = self.weapon.clone();
+        }
     }
 }
 
@@ -8018,6 +8028,14 @@ impl RulesPassProcessor {
                                 .native_stored_id
                                 .clone()
                         });
+                }
+                // Ares AnimTypeClass_LoadFromINI (1000A4B0, hooks 0x4287DC /
+                // 0x4287E9) runs after the original body.
+                #[cfg(feature = "ares")]
+                if let Some(weapon) =
+                    self.resolve_existing_type_from(section, "Weapon", RulesTypeFamily::Weapon)
+                {
+                    references.weapon = weapon;
                 }
                 self.family_mut(RulesTypeFamily::Animation)[index].anim_references = references;
             }

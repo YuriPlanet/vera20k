@@ -8064,7 +8064,7 @@ fn assert_direct_fatal_death_weapon_starts_crater(bridge: bool) {
     let ini = IniFile::from_str(
         "[CombatDamage]\nC4Warhead=KILLWH\n[InfantryTypes]\n[VehicleTypes]\n0=VICTIM\n1=FIRER\n\
          [AircraftTypes]\n[BuildingTypes]\n[OverlayTypes]\n\
-         [Warheads]\n0=KILLWH\n1=CRATERWH\n[SmudgeTypes]\n0=CR1\n\
+         [Warheads]\n0=KILLWH\n1=CRATERWH\n[SmudgeTypes]\n0=CR1\n[Animations]\n0=CRATERANIM\n\
          [VICTIM]\nStrength=1\nArmor=light\nExplodes=yes\nDeathWeapon=DeathBoom\n\
          [FIRER]\nStrength=100\nArmor=light\nPrimary=SONIC\n\
          [SONIC]\nDamage=1\nAmbientDamage=10\nWarhead=KILLWH\nIsSonic=yes\n\

@@ -7149,6 +7149,7 @@ fn v3_killing_aoe_emits_exactly_one_detonation_anim() {
          [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=V3W\n\n\
          [WEAK]\nStrength=10\nArmor=heavy\nSpeed=6\n\n\
          [V3W]\nDamage=200\nROF=20\nRange=10\nWarhead=V3WH\n\n\
+         [Animations]\n0=V3EXP\n\
          [V3WH]\nCellSpread=1\nPercentAtMax=1\nAnimList=V3EXP\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     ))
@@ -7193,6 +7194,7 @@ fn gsi_04_11_death_weapon_anim_precedes_outer_detonation_anim() {
          [DEMOW]\nDamage=200\nROF=50\nRange=4\nWarhead=DEMOWH\n\n\
          [TANKHIT]\nCellSpread=0\nPercentAtMax=1\nAnimList=TANKEXP\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\n\
+         [Animations]\n0=TANKEXP\n1=UCEXPLOD\n\
          [DEMOWH]\nCellSpread=2\nPercentAtMax=0.5\nAnimList=UCEXPLOD\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     ))
@@ -7241,6 +7243,7 @@ fn an_inviso_death_weapon_scatters_its_anim_inside_the_receiver() {
          [DEMOP]\nInviso=yes\n\n\
          [TANKHIT]\nCellSpread=0\nPercentAtMax=1\nAnimList=TANKEXP\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\n\
+         [Animations]\n0=TANKEXP\n1=UCEXPLOD\n\
          [DEMOWH]\nCellSpread=2\nPercentAtMax=0.5\nAnimList=UCEXPLOD\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     ))
@@ -7305,6 +7308,7 @@ fn a_death_weapon_over_water_picks_its_anim_at_the_zero_location() {
          [DEMOW]\nDamage=200\nROF=50\nRange=4\nWarhead=DEMOWH\n\n\
          [TANKHIT]\nCellSpread=0\nConventional=yes\nAnimList=TANKEXP\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\n\
+         [Animations]\n0=TANKEXP\n1=UCEXPLOD\n2=SPLASH\n\
          [DEMOWH]\nCellSpread=0\nConventional=yes\nAnimList=UCEXPLOD\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     ))
@@ -7460,6 +7464,7 @@ fn inviso_weapon_rules(inviso: bool, with_anim: bool) -> RuleSet {
 fn shooter_rules(projectile: &str, warhead: &str) -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(&format!(
         "\
+[Animations]\n0=PIFF\n\
 [InfantryTypes]\n\n\
 [VehicleTypes]\n0=SHOOTER\n1=TARGET\n\n\
 [AircraftTypes]\n\n\
@@ -11394,6 +11399,7 @@ fn gsi_05_14_a_dying_building_uses_its_own_debris_anims() {
          [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nCost=700\nPrimary=105mm\n\
          [HTNK]\nStrength=1\nArmor=heavy\nSpeed=4\nCost=900\nPrimary=105mm\n\
          MinDebris=3\nMaxDebris=4\nDebrisAnims=DBRI-WM1,DBRI-WM2\n\
+         [Animations]\n0=DBRI-WM1\n1=DBRI-WM2\n\
          [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\
          [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     ))
@@ -11593,7 +11599,7 @@ fn gsi_08_08_special_arm_suppresses_damage_but_keeps_the_detonation_tail() {
          [AircraftTypes]\n\
          [BuildingTypes]\n\
          [TARGET]\nStrength=200\nArmor=heavy\n\
-         [Warheads]\n0=Controller\n1=Plain\n\
+         [Warheads]\n0=Controller\n1=Plain\n[Animations]\n0=YURICNTL\n\
          [Controller]\nMindControl=yes\nAnimList=YURICNTL\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          [Plain]\nAnimList=YURICNTL\n\
@@ -11690,7 +11696,7 @@ fn clusters_scatter_around_the_impact() {
          [LAUNCHER]\nStrength=100\nPrimary=ClusterGun\n\
          [ClusterGun]\nDamage=10\nProjectile=ClusterP\nWarhead=Blast\n\
          [ClusterP]\nCluster=5\n\
-         [Warheads]\n0=Blast\n\
+         [Warheads]\n0=Blast\n[Animations]\n0=EXPLOSML\n\
          [Blast]\nAnimList=EXPLOSML\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     ))
@@ -11757,7 +11763,7 @@ fn gsi_08_33_direct_rocker_only_claims_a_vehicle_target() {
          [BuildingTypes]\n\
          [TARGET]\nStrength=200\nArmor=heavy\n\
          [FOOT]\nStrength=200\nArmor=none\n\
-         [Warheads]\n0=Rocker\n\
+         [Warheads]\n0=Rocker\n[Animations]\n0=YURICNTL\n\
          [Rocker]\nDirectRocker=yes\nAnimList=YURICNTL\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     ))

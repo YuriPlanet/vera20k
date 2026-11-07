@@ -83,7 +83,9 @@ fn ares_country_loading_prefix_exposes_both_primary_passes_before_type_reset() {
 
 #[test]
 fn ares_country_loading_prefix_consumes_original_constructor_receipt_without_rereading() {
-    let root = format!("{ROOT}[General]\nAmerParaDropInf=BEFORE\n");
+    // Paratrooper= still allocates through the original reader; Ares reads
+    // the paradrop lists Find-only (Buf_General 1005BB00, hook 0x66D55E).
+    let root = format!("{ROOT}[General]\nParatrooper=BEFORE\n");
     let mut owner = owner(&root);
     enter_shell(&mut owner);
     let preparation = owner.prepare_noncampaign_scenario_prefix();
@@ -92,7 +94,7 @@ fn ares_country_loading_prefix_consumes_original_constructor_receipt_without_rer
     // pre-reset constructor chronology. Production sources are frozen private
     // snapshots; no runtime setter is introduced for this observation seam.
     owner.sources.selected_rules_root =
-        IniFile::from_str(&format!("{ROOT}[General]\nAmerParaDropInf=AFTER\n"));
+        IniFile::from_str(&format!("{ROOT}[General]\nParatrooper=AFTER\n"));
     let loaded = owner
         .load_scenario(
             NativeScenarioRulesPrefix::PreparedNonCampaign {

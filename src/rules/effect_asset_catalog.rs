@@ -1036,7 +1036,9 @@ mod anim_class_root_tests {
     #[test]
     fn bridge_roots_preserve_literal_factory_tokens_and_unread_types() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nMetallicDebris=ONE, FX, none, ,D,ONE\n\
+            // FX is registered: Ares reads BridgeExplosions Find-only
+            // (Buf_General 1005BB00, hook 0x66D55E).
+            "[Animations]\n0=FX\n[General]\nMetallicDebris=ONE, FX, none, ,D,ONE\n\
              BridgeExplosions=FX, FX,none,<none>\n",
         ))
         .unwrap();
@@ -1053,7 +1055,9 @@ mod anim_class_root_tests {
     #[test]
     fn roots_cover_teleport_superweapon_and_lightning_producers() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nBehind=MYBEHIND\nWarpOut=MYWARP\nIronCurtainInvokeAnim=MYIRON\n\
+            // The weather anims are registered for Ares's Find-only lists.
+            "[Animations]\n0=MYCLOUD1\n1=MYCLOUD2\n2=MYBOLT\n\
+             [General]\nBehind=MYBEHIND\nWarpOut=MYWARP\nIronCurtainInvokeAnim=MYIRON\n\
              ForceShieldInvokeAnim=MYSHIELD\nIonBlast=MYRING\n\
              DominatorFirstAnim=MYHEAD\nDominatorSecondAnim=MYLOC\n\
              WeatherConClouds=MYCLOUD1,MYCLOUD2\nWeatherConBolts=MYBOLT\n\

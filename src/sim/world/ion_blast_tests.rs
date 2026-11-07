@@ -53,7 +53,7 @@ fn rules() -> RuleSet {
         "[RING1]\nRate=1\nEnd=8\n[SPLASH0]\nRate=1\nEnd=8\n[SPLASH1]\nRate=1\nEnd=8\n[IONBEAM]\nRate=1\nEnd=8\n",
     );
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(
-        "[General]\nIonBlast=RING1\nIonBeam=IONBEAM\n\
+        "[Animations]\n0=SPLASH0\n1=SPLASH1\n[General]\nIonBlast=RING1\nIonBeam=IONBEAM\n\
          [CombatDamage]\nIonCannonDamage=10\nIonCannonWarhead=ION\nSplashList=SPLASH0,SPLASH1\n\
          [Warheads]\n0=ION\n[ION]\nCellSpread=0.5\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          [VehicleTypes]\n0=TANK\n[TANK]\nStrength=5000\nArmor=none\nSpeed=4\nCrewed=no\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\

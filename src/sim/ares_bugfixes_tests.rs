@@ -30,6 +30,9 @@ Engineer=ENGI
 [Warheads]
 0=AP
 1=HE
+[Animations]
+0=EXPA
+1=EXPB
 [GI]
 Strength=100
 Speed=4

@@ -86,7 +86,17 @@ fn sound_name(index: &Value) -> String {
 /// with their SHP heights and frames bound, `Sound17` for its one sound, and
 /// a warhead for `LightningWarhead=`.
 fn fixture_rules() -> RuleSet {
-    fixture_rules_with("[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n")
+    // The anims are registered, as retail registers the clouds and bolts, so
+    // that Ares's Find-only WeatherCon* reads (Buf_General 1005BB00, hook
+    // 0x66D55E) resolve them too.
+    let anims: String = FIXTURE_ANIMS
+        .iter()
+        .enumerate()
+        .map(|(index, (name, ..))| format!("{index}={name}\n"))
+        .collect();
+    fixture_rules_with(&format!(
+        "[Animations]\n{anims}[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n"
+    ))
 }
 
 /// [`fixture_rules`] with `extra` sections in place of its empty type lists.
@@ -966,6 +976,7 @@ fn registry_only_warhead_rules() -> RuleSet {
          [VehicleTypes]\n\n\
          [AircraftTypes]\n\n\
          [BuildingTypes]\n0=GAPOWR\n\n\
+         [Animations]\n0=WCLBOLT1\n1=WCLBOLT2\n2=WCLBOLT3\n\n\
          [Warheads]\n0=LWH\n\n\
          [DUMMY]\nStrength=100\nArmor=none\nSpeed=4\n\n\
          [GAPOWR]\nStrength=200\nArmor=wood\n\n\
@@ -1009,7 +1020,8 @@ fn strike(
 #[test]
 fn renamed_general_weather_bolt_reaches_ground_strike() {
     let ini = IniFile::from_str(
-        "[General]\nWeatherConBolts=CUSTOMBOLT\nLightningWarhead=LWH\n\
+        "[Animations]\n0=CUSTOMBOLT\n\
+         [General]\nWeatherConBolts=CUSTOMBOLT\nLightningWarhead=LWH\n\
          [Warheads]\n0=LWH\n[LWH]\nCellSpread=0\n",
     );
     let mut rules = RuleSet::from_ini(&ini).expect("renamed bolt rules");
@@ -1037,6 +1049,7 @@ fn a_strikes_explosion_precedes_its_area_damage_on_ore() {
          [AircraftTypes]\n\
          [BuildingTypes]\n\
          [Warheads]\n0=LWH\n\
+         [Animations]\n0=WCLBOLT1\n1=WCLBOLT2\n2=WCLBOLT3\n\
          [OverlayTypes]\n0=ORE\n\
          [SmudgeTypes]\n0=CR1\n\
          [Tiberiums]\n0=Riparius\n\
@@ -1298,6 +1311,7 @@ fn a_fatal_strike_runs_the_death_transaction_inline() {
              [AircraftTypes]\n\
              [BuildingTypes]\n\
              [Warheads]\n0=LightningWH\n1=WallWH\n\
+             [Animations]\n0=WCLBOLT1\n1=WCLBOLT2\n2=WCLBOLT3\n\
              [OverlayTypes]\n0=TESTWALL\n\
              [BOOMER]\nStrength=101\nArmor=heavy\nExplodes=yes\nDeathWeapon=DeathBoom\n\
              [DeathBoom]\nDamage=214\nWarhead=WallWH\n\
@@ -1420,10 +1434,14 @@ fn retail_storm_rules() {
         general.weather_con_clouds,
         ["WCCLOUD1", "WCCLOUD2", "WCCLOUD3"]
     );
-    assert_eq!(
-        general.weather_con_bolts,
-        ["WCLBOLT1", "WCLBOLT2", "WCLBOLT3"]
-    );
+    // Retail registers no WCLBOLT2, which Ares's Find-only read (Buf_General
+    // 1005BB00, hook 0x66D55E) therefore drops.
+    let bolts: &[&str] = if cfg!(feature = "ares") {
+        &["WCLBOLT1", "WCLBOLT3"]
+    } else {
+        &["WCLBOLT1", "WCLBOLT2", "WCLBOLT3"]
+    };
+    assert_eq!(general.weather_con_bolts, bolts);
     // ReadGeneral's 0x80-byte read of the twenty names keeps fourteen and a
     // cut `D` (`0x0066DA90`), a type with no image.
     assert_eq!(general.metallic_debris.len(), 15);

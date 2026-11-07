@@ -5863,7 +5863,7 @@ impl RuleSet {
                     .copied()
                 {
                     let building = &mut rules.object_list[handle.0 as usize];
-                    *building.building_type_ext_mut() = ext.clone();
+                    building.bind_building_type_ext(ext);
                     // AIBaseNormal joins the base-reservation gate above.
                     building.base_reservation_spacing = building
                         .base_reservation_writer_eligible()
@@ -5883,12 +5883,8 @@ impl RuleSet {
                 .iter_mut()
                 .filter(|object| object.category == ObjectCategory::Building)
             {
-                let (id, foundation) = (object.id.clone(), object.foundation.clone());
                 object
-                    .building_type_ext_mut()
-                    .complete_initialization(&id, &foundation, |name| {
-                        foundations.get(&name.to_ascii_uppercase())
-                    });
+                    .complete_building_type_ext(|name| foundations.get(&name.to_ascii_uppercase()));
             }
         }
         for (name, flag) in processed.building_spotlight_flags() {
@@ -13927,7 +13923,8 @@ MutateWarhead=MyMutate\n\
     #[test]
     fn resolved_bridge_animation_order_and_duplicates_affect_simulation_hash() {
         let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nMetallicDebris=A,B,A\nBridgeExplosions=X,Y\n",
+            // X and Y are registered for Ares's Find-only BridgeExplosions.
+            "[Animations]\n0=X\n1=Y\n[General]\nMetallicDebris=A,B,A\nBridgeExplosions=X,Y\n",
         ))
         .unwrap();
         let original = rules.simulation_config_hash();
@@ -14668,7 +14665,10 @@ ChuteSound=
 
     #[test]
     fn base_unit_types_parse_from_general() {
-        let ini = IniFile::from_str("[General]\nBaseUnit=AMCV,SMCV,PCV\n");
+        // Registered for Ares's Find-only BaseUnit read.
+        let ini = IniFile::from_str(
+            "[VehicleTypes]\n0=AMCV\n1=SMCV\n2=PCV\n[General]\nBaseUnit=AMCV,SMCV,PCV\n",
+        );
         let general = RuleSet::from_ini(&ini).unwrap().general;
         assert_eq!(general.base_unit_types, vec!["AMCV", "SMCV", "PCV"]);
     }
@@ -15064,8 +15064,9 @@ DefaultSparkSystem=SparkSys
     }
 
     /// Each list is read on its own: the infantry through the InfantryType
-    /// list reader, which keeps a name it does not know and drops `none`, the
-    /// counts as ints. Nothing pairs them or compares their lengths.
+    /// list reader, which drops `none`, the counts as ints. Nothing pairs them
+    /// or compares their lengths. The infantry are registered, as Ares's
+    /// Find-only read (Buf_General 1005BB00, hook 0x66D55E) needs.
     #[test]
     fn paradrop_lists_read_separately() {
         let rules = RuleSet::from_ini(&ini_with_general(
@@ -15073,7 +15074,8 @@ DefaultSparkSystem=SparkSys
              AmerParaDropInf=E1,GHOST,none,ENGINEER\n\
              AmerParaDropNum=6,-2\n\
              SovParaDropInf=E2\n\
-             SovParaDropNum=9,4",
+             SovParaDropNum=9,4\n\
+             [InfantryTypes]\n0=E1\n1=GHOST\n2=ENGINEER\n3=E2",
         ))
         .unwrap();
         let g = &rules.general;
@@ -15558,6 +15560,8 @@ Projectile=Invisible
         assert!(!defaults.object("YARD").unwrap().build_const_eligible);
     }
 
+    // Ares reads these lists Find-only through ParseList (Misc/Bugfixes.Buffer.cpp).
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn build_const_readai_does_not_trim_individual_tokens() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
@@ -15580,6 +15584,8 @@ Projectile=Invisible
         );
     }
 
+    // Ares reads these lists Find-only through ParseList (Misc/Bugfixes.Buffer.cpp).
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn build_const_readai_uses_native_127_source_byte_prefix() {
         let oversized = format!("GACNST,{},LATE", "X".repeat(120));
@@ -15623,6 +15629,8 @@ Projectile=Invisible
         assert!(!rules.object("LATE").unwrap().build_const_eligible);
     }
 
+    // Ares reads these lists Find-only through ParseList (Misc/Bugfixes.Buffer.cpp).
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn recalc_type_lists_share_native_parser_and_registered_family_resolution() {
         let ini = IniFile::from_str(

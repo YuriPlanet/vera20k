@@ -2247,26 +2247,93 @@ impl Simulation {
         });
         #[cfg(not(feature = "ares"))]
         let source_house = None;
-        let increment = if terrain_owner { damage * 5.0 } else { damage };
-        let accumulated = f64::from_bits(anim.damage_accumulator.bits()) + increment;
-        // Rust does not specify arithmetic NaN payloads across platforms.
-        let bits = if accumulated.is_nan() {
-            0x7ff8_0000_0000_0000
-        } else {
-            accumulated.to_bits()
-        };
         let no_effects = anim.no_effects;
         let type_id = anim.type_id;
-        self.substrate.anims.get_mut(id).unwrap().damage_accumulator =
-            NativeF64Bits::from_bits(bits);
-        if !(accumulated >= 1.0) || no_effects {
-            return false;
-        }
-        //4245AC..4245D5 consumes Math7C5F00's low signed32 result, including
-        // masked conversion/overflow, and subtracts that signed integer.
-        let whole = X87Chop53::ftol_f64_low_masked(accumulated);
-        self.substrate.anims.get_mut(id).unwrap().damage_accumulator =
-            NativeF64Bits::from_bits((accumulated - f64::from(whole)).to_bits());
+        let accumulator = f64::from_bits(anim.damage_accumulator.bits());
+        // Rust does not specify arithmetic NaN payloads across platforms.
+        let store = |sim: &mut Self, value: f64| {
+            let bits = if value.is_nan() {
+                0x7ff8_0000_0000_0000
+            } else {
+                value.to_bits()
+            };
+            sim.substrate.anims.get_mut(id).unwrap().damage_accumulator =
+                NativeF64Bits::from_bits(bits);
+        };
+        #[cfg(not(feature = "ares"))]
+        let whole = {
+            let increment = if terrain_owner { damage * 5.0 } else { damage };
+            let accumulated = accumulator + increment;
+            store(self, accumulated);
+            if !(accumulated >= 1.0) || no_effects {
+                return false;
+            }
+            //4245AC..4245D5 consumes Math7C5F00's low signed32 result, including
+            // masked conversion/overflow, and subtracts that signed integer.
+            let whole = X87Chop53::ftol_f64_low_masked(accumulated);
+            store(self, accumulated - f64::from(whole));
+            whole
+        };
+        // Ares 3.0 AnimClass_Update_DamageDelay (1000AFE0, hook 0x424538,
+        // resuming at 0x42464C or 0x42465D): with `Damage.Delay=` above zero
+        // and `Damage=` at least 1, +0x188 counts frames and the whole Damage
+        // (truncated, times 5 on a terrain owner) lands once the count reaches
+        // the delay, which then restarts from zero. Otherwise the original
+        // fraction accumulates. Its conversion (100772B0) truncates and gives
+        // the integer indefinite out of range; a result below 1 or a
+        // no-effects anim delivers nothing and keeps the count.
+        #[cfg(feature = "ares")]
+        let whole = {
+            let multiplier = if terrain_owner { 5 } else { 1 };
+            let delay = config.ares_damage_delay;
+            let delayed = delay >= 1 && !(damage < 1.0);
+            let counted = if delayed {
+                accumulator + 1.0
+            } else {
+                f64::from(multiplier) * damage + accumulator
+            };
+            store(self, counted);
+            let short = if delayed {
+                counted < f64::from(delay)
+            } else {
+                counted < 1.0
+            };
+            if short {
+                return false;
+            }
+            let whole = if delayed {
+                ares_truncate(damage).wrapping_mul(multiplier)
+            } else {
+                ares_truncate(counted)
+            };
+            if whole < 1 || no_effects {
+                return false;
+            }
+            store(
+                self,
+                if delayed {
+                    0.0
+                } else {
+                    counted - f64::from(whole)
+                },
+            );
+            // Weapon= detonates a bullet of that weapon instead (0x42464C).
+            if let Some(weapon) = config
+                .ares_weapon
+                .as_deref()
+                .and_then(|name| rules.weapon(name))
+            {
+                return self.ares_anim_weapon_detonation(
+                    id,
+                    weapon,
+                    whole,
+                    rules,
+                    overlay_registry,
+                    effects,
+                );
+            }
+            whole
+        };
         //4245C3..424630 compares the own stored ID exactly, not Image.
         let warhead_name = if self.interner.resolve(type_id) == "INVISO" {
             Some(rules.bridge_warheads.c4_name.as_str())
@@ -2275,7 +2342,7 @@ impl Simulation {
         };
         // Ares1000B179 first reads AnimType+330 (the existing art Warhead
         // reader); only a null pointer uses the stock INVISO/FlameDamage2
-        // fallback. Weapon= and Damage.Delay= are separate pending extensions.
+        // fallback.
         #[cfg(feature = "ares")]
         let warhead_name = config.warhead.as_deref().or(warhead_name);
         let Some((name, warhead)) =
@@ -2303,6 +2370,59 @@ impl Simulation {
             effects,
         )
         .bridge_state_changed
+    }
+
+    /// Ares AnimClass_Update_DamageDelay's `Weapon=` arm (1000B116..
+    /// 1000B169): BulletTypeExt::CreateBullet of the weapon's Projectile at
+    /// the anim's cell, no owner, the computed damage, the weapon's Warhead
+    /// and Bright, given the weapon, Removed, detonated at the anim's
+    /// GetCoords and Released. That is the bare `DetonateAtCoord`
+    /// Fire_Death_Weapon makes (`ProjectileDetonationReason::DeathWeapon`).
+    /// Returns whether a bridge changed.
+    #[cfg(feature = "ares")]
+    fn ares_anim_weapon_detonation(
+        &mut self,
+        id: AnimId,
+        weapon: &crate::rules::weapon_type::WeaponType,
+        damage: i32,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let (Some(warhead), Some(coord)) =
+            (weapon.warhead.as_deref(), self.anim_absolute_coord(id))
+        else {
+            return false;
+        };
+        let impact = crate::sim::projectile::ProjectileCoord::new(coord.x, coord.y, coord.z);
+        let (rx, ry) = (coord.x.div_euclid(256), coord.y.div_euclid(256));
+        let target = match (u16::try_from(rx), u16::try_from(ry)) {
+            (Ok(rx), Ok(ry)) => crate::sim::projectile::ProjectileTarget::looked_up_cell(
+                self.resolved_terrain.as_ref(),
+                rx,
+                ry,
+            ),
+            _ => crate::sim::projectile::ProjectileTarget::DummyCell,
+        };
+        let payload = crate::sim::projectile::ProjectilePayload::new(
+            damage,
+            self.interner.intern(warhead),
+            weapon
+                .projectile
+                .as_deref()
+                .map(|id| self.interner.intern(id)),
+            weapon.bright,
+        )
+        .with_installed_weapon(Some(self.interner.intern(&weapon.id)));
+        let detonation = crate::sim::projectile::ProjectileDetonation {
+            projectile_id: id,
+            source_id: crate::sim::combat::RAD_NO_ATTACKER,
+            target,
+            impact,
+            payload,
+            reason: crate::sim::projectile::ProjectileDetonationReason::DeathWeapon,
+        };
+        self.commit_logic_projectile_detonations(rules, overlay_registry, &[detonation], effects)
     }
 
     /// The end of a `MakeInfantry=` anim's last loop with no `Next=`
@@ -3646,8 +3766,21 @@ impl Simulation {
             .and_then(|name| rules.p_type_id_by_name(name))
             && let Some(coord) = self.anim(id).map(|anim| anim.world_coord)
         {
-            for _ in 0..config.num_particles {
-                self.spawn_gas_particle(kind, glam::IVec3::new(coord.x, coord.y, coord.z), rules);
+            #[cfg(feature = "ares")]
+            let spread = config.ares_spawns_particle_range != [0, 0];
+            #[cfg(not(feature = "ares"))]
+            let spread = false;
+            if spread {
+                #[cfg(feature = "ares")]
+                self.ares_spawn_particles_around(id, kind, config, rules);
+            } else {
+                for _ in 0..config.num_particles {
+                    self.spawn_gas_particle(
+                        kind,
+                        glam::IVec3::new(coord.x, coord.y, coord.z),
+                        rules,
+                    );
+                }
             }
         }
         if !(config.scorch || config.crater) {
@@ -3694,6 +3827,67 @@ impl Simulation {
             overlay_registry,
             crate::sim::combat::SmudgeSpawnRequest::AnimMiddle { coord, marks },
         );
+    }
+
+    /// Ares 3.0 AnimClass_Expired_SpawnsParticle (1000AE40, hook 0x425002,
+    /// resuming at 0x42504D): each of the NumParticles particles lands at
+    /// `|RandomRanged(min, max)|` leptons from the anim's GetCoords, at an
+    /// angle drawn within its share of the circle (`RandomRanged(1,
+    /// 0x7FFFFFFF)` times 1/0x7FFFFFFF), keeping the anim's height above the
+    /// floor (`0x00578080`). The arithmetic is the DLL's x87 code; its CRT
+    /// cos/sin are libm's.
+    #[cfg(feature = "ares")]
+    fn ares_spawn_particles_around(
+        &mut self,
+        id: AnimId,
+        kind: crate::rules::particle_type::ParticleTypeId,
+        config: &AnimTypeRuntimeConfig,
+        rules: &RuleSet,
+    ) {
+        use crate::util::native_x87::NativeF64Bits as Bits;
+        let Some(coord) = self.anim_absolute_coord(id) else {
+            return;
+        };
+        let floor = |sim: &Self, x: i32, y: i32, z: i32| {
+            crate::sim::projectile::projectile_ground_z(
+                sim.resolved_terrain.as_ref(),
+                &sim.effective_shared_cell_dummy(),
+                crate::sim::projectile::ProjectileCoord::new(x, y, z),
+            )
+        };
+        let height = coord.z.wrapping_sub(floor(self, coord.x, coord.y, coord.z));
+        let load = |value: f64| {
+            X87Chop53::load_f64(Bits::from_bits(value.to_bits())).expect("finite constant")
+        };
+        let store = |value| f64::from_bits(X87Chop53::store_f64(value).map_or(0, Bits::bits));
+        let count = config.num_particles;
+        let step =
+            X87Chop53::div(load(6.283185307179586), X87Chop53::load_i32(count)).map_or(0.0, store);
+        let [minimum, maximum] = config.ares_spawns_particle_range;
+        let mut angle = 0.0;
+        for _ in 0..count {
+            let distance = self
+                .scenario_rng
+                .next_range_i32_inclusive(minimum, maximum)
+                .wrapping_abs();
+            let value = self.scenario_rng.next_range_i32_inclusive(1, 0x7FFF_FFFF);
+            let radians = store(X87Chop53::add(
+                X87Chop53::mul(
+                    X87Chop53::mul(X87Chop53::load_i32(value), load(4.656612873077393e-10)),
+                    load(step),
+                ),
+                load(angle),
+            ));
+            let (cos, sin) = (libm::cos(radians), libm::sin(radians));
+            let along = |trig: f64| {
+                ares_truncate_x87(X87Chop53::mul(X87Chop53::load_i32(distance), load(trig)))
+            };
+            let x = along(cos).wrapping_add(coord.x);
+            let y = coord.y.wrapping_sub(along(sin));
+            let z = floor(self, x, y, coord.z).wrapping_add(height);
+            self.spawn_gas_particle(kind, glam::IVec3::new(x, y, z), rules);
+            angle = store(X87Chop53::add(load(angle), load(step)));
+        }
     }
 
     fn switch_anim_type(
@@ -4067,6 +4261,22 @@ fn native_loop_remaining(loop_count: i32, constructor_loop: i32) -> u8 {
         1
     };
     (loop_count as u8).wrapping_mul(constructor_factor).max(1)
+}
+
+/// Ares.dll's float-to-int conversion (100772B0): toward zero, and the
+/// integer indefinite (`i32::MIN`) for NaN or a value out of range.
+#[cfg(feature = "ares")]
+fn ares_truncate(value: f64) -> i32 {
+    X87Chop53::load_f64(NativeF64Bits::from_bits(value.to_bits()))
+        .map_or(i32::MIN, ares_truncate_x87)
+}
+
+#[cfg(feature = "ares")]
+fn ares_truncate_x87(value: crate::util::native_x87::X87Value) -> i32 {
+    X87Chop53::ftol_i64(value)
+        .ok()
+        .and_then(|value| i32::try_from(value).ok())
+        .unwrap_or(i32::MIN)
 }
 
 fn trailer_cadence_matches(binary_frame: u64, separation: i32) -> bool {

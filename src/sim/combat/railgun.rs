@@ -136,7 +136,12 @@ pub(crate) fn line_damage(
             point,
         );
         if ground > point.z {
-            if let (Ok(rx), Ok(ry)) = (u16::try_from(cell.0), u16::try_from(cell.1)) {
+            // Ares 3.0 TechnoClass_DealParticleDamage_DontDestroyCliff
+            // (1005BF80, hook 0x70CAD8) jumps over this roll to 0x70CB30; Ares
+            // rolls in DamageArea instead (`world_receiver::collect_area`).
+            if !crate::rules::ARES_ENABLED
+                && let (Ok(rx), Ok(ry)) = (u16::try_from(cell.0), u16::try_from(cell.1))
+            {
                 world.roll_cliff_collapse(
                     rx,
                     ry,

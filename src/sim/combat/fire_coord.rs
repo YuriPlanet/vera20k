@@ -1044,6 +1044,7 @@ mod tests {
             &IniFile::from_str(
                 "[InfantryTypes]\n0=E1\n1=INIT\n[VehicleTypes]\n[AircraftTypes]\n\
              [BuildingTypes]\n0=BUNK\n1=TOWER\n\
+             [Animations]\n0=F0\n1=F1\n2=F2\n3=F3\n4=F4\n5=F5\n6=F6\n7=F7\n8=GUNFIRE\n9=SPARE\n\
              [E1]\nStrength=125\nImage=GI\nPrimary=M60\nSecondary=ONE\n\
              [INIT]\nStrength=125\nPrimary=JAB\n\
              [BUNK]\nStrength=500\nCanBeOccupied=yes\n\

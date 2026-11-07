@@ -2402,7 +2402,7 @@ impl Simulation {
     /// Commit a completed Bullet's detonation while its current Logic slot and
     /// physical object are still present. The caller retires the Bullet only
     /// after this transaction returns.
-    fn commit_logic_projectile_detonations(
+    pub(crate) fn commit_logic_projectile_detonations(
         &mut self,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,

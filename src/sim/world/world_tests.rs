@@ -2495,6 +2495,7 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
          [OverlayTypes]\n0=ORE\n\
          [SmudgeTypes]\n0=CR1\n\
          [Tiberiums]\n0=Riparius\n\
+         [Animations]\n0=EXPLOSION\n\
          [OREWH]\nCellSpread=0\nAnimList=EXPLOSION\nTiberium=yes\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          [ORE]\nTiberium=yes\nChainReaction=yes\n\

@@ -86,6 +86,8 @@ mod airstrike_target_tests;
 #[cfg(all(test, feature = "ares"))]
 mod ares_armor_tests;
 #[cfg(all(test, feature = "ares"))]
+mod ares_cliff_tests;
+#[cfg(all(test, feature = "ares"))]
 mod ares_warhead_combat_tests;
 #[cfg(all(test, feature = "ares"))]
 mod ares_warhead_effects_tests;
