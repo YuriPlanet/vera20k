@@ -374,6 +374,12 @@ pub(crate) fn commence_entity_mission(
     verb::commence_base(&mut entity.mission, now)
 }
 
+/// Whether [`commence_entity_mission`] writes: an aircraft's clears `+0x6D2`
+/// first, and the base promotes a queued mission.
+pub(crate) fn commence_entity_mission_writes(entity: &crate::sim::game_entity::GameEntity) -> bool {
+    entity.mission_leaf.as_aircraft().is_some() || verb::commences(&entity.mission)
+}
+
 /// The `RandomRanged(0, 2)` ceiling of the Rate epilogue.
 pub(crate) const RATE_EPILOGUE_JITTER_MAX_FRAMES: u32 = 2;
 
@@ -945,10 +951,13 @@ impl crate::sim::world::ObjectSubstrate {
             return Ok(false);
         }
 
-        let entity = self
+        // With nothing queued, Commence fails and writes nothing.
+        let Some(entity) = self
             .entities
-            .get_mut(receiver)
-            .expect("building-ready receiver remains present");
+            .get_mut_if(receiver, commence_entity_mission_writes)
+        else {
+            return Ok(false);
+        };
         if !commence_entity_mission(entity, now) {
             return Ok(false);
         }

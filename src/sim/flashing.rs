@@ -42,12 +42,17 @@ impl Flashing {
         self.frames = frames;
     }
 
+    /// Whether [`Self::tick`] counts: any nonzero countdown.
+    pub(crate) fn counting(&self) -> bool {
+        self.frames != 0
+    }
+
     /// Countdown `0x004CC770`: DEC runs for every nonzero signed dword,
     /// negative values included; zero is idle. Executed signed controls are
     /// in tools/spatial_oracle/team_creation (elite_flash rows). Returns
     /// whether it counted.
     pub(crate) fn tick(&mut self) -> bool {
-        if self.frames == 0 {
+        if !self.counting() {
             return false;
         }
         self.frames = self.frames.wrapping_sub(1);
