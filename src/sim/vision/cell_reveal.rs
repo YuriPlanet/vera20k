@@ -198,12 +198,41 @@ impl StaleFrames {
         }
     }
 
+    /// Whether any of the cells `first..=last` is stale.
+    fn any_within(&self, first: usize, last: usize) -> bool {
+        crate::util::bit_span::span_words(first, last)
+            .any(|(word, mask)| self.bits.get(word).is_none_or(|bits| bits & mask != 0))
+    }
+
     /// Clear `index`, building the bits for `len` cells, all stale, first.
     fn clear(&mut self, index: usize, len: usize) {
         if self.bits.is_empty() {
             self.bits = vec![u64::MAX; len.div_ceil(64)];
         }
         self.bits[index / 64] &= !(1 << (index % 64));
+    }
+}
+
+/// The smallest rectangle of cells that holds a list of cells, its corners
+/// included.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct CellBounds {
+    min: (u16, u16),
+    max: (u16, u16),
+}
+
+impl CellBounds {
+    /// The bounds of `cells`; `None` when there are none.
+    pub(super) fn of(cells: &[(u16, u16)]) -> Option<Self> {
+        let (&first, rest) = cells.split_first()?;
+        let start = Self {
+            min: first,
+            max: first,
+        };
+        Some(rest.iter().fold(start, |bounds, &(x, y)| Self {
+            min: (bounds.min.0.min(x), bounds.min.1.min(y)),
+            max: (bounds.max.0.max(x), bounds.max.1.max(y)),
+        }))
     }
 }
 
@@ -685,10 +714,11 @@ impl OwnerVisibility {
     }
 
     /// Recompute and store each of `cells`' ground frame in turn
-    /// ([`FogState::refresh_sight_border`]).
+    /// ([`FogState::refresh_sight_border`]); `bounds` holds them all.
     pub(super) fn refresh_ground_frames(
         &mut self,
         cells: &[(u16, u16)],
+        bounds: CellBounds,
         native_cells: Option<&NativeCellQuery<'_>>,
     ) {
         // Original Map::567DA0 retains the resolved cell across Tactical::6D8700
@@ -700,16 +730,24 @@ impl OwnerVisibility {
         // the border, visible only to a Dummy read before the next missing lookup.
         //
         // VERA-only: an interior cell whose frame is the one its bits give
-        // ([`StaleFrames`]) would store the same frame again, so it is skipped.
+        // ([`StaleFrames`]) would store the same frame again, so it is skipped,
+        // and so is the whole border when every cell within its bounds is one.
+        if self.frames_current_within(bounds, native_cells) {
+            if cfg!(debug_assertions) {
+                for &cell in cells {
+                    let index = self
+                        .interior_index(cell, native_cells)
+                        .filter(|&index| !self.stale_frames.is_stale(index))
+                        .unwrap_or_else(|| panic!("{cell:?} is outside its border's bounds"));
+                    self.check_skipped_frame(cell, index);
+                }
+            }
+            return;
+        }
         for &cell in cells {
             let (key, frame) = match self.interior_index(cell, native_cells) {
                 Some(index) if !self.stale_frames.is_stale(index) => {
-                    debug_assert!(
-                        !crate::util::debug_checks::live_read_check_enabled()
-                            || self.map_cell_edge_cache[index].frames[0]
-                                == self.interior_edge_frame(index, false),
-                        "{cell:?}'s ground frame is not the one its bits give"
-                    );
+                    self.check_skipped_frame(cell, index);
                     continue;
                 }
                 Some(index) => {
@@ -734,6 +772,50 @@ impl OwnerVisibility {
             };
             cache.frames[0] = frame;
         }
+    }
+
+    /// Whether every cell within `bounds` is interior under `native_cells`
+    /// ([`Self::interior_index`]) and holds the frame its bits give
+    /// ([`StaleFrames`]), checked row by row.
+    fn frames_current_within(
+        &self,
+        bounds: CellBounds,
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> bool {
+        let ((x0, y0), (x1, y1)) = (bounds.min, bounds.max);
+        if x0 == 0
+            || y0 == 0
+            || u32::from(x1) + 1 >= u32::from(self.width)
+            || u32::from(y1) + 1 >= u32::from(self.height)
+        {
+            return false;
+        }
+        let interior = match native_cells {
+            Some(cells) => match cells.terrain().interior_cells() {
+                Some(interior) => Some(interior),
+                None => return false,
+            },
+            None => None,
+        };
+        let width = usize::from(self.width);
+        (y0..=y1).all(|y| {
+            let row = usize::from(y) * width;
+            !self
+                .stale_frames
+                .any_within(row + usize::from(x0), row + usize::from(x1))
+                && interior.is_none_or(|interior| interior.contains_row(y, x0, x1))
+        })
+    }
+
+    /// Debug builds with live-read checks: `cell`, which a border skips,
+    /// holds the frame its bits give.
+    fn check_skipped_frame(&self, cell: (u16, u16), index: usize) {
+        debug_assert!(
+            !crate::util::debug_checks::live_read_check_enabled()
+                || self.map_cell_edge_cache[index].frames[0]
+                    == self.interior_edge_frame(index, false),
+            "{cell:?}'s ground frame is not the one its bits give"
+        );
     }
 
     fn map_cell_parts(&self, key: VisibilityCell) -> (u8, MapCellEdgeCache) {
@@ -1211,17 +1293,17 @@ impl FogState {
         let inputs = (origin, radius, inner);
         if self.border_geometry.inputs != Some(inputs) {
             self.border_geometry.cells = super::sight_border_cells(origin, radius, inner);
+            self.border_geometry.bounds = CellBounds::of(&self.border_geometry.cells);
             self.border_geometry.inputs = Some(inputs);
         }
-        let cells = &self.border_geometry.cells;
-        if cells.is_empty() {
+        let Some(bounds) = self.border_geometry.bounds else {
             return;
-        }
+        };
         self.by_owner.write(
             viewer,
             (self.width, self.height),
-            PlaneWrite::Border,
-            cells,
+            PlaneWrite::Border { bounds },
+            &self.border_geometry.cells,
             native_cells,
         );
     }

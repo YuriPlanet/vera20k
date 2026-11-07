@@ -53,7 +53,7 @@ pub use cell_reveal::SHROUD_EDGE_LUT;
 pub(crate) use cell_reveal::tests::{
     assert_native_cell_history, discovery_corpus, native_map_cell_fixture,
 };
-use cell_reveal::{DummyVisibility, EdgeCells, MapCellEdgeCache, StaleFrames};
+use cell_reveal::{CellBounds, DummyVisibility, EdgeCells, MapCellEdgeCache, StaleFrames};
 pub(crate) use cell_reveal::{ListedEdgeCells, MapCellNotification, MapRevealProjection};
 use shroud_knowledge::ShroudKnowledge;
 pub(crate) use shroud_knowledge::SightAdmission;
@@ -2624,6 +2624,8 @@ pub(crate) fn sight_border_cells(
 struct BorderGeometry {
     inputs: Option<((u16, u16, i32), i32, i32)>,
     cells: Vec<(u16, u16)>,
+    /// The bounds of `cells`; `None` when there are none.
+    bounds: Option<CellBounds>,
 }
 
 /// Reveal spiral table extracted from the original engine.
