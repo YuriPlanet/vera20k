@@ -3211,3 +3211,27 @@ fn ares_an_unwarpable_veteran_is_not_warped() {
     assert_eq!(head_of(&sim, veteran), None);
     assert_eq!(head_of(&sim, rookie), Some(cleg));
 }
+
+/// Ares 3.0 TemporalClass_UpdateA (1004BB60, hook 0x71A84E): the Update
+/// frees its target's JammerClass, unjamming what it held.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_temporal_update_frees_the_targets_radar_jammer() {
+    let rules = rules_from(
+        &RULES.replace("[HTNK]\n", "[HTNK]\nRadarJamRadius=5\n"),
+        ART,
+    );
+    let mut sim = sim(7);
+    let target = spawn(&mut sim, &rules, "HTNK", "Russians", 20, 20);
+    let attacker = spawn(&mut sim, &rules, "CLEG", "Americans", 22, 20);
+    sim.update_ares_radar_jammer(target, &rules);
+    assert!(!entity(&sim, target).radar_jam.is_default());
+    chain(&mut sim, target, &[attacker], 1_000_000);
+    sim.temporal_update_head(
+        attacker,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert!(entity(&sim, target).radar_jam.is_default());
+}

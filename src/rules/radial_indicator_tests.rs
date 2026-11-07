@@ -20,8 +20,25 @@ fn fields(object: &ObjectType) -> serde_json::Value {
 
 fn assert_fields(object: &ObjectType, expected: &serde_json::Value) {
     for (key, value) in fields(object).as_object().unwrap() {
+        // Ares keeps the whole int (TechnoTypeExt+0x650/+0x654, read by
+        // 1004D330/1004D170); `ares_gap_radius_keeps_the_whole_int` holds it.
+        if cfg!(feature = "ares") && key.ends_with("gap_radius") {
+            continue;
+        }
         assert_eq!(value, &expected[key], "{} {key}", object.id);
     }
+}
+
+/// Ares GetRangeOfRadial_LargeGap (1004D170, hook 0x4566D5): the int
+/// TechnoTypeExt radius, where stock keeps the low byte (128 reads -128).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_gap_radius_keeps_the_whole_int() {
+    let ini = IniFile::from_str("[GAP]\nGapGenerator=yes\nGapRadiusInCells=128\n");
+    let object =
+        ObjectType::from_ini_section("GAP", ini.section_or_empty("GAP"), ObjectCategory::Building);
+    assert_eq!(object.gap_radius_in_cells, 128);
+    assert_eq!(object.building_sensor_range(false, None), 128);
 }
 
 #[test]

@@ -193,7 +193,7 @@ impl Simulation {
             .then(|| {
                 (
                     self.building_operational_state(id, rules),
-                    i32::from(object.gap_radius_in_cells),
+                    object.gap_radius_in_cells,
                 )
             })
             .and_then(|(state, radius)| state.map(|state| (state, radius)))
@@ -435,8 +435,8 @@ impl Simulation {
         }
         let owner = entity.owner();
         let charged = entity.gap_generator.supercharged;
-        let normal = i32::from(object.gap_radius_in_cells);
-        let super_radius = i32::from(object.super_gap_radius_in_cells);
+        let normal = object.gap_radius_in_cells;
+        let super_radius = object.super_gap_radius_in_cells;
         let operational = self.building_operational_state(id, rules) == Some(true);
         let charge = !charged && operational;
         let radius = if charge { super_radius } else { normal };
@@ -654,9 +654,7 @@ impl Simulation {
     fn map_callback_gap_radius(&self, id: u64, rules: &RuleSet) -> Option<i32> {
         let entity = self.substrate.entities.get(id)?;
         let object = self.interner.object_type(entity.type_ref(), rules)?;
-        object
-            .gap_generator
-            .then(|| i32::from(object.gap_radius_in_cells))
+        object.gap_generator.then(|| object.gap_radius_in_cells)
     }
 }
 

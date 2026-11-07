@@ -359,7 +359,9 @@ pub(crate) fn weapon_for_index(
     }
     let slot_index = usize::try_from(index).ok()?;
     // Ares7177C0/7177E0 ->1003DBC0 exposes the extension WeaponStruct
-    // vectors beyond the original eighteen. The type owns their lifetime.
+    // vectors beyond the original eighteen (TechnoTypeClass_GetWeapon
+    // 10042510, TechnoTypeClass_GetEliteWeapon 100424E0). The type owns
+    // their lifetime.
     let slot_count = obj.weapon_record_count();
     if slot_index >= slot_count {
         return None;

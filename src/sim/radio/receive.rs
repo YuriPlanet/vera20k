@@ -1133,6 +1133,22 @@ fn transport_has_room(
     transport_type: &crate::rules::object_type::ObjectType,
     sender_type: &crate::rules::object_type::ObjectType,
 ) -> bool {
+    // Ares 3.0 UnitClass_ReceivedRadioCommand_BySize1/3/4 (1004C150,
+    // 1004C1D0, 1004C210; hooks 0x73762B, 0x73782F, 0x737994): a
+    // `Passengers.BySize=no` transport counts heads below `Passengers=` in
+    // place of the Size total; the SizeLimit test after it stays.
+    #[cfg(feature = "ares")]
+    if !transport_type.ares_passengers_by_size {
+        let heads = transport
+            .passenger_role
+            .cargo()
+            .map_or(0, |cargo| cargo.count() as i32);
+        return heads < transport_type.passengers
+            && crate::sim::passenger::PassengerCargo::size_within_limit(
+                sender_type.size,
+                transport_type.size_limit,
+            );
+    }
     let occupied = transport
         .passenger_role
         .cargo()
@@ -2171,6 +2187,48 @@ mod tests {
         );
         ge.bunker_runtime = Some(BunkerRuntime::idle());
         sim.substrate.entities.insert(ge);
+    }
+
+    /// Ares UnitClass_ReceivedRadioCommand_BySize1 (1004C150, hook
+    /// 0x73762B): a `Passengers.BySize=no` hold of two size-3 riders takes a
+    /// third, which the Size total (3 + 3 + 3 over `Passengers=4`) refuses.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_passengers_by_size_no_counts_heads() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[InfantryTypes]\n0=RIDER\n[VehicleTypes]\n0=BYSIZE\n1=BYHEAD\n\
+                 [RIDER]\nSize=3\n\
+                 [BYSIZE]\nPassengers=4\nSizeLimit=3\n\
+                 [BYHEAD]\nPassengers=4\nSizeLimit=3\nPassengers.BySize=no\n",
+            ))
+            .unwrap();
+        let rider = rules.object("RIDER").unwrap();
+        for (transport, room) in [("BYSIZE", false), ("BYHEAD", true)] {
+            let object = rules.object(transport).unwrap();
+            let mut hull = GameEntity::new_at_frame_zero_for_test(
+                1,
+                10,
+                10,
+                0,
+                0,
+                crate::sim::intern::InternedId::default(),
+                Health::new(100),
+                crate::sim::intern::InternedId::default(),
+                EntityCategory::Unit,
+                0,
+                5,
+                true,
+            );
+            let cargo = hull.passenger_role.ensure_hold();
+            cargo.set_passengers_for_test(vec![2, 3]);
+            cargo.set_passenger_sizes_for_test(vec![3.0, 3.0]);
+            assert_eq!(
+                super::transport_has_room(&hull, object, rider),
+                room,
+                "{transport}"
+            );
+        }
     }
 
     fn hello(sim: &mut Simulation, sender: u64, target: u64) -> RadioResponse {

@@ -140,6 +140,8 @@ impl Simulation {
                 {
                     ty.thief
                 }
+                // Ares 3.0 InfantryClass_UpdateVehicleThief_Check (10049970,
+                // hook 0x5202F9): VehicleThief (+EC6) or CanDrive.
                 #[cfg(feature = "ares")]
                 {
                     ty.vehicle_thief || ty.driver_rules().can_drive()

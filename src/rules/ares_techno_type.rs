@@ -49,7 +49,7 @@ pub(crate) struct AresTechnoTypeRules {
 
 /// TechnoTypeExt+0x27C `PassengerTurret` (false), +0x325 `CrashSpin`
 /// (true), +0x328 `AirRate` (0), +0x4C5 `NoManualUnload` and +0x4C7
-/// `NoManualEnter` (false).
+/// `NoManualEnter` (false), +0x604 `DeployDir` (Nullable, unset).
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MovementTypeRules {
     passenger_turret: bool,
@@ -57,6 +57,8 @@ pub(crate) struct MovementTypeRules {
     air_rate: i32,
     no_manual_unload: bool,
     no_manual_enter: bool,
+    #[serde(default)]
+    deploy_dir: Option<u8>,
 }
 
 impl Default for MovementTypeRules {
@@ -67,6 +69,7 @@ impl Default for MovementTypeRules {
             air_rate: 0,
             no_manual_unload: false,
             no_manual_enter: false,
+            deploy_dir: None,
         }
     }
 }
@@ -102,6 +105,16 @@ impl MovementTypeRules {
     /// transport (Unit 1004BEA0, hook 0x74031A; Infantry 100176E0, 0x51ED8E).
     pub(crate) fn no_manual_enter(&self) -> bool {
         self.no_manual_enter
+    }
+
+    /// `DeployDir` (read<Direction::Value> 100409B0: 0..7, else unset): the
+    /// eighth-turn a simple deployer with a `DeployingAnim=` faces before it
+    /// deploys, else `[AudioVisual] DeployDir` (JumpjetLocomotionClass_State4
+    /// _54C550_DeployDir 100499F0, hook 0x54C767; UnitClass_SimpleDeploy
+    /// _Facing 1004C2D0, hook 0x739B8A).
+    #[cfg(feature = "ares")]
+    pub(crate) fn deploy_dir(&self) -> Option<u8> {
+        self.deploy_dir
     }
 }
 
@@ -197,6 +210,8 @@ pub(crate) struct CombatTypeRules {
     civilian_enemy: bool,
     /// `Berserk.ROFMultiplier` (Nullable<double> +0x418, unset).
     berserk_rof_multiplier: Option<NativeF64Bits>,
+    /// `ImmuneToBerserk` (Nullable<bool> +0x428, unset).
+    immune_to_berserk: Option<bool>,
     /// `OmniCrusher.Aggressive` (+0x430, true).
     omni_crusher_aggressive: bool,
     /// `CrushDamage.%s` (Promotable<int> +0x434: rookie, veteran, elite; 0).
@@ -214,6 +229,7 @@ impl Default for CombatTypeRules {
         Self {
             civilian_enemy: false,
             berserk_rof_multiplier: None,
+            immune_to_berserk: None,
             omni_crusher_aggressive: true,
             crush_damage: [0; 3],
             crush_damage_warhead: None,
@@ -236,6 +252,16 @@ impl CombatTypeRules {
     /// 0x6FF28F).
     pub(crate) fn berserk_rof_multiplier(&self, rules_default: NativeF64Bits) -> NativeF64Bits {
         self.berserk_rof_multiplier.unwrap_or(rules_default)
+    }
+
+    /// `ImmuneToBerserk`, else `psionics_immune` (ImmuneToPsionics or the
+    /// rank's PSIONICSIMMUNE): a Psychedelic warhead neither fires at
+    /// (TechnoClass_CanFire_PsionicsImmune, Ares.dll 10049EF0, hook 0x6FC417)
+    /// nor turns this type (TechnoClass_ReceiveDamage_Abilities, 1004A950,
+    /// hook 0x701BFE).
+    #[cfg(feature = "ares")]
+    pub(crate) fn immune_to_berserk(&self, psionics_immune: bool) -> bool {
+        self.immune_to_berserk.unwrap_or(psionics_immune)
     }
 
     /// `OmniCrusher.Aggressive=no` skips Approach_Target's OmniCrusher arm
@@ -598,6 +624,8 @@ impl AresTechnoTypeRules {
             section.read_ares_nullable_bool("DamageSparks", damage.damage_sparks);
         combat.berserk_rof_multiplier = section
             .read_ares_nullable_double_bits("Berserk.ROFMultiplier", combat.berserk_rof_multiplier);
+        combat.immune_to_berserk =
+            section.read_ares_nullable_bool("ImmuneToBerserk", combat.immune_to_berserk);
         combat.omni_crusher_aggressive =
             section.read_ares_bool("OmniCrusher.Aggressive", combat.omni_crusher_aggressive);
         combat.crush_damage =
@@ -650,6 +678,18 @@ impl AresTechnoTypeRules {
         {
             fall.caps[arm] = section.read_ares_nullable_int(key, fall.caps[arm]);
         }
+        // After FakeOf: an invalid or out-of-range facing keeps the value.
+        self.movement.deploy_dir = section.read_string_with(
+            "DeployDir",
+            2048,
+            self.movement.deploy_dir,
+            |current, value| {
+                crate::rules::ini_value::parse_ares_int(value)
+                    .filter(|facing| (0..8).contains(facing))
+                    .map(|facing| facing as u8)
+                    .or(current)
+            },
+        );
     }
 
     /// The AircraftType's missile fields; `None` for other types.

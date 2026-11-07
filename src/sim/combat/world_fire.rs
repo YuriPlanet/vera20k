@@ -655,11 +655,14 @@ fn heal_weapon_drops_target(
     let TargetKind::Entity(id) = target else {
         return true;
     };
+    // Ares 3.0 InfantryClass_UpdateFiringState_Heal (1004E420, hook
+    // 0x520731) and UnitClass_UpdateFiringState_Heal (1004E6E0, hook
+    // 0x736E8E) keep any damaged Techno, of either class.
     let Some(target) = world
         .substrate
         .entities
         .get(id)
-        .filter(|target| target.category() == class)
+        .filter(|target| cfg!(feature = "ares") || target.category() == class)
     else {
         return true;
     };
@@ -667,6 +670,12 @@ fn heal_weapon_drops_target(
         .interner
         .object_type(target.type_ref(), rules)
         .map_or(0, |object| object.strength);
+    // The infantry hook's IsDamagedTechno asks `ratio < 1.0`, so 0/0 drops
+    // there; the unit hook's `ratio >= 1.0` keeps it, as the stock test does.
+    if cfg!(feature = "ares") && class == EntityCategory::Infantry {
+        return target.health.compare_ratio(strength, 1.0)
+            != crate::util::native_x87::MaskedX87Ordering::Less;
+    }
     target.health.is_full(strength)
 }
 
@@ -1868,7 +1877,7 @@ pub(super) fn emit_admitted_fire(
         // A launch with no ballistic solution deletes its bullet
         // (`0x006FF000` -> `0x006FF93C`, or `0x006FF01E` when
         // `BulletClass::Fire` refuses) and resumes at `0x006FF749`.
-        let launched = launch.is_some();
+        let mut launched = launch.is_some();
         if let Some(FireAtLaunchResult {
             velocity,
             speed: launch_speed,
@@ -1915,7 +1924,7 @@ pub(super) fn emit_admitted_fire(
             let payload =
                 payload.with_firepower_multiplier(phobos_firepower_multiplier(&damage_stages));
             // `BulletClass::Fire` (`0x006FF014`) at the launch source.
-            super::admit_fired_bullet(
+            launched = super::admit_techno_fired_bullet(
                 world,
                 rules,
                 weapon,
@@ -3645,3 +3654,55 @@ pub(crate) fn estimated_damage_on(
 #[cfg(test)]
 #[path = "welding_native_tests.rs"]
 mod welding_native_tests;
+
+/// Ares 3.0 InfantryClass_UpdateFiringState_Heal (1004E420, hook 0x520731):
+/// a healing infantryman keeps a damaged vehicle as its target, where the
+/// stock ILLEGAL arm keeps infantry only.
+#[cfg(all(test, feature = "ares"))]
+mod ares_heal_drop_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    #[test]
+    fn ares_healer_keeps_any_damaged_techno_target() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n0=MEDIC\n[AircraftTypes]\n[BuildingTypes]\n\
+             [VehicleTypes]\n0=MTNK\n\n\
+             [MEDIC]\nStrength=125\nPrimary=Mend\n\n\
+             [MTNK]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             Strength=300\nArmor=heavy\nSpeed=6\nSight=10\n\n\
+             [Mend]\nDamage=-50\nROF=50\nRange=6\nWarhead=AP\n\n\
+             [AP]\nVerses=100%,100%,90%,75%,75%,75%,60%,30%,20%,0%,0%\n",
+        ))
+        .expect("healer rules parse");
+        let mut world = Simulation::new();
+        world.intern_rule_type_ids(&rules);
+        world.resolve_type_handles(&rules);
+        let tank = world
+            .spawn_object("MTNK", "Americans", 5, 5, 0, &rules)
+            .expect("a vehicle target");
+        let mend = rules.weapon("Mend");
+        let drops = |world: &Simulation| {
+            heal_weapon_drops_target(
+                world,
+                &rules,
+                mend,
+                TargetKind::Entity(tank),
+                EntityCategory::Infantry,
+            )
+        };
+        let health = |world: &mut Simulation, value| {
+            world
+                .substrate
+                .entities
+                .get_mut(tank)
+                .unwrap()
+                .health
+                .set_for_test(value)
+        };
+        health(&mut world, 100);
+        assert!(!drops(&world), "a damaged vehicle stays the target");
+        health(&mut world, 300);
+        assert!(drops(&world), "a healthy one goes");
+    }
+}

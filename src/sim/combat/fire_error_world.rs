@@ -332,6 +332,23 @@ impl<'a> FireSubject<'a> {
             drain_target: Link::None,
             locomotor_target: Link::None,
             temporal: None,
+            #[cfg(feature = "ares")]
+            temporal_gunner_weapon: obj.turret_count > 0 && !obj.is_gattling && {
+                let entities = &self.world.substrate.entities;
+                let interner = &self.world.interner;
+                let slot = combat_weapon::what_weapon_should_i_use(
+                    self.rules,
+                    obj,
+                    &combat_weapon::attacker_facts(firer, obj),
+                    None,
+                    |slot| {
+                        combat_weapon::get_weapon(firer, obj, slot, entities, self.rules, interner)
+                    },
+                );
+                combat_weapon::get_weapon(firer, obj, slot, entities, self.rules, interner)
+                    .and_then(|weapon| combat_weapon::warhead_of(self.rules, weapon))
+                    .is_some_and(|warhead| warhead.temporal)
+            },
             owner_is_human: crate::sim::house_state::house_state_for_owner_id(
                 &self.world.houses,
                 firer.owner(),
@@ -482,7 +499,18 @@ impl<'a> FireSubject<'a> {
                         drainable: target_obj.drainable,
                         berserk_friendly: target_obj.berserk_friendly,
                         unnatural: target_obj.unnatural,
+                        // Ares TechnoClass_CanFire_PsionicsImmune (10049EF0,
+                        // hook 0x6FC417): the rank's PSIONICSIMMUNE joins the
+                        // type flag and `ImmuneToBerserk` overrides both.
+                        #[cfg(not(feature = "ares"))]
                         immune_to_psionics: target_obj.immune_to_psionics,
+                        #[cfg(feature = "ares")]
+                        immune_to_psionics: target_obj.techno_combat().combat().immune_to_berserk(
+                            target_obj.immune_to_psionics
+                                || target_obj.promotion_abilities().is_some_and(|abilities| {
+                                    abilities.psionics_immune(entity.veterancy.raw())
+                                }),
+                        ),
                         spawned: target_obj.spawned,
                         balloon_hover: target_obj.balloon_hover,
                         jumpjet: target_obj.jumpjet,

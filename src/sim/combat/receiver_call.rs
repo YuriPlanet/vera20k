@@ -324,6 +324,28 @@ pub(super) fn apply_building_receive_prelude(
     BuildingReceivePrelude::Respond
 }
 
+/// `BuildingClass::ReceiveDamage @ 0x00442230`'s two type gates, which
+/// return 0 after the wrapper's attacker bookkeeping and base response
+/// (already executed by commit_entities) and before the Ares firestorm hook
+/// (`0x004423E7`), the Health0 test and `TechnoClass::ReceiveDamage`.
+/// `0x00442358..0x004423A0`: a `LaserFence=` type (`+0x16BF`,
+/// BuildingTypeClass::ReadINI `0x00460AA9`) without ignoreDefenses (arg5,
+/// read at `0x00442368`); dormant in retail: no type sets `LaserFence=`.
+/// `0x004423A3..0x004423E4`: a `BridgeRepairHut=` type (`+0x16B6`) that is
+/// also `Immune=` (`+0x233`). The LaserFence gate is the only reader of
+/// ignoreDefenses before it (the next ones pass it to Techno at
+/// `0x00442425` and to vt+0x4EC at `0x00442665`), so the forced C4 of
+/// BlowUpBridge (`0x0047DDAE`) leaves the hut untouched.
+pub(super) fn building_type_gate_returns_zero(
+    target_type: Option<&crate::rules::object_type::ObjectType>,
+    receiver_flags: ReceiverCallFlags,
+) -> bool {
+    target_type.is_some_and(|object| {
+        (!receiver_flags.ignore_defenses && object.laser_fence)
+            || (object.bridge_repair_hut && object.immune)
+    })
+}
+
 /// Infantry517FC1..518010 mutates the caller's damage before Foot4D7330.
 /// Keep this head ahead of Foot's parasite callbacks and the Techno resolver.
 pub(super) fn prepare_infantry_receiver(
@@ -447,27 +469,7 @@ pub(super) fn resolve_receive_damage_with_input(
     let target = entities.get(event.target_id)?;
     let target_type = interner.object_type(target.type_ref(), rules);
     let target_is_building = target.category() == EntityCategory::Structure;
-    // `BuildingClass::ReceiveDamage @ 0x00442230` returns 0 at two type gates
-    // after the wrapper's attacker bookkeeping and base response (already
-    // executed by commit_entities) and before the Health0 test and
-    // `TechnoClass::ReceiveDamage`. `0x00442358..0x004423A0`: a
-    // `LaserFence=` type (`+0x16BF`, BuildingTypeClass::ReadINI
-    // `0x00460AA9`) without ignoreDefenses (arg5, read at `0x00442368`).
-    // Dormant in retail: no type sets `LaserFence=`.
-    if target_is_building
-        && !receiver_flags.ignore_defenses
-        && target_type.is_some_and(|object| object.laser_fence)
-    {
-        return None;
-    }
-    // `0x004423A3..0x004423E4`: a `BridgeRepairHut=` type (`+0x16B6`) that is
-    // also `Immune=` (`+0x233`). The LaserFence gate is the only reader of
-    // ignoreDefenses before it (the next ones pass it to Techno at
-    // `0x00442425` and to vt+0x4EC at `0x00442665`), so the forced C4 of
-    // BlowUpBridge (`0x0047DDAE`) leaves the hut untouched.
-    if target_is_building
-        && target_type.is_some_and(|object| object.bridge_repair_hut && object.immune)
-    {
+    if target_is_building && building_type_gate_returns_zero(target_type, receiver_flags) {
         return None;
     }
     // Building442230 returns before Techno for Health0, after its wrapper
@@ -502,6 +504,24 @@ pub(super) fn resolve_receive_damage_with_input(
     let allied = |asker: InternedId, other: InternedId| alliances.is_allied(interner, asker, other);
     let attacker_is_allied = source_house.is_some_and(|owner| allied(owner, target.owner()));
     let source_house_is_allied = source_house.is_some_and(|owner| allied(target.owner(), owner));
+    // Installed Ares TechnoClass_ReceiveDamage_Abilities1004A950 (hook
+    // 0x701BFE): the rank's RADIMMUNE, PSIONICWEAPONIMMUNE, POISONIMMUNE and
+    // PSIONICSIMMUNE join the type flags, and `ImmuneToBerserk` overrides the
+    // Psychedelic one.
+    #[cfg(feature = "ares")]
+    let (rank_rad, rank_psychic, rank_poison, rank_psionics) = target_type
+        .and_then(|object| object.promotion_abilities())
+        .map_or((false, false, false, false), |abilities| {
+            let xp = target.veterancy.raw();
+            (
+                abilities.rad_immune(xp),
+                abilities.psionic_weapon_immune(xp),
+                abilities.poison_immune(xp),
+                abilities.psionics_immune(xp),
+            )
+        });
+    #[cfg(not(feature = "ares"))]
+    let (rank_rad, rank_psychic, rank_poison, rank_psionics) = (false, false, false, false);
     // Installed Ares TechnoClass_ReceiveDamage_Abilities1004A950, at1004AA5F:
     // a live attacker's owner wins over arg7 sourceHouse. CanTargetHouse10051B70
     // replaces the stock ally gate after Poison and before Psychedelic, including
@@ -583,16 +603,22 @@ pub(super) fn resolve_receive_damage_with_input(
         warping_out: !receiver_flags.ignore_defenses && target.is_warped_out(),
         bunker_blocked,
         radiation_immune: warhead.radiation
-            && target_type.is_some_and(|object| object.immune_to_radiation),
+            && (rank_rad || target_type.is_some_and(|object| object.immune_to_radiation)),
         psychic_immune: warhead.psychic_damage
-            && target_type.is_some_and(|object| object.immune_to_psionic_weapons),
-        poison_immune: warhead.poison && target_type.is_some_and(|object| object.immune_to_poison),
+            && (rank_psychic || target_type.is_some_and(|object| object.immune_to_psionic_weapons)),
+        poison_immune: warhead.poison
+            && (rank_poison || target_type.is_some_and(|object| object.immune_to_poison)),
         affects_allies: warhead.affects_allies,
         attacker_is_allied,
         ares_house_damage_allowed,
         source_house_is_allied,
         psychedelic: warhead.psychedelic,
-        psionics_immune: target_type.is_some_and(|object| object.immune_to_psionics),
+        psionics_immune: target_type.is_some_and(|object| {
+            let immune = rank_psionics || object.immune_to_psionics;
+            #[cfg(feature = "ares")]
+            let immune = object.techno_combat().combat().immune_to_berserk(immune);
+            immune
+        }),
         target_is_building,
         skip_low_damage_check,
     };

@@ -926,6 +926,11 @@ pub struct ObjectType {
     /// The same retained reader stores at713109. Capture708DC0 falls to
     /// Enter709020 for -1; registered scalars queue without a Main draw.
     voice_capture: Option<String>,
+    /// Ares TechnoTypeExt `VoiceRepair` (ValueableIdx<VocClass>, unset -1):
+    /// the attack voice of a repairing weapon (TechnoClass_SelectFiringVoice
+    /// 1004B1D0, hook 0x7090A8).
+    #[cfg(feature = "ares")]
+    ares_voice_repair: Option<String>,
     /// `PreventAttackMove=` — the type refuses attack-move orders even when it
     /// carries a real `Primary=`.
     ///
@@ -1170,6 +1175,12 @@ pub struct ObjectType {
     /// `Abductor=` weapon takes this type (conductAbduction 10054A80).
     #[cfg(feature = "ares")]
     pub(crate) ares_immune_to_abduction: bool,
+    /// ObjectType `IgnoresFirestorm=` (`+0x239`, constructor false), which
+    /// `ObjectTypeClass::ReadINI @ 0x005F92D0` reads with ReadBool for every
+    /// type. Only the Ares firestorm walls read it (`sim::ares_firestorm`),
+    /// so only Ares builds keep it.
+    #[cfg(feature = "ares")]
+    pub(crate) ignores_firestorm: bool,
     /// Ares TechnoTypeExt+4C4 `Passengers.BySize=` (constructor true): the
     /// hold counts passengers' `Size=` against `Passengers=`, else heads
     /// (CanHoldPassenger 100448E0, abduction only here).
@@ -2586,11 +2597,17 @@ pub struct ObjectType {
     concentric_radial_indicator: bool,
     /// TechnoType+CD2: ReadInt713FBC stores AL without a clamp;4566EC
     /// sign-extends it. The constructor's default is zero, not General.GapRadius.
-    pub gap_radius_in_cells: i8,
+    /// Ares reads it as a whole int into TechnoTypeExt+0x650 (constructor 0),
+    /// which every gap radius read takes instead: CreateGap/RemoveGap
+    /// (1004D330, hooks 0x6FB1B5/0x6FB4A3), the operational edge (1004D250,
+    /// hook 0x454BDC), GetSensorRange (1004D170, hook 0x4566D5) and the
+    /// Mission_Unload toggle (1004D1B0, hook 0x44E2B0).
+    pub gap_radius_in_cells: i32,
     /// TechnoType+CD3 `SuperGapRadiusInCells=`: the gap radius while
     /// super-charged. Mission_Unload's gap arm needs it nonzero
-    /// (`0x0044E2B0`) and caches it in `+0x26C` (`0x0044E2DC`).
-    pub super_gap_radius_in_cells: i8,
+    /// (`0x0044E2B0`) and caches it in `+0x26C` (`0x0044E2DC`). Ares: the
+    /// whole int at TechnoTypeExt+0x654, as above.
+    pub super_gap_radius_in_cells: i32,
     /// BuildingType+170C: signed ReadInt460C41, current default zero.
     pub psychic_detection_radius: i32,
     /// `SensorArray=` — building sensor-array flag used by GetSensorRange.
@@ -3116,6 +3133,13 @@ impl ObjectType {
         &self,
     ) -> &crate::rules::ares_building_type::BuildingTypeExtRules {
         &self.building_type_ext
+    }
+
+    /// BuildingTypeExt `Firestorm.Wall` (`sim::ares_firestorm`), for the
+    /// client's health bar (hook `0x6F64CB`).
+    #[cfg(feature = "ares")]
+    pub fn ares_firestorm_wall(&self) -> bool {
+        self.building_type_ext.firestorm_wall
     }
 
     #[cfg(feature = "ares")]
@@ -3647,11 +3671,11 @@ impl ObjectType {
         if self.psychic_detection_radius > 0 {
             self.psychic_detection_radius
         } else if self.gap_generator {
-            i32::from(if gap_supercharged {
+            if gap_supercharged {
                 self.super_gap_radius_in_cells
             } else {
                 self.gap_radius_in_cells
-            })
+            }
         } else if crate::rules::ARES_ENABLED && self.sensor_array {
             // Ares GetRangeOfRadial_SensorArray10016D30 (hook4566F9) shows
             // the SensorsSight the array deposits.
@@ -3772,10 +3796,32 @@ impl ObjectType {
             // Native7162B0 dereferences an admitted primary. Preserve the
             // existing host's safe0 for an invalid missing binding; stock
             // MindControl has a bound weapon and follows the original read.
+            #[cfg(not(feature = "ares"))]
             PipScale::MindControl => self
                 .weapon_at(0)
                 .and_then(|name| rules.weapon(name))
                 .map_or(0, |weapon| weapon.damage),
+            // Ares TechnoTypeClass_GetPipMax_MindControl (1004B910, hook
+            // 0x7162B0): the first of the two base weapons whose warhead is
+            // `MindControl=` with a positive Damage, else the second's
+            // MindControl Damage, else 0.
+            #[cfg(feature = "ares")]
+            PipScale::MindControl => {
+                let mind_damage = |slot| {
+                    self.weapon_at(slot)
+                        .and_then(|name| rules.weapon(name))
+                        .filter(|weapon| {
+                            weapon
+                                .warhead
+                                .as_deref()
+                                .and_then(|warhead| rules.warhead(warhead))
+                                .is_some_and(|warhead| warhead.mind_control)
+                        })
+                        .map_or(0, |weapon| weapon.damage)
+                };
+                let primary = mind_damage(0);
+                if primary > 0 { primary } else { mind_damage(1) }
+            }
         }
     }
 
@@ -3868,6 +3914,17 @@ impl ObjectType {
             "VoiceSecondaryEliteWeaponAttack",
         ]
         .map(|key| section.and_then(|section| sounds.read_rules_reference(section, key, None)));
+        #[cfg(feature = "ares")]
+        {
+            self.ares_voice_repair = section
+                .and_then(|section| sounds.read_rules_reference(section, "VoiceRepair", None));
+        }
+    }
+
+    /// Ares `VoiceRepair`, see [`Self::ares_voice_repair`]'s field.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_voice_repair(&self) -> Option<&str> {
+        self.ares_voice_repair.as_deref()
     }
 
     pub fn voice_deploy(&self) -> Option<&str> {
@@ -3967,6 +4024,9 @@ impl ObjectType {
 
     /// Storage reached by GetWeapon7177C0/7177E0; Ares1003DBC0 adds
     /// extension records while the original build keeps its fixed bound.
+    /// Ares TechnoTypeClass_LoadFromINI_Weapons1 (10042570, hook 0x7128C0)
+    /// replaces the stock WeaponN block with LoadWeapons 10040020, which
+    /// `native_processing::WeaponSlots` ports.
     pub fn weapon_record_count(&self) -> usize {
         if cfg!(feature = "ares") {
             self.weapon_list.len()
@@ -4176,6 +4236,19 @@ impl ObjectType {
     /// `0x00457620` to `BuildingTypeClass__Is1x1WithUndeploy @ 0x00465D40`.
     pub fn is_1x1_with_undeploy(&self) -> bool {
         self.undeploys_into.is_some() && self.foundation.dimensions() == (1, 1)
+    }
+
+    /// BuildingClass::CanBeSelectedNow's type test (`0x00459C03`): whether a
+    /// band box may select the building, [`Self::is_1x1_with_undeploy`]; Ares
+    /// 3.0 BuildingClass_CanBeSelectedNow_MassSelectable 10013CF0 lets
+    /// `MassSelectable=` override it.
+    pub fn band_selectable(&self) -> bool {
+        #[cfg(feature = "ares")]
+        return self
+            .building_type_ext
+            .mass_selectable(self.is_1x1_with_undeploy());
+        #[cfg(not(feature = "ares"))]
+        self.is_1x1_with_undeploy()
     }
 
     /// The slot the per-class House and HouseType factor getters select by the
@@ -4668,6 +4741,8 @@ impl ObjectType {
             voice_deploy: None,
             voice_undeploy: None,
             voice_enter: None,
+            #[cfg(feature = "ares")]
+            ares_voice_repair: None,
             voice_capture: None,
             prevent_attack_move: section.read_bool("PreventAttackMove", false),
             voice_die: section
@@ -4777,6 +4852,8 @@ impl ObjectType {
             // TechnoTypeExt +0x304 and +0x4C4 (constructor false/true).
             #[cfg(feature = "ares")]
             ares_immune_to_abduction: section.read_ares_bool("ImmuneToAbduction", false),
+            #[cfg(feature = "ares")]
+            ignores_firestorm: section.read_bool("IgnoresFirestorm", false),
             #[cfg(feature = "ares")]
             ares_passengers_by_size: section.read_ares_bool("Passengers.BySize", true),
             #[cfg(feature = "ares")]
@@ -5377,8 +5454,15 @@ impl ObjectType {
             // The reached-pass history folds current-default reads before
             // this immutable projection. Low-byte storage commutes with
             // absent/default reads; it must not become a saturation clamp.
-            gap_radius_in_cells: section.read_int("GapRadiusInCells", 0) as i8,
-            super_gap_radius_in_cells: section.read_int("SuperGapRadiusInCells", 0) as i8,
+            #[cfg(not(feature = "ares"))]
+            gap_radius_in_cells: i32::from(section.read_int("GapRadiusInCells", 0) as i8),
+            #[cfg(not(feature = "ares"))]
+            super_gap_radius_in_cells: i32::from(section.read_int("SuperGapRadiusInCells", 0) as i8),
+            // Ares TechnoTypeExt::LoadFromINIFile Valueable<int> reads.
+            #[cfg(feature = "ares")]
+            gap_radius_in_cells: section.read_ares_int("GapRadiusInCells", 0),
+            #[cfg(feature = "ares")]
+            super_gap_radius_in_cells: section.read_ares_int("SuperGapRadiusInCells", 0),
             psychic_detection_radius: section.read_int("PsychicDetectionRadius", 0),
             sensor_array: section.read_bool("SensorArray", false),
             sensors: section.read_bool("Sensors", false),

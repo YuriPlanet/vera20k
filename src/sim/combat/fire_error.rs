@@ -295,6 +295,11 @@ pub(crate) struct FirerFacts {
     pub locomotor_target: Link,
     /// `+0x274` TemporalImUsing and what it holds (`Temporal+0x28`).
     pub temporal: Option<Link>,
+    /// Ares UnitClass_CanFire (1004BC80, hook 0x741206): a `TurretCount=`
+    /// non-Gattling type whose SelectWeapon(NULL) weapon has a `Temporal=`
+    /// warhead.
+    #[cfg(feature = "ares")]
+    pub temporal_gunner_weapon: bool,
     /// Owner `IsHumanPlayer` (`House+0x1EC`).
     pub owner_is_human: bool,
     /// Paralysed (vt+0x380: Foot `0x004DE770`, time left != 0).
@@ -373,6 +378,8 @@ impl Default for FirerFacts {
             drain_target: Link::None,
             locomotor_target: Link::None,
             temporal: None,
+            #[cfg(feature = "ares")]
+            temporal_gunner_weapon: false,
             owner_is_human: false,
             paralyzed: false,
             spawns: None,
@@ -710,13 +717,16 @@ fn unit(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> Fir
     // vehicle, the vt+0x80 of a Techno target (AsTechno `0x0040DD20`).
     if weapon_value(facts, query) < 0 {
         let target = &facts.target;
+        // Ares 3.0 UnitClass_CanFire_Heal (1004E540, hook 0x741113) replaces
+        // the vt+0x80 call: any Techno below the threshold may be healed.
         let vehicle = target.kind.techno_class().is_some_and(|class| {
-            super::vehicle_like(
-                class,
-                facts.target_type.non_vehicle,
-                facts.target_type.is_1x1_with_undeploy,
-                || query.low_flying(),
-            )
+            cfg!(feature = "ares")
+                || super::vehicle_like(
+                    class,
+                    facts.target_type.non_vehicle,
+                    facts.target_type.is_1x1_with_undeploy,
+                    || query.low_flying(),
+                )
         });
         if !vehicle || target.health.is_full(facts.target_type.strength) {
             return FireError::Illegal;
@@ -740,8 +750,16 @@ fn unit(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> Fir
     if (weapon.use_spark_particles || weapon.use_fire_particles) && firer.navcom {
         return FireError::Moving;
     }
-    // U10 `0x00741206`.
-    if firer.temporal.is_some() && firer.navcom {
+    // U10 `0x00741206`. Ares 3.0 UnitClass_CanFire (1004BC80) asks instead
+    // whether a turreted, non-Gattling type's SelectWeapon(NULL) weapon has
+    // a `Temporal=` warhead (0x00741210), so an IFV moves and fires its other
+    // gunner weapons.
+    let warping = if cfg!(feature = "ares") {
+        firer.temporal_gunner_weapon
+    } else {
+        firer.temporal.is_some()
+    };
+    if warping && firer.navcom {
         return FireError::Moving;
     }
     // U11 `0x00741229`: the turret is still finishing its arc.
@@ -777,11 +795,18 @@ fn infantry(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) ->
     if matches!(firer.sequence, 0xB..=0xF | 0x14 | 0x15 | 0x22..=0x24) {
         return FireError::Cant;
     }
-    // I2 `0x0051C8FE`: a medic heals only damaged infantry.
-    if weapon_value(facts, query) < 0
-        && (target.kind != FireTargetKind::Infantry
-            || target.health.is_full(facts.target_type.strength))
-    {
+    // I2 `0x0051C8FE`: a medic heals only damaged infantry. Ares 3.0
+    // InfantryClass_CanFire_Heal (1004E270, hook 0x0051C913): any damaged
+    // Techno (GetHealthPercentage below the threshold; 0/0 is not damaged).
+    let healable = if cfg!(feature = "ares") {
+        target.kind.techno_class().is_some()
+            && target.health.compare_ratio(facts.target_type.strength, 1.0)
+                == crate::util::native_x87::MaskedX87Ordering::Less
+    } else {
+        target.kind == FireTargetKind::Infantry
+            && !target.health.is_full(facts.target_type.strength)
+    };
+    if weapon_value(facts, query) < 0 && !healable {
         return FireError::Illegal;
     }
     // I3 `0x0051C947`: another object rocks the Unit.

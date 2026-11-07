@@ -36,6 +36,9 @@ impl WeaponOffsets {
             {
                 // Ares10040020/resize10040AF0: extension tails are destroyed
                 // on shrink; regrown WeaponStruct coordinates start at zero.
+                // LoadWeapons reads this art block itself, so
+                // TechnoTypeClass_LoadFromINI_Weapons2 (10042590, hook
+                // 0x715B1F) skips the stock one.
                 let extra = count.saturating_sub(WEAPON_SLOT_COUNT);
                 self.extra_base.resize(extra, [0; 3]);
                 self.extra_elite.resize(extra, [0; 3]);

@@ -200,7 +200,18 @@ impl Simulation {
             ge.set_body_facing_rot(obj.turret_rot);
         }
         if let Some(obj) = obj.filter(|obj| GameEntity::type_has_secondary_facing(obj, category)) {
-            let mut secondary = crate::sim::movement::FacingClass::new(initial, obj.turret_rot);
+            // Ares 3.0 UnitClass_CTOR_TurretROT (1004BC40, hook 0x735584) and
+            // AircraftClass_Init_TurretROT (10048AC0, hook 0x413FFA) give the
+            // secondary controller `TurretROT=`, else `ROT=`.
+            #[cfg(feature = "ares")]
+            let rot = if matches!(category, EntityCategory::Unit | EntityCategory::Aircraft) {
+                obj.secondary_turn_rate()
+            } else {
+                obj.turret_rot
+            };
+            #[cfg(not(feature = "ares"))]
+            let rot = obj.turret_rot;
+            let mut secondary = crate::sim::movement::FacingClass::new(initial, rot);
             if category == EntityCategory::Aircraft {
                 // Aircraft413FD2..414015 supplies ROT to BOTH controllers;
                 // Unlimbo414310 -> Foot4D7170 -> Techno6F6DAA snaps Primary;

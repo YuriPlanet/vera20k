@@ -308,3 +308,102 @@ fn inf_death_anim_replaces_the_table_and_takes_the_invoker_house() {
         "the anim arm UnInits instead of the Die2 sequence"
     );
 }
+
+/// InfantryClass_ReceiveDamage_Anims (10025D20, hook 0x5186F2): the
+/// FlamingInfantry arm's anim takes SetMakeInfOwner with no invoker, so the
+/// default `MakeInfantryOwner` (invoker) leaves it unowned, and `victim`
+/// gives it the burnt infantryman's house.
+#[test]
+fn inf_death_table_anim_takes_its_make_infantry_owner() {
+    for (owner_kind, expect_victim) in [("", false), ("MakeInfantryOwner=victim\n", true)] {
+        let mut rules = rules(
+            "InfDeath=4\n",
+            "",
+            "[InfantryTypes]\n0=TROOP\n[TROOP]\nStrength=100\nArmor=none\nSpeed=4\n\
+             [Animations]\n0=FLAME\n[General]\nFlamingInfantry=FLAME\n",
+        );
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
+            &format!("[FLAME]\nRate=900\n{owner_kind}"),
+        ));
+        art.bind_anim_frame_count_for_test("FLAME", 20);
+        rules.replace_art_registry_for_test(art);
+        let (mut sim, firer, _) = scene(&rules);
+        let troop = sim
+            .spawn_object("TROOP", "Russians", 25, 20, 0, &rules)
+            .unwrap();
+        let event = EntityDamageEvent::direct_receiver(
+            troop,
+            1_000,
+            0,
+            firer,
+            None,
+            sim.interner.intern("WH"),
+            ReceiverCallFlags {
+                ignore_defenses: true,
+                arg6: false,
+            },
+        );
+        let _ = sim.commit_direct_damage_receiver(&rules, None, event, FrameEffects::default());
+        let flame = sim.interner.get("FLAME").expect("anim type interned");
+        let anims: Vec<_> = sim
+            .substrate
+            .anims
+            .iter()
+            .map(|(_, anim)| anim)
+            .filter(|anim| anim.type_id() == flame)
+            .collect();
+        let [anim] = anims[..] else {
+            panic!("one FlamingInfantry anim: {}", anims.len());
+        };
+        let victim = sim.interner.get("Russians").unwrap();
+        assert_eq!(anim.owner_house(), expect_victim.then_some(victim), "{owner_kind}");
+    }
+}
+
+/// Ares TechnoClass_CanFire_PsionicsImmune (10049EF0, hook 0x6FC417):
+/// `ImmuneToBerserk` overrides `ImmuneToPsionics` for a Psychedelic weapon,
+/// both ways.
+#[test]
+fn immune_to_berserk_overrides_the_psychedelic_fire_error() {
+    for (target_ini, illegal) in [
+        ("ImmuneToPsionics=yes\n", true),
+        ("ImmuneToPsionics=yes\nImmuneToBerserk=no\n", false),
+        ("ImmuneToBerserk=yes\n", true),
+    ] {
+        let rules = rules("Psychedelic=yes\n", target_ini, "");
+        let (sim, firer, target) = scene(&rules);
+        let code = super::fire_error_world::FireSubject {
+            world: &sim,
+            rules: &rules,
+            overlay_registry: None,
+            fog: None,
+            firer: sim.entities().get(firer).unwrap(),
+            obj: rules.object("FIRER").unwrap(),
+            target: Some(TargetKind::Entity(target)),
+            weapon_index: 0,
+        }
+        .fire_error(false);
+        assert_eq!(code == FireError::Illegal, illegal, "{target_ini}");
+    }
+}
+
+/// Ares TechnoClass_ReceiveDamage_Abilities (1004A950, hook 0x701BFE): a
+/// veteran with the `RADIMMUNE` rank ability takes no radiation damage; the
+/// same type below veteran does.
+#[test]
+fn rad_immune_rank_ability_refuses_radiation_damage() {
+    let rules = rules("Radiation=yes\n", "VeteranAbilities=RADIMMUNE\n", "");
+    for (experience, damaged) in [(0.0f32, true), (1.0, false)] {
+        let (mut sim, firer, target) = scene(&rules);
+        sim.substrate
+            .entities
+            .get_mut(target)
+            .unwrap()
+            .veterancy
+            .set_raw_for_test(crate::util::native_x87::NativeF32Bits::from_bits(
+                experience.to_bits(),
+            ));
+        shoot(&mut sim, &rules, firer, target, 30);
+        assert_eq!(health(&sim, target) < 1000, damaged, "{experience}");
+    }
+}

@@ -701,6 +701,14 @@ impl Simulation {
                 return;
             }
         }
+        // Ares 3.0 TemporalClass_UpdateA (1004BB60, hook 0x71A84E): the
+        // target's JammerClass unjams everything and is freed (its next
+        // TechnoClass_Update makes a new one). Its AttachEffect anim hiding
+        // (`TemporalHidesAnim`) belongs to the AttachEffect owner's residual.
+        #[cfg(feature = "ares")]
+        if let Some(target) = link.target {
+            self.remove_radar_jammer(target);
+        }
         // 0x0071A84E..0x0071A88A: the chain first, then the head's own weapon.
         let chain = link
             .next

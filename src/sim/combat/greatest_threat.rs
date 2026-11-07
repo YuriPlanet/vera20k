@@ -940,8 +940,11 @@ impl ScanContext<'_> {
                     )
                     .is_some();
         }
-        // `0x006F7FC5..0x006F7FDD`: anything else answers vt+0x80.
-        !vehicle_like(self, candidate, candidate_obj)
+        // `0x006F7FC5..0x006F7FDD`: anything else answers vt+0x80. Ares 3.0
+        // TechnoClass_CanAutoTargetObject_Heal (1004E490, hook 0x6F7FC5)
+        // jumps past it to 0x006F7FDF, so a healing vehicle may take any
+        // damaged ally.
+        !cfg!(feature = "ares") && !vehicle_like(self, candidate, candidate_obj)
     }
 
     /// The candidate's owner is `MultiplayPassive` (HouseType `+0x1A6`).

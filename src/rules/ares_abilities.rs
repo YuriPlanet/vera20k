@@ -54,6 +54,26 @@ impl PromotionAbilities {
         self.has_at(5, experience)
     }
 
+    /// `RADIMMUNE` (TypeExt+12D/+134): FootClass_Update_RadImmune
+    /// (10049490, hook 0x4DA584) and ReceiveDamage_Abilities (1004A950,
+    /// hook 0x701BFE).
+    #[cfg(feature = "ares")]
+    pub(crate) fn rad_immune(&self, experience: NativeF32Bits) -> bool {
+        self.has_at(1, experience)
+    }
+
+    /// `POISONIMMUNE` (TypeExt+130/+137), ReceiveDamage_Abilities.
+    #[cfg(feature = "ares")]
+    pub(crate) fn poison_immune(&self, experience: NativeF32Bits) -> bool {
+        self.has_at(4, experience)
+    }
+
+    /// `PSIONICWEAPONIMMUNE` (TypeExt+132/+139), ReceiveDamage_Abilities.
+    #[cfg(feature = "ares")]
+    pub(crate) fn psionic_weapon_immune(&self, experience: NativeF32Bits) -> bool {
+        self.has_at(6, experience)
+    }
+
     /// `UNWARPABLE` (TypeExt+12F/+136) by the same raw-XP test, as
     /// TechnoExt::CanWarpTarget 1004F300 inlines HasAresAbility.
     #[cfg(feature = "ares")]

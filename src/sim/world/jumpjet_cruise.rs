@@ -460,6 +460,20 @@ impl JumpjetFlightHost for CruiseHost<'_> {
         self.owner().landing_for_deploy()
     }
     fn deploy_facing(&self) -> Option<u16> {
+        // Ares 3.0 JumpjetLocomotionClass_State4_54C550_DeployDir (100499F0,
+        // hook 0x54C767): only a type with a `DeployingAnim=` turns, to its
+        // own `DeployDir` (eighth turns, << 13) when set.
+        #[cfg(feature = "ares")]
+        {
+            let object = self
+                .sim
+                .interner
+                .object_type(self.owner().type_ref(), self.rules)?;
+            object.deploying_anim.as_ref()?;
+            if let Some(dir) = object.techno_combat().movement().deploy_dir() {
+                return Some(u16::from(dir) << 13);
+            }
+        }
         Some(u16::from(self.rules.general.deploy_dir as u8) << 8)
     }
     fn touchdown(&mut self, runtime: &mut JumpjetRuntime) -> bool {

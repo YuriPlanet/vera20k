@@ -53,7 +53,8 @@ impl GameEntity {
         }
     }
 
-    /// TechnoClass::SetGunnerWeapon70DC70 -> TechnoType7178B0.
+    /// TechnoClass::SetGunnerWeapon70DC70 -> TechnoType7178B0 (Ares
+    /// TechnoClass_SwitchGunner 10042480 reads indices from 18 on).
     /// Charge types retain both words; out-of-range signed modes select mode0.
     /// This changes no timer, attachment or RNG state.
     pub(crate) fn set_gunner_weapon(&mut self, mode: i32, object: &ObjectType) {
