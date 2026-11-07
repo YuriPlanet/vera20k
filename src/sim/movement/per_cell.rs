@@ -537,25 +537,55 @@ impl Simulation {
             effects,
         );
         if reply != crate::sim::radio::RadioResponse::Queued {
-            // RESIDUAL: `0x0073AAF7..0x0073AB66` is not ported. These are the
-            // replies other than Queued (0x17) to a tethered Unit's message 8,
-            // including 0 with no contact. Only a refinery and a non-naval war
-            // factory tether a Unit (radio 0x18, `0x0043CACE`, `0x004445E3`),
-            // and a war factory answers 0x17.
-            // - A Harvester or Weeder with an archive queues Harvest (0) and is
-            //   sent to the archive, which then clears. Without an archive and
-            //   NavCom it Scatters (NULL, 1, 0).
-            // - Reply 0xA and every other Unit go straight to the building
-            //   Scatter tail (`Self::unit_per_cell_building_scatter`), which
-            //   every one of these arms reaches.
-            // VERA returns here, leaving the departure to the dock owners.
-            // Trigger: a tethered Unit's arrival in a Cell away from its dock.
-            // Effect: none of this arm's Harvest, archive send or Scatter.
-            // Frequency: rare. No depot or bunker reply reaches it, and a
-            // refinery's miner untethers before it moves, so it needs a miner
-            // still tethered on arrival away from its dock.
-            // Risk: a Unit left standing on a building with no orders stays
-            // put where native would scatter it.
+            // `0x0073AAF7..0x0073AB66` takes every other reply, including 0
+            // with no contact. Only a refinery and a non-naval war factory
+            // tether a Unit (radio 0x18, `0x0043CACE`, `0x004445E3`); the war
+            // factory answers 0x17, the refinery 1 (`0x0043CE18`'s
+            // fallthrough, after Techno `0x006F4C29` untethered the miner).
+            // Reply 0xA and every other Unit reach only the building tail.
+            // Type, archive (+0x218) and NavCom are re-read after radio 8.
+            if reply != crate::sim::radio::RadioResponse::Negatory
+                && let Some(unit) = self.substrate.entities.get(id)
+                && self
+                    .object_type(unit.type_ref(), rules)
+                    .is_some_and(|object| object.harvester || object.weeder)
+            {
+                if let Some(archive) = unit.archive_target() {
+                    // The ore Cell archived when the miner filled up
+                    // (`0x0073E9E4..0x0073EA7B`): Queue_Mission(Harvest, 0)
+                    // (vt+0x1E8, `0x0073AB29`), Set_Destination(archive, 1)
+                    // (vt+0x480, `0x0073AB3D`), Set_ArchiveTarget(NULL)
+                    // (`0x0070C610`, `0x0073AB47`).
+                    let _ = self.mission_queue_exact(
+                        id,
+                        MissionId::from_known(MissionType::Harvest),
+                        0,
+                        self.session.binary_frame(),
+                        &LiveReadyInputProvider { rules },
+                    );
+                    self.set_unit_destination(
+                        id,
+                        NavTargetRef::from(archive),
+                        rules,
+                        true,
+                        effects,
+                    );
+                    if let Some(unit) = self.substrate.entities.get_mut(id) {
+                        unit.set_archive_target(None);
+                    }
+                } else if unit.navigation.nav_com().is_none() {
+                    // `0x0073AB4E..0x0073AB66`: vt+0x174(&0xB1CFE8, 1, 0).
+                    let _ = self.scatter(
+                        id,
+                        None,
+                        super::scatter::ScatterFlags::new(true, false),
+                        rules,
+                        registry,
+                        effects,
+                    );
+                }
+            }
+            self.unit_per_cell_building_scatter(id, rules, registry, effects);
             return;
         }
         let Some(unit) = self.substrate.entities.get(id) else {
