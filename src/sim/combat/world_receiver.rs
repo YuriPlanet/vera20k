@@ -2744,10 +2744,18 @@ fn finish_concrete_death(
                     .rfind(|event| event.target_id == dead_id)
                     .and_then(|event| event.source_house)
             });
+        #[cfg(feature = "ares")]
+        let inf_death_anim = killing_warhead
+            .as_ref()
+            .and_then(|(wh, _)| wh.ares_combat())
+            .and_then(|combat| combat.inf_death_anim());
+        #[cfg(not(feature = "ares"))]
+        let inf_death_anim = None;
         let postlude = world.begin_infantry_receiver_death(
             dead_id,
             inf_death,
             anim_house,
+            inf_death_anim,
             rules,
             overlay_registry,
             frame_effects,
@@ -3494,6 +3502,8 @@ fn emit_detonation_receivers<'r>(
     #[cfg(feature = "ares")]
     {
         let coordinate = ares_warhead_effect_coordinate(world, detonation);
+        // 100536E0 raises the ripple first, whatever happens to the target.
+        world.ares_apply_ripples([coordinate.x, coordinate.y, coordinate.z], warhead);
         // Parent100536E0 captures OwnerHouse before EMP/tag callbacks. Phobos
         // substitutes `FirerHouse` only in its own `WarheadTypeExt::Detonate`.
         let source_house = world
@@ -3501,6 +3511,23 @@ fn emit_detonation_receivers<'r>(
             .entities
             .get(detonation.source_id)
             .map(|source| source.owner());
+        //100536E0 passes the Bullet's WeaponType (+0x130) Damage (+0xA4) to
+        // applyIronCurtain, 0 without a WeaponType.
+        let weapon_damage = detonation
+            .payload
+            .installed_weapon()
+            .and_then(|weapon| rules.weapon(world.interner.resolve(weapon)))
+            .map_or(0, |weapon| weapon.damage);
+        world.apply_ares_iron_curtain_detonation(
+            run,
+            coordinate,
+            source_house,
+            warhead,
+            weapon_damage,
+            rules,
+            overlay_registry,
+            &mut out.effects,
+        );
         world.apply_ares_emp_detonation(
             coordinate,
             Some(detonation.source_id),
@@ -3509,6 +3536,22 @@ fn emit_detonation_receivers<'r>(
             effects,
         );
         world.apply_ares_attach_effect_detonation(coordinate, source_house, warhead, rules);
+        //10053851 reads the Bullet's live Target (+0x10C) after the effects;
+        // a permanent capture returns 0x469AA4 past every vanilla arm.
+        let target = match world.projectiles.current_detonation(*detonation).target {
+            ProjectileTarget::Entity(id) => Some(id),
+            _ => None,
+        };
+        if world.apply_ares_perma_mc_detonation(
+            target,
+            source_house,
+            warhead,
+            rules,
+            overlay_registry,
+            effects,
+        ) {
+            return (None, false);
+        }
     }
 
     // `BulletClass::DetonateAtCoord @ 0x0046978e` is the chain's only

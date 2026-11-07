@@ -5266,6 +5266,7 @@ impl RuleSet {
             if let Some(handle) = rules
                 .object_category_index
                 .get(&(category, name.to_ascii_uppercase()))
+            curtain_modifiers,
                 .copied()
             {
                 rules.object_list[handle.0 as usize].bind_selection_group(group);
@@ -5280,6 +5281,7 @@ impl RuleSet {
             {
                 rules.object_list[handle.0 as usize].bind_driver_rules(driver);
             }
+                    curtain_modifiers,
         }
         #[cfg(feature = "ares")]
         for (category, name, bounty) in processed.bounty_states() {
@@ -8251,6 +8253,23 @@ impl RuleSet {
             let extensions: Vec<_> = self
                 .object_list
                 .iter()
+            // TypeExt IronCurtain.Modifier/ForceShield.Modifier scale every
+            // curtain TechnoClass::IronCurtain (hook 70E2B0) applies.
+            let curtain_modifiers = self
+                .object_list
+                .iter()
+                .filter(|object| object.ares_curtain_modifiers() != [NativeF64Bits::ONE; 2])
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.ares_curtain_modifiers(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !curtain_modifiers.is_empty() {
+                b"ares-curtain-modifiers-v1".hash(&mut hasher);
+                curtain_modifiers.hash(&mut hasher);
+            }
                 .filter(|object| {
                     object.has_spotlight || object.spotlight_rules() != Default::default()
                 })

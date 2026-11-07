@@ -23,9 +23,8 @@
 //! Ledger: the invoke anim's and each curtain receiver's own RNG draws; timer
 //! writes of each curtain, the Super's fade countdown and the owner's
 //! blackout; the curtain receivers' detach calls (a parasite's ExitUnit).
-//! RESIDUAL: TechnoTypeExt `IronCurtain.Modifier` (hook 70E2B0, 1004A880)
-//! scales each curtain's duration; VERA applies the duration unscaled (the
-//! default modifier 1.0 gives the same frames).
+//! Each curtain's duration scales by the type's `IronCurtain.Modifier` in
+//! the Techno curtain (hook 70E2B0, 1004A880; `invulnerability`).
 
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;

@@ -25,6 +25,8 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 pub mod aim_coord;
+#[cfg(feature = "ares")]
+mod ares_warhead_effects;
 mod attack_target;
 mod airburst;
 #[cfg(feature = "phobos")]
@@ -85,6 +87,8 @@ mod airstrike_target_tests;
 mod ares_armor_tests;
 #[cfg(all(test, feature = "ares"))]
 mod ares_warhead_combat_tests;
+#[cfg(all(test, feature = "ares"))]
+mod ares_warhead_effects_tests;
 #[cfg(test)]
 mod bridge_cluster_tests;
 #[cfg(test)]

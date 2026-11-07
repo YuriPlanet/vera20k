@@ -260,6 +260,10 @@ pub(crate) struct FirerFacts {
     /// `+0x8C`, `+0xA4` (Location.Z, leptons).
     pub on_bridge: bool,
     pub z: i32,
+    /// Ares TechnoExt+50 DisableWeaponTimer in progress (StartTime set and
+    /// time left), read by hook 0x6FC0D3.
+    #[cfg(feature = "ares")]
+    pub weapons_disabled: bool,
     /// `+0x504` and, for a Unit, `+0x6D8` DeathFrameCounter (vt+0x37C).
     pub emp_remaining: i32,
     pub death_frame_counter: i32,
@@ -336,6 +340,8 @@ impl Default for FirerFacts {
             transporter: Transporter::None,
             on_bridge: false,
             z: 0,
+            #[cfg(feature = "ares")]
+            weapons_disabled: false,
             emp_remaining: 0,
             death_frame_counter: -1,
             fire_particles_live: false,
@@ -872,6 +878,13 @@ fn techno(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> F
     // T1..T11 `0x006FC0BA..0x006FC1B0`.
     if kind == FireTargetKind::None || firer.enslaved {
         return Illegal;
+    }
+    // Ares TechnoClass_CanFire_DisableWeapons (hook 0x6FC0D3, installed
+    // 10049EA0): `DisableWeapons.Duration` answers Rearm (0x6FC0DF) ahead of
+    // the warping test.
+    #[cfg(feature = "ares")]
+    if firer.weapons_disabled {
+        return Rearm;
     }
     if firer.warping_in || firer.locomotor_target == Link::Target {
         return Rearm;

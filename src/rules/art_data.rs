@@ -349,6 +349,11 @@ pub struct AnimTypeRuntimeConfig {
     /// `Victim`): the House a `MakeInfantry=` animation takes.
     #[cfg(feature = "phobos")]
     pub(crate) phobos_make_infantry_owner: crate::rules::ares_warhead::HouseSelector,
+    /// Ares AnimTypeExt+8 `MakeInfantryOwner` (Valueable<OwnerHouseKind>,
+    /// constructor Invoker; LoadFromINI 1000A4B0), the House
+    /// AnimTypeExt::SetMakeInfOwner (1000A5F0) gives the anim.
+    #[cfg(feature = "ares")]
+    pub(crate) ares_make_infantry_owner: crate::rules::ares_warhead::HouseSelector,
     /// Phobos `CreateUnit=` + `CreateUnit.Owner` (default `Victim`) +
     /// `CreateUnit.RemapAnim` (default no): `Some` when the animation names a
     /// unit type, which overrides the owner kind and permits remap.
@@ -769,6 +774,9 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         make_infantry: section.read_int("MakeInfantry", -1),
         #[cfg(feature = "phobos")]
         phobos_make_infantry_owner: crate::rules::ares_warhead::HouseSelector::Victim
+            .read(section, "MakeInfantryOwner"),
+        #[cfg(feature = "ares")]
+        ares_make_infantry_owner: crate::rules::ares_warhead::HouseSelector::Invoker
             .read(section, "MakeInfantryOwner"),
         // `CreateUnit` is a `Nullable<TechnoTypeClass*>`: `none` clears it and
         // an authored name is a presence signal here. A name no factory

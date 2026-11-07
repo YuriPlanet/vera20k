@@ -123,6 +123,15 @@ pub enum DeathAnimFollowUp {
     /// scheme's `+0x30C` from the array `0x00B054D4`); then, house or not,
     /// the anim's MarkCellOccupancy (vt+0xF0 = `0x00426270`).
     Mutate(Option<InternedId>),
+    /// Ares InfantryClass_ReceiveDamage_InfDeath (hook 0x5185C8, installed
+    /// 10025DE0): AnimTypeExt::SetMakeInfOwner (1000A5F0) with the killing
+    /// source's owner (else the house argument) as invoker and killer and
+    /// the infantryman's owner as victim ([`Simulation::ares_set_make_inf_owner`]).
+    #[cfg(feature = "ares")]
+    AresMakeInfOwner {
+        invoker: Option<InternedId>,
+        victim: InternedId,
+    },
     /// BuildingClass::DestructionEffects' frozen GetRemapColour result
     /// (`0x00441D37..0x00441D41`). Original441D2F requires a custom group;
     /// Ares441D25 ->441D37 assigns the result for ordinary types as well.
@@ -253,8 +262,58 @@ impl Simulation {
             Some(DeathAnimFollowUp::Remap(remap)) => {
                 self.substrate.anims.set_anim_remap(anim, remap);
             }
+            #[cfg(feature = "ares")]
+            Some(DeathAnimFollowUp::AresMakeInfOwner { invoker, victim }) => {
+                self.ares_set_make_inf_owner(anim, type_id, invoker, Some(victim), invoker, rules);
+            }
         }
         Some(anim)
+    }
+
+    /// Ares AnimTypeExt::SetMakeInfOwner (installed 1000A5F0), after the
+    /// anim's constructor: HouseExt::GetHouseKind (10021310) of the type's
+    /// `MakeInfantryOwner` with random allowed (one Scenario
+    /// `RandomRanged(0, houses - 1)` for `random`) and no default. A House it
+    /// finds becomes the anim's owner (`+0x180`), and for a `MakeInfantry=`
+    /// type its colour scheme's Convert the anim's remap (`+0xD4`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_set_make_inf_owner(
+        &mut self,
+        anim: crate::sim::anim_class::AnimId,
+        type_id: InternedId,
+        invoker: Option<InternedId>,
+        victim: Option<InternedId>,
+        killer: Option<InternedId>,
+        rules: &RuleSet,
+    ) {
+        use crate::rules::ares_warhead::HouseSelector;
+        let (selector, make_infantry) = rules
+            .art()
+            .anim_runtime_config(&self.interner.resolve(type_id).to_ascii_uppercase())
+            .map_or((HouseSelector::Invoker, -1), |config| {
+                (config.ares_make_infantry_owner, config.make_infantry)
+            });
+        let order = self.houses.order();
+        let random_house = (selector == HouseSelector::Random && !order.is_empty()).then(|| {
+            let last = order.len() as i32 - 1;
+            let index = self.scenario_rng.next_range_i32_inclusive(0, last);
+            order.get(index as usize).copied()
+        });
+        let Some(house) = self.house_kind(
+            selector,
+            None,
+            invoker,
+            killer,
+            victim,
+            rules,
+            random_house.flatten(),
+        ) else {
+            return;
+        };
+        self.substrate.set_anim_owner_house(anim, house);
+        if make_infantry > -1 {
+            self.substrate.anims.set_anim_house_remap(anim, house);
+        }
     }
 
     /// The shared low dropped-bomb water gate in Techno ReceiveDamage

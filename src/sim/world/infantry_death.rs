@@ -88,6 +88,12 @@ enum ReceiverDeathRecipe {
     /// InfDeath 9's InfantryMutate after its admission
     /// ([`Simulation::infantry_mutation_admits`]), then UnInit.
     Mutate,
+    /// Ares InfantryClass_ReceiveDamage_InfDeath (hook 0x5185C8, installed
+    /// 10025DE0): the killing warhead's `InfDeathAnim` in place of the
+    /// table, owned by SetMakeInfOwner, then the anim arms' tail
+    /// (`0x005185F1`) and UnInit.
+    #[cfg(feature = "ares")]
+    AresInfDeathAnim(String),
 }
 
 /// Captured concrete-receiver inputs after recursive DeathWeapon damage;
@@ -101,6 +107,9 @@ pub struct InfantryDeathPostlude {
     /// The house InfDeath 8 and 9 give their anim: the killing source's
     /// owner, else the receiver's house argument.
     house: Option<crate::sim::intern::InternedId>,
+    /// The infantryman's owner, the victim house of an Ares `InfDeathAnim`.
+    #[cfg(feature = "ares")]
+    victim_house: crate::sim::intern::InternedId,
     recipe: ReceiverDeathRecipe,
 }
 
@@ -179,7 +188,24 @@ impl InfantryDeathPostlude {
             ReceiverDeathRecipe::Sequence
             | ReceiverDeathRecipe::Cleanup
             | ReceiverDeathRecipe::WaterSplash => None,
+            #[cfg(feature = "ares")]
+            ReceiverDeathRecipe::AresInfDeathAnim(_) => None,
         };
+        #[cfg(feature = "ares")]
+        if let ReceiverDeathRecipe::AresInfDeathAnim(name) = &self.recipe {
+            world.emit_death_anim(
+                rules,
+                &mut effects.explosion_effects,
+                name,
+                DeathAnimSpawn {
+                    follow_up: Some(DeathAnimFollowUp::AresMakeInfOwner {
+                        invoker: self.house,
+                        victim: self.victim_house,
+                    }),
+                    ..DeathAnimSpawn::at(self.location, 0)
+                },
+            );
+        }
         if let Some((inf_death, follow_up)) = anim
             && let Some(name) = rules.general.infantry_death_anim(inf_death)
         {
@@ -193,13 +219,19 @@ impl InfantryDeathPostlude {
                 },
             );
         }
-        if matches!(
-            self.recipe,
-            ReceiverDeathRecipe::ExternalAnim(_)
-                | ReceiverDeathRecipe::Mutate
-                | ReceiverDeathRecipe::Cleanup
-                | ReceiverDeathRecipe::WaterSplash
-        ) {
+        #[cfg(feature = "ares")]
+        let ares_anim = matches!(self.recipe, ReceiverDeathRecipe::AresInfDeathAnim(_));
+        #[cfg(not(feature = "ares"))]
+        let ares_anim = false;
+        if ares_anim
+            || matches!(
+                self.recipe,
+                ReceiverDeathRecipe::ExternalAnim(_)
+                    | ReceiverDeathRecipe::Mutate
+                    | ReceiverDeathRecipe::Cleanup
+                    | ReceiverDeathRecipe::WaterSplash
+            )
+        {
             match uninit {
                 Some(context) => world.uninit_with_context(self.id, context),
                 None => effects.immediate_uninit_ids.push(self.id),
@@ -444,11 +476,18 @@ impl Simulation {
     /// later native callback or defer its House statistics until UnInit.
     ///
     /// `house` is the owner InfDeath 8 and 9 give their anim.
+    ///
+    /// `inf_death_anim` is the killing warhead's Ares `InfDeathAnim` (hook
+    /// 0x5185C8, installed 10025DE0): ahead of the table's dispatch, a human
+    /// (not `NotHuman=`) infantryman below height 10 (GetHeight, vt+0x1C8)
+    /// builds it at its Location instead of the table's arm, and the anim
+    /// tail follows.
     pub(crate) fn begin_infantry_receiver_death(
         &mut self,
         id: u64,
         inf_death: i32,
         house: Option<crate::sim::intern::InternedId>,
+        inf_death_anim: Option<&str>,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: super::FrameEffects<'_>,
@@ -494,6 +533,18 @@ impl Simulation {
             ),
         };
         let arm = self.infantry_death_arm(entity, inf_death, rules);
+        #[cfg(feature = "ares")]
+        let victim_house = entity.owner();
+        #[cfg(feature = "ares")]
+        let ares_anim = inf_death_anim.filter(|_| {
+            matches!(arm, InfantryDeathArm::Table(_))
+                && crate::sim::movement::air_movement::current_fly_height(
+                    entity,
+                    self.resolved_terrain.as_ref(),
+                ) < 10
+        });
+        #[cfg(not(feature = "ares"))]
+        let _ = inf_death_anim;
         if inf_death == VIRUS_INF_DEATH
             && matches!(arm, InfantryDeathArm::Table(PARADROP_INF_DEATH))
         {
@@ -517,6 +568,10 @@ impl Simulation {
                     self.emit_inline_virus_particle(rules, location);
                 }
                 ReceiverDeathRecipe::Sequence
+            }
+            #[cfg(feature = "ares")]
+            InfantryDeathArm::Table(_) if ares_anim.is_some() => {
+                ReceiverDeathRecipe::AresInfDeathAnim(ares_anim.unwrap_or_default().to_owned())
             }
             InfantryDeathArm::Table(INFANTRY_MUTATE_INF_DEATH) => {
                 if Self::infantry_mutation_admits(
@@ -554,6 +609,8 @@ impl Simulation {
             id,
             location,
             house,
+            #[cfg(feature = "ares")]
+            victim_house,
             recipe,
         }
     }

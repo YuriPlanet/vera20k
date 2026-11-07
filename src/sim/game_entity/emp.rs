@@ -95,25 +95,10 @@ mod receiver {
         /// Deliberate later mechanisms; never represented by a generic offline bool.
         Unsupported,
     }
-    /// Installed10062476..100624B4; signed32 addition wraps before max0.
+    /// Installed10062476..100624B4: the shared getCappedDuration branches
+    /// (signed32 addition wraps), then max0.
     fn capped_duration(old: i32, delta: i32, cap: i32) -> i32 {
-        let sum = old.wrapping_add(delta);
-        // Preserve10062476..A7's separate signed branches: moving max/min
-        // across this wrapping add changes overflow and zero-cap removal.
-        let new = if delta > 0 {
-            if cap < 0 {
-                old.max(delta)
-            } else if cap == 0 {
-                sum
-            } else {
-                old.max(sum.min(cap))
-            }
-        } else if cap < 0 {
-            sum
-        } else {
-            sum.min(cap)
-        };
-        new.max(0)
+        crate::sim::timer::ares_capped_duration(old, delta, cap).max(0)
     }
     fn duration_delta(duration: i32, modifier: NativeF64Bits) -> i32 {
         X87::fistp_i32_masked(X87::mul(

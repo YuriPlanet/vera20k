@@ -1566,6 +1566,11 @@ pub struct ObjectType {
     /// `TargetLaser=` (TechnoType+0xC90; the constructor stores 0 at
     /// `0x0071139B`, ReadINI `0x00714C8D..0x00714CA1` reads the key string at
     /// `0x00843898`). A human player's shot starts the firer's 15-frame laser
+    /// Ares TypeExt+150 `IronCurtain.Modifier` and +158
+    /// `ForceShield.Modifier` (constructor 1.0), projected from the retained
+    /// rules reader.
+    #[cfg(feature = "ares")]
+    curtain_modifiers: [NativeF64Bits; 2],
     /// timer (`Fire_At 0x006FF48D..0x006FF4C9`); only `UnitClass::Draw_It`
     /// draws it. Stock sets it on the Apocalypse.
     pub target_laser: bool,
@@ -2825,6 +2830,12 @@ impl ObjectType {
     #[cfg(feature = "ares")]
     pub(crate) fn bind_cloak_power_rules(
         &mut self,
+    /// Ares `IronCurtain.Modifier` and `ForceShield.Modifier`, in that order.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_curtain_modifiers(&self) -> [NativeF64Bits; 2] {
+        self.curtain_modifiers
+    }
+
         rules: &crate::rules::ares_cloak_power::CloakPowerTypeRules,
     ) {
         self.cloak_power = rules.clone();
@@ -2910,6 +2921,7 @@ impl ObjectType {
             turret_rot_override,
             aircraft_crashable,
         );
+        curtain_modifiers: [NativeF64Bits; 2],
     }
 
     #[cfg(feature = "ares")]
@@ -2919,6 +2931,7 @@ impl ObjectType {
         self.convert_script.as_ref()
     }
 
+            self.curtain_modifiers = curtain_modifiers;
     /// Retained nullable input; preserve presence independently of ROT.
     #[cfg(feature = "ares")]
     pub(crate) fn turret_rot_override(&self) -> Option<i32> {
@@ -2927,6 +2940,7 @@ impl ObjectType {
 
     /// Ares conversion1004380E..10043839 selects the optional secondary ROT.
     #[cfg(feature = "ares")]
+            curtain_modifiers,
     pub(crate) fn secondary_turn_rate(&self) -> i32 {
         self.turret_rot_override.unwrap_or(self.turret_rot)
     }
@@ -4829,6 +4843,8 @@ impl ObjectType {
             anti_armor_value: building_int(section, category, "AntiArmorValue"),
             anti_infantry_value: building_int(section, category, "AntiInfantryValue"),
             factory_rtti: if category == ObjectCategory::Building {
+            #[cfg(feature = "ares")]
+            curtain_modifiers: [NativeF64Bits::ONE; 2],
                 section.read_factory("Factory", 0)
             } else {
                 0

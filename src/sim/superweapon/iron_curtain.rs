@@ -19,7 +19,7 @@
 //!   Organic type. For any other, it forces a parasite off, clears the
 //!   paralysis timer and curtains.
 //! - BuildingClass's (`0x00457C90`) defuses a planted C4, then curtains.
-//! - The curtain itself is TechnoClass's (`0x0070E2B0`, [`apply_invulnerability`]).
+//! - The curtain itself is TechnoClass's (`0x0070E2B0`, [`techno_iron_curtain`]).
 //! - Terrain objects take ObjectClass's no-op (`0x00426460`, `RET 0xC`). VERA's
 //!   object lists hold no terrain.
 //!
@@ -71,7 +71,7 @@ use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::radar::{RadarEventRequest, RadarEventType};
 use crate::sim::superweapon::cell_grid::{live_successor, native_cells_3x3, selected_cell_list};
-use crate::sim::superweapon::invulnerability::{InvulnKind, apply_invulnerability};
+use crate::sim::superweapon::invulnerability::{InvulnKind, techno_iron_curtain};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
@@ -264,9 +264,10 @@ pub(crate) fn at_waypoint(
 
 /// One dispatch of ObjectClass vt+154 with its duration argument, the Iron
 /// Curtain's (force byte 0). Super6CCFF8 and Action6E37C9 pass
-/// `IronCurtainDuration=`; Ares SW_Protect::Activate10074750 its own. All
-/// enter the same Infantry522600 / Foot4DEAE0 / Building457C90 overrides.
-pub(super) fn curtain_object(
+/// `IronCurtainDuration=`; Ares SW_Protect::Activate10074750 its own and
+/// WarheadTypeExt::applyIronCurtain10052890 its capped one. All enter the
+/// same Infantry522600 / Foot4DEAE0 / Building457C90 overrides.
+pub(crate) fn curtain_object(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
@@ -295,7 +296,14 @@ pub(super) fn curtain_object(
                     (crate::rules::invulnerability_rules::IronCurtainEffect::Invulnerable, _) => {
                         let frame = sim.session.binary_frame();
                         if let Some(entity) = sim.substrate.entities.get_mut(id) {
-                            apply_invulnerability(entity, frame, duration, InvulnKind::IronCurtain);
+                            let object = sim.interner.object_type(entity.type_ref(), rules);
+                            techno_iron_curtain(
+                                entity,
+                                object,
+                                frame,
+                                duration,
+                                InvulnKind::IronCurtain,
+                            );
                         }
                     }
                     (crate::rules::invulnerability_rules::IronCurtainEffect::Kill, warhead) => {
@@ -330,7 +338,8 @@ pub(super) fn curtain_object(
         _ => {
             let frame = sim.session.binary_frame();
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
-                apply_invulnerability(entity, frame, duration, InvulnKind::IronCurtain);
+                let object = sim.interner.object_type(entity.type_ref(), rules);
+                techno_iron_curtain(entity, object, frame, duration, InvulnKind::IronCurtain);
             }
         }
     }
@@ -426,7 +435,8 @@ fn foot_iron_curtain(
     let frame = sim.session.binary_frame();
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.parasite.end_paralysis(frame);
-        apply_invulnerability(entity, frame, duration, InvulnKind::IronCurtain);
+        let object = sim.interner.object_type(entity.type_ref(), rules);
+        techno_iron_curtain(entity, object, frame, duration, InvulnKind::IronCurtain);
     }
 }
 

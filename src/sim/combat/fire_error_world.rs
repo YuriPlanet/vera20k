@@ -276,6 +276,10 @@ impl<'a> FireSubject<'a> {
             warped_out: firer.is_warped_out(),
             warping_in: firer.is_warping_in(),
             robot_offline: firer.deactivated.is_offline(),
+            #[cfg(feature = "ares")]
+            weapons_disabled: firer.ares_disable_weapons.start_frame()
+                != crate::sim::timer::PAUSED_START_FRAME
+                && firer.ares_disable_weapons.remaining(frame as i32) > 0,
             emp_remaining: firer.emp_remaining(),
             on_bridge: firer.on_bridge(),
             z: self.terrain().map_or(0, |terrain| {

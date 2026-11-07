@@ -1024,6 +1024,58 @@ impl Simulation {
         }
     }
 
+    /// Ares TechnoExt::ApplyPermaMC (installed 10045E30), the body of a
+    /// `MindControl.Permanent=yes` warhead's applyPermaMC (10052CD0): a type
+    /// that is `ImmuneToPsionics=` or has the rank's `PSIONICSIMMUNE` ability
+    /// refuses. Otherwise, like the Dominator's [`Self::perma_capture`], its
+    /// controller lets it go and it joins `house` with its `+0x2C4` set; then
+    /// it queues Guard (vt+0x1E8 `(Guard, 0)`), the ring it wears is UnInit
+    /// (vt+0xF8) and `PermaControlledAnimationType=` rings it
+    /// (CreateMindControlRingAnim 10043F90 inlined: a building's ring at its
+    /// height with ZAdjust -1024). Buildings are not refused.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_apply_perma_mc(
+        &mut self,
+        id: u64,
+        house: InternedId,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> bool {
+        let Some(object) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let Some(object_type) = self.object_type(object.type_ref(), rules) else {
+            return false;
+        };
+        if object_type.immune_to_psionics
+            || object_type
+                .promotion_abilities()
+                .is_some_and(|abilities| abilities.psionics_immune(object.veterancy.raw()))
+        {
+            return false;
+        }
+        if let Some(controller) = object.mind_control.controller {
+            self.free_unit(controller, id, rules, registry, frame_effects);
+        }
+        self.change_owner_with_rules(id, house, rules, registry, frame_effects);
+        let ring = self.substrate.entities.get_mut(id).and_then(|object| {
+            object.mind_control.permanent = true;
+            crate::sim::mission::authority::queue_entity_mission_deferred(
+                object,
+                MissionId::from_known(MissionType::Guard),
+            );
+            object.mind_control.ring_anim.take()
+        });
+        if let Some(ring) = ring {
+            self.destroy_anim(ring, rules);
+        }
+        if let Some(ring) = rules.mind_control.perma_controlled_anim.as_deref() {
+            self.attach_control_ring(id, ring, rules);
+        }
+        true
+    }
+
     /// Installed Ares capture10045C03..10045C1C clears permanent control
     /// and UnInit's the ring after any controller's FreeUnit has finished.
     #[cfg(feature = "ares")]

@@ -20,6 +20,8 @@ fn update_all_matches_native() {
                 coord: [index as i32, 0, 0],
                 frame: frame.as_i64().unwrap() as i32,
                 skip_forces: true,
+                #[cfg(feature = "ares")]
+                ares_warhead: None,
             });
         }
         sim.update_ion_blasts(
@@ -194,6 +196,8 @@ fn positive_ripple_stops_and_lifts_shp_foot_before_the_voxel_gate() {
             coord: [5248, 5248, 0],
             frame: 7,
             skip_forces: false,
+            #[cfg(feature = "ares")]
+            ares_warhead: None,
         },
         &rules,
     );
@@ -252,6 +256,8 @@ fn retail_loaded_tank_uses_the_shared_numeric_kernel_and_frame_table() {
             coord: [5248, 5248, 0],
             frame: 7,
             skip_forces: false,
+            #[cfg(feature = "ares")]
+            ares_warhead: None,
         },
         &rules,
     );
@@ -282,6 +288,8 @@ fn pending_damaging_blasts_survive_save_and_hash_while_visual_blasts_do_not() {
         coord: [128, 128, 0],
         frame: 8,
         skip_forces: false,
+        #[cfg(feature = "ares")]
+        ares_warhead: None,
     });
     let hash = sim.state_hash();
     assert_ne!(hash, default_hash);
@@ -375,4 +383,66 @@ fn ion_rules_use_current_defaults_case_and_registry_handoff() {
     ))
     .unwrap();
     assert_ne!(next_hash, fresh_same_text.simulation_config_hash());
+}
+
+/// Ares applyRipples (10051AE0) and the IonBlast hooks: an `IonCannon` blast
+/// builds `IonCannon.Beam` only (`IonCannon.Blast=none`) and damages with
+/// `IonCannon.Warhead`/`.Damage` (Update_Beam 10053F10); `Ripple.Radius=3`
+/// ends it after four frames (Update_Duration 100541B0); a Ripple-only
+/// warhead raises a flagged blast that builds and damages nothing.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_ion_cannon_warhead_replaces_the_blast_and_its_lifetime() {
+    let art = IniFile::from_str(
+        "[RING1]\nRate=1\nEnd=8\n[IONBEAM]\nRate=1\nEnd=8\n[ALTBEAM]\nRate=1\nEnd=8\n",
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[General]\nIonBlast=RING1\nIonBeam=IONBEAM\n\
+             [CombatDamage]\nIonCannonDamage=10\nIonCannonWarhead=ION\n\
+             [Animations]\n0=ALTBEAM\n\
+             [Warheads]\n0=ION\n1=ICWH\n2=ALT\n3=RIPPLE\n\
+             [ION]\nCellSpread=0.5\n[ALT]\nCellSpread=0.5\n\
+             [ICWH]\nIonCannon=yes\nRipple.Radius=3\nIonCannon.Blast=none\n\
+             IonCannon.Beam=ALTBEAM\nIonCannon.Warhead=ALT\nIonCannon.Damage=25\n\
+             [RIPPLE]\nIonCannon.Ripple=5\n",
+        ),
+        &art,
+    )
+    .unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    for name in ["RING1", "IONBEAM", "ALTBEAM"] {
+        rules.bind_anim_frame_count_for_test(name, 32);
+    }
+    let (rules, mut sim, _) = world_with(rules, 64, &[]);
+    sim.ares_apply_ripples([5248, 5248, 0], rules.warhead("ICWH").unwrap());
+    sim.ares_apply_ripples([1000, 1000, 0], rules.warhead("RIPPLE").unwrap());
+    let (_, areas) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
+        sim.update_ion_blasts(&rules, None, FrameEffects::default())
+    });
+    assert_eq!(
+        areas
+            .iter()
+            .map(|visit| (visit["warhead"].clone(), visit["damage"].clone()))
+            .collect::<Vec<_>>(),
+        [(serde_json::json!("ALT"), serde_json::json!(25))]
+    );
+    let names: Vec<_> = sim
+        .anims()
+        .map(|(_, anim)| sim.interner.resolve(anim.type_id()))
+        .collect();
+    assert_eq!(names, ["ALTBEAM"]);
+    for _ in 0..3 {
+        sim.update_ion_blasts(&rules, None, FrameEffects::default());
+    }
+    assert_eq!(
+        sim.ion_blasts().collect::<Vec<_>>(),
+        [([5248, 5248, 0], 4), ([1000, 1000, 0], 4)]
+    );
+    sim.update_ion_blasts(&rules, None, FrameEffects::default());
+    assert_eq!(
+        sim.ion_blasts().collect::<Vec<_>>(),
+        [([1000, 1000, 0], 5)],
+        "Ripple.Radius 3 lives four frames, IonCannon.Ripple 5 six"
+    );
 }

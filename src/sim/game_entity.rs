@@ -811,6 +811,13 @@ pub struct GameEntity {
     /// synchronously (`Simulation::tick_pending_building_detonation`) and
     /// keeps the marker, except a bridge repair hut's, which clears it.
     /// IronCurtain/ForceShield entry cancels it. A [`C4Detonation`] that
+    /// Ares TechnoExt+50 DisableWeaponTimer (allocator 10042CA0: StartTime
+    /// -1, TimeLeft 0). The ReceiveDamage aftermath starts it with
+    /// `DisableWeapons.Duration` (`vehicle_theft::driver_kill`); GetFireError
+    /// answers Rearm while it runs (`combat::fire_error_world`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_disable_weapons: crate::sim::timer::CdTimer,
     /// `sim::c4_plant` owns.
     ///
     /// [`C4Detonation`]: crate::sim::c4_plant::C4Detonation
@@ -2169,6 +2176,8 @@ impl GameEntity {
             bunker: Default::default(),
             building_gate: None,
             door: crate::sim::door::DoorClass::at_frame(construction_frame),
+            #[cfg(feature = "ares")]
+            ares_disable_weapons: Default::default(),
             bunker_runtime: None,
             deploy_attachment: Default::default(),
             behind_anim: None,

@@ -231,6 +231,9 @@ fn facts(input: &Value) -> FireFacts {
             },
             on_bridge: flag(&f["on_bridge"]),
             z: int(&f["z"]),
+            // The native rows run without Ares: no DisableWeaponTimer.
+            #[cfg(feature = "ares")]
+            weapons_disabled: false,
             emp_remaining: int(&f["emp_remaining"]),
             death_frame_counter: int(&f["death_frame_counter"]),
             fire_particles_live: flag(&f["fire_particles_live"]),

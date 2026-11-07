@@ -283,11 +283,30 @@ pub(crate) enum RelativeDamageKind {
 /// constructor 10051890 owns the defaults; ReadINI 10051D80 reads each key
 /// once per Rules pass with the Valueable/Nullable readers named below.
 /// Every key is independent, so the read order inside this group is not
-/// observable; `IonCannon`, `IronCurtain.Duration`, `MindControl.Permanent`
-/// and the other effect keys this struct lacks are not read.
+/// observable; `IonCannon` and the other effect keys this struct lacks are
+/// not read.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg(feature = "ares")]
 pub(crate) struct WarheadCombatRules {
+    /// +0x08 `MindControl.Permanent` (detail::read<bool>).
+    #[serde(default)]
+    mind_control_permanent: bool,
+    /// +0x18 `IronCurtain.Duration` and +0x1C `IronCurtain.Cap`
+    /// (detail::read<int>).
+    #[serde(default)]
+    iron_curtain_duration: i32,
+    #[serde(default = "default_iron_curtain_cap")]
+    iron_curtain_cap: i32,
+    /// +0x4C Valueable<AnimTypeClass*> `InfDeathAnim` (Find only; `none`
+    /// clears).
+    #[serde(default)]
+    inf_death_anim: Option<String>,
+    /// +0xFC `DisableWeapons.Duration`.
+    #[serde(default)]
+    disable_weapons_duration: i32,
+    /// +0x104..+0x128, the `IonCannon` group.
+    #[serde(default)]
+    ion_cannon: IonCannonRules,
     /// +0x20 Nullable<bool> `IronCurtain.Flash`.
     iron_curtain_flash: Option<bool>,
     /// +0x38 Valueable<double> `Temporal.HealthFactor`.
@@ -335,6 +354,12 @@ pub(crate) struct WarheadCombatRules {
 impl Default for WarheadCombatRules {
     fn default() -> Self {
         Self {
+            mind_control_permanent: false,
+            iron_curtain_duration: 0,
+            iron_curtain_cap: default_iron_curtain_cap(),
+            inf_death_anim: None,
+            disable_weapons_duration: 0,
+            ion_cannon: IonCannonRules::default(),
             iron_curtain_flash: None,
             temporal_health_factor: NativeF64Bits::from_bits(0),
             temporal_warp_away: None,
@@ -363,18 +388,36 @@ impl Default for WarheadCombatRules {
 }
 
 #[cfg(feature = "ares")]
+fn default_iron_curtain_cap() -> i32 {
+    -1
+}
+
+#[cfg(feature = "ares")]
 impl WarheadCombatRules {
     /// The ReadINI 10051D80 reads of this group. `temporal_warp_away` is the
     /// pass's resolved `Temporal.WarpAway` (Nullable<Anim> 1002D910: unknown
-    /// retains, `none` stores null) and `death_weapon_suppress` its
-    /// `DeathWeapon.Suppress` list (ValueableVector 1000EDD0: a reached read
-    /// replaces, unknown names are skipped).
+    /// retains, `none` stores null), `inf_death_anim` its `InfDeathAnim`
+    /// (the Valueable<Anim> Find read: unknown retains, `none` clears) and
+    /// `death_weapon_suppress` its `DeathWeapon.Suppress` list
+    /// (ValueableVector 1000EDD0: a reached read replaces, unknown names are
+    /// skipped).
     pub(crate) fn read_pass(
         &mut self,
         section: &IniSection,
         temporal_warp_away: Option<Option<String>>,
+        inf_death_anim: Option<Option<String>>,
         death_weapon_suppress: Option<Vec<crate::rules::superweapon_type::TechnoTypeReference>>,
     ) {
+        self.mind_control_permanent =
+            section.read_ares_bool("MindControl.Permanent", self.mind_control_permanent);
+        self.iron_curtain_duration =
+            section.read_ares_int("IronCurtain.Duration", self.iron_curtain_duration);
+        self.iron_curtain_cap = section.read_ares_int("IronCurtain.Cap", self.iron_curtain_cap);
+        if let Some(anim) = inf_death_anim {
+            self.inf_death_anim = anim;
+        }
+        self.disable_weapons_duration =
+            section.read_ares_int("DisableWeapons.Duration", self.disable_weapons_duration);
         self.iron_curtain_flash =
             section.read_ares_nullable_bool("IronCurtain.Flash", self.iron_curtain_flash);
         self.temporal_health_factor =
@@ -447,6 +490,26 @@ impl WarheadCombatRules {
             section.and_then(|section| sounds.read_ares_reference(section, "VoiceDie.Override"));
     }
 
+    pub(crate) fn mind_control_permanent(&self) -> bool {
+        self.mind_control_permanent
+    }
+    /// `IronCurtain.Duration` and `IronCurtain.Cap`.
+    pub(crate) fn iron_curtain(&self) -> (i32, i32) {
+        (self.iron_curtain_duration, self.iron_curtain_cap)
+    }
+    pub(crate) fn inf_death_anim(&self) -> Option<&str> {
+        self.inf_death_anim.as_deref()
+    }
+    pub(crate) fn disable_weapons_duration(&self) -> i32 {
+        self.disable_weapons_duration
+    }
+    pub(crate) fn ion_cannon(&self) -> &IonCannonRules {
+        &self.ion_cannon
+    }
+    /// The pass reads the three type references of the group first.
+    pub(crate) fn ion_cannon_mut(&mut self) -> &mut IonCannonRules {
+        &mut self.ion_cannon
+    }
     pub(crate) fn iron_curtain_flash(&self) -> Option<bool> {
         self.iron_curtain_flash
     }
@@ -533,6 +596,114 @@ impl WarheadCombatRules {
     /// Promotable<int>::Get for a rank index (Rookie 0, Veteran 1, Elite 2).
     pub(crate) fn culling(&self, rank: usize) -> (i32, i32) {
         (self.culling_below_health[rank], self.culling_chance[rank])
+    }
+}
+
+/// WarheadTypeExt+0x104..+0x128: the ion blast an `IonCannon` or
+/// `Ripple.Radius` warhead raises (applyRipples 10051AE0) and what its first
+/// frame builds (IonBlastClass_Update_Beam 10053F10).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg(feature = "ares")]
+pub(crate) struct IonCannonRules {
+    /// +0x104 Valueable<bool> `IonCannon`, constructor false.
+    enabled: bool,
+    /// +0x105 Valueable<bool> `IonCannon.Rock`, constructor true.
+    rock: bool,
+    /// +0x108 Nullable<int>, read from `Ripple.Radius`, then
+    /// `IonCannon.Ripple` (both write the field).
+    ripple_radius: Option<i32>,
+    /// +0x110/+0x118 Nullable<AnimTypeClass*> `IonCannon.Blast`/`.Beam` and
+    /// +0x120 Nullable<WarheadTypeClass*> `IonCannon.Warhead` (Find reads:
+    /// `Some(None)` is a successful `none`).
+    blast: Option<Option<String>>,
+    beam: Option<Option<String>>,
+    warhead: Option<Option<String>>,
+    /// +0x128 Nullable<int> `IonCannon.Damage`.
+    damage: Option<i32>,
+}
+
+#[cfg(feature = "ares")]
+impl Default for IonCannonRules {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            rock: true,
+            ripple_radius: None,
+            blast: None,
+            beam: None,
+            warhead: None,
+            damage: None,
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl IonCannonRules {
+    /// The ReadINI 10051D80 reads, given the pass's resolved references
+    /// (`None` where the read failed and the field retains).
+    pub(crate) fn read_pass(
+        &mut self,
+        section: &IniSection,
+        blast: Option<Option<String>>,
+        beam: Option<Option<String>>,
+        warhead: Option<Option<String>>,
+    ) {
+        self.enabled = section.read_ares_bool("IonCannon", self.enabled);
+        self.rock = section.read_ares_bool("IonCannon.Rock", self.rock);
+        self.ripple_radius = section.read_ares_nullable_int("Ripple.Radius", self.ripple_radius);
+        self.ripple_radius = section.read_ares_nullable_int("IonCannon.Ripple", self.ripple_radius);
+        for (field, value) in [
+            (&mut self.blast, blast),
+            (&mut self.beam, beam),
+            (&mut self.warhead, warhead),
+        ] {
+            if value.is_some() {
+                *field = value;
+            }
+        }
+        self.damage = section.read_ares_nullable_int("IonCannon.Damage", self.damage);
+    }
+    pub(crate) fn enabled(&self) -> bool {
+        self.enabled
+    }
+    pub(crate) fn rock(&self) -> bool {
+        self.rock
+    }
+    /// applyRipples 10051AE0 raises a blast for `IonCannon=yes` or a
+    /// positive `Ripple.Radius`.
+    pub(crate) fn raises_blast(&self) -> bool {
+        self.enabled || self.ripple_radius.unwrap_or(0) > 0
+    }
+    /// IonBlastClass_Update_Duration (100541B0): the blast lives while its
+    /// Lifetime is below `Ripple.Radius + 1` (default 79 for an ion cannon,
+    /// else 0), at most 79.
+    pub(crate) fn blast_lifetime(&self) -> i32 {
+        let radius = self
+            .ripple_radius
+            .unwrap_or(if self.enabled { 79 } else { 0 });
+        radius.wrapping_add(1).min(79)
+    }
+    /// The Nullables' value, else the given `[General]`/`[CombatDamage]`
+    /// default.
+    pub(crate) fn blast<'a>(&'a self, rules_default: &'a str) -> Option<&'a str> {
+        nullable_name(&self.blast, rules_default)
+    }
+    pub(crate) fn beam<'a>(&'a self, rules_default: &'a str) -> Option<&'a str> {
+        nullable_name(&self.beam, rules_default)
+    }
+    pub(crate) fn warhead<'a>(&'a self, rules_default: &'a str) -> Option<&'a str> {
+        nullable_name(&self.warhead, rules_default)
+    }
+    pub(crate) fn damage(&self, rules_default: i32) -> i32 {
+        self.damage.unwrap_or(rules_default)
+    }
+}
+
+#[cfg(feature = "ares")]
+fn nullable_name<'a>(value: &'a Option<Option<String>>, rules_default: &'a str) -> Option<&'a str> {
+    match value {
+        Some(name) => name.as_deref(),
+        None => Some(rules_default),
     }
 }
 
@@ -895,7 +1066,10 @@ mod tests {
             NativeF64Bits::from_bits(0.5_f64.to_bits())
         );
         assert_eq!(cull.temporal_warp_away("WARPAWAY"), None);
-        assert_eq!(combat("PLAIN").temporal_warp_away("WARPAWAY"), Some("WARPAWAY"));
+        assert_eq!(
+            combat("PLAIN").temporal_warp_away("WARPAWAY"),
+            Some("WARPAWAY")
+        );
         let plain = combat("PLAIN");
         assert_eq!(plain, &WarheadCombatRules::default());
         assert_eq!((plain.culling(0), plain.culling(2)), ((0, -1), (-1, -1)));

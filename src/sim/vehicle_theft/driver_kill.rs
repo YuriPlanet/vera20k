@@ -47,8 +47,9 @@ impl Simulation {
     /// ReceiveDamage_Aftermath1004AB50, after protected-Techno responses and
     /// before the native Uncloak70281D. Unlike EMP this is not a Bullet AoE.
     /// Behind the EffectsRequireDamage/EffectsRequireVerses gates it applies
-    /// KillDriver (10052B40), then `Flash.Duration`. `Sonar.Duration` and
-    /// `DisableWeapons.Duration`, which it starts in between, are not ported.
+    /// KillDriver (10052B40), then `DisableWeapons.Duration`, then
+    /// `Flash.Duration`. `Sonar.Duration`, which it starts between KillDriver
+    /// and DisableWeapons, is not ported here.
     pub(crate) fn ares_driver_kill_aftermath(
         &mut self,
         event: &EntityDamageEvent,
@@ -66,7 +67,8 @@ impl Simulation {
             return;
         };
         let flash = settings.combat().flash_duration();
-        if !settings.kill_driver().enabled() && flash <= 0 {
+        let disable_weapons = settings.combat().disable_weapons_duration();
+        if !settings.kill_driver().enabled() && flash <= 0 && disable_weapons <= 0 {
             return;
         }
         if state == DamageState::Unaffected
@@ -94,6 +96,15 @@ impl Simulation {
         }
         if settings.kill_driver().enabled() {
             self.ares_apply_kill_driver(event, warhead, settings, rules, registry, effects);
+        }
+        // DisableWeapons.Duration (WarheadExt+FC) restarts DisableWeaponTimer
+        // (TechnoExt+50) when it is longer than the timer's GetTimeLeft.
+        let frame = self.session.binary_frame() as i32;
+        if disable_weapons > 0
+            && let Some(target) = self.substrate.entities.get_mut(event.target_id)
+            && target.ares_disable_weapons.remaining(frame) < disable_weapons
+        {
+            target.ares_disable_weapons.start(frame, disable_weapons);
         }
         // 1004AB50 last: a Flash.Duration above Flashing (+0xF0) calls vt+0x148.
         if flash > 0

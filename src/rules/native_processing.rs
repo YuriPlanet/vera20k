@@ -2355,6 +2355,7 @@ impl ProcessedRulesLayers {
                 &member.super_weapon_techno,
             )
         })
+            [NativeF64Bits; 2],
     }
 
     pub(crate) fn ares_warhead_states(
@@ -2384,6 +2385,10 @@ impl ProcessedRulesLayers {
             .filter(|(family, _)| {
                 family.object_category().is_some() || **family == RulesTypeFamily::Terrain
             })
+                        #[cfg(feature = "ares")]
+                        member.curtain_modifiers,
+                        #[cfg(not(feature = "ares"))]
+                        [NativeF64Bits::ONE; 2],
             .flat_map(|(&family, members)| {
                 members.iter().map(move |member| {
                     (
@@ -3536,6 +3541,11 @@ impl CountryVeterancyState {
 
     #[cfg(feature = "ares")]
     pub(crate) fn presentation(
+#[cfg(feature = "ares")]
+fn default_curtain_modifiers() -> [NativeF64Bits; 2] {
+    [NativeF64Bits::ONE; 2]
+}
+
         &self,
     ) -> &crate::rules::ares_country_presentation::AresCountryPresentation {
         &self.ares.presentation
@@ -4843,6 +4853,11 @@ struct ProcessedType {
     /// ReadINI (`0x0046C2E1..0x0046C31F`) over the constructor's null
     /// (`0x0046BC82`).
     shrapnel_weapon: Option<String>,
+    /// Ares TypeExt+150 `IronCurtain.Modifier` and +158
+    /// `ForceShield.Modifier`, Valueable<double>, constructor 1.0.
+    #[cfg(feature = "ares")]
+    #[serde(default = "default_curtain_modifiers")]
+    curtain_modifiers: [NativeF64Bits; 2],
     /// Constructor46BC7C clears+2B0. ReadString128 at46C2B9 retains the
     /// existing pointer on empty input, else stores the Weapon factory result.
     #[serde(default)]
@@ -5408,6 +5423,8 @@ fn find_or_construct_type(
     #[cfg(feature = "ares")]
     if family == RulesTypeFamily::Country {
         let ares = &mut members[index].country_veterancy.ares;
+            #[cfg(feature = "ares")]
+            curtain_modifiers: default_curtain_modifiers(),
         ares.loading =
             crate::rules::country_loading::AresCountryLoading::for_country_id(&native_stored_id);
         ares.presentation =
@@ -7695,6 +7712,13 @@ impl RulesPassProcessor {
                         member.building_half_damage_smoke_location2 = raw.read_coord3(
                             "HalfDamageSmokeLocation2",
                             member.building_half_damage_smoke_location2,
+                    // TypeExt LoadFromINI1003DFB0: two independent
+                    // Valueable<double> reads (binary64, percent scales).
+                    let [iron_curtain, force_shield] = member.curtain_modifiers;
+                    member.curtain_modifiers = [
+                        raw.read_ares_double_bits("IronCurtain.Modifier", iron_curtain),
+                        raw.read_ares_double_bits("ForceShield.Modifier", force_shield),
+                    ];
                         );
                         member.building_foundation.read_stock_pass(
                             &image,
@@ -8472,8 +8496,18 @@ impl RulesPassProcessor {
                 if let Some(section) = section {
                     let ares = member.ares_warhead.as_mut().expect("WH Ares extension");
                     ares.read_pass(section, sparkle, animation);
-                    ares.combat_mut()
-                        .read_pass(section, temporal_warp_away, death_weapon_suppress);
+                    ares.combat_mut().read_pass(
+                        section,
+                        temporal_warp_away,
+                        inf_death_anim,
+                        death_weapon_suppress,
+                    );
+                    ares.combat_mut().ion_cannon_mut().read_pass(
+                        section,
+                        ion_blast,
+                        ion_beam,
+                        ion_warhead,
+                    );
                 }
                 member
                     .ares_verses
@@ -8574,11 +8608,33 @@ impl RulesPassProcessor {
                             art.read_int("DamageLevels", member.overlay_damage_levels);
                         //5FE8F1..5FE92D: plain Image.SHP, independently of
                         // Voxel; no Arctic prefix or generic retry here.
+                // Valueable<AnimTypeClass*> InfDeathAnim: the same Find
+                // read, where `none` stores null and an unknown name retains.
+                let inf_death_anim = pass
+                    .section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
+                    .and_then(|raw| {
+                        self.resolve_existing_type_from(
+                            raw,
+                            "InfDeathAnim",
+                            RulesTypeFamily::Animation,
+                        )
+                    });
                         if !member.object_image.theater() {
                             member.object_image.load_plain_shp();
                         }
                     }
                     _ => {}
+                // IonCannon.Blast/.Beam (Nullable<Anim> 1002B4D0) and
+                // IonCannon.Warhead (Nullable<Warhead> 10008D00): Find reads.
+                let [ion_blast, ion_beam, ion_warhead] = [
+                    ("IonCannon.Blast", RulesTypeFamily::Animation),
+                    ("IonCannon.Beam", RulesTypeFamily::Animation),
+                    ("IonCannon.Warhead", RulesTypeFamily::Warhead),
+                ]
+                .map(|(key, family)| {
+                    pass.section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
+                        .and_then(|raw| self.resolve_existing_type_from(raw, key, family))
+                });
                 }
             }
             index += 1;
