@@ -3024,5 +3024,12 @@ fn ares_own_detach_all_keeps_the_docked_missile() {
     let missile = docked(&sim).expect("a docked missile");
     sim.detach_all_pointer_expired(v3, &rules, None, crate::sim::world::FrameEffects::default());
     assert_eq!(docked(&sim), Some(missile));
-    assert!(sim.substrate.entities.get(missile).unwrap().lifecycle.object_alive());
+    assert!(
+        sim.substrate
+            .entities
+            .get(missile)
+            .unwrap()
+            .lifecycle
+            .object_alive()
+    );
 }
