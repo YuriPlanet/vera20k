@@ -120,6 +120,34 @@ Supported extensions:
 - [Superweapon building gates](ares-superweapon-building-gates.md)
 - [Superweapon money](ares-superweapon-money.md)
 - [UnitDelivery](ares-unit-delivery.md)
+- [Weapon beam, bolt and wave visuals](ares-weapon-visuals.md): `Beam.*`,
+  `Bolt.Color1..3`, `Bolt.ParticleSystem`, `Wave.Color`, `Wave.Intensity`,
+  `Wave.IsHouseColor`, `Wave.ReverseAgainst*` and `IsDetachedRailgun`. A wave
+  keeps its own weapon for range and cell damage. TS laser waves
+  (`Wave.IsLaser`, `Wave.IsBigLaser`) remain outside this chain.
+- Warhead damage modifiers and effects ([reader](../src/rules/ares_warhead.rs)):
+  `RelativeDamage.*`, `Culling.*`, `AllowZeroDamage`, `Damage.Deployed`,
+  `DamageAirThreshold`, `CellSpread.MaxAffect`, `PreventScatter`, `Malicious`,
+  `BridgeAbsoluteDestroyer`, `DeathWeapon.Suppress*`, `UnitLost.Suppress`,
+  `DieSound.Override`, `VoiceDie.Override`, `Flash.Duration`,
+  `IronCurtain.Flash`, `Temporal.HealthFactor`, `Temporal.WarpAway`,
+  `IronCurtain.Duration`/`.Cap` with the per-type `IronCurtain.Modifier` and
+  `ForceShield.Modifier`, `MindControl.Permanent`, `DisableWeapons.Duration`,
+  `Sonar.Duration`, `InfDeathAnim` and the `IonCannon.*`/`Ripple.Radius`
+  blast. Airborne victims of these effects and the building `EVA.Lost`
+  announcement remain outside this chain.
+- [Building infiltration and sabotage](ares-infiltration.md): `SpyEffect.*`,
+  `Saboteur`, `ImmuneToSaboteurs` and spy veterancy. Revealing the owner's
+  radar sight and custom spy cursors remain outside this chain.
+- [Cloak, PoweredBy, radar jammers and sensor arrays](ares-cloak-power.md)
+- [Superweapon common keys, Battery, Protect and SonarPulse](ares-superweapon-common.md):
+  charge drain, `SW.AlwaysGranted`, `SW.Unstoppable`, the EVA, message and
+  sidebar text keys, and `SidebarPalette`. DropPod and the retail-type options
+  (Chronosphere, Dominator, Lightning and others) remain separate.
+- [Veterancy, academies, build time and cloning](ares-veterancy.md):
+  `Promote.*`, `Experience.*`, `Academy.*`, `BuildTime.*`,
+  `FactoryPlant.Multiplier`, `Cloneable`, `ClonedAt`, `ClonedAs` and
+  `CloningFacility`.
 - [INI Include and inheritance](ini-directives.md). The read-only `asset ini-expand` probe works
   in every build.
 - [Extended authored House ally lists](../tools/input_oracle/ares_allies_reader.md).
@@ -151,6 +179,11 @@ the merged pull requests that carried each chain:
   bounty label's native slot, and the radiation decay-clock repair that
   survives loading a game.
 - **EncoreAlpha** — the retained `EMPulseWarhead` rules state.
+- **libi** — weapon beam, bolt and wave visuals, the warhead damage
+  modifiers and effects (curtain duration, permanent control, weapon lock,
+  ion cannon), building infiltration and sabotage, cloak, PoweredBy, radar
+  jammers and sensor arrays, the common superweapon keys with Battery,
+  Protect and SonarPulse, and veterancy, academies, build time and cloning.
 
 ## Original project and authors
 
