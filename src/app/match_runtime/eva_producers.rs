@@ -959,4 +959,35 @@ mod tests {
             );
         }
     }
+
+    /// Ares `InfiltratedBy @ 10012000`: each applied arm speaks its lines in
+    /// order, all behind the radar event.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_infiltration_lines_follow_each_applied_arm() {
+        use crate::sim::spy_infiltration::{AresInfiltrationArms, InfiltrationEffect};
+        let effect = InfiltrationEffect::Ares(AresInfiltrationArms {
+            radar_reset: Some(false),
+            super_granted: true,
+            cash_stolen: true,
+            ..Default::default()
+        });
+        assert_eq!(
+            infiltration_eva_events(effect, true, false, true),
+            [
+                "EVA_BuildingInfRadarSabotaged",
+                "EVA_BuildingInfiltrated",
+                "EVA_BuildingInfCashStolen"
+            ]
+        );
+        assert_eq!(
+            infiltration_eva_events(effect, true, true, false),
+            [
+                "EVA_RadarSabotaged",
+                "EVA_BuildingInfiltrated",
+                "EVA_CashStolen"
+            ]
+        );
+        assert!(infiltration_eva_events(effect, false, true, false).is_empty());
+    }
 }
