@@ -1770,6 +1770,8 @@ impl ProcessedRulesLayers {
                     ares_bolt_particle_system: &member.weapon.ares_bolt_particle_system,
                     #[cfg(feature = "ares")]
                     ares_ivan_bomb_warhead: &member.weapon.ares_ivan_bomb_warhead,
+                    #[cfg(feature = "ares")]
+                    ares_abductor_anim: member.weapon.ares_abductor_anim.as_deref(),
                 }
             })
     }
@@ -5270,6 +5272,8 @@ pub(crate) struct WeaponState<'a> {
     pub(crate) ares_bolt_particle_system: &'a Option<Option<String>>,
     #[cfg(feature = "ares")]
     pub(crate) ares_ivan_bomb_warhead: &'a Option<Option<String>>,
+    #[cfg(feature = "ares")]
+    pub(crate) ares_abductor_anim: Option<&'a str>,
 }
 
 /// Fields needed by Weapon7729F0, retained on the same live Weapon object.
@@ -5318,6 +5322,11 @@ struct WeaponReadState {
     #[cfg(feature = "ares")]
     #[serde(default)]
     ares_ivan_bomb_warhead: Option<Option<String>>,
+    /// Ares `Abductor.Anim` (WeaponTypeExt +0xC4), a Valueable whose Find
+    /// never allocates: `none` stores null, an unknown name retains.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_abductor_anim: Option<String>,
 }
 
 impl ProcessedType {
@@ -8436,6 +8445,24 @@ impl RulesPassProcessor {
                     self.family_mut(RulesTypeFamily::Weapon)[index]
                         .weapon
                         .ares_ivan_bomb_warhead = warhead;
+                    let current = Some(
+                        self.families[&RulesTypeFamily::Weapon][index]
+                            .weapon
+                            .ares_abductor_anim
+                            .clone(),
+                    );
+                    let anim = read_ares_type_ref(&raw, "Abductor.Anim", &current, |name| {
+                        self.find_existing(RulesTypeFamily::Animation, name)
+                            .map(|anim| {
+                                self.families[&RulesTypeFamily::Animation][anim]
+                                    .native_stored_id
+                                    .clone()
+                            })
+                    })
+                    .flatten();
+                    self.family_mut(RulesTypeFamily::Weapon)[index]
+                        .weapon
+                        .ares_abductor_anim = anim;
                 }
             }
             index += 1;

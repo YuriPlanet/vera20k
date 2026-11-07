@@ -80,6 +80,15 @@ pub struct WeaponType {
     /// Ares WeaponTypeExt custom Ivan bombs ([`crate::rules::ares_weapon`]).
     #[cfg(feature = "ares")]
     pub ares_ivan_bomb: crate::rules::ares_weapon::AresIvanBomb,
+    /// Ares `ApplyDamage=` (WeaponTypeExt +0xCC, Nullable<bool>, reader
+    /// 10055520): whether FireAt's shot carries `Damage=`, by default unless
+    /// `IsSonic=` or `UseFireParticles=` (TechnoClass_Fire_AllowDamage
+    /// 1004A370, hook 0x6FE31C).
+    #[cfg(feature = "ares")]
+    pub ares_apply_damage: Option<bool>,
+    /// Ares WeaponTypeExt abduction ([`crate::rules::ares_weapon`]).
+    #[cfg(feature = "ares")]
+    pub ares_abductor: crate::rules::ares_weapon::AresAbductor,
     /// `RevealOnFire=` (`+0x137`, default yes): a launched shot reveals the
     /// firer to a human victim (FireAt `0x006FF66C`). Retail turns it off on
     /// the sniper, Virus, disguise and Mirage weapons.
@@ -282,6 +291,18 @@ pub struct WeaponType {
 }
 
 impl WeaponType {
+    /// `FireAt`'s zeroing test (`0x006FE306..0x006FE32A`): an `IsSonic=` or
+    /// `UseFireParticles=` weapon's shot carries no damage, its wave or
+    /// particles hurt instead. Ares TechnoClass_Fire_AllowDamage (1004A370,
+    /// hook 0x6FE31C) lets `ApplyDamage=` decide, defaulting to that test.
+    pub(crate) fn fire_damage_zeroed(&self) -> bool {
+        let stock = self.is_sonic || self.use_fire_particles;
+        #[cfg(feature = "ares")]
+        return !self.ares_apply_damage.unwrap_or(!stock);
+        #[cfg(not(feature = "ares"))]
+        stock
+    }
+
     /// `WeaponTypeExt::HasRequiredAttachedEffects` reads no list: every shot
     /// passes without asking the target.
     pub fn has_attach_effect_gates(&self) -> bool {
@@ -455,6 +476,10 @@ impl WeaponType {
             ),
             #[cfg(feature = "ares")]
             ares_ivan_bomb: crate::rules::ares_weapon::AresIvanBomb::read(section),
+            #[cfg(feature = "ares")]
+            ares_apply_damage: section.read_ares_nullable_bool("ApplyDamage", None),
+            #[cfg(feature = "ares")]
+            ares_abductor: crate::rules::ares_weapon::AresAbductor::read(section),
             // Constructor 1 (`0x00771DBB`); ReadINI passes it as the default
             // (`0x00772182..0x00772196`).
             reveal_on_fire: section.read_bool("RevealOnFire", true),

@@ -6673,6 +6673,7 @@ impl RuleSet {
             {
                 weapon.ares_visuals.bolt_particle_system = state.ares_bolt_particle_system.clone();
                 weapon.ares_ivan_bomb.warhead = state.ares_ivan_bomb_warhead.clone();
+                weapon.ares_abductor.anim = state.ares_abductor_anim.map(str::to_owned);
             }
             // A repeated ID replaces the earlier weapon under its key. The
             // reserve is `insert`'s, so the keys iterate in the order they

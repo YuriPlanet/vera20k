@@ -1166,6 +1166,15 @@ pub struct ObjectType {
     /// retaliation and script-issued missions retain their existing owners.
     #[cfg(feature = "ares")]
     no_manual_fire: bool,
+    /// Ares TechnoTypeExt+304 `ImmuneToAbduction=` (constructor false): no
+    /// `Abductor=` weapon takes this type (conductAbduction 10054A80).
+    #[cfg(feature = "ares")]
+    pub(crate) ares_immune_to_abduction: bool,
+    /// Ares TechnoTypeExt+4C4 `Passengers.BySize=` (constructor true): the
+    /// hold counts passengers' `Size=` against `Passengers=`, else heads
+    /// (CanHoldPassenger 100448E0, abduction only here).
+    #[cfg(feature = "ares")]
+    pub(crate) ares_passengers_by_size: bool,
     /// Ares TechnoTypeExt+46C `Saboteur=` (constructor false, Valueable read
     /// in `TechnoTypeExt::ExtData::LoadFromINIFile`): an `Infiltrate=`
     /// infantryman blows up the buildings it enters
@@ -4639,6 +4648,11 @@ impl ObjectType {
             can_retaliate: section.read_bool("CanRetaliate", true),
             #[cfg(feature = "ares")]
             no_manual_fire: section.read_ares_bool("NoManualFire", false),
+            // TechnoTypeExt +0x304 and +0x4C4 (constructor false/true).
+            #[cfg(feature = "ares")]
+            ares_immune_to_abduction: section.read_ares_bool("ImmuneToAbduction", false),
+            #[cfg(feature = "ares")]
+            ares_passengers_by_size: section.read_ares_bool("Passengers.BySize", true),
             #[cfg(feature = "ares")]
             saboteur: section.read_ares_bool("Saboteur", false),
             #[cfg(feature = "ares")]

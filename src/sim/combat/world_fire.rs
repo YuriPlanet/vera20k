@@ -987,11 +987,7 @@ fn fireat_damage(
     is_garrison: bool,
 ) -> i32 {
     let stages = fire_damage_stages(world, rules, snap, obj, is_garrison);
-    damage::attacker::fire_damage(
-        weapon.damage,
-        weapon.is_sonic || weapon.use_fire_particles,
-        &stages,
-    )
+    damage::attacker::fire_damage(weapon.damage, weapon.fire_damage_zeroed(), &stages)
 }
 
 /// Phobos `BulletExt`'s construction-time `TechnoExt::GetCurrentFirepowerMultiplier`:
@@ -1564,11 +1560,8 @@ pub(super) fn emit_admitted_fire(
         .map_or(0, |entity| entity.prism_support_count.count());
     let warhead = selected.warhead;
     let damage_stages = fire_damage_stages(world, rules, snap, obj, is_garrison);
-    let base_damage = damage::attacker::fire_damage(
-        weapon.damage,
-        weapon.is_sonic || weapon.use_fire_particles,
-        &damage_stages,
-    );
+    let base_damage =
+        damage::attacker::fire_damage(weapon.damage, weapon.fire_damage_zeroed(), &damage_stages);
     // FireAt6FE460..6FE4EF constructs a retained DiskLaser before GetROF,
     // advances the burst, stores the unhalved rearm, then calls Fire4A71A0
     // and returns NULL. Disk AI owns the later range/crash gate, discharge

@@ -41,6 +41,8 @@ pub mod building_construction;
 pub(crate) mod base_plan;
 pub(crate) mod base_plan_generation;
 pub mod bomb;
+#[cfg(feature = "ares")]
+pub(crate) mod abduction; // Ares Abductor= weapons (conductAbduction 10054A80)
 pub(crate) mod c4_plant;
 pub mod campaign_carry_over; // the record 0x008A38E0 one campaign mission hands to the next start
 pub mod capture_manager;

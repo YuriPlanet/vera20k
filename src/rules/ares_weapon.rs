@@ -116,6 +116,55 @@ impl AresIvanBomb {
     }
 }
 
+/// Ares WeaponTypeExt abduction (#680 Chrono Prison; ExtData +0xB0..+0xC4,
+/// constructor 100548B0), consumed by `conductAbduction` (Ares.dll 10054A80,
+/// `sim::abduction`). `Abductor.Anim` resolves in the ordered processor.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AresAbductor {
+    /// `Abductor` (+0xB0): the weapon puts an eligible target into its
+    /// firer's passenger hold instead of hitting it.
+    pub(crate) abductor: bool,
+    /// `Abductor.ChangeOwner` (+0xB1): the abductee joins the firer's house.
+    pub(crate) change_owner: bool,
+    /// `Abductor.Temporal` (+0xB2): abduct when the warp erases the target
+    /// (hook 0x71AAAC) instead of on impact (hook 0x46920B).
+    pub(crate) temporal: bool,
+    /// `Abductor.AbductBelowPercent` (+0xB8, Valueable<double>, 1.0): only a
+    /// target at or below this health ratio.
+    pub(crate) abduct_below_percent: NativeF64Bits,
+    /// `Abductor.MaxHealth` (+0xC0, 0 = any): only a target with at most this
+    /// much health.
+    pub(crate) max_health: i32,
+    /// `Abductor.Anim` (+0xC4, Valueable<AnimTypeClass*>, Find): played at
+    /// the abductee.
+    pub(crate) anim: Option<String>,
+}
+
+impl AresAbductor {
+    /// The constructor's values (100548B0: +0xB0..+0xB2 zero, +0xB8 1.0).
+    pub(crate) const CONSTRUCTED: Self = Self {
+        abductor: false,
+        change_owner: false,
+        temporal: false,
+        abduct_below_percent: NativeF64Bits::ONE,
+        max_health: 0,
+        anim: None,
+    };
+
+    /// LoadFromINIFile 10055520's reads of these keys, in its order.
+    pub(crate) fn read(section: &IniSection) -> Self {
+        let mut abductor = Self::CONSTRUCTED;
+        abductor.abductor = section.read_ares_bool("Abductor", abductor.abductor);
+        abductor.change_owner =
+            section.read_ares_bool("Abductor.ChangeOwner", abductor.change_owner);
+        abductor.temporal = section.read_ares_bool("Abductor.Temporal", abductor.temporal);
+        abductor.abduct_below_percent = section
+            .read_ares_double_bits("Abductor.AbductBelowPercent", abductor.abduct_below_percent);
+        abductor.max_health = section.read_ares_int("Abductor.MaxHealth", abductor.max_health);
+        abductor
+    }
+}
+
 /// The `Wave.ReverseAgainst*` slots (ExtData +0x5C..+0x60), chosen by the
 /// target's What_Am_I in `IsWaveReversedAgainst`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

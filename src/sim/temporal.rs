@@ -827,6 +827,19 @@ impl Simulation {
         // attacker's house (FreeSlaves, no supplied house). Its UnInit and
         // owner-change callbacks share this object turn's map inputs.
         self.free_slaves(target, Some(head), None, rules, registry, effects);
+        // Ares TemporalClass_Update_Abductor (100564F0, hook 0x71AAAC): an
+        // `Abductor.Temporal` warp weapon abducts the erased object instead
+        // of announcing, crediting and removing it (to 0x71AAD5).
+        #[cfg(feature = "ares")]
+        if let Some(weapon) = self.ares_warp_weapon(head, rules)
+            && weapon.ares_abductor.temporal
+            && self.ares_conduct_abduction(head, target, weapon, rules, registry, effects)
+        {
+            self.temporal_owner_idle(head, rules, effects);
+            self.substrate.temporal_clear_fields(head);
+            self.temporal_owner_idle(head, rules, effects);
+            return;
+        }
         if category == EntityCategory::Structure {
             // 0x0071AA3A vtable +0x3B8: `BuildingClass::Death_Announcement @
             // 0x0044D760`. A current player's building (`0x0050B6F0`) pushes
@@ -901,6 +914,16 @@ impl Simulation {
     /// that moves its Temporal weapon to another slot.
     #[cfg(feature = "ares")]
     fn ares_warp_warhead<'r>(&self, owner: u64, rules: &'r RuleSet) -> Option<&'r WarheadType> {
+        rules.warhead(self.ares_warp_weapon(owner, rules)?.warhead.as_deref()?)
+    }
+
+    /// Ares GetWarpWeapon: the owner's weapon in that slot for its rank.
+    #[cfg(feature = "ares")]
+    fn ares_warp_weapon<'r>(
+        &self,
+        owner: u64,
+        rules: &'r RuleSet,
+    ) -> Option<&'r crate::rules::weapon_type::WeaponType> {
         let entity = self.substrate.entities.get(owner)?;
         let object = self.object_type(entity.type_ref(), rules)?;
         let count = if object.turret_count > 0 {
@@ -920,15 +943,14 @@ impl Simulation {
                 temporal(object.weapon_at(slot)) || temporal(object.elite_weapon_at(slot))
             })
             .unwrap_or(0);
-        let weapon = crate::sim::combat::combat_weapon::get_weapon(
+        crate::sim::combat::combat_weapon::get_weapon(
             entity,
             object,
             slot as i32,
             &self.substrate.entities,
             rules,
             &self.interner,
-        )?;
-        rules.warhead(weapon.warhead.as_deref()?)
+        )
     }
 
     /// Ares TemporalClass_Fire_HealthFactor (10053C20, hook 0x71AFB2): the

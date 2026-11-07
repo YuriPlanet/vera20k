@@ -492,6 +492,33 @@ impl Simulation {
         true
     }
 
+    /// Ares conductAbduction's tail (10054A80), after its Limbo: the
+    /// abductee's Transporter (`+0x11C`) is the abductor, an allied rider of
+    /// an `OpenTopped=` abductor is marked (EnteredOpenTopped `0x00710470`,
+    /// keeping its AI in the logic order), then AddPassenger (vt+0x394).
+    /// Answers whether the hold took it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_abduct_into_hold(
+        &mut self,
+        passenger: u64,
+        carrier: u64,
+        size: f64,
+        rider: bool,
+        context: UninitContext<'_>,
+    ) -> bool {
+        if let Some(entity) = self.substrate.entities.get_mut(passenger) {
+            entity.passenger_role.set_carrier_link(CarrierLink {
+                transport_id: carrier,
+                open_topped: rider,
+            });
+            entity.passenger_role.transporter = Some(carrier);
+        }
+        if rider {
+            let _ = self.register_open_topped_passenger(passenger);
+        }
+        self.add_passenger_with_context(carrier, &[(passenger, size)], context)
+    }
+
     /// Transporter and SetInOpenTransport710470 belong to the arrival
     /// caller, outside AddPassenger. Infantry51A45E..51A46E runs them before
     /// the class call; Unit73A740..73A768 runs them afterwards.

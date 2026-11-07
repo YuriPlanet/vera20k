@@ -1796,6 +1796,17 @@ impl ProjectileStore {
     /// Re-read the authoritative fields at a DetonateAtCoord callback
     /// boundary. The explicit impact and reason belong to the caller;
     /// source/target may have changed during synchronous receiver callbacks.
+    /// Ares BulletClass_Detonate's neutering of an abducting bullet
+    /// (100536E0, hook 0x46920B): Health (`+0x6C`) and DamageMultiplier
+    /// (`+0x150`) zeroed, so the vanilla arms that follow deal nothing.
+    #[cfg(feature = "ares")]
+    pub(crate) fn neuter(&mut self, id: u64) {
+        if let Some(bullet) = self.get_mut(id) {
+            bullet.payload.base_damage = 0;
+            bullet.payload.damage_multiplier = 0;
+        }
+    }
+
     pub(crate) fn current_detonation(&self, request: ProjectileDetonation) -> ProjectileDetonation {
         self.get(request.projectile_id).map_or(request, |bullet| {
             detonation(bullet, request.impact, request.reason)

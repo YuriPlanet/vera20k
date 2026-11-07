@@ -10452,6 +10452,37 @@ fn gsi_08_05_a_sonic_shot_carries_no_damage() {
     assert_eq!(store.get(2).expect("target").health.current(), 100);
 }
 
+/// Ares `ApplyDamage=yes` (TechnoClass_Fire_AllowDamage 1004A370, hook
+/// 0x6FE31C) keeps the Sonic shot's `Damage=`.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_apply_damage_keeps_a_sonic_shots_damage() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=DLPH\n1=TARGET\n\n\
+         [DLPH]\nStrength=200\nArmor=light\nSpeed=8\nPrimary=SonicZap\n\n\
+         [TARGET]\nStrength=100\nArmor=wood\n\n\
+         [SonicZap]\nDamage=4\nAmbientDamage=10\nROF=20\nRange=6\nWarhead=SonicWH\nIsSonic=yes\n\
+         ApplyDamage=yes\n\n\
+         [SonicWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
+    ))
+    .expect("Sonic fixture parses");
+    let mut store = EntityStore::new();
+    store.insert(make_entity_owned(1, "DLPH", 5, 5, 200, "Soviet"));
+    let _ = test_intern("TARGET");
+    store.insert(make_entity_owned(2, "TARGET", 8, 5, 100, "Americans"));
+    let mut interner = test_interner();
+    install_entity_attack_target_for_test(&mut store, 1, 2);
+    align_attackers_to_targets(&mut store);
+    tick(
+        &mut store,
+        &rules,
+        &mut interner,
+        0,
+        &mut SimRng::new(0x475A_5A4C),
+    );
+    assert_eq!(store.get(2).expect("target").health.current(), 96);
+}
+
 /// A vehicle installed in a Tank Bunker fires for `ftol(damage * f32
 /// BunkerDamageMultiplier)` (`0x006FE40B..0x006FE437`, a `+0x2E4` link on a
 /// non-building): the retail 1.3 turns a 90-damage gun into 116 (the single

@@ -3409,18 +3409,7 @@ pub(crate) fn ares_warhead_effect_coordinate(
     //Ares10053660 jumps to the existing planar5F6440 Distance_To, including
     //the target Building's foundation discount. Strict<64 snaps to+48,
     //not Building+A4/TargetCoordOffset. Original damage retains its impact.
-    let target = match detonation.target {
-        ProjectileTarget::Entity(id) | ProjectileTarget::Terrain(id) => {
-            Some(TargetKind::Entity(id))
-        }
-        ProjectileTarget::Cell { rx, ry } => Some(TargetKind::Cell(rx, ry)),
-        ProjectileTarget::None | ProjectileTarget::DummyCell => None,
-    };
-    target
-        .filter(|target| {
-            object_distance_to(detonation.projectile_id, target, world)
-                .is_some_and(|distance| distance < 64)
-        })
+    ares_snapped_target(world, detonation)
         .and_then(|target| {
             let cells = world
                 .resolved_terrain
@@ -3431,6 +3420,27 @@ pub(crate) fn ares_warhead_effect_coordinate(
         .map_or(detonation.impact, |coord| {
             ProjectileCoord::new(coord.x, coord.y, coord.z)
         })
+}
+
+/// 100536E0's snap: the bullet's target when it is within 64 leptons of it
+/// (`DistanceFrom < 64`), which also gates the abduction and occupant
+/// damage there.
+#[cfg(feature = "ares")]
+fn ares_snapped_target(
+    world: &Simulation,
+    detonation: &ProjectileDetonation,
+) -> Option<TargetKind> {
+    let target = match detonation.target {
+        ProjectileTarget::Entity(id) | ProjectileTarget::Terrain(id) => {
+            Some(TargetKind::Entity(id))
+        }
+        ProjectileTarget::Cell { rx, ry } => Some(TargetKind::Cell(rx, ry)),
+        ProjectileTarget::None | ProjectileTarget::DummyCell => None,
+    };
+    target.filter(|target| {
+        object_distance_to(detonation.projectile_id, target, world)
+            .is_some_and(|distance| distance < 64)
+    })
 }
 
 /// `BulletClass::DetonateAtCoord @ 0x004690B0` up to its receivers: the
@@ -3505,31 +3515,51 @@ fn emit_detonation_receivers<'r>(
             .entities
             .get(detonation.source_id)
             .map(|source| source.owner());
-        //100536E0 passes the Bullet's WeaponType (+0x130) Damage (+0xA4) to
-        // applyIronCurtain, 0 without a WeaponType.
-        let weapon_damage = detonation
+        let weapon = detonation
             .payload
             .installed_weapon()
-            .and_then(|weapon| rules.weapon(world.interner.resolve(weapon)))
-            .map_or(0, |weapon| weapon.damage);
-        world.apply_ares_iron_curtain_detonation(
-            run,
-            coordinate,
-            source_house,
-            warhead,
-            weapon_damage,
-            rules,
-            overlay_registry,
-            &mut out.effects,
-        );
-        world.apply_ares_emp_detonation(
-            coordinate,
-            Some(detonation.source_id),
-            warhead,
-            rules,
-            effects,
-        );
-        world.apply_ares_attach_effect_detonation(coordinate, source_house, warhead, rules);
+            .and_then(|weapon| rules.weapon(world.interner.resolve(weapon)));
+        // The abduction of a snapped bullet whose weapon is not
+        // `Abductor.Temporal` (`sim::abduction`): taken, the bullet is
+        // neutered and the effects below give way to applyPermaMC.
+        let abducted = match (ares_snapped_target(world, detonation), weapon) {
+            (Some(TargetKind::Entity(target)), Some(weapon)) if !weapon.ares_abductor.temporal => {
+                world.ares_conduct_abduction(
+                    detonation.source_id,
+                    target,
+                    weapon,
+                    rules,
+                    overlay_registry,
+                    effects,
+                )
+            }
+            _ => false,
+        };
+        if abducted {
+            world.projectiles.neuter(detonation.projectile_id);
+        } else {
+            //100536E0 passes the Bullet's WeaponType (+0x130) Damage (+0xA4)
+            // to applyIronCurtain, 0 without a WeaponType.
+            let weapon_damage = weapon.map_or(0, |weapon| weapon.damage);
+            world.apply_ares_iron_curtain_detonation(
+                run,
+                coordinate,
+                source_house,
+                warhead,
+                weapon_damage,
+                rules,
+                overlay_registry,
+                &mut out.effects,
+            );
+            world.apply_ares_emp_detonation(
+                coordinate,
+                Some(detonation.source_id),
+                warhead,
+                rules,
+                effects,
+            );
+            world.apply_ares_attach_effect_detonation(coordinate, source_house, warhead, rules);
+        }
         //10053851 reads the Bullet's live Target (+0x10C) after the effects;
         // a permanent capture returns 0x469AA4 past every vanilla arm.
         let target = match world.projectiles.current_detonation(*detonation).target {

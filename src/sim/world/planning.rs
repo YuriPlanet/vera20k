@@ -1343,7 +1343,7 @@ impl Simulation {
     /// `TechnoClass::ClearPlanningTokens @ 0x006386E0`: a nonempty path runs
     /// `PlanningTokenClass::Clear @ 0x00636120`'s body inline, then the
     /// in-flight latch +0x1C clears. Callers apply its event +0x1D gate.
-    pub(super) fn planning_detach_actor(&mut self, id: u64) {
+    pub(crate) fn planning_detach_actor(&mut self, id: u64) {
         if self.planning_has_remaining_nodes(id) {
             self.clear_planning_token(id);
         }
