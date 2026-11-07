@@ -212,10 +212,12 @@ pub(super) fn background_instances(
     if let Some(entry) = atlas.unknown_top_housing {
         push_art(&mut out, entry, layout.addon, screen);
     }
-    // LSPACER covers the strip as the match's bar lays it out (`spacer_pieces`).
+    // LSPACER reaches the closed left cap as the match's bar lays it out
+    // (`spacer_pieces`).
     if let Some(entry) = atlas.command_bar.spacer {
         let strip = layout.bottom_clip;
-        let pieces = spacer_pieces(strip.w.max(0) as u32, entry.pixel_size[0] as u32);
+        let cap_x = (layout.closed_left_cap.x - layout.bottom_spacer.x).max(0) as u32;
+        let pieces = spacer_pieces(cap_x, entry.pixel_size[0] as u32);
         for piece in pieces.into_iter().flatten() {
             let rect = RectPx::new(
                 layout.bottom_spacer.x + piece.x as i32,

@@ -54,13 +54,14 @@ pub(crate) fn append_prepared(
     camera: [f32; 2],
 ) {
     // 6D0A20: native sidebar converter, frame0, clipped to the tactical-bottom
-    // surface. The spacer covers the strip as `spacer_pieces` lays it out:
-    // 1:1 and cropped as native up to 1024-pixel frames, partly stretched in
-    // wider ones. Its NeedsRedraw gate (set by RequestRedraw 6D0F00 for
-    // triggers and mission timers, RequestTimedRedraw 6D0EC0) only skips
-    // unchanged frames; VERA draws the bar every frame.
+    // surface. The spacer reaches the left cap as `spacer_pieces` lays it
+    // out: 1:1 and cropped as native up to 1080-pixel frames, partly
+    // stretched in wider ones. Its NeedsRedraw gate (set by RequestRedraw
+    // 6D0F00 for triggers and mission timers, RequestTimedRedraw 6D0EC0) only
+    // skips unchanged frames; VERA draws the bar every frame.
     if let Some(spacer) = art.spacer {
-        let pieces = spacer_pieces(layout.bounds.w as u32, spacer.pixel_size[0] as u32);
+        let cap_x = (layout.left_cap.x - layout.bounds.x).max(0.0) as u32;
+        let pieces = spacer_pieces(cap_x, spacer.pixel_size[0] as u32);
         for piece in pieces.into_iter().flatten() {
             append_scaled(
                 out,
@@ -152,7 +153,8 @@ mod tests {
 
     /// The closed bar at the reported 1121x741 frame: the rail reaches the
     /// caps, where LSPACER's 856 pixels left 856..897 black, and its stretched
-    /// part is the rail's right half. At 1024x768 it stays one 1:1 draw.
+    /// part is the rail's right half. At 1080 wide, the widest frame whose
+    /// rail native fills, it stays one 1:1 draw.
     #[test]
     fn closed_bar_rail_reaches_the_caps_at_wide_frames() {
         let piece = |w: f32| SidebarChromeEntry {
@@ -193,14 +195,14 @@ mod tests {
             .find(|sprite| sprite.position[0] == 428.0)
             .unwrap();
         assert_eq!(
-            (rail.uv_origin[0], rail.uv_size[0]),
-            (428.0 / 1024.0, 428.0 / 1024.0)
+            (rail.size[0], rail.uv_origin[0], rail.uv_size[0]),
+            (469.0, 428.0 / 1024.0, 428.0 / 1024.0)
         );
-        let stock = closed_bar(1024, 768);
+        let native = closed_bar(1080, 768);
         assert_eq!(
-            (stock[0].position, stock[0].size),
+            (native[0].position, native[0].size),
             ([0.0, 736.0], [856.0, 32.0])
         );
-        assert_eq!(stock[0].uv_size, art.spacer.unwrap().uv_size);
+        assert_eq!(native[0].uv_size, art.spacer.unwrap().uv_size);
     }
 }

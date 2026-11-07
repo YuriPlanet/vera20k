@@ -109,17 +109,16 @@ pub struct SpacerPiece {
     pub w: u32,
 }
 
-/// How LSPACER covers a strip `strip_w` pixels wide, from its left. gamemd
-/// draws the canvas once at its own size (`6D0A20`, and `72F540` under the
-/// in-battle menus), which reaches a closed bar's caps only in frames up to
-/// 1080 pixels wide, beyond which a gap stays black. VERA's frames take any
-/// size, so a strip wider than the canvas (frames over 1024 pixels wide with
-/// the 856-pixel LSPACER) keeps the left half, the rail's riveted end, at its
-/// size and stretches the right half, plain rail, to the strip's end. Frames
-/// 1025 to 1080 pixels wide had no gap and now show that rail up to 13%
-/// stretched, which keeps the stretch continuous as the frame widens.
-pub fn spacer_pieces(strip_w: u32, spacer_w: u32) -> [Option<SpacerPiece>; 2] {
-    if strip_w <= spacer_w {
+/// How LSPACER covers the bottom strip from its left to `cap_x`, the bar's
+/// left cap, past which the caps (and an open bar's tiles) cover the strip.
+/// gamemd draws the canvas once at its own size (`6D0A20`, and `72F540` under
+/// the in-battle menus), which reaches a closed bar's left cap only in frames
+/// up to 1080 pixels wide, beyond which a gap stays black. VERA's frames take
+/// any size, so a cap beyond the canvas keeps the left half, the rail's
+/// riveted end, at its size and stretches the right half, plain rail, to the
+/// cap. Frames up to 1080 pixels wide and the open bar draw it as native.
+pub fn spacer_pieces(cap_x: u32, spacer_w: u32) -> [Option<SpacerPiece>; 2] {
+    if cap_x <= spacer_w {
         let whole = SpacerPiece {
             source_x: 0,
             source_w: spacer_w,
@@ -140,7 +139,7 @@ pub fn spacer_pieces(strip_w: u32, spacer_w: u32) -> [Option<SpacerPiece>; 2] {
             source_x: half,
             source_w: spacer_w - half,
             x: half,
-            w: strip_w - half,
+            w: cap_x - half,
         }),
     ]
 }
