@@ -316,6 +316,13 @@ impl SlaveLink {
         &self.cargo
     }
 
+    /// StorageClass::AddAmount (`0x006C9690`) of `amount` whole levels, for
+    /// [`GameEntity::add_storage_bales`].
+    pub(crate) fn add_bales(&mut self, bale: CargoBale, amount: u16) {
+        self.cargo
+            .extend(std::iter::repeat_n(bale, usize::from(amount)));
+    }
+
     /// A slave of `master` carrying `cargo`, for fixtures.
     #[cfg(any(test, feature = "test-support"))]
     pub fn for_test(master: Option<u64>, cargo: Vec<CargoBale>) -> Self {

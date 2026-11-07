@@ -33,6 +33,16 @@ impl GameEntity {
             .map_or_else(|| self.slave.cargo(), |miner| miner.cargo())
     }
 
+    /// StorageClass::AddAmount (`0x006C9690`) on the Storage that
+    /// [`Self::storage_bales`] reads. The Full reinforcement fill
+    /// (CreateMembers `0x0065DE7B`) is its whole-hold caller.
+    pub(crate) fn add_storage_bales(&mut self, bale: crate::sim::miner::CargoBale, amount: u16) {
+        match self.miner.as_mut() {
+            Some(miner) => miner.add_bales(bale, amount),
+            None => self.slave.add_bales(bale, amount),
+        }
+    }
+
     /// Base GetPipFillLevel708C30, virtual+2B8. This reads the existing
     /// ammo, Cargo count, capture-manager and miner authorities; it creates
     /// no derived status state. The result is signed and is not capped at
