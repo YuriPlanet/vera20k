@@ -74,8 +74,8 @@ without `Chronosphere.AffectsUnwarpable`, curtained ones without
 `.KillOrganic` (Teleporters only with `.KillTeleporters`); `.KillCargo` kills the
 passengers of the others. A Foot's destination is its own coordinates moved by the
 target's cell offset; its locomotor's track is forced to its own coordinates, which
-leaves a Drive's destination at the source block once the warp ends (VERA's Drive then
-drives the Unit back; this follows the DLL and has not been compared in play).
+leaves a Drive's destination at the source block once the warp ends, so the Unit drives
+back (see part 2).
 
 ## Nuke
 
@@ -119,10 +119,75 @@ common Launch builds `SW.Animation` (else `IonBlast=`) and plays `SW.Sound` (els
 
 ## Not included
 
-The building chronoshift (`Chronosphere.AffectsUndeployable`,
-`.ReconsiderBuildings` with `Chronoshift.IsVehicle`, `.BlowUnplaceable`, buildings in
-`SW.AffectsTarget`: ChronoWarpStateMachine) leaves such buildings in place;
-`Chronoshift.Crushable` (the Teleport make-room hook) is read but not consumed. The
-Lightning Storm's `Light.*` and the nuke flash's later relights (CurrentNukeType) are
-not applied. The other stock redirects, `NoCursor`/`Cursor` and the Ares trigger events
-remain outside this port.
+The Lightning Storm's `Light.*` and the nuke flash's later relights (CurrentNukeType)
+are not applied. The other stock redirects, `NoCursor`/`Cursor` and the Ares trigger
+events remain outside this port; part 2 below lists what it adds and what still stays out.
+
+## Part 2: building chronoshift, make-room, Spy Plane
+
+```ini
+[General]
+ChronoInfantryCrush=no
+
+[ChronoSphereSpecial]
+SW.AffectsTarget=all
+Chronosphere.AffectsUndeployable=yes
+Chronosphere.BlowUnplaceable=no
+
+[GAPILE]
+Chronoshift.IsVehicle=yes
+
+[HTNK]
+Chronoshift.Crushable=no
+
+[SpyPlaneSpecial]
+SpyPlane.Count=2
+SpyPlane.Type=SPYP
+SpyPlane.Mission=SpyplaneApproach
+```
+
+**Buildings.** A building the ChronoWarp's filters admit (`SW.AffectsTarget` with
+buildings, `UndeploysInto=` ones under `Chronosphere.AffectsUndeployable`, which
+place like vehicles, or `Chronoshift.IsVehicle` ones under
+`.ReconsiderBuildings` while units are affected) empties its Tank Bunker, unlinks
+its contacts, loses its passengers under `.KillCargo`, stops being a target (bullets
+lose it), counts as warped out (its AI freezes) and goes offline. `ChronoDelay`
+frames after the launch it leaves the map and comes back facing as before on the
+first cell around its target where it can be placed (only the target itself for a
+building, ten rings for a vehicle); otherwise it returns to where it stood and, as
+a vehicle or under `.BlowUnplaceable` (the default), takes its Strength as
+`C4Warhead=` damage credited to the firer. A building held by a Temporal erase stays
+removed.
+
+**Making room.** A warping object kills what stands on its landing cell as before,
+but a `Chronoshift.Crushable=no` object is protected like an Iron Curtained one (the
+arrival dies instead), and with `[General] ChronoInfantryCrush=no` arriving infantry
+dies on anything that is not infantry.
+
+**Units drive back.** The Ares warp forces a Unit's Drive or Ship track to the
+coordinates it warps from. Nothing in the Teleport states, their END or the Foot AI
+resets the stashed locomotor, so once it is active again its Process paths to the
+source cell and the Unit drives back unless the source is unreachable; Ares bug
+report 896231 on Launchpad describes chronoshifted tanks going back. VERA keeps this.
+
+**Spy Plane.** `Type=SpyPlane` goes to the Ares handler: a charged launch sends
+`SpyPlane.Count` (1) planes of `SpyPlane.Type` (`SPYP`) in `SpyPlane.Mission`
+(SpyplaneApproach) at the cell, raises no radar event and plays `EVA_SpyPlaneReady`
+as its ready line.
+
+**Unit Delivery.** A `Deliver.BaseNormal=no` building reserves no base space for the
+computer's planning, and placing it does not extend the base either.
+
+### Still not included
+
+- Lightning Storm redirect: the `Lightning.*` keys (Duration, RadarOutage, HitDelay,
+  ScatterDelay, ScatterCount, Separation, PrintText, IgnoreLightningRod, DebrisMin,
+  DebrisMax, CloudHeight, BoltExplosion, RadarOutageAffects, Clouds, Bolts, Debris,
+  Sounds), `LightningRod.Modifier` and the storm's `Light.*`: the stock storm runs.
+- EMPulse (`EMPulse.Linked`, `.TargetSelf`, `.PulseDelay`, `.PulseBall`, `.Cannons`).
+- `Type=DropPod` and the `DropPod*` RulesExt keys: it needs the DropPod locomotor
+  and CreateWithDroppod.
+- During a building chronoshift its light stays on, a cloak generator keeps cloaking
+  and `AboutToChronoshift` has no reader (Ares's own CanWarpTarget is not ported).
+- An unknown `SpyPlane.Type` sends nothing (natively it reads out of range), and an
+  off-map target cell is not replaced by the shared dummy cell.
