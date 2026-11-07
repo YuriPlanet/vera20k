@@ -1,6 +1,8 @@
 //! Base Techno GetPipFillLevel708C30, including Unit740E50's direct thunk.
 //! Building44D700 has a distinct House-storage Tiberium override; this base
-//! query does not reproduce that override. No RNG, timers or state writes.
+//! query does not reproduce that override. No RNG or timers; the one state
+//! write is [`GameEntity::add_storage_bales`], AddAmount on the hold the
+//! Tiberium pips read.
 
 use super::GameEntity;
 use crate::rules::object_type::{ObjectType, PipScale};
@@ -82,7 +84,13 @@ impl GameEntity {
                 // hold; losing its master does not empty it. Raw fractional
                 // or negative slots and Weeder cargo production remain
                 // unavailable state. Custom simultaneous Miner/SlaveLink
-                // storage is not represented as one native hold.
+                // storage is not represented as one native hold: an infantry
+                // type with Harvester= or Enslaves= and Storage>0 gets a Miner
+                // (construction has no category gate), so a Full team fills
+                // that hold while Infantry Mission_Harvest (0x00522E70) here
+                // reads and fills the SlaveLink one. Its pips show full and it
+                // still digs up to Storage more levels, where native sees the
+                // load at 1.0 and goes to Guard. Retail has no such infantry.
                 (self.storage_bales().len() as i32, object.storage)
             }
             PipScale::None | PipScale::Power => return 0,
