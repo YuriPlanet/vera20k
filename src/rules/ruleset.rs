@@ -3624,23 +3624,11 @@ impl GeneralRules {
         let path_delay = ai.read_double("PathDelay", defaults.path_delay);
         let blockage_path_delay_ticks =
             ai.read_int("BlockagePathDelay", defaults.blockage_path_delay_ticks);
-        // ReadAudioVisual6691E0 is independent of the ReadGeneral section
-        // gate.66B673..66B754 reads all three class lights and stores signed
-        // milliunits after the active x87 chop-toward-zero conversion.
-        // Original no-General GI control: infantry_berserk_body.json.
-        // Retained residual: a later AudioVisual pass with a missing key uses
-        // native signed integer /1000 defaults; this projection retains fractions.
-        let extra_unit_light = (audio_visual
-            .read_double("ExtraUnitLight", defaults.extra_unit_light as f64 / 1000.0)
-            * 1000.0) as i32;
-        let extra_infantry_light = (audio_visual.read_double(
-            "ExtraInfantryLight",
-            defaults.extra_infantry_light as f64 / 1000.0,
-        ) * 1000.0) as i32;
-        let extra_aircraft_light = (audio_visual.read_double(
-            "ExtraAircraftLight",
-            defaults.extra_aircraft_light as f64 / 1000.0,
-        ) * 1000.0) as i32;
+        // ReadAudioVisual66B673..66B74E belongs to the retained Process
+        // owner; a final merged INI cannot reproduce omitted-key defaults.
+        let extra_unit_light = defaults.extra_unit_light;
+        let extra_infantry_light = defaults.extra_infantry_light;
+        let extra_aircraft_light = defaults.extra_aircraft_light;
         // Phobos `RulesExt` reads these `[AudioVisual]` keys independently of
         // RulesClass's `[General]` gate.
         #[cfg(feature = "phobos")]
@@ -5332,6 +5320,11 @@ impl RuleSet {
             rules.general.unit_repair_rate,
             rules.general.infantry_repair_rate,
         ) = processed.repair_service_inputs();
+        [
+            rules.general.extra_unit_light,
+            rules.general.extra_infantry_light,
+            rules.general.extra_aircraft_light,
+        ] = processed.class_extra_lights();
         rules.general.charge_to_drain_ratio = processed.charge_to_drain_ratio();
         let mut weapon_name_counts = HashMap::<String, usize>::new();
         for weapon in processed.weapon_states() {
@@ -8234,6 +8227,12 @@ impl RuleSet {
         self.general.parachute_max_fall_rate.hash(&mut hasher);
         self.general.no_parachute_max_fall_rate.hash(&mut hasher);
         self.general.detail.hash(&mut hasher);
+        [
+            self.general.extra_unit_light,
+            self.general.extra_infantry_light,
+            self.general.extra_aircraft_light,
+        ]
+        .hash(&mut hasher);
         self.general.ambient_change_rate_nonzero.hash(&mut hasher);
         self.general
             .ambient_change_interval_frames
@@ -12539,18 +12538,20 @@ CellSpread=0
 
     #[test]
     fn gsi_13_10_extra_object_lights_default_zero_and_parse_signed_truncated_milliunits() {
-        let defaults = GeneralRules::from_ini(&IniFile::from_str(
+        let defaults = RuleSet::from_ini(&IniFile::from_str(
             "[General]\n\
              FixtureOnly=1\n\
              ExtraUnitLight=9.0\n\
              ExtraInfantryLight=8.0\n\
              ExtraAircraftLight=7.0\n",
-        ));
+        ))
+        .unwrap()
+        .general;
         assert_eq!(defaults.extra_unit_light, 0);
         assert_eq!(defaults.extra_infantry_light, 0);
         assert_eq!(defaults.extra_aircraft_light, 0);
 
-        let parsed = GeneralRules::from_ini(&IniFile::from_str(
+        let parsed = RuleSet::from_ini(&IniFile::from_str(
             "[General]\n\
              FixtureOnly=1\n\
              ExtraUnitLight=9.0\n\
@@ -12560,14 +12561,18 @@ CellSpread=0
              ExtraUnitLight=.2\n\
              ExtraInfantryLight=-.1259\n\
              ExtraAircraftLight=.3339\n",
-        ));
+        ))
+        .unwrap()
+        .general;
         assert_eq!(parsed.extra_unit_light, 200);
         assert_eq!(parsed.extra_infantry_light, -125);
         assert_eq!(parsed.extra_aircraft_light, 333);
 
-        let without_general = GeneralRules::from_ini(&IniFile::from_str(
+        let without_general = RuleSet::from_ini(&IniFile::from_str(
             "[AudioVisual]\nExtraUnitLight=.2\nExtraInfantryLight=-.1259\nExtraAircraftLight=.3339\n",
-        ));
+        ))
+        .unwrap()
+        .general;
         assert_eq!(without_general.extra_unit_light, parsed.extra_unit_light);
         assert_eq!(
             without_general.extra_infantry_light,
