@@ -69,6 +69,10 @@ pub enum SuperWeaponKind {
     /// Ares `Type=SonarPulse` (SW_SonarPulse, index 0): decloaks Technos in
     /// a range (or the whole map) and keeps them from cloaking for a while.
     SonarPulse,
+    /// Ares `Type=EMPulse` (SW_EMPulse, index 16): fires the owner's EMP
+    /// cannons at the cell (their Missile mission) or detonates each one's
+    /// weapon on itself.
+    EMPulse,
     /// Constructor Type=-1: no recognized name has replaced it. Launch's
     /// unsigned guard6CC3AC returns without a case; ordinary ClickFire still
     /// consumes readiness or its one-time grant. This is not an extension.
@@ -167,6 +171,7 @@ impl SuperWeaponKind {
                 | Self::Protect
                 | Self::Battery
                 | Self::SonarPulse
+                | Self::EMPulse
         )
     }
 
@@ -190,6 +195,7 @@ impl SuperWeaponKind {
             Self::Protect => 0x103,
             Self::Battery => 0x104,
             Self::SonarPulse => 0x105,
+            Self::EMPulse => 0x106,
             Self::GenericWarhead => -1,
             Self::NoEffect => -1,
         }
@@ -222,6 +228,8 @@ impl SuperWeaponKind {
             "battery" => Some(Self::Battery),
             #[cfg(feature = "ares")]
             "sonarpulse" => Some(Self::SonarPulse),
+            #[cfg(feature = "ares")]
+            "empulse" => Some(Self::EMPulse),
             _ => None,
         }
     }
@@ -332,6 +340,12 @@ impl AresSuperWeaponEva {
                 "EVA_IronCurtainReady",
                 "EVA_IronCurtainActivated",
                 "EVA_IronCurtainDetected",
+            ],
+            // SW_DropPod::Initialize100710F0.
+            Some(kind) if kind.eq_ignore_ascii_case("DropPod") => [
+                "EVA_DropPodReady",
+                "EVA_DropPodActivated",
+                "EVA_DropPodDetected",
             ],
             // SW_SpyPlane::Initialize10075800 names only the ready line.
             Some(kind) if kind.eq_ignore_ascii_case("SpyPlane") => {
@@ -858,6 +872,12 @@ impl SuperWeaponType {
                         crate::rules::ini_value::parse_leading_f64(width) as f32 >= 0.0
                     })
                     .then(|| "Attack".to_string()),
+                // SW_EMPulse::LoadFromINI10071510 writes Action every pass:
+                // none for `EMPulse.TargetSelf`, else the custom action with
+                // Initialize10071440's Attack cursor.
+                #[cfg(feature = "ares")]
+                SuperWeaponKind::EMPulse => (!section.read_ares_bool("EMPulse.TargetSelf", false))
+                    .then(|| "Attack".to_string()),
                 #[cfg(feature = "ares")]
                 SuperWeaponKind::UnitDelivery => Some(
                     section
@@ -1193,6 +1213,131 @@ pub(crate) struct AresSuperWeaponLaunch {
     /// SW_LightningStorm's fields (Initialize 10072C50, LoadFromINI 10072CF0).
     #[serde(default)]
     lightning: AresLightningRules,
+    /// SW_EMPulse's fields (Initialize 10071440, LoadFromINI 10071510).
+    #[serde(default)]
+    emp_pulse: AresEMPulseRules,
+    /// SW_DropPod's fields (LoadFromINI 10071140).
+    #[serde(default)]
+    drop_pod: AresDropPodRules,
+}
+
+/// SW_DropPod's SWTypeExt fields: `DropPod.Minimum`/`.Maximum`
+/// (Nullable<int> +0x15C/+0x164, else `[General] DropPodMinimum=`/
+/// `DropPodMaximum=`), `.Veterancy` (Valueable<double> +0x170, ctor 2.0)
+/// and `.Types` (ValueableVector<TechnoTypeClass*> +0x178, Find; empty
+/// takes `[General] DropPodTypes=`).
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresDropPodRules {
+    pub(crate) minimum: Option<i32>,
+    pub(crate) maximum: Option<i32>,
+    pub(crate) veterancy: crate::util::native_x87::NativeF64Bits,
+    pub(crate) types: Vec<TechnoTypeReference>,
+}
+
+/// RulesExt's DropPod globals, read by LoadAfterTypeData (1002A800) after
+/// `[SpecialWeapons] HSBuilding=`: `[General] DropPodTrailer=`
+/// (Nullable<AnimTypeClass*> +0xA4, Find; the locomotor's smoke hook
+/// 0x4B5EB0 takes `SMOKEY` while unset), `DropPodTypes=`
+/// (ValueableVector<TechnoTypeClass*> +0x98, Find) and `DropPodMinimum=`/
+/// `DropPodMaximum=` (Valueable<int> +0x90/+0x94, ctor 0).
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresDropPodGlobalRules {
+    pub(crate) trailer: Option<Option<String>>,
+    pub(crate) types: Vec<TechnoTypeReference>,
+    pub(crate) minimum: i32,
+    pub(crate) maximum: i32,
+}
+
+#[cfg(feature = "ares")]
+impl AresDropPodGlobalRules {
+    /// One pass's `[General]` reads in 1002A800's order; `trailer` and
+    /// `types` are the processor's Find lookups (None: absent or unknown).
+    pub(crate) fn read_pass(
+        &mut self,
+        general: Option<&IniSection>,
+        trailer: Option<Option<String>>,
+        types: Option<Vec<TechnoTypeReference>>,
+    ) {
+        if trailer.is_some() {
+            self.trailer = trailer;
+        }
+        if let Some(types) = types {
+            self.types = types;
+        }
+        if let Some(general) = general {
+            self.minimum = general.read_ares_int("DropPodMinimum", self.minimum);
+            self.maximum = general.read_ares_int("DropPodMaximum", self.maximum);
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl Default for AresDropPodRules {
+    fn default() -> Self {
+        Self {
+            minimum: None,
+            maximum: None,
+            veterancy: crate::util::native_x87::NativeF64Bits::from_bits(2.0_f64.to_bits()),
+            types: Vec::new(),
+        }
+    }
+}
+
+/// SW_EMPulse's SWTypeExt fields: `EMPulse.Linked` and `.TargetSelf`
+/// (Valueable<bool> +0xBC/+0xBD), `.PulseDelay` (Valueable<int> +0xC0, ctor
+/// 32), `.PulseBall` (Nullable<AnimTypeClass*> +0xC4, `Some(None)` an
+/// explicit none) and `.Cannons` (ValueableVector<BuildingTypeClass*>
+/// +0xCC), with the common `SW.MaxCount` (Valueable<int> +0x238, ctor -1,
+/// read at 10033682) that only this handler and HunterSeeker's consume.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresEMPulseRules {
+    pub(crate) linked: bool,
+    pub(crate) target_self: bool,
+    pub(crate) pulse_delay: i32,
+    pub(crate) pulse_ball: Option<Option<String>>,
+    pub(crate) cannons: Vec<String>,
+    pub(crate) max_count: i32,
+}
+
+#[cfg(feature = "ares")]
+impl Default for AresEMPulseRules {
+    fn default() -> Self {
+        Self {
+            linked: false,
+            target_self: false,
+            pulse_delay: 32,
+            pulse_ball: None,
+            cannons: Vec::new(),
+            max_count: -1,
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl AresEMPulseRules {
+    /// LoadFromINI10071510's reads, in its order, after the common
+    /// `SW.MaxCount`; `pulse_ball` and `cannons` are the processor's Find
+    /// lookups (None: key absent or unknown).
+    fn read_pass(
+        &mut self,
+        section: &IniSection,
+        pulse_ball: Option<Option<String>>,
+        cannons: Option<Vec<String>>,
+    ) {
+        self.max_count = section.read_ares_int("SW.MaxCount", self.max_count);
+        self.linked = section.read_ares_bool("EMPulse.Linked", self.linked);
+        self.target_self = section.read_ares_bool("EMPulse.TargetSelf", self.target_self);
+        self.pulse_delay = section.read_ares_int("EMPulse.PulseDelay", self.pulse_delay);
+        if pulse_ball.is_some() {
+            self.pulse_ball = pulse_ball;
+        }
+        if let Some(cannons) = cannons {
+            self.cannons = cannons;
+        }
+    }
 }
 
 /// SW_LightningStorm's SWTypeExt fields (`Weather_*`, +0x14..+0x98). The
@@ -1602,6 +1747,12 @@ pub(crate) struct AresHandlerReads {
     pub(crate) spy_plane_type: Option<Option<String>>,
     /// SW_LightningStorm's references.
     pub(crate) lightning: AresLightningReads,
+    /// `EMPulse.PulseBall` (Find) and `EMPulse.Cannons` (Find, unknown
+    /// names skipped).
+    pub(crate) emp_pulse_ball: Option<Option<String>>,
+    pub(crate) emp_pulse_cannons: Option<Vec<String>>,
+    /// `DropPod.Types` (TechnoTypeClass::Find, unknown names skipped).
+    pub(crate) drop_pod_types: Option<Vec<TechnoTypeReference>>,
 }
 
 #[cfg(feature = "ares")]
@@ -1629,6 +1780,8 @@ impl Default for AresSuperWeaponLaunch {
             dominator: AresDominatorRules::default(),
             spy_plane: AresSpyPlaneRules::default(),
             lightning: AresLightningRules::default(),
+            emp_pulse: AresEMPulseRules::default(),
+            drop_pod: AresDropPodRules::default(),
         }
     }
 }
@@ -1659,6 +1812,13 @@ impl AresSuperWeaponLaunch {
         }
         if initialized && is("LightningStorm") {
             self.lightning.initialize();
+        }
+        if initialized && is("EMPulse") {
+            // SW_EMPulse::Initialize10071440 (its ranges are the targeting
+            // owner's).
+            self.emp_pulse.max_count = 1;
+            self.emp_pulse.linked = false;
+            self.emp_pulse.target_self = false;
         }
         if initialized
             && is("SpyPlane")
@@ -1761,6 +1921,20 @@ impl AresSuperWeaponLaunch {
             }
         } else if is("LightningStorm") {
             self.lightning.read_pass(section, reads.lightning);
+        } else if is("EMPulse") {
+            self.emp_pulse
+                .read_pass(section, reads.emp_pulse_ball, reads.emp_pulse_cannons);
+        } else if is("DropPod") {
+            // SW_DropPod::LoadFromINI10071140: Minimum, Maximum, Veterancy,
+            // Types.
+            let drop_pod = &mut self.drop_pod;
+            drop_pod.minimum = section.read_ares_nullable_int("DropPod.Minimum", drop_pod.minimum);
+            drop_pod.maximum = section.read_ares_nullable_int("DropPod.Maximum", drop_pod.maximum);
+            drop_pod.veterancy =
+                section.read_ares_double_bits("DropPod.Veterancy", drop_pod.veterancy);
+            if let Some(types) = reads.drop_pod_types {
+                drop_pod.types = types;
+            }
         } else if is("HunterSeeker") {
             // SW_HunterSeeker::LoadFromINI10072A30 hard-codes it each pass,
             // after the common read (and Initialize10072990 already did).
@@ -1837,6 +2011,19 @@ impl AresSuperWeaponLaunch {
     /// SW_LightningStorm's fields.
     pub(crate) fn lightning(&self) -> &AresLightningRules {
         &self.lightning
+    }
+
+    /// SW_EMPulse's fields.
+    pub(crate) fn emp_pulse(&self) -> &AresEMPulseRules {
+        &self.emp_pulse
+    }
+
+    /// SW_DropPod's fields. RESIDUAL consumer: SW_DropPod::Activate
+    /// (10070E40), which needs the DropPod locomotor
+    /// (`docs/ares-superweapon-types.md`, part 4).
+    #[allow(dead_code)]
+    pub(crate) fn drop_pod(&self) -> &AresDropPodRules {
+        &self.drop_pod
     }
 
     /// SW.CreateRadarEvent.

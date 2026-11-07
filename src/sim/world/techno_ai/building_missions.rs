@@ -334,7 +334,9 @@ pub(super) fn dispatch(
             Some(delay) => delay,
             None => return,
         },
-        Some(MissionType::Missile) => super::building_missile::mission_missile(sim, id, rules),
+        Some(MissionType::Missile) => {
+            super::building_missile::mission_missile(sim, id, rules, ctx, bridge_state_changed)
+        }
         // Every other slot of the building's table, and no mission (above
         // `0x1F`, `0x005B30BB`), is a MissionClass stub; its Capture, Sabotage
         // and Harvest slots jump to them (`0x0044B760`, `0x0044B770`).

@@ -90,6 +90,9 @@ fn arc_angle(
 /// the sign: 70D590's return address occupies the residue's high DWORD.
 /// Every valid Acos-table angle exceeds every possible such tiny positive
 /// residue (minimum angle 7.549789948768648e-8, maximum residue <1.5e-306).
+/// The EMP cannon's four calls (43ECA7, 43ECFD, 44D293, 44D2ED) follow the
+/// same `PUSH distance; PUSH 0; CALL 70D590` sequence, so their residue is
+/// the same kind of code address.
 fn fireat_arc_pitch(
     table: &AcosTable,
     range: i32,
@@ -107,6 +110,61 @@ fn fireat_arc_pitch(
     } else {
         first
     }))
+}
+
+/// `Ballistics::SolveLaunchDirection @ 0x0048A8D0` as the EMP cannon calls
+/// it (`BuildingClass` vt+0x2C8 `0x0043ECA7`, Mission_Missile `0x0044D293`):
+/// the DirStruct pitch of a shell at `speed` leptons/frame to a point
+/// `height` leptons above and `range` leptons away under `gravity`, `None`
+/// where no arc reaches it.
+pub(crate) fn solve_launch_direction(
+    range: i32,
+    height: i32,
+    speed: i32,
+    gravity: NativeF64Bits,
+    high_root: bool,
+) -> Option<u16> {
+    fireat_arc_pitch(
+        AcosTable::retail(),
+        range,
+        height,
+        speed,
+        gravity,
+        high_root,
+    )
+}
+
+/// The heading of an EMP cannon's shot (`0x0044D017..0x0044D065`): the
+/// DirStruct of `atan2(flh.y - centre.y, centre.x - flh.x)`, each delta
+/// formed by FILD/FISUB.
+pub(crate) fn emp_cannon_heading(flh: ProjectileCoord, centre: (i32, i32)) -> u16 {
+    facing16_from_angle(atan(
+        round(X::sub(X::load_i32(flh.y), X::load_i32(centre.1))),
+        round(X::sub(X::load_i32(centre.0), X::load_i32(flh.x))),
+    ))
+}
+
+/// The velocity `BuildingClass::Mission_Missile` gives an EMP cannon's shot
+/// (`0x0044D0C3..0x0044D462`): the zeroed velocity's (100, 0, 0) turned to
+/// `heading` at its 2-D length (`Sqrt_Approx(10000)`), seeded again if zero,
+/// scaled to `speed` over its length `(x·x + z·z) + y·y`, then pitched to
+/// `pitch` over its length `(y·y + z·z) + x·x` (the inline pitch change).
+pub(crate) fn emp_cannon_launch_velocity(
+    heading: u16,
+    speed: i32,
+    pitch: u16,
+) -> ProjectileVelocity {
+    let trig = TrigTable::embedded();
+    let seed = turn_xy(ProjectileVelocity::new(100, 0, 0), heading, trig);
+    let scaled = scale_to_speed(seed.native().map(d), speed, |[x, y, z]| {
+        X::add(X::add(square(x), square(z)), square(y))
+    });
+    apply_pitch(
+        ProjectileVelocity::from_native(scaled.map(store)),
+        pitch,
+        [1, 2, 0],
+        trig,
+    )
 }
 
 /// World receiver results are resolved by the firing owner, before this scalar

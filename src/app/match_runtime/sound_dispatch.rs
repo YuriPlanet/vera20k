@@ -1434,7 +1434,8 @@ pub(crate) fn superweapon_launch_cue(
         | K::HunterSeeker
         | K::Protect
         | K::Battery
-        | K::SonarPulse => SuperWeaponLaunchCue::default(),
+        | K::SonarPulse
+        | K::EMPulse => SuperWeaponLaunchCue::default(),
     }
 }
 
@@ -2680,7 +2681,11 @@ mod tests {
     }
 
     /// Cases 5, 6 and 8 play nothing, but their player's launch still drops
-    /// the queued Ready line through the shared tail `0x006CD51E`.
+    /// the queued Ready line through the shared tail `0x006CD51E`. Installed
+    /// Ares hands SpyPlane to SW_SpyPlane (`HandlesType @ 100757F0`, hook
+    /// 6CC390): its launch skips case 8, and the Ready line it drops is the
+    /// common Launch's (`AresSuperWeaponFinished`), so the launch fact plays
+    /// and drops nothing.
     #[test]
     fn silent_launches_drop_their_ready_line_for_their_player_only() {
         let rules =
@@ -2716,6 +2721,10 @@ mod tests {
                 &mut output,
             );
             let emitted = output.drain();
+            if cfg!(feature = "ares") && name == "SpyPlaneSpecial" {
+                assert!(emitted.is_empty(), "{name}: {emitted:?}");
+                continue;
+            }
             assert!(
                 matches!(
                     emitted.as_slice(),

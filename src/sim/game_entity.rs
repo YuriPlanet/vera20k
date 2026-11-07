@@ -206,10 +206,11 @@ pub struct GameEntity {
     /// pitches the barrel voxel by it (`0x0073BB77..0x0073BBAC`); nothing in
     /// a unit's simulation reads it.
     ///
-    /// The building writers (the constructor's `Set`s at `0x0043BA5E` and
-    /// `0x0043BACB`, Sell's `Set_Current` at `0x0044A08C`, Mission_Missile's
-    /// `Set`s at `0x0044CEE2` and `0x0044CF7A`, an MCV deploy's `Set_Current`
-    /// at `0x00739827`) and their readers are not ported.
+    /// Mission_Missile's EMP cannon `Set`s (`0x0044CE1D`, `0x0044CEE2`,
+    /// `0x0044CF7A`) and their reader are [`Self::set_barrel_elevation`]'s.
+    /// The other building writers (the constructor's `Set`s at `0x0043BA5E`
+    /// and `0x0043BACB`, Sell's `Set_Current` at `0x0044A08C`, an MCV
+    /// deploy's `Set_Current` at `0x00739827`) are not ported.
     barrel_elevation: crate::sim::movement::FacingClass,
     /// The body-animation counter (`FootClass+0x538`), a
     /// [`BodyFrameCounter`] that `sim::animation` owns.
@@ -579,9 +580,17 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     ares_chronoshifting: bool,
-    /// Ares launch source; the entity owns its lifetime and save state.
+    /// Ares TechnoExt::SuperWeapon (+0xA0), the Super attached to this
+    /// Techno: SW_HunterSeeker::Activate's launch source on its seeker and
+    /// SW_EMPulse::Activate's firing Super on each cannon. The entity owns
+    /// its lifetime and save state.
     #[serde(default)]
-    hunter_seeker_origin: Option<crate::sim::hunter_seeker::HunterSeekerOrigin>,
+    ares_super_weapon: Option<crate::sim::hunter_seeker::AttachedSuper>,
+    /// Ares TechnoExt::SuperTarget (+0xA4): the cell SW_EMPulse::Activate
+    /// (10071200) aims its cannon at, `TryGetCellAt`'s null for a cell off
+    /// the grid. Only written with [`Self::ares_super_weapon`].
+    #[serde(default)]
+    ares_super_target: Option<(u16, u16)>,
     /// Building+66C charger pointers and +661 weapon latch, owned by
     /// `sim::tesla_charging` independently of House power accounting.
     #[serde(default)]
@@ -1065,18 +1074,31 @@ impl GameEntity {
         self.unit_delivery_no_base = self.category() == EntityCategory::Structure && !base_normal;
     }
 
-    pub(crate) fn hunter_seeker_origin(
-        &self,
-    ) -> Option<crate::sim::hunter_seeker::HunterSeekerOrigin> {
-        self.hunter_seeker_origin
+    pub(crate) fn ares_super_weapon(&self) -> Option<crate::sim::hunter_seeker::AttachedSuper> {
+        self.ares_super_weapon
     }
 
     #[cfg(feature = "ares")]
-    pub(crate) fn set_hunter_seeker_origin(
+    pub(crate) fn set_ares_super_weapon(
         &mut self,
-        origin: crate::sim::hunter_seeker::HunterSeekerOrigin,
+        origin: crate::sim::hunter_seeker::AttachedSuper,
     ) {
-        self.hunter_seeker_origin = Some(origin);
+        self.ares_super_weapon = Some(origin);
+    }
+
+    pub(crate) fn ares_super_target(&self) -> Option<(u16, u16)> {
+        self.ares_super_target
+    }
+
+    /// SW_EMPulse::Activate's two stores (10071245..1007126C).
+    #[cfg(feature = "ares")]
+    pub(crate) fn attach_ares_super_target(
+        &mut self,
+        origin: crate::sim::hunter_seeker::AttachedSuper,
+        target: Option<(u16, u16)>,
+    ) {
+        self.ares_super_weapon = Some(origin);
+        self.ares_super_target = target;
     }
 
     /// Saved extension effects must be admitted by the build that resumes them.
@@ -1087,8 +1109,8 @@ impl GameEntity {
             return Err("delivery base overrides require a build with the ares feature");
         }
         #[cfg(not(feature = "ares"))]
-        if self.hunter_seeker_origin.is_some() {
-            return Err("hunter seeker launch sources require a build with the ares feature");
+        if self.ares_super_weapon.is_some() || self.ares_super_target.is_some() {
+            return Err("attached superweapons require a build with the ares feature");
         }
         Ok(())
     }
@@ -1896,6 +1918,12 @@ impl GameEntity {
         &self.barrel_elevation
     }
 
+    /// `FacingClass::Set_Desired @ 0x004C9220` on the barrel (`+0x370`), as
+    /// an EMP cannon's Missile mission aims it.
+    pub(crate) fn set_barrel_elevation(&mut self, desired: u16, frame: u32) {
+        self.barrel_elevation.set(desired, frame);
+    }
+
     /// Install a fixture's barrel elevation.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_barrel_elevation_for_test(&mut self, facing: crate::sim::movement::FacingClass) {
@@ -2172,7 +2200,8 @@ impl GameEntity {
             unit_delivery_no_base: false,
             #[cfg(feature = "ares")]
             ares_chronoshifting: false,
-            hunter_seeker_origin: None,
+            ares_super_weapon: None,
+            ares_super_target: None,
             tesla_charge: Default::default(),
             tesla_charger: Default::default(),
             building_last_operational: Default::default(),

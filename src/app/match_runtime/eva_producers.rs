@@ -201,7 +201,8 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
         | SuperWeaponKind::HunterSeeker
         | SuperWeaponKind::Protect
         | SuperWeaponKind::Battery
-        | SuperWeaponKind::SonarPulse => return None,
+        | SuperWeaponKind::SonarPulse
+        | SuperWeaponKind::EMPulse => return None,
         SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => "EVA_ReinforcementsReady",
         SuperWeaponKind::PsychicDominator => "EVA_PsychicDominatorReady",
         SuperWeaponKind::SpyPlane => "EVA_SpyPlaneReady",

@@ -748,7 +748,8 @@ fn launch(
         | SuperWeaponKind::HunterSeeker
         | SuperWeaponKind::Protect
         | SuperWeaponKind::Battery
-        | SuperWeaponKind::SonarPulse => {}
+        | SuperWeaponKind::SonarPulse
+        | SuperWeaponKind::EMPulse => {}
         SuperWeaponKind::MultiMissile => {
             super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
         }
@@ -869,6 +870,21 @@ fn launch(
         #[cfg(feature = "ares")]
         SuperWeaponKind::Battery => {
             super::battery::activate(sim, rules, owner, sw);
+            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            return true;
+        }
+        #[cfg(feature = "ares")]
+        SuperWeaponKind::EMPulse => {
+            super::emp_pulse::launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                sw,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
             super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
             return true;
         }

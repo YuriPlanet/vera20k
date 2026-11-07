@@ -979,6 +979,12 @@ struct HouseSuperWeaponTargets {
     /// it for the warning anim and the missile (`0x0044C9DC`, `0x0044CAA9`).
     /// Constructor (0, 0) (`0x004F5C8D`).
     nuke_target: (u16, u16),
+    /// `+0x5780` EMPTarget, constructor (0, 0) (`0x004F5C7F`): where the
+    /// EMP cannons' Missile mission aims (`0x0044CD42..0x0044D006`). Ares's
+    /// EMPulse Activate (10071200) and the cannon hook 44CCE7 (10036570)
+    /// write it; nothing in the stock game does.
+    #[serde(default)]
+    emp_target: (u16, u16),
     /// House+54F0; constructor4F5A81/88 writes (0,0). TAction135/136
     /// change this preference, not the already-launched NukeTarget+5784.
     #[serde(default)]
@@ -1008,6 +1014,7 @@ impl Default for HouseSuperWeaponTargets {
     fn default() -> Self {
         Self {
             nuke_target: (0, 0),
+            emp_target: (0, 0),
             preferred_target: (0, 0),
             defense_cell: (0, 0),
             defense_frame: -100,
@@ -2052,6 +2059,17 @@ impl HouseState {
         self.super_weapon_targets.nuke_target = cell;
     }
 
+    /// The cell the house's EMP cannons fire at (`HouseClass+0x5780`).
+    pub(crate) fn emp_target(&self) -> (u16, u16) {
+        self.super_weapon_targets.emp_target
+    }
+
+    /// Ares SW_EMPulse::Activate (10071200) and the cannon hook 44CCE7.
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_emp_target(&mut self, cell: (u16, u16)) {
+        self.super_weapon_targets.emp_target = cell;
+    }
+
     /// House+54EC, separate from the scripted offensive target cell.
     pub(crate) fn preferred_super_weapon_target_kind(&self) -> i32 {
         self.super_weapon_targets.preferred_kind
@@ -2140,6 +2158,10 @@ impl HouseState {
         if cells.preferred_target != default.preferred_target {
             std::hash::Hash::hash(b"house-preferred-super-target-v377", hasher);
             std::hash::Hash::hash(&cells.preferred_target, hasher);
+        }
+        if cells.emp_target != default.emp_target {
+            std::hash::Hash::hash(b"house-emp-target-v1", hasher);
+            std::hash::Hash::hash(&cells.emp_target, hasher);
         }
     }
     /// The old House's notification before the arrival's Building ChangeOwner.

@@ -1886,9 +1886,13 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     if entity.ares_chronoshifting() {
         b"ares-building-chronoshift-v1".hash(hasher);
     }
-    if let Some(origin) = entity.hunter_seeker_origin() {
+    if let Some(origin) = entity.ares_super_weapon() {
         b"hunter-seeker-source-v1".hash(hasher);
         origin.hash(hasher);
+    }
+    if let Some(target) = entity.ares_super_target() {
+        b"ares-super-target-v1".hash(hasher);
+        target.hash(hasher);
     }
     // Building+662 and Techno+1C8 (`sim::powered_unit`), folded only
     // while set.

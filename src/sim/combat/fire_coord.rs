@@ -212,8 +212,17 @@ impl From<&AttackerSnapshot> for FireSource {
 /// locomotor's vt+0x24 at `0x006F3DB7`), including the translation of a
 /// rocking hull.
 ///
-/// BuildingClass's override (`0x00453A70`) has no port: neither caller
-/// reaches a building.
+/// BuildingClass's override (`0x00453A70`), which an EMP cannon's Missile
+/// mission launches from (`0x0043EC12`, `0x0044D1F9`), returns before that
+/// body for an occupied building or a `PrimaryFirePixelOffset=` type (the
+/// object coordinate, vt+0xAC, plus the port's or offset's
+/// IsometricPixelToWorld at its Z, `0x00453A9D..0x00453AE7`) and for a
+/// `BarrelAnimIsVoxel=` type (GetTurretDrawPosition, [`barrel_voxel_coordinate`]);
+/// otherwise a `TurretAnimIsVoxel=` type adds the pixel offset of its
+/// `TurretAnimX=`/`TurretAnimY=` to the body's result (`0x00453A12..
+/// 0x00453A4C` in shape). [`FireSource::of_entity`] has no firing port, so an
+/// occupied building takes the unoccupied arms here (no EMP cannon is
+/// occupiable in any retail type).
 pub fn turret_pivot_coordinate(
     world: &Simulation,
     rules: &RuleSet,
@@ -237,6 +246,25 @@ pub fn turret_pivot_coordinate(
         );
     }
     let base = fire_coordinate_base(world, rules, &source, obj);
+    let building = entity.category() == EntityCategory::Structure;
+    if building {
+        if let Some((px, py)) = building_pixel_offset(base.art, &source) {
+            let (dx, dy) = PixelConversionBounds::isometric_pixel_to_leptons(px, py);
+            return Some(ProjectileCoord::new(
+                base.x.wrapping_add(dx),
+                base.y.wrapping_add(dy),
+                base.z,
+            ));
+        }
+        if obj.barrel_anim_is_voxel {
+            return barrel_voxel_coordinate(world, &source, obj, &base).map(|fire| fire.coord);
+        }
+    }
+    let (voxel_x, voxel_y) = if building && obj.turret_anim_is_voxel {
+        PixelConversionBounds::isometric_pixel_to_leptons(obj.turret_anim_x, obj.turret_anim_y)
+    } else {
+        (0, 0)
+    };
     let offset = base.art.map_or(0, |art| art.turret_offset);
     let delta = if entity.locomotor.is_some() {
         // Authored TurretOffset is not clamped by the ART reader; ftol keeps
@@ -254,8 +282,8 @@ pub fn turret_pivot_coordinate(
         (offset, 0, 0)
     };
     Some(ProjectileCoord::new(
-        base.x.wrapping_add(delta.0),
-        base.y.wrapping_add(delta.1),
+        base.x.wrapping_add(delta.0).wrapping_add(voxel_x),
+        base.y.wrapping_add(delta.1).wrapping_add(voxel_y),
         base.z.wrapping_add(delta.2),
     ))
 }

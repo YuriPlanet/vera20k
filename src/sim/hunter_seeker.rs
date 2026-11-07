@@ -2,11 +2,12 @@
 
 use crate::sim::intern::InternedId;
 
-/// Ares TechnoExt::SuperWeapon (+0xA0), assigned before Put by
-/// SW_HunterSeeker::Activate's callback (installed Ares 0x10072190).
-/// House supers retain their identity for the scenario's lifetime.
+/// A Super as Ares TechnoExt::SuperWeapon (+0xA0) holds it: assigned
+/// before Put by SW_HunterSeeker::Activate's callback (installed Ares
+/// 0x10072190), and by SW_EMPulse::Activate (10071200) on each cannon it
+/// fires. House supers retain their identity for the scenario's lifetime.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct HunterSeekerOrigin {
+pub(crate) struct AttachedSuper {
     pub owner: InternedId,
     pub sw_type: InternedId,
 }
@@ -41,7 +42,7 @@ impl crate::sim::world::Simulation {
         {
             return false;
         }
-        let origin = hunter.hunter_seeker_origin();
+        let origin = hunter.ares_super_weapon();
         let source = origin.map_or(hunter.owner(), |origin| origin.owner);
         let Some(house) = self.houses.get(&source) else {
             return false;

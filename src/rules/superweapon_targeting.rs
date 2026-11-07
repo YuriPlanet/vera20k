@@ -427,6 +427,12 @@ impl AresSuperWeaponTargetingState {
             if type_name.is_some_and(|name| name.eq_ignore_ascii_case("HunterSeeker")) {
                 self.affects_house = HouseMask::ENEMIES;
             }
+            // SW_EMPulse::Initialize10071440: SW.RangeMaximum -1.0 and
+            // SW.RangeMinimum 0.0 (+0x468/+0x460).
+            if is("EMPulse") {
+                self.range_minimum = NativeF64Bits::from_bits(0.0_f64.to_bits());
+                self.range_maximum = NativeF64Bits::from_bits((-1.0_f64).to_bits());
+            }
             // SW_SonarPulse::Initialize100756D0: enemies on water.
             if type_name.is_some_and(|name| name.eq_ignore_ascii_case("SonarPulse")) {
                 self.affects_house = HouseMask::ENEMIES;
