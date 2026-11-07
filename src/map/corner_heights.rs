@@ -175,6 +175,13 @@ impl CornerGrid {
         }
     }
 
+    /// The highest of the cell's four corner heights. Terrain deformation
+    /// reads it to tell how far a crater cell has already sunk.
+    pub fn top_height(&self, mx: i32, my: i32) -> i32 {
+        let [nw, ne, se, sw] = self.cell_corners(mx, my).map(|c| self.corners[c].height);
+        nw.max(ne).max(se).max(sw)
+    }
+
     /// `0x006B4240`: the corner mask (bits `NW=0, NE=1, SE=2, SW=3`): all-equal picks every
     /// unlocked corner, raise picks unlocked corners below the max, lower picks
     /// unlocked corners above the min.

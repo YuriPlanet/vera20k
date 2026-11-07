@@ -148,11 +148,15 @@ pub struct WarheadType {
     /// constructor default is 0 (`0x0075CEF8`) and there is no post-read clamp.
     pub deform_threshold: i32,
     /// VERA's `DeformDepth=`, which gamemd does not read: how many levels one
-    /// dent sinks its cell, as deep as the open ground around it allows; each
-    /// level widens the crater by a cell on every side. A signed int, default
-    /// 1 (Tiberian Sun's single level); terrain deformation reads it as
-    /// `1..=16`.
+    /// dent sinks the middle of its crater, as deep as the open ground around
+    /// it allows. A signed int, default 1 (Tiberian Sun's single level);
+    /// terrain deformation reads it as `1..=16`.
     pub deform_depth: i32,
+    /// VERA's `DeformRadius=`, which gamemd does not read: how many cells
+    /// around the hit cell one dent sinks, deepest in the middle. A signed
+    /// int, default 0 (Tiberian Sun's single cell); terrain deformation reads
+    /// it as `0..=8`.
+    pub deform_radius: i32,
     /// `Bullets=` at +0x17A, ReadBool @0x005295F0 called from ReadINI
     /// @0x0075DA01; constructor default false (`0x0075D04A`).
     pub bullets: bool,
@@ -668,6 +672,7 @@ impl WarheadType {
             deform_f64: section.read_double("Deform", 0.0),
             deform_threshold: section.read_int("DeformThreshhold", 0),
             deform_depth: section.read_int("DeformDepth", 1),
+            deform_radius: section.read_int("DeformRadius", 0),
             bullets: section.read_bool("Bullets", false),
             veinhole: section.read_bool("Veinhole", false),
             // ReadInt current defaults fold each projected Rules pass; there
