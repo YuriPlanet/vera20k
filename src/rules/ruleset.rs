@@ -5024,6 +5024,14 @@ impl RuleSet {
         self.ares_global_controls.veterancy()
     }
 
+    /// RulesExt BerserkROFMultiplier, AutoRepel and PlayerAutoRepel.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_techno_combat(
+        &self,
+    ) -> &crate::rules::ares_techno_type::TechnoCombatGlobalRules {
+        self.ares_global_controls.techno_combat()
+    }
+
     /// RulesExt DamageAirConsiderBridges and IronCurtainFlash.
     #[cfg(feature = "ares")]
     pub(crate) fn ares_warhead_globals(&self) -> &crate::rules::ares_warhead::WarheadGlobalRules {

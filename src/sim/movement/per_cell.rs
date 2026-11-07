@@ -340,6 +340,8 @@ impl Simulation {
             if !kills.contains(&victim) {
                 continue;
             }
+            #[cfg(feature = "ares")]
+            self.ares_crush_damage(id, victim, rules, registry, effects);
             if let Some(entity) = self.substrate.entities.get(victim) {
                 super::bump_crush::emit_crush_kill_sounds_at(
                     entity,
@@ -394,6 +396,54 @@ impl Simulation {
         if self.per_cell_owner_alive(id) {
             self.foot_per_cell_process(id, reason, rules, registry, effects);
         }
+    }
+
+    /// Ares UnitClass_CrushCell_CrushDamage (Ares.dll 1004BCE0, hook
+    /// 0x7418AA), ahead of the CrushSound: the crusher receives the victim
+    /// type's `CrushDamage` for the victim's rank with its
+    /// `CrushDamage.Warhead`, else `[CombatDamage] C4Warhead`, as
+    /// `ReceiveDamage(&damage, 0, warhead, null, false, false, null)`. A zero
+    /// damage or a null warhead deals none.
+    #[cfg(feature = "ares")]
+    fn ares_crush_damage(
+        &mut self,
+        crusher: u64,
+        victim: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        use crate::sim::combat::veterancy::VeterancyRank;
+        let Some(entity) = self.substrate.entities.get(victim) else {
+            return;
+        };
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        let rank = match entity.veterancy.rank_kind() {
+            VeterancyRank::Rookie => 0,
+            VeterancyRank::Veteran => 1,
+            VeterancyRank::Elite => 2,
+        };
+        let (damage, warhead) = object.techno_combat().combat().crush_damage(rank);
+        let warhead = warhead.unwrap_or(Some(rules.bridge_warheads.c4_name.as_str()));
+        let Some(warhead) = warhead.filter(|name| !name.is_empty() && damage != 0) else {
+            return;
+        };
+        let warhead_ref = self.interner.intern(warhead);
+        let receiver = crate::sim::combat::EntityDamageEvent::direct_receiver(
+            crusher,
+            damage,
+            0,
+            crate::sim::combat::RAD_NO_ATTACKER,
+            None,
+            warhead_ref,
+            crate::sim::combat::ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        );
+        self.commit_direct_damage_receiver(rules, registry, receiver, effects);
     }
 
     /// Unit73AFD4..73B06E. The Cell is selected from the entry sample;

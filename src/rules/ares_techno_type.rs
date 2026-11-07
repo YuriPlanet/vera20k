@@ -9,8 +9,9 @@
 //! `<none>` clears it. The caller resolves them against the registry as the
 //! read reaches them ([`TypeRef`]).
 
-use crate::rules::ini_parser::IniSection;
+use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::missile_spawn::MissileSpawnParams;
+use crate::util::native_x87::NativeF64Bits;
 
 /// The registry a Find-only pointer read looks in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +36,134 @@ pub(crate) struct AresTechnoTypeRules {
     /// AircraftType-only custom missile block and its rocket puffs.
     missile: Option<Box<CustomMissileRules>>,
     ammo: AmmoTypeRules,
+    combat: CombatTypeRules,
+}
+
+/// TechnoTypeExt combat tweaks: +0x32C, +0x418, +0x430..+0x440 and
+/// +0x46D/+0x46E.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct CombatTypeRules {
+    /// `CivilianEnemy` (+0x32C, false).
+    civilian_enemy: bool,
+    /// `Berserk.ROFMultiplier` (Nullable<double> +0x418, unset).
+    berserk_rof_multiplier: Option<NativeF64Bits>,
+    /// `OmniCrusher.Aggressive` (+0x430, true).
+    omni_crusher_aggressive: bool,
+    /// `CrushDamage.%s` (Promotable<int> +0x434: rookie, veteran, elite; 0).
+    crush_damage: [i32; 3],
+    /// `CrushDamage.Warhead` (Nullable<WarheadTypeClass*> +0x440): `None`
+    /// unset (`[CombatDamage] C4Warhead`), `Some(None)` an explicit none.
+    crush_damage_warhead: Option<Option<String>>,
+    /// `CanPassiveAquire.Guard` (+0x46D) and `.Cloak` (+0x46E), both true.
+    can_passive_acquire_guard: bool,
+    can_passive_acquire_cloak: bool,
+}
+
+impl Default for CombatTypeRules {
+    fn default() -> Self {
+        Self {
+            civilian_enemy: false,
+            berserk_rof_multiplier: None,
+            omni_crusher_aggressive: true,
+            crush_damage: [0; 3],
+            crush_damage_warhead: None,
+            can_passive_acquire_guard: true,
+            can_passive_acquire_cloak: true,
+        }
+    }
+}
+
+impl CombatTypeRules {
+    /// `CivilianEnemy`: an auto-targeting scanner always takes this type as
+    /// an enemy (TechnoClass_CanAutoTargetObject_CivilianEnemy, Ares.dll
+    /// 10049D00, hook 0x6F826E).
+    pub(crate) fn civilian_enemy(&self) -> bool {
+        self.civilian_enemy
+    }
+
+    /// `Berserk.ROFMultiplier`, else the Rules `BerserkROFMultiplier`
+    /// (TechnoClass_Fire_BerserkROFMultiplier, Ares.dll 1004A3D0, hook
+    /// 0x6FF28F).
+    pub(crate) fn berserk_rof_multiplier(&self, rules_default: NativeF64Bits) -> NativeF64Bits {
+        self.berserk_rof_multiplier.unwrap_or(rules_default)
+    }
+
+    /// `OmniCrusher.Aggressive=no` skips Approach_Target's OmniCrusher arm
+    /// (UnitClass_ApproachTarget_OmniCrusher, Ares.dll 1004BC10, hook
+    /// 0x741613).
+    pub(crate) fn omni_crusher_aggressive(&self) -> bool {
+        self.omni_crusher_aggressive
+    }
+
+    /// The damage a crusher takes for crushing this type at `rank` (0
+    /// rookie, 1 veteran, 2 elite) and its warhead (`None`: `C4Warhead`;
+    /// `Some(None)`: no damage); UnitClass_CrushCell_CrushDamage (Ares.dll
+    /// 1004BCE0, hook 0x7418AA).
+    pub(crate) fn crush_damage(&self, rank: usize) -> (i32, Option<Option<&str>>) {
+        (
+            self.crush_damage[rank.min(2)],
+            self.crush_damage_warhead
+                .as_ref()
+                .map(|warhead| warhead.as_deref()),
+        )
+    }
+
+    /// `CanPassiveAquire.Guard`/`.Cloak`: a human player's guarding Foot
+    /// acquires no target (FootClass_SelectAutoTarget_Cloaked, Ares.dll
+    /// 100491E0, hook 0x4D9920).
+    pub(crate) fn can_passive_acquire_guard(&self) -> bool {
+        self.can_passive_acquire_guard
+    }
+
+    pub(crate) fn can_passive_acquire_cloak(&self) -> bool {
+        self.can_passive_acquire_cloak
+    }
+}
+
+/// RulesExt combat globals, read by `LoadBeforeTypeData` (Ares.dll
+/// 1002AB60) from `[CombatDamage]`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TechnoCombatGlobalRules {
+    /// `BerserkROFMultiplier` (RulesExt+0x68, 0.5).
+    berserk_rof_multiplier: NativeF64Bits,
+    /// `AutoRepel` (+0xAC) and `PlayerAutoRepel` (+0xAD), both false.
+    auto_repel_ai: bool,
+    auto_repel_player: bool,
+}
+
+impl Default for TechnoCombatGlobalRules {
+    fn default() -> Self {
+        Self {
+            berserk_rof_multiplier: NativeF64Bits::from_bits(0.5f64.to_bits()),
+            auto_repel_ai: false,
+            auto_repel_player: false,
+        }
+    }
+}
+
+impl TechnoCombatGlobalRules {
+    pub(crate) fn read_before_type_data(&mut self, pass: &IniFile) {
+        let Some(section) = pass.section("CombatDamage") else {
+            return;
+        };
+        self.berserk_rof_multiplier =
+            section.read_ares_double_bits("BerserkROFMultiplier", self.berserk_rof_multiplier);
+        self.auto_repel_ai = section.read_ares_bool("AutoRepel", self.auto_repel_ai);
+        self.auto_repel_player = section.read_ares_bool("PlayerAutoRepel", self.auto_repel_player);
+    }
+
+    pub(crate) fn berserk_rof_multiplier(&self) -> NativeF64Bits {
+        self.berserk_rof_multiplier
+    }
+
+    /// `PlayerAutoRepel` for a human-controlled scanner, else `AutoRepel`.
+    pub(crate) fn auto_repel(&self, controlled_by_human: bool) -> bool {
+        if controlled_by_human {
+            self.auto_repel_player
+        } else {
+            self.auto_repel_ai
+        }
+    }
 }
 
 /// TechnoTypeExt+0x458..+0x468, the reload amounts and the out-of-ammo
@@ -196,13 +325,45 @@ impl AresTechnoTypeRules {
             pointer("Missile.Weapon", TypeRef::Weapon, weapon);
             pointer("Missile.EliteWeapon", TypeRef::Weapon, elite_weapon);
         }
-        // After the crush block and ReloadRate.
+        // After HunterSeeker.*: CivilianEnemy; after the DamageSparks reads,
+        // the berserk, Assaulter and crush blocks.
+        let combat = &mut self.combat;
+        combat.civilian_enemy = section.read_ares_bool("CivilianEnemy", combat.civilian_enemy);
+        combat.berserk_rof_multiplier = section
+            .read_ares_nullable_double_bits("Berserk.ROFMultiplier", combat.berserk_rof_multiplier);
+        combat.omni_crusher_aggressive =
+            section.read_ares_bool("OmniCrusher.Aggressive", combat.omni_crusher_aggressive);
+        // Promotable<int>::Read: the common `CrushDamage` to every rank,
+        // then `CrushDamage.Rookie/.Veteran/.Elite`.
+        if let Some(all) = section.read_ares_nullable_int("CrushDamage", None) {
+            combat.crush_damage = [all; 3];
+        }
+        for (rank, key) in [
+            "CrushDamage.Rookie",
+            "CrushDamage.Veteran",
+            "CrushDamage.Elite",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            combat.crush_damage[rank] = section.read_ares_int(key, combat.crush_damage[rank]);
+        }
+        if let Some(warhead) = resolve("CrushDamage.Warhead", TypeRef::Warhead) {
+            combat.crush_damage_warhead = Some(warhead);
+        }
+        // After ReloadRate.
         let ammo = &mut self.ammo;
         ammo.reload_amount = section.read_ares_int("ReloadAmount", ammo.reload_amount);
         ammo.empty_reload_amount =
             section.read_ares_nullable_int("EmptyReloadAmount", ammo.empty_reload_amount);
         ammo.no_ammo_amount = section.read_ares_int("NoAmmoAmount", ammo.no_ammo_amount);
         ammo.no_ammo_weapon = section.read_ares_int("NoAmmoWeapon", ammo.no_ammo_weapon);
+        // After Saboteur.
+        let combat = &mut self.combat;
+        combat.can_passive_acquire_guard =
+            section.read_ares_bool("CanPassiveAquire.Guard", combat.can_passive_acquire_guard);
+        combat.can_passive_acquire_cloak =
+            section.read_ares_bool("CanPassiveAquire.Cloak", combat.can_passive_acquire_cloak);
     }
 
     /// The AircraftType's missile fields; `None` for other types.
@@ -212,6 +373,10 @@ impl AresTechnoTypeRules {
 
     pub(crate) fn ammo(&self) -> &AmmoTypeRules {
         &self.ammo
+    }
+
+    pub(crate) fn combat(&self) -> &CombatTypeRules {
+        &self.combat
     }
 
     /// `Gattling.Cycle`: a charge at the cap restarts the stages

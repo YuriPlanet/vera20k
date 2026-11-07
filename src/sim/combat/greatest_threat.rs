@@ -1274,6 +1274,39 @@ pub(crate) fn greatest_threat(
             };
         }
     };
+    // Ares FootClass_SelectAutoTarget_Cloaked (Ares.dll 100491E0, hook
+    // 0x4D9920, Foot's own entry): a human player's Foot on Guard whose type
+    // has `CanPassiveAquire.Guard=no`, or `CanPassiveAquire.Cloak=no` while
+    // it can cloak (IsCloakable vt+0x288, or the rank's CLOAK ability),
+    // returns no target before the latch and the scan.
+    #[cfg(feature = "ares")]
+    if foot_wrapper_entered
+        && standing.human
+        && scanner.mission.effective().known() == Some(crate::sim::mission::MissionType::Guard)
+    {
+        let combat = attacker_obj.techno_combat().combat();
+        let blocked = !combat.can_passive_acquire_guard()
+            || (!combat.can_passive_acquire_cloak()
+                && (crate::sim::world::techno_ai_cloak::ares_foot_is_cloakable(
+                    scanner,
+                    attacker_obj,
+                )
+                .unwrap_or(false)
+                    || crate::sim::combat::veterancy::has_weapon_ability(
+                        scanner.veterancy.rank_kind(),
+                        attacker_obj,
+                        crate::rules::object_type::Ability::Cloak,
+                    )));
+        if blocked {
+            return ThreatScanOutcome {
+                target: None,
+                foot_wrapper_entered: false,
+                collected: None,
+                scenario_rng: None,
+                met_idle_disguise: false,
+            };
+        }
+    }
     let result = |target: Option<u64>, collected, ctx: &ScanContext<'_>| ThreatScanOutcome {
         target: target.map(super::TargetKind::Entity),
         foot_wrapper_entered,
@@ -2495,9 +2528,34 @@ fn evaluate_candidate(
         return None;
     }
 
+    // Ares TechnoClass_CanAutoTargetObject_CivilianEnemy (Ares.dll 10049D00,
+    // hook 0x6F826E): a `CivilianEnemy=` candidate, or one whose Techno
+    // target the scanner's house is allied with while `[CombatDamage]
+    // AutoRepel` (`PlayerAutoRepel` for a human scanner) is set, is an enemy:
+    // the passive-house and Insignificant gates are skipped (`0x006F8483`).
+    #[cfg(feature = "ares")]
+    let considered_enemy = candidate_obj.techno_combat().combat().civilian_enemy()
+        || (candidate
+            .attack_target
+            .target()
+            .is_some_and(|target| match target {
+                super::TargetKind::Entity(id) => ctx
+                    .entities
+                    .get(id)
+                    .is_some_and(|target| ctx.is_ally(target)),
+                _ => false,
+            })
+            && ctx
+                .rules
+                .ares_techno_combat()
+                .auto_repel(ctx.standing.human));
+    #[cfg(not(feature = "ares"))]
+    let considered_enemy = false;
+
     // `0x006F826E..0x006F835E`: outside the campaign, a `MultiplayPassive`
     // house's objects are off limits but for the building exception.
-    let passive_owner = ctx.standing.game_mode_nonzero && ctx.owner_is_passive(candidate);
+    let passive_owner =
+        !considered_enemy && ctx.standing.game_mode_nonzero && ctx.owner_is_passive(candidate);
     if passive_owner && !ctx.passive_building_exception(candidate, candidate_obj) {
         return None;
     }
@@ -2509,7 +2567,8 @@ fn evaluate_candidate(
     // which only a building meets. Stock authors `Insignificant=yes` on 26
     // civilian vehicles (cars, buses, taxis), 22 civilian infantry types
     // (civilians, the cow) and every wall.
-    if candidate_obj.insignificant
+    if !considered_enemy
+        && candidate_obj.insignificant
         && !candidate.mind_control.is_mind_controlled()
         && (!building || ctx.owner_is_passive(candidate))
         && !ctx.passive_building_exception(candidate, candidate_obj)

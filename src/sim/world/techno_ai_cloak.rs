@@ -34,6 +34,32 @@ impl Simulation {
     }
 }
 
+/// `HasStealthAbility`: the live `+0x3D2` byte; Phobos'
+/// `TechnoClass_IsReadyToCloak_Wrapper` / `ShouldNotCloak_Wrapper` OR the
+/// active effects' `Cloakable` into it.
+fn has_stealth_ability(
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+) -> bool {
+    entity.stealth_ability.active(object.cloakable) || entity.phobos_cloakable()
+}
+
+/// `FootClass::IsCloakable @ 0x004DBDA0` (vtable +0x288) in Ares builds:
+/// HasStealthAbility unless a `CloakStop=` type is moving, which
+/// FootClass_IsCloakable_CloakStop (Ares.dll 10048250) asks ILocomotion+10,
+/// not stock +80. `None` for a Foot without a locomotor, an invalid native
+/// state.
+#[cfg(feature = "ares")]
+pub(crate) fn ares_foot_is_cloakable(
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+) -> Option<bool> {
+    Some(
+        has_stealth_ability(entity, object)
+            && !(object.cloak_stop && crate::sim::movement::motion_query::is_moving(entity)?),
+    )
+}
+
 fn stock_cloak_tick_facts(
     sim: &Simulation,
     id: u64,
@@ -57,10 +83,7 @@ fn stock_cloak_tick_facts(
     let is_building = entity.category() == EntityCategory::Structure;
     let object = sim.interner.object_type(entity.type_ref(), rules)?;
     let rank_cloak = has_weapon_ability(entity.veterancy.rank_kind(), object, Ability::Cloak);
-    // Phobos `TechnoClass_IsReadyToCloak_Wrapper` / `ShouldNotCloak_Wrapper`
-    // OR the active effects' `Cloakable` into the live Techno flag.
-    let intrinsic_cloak =
-        entity.stealth_ability.active(object.cloakable) || entity.phobos_cloakable();
+    let intrinsic_cloak = has_stealth_ability(entity, object);
     // vt+0x1D4 / vt+0x1D8 (`0x0070C5B0` / `0x0070C5C0`, reading
     // `TechnoClass+0x270`/`+0x271`): a Chrono teleport or a Temporal warp.
     let chrono_active = entity.is_warped_out() || entity.is_warping_in();
@@ -69,22 +92,21 @@ fn stock_cloak_tick_facts(
     // the locomotor's ILocomotion+0x80 at `0x004DBDDD`, asked only under
     // CloakStop.
     // The Building's +288 (`0x0070C5A0`) is the raw +3D2 byte alone.
-    let moving_blocks_cloak = if intrinsic_cloak && object.cloak_stop && !is_building {
-        if crate::rules::ARES_ENABLED {
-            // FootClass_IsCloakable_CloakStop10048250 dispatches ILocomotion
-            // +10, not stock +80. Missing locomotor is an invalid native state.
-            crate::sim::movement::motion_query::is_moving(entity)?
-        } else {
-            crate::sim::movement::motion_query::is_moving_now(
+    #[cfg(feature = "ares")]
+    let is_cloakable = if is_building {
+        intrinsic_cloak
+    } else {
+        ares_foot_is_cloakable(entity, object)?
+    };
+    #[cfg(not(feature = "ares"))]
+    let is_cloakable = intrinsic_cloak
+        && !(object.cloak_stop
+            && !is_building
+            && crate::sim::movement::motion_query::is_moving_now(
                 entity,
                 crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses),
                 sim.session.binary_frame(),
-            )
-        }
-    } else {
-        false
-    };
-    let is_cloakable = intrinsic_cloak && !moving_blocks_cloak;
+            ));
 
     // The gate the state-0 head of `CloakingTick @ 0x006FB757..0x006FB7F7`
     // actually applies, read from the disassembly:

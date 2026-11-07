@@ -133,6 +133,11 @@ impl Simulation {
             reach: rules.combat_damage.crush,
             techno: true,
             object: true,
+            // Ares UnitClass_ApproachTarget_OmniCrusher (Ares.dll 1004BC10,
+            // hook 0x741613): `OmniCrusher.Aggressive=no` skips the arm.
+            #[cfg(feature = "ares")]
+            omni: object.omni_crusher && object.techno_combat().combat().omni_crusher_aggressive(),
+            #[cfg(not(feature = "ares"))]
             omni: object.omni_crusher,
             is_human: self
                 .houses

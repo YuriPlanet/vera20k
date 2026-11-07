@@ -6430,6 +6430,67 @@ fn mapless_guard_pick(shell: &str) -> Option<u64> {
     .object()
 }
 
+/// A mapless Guard scan by a human player's guarding `ART` (with `art`) of
+/// one enemy `MTNK` (with `target`) a cell away.
+#[cfg(feature = "ares")]
+fn ares_guarding_pick(art: &str, target: &str) -> Option<u64> {
+    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[InfantryTypes]\n[VehicleTypes]\n0=ART\n1=MTNK\n[AircraftTypes]\n[BuildingTypes]\n\
+         [ART]\nStrength=300\nArmor=heavy\nSpeed=6\nPrimary=Shell\n{art}\n\
+         [MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\n{target}\n\
+         [Shell]\nDamage=65\nROF=50\nRange=8\nWarhead=AP\n\
+         [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+    )))
+    .expect("guard scan rules");
+    let mut store = EntityStore::new();
+    let mut scanner = make_entity_owned(10, "ART", 5, 5, 300, "Americans");
+    scanner.mission.set_current_for_test(
+        crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
+        0,
+    );
+    store.insert(scanner);
+    store.insert(make_entity_owned(20, "MTNK", 6, 5, 300, "Soviet"));
+    let interner = test_interner();
+    let mut fog = FogState::default();
+    fog.mark_visible_for_owner(test_intern("Americans"), 6, 5);
+    let occupancy = mark_fixture_entities(&mut store);
+    crate::sim::combat::combat_targeting::greatest_threat_for_entity(
+        &store,
+        &occupancy,
+        &rules,
+        &interner,
+        10,
+        Some(&fog),
+        None,
+        false,
+        crate::sim::combat::ScanMission::Guard,
+        None,
+        crate::sim::combat::line_of_fire::LineOfFireInputs {
+            overlay_grid: None,
+            overlay_registry: None,
+            alliances: Some(&HouseAlliances::default()),
+        },
+        None,
+        None,
+    )
+    .object()
+}
+
+/// Ares `CanPassiveAquire.Guard=no` stops a human player's guarding Foot
+/// from scanning (hook 0x4D9920), and `CivilianEnemy=yes` makes an
+/// `Insignificant=` candidate an enemy (hook 0x6F826E).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_passive_acquire_and_civilian_enemy_gate_the_guard_scan() {
+    assert_eq!(ares_guarding_pick("", ""), Some(20));
+    assert_eq!(ares_guarding_pick("CanPassiveAquire.Guard=no", ""), None);
+    assert_eq!(ares_guarding_pick("", "Insignificant=yes"), None);
+    assert_eq!(
+        ares_guarding_pick("", "Insignificant=yes\nCivilianEnemy=yes"),
+        Some(20)
+    );
+}
+
 /// Without resolved terrain the Guard scan's CanFireAt arm asks the shared
 /// mapless range (`in_range::mapless_in_range`), MinimumRange included: the
 /// nearer enemy is refused inside it, and the scan takes the other.
@@ -10985,6 +11046,35 @@ fn gsi_08_05_rearm_frames_match_the_original() {
             "{row}"
         );
     }
+}
+
+/// Ares TechnoClass_Fire_BerserkROFMultiplier (Ares.dll 1004A3D0, hook
+/// 0x6FF28F): a berserk firer's rearm is its GetROF value times the type's
+/// `Berserk.ROFMultiplier`, else `[CombatDamage] BerserkROFMultiplier`,
+/// truncated toward zero.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_berserk_rearm_takes_the_type_or_rules_multiplier() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[CombatDamage]\nBerserkROFMultiplier=0.75\n[VehicleTypes]\n0=OWN\n1=RULES\n\
+         [OWN]\nBerserk.ROFMultiplier=0.25\n[RULES]\nStrength=1\n",
+    ))
+    .unwrap();
+    let global = rules.ares_techno_combat().berserk_rof_multiplier();
+    let rearm = |name: &str, rof: i32| {
+        let multiplier = rules
+            .object(name)
+            .unwrap()
+            .techno_combat()
+            .combat()
+            .berserk_rof_multiplier(global);
+        super::world_fire::ares_berserk_rearm_frames(rof, Some(multiplier))
+    };
+    assert_eq!(
+        (rearm("OWN", 101), rearm("RULES", 101), rearm("RULES", -101)),
+        (25, 75, -75)
+    );
+    assert_eq!(super::world_fire::ares_berserk_rearm_frames(101, None), 101);
 }
 
 /// `TechnoClass::FireAt 0x006FE9FE`: EVERY launch speed is clamped to half the

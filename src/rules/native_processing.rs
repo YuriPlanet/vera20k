@@ -3703,6 +3703,8 @@ pub(crate) struct AresGlobalControls {
     warhead: crate::rules::ares_warhead::WarheadGlobalRules,
     #[serde(default)]
     veterancy: crate::rules::ares_veterancy::VeterancyGlobalRules,
+    #[serde(default)]
+    techno_combat: crate::rules::ares_techno_type::TechnoCombatGlobalRules,
 }
 
 #[cfg(feature = "ares")]
@@ -3718,6 +3720,7 @@ impl Default for AresGlobalControls {
             cloak_power: Default::default(),
             warhead: Default::default(),
             veterancy: Default::default(),
+            techno_combat: Default::default(),
         }
     }
 }
@@ -3752,6 +3755,12 @@ impl AresGlobalControls {
         &self.veterancy
     }
 
+    pub(crate) fn techno_combat(
+        &self,
+    ) -> &crate::rules::ares_techno_type::TechnoCombatGlobalRules {
+        &self.techno_combat
+    }
+
     pub(crate) fn ai_bypasses_build_limit(&self, difficulty_index: usize) -> bool {
         self.allow_bypass_build_limit
             .get(difficulty_index)
@@ -3779,6 +3788,8 @@ impl AresGlobalControls {
         self.warhead.read_before_type_data(pass);
         //1002AB60 also reads VeteranFlashTimer in AudioVisual.
         self.veterancy.read_before_type_data(pass);
+        //1002AB60 also reads BerserkROFMultiplier, AutoRepel, PlayerAutoRepel.
+        self.techno_combat.read_before_type_data(pass);
         if let Some(mission) = pass
             .section("CombatDamage")
             .and_then(|section| section.read_name("EMPAIRecoverMission", 2048))

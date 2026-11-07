@@ -2123,6 +2123,16 @@ pub(super) fn emit_admitted_fire(
     // The remainder (`0x006FF2C5`) divides by the Burst of the weapon fired,
     // where GetROF's mid-burst test read the (next) weapon GetWeapon answers.
     if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
+        #[cfg(feature = "ares")]
+        let rearm = ares_berserk_rearm_frames(
+            rof,
+            entity.berserk.is_active().then(|| {
+                obj.techno_combat()
+                    .combat()
+                    .berserk_rof_multiplier(rules.ares_techno_combat().berserk_rof_multiplier())
+            }),
+        );
+        #[cfg(not(feature = "ares"))]
         let rearm = fireat_rearm_frames(rof, entity.berserk.is_active());
         entity.rearm_after_fire(binary_frame as i32, rearm);
         entity.weapon_burst.complete_shot(weapon.burst.max(1));
@@ -2447,6 +2457,21 @@ fn fireat_estimate_debit(
 /// `tools/spatial_oracle/rearm_timer.py` (`fire` rows).
 pub(crate) fn fireat_rearm_frames(get_rof: i32, berserk: bool) -> i32 {
     if berserk { get_rof / 2 } else { get_rof }
+}
+
+/// Ares TechnoClass_Fire_BerserkROFMultiplier (Ares.dll 1004A3D0, hook
+/// 0x6FF28F) in place of the halving: a berserk firer's GetROF value times
+/// its multiplier (`Berserk.ROFMultiplier`, else `[CombatDamage]
+/// BerserkROFMultiplier`), x87 under the game's control word, then `_ftol`.
+#[cfg(feature = "ares")]
+pub(crate) fn ares_berserk_rearm_frames(
+    get_rof: i32,
+    multiplier: Option<crate::util::native_x87::NativeF64Bits>,
+) -> i32 {
+    use crate::util::native_x87::MaskedX87Chop53 as X;
+    multiplier.map_or(get_rof, |multiplier| {
+        X::ftol_i32_low_masked(X::mul(X::load_i32(get_rof), X::load_f64(multiplier)))
+    })
 }
 
 fn commit_fire_bookkeeping(
