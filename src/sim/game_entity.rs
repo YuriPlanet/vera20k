@@ -608,7 +608,7 @@ pub struct GameEntity {
     /// `sim::sensor_lifecycle`.
     #[cfg(feature = "ares")]
     #[serde(default)]
-    pub(crate) sensor_array_counter: i32,
+    pub(crate) sensor_array_counter: crate::sim::sensor_lifecycle::SensorArrayCounter,
     /// Ares TechnoExt+0x44 SonarTimer (constructor stopped): while it runs,
     /// CloakDisallowed (10043A40) keeps the object from cloaking.
     /// SW_SonarPulse::Activate100753A0 and the warhead `Sonar.Duration`
@@ -1588,7 +1588,7 @@ impl GameEntity {
 
     /// CreateWave 10055160's write, by the wave's own creator only.
     #[cfg(feature = "ares")]
-    pub(crate) fn set_ares_wave_weapon_slot(&mut self, slot: u8) {
+    pub(crate) fn record_ares_wave_weapon_slot(&mut self, slot: u8) {
         self.ares_wave_weapon_slot = slot;
     }
 
@@ -2121,7 +2121,7 @@ impl GameEntity {
             #[cfg(feature = "ares")]
             radar_jam: Default::default(),
             #[cfg(feature = "ares")]
-            sensor_array_counter: 0,
+            sensor_array_counter: Default::default(),
             #[cfg(feature = "ares")]
             sonar_timer: Default::default(),
             building_has_engineer: Default::default(),

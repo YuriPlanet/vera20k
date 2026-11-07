@@ -441,6 +441,7 @@ fn engine_per_client_reads_have_pinned_callers() {
             &[
                 ("sim/scenario_session.rs", 1),
                 ("sim/score.rs", 1),
+                ("sim/superweapon/mod.rs", 1),
                 ("sim/world/house_defeat.rs", 2),
             ],
         ),

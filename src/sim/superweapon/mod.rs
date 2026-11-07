@@ -17,7 +17,17 @@ mod chronosphere;
 pub use chronosphere::CHRONO_WARP_SELECTION_INDEX;
 pub mod airstrike_tint;
 #[cfg(all(test, feature = "ares"))]
+mod ares_charge_tests;
+#[cfg(all(test, feature = "ares"))]
+mod ares_common_keys_tests;
+#[cfg(feature = "ares")]
+mod ares_presentation;
+#[cfg(all(test, feature = "ares"))]
 mod ares_super_anims_tests;
+#[cfg(all(test, feature = "ares"))]
+mod ares_target_policy_tests;
+#[cfg(feature = "ares")]
+mod battery;
 #[cfg(all(test, feature = "ares"))]
 mod building_requirements_tests;
 #[cfg(test)]
@@ -36,21 +46,11 @@ mod fire;
 pub mod force_shield;
 #[cfg(feature = "ares")]
 mod generic_warhead;
-#[cfg(all(test, feature = "ares"))]
-mod ares_charge_tests;
-#[cfg(all(test, feature = "ares"))]
-mod ares_target_policy_tests;
-#[cfg(feature = "ares")]
-mod ares_presentation;
-#[cfg(feature = "ares")]
-mod battery;
-#[cfg(all(test, feature = "ares"))]
-mod ares_common_keys_tests;
+pub mod genetic_converter;
 #[cfg(feature = "ares")]
 mod hunter_seeker;
 #[cfg(test)]
 mod hunter_seeker_tests;
-pub mod genetic_converter;
 pub mod invulnerability;
 pub mod iron_curtain;
 pub mod lightning_storm;
@@ -62,16 +62,16 @@ pub(crate) mod nuke;
 #[cfg(test)]
 mod nuke_tests;
 pub mod paradrop;
-#[cfg(feature = "ares")]
-mod protect;
-#[cfg(feature = "ares")]
-mod sonar_pulse;
 #[cfg(all(test, feature = "phobos"))]
 mod phobos_techno_requirements_tests;
+#[cfg(feature = "ares")]
+mod protect;
 pub mod psychic_dominator;
 #[cfg(test)]
 mod psychic_dominator_tests;
 pub mod psychic_reveal;
+#[cfg(feature = "ares")]
+mod sonar_pulse;
 mod spy_plane;
 mod two_stage;
 pub use two_stage::PaidSuperWeaponSelection;
@@ -1553,18 +1553,19 @@ pub fn superweapon_views_for_owner(
         #[cfg(feature = "ares")]
         let can_afford = money::can_afford(&sim.houses, *owner, money_type);
         #[cfg(feature = "ares")]
-        let constraints_blocked = rules
-            .super_weapon_metadata(type_id_str)
-            .is_some_and(|metadata| {
-                let targeting = metadata.targeting();
-                targeting.use_ai_targeting()
-                    && !targeting.constraints().allows_manual_fire(
-                        sim.houses
-                            .get(owner)
-                            .map(|house| house.target_constraints_observations())
-                            .unwrap_or_default(),
-                    )
-            });
+        let constraints_blocked =
+            rules
+                .super_weapon_metadata(type_id_str)
+                .is_some_and(|metadata| {
+                    let targeting = metadata.targeting();
+                    targeting.use_ai_targeting()
+                        && !targeting.constraints().allows_manual_fire(
+                            sim.houses
+                                .get(owner)
+                                .map(|house| house.target_constraints_observations())
+                                .unwrap_or_default(),
+                        )
+                });
         views.push(SuperWeaponView {
             type_id: inst.type_id,
             use_ai_targeting: rules.super_weapon_uses_ai_targeting(type_id_str),
@@ -2064,9 +2065,12 @@ pub(crate) fn provided_supers<'r>(
 pub(crate) fn type_super_weapons(
     object: &crate::rules::object_type::ObjectType,
 ) -> impl Iterator<Item = &str> {
-    let primary = [object.super_weapon.as_deref(), object.super_weapon2.as_deref()]
-        .into_iter()
-        .flatten();
+    let primary = [
+        object.super_weapon.as_deref(),
+        object.super_weapon2.as_deref(),
+    ]
+    .into_iter()
+    .flatten();
     #[cfg(feature = "ares")]
     let names = primary.chain(object.additional_super_weapons().iter().map(String::as_str));
     #[cfg(not(feature = "ares"))]
@@ -2143,7 +2147,9 @@ fn provider_supers(
     // Ares GetSuperWeaponStatuses10038F10: the observer House has none; an
     // available `SW.AlwaysGranted` type is Available, PowerSourced and
     // Charging without a provider (the low-power pass still holds a powered
-    // one, as the shared hold decision does).
+    // one, as the shared hold decision does). Ares reads the client's own
+    // Observer pointer; VERA's observer list comes from every start slot, so
+    // all peers skip the same Houses.
     #[cfg(feature = "ares")]
     {
         if sim.session.is_observer_house(owner) {

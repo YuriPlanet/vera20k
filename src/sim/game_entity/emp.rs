@@ -55,8 +55,9 @@ impl GameEntity {
     pub(crate) fn emp_last_mission(&self) -> i32 {
         self.emp.last_mission
     }
+    /// EnableEMPEffect2 saves the mission DisableEMPEffect2 restores.
     #[cfg(feature = "ares")]
-    pub(crate) fn set_emp_last_mission(&mut self, raw: i32) {
+    pub(crate) fn remember_emp_last_mission(&mut self, raw: i32) {
         self.emp.last_mission = raw;
     }
     /// Installed IsDeactivationAdvisable10062D60, shared by the EMP and

@@ -313,7 +313,7 @@ impl Simulation {
             return false;
         }
         let raw = entity.mission.current().raw();
-        entity.set_emp_last_mission(raw);
+        entity.remember_emp_last_mission(raw);
         Self::temporal_release_if_warping(
             &mut self.substrate,
             &mut self.houses,

@@ -24,11 +24,11 @@ use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
 #[cfg(feature = "ares")]
 use crate::sim::mission::{MissionId, MissionType};
-#[cfg(feature = "ares")]
-use crate::util::state_hasher::StateHasher;
 use crate::sim::world::Simulation;
 #[cfg(feature = "ares")]
 use crate::sim::world::{FrameEffects, SimSoundEvent};
+#[cfg(feature = "ares")]
+use crate::util::state_hasher::StateHasher;
 use std::hash::{Hash, Hasher};
 
 #[cfg(all(test, feature = "ares"))]

@@ -2402,7 +2402,7 @@ impl Simulation {
             // in the owner's TechnoExt before the constructor runs.
             #[cfg(feature = "ares")]
             if let Some(owner) = self.substrate.entities.get_mut(event.attacker_id) {
-                owner.set_ares_wave_weapon_slot(weapon_index as u8);
+                owner.record_ares_wave_weapon_slot(weapon_index as u8);
             }
             self.admit_fired_wave(event.attacker_id, wave, rules, overlay_registry);
         }

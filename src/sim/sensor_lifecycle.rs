@@ -15,6 +15,49 @@ use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::world::Simulation;
 
+/// Ares BuildingExt+4C SensorArrayActiveCounter: Activate (10016D60) counts
+/// every call and adds the sensors only from zero; Deactivate (10016DB0)
+/// removes them only while the count is positive, then clears it.
+#[cfg(feature = "ares")]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+pub(crate) struct SensorArrayCounter(i32);
+
+#[cfg(feature = "ares")]
+impl SensorArrayCounter {
+    /// Counts one activation; true when it was the first, so the sensors go up.
+    fn activate(&mut self) -> bool {
+        let was = self.0;
+        self.0 = was.wrapping_add(1);
+        was == 0
+    }
+
+    /// True when the count was positive, so the sensors come down; the count
+    /// is then cleared. A zero or wrapped negative count is kept.
+    fn deactivate(&mut self) -> bool {
+        if self.0 <= 0 {
+            return false;
+        }
+        self.0 = 0;
+        true
+    }
+
+    pub(crate) fn is_active(self) -> bool {
+        self.0 > 0
+    }
+
+    pub(crate) fn is_zero(self) -> bool {
+        self.0 == 0
+    }
+
+    #[cfg(test)]
+    fn count(self) -> i32 {
+        self.0
+    }
+}
+
 fn unit_sensor_radius(entity_category: EntityCategory, object: &ObjectType) -> Option<u16> {
     if object.sensors_sight == 0
         || !matches!(
@@ -362,9 +405,7 @@ impl Simulation {
         if entity.deactivated.is_offline() {
             return;
         }
-        let was = entity.sensor_array_counter;
-        entity.sensor_array_counter = was.wrapping_add(1);
-        if was != 0 {
+        if !entity.sensor_array_counter.activate() {
             return;
         }
         let Some((owner, center, sight)) =
@@ -396,10 +437,9 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
             return;
         };
-        if entity.sensor_array_counter <= 0 {
+        if !entity.sensor_array_counter.deactivate() {
             return;
         }
-        entity.sensor_array_counter = 0;
         let Some((owner, center, sight)) =
             self.substrate.entities.get(stable_id).and_then(|entity| {
                 Some((
@@ -439,7 +479,7 @@ impl Simulation {
         {
             return;
         }
-        let was_active = entity.sensor_array_counter > 0;
+        let was_active = entity.sensor_array_counter.is_active();
         let active = !entity.deactivated.is_offline()
             && self.building_operational_state(stable_id, rules) == Some(true);
         if active == was_active {
@@ -722,8 +762,14 @@ mod tests {
                 .get(&owner)
                 .map_or(0, |cells| cells[row + x])
         };
-        let counter =
-            |sim: &Simulation| sim.substrate.entities.get(id).unwrap().sensor_array_counter;
+        let counter = |sim: &Simulation| {
+            sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .sensor_array_counter
+                .count()
+        };
         assert_eq!((counter(&sim), sensor(&sim, 27)), (1, 1));
         let visit = |sim: &mut Simulation| {
             sim.object_ai_visit_one(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
