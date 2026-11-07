@@ -42,11 +42,13 @@ use crate::sim::world::{FrameEffects, Simulation};
 pub(crate) const DOCK_FACING: u16 = 0x4000;
 
 /// The literal pad offset of `0x0043CA80..0x0043CA8D` (`add dx,3; inc ax`).
+#[cfg(any(test, not(feature = "ares")))]
 const DOCK_PAD_OFFSET: [i32; 2] = [3, 1];
 
 /// The pad cell a DockUnload/Weeder dock sends in MOVE_HERE
 /// (`0x0043CA71..0x0043CAB8`): its NW cell (`Get_Cell`, Location / 256) plus
 /// (3, 1), CellStruct int16 adds. The stock refinery pad is this cell.
+#[cfg(test)]
 pub(crate) fn dock_pad_cell(rx: u16, ry: u16) -> (u16, u16) {
     dock_pad_cell_at(rx, ry, DOCK_PAD_OFFSET)
 }
