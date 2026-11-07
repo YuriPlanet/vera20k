@@ -1068,6 +1068,11 @@ pub struct GeneralRules {
     /// `NavalUnitEmerge`; the native constructor's invalid Voc index is silence
     /// when the key is absent or cannot resolve.
     pub cloak_sound: Option<String>,
+    /// Ares RulesExt+38/+3C nullable `[AudioVisual] DecloakSound=`
+    /// (NullableIdx<Voc>1000E9D0 in LoadAfterTypeData1002A800), bound by the
+    /// fixed-catalog sound binder. Unset falls back to `cloak_sound`.
+    #[cfg(feature = "ares")]
+    pub(crate) ares_decloak_sound: Option<Option<String>>,
     /// `[AudioVisual] LeaveBioReactorSound=` is RulesClass+0x274, read by
     /// `RulesClass::ReadAudioVisual @ 0x006691E0` and played by the successful
     /// InfantryAbsorb arm of `BuildingClass::Mission_Unload @ 0x0044D880`.
@@ -2726,6 +2731,8 @@ impl Default for GeneralRules {
             cloaking_stages: 9,
             cloak_delay_frames: 0,
             cloak_sound: None,
+            #[cfg(feature = "ares")]
+            ares_decloak_sound: None,
             leave_bio_reactor_sound: None,
             enter_bio_reactor_sound: None,
             enter_grinder_sound: None,
@@ -3936,6 +3943,8 @@ impl GeneralRules {
             cloak_sound: audio_visual
                 .read_name("CloakSound", 0x80)
                 .map(str::to_owned),
+            #[cfg(feature = "ares")]
+            ares_decloak_sound: None,
             // The fixed SOUNDMD binder resolves Rules+0x274 as a Voc index.
             // Keep the constructor's invalid index until that owner binds it.
             leave_bio_reactor_sound: None,
@@ -4963,6 +4972,18 @@ impl RuleSet {
         self.ares_global_controls.bounty()
     }
 
+    /// RulesExt CloakHeight, dim factors and detection speak delays.
+    #[cfg(feature = "ares")]
+    pub fn ares_cloak_power(&self) -> &crate::rules::ares_cloak_power::CloakPowerGlobalRules {
+        self.ares_global_controls.cloak_power()
+    }
+
+    /// RulesExt DamageAirConsiderBridges and IronCurtainFlash.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_warhead_globals(&self) -> &crate::rules::ares_warhead::WarheadGlobalRules {
+        self.ares_global_controls.warhead()
+    }
+
     /// Ares RulesExt+70, used by SW_HunterSeeker::Activate100728EB.
     #[cfg(feature = "ares")]
     pub(crate) fn hunter_seeker_buildings(&self) -> &[String] {
@@ -5278,6 +5299,49 @@ impl RuleSet {
                 .copied()
             {
                 rules.object_list[handle.0 as usize].bind_crew_rules(crew);
+            }
+        }
+        #[cfg(feature = "ares")]
+        for (name, infiltration) in processed.infiltration_states() {
+            if let Some(handle) = rules
+                .object_category_index
+                .get(&(ObjectCategory::Building, name.to_ascii_uppercase()))
+                .copied()
+            {
+                rules.object_list[handle.0 as usize].bind_infiltration_rules(infiltration);
+            }
+        }
+        #[cfg(feature = "ares")]
+        {
+            for (category, name, retained) in processed.cloak_power_states() {
+                if let Some(handle) = rules
+                    .object_category_index
+                    .get(&(category, name.to_ascii_uppercase()))
+                    .copied()
+                {
+                    rules.object_list[handle.0 as usize].bind_cloak_power_rules(retained);
+                }
+            }
+            // Ares ValidateThings100677B0 (hook687C16), after every INI read:
+            // PoweredBy replaces PoweredUnit, and a PowersUnit naming a
+            // PoweredBy type is cleared. Both write the live Type.
+            let powered_by_types: HashSet<String> = rules
+                .object_list
+                .iter()
+                .filter(|object| !object.cloak_power().powered_by().is_empty())
+                .map(|object| object.id.to_ascii_uppercase())
+                .collect();
+            for object in &mut rules.object_list {
+                if !object.cloak_power().powered_by().is_empty() {
+                    object.powered_unit = false;
+                }
+                if object
+                    .powers_unit
+                    .as_deref()
+                    .is_some_and(|unit| powered_by_types.contains(&unit.to_ascii_uppercase()))
+                {
+                    object.powers_unit = None;
+                }
             }
         }
         for (name, ares) in processed.ares_warhead_states() {
@@ -5878,6 +5942,12 @@ impl RuleSet {
         self.general.spy_plane_camera = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "SpyPlaneCamera", None));
+        #[cfg(feature = "ares")]
+        {
+            self.general.ares_decloak_sound = ini
+                .section("AudioVisual")
+                .and_then(|section| sounds.read_ares_reference(section, "DecloakSound"));
+        }
         self.general.stop_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "StopSound", None));
@@ -5990,6 +6060,15 @@ impl RuleSet {
                 delivery.activation_sound = section
                     .and_then(|section| sounds.read_ares_reference(section, "SW.ActivationSound"))
                     .flatten();
+            }
+        }
+        // WarheadTypeExt ReadINI10051D80: DieSound.Override/VoiceDie.Override
+        // are NullableIdx<Voc> 1000E9D0 reads against the fixed SOUNDMD.
+        #[cfg(feature = "ares")]
+        for warhead in self.warheads.values_mut() {
+            let section = ini.section(&warhead.id);
+            if let Some(ares) = warhead.ares_rules_mut() {
+                ares.combat_mut().bind_sound_overrides(section, sounds);
             }
         }
         let type_array_indices = &self.type_array_indices;
@@ -6105,10 +6184,20 @@ impl RuleSet {
         let _ = (ini, eva);
         #[cfg(feature = "ares")]
         for sw in self.super_weapons.values_mut() {
+            // LoadFromINI10033370 reads these ValueableIdx<VoxClass> in this
+            // order after Ready/Activated/Detected; neither has a handler
+            // Initialize write. Ctor10031460: Impatient -1, SelectTarget
+            // and InsufficientFunds FindIndex of their literal names.
+            sw.impatient_eva = eva.read_rules_reference(ini.section(&sw.id), "EVA.Impatient", "");
             sw.insufficient_funds_eva = eva.read_rules_reference(
                 ini.section(&sw.id),
                 "EVA.InsufficientFunds",
                 "EVA_InsufficientFunds",
+            );
+            sw.select_target_eva = eva.read_rules_reference(
+                ini.section(&sw.id),
+                "EVA.SelectTarget",
+                "EVA_SelectTarget",
             );
         }
     }
@@ -6460,6 +6549,10 @@ impl RuleSet {
             weapon.occupant_anim = state.occupant_anim.map(str::to_owned);
             weapon.open_topped_anim = state.open_topped_anim.map(str::to_owned);
             weapon.attached_particle_system = state.attached_particle_system.map(str::to_owned);
+            #[cfg(feature = "ares")]
+            {
+                weapon.ares_visuals.bolt_particle_system = state.ares_bolt_particle_system.clone();
+            }
             // A repeated ID replaces the earlier weapon under its key. The
             // reserve is `insert`'s, so the keys iterate in the order they
             // did when the map held the weapons themselves.
@@ -8041,6 +8134,24 @@ impl RuleSet {
             if !aircraft_crash_overrides.is_empty() {
                 b"ares-aircraft-crashable-v1".hash(&mut hasher);
                 aircraft_crash_overrides.hash(&mut hasher);
+            }
+            let cloak_power = self
+                .object_list
+                .iter()
+                .filter(|object| {
+                    object.cloak_power()
+                        != &crate::rules::ares_cloak_power::CloakPowerTypeRules::default()
+                })
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.cloak_power(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !cloak_power.is_empty() {
+                b"ares-cloak-power-rules-v1".hash(&mut hasher);
+                cloak_power.hash(&mut hasher);
             }
             let crews = self
                 .object_list

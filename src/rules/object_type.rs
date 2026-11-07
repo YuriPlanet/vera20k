@@ -1166,6 +1166,16 @@ pub struct ObjectType {
     /// retaliation and script-issued missions retain their existing owners.
     #[cfg(feature = "ares")]
     no_manual_fire: bool,
+    /// Ares TechnoTypeExt+46C `Saboteur=` (constructor false, Valueable read
+    /// in `TechnoTypeExt::ExtData::LoadFromINIFile`): an `Infiltrate=`
+    /// infantryman blows up the buildings it enters
+    /// (`InfantryExt::GetInfiltrateAction @ 100252D0`).
+    #[cfg(feature = "ares")]
+    saboteur: bool,
+    /// BuildingTypeExt's `SpyEffect.*` and `ImmuneToSaboteurs=`, projected
+    /// from the retained rules reader (`rules::ares_infiltration`).
+    #[cfg(feature = "ares")]
+    infiltration: crate::rules::ares_infiltration::InfiltrationTypeRules,
     /// Ares3.0 TypeExt+646/+647. Unset uses the class/score default at the
     /// Add/Remove_Tracking owner; an explicit false is a distinct retained input.
     #[cfg(feature = "ares")]
@@ -1190,6 +1200,15 @@ pub struct ObjectType {
     bounty: crate::rules::ares_bounty::BountyTypeRules,
     #[cfg(feature = "ares")]
     crew: crate::rules::ares_crew::CrewTypeRules,
+    /// Ares TypeExt+278/+280/+1F8/+1F9/+1FC/+204, projected from the retained
+    /// rules reader (`rules::ares_cloak_power`).
+    #[cfg(feature = "ares")]
+    cloak_power: crate::rules::ares_cloak_power::CloakPowerTypeRules,
+    /// Ares TypeExt+1E8/+1EC CloakSound and +1F0/+1F4 DecloakSound
+    /// (constructor unset): unset, explicit silence and a resolved
+    /// Voc ID remain distinct.
+    #[cfg(feature = "ares")]
+    cloak_sounds: [Option<Option<String>>; 2],
     /// Immutable projection of the retained TechnoTypeExt+308/+314/+320/+321
     /// reader. Country identities bind during Process, never from merged INI.
     #[cfg(feature = "ares")]
@@ -2799,6 +2818,42 @@ impl ObjectType {
     }
 
     #[cfg(feature = "ares")]
+    pub(crate) fn cloak_power(&self) -> &crate::rules::ares_cloak_power::CloakPowerTypeRules {
+        &self.cloak_power
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_cloak_power_rules(
+        &mut self,
+        rules: &crate::rules::ares_cloak_power::CloakPowerTypeRules,
+    ) {
+        self.cloak_power = rules.clone();
+    }
+
+    /// The progress stages of this type's cloak: Ares Cloakable.Stages
+    /// (StartUncloaking hook7036EB ->10048400, VisualCharacter hook703A79 ->
+    /// 100484D0), else `[General]CloakingStages`.
+    pub fn cloaking_stages(&self, general: i32) -> i32 {
+        #[cfg(feature = "ares")]
+        {
+            self.cloak_power.cloaking_stages(general)
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            general
+        }
+    }
+
+    /// The cloak (`false`) or decloak (`true`) sound override, `None` when
+    /// unset. Hooks70380A/70375B use it before their Rules fallbacks.
+    #[cfg(feature = "ares")]
+    pub(crate) fn cloak_sound_override(&self, decloak: bool) -> Option<Option<&str>> {
+        self.cloak_sounds[usize::from(decloak)]
+            .as_ref()
+            .map(|cue| cue.as_deref())
+    }
+
+    #[cfg(feature = "ares")]
     pub(crate) fn bind_driver_rules(
         &mut self,
         driver: &crate::rules::ares_driver::DriverTypeRules,
@@ -2935,6 +2990,33 @@ impl ObjectType {
     /// The optional Ares manual-action restriction, shared by cursor and
     /// click through the existing action owner. INIs cannot enable it in a
     /// retail-only build.
+    /// Ares `Saboteur=` ([`Self::saboteur`] field doc).
+    #[cfg(feature = "ares")]
+    pub(crate) const fn saboteur(&self) -> bool {
+        self.saboteur
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn infiltration_rules(
+        &self,
+    ) -> &crate::rules::ares_infiltration::InfiltrationTypeRules {
+        &self.infiltration
+    }
+
+    /// Ares `SpyEffect.RevealProduction`, which the status text asks.
+    #[cfg(feature = "ares")]
+    pub fn spy_reveals_production(&self) -> bool {
+        self.infiltration.reveal_production
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_infiltration_rules(
+        &mut self,
+        infiltration: &crate::rules::ares_infiltration::InfiltrationTypeRules,
+    ) {
+        self.infiltration = infiltration.clone();
+    }
+
     pub const fn no_manual_fire(&self) -> bool {
         #[cfg(feature = "ares")]
         {
@@ -3615,6 +3697,12 @@ impl ObjectType {
             // TypeExt LoadFromINI1003F0C5/1003F0DB reuses NullableIdx<Voc>
             // 1000E9D0:2048-byte read, fixed-catalog lookup, unknown retains.
             self.promotion_sounds[slot] =
+                section.and_then(|section| sounds.read_ares_reference(section, key));
+        }
+        #[cfg(feature = "ares")]
+        for (slot, key) in ["CloakSound", "DecloakSound"].into_iter().enumerate() {
+            // TypeExt LoadFromINI1003DFB0: NullableIdx<Voc>1000E9D0.
+            self.cloak_sounds[slot] =
                 section.and_then(|section| sounds.read_ares_reference(section, key));
         }
         #[cfg(feature = "ares")]
@@ -4423,6 +4511,10 @@ impl ObjectType {
             #[cfg(feature = "ares")]
             no_manual_fire: section.read_ares_bool("NoManualFire", false),
             #[cfg(feature = "ares")]
+            saboteur: section.read_ares_bool("Saboteur", false),
+            #[cfg(feature = "ares")]
+            infiltration: Default::default(),
+            #[cfg(feature = "ares")]
             keep_alive: section.read_ares_nullable_bool("KeepAlive", None),
             #[cfg(feature = "ares")]
             convert_script: None,
@@ -4442,6 +4534,10 @@ impl ObjectType {
             bounty: Default::default(),
             #[cfg(feature = "ares")]
             crew: Default::default(),
+            #[cfg(feature = "ares")]
+            cloak_power: Default::default(),
+            #[cfg(feature = "ares")]
+            cloak_sounds: [None, None],
             #[cfg(feature = "ares")]
             factory_owners: Default::default(),
             #[cfg(feature = "ares")]

@@ -176,6 +176,8 @@ pub(crate) mod ares_country_presentation;
 pub(crate) mod ares_side_extension;
 pub(crate) mod ares_warhead;
 #[cfg(feature = "ares")]
+pub mod ares_weapon;
+#[cfg(feature = "ares")]
 pub(crate) mod ares_spotlight;
 #[cfg(feature = "ares")]
 pub(crate) mod ares_driver;
@@ -183,6 +185,10 @@ pub(crate) mod ares_driver;
 pub(crate) mod ares_crew;
 #[cfg(feature = "ares")]
 pub(crate) mod ares_bounty;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_infiltration;
+#[cfg(feature = "ares")]
+pub mod ares_cloak_power;
 pub mod armor;
 pub mod alpha_image_assets;
 pub mod country_loading;

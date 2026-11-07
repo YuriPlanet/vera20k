@@ -4418,11 +4418,22 @@ fn shot_is_illegal(
                 .and_then(|object| sim.interner().object_type(object.type_ref(), rules)),
         )
         .is_some_and(|(infantry, building)| {
-            (if infantry.agent {
-                building.spyable
-            } else {
-                building.capturable
-            }) || (infantry.c4 && building.can_c4)
+            // Ares 3.0 100261F0 (hook 0x007004AD): any action of the shared
+            // classification keeps the rung.
+            #[cfg(feature = "ares")]
+            {
+                let _ = (infantry, building);
+                sim.infiltrate_action(actor_id, target_id, rules)
+                    != crate::sim::world::InfiltrateAction::None
+            }
+            #[cfg(not(feature = "ares"))]
+            {
+                (if infantry.agent {
+                    building.spyable
+                } else {
+                    building.capturable
+                }) || (infantry.c4 && building.can_c4)
+            }
         });
     !infiltrate_arm
         && sim.effective_shared_cell_dummy().detached(|| {

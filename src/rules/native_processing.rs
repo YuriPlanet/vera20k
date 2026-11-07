@@ -1766,6 +1766,8 @@ impl ProcessedRulesLayers {
                     occupant_anim: member.weapon.occupant_anim.as_deref(),
                     open_topped_anim: member.weapon.open_topped_anim.as_deref(),
                     attached_particle_system: member.weapon.attached_particle_system.as_deref(),
+                    #[cfg(feature = "ares")]
+                    ares_bolt_particle_system: &member.weapon.ares_bolt_particle_system,
                 }
             })
     }
@@ -1918,6 +1920,7 @@ impl ProcessedRulesLayers {
                 &member.super_weapon_charge,
                 &member.super_weapon_influence,
                 member.super_weapon_targeting,
+                &member.super_weapon_launch,
             )
         })
     }
@@ -2234,6 +2237,27 @@ impl ProcessedRulesLayers {
     }
 
     #[cfg(feature = "ares")]
+    pub(crate) fn cloak_power_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            &crate::rules::ares_cloak_power::CloakPowerTypeRules,
+        ),
+    > {
+        let registry = self.native_type_construction_trace.registry_state();
+        registry.techno_type_order.iter().map(|&(family, index)| {
+            let member = &registry.families[&family][index];
+            (
+                family.object_category().expect("TechnoType category"),
+                member.native_stored_id.as_str(),
+                &member.cloak_power,
+            )
+        })
+    }
+
+    #[cfg(feature = "ares")]
     pub(crate) fn crew_states(
         &self,
     ) -> impl Iterator<
@@ -2252,6 +2276,19 @@ impl ProcessedRulesLayers {
                 &member.crew,
             )
         })
+    }
+
+    /// The retained BuildingTypeExt infiltration reads, by BuildingType.
+    #[cfg(feature = "ares")]
+    pub(crate) fn infiltration_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &str,
+            &crate::rules::ares_infiltration::InfiltrationTypeRules,
+        ),
+    > {
+        self.member_states(RulesTypeFamily::Building, |member| &member.infiltration)
     }
 
     pub(crate) fn ares_techno_states(
@@ -3557,6 +3594,10 @@ pub(crate) struct AresGlobalControls {
     type_select_use_deploy: bool,
     #[serde(default)]
     bounty: crate::rules::ares_bounty::BountyGlobalRules,
+    #[serde(default)]
+    cloak_power: crate::rules::ares_cloak_power::CloakPowerGlobalRules,
+    #[serde(default)]
+    warhead: crate::rules::ares_warhead::WarheadGlobalRules,
 }
 
 #[cfg(feature = "ares")]
@@ -3569,12 +3610,18 @@ impl Default for AresGlobalControls {
             emp_ai_recover_mission: None,
             type_select_use_deploy: Self::default_type_select_use_deploy(),
             bounty: Default::default(),
+            cloak_power: Default::default(),
+            warhead: Default::default(),
         }
     }
 }
 
 #[cfg(feature = "ares")]
 impl AresGlobalControls {
+    pub(crate) fn warhead(&self) -> &crate::rules::ares_warhead::WarheadGlobalRules {
+        &self.warhead
+    }
+
     const fn default_type_select_use_deploy() -> bool {
         true
     }
@@ -3589,6 +3636,10 @@ impl AresGlobalControls {
 
     pub(crate) fn hunter_seeker_buildings(&self) -> &[String] {
         &self.hunter_seeker_buildings
+    }
+
+    pub(crate) fn cloak_power(&self) -> &crate::rules::ares_cloak_power::CloakPowerGlobalRules {
+        &self.cloak_power
     }
 
     pub(crate) fn ai_bypasses_build_limit(&self, difficulty_index: usize) -> bool {
@@ -3612,6 +3663,10 @@ impl AresGlobalControls {
                 section.read_ares_bool("TypeSelectUseDeploy", self.type_select_use_deploy);
         }
         self.bounty.read_before_type_data(pass);
+        //1002AB60 reads DeactivateDim* and the speak delays in AudioVisual.
+        self.cloak_power.read_before_type_data(pass);
+        //1002AB60 also reads DamageAirConsiderBridges and IronCurtainFlash.
+        self.warhead.read_before_type_data(pass);
         if let Some(mission) = pass
             .section("CombatDamage")
             .and_then(|section| section.read_name("EMPAIRecoverMission", 2048))
@@ -4682,6 +4737,9 @@ struct ProcessedType {
     super_weapon_techno: crate::rules::superweapon_influence::TechnoSuperWeaponRules,
     /// TechnoTypeExt+1FA: ctor1003C9D7 defaults true; read1003EBEF.
     cloak_allowed: bool,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    cloak_power: crate::rules::ares_cloak_power::CloakPowerTypeRules,
     /// Ares TypeExt+588/+58C. Constructor1003CED0/6 clears value/presence;
     /// nullable reader10008CC0 at1003F267 retains both on invalid input.
     #[cfg(feature = "ares")]
@@ -4703,6 +4761,10 @@ struct ProcessedType {
     #[cfg(feature = "ares")]
     #[serde(default)]
     crew: crate::rules::ares_crew::CrewTypeRules,
+    /// BuildingTypeExt+AA..+CC and +1E8 (`rules::ares_infiltration`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    infiltration: crate::rules::ares_infiltration::InfiltrationTypeRules,
     ///1003CB5B leaves the Nullable<bool> presence byte+324 clear.
     #[cfg(feature = "ares")]
     #[serde(default)]
@@ -4743,6 +4805,10 @@ struct ProcessedType {
     #[cfg(feature = "ares")]
     #[serde(default)]
     super_weapon_charge: AresSuperWeaponCharge,
+    /// SWTypeExt launch fields and the Protect/Battery payloads.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    super_weapon_launch: crate::rules::superweapon_type::AresSuperWeaponLaunch,
     /// Phobos `SW.TechLevel`/`SW.AuxTechnos`/`SW.NegTechnos`, read by the same
     /// ordered Process owner as the Ares gates and keyed the same way.
     #[cfg(feature = "phobos")]
@@ -5109,6 +5175,8 @@ pub(crate) struct WeaponState<'a> {
     pub(crate) occupant_anim: Option<&'a str>,
     pub(crate) open_topped_anim: Option<&'a str>,
     pub(crate) attached_particle_system: Option<&'a str>,
+    #[cfg(feature = "ares")]
+    pub(crate) ares_bolt_particle_system: &'a Option<Option<String>>,
 }
 
 /// Fields needed by Weapon7729F0, retained on the same live Weapon object.
@@ -5146,6 +5214,12 @@ struct WeaponReadState {
     /// empty name or `<none>` keeps the field; `none`, like any other name,
     /// finds or constructs a ParticleSystemType of that name.
     attached_particle_system: Option<String>,
+    /// Ares `Bolt.ParticleSystem` (WeaponTypeExt +0x30), a
+    /// `Nullable<ParticleSystemTypeClass*>` whose Find never allocates;
+    /// `Some(None)` is an explicit `none`.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_bolt_particle_system: Option<Option<String>>,
 }
 
 impl ProcessedType {
@@ -5237,6 +5311,8 @@ impl ProcessedType {
             super_weapon_techno: Default::default(),
             cloak_allowed: true,
             #[cfg(feature = "ares")]
+            cloak_power: Default::default(),
+            #[cfg(feature = "ares")]
             turret_rot_override: None,
             #[cfg(feature = "ares")]
             spotlight: Default::default(),
@@ -5248,6 +5324,8 @@ impl ProcessedType {
             bounty: Default::default(),
             #[cfg(feature = "ares")]
             crew: Default::default(),
+            #[cfg(feature = "ares")]
+            infiltration: Default::default(),
             #[cfg(feature = "ares")]
             aircraft_crashable: None,
             armor_id: ArmorId::NONE,
@@ -5270,6 +5348,8 @@ impl ProcessedType {
             super_weapon_targeting: AresSuperWeaponTargetingState::default(),
             #[cfg(feature = "ares")]
             super_weapon_charge: AresSuperWeaponCharge::default(),
+            #[cfg(feature = "ares")]
+            super_weapon_launch: Default::default(),
             #[cfg(feature = "phobos")]
             super_weapon_phobos_availability: PhobosSuperWeaponAvailability::default(),
             #[cfg(feature = "ares")]
@@ -5633,6 +5713,11 @@ impl RulesPassProcessor {
             self.ares_global_controls
                 .bounty
                 .read_after_type_data(pass, enablers);
+            //1002A800 reads CloakHeight right after DecloakSound, which the
+            // fixed-catalog sound binder owns.
+            self.ares_global_controls
+                .cloak_power
+                .read_after_type_data(pass);
         }
 
         // ReadDifficulty66D270 skips an absent section. Once present, each
@@ -6973,13 +7058,17 @@ impl RulesPassProcessor {
                     let initialized = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_targeting
                         .read_pass(&raw, kind);
-                    let eva = &mut self.family_mut(RulesTypeFamily::SuperWeapon)[index]
-                        .super_weapon_presentation
-                        .eva;
+                    let presentation = &mut self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_presentation;
                     if initialized {
-                        eva.initialize_for_kind(kind, _fixed_eva);
+                        presentation.eva.initialize_for_kind(kind, _fixed_eva);
+                        presentation.texts.initialize_for_kind(kind);
+                        // SW_Protect::Initialize10074B60: SW_AnimHeight=5.
+                        if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("Protect")) {
+                            presentation.height = 5;
+                        }
                     }
-                    eva.read_pass(&raw, _fixed_eva);
+                    presentation.eva.read_pass(&raw, _fixed_eva);
                     let animation = self.resolve_existing_type_from(
                         &raw,
                         "SW.Animation",
@@ -7093,6 +7182,31 @@ impl RulesPassProcessor {
                         }
                     }
                     availability.read_shots_pass(&raw);
+                    // SW.CreateRadarEvent, SW.Range and SW.Group, then the
+                    // Protect/Battery LoadFromINI (10074C20/1006ECC0) after
+                    // the common reads; Battery's vectors use Find only.
+                    let battery_lists =
+                        if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("Battery")) {
+                            (
+                                self.resolve_existing_list_from(
+                                    &raw,
+                                    "Battery.KeepOnline",
+                                    RulesTypeFamily::Building,
+                                    0x800,
+                                ),
+                                self.resolve_existing_list_from(
+                                    &raw,
+                                    "Battery.Overpower",
+                                    RulesTypeFamily::Building,
+                                    0x800,
+                                ),
+                            )
+                        } else {
+                            (None, None)
+                        };
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_launch
+                        .read_pass(&raw, kind, battery_lists);
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_charge
                         .read_pass(&raw);
@@ -7487,6 +7601,18 @@ impl RulesPassProcessor {
                         .read_pass(&raw, animation);
                     member.cloak_allowed =
                         raw.read_ares_bool("Cloakable.Allowed", member.cloak_allowed);
+                    // TypeExt LoadFromINI1003DFB0 reads RadarJamRadius and the
+                    // Find-only PoweredBy vector10010850 before the cloak keys.
+                    let powered_by = self.resolve_existing_list_from(
+                        &raw,
+                        "PoweredBy",
+                        RulesTypeFamily::Building,
+                        2048,
+                    );
+                    self.family_mut(family)[index]
+                        .cloak_power
+                        .read_pass(&raw, powered_by);
+                    let member = &mut self.family_mut(family)[index];
                     member.turret_rot_override =
                         raw.read_ares_nullable_int("TurretROT", member.turret_rot_override);
                     //1003E232: the common extension applies to all Technos.
@@ -7529,6 +7655,20 @@ impl RulesPassProcessor {
                             // unknown tokens are skipped, registered sentinel IDs
                             // still match before none rejection, no allocation.
                             self.family_mut(family)[index].additional_super_weapons = supers;
+                        }
+                        // BuildingTypeExt 1000DD40+0x201..0x271: the
+                        // SpyEffect.SuperWeapon pointer is Find-only
+                        // (1000CA80); blank clears, unknown retains.
+                        #[cfg(feature = "ares")]
+                        {
+                            let super_weapon = self.resolve_existing_type_from(
+                                &raw,
+                                "SpyEffect.SuperWeapon",
+                                RulesTypeFamily::SuperWeapon,
+                            );
+                            self.family_mut(family)[index]
+                                .infiltration
+                                .read_pass(&raw, super_weapon);
                         }
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
                         // ReadINI460F50..460F9C: exact Rules key, ReadCoord529CA0,
@@ -8114,6 +8254,27 @@ impl RulesPassProcessor {
                 if let Some(warhead) = warhead {
                     state.warhead = warhead;
                 }
+                // Ares WeaponTypeExt::LoadFromINIFile 10055520 follows the
+                // whole ReadINI (hooks 0x7729B0/0x7729C7/0x7729D6). Its
+                // Nullable<ParticleSystemTypeClass*> read finds only a type
+                // that exists by now.
+                #[cfg(feature = "ares")]
+                {
+                    let current = &self.families[&RulesTypeFamily::Weapon][index]
+                        .weapon
+                        .ares_bolt_particle_system;
+                    let system = read_ares_type_ref(&raw, "Bolt.ParticleSystem", current, |name| {
+                        self.find_existing(RulesTypeFamily::ParticleSystem, name)
+                            .map(|system| {
+                                self.families[&RulesTypeFamily::ParticleSystem][system]
+                                    .native_stored_id
+                                    .clone()
+                            })
+                    });
+                    self.family_mut(RulesTypeFamily::Weapon)[index]
+                        .weapon
+                        .ares_bolt_particle_system = system;
+                }
             }
             index += 1;
         }
@@ -8286,17 +8447,33 @@ impl RulesPassProcessor {
                             RulesTypeFamily::Animation,
                         )
                     });
+                // WarheadTypeExt ReadINI10051D80: Temporal.WarpAway is a
+                // Nullable<Anim>; DeathWeapon.Suppress a
+                // ValueableVector<TechnoTypeClass*> (Find10007EA0 per token).
+                let temporal_warp_away = pass
+                    .section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
+                    .and_then(|raw| {
+                        self.resolve_existing_type_from(
+                            raw,
+                            "Temporal.WarpAway",
+                            RulesTypeFamily::Animation,
+                        )
+                    });
+                let death_weapon_suppress = pass
+                    .section(&self.families[&RulesTypeFamily::Warhead][index].native_stored_id)
+                    .and_then(|raw| {
+                        self.resolve_existing_techno_type_list_from(raw, "DeathWeapon.Suppress")
+                    });
                 let member = &mut self
                     .families
                     .get_mut(&RulesTypeFamily::Warhead)
                     .expect("Warhead family exists during its reader")[index];
                 let section = pass.section(&member.native_stored_id);
                 if let Some(section) = section {
-                    member
-                        .ares_warhead
-                        .as_mut()
-                        .expect("WH Ares extension")
-                        .read_pass(section, sparkle, animation);
+                    let ares = member.ares_warhead.as_mut().expect("WH Ares extension");
+                    ares.read_pass(section, sparkle, animation);
+                    ares.combat_mut()
+                        .read_pass(section, temporal_warp_away, death_weapon_suppress);
                 }
                 member
                     .ares_verses

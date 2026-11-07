@@ -454,6 +454,33 @@ struct SpyGains {
     veteran_infantry: bool,
     /// `+0x2C0`: veteran units.
     veteran_units: bool,
+    /// Ares HouseExt `+0x48`: veteran `Naval=` units, from
+    /// `SpyEffect.NavalVeterancy` (`BuildingExt::ExtData::InfiltratedBy @
+    /// 10012000`), never cleared.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    naval_veterancy: bool,
+    /// Ares HouseExt `+0x49`: veteran aircraft (`SpyEffect.AircraftVeterancy`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    aircraft_veterancy: bool,
+    /// Ares HouseExt `+0x4A`: veteran buildings (`SpyEffect.BuildingVeterancy`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    building_veterancy: bool,
+}
+
+/// The veterancy one Ares infiltration gives its house
+/// (`BuildingExt::ExtData::InfiltratedBy @ 10012000`): the House bytes
+/// `+0x2BF`/`+0x2C0` and the HouseExt bytes `+0x48..+0x4A`.
+#[cfg(feature = "ares")]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AresSpyVeterancy {
+    pub(crate) infantry: bool,
+    pub(crate) units: bool,
+    pub(crate) naval: bool,
+    pub(crate) aircraft: bool,
+    pub(crate) buildings: bool,
 }
 
 /// The four class-local indices use ObjectCategory's registry order. Keeping
@@ -2176,6 +2203,44 @@ impl HouseState {
     pub fn grant_veteran_units(&mut self) {
         self.spy_gains.veteran_units = true;
         self.request_tech_recheck();
+    }
+
+    /// The veterancy arms of Ares' infiltration (`10012000`): set each
+    /// granted byte, then House+1FC once any was. Answers whether any was.
+    #[cfg(feature = "ares")]
+    pub(crate) fn grant_ares_spy_veterancy(&mut self, gains: AresSpyVeterancy) -> bool {
+        let gains_any = gains != AresSpyVeterancy::default();
+        let spy = &mut self.spy_gains;
+        spy.veteran_infantry |= gains.infantry;
+        spy.veteran_units |= gains.units;
+        spy.naval_veterancy |= gains.naval;
+        spy.aircraft_veterancy |= gains.aircraft;
+        spy.building_veterancy |= gains.buildings;
+        if gains_any {
+            self.request_tech_recheck();
+        }
+        gains_any
+    }
+
+    /// Ares HouseExt `+0x48`, read by the Unit constructor and InitFromType
+    /// hooks (`0x00735678`, `0x0074689B`) and `CameoIsElite @ 1003D800`.
+    #[cfg(feature = "ares")]
+    pub fn naval_veterancy(&self) -> bool {
+        self.spy_gains.naval_veterancy
+    }
+
+    /// Ares HouseExt `+0x49`, read by `AircraftClass_Init_Academy`
+    /// (`0x00413FD2`) and `CameoIsElite`.
+    #[cfg(feature = "ares")]
+    pub fn aircraft_veterancy(&self) -> bool {
+        self.spy_gains.aircraft_veterancy
+    }
+
+    /// Ares HouseExt `+0x4A`, read by `BuildingClass_Init_Academy`
+    /// (`0x00442D1B`) and `CameoIsElite`.
+    #[cfg(feature = "ares")]
+    pub fn building_veterancy(&self) -> bool {
+        self.spy_gains.building_veterancy
     }
 
     /// House `+0x2BF`, read by `InfantryClass::InitFromType` (`0x00517D2A`).

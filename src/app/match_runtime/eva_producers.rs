@@ -197,7 +197,9 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
         | SuperWeaponKind::NoEffect
         | SuperWeaponKind::GenericWarhead
         | SuperWeaponKind::UnitDelivery
-        | SuperWeaponKind::HunterSeeker => return None,
+        | SuperWeaponKind::HunterSeeker
+        | SuperWeaponKind::Protect
+        | SuperWeaponKind::Battery => return None,
         SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => "EVA_ReinforcementsReady",
         SuperWeaponKind::PsychicDominator => "EVA_PsychicDominatorReady",
         SuperWeaponKind::SpyPlane => "EVA_SpyPlaneReady",
@@ -225,12 +227,7 @@ pub(crate) fn super_weapon_detected_event(
     // mod places one in an early SuperWeaponTypes slot.
     // Native44693D dispatches by registry ordinal, including ctor Type=-1.
     // GenericWarhead also uses a negative tag, so test extension identity.
-    if matches!(
-        kind,
-        SuperWeaponKind::GenericWarhead
-            | SuperWeaponKind::UnitDelivery
-            | SuperWeaponKind::HunterSeeker
-    ) {
+    if kind.is_extension() {
         return None;
     }
     match list_index {
@@ -356,6 +353,64 @@ pub(crate) fn infiltration_eva_events(
             }
         }
         InfiltrationEffect::None => {}
+        // Ares 3.0 10012000 (hook 0x004571E0): each arm's lines in its
+        // order, every one behind the radar event.
+        #[cfg(feature = "ares")]
+        InfiltrationEffect::Ares(arms) => {
+            let either = owner || infiltrator;
+            if let Some(owner_spy_sat) = arms.radar_reset
+                && !owner_spy_sat
+            {
+                if owner {
+                    lines.push(EVA_RADAR_SABOTAGED);
+                }
+                if infiltrator {
+                    lines.push(EVA_BUILDING_INF_RADAR_SABOTAGED);
+                }
+            }
+            if arms.power_outage {
+                if owner {
+                    lines.push(EVA_POWER_SABOTAGED);
+                }
+                if infiltrator {
+                    lines.extend([EVA_BUILDING_INFILTRATED, EVA_ENEMY_BASE_POWERED_DOWN]);
+                }
+            }
+            if arms.undo_reverse_engineer {
+                if owner {
+                    lines.push(EVA_BUILDING_INFILTRATED);
+                }
+                if infiltrator {
+                    lines.push(EVA_BUILDING_INFILTRATED);
+                }
+            }
+            for applied in [arms.supers_reset, arms.super_granted] {
+                if applied && either {
+                    lines.push(EVA_BUILDING_INFILTRATED);
+                }
+            }
+            if arms.cash_stolen {
+                if owner {
+                    lines.push(EVA_CASH_STOLEN);
+                }
+                if infiltrator {
+                    lines.push(EVA_BUILDING_INF_CASH_STOLEN);
+                }
+            }
+            if arms.veterancy_stolen {
+                if owner {
+                    lines.push(EVA_TECHNOLOGY_STOLEN);
+                }
+                if infiltrator {
+                    lines.extend([EVA_BUILDING_INFILTRATED, EVA_NEW_TECHNOLOGY_ACQUIRED]);
+                }
+            }
+            for revealed in [arms.production_revealed, arms.radar_revealed] {
+                if revealed && either {
+                    lines.push(EVA_BUILDING_INFILTRATED);
+                }
+            }
+        }
     }
     lines.into_iter().map(str::to_string).collect()
 }

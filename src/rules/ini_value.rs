@@ -549,22 +549,37 @@ impl IniSection {
     #[cfg(feature = "ares")]
     pub(crate) fn read_ares_coord3(&self, key: &str, current: [i32; 3]) -> [i32; 3] {
         self.read_string_with(key, 2048, current, |previous, value| {
-            if value.split(',').take(3).any(|token| {
-                token
-                    .as_bytes()
-                    .iter()
-                    .skip_while(|byte| is_crt_space(**byte))
-                    .count()
-                    >= 128
-            }) {
-                return previous;
-            }
-            let mut fields = previous;
-            if scan_partial_int_fields(value, &mut fields) == 3 {
-                fields
-            } else {
-                previous
-            }
+            parse_ares_coord3(value).unwrap_or(previous)
+        })
+    }
+
+    /// Ares `Nullable<Vector3D<int>>::Read` 10055C70 over the same
+    /// coordinate reader 100406D0 as [`Self::read_ares_coord3`]: a read
+    /// that converts sets the value and its presence, anything else retains
+    /// both (the partial-parse boundary keeps the prior pair here).
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_ares_nullable_coord3(
+        &self,
+        key: &str,
+        current: Option<[i32; 3]>,
+    ) -> Option<[i32; 3]> {
+        self.read_string_with(key, 2048, current, |previous, value| {
+            parse_ares_coord3(value).or(previous)
+        })
+    }
+
+    /// Ares `Nullable<ColorStruct>::Read` 10008D20 -> detail::read<ColorStruct>
+    /// 10008EE0: ReadString(2048), then `detail::parse<unsigned char>`
+    /// 100089C0 must convert all three channels. Only then are the color and
+    /// its presence set; absent, empty and invalid text retain both.
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_ares_nullable_color(
+        &self,
+        key: &str,
+        current: Option<[u8; 3]>,
+    ) -> Option<[u8; 3]> {
+        self.read_string_with(key, 2048, current, |previous, value| {
+            parse_ares_color(value).or(previous)
         })
     }
 
@@ -590,6 +605,18 @@ impl IniSection {
     pub fn read_ares_double_bits(&self, key: &str, default: NativeF64Bits) -> NativeF64Bits {
         self.read_string_with(key, 2048, default, |current, value| {
             parse_ares_double_bits(value).unwrap_or(current)
+        })
+    }
+
+    /// Ares Valueable<float>1000EAE0 -> detail::read<float>1000FA90 ->
+    /// Parser<float>10076B00: the same binary64 scan and percent scale as
+    /// [`Self::read_ares_double_bits`], stored to the float field (`FSTP
+    /// dword`). An unsuccessful scan retains the old field.
+    pub fn read_ares_float_bits(&self, key: &str, default: NativeF32Bits) -> NativeF32Bits {
+        self.read_string_with(key, 2048, default, |current, value| {
+            parse_ares_double_bits(value).map_or(current, |number| {
+                MaskedX87Chop53::store_f32_masked_chop(MaskedX87Chop53::load_f64(number))
+            })
         })
     }
 
@@ -1870,6 +1897,52 @@ fn parse_phobos_color(value: &str) -> Option<[u8; 3]> {
     (scan_int_fields(value, &mut channels) == 3
         && channels.iter().all(|channel| (0..=255).contains(channel)))
     .then(|| channels.map(|channel| channel as u8))
+}
+
+/// Ares 3.0 `detail::parse<T>(value, out, count)` (1000C7E0 for int,
+/// 100089C0 for BYTE): [`scan_partial_int_fields`], except that NextToken's
+/// `sscanf_s("%[^,]")` into its 0x80-byte buffer fails on a token of 128
+/// bytes or more (after the leading spaces), which ends the scan there.
+#[cfg(feature = "ares")]
+fn scan_ares_fields(value: &str, out: &mut [i32]) -> u8 {
+    let limit = value
+        .split(',')
+        .take(out.len())
+        .position(|token| {
+            token
+                .as_bytes()
+                .iter()
+                .skip_while(|byte| is_crt_space(**byte))
+                .count()
+                >= 128
+        })
+        .unwrap_or(out.len());
+    scan_partial_int_fields(value, &mut out[..limit])
+}
+
+/// The three-value coordinate reader 100406D0, when all three convert.
+#[cfg(feature = "ares")]
+fn parse_ares_coord3(value: &str) -> Option<[i32; 3]> {
+    let mut fields = [0; 3];
+    (scan_ares_fields(value, &mut fields) == 3).then_some(fields)
+}
+
+/// `detail::parse<unsigned char>` 100089C0 with three channels:
+/// `Parser<BYTE>::TryParse` (10076A10) scans the token like `Parser<int>`
+/// (`$%hu`, `%hxh`, `%hu`) into a WORD, keeping its low 16 bits, and accepts
+/// it only up to 255.
+#[cfg(feature = "ares")]
+fn parse_ares_color(value: &str) -> Option<[u8; 3]> {
+    let mut fields = [0; 3];
+    if scan_ares_fields(value, &mut fields) != 3 {
+        return None;
+    }
+    let channel = |field: i32| u8::try_from(field as u16).ok();
+    Some([
+        channel(fields[0])?,
+        channel(fields[1])?,
+        channel(fields[2])?,
+    ])
 }
 
 /// `MultiParser<int>::Parse(pValue, outValue, count)`: for each slot skip the

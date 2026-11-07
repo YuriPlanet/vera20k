@@ -284,7 +284,9 @@ mod self_deploy_site_tests;
 /// The infiltration arms' type test (`0x0051EE4E..0x0051EEE7`,
 /// `0x0051B2BD..0x0051B330`): an `Infiltrate=` infantryman (`+0xEBE`) may
 /// enter a `Spyable=` building (`+0x1576`) if it is an `Agent=` one
-/// (`+0xEC4`), else a `Capturable=` one (`+0x1572`).
+/// (`+0xEC4`), else a `Capturable=` one (`+0x1572`). Ares replaces it with
+/// `Simulation::infiltrate_action`.
+#[cfg(not(feature = "ares"))]
 fn infiltrator_admits(
     infantry: &crate::rules::object_type::ObjectType,
     building: &crate::rules::object_type::ObjectType,
@@ -295,6 +297,19 @@ fn infiltrator_admits(
         } else {
             building.capturable
         }
+}
+
+/// What an infantryman does entering a building with Ares
+/// (`InfantryExt::GetInfiltrateAction @ 100252D0`'s answers 0..4; names
+/// inferred). [`Simulation::infiltrate_action`] decides it.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InfiltrateAction {
+    None,
+    Spy,
+    Sabotage,
+    Capture,
+    C4,
 }
 
 /// The damage an Engineer deals entering a hostile building with the
@@ -1078,16 +1093,85 @@ impl Simulation {
         ) else {
             return false;
         };
-        infiltrator_admits(infantry, building)
+        let allied = self
+            .house_alliances
+            .is_allied(&self.interner, actor.owner(), target.owner());
+        // Ares 3.0 10025FC0 (hook 0x0051EE6B) asks the shared Ares
+        // classification instead of the type flags.
+        #[cfg(feature = "ares")]
+        {
+            let _ = building;
+            infantry.infiltrate
+                && !allied
+                && self.infiltrate_action(actor_id, target_id, rules) != InfiltrateAction::None
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            infiltrator_admits(infantry, building) && !allied
+        }
+    }
+
+    /// `InfantryExt::GetInfiltrateAction @ 100252D0`, in its order:
+    /// - C4: the type's `C4=` (`+0xEC2`) or a rank holding the C4 ability
+    ///   ([`combat::veterancy::holds_c4`]), over a `CanC4=` building
+    ///   (`+0x1577`).
+    /// - Spy: an `Agent=` one (`+0xEC4`) over a `Spyable=` building
+    ///   (`+0x1576`) of a house its own is not allied to (`IsAlliedWith`).
+    /// - Sabotage: a `Saboteur=` one over a building it may blow up
+    ///   (`BuildingTypeExt::IsSabotagable @ 1000D790`).
+    /// - Capture: one that is neither over a `Capturable=` building
+    ///   (`+0x1572`).
+    ///
+    /// None for anything else, or when either object is missing or the
+    /// target is not a building. It asks neither `Infiltrate=` nor the
+    /// owner's control; its callers do.
+    #[cfg(feature = "ares")]
+    pub fn infiltrate_action(
+        &self,
+        infantry_id: u64,
+        building_id: u64,
+        rules: &RuleSet,
+    ) -> InfiltrateAction {
+        let (Some(infantry), Some(building)) = (
+            self.substrate.entities.get(infantry_id),
+            self.substrate.entities.get(building_id),
+        ) else {
+            return InfiltrateAction::None;
+        };
+        if building.category() != EntityCategory::Structure {
+            return InfiltrateAction::None;
+        }
+        let (Some(kind), Some(target)) = (
+            self.object_type(infantry.type_ref(), rules),
+            self.object_type(building.type_ref(), rules),
+        ) else {
+            return InfiltrateAction::None;
+        };
+        if combat::veterancy::holds_c4(infantry.veterancy.rank_kind(), kind) && target.can_c4 {
+            return InfiltrateAction::C4;
+        }
+        if kind.agent
+            && target.spyable
             && !self
                 .house_alliances
-                .is_allied(&self.interner, actor.owner(), target.owner())
+                .is_allied(&self.interner, infantry.owner(), building.owner())
+        {
+            return InfiltrateAction::Spy;
+        }
+        let saboteur = kind.saboteur();
+        if saboteur && target.infiltration_rules().sabotagable(target) {
+            return InfiltrateAction::Sabotage;
+        }
+        if !kind.agent && !saboteur && target.capturable {
+            return InfiltrateAction::Capture;
+        }
+        InfiltrateAction::None
     }
 
     /// `InfantryClass::Assign_Target`'s infiltration arm
     /// (`0x0051B2B1..0x0051B33F`), after the Techno base write: the building
     /// an `Infiltrate=` infantryman with no NavCom (`+0x5A4`) heads for when
-    /// handed `target` (vt+0x480(target, 1)), if [`infiltrator_admits`] it.
+    /// handed `target` (vt+0x480(target, 1)), if `infiltrator_admits` it.
     /// Unlike the click's arm ([`Self::infiltrator_building_action`]), it asks
     /// neither the owner's control nor alliance. Every path through the
     /// setter's tail then clears the automatic Tesla charging latch `+0x68E`.
@@ -1108,11 +1192,25 @@ impl Simulation {
         {
             return None;
         }
-        infiltrator_admits(
-            self.object_type(actor.type_ref(), rules)?,
-            self.object_type(building.type_ref(), rules)?,
-        )
-        .then_some(building_id)
+        // Ares 3.0 10026080 (hook 0x0051B2CB): after the `Infiltrate=`
+        // test, every action but C4 heads for the building.
+        #[cfg(feature = "ares")]
+        {
+            (self.object_type(actor.type_ref(), rules)?.infiltrate
+                && matches!(
+                    self.infiltrate_action(actor_id, building_id, rules),
+                    InfiltrateAction::Spy | InfiltrateAction::Sabotage | InfiltrateAction::Capture
+                ))
+            .then_some(building_id)
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            infiltrator_admits(
+                self.object_type(actor.type_ref(), rules)?,
+                self.object_type(building.type_ref(), rules)?,
+            )
+            .then_some(building_id)
+        }
     }
 
     fn announce_bridge_repair(
@@ -1565,6 +1663,11 @@ impl Simulation {
     /// destination (vt+0x480(NULL, 1)) and scatters from the building's
     /// GetCoords (vt+0x174(coord, 1, 1); `0x0051A03E..0x0051A061`).
     ///
+    /// With Ares the arm follows [`Self::infiltrate_action`] (`100260D0`,
+    /// hook `0x00519FF8`): Spy takes the `Agent=` arm, Sabotage plants
+    /// through [`Self::infantry_per_cell_sabotage`] and is consumed once
+    /// planted, and anything else is turned away.
+    ///
     /// The common caller raises the Building's Entered1 before this gate.
     /// Consumption raises the spy's own48 synchronously before UnInit.
     fn infantry_per_cell_infiltrator_entry(
@@ -1580,7 +1683,16 @@ impl Simulation {
             return_before_foot: true,
             ..Default::default()
         };
-        if agent {
+        // Ares 3.0 100260D0 (hook 0x00519FF8): the shared classification
+        // picks the arm; a Saboteur plants its charge.
+        #[cfg(feature = "ares")]
+        let action = {
+            let _ = agent;
+            self.infiltrate_action(infantry_id, building_id, rules)
+        };
+        #[cfg(feature = "ares")]
+        let agent = action == InfiltrateAction::Spy;
+        let consumed = if agent {
             if let Some(owner) = self
                 .substrate
                 .entities
@@ -1589,6 +1701,25 @@ impl Simulation {
             {
                 self.infiltrate_building(building_id, owner, rules);
             }
+            true
+        } else {
+            #[cfg(feature = "ares")]
+            {
+                action == InfiltrateAction::Sabotage
+                    && self.infantry_per_cell_sabotage(
+                        infantry_id,
+                        building_id,
+                        rules,
+                        registry,
+                        frame_effects,
+                    )
+            }
+            #[cfg(not(feature = "ares"))]
+            {
+                false
+            }
+        };
+        if consumed {
             self.dispatch_object_tag_event(
                 infantry_id,
                 48,

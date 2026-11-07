@@ -381,6 +381,19 @@ impl Simulation {
                 }
                 _ => false,
             });
+        // Ares 3.0 100237C0, 10023600 and 100236D0 (hooks 0x00735678 and
+        // 0x0074689B, 0x00413FD2, 0x00442D1B): the owner's SpyEffect
+        // veterancy (HouseExt +0x48..+0x4A, `sim::spy_infiltration`) makes a
+        // `Trainable=` naval unit, aircraft or building veteran too.
+        #[cfg(feature = "ares")]
+        let veteran = veteran
+            || obj.trainable
+                && house.is_some_and(|house| match category {
+                    EntityCategory::Unit => obj.naval && house.naval_veterancy(),
+                    EntityCategory::Aircraft => house.aircraft_veterancy(),
+                    EntityCategory::Structure => house.building_veterancy(),
+                    EntityCategory::Infantry => false,
+                });
         if veteran {
             ge.veterancy.set_veteran();
         }

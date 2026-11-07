@@ -456,6 +456,12 @@ impl Simulation {
     ) {
         // 1. `0x004415F9..0x00441617`.
         self.clear_building_damage_fire_slots(building_id, rules);
+        // Ares 3.0 10015A90 (hook 0x0044161C): the destroyed building shows
+        // its production to nobody (`sim::spy_infiltration`).
+        #[cfg(feature = "ares")]
+        if let Some(building) = self.substrate.entities.get_mut(building_id) {
+            building.display_production_to.clear();
+        }
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return;
         };

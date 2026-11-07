@@ -244,6 +244,13 @@ pub struct GameEntity {
     /// transferred by10045B54. Capture preserves this Country identity.
     #[cfg(feature = "ares")]
     original_factory_country: Option<crate::rules::ruleset::CountryIdx>,
+    /// Ares3.0 TechnoExt+8 `idxSlot_Wave`: the weapon index (a BYTE) of the
+    /// last wave this object fired. CreateWave 10055160 writes it before the
+    /// WaveClass constructor; WaveClass_Update_Beam 10057290 reads it for the
+    /// owner's range test and GetFLH.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_wave_weapon_slot: u8,
     /// The object's health (`ObjectClass+0x6C`), a [`Health`] that
     /// `combat::object_health` owns.
     pub health: Health,
@@ -587,6 +594,16 @@ pub struct GameEntity {
     /// [`PoweredCenter`]: crate::sim::powered_unit::PoweredCenter
     #[serde(default)]
     pub(crate) building_powered_center: crate::sim::powered_unit::PoweredCenter,
+    /// Ares TechnoExt+1C PoweredUnitClass of a `PoweredBy=` type, owned by
+    /// `sim::powered_by`.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) powered_by: Option<crate::sim::powered_by::PoweredBySource>,
+    /// Ares TechnoExt+18 JammerClass and BuildingExt+40 RegisteredJammers,
+    /// owned by `sim::radar_jammer`.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) radar_jam: crate::sim::radar_jammer::RadarJamState,
     /// HasEngineer (`BuildingClass+0x6CC`), a [`HasEngineer`] that
     /// `sim::building_art` owns.
     ///
@@ -794,6 +811,14 @@ pub struct GameEntity {
     /// [`C4Detonation`]: crate::sim::c4_plant::C4Detonation
     #[serde(default)]
     pub(crate) pending_c4_detonation: crate::sim::c4_plant::C4Detonation,
+    /// A building's DisplayProductionTo (`BuildingClass+0x210`), which only
+    /// Ares writes: a [`DisplayProductionTo`] that `sim::spy_infiltration`
+    /// owns.
+    ///
+    /// [`DisplayProductionTo`]: crate::sim::spy_infiltration::DisplayProductionTo
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) display_production_to: crate::sim::spy_infiltration::DisplayProductionTo,
     /// A building's HasBeenCaptured byte (`BuildingClass+0x6E3`), a
     /// [`HasBeenCaptured`] that `crew_survival` owns.
     ///
@@ -1537,6 +1562,17 @@ impl GameEntity {
         self.original_factory_country
     }
 
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_wave_weapon_slot(&self) -> u8 {
+        self.ares_wave_weapon_slot
+    }
+
+    /// CreateWave 10055160's write, by the wave's own creator only.
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_ares_wave_weapon_slot(&mut self, slot: u8) {
+        self.ares_wave_weapon_slot = slot;
+    }
+
     /// InitManagers1004A776 and the conversion10045B54 use the same retained
     /// identity; ordinary ownership changes never call this writer.
     #[cfg(feature = "ares")]
@@ -1888,6 +1924,13 @@ impl GameEntity {
     }
 
     /// Ares TechnoExt+9C. Gameplay and drawing read the same driver state.
+    /// Whether `house` spied this building's production (Ares
+    /// DisplayProductionTo, `sim::spy_infiltration`).
+    #[cfg(feature = "ares")]
+    pub fn shows_production_to(&self, house: InternedId) -> bool {
+        self.display_production_to.contains(house)
+    }
+
     #[cfg(feature = "ares")]
     pub fn driver_killed(&self) -> bool {
         self.vehicle_driver.killed()
@@ -1982,6 +2025,8 @@ impl GameEntity {
             initial_owner: owner,
             #[cfg(feature = "ares")]
             original_factory_country: None,
+            #[cfg(feature = "ares")]
+            ares_wave_weapon_slot: 0,
             health,
             estimated_health: crate::sim::estimated_health::EstimatedHealth::from_raw(
                 health.current(),
@@ -2052,6 +2097,10 @@ impl GameEntity {
             building_last_operational: Default::default(),
             building_loss_index: 0,
             building_powered_center: Default::default(),
+            #[cfg(feature = "ares")]
+            powered_by: None,
+            #[cfg(feature = "ares")]
+            radar_jam: Default::default(),
             building_has_engineer: Default::default(),
             building_light: Default::default(),
             damage_fires: Default::default(),
@@ -2105,6 +2154,8 @@ impl GameEntity {
             #[cfg(feature = "ares")]
             bounty_display: Default::default(),
             pending_c4_detonation: Default::default(),
+            #[cfg(feature = "ares")]
+            display_production_to: Default::default(),
             has_been_captured: Default::default(),
             no_survivor: Default::default(),
             nominal_survivor: false,

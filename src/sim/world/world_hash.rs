@@ -1885,6 +1885,16 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     }
     entity.hash_emp_state(hasher);
     #[cfg(feature = "ares")]
+    if let Some(source) = entity.powered_by {
+        b"ares-powered-by-v1".hash(hasher);
+        source.hash(hasher);
+    }
+    #[cfg(feature = "ares")]
+    if !entity.radar_jam.is_default() {
+        b"ares-radar-jam-v1".hash(hasher);
+        entity.radar_jam.hash(hasher);
+    }
+    #[cfg(feature = "ares")]
     entity.hash_attach_effects(hasher);
     #[cfg(feature = "phobos")]
     entity.hash_phobos_attach_effects(hasher);
@@ -1904,6 +1914,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     if let Some(country) = entity.original_factory_country() {
         b"ares-original-factory-country-v1".hash(hasher);
         country.hash(hasher);
+    }
+    #[cfg(feature = "ares")]
+    if entity.ares_wave_weapon_slot() != 0 {
+        b"ares-wave-weapon-slot-v1".hash(hasher);
+        entity.ares_wave_weapon_slot().hash(hasher);
     }
     // Techno+14C survives ChangeOwner and controls an AI building capture's
     // automatic sale. Preserve the untouched-owner stream, but distinguish
@@ -2181,6 +2196,8 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         }
         None => false.hash(hasher),
     }
+    #[cfg(feature = "ares")]
+    entity.display_production_to.hash_state(hasher);
     entity.bunker.occupant().hash(hasher);
     // Reciprocal link + install machine are authoritative lifecycle state.
     entity.bunker.link().hash(hasher);

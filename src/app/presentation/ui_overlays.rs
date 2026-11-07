@@ -243,6 +243,8 @@ fn admitted_techno_observer(
 /// Its only writers found (the constructor 0x006F2D05, 0x0044162A and the
 /// ChangeOwner clears 0x00448324/0x00448DB3) store zero, so the non-allied
 /// arm is dormant and only the current-owned / allied path is modelled.
+/// Ares writes the bit (`sim::spy_infiltration::DisplayProductionTo`, which
+/// records why this arm stays out).
 /// Building6F67DC..67FE also admits CanBeOccupied/PipsDrawForAll; the
 /// mobile caller never reads the latter.709B61 suppresses the complete
 /// Building Tiberium tail. All pip/group consumers share these decisions.
@@ -659,26 +661,54 @@ pub(crate) fn build_building_status_render_instances(
         if !body_opportunities.contains(&entity.stable_id())
             || !entity.lifecycle.cell_marked()
             || !entity.selection.is_selected()
-            || !crate::map::houses::is_allied_with(
-                sim.house_alliances().as_map(),
-                sim.interner().resolve(entity.owner()),
-                current_house,
-            )
         {
             continue;
         }
-        //43E7EF's separate non-allied Techno+210 display-bit arm is
-        //dormant: no writer found sets the bit nonzero (see
-        //entity_status_pips_drawable).
+        let allied = crate::map::houses::is_allied_with(
+            sim.house_alliances().as_map(),
+            sim.interner().resolve(entity.owner()),
+            current_house,
+        );
         let Some(object) = sim.interner().object_type(entity.type_ref(), rules) else {
             continue;
         };
         let primary = sim.production().is_primary_factory(entity.stable_id());
+        //Without Ares, 43E7EF's separate non-allied Techno+210 display-bit
+        //arm is dormant: no writer found sets the bit nonzero (see
+        //entity_status_pips_drawable).
         //70AA88..70AAA4 admits the positive type Power arm only when the
         //primary latch is clear.70ABEA then tests that latch for PRIMARY.
-        if !primary && object.power <= 0 {
-            continue;
-        }
+        #[cfg(not(feature = "ares"))]
+        let text = match (allied, primary, object.power > 0) {
+            (false, _, _) | (true, false, false) => continue,
+            (true, true, _) => BuildingStatusText::Primary,
+            (true, false, true) => BuildingStatusText::Power,
+        };
+        // Ares 3.0 10015AB0 (hook 0x0043E7B0) also admits a building whose
+        // `SpyEffect.RevealProduction` spy bit the current house holds
+        // (`sim::spy_infiltration::DisplayProductionTo`); its DrawExtraInfo
+        // 10015F10 (hook 0x0070AA60) puts the Power arm first, shows a
+        // `Storage=` building's money to a house not allied to its owner,
+        // and PRIMARY only to an allied one.
+        // RESIDUAL: Ares' observer arms and `Fake=` text (`TXT_FAKE`) are
+        // not ported; an observer sees what the house it watches sees.
+        #[cfg(feature = "ares")]
+        let text = {
+            let revealed =
+                object.spy_reveals_production() && entity.shows_production_to(current_house_id);
+            if !(allied || revealed) {
+                continue;
+            }
+            if object.power > 0 {
+                BuildingStatusText::Power
+            } else if object.storage > 0 && !allied {
+                BuildingStatusText::Money
+            } else if primary && allied {
+                BuildingStatusText::Primary
+            } else {
+                continue;
+            }
+        };
         let location =
             crate::sim::movement::ground_pose::object_location(entity, sim.resolved_terrain());
         //6D9472 calls virtual+AC=459EF0, not GetCoords447AC0. Neither
@@ -698,30 +728,43 @@ pub(crate) fn build_building_status_render_instances(
         {
             continue;
         }
-        let text = if primary {
-            //70AC24's45EC90 uses foundation CELL width, not Dimension2 leptons.
-            let key = if object.foundation.dimensions().0 == 1 {
-                "TXT_PRI"
-            } else {
-                "TXT_PRIMARY"
-            };
-            csf.text(key)
-        } else {
-            //70AAAA..70AAEA reads the owner's retained IHouse4F6A00/4F6A10
-            //slots and formats physical TXT_POWER_DRAIN2. Drawing neither
-            //reassesses power nor substitutes the selected building's output.
-            let (output, drain) = crate::sim::production::power_balance_for_owner(
-                sim,
-                rules,
-                sim.interner().resolve(entity.owner()),
-            );
-            Cow::Owned(format_csf(
-                &csf.text("TXT_POWER_DRAIN2"),
-                &[
-                    CsfArg::Int(i64::from(output)),
-                    CsfArg::Int(i64::from(drain)),
-                ],
-            ))
+        let text = match text {
+            BuildingStatusText::Primary => {
+                //70AC24's45EC90 uses foundation CELL width, not Dimension2 leptons.
+                let key = if object.foundation.dimensions().0 == 1 {
+                    "TXT_PRI"
+                } else {
+                    "TXT_PRIMARY"
+                };
+                csf.text(key)
+            }
+            BuildingStatusText::Power => {
+                //70AAAA..70AAEA reads the owner's retained IHouse4F6A00/4F6A10
+                //slots and formats physical TXT_POWER_DRAIN2. Drawing neither
+                //reassesses power nor substitutes the selected building's output.
+                let (output, drain) = crate::sim::production::power_balance_for_owner(
+                    sim,
+                    rules,
+                    sim.interner().resolve(entity.owner()),
+                );
+                Cow::Owned(format_csf(
+                    &csf.text("TXT_POWER_DRAIN2"),
+                    &[
+                        CsfArg::Int(i64::from(output)),
+                        CsfArg::Int(i64::from(drain)),
+                    ],
+                ))
+            }
+            // Ares 10015F10: the owner's Available_Money (IHouse +0x18).
+            #[cfg(feature = "ares")]
+            BuildingStatusText::Money => Cow::Owned(format_csf(
+                &csf.text("TXT_MONEY_FORMAT_1"),
+                &[CsfArg::Int(i64::from(
+                    sim.houses()
+                        .get(&entity.owner())
+                        .map_or(0, |house| house.economy().available_money()),
+                ))],
+            )),
         };
         let measure = font.compute_text_rect(&text, anchor, 0x149, [4, 2]);
         let clipped = crate::util::rect::clip_rect(measure, tactical_clip);
@@ -741,6 +784,16 @@ pub(crate) fn build_building_status_render_instances(
         ));
     }
     labels
+}
+
+/// Which of DrawExtraInfo's texts a selected building shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BuildingStatusText {
+    Primary,
+    Power,
+    /// Ares' money arm (`TXT_MONEY_FORMAT_1`).
+    #[cfg(feature = "ares")]
+    Money,
 }
 
 /// AppState supplies current resources and the existing tactical viewport;
