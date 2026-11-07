@@ -23,7 +23,7 @@ pub mod lcw;
 pub mod legacy_crt_rng;
 pub mod lepton;
 pub mod logging;
-pub(crate) mod lookup_hash;
+pub mod lookup_hash;
 pub mod lzo;
 pub(crate) mod native_ballistics;
 pub mod native_color;

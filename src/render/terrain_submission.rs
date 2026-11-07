@@ -11,6 +11,13 @@
 //! pixel, depth, object order or presentation boundary. See
 //! <https://github.com/gfx-rs/wgpu/issues/5738> and
 //! <https://github.com/gfx-rs/wgpu/pull/7858> for the backend constraints.
+//!
+//! wgpu-core 30 records passes and encodes them at `CommandEncoder::finish`
+//! (`command/mod.rs` `encode_commands`), so each submission here also carries
+//! the driver encoding of the passes before it. The FPS panel counts that
+//! time as handing the frame to the driver, not as recording draw calls.
+
+use crate::util::time::{Duration, Instant};
 
 /// Keep substantial headroom for wgpu's internal buffers and the fixed frame
 /// passes outside native-object replay. This is a scheduling bound, not a
@@ -22,6 +29,8 @@ pub(super) struct PassSubmission {
     queue: wgpu::Queue,
     pending_passes: usize,
     submissions: usize,
+    /// Wall time spent finishing and submitting this frame's bounded batches.
+    submit_time: Duration,
     /// Every pass closed this frame, for replay pass-count tests.
     #[cfg(test)]
     closed_passes: usize,
@@ -34,6 +43,7 @@ impl PassSubmission {
             queue: queue.clone(),
             pending_passes: 0,
             submissions: 0,
+            submit_time: Duration::ZERO,
             #[cfg(test)]
             closed_passes: 0,
         }
@@ -45,10 +55,16 @@ impl PassSubmission {
     pub(super) fn reset_frame(&mut self) {
         self.pending_passes = 0;
         self.submissions = 0;
+        self.submit_time = Duration::ZERO;
         #[cfg(test)]
         {
             self.closed_passes = 0;
         }
+    }
+
+    /// Wall time this frame's bounded submissions took so far.
+    pub(super) fn submit_time(&self) -> Duration {
+        self.submit_time
     }
 
     #[cfg(test)]
@@ -78,7 +94,9 @@ impl PassSubmission {
                 label: Some("Native object replay continuation"),
             });
         let completed = std::mem::replace(encoder, next);
+        let started = Instant::now();
         self.queue.submit([completed.finish()]);
+        self.submit_time += started.elapsed();
         self.pending_passes = 0;
         self.submissions += 1;
     }

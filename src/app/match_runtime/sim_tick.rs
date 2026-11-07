@@ -194,8 +194,8 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     if !crate::app::commander_feedback::verdict_was_held_for_a_clip(state) {
         start_verdict_theme(state, outcome, wall_ms);
     }
-    let title = crate::app::match_runtime::scenario_exit::outcome_title(outcome).to_string();
-    let detail = crate::app::match_runtime::scenario_exit::outcome_detail(outcome).to_string();
+    let title = crate::app::match_runtime::scenario_exit::outcome_title(outcome);
+    let detail = crate::app::match_runtime::scenario_exit::outcome_detail(outcome);
     let destination = crate::app::match_runtime::scenario_exit::scenario_exit_destination(
         state.match_state.session_mode(),
         outcome,
@@ -1562,6 +1562,7 @@ fn advance_one_simulation_frame(
         let mut hud_messages = Vec::new();
         // Carried out of the sim borrow so the census can read `state` freely below.
         let mut census_tick: Option<u64> = None;
+        let fps_panel_shown = state.renderer.fps_overlay.is_visible();
         if let Some(rt) = state.match_state.sim_runtime.as_mut() {
             let sim = &mut rt.simulation;
             let native_frame = sim.session().binary_frame();
@@ -1576,9 +1577,9 @@ fn advance_one_simulation_frame(
                 crate::sim::replay::PLAY_HASH_INTERVAL
             });
             // Report points need the ledger whether or not a dashboard is
-            // attached; `publish_if_due` only runs with a client.
-            #[cfg(feature = "telemetry-dashboard")]
-            sim.set_frame_profiling(true);
+            // attached; `publish_if_due` only runs with a client. Elsewhere
+            // the FPS panel's Most CPU row reads it while the panel shows.
+            sim.set_frame_profiling(cfg!(feature = "telemetry-dashboard") || fps_panel_shown);
             // Delay-zero AnimClass construction can emit StartSound during the
             // final map-load sweep. Keep it until this first tactical drain;
             // `drain(..)` below still consumes every event exactly once.
@@ -2089,6 +2090,22 @@ fn advance_one_simulation_frame(
                         },
                     );
                 }
+                LifecycleOutput::PlanningAppendRefused { owner, message } => {
+                    crate::app::input::planning_mode::append_output(
+                        state,
+                        Some(owner) == local_house,
+                        message,
+                        false,
+                    );
+                }
+                LifecycleOutput::PlanningFramePassQueued { owner, message } => {
+                    crate::app::input::planning_mode::append_output(
+                        state,
+                        Some(owner) == local_house,
+                        message,
+                        true,
+                    );
+                }
                 LifecycleOutput::SidebarConstructionOption { .. }
                 | LifecycleOutput::SidebarRecalculated { .. }
                 | LifecycleOutput::ProductionBeginAttempted { .. }
@@ -2177,6 +2194,11 @@ fn advance_one_simulation_frame(
                 | LifecycleOutput::ClearDrawnState { .. }
                 | LifecycleOutput::ClearRedraw { .. } => {}
             }
+        }
+        // Main_Tick runs PlanMgr_Process_Frame after the frame's events
+        // (0x0055DEA4); its input tail follows their lifecycle outputs.
+        if frame_committed {
+            crate::app::input::planning_mode::frame_pass(state);
         }
         // Black-cell census, on a schedule rather than a keypress: nobody hits a debug key
         // at the exact moment they notice the artifact. Spread-out ticks give a time series,
@@ -2446,6 +2468,9 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
+    // UpdateFoundationCenter4A91B0 takes the cursor's Cell from
+    // `RadarClass::Click_Cell_Calc @ 0x00653760` (`0x004A9251`): the
+    // tactical ScreenPixelToCell answer this shared inverse ports.
     // UpdateFoundationCenter4A91B0 uses center + the type's active offset.
     // Resolve it before admission/ground/shroud, through the shared owner
     // also used by a fresh LeftUp; rendering consumes the resulting Cells.

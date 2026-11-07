@@ -1300,7 +1300,7 @@ impl MultiplayerShellRuntime {
         self.scenario_start_staging
     }
 
-    /// The accepted random map's staging (`0x0058B830`).
+    /// The accepted random map's staging (`0x0058B820`).
     pub(crate) fn stage_generated_starts(
         &mut self,
         staging: crate::map::preview::ScenarioStartStaging,

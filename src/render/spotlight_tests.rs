@@ -130,7 +130,7 @@ fn production_spotlight_brightening_pixels_match_original() {
                 old_z,
                 wgpu::LoadOp::Load,
             );
-            renderer.draw_surface_lines(&mut encoder, &color_view, prepared);
+            renderer.draw_surface_lines(&mut encoder, &color_view, &[prepared]);
             let reads = [
                 gpu.read(&mut encoder, &color),
                 gpu.read(&mut encoder, &depth),

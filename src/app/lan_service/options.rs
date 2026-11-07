@@ -220,10 +220,7 @@ pub(super) fn receive_options(
     message: &LanMessage,
 ) -> Result<()> {
     validate_host(state, source, message)?;
-    super::reject_setup_compatibility(
-        state,
-        "The LAN host did not send VERA20k build and rules agreement.",
-    );
+    super::reject_setup_compatibility(state, &crate::i18n::tr("VERA:LanHostNoAgreement"));
     anyhow::bail!("unscoped legacy full setup is not a VERA admission")
 }
 
@@ -337,7 +334,7 @@ pub(super) fn receive_extended(
             if options.agreement.version != crate::app::shell_network_setup::agreement::version() {
                 super::reject_setup_compatibility(
                     state,
-                    "VERA20k build or enabled gameplay features differ from the LAN host.",
+                    &crate::i18n::tr("VERA:LanHostBuildDiffers"),
                 );
                 anyhow::bail!("LAN gameplay build mismatch");
             }

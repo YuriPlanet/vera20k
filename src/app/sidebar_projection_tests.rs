@@ -192,6 +192,43 @@ fn only_a_changed_view_moves_the_view_revision() {
     assert_ne!(projection.view_revision(), second);
 }
 
+/// The per-pass gadget refresh keeps a view built from the same inputs,
+/// strips and Factory links; a change to any of them builds it again.
+#[test]
+fn a_built_view_holds_only_while_its_inputs_and_strips_hold() {
+    use super::sidebar_projection::{SidebarSimInputs, SidebarViewInputs};
+    use std::sync::Arc;
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini("[Countries]\n0=Americans\n"),
+        &crate::rules::ini_parser::IniFile::empty(),
+    )
+    .unwrap();
+    let (sim, owner) = world(&rules, &[]);
+    let options = all_build_options_for_owner(&sim, &rules, "Americans");
+    let mut projection = SidebarProjectionState::default();
+    projection.reconcile_fixture(owner, &[], 4);
+    let kept = projection.sim_inputs(&sim, &rules, "Americans", true);
+    let inputs = |sim: &Arc<SidebarSimInputs>, tab| SidebarViewInputs {
+        spec: SidebarChromeLayoutSpec::stock(),
+        screen: (800.0, 600.0),
+        tab,
+        credits: 50_000,
+        sim: Arc::clone(sim),
+        button_sizes: [None; 7],
+        armed: None,
+        supers: Vec::new(),
+        gadgets: SidebarGadgetState::new(),
+    };
+    let drawn = view(&sim, &options, &projection, SidebarTab::Building, 600.0);
+    projection.replace_built_view(drawn, inputs(&kept, SidebarTab::Building));
+    assert!(projection.view_holds_for(&inputs(&kept, SidebarTab::Building)));
+    assert!(!projection.view_holds_for(&inputs(&kept, SidebarTab::Defense)));
+    let derived = projection.sim_inputs(&sim, &rules, "Americans", false);
+    assert!(!projection.view_holds_for(&inputs(&derived, SidebarTab::Building)));
+    projection.set_scroll_row(SidebarTab::Building, 1);
+    assert!(!projection.view_holds_for(&inputs(&kept, SidebarTab::Building)));
+}
+
 fn view(
     sim: &Simulation,
     options: &[BuildOption],

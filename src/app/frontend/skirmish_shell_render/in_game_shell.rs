@@ -344,7 +344,10 @@ pub(super) struct ShellFrameOverlay {
 /// [`in_game_shell_size`] into the shell surface, which a second pass copies
 /// over the match frame at the Sidebar size, as the sidebar's surface is;
 /// the cursor goes on top at the frame's own size, as over the battlefield.
-/// A zoomed match then scales the frame up.
+/// A zoomed match then scales the frame up. Texts laid out for the window
+/// ([`crate::render::bit_font::BitFont::raster`], set by the caller through
+/// `window_ui::shell_raster`) are drawn there after that, with the popups
+/// and the cursor over them (`app::presentation::window_ui`).
 pub(super) fn render_shell_frame(
     state: &mut AppState,
     encoder: &mut wgpu::CommandEncoder,
@@ -356,6 +359,8 @@ pub(super) fn render_shell_frame(
 ) -> anyhow::Result<()> {
     let width = state.render_width();
     let height = state.render_height();
+    let window_raster = Some(state.renderer.bit_font.raster())
+        .filter(|raster| *raster != crate::render::bit_font::TextRaster::NATIVE);
     let sidebar_frame = matches!(art, ShellFrameArt::Sidebar).then(|| state.sidebar_frame());
     let (shell_width, shell_height) =
         sidebar_frame.map_or((width, height), |frame| frame.layout_size());
@@ -431,7 +436,19 @@ pub(super) fn render_shell_frame(
         .iter()
         .map(|d| batch.create_instance_buffer(gpu, &d.instances))
         .collect();
-    let overlay_buffer = batch.create_instance_buffer(gpu, &overlay.controls);
+    // The open list goes to the window over its texts, moved and grown
+    // there as they are.
+    let overlay_buffer = match window_raster {
+        Some(raster) => {
+            let controls: Vec<_> = overlay
+                .controls
+                .iter()
+                .map(|quad| raster.quad(*quad))
+                .collect();
+            batch.create_instance_buffer(gpu, &controls)
+        }
+        None => batch.create_instance_buffer(gpu, &overlay.controls),
+    };
     let progress_buffer = batch.create_instance_buffer(gpu, &overlay.progress_meter);
     let overlay_text_buffers: Vec<_> = overlay
         .texts
@@ -439,10 +456,14 @@ pub(super) fn render_shell_frame(
         .map(|d| batch.create_instance_buffer(gpu, &d.instances))
         .collect();
     let zoom_buffers = overlay.zoom.as_ref().map(|zoom| zoom.buffers(state));
+    let cursor_raster = window_raster.map(|_| {
+        crate::app::presentation::window_ui::dialog_raster(state)
+            .unwrap_or(crate::render::bit_font::TextRaster::NATIVE)
+    });
     let cursor: Vec<_> = match cursor_policy {
         ShellFrameCursor::Visible => {
             crate::app::frontend::shell_pass::software_cursor(state, super::SHELL_CURSOR_DEPTH)
-                .map(|(_, instance)| instance)
+                .map(|(_, instance)| cursor_raster.map_or(instance, |raster| raster.quad(instance)))
                 .into_iter()
                 .collect()
         }
@@ -491,7 +512,7 @@ pub(super) fn render_shell_frame(
         batch.draw_with_buffer_passthrough(&mut pass, &control_atlas.texture, buffer, *count);
     }
     for (draw, buffer) in texts.iter().zip(&text_buffers) {
-        if let Some((buffer, count)) = buffer {
+        if let Some((buffer, count)) = buffer.as_ref().filter(|_| window_raster.is_none()) {
             let x = draw.scissor.x.min(shell_width);
             let y = draw.scissor.y.min(shell_height);
             let w = draw.scissor.w.min(shell_width - x);
@@ -509,7 +530,9 @@ pub(super) fn render_shell_frame(
         }
     }
     pass.set_scissor_rect(0, 0, shell_width, shell_height);
-    if let (Some((buffer, count)), Some(atlas)) = (&overlay_buffer, control_atlas) {
+    if let (Some((buffer, count)), Some(atlas), None) =
+        (&overlay_buffer, control_atlas, window_raster)
+    {
         batch.draw_with_buffer_passthrough(&mut pass, &atlas.texture, buffer, *count);
     }
     if let (Some((buffer, count)), Some(atlas)) = (
@@ -519,7 +542,7 @@ pub(super) fn render_shell_frame(
         batch.draw_with_buffer_passthrough(&mut pass, &atlas.texture, buffer, *count);
     }
     for (draw, buffer) in overlay.texts.iter().zip(&overlay_text_buffers) {
-        if let Some((buffer, count)) = buffer {
+        if let Some((buffer, count)) = buffer.as_ref().filter(|_| window_raster.is_none()) {
             let x = draw.scissor.x.min(shell_width);
             let y = draw.scissor.y.min(shell_height);
             let w = draw.scissor.w.min(shell_width - x);
@@ -562,7 +585,9 @@ pub(super) fn render_shell_frame(
             (width, height),
         );
     }
-    if let (Some((buffer, count)), Some(texture)) = (&cursor_buffer, cursor_texture) {
+    if let (Some((buffer, count)), Some(texture), None) =
+        (&cursor_buffer, cursor_texture, window_raster)
+    {
         let mut pass = begin_shell_pass(
             encoder,
             "Shell cursor after retained composition",
@@ -580,6 +605,37 @@ pub(super) fn render_shell_frame(
             zoom.draw(encoder, &destination.create_view(&Default::default()));
         }
         None => presenter.encode_present(encoder, destination),
+    }
+    if let Some(raster) = window_raster {
+        let view = destination.create_view(&Default::default());
+        let mut pass = state.renderer.window_ui.begin_pass(state, encoder, &view);
+        let atlas = state.renderer.bit_font.atlas();
+        for (draw, buffer) in texts.iter().zip(&text_buffers) {
+            if let Some((buffer, count)) = buffer {
+                pass.draw(atlas, buffer, *count, draw.scissor);
+            }
+        }
+        if let (Some((buffer, count)), Some(control_atlas)) = (&overlay_buffer, control_atlas) {
+            let shell = crate::render::shell_text::ScissorRect::of(
+                crate::render::shell_text::TextRect {
+                    x: 0,
+                    y: 0,
+                    w: shell_width,
+                    h: shell_height,
+                },
+                raster,
+            );
+            pass.draw(&control_atlas.texture, buffer, *count, shell);
+        }
+        for (draw, buffer) in overlay.texts.iter().zip(&overlay_text_buffers) {
+            if let Some((buffer, count)) = buffer {
+                pass.draw(atlas, buffer, *count, draw.scissor);
+            }
+        }
+        if let (Some((buffer, count)), Some(texture)) = (&cursor_buffer, cursor_texture) {
+            let frame = crate::app::presentation::window_ui::frame_rect(state);
+            pass.draw_cursor(texture, buffer, *count, frame);
+        }
     }
     Ok(())
 }

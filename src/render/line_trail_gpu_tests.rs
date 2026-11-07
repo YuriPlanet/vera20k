@@ -99,7 +99,7 @@ fn production_line_trail_matches_original_full_line_pixels() {
             );
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
             clear(&mut encoder, &cv, &dv, old_z, wgpu::LoadOp::Load);
-            terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
+            terrain.draw_surface_lines(&mut encoder, &cv, &[prepared_lines]);
             let reads = [
                 gpu.read(&mut encoder, &color),
                 gpu.read(&mut encoder, &depth),
@@ -210,7 +210,7 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
                     65535,
                     wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                 );
-                terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
+                terrain.draw_surface_lines(&mut encoder, &cv, &[prepared_lines]);
                 let reads = [
                     gpu.read(&mut encoder, &color),
                     gpu.read(&mut encoder, &depth),
@@ -242,6 +242,35 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
             }
         }
     }
+}
+
+/// Pixels in opposite corners of a 1080p frame snapshot only their tiles,
+/// clipped to the blends' scissor, not the box between them.
+#[test]
+fn surface_line_snapshot_copies_only_the_tiles_its_blends_read() {
+    let mut cover = SnapshotCover::default();
+    cover.reset([1920, 1080]);
+    cover.add(5, 6, 6, 7);
+    cover.add(1900, 1070, 1902, 1072);
+    assert_eq!(cover.scissor(), [5, 6, 1897, 1066]);
+    let mut rects = Vec::new();
+    cover.snapshot_rects(&mut rects);
+    assert_eq!(rects, [[5, 6, 27, 26], [1888, 1056, 14, 16]]);
+}
+
+/// A zoomed pixel across a tile edge reads both tiles, which one run copies;
+/// a pixel past the target's edge copies nothing.
+#[test]
+fn surface_line_snapshot_joins_tile_runs_and_skips_pixels_off_the_target() {
+    let mut cover = SnapshotCover::default();
+    cover.reset([100, 50]);
+    cover.add(31, 0, 33, 2);
+    cover.add(70, 40, 71, 41);
+    cover.add(120, 10, 121, 11);
+    assert_eq!(cover.scissor(), [31, 0, 69, 41]);
+    let mut rects = Vec::new();
+    cover.snapshot_rects(&mut rects);
+    assert_eq!(rects, [[31, 0, 33, 32], [64, 32, 32, 9]]);
 }
 
 #[test]
@@ -360,11 +389,11 @@ fn line_trail_native_fixture_submission_timings() {
                 // One immutable light upload and the same bounded submission
                 // accounting are used by production retained-object replay.
                 for index in 0..light_records.len() {
-                    if lights.draw_record(&mut encoder, [0, 0, size[0], size[1]], index) {
+                    if lights.draw_records(&mut encoder, [0, 0, size[0], size[1]], &[index]) {
                         terrain.note_external_passes(&mut encoder, 1);
                     }
                 }
-                terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
+                terrain.draw_surface_lines(&mut encoder, &cv, &[prepared_lines]);
                 submissions = terrain.submissions();
                 if light_records.len() >= 256 {
                     assert!(

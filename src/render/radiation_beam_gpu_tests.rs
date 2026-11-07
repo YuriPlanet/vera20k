@@ -118,7 +118,7 @@ fn production_radbeam_pixels_match_original_and_preserve_depth() {
                 } else {
                     clear(&mut encoder, &cv, &dv, z[0], wgpu::LoadOp::Load);
                 }
-                terrain.draw_surface_lines(&mut encoder, &cv, prepared);
+                terrain.draw_surface_lines(&mut encoder, &cv, &[prepared]);
                 let reads = [
                     gpu.read(&mut encoder, &color),
                     gpu.read(&mut encoder, &depth),

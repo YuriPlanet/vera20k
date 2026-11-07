@@ -877,6 +877,8 @@ fn build_theme_atlas(
         *slot = entry;
     }
 
+    // `RadarClass::FreeButtonShapes @ 0x00652D90` frees both shapes again
+    // before Init_For_House reloads them; dropping this table does the same.
     // 652E90 + 653010: both top controls use the generic SIDEBAR.PAL
     // converter (87F6CC), including Yuri. Native mask5, plain toggle kind0.
     let top_button_entries: [[Option<RenderedChromeEntry>; 2]; 2] = ["diplobtn.shp", "optbtn.shp"]

@@ -80,6 +80,36 @@ where
     })())
 }
 
+/// `vera20k --check-language <vera20k.<tag>.ini>`: print what a language file
+/// leaves untranslated or gets wrong ([`crate::i18n::check`]). Exits 0 when it
+/// is complete, 1 otherwise.
+pub fn try_language_check<I>(args: I) -> Option<Result<i32>>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut args = args.into_iter();
+    if args.next().as_deref() != Some(OsStr::new("--check-language")) {
+        return None;
+    }
+    Some((|| {
+        let path = PathBuf::from(
+            args.next()
+                .context("usage: vera20k --check-language <vera20k.<tag>.ini>")?,
+        );
+        ensure!(args.next().is_none(), "--check-language takes one file");
+        let bytes = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+        let text = String::from_utf8(bytes)
+            .with_context(|| format!("{} is not UTF-8 text", path.display()))?;
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let report = crate::i18n::check(&name, &text);
+        print!("{report}");
+        Ok(if report.complete() { 0 } else { 1 })
+    })())
+}
+
 /// `vera20k --probe [--ra2-dir <dir>] [--map <path>]` (docs/spawn.md): print
 /// one JSON object describing what a spawn launch on this installation is
 /// checked against, then exit. Headless: no logger, window or audio.

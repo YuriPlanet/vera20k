@@ -49,6 +49,7 @@ pub struct ScratchCell {
     pub lake_allow: bool,
 }
 
+/// The record defaults `0x0058BDC0` writes.
 impl Default for ScratchCell {
     fn default() -> Self {
         Self {

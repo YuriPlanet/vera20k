@@ -80,6 +80,11 @@ impl LineTrails {
         self.segments.clear();
     }
 
+    /// Whether no trail is attached or still fading.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.trails.is_empty()
+    }
+
     /// The last composite's segments, in world coordinates.
     pub(crate) fn shown(&self) -> &[LineTrailSegment] {
         &self.segments

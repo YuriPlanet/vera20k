@@ -1,6 +1,6 @@
 //! Dialog 0xE2 shell layout recovered from gamemd.exe.
 
-use super::state::MainMenuControlId;
+use super::state::{LANGUAGE_BUTTON, MainMenuControlId};
 use crate::ui::shell::descriptor::{
     AnchorRule, BgKind, ControlDescriptor, ControlKind, DialogDescriptor, DialogId, HEADING_ANCHOR,
     MONITOR_ANCHOR, RepositionPolicy,
@@ -57,7 +57,8 @@ pub struct MainMenuShellLayout {
     pub tooltip_line: RectPx,
     /// Static `0x71C` window rect (the animated SDWRNANM monitor).
     pub warning_monitor: RectPx,
-    pub buttons: [MainMenuButtonRect; 6],
+    /// Top to bottom; Exit is last.
+    pub buttons: Vec<MainMenuButtonRect>,
     pub right_panel: RightPanelRects,
     pub lower_strip: RectPx,
 }
@@ -139,14 +140,35 @@ fn button_ctrl(
     }
 }
 
+/// Whether a right panel of `tile_rows` rows has a free tile for VERA's
+/// Language button under Options: every column but retail 640x480's, whose
+/// six rows hold the five stacked buttons and Exit. There the Language list
+/// on the Options page is the way in.
+pub fn language_button_fits(tile_rows: i32) -> bool {
+    tile_rows > 6
+}
+
+/// The stacked buttons' DLU tops go on 27 at a time, one tile each.
+const LANGUAGE_DLU_TOP: i32 = 233 + 27;
+
 /// Dialog 0xE2 descriptor: the six owner-draw buttons (five stacked + Exit) plus
-/// the 0x694 heading and the 0x71C warning monitor. The bottom-anchored
-/// version/tooltip statics keep their bespoke shell helpers for now (no verified
-/// resource id; one-of-a-kind anchors), so they are computed outside this table.
-fn dialog_descriptor() -> DialogDescriptor {
+/// the 0x694 heading and the 0x71C warning monitor, and VERA's Language button
+/// on the next tile when `language` is set. The bottom-anchored version/tooltip
+/// statics keep their bespoke shell helpers for now (no verified resource id;
+/// one-of-a-kind anchors), so they are computed outside this table.
+fn dialog_descriptor(language: bool) -> DialogDescriptor {
     let snap = AnchorRule::OwnerDrawButtonSnap {
         cell_w: BUTTON_CELL_W,
     };
+    let language = language.then(|| {
+        button_ctrl(
+            LANGUAGE_BUTTON,
+            LANGUAGE_DLU_TOP,
+            snap,
+            "VERA:Language",
+            "VERA:LanguageHelp",
+        )
+    });
     DialogDescriptor {
         id: DialogId(0x00E2),
         bg_kind: BgKind::RightPanelShell,
@@ -170,6 +192,10 @@ fn dialog_descriptor() -> DialogDescriptor {
                 "STT:MainButtonMovies",
             ),
             button_ctrl(0x055C, 233, snap, "GUI:Options", "STT:MainButtonOptions"),
+        ]
+        .into_iter()
+        .chain(language)
+        .chain([
             button_ctrl(
                 0x03EE,
                 330,
@@ -203,7 +229,8 @@ fn dialog_descriptor() -> DialogDescriptor {
                 enabled: true,
                 visible: true,
             },
-        ],
+        ])
+        .collect(),
     }
 }
 
@@ -234,7 +261,18 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> MainMenuShellLayout {
     // by the shared shell pass (contract C7: DLU->pixel once, then include-set
     // re-anchor). The bottom-anchored version/tooltip statics keep their bespoke
     // helpers above.
-    let laid = layout_pass(&dialog_descriptor(), screen_w, screen_h);
+    let descriptor = dialog_descriptor(language_button_fits(right_panel.tile_count));
+    let laid = layout_pass(&descriptor, screen_w, screen_h);
+    let buttons = descriptor
+        .controls
+        .iter()
+        .filter(|control| control.kind == ControlKind::Button)
+        .map(|control| MainMenuButtonRect {
+            id: MainMenuControlId::from_resource_id(control.id)
+                .expect("0xE2 descriptor buttons are main-menu controls"),
+            rect: rect_for(&laid, control.id),
+        })
+        .collect();
 
     MainMenuShellLayout {
         scale: ShellScale::RETAIL,
@@ -245,32 +283,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> MainMenuShellLayout {
         version_line,
         tooltip_line,
         warning_monitor: rect_for(&laid, WARNING_MONITOR_CONTROL),
-        buttons: [
-            MainMenuButtonRect {
-                id: MainMenuControlId::SinglePlayer0x683,
-                rect: rect_for(&laid, 0x0683),
-            },
-            MainMenuButtonRect {
-                id: MainMenuControlId::WwOnline0x684,
-                rect: rect_for(&laid, 0x0684),
-            },
-            MainMenuButtonRect {
-                id: MainMenuControlId::Network0x578,
-                rect: rect_for(&laid, 0x0578),
-            },
-            MainMenuButtonRect {
-                id: MainMenuControlId::MoviesAndCredits0x686,
-                rect: rect_for(&laid, 0x0686),
-            },
-            MainMenuButtonRect {
-                id: MainMenuControlId::Options0x55c,
-                rect: rect_for(&laid, 0x055C),
-            },
-            MainMenuButtonRect {
-                id: MainMenuControlId::ExitGame0x3ee,
-                rect: rect_for(&laid, 0x03EE),
-            },
-        ],
+        buttons,
         right_panel,
         lower_strip,
     }
@@ -296,7 +309,7 @@ pub fn movie_base_for_responsive_width(_screen_w: u32) -> MainMenuMovieBase {
 pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> MainMenuShellLayout {
     let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
     let base = compute_layout(SHELL_BASE_W as u32, SHELL_BASE_H as u32);
-    let mut buttons = base.buttons;
+    let mut buttons = base.buttons.clone();
     for button in &mut buttons {
         button.rect = scale.scale_rect(button.rect);
     }
@@ -330,7 +343,31 @@ mod tests {
             assert_eq!(button.rect, RectPx::new(644, y, 156, 42));
         }
         // Exit (0x3ee): same flush-right cell in the final row above SDBTM.
-        assert_eq!(layout.buttons[5].rect, RectPx::new(644, 535, 156, 42));
+        assert_eq!(
+            layout.buttons.last().unwrap().rect,
+            RectPx::new(644, 535, 156, 42)
+        );
+    }
+
+    #[test]
+    fn the_language_button_takes_the_tile_under_options_where_the_column_has_one() {
+        let language = |layout: &MainMenuShellLayout| {
+            layout
+                .buttons
+                .iter()
+                .find(|button| button.id == MainMenuControlId::Language)
+                .map(|button| button.rect)
+        };
+        assert_eq!(
+            language(&compute_layout(800, 600)),
+            Some(RectPx::new(644, 409, 156, 42))
+        );
+        // 640x480's six rows end with Exit on the sixth.
+        let small = compute_layout(640, 480);
+        assert_eq!(language(&small), None);
+        assert_eq!(small.buttons.len(), 6);
+        // A fitted window scales the 800x600 column, Language included.
+        assert!(language(&compute_responsive_layout(640, 480)).is_some());
     }
 
     #[test]
@@ -369,7 +406,10 @@ mod tests {
         let layout = compute_layout(640, 480);
         assert_eq!(layout.movie_base, MainMenuMovieBase::Ra2tsS);
         assert_eq!(layout.movie, RectPx::new(0, 0, 472, 450));
-        assert_eq!(layout.buttons[5].rect, RectPx::new(484, 409, 156, 42));
+        assert_eq!(
+            layout.buttons.last().unwrap().rect,
+            RectPx::new(484, 409, 156, 42)
+        );
     }
 
     #[test]
@@ -395,7 +435,10 @@ mod tests {
         // Base SP cell (644,199,156,42) scaled 1.5x (corner-rounded) ->
         // (1166,299,234,63); base Exit (644,535,156,42) -> (1166,803,234,63).
         assert_eq!(layout.buttons[0].rect, RectPx::new(1166, 299, 234, 63));
-        assert_eq!(layout.buttons[5].rect, RectPx::new(1166, 803, 234, 63));
+        assert_eq!(
+            layout.buttons.last().unwrap().rect,
+            RectPx::new(1166, 803, 234, 63)
+        );
     }
 
     /// At 1.28x (1366x768) each scaled panel row rounds like the button

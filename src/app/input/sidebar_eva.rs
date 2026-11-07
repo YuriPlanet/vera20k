@@ -77,7 +77,8 @@ pub(crate) struct CameoClick {
 ///   (`0x006AAFE1..0x006AB02A`). Held or finished: the sound,
 ///   `EVA_Canceled` (`0x006AAE39`) and ABANDON, or ABANDON_ALL with Shift
 ///   (`0x006AAE4A..0x006AAE68`). No own factory but a copy queued behind the
-///   category's build: the sound and the abandon, no line
+///   category's build (`FactoryClass::IsInQueue @ 0x004CA6B0` at
+///   `0x006AB1B0`): the sound and the abandon, no line
 ///   (`0x006AB1A0..0x006AB22A`).
 /// * Left, own factory stopped: finished — the sound and a builder lookup,
 ///   followed by building placement, mobile PLACE, or ABANDON plus refusal

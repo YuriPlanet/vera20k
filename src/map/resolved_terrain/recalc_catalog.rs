@@ -8,6 +8,7 @@ use super::build::{TileMetadata, merge_tmp_file_metadata, ordinary_variant_selec
 use super::tubes::auto_tube_direction_from_bases;
 use super::*;
 use crate::map::tile_variant_selector::TileVariantSelector;
+use crate::util::lookup_hash::LookupMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum BridgeRecalcCatalogError {
@@ -125,8 +126,10 @@ fn read_resident_tmp(
 
 #[derive(Debug, Clone)]
 pub(crate) struct BridgeRecalcCatalog {
-    heads: HashMap<u16, ResidentTmp>,
-    files: HashMap<u16, Box<[ResidentTmp]>>,
+    // Lookup-only by tile: the tactical draw reads `files` for every visible
+    // cell, where the standard SipHash dominated the terrain instance build.
+    heads: LookupMap<u16, ResidentTmp>,
+    files: LookupMap<u16, Box<[ResidentTmp]>>,
     selector: TileVariantSelector,
     permissions: Vec<(bool, bool)>,
     registered_names: Vec<Vec<u8>>,
@@ -299,8 +302,8 @@ impl BridgeRecalcCatalog {
                 )
             })
             .collect();
-        let mut heads = HashMap::new();
-        let mut files = HashMap::new();
+        let mut heads = LookupMap::default();
+        let mut files = LookupMap::default();
         for id in ids {
             let Ok(tile) = u16::try_from(id) else {
                 continue;
@@ -496,8 +499,9 @@ impl ResolvedTerrainGrid {
         }
         let catalog = self.bridge_recalc_catalog.as_ref()?;
         let (tile, fallback) = catalog.presentation_tile(cell, self.clear_tile_id);
-        let pristine = catalog.file(tile, 0).ok()?;
-        let count = u8::try_from(catalog.files.get(&tile)?.len()).ok()?;
+        let files = catalog.files.get(&tile)?;
+        let pristine = files.first()?.as_deref().ok()?;
+        let count = u8::try_from(files.len()).ok()?;
         if count < 2 {
             return Some(0);
         }

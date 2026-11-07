@@ -196,6 +196,12 @@ impl SidebarFrame {
         (self.percent * self.zoom_percent).is_multiple_of(10_000 * self.draw_scale)
     }
 
+    /// Whether every surface pixel shows as one window pixel: what the
+    /// surfaces draw is at the window's pixels.
+    pub fn draws_window_pixels(self) -> bool {
+        self.percent * self.zoom_percent == 10_000 * self.draw_scale
+    }
+
     /// The column's left edge in frame pixels; left of the frame when the
     /// frame is narrower than the column.
     pub fn frame_left(self) -> f32 {
@@ -382,25 +388,27 @@ mod tests {
         assert_eq!(normal.copy_scale(), 1.0 / 3.0);
         assert!(!normal.copy_is_sharp() && normal.has_window_copy());
         assert_eq!(normal.window_copy_scale(), 1.0);
-        assert!(normal.window_copy_is_sharp());
+        assert!(normal.window_copy_is_sharp() && normal.draws_window_pixels());
         // A zoom between whole steps blends in the window, as the zoom did.
         let between = SidebarFrame::new(1024, 576, 100).in_window(250, false);
         assert_eq!(
             (between.draw_scale(), between.window_copy_scale()),
             (2, 1.25)
         );
-        assert!(!between.window_copy_is_sharp());
+        assert!(!between.window_copy_is_sharp() && !between.draws_window_pixels());
         // Unzoomed XL draws 2x and copies 1:1; nothing more to show.
         let xl = SidebarFrame::new(1920, 1080, 200).in_window(100, false);
         assert_eq!((xl.draw_scale(), xl.copy_scale()), (2, 1.0));
-        assert!(xl.copy_is_sharp() && !xl.has_window_copy());
+        assert!(xl.copy_is_sharp() && !xl.has_window_copy() && xl.draws_window_pixels());
         // Large keeps its own pixels, unless asked to sharpen.
         let large = SidebarFrame::new(1280, 720, 150);
         assert_eq!(large.in_window(200, false).draw_scale(), 1);
         assert!(!large.in_window(200, false).has_window_copy());
+        assert!(!large.in_window(200, false).draws_window_pixels());
+        assert!(!large.in_window(100, true).draws_window_pixels());
         let sharp = large.in_window(200, true);
         assert_eq!((sharp.draw_scale(), sharp.copy_scale()), (3, 0.5));
-        assert!(sharp.window_copy_is_sharp());
+        assert!(sharp.window_copy_is_sharp() && sharp.draws_window_pixels());
         // Layout stays in sidebar pixels.
         assert_eq!(
             normal.layout_size(),
