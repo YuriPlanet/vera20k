@@ -84,13 +84,35 @@ pub(crate) fn fired(
     } else {
         weapon
     };
+    #[cfg(not(feature = "ares"))]
     let prism = source.category() == EntityCategory::Structure && rules.is_prism_type(obj);
+    // Ares TechnoClass_Fire_IsLaser (100563D0, hook 0x6FF4DE), its Prism
+    // arm: a `PrismForwarding=` tower that can fire, with SupportingPrisms
+    // (Ares: the longest chain behind it), thickens by `-Intensity` (a
+    // negative one) or `Intensity` per link (a positive one) and is always
+    // supported.
+    #[cfg(feature = "ares")]
+    let (prism, intensity) = {
+        let forwarding = obj.building_type_ext().prism_forwarding();
+        (
+            source.category() == EntityCategory::Structure && forwarding.can_attack(),
+            forwarding.intensity(),
+        )
+    };
     let supported = prism && prism_support_count > 0;
     // FireAt6FF549..6FF571: every non-building firer's house-colour laser is
     // 2 wide (a LUNR on MoonPatr, which makes it buildable); a non-Prism
     // building keeps the constructor's 1.
+    #[cfg(not(feature = "ares"))]
+    let supported_width = 5;
+    #[cfg(feature = "ares")]
+    let supported_width = match intensity {
+        i32::MIN..0 => 3i32.wrapping_sub(intensity),
+        0 => 3,
+        _ => 3i32.wrapping_add(intensity.wrapping_mul(prism_support_count)),
+    };
     let width = if prism {
-        if supported { 5 } else { 3 }
+        if supported { supported_width } else { 3 }
     } else if source.category() != EntityCategory::Structure && weapon.is_house_color {
         2
     } else {
@@ -268,38 +290,76 @@ pub(crate) fn construct<'a>(
 
 /// Building44ABD0's delayed support emission is unconditional once due.
 /// It uses weapon0's current FLH and the copied endpoint stored when armed.
-pub(crate) fn support(
-    world: &mut Simulation,
+pub(crate) fn support<'w>(
+    world: &'w mut Simulation,
     rules: &RuleSet,
     source_id: u64,
     to: ProjectileCoord,
-) {
-    let Some(source) = world.substrate.entities.get(source_id) else {
-        return;
-    };
-    let Some(obj) = world.interner.object_type(source.type_ref(), rules) else {
-        return;
-    };
-    let from = super::fire_coord::fire_coordinate(
-        world,
-        rules,
-        &super::fire_coord::FireSource::of_entity(source),
-        obj,
-        0,
-        (source.weapon_burst.index() & 1) as u8,
-        Default::default(),
+) -> Option<&'w mut LaserBirth> {
+    let from = support_source(world, rules, source_id)?;
+    let owner = world.substrate.entities.get(source_id)?.owner();
+    Some(support_beam(world, rules, owner, from, to, None))
+}
+
+/// The support beam's source, the building's current weapon-0 FLH.
+pub(crate) fn support_source(
+    world: &Simulation,
+    rules: &RuleSet,
+    source_id: u64,
+) -> Option<ProjectileCoord> {
+    let source = world.substrate.entities.get(source_id)?;
+    let obj = world.interner.object_type(source.type_ref(), rules)?;
+    Some(
+        super::fire_coord::fire_coordinate(
+            world,
+            rules,
+            &super::fire_coord::FireSource::of_entity(source),
+            obj,
+            0,
+            (source.weapon_burst.index() & 1) as u8,
+            Default::default(),
+        )
+        .coord,
     )
-    .coord;
-    let color = LaserColor::House(source.owner());
-    construct(
+}
+
+/// The support beam's LaserDraw, 3 wide: the House colour for
+/// `PrismSupportDuration=` frames, or, for an Ares Prism `SupportWeapon`
+/// (`10016490`), that weapon's colours (the House's for `IsHouseColor=`)
+/// for its `LaserDuration=`.
+pub(crate) fn support_beam<'w>(
+    world: &'w mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    from: ProjectileCoord,
+    to: ProjectileCoord,
+    weapon: Option<&WeaponType>,
+) -> &'w mut LaserBirth {
+    let (color, duration) = match weapon {
+        None => (
+            LaserColor::House(owner),
+            rules.general.prism_support.duration,
+        ),
+        Some(weapon) if weapon.is_house_color => (LaserColor::House(owner), weapon.laser_duration),
+        Some(weapon) => (
+            LaserColor::Explicit {
+                inner: weapon.laser_inner_color,
+                outer: weapon.laser_outer_color,
+                spread: weapon.laser_outer_spread,
+            },
+            weapon.laser_duration,
+        ),
+    };
+    let birth = construct(
         &world.session,
         &mut world.lifecycle_outputs,
         from,
         to,
         0,
-        rules.general.prism_support.duration,
+        duration,
         color,
         NativeF32Bits::POSITIVE_ZERO,
-    )
-    .width = 3;
+    );
+    birth.width = 3;
+    birth
 }

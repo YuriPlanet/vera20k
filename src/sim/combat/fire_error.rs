@@ -323,6 +323,10 @@ pub(crate) struct FirerFacts {
     pub effective_mission: i32,
     pub delayed_fire_counter: i32,
     pub turret_upgrade: bool,
+    /// Ares: a charging supporter of a `PrismForwarding.BreakSupport=yes`
+    /// tower that can fire (`10016360`).
+    #[cfg(feature = "ares")]
+    pub prism_breaks_support: bool,
 }
 
 impl Default for FirerFacts {
@@ -378,6 +382,8 @@ impl Default for FirerFacts {
             effective_mission: 0,
             delayed_fire_counter: 0,
             turret_upgrade: false,
+            #[cfg(feature = "ares")]
+            prism_breaks_support: false,
         }
     }
 }
@@ -841,7 +847,15 @@ fn building(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) ->
         return FireError::Cant;
     }
     // B6 `0x00447FAE`: a delayed shot is counting down.
+    #[cfg(not(feature = "ares"))]
     if firer.delayed_fire_counter != 0 {
+        return FireError::Rearm;
+    }
+    // Ares BuildingClass_CanFire_PrismForward (10016360, hook 0x447FAE)
+    // tests the countdown signed, and spares a charging BreakSupport
+    // supporter, which may still turn master.
+    #[cfg(feature = "ares")]
+    if firer.delayed_fire_counter > 0 && !firer.prism_breaks_support {
         return FireError::Rearm;
     }
     let base = techno(facts, query, check_range);

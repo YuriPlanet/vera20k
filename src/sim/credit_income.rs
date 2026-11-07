@@ -312,6 +312,16 @@ pub(crate) fn install_drain_link(
     {
         return false;
     }
+    // Ares TechnoClass_Drain_PrismForward (10016B90, hook 0x70FD9A): a
+    // building not yet drained by this drainer leaves its Prism network.
+    #[cfg(feature = "ares")]
+    if substrate
+        .entities
+        .get(victim_id)
+        .is_some_and(|victim| victim.drain.draining_me != Some(drainer_id))
+    {
+        substrate.ares_prism_remove_from_network(victim_id, true);
+    }
     if let Some(victim) = substrate.entities.get_mut(victim_id) {
         victim.drain.draining_me = Some(drainer_id);
     }

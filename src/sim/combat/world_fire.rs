@@ -1865,6 +1865,15 @@ pub(super) fn emit_admitted_fire(
                 }
                 _ => ProjectilePayload::UNSCALED,
             };
+            // Ares BuildingClass_Update_Prism (100169A0) also adds the
+            // tower's `PrismForwarding.DamageAdd` and damage reserve to the
+            // returned bullet's Health.
+            #[cfg(feature = "ares")]
+            let base_damage = match snap.building_shot {
+                Some(super::BuildingShot::Delayed { .. }) => base_damage
+                    .wrapping_add(world.ares_prism_shot_damage_add(snap.stable_id, rules)),
+                _ => base_damage,
+            };
             let payload = ProjectilePayload::new(
                 base_damage,
                 world.interner.intern(&warhead.id),

@@ -119,6 +119,12 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
+#[cfg(feature = "ares")]
+#[path = "ares_prism_forwarding.rs"]
+mod ares_prism_forwarding;
+#[cfg(feature = "ares")]
+pub(crate) use ares_prism_forwarding::AresPrismForwarding;
+
 /// A building's delayed fire (`BuildingClass+0x704` mode, `+0x714`
 /// countdown, `+0x708..+0x710` payload), armed by Mission_Attack and served by
 /// ProcessDelayedFire (`0x004503F0`) when the countdown ends.
@@ -1046,6 +1052,7 @@ impl PrismSupport {
     }
 
     /// Mission_Attack's recruit (`0x0044B4D7`); a native dword, so it wraps.
+    #[cfg(not(feature = "ares"))]
     fn recruit(&mut self) {
         self.count = self.count.wrapping_add(1);
     }
@@ -1256,8 +1263,15 @@ fn fire_arm(
     else {
         return;
     };
+    #[cfg(not(feature = "ares"))]
     if rules.is_prism_type(obj) {
         prism_arm(sim, id, rules, obj);
+        return;
+    }
+    // Ares BuildingClass_Mi_Attack_IsPrism (100167E0, hook 0x44B2FE) takes
+    // the arm for a `PrismForwarding=` tower in place of the PrismType test.
+    #[cfg(feature = "ares")]
+    if ares_prism_forwarding::mission_attack_prism(sim, id, rules, obj) {
         return;
     }
     match rules
@@ -1333,6 +1347,7 @@ fn arm_delayed_fire(
 /// the type's `DelayedFireDelay=` (`+0x16EC`; the supporter is a PrismType
 /// tower too), and the arm returns 1 either way, so one tower is recruited per
 /// visit.
+#[cfg(not(feature = "ares"))]
 fn prism_arm(
     sim: &mut Simulation,
     id: u64,
@@ -1401,6 +1416,7 @@ fn prism_arm(
 ///
 /// FireAt already started the shooter's actual rearm inside its visit
 /// (`0x006FF2B2..0x006FF2BB`); a zero ROF remains expired, as in native.
+#[cfg(not(feature = "ares"))]
 fn prism_supporter(
     sim: &Simulation,
     id: u64,
@@ -1465,7 +1481,31 @@ fn prism_supporter(
 ///   `+0x664 = 0` (`0x0044ACCA`) and the downtime: the rearm timer
 ///   becomes {Frame, `PrismSupportDelay=`} (`0x0044ACD0..0x0044ACDC`). No
 ///   check, damage or Scenario draw.
+///
+/// Ares replaces the whole body (`ares_prism_forwarding::update_prism`).
 pub(super) fn process_delayed_fire(
+    sim: &mut Simulation,
+    id: u64,
+    rules: &RuleSet,
+    ctx: ObjectAiCtx<'_>,
+    bridge_state_changed: &mut bool,
+) {
+    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+        return;
+    };
+    // Health 0 returned before the call (`0x00440072`).
+    if entity.death.is_dying() || entity.health.current() == 0 {
+        return;
+    }
+    #[cfg(feature = "ares")]
+    ares_prism_forwarding::update_prism(sim, id, rules, ctx, bridge_state_changed);
+    #[cfg(not(feature = "ares"))]
+    stock_delayed_fire(sim, id, rules, ctx, bridge_state_changed);
+}
+
+/// The stock body of [`process_delayed_fire`].
+#[cfg(not(feature = "ares"))]
+fn stock_delayed_fire(
     sim: &mut Simulation,
     id: u64,
     rules: &RuleSet,
@@ -1476,10 +1516,6 @@ pub(super) fn process_delayed_fire(
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return;
     };
-    // Health 0 returned before the call (`0x00440072`).
-    if entity.death.is_dying() || entity.health.current() == 0 {
-        return;
-    }
     let Some(fire) = entity.pending_building_fire.count_down() else {
         return;
     };
@@ -1534,6 +1570,7 @@ pub(super) fn process_delayed_fire(
 /// `((PrismSupportModifier * count + 100) << 8) / 100`, the `imul` and add
 /// wrapping in 32 bits and the division unsigned (`mul 0x51EB851F; shr edx,
 /// 5`), in the bullet's 1/256 damage units.
+#[cfg(not(feature = "ares"))]
 fn support_multiplier(modifier: i32, count: i32) -> i32 {
     let scaled = (modifier.wrapping_mul(count).wrapping_add(100) as u32) << 8;
     (scaled / 100) as i32
@@ -1708,7 +1745,21 @@ impl crate::sim::world::ObjectSubstrate {
     /// [`ProjectilePayload::UNSCALED`]. The live receiver asks it for a
     /// launched delayed shot only ([`BuildingShot::Delayed`]); FireAt's early
     /// exits and a refused launch return no bullet and keep the count.
+    ///
+    /// Ares BuildingClass_Update_Prism (100169A0) writes the reserves'
+    /// multiplier instead and clears them after the shot.
     pub(crate) fn take_support_bonus(&mut self, id: u64, rules: &RuleSet) -> i32 {
+        #[cfg(feature = "ares")]
+        {
+            let _ = rules;
+            self.ares_prism_shot_multiplier(id)
+        }
+        #[cfg(not(feature = "ares"))]
+        self.stock_support_bonus(id, rules)
+    }
+
+    #[cfg(not(feature = "ares"))]
+    fn stock_support_bonus(&mut self, id: u64, rules: &RuleSet) -> i32 {
         let Some(entity) = self.entities.get_mut(id) else {
             return ProjectilePayload::UNSCALED;
         };

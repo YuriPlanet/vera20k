@@ -2559,7 +2559,11 @@ impl Simulation {
     fn base_reservation_writer(&self, stable_id: u64) -> Option<(InternedId, CellRect)> {
         let entity = self.substrate.entities.get(stable_id)?;
         let spacing = entity.type_facts.base_reservation_spacing()?;
+        // Ares IsBaseNormal (10011810, hooks 0x00440C08 Unlimbo and
+        // 0x00456370 the neighbour repair): a delivered building marked
+        // NoBaseNormal reserves no base space.
         (entity.category() == EntityCategory::Structure
+            && entity.unit_delivery_provides_base_space()
             && entity.lifecycle.object_alive
             && !entity.lifecycle.in_limbo
             && entity.lifecycle.cell_marked
@@ -2591,7 +2595,10 @@ impl Simulation {
         let Some(spacing) = entity.type_facts.base_reservation_spacing() else {
             return false;
         };
+        // Ares IsBaseNormal at Limbo's test (hook 0x00445A72): NoBaseNormal
+        // skips the clear.
         if entity.category() != EntityCategory::Structure
+            || !entity.unit_delivery_provides_base_space()
             || !entity.lifecycle.cell_marked
             || cell_list_layer_for_entity(
                 entity,
@@ -4348,6 +4355,13 @@ impl Simulation {
         else {
             return;
         };
+        // Ares BuildingClass_Disappear_PrismForward (10016470, hook
+        // 0x44EBF0) takes a building out of its Prism network first.
+        #[cfg(feature = "ares")]
+        if category == EntityCategory::Structure {
+            self.substrate
+                .ares_prism_remove_from_network(stable_id, true);
+        }
         let allied_with = |sim: &Self, contact: u64| {
             sim.substrate.entities.get(contact).is_some_and(|contact| {
                 crate::sim::combat::combat_weapon::is_ally_by_object(
@@ -5592,7 +5606,7 @@ impl Simulation {
     /// Teleport Process7193CC..7193F4 calls Bullet::LoseTarget468430 on every
     /// matching Bullet in reverse construction order, including non-Logic
     /// bullets. Stable IDs retain that construction order in the store.
-    pub(super) fn lose_projectile_targets(&mut self, target_id: u64, rules: &RuleSet) {
+    pub(crate) fn lose_projectile_targets(&mut self, target_id: u64, rules: &RuleSet) {
         if !self
             .projectiles
             .iter()

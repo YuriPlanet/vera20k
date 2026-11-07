@@ -362,6 +362,10 @@ impl<'a> FireSubject<'a> {
                 .map_or(-1, |leaf| leaf.doing()),
             effective_mission: firer.mission.effective().raw(),
             delayed_fire_counter: firer.pending_building_fire.remaining_ticks(),
+            #[cfg(feature = "ares")]
+            prism_breaks_support: self
+                .world
+                .ares_prism_breaks_support(firer.stable_id(), self.rules),
             ..FirerFacts::default()
         };
         let firer_type = FirerTypeFacts {

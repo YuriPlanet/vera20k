@@ -2537,6 +2537,13 @@ pub(crate) fn handle_death(
                 }
                 None => std::borrow::Cow::Borrowed(contacts),
             };
+            // Ares BuildingClass_ReceiveDamage_PrismForward (10016950, hook
+            // 0x4424EF), after the bunker release and before the captives go
+            // free: the building leaves its Prism network.
+            #[cfg(feature = "ares")]
+            world
+                .substrate
+                .ares_prism_remove_from_network(dead_id, true);
             let (nested, pings) =
                 world.building_now_dead_contacts(dead_id, &contacts, rules, overlay_registry, run);
             effects.append(nested);

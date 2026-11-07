@@ -240,10 +240,12 @@ impl GameEntity {
 
     /// `TechnoClass+0x270` BeingWarpedOut (vtable `+0x1D4`, `0x0070C5B0`):
     /// written by TemporalClass and by the Chronosphere's Teleport states
-    /// (state 0 sets it, state 2 clears it). The ordinary teleport never
-    /// writes it.
+    /// (state 0 sets it, state 2 clears it), and in Ares builds by the
+    /// building chronoshift. The ordinary teleport never writes it.
     pub fn is_warped_out(&self) -> bool {
-        self.temporal.is_warped() || self.chrono_warp().is_some_and(|warp| warp.warped_out())
+        self.temporal.is_warped()
+            || self.chrono_warp().is_some_and(|warp| warp.warped_out())
+            || self.ares_chronoshifting()
     }
 
     /// The frozen branch of every class's AI while the object is warped
@@ -381,6 +383,37 @@ impl Simulation {
         self.temporal_initiate_warp(firer, victim, rules, registry, effects);
     }
 
+    /// InitiateWarp's opening (`0x0071AF2F..0x0071AF48`): Kill_All_Spawns
+    /// (`0x006B7100`) and CaptureManager FreeAll on the target.
+    fn temporal_free_target(
+        &mut self,
+        target: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        if self
+            .substrate
+            .entities
+            .get(target)
+            .is_some_and(|entity| entity.spawn_manager.is_some())
+        {
+            crate::sim::spawn_manager::kill_all_spawns_with_context(
+                self,
+                target,
+                UninitContext::new(rules, registry).with_effects(effects),
+            );
+        }
+        if self
+            .substrate
+            .entities
+            .get(target)
+            .is_some_and(|entity| entity.capture_manager.is_some())
+        {
+            self.free_all_captures(target, rules, registry, effects);
+        }
+    }
+
     /// `TemporalClass::InitiateWarp @ 0x0071AF20`.
     pub(crate) fn temporal_initiate_warp(
         &mut self,
@@ -390,29 +423,13 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
+        // 0x0071AF2F..0x0071AF48: the target's spawns die and its captives
+        // go free before anything else is decided. Ares
+        // TemporalClass_Fire_UnwarpableA (hook 0x71AF2B) skips this to
+        // 0x71AF4D and does it once the target proves warpable (below).
+        #[cfg(not(feature = "ares"))]
         if let Some(target) = target {
-            // 0x0071AF2F..0x0071AF48: the target's spawns die and its captives
-            // go free before anything else is decided.
-            if self
-                .substrate
-                .entities
-                .get(target)
-                .is_some_and(|entity| entity.spawn_manager.is_some())
-            {
-                crate::sim::spawn_manager::kill_all_spawns_with_context(
-                    self,
-                    target,
-                    UninitContext::new(rules, registry).with_effects(effects),
-                );
-            }
-            if self
-                .substrate
-                .entities
-                .get(target)
-                .is_some_and(|entity| entity.capture_manager.is_some())
-            {
-                self.free_all_captures(target, rules, registry, effects);
-            }
+            self.temporal_free_target(target, rules, registry, effects);
         }
         // 0x0071AF4D..0x0071AF61: the attacker drops its previous victim.
         Self::temporal_release_if_warping(
@@ -426,6 +443,14 @@ impl Simulation {
         };
         if !self.can_warp_target(target, rules) {
             return;
+        }
+        // Ares TemporalClass_Fire_PrismForwardAndWarpable (10016BD0, hook
+        // 0x71AF76): the warpable target's spawns die and its captives go
+        // free, and a building leaves its Prism network.
+        #[cfg(feature = "ares")]
+        {
+            self.temporal_free_target(target, rules, registry, effects);
+            self.substrate.ares_prism_remove_from_network(target, true);
         }
         // 0x0071AF76..0x0071AF81: an attacker being warped cannot start.
         if self

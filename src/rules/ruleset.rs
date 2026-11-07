@@ -5007,6 +5007,13 @@ impl RuleSet {
         }
     }
 
+    /// RulesExt `[General] ChronoInfantryCrush` (constructor true): whether
+    /// warping infantry may land on a cell holding anything but infantry.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_chrono_infantry_crush(&self) -> bool {
+        self.ares_global_controls.chrono_infantry_crush()
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn bounty_rules(&self) -> &crate::rules::ares_bounty::BountyGlobalRules {
         self.ares_global_controls.bounty()
@@ -7184,6 +7191,22 @@ impl RuleSet {
             .map(|handle| self.object_by_handle(handle))
     }
 
+    /// Ares 3.0 TechnoTypeClass::Find (Ares.dll 10007EA0): unless the name is
+    /// `none` or `<none>` (CCINIClass::IsBlank 10003950), the first type of
+    /// the same TechnoType array whose ID matches ignoring ASCII case
+    /// (`strcmpi`). An unrepresentable first match answers None, as above.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_find_techno_type(&self, id: &str) -> Option<&ObjectType> {
+        if crate::rules::ini_parser::is_native_none_type_name(id) {
+            return None;
+        }
+        self.native_techno_type_order
+            .iter()
+            .find(|(_, stored_id, _)| stored_id.eq_ignore_ascii_case(id))
+            .and_then(|(_, _, handle)| *handle)
+            .map(|handle| self.object_by_handle(handle))
+    }
+
     /// This set's identity: nonzero and distinct from every other `RuleSet`
     /// built in the process. It reaches no result; caches of handles compare
     /// it to know whose handles they hold.
@@ -7240,7 +7263,9 @@ impl RuleSet {
             .map(|metadata| metadata.targeting())
     }
 
-    /// `Type == Rules+0x498` (`[General] PrismType=`, `0x0044B2F8`).
+    /// `Type == Rules+0x498` (`[General] PrismType=`, `0x0044B2F8`). Ares
+    /// asks the type's `PrismForwarding=` instead (`rules::ares_prism_forwarding`).
+    #[cfg(not(feature = "ares"))]
     pub(crate) fn is_prism_type(&self, object: &ObjectType) -> bool {
         self.general
             .prism_type

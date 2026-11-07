@@ -281,6 +281,8 @@ fn facts(input: &Value) -> FireFacts {
             effective_mission: effective_mission(&f["mission"], &f["queued_mission"]),
             delayed_fire_counter: int(&f["delayed_fire_counter"]),
             turret_upgrade: flag(&f["turret_upgrade"]),
+            #[cfg(feature = "ares")]
+            prism_breaks_support: false,
         },
         firer_type: FirerTypeFacts {
             natural: flag(&ft["natural"]),

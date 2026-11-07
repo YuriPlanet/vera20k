@@ -106,6 +106,26 @@ impl WeaponOffsets {
         coordinate.copied().unwrap_or_default().into()
     }
 
+    /// Ares Prism SupportWeapon reader `100103F0`: `slot` takes AlternateFLH0
+    /// (base) or AlternateFLH1 (elite), else that array's slot-0 coordinate.
+    #[cfg(feature = "ares")]
+    pub(crate) fn copy_support_flh(&mut self, slot: usize, elite: bool) {
+        let alternate = self.alternate[usize::from(elite)];
+        let slots = if elite {
+            &mut self.elite
+        } else {
+            &mut self.base
+        };
+        let flh = if alternate == [0; 3] {
+            slots[0]
+        } else {
+            alternate
+        };
+        if let Some(entry) = slots.get_mut(slot) {
+            *entry = flh;
+        }
+    }
+
     /// GetFLH6F3AF5..6F3B21: ports beyond the five stored coordinates are zero.
     pub(crate) fn alternate(&self, port: usize) -> Flh {
         self.alternate.get(port).copied().unwrap_or_default().into()

@@ -62,6 +62,12 @@ impl RulesTypeReferences {
         }
     }
 
+    /// A kept pointer's current stored ID, `None` while it is null.
+    #[cfg(feature = "ares")]
+    pub(crate) fn pointer(&self, key: &str) -> Option<&str> {
+        self.pointers.get(key).map(String::as_str)
+    }
+
     pub(crate) fn list(&self, key: &str) -> &[String] {
         self.lists.get(key).map_or(&[], Vec::as_slice)
     }

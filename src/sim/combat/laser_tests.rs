@@ -432,6 +432,9 @@ fn direct_laser_keeps_explicit_source_and_native_constructor_defaults() {
 }
 
 #[test]
+// The stock support beam; an Ares supporter without a support target does
+// not beam (`techno_ai::ares_prism_forwarding`).
+#[cfg(not(feature = "ares"))]
 fn production_frame_orders_laser_update_before_delayed_support_birth() {
     let rules = fixture_rules(&json!({}));
     let mut sim = Simulation::new();
@@ -609,6 +612,8 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
             );
         } else {
             assert!(births.is_empty(), "out-of-range delayed shot");
+            // Ares Update_Prism (100169A0) clears SupportingPrisms whether
+            // or not the shot left.
             assert_eq!(
                 sim.substrate
                     .entities
@@ -616,7 +621,7 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
                     .unwrap()
                     .prism_support_count
                     .count(),
-                1
+                if cfg!(feature = "ares") { 0 } else { 1 }
             );
         }
     }

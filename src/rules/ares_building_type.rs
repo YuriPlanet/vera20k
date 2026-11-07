@@ -131,6 +131,10 @@ pub(crate) struct BuildingTypeExtRules {
     /// `AIBaseNormal` (`+0x235`, Nullable<bool>): whether the building counts
     /// for the AI base reservation, else the stock BaseNormal test.
     pub(crate) ai_base_normal: Option<bool>,
+    /// `PrismForwarding.*` (`+0xE0`, `rules::ares_prism_forwarding`), read
+    /// first by `1000DD40` through the registry.
+    #[serde(default)]
+    prism_forwarding: crate::rules::ares_prism_forwarding::PrismForwardingRules,
 }
 
 impl Default for BuildingTypeExtRules {
@@ -157,6 +161,7 @@ impl Default for BuildingTypeExtRules {
             message_capture: String::new(),
             message_lost: String::new(),
             ai_base_normal: None,
+            prism_forwarding: Default::default(),
         }
     }
 }
@@ -260,6 +265,19 @@ impl BuildingTypeExtRules {
         self.engineer_repairable =
             section.read_ares_nullable_bool("EngineerRepairable", self.engineer_repairable);
         self.ai_base_normal = section.read_ares_nullable_bool("AIBaseNormal", self.ai_base_normal);
+    }
+
+    /// The tower's `PrismForwarding.*` keys.
+    pub(crate) fn prism_forwarding(
+        &self,
+    ) -> &crate::rules::ares_prism_forwarding::PrismForwardingRules {
+        &self.prism_forwarding
+    }
+
+    pub(crate) fn prism_forwarding_mut(
+        &mut self,
+    ) -> &mut crate::rules::ares_prism_forwarding::PrismForwardingRules {
+        &mut self.prism_forwarding
     }
 
     /// `BuildingTypeExt::ExtData::UpdateBuildupFrames @ 1000F450`'s two

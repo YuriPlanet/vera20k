@@ -332,6 +332,10 @@ pub(crate) fn sell_back(
     else {
         return false;
     };
+    // Ares BuildingClass_Sell_PrismForward (10016970, hook 0x447113) takes
+    // the building out of its Prism network on every order.
+    #[cfg(feature = "ares")]
+    sim.substrate.ares_prism_remove_from_network(id, true);
     if !buildup {
         // Ares BuildingClass_Sell_DetonateNoBuildup (hook 0x4471D5) before
         // the wall's removal; a wall its blast destroys is not removed twice.

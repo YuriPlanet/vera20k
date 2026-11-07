@@ -3710,6 +3710,12 @@ pub(crate) struct AresGlobalControls {
     /// RulesExt+4B: constructor1002A3DF sets true; reader1002AC23..35.
     #[serde(default = "AresGlobalControls::default_type_select_use_deploy")]
     type_select_use_deploy: bool,
+    /// RulesExt+14F `[General] ChronoInfantryCrush`: constructor1002A360
+    /// stores the dword 0x01010100 at +14C (+14F true); 1002AB60 reads it
+    /// with Valueable<bool>. The Teleport make-room hook (718275,
+    /// 1004B980) reads it.
+    #[serde(default = "AresGlobalControls::default_chrono_infantry_crush")]
+    chrono_infantry_crush: bool,
     #[serde(default)]
     bounty: crate::rules::ares_bounty::BountyGlobalRules,
     #[serde(default)]
@@ -3733,6 +3739,7 @@ impl Default for AresGlobalControls {
             allow_bypass_build_limit: [false; 3],
             emp_ai_recover_mission: None,
             type_select_use_deploy: Self::default_type_select_use_deploy(),
+            chrono_infantry_crush: Self::default_chrono_infantry_crush(),
             bounty: Default::default(),
             cloak_power: Default::default(),
             warhead: Default::default(),
@@ -3759,6 +3766,14 @@ impl AresGlobalControls {
 
     pub(crate) fn type_select_use_deploy(&self) -> bool {
         self.type_select_use_deploy
+    }
+
+    const fn default_chrono_infantry_crush() -> bool {
+        true
+    }
+
+    pub(crate) fn chrono_infantry_crush(&self) -> bool {
+        self.chrono_infantry_crush
     }
 
     pub(crate) fn bounty(&self) -> &crate::rules::ares_bounty::BountyGlobalRules {
@@ -3800,6 +3815,8 @@ impl AresGlobalControls {
         if let Some(section) = pass.section("General") {
             self.type_select_use_deploy =
                 section.read_ares_bool("TypeSelectUseDeploy", self.type_select_use_deploy);
+            self.chrono_infantry_crush =
+                section.read_ares_bool("ChronoInfantryCrush", self.chrono_infantry_crush);
         }
         self.bounty.read_before_type_data(pass);
         //1002AB60 reads DeactivateDim* and the speak delays in AudioVisual.
@@ -5334,6 +5351,31 @@ impl WeaponSlots {
             .chain(self.extra_elite.iter().cloned())
             .collect();
         records
+    }
+
+    /// Ares Prism SupportWeapon reader `100103F0`: GetUnusedWeaponSlot
+    /// (inlined) answers the first empty slot of 2..17 of the base or elite
+    /// array.
+    #[cfg(feature = "ares")]
+    fn unused_prism_slot(&self, elite: bool) -> Option<usize> {
+        let slots = if elite { &self.elite } else { &self.base };
+        (2..WEAPON_SLOT_COUNT).find(|&slot| slots[slot].is_none())
+    }
+
+    /// `100103F0` stores the support weapon in `slot` of the base or elite
+    /// array, with AlternateFLH0 (base) or AlternateFLH1 (elite) as its FLH,
+    /// else the slot-0 coordinate of the same array.
+    #[cfg(feature = "ares")]
+    fn install_prism_support_weapon(&mut self, slot: usize, elite: bool, weapon: String) {
+        let slots = if elite {
+            &mut self.elite
+        } else {
+            &mut self.base
+        };
+        if let Some(entry) = slots.get_mut(slot) {
+            *entry = Some(weapon);
+            self.offsets.copy_support_flh(slot, elite);
+        }
     }
 }
 
@@ -7477,6 +7519,23 @@ impl RulesPassProcessor {
                             ("Nuke.PsiWarning", RulesTypeFamily::Animation),
                         ]
                         .map(|(key, family)| self.resolve_existing_type_from(&raw, key, family));
+                    } else if is("SpyPlane") {
+                        // SW_SpyPlane::Initialize10075800 and LoadFromINI
+                        // 10075880: AircraftTypeClass::FindIndex, never an
+                        // allocation.
+                        if initialized {
+                            reads.spy_plane_default = Some(
+                                self.find_existing(RulesTypeFamily::Aircraft, "SPYP")
+                                    .map(|index| {
+                                        self.resolved_type_key(RulesTypeFamily::Aircraft, index)
+                                    }),
+                            );
+                        }
+                        reads.spy_plane_type = self.resolve_existing_type_from(
+                            &raw,
+                            "SpyPlane.Type",
+                            RulesTypeFamily::Aircraft,
+                        );
                     }
                     // 10033670: Nullable<WarheadTypeClass*> through the
                     // Warhead factory, for every type.
@@ -8243,6 +8302,9 @@ impl RulesPassProcessor {
                 }
                 #[cfg(feature = "ares")]
                 if family == RulesTypeFamily::Building {
+                    // 1000DD40 opens with the Prism forwarding reader
+                    // 10010680, after every original Building allocation.
+                    self.read_ares_prism_forwarding(index, &native_stored_id, &raw);
                     // Building suffix464A49/464A56 ->1000FDB0 runs after
                     // original Building fields. Use the current reached-body
                     // projection's stock readers, including prior defaults.
@@ -8256,6 +8318,82 @@ impl RulesPassProcessor {
                 }
             }
             index += 1;
+        }
+    }
+
+    /// `BuildingTypeExt::cPrismForwarding::LoadFromINIFile @ 10010680` for
+    /// the Building at `index` (`rules::ares_prism_forwarding`), then, for an
+    /// enabled tower, its two support weapon reads (`100103F0`, normal then
+    /// elite): ReadString(2048) and `WeaponTypeClass::FindOrAllocate`
+    /// (`10010570`), which answers null for a blank or `none` name and then
+    /// changes nothing. The weapon goes to the slot an earlier pass chose, or
+    /// the first empty one of 2..17, and gets `[CombatDamage] C4Warhead` when
+    /// it has no Warhead yet and `NeverUse=yes` (the weapon's own later reads
+    /// still override both).
+    #[cfg(feature = "ares")]
+    fn read_ares_prism_forwarding(&mut self, index: usize, type_id: &str, raw: &IniSection) {
+        let targets = self.resolve_existing_list_from(
+            raw,
+            "PrismForwarding.Targets",
+            RulesTypeFamily::Building,
+            2048,
+        );
+        let prism_type = self.rules_prism_type.clone();
+        let enabled = self.family_mut(RulesTypeFamily::Building)[index]
+            .building_type_ext
+            .prism_forwarding_mut()
+            .read_pass(raw, type_id, prism_type.as_deref(), targets);
+        if !enabled {
+            return;
+        }
+        for (key, elite) in [
+            ("PrismForwarding.SupportWeapon", false),
+            ("PrismForwarding.EliteSupportWeapon", true),
+        ] {
+            let Some(Some(weapon)) =
+                self.resolve_scalar_from(raw, key, RulesTypeFamily::Weapon, 2048)
+            else {
+                continue;
+            };
+            let member = &mut self.family_mut(RulesTypeFamily::Building)[index];
+            let mut slot = member
+                .building_type_ext
+                .prism_forwarding()
+                .support_weapon_index(elite);
+            if slot < 0 {
+                let Some(unused) = member.weapon_slots.unused_prism_slot(elite) else {
+                    // Ares stops the game here; VERA reports it and leaves
+                    // the tower without that support weapon.
+                    log::error!(
+                        "BuildingType [{type_id}] is a Prism Tower however there are no free \
+                         weapon slots to assign the {}support weapon to",
+                        if elite { "elite " } else { "" }
+                    );
+                    continue;
+                };
+                slot = unused as i32;
+                member
+                    .building_type_ext
+                    .prism_forwarding_mut()
+                    .set_support_weapon_index(elite, slot);
+            }
+            member
+                .weapon_slots
+                .install_prism_support_weapon(slot as usize, elite, weapon.clone());
+            let Some(weapon_index) = self.find_existing(RulesTypeFamily::Weapon, &weapon) else {
+                continue;
+            };
+            let c4 = self
+                .rules_type_references
+                .pointer("C4Warhead")
+                .and_then(|id| self.find_existing(RulesTypeFamily::Warhead, id));
+            let member = &mut self.family_mut(RulesTypeFamily::Weapon)[weapon_index];
+            if member.weapon.warhead.is_none() {
+                member.weapon.warhead = c4;
+            }
+            let mut never_use = IniSection::new(member.native_stored_id.clone());
+            never_use.set("NeverUse", "yes");
+            member.body.overlay_rules_pass(&never_use);
         }
     }
 

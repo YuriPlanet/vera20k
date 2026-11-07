@@ -1456,6 +1456,8 @@ impl Simulation {
     /// Hash per-house superweapon state and active lightning storm.
     fn hash_super_weapons(&self, hasher: &mut impl Hasher) {
         self.unit_deliveries.hash_state(hasher);
+        #[cfg(feature = "ares")]
+        self.ares_chrono_warps.hash_state(hasher);
         for (owner, weapons) in self.super_weapons.iter() {
             owner.hash(hasher);
             for (type_id, inst) in weapons {
@@ -1877,6 +1879,9 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     if !entity.unit_delivery_provides_base_space() {
         b"unit-delivery-no-base-v1".hash(hasher);
     }
+    if entity.ares_chronoshifting() {
+        b"ares-building-chronoshift-v1".hash(hasher);
+    }
     if let Some(origin) = entity.hunter_seeker_origin() {
         b"hunter-seeker-source-v1".hash(hasher);
         origin.hash(hasher);
@@ -2195,6 +2200,8 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         b"prism-support-count-v1".hash(hasher);
         entity.prism_support_count.count().hash(hasher);
     }
+    #[cfg(feature = "ares")]
+    entity.ares_prism.hash_state(hasher);
     // One native weapon owner replaces last-shot/transport copies.
     // The turret index and saved charge duration only drive drawing.
     entity.current_weapon_number().hash(hasher);

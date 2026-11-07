@@ -9,16 +9,13 @@
 //! RegisteredJammers and raise the building owner's RecheckRadar (+5779) when
 //! the list becomes nonempty or empty. TechnoClass_ChangeOwnership10049FB0
 //! (hook7014D5) and Remove1004B140 (hook6F6AC9) unjam; Building ChangeOwner
-//! 100163B0 (hook448277) clears the building's list. The radar and SpySat
+//! 100163B0 (hook448277) clears the building's list, except for a
+//! `PrismForwarding.ToAllies` tower that stays in its network
+//! (`Simulation::ares_prism_change_owner`). The radar and SpySat
 //! scans skip a jammed provider (HouseClass_Radar_Update_CheckEligible
 //! 10024550, hook508EBC; SpySat 10024620, hook508F91).
 //!
 //! Ledger: no RNG draws, no DetachAll; the only timer is LastScan.
-//!
-//! RESIDUAL: Building ChangeOwner keeps the list of a `PrismForwarding.
-//! ToAllies` slave tower whose network stays allied (100163B0's early
-//! return). Prism forwarding is not represented, so every captured building
-//! drops its jammers until their next scan.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;

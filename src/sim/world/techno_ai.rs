@@ -19,6 +19,8 @@ mod building_missile;
 mod building_missions;
 mod building_retaliation;
 mod foot_patrol;
+#[cfg(feature = "ares")]
+pub(crate) use building_missions::AresPrismForwarding;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use building_missions::PendingBuildingFire;
 pub(crate) use building_missions::PrismSupport;

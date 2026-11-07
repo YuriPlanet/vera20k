@@ -153,6 +153,13 @@ impl BuildingArt {
         self.actually_placed
     }
 
+    /// Ares ChronoWarpStateMachine::Update (`10070230`) drops +6E4 when it
+    /// removes a chronoshifted building, so its next Place opens it again.
+    #[cfg(feature = "ares")]
+    pub(crate) fn clear_actually_placed(&mut self) {
+        self.actually_placed = false;
+    }
+
     /// Retained flag transition itself, shared by every reached caller.
     /// Returns whether native451EE0 proceeds to its ordered occupied-slot
     /// replacement loop.
@@ -714,6 +721,15 @@ impl Simulation {
             self.substrate.anims.get_mut(new_id)?.temporal_pause();
         }
         Some(new_id)
+    }
+
+    /// Whether the building's type names an anim for `slot`, the first-byte
+    /// test of the anim name (`+0x11F4` for the SpecialAnim) the Ares Prism
+    /// charge makes before it swaps anims (`100169A0`, `10017970`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn building_has_anim(&self, id: u64, slot: u8, rules: &RuleSet) -> bool {
+        self.building_anim_config(id, slot, rules)
+            .is_some_and(|config| !config.anim_type.is_empty())
     }
 
     pub fn clear_building_anim_slot(&mut self, id: u64, slot: u8) {

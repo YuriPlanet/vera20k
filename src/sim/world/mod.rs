@@ -144,6 +144,8 @@ mod trigger_camera_tests;
 mod trigger_explosion;
 mod trigger_strikes;
 pub(crate) use shroud_refresh::ParanoidMaps;
+#[cfg(feature = "ares")]
+pub(crate) use techno_ai::AresPrismForwarding;
 pub(crate) use techno_ai::ObjectAiCtx;
 pub(crate) use techno_ai::PassiveScan;
 pub(crate) use techno_ai::PatrolPost;
@@ -1689,6 +1691,11 @@ pub struct Simulation {
     /// Pending UnitDelivery effects; simulation-owned, saved and hashed.
     #[serde(default)]
     pub(crate) unit_deliveries: crate::sim::superweapon::unit_delivery::UnitDeliveryState,
+    /// Ares ChronoWarpStateMachines moving chronoshifted buildings; owned by
+    /// `superweapon::chronosphere`, saved and hashed.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_chrono_warps: crate::sim::superweapon::AresChronoWarps,
     /// IonBlastClass's vector (`0x00AA0118`), owned by `ion_blast`. Native
     /// saves no blast; Rust retains pending damaging effects for match restore.
     #[serde(
@@ -4593,6 +4600,8 @@ impl Simulation {
             lightning_storm: Default::default(),
             psychic_dominator: Default::default(),
             unit_deliveries: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_chrono_warps: Default::default(),
             ion_blasts: Vec::new(),
             alpha_shapes: Default::default(),
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
@@ -6382,10 +6391,13 @@ impl Simulation {
         // `BuildingClass::ChangeOwner` first (`0x00448277..0x0044828E`): a
         // building changing hands loses its bomb unless it is
         // `CanBeOccupied=`.
-        // Ares hook448277 (100163B0) also forgets the building's radar
-        // jammers there; `sim::radar_jammer` records the prism residual.
+        // Ares hook448277 (100163B0) takes the building out of its Prism
+        // network unless it is a `ToAllies` supporter whose network stays
+        // allied, and then forgets its radar jammers.
         #[cfg(feature = "ares")]
-        if category == EntityCategory::Structure {
+        if category == EntityCategory::Structure
+            && self.ares_prism_change_owner(stable_id, new_owner, rules)
+        {
             self.clear_registered_jammers(stable_id);
         }
         // Ares BuildingClass_ChangeOwner_PrismForwardAndLeaveBomb (100163B0)

@@ -190,6 +190,8 @@ pub(crate) mod ares_infiltration;
 #[cfg(feature = "ares")]
 pub(crate) mod ares_building_type;
 #[cfg(feature = "ares")]
+pub(crate) mod ares_prism_forwarding;
+#[cfg(feature = "ares")]
 pub mod ares_cloak_power;
 #[cfg(feature = "ares")]
 pub(crate) mod ares_veterancy;

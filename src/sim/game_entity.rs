@@ -450,6 +450,13 @@ pub struct GameEntity {
     /// [`PrismSupport`]: crate::sim::world::PrismSupport
     #[serde(default)]
     pub prism_support_count: crate::sim::world::PrismSupport,
+    /// A building's Ares Prism network (BuildingExt `+0x10`), an
+    /// [`AresPrismForwarding`] that `techno_ai::building_missions` owns.
+    ///
+    /// [`AresPrismForwarding`]: crate::sim::world::AresPrismForwarding
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_prism: crate::sim::world::AresPrismForwarding,
     /// The current weapon and turret (`TechnoClass+0x138`, `+0x124`) and the
     /// charge turret's saved rearm (`+0x2F8`), a [`TurretSelection`] that
     /// `game_entity::gunner` owns.
@@ -566,6 +573,12 @@ pub struct GameEntity {
     /// Per-instance Deliver.BaseNormal override, not a mutation of its type.
     #[serde(default)]
     unit_delivery_no_base: bool,
+    /// An Ares chronoshifted building (BeingWarpedOut `+0x270` with
+    /// BuildingExt `AboutToChronoshift`), from the ChronoWarp's arm until
+    /// ChronoWarpStateMachine puts it back (`superweapon::chronosphere`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_chronoshifting: bool,
     /// Ares launch source; the entity owns its lifetime and save state.
     #[serde(default)]
     hunter_seeker_origin: Option<crate::sim::hunter_seeker::HunterSeekerOrigin>,
@@ -1030,6 +1043,23 @@ impl GameEntity {
         self.nominal_survivor = true;
     }
 
+    /// Whether an Ares ChronoWarp holds this building warped out.
+    pub(crate) fn ares_chronoshifting(&self) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.ares_chronoshifting
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            false
+        }
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_ares_chronoshifting(&mut self, shifting: bool) {
+        self.ares_chronoshifting = shifting;
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn set_unit_delivery_base_normal(&mut self, base_normal: bool) {
         self.unit_delivery_no_base = self.category() == EntityCategory::Structure && !base_normal;
@@ -1125,6 +1155,13 @@ impl GameEntity {
     /// The authoritative Techno reload clock, preserved verbatim in saves.
     pub const fn ammo_reload_timer(&self) -> crate::sim::timer::CdTimer {
         self.ammo_reload_timer
+    }
+
+    /// Ares BuildingClass_FireLaser (10016490) starts this clock (YRpp's
+    /// `ReloadTimer`, Techno+1FC) with a Prism support beam's downtime.
+    #[cfg(feature = "ares")]
+    pub(crate) fn start_prism_support_downtime(&mut self, now: i32, duration: i32) {
+        self.ammo_reload_timer.start(now, duration);
     }
 
     /// Techno ReceiveDamage701ADB..701B62, after the early immunity gates
@@ -2109,6 +2146,8 @@ impl GameEntity {
             attack_target: TarCom::default(),
             pending_building_fire: Default::default(),
             prism_support_count: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_prism: Default::default(),
             turret_selection: gunner::TurretSelection::constructed(),
             radio_contacts: Contacts::default(),
             tether: crate::sim::radio::Tether::default(),
@@ -2131,6 +2170,8 @@ impl GameEntity {
             building_art: Default::default(),
             building_online: Default::default(),
             unit_delivery_no_base: false,
+            #[cfg(feature = "ares")]
+            ares_chronoshifting: false,
             hunter_seeker_origin: None,
             tesla_charge: Default::default(),
             tesla_charger: Default::default(),
