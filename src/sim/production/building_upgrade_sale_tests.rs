@@ -151,3 +151,70 @@ fn selling_a_sparse_top_slot_stays_safe_without_compacting_or_refunding() {
     assert!(!sim.power_states[&owner].power_recheck_for_test());
     assert!(!sim.power_states[&owner].radar_recheck_for_test());
 }
+
+/// Building451690's turret arm terminates the counted stack. Use two actual
+/// ReadScenarioBuildings -> Unlimbo installations, rather than seeding slots.
+#[test]
+fn selling_installed_turret_upgrade_drops_the_counted_stack_after_one_refund() {
+    let map = IniFile::from_str(
+        "[GAPILL]\nPowersUpBuilding=GAPOWR\nTurret=yes\n[Structures]\n\
+         0=Americans,GAPOWR,256,10,12,0,None,1,0,1,2,0,GAPILL,GAPILL,None,0,1\n",
+    );
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&map)
+    else {
+        return;
+    };
+    let mut rules = retail.rules;
+    // Supplied bound-buildup prior for Sell_Back admission; this test does not
+    // compare Buildup SHP loading or playback duration.
+    rules.set_buildup_control_for_test("GAPOWR", [0, 4, 1]);
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4516_90);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    let owner = sim.interner.get("Americans").unwrap();
+    sim.session.set_current_house_for_test(Some(owner));
+    let placements = crate::map::entities::parse_map_entities(&map, 4);
+    assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 3);
+    let turret = sim.interner.get("GAPILL").unwrap();
+    let host = sim.entities().get(1).unwrap();
+    assert_eq!(host.building_upgrades().count(), 2);
+    assert_eq!(
+        *host.building_upgrades().types(),
+        [Some(turret), Some(turret), None]
+    );
+    assert!(!sim.entities().get(2).unwrap().is_object_alive());
+    assert!(!sim.entities().get(3).unwrap().is_object_alive());
+
+    sim.apply_command(
+        "Americans",
+        &crate::sim::command::Command::SellBuilding { entity_id: 1 },
+        Some(&rules),
+    );
+    assert_eq!(
+        sim.entities().get(1).unwrap().mission.current().known(),
+        Some(MissionType::Selling)
+    );
+    sim.session.set_binary_frame_for_test(1);
+    sim.visit_building_down(1, &rules, None, FrameEffects::default());
+    let host = sim.entities().get(1).unwrap();
+    assert_eq!(
+        host.building_upgrades().count(),
+        0,
+        "turret removal clears the count, not every retained pointer"
+    );
+    assert_eq!(
+        *host.building_upgrades().types(),
+        [Some(turret), None, None]
+    );
+    let credited = sim.houses[&owner].economy().credits();
+    let next_id = sim.next_stable_object_id();
+    sim.session.set_binary_frame_for_test(2);
+    sim.visit_building_down(1, &rules, None, FrameEffects::default());
+    assert_eq!(
+        sim.entities().get(1).unwrap().mission.handler_state(),
+        1,
+        "the next visit starts the host sale instead of refunding another upgrade"
+    );
+    assert_eq!(sim.houses[&owner].economy().credits(), credited);
+    assert_eq!(sim.next_stable_object_id(), next_id);
+}

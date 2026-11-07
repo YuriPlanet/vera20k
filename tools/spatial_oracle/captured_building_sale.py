@@ -122,6 +122,10 @@ def prepare_fixture(inputs, case):
         if f.read32(typ + 0x610) != upgrade['cost']:
             raise native.OracleError('Upgrade cost differs from original reader')
         u.mem_write(BLD + 0x5EC + index * 4, dwords(typ))
+    # Explicit provided type-byte priors for the removal controls. Untouched
+    # retail GAPOWR/GAPILE have Turret=no; these rows do not claim otherwise.
+    for name in case.get('turret_types', ()):
+        u.mem_write(f.types[name] + 0xCA1, b'\1')
     u.mem_write(HOUSE + 0x5778, b'\0\0')
     return f
 
@@ -193,7 +197,37 @@ TAIL_CASES = (
     case('local_computer_is_still_computer', new_owner_player=True),
     case('upgrade_full_refund_then_sale', upgrades=[dict(name='GAPOWR', cost=800), dict(name='GAPILE', cost=500)]),
     case('upgrade_full_refund_before_c4_refusal', c4=True, upgrades=[dict(name='GAPILE', cost=500)]),
+    case('top_turret_stops_capture_refund_loop', turret_types=['GAPILE'],
+         upgrades=[dict(name='GAPOWR', cost=800), dict(name='GAPILE', cost=500)]),
 )
+
+SELLING_CASE = case('top_turret_selling_then_host_tail', current_owner='NEW', initial_owner='NEW',
+    new_owner_human=True, mission=19, turret_types=['GAPILE'],
+    upgrades=[dict(name='GAPOWR', cost=800), dict(name='GAPILE', cost=500)])
+
+
+def selling_row(inputs, item):
+    f = prepare_fixture(inputs, item)
+    # The scalar Building destructor uses four class-global arrays that capture
+    # alone never visits. Execute their actual CRT initializers, identified by
+    # the executable's startup table; never answer a destructor virtual call.
+    for table, entry in ((0x81322C, 0x4E6B60), (0x8132B0, 0x4E7BE0),
+                         (0x8152DC, 0x7254D0), (0x8152E0, 0x725550)):
+        native.require(f.read32(table) == entry, 'Unexpected Building array initializer')
+        construction.invoke(f.u, entry, 0)
+    before, rng_before = f.compact_state(), f.rng()
+    observation = Observation(f)
+    phases = []
+    for frame in (1, 2):
+        f.phase = 'selling_upgrade_visit'
+        f.u.mem_write(0xA8ED84, dwords(frame))
+        mark = len(f.draws)
+        construction.invoke(f.u, 0x449C30, BLD)
+        phases.append(dict(frame=frame, state=f.compact_state(), rng=f.rng(),
+            draws=[dict(entry=row['entry'], site=row['site'], result=row['result'])
+                   for row in f.draws[mark:]]))
+    return dict(input=item, constructor=f.constructor, before=before, rng_before=rng_before,
+        phases=phases, **observation.finish((0x449C30, 0x43B740, 0x6F3254, 0x43BCF0, 0x451690)))
 
 
 def joined_row(inputs, item):
@@ -244,24 +278,26 @@ def generate():
             super_weapon=signed(inputs.u, inputs.types[name] + 0x16F0),
             turret=bool(inputs.u.mem_read(inputs.types[name] + 0xCA1, 1)[0])) for name in ('GAPOWR', 'GAPILE')],
         retail_files=[dict(name=p.name, size=p.stat().st_size, sha256=hashlib.sha256(p.read_bytes()).hexdigest())
-            for p in sorted(root.iterdir()) if p.is_file() and p.suffix.lower() != '.json'],
-        joined_cases=[], tail_cases=[])
+            for p in sorted(root.iterdir(), key=lambda p: p.name.casefold()) if p.is_file() and p.suffix.lower() != '.json'],
+        joined_cases=[], tail_cases=[], selling_cases=[])
     for item in JOINED_CASES:
         result['joined_cases'].append(joined_row(inputs, item))
     for item in TAIL_CASES:
         result['tail_cases'].append(tail_row(inputs, item))
+    result['selling_cases'].append(selling_row(inputs, SELLING_CASE))
     return result
 
 
 def metadata():
     result = native.provenance(
-        scope='Original joined Engineer Capture event/Walk/PerCell/ChangeOwner handoff to Sell_Back(1), plus cropped4492D7..44936E predicate/upgrade controls. Stops before Selling mission visits.',
+        scope='Original joined Engineer Capture handoff, cropped4492D7..44936E predicate/upgrade controls, and two original449C30 Selling visits for a provided top-Turret upgrade.',
         assumptions=[
             'EngineerJoinedFixture supplies the existing active-retail rules/art/sound/map/allocator platform. Whole Building43B740 establishes Techno+14C at6F3241 before the explicit already-admitted damaged GAPOWR map prior. No initial-owner value is supplied after constructor execution.',
             'The issued AI order boundary supplies Capture8 with both target and destination naming the building, as original Engineer Hunt callers do. Original6FFBE0/event delivery/Commence execute. Whole Team/Hunt selection, cursor/UI, distant path search/payment and autonomous AI planning are not executed.',
             'Walk starts16leptons before an already-paid head, as the shared Engineer oracle. Whole75AEC0/519630/448260/7014A0 execute; live untagged owner state and ordinary building admission are supplied. Stops after capture returns, before the existing building_sale oracle owned Selling continuation.',
             'Tail controls enter original4492D7 with ESI=building and EBP=newowner, currentowner already transferred. Native IsControlledByHuman, GetRefund(owner,true), AddCredits, RemoveLastUpgrade, Sell_Back(1), QueueMission and Commence remain live. GAPOWR/GAPILE installed upgrades are explicit synthetic input slots, not a stock powerplant-upgrade claim.',
             'House/Country copies, passive/human/player flags, game mode, C4, buildup, missions, credits and installed upgrade slots are explicit prior inputs. Constructor provenance survives the supplied current-owner changes. Pointer identity labels are fixture-relative.',
+            'Turret controls explicitly supply selected BuildingType+CA1 bytes; stock GAPOWR/GAPILE values remain reported separately. Selling executes real temporary Building construction, refund, scalar destruction and451690, then the next host-sale stage-zero tail. Four actual CRT array constructors prepare destructor-only global prerequisites. It stops before reverse buildup and final host disposal.',
         ],
         substitutions=[
             'Only read-only observation hooks are added; inherited platform, allocator, presentation and file transport leaves are disclosed in inherited_fixture. No capture, sale, refund, upgrade-removal or mission decision is answered or original instruction/vtable patched.',
