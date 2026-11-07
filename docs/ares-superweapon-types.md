@@ -180,9 +180,7 @@ computer's planning, and placing it does not extend the base either.
 
 ### Still not included
 
-- EMPulse (`EMPulse.Linked`, `.TargetSelf`, `.PulseDelay`, `.PulseBall`, `.Cannons`).
-- `Type=DropPod` and the `DropPod*` RulesExt keys: it needs the DropPod locomotor
-  and CreateWithDroppod.
+- EMPulse and `Type=DropPod` (part 4 adds EMPulse and the DropPod readers).
 - During a building chronoshift its light stays on, a cloak generator keeps cloaking
   and `AboutToChronoshift` has no reader (Ares's own CanWarpTarget is not ported).
 - An unknown `SpyPlane.Type` sends nothing (natively it reads out of range), and an
@@ -252,8 +250,96 @@ rules. A nuke flash with a duration below -1 never ends.
 
 ### Still not included after part 3
 
-- EMPulse, `Type=DropPod` with the `DropPod*` keys, the building chronoshift's
-  light and cloak generator, `AboutToChronoshift` and Ares's CanWarpTarget
-  (see part 2's list).
+- The building chronoshift's light and cloak generator, `AboutToChronoshift`
+  and Ares's CanWarpTarget (see part 2's list); EMPulse and DropPod are
+  part 4's.
 - A palette built while a storm, nuke flash or Dominator is active takes the
   stock colours, not the type's `Light.*` (hook `0x555E50`).
+
+## Part 4: EMPulse and the DropPod readers
+
+```ini
+[SuperWeaponTypes]
+0=EMPulseSpecial
+
+[EMPulseSpecial]
+Type=EMPulse
+SW.MaxCount=2
+SW.RangeMaximum=-1
+EMPulse.Linked=no
+EMPulse.TargetSelf=no
+EMPulse.PulseDelay=32
+EMPulse.PulseBall=PULSBALL
+EMPulse.Cannons=NAEMPC
+
+[NAEMPC]
+EMPulseCannon=yes
+SuperWeapon=EMPulseSpecial
+Primary=EMPulseShell
+```
+
+**The stock EMP cannon.** gamemd still holds Tiberian Sun's EMP cannon as
+the other arm of the Missile mission. With a firing type the building first
+fires weapon 0 at the House's NukeTarget and queues Guard. An
+`EMPulseCannon=` building then turns its body toward the House's EMP target
+and its barrel to the shell's ballistic pitch, shows `PULSBALL` at its fire
+coordinate, waits 32 frames, and fires weapon 0's shell from its turret
+pivot. The shell starts at three quarters of the launch speed that gravity
+gives for the distance; the arc is retried at 1.25 times that speed, else
+the pitch is 0xFA00. Then a Turret= type's recoil arms and one Main draw
+picks a `Report=` sound. Last, the barrel levels and the building goes back
+to Guard. Retail data never gets there: only the MultiMissile launch
+queues Missile, on a silo, and no retail type sets `EMPulseCannon=`.
+
+**Type=EMPulse.** The handler starts with `SW.MaxCount` 1,
+`SW.RangeMinimum` 0 and `SW.RangeMaximum` -1, the Attack cursor and no AI
+mode. A launch site is a building of a type listed in `EMPulse.Cannons`
+that is alive and powered, whatever it provides. Without that list it is
+a providing `EMPulseCannon=` building. Each site's range is the type's, with
+a negative maximum or minimum taken in whole cells from weapon 0's `Range=`
+or `MinimumRange=`. Under `EMPulse.TargetSelf` no target is needed (no
+action), and no site needs to be in range.
+The launch sets the House's EMP target and walks the House's buildings. Up
+to `SW.MaxCount` sites (negative: all) in range, or any under
+`EMPulse.Linked`, each remember the Super and the cell and fire through the
+Missile mission. Under `EMPulse.TargetSelf` each instead detonates weapon
+0's bullet at its own coordinates. A listed building that is not an
+`EMPulseCannon=` just fires weapon 0 at the cell and goes back to Guard. A
+cannon shows the Super's `EMPulse.PulseBall` (none allowed) and waits its
+`EMPulse.PulseDelay`. The common launch, money and trigger events 75/77
+work as for the other new types.
+
+**Type=DropPod** has its readers but no launch. `DropPod.Minimum`,
+`.Maximum`, `.Veterancy` (2.0) and `.Types` are read per pass, and so are
+`[General] DropPodTrailer=`, `DropPodTypes=`, `DropPodMinimum=` and
+`DropPodMaximum=`. Every type reference is a Find; an unknown name is
+skipped. The handler sets its EVA lines and the DropPod AI mode, but the
+type still dispatches as an unknown `Type=` and drops nothing.
+
+### Still not included after part 4
+
+- `Type=DropPod`'s launch (SW_DropPod::Activate `10070E40`) needs the
+  DropPod locomotor, which VERA does not have (gamemd
+  DropPodLocomotionClass, `0x4B5xxx`). It also needs TechnoExt's
+  CreateWithDroppod (the piggybacked locomotor swap) and the map's free-cell
+  search. So do the locomotor hooks `0x4B5EB0` (`DropPodTrailer`, else
+  SMOKEY, every 6 frames), `0x4B5F9E` (no report without sounds) and
+  `0x4B619F` (no AtmosphereEntry anim when unset). A launch spends the
+  charge with no effect.
+- An EMP cannon whose weapon 0 is `IsLaser=` aims its barrel by vt+0x2C8's
+  laser arm (`0x0043E968`); VERA uses the EMP arm. When no arc reaches the
+  cell, the stock barrel takes an uninitialized word; VERA's barrel counts
+  as aimed.
+- A cannon without weapon 0 crashes the stock game (`0x0043E95A`); VERA
+  parks it. A stock `PULSBALL` that does not exist is read out of bounds;
+  VERA shows nothing. A stock weapon with no `Report=` divides by zero;
+  VERA plays nothing (as Ares's hook 44D4CA does).
+- An occupied cannon's turret pivot takes the unoccupied arms: the
+  occupant's port is not read.
+- The building constructor's barrel sets (`0x0043BA5E`, `0x0043BACB`) are
+  not ported; the barrel starts where Unlimbo leaves it.
+- A TargetSelf detonation that removes one of the House's buildings during
+  the walk skips the next building in native (the vector shifts); VERA
+  does not skip it.
+- The palette `Light.*` (hook `0x555E50`) is still not applied (see part
+  3).
