@@ -87,7 +87,8 @@ fn load_campaign(
         .load_initial_with_assets(
             root.to_owned(),
             assets,
-            process.native_rules(),
+            process.native_rules_mut_with_tile_cache().0,
+            None,
             &mut SilentProgress,
         )
         .unwrap();
