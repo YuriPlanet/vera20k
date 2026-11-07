@@ -264,6 +264,11 @@ impl RandomMapSetupModalState {
             self.options.num_players = self.options.num_players.min(NATIVE_MAX_PLAYERS);
             self.options.width = self.options.width.min(NATIVE_MAX_SIZE_OPTION);
             self.options.height = self.options.height.min(NATIVE_MAX_SIZE_OPTION);
+            // The options record is shared with offline Skirmish, so a theater
+            // only that dialog offers falls back to the first native entry.
+            if self.options.theater >= NATIVE_THEATER_ITEMS as i32 {
+                self.options.theater = 0;
+            }
         }
     }
 
@@ -617,18 +622,30 @@ mod tests {
             num_players: 30,
             width: 7,
             height: 7,
+            theater: 3,
             ..Default::default()
         };
         let mut network = RandomMapSetupModalState::open(options.clone(), None, false, false);
-        assert_eq!((network.options.num_players, network.options.width), (8, 3));
+        assert_eq!(
+            (
+                network.options.num_players,
+                network.options.width,
+                network.options.theater
+            ),
+            (8, 3, 0)
+        );
         assert_eq!(network.combo_items(SetupCombo::Size).len(), 4);
         network.set_num_players(12);
         assert_eq!(network.options.num_players, 8);
 
         let skirmish = RandomMapSetupModalState::open(options, None, false, true);
         assert_eq!(
-            (skirmish.options.num_players, skirmish.options.width),
-            (30, 7)
+            (
+                skirmish.options.num_players,
+                skirmish.options.width,
+                skirmish.options.theater
+            ),
+            (30, 7, 3)
         );
         assert_eq!(skirmish.combo_items(SetupCombo::Size).len(), 8);
     }
