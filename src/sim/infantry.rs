@@ -308,6 +308,22 @@ impl crate::sim::world::Simulation {
         if actor.category() != crate::map::entities::EntityCategory::Infantry {
             return Ok(false);
         }
+        // Ares InfantryClass_UpdatePanic1004CC80 (hook5200B3): a
+        // Deactivated infantryman only counts its fear down, even Fearless,
+        // and takes none of the stance, refill or Scatter work.
+        #[cfg(feature = "ares")]
+        if actor.deactivated.is_offline() {
+            if let Some(infantry) = self
+                .substrate
+                .entities
+                .get_mut(id)
+                .and_then(|actor| actor.infantry.as_mut())
+                && infantry.fear_level > 0
+            {
+                infantry.fear_level -= 1;
+            }
+            return Ok(false);
+        }
         let infantry = actor
             .infantry
             .as_ref()

@@ -1619,9 +1619,13 @@ fn techno_common_steps(
     //the stock head. EMP expiry itself must not invent a future-power sweep.
     #[cfg(feature = "ares")]
     sim.update_ares_emp_operability(id, rules, effects);
-    // Ares1004B320 then unjams a deactivated jammer or updates an active one.
+    // Ares1004B320 then stops a deactivated Unit's driving and unjams a
+    // deactivated jammer or updates an active one.
     #[cfg(feature = "ares")]
-    sim.update_ares_radar_jammer(id, rules);
+    {
+        sim.stop_ares_deactivated_unit_driving(id, rules, overlay_registry, effects);
+        sim.update_ares_radar_jammer(id, rules);
+    }
     #[cfg(feature = "ares")]
     sim.update_ares_driver_killed_mission(id, rules, overlay_registry, effects);
     // Ares1004B64B..1004B658 follows the extension updates and precedes

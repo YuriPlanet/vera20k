@@ -409,6 +409,38 @@ impl Simulation {
         }
     }
 
+    /// Ares TechnoClass_Update1004B320's Deactivated Unit block, after the
+    /// operator update: a Unit with a NavCom, held by no Magnetron (+2B0),
+    /// whose locomotor still moves (ILocomotion+10) drops the destination
+    /// (vt+0x480(0, 1)) and stops its driver (vt+0x500).
+    #[cfg(feature = "ares")]
+    pub(crate) fn stop_ares_deactivated_unit_driving(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if !entity.deactivated.is_offline()
+            || entity.category() != EntityCategory::Unit
+            || entity.navigation.nav_com().is_none()
+            || entity.lift.source().is_some()
+            || crate::sim::movement::motion_query::is_moving(entity) != Some(true)
+        {
+            return;
+        }
+        if let Err(cause) = self.assign_destination_represented(id, None, rules, registry, effects)
+        {
+            log::warn!("Deactivated unit {id} destination: {cause}");
+        }
+        if let Err(cause) = self.foot_stop_driver(id, rules, registry, effects) {
+            log::warn!("Deactivated unit {id} driver: {cause}");
+        }
+    }
+
     /// `TechnoClass::Reactivate @ 0x0070FBE0`: ResetOrdersToGuard
     /// (vt+0x3D0), a Foot's ILocomotion Power_On (the base `0x0055A8F0` in
     /// every family), its type's `ActivateSound=` where it stands if it was

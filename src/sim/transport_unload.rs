@@ -524,6 +524,37 @@ fn eject_head_passenger(
                 passenger.passenger_role.clear_transporter();
             }
             sim.queue_order_mission(pax_id, MissionType::Move, rules);
+            // Ares UnitClass_Mi_Unload_Decactivated1004CF80 (hook73DBF9): a
+            // Deactivated passenger's locomotor is powered off, and an
+            // unpowered one only reaches its placement cell.
+            #[cfg(feature = "ares")]
+            let dest = {
+                if sim
+                    .substrate
+                    .entities
+                    .get(pax_id)
+                    .is_some_and(|passenger| passenger.deactivated.is_offline())
+                {
+                    Simulation::locomotor_power_off(
+                        &mut sim.scenario_rng,
+                        &mut sim.substrate,
+                        &sim.resolved_terrain,
+                        pax_id,
+                    );
+                }
+                let powered = sim.substrate.entities.get(pax_id).and_then(|passenger| {
+                    let cells = sim
+                        .resolved_terrain
+                        .as_ref()
+                        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                    crate::sim::movement::motion_query::is_powered(passenger, cells.as_ref())
+                });
+                if powered == Some(false) {
+                    place_cell
+                } else {
+                    dest
+                }
+            };
             if let Err(cause) = sim.assign_destination_represented(
                 pax_id,
                 Some(crate::sim::components::NavTargetRef::cell(dest.0, dest.1)),

@@ -770,3 +770,64 @@ fn robot_tank_state_is_saved_and_hashed() {
     assert!(restored.has_powered_center(house));
     assert_eq!(restored.state_hash(), sim.state_hash());
 }
+
+/// Ares InfantryClass_UpdatePanic1004CC80 (hook5200B3) and Scatter1004CC60
+/// (hook51D0DD): a Deactivated infantryman's fear only counts down, even a
+/// Fearless one's, and a forced Scatter leaves it standing.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_deactivated_infantry_only_counts_fear_down_and_never_scatters() {
+    use crate::sim::movement::ScatterFlags;
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[InfantryTypes]\n0=BRAVE\n[BRAVE]\nStrength=100\nSpeed=4\nFearless=yes\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 5);
+    sim.intern_rule_type_ids(&rules);
+    let offline = sim
+        .spawn_object("BRAVE", "Russians", 10, 10, 0, &rules)
+        .unwrap();
+    let online = sim
+        .spawn_object("BRAVE", "Russians", 20, 20, 0, &rules)
+        .unwrap();
+    sim.resolve_type_handles(&rules);
+    for id in [offline, online] {
+        // A standing (Doing 0) infantryman, which a forced Scatter admits.
+        sim.substrate.entities.get_mut(id).unwrap().mission_leaf =
+            crate::sim::mission::leaf::MissionLeafState::infantry_raw_for_test(0, 0);
+    }
+    let entity = sim.substrate.entities.get_mut(offline).unwrap();
+    entity.infantry.as_mut().unwrap().set_fear_level_for_test(3);
+    entity.deactivated.set_for_test(true);
+    assert!(
+        !sim.infantry_fear_turn(offline, &rules, None, FrameEffects::default())
+            .unwrap()
+    );
+    let fear = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(offline)
+            .unwrap()
+            .infantry
+            .as_ref()
+            .unwrap()
+            .fear_level()
+    };
+    assert_eq!(fear(&sim), 2);
+    // An admitted null-coordinate Scatter draws its fallback direction.
+    let draws = |sim: &mut Simulation, id| {
+        let before = sim.scenario_rng.logical_state();
+        sim.scatter(
+            id,
+            None,
+            ScatterFlags::new(true, false),
+            &rules,
+            None,
+            FrameEffects::default(),
+        )
+        .unwrap();
+        sim.scenario_rng.logical_state() != before
+    };
+    assert!(draws(&mut sim, online), "an active one scatters");
+    assert!(!draws(&mut sim, offline));
+}
