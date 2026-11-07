@@ -267,6 +267,7 @@ pub(super) enum Response {
         operation: &'static str,
         failure: CommandFailure,
     },
+    /// A notice for the lobby's chat, by its `VERA:` label.
     Failure(&'static str),
     Offline,
     /// The first event poll of an outage failed; polling keeps retrying.
@@ -353,25 +354,67 @@ enum RequestFailure {
     },
 }
 
+/// What the shell hears when a sign-in gets no session. A 409 is the name
+/// in use (0x8004_0064, TXT_LOGIN_USED); code 0 is no usable answer.
+fn sign_in_failure(attempt: u64, failure: RequestFailure) -> Response {
+    match failure {
+        RequestFailure::Status(401 | 403) => Response::LoginFailed {
+            attempt,
+            code: 0x8004_0073,
+        },
+        RequestFailure::Status(409) => Response::LoginFailed {
+            attempt,
+            code: 0x8004_0064,
+        },
+        RequestFailure::UpgradeRequired(message) => Response::UpgradeRequired { attempt, message },
+        error @ (RequestFailure::Maintenance(_)
+        | RequestFailure::Full(_)
+        | RequestFailure::Account { .. }
+        | RequestFailure::Status(429)) => {
+            let bad_credential = matches!(
+                error,
+                RequestFailure::Account {
+                    bad_credential: true,
+                    ..
+                }
+            );
+            Response::SignInRefused {
+                attempt,
+                message: sign_in_refusal(error),
+                bad_credential,
+            }
+        }
+        _ => Response::LoginFailed { attempt, code: 0 },
+    }
+}
+
 /// What a lobby refusal of a sign-in tells the player: its own plain
 /// message when it gave one.
 fn sign_in_refusal(failure: RequestFailure) -> String {
     match failure {
-        RequestFailure::Maintenance(message) => message.unwrap_or_else(|| {
-            "VERA20k Online is down for maintenance. Please try again later.".to_owned()
-        }),
-        RequestFailure::Full(message) => message.unwrap_or_else(|| {
-            "VERA20k Online is full right now. Please try again later.".to_owned()
-        }),
+        RequestFailure::Maintenance(message) => {
+            message.unwrap_or_else(|| crate::i18n::tr("VERA:OnlineMaintenance"))
+        }
+        RequestFailure::Full(message) => {
+            message.unwrap_or_else(|| crate::i18n::tr("VERA:OnlineFull"))
+        }
         RequestFailure::Account { message, .. } => message,
-        _ => "VERA20k Online is busy right now. Please try again in a minute.".to_owned(),
+        _ => crate::i18n::tr("VERA:OnlineBusy"),
     }
 }
 
-/// The lobby's `error.message` when it is one short line of plain text.
+/// The lobby's `error.message` when it is one short line of plain text: in
+/// the language in use when the lobby said it as phrases that VERA's language
+/// files hold.
 fn plain_message(value: Option<&Value>) -> Option<String> {
-    value
-        .and_then(|value| value["error"]["message"].as_str())
+    let error = &value?["error"];
+    let said = serde_json::from_value::<Vec<crate::app::shell_wol::lobby_phrases::Phrase>>(
+        error["phrases"].clone(),
+    )
+    .ok()
+    .and_then(|phrases| crate::app::shell_wol::lobby_phrases::localized(&phrases));
+    said.as_deref()
+        .or_else(|| error["message"].as_str())
         .map(str::trim)
         .filter(|message| {
             !message.is_empty()
@@ -450,12 +493,17 @@ impl RequestFailure {
     /// An answer to `path`: an `/v1/accounts/` request's refusals all
     /// carry their message, since `name_unavailable` there names an account,
     /// and so do a sign-in's wrong passwords from one network and its
-    /// accounts being unavailable.
+    /// accounts being unavailable. A sign-in's `name_unavailable` is a name
+    /// already online or reserved: the plain 409 that [`sign_in_failure`]
+    /// shows as the name in use, not a room's code.
     fn answer(path: &str, status: u16, bytes: &[u8]) -> Self {
         let value = serde_json::from_slice::<Value>(bytes).ok();
         let code = value
             .as_ref()
             .and_then(|value| value["error"]["code"].as_str());
+        if path == "/v1/sessions" && status == 409 && code == Some("name_unavailable") {
+            return Self::Status(409);
+        }
         let sign_in = path == "/v1/sessions"
             && matches!(
                 (status, code),
@@ -467,25 +515,19 @@ impl RequestFailure {
         Self::account(status, code, value.as_ref())
     }
 
-    /// An account refusal with the lobby's plain message, or one for its code.
+    /// An account refusal with the lobby's plain message, or VERA's for its
+    /// code.
     fn account(status: u16, code: Option<&str>, value: Option<&Value>) -> Self {
         let message = plain_message(value).unwrap_or_else(|| {
-            match code {
-                Some("name_claimed") => {
-                    "That name has an account. Enter its password, or choose another username."
-                }
-                Some("wrong_password") => "Wrong password.",
-                Some("no_account") => "No account has that name.",
-                Some("account_locked") => {
-                    "Too many wrong passwords. Try again later, or use Forgot Password."
-                }
-                _ if status == 429 => "Too many tries. Please try again later.",
-                _ if status == 0 || status >= 500 => {
-                    "VERA20k Online is busy right now. Please try again in a minute."
-                }
-                _ => "VERA20k Online refused that. Check what you entered.",
-            }
-            .to_owned()
+            crate::i18n::tr(match code {
+                Some("name_claimed") => "VERA:NameHasAccount",
+                Some("wrong_password") => "VERA:WrongPassword",
+                Some("no_account") => "VERA:NoSuchAccount",
+                Some("account_locked") => "VERA:AccountLocked",
+                _ if status == 429 => "VERA:TooManyTries",
+                _ if status == 0 || status >= 500 => "VERA:OnlineBusy",
+                _ => "VERA:OnlineRefusedEntry",
+            })
         });
         Self::Account {
             status,
@@ -655,9 +697,12 @@ impl Client {
             if path == "/v1/sessions" {
                 // Its relay CONFIRM carries a federation roster, and it plays
                 // Quick Match; see docs/lobby-protocol.md.
+                // The operator's welcome, notice and maintenance message
+                // come in the player's language when the operator wrote it.
                 request = request
                     .header("Vera-Relay-Federation", "1")
-                    .header("Vera-Quick-Match", "1");
+                    .header("Vera-Quick-Match", "1")
+                    .header("Vera-Language", crate::i18n::selected_language());
             }
             if let Some(token) = &self.token {
                 request = request.header("Authorization", format!("Bearer {token}"));
@@ -1122,41 +1167,8 @@ macro_rules! serial_driver {
                             break;
                         }
                     }
-                    Err(RequestFailure::Status(0)) => {
-                        let _ = output.send(Response::LoginFailed { attempt, code: 0 });
-                    }
-                    Err(RequestFailure::Status(401 | 403)) => {
-                        let _ = output.send(Response::LoginFailed {
-                            attempt,
-                            code: 0x8004_0073,
-                        });
-                    }
-                    Err(RequestFailure::Status(409)) => {
-                        let _ = output.send(Response::LoginFailed {
-                            attempt,
-                            code: 0x8004_0064,
-                        });
-                    }
-                    Err(RequestFailure::UpgradeRequired(message)) => {
-                        let _ = output.send(Response::UpgradeRequired { attempt, message });
-                    }
-                    Err(error @ (RequestFailure::Maintenance(_)
-                    | RequestFailure::Full(_)
-                    | RequestFailure::Account { .. }
-                    | RequestFailure::Status(429))) => {
-                        let bad_credential = matches!(
-                            error,
-                            RequestFailure::Account { bad_credential: true, .. }
-                        );
-                        let message = sign_in_refusal(error);
-                        let _ = output.send(Response::SignInRefused {
-                            attempt,
-                            message,
-                            bad_credential,
-                        });
-                    }
-                    Err(_) => {
-                        let _ = output.send(Response::LoginFailed { attempt, code: 0 });
+                    Err(failure) => {
+                        let _ = output.send(sign_in_failure(attempt, failure));
                     }
                 }
             }
@@ -1194,8 +1206,7 @@ macro_rules! serial_driver {
                     }
                     Err(error) => {
                         if !platform_await!(client.session_failed(error, &output)) {
-                            let _ = output
-                                .send(Response::Failure("Could not refresh the online lobby."));
+                            let _ = output.send(Response::Failure("VERA:OnlineRefreshFailed"));
                         }
                     }
                 }
@@ -1661,6 +1672,26 @@ mod tests {
         assert_eq!(sign_in_refusal(full), reason);
         assert!(sign_in_refusal(RequestFailure::Full(None)).contains("full"));
         assert!(sign_in_refusal(RequestFailure::Status(429)).contains("busy"));
+    }
+
+    /// A sign-in under a name that is already online or reserved (the
+    /// lobby's 409 `name_unavailable`) says the name is in use, not that the
+    /// lobby could not be reached; a room's `name_unavailable` keeps its code.
+    #[test]
+    fn a_sign_in_name_in_use_is_not_a_failed_connection() {
+        let taken = br#"{"error":{"code":"name_unavailable","message":"That player name is already in use. Choose another username."}}"#;
+        let failure = RequestFailure::answer("/v1/sessions", 409, taken);
+        assert!(matches!(
+            sign_in_failure(7, failure),
+            Response::LoginFailed {
+                attempt: 7,
+                code: 0x8004_0064
+            }
+        ));
+        assert_eq!(
+            RequestFailure::answer("/v1/commands", 409, taken).command_failure("create"),
+            CommandFailure::Rejected(crate::app::shell_wol::lobby::ROOM_NAME_TAKEN)
+        );
     }
 
     /// An account's refusals show the lobby's words; only `wrong_password`

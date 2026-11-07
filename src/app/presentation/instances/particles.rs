@@ -293,19 +293,10 @@ pub(super) fn build_particle_instance(
         kind.behaves_like,
         ParticleBehavesLike::Spark | ParticleBehavesLike::Railgun
     ) {
-        let color = particle
-            .spark()
-            .map(|spark| (spark.start_rgb, spark.color_index, spark.color_accumulator))
-            .or_else(|| {
-                particle.railgun().map(|railgun| {
-                    (
-                        railgun.start_rgb,
-                        railgun.color_index,
-                        railgun.color_accumulator,
-                    )
-                })
-            });
-        if let Some((start_rgb, color_index, color_accumulator)) = color {
+        {
+            let start_rgb = particle.start_rgb();
+            let color_index = particle.color_index();
+            let color_accumulator = particle.color_accumulator();
             let command = crate::render::tactical_compat::SparkPointCommand {
                 world: painted.ivec3(),
                 start_rgb,
@@ -328,7 +319,6 @@ pub(super) fn build_particle_instance(
                     command,
                     &kind.color_list,
                     context.point_viewport,
-                    crate::render::tactical_compat::SparkPointPlanes::Deferred,
                 )
                 .expect("produced point-particle state has finite native arithmetic")
             {
@@ -343,26 +333,7 @@ pub(super) fn build_particle_instance(
         return;
     };
     let image = kind.image.as_str();
-    let native_frame = match kind.behaves_like {
-        // ParticleGetDrawFrame62D830: MOVSX from state+12E. The atlas
-        // accepts nonnegative frames only; stock Smoke is0..19.
-        ParticleBehavesLike::Smoke | ParticleBehavesLike::Gas => {
-            i32::from(particle.animation_state() as i8)
-        }
-        // The separate Fire frame policy retains its existing path;
-        // this mechanism is bounded to stock building damage-Smoke.
-        ParticleBehavesLike::Fire => {
-            // Residual: detached Fire frame selection lacks original evidence.
-            // The existing approximate policy needs a System's facing; do not
-            // invent that facing or retain a fabricated parent association.
-            let Some(system) = system else {
-                return;
-            };
-            let band = (u16::from(system.facing()) / 0x40) & 3;
-            i32::from(band * u16::from(kind.end_state_ai) + u16::from(particle.animation_state()))
-        }
-        ParticleBehavesLike::Spark | ParticleBehavesLike::Railgun => return,
-    };
+    let native_frame = particle.draw_frame(kind);
     let Ok(frame) = u16::try_from(native_frame) else {
         return;
     };

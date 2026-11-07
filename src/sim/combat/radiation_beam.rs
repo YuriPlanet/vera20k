@@ -46,10 +46,8 @@ pub(crate) fn fired(
     if super::world_fire::fire_at_effect(weapon) != super::world_fire::FireAtEffect::RadiationBeam {
         return;
     }
-    let mode = if weapon
-        .warhead
-        .as_deref()
-        .and_then(|name| rules.warhead(name))
+    let mode = if rules
+        .weapon_warhead(weapon)
         .is_some_and(|warhead| warhead.temporal)
     {
         CopiedBeamMode::Chrono
@@ -165,11 +163,7 @@ pub(crate) fn erupted(
     }
     // Native dereferences the warhead unguarded; a weapon without one
     // would crash there.
-    let Some(warhead) = weapon
-        .warhead
-        .as_deref()
-        .and_then(|name| rules.warhead(name))
-    else {
+    let Some(warhead) = rules.weapon_warhead(weapon) else {
         return;
     };
     let spread = M::ftol_i32_low_masked(M::load_f64(NativeF64Bits::from_bits(

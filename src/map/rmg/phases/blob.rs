@@ -18,8 +18,6 @@ use crate::util::native_x87::X87Chop53;
 
 use super::shore::{self, ShoreCtx, TileBlocks};
 
-/// 5.0 — undirected jitter scale (double).
-const JITTER_SCALE: f64 = 5.0;
 /// 1.2 — aspect-weight scale (double).
 const ASPECT_SCALE: f64 = 1.2;
 
@@ -58,13 +56,6 @@ pub struct BlobParams {
     pub directed: bool,
 }
 
-/// Water-family gate: shore pieces, the narrow water set, or the auxiliary
-/// waterfall sets (absent from generated maps; see tiles.rs reasoning).
-fn water_family(ids: &TileIds, tile: i32) -> bool {
-    (ids.shore != -1 && tile >= ids.shore && tile < ids.shore + 0x2A)
-        || (ids.water_base != -1 && tile >= ids.water_base && tile < ids.water_base + 0x0E)
-}
-
 /// A flood's heap: f32 keys over cell coordinates. The starts phase's
 /// per-start clearing flood, the lakes, Tiberium, trees and patches share it.
 pub(crate) type CellHeap = NativeHeap<(f32, (i32, i32))>;
@@ -90,8 +81,9 @@ pub(crate) fn seed_draw(rng: &mut RmgRng, dim: i32) -> i32 {
     }
 }
 
-/// Ellipse membership test (`0x0059BAB0`, ellipse mode).
-fn ellipse_pass(
+/// Ellipse membership test (`Rmg__IsCellInRectOrEllipse @ 0x0059BAB0`,
+/// ellipse mode).
+pub(crate) fn ellipse_pass(
     map_w: i32,
     cell: (i32, i32),
     rect: &[i32; 4],
@@ -132,32 +124,47 @@ fn directed_key(
         .mul(TruncF64::from_f64(f64::from(weight_y)))
         .add(TruncF64::from_f64(f64::from(weight_x)).mul(tmp))
         .mul(TruncF64::from_f64(f64::from(cheb)));
-    key.to_f64() as f32
+    // Stored by the caller's `FSTP m32` at 0x0059C229.
+    x87::store_f32(key)
 }
 
-/// Carve one blob. Returns the pop count, or 0 on failure/rollback.
+/// Carve one blob (`RandomMapGenerator::CarveBlob @ 0x0059BBC0`). Returns the
+/// pop count, or 0 on failure/rollback.
 ///
 /// `blob_counter` is the shared blob-id source: the current value tags this
 /// blob, and a successful commit increments it here (the failure-path
 /// increments belong to the shape drivers).
 pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams) -> i32 {
     let blob_id = *blob_counter;
+    // 0x0059BBCC..0x0059BBF3: fewer than 401 cells read as 400, and the node
+    // pool and heap both take `8 * max_cells + 2` slots (at least 3,202).
+    // Neither can fill: the only inserts are the seed and at most four per
+    // pop (directions 0, 2, 4, 6) over at most `max_cells` pops, so at most
+    // `4 * max_cells + 1` nodes. The pool check and the heap's full-drop are
+    // kept as native writes them (the heap insert at 0x0059C23C).
     let max_cells = params.max_cells.max(400);
     let cap = (max_cells * 8 + 2).max(100) as usize;
 
-    // Seed selection (random path only when the caller passes (0,0)).
+    // Seed selection (random path only when the caller passes (0,0)). The
+    // count reaches 200 before the 200th candidate is tested
+    // (0x0059BD7E..0x0059BD88), so 200 draw pairs test 199 candidates.
     let seed = if params.seed == (0, 0) {
         let mut found = None;
-        for _ in 0..200 {
+        for attempt in 1..=200 {
             let d1 = seed_draw(ctx.rng, ctx.map_w);
             let d2 = seed_draw(ctx.rng, ctx.map_h);
+            if attempt == 200 {
+                break;
+            }
             let candidate = (d1 + d2 + 1, (ctx.map_w - d1) + d2);
             let free = ctx.scratch.in_diamond(candidate.0, candidate.1)
                 && ctx.scratch.get(candidate.0, candidate.1).region == 0;
+            // Every water test here is Cell 0x004865D0: water, shore pieces
+            // and the four waterfall bands.
             let watery = ctx
                 .grid
                 .get(candidate.0, candidate.1)
-                .is_some_and(|cell| water_family(ctx.ids, cell.tile));
+                .is_some_and(|cell| ctx.ids.is_water_shore_or_waterfall(cell.tile));
             if free && watery {
                 found = Some(candidate);
                 break;
@@ -226,7 +233,7 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
             let watery = ctx
                 .grid
                 .get(nx, ny)
-                .is_some_and(|cell| water_family(ctx.ids, cell.tile));
+                .is_some_and(|cell| ctx.ids.is_water_shore_or_waterfall(cell.tile));
             if !watery || nodes_used >= cap {
                 continue;
             }
@@ -240,12 +247,7 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
                 directed_key((rx, ry), (nx, ny), params.target, weight_x, weight_y)
             } else {
                 let dist2 = (nx - rx) * (nx - rx) + (ny - ry) * (ny - ry);
-                let jitter = TruncF64::from_f64(f64::from(ctx.rng.next_u32()))
-                    .mul(TruncF64::from_f64(JITTER_SCALE))
-                    .mul(TruncF64::from_f64(f64::from_bits(RANGE_K_BITS)));
-                approx_sqrt(TruncF64::from_f64(f64::from(dist2)))
-                    .add(jitter)
-                    .to_f64() as f32
+                x87::jittered_distance_key(dist2, ctx.rng.next_u32())
             };
             ctx.scratch.get_mut(nx, ny).stamp = blob_id;
             nodes_used += 1;
@@ -266,7 +268,7 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
         let watery = ctx
             .grid
             .get(coord.0, coord.1)
-            .is_some_and(|cell| water_family(ctx.ids, cell.tile));
+            .is_some_and(|cell| ctx.ids.is_water_shore_or_waterfall(cell.tile));
         if free && watery {
             if let Some(cell) = ctx.grid.get_mut(coord.0, coord.1) {
                 cell.tile = 0;
@@ -291,7 +293,7 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
     let coords: Vec<(i32, i32)> = ctx.grid.native_cells().collect();
     for &(x, y) in &coords {
         let tile = ctx.grid.get(x, y).expect("native cell").tile;
-        if ctx.ids.shore != -1 && tile >= ctx.ids.shore && tile < ctx.ids.shore + 0x2A {
+        if ctx.ids.is_shore_piece(tile) {
             let cell = ctx.grid.get_mut(x, y).expect("native cell");
             cell.tile = 0;
             cell.sub_tile = 0;
@@ -384,6 +386,125 @@ mod tests {
             grid.get_mut(x, y).unwrap().tile = 500;
         }
         (grid, scratch)
+    }
+
+    /// Whole original `RandomMapGenerator::CarveBlob @ 0x0059BBC0` calls from
+    /// `tools/rmg_oracle/carve_blob.py`: a declared all-water scene (not a
+    /// full Generate prefix) on the fixture's physical shore TMPs, and every
+    /// carved cell, stamp, region tag, return value, blob id and draw.
+    #[test]
+    fn native_carve_blob_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/carve_blob.json");
+        let int = |v: &serde_json::Value| v.as_i64().unwrap() as i32;
+        let (mut identity, blocks) = super::super::cliff_native_tests::physical_tiles();
+        identity.water_base = int(&doc["scene"]["water_base"]);
+        let cliff = int(&doc["scene"]["cliff_base"]);
+        let falls = int(&doc["scene"]["waterfall_east"]);
+        assert_eq!(identity.cliffs.waterfall_bases()[1], falls);
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 10);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let pair = |v: &serde_json::Value| (int(&v[0]), int(&v[1]));
+            let list = |key: &str| input[key].as_array().unwrap().clone();
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let mut scratch = RmgScratch::new(33, 16, 48);
+            let fill = int(&input["fill"]);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                let cell = grid.get_mut(x, y).unwrap();
+                (cell.sub_tile, cell.level) = (0, 0);
+                cell.tile = if fill != 0 { 0 } else { identity.water_base };
+                scratch.get_mut(x, y).region = fill;
+            }
+            for c in list("water") {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile = identity.water_base;
+                scratch.get_mut(int(&c[0]), int(&c[1])).region = 0;
+            }
+            for c in list("land") {
+                let (x, y) = (int(&c[0]), int(&c[1]));
+                if scratch.in_diamond(x, y) {
+                    grid.get_mut(x, y).unwrap().tile = 0;
+                    scratch.get_mut(x, y).region = int(&c[2]);
+                }
+            }
+            for c in list("rough") {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile = cliff;
+            }
+            for c in list("falls") {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile = falls + int(&c[2]);
+            }
+            let fields = |grid: &RmgGrid, scratch: &RmgScratch| {
+                let mut out = Vec::new();
+                for y in 0..33 {
+                    for x in 0..33 {
+                        if scratch.in_diamond(x, y) {
+                            let cell = grid.get(x, y).unwrap();
+                            let record = scratch.get(x, y);
+                            out.push([
+                                x,
+                                y,
+                                cell.tile,
+                                i32::from(cell.sub_tile),
+                                i32::from(cell.level),
+                                record.region,
+                                record.stamp,
+                            ]);
+                        }
+                    }
+                }
+                out
+            };
+            let prior = fields(&grid, &scratch);
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut gauss = Gaussian::default();
+            let mut blob = int(&input["blob"]);
+            let rect = &input["rect"];
+            let params = BlobParams {
+                max_cells: int(&input["max_cells"]),
+                rect: std::array::from_fn(|i| int(&rect[i])),
+                seed: pair(&input["start"]),
+                target: pair(&input["target"]),
+                drift_scale: input["drift"].as_f64().unwrap(),
+                directed: int(&input["directed"]) != 0,
+            };
+            let pops = {
+                let mut ctx = BlobCtx {
+                    grid: &mut grid,
+                    scratch: &mut scratch,
+                    ids: &identity,
+                    blocks: &blocks,
+                    rng: &mut rng,
+                    gauss: &mut gauss,
+                    trig: None,
+                    map_w: 16,
+                    map_h: 16,
+                    rollback_level: int(&input["level"]) as u8,
+                };
+                carve(&mut ctx, &mut blob, &params)
+            };
+            assert_eq!(pops, int(&row["result"]), "{context}: result");
+            assert_eq!(blob, int(&row["blob_after"]), "{context}: blob id");
+            let cells: Vec<[i32; 7]> = fields(&grid, &scratch)
+                .into_iter()
+                .zip(prior)
+                .filter(|(now, before)| now != before)
+                .map(|(now, _)| now)
+                .collect();
+            let native: Vec<[i32; 7]> = row["cells"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| std::array::from_fn(|i| int(&c[i])))
+                .collect();
+            assert_eq!(cells, native, "{context}: cells");
+            assert_eq!(
+                rng.into_continuation().into_native_parts(),
+                super::super::cliff_native_tests::native_state(&doc, &row["rng_after"])
+                    .into_native_parts(),
+                "{context}: exit RNG"
+            );
+        }
     }
 
     #[test]

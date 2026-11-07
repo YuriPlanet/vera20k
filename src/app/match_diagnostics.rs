@@ -328,14 +328,14 @@ impl MatchDiagnosticsState {
 
     pub(crate) fn playback_status(&self) -> Option<String> {
         Some(match self.replay_playback.as_ref()? {
-            ReplayPlaybackState::Loading(_) => "Loading replay".to_owned(),
-            ReplayPlaybackState::Failed(error) => format!("Replay failed: {error} — Esc to exit"),
+            ReplayPlaybackState::Loading(_) => crate::i18n::tr("VERA:LoadingReplay"),
+            ReplayPlaybackState::Failed(error) => {
+                crate::i18n::tr_fill("VERA:ReplayFailed", &[("error", error)])
+            }
             ReplayPlaybackState::Playing(playback) => match playback.failure() {
-                Some(error) => format!("Replay failed: {error} — Esc to exit"),
-                None if playback.is_finished() => {
-                    "Replay ended — camera controls available; Esc to exit".to_owned()
-                }
-                None => "Replay — camera controls available; Esc to exit".to_owned(),
+                Some(error) => crate::i18n::tr_fill("VERA:ReplayFailed", &[("error", &error)]),
+                None if playback.is_finished() => crate::i18n::tr("VERA:ReplayEnded"),
+                None => crate::i18n::tr("VERA:ReplayPlaying"),
             },
         })
     }

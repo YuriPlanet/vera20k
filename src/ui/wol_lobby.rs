@@ -10,9 +10,11 @@
 //! [`LanListState`]).
 
 mod channels;
+mod player_card;
 mod popups;
 
 pub(crate) use channels::*;
+pub(crate) use player_card::*;
 pub(crate) use popups::*;
 
 use crate::ui::lan_shell::{
@@ -412,20 +414,35 @@ pub(crate) struct PlayerScore {
     pub(crate) coop: u32,
 }
 
+/// `0x00783B80`'s badges, highest first: the high-score points each starts
+/// at, its PCX and VERA's name for it, as the game names none.
+const BADGES: [(u32, &str, &str); 10] = [
+    (2001, "comchief.pcx", "VERA:LobbyBadgeCommanderInChief"),
+    (1501, "stargen.pcx", "VERA:LobbyBadgeFiveStarGeneral"),
+    (1001, "general.pcx", "VERA:LobbyBadgeGeneral"),
+    (501, "briggenr.pcx", "VERA:LobbyBadgeBrigadierGeneral"),
+    (251, "colonel.pcx", "VERA:LobbyBadgeColonel"),
+    (151, "major.pcx", "VERA:LobbyBadgeMajor"),
+    (81, "lieutena.pcx", "VERA:LobbyBadgeLieutenant"),
+    (61, "sergeant.pcx", "VERA:LobbyBadgeSergeant"),
+    (32, "corporal.pcx", "VERA:LobbyBadgeCorporal"),
+    (0, "private.pcx", "VERA:LobbyBadgePrivate"),
+];
+
 /// `0x00783B80`: the badge of the high-score points.
 fn badge(points: u32) -> &'static str {
-    match points {
-        2001.. => "comchief.pcx",
-        1501.. => "stargen.pcx",
-        1001.. => "general.pcx",
-        501.. => "briggenr.pcx",
-        251.. => "colonel.pcx",
-        151.. => "major.pcx",
-        81.. => "lieutena.pcx",
-        61.. => "sergeant.pcx",
-        32.. => "corporal.pcx",
-        _ => "private.pcx",
-    }
+    BADGES
+        .iter()
+        .find(|(from, ..)| points >= *from)
+        .map_or("private.pcx", |(_, file, _)| file)
+}
+
+/// The text key of the badge drawn from `file`.
+pub(crate) fn badge_name_key(file: &str) -> Option<&'static str> {
+    BADGES
+        .iter()
+        .find(|(_, pcx, _)| *pcx == file)
+        .map(|(.., key)| *key)
 }
 
 /// `0x00783C80`'s high-score cells (`0x007845A8..0x007847F0`): the rank's
@@ -547,6 +564,8 @@ pub(crate) struct WolLobbyState {
     /// `[0x84A23C]`: the row index of the last Join (initially -1).
     pub(crate) join_row: Option<usize>,
     pub(crate) popup: Option<WolLobbyPopup>,
+    /// VERA's player card over the modern lobby.
+    pub(crate) card: Option<WolPlayerCard>,
     focus_started_at: crate::util::time::Instant,
 }
 
@@ -574,6 +593,7 @@ impl WolLobbyState {
             admitted_name: None,
             join_row: None,
             popup: None,
+            card: None,
             focus_started_at: crate::util::time::Instant::now(),
         }
     }
@@ -697,6 +717,10 @@ impl WolLobbyState {
         if let Some(popup) = self.popup.as_mut() {
             popup.cancel_pointer();
         }
+        if let Some(card) = self.card.as_mut() {
+            card.buttons = ShellButtonInteraction::default();
+            card.country_list.cancel_pointer();
+        }
     }
 
     pub(crate) fn selected_game(&self) -> Option<&WolGameRow> {
@@ -765,6 +789,14 @@ impl WolLobbyState {
             })
             .collect();
         self.player_list.hot_row = None;
+        // A player card closes once its player has left the list.
+        if self
+            .card
+            .as_ref()
+            .is_some_and(|card| !self.player_rows.iter().any(|row| row.name == card.name))
+        {
+            self.card = None;
+        }
     }
 
     /// The selected players' names (`LB_GETSELITEMS`, at most 32).
@@ -778,7 +810,20 @@ impl WolLobbyState {
             .collect()
     }
 
-    pub(crate) fn toggle_player(&mut self, row: usize) {
+    /// A press on a player row: the classic page toggles its selection
+    /// (`LBS_MULTIPLESEL`); VERA's lobby opens the player's card instead and
+    /// returns the name.
+    pub(crate) fn press_player(&mut self, row: usize) -> Option<String> {
+        if !self.modern {
+            self.toggle_player(row);
+            return None;
+        }
+        let name = self.player_rows.get(row)?.name.clone();
+        self.card = Some(WolPlayerCard::new(name.clone()));
+        Some(name)
+    }
+
+    fn toggle_player(&mut self, row: usize) {
         if row >= self.player_rows.len() {
             return;
         }
@@ -1061,8 +1106,8 @@ mod tests {
             score_icons: Vec::new(),
         };
         lobby.replace_players(vec![player("x"), player("y"), player("z")]);
-        lobby.toggle_player(2);
-        lobby.toggle_player(0);
+        assert_eq!(lobby.press_player(2), None);
+        assert_eq!(lobby.press_player(0), None);
         assert_eq!(lobby.private_targets(), ["x", "z"]);
         lobby.replace_players(vec![
             player("z"),
@@ -1080,6 +1125,30 @@ mod tests {
 
         lobby.replace_players(vec![player("y")]);
         assert!(lobby.private_targets().is_empty());
+    }
+
+    /// VERA's lobby opens a player's card where the classic page selects the
+    /// name for private chat; the card closes once its player has left.
+    #[test]
+    fn a_modern_press_opens_the_players_card_until_they_leave() {
+        let player = |name: &str| WolPlayerRow {
+            name: name.into(),
+            icon: None,
+            clan: None,
+            rank: None,
+            score_icons: Vec::new(),
+        };
+        let mut lobby = WolLobbyState::new(false, true);
+        lobby.replace_players(vec![player("Tanya"), player("Boris")]);
+        assert_eq!(lobby.press_player(1).as_deref(), Some("Boris"));
+        assert!(lobby.private_targets().is_empty());
+        lobby.replace_players(vec![player("Boris"), player("Natasha")]);
+        assert_eq!(
+            lobby.card.as_ref().map(|card| card.name.as_str()),
+            Some("Boris")
+        );
+        lobby.replace_players(vec![player("Natasha")]);
+        assert!(lobby.card.is_none());
     }
 
     #[test]
@@ -1139,5 +1208,21 @@ mod tests {
             [("comchief.pcx", 0x3D)]
         );
         assert_eq!(score_icons(score(32, 1000, 0), 4), [("corporal.pcx", 0x3D)]);
+    }
+
+    /// The hover help names every badge the list draws, in each language.
+    #[test]
+    fn every_badge_the_list_draws_has_a_name() {
+        let mut csf = crate::assets::csf_file::test_csf(&[("GUI:Ok", "OK")]);
+        crate::i18n::apply(&mut csf);
+        for points in [0, 31, 32, 60, 61, 1500, 1501, 2000, 2001] {
+            let key = badge_name_key(badge(points)).expect("a named badge");
+            assert!(!csf.text(key).starts_with("MISSING:"), "{key}");
+        }
+        assert_eq!(
+            badge_name_key(badge(2001)),
+            Some("VERA:LobbyBadgeCommanderInChief")
+        );
+        assert_eq!(badge_name_key("number1.pcx"), None);
     }
 }

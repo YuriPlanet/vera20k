@@ -164,6 +164,7 @@ impl PreparedSavedLocalView {
         input.planning.reset();
         sidebar.repair_mode_on = modes.repair;
         sidebar.sell_mode_on = modes.sell;
+        sidebar.command_bar_closed = modes.command_bar_closed;
         input.targeting_mode = self.targeting;
         // The preview is derived from the cursor; the next tactical frame
         // recomputes it. The BandBoxLeftUp retry copy (+1190..+1198) loads
@@ -221,6 +222,7 @@ pub(crate) struct MatchInputState {
     /// saved nor simulation state and is discarded when pointer focus changes.
     last_cursor_window: Option<(f32, f32)>,
     pub(crate) keys_held: HashSet<KeyCode>,
+    pub(crate) camera_scroll_keys: super::hotkeys::CameraScrollKeys,
     pub(crate) hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings,
     pub(crate) hotkey_modifiers: ModifiersState,
     /// Local AllToCheer730F30 admission scalar84555C. The simulation owns
@@ -450,6 +452,7 @@ impl MatchInputState {
             cursor_zoom: None,
             last_cursor_window: None,
             keys_held: HashSet::new(),
+            camera_scroll_keys: Default::default(),
             hotkey_bindings,
             hotkey_modifiers: ModifiersState::empty(),
             last_cheer_frame: -100,
@@ -796,6 +799,7 @@ impl MatchInputState {
                 // Active YR PlanMgr is outside Mouse's saved Display body.
                 planning: false,
                 targeting,
+                command_bar_closed: sidebar.command_bar_closed,
             },
         )
     }

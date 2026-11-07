@@ -75,9 +75,16 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::team_script_vm::TeamScriptVm;
 use crate::sim::world::ObjectSubstrate;
 
+#[path = "scout_houses.rs"]
+mod scout_houses;
+
 #[cfg(test)]
 #[path = "scout_tests.rs"]
 mod scout_tests;
+
+#[cfg(test)]
+#[path = "scout_houses_tests.rs"]
+mod scout_houses_tests;
 
 #[cfg(test)]
 #[path = "result_tests.rs"]
@@ -166,6 +173,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 43
             | 46
             | 47
+            | 48
             | 49
             | 50
             | 51
@@ -294,6 +302,7 @@ impl Simulation {
     ) {
         let current_frame = self.session.binary_frame() as i32;
         match action.action_id {
+            48 => self.team_action_scout_houses(team_id, rules, registry, frame_effects),
             0 => self.team_action_attack_quarry(
                 team_id,
                 action.argument,
@@ -1031,7 +1040,7 @@ impl Simulation {
     ) {
         if first {
             let index = argument & 0xffff;
-            let type_name = rules.anim_type_name_by_index(index).map(str::to_owned);
+            let type_name = rules.anim_type_runtime_key_by_index(index);
             if let Some(type_name) = type_name {
                 let type_id = self.interner.intern(&type_name);
                 let members: Vec<u64> = self

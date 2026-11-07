@@ -390,7 +390,6 @@ fn built(row: &Value, zoom: f32) -> (Vec<SpriteInstance>, TacticalViewport) {
         0,
         view,
         None,
-        &mut |_| 127,
     );
     (instances, view)
 }
@@ -557,7 +556,6 @@ fn original_unit_attack_line_pixels_and_read_only_coordinate_queries() {
             0,
             view,
             None,
-            &mut |_| 127,
         );
         assert_native_pixels(&raster(&instances, view), &words(row), [160, 120], 0, row);
         assert_eq!(sim.state_hash(), hash, "{}", row["input"]);
@@ -830,7 +828,6 @@ fn move_line_query_leaves_the_simulation_dummy_unchanged() {
         0,
         view,
         None,
-        &mut |_| 127,
     );
     assert_eq!(query.dummy().snapshot().coord, before);
 }
@@ -965,4 +962,33 @@ fn production_action_line_gpu_matches_original_surface() {
             }
         }
     }
+}
+
+#[test]
+fn dense_action_lines_leave_no_pixels_for_the_next_frame() {
+    let view = TacticalViewport {
+        camera: [0, 0],
+        clip: [0, 0, 640, 400],
+        zoom: 1.0,
+    };
+    let colors = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+    let rows = |x0, x1, kind| {
+        (0..40).map(move |row| ProjectedActionLine {
+            start: [x0, 10 + row],
+            end: [x1, 10 + row],
+            kind,
+        })
+    };
+    // The later frame's spans on each row reach across the earlier frame's.
+    let wide: Vec<_> = rows(100, 300, SelectedLineKind::Attack).collect();
+    let ends: Vec<_> = rows(50, 60, SelectedLineKind::Move)
+        .chain(rows(400, 410, SelectedLineKind::Move))
+        .collect();
+    let bytes = |instances: Vec<SpriteInstance>| bytemuck::cast_slice::<_, u8>(&instances).to_vec();
+    let alone = bytes(build_selected_action_line_instances(&ends, colors, view));
+    assert!(!bytes(build_selected_action_line_instances(&wide, colors, view)).is_empty());
+    assert_eq!(
+        bytes(build_selected_action_line_instances(&ends, colors, view)),
+        alone
+    );
 }

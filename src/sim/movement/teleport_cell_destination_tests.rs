@@ -112,13 +112,14 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
                 // Original fixture installs nine land0 speed entries of1.0 at
                 //89EA40; this is supplied terrain, independently of retail INIs.
                 cell.speed_costs = crate::rules::terrain_rules::SpeedCostProfile {
-                    foot: Some(100),
-                    track: Some(100),
-                    wheel: Some(100),
-                    float: Some(100),
-                    amphibious: Some(100),
-                    float_beach: Some(100),
-                    hover: Some(100),
+                    foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
                 };
                 cell.base_speed_costs = cell.speed_costs;
                 cell

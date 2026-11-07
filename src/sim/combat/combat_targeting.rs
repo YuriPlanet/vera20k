@@ -475,7 +475,7 @@ pub(crate) fn should_retaliate(
     // warhead skips the test and retaliates (`0x00708AD4`, `0x00708ADE`).
     subject
         .weapon_at(subject.weapon_index)
-        .and_then(|weapon| super::combat_weapon::warhead_of(rules, weapon))
+        .and_then(|weapon| rules.weapon_warhead(weapon))
         .is_none_or(|warhead| {
             // Ares 3.0 hook100543E0 replaces only this original threshold
             // with the independently retained Retaliate flag.

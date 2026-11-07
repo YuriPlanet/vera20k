@@ -36,8 +36,8 @@ pub(in crate::sim) fn formed_sim(seed: u64, level: u8) -> Simulation {
         c.level = level;
         c.allows_tiberium = true;
         //Declared passable Clear-land input, including the actual 89EA40 row.
-        c.speed_costs.track = Some(100);
-        c.base_speed_costs.track = Some(100);
+        c.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+        c.base_speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
         c
     });
     terrain.shared_cell_dummy().set_level_slope(level as i8, 0);

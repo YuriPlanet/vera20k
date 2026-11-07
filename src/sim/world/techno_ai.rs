@@ -1059,6 +1059,10 @@ fn veterancy_promotion_step(
         return;
     };
     let owner = entity.owner();
+    // The promoted object's type is already interned on the entity; carry it
+    // out so the accessibility line can name the game's own object without a
+    // second lookup or a guessed translation. Transient fact only.
+    let type_id = entity.type_ref();
     let world = crate::sim::movement::ground_pose::object_location(entity, terrain).into();
     let sound = match promotion {
         crate::sim::combat::veterancy::Promotion::Elite => {
@@ -1086,6 +1090,7 @@ fn veterancy_promotion_step(
     sound_events.emit(super::SimSoundEvent::UnitPromoted {
         owner,
         sound_id,
+        type_id,
         world,
     });
 }
@@ -1905,7 +1910,7 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let overpowers = target_building
         && target_obj.overpowerable
         && target_scan::weapon_at_index(sim, rules, id, 1)
-            .and_then(|weapon| combat_weapon::warhead_of(rules, weapon))
+            .and_then(|weapon| rules.weapon_warhead(weapon))
             .is_some_and(|warhead| warhead.electric_assault);
     if engineer || overpowers || occupiable || entity.berserk.is_active() {
         return;
@@ -2687,20 +2692,20 @@ mod tests {
     #[test]
     fn a_dead_medic_lets_go_of_an_enemy_on_its_corpse_visit() {
         let art = IniFile::from_str(crate::rules::retail_ini_fixture::GI_ART_EXCERPT);
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[InfantryTypes]\n0=MEDIC\n1=E1\n[VehicleTypes]\n0=TANK\n\
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[InfantryTypes]\n0=MEDIC\n1=E1\n[VehicleTypes]\n0=TANK\n\
              [AircraftTypes]\n[BuildingTypes]\n\
              [MEDIC]\nImage=GI\nStrength=100\nPrimary=Heal\n\
              [E1]\nImage=GI\nStrength=100\nPrimary=Gun\n\
              [TANK]\nStrength=300\nPrimary=Gun\n\
              [WeaponTypes]\n0=Heal\n1=Gun\n\
              [Heal]\nDamage=-50\nRange=2\n[Gun]\nDamage=60\nRange=5\n",
-        ))
+            ),
+            &art,
+        )
         .unwrap();
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         let mut sim = Simulation::new();
         let ours = sim.interner.intern("Americans");
         let theirs = sim.interner.intern("Russians");

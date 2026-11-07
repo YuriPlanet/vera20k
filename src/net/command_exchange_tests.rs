@@ -1,6 +1,6 @@
 use super::*;
 use crate::sim::command::{CommandEnvelope, CommandRecord};
-use crate::sim::command_queue::DO_LIST_CAPACITY;
+use crate::sim::command_queue::SINGLE_PLAYER_DOLIST_CAPACITY;
 use crate::sim::world::Simulation;
 use std::num::NonZeroU32;
 
@@ -250,7 +250,7 @@ fn decode_failure_updates_advertised_progress_but_not_decoded_frontier_or_prefix
     let mut sim = Simulation::new();
     {
         let mut queues = sim.network_command_queues();
-        for _ in 0..DO_LIST_CAPACITY - 1 {
+        for _ in 0..SINGLE_PLAYER_DOLIST_CAPACITY - 1 {
             assert!(queues.admit_received(stop(1)));
         }
     }
@@ -287,7 +287,7 @@ fn decode_failure_updates_advertised_progress_but_not_decoded_frontier_or_prefix
     );
     assert_eq!(
         sim.network_command_queues().synchronized_len(),
-        DO_LIST_CAPACITY
+        SINGLE_PLAYER_DOLIST_CAPACITY
     );
     assert_eq!(exchange.peers()[0].frame(), 15);
     assert_eq!(exchange.peers()[0].advertised_commands(), 12);

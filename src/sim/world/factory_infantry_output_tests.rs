@@ -151,7 +151,6 @@ fn ground_command_fixture(
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &retail.fixed_art)
             .expect("original non-Deployer component prior parses");
         rules.install_art_data(retail.rules.art().clone());
-        rules.replace_animation_sequences_for_test(retail.rules.animation_sequences().clone());
         rules
     } else {
         retail.rules

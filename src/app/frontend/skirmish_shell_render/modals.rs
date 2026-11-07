@@ -9,11 +9,10 @@ use crate::ui::shell::geom::{LOWER_STRIP_H, ShellScale};
 use crate::ui::shell::list::ListMetrics;
 use crate::ui::shell::modal::BodyOkLayout;
 use crate::ui::skirmish_shell::{
-    ChooseMapModalButton, ChooseMapModalLayout, DropdownMetrics, PLAYERS_RANGE,
-    RandomMapSetupControl, RandomMapSetupLayout, RandomMapSetupModalState, RectPx,
-    SETUP_COMBO_ROWS, SavedSeedBrowserState, SavedSeedControl, SavedSeedLayout,
-    SkirmishShellLayout, SkirmishShellState, combo_face_rect, random_map_setup_dropdown_rect,
-    setup_combo_items,
+    ChooseMapModalButton, ChooseMapModalLayout, DropdownMetrics, RandomMapSetupControl,
+    RandomMapSetupLayout, RandomMapSetupModalState, RectPx, SETUP_COMBO_ROWS,
+    SavedSeedBrowserState, SavedSeedControl, SavedSeedLayout, SkirmishShellLayout,
+    SkirmishShellState, combo_face_rect, random_map_setup_dropdown_rect,
 };
 
 use super::chrome::{
@@ -58,7 +57,9 @@ pub(crate) fn render_saved_game_loading(
     use super::in_game_shell::{
         InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
     };
-    use crate::ui::shell::modal::{body_ok_layout, build_saved_game_loading_descriptor, control};
+    use crate::ui::shell::modal::{
+        body_ok_layout, body_ok_layout_in, build_saved_game_loading_descriptor, control,
+    };
 
     // An in-match load paints over the match frame at its source size and
     // zooms with it; a menu load paints over the menu at the window's size.
@@ -88,9 +89,15 @@ pub(crate) fn render_saved_game_loading(
         .expect("loading shell chrome");
     // 559D60 shows F0 before 69BB40 clears Session+30D8. An active load thus
     // starts with its current side; a menu load starts with the neutral assets.
-    let side = (state.frontend.screen == crate::ui::game_screen::GameScreen::InGame)
-        .then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
-    let layout = body_ok_layout(frame.0 as i32, frame.1 as i32);
+    let in_match = state.frontend.screen == crate::ui::game_screen::GameScreen::InGame;
+    let side =
+        in_match.then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
+    let (width, height) = (frame.0 as i32, frame.1 as i32);
+    let layout = if in_match {
+        body_ok_layout_in(RectPx::new(0, 0, width, height))
+    } else {
+        body_ok_layout(width, height)
+    };
     let descriptor = build_saved_game_loading_descriptor();
     let body = descriptor
         .controls
@@ -109,6 +116,10 @@ pub(crate) fn render_saved_game_loading(
         align: super::text::validation_modal_body_text_align(),
         path_a_reveal: None,
     }];
+    // A zoomed match's text is drawn in the window (`window_ui`).
+    let raster = crate::app::presentation::window_ui::shell_raster(state, false)
+        .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
+    let frame_raster = state.renderer.bit_font.set_raster(raster);
     let modal = shell_paint::paint_modal_shp(
         &state.renderer.bit_font,
         atlas.mode_two_dialog_background(side),
@@ -119,7 +130,7 @@ pub(crate) fn render_saved_game_loading(
         ShellScale::RETAIL,
         VALIDATION_MODAL_SPRITE_DEPTHS,
     );
-    super::in_game_shell::render_shell_frame(
+    let painted = super::in_game_shell::render_shell_frame(
         state,
         encoder,
         destination,
@@ -132,7 +143,9 @@ pub(crate) fn render_saved_game_loading(
         art,
         ShellFrameOverlay::default(),
         ShellFrameCursor::Hidden,
-    )
+    );
+    state.renderer.bit_font.set_raster(frame_raster);
+    painted
 }
 
 /// Native owner-draw listboxes preserve a composed backing surface. On the
@@ -488,7 +501,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         &chrome,
         ControlPaint::Trackbar {
             rect: players,
-            thumb_left: PLAYERS_RANGE.thumb_left_in(
+            thumb_left: modal.players_range().thumb_left_in(
                 modal.options.num_players,
                 players,
                 layout.scale,
@@ -588,7 +601,7 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     // An open list paints last so it covers the rows beneath it.
     if let Some(combo) = modal.open_combo {
         let row = combo.row();
-        let items = setup_combo_items(combo);
+        let items = modal.combo_items(combo);
         let list = random_map_setup_dropdown_rect(layout, row, items.len());
         let row_h = DropdownMetrics::scaled(layout.scale).row_h;
         push_solid_rect(

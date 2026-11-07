@@ -1939,6 +1939,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             .get(id)
                             .unwrap()
                             .bomb
+                            .as_ref()
                             .unwrap()
                             .clock_frame(
                                 frame as i32,
@@ -2318,6 +2319,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
             let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
             terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
             if wrench_composed {
+                terrain.bind_surface_line_a(&gpu.device, Some(&a));
                 terrain.begin_surface_lines();
                 let viewport = crate::render::surface_line::SurfaceLineViewport {
                     camera: cam.camera_pos.map(|value| value as i32),
@@ -2339,7 +2341,6 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             &[],
                             viewport,
                             |_| false,
-                            |_| input["a_value"].as_u64().unwrap() as u16,
                         )
                     })
                     .collect();
@@ -2361,7 +2362,6 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             &[],
                             viewport,
                             |_| false,
-                            |_| input["a_value"].as_u64().unwrap() as u16,
                         );
                     }
                 }

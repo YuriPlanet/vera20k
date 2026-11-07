@@ -737,12 +737,22 @@ impl Simulation {
                     crate::sim::movement::ground_pose::position_world_coord(&entity.position);
                 let land = cells.land_type(cells.lookup_world(coord.x, coord.y));
                 land != i32::from(crate::rules::terrain_rules::LandType::Water.as_index())
-                    && !u8::try_from(land)
+                    && u8::try_from(land)
                         .ok()
                         .and_then(|land| rules.terrain_rules.semantics_for_land_type(land))
                         .is_some_and(|row| {
+                            // UnitWhatAction7400A1..7400BE: first passenger,
+                            // strictly below the native double1% threshold.
                             row.cost_for_speed_type(passenger.speed_type)
-                                .is_none_or(|cost| cost != 0)
+                                .is_some_and(|cost| {
+                                    matches!(
+                                        crate::rules::terrain_rules::compare_speed_to_one_percent(
+                                            cost
+                                        ),
+                                        crate::util::native_x87::MaskedX87Ordering::Less
+                                            | crate::util::native_x87::MaskedX87Ordering::Unordered
+                                    )
+                                })
                         })
             });
         stranded

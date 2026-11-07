@@ -20,7 +20,7 @@ mod install;
 mod manifest;
 pub(crate) mod notes;
 
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -28,6 +28,7 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use crate::app::App;
 use crate::app::frontend::state::{ShellMessageBox, ShellMessageBoxPurpose};
 use crate::app::state::AppState;
+use crate::app::web_link::{WEBSITE, open_in_browser};
 use crate::ui::main_menu_dialogs::ShellMessageBoxLabels;
 use crate::ui::shell::modal::ModalResult;
 use crate::util::time::{Duration, Instant};
@@ -38,10 +39,6 @@ use manifest::{Offer, Release, Version};
 
 /// How often a pending check or download is polled.
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
-
-/// Where a release that needs a newer updater is downloaded by hand; the
-/// online login page also reads its news there.
-pub(crate) const WEBSITE: &str = "https://vera20k.org/";
 
 /// Set only for the Release workflow's update test (`tools/update_test.py`):
 /// its runners have no retail game data, so no main menu to ask on, and the
@@ -128,7 +125,8 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
                 log::info!("Updater: no newer release");
                 state.frontend.updater.phase = Phase::Finished;
                 if asked {
-                    let text = format!("VERA20K {} is up to date.", Version::current());
+                    let text =
+                        crate::i18n::tr_fill("VERA:UpToDate", &[("version", &Version::current())]);
                     show_notice(state, text);
                 }
                 None
@@ -137,7 +135,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
                 log::info!("Updater: check failed: {error:#}");
                 state.frontend.updater.phase = Phase::Finished;
                 if asked {
-                    show_notice(state, CHECK_FAILED.to_owned());
+                    show_notice(state, crate::i18n::tr(CHECK_FAILED));
                 }
                 None
             }
@@ -152,7 +150,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
             Err(TryRecvError::Disconnected) => {
                 state.frontend.updater.phase = Phase::Finished;
                 if asked {
-                    show_notice(state, CHECK_FAILED.to_owned());
+                    show_notice(state, crate::i18n::tr(CHECK_FAILED));
                 }
                 None
             }
@@ -227,19 +225,13 @@ pub(crate) fn poll(state: &mut AppState) -> Option<Instant> {
 }
 
 /// Start the check when this is a release build running from its package;
-/// otherwise what Check for Updates says instead.
+/// otherwise the label of what Check for Updates says instead.
 fn start(asked: bool) -> Result<Phase, &'static str> {
     if option_env!("VERA20K_COMMIT").is_none_or(str::is_empty) {
-        return Err(
-            "This VERA20K was built from source, so it does not update itself.\n\n\
-             Download releases from vera20k.org.",
-        );
+        return Err("VERA:UpdateFromSource");
     }
     let (Some(platform), Some(package)) = (manifest::platform(), install::package()) else {
-        return Err(
-            "This copy is not an installed VERA20K release, so it does not update \
-             itself.\n\nDownload releases from vera20k.org.",
-        );
+        return Err("VERA:UpdateNotInstalled");
     };
     let (sender, result) = mpsc::channel();
     let spawned = std::thread::Builder::new()
@@ -260,8 +252,9 @@ fn start(asked: bool) -> Result<Phase, &'static str> {
     }
 }
 
-/// What Check for Updates says when the check fails, offline included.
-const CHECK_FAILED: &str = "VERA20K could not check for updates.\n\nTry again later.";
+/// The label of what Check for Updates says when the check fails, offline
+/// included.
+const CHECK_FAILED: &str = "VERA:UpdateCheckFailed";
 
 /// Vera Options' Check for Updates, once its page has slid out: an offer
 /// waiting for the main menu shows now, and otherwise a check (the one
@@ -292,7 +285,7 @@ pub(crate) fn open_check(state: &mut AppState) {
             }
             Err(reason) => {
                 state.frontend.updater.phase = Phase::Finished;
-                show_notice(state, reason.to_owned());
+                show_notice(state, crate::i18n::tr(reason));
             }
         },
         // A box of the updater's own is up already.
@@ -308,7 +301,7 @@ fn open_checking(state: &mut AppState) {
         state,
         ShellMessageBox {
             labels: ShellMessageBoxLabels {
-                title: "Checking for a newer VERA20K...".to_owned(),
+                title: crate::i18n::tr("VERA:UpdateChecking"),
                 confirm: cancel,
                 third: String::new(),
                 cancel: String::new(),
@@ -341,39 +334,38 @@ fn main_menu_idle(state: &AppState) -> bool {
 /// The menu has slid out: ask over the empty shell backdrop, as Exit Game
 /// does (`App::open_exit_confirm`).
 pub(crate) fn open_offer(state: &mut AppState) {
+    use crate::i18n::{tr, tr_fill};
     let Phase::Offered { offer, .. } = &state.frontend.updater.phase else {
         return;
     };
     let (question, confirm, skip, changes) = match offer {
         Offer::Update(release) => (
-            "Update now? VERA20K restarts when it is done.",
-            "Update",
-            "Skip Version",
+            "VERA:UpdateQuestion",
+            "VERA:Update",
+            Some("VERA:SkipVersion"),
             release.notes.as_slice(),
         ),
         Offer::Manual { notes, .. } => (
-            "This copy cannot install it by itself. Download it from vera20k.org.",
-            "Download",
-            "Skip Version",
+            "VERA:UpdateByHand",
+            "VERA:Download",
+            Some("VERA:SkipVersion"),
             notes.as_slice(),
         ),
         // Unverified: its version is not one to skip.
-        Offer::NewKey { .. } => (
-            "This copy cannot install it by itself. Download it from GitHub.",
-            "Download",
-            "",
-            &[][..],
-        ),
+        Offer::NewKey { .. } => ("VERA:UpdateNewKey", "VERA:Download", None, &[][..]),
     };
     let labels = ShellMessageBoxLabels {
-        title: format!(
-            "VERA20K {} is available. You have {}.\n\n{question}",
-            offer.version(),
-            Version::current()
+        title: tr_fill(
+            "VERA:UpdateAvailable",
+            &[
+                ("version", &offer.version()),
+                ("current", &Version::current()),
+                ("question", &tr(question)),
+            ],
         ),
-        confirm: confirm.to_owned(),
-        third: skip.to_owned(),
-        cancel: "Later".to_owned(),
+        confirm: tr(confirm),
+        third: skip.map(tr).unwrap_or_default(),
+        cancel: tr("VERA:Later"),
     };
     let notes = notes::ReleaseNotes::new(&state.renderer.bit_font, changes);
     crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
@@ -413,33 +405,6 @@ pub(crate) fn answer_offer(state: &mut AppState, result: ModalResult) {
         _ => {}
     }
     state.platform.window.request_redraw();
-}
-
-/// Open `url` in the player's browser.
-fn open_in_browser(url: &str) {
-    let opener = if cfg!(target_os = "windows") {
-        "explorer"
-    } else if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    };
-    let opened = Command::new(opener)
-        .arg(url)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn();
-    match opened {
-        Ok(mut child) => {
-            log::info!("Updater: opening {url}");
-            // xdg-open may run the browser itself: reap it when it ends.
-            let _ = std::thread::Builder::new()
-                .name("vera-update-browser".into())
-                .spawn(move || child.wait());
-        }
-        Err(error) => log::warn!("Updater: cannot open {url}: {error}"),
-    }
 }
 
 fn download(state: &mut AppState, package: Package, release: Release) {
@@ -518,13 +483,16 @@ pub(crate) fn cancel_download(state: &mut AppState) {
 fn progress_text(version: Version, received: u64, size: u64) -> String {
     const MIB: f64 = 1024.0 * 1024.0;
     if received >= size {
-        return format!("Installing VERA20K {version}...");
+        return crate::i18n::tr_fill("VERA:UpdateInstalling", &[("version", &version)]);
     }
-    format!(
-        "Downloading VERA20K {version}...\n\n{:.1} of {:.1} MB ({}%)",
-        received as f64 / MIB,
-        size as f64 / MIB,
-        received * 100 / size.max(1)
+    crate::i18n::tr_fill(
+        "VERA:UpdateDownloading",
+        &[
+            ("version", &version),
+            ("received", &format!("{:.1}", received as f64 / MIB)),
+            ("size", &format!("{:.1}", size as f64 / MIB)),
+            ("percent", &(received * 100 / size.max(1))),
+        ],
     )
 }
 
@@ -547,13 +515,16 @@ fn restart(state: &mut AppState, release: &Release, finish: &mut Command) {
 }
 
 fn show_failure(state: &mut AppState, version: Version, error: &anyhow::Error) {
-    let reason = error.downcast_ref::<install::Hint>().map_or(
-        "Try again later, or download it from vera20k.org.",
-        |hint| hint.0,
+    let reason = error.downcast_ref::<install::Hint>().map_or_else(
+        || crate::i18n::tr("VERA:UpdateTryLater"),
+        |hint| hint.0.clone(),
     );
     show_notice(
         state,
-        format!("VERA20K could not update to {version}.\n\n{reason}"),
+        crate::i18n::tr_fill(
+            "VERA:UpdateFailed",
+            &[("version", &version), ("reason", &reason)],
+        ),
     );
 }
 

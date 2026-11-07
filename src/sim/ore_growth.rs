@@ -134,11 +134,14 @@ impl OreGrowthConfig {
     /// GameMode != 0 (`Full_Init @ 0x00687C23` overwrites the scenario dword
     /// with the session dword every skirmish/multiplayer start forces to
     /// `| 0xC0`) and from the map `[SpecialFlags]` only in GameMode 0
-    /// (`0x006B8CA0`, default = the pre-existing bit; VERA keeps `true` there,
-    /// gamemd's pre-read campaign default UNCHECKED). `[General]
-    /// TiberiumGrows/TiberiumSpreads` have no gamemd reader (the only readers of
-    /// those key strings are `[SpecialFlags]` I/O at `0x006B8B30`/`0x006B8CA0`
-    /// and `[MultiplayerDialogSettings]` at `0x006720AA`) and no longer gate.
+    /// (`0x006B8CA0`, default = the pre-existing bit). The loader fills that
+    /// default first ([`crate::map::basic::SpecialFlagsSection::resolve_campaign_defaults`]:
+    /// the retained scenario's bits, else the cold ctor's grows off, spreads
+    /// on), so the `true` fallbacks below serve only fixtures that skip it.
+    /// `[General] TiberiumGrows/TiberiumSpreads` have no gamemd reader (the
+    /// only readers of those key strings are `[SpecialFlags]` I/O at
+    /// `0x006B8B30`/`0x006B8CA0` and `[MultiplayerDialogSettings]` at
+    /// `0x006720AA`).
     pub fn resolve(
         basic: &BasicSection,
         special_flags: &SpecialFlagsSection,
@@ -396,17 +399,15 @@ fn native_percentage_drives(bits: u64) -> bool {
 }
 
 /// Processor batch: `FILD heap_count; FMUL [pct]; call _ftol` under the
-/// process's 53-bit chop control word, then the clamp `[min, max]`
-/// (`0x00722F3C..0x00722F68` growth, `0x00722480..0x007224AC` spread).
+/// process's 53-bit chop control word, then the signed clamp `[min, max]` of
+/// EAX alone, the low dword of the `ftol` result (`0x00722F3C..0x00722F68`
+/// growth, `0x00722480..0x007224AC` spread).
 fn native_processor_batch(heap_count: usize, percentage_bits: u64, min: u32, max: u32) -> u32 {
     let count = i32::try_from(heap_count).unwrap_or(i32::MAX);
-    let product = X87Chop53::load_f64(NativeF64Bits::from_bits(percentage_bits))
+    let scaled = X87Chop53::load_f64(NativeF64Bits::from_bits(percentage_bits))
         .map(|percentage| X87Chop53::mul(X87Chop53::load_i32(count), percentage))
-        .ok();
-    let scaled = product
-        .and_then(|product| X87Chop53::ftol_i64(product).ok())
-        .unwrap_or(0);
-    scaled.clamp(i64::from(min), i64::from(max)) as u32
+        .map_or(0, X87Chop53::ftol_i32_low_masked);
+    scaled.clamp(min as i32, max as i32) as u32
 }
 
 /// Heap entry shell for native growth/spread queues.
@@ -549,6 +550,16 @@ impl OreGrowthState {
     /// Drop every queue and size the state for a `map_width` x `map_height`
     /// cell array, as a scenario load does before it rebuilds the queues
     /// ([`initialize_native_tiberium_queues`](crate::sim::runtime::initialize_native_tiberium_queues)).
+    ///
+    /// gamemd-derived: `TiberiumClass::FreeSpreadQueues_All @ 0x00722390` and
+    /// `FreeGrowthQueues_All @ 0x00722E50` (`Clear_Scene @ 0x00685515/1A`,
+    /// `RandomMapGenerator::InitMapFromSyntheticINI @ 0x00599A13/18`, the
+    /// exit-time free `0x00581128/31` and the `MapClass` destructor) free each
+    /// class's heap, entry array and flag plane and zero its array counter.
+    /// They leave the timers alone, as this does not: the scenario load that
+    /// follows re-arms them ([`NativeTiberiumClassState::new_due`]). Between
+    /// the free and `InitGrowthQueues_All` no driver runs, so the null queues
+    /// native holds there need no state of their own.
     pub(crate) fn reset_for_cell_array(&mut self, map_width: u16, map_height: u16) {
         *self = Self::new(map_width, map_height);
     }
@@ -1219,6 +1230,13 @@ impl OreGrowthState {
     /// 0x007228B0`, which walk every real cell in `CellIterator` order.
     /// `occupied_cells` is the set of cells whose `CellClass+0xE4 FirstObject`
     /// is non-null (terrain objects and every ground-list Techno).
+    ///
+    /// The per-class `InitSpreadQueue @ 0x00722770`, `InitGrowthQueue @
+    /// 0x00723260`, `FreeSpreadQueue @ 0x00722A20` and `FreeGrowthQueue @
+    /// 0x00723510` are out-of-line copies of the bodies the `_All` loops
+    /// inline (identical per item). Nothing reaches them: Ghidra has no
+    /// reference to any of the four and the image holds no pointer to them,
+    /// so they have no port.
     pub fn rebuild_native_tiberium_queues_from_overlays(
         &mut self,
         overlay_grid: &OverlayGrid,
@@ -1666,11 +1684,11 @@ mod tests {
     /// `[Clear]` row whose Track entry the new ore's Mark admission reads
     /// (`0x004834A0`, called at `0x005FD00C`; `0x005FD04F` for TIB01).
     fn flat_clear_resolved_grid(width: u16, height: u16) -> ResolvedTerrainGrid {
-        use crate::map::resolved_terrain::TEST_RETAIL_CLEAR_SPEED_COSTS;
+        use crate::map::resolved_terrain::test_retail_clear_speed_costs;
         crate::map::resolved_terrain::test_grid(width, height, |rx, ry| ResolvedTerrainCell {
             allows_tiberium: true,
-            speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
-            base_speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
+            speed_costs: test_retail_clear_speed_costs(),
+            base_speed_costs: test_retail_clear_speed_costs(),
             ..crate::map::resolved_terrain::test_loader_clear_cell(rx, ry)
         })
     }
@@ -2446,20 +2464,13 @@ SpreadPercentage=.06
 
     /// `OreGrowthConfig::resolve`: GameMode != 0 takes the session bits and
     /// ignores the map `[SpecialFlags]` keys (never read there, `0x006B8CA0`);
-    /// GameMode 0 reads the map keys; `[General] TiberiumGrows/TiberiumSpreads`
-    /// gate nothing; `[Basic] TiberiumGrowthEnabled` gates in every mode.
+    /// GameMode 0 reads the map keys; `[Basic] TiberiumGrowthEnabled` gates in
+    /// every mode.
     #[test]
     fn gsi_09_04_config_resolves_flag_bits_from_session_in_nonzero_game_mode() {
         use crate::map::basic::{BasicSection, SpecialFlagsSection};
-        use crate::rules::ini_parser::IniFile;
         use crate::sim::scenario_session::{ScenarioDescriptor, ScenarioSession};
 
-        let general = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nTiberiumGrows=no\nTiberiumSpreads=no\n",
-        ))
-        .expect("rules")
-        .general;
-        assert!(!general.tiberium_grows && !general.tiberium_spreads);
         let map_off = SpecialFlagsSection {
             tiberium_grows: Some(false),
             tiberium_spreads: Some(false),
@@ -3309,6 +3320,17 @@ SpreadPercentage=.06
         assert_eq!(native_processor_batch(1000, pct, 5, 50), 50);
         assert_eq!(native_processor_batch(1000, pct, 5, 25), 25);
         assert_eq!(native_processor_batch(0, pct, 5, 50), 5);
+    }
+
+    /// The clamp reads EAX only (`0x00722F4B CMP EAX,0x5`): a product past
+    /// 2^32 keeps its low dword, and one whose low dword is negative clamps
+    /// up to the minimum, where the full 64-bit result would clamp to the max.
+    #[test]
+    fn native_processor_batch_clamps_the_ftol_low_dword() {
+        let low_seven = 4_294_967_303.0f64.to_bits();
+        assert_eq!(native_processor_batch(1, low_seven, 5, 50), 7);
+        let negative_low = 2_147_483_664.0f64.to_bits();
+        assert_eq!(native_processor_batch(1, negative_low, 5, 25), 5);
     }
 
     /// `CanGrow/CanSpreadTiberium` reject `pct < 1e-05`; the processors

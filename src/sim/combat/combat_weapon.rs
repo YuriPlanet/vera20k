@@ -488,8 +488,7 @@ pub fn is_armed(
 pub(crate) fn aircraft_strafes(rules: &RuleSet, obj: &ObjectType, veterancy: u16) -> bool {
     primary_for_tier(obj, veterancy)
         .and_then(|name| rules.weapon(name))
-        .and_then(|weapon| weapon.projectile.as_deref())
-        .and_then(|name| rules.projectile(name))
+        .and_then(|weapon| rules.weapon_projectile(weapon))
         .is_some_and(|projectile| projectile.rot <= 1 && !projectile.inviso)
 }
 
@@ -650,10 +649,8 @@ pub(crate) fn select_naval_targeting_weapon(obj: &ObjectType, target: Option<&Ta
 }
 
 fn projectile_aa(rules: &RuleSet, weapon: &WeaponType) -> bool {
-    weapon
-        .projectile
-        .as_ref()
-        .and_then(|id| rules.projectile(id))
+    rules
+        .weapon_projectile(weapon)
         .is_some_and(|projectile| projectile.aa)
 }
 
@@ -663,10 +660,8 @@ fn projectile_aa(rules: &RuleSet, weapon: &WeaponType) -> bool {
 /// defaults (AA=no, AG=yes), as weapon selection does; retail weapons always
 /// name one.
 fn weapon_class_bits(rules: &RuleSet, weapon: &WeaponType) -> u32 {
-    let (aa, ag) = weapon
-        .projectile
-        .as_ref()
-        .and_then(|id| rules.projectile(id))
+    let (aa, ag) = rules
+        .weapon_projectile(weapon)
         .map_or((false, true), |projectile| (projectile.aa, projectile.ag));
     let mut bits = 0;
     if aa {
@@ -711,12 +706,8 @@ pub(crate) fn primary_warhead_spares_medium_and_wood(
 ) -> bool {
     let warhead = primary_for_tier(obj, veterancy)
         .and_then(|id| rules.weapon(id))
-        .and_then(|weapon| warhead_of(rules, weapon));
+        .and_then(|weapon| rules.weapon_warhead(weapon));
     warhead.is_some_and(WarheadType::uses_medium_wood_target_mask)
-}
-
-pub(crate) fn warhead_of<'a>(rules: &'a RuleSet, weapon: &WeaponType) -> Option<&'a WarheadType> {
-    weapon.warhead.as_ref().and_then(|id| rules.warhead(id))
 }
 
 /// Native `FCOMP Verses[armor], 0.0` (`0x006F3705` / `0x006F3738`): the
@@ -838,8 +829,8 @@ fn techno_what_weapon_should_i_use<'r>(
     }
     let techno = target.techno();
     let secondary_aa = projectile_aa(rules, secondary);
-    let secondary_warhead = warhead_of(rules, secondary);
-    let primary_warhead = warhead_of(rules, primary);
+    let secondary_warhead = rules.weapon_warhead(secondary);
+    let primary_warhead = rules.weapon_warhead(primary);
     // H @ 0x006F3422: gattling stage pair. Note the AA test reads
     // `GetWeapon(1)`'s projectile regardless of the current stage.
     if obj.is_gattling {
@@ -1002,7 +993,7 @@ pub(crate) fn resolve_weapon_index<'a>(
     Some(SelectedWeapon {
         weapon_id: &weapon.id,
         weapon,
-        warhead: warhead_of(rules, weapon)?,
+        warhead: rules.weapon_warhead(weapon)?,
         slot: if index == 1 {
             WeaponSlot::Secondary
         } else {

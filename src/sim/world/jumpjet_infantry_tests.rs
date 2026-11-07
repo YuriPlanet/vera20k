@@ -85,7 +85,8 @@ pub(super) fn retail_dustbowl_rocketeer()
                         sim.playfield_bounds,
                         Some(terrain),
                     ) && terrain.cell(cx, cy).is_some_and(|cell| {
-                        cell.level == level && cell.speed_costs.foot.is_some_and(|cost| cost > 0)
+                        cell.level == level
+                            && cell.speed_costs.foot.is_some_and(|cost| !cost.is_zero())
                     }) && grid.cell(cx, cy).is_some_and(|cell| cell.ground_walkable)
                         && sim.substrate.raw_cell_occupation.ground_bits(cx, cy) == 0
                 })
@@ -955,10 +956,6 @@ fn rocketeer_rules_armed(armed: bool) -> crate::rules::ruleset::RuleSet {
     )
     .unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    let registry = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art);
-    rules.replace_animation_sequences_for_test(
-        crate::rules::animation_sequence::build_animation_sequence_catalog(&rules, Some(&registry)),
-    );
     rules
 }
 
@@ -1634,7 +1631,8 @@ fn give_cells_hover_costs(sim: &mut super::Simulation) {
     let terrain = sim.resolved_terrain.as_mut().unwrap();
     for y in 0..70 {
         for x in 0..70 {
-            terrain.cell_mut_for_test(x, y).unwrap().speed_costs.hover = Some(100);
+            terrain.cell_mut_for_test(x, y).unwrap().speed_costs.hover =
+                Some(crate::util::native_x87::NativeF32Bits::ONE);
         }
     }
 }

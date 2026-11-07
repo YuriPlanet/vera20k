@@ -1371,7 +1371,7 @@ fn restore_object_references(
 
         // A bomb's planter (`BombClass+0x24`) is a pointer its expiry nulls
         // (`BombListClass::PointerGotInvalid @ 0x00439150`).
-        if let Some(planter) = entity.bomb.and_then(|bomb| bomb.planter()) {
+        if let Some(planter) = entity.bomb.as_ref().and_then(|bomb| bomb.planter()) {
             require_resolved_reference(
                 entity_ids.contains(&planter),
                 "EntityStore",
@@ -1760,6 +1760,18 @@ fn restore_object_references(
 }
 
 impl Simulation {
+    /// BuildingLoad453ECF invokes NoInit43B680 after the saved global Frame
+    /// has loaded. Reconstruct its independent repair Stage at the player-file
+    /// boundary, preserving mission state, radio links and internal continuations.
+    pub fn reconstruct_building_repair_progress_after_player_load(&mut self) {
+        let frame = self.session.binary_frame() as i32;
+        for entity in self.substrate.entities.values_mut() {
+            entity
+                .mission_leaf
+                .reconstruct_building_repair_progress_after_player_load(frame);
+        }
+    }
+
     /// Validate and re-register a deserialized simulation before it can resume.
     ///
     /// Native load registers old identities and pointer slots, resolves them,

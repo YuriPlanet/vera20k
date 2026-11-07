@@ -241,7 +241,7 @@ fn the_land_row_refuses_after_the_wall_arm() {
         .cell_mut_for_test(16, 15)
         .unwrap()
         .speed_costs
-        .foot = Some(0);
+        .foot = Some(crate::rules::terrain_rules::test_speed_percent(0));
     assert_eq!(entry(&sim, &rules, &registry, WALLI), Ok(7));
 }
 
@@ -641,13 +641,23 @@ fn retail_unit_per_cell_removes_authored_fence_before_returning() {
         delivered: std::cell::Cell::new(0),
         crushed: std::cell::Cell::new(0),
     };
-    let Some((root, _assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+    let Some((root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
     let profile = crate::test_fixture::json("tools/map_observation.authored-fence.example.json");
-    let launch: crate::skirmish_launch::SkirmishLaunchSession =
+    let mut launch: crate::skirmish_launch::SkirmishLaunchSession =
         serde_json::from_value(profile["launch"].clone()).unwrap();
     let map = launch.selected_map_file.as_deref().unwrap().to_owned();
+    let mut bytes = assets.get_ref(&map).unwrap().to_vec();
+    bytes.extend_from_slice(b"\n[CAFNCB]\nCrushSound=Unknown\n");
+    let directory = crate::map::source::test_support::TestDirectory::new("retained-fence-sound");
+    directory.write("fence.map", &bytes);
+    let map = directory
+        .path()
+        .join("fence.map")
+        .to_string_lossy()
+        .into_owned();
+    launch.selected_map_file = Some(map.clone());
     let mut scene = crate::headless_scenario::load_session(
         &root,
         &map,

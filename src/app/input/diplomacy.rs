@@ -453,8 +453,8 @@ fn press_allies_box(state: &mut AppState, row: usize) {
 /// FixedAlliance is set only by a WOL clan game's
 /// Apply_Squad_Alliances (`0x0069B170`); `SpecialClass::Init 0x006B8AE0`
 /// clears it.
-/// RESIDUAL: a full OutList (128 records, `[0xA802C8]`) drops the event
-/// natively; VERA's queue has no such cap.
+/// Sim-scale deviation: a full OutList (128 records, `[0xA802C8]`) drops the
+/// event natively; VERA's far larger queue refuses the click instead.
 pub(crate) fn ally(state: &mut AppState, house: InternedId) {
     let Some(local) = crate::app::input::commands::preferred_local_owner_name(state) else {
         return;

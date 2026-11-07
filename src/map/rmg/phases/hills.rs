@@ -23,7 +23,8 @@ const TILT_SLOPE: f64 = 0.0001;
 const TILT_BASE: f64 = 0.1;
 const OUT_VEL_SCALE: f64 = 0.0025;
 const HALF_STEP_SCALE: f64 = 0.005;
-/// Walk skip threshold: `out_vel < 0.025` (Ruggedness < 10) → no hills.
+/// Walk skip threshold: `out_vel < 0.025`. `10 * 0.0025` rounds below it, so
+/// Ruggedness 10 or less makes no hills.
 const WALK_MIN_OUT_VEL: f64 = 0.025;
 /// Velocity forced on water-flagged cells (the exact f64 nearest 0.0025).
 const FLAGGED_VEL: f64 = 0.0025;
@@ -102,7 +103,7 @@ pub fn water_seed(grid: &RmgGrid, scratch: &mut RmgScratch, ids: &TileIds) {
 
 /// Height random walk (`0x005A2F50`): row-major smoothing from the already
 /// processed W/N neighbours plus two Gaussian draws per cell, then a final
-/// truncation. Skipped entirely below Ruggedness 10.
+/// rounding to whole levels. Skipped entirely at Ruggedness 10 or less.
 pub fn walk(scratch: &mut RmgScratch, gauss: &mut Gaussian, rng: &mut RmgRng, ruggedness: i32) {
     let r = t(f64::from(ruggedness));
     let tilt_clamp = r.mul(t(TILT_SLOPE)).add(t(TILT_BASE));
@@ -198,10 +199,19 @@ pub fn walk(scratch: &mut RmgScratch, gauss: &mut Gaussian, rng: &mut RmgRng, ru
         record.velocity = vel.to_f64();
     }
 
-    // Final pass: truncate every height to a whole number.
+    // Final pass (0x005A338D..0x005A33E6): round every height half away
+    // from zero, `ftol(h + 0.5)` above zero and `ftol(h - 0.5)` below it; a
+    // zero height is not rewritten.
     for k in 0..width * width {
-        let height = scratch.cells()[k].height;
-        scratch.cells_mut()[k].height = f64::from(X87Chop53::ftol_f64_low_masked(height));
+        let height = t(scratch.cells()[k].height);
+        let biased = if height.lt(zero) {
+            height.sub(half)
+        } else if zero.lt(height) {
+            height.add(half)
+        } else {
+            continue;
+        };
+        scratch.cells_mut()[k].height = f64::from(X87Chop53::ftol_f64_low_masked(biased.to_f64()));
     }
 }
 
@@ -330,7 +340,7 @@ mod tests {
     }
 
     #[test]
-    fn walk_truncates_heights_into_minus_two_to_two() {
+    fn walk_rounds_heights_into_minus_two_to_two() {
         let (_grid, mut scratch) = world();
         let mut gauss = Gaussian::default();
         let mut rng = RmgRng::new(4242);
@@ -376,5 +386,122 @@ mod tests {
             scratch.cells().iter().map(|c| c.height).collect::<Vec<_>>()
         };
         assert_eq!(snapshot(2024), snapshot(2024));
+    }
+
+    /// A corpus value: an integer, or the hex bits of a fractional double.
+    fn native_f64(value: &serde_json::Value) -> u64 {
+        match value.as_str() {
+            Some(hex) => u64::from_str_radix(hex, 16).unwrap(),
+            None => (value.as_i64().unwrap() as f64).to_bits(),
+        }
+    }
+
+    /// Whole original `Rmg__HillsWaterAdjacencySeed @ 0x005A33F0` and
+    /// `Rmg__HillHeightRandomWalk @ 0x005A2F50` calls from
+    /// `tools/rmg_oracle/hill_walk.py`: every height, velocity and lock, the
+    /// exit RNG and the Gaussian cache.
+    #[test]
+    fn native_hill_walk_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/hill_walk.json");
+        let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
+        let globals = &doc["scene"]["family_globals"];
+        let base = |address: &str| u16::try_from(globals[address].as_u64().unwrap()).ok();
+        let identity = TileIds {
+            shore: int(&doc["scene"]["shore"]),
+            cliffs: TheaterCliffRanges {
+                cliff_set: base("00AA1020"),
+                cliff_ramps: base("00ABBEBC"),
+                water_cliffs: base("00AA101C"),
+                destroyable_cliffs: base("00ABC2C8"),
+                bridge_set: base("00AA0E28"),
+                wood_bridge_set: base("00ABAD1C"),
+                water_caves: base("00ABAD24"),
+                waterfall_east: base("00AA073C"),
+                waterfall_west: base("00ABB110"),
+                waterfall_north: base("00AA10A0"),
+                waterfall_south: base("00AA1050"),
+            },
+            ..ids()
+        };
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 5);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let mut scratch = RmgScratch::new(33, 16, 48);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                grid.get_mut(x, y).unwrap().tile = 0;
+            }
+            for (key, tile) in [("rough", "rough"), ("shore", "shore")] {
+                for c in input[key].as_array().unwrap() {
+                    grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile = int(&doc["scene"][tile]);
+                }
+            }
+            for c in input["locked"].as_array().unwrap() {
+                scratch.get_mut(int(&c[0]), int(&c[1])).water_lock = true;
+            }
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut gauss = Gaussian::default();
+            water_seed(&grid, &mut scratch, &identity);
+            walk(
+                &mut scratch,
+                &mut gauss,
+                &mut rng,
+                int(&input["ruggedness"]),
+            );
+
+            let diamond: Vec<(i32, i32)> = (0..33)
+                .flat_map(|y| (0..33).map(move |x| (x, y)))
+                .filter(|&(x, y)| scratch.in_diamond(x, y))
+                .collect();
+            let column = |key: &str| -> Vec<u64> {
+                row[key]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(native_f64)
+                    .collect()
+            };
+            let heights: Vec<u64> = diamond
+                .iter()
+                .map(|&(x, y)| scratch.get(x, y).height.to_bits())
+                .collect();
+            assert_eq!(heights, column("heights"), "{context}: heights");
+            let velocities: Vec<u64> = diamond
+                .iter()
+                .map(|&(x, y)| scratch.get(x, y).velocity.to_bits())
+                .collect();
+            assert_eq!(velocities, column("velocities"), "{context}: velocities");
+            let locks: Vec<[i32; 2]> = diamond
+                .iter()
+                .filter(|&&(x, y)| scratch.get(x, y).water_lock)
+                .map(|&(x, y)| [x, y])
+                .collect();
+            let native_locks: Vec<[i32; 2]> = row["locks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| [int(&c[0]), int(&c[1])])
+                .collect();
+            assert_eq!(locks, native_locks, "{context}: locks");
+            assert_eq!(
+                rng.into_continuation().into_native_parts(),
+                super::super::cliff_native_tests::native_state(doc, &row["rng_after"])
+                    .into_native_parts(),
+                "{context}: exit RNG"
+            );
+            let mut probe = RmgRng::new(0);
+            let value = gauss.next(&mut probe);
+            let cached = probe.next_u32() == RmgRng::new(0).next_u32();
+            assert_eq!(cached, int(&row["gauss_cached"]) != 0, "{context}: cache");
+            if cached {
+                assert_eq!(
+                    value.to_bits(),
+                    row["gauss_value_bits"].as_u64().unwrap(),
+                    "{context}: cached variate"
+                );
+            }
+        }
     }
 }

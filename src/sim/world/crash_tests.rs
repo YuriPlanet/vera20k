@@ -358,13 +358,14 @@ fn aircraft_drop_landing_uses_original_wheel_controls() {
             .unwrap();
         cell.land_type = input["land_type"].as_u64().unwrap() as u8;
         cell.speed_costs = SpeedCostProfile {
-            foot: Some(percent),
-            track: Some(percent),
-            wheel: Some(percent),
-            float: Some(percent),
-            amphibious: Some(percent),
-            float_beach: Some(percent),
-            hover: Some(percent),
+            foot: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            track: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            wheel: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            float: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            amphibious: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            float_beach: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            hover: Some(crate::rules::terrain_rules::test_speed_percent(percent)),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         };
         cell.base_speed_costs = cell.speed_costs.clone();
         assert_eq!(

@@ -65,9 +65,6 @@
 //! state. Tactical presentation consumes the shared GetFLH/live coordinates.
 //!
 //! RESIDUALS:
-//! - A type's `MindClearedSound=` naming an unknown sound is -1 natively and
-//!   FreeUnit falls back to the global (`0x00472057`); VERA keeps the name
-//!   and plays nothing. No stock type authors the key.
 //! - `AICaptureWoundedMark=` is read natively as a double and stored with
 //!   `FSTP float` under the process chop control word (`0x00670504..
 //!   0x00670509`); VERA parses to the nearest `f32`. Equal for stock `.25`;
@@ -618,7 +615,7 @@ pub(crate) fn init_capture_manager(
     let weapon_name =
         crate::sim::combat::combat_weapon::weapon_for_index(object_type, 0, 0)?.weapon_id?;
     let weapon = rules.weapon(weapon_name)?;
-    let warhead = rules.warhead(weapon.warhead.as_deref()?)?;
+    let warhead = rules.weapon_warhead(weapon)?;
     warhead
         .mind_control
         .then(|| CaptureManagerState::constructed(weapon.damage, weapon.infinite_mind_control))

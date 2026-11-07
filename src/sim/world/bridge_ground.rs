@@ -162,9 +162,6 @@ mod tests {
              Verses=150%,100%,100%,90%,50%,50%,100%,150%,30%,100%,100%\n",
         ), &art).unwrap();
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         rules
     }
 

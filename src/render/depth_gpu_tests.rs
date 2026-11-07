@@ -19,7 +19,7 @@ use wgpu::util::DeviceExt;
 
 use super::batch::{CameraUniform, SpriteInstance};
 use super::draw_state::DrawState;
-use super::frame_readback::PendingBgra8Readback;
+use super::frame_readback::PendingTextureReadback;
 use super::gpu::block_on;
 use super::native_z::{Z_GRADIENT_ZSHAPE_CLIP_FLAG, Z_GRADIENT_ZSHAPE_FLAG, ZGradient};
 
@@ -441,7 +441,7 @@ impl Gpu {
             pass.draw(0..6, 0..1);
         }
 
-        let readback = PendingBgra8Readback::encode(
+        let readback = PendingTextureReadback::encode(
             &self.device,
             &mut encoder,
             &color,

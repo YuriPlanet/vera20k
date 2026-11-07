@@ -838,10 +838,12 @@ mod tests {
         // there, and the cell whose shroud and fog the HD radar paints on it.
         assert_eq!((pick.object_pixel, pick.cell_pixel), ((10, 20), (32, 61)));
         let cell = signed_tracker_or_inverse_cell(pick.inverse, pick.cell_pixel, None);
-        let image = super::super::hd::HdImage::new(surface, 3);
+        // The cell the HD radar's composition reads for that pixel.
         assert_eq!(
             (cell.0 as u16, cell.1 as u16),
-            image.cell_at(pick.cell_pixel)
+            surface
+                .subdivided(3)
+                .surface_pixel_to_visibility_cell(pick.cell_pixel)
         );
     }
 

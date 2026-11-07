@@ -25,26 +25,30 @@ pub struct ParticleTypeId(pub u32);
 /// `Gas=0, Smoke=1, Fire=2, Spark=3, Railgun=4`. This is **different** from
 /// `ParticleSystemBehavesLike` — Gas and Smoke are swapped at the system level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(u8)]
+#[repr(i32)]
 pub enum ParticleBehavesLike {
     Gas = 0,
     Smoke = 1,
     Fire = 2,
     Spark = 3,
     Railgun = 4,
+    /// Constructor and unrecognized/empty ReadINI result.
+    Unknown = -1,
 }
 
 impl ParticleBehavesLike {
     /// Parse a `BehavesLike=` value from INI. Returns `None` for unknown strings.
     pub fn parse(s: &str) -> Option<Self> {
-        match s.trim() {
-            "Gas" => Some(Self::Gas),
-            "Smoke" => Some(Self::Smoke),
-            "Fire" => Some(Self::Fire),
-            "Spark" => Some(Self::Spark),
-            "Railgun" => Some(Self::Railgun),
-            _ => None,
-        }
+        [
+            Self::Gas,
+            Self::Smoke,
+            Self::Fire,
+            Self::Spark,
+            Self::Railgun,
+        ]
+        .into_iter()
+        .zip(["Gas", "Smoke", "Fire", "Spark", "Railgun"])
+        .find_map(|(behavior, name)| s.eq_ignore_ascii_case(name).then_some(behavior))
     }
 }
 
@@ -121,9 +125,7 @@ pub struct ParticleType {
     pub translucent_50_state: u8,
     /// Normalize the direction vector based on distance to target.
     pub normalized: bool,
-    /// Resolved next-particle reference. Always `None` after A2; the
-    /// 2-pass resolver introduced in Task A4 fills this in from the
-    /// captured name string.
+    /// Retained ParticleType+310 reference from the ordered native factory.
     pub next_particle: Option<ParticleTypeId>,
     /// Position offset applied when transitioning to next particle in a chain.
     pub next_particle_offset: IVec3,
@@ -152,51 +154,65 @@ pub struct ParticleType {
     pub z_velocity_range: i32,
 }
 
-/// Parse-state wrapper around a `ParticleType` whose `next_particle` reference
-/// has not yet been resolved.
-///
-/// `RuleSet::from_ini` collects these in pass 1, then resolves
-/// `next_particle_name` against the name → ID map in pass 2. The resulting
-/// `ParticleType` is stored in the registry.
-pub struct PendingParticleType {
-    /// The parsed type with `next_particle = None`.
-    pub partial: ParticleType,
-    /// Captured `NextParticle=` value to resolve in pass 2.
-    pub next_particle_name: Option<String>,
+/// Fields whose reader resets on each admitted ParticleType ReadINI body,
+/// unlike ordinary current-value scalar reads. One state belongs to each
+/// allocated type, including types allocated without a section.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(super) struct ParticleReadState {
+    behaves_like: ParticleBehavesLike,
+    end_state_ai: u8,
+    final_damage_state: u8,
+    color_list: Vec<[u8; 3]>,
+}
+
+impl Default for ParticleReadState {
+    fn default() -> Self {
+        // ParticleTypeClass::Constructor @ 0x00644BE0: +309/+30C zero,
+        // ColorList empty, and +314=-1 (0x00644CEE).
+        Self {
+            behaves_like: ParticleBehavesLike::Unknown,
+            end_state_ai: 0,
+            final_damage_state: 0,
+            color_list: Vec::new(),
+        }
+    }
+}
+
+impl ParticleReadState {
+    pub(super) fn apply_pass(&mut self, section: &IniSection) {
+        // ParticleTypeClass::ReadINI @ 0x00644F50: fresh ColorList temporary
+        // 644F7A..644FE1; signed EndStateAI default at6452DC; strcmpi table
+        // 6453BA..6453FF stores -1 for absent/unrecognized BehavesLike.
+        self.color_list = section.read_color_list("ColorList").unwrap_or_default();
+        self.end_state_ai =
+            section.read_int("EndStateAI", i32::from(self.end_state_ai as i8)) as u8;
+        self.final_damage_state =
+            section.read_int("FinalDamageState", i32::from(self.end_state_ai as i8)) as u8;
+        self.behaves_like = section
+            .read_name("BehavesLike", 0x20)
+            .and_then(ParticleBehavesLike::parse)
+            .unwrap_or(ParticleBehavesLike::Unknown);
+    }
 }
 
 impl ParticleType {
-    /// Parse a ParticleType from an INI section.
-    ///
-    /// `next_particle` is always `None` — the resolver in `RuleSet::from_ini`
-    /// fills it in after all particle types have been collected.
-    /// Use `from_ini_section_pending` if you need the unresolved reference name.
     #[cfg(test)]
     pub fn from_ini_section(name: &str, section: &IniSection) -> Self {
-        Self::from_ini_section_pending(name, section).partial
+        let mut read = ParticleReadState::default();
+        read.apply_pass(section);
+        Self::from_read_state(name, section, &read, None, None)
     }
 
-    /// Parse a ParticleType plus its unresolved `NextParticle=` name string.
-    pub fn from_ini_section_pending(name: &str, section: &IniSection) -> PendingParticleType {
-        let behaves_like = section
-            .read_name("BehavesLike", 0x20)
-            .and_then(ParticleBehavesLike::parse)
-            // Binary's string-table loop falls through to index 0 (Gas) when
-            // the INI string doesn't match any entry.
-            .unwrap_or(ParticleBehavesLike::Gas);
-
-        let end_state_ai = section.read_int("EndStateAI", 0) as u8;
-        let final_damage_state =
-            section.read_int("FinalDamageState", i32::from(end_state_ai)) as u8;
-
-        let next_particle_name = section
-            .read_name("NextParticle", 0x20)
-            .filter(|s| !s.eq_ignore_ascii_case("none"))
-            .map(str::to_owned);
-
-        let partial = Self {
+    pub(super) fn from_read_state(
+        name: &str,
+        section: &IniSection,
+        read: &ParticleReadState,
+        next_particle: Option<ParticleTypeId>,
+        warhead: Option<String>,
+    ) -> Self {
+        Self {
             name: name.to_string(),
-            behaves_like,
+            behaves_like: read.behaves_like,
             image: section.read_name("Image", 0x19).unwrap_or(name).to_owned(),
             alpha_image: section.read_object_alpha_image(""),
             start_frame: section.read_int("StartFrame", 0),
@@ -206,8 +222,7 @@ impl ParticleType {
             max_dc: section.read_int("MaxDC", 0),
             max_ec: section.read_int("MaxEC", 1),
             damage: section.read_int("Damage", 0),
-            // Constructor null; only the ordered Process owner reads it.
-            warhead: None,
+            warhead,
             num_loop_frames: section.read_int("NumLoopFrames", 1),
             translucency: section.read_int("Translucency", 0) as u8,
             wind_effect: section.read_int("WindEffect", 0),
@@ -216,19 +231,19 @@ impl ParticleType {
             deacc: section.read_double_to_float("Deacc", NativeF32Bits::POSITIVE_ZERO),
             radius: section.read_int("Radius", 0),
             delete_on_state_limit: section.read_bool("DeleteOnStateLimit", false),
-            end_state_ai,
+            end_state_ai: read.end_state_ai,
             start_state_ai: section.read_int("StartStateAI", 0) as u8,
             state_ai_advance: section.read_int("StateAIAdvance", 4) as u8,
-            final_damage_state,
+            final_damage_state: read.final_damage_state,
             translucent_25_state: section.read_int("Translucent25State", 0xFF) as u8,
             translucent_50_state: section.read_int("Translucent50State", 0xFF) as u8,
             normalized: section.read_bool("Normalized", false),
-            next_particle: None,
+            next_particle,
             next_particle_offset: IVec3::from_array(
                 section.read_coord_tokens("NextParticleOffset", [0; 3]),
             ),
 
-            color_list: section.read_color_list("ColorList").unwrap_or_default(),
+            color_list: read.color_list.clone(),
             color_speed: NativeF64Bits::from_bits(section.read_double("ColorSpeed", 0.0).to_bits()),
             start_color_1: section.read_color_rgb("StartColor1", [0, 0, 0], None),
             start_color_2: section.read_color_rgb("StartColor2", [0, 0, 0], None),
@@ -240,11 +255,6 @@ impl ParticleType {
             y_velocity: section.read_int("YVelocity", 1),
             min_z_velocity: section.read_int("MinZVelocity", 0),
             z_velocity_range: section.read_int("ZVelocityRange", 1),
-        };
-
-        PendingParticleType {
-            partial,
-            next_particle_name,
         }
     }
 }
@@ -253,6 +263,113 @@ impl ParticleType {
 mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
+
+    #[test]
+    fn particle_behaviors_reset_per_reached_layer() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::particle_system_type::ParticleSystemBehavesLike;
+        use crate::rules::ruleset::RuleSet;
+
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[Particles]\n0=P\n[ParticleSystems]\n0=S\n\
+             [P]\nBehavesLike=sMoKe\nMaxEC=8\nEndStateAI=7\nFinalDamageState=9\n\
+             ColorList=(255,0,0),(0,255,0)\nXVelocity=3\n\
+             [S]\nBehavesLike=sPaRk\nHoldsWhat=P\nSpawnSparkPercentage=.2\n",
+        ));
+        let first = RuleSet::from_rules_layers(&layers).unwrap();
+        let p = first.particle_type(first.p_type_id_by_name("P").unwrap());
+        let s = first.particle_system_type(first.ps_type_id_by_name("S").unwrap());
+        assert_eq!(p.behaves_like, ParticleBehavesLike::Smoke);
+        assert_eq!(s.behaves_like, ParticleSystemBehavesLike::Spark);
+        assert_eq!(p.color_list.len(), 2);
+        assert_eq!(p.final_damage_state, 9);
+
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str("[P]\nMaxEC=9\nbehaveslike=Fire\n[S]\nLifetime=5\n"),
+        );
+        let second = RuleSet::from_rules_layers(&layers).unwrap();
+        let p = second.particle_type(second.p_type_id_by_name("P").unwrap());
+        let s2 = second.particle_system_type(second.ps_type_id_by_name("S").unwrap());
+        assert_eq!(p.behaves_like as i32, -1);
+        assert_eq!(s2.behaves_like as i32, -1);
+        assert!(p.color_list.is_empty());
+        assert_eq!(p.final_damage_state, 7);
+        assert_eq!(p.x_velocity, 3);
+        assert_eq!(s2.spawn_spark_percentage, s.spawn_spark_percentage);
+    }
+
+    #[test]
+    fn particle_factory_bindings_preserve_allocation_order_and_saved_reads() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[Particles]\n0=P\n[ParticleSystems]\n0=S\n\
+             [P]\nBehavesLike=Smoke\nNextParticle=none\n\
+             [none]\nBehavesLike=Fire\nMaxEC=6\n\
+             [S]\nBehavesLike=Smoke\nHoldsWhat=Late\n\
+             [Late]\nBehavesLike=Spark\nMaxEC=200\n",
+        ));
+        let first = RuleSet::from_rules_layers(&layers).unwrap();
+        let p_id = first.p_type_id_by_name("P").unwrap();
+        let next = first.particle_type(p_id).next_particle.unwrap();
+        assert_eq!(first.particle_type(next).name, "none");
+        assert_eq!(
+            first.particle_type(next).behaves_like,
+            ParticleBehavesLike::Fire
+        );
+        let late = first
+            .particle_system_type(first.ps_type_id_by_name("S").unwrap())
+            .holds_what
+            .unwrap();
+        assert_eq!(
+            first.particle_type(late).behaves_like,
+            ParticleBehavesLike::Unknown
+        );
+        assert_eq!(first.particle_type(late).max_ec, 1);
+
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str(
+                "[P]\nNextParticle=\n[S]\nBehavesLike=Smoke\n[Late]\nBehavesLike=Railgun\n",
+            ),
+        );
+        let processed = layers.process().unwrap();
+        let second = RuleSet::from_processed_rules(&processed).unwrap();
+        assert_eq!(second.particle_type(p_id).next_particle, Some(next));
+        assert_eq!(
+            second.particle_type(late).behaves_like,
+            ParticleBehavesLike::Railgun
+        );
+        let empty = second
+            .particle_system_type(second.ps_type_id_by_name("S").unwrap())
+            .holds_what
+            .unwrap();
+        assert_eq!(second.particle_type(empty).name, "");
+        assert_eq!(second.particle_type(empty).max_ec, 1);
+        assert_eq!(
+            second.particle_type(empty).behaves_like,
+            ParticleBehavesLike::Unknown
+        );
+        let restored = serde_json::from_slice(&serde_json::to_vec(&processed).unwrap()).unwrap();
+        assert_eq!(
+            second.simulation_config_hash(),
+            RuleSet::from_processed_rules(&restored)
+                .unwrap()
+                .simulation_config_hash()
+        );
+
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[P]\nNextParticle=<none>\n"),
+        );
+        let cleared = RuleSet::from_rules_layers(&layers).unwrap();
+        assert_eq!(cleared.particle_type(p_id).next_particle, None);
+        assert_ne!(
+            cleared.simulation_config_hash(),
+            second.simulation_config_hash()
+        );
+    }
 
     #[test]
     fn behaves_like_discriminants_match_binary() {
@@ -273,8 +390,8 @@ mod tests {
         assert_eq!(pt.translucent_25_state, 0xFF);
         assert_eq!(pt.translucent_50_state, 0xFF);
         assert_eq!(pt.color_list, Vec::<[u8; 3]>::new());
-        // BehavesLike defaults to Gas (binary's string-table fallthrough).
-        assert_eq!(pt.behaves_like, ParticleBehavesLike::Gas);
+        // The native constructor and unknown reader result are -1.
+        assert_eq!(pt.behaves_like, ParticleBehavesLike::Unknown);
         // FinalDamageState mirrors EndStateAI when both absent — both 0 here.
         assert_eq!(pt.final_damage_state, pt.end_state_ai);
         assert_eq!(pt.next_particle, None);
@@ -340,10 +457,10 @@ mod tests {
     }
 
     #[test]
-    fn from_ini_unknown_behaves_like_falls_through_to_gas() {
+    fn from_ini_unknown_behaves_like_is_minus_one() {
         let ini = IniFile::from_str("[Foo]\nBehavesLike=Bogus\n");
         let section = ini.section("Foo").unwrap();
         let pt = ParticleType::from_ini_section("Foo", section);
-        assert_eq!(pt.behaves_like, ParticleBehavesLike::Gas);
+        assert_eq!(pt.behaves_like, ParticleBehavesLike::Unknown);
     }
 }

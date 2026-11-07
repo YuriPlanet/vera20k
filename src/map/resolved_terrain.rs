@@ -42,6 +42,7 @@ use crate::rules::overlay_types::{
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_object_type::TerrainObjectType;
 use crate::rules::terrain_rules::{LandType, LandTypeSemantics, SpeedCostProfile, TerrainRules};
+use crate::util::lookup_hash::LookupMap;
 use crate::util::pixel_conversion::PixelConversionBounds;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{
@@ -73,9 +74,10 @@ pub(crate) use bridge_flags::RealCellBridgeFlags0x1180;
 pub use build::OverlayLoadSource;
 pub use build::{AuthoredTerrainFill, RadarColorMetadata, current_tile_permissions};
 use build::{presentation_tile_parts, wheel_speed_at_or_below_one_percent};
+pub(crate) use build::cliff_back_normal_reclass_applies;
 pub(crate) use cell_recalc::{
     AutomaticTubeAllocation, AutomaticTubeRequest, LoadCellRecalcEffects, LoadCellRecalcError,
-    LoadCellRecalcOutcome, LoadCellRecalcState,
+    LoadCellRecalcOutcome, LoadCellRecalcState, is_behind_cliff,
 };
 use cliffs::DestroyableCliffCatalog;
 pub(crate) use native_cell::{
@@ -117,7 +119,25 @@ pub(crate) fn recalc_zone_type(
     outside: bool,
     overlay_zone_type: Option<u8>,
     land_type: u8,
-    wheel_speed: Option<u8>,
+    wheel_speed: Option<crate::util::native_x87::NativeF32Bits>,
+    terrain_object_occupation: Option<i32>,
+) -> u8 {
+    recalc_zone_type_for_wheel_block(
+        outside,
+        overlay_zone_type,
+        land_type,
+        wheel_speed_at_or_below_one_percent(wheel_speed),
+        terrain_object_occupation,
+    )
+}
+
+/// [`recalc_zone_type`] for a caller that holds the land row's
+/// `Wheel <= 1%` result (`0x00483D57..0x00483D69`) instead of the speed.
+pub(crate) fn recalc_zone_type_for_wheel_block(
+    outside: bool,
+    overlay_zone_type: Option<u8>,
+    land_type: u8,
+    wheel_blocked: bool,
     terrain_object_occupation: Option<i32>,
 ) -> u8 {
     if outside {
@@ -128,7 +148,7 @@ pub(crate) fn recalc_zone_type(
         zone_class::WATER
     } else if land_type == LandType::Beach.as_index() {
         zone_class::BEACH
-    } else if wheel_speed_at_or_below_one_percent(wheel_speed) {
+    } else if wheel_blocked {
         zone_class::IMPASSABLE
     } else if terrain_object_occupation == Some(7) {
         zone_class::WALL
@@ -219,6 +239,10 @@ pub struct ResolvedTerrainCell {
     /// by Engineer CABHUT bridge-repair dispatch.
     pub is_wood_bridge_repair_tile: bool,
     pub level: u8,
+    /// Raw CellClass+0x119 from ReadIsoMapPack5 (gamemd.exe 0x0056BAC0).
+    /// Constructor47BBF0 initializes zero; Cell Save483C10/Load4839F0 retain
+    /// the whole byte. Tile/overlay mutations do not reinterpret or reset it.
+    pub legacy_ice_byte: u8,
     pub filled_clear: bool,
     pub tileset_index: Option<u16>,
     /// `CellClass+0xEC` LandType after TMP and overlay derivation: the one
@@ -717,8 +741,9 @@ pub struct ResolvedTerrainGrid {
     overlay_passability: Vec<OverlayPassability>,
     /// Pristine TMP dimensions used by Techno draw depth (0x547150/0x704350).
     /// Derived asset data, keyed by tile identity rather than mutable cell:
-    /// never serialized or included in simulation hashes.
-    native_tmp_draw_heights: HashMap<u16, PristineTmpHeader>,
+    /// never serialized or included in simulation hashes. Every drawn object
+    /// asks it each frame and nothing walks it, so it takes the lookup hasher.
+    native_tmp_draw_heights: LookupMap<u16, PristineTmpHeader>,
     cells: Vec<ResolvedTerrainCell>,
     /// Derived bound on the signed levels in `cells`, always holding 0 (the
     /// level presentation assumes for a cell the grid lacks). Every
@@ -798,9 +823,10 @@ pub struct ResolvedTerrainGrid {
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_flat_ground_grid(size: u16) -> ResolvedTerrainGrid {
     let costs = SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         ..Default::default()
     };
     test_grid(size, size, |rx, ry| ResolvedTerrainCell {
@@ -818,15 +844,16 @@ pub(crate) const TEST_RETAIL_CLEAR_INI: &str = "[Clear]\nFoot=100%\nTrack=100%\n
 
 /// The row the production land reader makes of retail `[Clear]`.
 #[cfg(any(test, feature = "test-support"))]
-pub(crate) const TEST_RETAIL_CLEAR_SPEED_COSTS: SpeedCostProfile = SpeedCostProfile {
-    foot: Some(100),
-    track: Some(100),
-    wheel: Some(100),
-    float: Some(0),
-    amphibious: Some(80),
-    float_beach: Some(0),
-    hover: Some(50),
-};
+pub(crate) fn test_retail_clear_speed_costs() -> SpeedCostProfile {
+    static ROW: std::sync::OnceLock<SpeedCostProfile> = std::sync::OnceLock::new();
+    *ROW.get_or_init(|| {
+        TerrainRules::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            TEST_RETAIL_CLEAR_INI,
+        ))
+        .row(LandType::Clear)
+        .speed_costs
+    })
+}
 
 /// Retail `[Clear]` read by the production land reader, for binding a test
 /// grid's land rows as a scenario load binds its rules.
@@ -841,8 +868,8 @@ pub fn test_retail_clear_rules() -> TerrainRules {
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn test_retail_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
-        speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
-        base_speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
+        speed_costs: test_retail_clear_speed_costs(),
+        base_speed_costs: test_retail_clear_speed_costs(),
         ..test_clear_cell(rx, ry)
     }
 }
@@ -876,13 +903,14 @@ pub fn test_grid(
 /// Every SpeedType at 100%.
 #[cfg(any(test, feature = "test-support"))]
 pub const TEST_OPEN_SPEED_COSTS: SpeedCostProfile = SpeedCostProfile {
-    foot: Some(100),
-    track: Some(100),
-    wheel: Some(100),
-    float: Some(100),
-    amphibious: Some(100),
-    float_beach: Some(100),
-    hover: Some(100),
+    foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+    winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
 };
 
 /// [`test_flat_cell`], named for the Clear land it carries.
@@ -935,6 +963,7 @@ pub fn test_loader_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_flat_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
+        legacy_ice_byte: 0,
         rx,
         ry,
         source_tile_index: 0,
@@ -1059,7 +1088,7 @@ impl ResolvedTerrainGrid {
             cells,
             land_speed_costs: land_speed_cost_profiles(None),
             overlay_passability: Vec::new(),
-            native_tmp_draw_heights: HashMap::new(),
+            native_tmp_draw_heights: LookupMap::default(),
             shared_cell_dummy: SharedCellDummy::fresh(),
             mutation_epoch: 0,
             native_allocated: None,
@@ -1492,7 +1521,8 @@ impl ResolvedTerrainCell {
     /// overlay fields are the knobs a test turns.
     pub fn clear_for_test(rx: u16, ry: u16) -> Self {
         let speed_costs = SpeedCostProfile {
-            wheel: Some(100),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             ..Default::default()
         };
         Self {

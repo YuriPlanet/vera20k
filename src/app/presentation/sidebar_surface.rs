@@ -20,9 +20,14 @@
 //! frame's pixels; after the zoom scales the frame into the window, the
 //! window copy (`draw_window_copy`) puts them there at full size, except
 //! under the UI drawn over them in the frame.
+//!
+//! The column's text always draws at the window's pixels: in the surface
+//! where its pixels are the window's, over the copy where they are not
+//! ([`column_text`]).
 
 use crate::app::AppState;
 use crate::render::batch::{BatchRenderer, CameraUniform};
+use crate::render::bit_font::TextRaster;
 use crate::render::scaled_copy::{MaskedCopy, ScaledSurface};
 use crate::render::terrain_draw::{
     PackedCompositePiece, PackedSpriteKind, PackedSurface, TerrainDrawRenderer,
@@ -45,6 +50,10 @@ pub(crate) struct SidebarSurface {
     frame: SidebarFrame,
     packed: Option<PackedSurface>,
     column_camera: CameraUniform,
+    /// The column's camera at its surface's own pixels, for its text
+    /// ([`column_text`]).
+    text_camera_buffer: wgpu::Buffer,
+    text_camera: wgpu::BindGroup,
     window: MaskedCopy,
 }
 
@@ -83,12 +92,15 @@ impl SidebarSurface {
                 window_placement: window.placement_buffer(device),
             }
         };
+        let (text_camera_buffer, text_camera) = batch.create_ui_camera(device);
         let surface = Self {
             column: part("Sidebar Surface", frame.surface_draw_size()),
             bar: part("Command Bar Surface", frame.bar_draw_size()),
             frame,
             packed: None,
             column_camera: batch.ui_camera_uniform(),
+            text_camera_buffer,
+            text_camera,
             window,
         };
         surface.place(queue);
@@ -159,6 +171,28 @@ impl SidebarSurface {
             camera_pos: [ui.camera_pos[0] + frame.layout_left(), ui.camera_pos[1]],
             ..ui
         };
+        // Text laid out for the surface's pixels lands there from the
+        // origin; the Z row the depth reads stays the column's.
+        let (width, height) = frame.surface_draw_size();
+        let text = CameraUniform {
+            screen_size: [width as f32, height as f32],
+            camera_pos: [0.0; 2],
+            native_z_origin_y: self.column_camera.camera_pos[1]
+                + self.column_camera.native_z_origin_y,
+            ..self.column_camera
+        };
+        queue.write_buffer(&self.text_camera_buffer, 0, bytemuck::bytes_of(&text));
+    }
+
+    /// The camera the column's text draws with in the surface:
+    /// [`Self::camera`], or one at the surface's own pixels while they are
+    /// finer than the sidebar's ([`column_text`]).
+    pub(crate) fn text_camera(&self) -> &wgpu::BindGroup {
+        if self.frame.draw_scale() > 1 {
+            &self.text_camera
+        } else {
+            &self.column.camera
+        }
     }
 
     pub(crate) fn prepare_packed(&mut self, device: &wgpu::Device, renderer: &TerrainDrawRenderer) {
@@ -346,6 +380,89 @@ impl SidebarSurface {
     }
 }
 
+/// The column's text layers in their draw order: the queue counts
+/// (`0x006A9D7B`), the Ready and Super labels (`0x006A9D94`), then the HOLD
+/// label (`0x006AA014`) and the credits.
+pub(crate) const TEXT_LAYERS: [&str; 3] =
+    ["sidebar_queue_text", "sidebar_label_text", "sidebar_text"];
+
+/// Where the sidebar column's text (its queue counts, labels and credits)
+/// is drawn this frame, with the raster it is emitted for there.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ColumnText {
+    /// In the column's surface, between its other layers: at the surface's
+    /// pixels, through the raster while they are finer than the sidebar's
+    /// ([`SidebarSurface::text_camera`]).
+    Surface(Option<TextRaster>),
+    /// Over the column's copy in the frame (`dispatch_draw_passes`), in the
+    /// frame's pixels with its UI camera.
+    Frame(TextRaster),
+    /// Over the column's window copy after the zoom
+    /// (`window_ui::draw_battlefield`), in the window's pixels.
+    Window(TextRaster),
+}
+
+impl ColumnText {
+    /// The raster the text is emitted for; `None` is the surface's own.
+    pub(crate) fn raster(self) -> Option<TextRaster> {
+        match self {
+            Self::Surface(raster) => raster,
+            Self::Frame(raster) | Self::Window(raster) => Some(raster),
+        }
+    }
+}
+
+/// Where the column's text goes this frame. It is laid out in sidebar pixels
+/// and drawn at the window's: in the surface, in gamemd's order among the
+/// column's layers (`StripClass::Draw`, `0x006A9A3E..0x006AA014`), while
+/// each surface pixel shows as one window pixel. Otherwise (the Large size,
+/// or a zoom between whole steps) the column's copy would resample it, so
+/// it goes over the copy: in the window after the zoom, or in the frame
+/// without one or under the in-match page, where the battlefield's text
+/// stays too. Over the copy, the build clock (`0x006A9E97`) no longer blends
+/// over the queue counts gamemd draws before it.
+pub(crate) fn column_text(state: &AppState) -> ColumnText {
+    let input = &state.match_state.input;
+    place_column_text(
+        state.sidebar_frame(),
+        [input.camera_x, input.camera_y],
+        crate::app::presentation::window_ui::battlefield_raster(state),
+    )
+}
+
+/// [`column_text`] for `frame`, the UI camera at `camera`, and `window`, the
+/// battlefield's window raster this frame.
+fn place_column_text(
+    frame: SidebarFrame,
+    [camera_x, camera_y]: [f32; 2],
+    window: Option<TextRaster>,
+) -> ColumnText {
+    let camera = [camera_x + frame.layout_left(), camera_y];
+    if frame.draws_window_pixels() {
+        let scale = frame.draw_scale();
+        return ColumnText::Surface((scale > 1).then_some(TextRaster {
+            scale: scale as f32,
+            origin: [0.0; 2],
+            camera,
+        }));
+    }
+    match window {
+        Some(window) => ColumnText::Window(TextRaster {
+            scale: frame.scale() * window.scale,
+            origin: [
+                window.origin[0] + frame.frame_left() * window.scale,
+                window.origin[1],
+            ],
+            camera,
+        }),
+        None => ColumnText::Frame(TextRaster {
+            scale: frame.scale(),
+            origin: [camera_x + frame.frame_left(), camera_y],
+            camera,
+        }),
+    }
+}
+
 /// The window pixels wholly inside frame rect `(x, y, width, height)` once
 /// `zoom` scales it: one it shares with a neighbour keeps the zoom's blend.
 fn window_rect(zoom: ZoomGeometry, (x, y, width, height): (u32, u32, u32, u32)) -> [u32; 4] {
@@ -525,7 +642,7 @@ mod tests {
             });
             surface.composite(&mut pass);
         }
-        let readback = crate::render::frame_readback::PendingBgra8Readback::encode(
+        let readback = crate::render::frame_readback::PendingTextureReadback::encode(
             &gpu.device,
             &mut encoder,
             &color,
@@ -543,6 +660,55 @@ mod tests {
     fn pixel(pixels: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
         let at = ((y * width + x) * 4) as usize;
         pixels[at..at + 4].try_into().unwrap()
+    }
+
+    /// The column's text goes over the copy where the copy would resample
+    /// it, landing where the copy puts the column; whole steps keep it in
+    /// the surface.
+    #[test]
+    fn column_text_goes_over_a_resampling_copy() {
+        let camera = [64.0, 32.0];
+        // Large unzoomed at 1080p: over the frame's copy, 1.5 frame pixels
+        // per sidebar pixel from the column's corner (1668, 0).
+        let large = SidebarFrame::new(1920, 1080, 150).in_window(100, true);
+        let ColumnText::Frame(raster) = place_column_text(large, camera, None) else {
+            panic!("Large keeps its text in the surface");
+        };
+        let corner = [camera[0] + large.layout_left(), camera[1]];
+        assert_eq!(raster.point(corner), [64.0 + 1668.0, 32.0]);
+        assert_eq!(
+            raster.point([corner[0] + 10.0, 36.0]),
+            [64.0 + 1683.0, 38.0]
+        );
+        // Normal zoomed 150%: over the window copy, where the zoom puts it.
+        let window = TextRaster {
+            scale: 1.5,
+            origin: [10.0, 0.0],
+            camera,
+        };
+        let normal = SidebarFrame::new(1280, 720, 100).in_window(150, false);
+        let ColumnText::Window(raster) = place_column_text(normal, camera, Some(window)) else {
+            panic!("a 150% zoom keeps the text in the surface");
+        };
+        let corner = [camera[0] + normal.layout_left(), camera[1] + 2.0];
+        assert_eq!(raster.point(corner), [10.0 + 1112.0 * 1.5, 3.0]);
+        // Whole steps: XL unzoomed draws at the surface's 2x pixels, Normal
+        // at its own.
+        let xl = SidebarFrame::new(1920, 1080, 200).in_window(100, false);
+        let surface = TextRaster {
+            scale: 2.0,
+            origin: [0.0; 2],
+            camera: [64.0 + 792.0, 32.0],
+        };
+        assert_eq!(
+            place_column_text(xl, camera, None),
+            ColumnText::Surface(Some(surface))
+        );
+        let native = SidebarFrame::native(800, 600);
+        assert_eq!(
+            place_column_text(native, camera, Some(window)),
+            ColumnText::Surface(None)
+        );
     }
 
     /// At Normal the copy is 1:1 in the production sRGB format: every byte
@@ -711,7 +877,7 @@ mod tests {
             &depth_view,
         );
         let read = |encoder: &mut wgpu::CommandEncoder, texture: &wgpu::Texture, (w, h)| {
-            crate::render::frame_readback::PendingBgra8Readback::encode(
+            crate::render::frame_readback::PendingTextureReadback::encode(
                 &gpu.device,
                 encoder,
                 texture,

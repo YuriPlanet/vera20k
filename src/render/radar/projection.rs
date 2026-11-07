@@ -8,14 +8,13 @@ use crate::map::terrain::{PlayfieldPresentationGeometry, TerrainGrid};
 use super::current_cell::CurrentRadarCellAuthority;
 use super::geometry::NativeRadarSurfaceGeometry;
 use super::helpers::{
-    COLOR_SHROUD, MINIMAP_HEIGHT, MINIMAP_WIDTH, OverlayPixel, RadarSurfacePixel, TerrainPixel,
-    TerrainPixels, compute_aspect_fit, overlay_radar_color, radar_color_for_cell,
-    radar_colors_for_cell, set_pixel, structural_bridge_radar_color,
-    terrain_brightness_for_theater, world_to_minimap_pixel,
+    COLOR_SHROUD, MINIMAP_HEIGHT, MINIMAP_WIDTH, OverlayPixel, TerrainPixel, TerrainPixels,
+    compute_aspect_fit, overlay_radar_color, radar_color_for_cell, radar_colors_for_cell,
+    set_pixel, structural_bridge_radar_color, terrain_brightness_for_theater,
+    world_to_minimap_pixel,
 };
 use super::minimap::{MinimapCellRadarSource, MinimapOverlayDatum};
 use super::terrain::{NativeRadarCellColors, NativeRadarTerrainSurface};
-use crate::render::native_surface_format::RGB565;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(in crate::render) struct PrimaryRadarCopyFrame {
@@ -65,13 +64,14 @@ pub(super) fn aperture_pixel(
 }
 
 pub(super) struct MinimapPlayfieldProjection {
+    /// The mapless fallback's terrain in the aperture; empty with a generated
+    /// surface, which the GPU composes ([`super::compose`]).
     pub base_rgba: Vec<u8>,
     pub world_origin_x: f32,
     pub world_origin_y: f32,
     pub world_width: f32,
     pub world_height: f32,
     pub terrain_pixels: TerrainPixels,
-    pub surface_pixels: Vec<RadarSurfacePixel>,
     pub overlay_pixels: Vec<OverlayPixel>,
     pub map_offset_x: f32,
     pub map_offset_y: f32,
@@ -79,37 +79,6 @@ pub(super) struct MinimapPlayfieldProjection {
     pub map_pixel_h: f32,
     pub native_radar_surface: Option<NativeRadarSurfaceGeometry>,
     pub native_radar_terrain: Option<NativeRadarTerrainSurface>,
-}
-
-pub(super) fn rasterize_native_terrain(
-    surface: &NativeRadarTerrainSurface,
-) -> (Vec<u8>, Vec<RadarSurfacePixel>) {
-    let mut rgba = vec![0u8; (MINIMAP_WIDTH * MINIMAP_HEIGHT * 4) as usize];
-    for pixel in rgba.as_chunks_mut::<4>().0 {
-        pixel.copy_from_slice(&COLOR_SHROUD);
-    }
-    let geometry = surface.geometry();
-    let generated_size = geometry.generated_size();
-    let mut pixels = Vec::with_capacity(surface.generated_rgb565().len());
-    for (index, &packed) in surface.generated_rgb565().iter().enumerate() {
-        let px = index as i32 % generated_size.0;
-        let py = index as i32 / generated_size.0;
-        let [red, green, blue] = RGB565.unpack_rgb8(packed);
-        let color = [red, green, blue, 255];
-        let (rx, ry) = geometry.surface_pixel_to_visibility_cell((px, py));
-        if let Some((dest_x, dest_y)) = aperture_pixel(geometry.into(), (px as u32, py as u32)) {
-            set_pixel(&mut rgba, MINIMAP_WIDTH, dest_x, dest_y, color);
-        }
-        pixels.push(RadarSurfacePixel {
-            rx,
-            ry,
-            px: px as u32,
-            py: py as u32,
-            packed_rgb565: packed,
-            color,
-        });
-    }
-    (rgba, pixels)
 }
 
 impl MinimapPlayfieldProjection {
@@ -335,13 +304,9 @@ impl MinimapPlayfieldProjection {
                 terrain_brightness,
             )
         });
-        let surface_pixels = if let Some(surface) = &native_radar_terrain {
-            let (native_rgba, pixels) = rasterize_native_terrain(surface);
-            base_rgba = native_rgba;
-            pixels
-        } else {
-            Vec::new()
-        };
+        if native_radar_terrain.is_some() {
+            base_rgba = Vec::new();
+        }
 
         Self {
             base_rgba,
@@ -350,7 +315,6 @@ impl MinimapPlayfieldProjection {
             world_width,
             world_height,
             terrain_pixels: TerrainPixels::new(terrain_pixels),
-            surface_pixels,
             overlay_pixels,
             map_offset_x,
             map_offset_y,

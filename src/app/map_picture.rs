@@ -6,10 +6,13 @@
 //! The first time a map is shown, the menus start a hidden run of this
 //! executable (`--map-picture`, [`session`]) that loads the map as a quiet
 //! Battle, draws its battlefield where the map's own preview shows it
-//! ([`placement`]) and writes a PNG to `MapPreviews/<build>/<sha256>.png` in
-//! the settings folder ([`pictures`]). The picture is kept by the map's
-//! SHA-256, so every map with the same bytes, under any name, shares it; each
-//! build and game folder keeps its own ([`generation_folder`]). Showing the
+//! ([`placement`]), marks its ore yellow and its gems purple as map library
+//! previews do, and writes a PNG to `MapPreviews/<generation>/<sha256>.png`
+//! in the settings folder ([`pictures`]). The picture is kept by the map's
+//! SHA-256, so every map with the same bytes, under any name, shares it.
+//! Every later build shows it until the pictures' version changes, so a new
+//! build never waits for it; each game folder keeps its own
+//! ([`generation_folder`]). Showing the
 //! preview's place in the preview's shape lets the menus fit the picture in
 //! the very rectangle the preview filled, so the map and its start markers
 //! stay put when the picture replaces it.
@@ -34,8 +37,12 @@ const FLAG: &str = "--map-picture";
 /// The longest a run lives, however it hangs: past it the run ends itself,
 /// so no run outlives the game that started it for long.
 const LIFETIME: std::time::Duration = std::time::Duration::from_secs(150);
-/// Hex digits naming a build's pictures folder.
+/// Hex digits naming a pictures folder ([`generation_folder`]).
 const GENERATION_LEN: usize = 16;
+/// The pictures' version. Bump it when a change to how VERA draws a picture
+/// (its framing, size or marks) should redraw the pictures kept so far;
+/// until then every build shows them.
+const PICTURE_VERSION: u32 = 1;
 
 /// One hidden run's job: `vera20k --map-picture <map> --sha256 <hex> --output
 /// <png>`, and for tools/map_render.py `--area view`, `--max-size <w>x<h>` and
@@ -200,15 +207,13 @@ fn picture_path(folder: &Path, sha256: &str) -> PathBuf {
     folder.join(format!("{sha256}.png"))
 }
 
-/// The folder in `pictures` for this build's pictures of maps drawn with the
-/// art in `ra2_dir`: a picture shows what this build draws with that art, so
-/// a new build or game folder draws its own. The folders of the others,
-/// which this build never shows, are removed.
+/// The folder in `pictures` for the [`PICTURE_VERSION`] pictures of maps
+/// drawn with the art in `ra2_dir`: every build of that version shares it,
+/// and another game folder draws its own. The folders of other versions and
+/// game folders, which this build never shows, are removed.
 fn generation_folder(pictures: &Path, ra2_dir: &Path) -> PathBuf {
-    let mut key = env!("VERA20K_NETWORK_BUILD").as_bytes().to_vec();
-    key.push(0);
-    key.extend_from_slice(ra2_dir.to_string_lossy().as_bytes());
-    let name = crate::util::sha256::sha256_hex(&key)[..GENERATION_LEN].to_owned();
+    let key = format!("{PICTURE_VERSION}\0{}", ra2_dir.to_string_lossy());
+    let name = crate::util::sha256::sha256_hex(key.as_bytes())[..GENERATION_LEN].to_owned();
     for entry in std::fs::read_dir(pictures).into_iter().flatten().flatten() {
         let other = entry.file_name().to_str().is_some_and(|other| {
             other != name
@@ -295,20 +300,22 @@ mod tests {
     }
 
     #[test]
-    fn each_build_and_game_folder_keeps_its_own_pictures() {
+    fn each_picture_version_and_game_folder_keeps_its_own_pictures() {
         let pictures =
             std::env::temp_dir().join(format!("vera20k-map-pictures-{}", std::process::id()));
-        let older_build = pictures.join("0123456789abcdef");
+        let older = pictures.join("0123456789abcdef");
         let not_ours = pictures.join("Notes");
-        std::fs::create_dir_all(&older_build).unwrap();
+        std::fs::create_dir_all(&older).unwrap();
         std::fs::create_dir_all(&not_ours).unwrap();
         let folder = generation_folder(&pictures, Path::new("/games/yr"));
-        assert_eq!(folder.parent(), Some(pictures.as_path()));
+        // Named by the pictures' version 1 and the game folder alone, so
+        // every build of that version shows the same pictures.
+        assert_eq!(folder, pictures.join("15dae2fa124079a9"));
         assert_ne!(
             folder,
             generation_folder(&pictures, Path::new("/games/modded"))
         );
-        assert!(!older_build.exists(), "another build's pictures stayed");
+        assert!(!older.exists(), "another version's pictures stayed");
         assert!(not_ours.exists());
         std::fs::remove_dir_all(&pictures).unwrap();
     }

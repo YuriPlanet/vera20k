@@ -64,11 +64,11 @@ impl BuildingLight {
 }
 
 /// Two type facts the removal paths read, copied onto the object:
-/// - `ObjectClass::Limbo` (`0x005F4D30`) dirties the tactical rect of the
-///   object's extent when the type's `+0xAC` pointer is set
-///   ([`LifecycleOutput::DirtyTacticalRect`]). VERA keeps the fact false
-///   unless a caller has positive evidence and never infers it from category
-///   or render representation; no production path sets it.
+/// - `ObjectClass::Limbo` (`0x005F4D30`) dirties the AlphaImage-sized rect
+///   around GetCoords when the type's AlphaImage (`+0xAC`) loaded
+///   ([`LifecycleOutput::DirtyTacticalRect`]). No production path sets the
+///   fact: that rect only clears the object's glow, and the tactical A plane
+///   redraws whenever its glow list changes (`alpha_shape`).
 /// - `Occupier=`, which `FootClass::PointerExpired` (`0x004D9960`) tests to
 ///   keep a capturing infantryman's NavCom on an expiring target.
 ///   Construction stamps it ([`Self::stamp_occupier`]).
@@ -718,6 +718,18 @@ pub enum LifecycleOutput {
         owner: InternedId,
         node_id: u64,
         next_node: Option<u64>,
+    },
+    /// PlanMgr append 0x00638120 refused `owner`'s event with a message
+    /// (latched with ScoldSound) that only the local house shows.
+    PlanningAppendRefused {
+        owner: InternedId,
+        message: super::planning::PlanningAppendMessage,
+    },
+    /// Append 0x006383BF set AC4C90 for `owner`: if local, PlanMgr637270's
+    /// next frame pass deselects all and posts `message`.
+    PlanningFramePassQueued {
+        owner: InternedId,
+        message: super::planning::PlanningAppendMessage,
     },
     /// HouseBegin4FA41C clears the category prediction gate before builder
     /// admission, including a refused Begin. The strip's request survives.
@@ -1649,7 +1661,7 @@ impl Simulation {
                 .get(stable_id)
                 .is_some_and(|entity| entity.category() == EntityCategory::Structure)
         {
-            for viewer in self.fog_viewers() {
+            for &viewer in self.fog_viewers().iter() {
                 self.freeze_building_in_fog(viewer, stable_id, false, context);
             }
         }
@@ -1719,6 +1731,8 @@ impl Simulation {
         } else {
             false
         };
+        // Unlimbo's AlphaShapeClass block follows the Logic registration.
+        self.construct_alpha_shape(stable_id, context.rules());
         // Building4415D8: successful normal Unlimbo after opening/base-plan.
         // The early dead/failed paths do not reach this call.
         let rules = context.rules();
@@ -5714,6 +5728,10 @@ impl Simulation {
         // VERA-only: a batched target scan holds its pick across the turns
         // before its scanner's as a TarCom does (`techno_ai::scan_batch`).
         self.release_batched_scan_pick(expired_id);
+        // `AlphaShapeClass::PointerExpired @ 0x00420E70` listens whatever the
+        // control and touches no other listener's state, so its place among
+        // the listeners changes nothing.
+        self.alpha_shapes.pointer_expired(expired_id);
         // `DispatchPointerExpiredCleanup @ 0x007258D0` calls
         // `BombListClass::PointerGotInvalid @ 0x00439150` after its listener
         // loop (0x00725961) whatever the control, so a cloaking planter loses
@@ -5826,10 +5844,8 @@ impl Simulation {
 
         // BuildingLight436A00; Ares1004EBC0 preserves a cloaking parent's
         // link on control0, while the target clear remains unconditional.
-        self.substrate.spotlights_pointer_expired(
-            expired_id,
-            control == PointerExpiryControl::Uninit,
-        );
+        self.substrate
+            .spotlights_pointer_expired(expired_id, control == PointerExpiryControl::Uninit);
 
         #[cfg(any(test, feature = "test-support"))]
         if let Some(smudge) = self
@@ -6371,7 +6387,12 @@ impl Simulation {
         }
         // ObjectClass::UnInit's first statement (`0x005F65F3`) defuses a
         // carried bomb silently: sold, crushed, erased.
-        Self::bomb_defuse(&mut self.substrate, &mut self.bombs, stable_id);
+        Self::bomb_defuse(
+            &mut self.substrate,
+            &mut self.bombs,
+            &mut self.sound_events,
+            stable_id,
+        );
         self.notify_pointer_expired(stable_id, context);
 
         match kind {
@@ -6813,7 +6834,12 @@ impl Simulation {
             entity.lifecycle.object_alive = false;
         }
         // The ObjectClass destructor's defensive Defuse (`0x005F3BA6`).
-        Self::bomb_defuse(&mut self.substrate, &mut self.bombs, stable_id);
+        Self::bomb_defuse(
+            &mut self.substrate,
+            &mut self.bombs,
+            &mut self.sound_events,
+            stable_id,
+        );
         self.team_script_vm.object_deleted(stable_id);
         Self::release_house_base_tracking(&self.substrate, &mut self.houses, stable_id);
         // Selected original Foot destructor4D3632..4D366E clears only its

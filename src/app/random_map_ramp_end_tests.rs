@@ -51,8 +51,13 @@ fn retail_generation_inputs(
     )
     .expect("retail Generate rules")
     .into_parts();
-    let prepared = prepare_random_map_generation(&mut assets, options, Some(&rules), None)
-        .expect("production Generate preparation");
+    let prepared = prepare_random_map_generation(
+        &mut assets,
+        options,
+        crate::app::shell_random_map::RandomMapRulesPreparation::ReadOnly(Some(&rules)),
+        None,
+    )
+    .expect("production Generate preparation");
     Some((assets, prepared, rules))
 }
 
@@ -93,7 +98,7 @@ fn generated_connector_uses_native_slope_piece_tileset() {
     // connector admission, after the dialog reroll. The precondition below
     // must remain positive; do not inject geometry to repair this witness.
     let options = ordinary_recipe(11, 3);
-    let Some((mut assets, prepared, rules)) = retail_generation_inputs(&options) else {
+    let Some((mut assets, prepared, mut rules)) = retail_generation_inputs(&options) else {
         return;
     };
     let native = crate::test_fixture::json("tools/rules_oracle/theater_general_reader.json");
@@ -269,8 +274,12 @@ fn generated_connector_uses_native_slope_piece_tileset() {
     let loaded = crate::app::loading::init::load_map_initial_with_assets(
         seed_dir.path().to_path_buf(),
         &mut assets,
-        Some(&rules),
+        Some(&mut rules),
+        None,
         Some(seed_name),
+        None,
+        crate::app::match_runtime::session::SessionMode::Skirmish,
+        false,
         &mut SilentProgress,
     )
     .expect("ordinary selected-.SED load");

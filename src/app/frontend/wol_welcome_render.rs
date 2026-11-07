@@ -20,13 +20,14 @@ use crate::app::frontend::shell_pass::{
     software_cursor,
 };
 use crate::app::frontend::shell_transition::ShellSlideKind;
+use crate::app::frontend::skirmish_shell_render::WolLobbyPaint;
 use crate::app::shell_wol::WolPage;
 use crate::render::shell_paint::{
     self, CHROME_DEPTH, CURSOR_DEPTH, PARENT_BACKGROUND_DEPTH, PaintButton, PaintLabel,
     SHELL_TEXT_RGB_ENABLED, push_entry_scaled,
 };
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::geom::{ShellScale, centred_in_window};
+use crate::ui::shell::geom::{RectPx, ShellScale, centred_in_window};
 use crate::ui::shell::menu_page::{MenuPageButtonRect, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::slide::PanelArt;
 use crate::ui::wol_shell::{
@@ -136,26 +137,21 @@ pub(crate) fn presented_wol_page(state: &AppState) -> PresentedShell {
     }
 }
 
-/// `0xCF` or `0x11E` over whatever the page shows.
-pub(crate) fn page_dialogs_paint(
-    state: &AppState,
-) -> Option<crate::app::frontend::skirmish_shell_render::WolLobbyPaint> {
+/// `0xCF` or `0x11E` over whatever the page shows, and where it sits.
+pub(crate) fn page_dialogs_paint(state: &AppState) -> Option<(RectPx, WolLobbyPaint)> {
     use crate::app::frontend::skirmish_shell_render::{
         paint_wol_page_dialog, paint_wol_page_received,
     };
     use crate::app::shell_wol::page;
     if let Some(dialog) = page::page_dialog(state) {
-        return Some(paint_wol_page_dialog(
-            state,
-            dialog,
-            &page::page_layout(state),
-        ));
+        let layout = page::page_layout(state);
+        return Some((layout.dialog, paint_wol_page_dialog(state, dialog, &layout)));
     }
     let received = page::page_received(state)?;
-    Some(paint_wol_page_received(
-        state,
-        received,
-        &page::received_layout(state),
+    let layout = page::received_layout(state);
+    Some((
+        layout.dialog,
+        paint_wol_page_received(state, received, &layout),
     ))
 }
 
@@ -486,6 +482,9 @@ pub(crate) fn render_wol_page(
         for (text, rect) in &layout.texts {
             let caption = match filled.iter().find(|(id, _)| Some(*id) == text.id) {
                 Some((_, value)) => value.as_str().into(),
+                // An empty template caption is no label: the persona heading
+                // stays blank without a nickname.
+                None if text.key.is_empty() => continue,
                 None => resolve_csf(state, text.key),
             };
             if caption.is_empty() {
@@ -524,13 +523,10 @@ pub(crate) fn render_wol_page(
                 &crate::ui::shell::modal::wol_add_buddy_layout(screen_w, screen_h),
             )
         });
-    // 0x115 and the modal 0x11E sit over 0x116 without covering it.
+    // 0x115 sits over 0x116 without covering it.
     let buddy_popup = match &painted {
         Painted::Buddy(_) if add_buddy.is_some() => {
             Some(crate::ui::shell::modal::wol_add_buddy_layout(screen_w, screen_h).dialog)
-        }
-        Painted::Buddy(_) if crate::app::shell_wol::page::page_received(state).is_some() => {
-            Some(crate::app::shell_wol::page::received_layout(state).dialog)
         }
         _ => None,
     };
@@ -635,6 +631,29 @@ pub(crate) fn render_wol_page(
                     &base_names,
                 ),
             )
+        }
+        _ => None,
+    };
+    // VERA's player card over the modern lobby.
+    let player_card = match (&painted, children) {
+        (Painted::Lobby(layout), true) => {
+            crate::app::shell_wol::player_card::view(state).map(|view| {
+                let scale = layout.page.scale;
+                (
+                    view.layout.dialog,
+                    crate::app::frontend::skirmish_shell_render::paint_wol_player_card(
+                        state, &view, art, scale,
+                    ),
+                    view.countries.as_ref().map(|list| {
+                        (
+                            list.popup.rect,
+                            crate::app::frontend::skirmish_shell_render::paint_wol_card_countries(
+                                state, list, scale,
+                            ),
+                        )
+                    }),
+                )
+            })
         }
         _ => None,
     };
@@ -889,7 +908,7 @@ pub(crate) fn render_wol_page(
         labels.push(PaintLabel {
             text,
             rect: owner_draw_button_label_rect(button.rect, *pressed),
-            align: ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0),
+            align: ShellAlign::BUTTON_CAPTION,
             rgb: crate::app::frontend::skirmish_shell_render::wol_button_label_rgb(*enabled),
             path_a_reveal: None,
         });
@@ -898,7 +917,7 @@ pub(crate) fn render_wol_page(
         labels.push(PaintLabel {
             text: resolve_csf(state, key),
             rect: page.title,
-            align: ShellAlign::H_CENTER,
+            align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: Some(shell_reveal_path_a(window)),
         });
@@ -1103,7 +1122,32 @@ pub(crate) fn render_wol_page(
         });
         text.extend(popup.texts);
     }
-    if let (Some(atlas), Some(page)) = (controls_atlas, page_dialogs) {
+    if let (Some(atlas), Some((dialog, card, countries))) = (controls_atlas, player_card) {
+        hide_glyphs_under(&mut text, dialog);
+        draws.push(TexturedDraw {
+            texture: &atlas.texture,
+            instances: card.controls,
+        });
+        if let Some(art) = art {
+            draws.push(TexturedDraw {
+                texture: &art.texture,
+                instances: card.icons,
+            });
+        }
+        text.extend(card.texts);
+        if let Some((list, countries)) = countries {
+            hide_glyphs_under(&mut text, list);
+            draws.push(TexturedDraw {
+                texture: &atlas.texture,
+                instances: countries.controls,
+            });
+            text.extend(countries.texts);
+        }
+    }
+    // 0xCF and 0x11E leave the page painting beneath them, over the lobby,
+    // the buddy list or any other page.
+    if let (Some(atlas), Some((dialog, page))) = (controls_atlas, page_dialogs) {
+        hide_glyphs_under(&mut text, dialog);
         draws.push(TexturedDraw {
             texture: &atlas.texture,
             instances: page.controls,

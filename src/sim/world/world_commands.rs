@@ -1845,7 +1845,17 @@ impl Simulation {
                 // compares the sender's House with the actor's owner; sender
                 // eligibility belongs to Execute_DoList's House scan.
                 // Source: original gamemd.exe instructions.
-                if !self.order_actor_admits(*entity_id) {
+                // `0x004C74DE..0x004C74FE`: IDLE admits an actor that exists,
+                // is alive (`+0x90`) and is out of limbo (`+0x81`). Unlike the
+                // MEGAMISSION gate (`order_actor_admits`) it reads no
+                // strength, so an object at 0 strength still stops. VERA's
+                // dying mark stands for the UnInit that clears `+0x90`.
+                if !self
+                    .substrate
+                    .entities
+                    .get(*entity_id)
+                    .is_some_and(|e| e.is_active() && !e.lifecycle.in_limbo())
+                {
                     return false;
                 }
                 // The IDLE arm returns at `0x004C7504..0x004C750C` when the
@@ -1865,14 +1875,25 @@ impl Simulation {
                 {
                     return true;
                 }
+                // `0x004C752A..0x004C7577`: off a bridge, an actor on a flat
+                // cell whose screen projection lands in another cell (low
+                // ground drawn behind a cliff) ends the event here, before any
+                // write, as DEPLOY's arm does. A harvesting miner there keeps
+                // its mission and NavCom.
+                if crate::sim::movement::ground_pose::event_hidden_flat_cell(self, *entity_id) {
+                    return true;
+                }
                 // Event6 IDLE4C74CB..4C76BB retains the committed/queued
                 // mission and its dispatch timer. Only the ore-miner exception
                 // below writes Guard. Ordinary Move/Attack handlers see the
                 // cleared NavCom/TarCom on their next dispatch and own the idle
                 // transition, including Temporal LetGo at that later boundary.
                 // `0x004C757D..0x004C759C`: a Foot's navigation list is
-                // emptied (twice: inline, then `0x004DA1C0`); the planning-path
-                // writes that follow have no VERA state.
+                // emptied (twice: inline, then `0x004DA1C0`). The writes that
+                // follow (`0x004C75BD..0x004C75D4`: `+0x520` = -1, `+0x524`,
+                // `+0x528`, `+0x686`) reset the legacy waypoint path, whose
+                // index YR never sets (`aircraft::move_mission`); VERA keeps no
+                // state for it.
                 if let Some(entity) = self.substrate.entities.get_mut(*entity_id)
                     && entity.category() != crate::map::entities::EntityCategory::Structure
                 {
@@ -1937,27 +1958,11 @@ impl Simulation {
                     overlay_registry,
                     frame_effects,
                 );
-                // **VERA-internal: retail Stop leaves the installed locomotor
-                // alone.** This existing unwind policy uses the same END gate
-                // as FootAI4DAEC3 / SetDestination742587 (an active Drive's
-                // IsOKToEnd4AF970), after navigation is cleared. A live Drive
-                // head still refuses it.
-                // Keep that timing while centralizing the actual instance
-                // transfer/retirement in locomotor_owner.
-                // Trigger: Stop on a piggybacked Chrono Miner, a few times per
-                // ordinary Allied match; a premature unwind can change the next
-                // command's locomotor. Native Stop parity remains open. The
-                // production command's admitted/refused lifetime is covered by
-                // locomotor_owner_tests::stop_command_retires_only_the_drive_admitted_by_its_existing_gate.
-                let may_end = self.substrate.entities.get(*entity_id).is_some_and(|e| {
-                    e.locomotor
-                        .as_ref()
-                        .is_some_and(|loco| loco.is_overridden())
-                        && crate::sim::movement::locomotor_owner::piggyback_end_admitted(e)
-                });
-                if may_end {
-                    self.end_admitted_piggyback(*entity_id, rules);
-                }
+                // The IDLE arm leaves the installed locomotor alone: a stopped
+                // Chrono Miner's harvest Drive ends at the next frame's
+                // FootClass::AI tail (`0x004DAE5F..0x004DAEC3`, `object_turn`),
+                // when Is_Ok_To_End (`0x004AF970`) allows, so an order after
+                // the Stop in the same frame still finds the Drive.
                 // Ore-miner arm, last — retail runs it after the radio break,
                 // the navigation clear, the target clear and the path-cursor
                 // reset. A vehicle carrying the miner type flag whose committed
@@ -1976,10 +1981,19 @@ impl Simulation {
                     overlay_registry,
                     frame_effects,
                 );
-                self.commit_stop_miner_guard(*entity_id, rules);
-                // `0x004C769C..0x004C76AC`: Stop takes a Slave Miner off its
-                // hunt (`sim::slave_manager`).
-                self.reset_slave_manager(*entity_id, rules, frame_effects);
+                // `0x004C7655..0x004C765F`: only a Unit (vt+0x2C is 1) goes on
+                // to the miner arm and `0x004C769C..0x004C76AC`, which takes a
+                // Slave Miner off its hunt (`sim::slave_manager`). A selected
+                // Slave refinery's slaves keep working.
+                if self
+                    .substrate
+                    .entities
+                    .get(*entity_id)
+                    .is_some_and(|e| e.category() == crate::map::entities::EntityCategory::Unit)
+                {
+                    self.commit_stop_miner_guard(*entity_id, rules);
+                    self.reset_slave_manager(*entity_id, rules, frame_effects);
+                }
                 true
             }
             // A Cell target is the Ctrl click on the ground.
@@ -2475,19 +2489,11 @@ impl Simulation {
                         // (`BuildingClass::Mission_Unload @ 0x0044D880`),
                         // commenced at the building's ready checks.
                         //
-                        // RESIDUAL: this payload stands for two native events.
-                        // The self-click sends a MEGAMISSION Unload whose
-                        // target token is the building itself
-                        // (`BuildingClass::ClickedAction_Object @ 0x00443410`
-                        // -> ClickedMission `0x006FFBE0`); the deploy key
-                        // sends DEPLOY (`0x00730AF0`, vt+0x374(9)). Here the
-                        // order queues Unload through the MEGAMISSION prefix
-                        // alone, without the event's target and destination
-                        // setters. Trigger: every garrison unload. Effect:
-                        // the building's target is not run through
-                        // BuildingClass::SetTarget with the event's token.
-                        // Risk: low; Mission_Unload empties it either way.
-                        // The self-click's flash of its own token is kept.
+                        // Ordinary self-click is encoded as MEGAMISSION with
+                        // its own target and NULL destination before dispatch.
+                        // This direct DTO adapter remains for internal/test
+                        // callers. D uses the separate Event9 receiver, whose
+                        // class setters clear both target and destination.
                         if !self.order_actor_admits(*transport_id) {
                             return false;
                         }
@@ -3224,9 +3230,10 @@ impl Simulation {
     /// * **The manager abandon** at 0x004C73E1-0x004C73EA calls 0x006B0C80 on
     ///   `[actor+0x2D8]`, the SlaveManagerClass (not a spawn manager), whenever
     ///   the queued mission is not Attack; it is not Foot-gated. The funnel
-    ///   below and Stop's own copy
-    ///   (0x004C769C-0x004C76AC) run it (`Simulation::reset_slave_manager`);
-    ///   the other orders outside the funnel do not yet.
+    ///   below runs it for any actor and Stop's own copy
+    ///   (0x004C769C-0x004C76AC) for a Unit only (0x004C7655-0x004C765F), both
+    ///   through `Simulation::reset_slave_manager`; the other orders outside
+    ///   the funnel do not yet.
     /// * **`TeamClass__Remove_Member`** runs in the MEGAMISSION funnel
     ///   and in its shared prefix; EjectBunker and the dormant aircraft Unload
     ///   arm bypass that prefix and keep a team member in its team.
@@ -3388,9 +3395,9 @@ impl Simulation {
     /// transport's Unload and Enter, Capture and Sabotage onto their object
     /// and Harvest run here. A tank bunker's Enter uses the same destination
     /// and radio owners.
-    /// A garrison's ordinary Unload (one command
-    /// for the self-click and the deploy key's DEPLOY event) and the dormant
-    /// aircraft Unload retain their adapters. In native order:
+    /// A garrison's self-click Unload uses this event's self-target codec;
+    /// its D key uses the separate DEPLOY event. Direct semantic Unload and
+    /// dormant aircraft Unload retain their adapters. In native order:
     ///
     /// 1. The actor gate (`0x004C71F6..0x004C721F`,
     ///    [`Self::order_actor_admits`]), then each object token's (target
@@ -3642,6 +3649,98 @@ mod tests {
         // reads that byte, so the fixture must model a revealed object.
         entity.lifecycle.set_in_limbo_for_test(false);
         sim.substrate.entities.insert(entity);
+    }
+
+    /// Event IDLE's terrain exit (`0x004C752A..0x004C7577`): a harvesting
+    /// miner on a flat cell drawn under a higher one ignores Stop and keeps
+    /// Harvest. With that cell flat too, Stop puts it on Guard.
+    #[test]
+    fn stop_leaves_a_miner_on_a_hidden_flat_cell_harvesting() {
+        use crate::sim::mission::MissionType;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=HARV\n[HARV]\nStrength=600\nSpeed=4\nHarvester=yes\n\
+             MovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+        ))
+        .expect("HARV rules");
+        let harvest = MissionId::from_known(MissionType::Harvest);
+        for hidden in [true, false] {
+            let mut sim = Simulation::new();
+            // The projection probe from (20, 20) meets (21, 21) four levels
+            // up, which covers (20, 20) on screen.
+            sim.resolved_terrain =
+                Some(crate::map::resolved_terrain::test_grid(32, 32, |rx, ry| {
+                    let mut cell = crate::map::resolved_terrain::test_flat_cell(rx, ry);
+                    if hidden && (rx, ry) == (21, 21) {
+                        cell.level = 4;
+                    }
+                    cell
+                }));
+            spawn_rule_backed_unit(&mut sim, 42, "HARV", &rules);
+            sim.substrate.entities.get_mut(42).unwrap().miner =
+                Some(crate::sim::miner::Miner::new(
+                    crate::sim::miner::MinerKind::War,
+                    &crate::sim::miner::MinerConfig::default(),
+                    40,
+                ));
+            sim.substrate
+                .mission_assign_exact(42, harvest, 0)
+                .expect("miner");
+            assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 42 }, Some(&rules)));
+            let mission = sim.substrate.entities.get(42).unwrap().mission.current();
+            let expected = if hidden {
+                harvest
+            } else {
+                MissionId::from_known(MissionType::Guard)
+            };
+            assert_eq!(mission, expected, "hidden={hidden}");
+        }
+    }
+
+    /// Event IDLE admits its actor on `+0x90` and `+0x81` alone
+    /// (`0x004C74E8..0x004C74FE`), with no strength test: a live miner at 0
+    /// strength still stops and goes on Guard. VERA's dying mark, native's
+    /// UnInit, refuses it.
+    #[test]
+    fn stop_admits_a_live_actor_at_zero_strength() {
+        use crate::sim::mission::MissionType;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=HARV\n[HARV]\nStrength=600\nSpeed=4\nHarvester=yes\n\
+             MovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+        ))
+        .expect("HARV rules");
+        let mut sim = Simulation::new();
+        sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
+            32,
+            32,
+            crate::map::resolved_terrain::test_flat_cell,
+        ));
+        spawn_rule_backed_unit(&mut sim, 42, "HARV", &rules);
+        let miner = sim.substrate.entities.get_mut(42).unwrap();
+        miner.miner = Some(crate::sim::miner::Miner::new(
+            crate::sim::miner::MinerKind::War,
+            &crate::sim::miner::MinerConfig::default(),
+            40,
+        ));
+        miner.health = crate::sim::combat::Health::new(0);
+        sim.substrate
+            .mission_assign_exact(42, MissionId::from_known(MissionType::Harvest), 0)
+            .expect("miner");
+        assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 42 }, Some(&rules)));
+        let mission = sim.substrate.entities.get(42).unwrap().mission.current();
+        assert_eq!(mission, MissionId::from_known(MissionType::Guard));
+
+        sim.substrate
+            .entities
+            .get_mut(42)
+            .unwrap()
+            .death
+            .set_dying_for_test(true);
+        sim.substrate
+            .mission_assign_exact(42, MissionId::from_known(MissionType::Harvest), 0)
+            .expect("miner");
+        assert!(!sim.apply_command("Americans", &Command::Stop { entity_id: 42 }, Some(&rules)));
+        let mission = sim.substrate.entities.get(42).unwrap().mission.current();
+        assert_eq!(mission, MissionId::from_known(MissionType::Harvest));
     }
 
     #[test]

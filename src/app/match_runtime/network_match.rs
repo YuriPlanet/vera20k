@@ -316,11 +316,15 @@ pub(crate) fn post_speed_changes(state: &mut AppState) {
                     i32::from(house),
                 )
                 .map(|source| participant_name(&state.match_state.session, source))
-                .filter(|name| !name.is_empty())
-                .unwrap_or_else(|| "A player".to_owned());
-                format!("{name} is slowing the game down.")
+                .filter(|name| !name.is_empty());
+                match name {
+                    Some(name) => {
+                        crate::i18n::tr_fill("VERA:PlayerSlowingGame", &[("name", &name)])
+                    }
+                    None => crate::i18n::tr("VERA:SomeoneSlowingGame"),
+                }
             }
-            MatchSpeedChange::Normal => "Game speed is back to normal.".to_owned(),
+            MatchSpeedChange::Normal => crate::i18n::tr("VERA:GameSpeedNormal"),
         };
         crate::app::input::messages::post_match_speed(state, &text);
     }
@@ -344,8 +348,7 @@ pub(crate) fn post_caught_up(state: &mut AppState) {
             live.take_caught_up_in_pause(reached, frame) && !live.exit_requested()
         });
     if caught_up && !defeated {
-        let text =
-            crate::i18n::text(state.process_assets.csf.as_ref(), "VERA:CaughtUp").into_owned();
+        let text = crate::i18n::tr("VERA:CaughtUp");
         crate::app::input::chat::send_to_all(state, &text);
     }
 }

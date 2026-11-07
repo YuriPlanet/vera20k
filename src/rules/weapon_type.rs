@@ -59,6 +59,9 @@ pub struct WeaponType {
     pub projectile: Option<String>,
     /// Warhead type ID (`+0xAC`, references a [WarheadName] section).
     pub warhead: Option<String>,
+    /// Derived: [`Self::warhead`] and [`Self::projectile`] as the RuleSet
+    /// holding this weapon resolved them (`RuleSet::resolve_handles`).
+    parts: crate::rules::ruleset::WeaponParts,
     /// `Report=` firing sounds read by `WeaponTypeClass::ReadINI @ 0x00772080`
     /// through `ReadSoundList @ 0x00525430`, resolved against the fixed registry.
     pub report: Vec<String>,
@@ -275,6 +278,19 @@ pub struct WeaponType {
 }
 
 impl WeaponType {
+    /// The weapon's warhead and projectile as its RuleSet resolved them;
+    /// reads go through `RuleSet::weapon_warhead`/`weapon_projectile`, which
+    /// check the resolving set.
+    #[inline]
+    pub(crate) fn parts(&self) -> crate::rules::ruleset::WeaponParts {
+        self.parts
+    }
+
+    /// Store the warhead and projectile resolved against the current set.
+    pub(crate) fn project_parts(&mut self, parts: crate::rules::ruleset::WeaponParts) {
+        self.parts = parts;
+    }
+
     /// `WeaponTypeExt::HasRequiredAttachedEffects` reads no list: every shot
     /// passes without asking the target.
     pub fn has_attach_effect_gates(&self) -> bool {
@@ -436,6 +452,7 @@ impl WeaponType {
             speed: 0,
             projectile: None,
             warhead: None,
+            parts: Default::default(),
             report: sound_list(section, "Report"),
             down_report: Vec::new(),
             burst: section.read_int("Burst", 1),

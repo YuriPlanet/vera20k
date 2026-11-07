@@ -477,8 +477,8 @@ fn a_water_click_sends_the_plane_to_land_beside_it() {
         .unwrap();
     // Water: Foot's speed there is 0.
     cell.land_type = 2;
-    cell.speed_costs.foot = Some(0);
-    cell.base_speed_costs.foot = Some(0);
+    cell.speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+    cell.base_speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let sw_type = charge_super(&mut sim, americans, PARADROP);
 

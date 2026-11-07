@@ -93,7 +93,10 @@ impl ImeState {
 /// The chat edit that takes keys now, with its rectangle in window pixels.
 /// The dialogs the key dispatch serves first leave none.
 fn target(state: &AppState) -> Option<(ImeTarget, RectPx)> {
-    if state.frontend.keyboard_dialog.is_some() || crate::app::input::coop_score::active(state) {
+    if state.frontend.keyboard_dialog.is_some()
+        || crate::app::input::coop_score::active(state)
+        || crate::app::frontend::preview_zoom::is_open(state)
+    {
         return None;
     }
     [

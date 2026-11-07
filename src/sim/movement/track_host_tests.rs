@@ -640,8 +640,8 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
                     (0..32).map(move |x| {
                         let mut cell =
                             crate::map::resolved_terrain::ResolvedTerrainCell::clear_for_test(x, y);
-                        cell.speed_costs.track = Some(100);
-                        cell.speed_costs.float = Some(100);
+                        cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+                        cell.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
                         if family == TrackFamily::Ship {
                             cell.zone_type = crate::map::resolved_terrain::zone_class::WATER;
                             cell.ground_walk_blocked = true;
@@ -1094,6 +1094,24 @@ fn factory_per_cell_fixture(
     producer_on_bridge: bool,
     unit_reader_lines: &str,
 ) -> (Simulation, RuleSet) {
+    per_cell_partner_fixture(
+        tethered,
+        producer_on_bridge,
+        unit_reader_lines,
+        "GAWEAP",
+        "WeaponsFactory=yes",
+    )
+}
+
+/// Unit 1 (MTNK) in radio contact with Building 2 (`partner`, read with
+/// `partner_lines`) on its Cell (10, 10), and tethered to it when `tethered`.
+fn per_cell_partner_fixture(
+    tethered: bool,
+    producer_on_bridge: bool,
+    unit_reader_lines: &str,
+    partner: &str,
+    partner_lines: &str,
+) -> (Simulation, RuleSet) {
     use crate::rules::ini_parser::IniFile;
     use crate::sim::mission::state::MissionTestFixture;
     use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
@@ -1103,7 +1121,7 @@ fn factory_per_cell_fixture(
     sim.session.set_binary_frame_for_test(57);
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\n{unit_reader_lines}\n\
-         [BuildingTypes]\n0=GAWEAP\n[GAWEAP]\nWeaponsFactory=yes\n",
+         [BuildingTypes]\n0={partner}\n[{partner}]\n{partner_lines}\n",
     )))
     .unwrap();
     let type_ref = sim.intern("MTNK");
@@ -1136,13 +1154,13 @@ fn factory_per_cell_fixture(
         ));
     let mut producer = GameEntity::test_default_of_category(
         2,
-        "GAWEAP",
+        partner,
         "Americans",
         10,
         10,
         EntityCategory::Structure,
     );
-    producer.set_type_ref_for_test(sim.intern("GAWEAP"));
+    producer.set_type_ref_for_test(sim.intern(partner));
     producer.set_owner_for_test(owner);
     producer.type_facts.set_foundation_for_test("1x1".into());
     producer.set_on_bridge(producer_on_bridge);
@@ -2631,6 +2649,136 @@ fn per_cell_factory_clearance_scatters_a_harvester_off_the_factory() {
         assert_eq!(
             unit.navigation.nav_queue().len(),
             usize::from(case == "nav_queue")
+        );
+    }
+}
+
+/// `0x0073AAF7..0x0073AB66`: a refinery answers its tethered miner's
+/// clearance 8 with 1, not 0x17. A Harvester holding an archived ore Cell
+/// queues Harvest, heads back to that Cell and clears the archive; the
+/// Ready/Commence after the clearance (`0x0073ACC2`) starts the Harvest. One
+/// with no archive and no NavCom scatters and stays on Guard. The miner has
+/// left the refinery's foundation, so the building tail cannot scatter it.
+#[test]
+fn per_cell_refinery_clearance_returns_a_tethered_harvester_to_its_ore() {
+    use crate::sim::combat::TargetKind;
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::mission::MissionType;
+
+    for archive in [Some(TargetKind::Cell(14, 14)), None] {
+        let (mut sim, rules) =
+            per_cell_partner_fixture(true, false, "Harvester=yes", "GAREFN", "Refinery=yes");
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        let refinery = sim.substrate.entities.get_mut(2).unwrap();
+        refinery.position.put_location(DriveCoord::cell(12, 12, 0));
+        sim.substrate.occupancy =
+            crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.navigation.set_nav_com_for_test(None);
+        unit.set_archive_target(archive);
+        sim.per_cell_process(
+            1,
+            super::super::PerCellReason::Arrival,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            crate::sim::radio::take_transmit_log()
+                .first()
+                .map(|send| (send.msg, send.reply)),
+            Some((8, Some(1)))
+        );
+        let unit = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(unit.tether.partner(), None);
+        assert_eq!(unit.archive_target(), None);
+        if archive.is_some() {
+            assert_eq!(unit.mission.current().known(), Some(MissionType::Harvest));
+            assert_eq!(unit.navigation.nav_com(), Some(NavTargetRef::cell(14, 14)));
+        } else {
+            assert_eq!(unit.mission.current().known(), Some(MissionType::Guard));
+            assert!(unit.navigation.nav_com().is_some(), "the arm scatters it");
+        }
+    }
+}
+
+/// `0x0073AE1B..0x0073AFD3`: a stopped Unit on a building's Cell with no
+/// radio contact, which its Can_Enter_Cell refuses with 7, Scatters on Enter
+/// and otherwise takes the C4Warhead flash and its own strength as damage. In
+/// contact, at or past the building's NumberImpassableRows=, the Cell admits
+/// it (`0x0073F57C..0x0073F5A2`) and nothing happens.
+#[test]
+fn per_cell_end_handles_a_unit_its_own_cell_refuses() {
+    use crate::sim::mission::state::MissionTestFixture;
+    use crate::sim::mission::{MissionDispatchTimer, MissionId, MissionType};
+    use crate::sim::radio::{RadioMessage, RadioPayload, transmit};
+
+    for (contact, mission) in [
+        (true, MissionType::Guard),
+        (false, MissionType::Guard),
+        (false, MissionType::Enter),
+    ] {
+        let (mut sim, rules) = per_cell_partner_fixture(
+            false,
+            false,
+            "",
+            "GAPOWR",
+            "NumberImpassableRows=0\n[CombatDamage]\nC4Warhead=Super\n[Warheads]\n\
+             0=Super\n[Super]\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%",
+        );
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        if !contact {
+            transmit(
+                &mut sim,
+                1,
+                2,
+                RadioMessage::Break,
+                RadioPayload::default(),
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            );
+            crate::sim::radio::take_transmit_log();
+        }
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        let strength = unit.health.current();
+        unit.navigation.set_nav_com_for_test(None);
+        unit.mission.apply_test_fixture(MissionTestFixture {
+            current: MissionId::from_known(mission),
+            suspended: MissionId::NONE,
+            queued: MissionId::NONE,
+            movement_bypass_latch: 0,
+            handler_state: 4,
+            mission_start_frame: 3,
+            ai_counter: 11,
+            dispatch_timer: MissionDispatchTimer::from_raw(3, 90),
+        });
+        sim.per_cell_process(
+            1,
+            super::super::PerCellReason::Arrival,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+
+        let blown_up = !contact && mission == MissionType::Guard;
+        let unit = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(
+            unit.health.current(),
+            if blown_up { 0 } else { strength },
+            "{contact} {mission:?}"
+        );
+        assert_eq!(
+            sim.combat_light_requests.as_slice().len(),
+            usize::from(blown_up),
+            "{contact} {mission:?}: Flash at 0x0073AF8B"
+        );
+        assert_eq!(
+            unit.navigation.nav_com().is_some(),
+            !contact && mission == MissionType::Enter,
+            "{contact} {mission:?}: Scatter at 0x0073AFCE"
         );
     }
 }

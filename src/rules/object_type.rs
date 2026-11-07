@@ -1454,8 +1454,9 @@ pub struct ObjectType {
     /// `TechnoType+0xD4C`, `SlaveReloadRate=`: frames a slave waits inside
     /// after paying its load. ReadInt at `0x00714E4A`; constructor 0.
     pub slave_reload_rate: i32,
-    /// Whether this infantry is a slave unit (Slaved=yes in rules.ini).
-    /// Slave units are bound to a master (Slave Miner) and have restricted AI.
+    /// `Slaved=` (TechnoType `+0xD3E`). gamemd reads the key, but no gameplay
+    /// code reads the field, natively or here: a slave's ties to its master
+    /// come from the master's `Enslaves=` and SlaveManager.
     pub slaved: bool,
     /// `Fearless=yes` on InfantryType. Suppresses fear/prone panic changes.
     pub fearless: bool,
@@ -2004,10 +2005,8 @@ pub struct ObjectType {
     /// Immutable projection of the retained InfantryType Pip/OccupyPip state.
     infantry_pips: InfantryPips,
 
-    /// ReadSequenceData's sound pairs from every reached rules pass,
-    /// projected from the native type registry; bound by
-    /// [`Self::bind_sequence_sounds`].
-    sequence_sound_reads: Vec<crate::rules::infantry_sequence::SequenceSoundRead>,
+    /// Immutable projection of the type's retained ReadSequenceData523D00 bank.
+    infantry_sequence_bank: Option<crate::rules::infantry_sequence::InfantrySequenceBank>,
 
     /// The bound record sounds: at most two per DoType (record `+0x10`).
     sequence_sounds: Vec<crate::rules::infantry_sequence::SequenceSound>,
@@ -2065,7 +2064,7 @@ pub struct ObjectType {
     pub elite_weapon_list: Vec<Option<String>>,
     /// Derived: the weapons `weapon_list`, `elite_weapon_list`,
     /// `occupy_weapon` and `elite_occupy_weapon` name, as the RuleSet that
-    /// built the type resolved them (`RuleSet::resolve_type_weapons`).
+    /// built the type resolved them (`RuleSet::resolve_handles`).
     resolved_weapons: crate::rules::ruleset::TypeWeapons,
     /// Retained WeaponStruct and transport-port coordinates, projected from
     /// the ordered type reader rather than reconstructed from the final Image.
@@ -3395,17 +3394,26 @@ impl ObjectType {
         ] = art.discharge_frames;
     }
 
-    pub(crate) fn project_sequence_sound_reads(
+    pub(crate) fn project_infantry_sequence_bank(
         &mut self,
-        reads: &[crate::rules::infantry_sequence::SequenceSoundRead],
+        bank: &crate::rules::infantry_sequence::InfantrySequenceBank,
     ) {
-        self.sequence_sound_reads = reads.to_vec();
+        self.infantry_sequence_bank = Some(bank.clone());
     }
 
-    /// Resolve the projected pairs through `find` (VocClass::FindByName).
-    pub(crate) fn bind_sequence_sounds(&mut self, find: impl FnMut(&str) -> Option<String>) {
-        self.sequence_sounds =
-            crate::rules::infantry_sequence::bind_sequence_sounds(&self.sequence_sound_reads, find);
+    pub(crate) fn infantry_sequence_bank(
+        &self,
+    ) -> Option<&crate::rules::infantry_sequence::InfantrySequenceBank> {
+        self.infantry_sequence_bank.as_ref()
+    }
+
+    /// Derive presentation names from saved Voc ordinals, without rereading ART.
+    pub(crate) fn bind_sequence_sounds(&mut self, sounds: &crate::rules::sound_ini::SoundRegistry) {
+        self.sequence_sounds = self
+            .infantry_sequence_bank
+            .as_ref()
+            .map(|bank| bank.bound_sounds(sounds))
+            .unwrap_or_default();
     }
 
     /// The sounds of DoType `action`'s record, in slot order.
@@ -3534,16 +3542,16 @@ impl ObjectType {
             sounds.read_rules_sound_list(section, "VoiceAttack")
         });
         self.voice_enter =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceEnter"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceEnter", None));
         self.voice_capture =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceCapture"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceCapture", None));
         self.voice_attack_overrides = [
             "VoicePrimaryWeaponAttack",
             "VoicePrimaryEliteWeaponAttack",
             "VoiceSecondaryWeaponAttack",
             "VoiceSecondaryEliteWeaponAttack",
         ]
-        .map(|key| section.and_then(|section| sounds.read_rules_reference(section, key)));
+        .map(|key| section.and_then(|section| sounds.read_rules_reference(section, key, None)));
     }
 
     pub fn voice_deploy(&self) -> Option<&str> {
@@ -3562,11 +3570,11 @@ impl ObjectType {
         sounds: &SoundRegistry,
     ) {
         self.voice_harvest =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceHarvest"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceHarvest", None));
         self.voice_deploy =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceDeploy"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceDeploy", None));
         self.voice_undeploy =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceUndeploy"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceUndeploy", None));
     }
 
     pub fn damage_sound(&self) -> Option<&str> {
@@ -3593,9 +3601,13 @@ impl ObjectType {
         sounds: &SoundRegistry,
     ) {
         self.create_sound =
-            section.and_then(|section| sounds.read_rules_reference(section, "CreateSound"));
+            section.and_then(|section| sounds.read_rules_reference(section, "CreateSound", None));
         self.damage_sound =
-            section.and_then(|section| sounds.read_rules_reference(section, "DamageSound"));
+            section.and_then(|section| sounds.read_rules_reference(section, "DamageSound", None));
+        // TechnoType ReadINI713949..713985: current fixed Voc ID, with
+        // ctor710FA5=-1. Unknown/empty later reads retain a valid override.
+        self.mind_cleared_sound = section
+            .and_then(|section| sounds.read_rules_reference(section, "MindClearedSound", None));
         #[cfg(feature = "ares")]
         for (slot, key) in ["Promote.VeteranSound", "Promote.EliteSound"]
             .into_iter()
@@ -3911,8 +3923,6 @@ impl ObjectType {
             } else {
                 (false, false, false, false, false)
             };
-        // `IsGattling=` gates the Stage loop read beside it (`0x0071407E`).
-        let is_gattling = section.read_bool("IsGattling", false);
         // `GuardRange=` and `AirRangeBonus=` are ReadRange whole leptons
         // (`0x007122B3`, `0x007147A9`), kept here as cells; `None` marks an
         // absent key.
@@ -4351,7 +4361,9 @@ impl ObjectType {
                 .map(str::to_owned),
             voice_feedback: Vec::new(),
             voice_special_attack: Vec::new(),
-            crush_sound: section.read_name("CrushSound", 0x80).map(str::to_owned),
+            // ObjectTypeCtor5F713A; ProcessedType projects the retained
+            // fixed-Voc binding from inherited ReadINI5F938B..5F93D5.
+            crush_sound: None,
             deploy_sound: section.read_name("DeploySound", 0x80).map(str::to_owned),
             buildup_sound: None,
             working_sound: None,
@@ -4666,11 +4678,9 @@ impl ObjectType {
             bombable: section.read_bool("Bombable", true),
             bomb_sight: section.read_int("BombSight", 0),
             mind_control_ring_offset: section.read_int("MindControlRingOffset", 0x8C),
-            // "none" finds no sound (-1), which FreeUnit reads as unset.
-            mind_cleared_sound: section
-                .read_name("MindClearedSound", 0x80)
-                .map(str::to_owned)
-                .filter(|sound| !sound.is_empty() && !sound.eq_ignore_ascii_case("none")),
+            // Ctor710FA5=-1; bind_scalar_sound_references owns the fixed
+            // Voc lookup, including registered none spellings.
+            mind_cleared_sound: None,
             #[cfg(feature = "phobos")]
             mind_control_range_limit: section.read_phobos_leptons("MindControlRangeLimit", 0),
             #[cfg(feature = "phobos")]
@@ -4797,7 +4807,7 @@ impl ObjectType {
             elite_occupy_weapon: None,
             // Constructor values; only the ordered Process owner reads them.
             infantry_pips: InfantryPips::default(),
-            sequence_sound_reads: Vec::new(),
+            infantry_sequence_bank: (category == ObjectCategory::Infantry).then(Default::default),
             sequence_sounds: Vec::new(),
             pip_scale: section
                 .read_name("PipScale", 0x20)
@@ -4854,11 +4864,9 @@ impl ObjectType {
             tick_tank: category == ObjectCategory::Building && section.read_bool("TickTank", false),
             artillary: category == ObjectCategory::Building
                 && section.read_bool("Artillary", false),
-            is_gattling,
-            gattling_stages: crate::rules::gattling_type::GattlingStages::read(
-                section,
-                is_gattling,
-            ),
+            // Retained per-pass flag/table from the ordered Rules owner.
+            is_gattling: false,
+            gattling_stages: Default::default(),
             turret_count: 0,
             has_turret_tooltips: section.read_bool("HasTurretTooltips", false),
             drainable: section.read_bool("Drainable", false),

@@ -57,7 +57,8 @@ impl InternetPauseControls {
 /// VERA's Display group. The Options profile owns the zoom, sidebar size and
 /// shape, and the window owns full screen; the group copies them each frame.
 /// Each applies at once, as on the main menu's Options pages, and the
-/// profile saves them with the rest of its values.
+/// profile saves them with the rest of its values. The Performance Stats box reads
+/// and switches the performance panel itself, which no profile saves.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(crate) struct DisplayPauseControls {
     /// The window's `Zoom::choices`, one list row each.
@@ -102,10 +103,14 @@ impl DisplayPauseControls {
     }
 
     /// A row's text.
-    pub(crate) fn row_label(&self, list: DisplayList, row: usize) -> &str {
+    pub(crate) fn row_label(&self, list: DisplayList, row: usize) -> String {
         match list {
-            DisplayList::Zoom => self.zoom_labels.get(row).map_or("", String::as_str),
-            DisplayList::Sidebar => self.sidebar_choices.get(row).map_or("", |s| s.label()),
+            DisplayList::Zoom => self.zoom_labels.get(row).cloned().unwrap_or_default(),
+            DisplayList::Sidebar => self
+                .sidebar_choices
+                .get(row)
+                .map(|size| size.label())
+                .unwrap_or_default(),
         }
     }
 
@@ -209,6 +214,13 @@ fn display_press(state: &mut AppState, layout: &PauseMenuLayout) -> bool {
         display.original_shape = !display.original_shape;
         state.persistence.options_profile.original_shape = display.original_shape;
         refit_match(state);
+        play_checkbox_sound(state);
+        return true;
+    }
+    if box_at(controls.performance_stats) {
+        // Ctrl+Alt+F's switch: the panel shows or hides at once, over the
+        // menu too, and starts hidden at the next launch.
+        state.renderer.performance_overlay.toggle();
         play_checkbox_sound(state);
         return true;
     }

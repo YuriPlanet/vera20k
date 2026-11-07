@@ -139,10 +139,19 @@ pub enum WolTarget {
     LobbyBack,
     /// The Options page's offline test service: login to a settled 0x113.
     TestServiceLobby,
-    /// Modern lobby presentation with sealed local fixture data, no credentials.
+    /// Modern lobby presentation with sealed local fixture data, no
+    /// credentials, Tanya's row hovered.
     ModernLobby,
-    /// The same, then Create Game: `0xC3` on Red Alert 2's box art.
+    /// The same, then Create Game: `0xC3` on Red Alert 2's box art, its
+    /// Ranked game box's help hovered.
     ModernCreate,
+    /// The same, then a click on Tanya: VERA's player card with her badge,
+    /// country and season record, her season row's help hovered.
+    ModernPlayerCard,
+    /// The same, then a click on your own name: Change Country picks
+    /// Australia, which VERA.INI keeps and the lobby is sent; the list is
+    /// open again over the card, Australia lit.
+    ModernChangeCountry,
     /// The same, then OK: VERA's C2, whose Game Options toggles Crates.
     ModernRoomOptions,
     /// VERA's C2 opens two spectator rows past its players and the stand-in
@@ -525,6 +534,8 @@ impl WolTarget {
                 Self::TestServiceLobby
                     | Self::ModernLobby
                     | Self::ModernCreate
+                    | Self::ModernPlayerCard
+                    | Self::ModernChangeCountry
                     | Self::ModernRoomOptions
                     | Self::ModernSpectators
                     | Self::ModernOptions
@@ -710,6 +721,8 @@ pub(crate) const WOL_CHECKPOINTS: &[(&str, WolTarget)] = &[
     ("wol-test-service-lobby", WolTarget::TestServiceLobby),
     ("wol-modern-lobby", WolTarget::ModernLobby),
     ("wol-modern-create", WolTarget::ModernCreate),
+    ("wol-modern-player-card", WolTarget::ModernPlayerCard),
+    ("wol-modern-change-country", WolTarget::ModernChangeCountry),
     ("wol-modern-room-options", WolTarget::ModernRoomOptions),
     ("wol-modern-spectators", WolTarget::ModernSpectators),
     ("wol-test-service-create", WolTarget::TestServiceCreate),
@@ -951,6 +964,86 @@ impl WolCapture {
         self.phase = WolPhase::Settle(SETTLE_FRAMES);
     }
 
+    /// Your own card's Change Country: the list opens at the login's United
+    /// States (2), a pick of another shown country is kept and sent, and the
+    /// list then opens again at that row.
+    fn change_country(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
+        use crate::app::shell_wol::player_card;
+        use crate::ui::wol_lobby::CARD_COUNTRY_ROWS;
+        player_row_click(state, NICKNAME)?;
+        ensure!(
+            Self::lobby(state)?
+                .ui
+                .card
+                .as_ref()
+                .is_some_and(|card| card.name == NICKNAME),
+            "a click on your own name did not open your card"
+        );
+        let message = player_card::layout(state).message;
+        let countries = |state: &AppState| {
+            player_card::view(state).and_then(|view| view.countries.map(|list| (view.rows, list)))
+        };
+        // The open list's row for `locale` and the top row it should open at.
+        let opens_at = |state: &AppState, locale: i32| -> Result<(usize, usize)> {
+            let rows = &Self::lobby(state)?
+                .ui
+                .card
+                .as_ref()
+                .context("your card")?
+                .countries;
+            let row = rows
+                .iter()
+                .position(|row| row.locale == locale)
+                .context("the country's row")?;
+            Ok((row, row.min(rows.len().saturating_sub(CARD_COUNTRY_ROWS))))
+        };
+        welcome_click(state, message);
+        let (_, list) = countries(state).context("Change Country did not drop the country list")?;
+        let (lit, top) = opens_at(state, 2)?;
+        ensure!(
+            list.hot_row == Some(lit) && list.popup.first == top,
+            "the list opened at row {:?}, top {}, not at the United States",
+            list.hot_row,
+            list.popup.first
+        );
+        // The first shown row of another country: where the United States
+        // sits depends on the language's names.
+        let (row, locale) = {
+            let card = Self::lobby(state)?.ui.card.as_ref().context("your card")?;
+            (list.popup.first..list.popup.first + CARD_COUNTRY_ROWS)
+                .filter_map(|row| card.countries.get(row).map(|country| (row, country.locale)))
+                .find(|&(_, locale)| locale != 2)
+                .context("every shown row is the United States")?
+        };
+        welcome_click(state, list.popup.row_rect(row).context("the picked row")?);
+        ensure!(countries(state).is_none(), "the pick left the list open");
+        ensure!(
+            state.persistence.options_profile.online_locale == locale,
+            "VERA.INI did not keep {locale}"
+        );
+        let requests = self.requests(state, frame)?;
+        ensure!(
+            requests.contains(&WolServiceRequest::SetLocale(locale)),
+            "the pick sent {requests:?}"
+        );
+        self.event(frame, json!({"country kept and sent": locale}));
+        welcome_click(state, message);
+        let (rows, list) = countries(state).context("Change Country did not open again")?;
+        let (lit, top) = opens_at(state, locale)?;
+        ensure!(
+            lit == row && list.hot_row == Some(row) && list.popup.first == top,
+            "the list opened again at row {:?}, top {}",
+            list.hot_row,
+            list.popup.first
+        );
+        let picked = &list.rows[row];
+        ensure!(
+            rows.iter().any(|(_, value)| value == picked),
+            "the card shows {rows:?}"
+        );
+        Ok(())
+    }
+
     fn requests(&mut self, state: &mut AppState, frame: u32) -> Result<Vec<WolServiceRequest>> {
         let requests = state
             .frontend
@@ -1017,6 +1110,8 @@ impl WolCapture {
                     target if target.online_login() => WolPhase::Login,
                     WolTarget::ModernLobby
                     | WolTarget::ModernCreate
+                    | WolTarget::ModernPlayerCard
+                    | WolTarget::ModernChangeCountry
                     | WolTarget::ModernRoomOptions
                     | WolTarget::ModernSpectators
                     | WolTarget::ModernOptions => WolPhase::ServiceLogin,
@@ -1547,7 +1642,7 @@ impl WolCapture {
                     .iter()
                     .map(|line| String::from_utf16_lossy(&line.text))
                     .collect();
-                if texts.iter().any(|text| text == "(Tanya) Got your page.") {
+                if texts.contains(&test_page_back("Tanya")) {
                     ensure!(
                         texts.contains(&format!("[{NICKNAME}] On my way"))
                             && received.lines.iter().any(|line| line.color == 0xF0F0),
@@ -2034,6 +2129,8 @@ impl WolCapture {
                                 self.target,
                                 WolTarget::ModernLobby
                                     | WolTarget::ModernCreate
+                                    | WolTarget::ModernPlayerCard
+                                    | WolTarget::ModernChangeCountry
                                     | WolTarget::ModernRoomOptions
                                     | WolTarget::ModernSpectators
                                     | WolTarget::ModernOptions
@@ -2106,6 +2203,88 @@ impl WolCapture {
                             == Some(lobby_ui::CREATE_LIMIT),
                         "Limit Screen Resolution has no help"
                     );
+                    // Ranked game says when the lobby ranks the room's games.
+                    set_window_pointer_to_rect_center(state, create.ranked.context("Ranked game")?);
+                    App::handle_wol_mouse_move(state);
+                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    ensure!(
+                        help == App::csf_label(state, "VERA:RankedGameHelp", "VERA:RankedGameHelp"),
+                        "Ranked game's help read {help:?}"
+                    );
+                    self.event(frame, json!({"Ranked game help": help}));
+                    self.settle();
+                    return Ok(());
+                }
+                if self.target == WolTarget::ModernLobby {
+                    // Tanya's row names her badge, rank and OS.
+                    let row = player_row_rect(state, "Tanya")?;
+                    set_window_pointer_to_rect_center(state, row);
+                    App::handle_wol_mouse_move(state);
+                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    let label = |key: &str| App::csf_label(state, key, key);
+                    let expected = crate::i18n::fill(
+                        &label("VERA:PlayerHelp"),
+                        &[
+                            ("name", &"Tanya"),
+                            ("badge", &label("VERA:LobbyBadgeCommanderInChief")),
+                            ("rank", &1),
+                            ("os", &"48.51"),
+                        ],
+                    );
+                    ensure!(help == expected, "Tanya's row help read {help:?}");
+                    self.event(frame, json!({"hovered player help": help}));
+                    self.settle();
+                    return Ok(());
+                }
+                if self.target == WolTarget::ModernPlayerCard {
+                    // The test service has sent Tanya's badge, country and
+                    // season record.
+                    player_row_click(state, "Tanya")?;
+                    ensure!(
+                        Self::lobby(state)?
+                            .ui
+                            .card
+                            .as_ref()
+                            .is_some_and(|card| card.name == "Tanya"),
+                        "a click on Tanya did not open her card"
+                    );
+                    self.event(frame, "player card opened");
+                    // Message's help in the box's status line.
+                    let card = crate::app::shell_wol::player_card::layout(state);
+                    set_window_pointer_to_rect_center(state, card.message);
+                    App::handle_wol_mouse_move(state);
+                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    let expected = crate::i18n::fill(
+                        &App::csf_label(state, "VERA:MessageHelp", "VERA:MessageHelp"),
+                        &[("name", &"Tanya")],
+                    );
+                    ensure!(help == expected, "Message's help read {help:?}");
+                    // The season row: her OS to the hundredth, and what OS
+                    // is under the pointer.
+                    let label = |key: &str| App::csf_label(state, key, key);
+                    let rows = crate::app::shell_wol::player_card::view(state)
+                        .context("Tanya's card")?
+                        .rows;
+                    let season = rows
+                        .iter()
+                        .position(|(caption, _)| *caption == label("VERA:Season"))
+                        .context("the season row")?;
+                    let shown = crate::i18n::fill(
+                        &label("VERA:SeasonRank"),
+                        &[("rank", &1), ("os", &"48.51")],
+                    );
+                    ensure!(rows[season].1 == shown, "the card shows {rows:?}");
+                    let explained = label("VERA:SeasonHelp");
+                    set_window_pointer_to_rect_center(state, card.rows[season].1);
+                    App::handle_wol_mouse_move(state);
+                    let help = crate::app::shell_wol::lobby::status_help(state);
+                    ensure!(help == explained, "the season row's help read {help:?}");
+                    self.event(frame, json!({"season row help": help}));
+                    self.settle();
+                    return Ok(());
+                }
+                if self.target == WolTarget::ModernChangeCountry {
+                    self.change_country(state, frame)?;
                     self.settle();
                     return Ok(());
                 }
@@ -4423,7 +4602,8 @@ impl WolCapture {
         let done = match self.target {
             WolTarget::PageFindStatus => page.status == csf("TXT_FINDPAGE_NOT_ONLINE"),
             WolTarget::PageUserGone => texts.contains(&csf("TXT_PAGEUSERGONE")),
-            _ => texts.iter().any(|text| text.ends_with(") Got your page.")),
+            WolTarget::SetupPage => texts.contains(&test_page_back("Boris")),
+            _ => texts.contains(&test_page_back("Tanya")),
         };
         if !done {
             return Ok(());
@@ -4442,7 +4622,7 @@ impl WolCapture {
                 "0xCF lacks the echo, the result or the status: {texts:?} {:?}",
                 page.status
             );
-            let line = format!("({name}) Got your page.");
+            let line = test_page_back(name);
             let transcript = if self.target == WolTarget::SetupPage {
                 setup_chat_has(state, &line)?
             } else {
@@ -4922,6 +5102,36 @@ fn game_row_click(state: &mut AppState, row: usize) -> Result<()> {
     Ok(())
 }
 
+/// A click on the player list's row of `name`.
+fn player_row_click(state: &mut AppState, name: &str) -> Result<()> {
+    let rect = player_row_rect(state, name)?;
+    welcome_click(state, rect);
+    Ok(())
+}
+
+/// The modern player list's row of `name`.
+fn player_row_rect(state: &AppState, name: &str) -> Result<RectPx> {
+    let layout = crate::app::shell_wol::lobby::layout(state);
+    let lobby = state
+        .frontend
+        .wol
+        .as_ref()
+        .and_then(|visit| visit.lobby())
+        .context("the lobby runner")?;
+    let row = lobby
+        .ui
+        .player_rows
+        .iter()
+        .position(|row| row.name == name)
+        .context("the player's row")?;
+    let geometry = lobby.ui.player_list.geometry(
+        layout.players,
+        lobby.ui.player_rows.len(),
+        layout.page.scale,
+    );
+    Ok(geometry.row(row - lobby.ui.player_list.top_index))
+}
+
 /// Three IRC records; the preferred-server draw left record 1 selected.
 /// `wolinfoMD.ini` beside the isolated VERA.INI.
 fn info_file(state: &AppState) -> Result<WolInfoFile> {
@@ -4953,6 +5163,12 @@ fn server_list() -> WolServerList {
 
 fn button(layout: &crate::ui::wol_login::WolLoginLayout, id: u16) -> Result<RectPx> {
     layout.page.button_rect(id).context("0x10F button")
+}
+
+/// The test service's page back from `name`, as the page dialog shows it
+/// (`(name) ` before the stand-in's line, in the player's language).
+fn test_page_back(name: &str) -> String {
+    format!("({name}) {}", crate::i18n::tr("VERA:TestPageReply"))
 }
 
 /// A press and release through the window handlers' WOL routing; like the

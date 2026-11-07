@@ -41,14 +41,10 @@ impl Simulation {
         let Some(weapon) = rules.weapon("ChemLauncher") else {
             return false;
         };
-        let Some(warhead) = weapon.warhead.as_deref().and_then(|id| rules.warhead(id)) else {
+        let Some(warhead) = rules.weapon_warhead(weapon) else {
             return false;
         };
-        let Some(projectile) = weapon
-            .projectile
-            .as_deref()
-            .and_then(|id| rules.projectile(id))
-        else {
+        let Some(projectile) = rules.weapon_projectile(weapon) else {
             return false;
         };
         let target = self.direct_strike_target(location);
@@ -129,7 +125,7 @@ impl Simulation {
     ) -> Option<DriveCoord> {
         let location = self.direct_strike_coord(cell)?;
         let weapon = rules.weapon("NukePayload")?;
-        let warhead = weapon.warhead.as_deref().and_then(|id| rules.warhead(id))?;
+        let warhead = rules.weapon_warhead(weapon)?;
         // 6E34D3's Map565730 looks up world XY again. Preserve truncation
         // and the retained Dummy rather than assuming the packed waypoint
         // is always the CellClass that becomes the Bullet's target.

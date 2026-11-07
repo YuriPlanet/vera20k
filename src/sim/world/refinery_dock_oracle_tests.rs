@@ -476,7 +476,7 @@ pub(super) fn scene_with(input: &Value, rules: RuleSet, ini: &IniFile) -> Scene 
             .cell_mut_for_test(spawn_x, spawn_y)
             .unwrap();
         let prior = cell.speed_costs;
-        cell.speed_costs.wheel = Some(100);
+        cell.speed_costs.wheel = Some(crate::util::native_x87::NativeF32Bits::ONE);
         prior
     };
     let miner = sim
@@ -1089,14 +1089,11 @@ fn per_cell_dock_now_matches_the_original_track_end_arm() {
     for row in corpus["per_cell"].as_array().unwrap() {
         let input = &row["input"];
         let context = input["name"].as_str().unwrap().to_string();
-        // The refusal's Scatter is the recorded residual (`refinery_dock`
-        // module doc); it must stay confined to the selling row.
-        let scatters = row["events"]
+        let scatter = row["events"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|e| e[0] == "scatter");
-        assert_eq!(scatters, context == "per_cell_pad_selling", "{context}");
+            .find(|e| e[0] == "scatter");
         let mut s = scene(input);
         radio::take_transmit_log();
         s.sim.unit_dock_now(
@@ -1106,7 +1103,20 @@ fn per_cell_dock_now_matches_the_original_track_end_arm() {
             crate::sim::world::FrameEffects::default(),
         );
         assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
-        compare_state(&s, row, &context);
+        let mut expected = row.clone();
+        if let Some(scatter) = scatter {
+            // The oracle records Scatter(&0xB1CFE8, 1, 0) without running it,
+            // so the row certifies the call and its arguments, not the cell:
+            // that is the Unit Scatter's own (scatter_tests). It runs here, so
+            // the miner's NavCom is the cell it chose.
+            assert_eq!(scatter.as_array().unwrap()[2..], [1, 0], "{context}");
+            let miner = s.sim.substrate.entities.get(s.miner).unwrap();
+            let Some(NavTargetRef::Cell { rx, ry }) = miner.navigation.nav_com() else {
+                panic!("{context}: the refusal Scatters the miner");
+            };
+            expected["state"]["miner_nav"] = serde_json::json!([rx, ry]);
+        }
+        compare_state(&s, &expected, &context);
     }
 }
 

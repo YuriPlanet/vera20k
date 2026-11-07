@@ -11,12 +11,21 @@ use winit::dpi::PhysicalSize;
 use winit::event::{MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(any(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+))]
+mod keyboard_shim;
+#[cfg(any(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+))]
+use keyboard_shim::KeyEventExtModifierSupplement;
+#[cfg(not(any(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+)))]
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
-#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-mod web_keyboard;
-#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-use web_keyboard::KeyEventExtModifierSupplement;
 use winit::window::{Window, WindowAttributes, WindowId};
 
 use crate::app::match_runtime::sim_tick;
@@ -114,6 +123,7 @@ pub(crate) mod telemetry_server;
 pub(crate) mod types;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) mod updater;
+pub(crate) mod web_link;
 mod window_icon;
 
 /// Main window title. The single-instance gate finds a running copy's window by

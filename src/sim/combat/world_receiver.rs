@@ -548,6 +548,7 @@ pub(crate) fn collect_area(
             impact_z,
         },
         world.session.no_damage(),
+        world.session.truce_harvester_types(rules, &world.interner),
     ) else {
         return combat_aoe::AoEDamageResult::default();
     };
@@ -2502,7 +2503,7 @@ fn finish_concrete_death(
         // types at `0x004D98DD`. Its owner gate (`0x0050B6F0`) and
         // the `CreateRadarEvent(7)` dedupe (`0x004D98FE`) need the
         // house table and radar queue, which the world owns.
-        if let Some(event) = death_announcement_event(obj, category, rx, ry, owner) {
+        if let Some(event) = death_announcement_event(obj, type_id, category, rx, ry, owner) {
             effects.unit_lost_events.push(event);
         }
     }
@@ -2953,7 +2954,12 @@ fn run_special_detonation_arm(
         SpecialDetonationAction::BombDisarm => {
             // 0x004699C4..0x004699FE: a bombed Object target is defused.
             if let Some(id) = object {
-                Simulation::bomb_defuse(&mut world.substrate, &mut world.bombs, id);
+                Simulation::bomb_defuse(
+                    &mut world.substrate,
+                    &mut world.bombs,
+                    &mut world.sound_events,
+                    id,
+                );
             }
         }
         SpecialDetonationAction::NukeMaker => nuke_maker(world, rules, detonation),
@@ -3051,13 +3057,10 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
         .payload
         .installed_weapon()
         .and_then(|weapon| rules.weapon(world.interner.resolve(weapon)))
-        .and_then(|weapon| weapon.projectile.as_deref())
-        .and_then(|projectile| rules.projectile(projectile))
+        .and_then(|weapon| rules.weapon_projectile(weapon))
         .map_or(0, |projectile| projectile.detonation_altitude);
     let weapon = rules.weapon(NUKE_PAYLOAD_WEAPON);
-    let warhead = weapon
-        .and_then(|weapon| weapon.warhead.as_deref())
-        .and_then(|name| rules.warhead(name));
+    let warhead = weapon.and_then(|weapon| rules.weapon_warhead(weapon));
     let (Some(target_coords), Some(weapon), Some(warhead)) = (target_coords, weapon, warhead)
     else {
         return;
@@ -3351,10 +3354,7 @@ fn emit_detonation_receivers<'r>(
         .installed_weapon()
         .and_then(|weapon| rules.weapon(world.interner.resolve(weapon)))
         && weapon.rad_level > 0
-        && let Some(rad_warhead) = weapon
-            .warhead
-            .as_deref()
-            .and_then(|name| rules.warhead(name))
+        && let Some(rad_warhead) = rules.weapon_warhead(weapon)
     {
         out.effects
             .rad_detonations

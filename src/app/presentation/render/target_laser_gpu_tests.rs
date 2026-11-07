@@ -88,7 +88,6 @@ fn tail_stores_reach_the_gpu_over_any_z_without_writing_it() {
                     zoom: 1.,
                 },
                 |_| false,
-                |_| panic!("opaque stores never query A"),
             ));
         }
         let initial = std::iter::repeat_n(encoded(BACKGROUND, format), z.len())

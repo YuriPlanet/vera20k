@@ -1233,38 +1233,26 @@ pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
     {
         return;
     }
+    let held = |arrow| {
+        !state.match_state.match_presentation.message_list.editing()
+            && state
+                .match_state
+                .input
+                .camera_scroll_keys
+                .held(&state.match_state.input.keys_held, arrow)
+    };
     let key_distance = keyboard_scroll_distance(state);
     let mut movement = (0.0, 0.0);
-    if state
-        .match_state
-        .input
-        .keys_held
-        .contains(&winit::keyboard::KeyCode::ArrowLeft)
-    {
+    if held(winit::keyboard::KeyCode::ArrowLeft) {
         movement.0 -= key_distance / state.match_state.input.zoom_level;
     }
-    if state
-        .match_state
-        .input
-        .keys_held
-        .contains(&winit::keyboard::KeyCode::ArrowRight)
-    {
+    if held(winit::keyboard::KeyCode::ArrowRight) {
         movement.0 += key_distance / state.match_state.input.zoom_level;
     }
-    if state
-        .match_state
-        .input
-        .keys_held
-        .contains(&winit::keyboard::KeyCode::ArrowUp)
-    {
+    if held(winit::keyboard::KeyCode::ArrowUp) {
         movement.1 -= key_distance / state.match_state.input.zoom_level;
     }
-    if state
-        .match_state
-        .input
-        .keys_held
-        .contains(&winit::keyboard::KeyCode::ArrowDown)
-    {
+    if held(winit::keyboard::KeyCode::ArrowDown) {
         movement.1 += key_distance / state.match_state.input.zoom_level;
     }
 

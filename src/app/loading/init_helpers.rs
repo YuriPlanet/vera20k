@@ -22,7 +22,6 @@ use crate::render::tile_atlas::{self, TileAtlas};
 use crate::render::unit_atlas::{self, UnitAtlas};
 use crate::rules::effect_asset_catalog::tolerant_anim_class_roots;
 use crate::rules::ini_parser::IniFile;
-use crate::rules::process_owner::NativeRulesProcessOwner;
 #[cfg(test)]
 use crate::rules::retail_sources::load_startup_rules;
 use crate::rules::ruleset::RuleSet;
@@ -313,36 +312,6 @@ pub(crate) fn load_rules_with_prefix_for_test(
     Some((rules, processed_ini, fixed_art_ini, receipt))
 }
 
-/// Resolve the neutral tech buildings the random map generator may place.
-///
-/// The type list lives in `[AI] NeutralTechBuildings` and each footprint in
-/// `Foundation=`, so RULESMD/LANGRULE and fixed ARTMD are both needed.
-/// An unavailable INI yields an empty catalog, which the placement phase
-/// treats as "place nothing" rather than as an error.
-pub(crate) fn load_neutral_tech_types(
-    owner: Option<&NativeRulesProcessOwner>,
-) -> Vec<crate::map::rmg::phases::tech_buildings::TechType> {
-    let Some(owner) = owner else {
-        log::warn!("random map: startup rules/art unavailable; placing no neutral tech buildings");
-        return Vec::new();
-    };
-    let Ok(processed) = owner.startup_compatibility_projection() else {
-        log::warn!(
-            "random map: startup rules projection failed; placing no neutral tech buildings"
-        );
-        return Vec::new();
-    };
-    let types = crate::map::rmg::tech_catalog::resolve(
-        processed.neutral_tech_buildings(),
-        owner.fixed_art(),
-    );
-    log::info!(
-        "random map: resolved {} neutral tech building type(s)",
-        types.len()
-    );
-    types
-}
-
 /// Install the process-selected ART metadata before terrain construction or
 /// saved-cell rebinding. RulesLoad675210 restores type state, while the
 /// hierarchy/theater loaders rebind resident images (LoadContent67E730).
@@ -367,7 +336,6 @@ pub(crate) fn bind_rules_art_metadata(
 /// bind join that closure.
 pub(crate) fn bind_rules_asset_closure(
     rules: &mut RuleSet,
-    fixed_art: &IniFile,
     overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
     roots: &[String],
     authored_anim_roots: &[String],
@@ -386,10 +354,7 @@ pub(crate) fn bind_rules_asset_closure(
     rules.bind_building_buildup_assets(assets, theater_name);
     rules.bind_building_rubble_assets(assets, theater_ext, theater_name);
     rules.bind_terrain_assets(assets, theater_ext, terrain_phase);
-    let _alpha_image_bindings =
-        crate::rules::alpha_image_assets::bind(rules, overlay_registry, assets);
-    let sequences = crate::rules::infantry_sequence::parse_infantry_sequence_registry(fixed_art);
-    rules.bind_animation_sequences(&sequences);
+    rules.bind_alpha_images(overlay_registry, assets);
     Ok(())
 }
 

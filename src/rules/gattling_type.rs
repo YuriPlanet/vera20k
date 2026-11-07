@@ -24,19 +24,10 @@
 //! below 0. Effect: different caps and thresholds from native's neighbouring
 //! fields. Frequency: never on retail data (YTNK and YAGGUN author 3).
 //!
-//! Layers: the reader runs once per INI layer, each read defaulting to the
-//! field's current value, and the stage loop's gate (`0x0071407E..
-//! 0x00714099`) is evaluated per layer. VERA reads the layered section once.
-//! RESIDUAL: the two disagree when (a) a later layer lowers `WeaponStages=`
-//! below an index an earlier layer wrote and that index is later read (only
-//! the overlap cases above can do that); (b) a later layer turns
-//! `IsGattling=` on or raises `WeaponStages=` past 1 while the `Stage%d=`
-//! keys sit only in an earlier layer, whose loop never ran (native reads the
-//! later file and finds none; VERA reads the merged keys); (c) with
-//! `WeaponStages=` 7 or more, overlapping keys from different layers apply
-//! layer by layer natively and per merged key here. Frequency: never on
-//! retail data (YTNK and YAGGUN author every key in rulesmd; the mode INIs
-//! leave them alone; map layers not surveyed).
+//! The ordered Rules owner retains this block on the live TechnoType and
+//! applies each admitted INI body with its current IsGattling flag. Skipped
+//! stage keys are never replayed by a later layer; a smaller count preserves
+//! earlier table writes. Destroying the Type reconstructs the zeroed block.
 
 use crate::rules::ini_parser::IniSection;
 
@@ -51,16 +42,17 @@ const RATE_DOWN: usize = 14;
 const BLOCK_LEN: usize = 15;
 
 /// `TechnoTypeClass+0xCD8..+0xD10`, as the reader writes it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct GattlingStages {
     block: [i32; BLOCK_LEN],
 }
 
 impl GattlingStages {
     /// The native read (see the module doc).
-    pub(crate) fn read(section: &IniSection, is_gattling: bool) -> Self {
-        let mut stages = Self::default();
-        let block = &mut stages.block;
+    pub(crate) fn apply_pass(&mut self, section: &IniSection, is_gattling: bool) {
+        let block = &mut self.block;
         let mut read = |slot: usize, key: &str| {
             if let Some(cell) = block.get_mut(slot) {
                 *cell = section.read_int(key, *cell);
@@ -82,7 +74,6 @@ impl GattlingStages {
                 }
             }
         }
-        stages
     }
 
     /// The block from its field values, for fixtures and native payloads.
@@ -134,10 +125,103 @@ impl GattlingStages {
 mod tests {
     use super::GattlingStages;
     use crate::rules::ini_parser::IniFile;
+    use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerKind, RulesLayerStack};
+    use crate::rules::ruleset::RuleSet;
 
     fn read(text: &str, is_gattling: bool) -> GattlingStages {
-        let ini = IniFile::from_str(text);
-        GattlingStages::read(ini.section("T").expect("section"), is_gattling)
+        let ini = IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=T\n{text}IsGattling={}\n",
+            if is_gattling { "yes" } else { "no" },
+        ));
+        RuleSet::from_ini(&ini)
+            .unwrap()
+            .object("T")
+            .unwrap()
+            .gattling_stages
+    }
+
+    #[test]
+    fn gattling_pass_gate_rejects_disabled_thresholds_in_the_live_consumer() {
+        use crate::sim::combat::fire_error::FireError;
+        use crate::sim::combat::gattling::{GattlingState, UnitFireOutcome};
+        use crate::sim::world::{FrameEffects, Simulation};
+
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[VehicleTypes]\n0=GTNK\n[GTNK]\nStrength=300\nIsGattling=yes\n\
+             TurretCount=1\nWeaponCount=4\nWeapon1=W\nWeapon3=W\n\
+             WeaponStages=2\nStage1=7\nStage2=10\nRateUp=1\n[W]\nDamage=25\n",
+        ));
+        layers.push(
+            RulesLayerKind::GameMode,
+            IniFile::from_str("[GTNK]\nIsGattling=no\nStage1=100\nStage2=200\n"),
+        );
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[GTNK]\nIsGattling=yes\n"),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        let mut sim = Simulation::new();
+        let id = sim
+            .spawn_object("GTNK", "Americans", 10, 10, 0, &rules)
+            .unwrap();
+        sim.substrate.entities.get_mut(id).unwrap().gattling =
+            GattlingState::from_fields(0, 7, false);
+        sim.unit_fire_update_tail(
+            id,
+            UnitFireOutcome::Code(FireError::Rearm),
+            &rules,
+            FrameEffects::default(),
+        );
+        let state = sim.substrate.entities.get(id).unwrap().gattling;
+        assert_eq!((state.stage(), state.value()), (1, 8));
+    }
+
+    #[test]
+    fn gattling_pass_overlap_survives_save_and_resets_with_type_destruction() {
+        use crate::util::save_codec;
+
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[VehicleTypes]\n0=T\n[T]\nIsGattling=yes\nWeaponStages=7\n\
+             RateUp=9\nEliteStage1=100\nStage7=700\nEliteStage7=77\n",
+        ));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[T]\nWeaponStages=3\n"),
+        );
+        let processed = layers.process().unwrap();
+        let rules = RuleSet::from_processed_rules(&processed).unwrap();
+        let table = rules.object("T").unwrap().gattling_stages;
+        assert_eq!((table.threshold(1, true), table.rate_up()), (700, 77));
+        let restored: ProcessedRulesLayers =
+            save_codec::deserialize(&save_codec::serialize(&processed).unwrap()).unwrap();
+        let (_, trace) = restored.into_ini_and_native_type_construction_trace();
+        let state = trace.into_registry_state_discarding_events();
+        let next_source = IniFile::from_str("[VehicleTypes]\n0=T\n[T]\nStrength=100\n");
+        let fresh = RuleSet::from_ini(&next_source).unwrap();
+        let next = RulesLayerStack::new(next_source.clone())
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), state)
+            .unwrap();
+        let retained = RuleSet::from_processed_rules(&next).unwrap();
+        assert!(retained.object("T").unwrap().is_gattling);
+        assert_eq!(retained.object("T").unwrap().gattling_stages, table);
+        assert_eq!(retained.source_ini_hash(), fresh.source_ini_hash());
+        assert_ne!(
+            retained.simulation_config_hash(),
+            fresh.simulation_config_hash()
+        );
+        let (_, trace) = next.into_ini_and_native_type_construction_trace();
+        let reset = trace
+            .into_registry_state_discarding_events()
+            .destructive_reset();
+        let rebuilt = RulesLayerStack::new(next_source)
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), reset)
+            .unwrap();
+        let rules = RuleSet::from_processed_rules(&rebuilt).unwrap();
+        assert!(!rules.object("T").unwrap().is_gattling);
+        assert_eq!(
+            rules.object("T").unwrap().gattling_stages,
+            GattlingStages::default()
+        );
     }
 
     /// The Stage loop runs only for a gattling type with more than one stage,

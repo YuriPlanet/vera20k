@@ -82,11 +82,6 @@ fn physical_rules(assets: &AssetManager, shared: &Value) -> crate::rules::rulese
     )
     .unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    // Match map loading's data-only fixed-ART sequence binding before the
-    // atlas resolves real Infantry action records and all facing frames.
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let kind = rules.object("E1").unwrap();
     assert_eq!(kind.image, shared["native_type"]["image"].as_str().unwrap());
     assert_eq!(kind.strength, int(&shared["native_type"]["strength"]));

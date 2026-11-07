@@ -157,12 +157,18 @@ pub(crate) fn build_selection_bracket_lines(
             let object = rules.object(sim.interner().resolve(e.type_ref()))?;
             let center = object_get_coords(e, terrain);
             let color = palette[usize::from(current_fly_height(e, terrain) < -4)];
+            let correction = crate::render::locomotor_visual::building_terrain_correction(
+                i32::from(e.position.z() as i8),
+            );
             let mut lines = building_bracket_lines(
                 [center.x, center.y, center.z],
                 rules.building_dimensions(object),
-                camera,
+                [camera[0], camera[1].wrapping_add(correction)],
                 color,
             );
+            for line in lines.behind.iter_mut().chain(&mut lines.extras) {
+                line.z_adjust = line.z_adjust.map(|z| z.wrapping_sub(correction));
+            }
             if e.sinking.is_active() {
                 lines.extras.clear();
             }

@@ -141,6 +141,16 @@ pub struct CargoBale {
     pub value: u16,
 }
 
+/// StorageClass::AddAmount @ 0x006C9690, represented as whole bales.
+/// Native adds to the selected slot without clearing or capacity clamping;
+/// harvesting owns its admission limit, while Full reinforcements add the
+/// positive Type.Storage to a freshly zeroed hold (CreateMembers65DE7B).
+/// Both holds that stand for Techno Storage (`+0x33C`), the [`Miner`]'s and
+/// the [`crate::sim::slave_manager::SlaveLink`]'s, add through it.
+pub(crate) fn add_amount(hold: &mut Vec<CargoBale>, bale: CargoBale, amount: u16) {
+    hold.extend(std::iter::repeat_n(bale, usize::from(amount)));
+}
+
 impl CargoBale {
     /// Unit Harvest_Ore_Tick73D450 and Infantry Harvest522E70 preserve the
     /// Cell's native Tiberium index when storing the reduction. Value comes
@@ -255,7 +265,10 @@ impl Miner {
                     config.chrono_miner_capacity
                 }
             }
-            // Slave Miners don't carry cargo — their slave infantry harvest instead.
+            // Slave Miners never harvest (their slaves do), so nothing admits
+            // bales against this capacity. A Full team still fills their
+            // Storage with Type.Storage (CreateMembers 0x0065DE7B), which no
+            // reader consumes for a Slave Miner.
             MinerKind::Slave => 0,
             #[cfg(feature = "ares")]
             MinerKind::Inactive => 0,
@@ -308,13 +321,9 @@ impl Miner {
         &self.cargo
     }
 
-    /// StorageClass::AddAmount @ 0x006C9690, represented as whole bales.
-    /// Native adds to the selected slot without clearing or capacity clamping;
-    /// harvesting owns its admission limit, while Full reinforcements add the
-    /// positive Type.Storage to a freshly zeroed hold (CreateMembers65DE7B).
+    /// [`add_amount`] on this Miner's hold.
     pub(crate) fn add_bales(&mut self, bale: CargoBale, amount: u16) {
-        self.cargo
-            .extend(std::iter::repeat_n(bale, usize::from(amount)));
+        add_amount(&mut self.cargo, bale, amount);
     }
 
     /// The hold's capacity in bales.

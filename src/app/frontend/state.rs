@@ -24,6 +24,9 @@ pub(crate) struct FrontendState {
     /// The decided network match's winners still in it, for the online
     /// lobby's `finish` (docs/lobby-protocol.md).
     pub(crate) match_winners: Option<Vec<String>>,
+    /// VERA: when `match_result` was decided, for the online lobby's
+    /// `finish` (`ended_ago`), which the score screen holds back.
+    pub(crate) match_result_at: Option<Instant>,
     /// Frames, duration and opponent departure for the launch report.
     pub(crate) external_progress: crate::app::cncnet::ExternalLaunchProgress,
     /// The game is closing and waits until this for its network goodbyes
@@ -123,6 +126,9 @@ pub(crate) struct FrontendState {
     pub(crate) movie_list_selection: i32,
     /// Full-screen Play_Movie session (Sneak Peeks or a movie-list entry).
     pub(crate) fullscreen_movie: Option<crate::app::frontend::fullscreen_movie::FullscreenMovie>,
+    /// The "import game files" dialog on the startup-failure card: what step it
+    /// is on, and therefore which buttons the card shows.
+    pub(crate) asset_import: crate::ui::asset_import::AssetImport,
     /// Show_Credits session.
     pub(crate) credits_roll: Option<crate::app::frontend::credits_roll::CreditsRollSession>,
     /// Campaign selection `0x94` instance while its route shows.
@@ -247,6 +253,8 @@ pub(crate) struct FrontendState {
     pub(crate) random_map_retention: RandomMapGenerationRetention,
     pub(crate) skirmish_preview_texture:
         Option<crate::app::frontend::skirmish_shell_render::SkirmishPreviewTexture>,
+    /// VERA's enlarged map preview, while it shows.
+    pub(crate) preview_zoom: Option<crate::app::frontend::preview_zoom::PreviewZoom>,
     /// Minimap renderer — created at map load time.
     pub(crate) loading_screen_atlas:
         Option<crate::render::loading_screen_chrome::LoadingScreenAtlas>,

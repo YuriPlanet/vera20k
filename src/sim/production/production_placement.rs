@@ -297,6 +297,7 @@ pub(crate) fn place_production_with_overlays(
             else {
                 return false;
             };
+            let product_type_id = object.type_id;
             let Some(entity_id) = object.entity_id else {
                 return false;
             };
@@ -356,6 +357,7 @@ pub(crate) fn place_production_with_overlays(
                     sim.sound_events
                         .emit(crate::sim::world::SimSoundEvent::UnitComplete {
                             owner: owner_id,
+                            type_id: product_type_id,
                             radar: crate::sim::radar::RadarEventRequest::new(
                                 crate::sim::radar::RadarEventType::UnitReady,
                                 crate::util::lepton::lepton_to_cell_packed(coords.x) as u16,

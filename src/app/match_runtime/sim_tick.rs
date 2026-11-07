@@ -194,8 +194,8 @@ pub(crate) fn drive_local_player_outcome_exit(state: &mut AppState, wall_ms: u64
     if !crate::app::commander_feedback::verdict_was_held_for_a_clip(state) {
         start_verdict_theme(state, outcome, wall_ms);
     }
-    let title = crate::app::match_runtime::scenario_exit::outcome_title(outcome).to_string();
-    let detail = crate::app::match_runtime::scenario_exit::outcome_detail(outcome).to_string();
+    let title = crate::app::match_runtime::scenario_exit::outcome_title(outcome);
+    let detail = crate::app::match_runtime::scenario_exit::outcome_detail(outcome);
     let destination = crate::app::match_runtime::scenario_exit::scenario_exit_destination(
         state.match_state.session_mode(),
         outcome,
@@ -1560,8 +1560,16 @@ fn advance_one_simulation_frame(
         let mut trigger_effects: Vec<TriggerEffect> = Vec::new();
         let mut camera_logic_frame: Option<u32> = None;
         let mut hud_messages = Vec::new();
+        // VERA-only accessibility rows. The frame's synchronously delivered
+        // sound prefix is played by FrameClientBoundary, whose pass also fills
+        // this sink; the frame tail handles the suffix. Both must be merged so
+        // an EVA row is never lost just because its voice played early.
+        let detailed_eva_text = state.persistence.options_profile.detailed_eva_text;
+        let prefix_eva_text: std::cell::RefCell<Vec<crate::app::input::messages::HudMessage>> =
+            std::cell::RefCell::new(Vec::new());
         // Carried out of the sim borrow so the census can read `state` freely below.
         let mut census_tick: Option<u64> = None;
+        let fps_panel_shown = state.renderer.performance_overlay.is_visible();
         if let Some(rt) = state.match_state.sim_runtime.as_mut() {
             let sim = &mut rt.simulation;
             let native_frame = sim.session().binary_frame();
@@ -1576,9 +1584,9 @@ fn advance_one_simulation_frame(
                 crate::sim::replay::PLAY_HASH_INTERVAL
             });
             // Report points need the ledger whether or not a dashboard is
-            // attached; `publish_if_due` only runs with a client.
-            #[cfg(feature = "telemetry-dashboard")]
-            sim.set_frame_profiling(true);
+            // attached; `publish_if_due` only runs with a client. Elsewhere
+            // the performance panel's Most CPU row reads it while the panel shows.
+            sim.set_frame_profiling(cfg!(feature = "telemetry-dashboard") || fps_panel_shown);
             // Delay-zero AnimClass construction can emit StartSound during the
             // final map-load sweep. Keep it until this first tactical drain;
             // `drain(..)` below still consumes every event exactly once.
@@ -1703,7 +1711,8 @@ fn advance_one_simulation_frame(
                     other_local_pause,
                 )
                 .with_outcome_wait(&mut state.match_state.scenario_outcome)
-                .with_deferred_verdict(defer_verdict_to_clip);
+                .with_deferred_verdict(defer_verdict_to_clip)
+                .with_eva_text(detailed_eva_text.then_some(&prefix_eva_text));
                 let effects = FrameEffects::for_sound(&boundary)
                     .with_tactical_radar(&boundary)
                     .with_local_planning(&boundary)
@@ -1940,6 +1949,10 @@ fn advance_one_simulation_frame(
                     minimap.admit_radar_event(request, radar_frame, Some(&resources.rules))
                 })
             };
+            // VERA-only accessibility text: collect the EVA rows only when the
+            // option is on. A disabled switch passes None, so the dispatch
+            // never builds a fact and no rules/CSF lookup follows.
+            let mut eva_text_messages = Vec::new();
             super::sound_dispatch::dispatch_sim_sound_events(
                 frame_sound_events
                     .into_iter()
@@ -1958,7 +1971,12 @@ fn advance_one_simulation_frame(
                 local_owner_name.as_deref(),
                 &mut admit_radar,
                 &mut state.match_state.match_audio.sound_events,
+                detailed_eva_text.then_some(&mut eva_text_messages),
             );
+            // Frame order: the synchronously delivered prefix precedes the
+            // frame-tail suffix. Both passes follow the same voice gates.
+            hud_messages.extend(prefix_eva_text.borrow_mut().drain(..));
+            hud_messages.extend(eva_text_messages);
             super::super_selection::hide_placement_anims(
                 &mut state.match_state.match_presentation.hidden_super_anims,
                 sim,
@@ -2089,6 +2107,22 @@ fn advance_one_simulation_frame(
                         },
                     );
                 }
+                LifecycleOutput::PlanningAppendRefused { owner, message } => {
+                    crate::app::input::planning_mode::append_output(
+                        state,
+                        Some(owner) == local_house,
+                        message,
+                        false,
+                    );
+                }
+                LifecycleOutput::PlanningFramePassQueued { owner, message } => {
+                    crate::app::input::planning_mode::append_output(
+                        state,
+                        Some(owner) == local_house,
+                        message,
+                        true,
+                    );
+                }
                 LifecycleOutput::SidebarConstructionOption { .. }
                 | LifecycleOutput::SidebarRecalculated { .. }
                 | LifecycleOutput::ProductionBeginAttempted { .. }
@@ -2177,6 +2211,11 @@ fn advance_one_simulation_frame(
                 | LifecycleOutput::ClearDrawnState { .. }
                 | LifecycleOutput::ClearRedraw { .. } => {}
             }
+        }
+        // Main_Tick runs PlanMgr_Process_Frame after the frame's events
+        // (0x0055DEA4); its input tail follows their lifecycle outputs.
+        if frame_committed {
+            crate::app::input::planning_mode::frame_pass(state);
         }
         // Black-cell census, on a schedule rather than a keypress: nobody hits a debug key
         // at the exact moment they notice the artifact. Spread-out ticks give a time series,
@@ -2446,6 +2485,9 @@ pub(crate) fn update_building_placement_preview(state: &mut AppState) {
         state.match_state.input.cursor_x,
         state.match_state.input.cursor_y,
     );
+    // UpdateFoundationCenter4A91B0 takes the cursor's Cell from
+    // `RadarClass::Click_Cell_Calc @ 0x00653760` (`0x004A9251`): the
+    // tactical ScreenPixelToCell answer this shared inverse ports.
     // UpdateFoundationCenter4A91B0 uses center + the type's active offset.
     // Resolve it before admission/ground/shroud, through the shared owner
     // also used by a fresh LeftUp; rendering consumes the resulting Cells.
@@ -2679,13 +2721,14 @@ mod tests {
             ))
             .unwrap();
         let speed_costs = SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            wheel: Some(100),
-            float: Some(100),
-            amphibious: Some(100),
-            float_beach: Some(100),
-            hover: Some(100),
+            foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         };
         let terrain = ResolvedTerrainGrid::from_cells(
             1,

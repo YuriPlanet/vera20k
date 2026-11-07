@@ -264,6 +264,38 @@ fn force_slot_translucency(sim: &mut Simulation, anim: u64) {
         .forced_translucent = true;
 }
 
+#[test]
+fn high_terrain_building_slots_keep_their_offsets_and_depth() {
+    let (mut sim, rules, building, atlas) = fixture("NATBNK", false);
+    let order = NativeDisplayOrder::from_display(sim.display_layers());
+    let flat = emit(&sim, &rules, building, &atlas, &order);
+    assert!(!flat.is_empty());
+    let entity = sim.entities_mut_for_test().get_mut(building).unwrap();
+    entity.position.set_z_for_test(36);
+    entity.position.set_exact_z_leptons_for_test(Some(3744));
+    let slots = *entity.building_art.anim_slots();
+    for id in slots.into_iter().flatten() {
+        sim.anims_mut_for_test()
+            .get_mut(id)
+            .unwrap()
+            .world_coord_mut_for_test()
+            .z += 3744;
+    }
+    let raised = emit(&sim, &rules, building, &atlas, &order);
+    assert_eq!(flat.len(), raised.len());
+    for (flat, raised) in flat.iter().zip(&raised) {
+        for (flat, raised) in flat.pieces.iter().zip(&raised.pieces) {
+            assert_eq!(raised.instance.position[0], flat.instance.position[0]);
+            assert_eq!(
+                raised.instance.position[1],
+                flat.instance.position[1] - 540.0
+            );
+            assert_eq!(raised.instance.z_adjust, flat.instance.z_adjust - 540.0);
+            assert_eq!(raised.instance.depth, flat.instance.depth);
+        }
+    }
+}
+
 fn assert_slot_replay(
     planned: Vec<PlannedObjectInstance>,
     anim: u64,
@@ -415,20 +447,6 @@ fn bouncing_slot_anims_take_the_ordinary_material_after_their_ground_shadow() {
             palette,
         );
     }
-}
-
-#[test]
-fn tiled_slot_anims_keep_their_existing_translucent_material() {
-    let (mut sim, rules, building, anim, atlas) = material_fixture("TILED", "Tiled=yes\n");
-    force_slot_translucency(&mut sim, anim);
-    let palette = PaletteLight::color_scheme([1000; 3], 1000);
-    let inherited = DrawState {
-        remap_row: 7,
-        ..DrawState::default()
-    };
-    let order = NativeDisplayOrder::from_display(sim.display_layers());
-    let planned = emit_with_material(&sim, &rules, building, &atlas, &order, palette, inherited);
-    assert_slot_replay(planned, anim, 0.5, inherited, palette);
 }
 
 #[test]

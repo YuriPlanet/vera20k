@@ -11,7 +11,7 @@ use super::in_game_shell::{
 };
 use super::preview::{
     aspect_fit_rect, build_preview_surface_instance, ensure_map_preview_texture,
-    project_preview_start_positions, push_start_marker_sprites,
+    ensure_zoom_texture, project_preview_start_positions, push_start_marker_sprites, zoom_draws,
 };
 use super::text::{
     button_text_rect, localized_label, push_start_marker_labels, rect_to_text_rect, static_label,
@@ -43,6 +43,7 @@ pub(crate) fn render_multiplayer_setup(
         .filter(|protocol| protocol.blocking_map_transfer())
         .and_then(|protocol| protocol.transfer_progress())
     {
+        crate::app::frontend::preview_zoom::close(state);
         let (progress_meter, texts) =
             crate::app::loading::pump::transfer_progress_draws(state, completed, total)?;
         let layout = crate::app::input::multiplayer_setup::layout(state);
@@ -81,6 +82,7 @@ pub(crate) fn render_multiplayer_setup(
         );
     }
     let Some(view) = crate::app::shell_network_setup::view(state) else {
+        crate::app::frontend::preview_zoom::close(state);
         return Ok(());
     };
     crate::app::input::multiplayer_setup::update_geometry(state);
@@ -103,6 +105,7 @@ pub(crate) fn render_multiplayer_setup(
     } else {
         state.frontend.skirmish_preview_texture = None;
     }
+    let zoom_layout = ensure_zoom_texture(state, scale, !sliding && !view.preview_hidden);
     let heading = localized_label(state, view.page().title_key, view.page().title_key);
     let accept_highlight = state
         .frontend
@@ -125,14 +128,12 @@ pub(crate) fn render_multiplayer_setup(
             .set_map_labels(&view.mode_label, &view.map_label, now);
         let shown = ui.statics.paint(now, sliding);
         [
-            (shown.heading, layout.page.title),
-            (shown.game_type, layout.mode_label),
-            (shown.map_label, layout.map_label),
+            (shown.heading, layout.page.title, ShellAlign::PANEL_TITLE),
+            (shown.game_type, layout.mode_label, ShellAlign::H_CENTER),
+            (shown.map_label, layout.map_label, ShellAlign::H_CENTER),
         ]
         .into_iter()
-        .filter_map(|(shown, rect)| {
-            shown.map(|shown| static_label(shown, rect, ShellAlign::H_CENTER))
-        })
+        .filter_map(|(shown, rect, align)| shown.map(|shown| static_label(shown, rect, align)))
         .chain(status_line_label(
             shown.status_line,
             layout.page.status_help,
@@ -234,7 +235,7 @@ pub(crate) fn render_multiplayer_setup(
             // Ordinary MNBTTN buttons, as Game Options' OK; one with no page
             // to go to is hidden.
             let mut buttons = Vec::new();
-            for (id, caption) in [(PREVIOUS_ROWS, "Previous"), (NEXT_ROWS, "Next")] {
+            for (id, caption) in [(PREVIOUS_ROWS, "VERA:Previous"), (NEXT_ROWS, "VERA:Next")] {
                 if !view.enabled(id) {
                     continue;
                 }
@@ -246,7 +247,7 @@ pub(crate) fn render_multiplayer_setup(
                     enabled: true,
                 });
                 texts.push(text(
-                    caption,
+                    &crate::i18n::tr(caption),
                     crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
                     ShellAlign::H_CENTER | ShellAlign::V_CENTER,
                     SHELL_LABEL_TEXT_RGB,
@@ -266,11 +267,13 @@ pub(crate) fn render_multiplayer_setup(
                 },
             ));
             texts.push(text(
-                &format!(
-                    "Players {}-{} of {}",
-                    view.first_row + 1,
-                    (view.first_row + page_rows).min(view.row_count),
-                    view.row_count
+                &crate::i18n::tr_fill(
+                    "VERA:RosterPage",
+                    &[
+                        ("first", &(view.first_row + 1)),
+                        ("last", &(view.first_row + page_rows).min(view.row_count)),
+                        ("total", &view.row_count),
+                    ],
                 ),
                 layout.roster_page_label,
                 ShellAlign::H_CENTER | ShellAlign::V_CENTER,
@@ -480,21 +483,28 @@ pub(crate) fn render_multiplayer_setup(
                             .preview_source_bounds()
                     })
                     .flatten();
-                if let Some(bounds) = state
+                // The host's RandMap sentinel numbers the last Generate's
+                // starts, copied back by 0x0058BB30 (0x005E67ED).
+                let entry = view
+                    .selected_map_index
+                    .and_then(|index| state.frontend.scenario_catalog.shell_maps().get(index));
+                let own_bounds = super::preview::start_marker_bounds(
+                    entry
+                        .is_some_and(super::preview::is_random_map_sentinel_entry)
+                        .then(|| state.frontend.random_map_retention.generated_header()),
+                    entry.and_then(|entry| entry.preview_source_bounds.as_ref()),
+                );
+                let bounds = state
                     .frontend
                     .network_setup_protocol
                     .as_ref()
                     .and_then(|protocol| protocol.received_preview_bounds())
                     .or(received_bounds.as_ref())
-                    .or_else(|| {
-                        view.selected_map_index
-                            .and_then(|index| {
-                                state.frontend.scenario_catalog.shell_maps().get(index)
-                            })
-                            .filter(|entry| !super::preview::is_random_map_sentinel_entry(entry))
-                            .and_then(|entry| entry.preview_source_bounds.as_ref())
-                    })
-                {
+                    .or(own_bounds.as_ref());
+                overlay.zoom = zoom_layout
+                    .as_ref()
+                    .map(|zoom_layout| zoom_draws(state, atlas, zoom_layout, bounds, scale));
+                if let Some(bounds) = bounds {
                     let fitted = aspect_fit_rect(layout.map_preview, preview.width, preview.height);
                     let positions = project_preview_start_positions(bounds, fitted);
                     push_start_marker_sprites(&mut controls, atlas, &positions, scale, 0.00056);
@@ -532,11 +542,11 @@ pub(crate) fn render_multiplayer_setup(
                         font,
                         &view.dialog.button_label(button.id).map_or_else(
                             || localized_label(state, spec.csf_key, spec.csf_key),
-                            str::to_owned,
+                            crate::i18n::tr,
                         ),
                         button_text_rect(button.rect, pressed, scale),
                         super::text::button_label_color_for_disabled(!view.enabled(button.id)),
-                        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                        ShellAlign::BUTTON_CAPTION,
                         [0.0; 2],
                         SHELL_CONTROL_TEXT_DEPTH,
                         scale.factor(),
@@ -676,12 +686,16 @@ pub(crate) fn render_multiplayer_setup(
                 .flatten()
                 .map(|(completed, total)| (u64::from(completed), u64::from(total)));
             let body = match progress {
-                Some((completed, total)) => format!(
-                    "Downloading {}... {}%",
-                    offer.name,
-                    completed.min(total) * 100 / total.max(1)
+                Some((completed, total)) => crate::i18n::tr_fill(
+                    "VERA:DownloadingMapPercent",
+                    &[
+                        ("name", &offer.name),
+                        ("percent", &(completed.min(total) * 100 / total.max(1))),
+                    ],
                 ),
-                None if offer.downloading => format!("Downloading {}...", offer.name),
+                None if offer.downloading => {
+                    crate::i18n::tr_fill("VERA:DownloadingMap", &[("name", &offer.name)])
+                }
                 None => offer.message.clone(),
             };
             let button_label = |text: String, rect: RectPx, pressed: bool, rgb| PaintLabel {
@@ -700,7 +714,7 @@ pub(crate) fn render_multiplayer_setup(
                     path_a_reveal: None,
                 },
                 button_label(
-                    "Download".to_owned(),
+                    crate::i18n::tr("VERA:Download"),
                     boxed.ok,
                     pressed(MAP_OFFER_DOWNLOAD),
                     if offer.downloading {
@@ -780,7 +794,7 @@ pub(crate) fn render_multiplayer_setup(
         );
     }
     // The page dialog 0xCF over C2/C9 (0x0077D820 keeps the page painting).
-    if let Some(page) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(state) {
+    if let Some((_, page)) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(state) {
         overlay.controls.extend(page.controls);
         overlay.texts.extend(page.texts);
     }
@@ -901,7 +915,7 @@ fn push_option_controls(
                 scale,
             );
             texts.push(text(
-                label,
+                &crate::i18n::tr(label),
                 crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
                 ShellAlign::V_CENTER,
             ));

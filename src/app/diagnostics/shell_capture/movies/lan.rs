@@ -1131,7 +1131,7 @@ impl LanCapture {
     }
     /// The controlled host generates its random map from its own `.Sed`
     /// through the production loader, and computes the `'W'` staging the
-    /// way its Generate does (`0x0058B830`).
+    /// way its Generate does (`0x0058B820`).
     fn prepare_controlled_random_map(&mut self, state: &mut AppState) -> Result<()> {
         struct Silent;
         impl crate::app::loading::pump::LoadingProgressSink for Silent {
@@ -1150,12 +1150,26 @@ impl LanCapture {
         // A path, as a bare name would be read from VERA's random-map folder.
         let sed_path = host_dir.join(crate::map::skirmish_scenarios::RANDMAP_SED);
         fs::write(&sed_path, &sed)?;
+        let mode_file = state
+            .match_state
+            .session
+            .network_setup()
+            .map(|launch| launch.mode.override_file.clone());
+        let the_team_enabled = state
+            .frontend
+            .main_menu_shell_state
+            .typed_codes
+            .the_team_enabled();
         let (manager, rules, _) = state.process_assets.manager_and_rules_with_tile_cache();
         let initial = crate::app::loading::init::load_map_initial_with_assets(
             host_dir,
             manager.context("controlled host assets")?,
             rules,
+            None,
             Some(sed_path.to_str().context("controlled host seed path")?),
+            mode_file.as_deref(),
+            SessionMode::Lan,
+            the_team_enabled,
             &mut Silent,
         )?;
         let map = initial.map_data();

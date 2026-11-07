@@ -424,7 +424,7 @@ fn movie_list_composition<'a>(
         labels.push(PaintLabel {
             text: resolve_csf(state, spec.csf_key),
             rect: owner_draw_button_label_rect(button.rect, pressed == Some(button.id)),
-            align: ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0),
+            align: ShellAlign::BUTTON_CAPTION,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: None,
         });
@@ -433,7 +433,7 @@ fn movie_list_composition<'a>(
         labels.push(PaintLabel {
             text: resolve_csf(state, MOVIE_LIST_PAGE.title_key),
             rect: layout.page.title,
-            align: ShellAlign::H_CENTER,
+            align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: Some(
                 crate::app::frontend::main_menu_shell_render::shell_reveal_path_a(window),
@@ -603,26 +603,18 @@ pub(crate) fn render_credits_roll(
 ) -> Result<()> {
     let screen_w = state.renderer.gpu.config.width;
     let screen_h = state.renderer.gpu.config.height;
+    let viewport = super::credits_roll::CreditsViewport::new(screen_w, screen_h);
     let active = state.platform.window_active;
     let Some(session) = state.frontend.credits_roll.as_mut() else {
         return Ok(());
     };
     if active || session.last_drawn.is_empty() {
-        session.last_drawn = session
-            .roll
-            .instances(&state.renderer.bit_font, screen_w as i32);
+        session.last_drawn = session.roll.instances(&state.renderer.bit_font, viewport);
     }
     // Glyphs are clipped to the 520 px box (0x006211D0 sets the clip rect).
-    let box_x = crate::app::frontend::credits_roll::credits_box_x(screen_w as i32).max(0) as u32;
     let text = [ShellTextDraw {
         instances: session.last_drawn.clone(),
-        scissor: crate::render::shell_text::ScissorRect {
-            x: box_x,
-            y: 0,
-            w: (crate::app::frontend::credits_roll::CREDITS_BOX_WIDTH as u32)
-                .min(screen_w.saturating_sub(box_x)),
-            h: screen_h,
-        },
+        scissor: viewport.scissor,
     }];
     encode_shell_pass(
         state,
@@ -632,7 +624,7 @@ pub(crate) fn render_credits_roll(
         ShellComposition {
             text: &text,
             effects: Some(SurfaceEffects {
-                fade_rows: crate::app::frontend::credits_roll::CREDITS_FADE_ROWS,
+                fade_rows: viewport.fade_rows,
             }),
             ..ShellComposition::default()
         },

@@ -1081,13 +1081,14 @@ fn drive_ship_slope_production_spawn_unlimbo_snaps_without_manual_rocking_state(
             .unwrap();
         terrain_cell.slope_type = slope;
         terrain_cell.speed_costs = SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            wheel: Some(100),
-            float: Some(100),
-            amphibious: Some(100),
-            float_beach: Some(100),
-            hover: Some(100),
+            foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         };
         terrain_cell.base_speed_costs = terrain_cell.speed_costs;
         let mut expected_rng = sim.scenario_rng.clone();
@@ -1141,13 +1142,14 @@ fn zero_speed_foot_drive_ship_payloads_survive_all_world_spawn_paths() {
             .unwrap();
         terrain_cell.slope_type = slope;
         terrain_cell.speed_costs = SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            wheel: Some(100),
-            float: Some(100),
-            amphibious: Some(100),
-            float_beach: Some(100),
-            hover: Some(100),
+            foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         };
         terrain_cell.base_speed_costs = terrain_cell.speed_costs;
     }
@@ -4055,9 +4057,6 @@ fn infantry_target_expiry_clears_firing_action_before_target() {
     let art = IniFile::from_str(crate::rules::retail_ini_fixture::GI_ART_EXCERPT);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     // Original 51B20E drops the firing latch before its unforced Ready
     // request. FireUp (4) admits it; Die2 (12) refuses and retains its stage.
     // The corresponding class-target receipts pin this ordering without RNG.
@@ -9880,8 +9879,8 @@ fn unlimbo_levels_then_aims_the_barrel_elevation() {
             .unwrap()
             .cell_mut_for_test(4, 4)
             .unwrap();
-        cell.speed_costs.track = Some(100);
-        cell.speed_costs.wheel = Some(100);
+        cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+        cell.speed_costs.wheel = Some(crate::util::native_x87::NativeF32Bits::ONE);
         cell.base_speed_costs = cell.speed_costs;
         let id = sim
             .spawn_object(type_id, "Americans", 4, 4, 0, &rules)

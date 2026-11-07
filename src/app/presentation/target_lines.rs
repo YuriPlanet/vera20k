@@ -11,6 +11,7 @@ use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseColorMap;
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::render::batch::SpriteInstance;
+use crate::render::draw_state::{DrawState, FX_SURFACE_A_NONZERO, FX_SURFACE_A_ZERO};
 use crate::rules::house_colors::{HouseColorRamps, NO_REMAP};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
@@ -111,9 +112,7 @@ impl TargetLineState {
 }
 
 /// Build selected unit action-line instances from live simulation state.
-///
-/// `alpha_at` samples the shroud A-buffer at a surface point, which the
-/// psychic detection line's dashed leaf reads.
+/// The psychic detection line's dashed stores carry their A gate for the GPU.
 #[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 pub(crate) fn build_target_line_instances(
@@ -126,7 +125,6 @@ pub(crate) fn build_target_line_instances(
     wall_ms: u32,
     viewport: TacticalViewport,
     after_entity: Option<&mut dyn FnMut(u64, &mut Vec<SpriteInstance>)>,
-    alpha_at: &mut dyn FnMut([i32; 2]) -> u8,
 ) -> Vec<SpriteInstance> {
     build_target_line_instances_sampled(
         line_state,
@@ -138,7 +136,6 @@ pub(crate) fn build_target_line_instances(
         wall_ms,
         viewport,
         after_entity,
-        alpha_at,
         None,
     )
 }
@@ -153,7 +150,6 @@ pub(crate) fn build_target_line_instances_sampled(
     wall_ms: u32,
     viewport: TacticalViewport,
     mut after_entity: Option<&mut dyn FnMut(u64, &mut Vec<SpriteInstance>)>,
-    alpha_at: &mut dyn FnMut([i32; 2]) -> u8,
     interpolation: Option<&super::interpolation::RenderInterpolation>,
 ) -> Vec<SpriteInstance> {
     let Some(sim) = sim else {
@@ -175,7 +171,7 @@ pub(crate) fn build_target_line_instances_sampled(
             p.y as i32 - viewport.camera[1] + viewport.clip[1],
         ]
     };
-    let mut psychic_line_for = |entity: &GameEntity, instances: &mut Vec<SpriteInstance>| {
+    let psychic_line_for = |entity: &GameEntity, instances: &mut Vec<SpriteInstance>| {
         let Some((rules, viewer, sites)) = psychic.as_ref() else {
             return;
         };
@@ -207,8 +203,9 @@ pub(crate) fn build_target_line_instances_sampled(
             rgb,
             wall_ms,
             viewport.clip,
-            &mut *alpha_at,
-            |rect, word| push_surface_word(instances, rect, word, viewport),
+            |rect, word, gate| {
+                push_gated_surface_rect(instances, rect, surface_word_tint(word), gate, viewport)
+            },
         );
     };
     // Tactical6D4729 and6D4793 use the same planning gate; the action-line
@@ -334,22 +331,23 @@ fn sample_action_line(
 /// at point-2 in the owner's colour (House+56F9), then, when 7BC2B0 clips the
 /// line in, DSurface4C0750's dashed walk over pattern822540 (the rally
 /// pattern) at phase `(-time >> 5) & 15`, storing only where the A-buffer is
-/// nonzero. The colour pulses toward white (6612C0 by `time & 0x3FF`, the
-/// low byte mirrored while bit 8 is set) except while bit 9 is set. `time` is
-/// timeGetTime: wall-clock milliseconds. No RNG, timer or simulation write.
+/// nonzero: `draw` receives each store with its A gate, which the GPU applies
+/// (`FX_SURFACE_A_NONZERO` on the dashes, none on the boxes). The colour
+/// pulses toward white (6612C0 by `time & 0x3FF`, the low byte mirrored while
+/// bit 8 is set) except while bit 9 is set. `time` is timeGetTime: wall-clock
+/// milliseconds. No RNG, timer or simulation write.
 fn emit_psychic_detection_line(
     start: [i32; 2],
     end: [i32; 2],
     rgb: [u8; 3],
     time: u32,
     clip: [i32; 4],
-    alpha_at: &mut dyn FnMut([i32; 2]) -> u8,
-    mut draw: impl FnMut([i32; 4], u16),
+    mut draw: impl FnMut([i32; 4], u16, u32),
 ) {
     use crate::render::native_surface_format::{RGB565, interpolate_rgb8};
     use crate::render::surface_line::{clip_line, patterned_line};
     let base = RGB565.pack_rgb8(rgb);
-    endpoint_boxes([start, end], clip, |rect| draw(rect, base));
+    endpoint_boxes([start, end], clip, |rect| draw(rect, base, 0));
     let (mut start, mut end) = (start, end);
     if !clip_line(&mut start, &mut end, clip) {
         return;
@@ -365,9 +363,7 @@ fn emit_psychic_detection_line(
     let word = RGB565.pack_rgb8(color);
     let phase = ((time.wrapping_neg() as i32) >> 5) & 0xF;
     patterned_line(start, end, &RALLY_PATTERN, phase, |point| {
-        if alpha_at(point) != 0 {
-            draw([point[0], point[1], 1, 1], word);
-        }
+        draw([point[0], point[1], 1, 1], word, FX_SURFACE_A_NONZERO);
     });
 }
 
@@ -378,24 +374,25 @@ pub(crate) fn push_surface_word(
     word: u16,
     view: TacticalViewport,
 ) {
+    push_surface_rect(instances, rect, surface_word_tint(word), view);
+}
+
+/// The presented tint of one native RGB565 word.
+fn surface_word_tint(word: u16) -> [f32; 3] {
     let rgb = crate::render::native_surface_format::RGB565.unpack_rgb8(word);
     let rgba = crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
         .quantize_rgba8([rgb[0], rgb[1], rgb[2], 255]);
-    push_surface_rect(
-        instances,
-        rect,
-        [rgba[0], rgba[1], rgba[2]].map(|v| f32::from(v) / 255.),
-        view,
-    );
+    [rgba[0], rgba[1], rgba[2]].map(|v| f32::from(v) / 255.)
 }
 
 /// Compose this call's already projected lines in Tactical6D4750 Techno order.
 /// Native7049C0 writes a constant opaque color without reading A or Z, so after
 /// resolving overlaps its disjoint final spans may be emitted in row order.
-/// The pixel grid and dirty ranges are derived only from these lines/clip and
-/// are dropped before returning; no presentation cache or simulation state is
-/// retained. Both routes pass the same logical pixels through the half-open
-/// pixel-center scaling in `push_surface_rect` after resolving opaque stores.
+/// The pixel grid and dirty ranges are derived only from these lines/clip;
+/// the grid's allocation outlives the call (`DENSE_PIXELS`), its contents do
+/// not, and no simulation state is retained. Both routes pass the same logical
+/// pixels through the half-open pixel-center scaling in `push_surface_rect`
+/// after resolving opaque stores.
 /// Native primitive/overlap evidence: tools/procedural_drawing_oracle/action_lines.
 fn build_selected_action_line_instances(
     lines: &[ProjectedActionLine],
@@ -412,37 +409,82 @@ fn build_selected_action_line_instances(
     {
         return instances;
     }
-    let color_index = |kind| match kind {
-        SelectedLineKind::Move => 1_u8,
-        SelectedLineKind::Attack => 2_u8,
-    };
+    let color_index = action_line_color_index;
     let width = width as usize;
     let height = height as usize;
     // Small selections keep the direct route. Checked/fallible allocations
     // preserve that same route if a dense viewport cannot be represented.
-    let dense = (lines.len() > 32)
-        .then(|| {
-            let pixel_count = width.checked_mul(height)?;
-            let mut pixels = Vec::new();
-            pixels.try_reserve_exact(pixel_count).ok()?;
-            pixels.resize(pixel_count, 0_u8); // 0 is untouched, not a black pixel.
+    let dense = lines.len() > 32
+        && DENSE_PIXELS.with_borrow_mut(|pixels| {
+            let Some(pixel_count) = width.checked_mul(height) else {
+                return false;
+            };
+            if pixels.len() < pixel_count {
+                if pixels
+                    .try_reserve_exact(pixel_count - pixels.len())
+                    .is_err()
+                {
+                    return false;
+                }
+                pixels.resize(pixel_count, 0_u8); // 0 is untouched, not a black pixel.
+            }
             let mut dirty_rows = Vec::new();
-            dirty_rows.try_reserve_exact(height).ok()?;
+            if dirty_rows.try_reserve_exact(height).is_err() {
+                return false;
+            }
             dirty_rows.resize(height, [width, 0]); // [first, end), empty initially.
-            Some((pixels, dirty_rows))
-        })
-        .flatten();
-    let Some((mut pixels, mut dirty_rows)) = dense else {
+            compose_dense_action_lines(
+                lines,
+                colors,
+                viewport,
+                [width, height],
+                pixels,
+                dirty_rows,
+                &mut instances,
+            );
+            true
+        });
+    if !dense {
         for line in lines {
             let tint = colors[usize::from(color_index(line.kind) - 1)];
             emit_selected_action_line(line.start, line.end, viewport.clip, |rect| {
                 push_surface_rect(&mut instances, rect, tint, viewport);
             });
         }
-        return instances;
-    };
+    }
+    instances
+}
+
+thread_local! {
+    /// The dense route's colour grid, whose allocation is kept between frames
+    /// (a VERA performance cache, not native state). Every byte is 0 between
+    /// calls: each call clears the spans it painted.
+    static DENSE_PIXELS: std::cell::RefCell<Vec<u8>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn action_line_color_index(kind: SelectedLineKind) -> u8 {
+    match kind {
+        SelectedLineKind::Move => 1,
+        SelectedLineKind::Attack => 2,
+    }
+}
+
+/// The dense route: resolve every line's opaque stores in `pixels` (zero on
+/// entry, `[width, height]` row-major), emit the final spans in row order and
+/// clear them again.
+fn compose_dense_action_lines(
+    lines: &[ProjectedActionLine],
+    colors: [[f32; 3]; 2],
+    viewport: TacticalViewport,
+    [width, height]: [usize; 2],
+    pixels: &mut [u8],
+    mut dirty_rows: Vec<[usize; 2]>,
+    instances: &mut Vec<SpriteInstance>,
+) {
+    let [left, top, ..] = viewport.clip;
     for line in lines {
-        let color = color_index(line.kind);
+        let color = action_line_color_index(line.kind);
         emit_selected_action_line(line.start, line.end, viewport.clip, |rect| {
             if rect[2] <= 0 || rect[3] <= 0 {
                 return;
@@ -467,7 +509,10 @@ fn build_selected_action_line_instances(
         });
     }
     for (y, [first, end]) in dirty_rows.into_iter().enumerate() {
-        let row = &pixels[y * width..(y + 1) * width];
+        if first >= end {
+            continue;
+        }
+        let row = &mut pixels[y * width..(y + 1) * width];
         let mut x = first;
         while x < end {
             let color = row[x];
@@ -481,14 +526,14 @@ fn build_selected_action_line_instances(
                 x += 1;
             }
             push_surface_rect(
-                &mut instances,
+                instances,
                 [left + start as i32, top + y as i32, (x - start) as i32, 1],
                 colors[usize::from(color - 1)],
                 viewport,
             );
         }
+        row[first..end].fill(0);
     }
-    instances
 }
 
 /// Integer logical viewport plus VERA's presentation-only zoom. Native rally
@@ -514,7 +559,6 @@ pub(crate) fn build_factory_rally_line_instances(
     house_color_map: &HouseColorMap,
     local_owner: Option<&str>,
     viewport: TacticalViewport,
-    mut alpha_at: impl FnMut([i32; 2]) -> u8,
 ) -> [Vec<SpriteInstance>; 2] {
     build_factory_rally_line_instances_sampled(
         sim,
@@ -523,7 +567,6 @@ pub(crate) fn build_factory_rally_line_instances(
         house_color_map,
         local_owner,
         viewport,
-        &mut alpha_at,
         None,
     )
 }
@@ -535,7 +578,6 @@ pub(crate) fn build_factory_rally_line_instances_sampled(
     house_color_map: &HouseColorMap,
     local_owner: Option<&str>,
     viewport: TacticalViewport,
-    mut alpha_at: impl FnMut([i32; 2]) -> u8,
     interpolation: Option<&super::interpolation::RenderInterpolation>,
 ) -> [Vec<SpriteInstance>; 2] {
     use crate::map::resolved_terrain::NativeCellQuery;
@@ -616,7 +658,6 @@ pub(crate) fn build_factory_rally_line_instances_sampled(
             tint,
             sim.session().binary_frame(),
             viewport,
-            &mut alpha_at,
         );
     }
     instances
@@ -876,6 +917,8 @@ pub(crate) fn endpoint_boxes(
 /// the leaf repeats16 entries; signed subtraction/remainder survive frame wrap.
 const RALLY_PATTERN: [u8; 16] = [1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0];
 
+/// Tactical6D4648 stores the pixels whose A is nonzero and 6D46CF, later,
+/// those whose A is zero: every pixel enters both passes, gated for the GPU.
 fn emit_rally_line(
     instances: &mut [Vec<SpriteInstance>; 2],
     mut from: [i32; 2],
@@ -883,7 +926,6 @@ fn emit_rally_line(
     tint: [f32; 3],
     frame: u32,
     viewport: TacticalViewport,
-    mut alpha_at: impl FnMut([i32; 2]) -> u8,
 ) {
     use crate::render::surface_line::{clip_line, patterned_line};
     let phase = i32::MAX.wrapping_sub(frame as i32) % 15;
@@ -898,13 +940,13 @@ fn emit_rally_line(
         // one row misses the clip. Independent offset/clip calls differ at edges.
         if clip_line(&mut from, &mut to, viewport.clip) {
             patterned_line(from, to, &RALLY_PATTERN, phase, |point| {
-                let pass = usize::from(alpha_at(point) == 0);
-                push_surface_rect(
-                    &mut instances[pass],
-                    [point[0], point[1], 1, 1],
-                    color,
-                    viewport,
-                );
+                let rect = [point[0], point[1], 1, 1];
+                for (pass, gate) in [FX_SURFACE_A_NONZERO, FX_SURFACE_A_ZERO]
+                    .into_iter()
+                    .enumerate()
+                {
+                    push_gated_surface_rect(&mut instances[pass], rect, color, gate, viewport);
+                }
             });
         }
         from[1] -= 1;
@@ -921,8 +963,21 @@ fn emit_rally_line(
 /// opaque overlaps in logical pixels before this mapping preserves coverage.
 pub(crate) fn push_surface_rect(
     instances: &mut Vec<SpriteInstance>,
+    rect: [i32; 4],
+    tint: [f32; 3],
+    view: TacticalViewport,
+) {
+    push_gated_surface_rect(instances, rect, tint, 0, view);
+}
+
+/// [`push_surface_rect`] for a store the GPU keeps or skips by the live A
+/// (`gate`: `FX_SURFACE_A_NONZERO`, `FX_SURFACE_A_ZERO`, or 0 for none).
+/// Spans merge only with spans of the same gate.
+fn push_gated_surface_rect(
+    instances: &mut Vec<SpriteInstance>,
     [left, top, width, height]: [i32; 4],
     tint: [f32; 3],
+    gate: u32,
     view: TacticalViewport,
 ) {
     let edge = |v: i32| (v as f32 * view.zoom - 0.5).ceil();
@@ -935,6 +990,7 @@ pub(crate) fn push_surface_rect(
     let position = [x + view.camera[0] as f32, y + view.camera[1] as f32];
     if let Some(last) = instances.last_mut()
         && last.tint == tint
+        && last.draw_state.fx_flags == gate
         && last.position[1] == position[1]
         && last.size[1] == size[1]
         && last.position[0] + last.size[0] == position[0]
@@ -948,6 +1004,10 @@ pub(crate) fn push_surface_rect(
         uv_size: [1.; 2],
         tint,
         alpha: 1.,
+        draw_state: DrawState {
+            fx_flags: gate,
+            ..Default::default()
+        },
         ..Default::default()
     });
 }
@@ -1010,7 +1070,6 @@ mod tests {
                 0,
                 test_viewport(),
                 Some(&mut callback),
-                &mut |_| 127,
             )
             .is_empty()
         );
@@ -1034,7 +1093,6 @@ mod tests {
                 0,
                 test_viewport(),
                 Some(&mut callback),
-                &mut |_| 127,
             )
             .is_empty()
         );

@@ -417,7 +417,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/gap_generator.rs", 1),
                 ("sim/world/house_defeat.rs", 9),
                 ("sim/world/jumpjet_cruise.rs", 1),
-                ("sim/world/lifecycle.rs", 5),
+                ("sim/world/lifecycle.rs", 6),
                 ("sim/world/mod.rs", 7),
                 ("sim/world/object_turn.rs", 1),
                 ("sim/world/planning.rs", 2),
@@ -504,7 +504,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/power_system.rs", 2),
                 ("sim/production/production_tech.rs", 1),
                 ("sim/trigger_runtime.rs", 1),
-                ("sim/world/lifecycle.rs", 10),
+                ("sim/world/lifecycle.rs", 11),
                 ("sim/world/mod.rs", 1),
                 ("sim/world/shroud_refresh.rs", 1),
                 ("sim/world/world_commands.rs", 1),
@@ -808,8 +808,66 @@ fn is_raw_string_start(bytes: &[u8], i: usize) -> bool {
     bytes.get(j) == Some(&b'"')
 }
 
+#[test]
+fn test_item_scan_keeps_production_after_gated_variants_and_match_arms() {
+    // SoundReferenceSource's test-support variant and arm are both comma
+    // terminated. Neither may hide the next production RuleSet impl.
+    let source = r#"
+enum Source<'a> {
+    Live(&'a Ini),
+    #[cfg(any(test, feature = "test-support"))]
+    Fixture(&'a Ini),
+}
+fn after_variant() { registry_ids(); }
+fn select(source: Source<'_>) {
+    match source {
+        Source::Live(ini) => production(ini),
+        #[cfg(any(test, feature = "test-support"))]
+        Source::Fixture(ini) => fixture_only(ini),
+    }
+}
+fn after_arm() { registry_ids(); }
+"#;
+    let production = strip_test_items(source, &blank_comments_and_literals(source));
+    assert_eq!(count_identifier(&production, "registry_ids"), 2);
+    assert_eq!(count_identifier(&production, "fixture_only"), 0);
+    assert!(production.contains("Source::Live"));
+}
+
+#[test]
+fn test_item_scan_consumes_nested_comma_items_and_whole_function_headers() {
+    let source = r#"
+enum Source {
+    #[cfg(test)]
+    Fixture(
+        (One, Two),
+        Result<Three, Four>,
+    ),
+    Live,
+}
+#[cfg(test)]
+fn fixture_only<T>(
+    pair: (One, Two),
+    callback: impl Fn([u8; 2], T),
+)
+where
+    T: From<(Three, Four)>,
+{
+    fixture_body();
+}
+#[cfg(any(test, debug_assertions))]
+fn debug_production() { registry_ids(); }
+fn after_function() { registry_ids(); }
+"#;
+    let production = strip_test_items(source, &blank_comments_and_literals(source));
+    assert_eq!(count_identifier(&production, "registry_ids"), 2);
+    assert_eq!(count_identifier(&production, "Fixture"), 0);
+    assert_eq!(count_identifier(&production, "fixture_body"), 0);
+    assert!(production.contains("Live"));
+}
+
 /// `source` without its `#[cfg(test)]` items (attribute plus the following
-/// item, braced or single-statement), as blanked text: `text` is `source` with
+/// item, braced or terminated by `;`/`,`), as blanked text: `text` is `source` with
 /// comments and literals blanked. `cfg(all(test, …))` and
 /// `cfg(any(test, feature = "test-support"))` count as test-only;
 /// `cfg(any(test, debug_assertions))` does not. The feature gate is read from
@@ -819,6 +877,8 @@ fn strip_test_items(source: &str, text: &str) -> String {
     let mut depth: i64 = 0;
     let mut skip_above: Option<i64> = None;
     let mut awaiting_item = false;
+    let mut item_delimiters = Vec::new();
+    let mut awaiting_function = false;
     for (line, source_line) in text.lines().zip(source.lines()) {
         let opens = line.bytes().filter(|&b| b == b'{').count() as i64;
         let closes = line.bytes().filter(|&b| b == b'}').count() as i64;
@@ -837,6 +897,8 @@ fn strip_test_items(source: &str, text: &str) -> String {
                 skip_above = Some(depth);
             } else {
                 awaiting_item = true;
+                item_delimiters.clear();
+                awaiting_function = false;
             }
         } else if awaiting_item {
             emit = false;
@@ -846,9 +908,44 @@ fn strip_test_items(source: &str, text: &str) -> String {
             } else if opens > 0 {
                 skip_above = Some(depth);
                 awaiting_item = false;
-            } else if trimmed.trim_end().ends_with(';') {
-                // Single-statement item (e.g. `use`), fully consumed.
-                awaiting_item = false;
+            } else {
+                // A declaration's `where` clause may contain top-level
+                // commas after its parameter list. It still ends at its
+                // body or semicolon. Ignore a visibility group's parens
+                // when identifying the declaration, but not tuple variants
+                // or function-pointer fields.
+                let declaration = trimmed
+                    .strip_prefix("pub(")
+                    .and_then(|visibility| visibility.split_once(')').map(|(_, rest)| rest))
+                    .unwrap_or(trimmed);
+                let head = declaration.split(['(', ':', '=']).next().unwrap_or("");
+                awaiting_function |= count_identifier(head, "fn") > 0;
+
+                let mut previous = 0;
+                for b in line.bytes() {
+                    match b {
+                        b'(' => item_delimiters.push(b')'),
+                        b'[' => item_delimiters.push(b']'),
+                        b'<' => item_delimiters.push(b'>'),
+                        b')' | b']' | b'>'
+                            if item_delimiters.last() == Some(&b)
+                                && !(b == b'>' && matches!(previous, b'-' | b'=')) =>
+                        {
+                            item_delimiters.pop();
+                        }
+                        b';' if item_delimiters.is_empty() => {
+                            awaiting_item = false;
+                            break;
+                        }
+                        b',' if item_delimiters.is_empty() && !awaiting_function => {
+                            // Enum variants, fields and expression match arms.
+                            awaiting_item = false;
+                            break;
+                        }
+                        _ => {}
+                    }
+                    previous = b;
+                }
             }
         }
 

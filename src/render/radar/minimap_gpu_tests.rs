@@ -160,9 +160,9 @@ fn new_presentation(gpu: &Gpu, scene: &HeadlessScenario, format: wgpu::TextureFo
     }
 }
 
-/// Sample the uploaded production texture through the ordinary UI batch. This
-/// needs neither COPY_SRC on the original texture nor a fake window context.
-fn read_uploaded(gpu: &Gpu, presented: &Presented) -> Vec<u8> {
+/// Compose the pending picture, then sample it through the ordinary UI batch.
+/// This needs neither COPY_SRC on the picture nor a fake window context.
+fn read_uploaded(gpu: &Gpu, presented: &mut Presented) -> Vec<u8> {
     let size = [MINIMAP_WIDTH, MINIMAP_HEIGHT];
     let instance = SpriteInstance {
         position: [0.0, 0.0],
@@ -180,6 +180,9 @@ fn read_uploaded(gpu: &Gpu, presented: &Presented) -> Vec<u8> {
     let cv = color.create_view(&Default::default());
     let dv = depth.create_view(&Default::default());
     let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    presented
+        .minimap
+        .encode_composition(&gpu.device, &mut encoder);
     clear(
         &mut encoder,
         &cv,
@@ -201,6 +204,34 @@ fn read_uploaded(gpu: &Gpu, presented: &Presented) -> Vec<u8> {
     gpu.finish(encoder, &[read], size).remove(0)
 }
 
+/// The picture a revealed generated surface composes to, in the target's
+/// byte order: each word unpacked at its aperture pixel, the shroud fill
+/// around it, then the update's stores (`RadarClass::Update @ 0x00656EC0`).
+fn revealed_picture(presented: &Presented) -> Vec<u8> {
+    let minimap = &presented.minimap;
+    let terrain = minimap.native_radar_terrain.as_ref().unwrap();
+    let geometry = terrain.geometry();
+    let width = geometry.generated_size().0 as u32;
+    let mut rgba = COLOR_SHROUD.repeat((MINIMAP_WIDTH * MINIMAP_HEIGHT) as usize);
+    for (index, &word) in terrain.generated_rgb565().iter().enumerate() {
+        let pixel = (index as u32 % width, index as u32 / width);
+        let [red, green, blue] = crate::render::native_surface_format::RGB565.unpack_rgb8(word);
+        if let Some((x, y)) = aperture_pixel(Some(geometry), pixel) {
+            set_pixel(&mut rgba, MINIMAP_WIDTH, x, y, [red, green, blue, 255]);
+        }
+    }
+    for store in &minimap.stores {
+        let (x, y) = store.pixel();
+        set_pixel(&mut rgba, MINIMAP_WIDTH, x, y, store.color());
+    }
+    if presented.format == wgpu::TextureFormat::Bgra8UnormSrgb {
+        for pixel in rgba.as_chunks_mut::<4>().0 {
+            pixel.swap(0, 2);
+        }
+    }
+    rgba
+}
+
 fn present(
     gpu: &Gpu,
     scene: &mut HeadlessScenario,
@@ -217,6 +248,7 @@ fn present(
             let mut consumed = None;
             for (index, presented) in presentations.iter_mut().enumerate() {
                 let current = presented.minimap.update_unit_dots(
+                    &gpu.device,
                     &gpu.queue,
                     view.entities(),
                     view.logic_order(),
@@ -329,7 +361,7 @@ fn retail_authored_ore_spread_reaches_uploaded_minimap() {
     assert!(commit.acknowledged);
     assert!(scene.runtime.view().radar_terrain_dirty().0.is_empty());
     let hash = scene.sim().state_hash();
-    for presented in &presentations {
+    for presented in &mut presentations {
         let surface = presented.minimap.native_radar_terrain.as_ref().unwrap();
         let geometry = surface.geometry();
         for &cell in &grown {
@@ -340,21 +372,17 @@ fn retail_authored_ore_spread_reaches_uploaded_minimap() {
                 &before[index..index + 2]
             );
         }
-        let mut expected = presented.minimap.composed_rgba().0.to_vec();
-        if presented.format == wgpu::TextureFormat::Bgra8UnormSrgb {
-            for pixel in expected.as_chunks_mut::<4>().0 {
-                pixel.swap(0, 2);
-            }
-        }
+        let expected = revealed_picture(presented);
         assert_eq!(
             read_uploaded(&gpu, presented),
             expected,
             "uploaded natural ore/{:?}",
             presented.format
         );
+        let surface = presented.minimap.native_radar_terrain.as_ref().unwrap();
         // Original initialization654650/Fill654EA0 consumes current Cell47C060.
         // Retaining authored map overlays must not hide naturally added cells.
-        let fresh = new_presentation(&gpu, &scene, presented.format);
+        let mut fresh = new_presentation(&gpu, &scene, presented.format);
         assert_eq!(
             fresh
                 .minimap
@@ -365,14 +393,9 @@ fn retail_authored_ore_spread_reaches_uploaded_minimap() {
             surface.raw_rgb(),
             "reconstruction and incremental publication share live Cell authority"
         );
-        let mut expected = fresh.minimap.base_terrain_rgba.clone();
-        if fresh.format == wgpu::TextureFormat::Bgra8UnormSrgb {
-            for pixel in expected.as_chunks_mut::<4>().0 {
-                pixel.swap(0, 2);
-            }
-        }
+        let expected = revealed_picture(&fresh);
         assert_eq!(
-            read_uploaded(&gpu, &fresh),
+            read_uploaded(&gpu, &mut fresh),
             expected,
             "constructor uploads current terrain"
         );
@@ -478,7 +501,7 @@ fn retail_ore_depletion_reaches_uploaded_minimap_and_acknowledges_once() {
                 assert_eq!(commit.consumed_generation, None);
                 assert!(!commit.acknowledged);
             }
-            for presented in &presentations {
+            for presented in &mut presentations {
                 let surface = presented.minimap.native_radar_terrain.as_ref().unwrap();
                 let geometry = surface.geometry();
                 let (x, y) = geometry.cell_to_raw_pixel(ORE);
@@ -487,12 +510,7 @@ fn retail_ore_depletion_reaches_uploaded_minimap_and_acknowledges_once() {
                     serde_json::json!(&surface.raw_rgb()[index..index + 2]),
                     row["color_pair"]
                 );
-                let mut expected = presented.minimap.composed_rgba().0.to_vec();
-                if presented.format == wgpu::TextureFormat::Bgra8UnormSrgb {
-                    for pixel in expected.as_chunks_mut::<4>().0 {
-                        pixel.swap(0, 2);
-                    }
-                }
+                let expected = revealed_picture(presented);
                 assert_eq!(
                     read_uploaded(&gpu, presented),
                     expected,
@@ -527,7 +545,7 @@ fn retail_ore_depletion_reaches_uploaded_minimap_and_acknowledges_once() {
         .find(|row| row["name"] == "empty")
         .unwrap();
     for presented in &presentations {
-        let fresh = new_presentation(&gpu, &scene, presented.format);
+        let mut fresh = new_presentation(&gpu, &scene, presented.format);
         let surface = fresh.minimap.native_radar_terrain.as_ref().unwrap();
         let geometry = surface.geometry();
         let (x, y) = geometry.cell_to_raw_pixel(ORE);
@@ -537,14 +555,9 @@ fn retail_ore_depletion_reaches_uploaded_minimap_and_acknowledges_once() {
             empty["color_pair"],
             "fresh constructor uses current Cell colors"
         );
-        let mut expected = fresh.minimap.base_terrain_rgba.clone();
-        if fresh.format == wgpu::TextureFormat::Bgra8UnormSrgb {
-            for pixel in expected.as_chunks_mut::<4>().0 {
-                pixel.swap(0, 2);
-            }
-        }
+        let expected = revealed_picture(&fresh);
         assert_eq!(
-            read_uploaded(&gpu, &fresh),
+            read_uploaded(&gpu, &mut fresh),
             expected,
             "constructor uploads its current terrain before a dirty update"
         );

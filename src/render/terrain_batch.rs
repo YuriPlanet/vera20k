@@ -3,24 +3,36 @@
 //! VERA scheduling only: original 4990E0/497390 pixel semantics stay in the
 //! existing shaders. Overlapping conservative clips keep strict source order;
 //! disjoint clips commute and may share one immutable destination snapshot.
+//! A command that can replay an earlier one it overlaps (read-write edits,
+//! terrain_edit.wgsl `replay_earlier`) may follow it inside their wave
+//! instead, recomputing its pixels from the shared snapshot.
 //!
 //! Every wave costs a snapshot and an edit pass (#3605), so dependencies are
 //! exact rectangle intersections. Tiles only narrow the candidates: a tile
-//! lists up to [`TILE_LIST`] commands, and a busier tile falls back to its
-//! conservative latest wave.
+//! lists its latest commands, up to [`TILE_LIST`] (a replay window's worth).
+//! A full tile forgets its older half, which every later command there then
+//! follows.
 
 use super::DestinationEditCommand;
 
 const TILE: u32 = 32;
-const TILE_LIST: u16 = 16;
+/// Commands of one replay window: a wave's members in push order, cut into
+/// runs of this many. A command replays only earlier members of its window.
+pub(super) const WINDOW: usize = 64;
+const TILE_LIST: u16 = WINDOW as u16;
 const END: usize = usize::MAX;
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TerrainCommand<T = DestinationEditCommand> {
     pub draw: T,
     pub rect: [u32; 4],
+    /// A bit per earlier member of this command's window, by place in the
+    /// window, that it overlaps and replays.
+    pub earlier: u64,
     next: usize,
     wave: usize,
+    /// Place in its wave, in push order.
+    member: usize,
 }
 
 impl<T> TerrainCommand<T> {
@@ -28,8 +40,10 @@ impl<T> TerrainCommand<T> {
         Self {
             draw,
             rect,
+            earlier: 0,
             next: END,
             wave: 0,
+            member: 0,
         }
     }
 }
@@ -37,23 +51,21 @@ impl<T> TerrainCommand<T> {
 /// One tile's dependency history within a span.
 #[derive(Clone, Copy, Debug)]
 struct Tile {
-    /// One past the latest wave of any command touching this tile; 0 when
-    /// untouched.
-    wave_end: usize,
-    /// Head of this tile's command list in `TerrainBatches::entries`.
+    /// One past the latest wave of the commands this tile has forgotten; 0
+    /// while it lists every command touching it.
+    forgotten_end: usize,
+    /// Head of this tile's command list in `TerrainBatches::entries`, newest
+    /// first; `END` when untouched.
     head: usize,
     listed: u16,
-    /// More than `TILE_LIST` commands: only `wave_end` is authoritative.
-    overflow: bool,
 }
 
 impl Default for Tile {
     fn default() -> Self {
         Self {
-            wave_end: 0,
+            forgotten_end: 0,
             head: END,
             listed: 0,
-            overflow: false,
         }
     }
 }
@@ -93,6 +105,8 @@ pub(super) struct TerrainBatches<T = DestinationEditCommand> {
     commands: Vec<TerrainCommand<T>>,
     heads: Vec<usize>,
     tails: Vec<usize>,
+    /// Members per wave.
+    counts: Vec<usize>,
     tile_dependencies: usize,
 }
 
@@ -107,6 +121,7 @@ impl<T> Default for TerrainBatches<T> {
             commands: Vec::new(),
             heads: Vec::new(),
             tails: Vec::new(),
+            counts: Vec::new(),
             tile_dependencies: 0,
         }
     }
@@ -132,6 +147,7 @@ impl<T> TerrainBatches<T> {
         self.commands.clear();
         self.heads.clear();
         self.tails.clear();
+        self.counts.clear();
         self.tile_dependencies = 0;
     }
 
@@ -139,6 +155,18 @@ impl<T> TerrainBatches<T> {
     /// edit scissors. Out-of-attachment rectangles retain the old sequential
     /// draw/validation path instead of acquiring unchecked grid addressing.
     pub fn push(&mut self, command: TerrainCommand<T>) -> bool {
+        self.push_replaying(command, |_, _| false)
+    }
+
+    /// [`Self::push`], where `replays(earlier, command)` says whether the
+    /// command can replay an earlier command it overlaps. It then joins that
+    /// command's wave when every earlier member it overlaps there shares its
+    /// window, and records them in [`TerrainCommand::earlier`].
+    pub fn push_replaying(
+        &mut self,
+        mut command: TerrainCommand<T>,
+        replays: impl Fn(&T, &T) -> bool,
+    ) -> bool {
         let [x, y, width, height] = command.rect;
         let (Some(right), Some(bottom)) = (x.checked_add(width), y.checked_add(height)) else {
             return false;
@@ -150,45 +178,75 @@ impl<T> TerrainBatches<T> {
         let x1 = (right - 1) / TILE;
         let y0 = y / TILE;
         let y1 = (bottom - 1) / TILE;
-        // A command follows every earlier command it intersects. Two
-        // intersecting rectangles share a tile, where the earlier one is
-        // either listed or covered by the tile's conservative `wave_end`, so
-        // intersecting rectangles never share a wave.
+        // A command follows every earlier command it intersects: in a later
+        // wave, or in the same wave when it replays it. Two intersecting
+        // rectangles share a tile, where the earlier one is either listed or
+        // forgotten, before the tile's `forgotten_end`, so an intersecting
+        // rectangle the command does not replay never shares its wave.
         let mut wave = 0;
         for ty in y0..=y1 {
             for tx in x0..=x1 {
                 let tile = self.grid[(ty * self.columns + tx) as usize];
                 self.tile_dependencies += 1;
-                if tile.overflow {
-                    wave = wave.max(tile.wave_end);
-                    continue;
-                }
+                wave = wave.max(tile.forgotten_end);
                 let mut entry = tile.head;
                 while entry != END {
                     let (other, next) = self.entries[entry];
                     let other = &self.commands[other];
                     if intersects(other.rect, command.rect) {
-                        wave = wave.max(other.wave + 1);
+                        let after = !replays(&other.draw, &command.draw);
+                        wave = wave.max(other.wave + usize::from(after));
                     }
                     entry = next;
                 }
             }
         }
+        // Every overlap left in `wave` is listed and replayable. They must
+        // share the command's window; otherwise it takes the next wave, which
+        // nothing it overlaps has reached.
+        let member = self.counts.get(wave).copied().unwrap_or(0);
+        command.earlier = 0;
+        'tiles: for ty in y0..=y1 {
+            for tx in x0..=x1 {
+                let tile = self.grid[(ty * self.columns + tx) as usize];
+                let mut entry = tile.head;
+                while entry != END {
+                    let (other, next) = self.entries[entry];
+                    let other = &self.commands[other];
+                    if other.wave == wave && intersects(other.rect, command.rect) {
+                        if other.member / WINDOW != member / WINDOW {
+                            wave += 1;
+                            command.earlier = 0;
+                            break 'tiles;
+                        }
+                        command.earlier |= 1 << (other.member % WINDOW);
+                    }
+                    entry = next;
+                }
+            }
+        }
+        let member = self.counts.get(wave).copied().unwrap_or(0);
         let index = self.commands.len();
         for ty in y0..=y1 {
             for tx in x0..=x1 {
                 let cell = (ty * self.columns + tx) as usize;
                 let tile = &mut self.grid[cell];
-                if tile.wave_end == 0 {
+                if tile.head == END {
                     self.touched.push(cell);
                 }
-                tile.wave_end = tile.wave_end.max(wave + 1);
-                if tile.overflow {
-                    continue;
-                }
                 if tile.listed == TILE_LIST {
-                    tile.overflow = true;
-                    continue;
+                    // Forget the older half; later commands follow all of it.
+                    let mut entry = tile.head;
+                    for _ in 1..TILE_LIST / 2 {
+                        entry = self.entries[entry].1;
+                    }
+                    let mut forgotten = std::mem::replace(&mut self.entries[entry].1, END);
+                    while forgotten != END {
+                        let (other, next) = self.entries[forgotten];
+                        tile.forgotten_end = tile.forgotten_end.max(self.commands[other].wave + 1);
+                        forgotten = next;
+                    }
+                    tile.listed = TILE_LIST / 2;
                 }
                 self.entries.push((index, tile.head));
                 tile.head = self.entries.len() - 1;
@@ -197,13 +255,19 @@ impl<T> TerrainBatches<T> {
         }
         self.heads.resize(self.heads.len().max(wave + 1), END);
         self.tails.resize(self.tails.len().max(wave + 1), END);
+        self.counts.resize(self.counts.len().max(wave + 1), 0);
         if self.heads[wave] == END {
             self.heads[wave] = index;
         } else {
             self.commands[self.tails[wave]].next = index;
         }
         self.tails[wave] = index;
-        self.commands.push(TerrainCommand { wave, ..command });
+        self.counts[wave] += 1;
+        self.commands.push(TerrainCommand {
+            wave,
+            member,
+            ..command
+        });
         true
     }
 
@@ -286,6 +350,51 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![vec![0, 1], vec![2]]
         );
+    }
+
+    /// A command that replays the earlier commands it overlaps shares their
+    /// wave and records them, but only inside its window; one that cannot
+    /// replay them still waits for the next wave.
+    #[test]
+    fn terrain_batches_let_replaying_overlaps_share_a_wave_within_a_window() {
+        let mut batches = TerrainBatches::default();
+        batches.begin_span([256, 64]);
+        let rects = [
+            [0, 0, 16, 16],
+            [8, 8, 16, 16],
+            [100, 0, 8, 8],
+            [4, 4, 8, 8],
+            [12, 12, 4, 4],
+        ];
+        for (i, rect) in rects.into_iter().enumerate() {
+            assert!(batches.push_replaying(command(i as u32, rect), |_, later| later.index != 3));
+        }
+        let waves = |batches: &TerrainBatches| {
+            batches
+                .waves()
+                .map(|w| w.map(|c| (c.draw.index, c.earlier)).collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            waves(&batches),
+            vec![vec![(0, 0), (1, 0b1), (2, 0), (4, 0b11)], vec![(3, 0)]]
+        );
+        batches.begin_span([256, 64]);
+        for i in 0..WINDOW as u32 {
+            assert!(batches.push_replaying(command(i, [0, 0, 8, 8]), |_, _| true));
+        }
+        assert_eq!(waves(&batches)[0][WINDOW - 1].1, u64::MAX >> 1);
+        // A wave of a full window sends a later overlap to the next one.
+        batches.begin_span([256, 64]);
+        for i in 0..WINDOW as u32 {
+            let rect = [i % 32 * 8, i / 32 * 8, 8, 8];
+            assert!(batches.push_replaying(command(i, rect), |_, _| true));
+        }
+        let last = command(WINDOW as u32, [4, 4, 8, 8]);
+        assert!(batches.push_replaying(last, |_, _| true));
+        let waves = waves(&batches);
+        assert_eq!(waves[0].len(), WINDOW);
+        assert_eq!(waves[1], vec![(WINDOW as u32, 0)]);
     }
 
     #[test]

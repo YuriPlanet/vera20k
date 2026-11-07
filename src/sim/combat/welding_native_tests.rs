@@ -640,13 +640,12 @@ fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_l
                 .get(id)
                 .and_then(|system| system.particles().first())
         {
-            let spark = particle.spark().unwrap();
             let expected = &row["first_produced_particle"];
             assert_eq!(json!(particle.coords().to_array()), expected["world"]);
-            assert_eq!(json!(spark.start_rgb), expected["start_rgb"]);
-            assert_eq!(json!(spark.color_index), expected["color_index"]);
+            assert_eq!(json!(particle.start_rgb()), expected["start_rgb"]);
+            assert_eq!(json!(particle.color_index()), expected["color_index"]);
             assert_eq!(
-                format!("{:016x}", spark.color_accumulator.bits()),
+                format!("{:016x}", particle.color_accumulator().bits()),
                 expected["color_accumulator_f64_bits"].as_str().unwrap()
             );
             compared_produced_child = true;

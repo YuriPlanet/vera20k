@@ -68,6 +68,8 @@ pub(super) struct DebugInstances {
 /// In-game UI overlays: health bars, placement preview, cursor.
 pub(super) struct UiInstances {
     pub software_cursor: Vec<SpriteInstance>,
+    /// The frame `software_cursor` was built from, whose texture draws it.
+    pub software_cursor_draw: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
     pub drag: Vec<SpriteInstance>,
     pub placement: Vec<SpriteInstance>,
     /// Phobos placement preview artwork, drawn after the PLACE cells.
@@ -158,6 +160,7 @@ pub(super) fn build_world_instances(
     sw: f32,
     sh: f32,
     bracket_palette: Option<[u16; 2]>,
+    hover: Option<crate::app::input::entity_pick::HoverObject>,
 ) -> WorldInstances {
     // Terrain tiles use the selected TMP owner exactly. A sparse/null cell in
     // a positive suffix remains absent instead of borrowing pristine UVs.
@@ -335,12 +338,7 @@ pub(super) fn build_world_instances(
     }
 
     // Every dynamic pose consumer, including Bullet46B0C0, has now populated
-    // the shared page. One upload precedes this frame's draw submission.
-    state.renderer.vxl_pose_frame_cache.borrow_mut().upload(
-        &state.renderer.gpu.device,
-        &state.renderer.gpu.queue,
-        &state.renderer.batch_renderer,
-    );
+    // the shared pages; the draw passes encode them before the main pass.
 
     // Selection is read by its existing presentation producer; only parents
     // admitted by the Display/body plan receive commands. Native6D913C and
@@ -365,7 +363,12 @@ pub(super) fn build_world_instances(
     // The same admitted Display parents feed native6D9789's later sweep.
     // Shared health admission/selection/hover owners derive frame-local strips;
     // storage order and atlas identity never determine their submission order.
-    let mut group_labels = build_control_group_status_instances(state, sw, sh);
+    // The frame's cursor pick serves the group labels and every health bar:
+    // both read the hover flag the cursor's action target sets.
+    let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
+    let hovered = crate::app::presentation::ui_overlays::health_hover_target(hover);
+    let mut group_labels =
+        build_control_group_status_instances(state, local_owner.as_deref(), hovered, sw, sh);
     if let (Some(sim), Some(overlay)) = (
         state
             .match_state
@@ -378,11 +381,6 @@ pub(super) fn build_world_instances(
             .selection_overlay
             .as_ref(),
     ) {
-        let local_owner = crate::app::input::commands::preferred_local_owner_name(state);
-        let hovered = crate::app::presentation::ui_overlays::health_hover_target(
-            state,
-            local_owner.as_deref(),
-        );
         let speech_wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         for parent in &mut planned_objects {
             parent.status = sim.entities().get(parent.parent.id).map(|entity| {
@@ -853,6 +851,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
             let (radar_dirty_cells, radar_dirty_generation) = view.radar_terrain_dirty();
             Ok::<_, std::convert::Infallible>(
                 minimap.update_unit_dots(
+                    &state.renderer.gpu.device,
                     &state.renderer.gpu.queue,
                     view.entities(),
                     view.logic_order(),
@@ -894,8 +893,12 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
 /// `wall_ms` is the last tactical composite's timeGetTime: planning dashes
 /// (63D8B8), mind-control links (704E40), psychic detection lines (4DC340)
 /// and the airstrike wobble move with it once per composite.
-pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances {
-    let software_cursor = build_software_cursor_instances(state);
+pub(super) fn build_ui_instances(
+    state: &AppState,
+    wall_ms: u32,
+    cursor: &crate::app::input::cursor::CursorTargets,
+) -> UiInstances {
+    let (software_cursor, software_cursor_draw) = build_software_cursor_instances(state, cursor);
     let drag = match &state.match_state.match_presentation.selection_overlay {
         Some(o) => o.build_drag_rect(
             &state.match_state.input.selection_state,
@@ -955,30 +958,16 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         }
     }
     let interleave_enabled = !designations.is_empty();
-    // The shroud A-buffer sample DSurface4C0750's dashed lines read.
-    let mut shroud_alpha = |point: [i32; 2]| -> u8 {
-        if state.match_state.sandbox_full_visibility {
-            return 127;
-        }
-        state
-            .match_state
-            .match_presentation
-            .shroud_buffer
-            .as_ref()
-            .and_then(|buffer| {
-                buffer.sample_world(
-                    (point[0] + camera[0] - view.clip[0]) as f32,
-                    (point[1] + camera[1] - view.clip[1]) as f32,
-                    input.camera_x,
-                    input.camera_y,
-                )
-            })
-            .unwrap_or(127)
-    };
+    // DSurface4C0750's dashed stores read the A plane on the GPU, whose
+    // pixels (like the surface lines') start at the floored camera.
+    let a_offset = [
+        camera[0] - input.camera_x.floor() as i32,
+        camera[1] - input.camera_y.floor() as i32,
+    ];
     let mut tactical_line_calls = Vec::new();
     let mut after_entity = |id, instances: &mut Vec<SpriteInstance>| {
         use crate::app::presentation::airstrike_lines::{TacticalLineCall, drain_opaque};
-        drain_opaque(&mut tactical_line_calls, instances, camera);
+        drain_opaque(&mut tactical_line_calls, instances, camera, a_offset);
         if let Some((coords, style)) = designations.remove(&id) {
             tactical_line_calls.push(TacticalLineCall::Designation { id, coords, style });
         }
@@ -1005,21 +994,10 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         } else {
             None
         },
-        &mut shroud_alpha,
         Some(&state.match_state.match_presentation.interpolation),
     );
     target_line.extend(action_lines);
     target_line.extend(planning_highlights);
-    let selected = crate::app::input::dispatch::selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
-    );
     let [factory_rally_first, factory_rally_second] =
         crate::app::presentation::target_lines::build_factory_rally_line_instances_sampled(
             state
@@ -1028,16 +1006,16 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
                 .as_ref()
                 .map(|rt| &rt.simulation),
             state.rules(),
-            &selected,
+            &cursor.selected,
             &state.match_state.match_presentation.house_color_map,
             preferred_local_owner(state).as_deref(),
             view,
-            &mut shroud_alpha,
             Some(&state.match_state.match_presentation.interpolation),
         );
 
     UiInstances {
         software_cursor,
+        software_cursor_draw,
         drag,
         placement: placement_preview.cells,
         #[cfg(feature = "phobos")]
@@ -1352,6 +1330,12 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             crate::app::presentation::sw_sidebar_build::build(state, status_labels, ready_tint)
         })
         .unwrap_or_default();
+    // The column's text, at the window's pixels wherever it is drawn.
+    let frame_raster = state.renderer.bit_font.set_raster(
+        crate::app::presentation::sidebar_surface::column_text(state)
+            .raster()
+            .unwrap_or(crate::render::bit_font::TextRaster::NATIVE),
+    );
     let mut text_layers = view
         .as_ref()
         .map(|v| build_sidebar_text_instances(state, v, status_labels, ready_tint))
@@ -1373,6 +1357,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
             ),
         );
     }
+    state.renderer.bit_font.set_raster(frame_raster);
 
     // Preserve the pixels actually drawn online for a possible pre-due loss.
     // This is display history, separate from ongoing internal minimap updates.
@@ -1385,10 +1370,9 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
         presentation.radar_anim.as_mut(),
         presentation.minimap.as_ref(),
     ) {
-        let (rgba, size) = mm.composed_rgba();
         radar.retain_online_content(
-            rgba,
-            size,
+            mm.native_map_texture(),
+            mm.white_texture(),
             &minimap,
             viewport_rect.iter().chain(&content_boundary).copied(),
             origin,

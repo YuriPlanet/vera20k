@@ -12,7 +12,8 @@
 
 use crate::app::{App, AppState};
 use crate::ui::pause_menu::{InGameMenuState, ModalOutcome};
-use crate::ui::shell::modal::{QuitConfirmLayout, quit_confirm_layout};
+use crate::ui::shell::geom::RectPx;
+use crate::ui::shell::modal::{QuitConfirmLayout, quit_confirm_layout_in};
 use winit::event::MouseButton;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,7 +55,12 @@ pub(crate) fn open(state: &mut AppState) {
 
 /// `0x120` centred over the frame the battlefield draws into.
 pub(crate) fn layout(state: &AppState) -> QuitConfirmLayout {
-    quit_confirm_layout(state.render_width() as i32, state.render_height() as i32)
+    quit_confirm_layout_in(RectPx::new(
+        0,
+        0,
+        state.render_width() as i32,
+        state.render_height() as i32,
+    ))
 }
 
 fn hit(state: &AppState) -> Option<SurrenderButton> {

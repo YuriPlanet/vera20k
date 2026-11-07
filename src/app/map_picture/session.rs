@@ -4,14 +4,15 @@
 //! camera across the picture's rectangle, keeping one production frame at
 //! each place. The frames' battlefields are shrunk into a picture
 //! ([`super::canvas`]). The menus keep the part showing the place of the
-//! map's own preview ([`super::placement`]); `--area view` keeps all of it,
-//! with the start markers' JSON when asked ([`write_markers`]). Either is
+//! map's own preview ([`super::placement`]), its ore and gem fields marked
+//! ([`resource_fields`]); `--area view` keeps all of it unmarked, with the
+//! start markers' JSON when asked ([`write_markers`]). Either is
 //! written as a PNG. Nothing here touches simulation state; the process ends
 //! with the picture.
 
 use anyhow::{Context, Result, bail, ensure};
 
-use super::canvas::{Canvas, Picture, Place, Tile, WorldRect, tiles};
+use super::canvas::{Canvas, Field, Picture, Place, Resource, Tile, WorldRect, tiles};
 use super::{MapPictureRequest, PictureArea, placement};
 use crate::app::AppState;
 use crate::app::presentation::render::GameRenderOutput;
@@ -223,34 +224,32 @@ impl MapPictureSession {
     /// The part of `picture` the menus show: the place where the map's own
     /// preview sits, in the preview's shape, so the picture replaces the
     /// preview without the map moving; else `fallback`.
-    fn preview_part(
+    fn preview_place(
         &self,
         picture: &Picture,
         candidates: &[Place],
         fallback: WorldRect,
-    ) -> Result<(u32, u32, Vec<u8>)> {
-        let max_size = self.request.max_size;
+    ) -> (Place, Option<(u32, u32)>) {
         let found = self.own.as_ref().and_then(|(_, preview)| {
             let (place, score) = placement::locate(preview, picture, candidates)?;
             Some((place, score, (preview.width, preview.height)))
         });
-        let part = match found {
+        match found {
             Some((place, score, shape)) => {
                 log::info!(
                     "{}'s own preview shows {place:?} (match {score:.2})",
                     self.request.map
                 );
-                picture.part(place, Some(shape), max_size)
+                (place, Some(shape))
             }
             None => {
                 log::info!(
                     "{}'s own preview matches no place; showing {fallback:?}",
                     self.request.map
                 );
-                picture.part(Place::from(fallback), None, max_size)
+                (Place::from(fallback), None)
             }
-        };
-        part.context("the picture shows nothing of its place")
+        }
     }
 
     /// Keep this frame once it has settled at its place and draws whole.
@@ -320,11 +319,19 @@ impl MapPictureSession {
             fallback,
             ..
         } = self.plan.take().expect("planned");
-        let picture = canvas.finish();
+        let mut picture = canvas.finish();
         let (area, factor) = (picture.area, picture.factor);
         let (width, height, rgb) = match self.request.area {
             PictureArea::View => (picture.width, picture.height, picture.rgb),
-            PictureArea::Preview => self.preview_part(&picture, &candidates, fallback)?,
+            PictureArea::Preview => {
+                let (place, shape) = self.preview_place(&picture, &candidates, fallback);
+                // Marked after the match, which compares the map's own
+                // preview with the battlefield as drawn.
+                picture.mark_fields(&resource_fields(state));
+                picture
+                    .part(place, shape, self.request.max_size)
+                    .context("the picture shows nothing of its place")?
+            }
         };
         super::write_png(&self.request.output, width, height, &rgb)?;
         if let Some(path) = &self.request.markers {
@@ -362,6 +369,35 @@ impl MapPictureSession {
             None => bail!("the map picture ended before it was written"),
         }
     }
+}
+
+/// Each ore and gem cell the map starts with, as the radar tells them apart,
+/// at its centre on the terrain.
+fn resource_fields(state: &AppState) -> Vec<Field> {
+    use crate::render::radar::minimap::{OverlayClassification, overlay_classification};
+    let Some(view) = state.sim_view() else {
+        return Vec::new();
+    };
+    let (Some(overlays), Some(terrain)) = (view.overlay_grid(), view.resolved_terrain()) else {
+        return Vec::new();
+    };
+    let registry = state.overlay_registry();
+    let (sub_x, sub_y) = crate::util::lepton::subcell_lepton_offset(None);
+    overlays
+        .iter_occupied()
+        .filter_map(|(rx, ry, cell)| {
+            let resource = match overlay_classification(cell.overlay_id?, registry) {
+                OverlayClassification::Ore => Resource::Ore,
+                OverlayClassification::Gem => Resource::Gems,
+                _ => return None,
+            };
+            let level = terrain.cell(rx, ry)?.level;
+            Some(Field {
+                centre: crate::util::lepton::lepton_to_screen(rx, ry, sub_x, sub_y, level),
+                resource,
+            })
+        })
+        .collect()
 }
 
 /// Write `path` as JSON for tools/map_render.py: the whole picture's world

@@ -195,10 +195,146 @@ impl Simulation {
             rules,
             effects,
         );
-        // 0x0073A5CE..0x0073A5E4: an answer other than 1 or 5 scatters the unit
-        // (a refinery being sold) — RESIDUAL, module doc.
-        let _ = reply;
+        // 0x0073A5CE..0x0073A5E4: an answer other than 1 or 5 Scatters the
+        // Unit, vt+0x174(&0xB1CFE8, 1, 0). Only a Building gets DOCK_NOW
+        // here, and no Building answers 5: any Building in its Selling
+        // mission answers NEGATORY (`0x0043C6F6`, ahead of the dock cases)
+        // and one that is no dock answers 0 (the Techno fallback). This
+        // Scatter does nothing while the unit still has a NavCom
+        // (`0x00743B1D..0x00743B2D`), as it does after a Drive arrival.
+        if reply != crate::sim::radio::RadioResponse::Roger {
+            let _ = self.scatter(
+                id,
+                None,
+                super::scatter::ScatterFlags::new(true, false),
+                rules,
+                registry,
+                effects,
+            );
+        }
         false
+    }
+
+    /// `UnitClass::Per_Cell_Process`'s own-cell arm (`0x0073AE1B..0x0073AFD3`),
+    /// reason 2 only, after the rearm timer. It takes the cell at the unit's
+    /// Location (`0x0073AE3B`, `0x00565730`) and acts when the locomotor is
+    /// not moving (Is_Moving, `0x0073AE65`), the unit's own Can_Enter_Cell
+    /// refuses that cell with 7 (`0x0073AE7E`, called with (cell, -1, -1,
+    /// NULL, 1)), it is not on a bridge over a cell with flag 0x100
+    /// (`0x0073AE8D..0x0073AEA0`) and it is not sinking (`+0x3CD`).
+    /// - On Enter (`+0xAC` is 7) it Scatters, vt+0x174(&0xB1CFE8, 1, 1)
+    ///   (`0x0073AFC0..0x0073AFCE`), and the crush and Foot tail follow.
+    /// - Otherwise it blows itself up with C4Warhead (Rules `+0xFA8`) for its
+    ///   strength (`+0x6C`): the `SelectAnim @ 0x0048A4F0` animation for the
+    ///   cell's LandType (`+0xEC`) at its Location (`0x0073AEC1..0x0073AF47`),
+    ///   the `0x0048A620` flash at its GetCoords (`0x0073AF4C..0x0073AF8B`),
+    ///   then ReceiveDamage(&strength, 0, C4Warhead, NULL, 1, 0, NULL)
+    ///   (`0x0073AF90..0x0073AFB0`), and returns true: the call ends before
+    ///   the crush and the Foot body. A null C4Warhead leaves the flash and
+    ///   the damage inert, and the call still ends.
+    ///
+    /// Residual: native allocates the anim before SelectAnim (`0x0073AEC1`),
+    /// so a null pick (0 strength, or no C4Warhead) still runs AnimClass's
+    /// constructor (`0x00421EA0`) on a null type; VERA constructs nothing.
+    /// Retail C4Warhead is Super, which lists `AnimList=`, so only a unit at 0
+    /// strength gets there. Rare; the constructor's own writes are the risk.
+    ///
+    /// A miner on its refinery's pad never gets here: the pad is the east
+    /// column of a `Bib=` foundation, which Can_Enter_Cell admits whatever
+    /// the radio contact (`0x0073F7D3..0x0073F821`). Nor does a warp
+    /// arrival: Teleport Process calls this Per_Cell_Process (`0x0071971C`)
+    /// before its own Stop_Moving (`0x00719725`), so Is_Moving is still set.
+    fn unit_per_cell_own_cell_refusal(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return false;
+        };
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let location = super::ground_pose::object_location(entity, Some(terrain));
+        if super::motion_query::is_moving(entity) != Some(false) {
+            return false;
+        }
+        let cell = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain)
+            .lookup_world(location.x, location.y);
+        let refused = self.foot_can_enter(
+            id,
+            cell,
+            crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
+            rules,
+            registry,
+        ) == Ok(7);
+        if !refused
+            || entity.on_bridge()
+                && crate::sim::cell_rect::get_cellclass_fallback_leptons(
+                    Some(terrain),
+                    location.x,
+                    location.y,
+                )
+                .bridge_flags_0x1180()
+                    & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
+                    != 0
+            || entity.sinking.is_active()
+        {
+            return false;
+        }
+        if entity.mission.current() == MissionId::from_known(MissionType::Enter) {
+            let _ = self.scatter(
+                id,
+                None,
+                super::scatter::ScatterFlags::new(true, true),
+                rules,
+                registry,
+                effects,
+            );
+            return false;
+        }
+        let strength = entity.health.current();
+        let center = super::ground_pose::object_get_coords(entity, Some(terrain));
+        let Some(warhead) = rules.warhead(&rules.bridge_warheads.c4_name) else {
+            return true;
+        };
+        let warhead_ref = self.interner.intern(&warhead.id);
+        let at = crate::sim::projectile::ProjectileCoord::new(location.x, location.y, location.z);
+        let land = crate::sim::combat::detonation_anim::land_at(self, at);
+        if let Some(effect) = crate::sim::combat::detonation_anim::effect(
+            self, rules, warhead, strength, land, at, at, false,
+        ) {
+            crate::sim::world::damage_consequences::admit_explosion_effect(self, rules, effect);
+        }
+        self.combat_light_requests
+            .emit(crate::sim::combat::CombatLightRequest::Impact {
+                target_id: None,
+                damage: strength,
+                warhead_ref,
+                coord: crate::sim::projectile::ProjectileCoord::new(center.x, center.y, center.z),
+                force_create: false,
+                flags: 0,
+            });
+        self.commit_direct_damage_receiver(
+            rules,
+            registry,
+            crate::sim::combat::EntityDamageEvent::direct_receiver(
+                id,
+                strength,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                warhead_ref,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6: false,
+                },
+            ),
+            effects,
+        );
+        true
     }
 
     /// `UnitClass::Per_Cell_Process @ 0x00739EC0`: the Unit's own arrival
@@ -284,6 +420,14 @@ impl Simulation {
         // drops a refinery (weeder) contact at every track end.
         if reason == PerCellReason::Arrival {
             crate::sim::miner::per_cell_release_dock_contact(self, rules, id, effects);
+        }
+        // `0x0073AE1B..0x0073AFD3`: a stopped unit its own cell refuses
+        // scatters on Enter; otherwise it blows itself up and returns before
+        // the crush and the Foot body.
+        if reason == PerCellReason::Arrival
+            && self.unit_per_cell_own_cell_refusal(id, rules, registry, effects)
+        {
+            return;
         }
         // 73AFD4..73B06E is common to reasons0/2 and precedes the fresh
         // +1B8/full-cell crush query73B074 and the Foot continuation.
@@ -537,25 +681,55 @@ impl Simulation {
             effects,
         );
         if reply != crate::sim::radio::RadioResponse::Queued {
-            // RESIDUAL: `0x0073AAF7..0x0073AB66` is not ported. These are the
-            // replies other than Queued (0x17) to a tethered Unit's message 8,
-            // including 0 with no contact. Only a refinery and a non-naval war
-            // factory tether a Unit (radio 0x18, `0x0043CACE`, `0x004445E3`),
-            // and a war factory answers 0x17.
-            // - A Harvester or Weeder with an archive queues Harvest (0) and is
-            //   sent to the archive, which then clears. Without an archive and
-            //   NavCom it Scatters (NULL, 1, 0).
-            // - Reply 0xA and every other Unit go straight to the building
-            //   Scatter tail (`Self::unit_per_cell_building_scatter`), which
-            //   every one of these arms reaches.
-            // VERA returns here, leaving the departure to the dock owners.
-            // Trigger: a tethered Unit's arrival in a Cell away from its dock.
-            // Effect: none of this arm's Harvest, archive send or Scatter.
-            // Frequency: rare. No depot or bunker reply reaches it, and a
-            // refinery's miner untethers before it moves, so it needs a miner
-            // still tethered on arrival away from its dock.
-            // Risk: a Unit left standing on a building with no orders stays
-            // put where native would scatter it.
+            // `0x0073AAF7..0x0073AB66` takes every other reply, including 0
+            // with no contact. Only a refinery and a non-naval war factory
+            // tether a Unit (radio 0x18, `0x0043CACE`, `0x004445E3`); the war
+            // factory answers 0x17, the refinery 1 (`0x0043CE18`'s
+            // fallthrough, after Techno `0x006F4C29` untethered the miner).
+            // Reply 0xA and every other Unit reach only the building tail.
+            // Type, archive (+0x218) and NavCom are re-read after radio 8.
+            if reply != crate::sim::radio::RadioResponse::Negatory
+                && let Some(unit) = self.substrate.entities.get(id)
+                && self
+                    .object_type(unit.type_ref(), rules)
+                    .is_some_and(|object| object.harvester || object.weeder)
+            {
+                if let Some(archive) = unit.archive_target() {
+                    // The ore Cell archived when the miner filled up
+                    // (`0x0073E9E4..0x0073EA7B`): Queue_Mission(Harvest, 0)
+                    // (vt+0x1E8, `0x0073AB29`), Set_Destination(archive, 1)
+                    // (vt+0x480, `0x0073AB3D`), Set_ArchiveTarget(NULL)
+                    // (`0x0070C610`, `0x0073AB47`).
+                    let _ = self.mission_queue_exact(
+                        id,
+                        MissionId::from_known(MissionType::Harvest),
+                        0,
+                        self.session.binary_frame(),
+                        &LiveReadyInputProvider { rules },
+                    );
+                    self.set_unit_destination(
+                        id,
+                        NavTargetRef::from(archive),
+                        rules,
+                        true,
+                        effects,
+                    );
+                    if let Some(unit) = self.substrate.entities.get_mut(id) {
+                        unit.set_archive_target(None);
+                    }
+                } else if unit.navigation.nav_com().is_none() {
+                    // `0x0073AB4E..0x0073AB66`: vt+0x174(&0xB1CFE8, 1, 0).
+                    let _ = self.scatter(
+                        id,
+                        None,
+                        super::scatter::ScatterFlags::new(true, false),
+                        rules,
+                        registry,
+                        effects,
+                    );
+                }
+            }
+            self.unit_per_cell_building_scatter(id, rules, registry, effects);
             return;
         }
         let Some(unit) = self.substrate.entities.get(id) else {

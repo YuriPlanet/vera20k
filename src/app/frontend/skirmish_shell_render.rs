@@ -635,22 +635,33 @@ fn render_skirmish_shell_with_atlas(
         .or_else(|| choose_map_layout.as_ref().map(|layout| layout.preview))
         .unwrap_or(layout.map_preview);
     ensure_selected_preview_texture(state, preview_rect);
+    let zoom_layout =
+        ensure_zoom_texture(state, layout.scale, !sliding && !leaving && !message_box_up);
     let selected_entry = state
         .frontend
         .scenario_catalog
         .shell_maps()
         .get(preview::preview_map_idx(state));
-    // Both the sentinel's RandMap.img and the setup dialog's generated image
-    // already carry their start markers, so the overlay pass must not add them
-    // a second time.
-    let preview_has_baked_start_markers = selected_entry.is_some_and(is_random_map_sentinel_entry)
-        || state
-            .frontend
-            .skirmish_shell_state
-            .random_map_setup_modal
-            .is_some();
-    let selected_preview_bounds =
-        selected_entry.and_then(|entry| entry.preview_source_bounds.as_ref());
+    // A generated preview carries its red squares (0x00641140) and also gets
+    // the numbered markers from the last Generate's header: the setup dialog
+    // paints them (0x00596ACD), and selecting the sentinel copies the header
+    // back first (0x0058BB30 at 0x005E67ED/0x006AEE9C).
+    // RESIDUAL: native also numbers its in-progress redraws, from the previous
+    // header until 0x00594EE3 runs; VERA draws none while generating.
+    let setup_modal = state
+        .frontend
+        .skirmish_shell_state
+        .random_map_setup_modal
+        .as_ref();
+    let random_preview = setup_modal.is_some_and(|modal| !modal.generating)
+        || (setup_modal.is_none() && selected_entry.is_some_and(is_random_map_sentinel_entry));
+    let selected_preview_bounds = start_marker_bounds(
+        random_preview.then(|| state.frontend.random_map_retention.generated_header()),
+        selected_entry
+            .filter(|_| setup_modal.is_none())
+            .and_then(|entry| entry.preview_source_bounds.as_ref()),
+    );
+    let selected_preview_bounds = selected_preview_bounds.as_ref();
     let fitted_preview_rect = state
         .frontend
         .skirmish_preview_texture
@@ -660,14 +671,19 @@ fn render_skirmish_shell_with_atlas(
         .zip(fitted_preview_rect)
         .map(|(bounds, rect)| project_preview_start_positions(bounds, rect))
         .unwrap_or_default();
+    let zoom = zoom_layout.as_ref().map(|zoom_layout| {
+        zoom_draws(
+            state,
+            atlas,
+            zoom_layout,
+            selected_preview_bounds,
+            layout.scale,
+        )
+    });
     // The map preview static and its markers sit in the top panel.
     let draw_start_marker_overlays = !sliding
         && !message_box_up
-        && should_draw_start_marker_overlays(
-            fitted_preview_rect,
-            &projected_start_positions,
-            preview_has_baked_start_markers,
-        );
+        && should_draw_start_marker_overlays(fitted_preview_rect, &projected_start_positions);
     let preview_instance = state
         .frontend
         .skirmish_preview_texture
@@ -891,6 +907,7 @@ fn render_skirmish_shell_with_atlas(
         .renderer
         .batch_renderer
         .create_instance_buffer(&state.renderer.gpu, &cursor_instances);
+    let zoom_buffers = zoom.as_ref().map(|zoom| zoom.buffers(state));
     // Default-cursor frame-0 texture, borrowed for the duration of the pass.
     let cursor_texture = state
         .match_state
@@ -983,6 +1000,9 @@ fn render_skirmish_shell_with_atlas(
     );
     // Reset scissor to full render so any subsequent draws / passes aren't clipped.
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+    if let Some(buffers) = zoom_buffers.as_ref() {
+        draw_zoom(&mut pass, state, atlas, buffers);
+    }
     // Software cursor draws last, on top of all chrome/controls/modals.
     if let (Some((buffer, count)), Some(texture)) = (cursor_buffer.as_ref(), cursor_texture) {
         state
@@ -1099,7 +1119,7 @@ mod tests {
             let draws = paint_map_dialog_statics(
                 &font,
                 &[
-                    text::static_label(shown, title, ShellAlign::H_CENTER),
+                    text::static_label(shown, title, ShellAlign::PANEL_TITLE),
                     text::static_label(shown, help, ShellAlign::NONE),
                 ],
                 scale,
@@ -1797,14 +1817,26 @@ mod tests {
     }
 
     #[test]
-    fn randmap_preview_suppresses_duplicate_start_marker_overlays() {
-        let fitted = Some(RectPx::new(644, 54, 144, 78));
-        let starts = [(700, 90)];
-
-        assert!(should_draw_start_marker_overlays(fitted, &starts, false));
-        assert!(!should_draw_start_marker_overlays(fitted, &starts, true));
-        assert!(!should_draw_start_marker_overlays(fitted, &[], false));
-        assert!(!should_draw_start_marker_overlays(None, &starts, false));
+    fn a_random_preview_numbers_the_last_generates_starts() {
+        let mut header = crate::map::preview::ScenarioStartStaging {
+            width: 40,
+            height: 20,
+            ..Default::default()
+        };
+        assert_eq!(
+            start_marker_bounds(Some(header), None),
+            None,
+            "no Generate yet: count 0 draws nothing"
+        );
+        header.count = 1;
+        header.pairs[0] = (10, 5);
+        let bounds = start_marker_bounds(Some(header), None).expect("one staged start");
+        assert_eq!(bounds.start_points.len(), 1);
+        assert_eq!(
+            start_marker_bounds(None, Some(&bounds)),
+            Some(bounds),
+            "an ordinary map keeps its own header"
+        );
     }
 
     #[test]
@@ -2054,7 +2086,10 @@ mod wol_persona;
 mod wol_quick_match;
 pub(crate) use lan_lobby::render_lan_lobby;
 pub(crate) use wol_buddy::paint_wol_buddy_children;
-pub(crate) use wol_lobby::{WolLobbyPaint, paint_wol_lobby_children, paint_wol_lobby_popup};
+pub(crate) use wol_lobby::{
+    WolLobbyPaint, paint_wol_card_countries, paint_wol_lobby_children, paint_wol_lobby_popup,
+    paint_wol_player_card,
+};
 pub(crate) use wol_login::{
     paint_wol_account_form, paint_wol_login_children, wol_button_label_rgb,
 };

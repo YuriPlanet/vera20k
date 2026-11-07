@@ -2771,8 +2771,17 @@ fn terrain_render_observation(state: &AppState, rx: u16, ry: u16) -> Value {
     let a_source = (!state.match_state.sandbox_full_visibility)
         .then_some(presentation.shroud_buffer.as_ref())
         .flatten();
-    let a_center =
-        center.and_then(|point| a_source?.sample_world(point[0], point[1], camera[0], camera[1]));
+    let gpu = &state.renderer.gpu;
+    let a_center = center.and_then(|point| {
+        a_source?.read_world(
+            &gpu.device,
+            &gpu.queue,
+            point[0],
+            point[1],
+            camera[0],
+            camera[1],
+        )
+    });
     json!({
         "phase": "after_draw",
         "variant": cell.map(|cell| cell.variant),
@@ -4617,7 +4626,10 @@ impl TacticalCaptureSession {
         ensure!(
             ready && static_default_cursor && camera_input_idle,
             "map observation requires every draw ready with a static cursor and idle camera input: ready={ready}, static_cursor={static_default_cursor}, camera_idle={camera_input_idle}, cursor_feedback={:?}, cursor_position={cursor_position:?}",
-            crate::app::input::cursor::current_cursor_feedback_kind(state)
+            crate::app::input::cursor::current_cursor_feedback_kind(
+                state,
+                &crate::app::input::cursor::CursorTargets::read(state),
+            )
         );
         let profile = &self
             .request

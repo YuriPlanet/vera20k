@@ -151,6 +151,17 @@ impl InGameShellLayout {
         self.background.y = (height - 32 - self.background.h) / 2;
         self
     }
+
+    /// VERA's placement without the Phobos switch: the whole battlefield, left
+    /// of the column and above the bottom strip, with the art stretched over
+    /// it. `0x0072FC60` keeps the canvas size, and retail art is exactly the
+    /// battlefield at 640x480, 800x600 and 1024x768, so those stay 1:1. VERA's
+    /// frames take any size (Zoom, Sidebar size), where the canvas would leave
+    /// black beside or below the art, or crop it.
+    pub fn with_battlefield_background(mut self) -> Self {
+        self.background = RectPx::new(0, 0, self.credits.x, self.bottom_clip.y);
+        self
+    }
 }
 
 /// An active-game dialog's title static 0x694: original 0x0060B1D0's active
@@ -336,13 +347,36 @@ mod tests {
         ] {
             let layout = allied_fixture_layout(width, height);
             assert_eq!(layout.background, canvas);
-            assert_eq!(layout.with_centered_background(width, height).background, canvas);
+            assert_eq!(
+                layout.with_centered_background(width, height).background,
+                canvas
+            );
         }
         let layout = allied_fixture_layout(1280, 1024);
         assert_eq!(layout.background, RectPx::new(0, 0, 856, 736));
         assert_eq!(
             layout.with_centered_background(1280, 1024).background,
             RectPx::new(128, 128, 856, 736)
+        );
+    }
+
+    /// The reported Auto zoom frame, 1121x741: BKGDLG's 856x736 canvas falls
+    /// short of the 953x709 battlefield, which the art now fills. At the stock
+    /// sizes the battlefield is the canvas itself.
+    #[test]
+    fn battlefield_background_fills_any_frame_and_keeps_stock_canvases() {
+        for (width, height) in [(640, 480), (800, 600), (1024, 768)] {
+            let layout = allied_fixture_layout(width, height);
+            assert_eq!(
+                layout.with_battlefield_background().background,
+                layout.background
+            );
+        }
+        assert_eq!(
+            allied_fixture_layout(1121, 741)
+                .with_battlefield_background()
+                .background,
+            RectPx::new(0, 0, 953, 709)
         );
     }
 }

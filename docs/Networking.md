@@ -3,15 +3,15 @@
 Windows, macOS and Linux builds provide LAN and online multiplayer through
 the normal game menus. Both paths use the existing
 owners for session setup, synchronized commands, reliable UDP delivery, frame
-pacing, checksums, disconnects, results and rematches. The function-level
-active-retail `gamemd.exe` parity audit remains separate from runtime validation.
+pacing, checksums, disconnects, results and rematches.
 
 Legacy IPX sockets and the IPX protocol are excluded. Shared behavior in
 IPX-named classes remains relevant. Retail's Network menu constructs the IPX
 interface (`52E3D2`); VERA uses IPv4 UDP for this LAN entry point. That replacement,
 including limited broadcast on port 1234, is an explicit transport adaptation.
-Online play uses the Cloudflare HTTPS lobby and an authenticated UDP gameplay
-relay on DigitalOcean. Relay admission handles client source-address changes;
+Online play uses the Cloudflare HTTPS lobby and authenticated UDP gameplay relays;
+the lobby gives each match a relay near its players, or spreads it over several
+relays when they are far apart. Relay admission handles client source-address changes;
 the relay orders modern online commands while clients retain simulation authority. Matches are between
 VERA20k clients; legacy IPX and gamemd wire compatibility are not supported.
 
@@ -100,8 +100,13 @@ schedule earlier, so no hold exceeds that reserve. Stable delivery gradually
 reduces the reserve. The relay still owns the clock; local pacing never changes
 commands, simulation order or another player's progress. A stalled or slow client
 catches up through at most eight ordinary simulation transactions or eight
-milliseconds per service wake, then yields to input/rendering. It never skips
-simulation ticks, and pacing never interrupts an already-started frame transaction.
+milliseconds per service wake, then yields to input. It draws once no frame is
+due, so a client that draws slower than the match rate shows a steady number of
+frames per picture instead of falling behind and catching up in bursts. A
+picture stands at most four recent draw times (at least 50 ms): the simulation
+may take the four fifths of the time the relay expects a player's tick cost to
+hold. It never skips simulation ticks, and pacing never interrupts an
+already-started frame transaction.
 An agreed resume resets the local playout clock so paused time creates no catch-up debt.
 
 A player whose PC cannot keep up slows the match, within limits. Each client
@@ -230,33 +235,6 @@ modern online ordering above is an intentional adaptation.
 - Setup Back retains transport history within a lobby visit. A fresh post-match
   visit resets queues, sequence history, observations and lobby timing while
   retaining the portable socket bindings.
-
-## Validation and native audit
-
-Two consecutive online matches passed functional validation with 30 independent
-client processes and more than 20,000 active mobile units per match. The clients
-ran across seven machines: two local macOS clients on one Mac and 28 Linux clients
-cohosted on six VMs. The run covered real Move/Stop input, matching shared
-simulation checksums and hashes, both results screens and lobby returns, a rematch
-in the same client processes, and final Main Menu return.
-
-The Linux clients used software rendering. Sampled host traces showed approximately
-0.74 simulation frames per wall-clock second in each match. These samples
-measure observed simulation progress, not display FPS or the selected TIMING rate.
-This establishes functional scale behavior; smooth, real-time performance remains
-unproven. Exhaustive fault coverage and Windows multiplayer validation are not
-claimed here.
-
-The native-function audit continues through the existing owners, including wider
-gameplay command producers and cooperative handoffs. Native extra-channel/router
-behavior, interface selection and local MoveFlash drawing retain their separate
-audit scope. VERA's IPv4/relay transport and bounded command admission do not claim
-legacy wire compatibility or exhaustive gamemd behavior.
-
-Solo AI validation also completed two 600-frame online rounds with Move and Stop
-applied in their issue frame, real AI activity, lobby return, rematch and acknowledged
-logout. This covers local input scheduling; it does not measure human-to-human
-Internet latency or establish complete AI or cooperative-campaign behavior.
 
 ## Reproducible validation tools
 

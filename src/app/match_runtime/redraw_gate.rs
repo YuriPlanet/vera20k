@@ -20,6 +20,12 @@
 //! the chrono screen, message typing) keep every refresh drawn until they
 //! settle; the cursor animation and superweapon timer blinks draw again once
 //! their deadline passes.
+//!
+//! A network match composites on every draw, as ThrottleFrame renders while
+//! it waits, so its battlefield stands between frames only while the last
+//! composite held none of those effects or lines
+//! ([`crate::app::presentation::tactical_composite::TacticalComposite::animated`])
+//! and no recovery line, which reads the wall clock, shows.
 
 use crate::app::AppState;
 use crate::app::input::precedence::ScreenPage;
@@ -51,9 +57,10 @@ impl PictureClock {
 /// message rows, the published detail frame rate, the talk bubble and each
 /// published atlas growth, and stands only while none of its self-moving
 /// owners runs (module docs).
-/// `None` keeps every refresh drawn: captures, modals, other screens,
-/// network and replay matches, exits and loads, the FPS overlay, a held
-/// mouse button (gadgets repeat on it) and a shake still decaying.
+/// `None` keeps every refresh drawn: captures, modals, other screens, replay
+/// matches, a network match's moving composite, recovery line or in-game
+/// menu, exits and loads, the performance overlay, a held mouse button (gadgets
+/// repeat on it) and a shake still decaying.
 pub(crate) fn still_frame(
     state: &AppState,
     capture: bool,
@@ -71,7 +78,7 @@ pub(crate) fn still_frame(
     let still = !capture
         && modal.is_none()
         && state.frontend.screen == GameScreen::InGame
-        && state.match_state.live_network.is_none()
+        && !network_picture_moves(state, simulation, clock)
         && !state.match_state.match_diagnostics.is_replay_playback()
         && !state
             .match_state
@@ -82,7 +89,7 @@ pub(crate) fn still_frame(
         && state.match_state.scenario_exit.is_none()
         && state.match_state.scenario_outcome.is_none()
         && !crate::app::App::house_outcome_wait_pending(state)
-        && !state.renderer.fps_overlay.is_visible()
+        && !state.renderer.performance_overlay.is_visible()
         && !input.tactical_mouse.left_held()
         && !input.tactical_mouse.right_held()
         && !simulation.is_some_and(|sim| {
@@ -99,19 +106,21 @@ pub(crate) fn still_frame(
         .active()
         .map(|tip| (tip.id, tip.x, tip.y));
     match page {
-        ScreenPage::InGameShell(menu) => Some(StillFrame::Menu {
-            menu,
-            revision,
-            shake_px,
-            tooltip,
-            caret: matches!(menu, InGameMenuState::SavedGame(_))
-                && presentation
-                    .saved_game_browser
-                    .as_ref()
-                    .is_some_and(|browser| {
-                        browser.description_edit.focused && browser.caret_blink_on()
-                    }),
-        }),
+        ScreenPage::InGameShell(menu) if state.match_state.live_network.is_none() => {
+            Some(StillFrame::Menu {
+                menu,
+                revision,
+                shake_px,
+                tooltip,
+                caret: matches!(menu, InGameMenuState::SavedGame(_))
+                    && presentation
+                        .saved_game_browser
+                        .as_ref()
+                        .is_some_and(|browser| {
+                            browser.description_edit.focused && browser.caret_blink_on()
+                        }),
+            })
+        }
         ScreenPage::Battlefield => {
             let detail = presentation.detail.borrow();
             let moving = state.match_state.paused()
@@ -145,6 +154,27 @@ pub(crate) fn still_frame(
     }
 }
 
+/// A network match's picture moves without a new frame while its last
+/// composite would move again or the recovery line shows.
+fn network_picture_moves(
+    state: &AppState,
+    simulation: Option<&crate::sim::world::Simulation>,
+    clock: PictureClock,
+) -> bool {
+    let Some(live) = state.match_state.live_network.as_ref() else {
+        return false;
+    };
+    state
+        .match_state
+        .match_presentation
+        .tactical_composite
+        .animated()
+        || simulation.is_some_and(|sim| {
+            live.recovery_status(clock.wall_ms as u32, sim.session().binary_frame())
+                .is_some()
+        })
+}
+
 /// The inputs a still picture is drawn from: two passes with equal values
 /// draw the same pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,7 +191,7 @@ pub(crate) enum StillFrame {
         /// Whether the Save page draws its name caret.
         caret: bool,
     },
-    /// The offline battlefield with its sidebar and HUD.
+    /// The battlefield with its sidebar and HUD.
     Battlefield {
         revision: Option<u64>,
         /// The Main_Ticks counted: each owes a tactical composite.

@@ -299,17 +299,54 @@ pub(super) struct Start {
     pub relay: RelayGrant,
 }
 
-/// The `ladder` event: the running season's records of the names a `ladder`
-/// command asked for; a name without a rated game there has none.
+/// The `ladder` event for the names a `ladder` command asked for, or the
+/// rated players' tables the lobby sends unasked after a rated game, or none
+/// when a season starts or ends: the running season's records, which a name
+/// without a rated game there lacks, and the badge points of those that have
+/// played one.
 #[derive(Deserialize)]
 pub(super) struct Ladder {
+    /// The running season's number; `None` when none runs, as from a lobby
+    /// from before seasons.
+    #[serde(default)]
+    pub season: Option<u32>,
     pub records: Vec<LadderRecord>,
+    /// Absent from a lobby from before all-time badges.
+    #[serde(default)]
+    pub high_scores: Vec<HighScoreRecord>,
 }
 
+impl Ladder {
+    /// The ladder table from the season's records, and the high-score table,
+    /// whose points pick the badges (`0x00783B80`), from the badge points.
+    pub(super) fn tables(&self) -> (Vec<WolLadderRecord>, Vec<WolHighScoreRecord>) {
+        (
+            self.records.iter().map(WolLadderRecord::from).collect(),
+            self.high_scores
+                .iter()
+                .map(WolHighScoreRecord::from)
+                .collect(),
+        )
+    }
+}
+
+/// A player's badge points, the points that pick the badge of their OS, and
+/// their rank in the running season, 0 when unranked.
+#[derive(Deserialize)]
+pub(super) struct HighScoreRecord {
+    pub name: String,
+    pub points: u32,
+    pub rank: u32,
+}
+
+/// A player's season record: `points` their OS rounded and `os` their OS to
+/// the hundredth, which a lobby from before it leaves out.
 #[derive(Deserialize)]
 pub(super) struct LadderRecord {
     pub name: String,
     pub points: u32,
+    #[serde(default)]
+    pub os: Option<f64>,
     pub rank: u32,
     pub wins: u32,
     pub losses: u32,
@@ -328,6 +365,10 @@ impl From<&LadderRecord> for WolLadderRecord {
             wins: signed(record.wins),
             losses: signed(record.losses),
             points: signed(record.points),
+            os_hundredths: record.os.map_or_else(
+                || signed(record.points).saturating_mul(100),
+                |os| (os * 100.0).round().max(0.0) as i32,
+            ),
             rank: signed(record.rank),
             disconnects: signed(record.disconnects),
         }
@@ -335,8 +376,8 @@ impl From<&LadderRecord> for WolLadderRecord {
 }
 
 /// The co-op icon's campaign bits have no lobby source and stay clear.
-impl From<&LadderRecord> for WolHighScoreRecord {
-    fn from(record: &LadderRecord) -> Self {
+impl From<&HighScoreRecord> for WolHighScoreRecord {
+    fn from(record: &HighScoreRecord) -> Self {
         Self {
             name: record.name.clone(),
             points: record.points,

@@ -121,7 +121,9 @@ fn frozen_building_pieces(
         location.y.wrapping_sub(128),
         location.z,
     );
-    let lift = crate::util::native_x87::adjust_for_z_standard(location.z);
+    let correction = crate::render::locomotor_visual::building_terrain_correction(frozen.level);
+    let y = y - correction as f32;
+    let lift = crate::util::native_x87::adjust_for_z_standard(location.z) + correction;
     let depth = super::compute_sprite_depth_params_lifted(
         input.axis.origin_y,
         input.axis.world_height,
@@ -445,6 +447,17 @@ mod tests {
             pieces[3].instance.z_adjust,
             11.0 - crate::util::native_x87::adjust_for_z_standard(104) as f32
         );
+
+        let mut raised = selected[0].1.clone();
+        raised.level = 36;
+        raised.location.z = 3744;
+        let raised = frozen_building_pieces(&input, &raised);
+        assert_eq!(raised.len(), pieces.len());
+        for (low, high) in pieces.iter().zip(&raised) {
+            assert_eq!(high.instance.position[1], low.instance.position[1] - 525.0);
+            assert_eq!(high.instance.z_adjust, low.instance.z_adjust - 525.0);
+            assert_eq!(high.instance.depth, low.instance.depth);
+        }
     }
 }
 

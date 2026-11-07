@@ -315,9 +315,6 @@ fn team_lookup_ordinary_ai_recruits_and_moves_first_name() {
             .bind_native_rules_receipt(receipt, &launch, &rules)
             .unwrap();
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         let registry = TeamAiIniRegistry::from_sources(&fixed, &map.ini, true);
         // Use the production prefix admission for both RNG and native IDs;
         // the controlled terrain and named House are installed below.

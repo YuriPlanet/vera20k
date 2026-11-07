@@ -261,6 +261,12 @@ impl StashedLocomotor {
         self.0.warp_teleport_mut()
     }
 
+    /// A suspended Teleport's own Stop_Moving after its relocation
+    /// ([`LocomotorState::teleport_process_stop`]).
+    pub(in crate::sim::movement) fn teleport_process_stop(&mut self) {
+        self.0.teleport_process_stop();
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(in crate::sim::movement) fn install_drive_state_for_test(
         &mut self,

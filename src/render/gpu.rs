@@ -169,7 +169,8 @@ pub struct GpuContext {
     /// The GPU surface we render to (tied to the window).
     // Loading progress shares the GPU context with asset uploads. Only this
     // owner locks the surface, briefly, to acquire or replace a lost swapchain.
-    surface: Mutex<wgpu::Surface<'static>>,
+    // Android suspension drops it while retaining the device and game resources.
+    surface: Mutex<Option<wgpu::Surface<'static>>>,
     instance: wgpu::Instance,
     window: Arc<Window>,
     /// The logical GPU device — used to create buffers, textures, pipelines.
@@ -183,6 +184,8 @@ pub struct GpuContext {
     /// Exact identity returned by the adapter that backs this context.
     adapter_info: wgpu::AdapterInfo,
     capture_target: Option<CaptureTarget>,
+    /// The GPU time of each frame, while the Performance Stats panel shows.
+    pub(crate) timer: super::gpu_timer::GpuTimer,
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     web_present: Arc<web_present::WebPresent>,
 }
@@ -337,7 +340,7 @@ impl GpuContext {
         let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("RA2 Device"),
-                required_features: wgpu::Features::empty(),
+                required_features: super::gpu_timer::GpuTimer::features(&adapter),
                 required_limits,
                 ..Default::default()
             })
@@ -388,6 +391,19 @@ impl GpuContext {
                 downlevel.flags
             );
         }
+        // The packed sprite stencil and its destination snapshot share a pass
+        // with per-attachment write masks (terrain_packed.rs).
+        if !webgl
+            && !downlevel
+                .flags
+                .contains(wgpu::DownlevelFlags::INDEPENDENT_BLEND)
+        {
+            bail!(
+                "native sprite drawing requires per-attachment write masks, \
+                 adapter downlevel flags are {:?}",
+                downlevel.flags
+            );
+        }
         let surface_format: wgpu::TextureFormat = surface_caps
             .formats
             .iter()
@@ -423,6 +439,7 @@ impl GpuContext {
         // swapchain skip/recovery.
         // https://docs.rs/wgpu-hal/30.0.1/src/wgpu_hal/metal/surface.rs.html#347-371
         let capture_target = hidden_capture.then(|| CaptureTarget::new(&device, &config));
+        let timer = super::gpu_timer::GpuTimer::new(&device, &queue);
 
         log::info!(
             "GPU initialized: {}x{}, format={:?}",
@@ -432,7 +449,7 @@ impl GpuContext {
         );
 
         Ok(Self {
-            surface: Mutex::new(surface),
+            surface: Mutex::new(Some(surface)),
             instance,
             window,
             device,
@@ -441,6 +458,7 @@ impl GpuContext {
             surface_format,
             adapter_info,
             capture_target,
+            timer,
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             web_present,
         })
@@ -449,6 +467,61 @@ impl GpuContext {
     /// Return a borrowed capture-only view of the selected adapter identity.
     pub(crate) fn capture_adapter_observation(&self) -> GpuAdapterObservation<'_> {
         GpuAdapterObservation::from(&self.adapter_info)
+    }
+
+    /// Whether the window currently owns a render surface.
+    #[cfg(target_os = "android")]
+    pub(crate) fn has_surface(&self) -> bool {
+        self.surface
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some()
+    }
+
+    /// Release Android's native surface before the suspended callback returns.
+    /// Device resources survive; no acquisition can recreate the surface until
+    /// the next resumed callback explicitly restores it.
+    /// https://docs.rs/winit/0.30.13/winit/application/trait.ApplicationHandler.html#method.suspended
+    #[cfg(target_os = "android")]
+    pub(crate) fn suspend_surface(&mut self) {
+        drop(
+            self.surface
+                .get_mut()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take(),
+        );
+    }
+
+    /// Rebuild the swapchain against the window's current native surface.
+    ///
+    /// Android destroys the activity's surface when the screen turns off or the
+    /// app goes to the background, and winit's `Window` reports the replacement
+    /// native handle once it is resumed. A wgpu surface keeps the handle it was
+    /// created with, so it can never present again — reconfiguring it is not
+    /// enough, it has to be replaced.
+    /// Retain the configured dimensions here: the app's existing resize owner
+    /// updates the depth and offscreen targets together with the surface.
+    #[cfg(target_os = "android")]
+    pub(crate) fn restore_surface(&mut self) -> anyhow::Result<()> {
+        let slot = self
+            .surface
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner);
+        if slot.is_some() {
+            return Ok(());
+        }
+        let surface = self
+            .instance
+            .create_surface(self.window.clone())
+            .context("recreate the wgpu surface after a resume")?;
+        surface.configure(&self.device, &self.config);
+        *slot = Some(surface);
+        log::info!(
+            "Surface restored at {}x{}",
+            self.config.width,
+            self.config.height
+        );
+        Ok(())
     }
 
     /// Handle window resize — reconfigure the surface with new dimensions.
@@ -461,10 +534,13 @@ impl GpuContext {
         }
         self.config.width = width;
         self.config.height = height;
-        self.surface
+        if let Some(surface) = self
+            .surface
             .get_mut()
             .unwrap_or_else(PoisonError::into_inner)
-            .configure(&self.device, &self.config);
+        {
+            surface.configure(&self.device, &self.config);
+        }
         if let Some(target) = &mut self.capture_target {
             target.resize(&self.device, &self.config);
         }
@@ -487,10 +563,13 @@ impl GpuContext {
     /// occlusion skip this redraw. Validation failures remain errors.
     /// https://docs.rs/wgpu/30.0.1/wgpu/enum.CurrentSurfaceTexture.html
     pub fn acquire_frame(&self) -> Result<Option<GpuFrame>> {
+        let mut surface = self.surface.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(surface) = surface.as_mut() else {
+            return Ok(None);
+        };
         if let Some(target) = &self.capture_target {
             return Ok(Some(target.frame()));
         }
-        let mut surface = self.surface.lock().unwrap_or_else(PoisonError::into_inner);
         acquire_with_recovery(|recovery| {
             if let Some(recovery) = recovery {
                 log::warn!(
@@ -683,7 +762,7 @@ mod tests {
     #[test]
     #[ignore = "requires a wgpu adapter for hidden capture frame readback"]
     fn hidden_capture_frame_renders_reads_back_and_resizes_without_a_swapchain() {
-        use crate::render::frame_readback::PendingBgra8Readback;
+        use crate::render::frame_readback::PendingTextureReadback;
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
@@ -738,7 +817,7 @@ mod tests {
                         multiview_mask: None,
                     });
                 }
-                let pending = PendingBgra8Readback::encode(
+                let pending = PendingTextureReadback::encode(
                     &device,
                     &mut encoder,
                     &frame.texture,

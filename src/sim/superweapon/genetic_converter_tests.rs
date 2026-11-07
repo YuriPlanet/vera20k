@@ -408,7 +408,9 @@ fn the_mutation_arm_matches_native() {
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             let index = terrain.index(cell.0, cell.1).unwrap();
             let foot = row["foot_cost"].as_f64().unwrap();
-            terrain.cells_mut_for_test()[index].speed_costs.foot = Some((foot * 100.0) as u8);
+            terrain.cells_mut_for_test()[index].speed_costs.foot = Some(
+                crate::util::native_x87::NativeF32Bits::from_bits((foot as f32).to_bits()),
+            );
         }
         let victim = sim
             .construct_object_limbo_at_height(

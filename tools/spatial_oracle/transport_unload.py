@@ -5,6 +5,8 @@ Default: four independent hull/turret state-1 controls in the existing dock VM.
 physical Anytown crop, using its original type/actor/locomotor/placement owners.
 --deploy-event: ordinary ground-transport D producer, Event9 receiver and empty
 Unload admission components in the same existing dock VM.
+--building-garrison-deploy: stock occupied CAHSE01 D/Event9 components using
+the existing garrison reader and constructed Building/Infantry fixture.
 See transport_unload.md for supplied boundaries and input preparation.
 """
 from pathlib import Path
@@ -190,7 +192,7 @@ def _deploy_fixture(mission, cargo):
     return u, call, read
 
 
-def _deploy_trace(u, read):
+def _deploy_trace(u, read, *, extra_specs=None):
     from unicorn import UC_HOOK_CODE
     from unicorn.x86_const import UC_X86_REG_ESP
     from tools.native_oracle import NativeCallTrace
@@ -214,6 +216,7 @@ def _deploy_trace(u, read):
         0x4061D0: ('sound_sample_volume', 0, 0),
         0x406270: ('play_sound_sample', 0, 0),
     }
+    specs.update(extra_specs or {})
     trace = NativeCallTrace(u, read)
 
     def observe(_u, pc, _size, _data):
@@ -309,30 +312,37 @@ def deploy_event_control(mission, cargo):
     return result
 
 
-def deploy_key_producer(cargo):
+def _selected_deploy_key(u, read, actor, house, items, required_addresses):
+    """Original730AF0 selected-actor prefix; stop before event encoding."""
     from tools.native_oracle import RET_MAGIC
-    from tools.spatial_oracle import refinery_dock as rd
     from tools.spatial_oracle.unit_scatter_state import SP
 
-    u, _call, read = _deploy_fixture(5, cargo)
-    text = bytes(u.mem_read(0x401000, 0x3E0000))
-    items = rd.EXTRA + 0x2C800
-    for address, value in ((0xA83D4C, rd.HOUSE), (0xA8ECC8, 1),
-                           (0xA8ECBC, items), (items, rd.ACTOR)):
+    for address, value in ((0xA83D4C, house), (0xA8ECC8, 1),
+                           (0xA8ECBC, items), (items, actor)):
         u.mem_write(address, dwords(value))
-    u.mem_write(rd.ACTOR + 0x83, b'\x01')
-    u.mem_write(rd.TYPE + 0x230, b'\x01')
-    trace = _deploy_trace(u, read)
+    u.mem_write(actor + 0x83, b'\x01')
     u.mem_write(SP, dwords(RET_MAGIC))
     u.reg_write(UC_X86_REG_ESP, SP)
     stop = run_checked(u, 0x730AF0, (RET_MAGIC, 0x6FFE00), count=200000,
-                       required_addresses=[0x730AF0, 0x700D50])
+                       required_addresses=[0x730AF0, *required_addresses])
+    opcode = read(u.reg_read(UC_X86_REG_ESP) + 4) if stop == 0x6FFE00 else None
+    return stop, opcode
+
+
+def deploy_key_producer(cargo):
+    from tools.spatial_oracle import refinery_dock as rd
+
+    u, _call, read = _deploy_fixture(5, cargo)
+    text = bytes(u.mem_read(0x401000, 0x3E0000))
+    u.mem_write(rd.TYPE + 0x230, b'\x01')
+    trace = _deploy_trace(u, read)
+    stop, opcode = _selected_deploy_key(u, read, rd.ACTOR, rd.HOUSE,
+                                      rd.EXTRA + 0x2C800, [0x700D50])
     trace.returned(stop, u.reg_read(UC_X86_REG_ESP))
     assert not trace.pending
     assert bytes(u.mem_read(0x401000, 0x3E0000)) == text
     return dict(cargo=cargo, stop=hex(stop),
-                event_opcode=read(u.reg_read(UC_X86_REG_ESP) + 4)
-                    if stop == 0x6FFE00 else None,
+                event_opcode=opcode,
                 calls=_deploy_calls(trace))
 
 
@@ -411,7 +421,182 @@ def deploy_event_metadata():
             'promotion, full pathfinding or death mechanism.'])
 
 
+def _building_garrison_actor(inputs):
+    from tools.spatial_oracle import building_construction as bc
+    from tools.spatial_oracle import building_death_anims as gd
+    from tools.spatial_oracle import engineer_repair_admission as er
+
+    f = gd.joined_fixture(inputs, 374, seed=31, building_ai=True, unit_startup=True)
+    u, read = f.u, f.read32
+    u.mem_write(0xA8B238, dwords(5))  # Explicit Skirmish runtime prior.
+    actor = f.allocate(0x800)
+    f.building('CAHSE01', actor, f.allocate(0x20), constructor_only=True)
+    position = f.allocate(12)
+    u.mem_write(position, dwords(18 * 256 + 128, 16 * 256 + 128, 0))
+    unlimbo = bc.invoke(u, 0x440580, actor, position, 0)
+    assert unlimbo & 255 == 1
+    bc.invoke(u, 0x44D6A0, actor, 0, 1)
+    bc.run_block(u, actor, bc.QUEUED_BSTATE, ebp=-1)
+    bc.invoke(u, 0x4509D0, actor)
+    bc.invoke(u, 0x5B3570, actor)
+    # Native unoccupied StupidGuard dispatch establishes its100-frame clock.
+    # This is explicit setup, not a full Ready/Logic or boarding history.
+    bc.invoke(u, 0x5B3060, actor)
+    assert read(actor + 0xAC) == 5 and read(actor + 0xD0) == 100
+    foot = f.allocate(0x800)
+    bc.invoke(u, 0x517A50, foot, f.types['E1'], er.HOUSE)
+    vector = actor + 0x684
+    resized = bc.invoke(u, read(read(vector) + 8), vector, 1, 0)
+    assert resized & 255 == 1
+    # Original storage resize; supplied already-garrisoned membership follows
+    # garrison_fatal_execute. No entrance/ownership-transfer claim follows.
+    u.mem_write(read(actor + 0x688), dwords(foot))
+    u.mem_write(actor + 0x694, dwords(1))
+    u.mem_write(foot + 0x9C, bytes(u.mem_read(actor + 0x9C, 12)))
+    u.mem_write(foot + 0x11C, dwords(actor))
+    u.mem_write(foot + 0xAC, dwords(5))
+    assert read(actor) == 0x7E3EBC and read(actor + 0x21C) == er.HOUSE
+    assert read(actor + 0x534) == 1
+    assert u.mem_read(actor + 0x90, 1) == b'\1' and u.mem_read(actor + 0x81, 1) == b'\0'
+    operational = read(read(actor) + 0x350)
+    assert operational == 0x4555D0
+    operational_result = bc.invoke(u, operational, actor)
+    assert operational_result & 255 == 1
+    assert u.mem_read(read(actor + 0x520) + 0x16BD, 1) == b'\0'
+    assert u.mem_read(read(actor + 0x520) + 0x16B9, 1) == b'\0'
+    # Building vtable+408 is GetOccupantCount; Type instance+408 is unrelated.
+    assert read(read(actor) + 0x408) == 0x4581F0
+    occupants = bc.invoke(u, 0x4581F0, actor)
+    assert occupants == 1
+    u.mem_write(bc.FRAME, dwords(1))
+    assert f.code_unchanged()
+    return f, actor
+
+
+def _building_garrison_state(f, actor):
+    read = f.read32
+    signed = lambda offset: struct.unpack('<i', f.u.mem_read(actor + offset, 4))[0]
+    return dict(target_is_set=bool(read(actor + 0x2B4)),
+                current_mission=signed(0xAC), queued_mission=signed(0xB4),
+                occupants=read(actor + 0x694), status=signed(0xBC),
+                ready=bool(f.u.mem_read(actor + 0x6DD, 1)[0]),
+                burst=read(actor + 0x3B8), archive=read(actor + 0x218),
+                clock=(signed(0xC8), signed(0xD0)))
+
+
+def _building_garrison_component(inputs, name):
+    from tools import native_oracle as native
+    from tools.spatial_oracle import building_construction as bc
+    from tools.spatial_oracle import engineer_repair_admission as er
+    from tools.spatial_oracle import refinery_dock as rd
+    from tools.spatial_oracle.building_body_rules import SP
+
+    f, actor = _building_garrison_actor(inputs)
+    u, read = f.u, f.read32
+    destination = read(read(actor) + 0x480)
+    target = read(read(actor) + 0x3C8)
+    assert (destination, target) == (0x455D50, 0x443B90)
+    initial_target = rd.cell(22, 16) if name == 'existing_cell_target' else 0
+    bc.invoke(u, target, actor, initial_target)
+    assert read(actor + 0x2B4) == initial_target
+    trace = _deploy_trace(u, read, extra_specs={
+        destination: ('building_assign_destination', 2, 8),
+        target: ('building_assign_target', 1, 4),
+        0x4581F0: ('building_occupant_count', 0, 0),
+    })
+    before, rng = _building_garrison_state(f, actor), f.rng()
+    assert before['current_mission'] == 5 and before['queued_mission'] == -1
+    assert before['occupants'] == 1
+    if name == 'producer':
+        stop, opcode = _selected_deploy_key(u, read, actor, er.HOUSE,
+                                          f.allocate(4), [0x4581F0])
+        assert stop == 0x6FFE00
+        result = dict(event_opcode=opcode)
+    else:
+        # Resolved actor supplied after token/planning work, as --deploy-event.
+        u.mem_write(SP, bytes(0x100))
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_ESI, actor)
+        stop = run_checked(u, 0x4C76D7, (0x4C7818, 0x4C8109), count=300000,
+                           required_addresses=[0x65ACB0, destination, target, 0x5B35E0])
+        assert stop == 0x4C7818
+        result = dict(name=name)
+    trace.returned(stop, u.reg_read(UC_X86_REG_ESP))
+    assert not trace.pending
+    after = _building_garrison_state(f, actor)
+    for key in ('current_mission', 'occupants', 'status', 'ready', 'burst', 'archive', 'clock'):
+        assert after[key] == before[key], (name, key, before[key], after[key])
+    assert f.rng() == rng
+    assert f.code_unchanged()
+    for table in (0x7E3EBC, 0x7EB058):
+        assert bytes(u.mem_read(table, 0x600)) == native.file_span(native.image_bytes(), table, 0x600)[1]
+    if name == 'producer':
+        assert after == before
+        assert [(row['name'], row['args']) for row in trace.calls] == [
+            ('building_occupant_count', [])]
+    else:
+        calls = [(row['name'], row['args']) for row in trace.calls]
+        assert calls == [('over_out_first_contact', [3]),
+                         ('building_assign_destination', [0, 1]),
+                         ('building_assign_target', [0]),
+                         ('techno_assign_target', [0]), ('queue_mission', [16, 0])]
+        result.update({key: after[key] for key in ('target_is_set', 'queued_mission', 'occupants')})
+    return result
+
+
+def building_garrison_deploy_controls():
+    import os
+    from tools.spatial_oracle import building_death_anims as gd
+
+    inputs = gd.garrison_fatal_inputs(Path(os.environ['VERA20K_BUILDING_DEATH_ASSETS']))
+    return dict(producer=_building_garrison_component(inputs, 'producer'),
+                receiver=[_building_garrison_component(inputs, name)
+                          for name in ('null_target', 'existing_cell_target')])
+
+
+def building_garrison_deploy_metadata():
+    from tools.spatial_oracle import building_death_anims as gd
+
+    metadata = provenance(
+        scope='Stock CAHSE01/E1 selected Building D producer and two resolved Event9 target-clear/Queue controls.',
+        entry_points=dict(deploy_command=0x730AF0, event_producer=0x6FFE00,
+                          deploy_receiver=0x4C76D7, deploy_receiver_stop=0x4C7818,
+                          building_ctor=0x43B740, building_unlimbo=0x440580,
+                          infantry_ctor=0x517A50, building_operational=0x4555D0,
+                          occupant_count=0x4581F0, building_destination=0x455D50,
+                          building_target=0x443B90, techno_target=0x6FCDB0, queue=0x5B35E0),
+        assumptions=[
+            'Reuse garrison_fatal_inputs/joined_fixture original selected Rules/ART readers, '
+            'CAHSE01/E1 constructors, flat32-cell map, House and successful allocations. '
+            'RULESMD, optional LANGRULE, MPBattleMD and Hills.map layers; ARTMD separate.',
+            'Runtime gameMode5, original Unlimbo18,16, explicit Idle/body transition/Commence '
+            'and unoccupied Guard dispatch establish current5/pending-1/clock0+100 at frame1. '
+            'Original occupant-vector resize precedes supplied one-E1 garrison membership, '
+            'stored position and Transporter; no natural boarding or ownership transfer.',
+            'Producer supplies singleton selection/local House and stops before encoding. '
+            'Receivers supply the resolved actor after token/planning prefix; original '
+            'class/lifecycle/factory gates and all setters/Queue execute. One begins NULL, '
+            'the other with Cell22,16 accepted by the original Building target setter.',
+            'Each component asserts unchanged current Guard5, occupants1, status/ready/'
+            'burst/archive/clock, all three full RNG states, executable sections and '
+            'Building/Infantry primary tables. Traced call sequence excludes RNG/detach. '
+            'No-contact/burst0 inputs do not establish live-contact or fired-burst effects.',
+            'No post-event Commence, Mission_Unload, later world tick, whole UI/delivery '
+            'or complete frame equivalence. Corpus retains only Rust-consumed outcomes.'],
+        substitutions=gd.joined_metadata()['substitutions'])
+    metadata['evidence_sidecar'] = 'transport_unload.md#building-garrison-deploy'
+    return metadata
+
+
 if __name__ == '__main__':
+    if '--building-garrison-deploy' in sys.argv:
+        if {'--deploy-event', '--retail'} & set(sys.argv):
+            raise SystemExit('Select one native corpus mode')
+        finish_vectors(building_garrison_deploy_controls,
+            Path(__file__).with_name('building_garrison_deploy.json'),
+            argv=[arg for arg in sys.argv[1:] if arg != '--building-garrison-deploy'],
+            provenance=building_garrison_deploy_metadata)
+        raise SystemExit(0)
     if '--deploy-event' in sys.argv:
         if '--retail' in sys.argv:
             raise SystemExit('--deploy-event and --retail select different corpora')

@@ -1083,7 +1083,6 @@ fn native_deploy_rules(input: &serde_json::Value) -> RuleSet {
                 && input["area_slot"].as_i64().unwrap_or(1) == 1
         ),
     ));
-    let mut rules = RuleSet::from_ini(&ini).unwrap();
     let mut counts = [input["count"].as_i64().unwrap_or(6) as i32; 42];
     for record in input["counts"].as_array().into_iter().flatten() {
         counts[record[0].as_u64().unwrap() as usize] = record[1].as_i64().unwrap() as i32;
@@ -1096,14 +1095,8 @@ fn native_deploy_rules(input: &serde_json::Value) -> RuleSet {
         text.push_str(&format!("{name}=100,{count},6\n"));
     }
     let art = IniFile::from_str(&text);
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.replace_art_registry_for_test(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    let sequences = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art);
-    rules.replace_animation_sequences_for_test(
-        crate::rules::animation_sequence::build_animation_sequence_catalog(
-            &rules,
-            Some(&sequences),
-        ),
-    );
     rules
 }
 

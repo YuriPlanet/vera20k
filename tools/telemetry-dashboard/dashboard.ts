@@ -786,6 +786,10 @@ function buildTimingSlices(
     { key: "rnd.ui", ms: render.ui_ms, color: "#2f6fb0" },
     { key: "rnd.sidebar", ms: render.sidebar_ms, color: "#3f9f5f" },
     { key: "rnd.upload", ms: render.upload_ms, color: "#d94f5c" },
+    { key: "rnd.lights", ms: render.lights_ms, color: "#f2d34f" },
+    { key: "rnd.effects", ms: render.effects_ms, color: "#e05fb0" },
+    { key: "rnd.drawCalls", ms: render.draw_calls_ms, color: "#7fa7d9" },
+    { key: "rnd.handoff", ms: render.handoff_ms, color: "#c46a3a" },
     { key: "rnd.other", ms: render.other_ms, color: "#9a9a9a" },
   ] : [];
   return {

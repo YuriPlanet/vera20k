@@ -15,8 +15,10 @@ use thiserror::Error;
 
 use crate::rules::flh::Flh;
 use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::rules::native_processing::anim_type_runtime_key;
 use crate::rules::object_type::{BuildingHiddenOccupancyProfile, HIDDEN_OCCUPY_SLOT_COUNT};
 use crate::util::lookup_hash::LookupMap;
+use crate::util::native_string::with_ascii_uppercase;
 use crate::util::native_x87::NativeF64Bits;
 
 /// A war factory's unload art, read by `BuildingTypeClass::LoadVisualAssets
@@ -324,9 +326,15 @@ pub struct AnimTypeRuntimeConfig {
     /// contained tiberium value at which a `HideIfNoOre=` anim still draws.
     #[cfg(feature = "phobos")]
     pub hide_if_no_ore_threshold: i32,
-    /// Read only by `Anims_Refresh_Tiberium_LightConverts @ 0x004261D0` after a
-    /// save load (0x006851B1), for anims `OverlayClass::Mark` creates from
-    /// `CellAnim=` (0x005FD1E7). Not ported: retail sets no `CellAnim=`.
+    /// art.ini `IsAnimatedTiberium=`, `AnimTypeClass+0x360`, read only by
+    /// `Anims_Refresh_Tiberium_LightConverts @ 0x004261D0` after a save load
+    /// (`Post_Load_Game`, `0x006851B1`). That pass gives every live anim of
+    /// such a type standing on tiberium the tiberium's ColorScheme Convert
+    /// (`+0xD4`), however the anim was made.
+    /// RESIDUAL (dormant): not ported, so after a load such an anim keeps the
+    /// palette it was saved with. Only maps and mods reach it: retail's one
+    /// such type, BIGBLUE, is never spawned (its `CellAnim=` lines are
+    /// commented out). Nothing in gameplay reads the Convert.
     pub is_animated_tiberium: bool,
     pub tiberium_spread_radius: i32,
     /// The Type references (`TiberiumSpawnType=`, `Spawns=`, `Warhead=`,
@@ -910,11 +918,13 @@ pub struct ResolvedObjectArt<'a> {
 /// Lookup table for art.ini rendering data.
 #[derive(Debug, Clone)]
 pub struct ArtRegistry {
-    /// Exact ART section -> its sole metadata entry.
-    entries: HashMap<String, ArtEntry>,
+    /// Exact ART section -> its sole metadata entry. Both maps are only
+    /// looked up, and draws look art up for every object each frame, so they
+    /// take the lookup hasher.
+    entries: LookupMap<String, ArtEntry>,
     /// Derived uppercase lookup -> exact entry key for legacy visual consumers.
     /// Rebuilt with entries; preserves their former last-wins folded lookup.
-    entry_names: HashMap<String, String>,
+    entry_names: LookupMap<String, String>,
     /// section ID (uppercase) -> `CanHideThings=`. Missing sections default true.
     can_hide_things: HashMap<String, bool>,
     /// section ID (uppercase) -> `OccupyHeight=`, defaulting to art `Height=`.
@@ -922,7 +932,7 @@ pub struct ArtRegistry {
     /// section ID (uppercase) -> generic AnimType runtime metadata. Every
     /// anim reads its type's here each frame; only looked up.
     anim_runtime_configs: LookupMap<String, AnimTypeRuntimeConfig>,
-    /// First native Anim slot's immutable image projection. Unlike orphan
+    /// Each native Anim slot's immutable image projection. Unlike orphan
     /// ART metadata, these requests came from the retained ProcessedType.
     anim_type_images: HashMap<String, crate::rules::object_image::ObjectImageState>,
     /// Fresh AnimType `(Theater, NewTheater)` after the Image and own ART reads.
@@ -1049,8 +1059,8 @@ pub(crate) fn read_infantry_discharge_frames(section: &IniSection, frames: &mut 
 impl ArtRegistry {
     /// Parse all sections from an art.ini IniFile into the registry.
     pub fn from_ini(ini: &IniFile) -> Self {
-        let mut entries: HashMap<String, ArtEntry> = HashMap::new();
-        let mut entry_names: HashMap<String, String> = HashMap::new();
+        let mut entries: LookupMap<String, ArtEntry> = LookupMap::default();
+        let mut entry_names: LookupMap<String, String> = LookupMap::default();
         let mut can_hide_things: HashMap<String, bool> = HashMap::new();
         let mut occupy_heights: HashMap<String, i32> = HashMap::new();
         let mut anim_runtime_configs: LookupMap<String, AnimTypeRuntimeConfig> =
@@ -1335,8 +1345,8 @@ impl ArtRegistry {
     /// Create an empty registry (used when art.ini is unavailable).
     pub fn empty() -> Self {
         ArtRegistry {
-            entries: HashMap::new(),
-            entry_names: HashMap::new(),
+            entries: LookupMap::default(),
+            entry_names: LookupMap::default(),
             can_hide_things: HashMap::new(),
             occupy_heights: HashMap::new(),
             anim_runtime_configs: LookupMap::default(),
@@ -1349,9 +1359,7 @@ impl ArtRegistry {
 
     /// Look up art entry for an image ID (case-insensitive).
     pub fn get(&self, image_id: &str) -> Option<&ArtEntry> {
-        self.entry_names
-            .get(&image_id.to_uppercase())
-            .and_then(|name| self.entries.get(name))
+        folded_entry_name(&self.entry_names, image_id).and_then(|name| self.entries.get(name))
     }
 
     /// Native Foundation474DA0 uses exact section/key identity. The cached
@@ -1383,17 +1391,29 @@ impl ArtRegistry {
     /// Building/weapon references allocated after the AnimType sweep retain
     /// constructor state even when a same-named ART section exists.
     pub fn apply_anim_type_read_states(&mut self, states: &[(String, bool)]) {
-        let mut seen = BTreeSet::new();
-        for (name, read) in states {
-            let key = name.to_ascii_uppercase();
-            // Find returns the first slot when native truncated IDs collide.
-            if !seen.insert(key.clone()) || *read {
-                continue;
+        // Read every ART template before publishing any constructor-only
+        // slot, which must not overwrite a later twin's reached ART body.
+        let configs: Vec<_> = states
+            .iter()
+            .map(|(name, read)| {
+                if *read {
+                    self.anim_runtime_config(name).cloned()
+                } else {
+                    let mut config = parse_anim_runtime_config(&IniSection::new(name.clone()));
+                    config.art_body_read = false;
+                    config.image = name.clone();
+                    Some(config)
+                }
+            })
+            .collect();
+        for (index, config) in configs.into_iter().enumerate() {
+            if let Some(config) = config {
+                let key =
+                    anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
+                        .unwrap()
+                        .to_ascii_uppercase();
+                self.anim_runtime_configs.insert(key, config);
             }
-            let mut config = parse_anim_runtime_config(&IniSection::new(name.clone()));
-            config.art_body_read = false;
-            config.image = name.clone();
-            self.anim_runtime_configs.insert(key, config);
         }
     }
 
@@ -1405,11 +1425,10 @@ impl ArtRegistry {
         states: &[(String, crate::rules::object_image::ObjectImageState)],
     ) {
         self.anim_type_images.clear();
-        for (name, image) in states {
-            let key = name.to_ascii_uppercase();
-            if self.anim_type_images.contains_key(&key) {
-                continue;
-            }
+        for (index, (_, image)) in states.iter().enumerate() {
+            let key = anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
+                .unwrap()
+                .to_ascii_uppercase();
             if let Some(config) = self.anim_runtime_configs.get_mut(&key) {
                 config.image = image.image().to_owned();
             }
@@ -1429,8 +1448,8 @@ impl ArtRegistry {
     }
 
     /// Apply the canonical RulesClass processing receipt's AnimType references
-    /// ([`AnimTypeReferences`]), in AnimType registry order. A name's first
-    /// slot wins, as in [`Self::apply_anim_type_read_states`]; a type whose
+    /// ([`AnimTypeReferences`]), in AnimType registry order. Each slot has the
+    /// same identity as [`Self::apply_anim_type_read_states`]; a type whose
     /// ART body was never read carries the constructor's nulls.
     ///
     /// [`AnimTypeReferences`]: crate::rules::native_processing::AnimTypeReferences
@@ -1438,12 +1457,10 @@ impl ArtRegistry {
         &mut self,
         states: &[(String, crate::rules::native_processing::AnimTypeReferences)],
     ) {
-        let mut seen = BTreeSet::new();
-        for (name, references) in states {
-            let key = name.to_ascii_uppercase();
-            if !seen.insert(key.clone()) {
-                continue;
-            }
+        for (index, (_, references)) in states.iter().enumerate() {
+            let key = anim_type_runtime_key(states.iter().map(|(name, _)| name.as_str()), index)
+                .unwrap()
+                .to_ascii_uppercase();
             if let Some(config) = self.anim_runtime_configs.get_mut(&key) {
                 references.apply_to(config);
             }
@@ -1844,7 +1861,16 @@ impl ArtRegistry {
         type_id: &str,
         rules_image: &str,
     ) -> Option<&'a ArtEntry> {
-        self.resolve_object_art(type_id, rules_image).entry
+        // `resolve_object_art`'s entry without building its owned ids: the
+        // rules Image's section, else the type's own. Draws ask this for
+        // every object each frame. Uppercasing an ASCII id twice changes
+        // nothing; other ids take the full path.
+        let image = rules_image.trim();
+        if !(type_id.is_ascii() && image.is_ascii()) {
+            return self.resolve_object_art(type_id, rules_image).entry;
+        }
+        let base = if image.is_empty() { type_id } else { image };
+        self.get(base).or_else(|| self.get(type_id))
     }
 
     /// Resolve the effective image id for an object.
@@ -2012,7 +2038,7 @@ impl ArtRegistry {
 
     /// Mutable lookup; case-insensitive on the key.
     pub fn get_mut(&mut self, image_id: &str) -> Option<&mut ArtEntry> {
-        let name = self.entry_names.get(&image_id.to_uppercase())?;
+        let name = folded_entry_name(&self.entry_names, image_id)?;
         self.entries.get_mut(name)
     }
 
@@ -2469,6 +2495,19 @@ fn apply_generic_letter(name: &str) -> String {
     let mut chars: Vec<char> = name.chars().collect();
     chars[1] = NEW_THEATER_GENERIC_LETTER;
     chars.into_iter().collect()
+}
+
+/// The exact section `image_id` folds to (`str::to_uppercase`). An ASCII id,
+/// whose Unicode uppercase is its ASCII one, is folded on the stack.
+fn folded_entry_name<'a>(
+    names: &'a LookupMap<String, String>,
+    image_id: &str,
+) -> Option<&'a String> {
+    if image_id.is_ascii() {
+        with_ascii_uppercase(image_id, |key| names.get(key))
+    } else {
+        names.get(&image_id.to_uppercase())
+    }
 }
 
 fn normalize_id(value: &str) -> Option<String> {

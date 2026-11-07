@@ -28,8 +28,13 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
     };
     let mode =
         crate::rules::retail_sources::select_mode_ini(&assets, Some("MPBattleMD.ini")).unwrap();
-    let prepared =
-        prepare_random_map_generation(&mut assets, &options, Some(&owner), mode.as_ref()).unwrap();
+    let prepared = prepare_random_map_generation(
+        &mut assets,
+        &options,
+        RandomMapRulesPreparation::ReadOnly(Some(&owner)),
+        mode.as_ref(),
+    )
+    .unwrap();
     let decision = RandomMapGenerationRetention::default().map_storage_decision(&options);
     let receiver = spawn_random_map_generation_worker(
         options.clone(),
@@ -175,7 +180,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
     let preview = crate::map::rmg::preview::render_preview(&final_colors, &[]).unwrap();
     let directory = crate::map::source::test_support::TestDirectory::new("terrain-preview");
     let mut modal = Some(crate::ui::skirmish_shell::RandomMapSetupModalState::open(
-        options, None, false,
+        options, None, false, true,
     ));
     modal
         .as_mut()
