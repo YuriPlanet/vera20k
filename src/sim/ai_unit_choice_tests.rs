@@ -51,6 +51,12 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
             .unwrap()
             .is_empty()
     );
+    // Installed Ares CanBuild10024090 (hook 0x4F7870) -> PrereqValidate10021B00
+    // asks HasFactory for computer houses too, where stock 0x004F7B5C answers
+    // them 1 before any factory; the replacement GI needs a real barracks.
+    #[cfg(feature = "ares")]
+    sim.spawn_object("GAPILE", "Americans", 20, 20, 0, &rules)
+        .unwrap();
     // Physical AIMD: Allied Base Guard - Refine needs three E1 and three GGI.
     let team_type = sim.interner.get("06175EFC-G").unwrap();
     sim.create_team(team_type, Some(owner), &rules).unwrap();
