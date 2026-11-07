@@ -548,6 +548,7 @@ pub(crate) fn collect_area(
             impact_z,
         },
         world.session.no_damage(),
+        world.session.truce_harvester_types(rules, &world.interner),
     ) else {
         return combat_aoe::AoEDamageResult::default();
     };

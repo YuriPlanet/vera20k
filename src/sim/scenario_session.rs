@@ -696,9 +696,11 @@ pub struct ScenarioDescriptor {
     /// session's Harvester Truce byte `0x00A8B31D` in this bit
     /// (`0x005E7495..0x005E74D4`). The skirmish dialog clears the truce byte
     /// (`0x006AD89D`), so every skirmish leaves it off; LAN/WOL lobbies can
-    /// set it. Its reader is `Evaluate_Candidate`'s HarvesterImmune gate
-    /// (`0x006F8009..0x006F8047`): while set, a candidate whose type is in
-    /// Rules' `HarvesterUnit=` list is refused.
+    /// set it. While set, a Unit whose type is in Rules' `HarvesterUnit=`
+    /// list ([`Self::truce_harvester_types`]) is refused by
+    /// `Evaluate_Candidate` (`0x006F8009..0x006F8047`) and gets no
+    /// `Apply_area_damage` record (`0x00489710..0x00489759`); the
+    /// hunter-seeker skips `Harvester=` units (`0x004CFFB9`).
     pub harvester_immune: bool,
     /// Map-authored global-light profiles plus their tick-zero mutable state.
     pub lighting: ScenarioLightingState,
@@ -990,6 +992,25 @@ impl ScenarioSession {
 
     pub const fn harvester_immune(&self) -> bool {
         self.harvester_immune
+    }
+
+    /// The Rules `[General] HarvesterUnit=` types (`+0xB3C`, filled at
+    /// `0x0066F973`, VehicleTypes only) that bit `0x800` protects, as
+    /// interned ids for native's type-pointer compares; empty while the bit
+    /// is clear.
+    pub fn truce_harvester_types(
+        &self,
+        rules: &crate::rules::ruleset::RuleSet,
+        interner: &crate::sim::intern::StringInterner,
+    ) -> Vec<InternedId> {
+        if !self.harvester_immune {
+            return Vec::new();
+        }
+        rules
+            .harvester_unit_types
+            .iter()
+            .filter_map(|type_id| interner.get(type_id))
+            .collect()
     }
 
     pub const fn lighting(&self) -> &ScenarioLightingState {

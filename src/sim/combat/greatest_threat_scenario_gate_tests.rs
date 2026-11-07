@@ -1,7 +1,8 @@
 //! The underground (`0x006F7E11..0x006F7E1E`), campaign discovery
 //! (`0x006F81BE..0x006F81F4`) and HarvesterImmune (`0x006F8009..0x006F8047`)
 //! candidate gates, through the production scan owner against retail rules
-//! and the retail `[General] HarvesterUnit=` list.
+//! and the retail `[General] HarvesterUnit=` list, plus HarvesterImmune's
+//! area-damage receiver skip (`0x00489710..0x00489759`).
 
 use super::*;
 use crate::sim::combat::threat_range::ScanMission;
@@ -213,6 +214,45 @@ fn retail_guard_scan_skips_a_harvester_while_scenario_bit_800_is_set() {
         Some(rhino),
         "bit set: a non-harvester tank is not refused"
     );
+}
+
+/// Scenario bit `0x800` in Apply_area_damage (`0x00489710..0x00489759`): a
+/// shell landing on an enemy harvester records no hit on it while the bit is
+/// set, and does with the bit clear; a tank in its place is hit either way.
+#[test]
+fn retail_area_damage_skips_a_harvester_while_scenario_bit_800_is_set() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let warhead = rules.warhead("HE").unwrap();
+    for (target_type, immune, hit) in [
+        ("HARV", false, true),
+        ("HARV", true, false),
+        ("HTNK", true, true),
+    ] {
+        let (mut sim, _, target) = rival_pair(rules, "MTNK", target_type);
+        sim.session.set_harvester_immune_for_test(immune);
+        let he = sim.interner.intern("HE");
+        let area = crate::sim::combat::world_receiver::collect_area(
+            &mut sim,
+            rules,
+            None,
+            (18, 16),
+            100,
+            warhead,
+            false,
+            (crate::sim::combat::RAD_NO_ATTACKER, None, he),
+            None,
+            0,
+            crate::sim::world::FrameEffects::default(),
+        );
+        assert_eq!(
+            area.hits.iter().any(|event| event.target_id == target),
+            hit,
+            "{target_type}, bit 0x800 {immune}"
+        );
+    }
 }
 
 /// The underground gate (`0x006F7E11..0x006F7E1E`): a candidate whose
