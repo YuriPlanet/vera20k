@@ -63,9 +63,11 @@ impl<'a> EntryReadContext<'a> {
 
     fn entry_cell(&self, cell: Cell) -> EntryCell {
         match (cell, self.facts) {
-            (Cell::Real(index), Some(facts)) => {
-                EntryCell::Kept(facts.cell(index, || CellFacts::of(self.sim, index)))
-            }
+            (Cell::Real(index), Some(facts)) => facts.cell(
+                index,
+                || CellFacts::of(self.sim, index),
+                |&kept| EntryCell::Kept(kept),
+            ),
             _ => EntryCell::Live(cell),
         }
     }
@@ -73,11 +75,17 @@ impl<'a> EntryReadContext<'a> {
     /// Real cell `index`'s [`PlainCell`], read through the batch's `facts`.
     fn plain_cell(&self, facts: &EntryFacts, index: usize) -> PlainCell {
         facts.plain(index, || {
-            PlainCell::new(
-                &facts.cell(index, || CellFacts::of(self.sim, index)),
-                self.terrain()
-                    .tube_for_native_cell(Cell::Real(index))
-                    .is_some(),
+            facts.cell(
+                index,
+                || CellFacts::of(self.sim, index),
+                |kept| {
+                    PlainCell::new(
+                        kept,
+                        self.terrain()
+                            .tube_for_native_cell(Cell::Real(index))
+                            .is_some(),
+                    )
+                },
             )
         })
     }
@@ -231,11 +239,12 @@ struct PreludeReads<'a> {
 }
 
 impl PreludeReads<'_> {
-    fn kept(&self, cell: Cell) -> Option<CellFacts> {
+    /// `see` of a real cell's kept facts, in a batch.
+    fn kept<R>(&self, cell: Cell, see: impl FnOnce(&CellFacts) -> R) -> Option<R> {
         let (Cell::Real(index), Some(facts)) = (cell, self.facts) else {
             return None;
         };
-        Some(facts.cell(index, || CellFacts::of(self.sim, index)))
+        Some(facts.cell(index, || CellFacts::of(self.sim, index), see))
     }
 }
 
@@ -250,15 +259,13 @@ impl PreludeCells for PreludeReads<'_> {
     }
 
     fn level_slope(&self, cell: Cell) -> (i32, u8) {
-        self.kept(cell).map_or_else(
-            || self.query.level_slope(cell),
-            |facts| (i32::from(facts.level), facts.slope),
-        )
+        self.kept(cell, |facts| (i32::from(facts.level), facts.slope))
+            .unwrap_or_else(|| self.query.level_slope(cell))
     }
 
     fn flags(&self, cell: Cell) -> u32 {
-        self.kept(cell)
-            .map_or_else(|| self.query.flags(cell), |facts| facts.flags)
+        self.kept(cell, |facts| facts.flags)
+            .unwrap_or_else(|| self.query.flags(cell))
     }
 }
 
@@ -897,10 +904,11 @@ fn plain_entry(
         return None;
     }
     if to.overlay() {
-        let overlay = facts
-            .cell(target, || CellFacts::of(live.sim, target))
-            .overlay
-            .overlay_id?;
+        let overlay = facts.cell(
+            target,
+            || CellFacts::of(live.sim, target),
+            |kept| kept.overlay.overlay_id,
+        )?;
         let flags = live.registry?.flags(overlay)?;
         if flags.crate_type || flags.wall {
             return None;

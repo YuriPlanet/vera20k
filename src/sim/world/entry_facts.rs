@@ -106,17 +106,26 @@ impl EntryFacts {
     }
 
     /// Real cell `index`'s facts, kept from this batch's first ask
-    /// ([`Self::keep`]).
-    pub(super) fn cell(&self, index: usize, read: impl Fn() -> CellFacts) -> CellFacts {
-        let facts = match self.cells[index].get() {
-            Some(&kept) => kept,
-            None => Self::keep(&self.cells[index], &self.cells_claimed, index, read()),
-        };
-        debug_assert!(
-            !crate::sim::touch_log::live_read_check_enabled() || facts == read(),
-            "real cell {index} changed during a path batch"
-        );
-        facts
+    /// ([`Self::keep`]), lent to `see`: most asks read a few fields of them.
+    pub(super) fn cell<R>(
+        &self,
+        index: usize,
+        read: impl Fn() -> CellFacts,
+        see: impl FnOnce(&CellFacts) -> R,
+    ) -> R {
+        Self::keep(
+            &self.cells[index],
+            &self.cells_claimed,
+            index,
+            &read,
+            |facts| {
+                debug_assert!(
+                    !crate::sim::touch_log::live_read_check_enabled() || *facts == read(),
+                    "real cell {index} changed during a path batch"
+                );
+                see(facts)
+            },
+        )
     }
 
     /// Real cell `index`'s [`PlainCell`], kept from this batch's first ask.
@@ -143,28 +152,42 @@ impl EntryFacts {
     /// The facts of the entity in `slot`, kept from this batch's first ask
     /// ([`Self::keep`]).
     pub(super) fn blocker(&self, slot: usize, read: impl Fn() -> BlockerFacts) -> BlockerFacts {
-        let facts = match self.blockers[slot].get() {
-            Some(&kept) => kept,
-            None => Self::keep(&self.blockers[slot], &self.blockers_claimed, slot, read()),
-        };
-        debug_assert!(
-            !crate::sim::touch_log::live_read_check_enabled() || facts == read(),
-            "the entity in slot {slot} changed during a path batch"
-        );
-        facts
+        Self::keep(
+            &self.blockers[slot],
+            &self.blockers_claimed,
+            slot,
+            &read,
+            |&facts| {
+                debug_assert!(
+                    !crate::sim::touch_log::live_read_check_enabled() || facts == read(),
+                    "the entity in slot {slot} changed during a path batch"
+                );
+                facts
+            },
+        )
     }
 
-    /// A search's `read` of entry `index`, which it keeps when it is the one
-    /// to claim the entry. Only that search sets `kept`, so the set never
-    /// waits, and a search asking before the set lands answers from its own
-    /// read instead of waiting for it. Each search reads before it claims,
-    /// so searches asking at once read side by side. Every read sees the one
-    /// unchanged world, so the answers are equal.
-    fn keep<T: Copy>(kept: &OnceLock<T>, claimed: &KeptBits, index: usize, read: T) -> T {
-        if claimed.claim(index) {
-            let _ = kept.set(read);
+    /// `see` of entry `index`'s kept facts, else of a search's own `read`,
+    /// which it keeps when it is the one to claim the entry. Only that search
+    /// sets `kept`, so the set never waits, and a search asking before the
+    /// set lands sees its own read instead of waiting for it. Each search
+    /// reads before it claims, so searches asking at once read side by side.
+    /// Every read sees the one unchanged world, so the answers are equal.
+    fn keep<T: Copy, R>(
+        kept: &OnceLock<T>,
+        claimed: &KeptBits,
+        index: usize,
+        read: impl Fn() -> T,
+        see: impl FnOnce(&T) -> R,
+    ) -> R {
+        if let Some(facts) = kept.get() {
+            return see(facts);
         }
-        read
+        let facts = read();
+        if claimed.claim(index) {
+            let _ = kept.set(facts);
+        }
+        see(&facts)
     }
 }
 
@@ -446,14 +469,14 @@ mod tests {
         let mut facts = EntryFacts::default();
         facts.reset(130, 70);
         for index in [0, 63, 64, 129] {
-            facts.cell(index, || cell_facts(1));
+            facts.cell(index, || cell_facts(1), |_| ());
             facts.plain(index, || PlainCell(PlainCell::KNOWN | 1));
         }
         facts.blocker(69, || blocker(1, 5));
         facts.reset(130, 10);
         facts.reset(130, 70);
         for index in [0, 63, 64, 129] {
-            assert_eq!(facts.cell(index, || cell_facts(2)).level, 2);
+            assert_eq!(facts.cell(index, || cell_facts(2), |kept| kept.level), 2);
             assert_eq!(facts.cells[index].get(), Some(&cell_facts(2)));
             assert_eq!(
                 facts.plain(index, || PlainCell(PlainCell::KNOWN | 2)),
@@ -473,7 +496,7 @@ mod tests {
         facts.reset(1, 1);
         assert!(facts.cells_claimed.claim(0));
         assert!(facts.blockers_claimed.claim(0));
-        assert_eq!(facts.cell(0, || cell_facts(4)), cell_facts(4));
+        assert_eq!(facts.cell(0, || cell_facts(4), |&own| own), cell_facts(4));
         assert_eq!(facts.blocker(0, || blocker(1, 7)), blocker(1, 7));
         assert!(facts.cells[0].get().is_none());
         assert!(facts.blockers[0].get().is_none());
@@ -509,12 +532,16 @@ mod tests {
         };
         at_once(&|wait| {
             let first = std::cell::Cell::new(true);
-            let kept = facts.cell(0, || {
-                if first.replace(false) {
-                    wait();
-                }
-                cell_facts(3)
-            });
+            let kept = facts.cell(
+                0,
+                || {
+                    if first.replace(false) {
+                        wait();
+                    }
+                    cell_facts(3)
+                },
+                |&kept| kept,
+            );
             assert_eq!(kept, cell_facts(3));
         });
         at_once(&|wait| {

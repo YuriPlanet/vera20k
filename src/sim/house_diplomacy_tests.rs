@@ -340,6 +340,10 @@ fn a_house_added_after_the_load_gets_a_matrix_row() {
     };
     let local = scene.sim().session.current_house().expect("local house");
     assert!(has_row(scene.sim(), local));
+    assert!(
+        scene.sim().interner.get("Late").is_none(),
+        "a name the load never interned"
+    );
     let late = scene.add_human_house("Late", crate::skirmish_launch::LaunchCountry::Yuri);
     assert!(has_row(scene.sim(), late));
 }
