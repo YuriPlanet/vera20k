@@ -180,7 +180,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
     let preview = crate::map::rmg::preview::render_preview(&final_colors, &[]).unwrap();
     let directory = crate::map::source::test_support::TestDirectory::new("terrain-preview");
     let mut modal = Some(crate::ui::skirmish_shell::RandomMapSetupModalState::open(
-        options, None, false,
+        options, None, false, true,
     ));
     modal
         .as_mut()

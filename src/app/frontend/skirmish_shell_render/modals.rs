@@ -12,7 +12,7 @@ use crate::ui::skirmish_shell::{
     ChooseMapModalButton, ChooseMapModalLayout, DropdownMetrics, RandomMapSetupControl,
     RandomMapSetupLayout, RandomMapSetupModalState, RectPx, SETUP_COMBO_ROWS,
     SavedSeedBrowserState, SavedSeedControl, SavedSeedLayout, SkirmishShellLayout,
-    SkirmishShellState, combo_face_rect, random_map_setup_dropdown_rect, setup_combo_items,
+    SkirmishShellState, combo_face_rect, random_map_setup_dropdown_rect,
 };
 
 use super::chrome::{

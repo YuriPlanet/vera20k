@@ -26,7 +26,7 @@ use crate::ui::skirmish_shell::{
     SkirmishShellState, SkirmishTrackbarId, checkbox_text_rect, combo_dropdown_content_rect,
     combo_dropdown_rect, combo_dropdown_visible_row_count, combo_enabled, combo_items,
     combo_text_rect, player_name_edit_text_rect, player_row_visible,
-    random_map_setup_dropdown_rect, setup_combo_items, trackbar_visual_value,
+    random_map_setup_dropdown_rect, trackbar_visual_value,
 };
 
 use super::controls::trackbar_rect_for_id;
@@ -1756,7 +1756,7 @@ mod tests {
                 let list = random_map_setup_dropdown_rect(
                     &layout,
                     combo.row(),
-                    setup_combo_items(combo, true).len(),
+                    crate::ui::skirmish_shell::setup_combo_items(combo, true).len(),
                 );
                 for text in &texts {
                     let inside = text.x >= list.x
