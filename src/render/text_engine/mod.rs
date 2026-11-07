@@ -16,6 +16,7 @@
 //! Presentation only: nothing here reaches the simulation.
 
 mod atlas;
+mod fnt_fill;
 pub(crate) mod fnt_font;
 pub(crate) mod fonts;
 
@@ -32,7 +33,7 @@ use parley::{
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 
 pub(crate) use atlas::SUBPIXEL_STEPS;
-use atlas::{GlyphAtlas, GlyphKey};
+use atlas::{GlyphAtlas, GlyphKey, SIZE_STEPS};
 use fonts::{BASELINE, CJK_WEIGHT, LATIN_WEIGHT, LATIN_WIDTH_PERCENT, OTHER_WEIGHT, TextClass};
 
 /// Which face interface text draws in. The options profile picks it at
@@ -594,7 +595,7 @@ impl TextEngine {
             font,
             coords,
             glyph: id,
-            size: (pixel_size * 16.0).round() as u32,
+            size: (pixel_size * SIZE_STEPS).round() as u32,
             subpixel,
         };
         let placed = match self.atlas.get(&key) {
@@ -637,7 +638,7 @@ impl TextEngine {
         let mut scaler = self
             .scale_cx
             .builder(font)
-            .size(key.size as f32 / 16.0)
+            .size(key.size as f32 / SIZE_STEPS)
             .hint(slot.hint)
             .normalized_coords(self.coords[usize::from(key.coords)].iter())
             .build();
@@ -859,6 +860,9 @@ mod tests {
         assert!(narrowest.width() < 0.8 && narrowest.size() == 1.0);
     }
 
+    /// A letter GAME.FNT lacks draws from it in its style ([`fnt_fill`]); a
+    /// character with no glyph in its style falls back to the bundled fonts,
+    /// such as '中', which retail GAME.FNT draws itself.
     #[test]
     fn original_font_falls_back_for_characters_game_fnt_lacks() {
         let mut engine = engine_with_tiny_fnt();
@@ -866,11 +870,24 @@ mod tests {
         let glyphs = &shaped.lines[0].glyphs;
         assert_eq!(glyphs.len(), 3);
         let original = engine.original_slot().expect("GAME.FNT registered");
-        assert_eq!(glyphs[0].font, original);
-        assert!(glyphs[1..].iter().all(|g| g.font != original && g.id != 0));
+        assert_eq!([glyphs[0].font, glyphs[1].font], [original; 2]);
+        assert!(glyphs[2].font != original && glyphs[2].id != 0);
         // The fallback hanzi takes GAME.FNT's full-cell size.
         assert_eq!(glyphs[2].size, fonts::CJK_SIZE);
         assert_eq!(glyphs[1].size, fonts::LATIN_SIZE);
+    }
+
+    /// Cyrillic and Greek letters shaped like Latin ones draw as GAME.FNT's
+    /// own Latin letter, and the others as whole pixels like it, at 1:1.
+    #[test]
+    fn original_font_draws_letters_game_fnt_lacks_as_its_pixels() {
+        let mut engine = engine_with_tiny_fnt();
+        let latin = draw(&mut engine, FontMode::Original, "A", 1.0, 16, 16);
+        for twin in ["А", "Α"] {
+            assert_eq!(draw(&mut engine, FontMode::Original, twin, 1.0, 16, 16), latin);
+        }
+        let alpha = draw(&mut engine, FontMode::Original, "Б", 1.0, 16, 16);
+        assert!(alpha.contains(&255) && alpha.iter().all(|&a| a == 0 || a == 255));
     }
 
     #[test]
