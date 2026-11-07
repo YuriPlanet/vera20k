@@ -192,14 +192,12 @@ fn fetch_catalog(state: &AppState, retried: bool) -> Phase {
 }
 
 /// What an empty Online Maps list says.
-pub(crate) fn empty_online_maps_text(state: &AppState) -> &'static str {
-    match state.frontend.map_library.phase {
-        Phase::NotStarted | Phase::Fetching { .. } => "Loading the online map library...",
-        Phase::Failed { .. } => {
-            "The online map library is unavailable. Check your internet connection."
-        }
-        Phase::Ready => "No maps found.",
-    }
+pub(crate) fn empty_online_maps_text(state: &AppState) -> String {
+    crate::i18n::tr(match state.frontend.map_library.phase {
+        Phase::NotStarted | Phase::Fetching { .. } => "VERA:OnlineMapsLoading",
+        Phase::Failed { .. } => "VERA:OnlineMapsUnavailable",
+        Phase::Ready => "VERA:OnlineMapsEmpty",
+    })
 }
 
 /// An open Choose Map shows the catalog's rows as they are now.

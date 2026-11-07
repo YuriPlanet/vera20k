@@ -1430,6 +1430,9 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
     }
     match action {
         SidebarAction::None => {}
+        // `RadarClass::AI @ 0x00653850`: input 0x80F3 (OPTBTN) writes
+        // in-scenario state 1, the options menu; 0x80F2 (DIPLOBTN) goes
+        // through the diplomacy owner's state 8/9 choice.
         SidebarAction::OpenPauseMenu => open_pause_menu(state),
         SidebarAction::OpenDiplomacy => crate::app::input::diplomacy::open(
             state,
@@ -2053,7 +2056,48 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::AutoLoad => crate::app::input::autoload::hotkey_pressed(state),
         #[cfg(not(feature = "verax"))]
         HotkeyCommand::AutoLoad => {}
+        // A chord runs in the window owner before this dispatch; a binding on
+        // a typing key reaches here, after the chat edit.
+        HotkeyCommand::PerformanceStats | HotkeyCommand::LockCursor | HotkeyCommand::FullScreen => {
+            run_window_command(state, command)
+        }
+        HotkeyCommand::RenderInterpolation => {
+            let enabled = state.match_state.match_presentation.interpolation.toggle();
+            state.persistence.options_profile.render_interpolation = enabled;
+            log::info!(
+                "Render interpolation prototype: {}",
+                if enabled { "ON" } else { "OFF" }
+            );
+        }
     }
+}
+
+/// VERA's every-screen commands ([`HotkeyBindings::window_command`]): from the
+/// window owner's key handling on every screen, or from a battle's hotkey
+/// dispatch for a binding on a typing key.
+///
+/// [`HotkeyBindings::window_command`]: crate::app::input::hotkeys::HotkeyBindings::window_command
+pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
+    match command {
+        HotkeyCommand::LockCursor => crate::app::input::cursor::toggle_cursor_confinement(state),
+        // A capture keeps its fixed surface.
+        HotkeyCommand::FullScreen if state.platform.capture_client_size.is_none() => {
+            let full_screen = state.platform.window.fullscreen().is_none();
+            crate::app::App::set_full_screen(state, full_screen);
+        }
+        HotkeyCommand::PerformanceStats => {
+            let shown = state.renderer.performance_overlay.toggle();
+            if let Some(dialog) = state.frontend.options_dialog.as_mut() {
+                dialog.sync_performance_stats(shown);
+            }
+            log::info!(
+                "Performance stats: {}",
+                if shown { "shown" } else { "hidden" }
+            );
+        }
+        _ => return,
+    }
+    state.platform.window.request_redraw();
 }
 
 /// A superweapon cameo press. Phobos's `FireTacticalSW` keys call
@@ -2410,6 +2454,21 @@ pub(crate) fn is_ctrl_held(state: &AppState) -> bool {
 /// matching gamemd's `What_Action_OnCell` Alt-overrides-Ctrl rule.
 pub(crate) fn is_alt_held(state: &AppState) -> bool {
     state.match_state.input.hotkey_modifiers.alt_key()
+}
+
+/// [`selected_stable_ids_in_order`] of `state`'s world and ledger. It walks
+/// every object, so a draw reads it once and hands it to its consumers.
+pub(crate) fn selected_in_order(state: &AppState) -> Vec<u64> {
+    selected_stable_ids_in_order(
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        state.rules(),
+        &state.match_state.input.selection_order,
+        state.match_state.input.selection_order_pending,
+    )
 }
 
 /// Read the player-side selection vector in native order. While a selection
@@ -4082,10 +4141,12 @@ fn deploy_key_command(
     let entity = sim.entities().get(entity_id)?;
     let obj = rules.and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
     match entity.category() {
-        // Absorbers and garrisons share unload admission.
-        EntityCategory::Structure => {
-            super::transport_orders::unload_command(entity, obj, local_owner)
-        }
+        // Selection730B28..730B5E sends Event9 for an occupied Building.
+        // Its native receiver owns NULL setters and Unload; self-click keeps
+        // the separate MEGAMISSION/absorber admission in transport_orders.
+        EntityCategory::Structure => (!entity.passenger_role.occupants().is_empty()
+            && local_owner.is_none_or(|owner| entity.owner() == owner))
+        .then_some(Command::DeployMcv { entity_id }),
         EntityCategory::Infantry => Some(Command::ToggleInfantryDeploy { entity_id }),
         // A unit in a tank bunker deploys out of it: its Unload's bunker arm
         // (`0x0073D63B`) runs before the transport arm.

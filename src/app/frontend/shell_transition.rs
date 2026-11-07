@@ -151,7 +151,8 @@ impl ShellSlideKind {
     /// The dialog's slide column with the panel's `rows` tile rows. Every
     /// rendered shell has a `slide` table entry, so a miss is a programming
     /// error. Options slides VERA's page buttons under retail's Keyboard.
-    /// Skirmish slides VERA's Save Setup and Load Setup under Choose Map.
+    /// Skirmish slides VERA's Save Setup and Load Setup under Choose Map. The
+    /// main menu slides VERA's Language under Options where it has a tile.
     pub(crate) fn column(self, rows: u32, page: Option<&MenuPageSpec>) -> SlideColumn {
         let spec = crate::ui::shell::slide::slide_spec_for(self.dialog_id())
             .expect("rendered shell dialog must have a slide column");
@@ -165,6 +166,11 @@ impl ShellSlideKind {
                         .len() as u32
                 }
                 ShellSlideKind::Skirmish => spec.top_buttons + 2,
+                ShellSlideKind::MainMenu => {
+                    let rows = i32::try_from(rows).unwrap_or(i32::MAX);
+                    spec.top_buttons
+                        + u32::from(crate::ui::main_menu_shell::language_button_fits(rows))
+                }
                 _ => spec.top_buttons,
             },
             |page| page.stacked.len() as u32,
@@ -1389,7 +1395,8 @@ mod tests {
             seed: 1,
             ..Default::default()
         };
-        shell.random_map_setup_modal = Some(RandomMapSetupModalState::open(options, None, false));
+        shell.random_map_setup_modal =
+            Some(RandomMapSetupModalState::open(options, None, false, true));
         assert_eq!(
             skirmish_slide_target(&shell),
             Some(ShellSlideKind::RandomMap)
@@ -1495,7 +1502,10 @@ mod tests {
             let column = kind.column(9, None);
             (column.top_buttons, column.bottom_button, column.map_button)
         };
-        assert_eq!(top_and_bottom(ShellSlideKind::MainMenu), (5, true, false));
+        // VERA's Language button slides under Options where the column has
+        // a tile for it; retail 640x480's six rows have none.
+        assert_eq!(top_and_bottom(ShellSlideKind::MainMenu), (6, true, false));
+        assert_eq!(ShellSlideKind::MainMenu.column(6, None).top_buttons, 5);
         assert_eq!(
             top_and_bottom(ShellSlideKind::SinglePlayer),
             (3, true, false)

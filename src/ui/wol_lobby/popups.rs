@@ -31,7 +31,8 @@ const ROOM_NAME_LIMIT: usize = 24;
 /// `EM_LIMITTEXT 8` at both procs' `0x497`.
 const PASSWORD_LIMIT: usize = 8;
 
-/// Executed `0x6040B0` help of `0xC3`; `0xE1` has none.
+/// Executed `0x6040B0` help of `0xC3`; `0xE1` has none. VERA's Ranked game
+/// box says when the lobby ranks a room's games.
 pub(crate) fn create_tooltip_key(control: u16) -> Option<&'static str> {
     Some(match control {
         POPUP_OK => "STT:WOLNewGameOK",
@@ -39,6 +40,7 @@ pub(crate) fn create_tooltip_key(control: u16) -> Option<&'static str> {
         CREATE_CLAN => "STT:WOLNewGameClanTournament",
         CREATE_LIMIT => "STT:WOLLimitScreenResolution",
         POPUP_PASSWORD => "STT:WOLNewGamePassword",
+        CREATE_RANKED => "VERA:RankedGameHelp",
         _ => return None,
     })
 }

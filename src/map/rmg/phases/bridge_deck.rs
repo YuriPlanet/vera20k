@@ -207,9 +207,10 @@ fn exact_region_pair(a: i32, b: i32, first: i32, second: i32) -> bool {
 
 fn outer_cells_are_usable(ctx: &CarveCtx<'_>, a: (i32, i32), b: (i32, i32)) -> bool {
     [a, b].into_iter().all(|(x, y)| {
+        // Both 0x0058F4AF-style probes pass checkLevel = 1.
         x >= 0
             && y >= 0
-            && ctx.playfield.contains_geometry_packed(x, y)
+            && super::carve_driver::in_playfield_at_level(ctx, (x, y))
             && ctx.grid.get(x, y).is_some_and(|cell| {
                 !ctx.ids
                     .cliffs
@@ -1656,6 +1657,29 @@ mod tests {
         assert!(!outer_cells_are_usable(&ctx, (40, 48), (41, 48)));
         assert!(!outer_cells_are_usable(&ctx, (0, 0), (41, 48)));
         assert!(outer_cells_are_usable(&ctx, (41, 48), (42, 48)));
+    }
+
+    #[test]
+    fn deck_outer_cells_use_the_level_aware_playfield() {
+        // Playfield low edge: 74 + 2 * 5 + level < x + y (0x00578460, checkLevel).
+        let (mut grid, mut scratch) = harness();
+        grid.get_mut(42, 44).unwrap().level = 0;
+        grid.get_mut(43, 44).unwrap().level = 0;
+        let identity = ids();
+        let blocks = OneByOne::new();
+        let playfield = playfield();
+        let mut rng = RmgRng::new(1);
+        let ctx = CarveCtx {
+            grid: &mut grid,
+            scratch: &mut scratch,
+            ids: &identity,
+            blocks: &blocks,
+            rng: &mut rng,
+            playfield: &playfield,
+        };
+        assert!(outer_cells_are_usable(&ctx, (42, 44), (43, 44)));
+        // Sum 88 is inside the level-0 band but not at level 4.
+        assert!(!outer_cells_are_usable(&ctx, (42, 46), (44, 46)));
     }
 
     #[test]

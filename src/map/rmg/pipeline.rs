@@ -17,7 +17,6 @@
 //! the post-patch pass that produces the sand-LAT tiles the rock pass needs.
 
 use super::grid::RmgGrid;
-use super::phases::adjacency;
 use super::phases::blob::BlobCtx;
 use super::phases::carve::CarveCtx;
 use super::phases::carve_driver::{self, ConnectorRegion};
@@ -58,6 +57,11 @@ pub struct PipelineInputs<'a> {
     pub morphable: &'a dyn Fn(i32) -> bool,
     /// Per-land-type "wheel speed <= 1%" flags for the zone classifier.
     pub wheel_impassable: [bool; LAND_TYPES],
+    /// Low byte of `[General] CliffBackImpassability=`, for the Recalc land
+    /// type the zone classifier and tech foundation gate read.
+    pub cliff_back_impassability: u8,
+    /// What the start-zone classifier reads from each overlay type, by id.
+    pub overlay_zones: &'a [super::phases::zones::OverlayZoneFacts],
     /// The resolved `NeutralTechBuildings` list.
     pub tech_types: &'a [TechType],
     /// The generator's sine table, for the river's heading.
@@ -232,18 +236,7 @@ pub fn run_pipeline(
         };
         regions = island_passes::run(&mut ctx);
 
-        // Then the ramps. THREE SEPARATE PASSES over every region, in this
-        // order — adjacency for all of them, then carving for all of them,
-        // then the release. Fusing the first two would let a region see a
-        // neighbour's data before that neighbour had been measured, and the
-        // maps would drift apart from the original.
-        //
-        // The first pass is implicit here: `adjacency::neighbour_ids` reads
-        // the scratch grid directly rather than caching onto the region, and
-        // the grid is already final by this point, so every region sees the
-        // same finished partition the original's pre-pass would have built.
-        // The third pass — freeing the vectors — has no analogue: the lists
-        // are values and drop on their own.
+        // Then the ramps and low-bridge decks (step 6 of 0x0058EF10).
         let playfield = PlayfieldBounds::from_normalized_local_size(
             map_w,
             local_rect[0],
@@ -251,35 +244,21 @@ pub fn run_pipeline(
             gen_w,
             gen_h,
         );
-        let connector_regions: Vec<ConnectorRegion> = regions
-            .list
-            .iter()
-            .map(|r| ConnectorRegion {
-                id: r.id,
-                level: r.level,
-                waterish: r.active,
-                cell_count: adjacency::region_cell_count(scratch, r.id),
-                neighbours: adjacency::neighbour_ids(scratch, r.id, regions.id_counter),
-            })
-            .collect();
-        for region in &connector_regions {
-            let mut ctx = CarveCtx {
-                grid: &mut *grid,
-                scratch: &mut *scratch,
-                ids: inputs.ids,
-                blocks: inputs.blocks,
-                rng: &mut *rng,
-                playfield: &playfield,
-            };
-            carve_driver::carve_connectors_for_region(
-                &mut ctx,
-                &connector_regions,
-                region,
-                inputs.accessibility,
-                &mut structures,
-                &mut construction_trace,
-            );
-        }
+        let mut ctx = CarveCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            blocks: inputs.blocks,
+            rng: &mut *rng,
+            playfield: &playfield,
+        };
+        carve_driver::connect_regions(
+            &mut ctx,
+            &regions,
+            inputs.accessibility,
+            &mut structures,
+            &mut construction_trace,
+        );
         // Original Generate598D6E..598D82: after connectors, jitter the
         // ridge edges, repair/materialize faces, then restamp registered
         // cliff variants. Generate ignores the materializer's refusal result
@@ -309,6 +288,8 @@ pub fn run_pipeline(
             map_w,
             local_rect,
             wheel_impassable: inputs.wheel_impassable,
+            cliff_back_impassability: inputs.cliff_back_impassability,
+            overlays: inputs.overlay_zones,
         };
         let zones = zones::compute(
             grid,
@@ -348,11 +329,13 @@ pub fn run_pipeline(
                 map_w,
                 local_rect,
                 stride: stride as i32,
+                cliff_back_impassability: inputs.cliff_back_impassability,
             };
             let mut ctx = TechCtx {
                 grid: &mut *grid,
                 scratch: &mut *scratch,
                 ids: inputs.ids,
+                blocks: inputs.blocks,
                 rng: &mut *rng,
                 regions: &regions,
                 types: inputs.tech_types,
@@ -395,11 +378,13 @@ pub fn run_pipeline(
             map_w,
             local_rect,
             stride: stride as i32,
+            cliff_back_impassability: inputs.cliff_back_impassability,
         };
         let mut ctx = TechCtx {
             grid: &mut *grid,
             scratch: &mut *scratch,
             ids: inputs.ids,
+            blocks: inputs.blocks,
             rng: &mut *rng,
             regions: &regions,
             types: inputs.tech_types,
@@ -440,6 +425,11 @@ pub fn run_pipeline(
     observe(Stage::RegionReset, grid, &waypoints, &terrain);
     lat_fixup::run(grid, inputs.ids);
     observe(Stage::RecalcAfterTiberium, grid, &waypoints, &terrain);
+    // This recalc (Generate 0x00598960, just before CreateHills) is the last
+    // to set the land type PlaceTreeRegion (0x005A45E0) reads: neither the
+    // hills nor the LAT patches recompute it, so its Rock cells are kept.
+    let recalc_rock =
+        trees::RecalcRock::snapshot(grid, inputs.blocks, inputs.cliff_back_impassability);
 
     // ---- Hills -------------------------------------------------------------
     {
@@ -487,6 +477,7 @@ pub fn run_pipeline(
             ids: inputs.ids,
             rng: &mut *rng,
             gauss: &mut *gauss,
+            recalc_rock: &recalc_rock,
         };
         trees::run(&mut ctx, &args)
     };
@@ -692,12 +683,14 @@ mod tests {
             map_w: 74,
             local_rect: [2, 5, 70, 70],
             stride: STRIDE as i32,
+            cliff_back_impassability: 2,
         };
         let tech_placements = {
             let mut ctx = TechCtx {
                 grid: &mut grid,
                 scratch: &mut scratch,
                 ids: &identity,
+                blocks: &blocks,
                 rng: &mut rng,
                 regions: &empty_regions,
                 types: &types,

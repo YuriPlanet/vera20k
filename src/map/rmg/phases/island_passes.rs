@@ -381,4 +381,188 @@ mod tests {
         let mut fresh = RmgRng::new(1);
         assert_eq!(ctx.rng.next_u32(), fresh.next_u32(), "rebuild drew nothing");
     }
+
+    /// Whole original `BridgeAndConnectorPass @ 0x0058EF10` calls from
+    /// `tools/rmg_oracle/bridge_pass.py` over declared terrains (not a
+    /// Generate prefix): the raise and rebuild here, then the production
+    /// connector/deck driver. Every changed cell, region owner, rebuilt
+    /// region, repair hut and the exit RNG state.
+    #[test]
+    fn native_bridge_pass_controls() {
+        use super::super::carve::CarveCtx;
+        use super::super::carve_driver;
+        use super::super::cliff_native_tests::{blocks, native_state, ranges};
+        use crate::map::playfield::PlayfieldBounds;
+        use crate::map::rmg::RmgConstructionTrace;
+        use crate::map::rmg::grid::GridCell;
+        use serde_json::Value;
+
+        let doc = crate::test_fixture::json("tools/rmg_oracle/bridge_pass.json");
+        let int = |v: &Value| v.as_i64().unwrap() as i32;
+        let scene = &doc["scene"];
+        let size = int(&scene["size"]);
+        let (stride, low, high) = ((2 * size + 1) as usize, size, 3 * size);
+        let tile = |name: &str| int(&scene["tiles"][name]);
+        let identity = TileIds {
+            ramp_base: tile("ramp_base"),
+            slope_set_pieces: tile("slope_set_pieces"),
+            green: tile("green"),
+            green_lat: tile("green_lat"),
+            pave: tile("pave"),
+            water_base: tile("water"),
+            shore: tile("shore"),
+            misc_pave: tile("misc_pave"),
+            paved_roads: tile("paved_roads"),
+            paved_road_ends: tile("paved_road_ends"),
+            cliffs: ranges(doc, &Value::Null),
+            ..ids()
+        };
+        let tile_blocks = blocks(doc);
+        let generated = &scene["gen"];
+        let playfield = PlayfieldBounds::from_normalized_local_size(
+            size,
+            2,
+            5,
+            int(&generated[0]),
+            int(&generated[1]),
+        );
+        // Row-major in-diamond cells, the corpus's run order.
+        let probe = RmgGrid::new(stride, low, high);
+        let cells: Vec<(i32, i32)> = (0..stride as i32)
+            .flat_map(|y| (0..stride as i32).map(move |x| (x, y)))
+            .filter(|&(x, y)| probe.is_valid(x, y))
+            .collect();
+        assert_eq!(cells.len(), int(&scene["cell_count"]) as usize);
+        let expand = |runs: &Value| -> Vec<Vec<i32>> {
+            let mut out = Vec::new();
+            for run in runs.as_array().unwrap() {
+                let run = run.as_array().unwrap();
+                for _ in 0..int(&run[0]) {
+                    out.push(run[1..].iter().map(int).collect());
+                }
+            }
+            out
+        };
+        let state = |cell: &GridCell| {
+            vec![
+                cell.tile,
+                i32::from(cell.sub_tile),
+                i32::from(cell.level),
+                i32::from(cell.slope),
+                cell.overlay,
+                i32::from(cell.density),
+                i32::from(cell.occupied),
+            ]
+        };
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 11);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let mut grid = RmgGrid::new(stride, low, high);
+            let mut scratch = RmgScratch::new(stride, low, high);
+            scratch.reset_region_ids();
+            for (&(x, y), value) in cells.iter().zip(expand(&row["terrain"])) {
+                let cell = grid.get_mut(x, y).unwrap();
+                (cell.tile, cell.level, cell.sub_tile, cell.slope) =
+                    (value[0], value[1] as u8, 0, 0);
+            }
+            let border_before = state(grid.ref_cell(CellRef::Border));
+            let before: Vec<Vec<i32>> = cells
+                .iter()
+                .map(|&(x, y)| state(grid.get(x, y).unwrap()))
+                .collect();
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let regions = {
+                let mut ctx = RegionCtx {
+                    grid: &mut grid,
+                    scratch: &mut scratch,
+                    ids: &identity,
+                    rng: &mut rng,
+                    map_type: 3,
+                    default_level: 0,
+                };
+                run(&mut ctx)
+            };
+            let listed: Vec<[i32; 4]> = regions
+                .list
+                .iter()
+                .map(|r| {
+                    let count = super::super::adjacency::region_cell_count(&scratch, r.id);
+                    [r.id, count, i32::from(r.level), i32::from(r.active)]
+                })
+                .collect();
+            let mut structures = Vec::new();
+            let mut trace = RmgConstructionTrace::default();
+            let mut ctx = CarveCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                blocks: &tile_blocks,
+                rng: &mut rng,
+                playfield: &playfield,
+            };
+            carve_driver::connect_regions(
+                &mut ctx,
+                &regions,
+                int(&input["accessibility"]),
+                &mut structures,
+                &mut trace,
+            );
+            let native_listed: Vec<[i32; 4]> = row["listed"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| std::array::from_fn(|i| int(&r[i])))
+                .collect();
+            assert_eq!(listed, native_listed, "{context}: rebuilt regions");
+            assert_eq!(regions.id_counter, int(&row["next_region_id"]), "{context}");
+            let changed: Vec<Vec<i32>> = cells
+                .iter()
+                .zip(&before)
+                .filter_map(|(&(x, y), was)| {
+                    let now = state(grid.get(x, y).unwrap());
+                    (&now != was).then(|| [vec![x, y], now].concat())
+                })
+                .collect();
+            let native_changed: Vec<Vec<i32>> = row["changed"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| c.as_array().unwrap().iter().map(int).collect())
+                .collect();
+            assert_eq!(changed, native_changed, "{context}: cells");
+            let owners: Vec<Vec<i32>> = cells
+                .iter()
+                .map(|&(x, y)| vec![scratch.get(x, y).region])
+                .collect();
+            assert_eq!(owners, expand(&row["regions"]), "{context}: region owners");
+            let huts: Vec<[i32; 2]> = structures
+                .iter()
+                .map(|(name, x, y)| {
+                    assert_eq!(name, "CABHUT");
+                    [i32::from(*x), i32::from(*y)]
+                })
+                .collect();
+            let native_huts: Vec<[i32; 2]> = row["huts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| [int(&c[0]), int(&c[1])])
+                .collect();
+            assert_eq!(huts, native_huts, "{context}: repair huts");
+            let border = state(grid.ref_cell(CellRef::Border));
+            if row["dummy"].is_null() {
+                assert_eq!(border, border_before, "{context}: Dummy untouched");
+            } else {
+                let native: Vec<i32> = row["dummy"].as_array().unwrap().iter().map(int).collect();
+                assert_eq!(border, native, "{context}: Dummy");
+            }
+            assert_eq!(
+                rng.into_continuation().into_native_parts(),
+                native_state(doc, &row["rng_after"]).into_native_parts(),
+                "{context}: exit RNG"
+            );
+        }
+    }
 }

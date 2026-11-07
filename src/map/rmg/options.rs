@@ -84,13 +84,15 @@ impl RmgOptions {
         self.time = self.time.clamp(0, 3);
         self.ruggedness = self.ruggedness.clamp(0, 100);
         self.water_amount = self.water_amount.clamp(0, 100);
-        self.num_players = self.num_players.clamp(2, 8);
+        // VERA extension: the original clamps to 2..=8.
+        self.num_players = self.num_players.clamp(2, super::MAX_PLAYERS);
         self.tiberium = self.tiberium.clamp(1, 100);
         self.tiberium_layout = self.tiberium_layout.clamp(0, 100);
         self.vegetation = self.vegetation.clamp(0, 100);
         self.urban_presence = self.urban_presence.clamp(0, 100);
-        self.width = self.width.clamp(0, 3);
-        self.height = self.height.clamp(0, 3);
+        // VERA extension: options past 3 ("Very Large") are larger maps.
+        self.width = self.width.clamp(0, super::MAX_SIZE_OPTION);
+        self.height = self.height.clamp(0, super::MAX_SIZE_OPTION);
         self.accessibility = self.accessibility.clamp(0, 100);
         self.region_size = self.region_size.clamp(0, 100);
         self.seed = self.seed.clamp(0, 0xFFFF);
@@ -261,8 +263,8 @@ mod tests {
             tiberium_layout: 500,
             vegetation: -3,
             urban_presence: 900,
-            width: 7,
-            height: 7,
+            width: 9,
+            height: 9,
             accessibility: 101,
             region_size: -1,
             seed: 0x1_0000,
@@ -285,7 +287,7 @@ mod tests {
             ),
             (100, 0, 100)
         );
-        assert_eq!((options.width, options.height), (3, 3));
+        assert_eq!((options.width, options.height), (7, 7));
         assert_eq!((options.accessibility, options.region_size), (100, 0));
         assert_eq!(options.seed, 0xFFFF);
     }

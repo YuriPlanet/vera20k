@@ -34,6 +34,7 @@ pub(crate) fn registered_commands() -> &'static [CommandMetadata] {
     ALL.get_or_init(|| {
         let mut all = RETAIL_COMMANDS.to_vec();
         all.extend_from_slice(&CAMERA_COMMANDS);
+        all.extend_from_slice(&SHORTCUT_COMMANDS);
         #[cfg(feature = "verax")]
         all.extend_from_slice(&VERA_COMMANDS);
         #[cfg(feature = "phobos")]
@@ -54,42 +55,83 @@ pub(crate) fn retail_commands() -> &'static [CommandMetadata] {
 /// `category_key`; VERA's is declared here instead, so the category exists —
 /// and keeps its place at the end — before any command is registered in it.
 /// Ares-style enhancements add their keys here rather than among the original
-/// commands. The CSF has no entry, so the page shows the key itself.
-pub(crate) const VERA_CATEGORY_KEY: &str = "vera20k";
+/// commands. Its name, like the camera commands' names and descriptions, is a
+/// `VERA:` label: the page reads it from VERA's language files, not the CSF
+/// (`app::input::keyboard::open`).
+pub(crate) const VERA_CATEGORY_KEY: &str = "VERA:HotkeyCategory";
 
 /// Optional bindings: ordinary arrow fallback and retail W/A/S/D bindings
 /// remain unchanged until the player assigns a camera command in Keyboard.
+/// Each category literal is [`VERA_CATEGORY_KEY`]; the macro takes a literal.
 const CAMERA_COMMANDS: [CommandMetadata; 4] = [
     command!(
         HotkeyCommand::CameraUp,
         "CameraUp",
-        "Camera Up",
-        "vera20k",
-        "Scroll the camera up while held (arrow keys also scroll by default)",
+        "VERA:CameraUp",
+        "VERA:HotkeyCategory",
+        "VERA:CameraUpDesc",
         None
     ),
     command!(
         HotkeyCommand::CameraDown,
         "CameraDown",
-        "Camera Down",
-        "vera20k",
-        "Scroll the camera down while held (arrow keys also scroll by default)",
+        "VERA:CameraDown",
+        "VERA:HotkeyCategory",
+        "VERA:CameraDownDesc",
         None
     ),
     command!(
         HotkeyCommand::CameraLeft,
         "CameraLeft",
-        "Camera Left",
-        "vera20k",
-        "Scroll the camera left while held (arrow keys also scroll by default)",
+        "VERA:CameraLeft",
+        "VERA:HotkeyCategory",
+        "VERA:CameraLeftDesc",
         None
     ),
     command!(
         HotkeyCommand::CameraRight,
         "CameraRight",
-        "Camera Right",
-        "vera20k",
-        "Scroll the camera right while held (arrow keys also scroll by default)",
+        "VERA:CameraRight",
+        "VERA:HotkeyCategory",
+        "VERA:CameraRightDesc",
+        None
+    ),
+];
+
+/// VERA's built-in keys, with their default keys in the binding owner
+/// (`hotkeys::VERA_DEFAULT_KEYS`). Each name is the Options page's label for
+/// the same setting; each category literal is [`VERA_CATEGORY_KEY`].
+const SHORTCUT_COMMANDS: [CommandMetadata; 4] = [
+    command!(
+        HotkeyCommand::PerformanceStats,
+        "PerformanceStats",
+        "VERA:PerformanceStats",
+        "VERA:HotkeyCategory",
+        "VERA:PerformanceStatsDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::LockCursor,
+        "LockCursor",
+        "VERA:LockCursor",
+        "VERA:HotkeyCategory",
+        "VERA:LockCursorDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::FullScreen,
+        "FullScreen",
+        "VERA:FullScreen",
+        "VERA:HotkeyCategory",
+        "VERA:FullScreenDesc",
+        None
+    ),
+    command!(
+        HotkeyCommand::RenderInterpolation,
+        "RenderInterpolation",
+        "VERA:RenderInterpolation",
+        "VERA:HotkeyCategory",
+        "VERA:RenderInterpolationDesc",
         None
     ),
 ];
@@ -794,15 +836,15 @@ const RETAIL_COMMANDS: [CommandMetadata; 87] = [
 ];
 
 /// VeraX's own commands, registered after every retail one. The CSF has no
-/// entries, so the page shows these strings themselves.
+/// entries, so their names come from VERA's language files.
 #[cfg(feature = "verax")]
 const VERA_COMMANDS: [CommandMetadata; 1] = [command!(
     HotkeyCommand::AutoLoad,
     "AutoLoad",
-    "AutoLoad",
+    "VERA:AutoLoad",
     // Keep equal to [`VERA_CATEGORY_KEY`]; the macro takes a literal.
-    "vera20k",
-    "Load the selected infantry and vehicles into nearby transports",
+    "VERA:HotkeyCategory",
+    "VERA:AutoLoadDesc",
     None
 )];
 
@@ -810,15 +852,92 @@ const VERA_COMMANDS: [CommandMetadata; 1] = [command!(
 /// `FireTacticalSW.ini` reads the CSF keys `TXT_FIRE_TACTICAL_SW_XX[_DESC]`.
 #[cfg(feature = "phobos")]
 const PHOBOS_COMMANDS: [CommandMetadata; 11] = [
-    command!(HotkeyCommand::FireTacticalSw(0), "FireTacticalSW1", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(1)),
-    command!(HotkeyCommand::FireTacticalSw(1), "FireTacticalSW2", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(2)),
-    command!(HotkeyCommand::FireTacticalSw(2), "FireTacticalSW3", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(3)),
-    command!(HotkeyCommand::FireTacticalSw(3), "FireTacticalSW4", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(4)),
-    command!(HotkeyCommand::FireTacticalSw(4), "FireTacticalSW5", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(5)),
-    command!(HotkeyCommand::FireTacticalSw(5), "FireTacticalSW6", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(6)),
-    command!(HotkeyCommand::FireTacticalSw(6), "FireTacticalSW7", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(7)),
-    command!(HotkeyCommand::FireTacticalSw(7), "FireTacticalSW8", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(8)),
-    command!(HotkeyCommand::FireTacticalSw(8), "FireTacticalSW9", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(9)),
-    command!(HotkeyCommand::FireTacticalSw(9), "FireTacticalSW10", "TXT_FIRE_TACTICAL_SW_XX", "TXT_INTERFACE", "TXT_FIRE_TACTICAL_SW_XX_DESC", Some(10)),
-    command!(HotkeyCommand::ToggleSwSidebar, "Toggle Super Weapon Sidebar", "TXT_TOGGLE_SW_SIDEBAR", "TXT_INTERFACE", "TXT_TOGGLE_SW_SIDEBAR_DESC", None),
+    command!(
+        HotkeyCommand::FireTacticalSw(0),
+        "FireTacticalSW1",
+        "TXT_FIRE_TACTICAL_SW_XX",
+        "TXT_INTERFACE",
+        "TXT_FIRE_TACTICAL_SW_XX_DESC",
+        Some(1)
+    ),
+    command!(
+        HotkeyCommand::FireTacticalSw(1),
+        "FireTacticalSW2",
+        "TXT_FIRE_TACTICAL_SW_XX",
+        "TXT_INTERFACE",
+        "TXT_FIRE_TACTICAL_SW_XX_DESC",
+        Some(2)
+    ),
+    command!(
+        HotkeyCommand::FireTacticalSw(2),
+        "FireTacticalSW3",
+        "TXT_FIRE_TACTICAL_SW_XX",
+        "TXT_INTERFACE",
+        "TXT_FIRE_TACTICAL_SW_XX_DESC",
+        Some(3)
+    ),
+    command!(
+        HotkeyCommand::FireTacticalSw(3),
+        "FireTacticalSW4",
+        "TXT_FIRE_TACTICAL_SW_XX",
+        "TXT_INTERFACE",
+        "TXT_FIRE_TACTICAL_SW_XX_DESC",
+        Some(4)
+    ),
+    command!(
+        HotkeyCommand::FireTacticalSw(4),
+        "FireTacticalSW5",
+        "TXT_FIRE_TACTICAL_SW_XX",
+        "TXT_INTERFACE",
+        "TXT_FIRE_TACTICAL_SW_XX_DESC",
+        Some(5)
+    ),
+    command!(
+        HotkeyCommand::FireTacticalSw(5),
+        "FireTacticalSW6",
+        "TXT_FIRE_TACTICAL_SW_XX",
+        "TXT_INTERFACE",
+        "TXT_FIRE_TACTICAL_SW_XX_DESC",
+        Some(6)
+    ),
+    command!(
+        HotkeyCommand::FireTacticalSw(6),
+        "FireTacticalSW7",
+        "TXT_FIRE_TACTICAL_SW_XX",
+        "TXT_INTERFACE",
+        "TXT_FIRE_TACTICAL_SW_XX_DESC",
+        Some(7)
+    ),
+    command!(
+        HotkeyCommand::FireTacticalSw(7),
+        "FireTacticalSW8",
+        "TXT_FIRE_TACTICAL_SW_XX",
+        "TXT_INTERFACE",
+        "TXT_FIRE_TACTICAL_SW_XX_DESC",
+        Some(8)
+    ),
+    command!(
+        HotkeyCommand::FireTacticalSw(8),
+        "FireTacticalSW9",
+        "TXT_FIRE_TACTICAL_SW_XX",
+        "TXT_INTERFACE",
+        "TXT_FIRE_TACTICAL_SW_XX_DESC",
+        Some(9)
+    ),
+    command!(
+        HotkeyCommand::FireTacticalSw(9),
+        "FireTacticalSW10",
+        "TXT_FIRE_TACTICAL_SW_XX",
+        "TXT_INTERFACE",
+        "TXT_FIRE_TACTICAL_SW_XX_DESC",
+        Some(10)
+    ),
+    command!(
+        HotkeyCommand::ToggleSwSidebar,
+        "Toggle Super Weapon Sidebar",
+        "TXT_TOGGLE_SW_SIDEBAR",
+        "TXT_INTERFACE",
+        "TXT_TOGGLE_SW_SIDEBAR_DESC",
+        None
+    ),
 ];

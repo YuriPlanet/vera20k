@@ -2175,14 +2175,32 @@ impl BatchRenderer {
         start: u32,
         count: u32,
     ) {
-        if count == 0 {
+        self.draw_passthrough_group(
+            render_pass,
+            &texture.bind_group,
+            buffer,
+            camera,
+            start..start + count,
+        );
+    }
+
+    /// [`Self::draw_passthrough_range_bound`] with a texture's bind group.
+    pub(crate) fn draw_passthrough_group(
+        &self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        texture: &wgpu::BindGroup,
+        buffer: &wgpu::Buffer,
+        camera: &wgpu::BindGroup,
+        instances: std::ops::Range<u32>,
+    ) {
+        if instances.is_empty() {
             return;
         }
         render_pass.set_pipeline(&self.overlay_passthrough_pipeline);
         render_pass.set_bind_group(0, camera, &[]);
-        render_pass.set_bind_group(1, &texture.bind_group, &[]);
+        render_pass.set_bind_group(1, texture, &[]);
         render_pass.set_vertex_buffer(0, buffer.slice(..));
-        render_pass.draw(0..6, start..start + count);
+        render_pass.draw(0..6, instances);
     }
 }
 

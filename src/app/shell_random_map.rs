@@ -305,8 +305,25 @@ impl AcceptedRmgStartStaging {
         }
     }
 
+    /// Staging from the shell's retained Scenario `+0x11C0` cells
+    /// (`0x0058B830`), which Full_Init copies again (`0x006873E6`): a network
+    /// guest's launch and a Skirmish rematch after the accepted setup was
+    /// consumed. `None` unless `RandMap.Sed` is selected and the
+    /// shell holds a start.
+    pub(crate) fn from_retained_staging(
+        staging: &crate::map::preview::ScenarioStartStaging,
+        selected_map_file: Option<&str>,
+    ) -> Option<Self> {
+        let random_map = selected_map_file.is_some_and(|file| {
+            file.eq_ignore_ascii_case(crate::map::skirmish_scenarios::RANDMAP_SED)
+        });
+        (random_map && staging.defined_cells().next().is_some())
+            .then(|| Self::from_scenario_staging(staging))
+    }
+
     fn from_generated(generated: &crate::map::rmg::GeneratedMap) -> Self {
-        let mut slots = [None; crate::skirmish_launch::SKIRMISH_PLAYER_SLOT_COUNT];
+        // VERA: every start of a random map for up to thirty players.
+        let mut slots = [None; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT];
         for &(slot, rx, ry) in &generated.start_waypoints {
             if let Some(entry) = slots.get_mut(usize::from(slot)) {
                 *entry = Some(crate::map::waypoints::Waypoint {
@@ -582,6 +599,13 @@ impl PreparedRandomMapGeneration {
         // Retained rows may differ despite identical current source text.
         // These are the land-derived inputs that generation actually consumes.
         bytes.extend(self.resolved_inputs.wheel_impassable.map(u8::from));
+        for facts in &self.resolved_inputs.overlay_zones {
+            bytes.extend([
+                facts.land,
+                u8::from(facts.early_land),
+                facts.zone_type.unwrap_or(0xFF),
+            ]);
+        }
         bytes.extend_from_slice(crate::util::sha256::sha256_hex(&self.theater.ini_data).as_bytes());
         bytes.extend_from_slice(self.blocks.multiplayer_digest().as_bytes());
         for technology in &self.tech_types {
@@ -682,8 +706,19 @@ pub(super) fn prepare_random_map_generation(
         .as_ref()
         .map(|preview| preview.rules.terrain_rules.clone())
         .unwrap_or_default();
-    let resolved_inputs =
-        crate::map::rmg::build::ResolvedTheaterInputs::from_theater(&theater, &terrain_rules);
+    let cliff_back_impassability = preview_rules.as_ref().map_or_else(
+        || crate::rules::ruleset::GeneralRules::default().cliff_back_impassability,
+        |preview| preview.rules.general.cliff_back_impassability,
+    );
+    let empty_overlays = crate::rules::overlay_types::OverlayTypeRegistry::empty();
+    let resolved_inputs = crate::map::rmg::build::ResolvedTheaterInputs::from_theater(
+        &theater,
+        &terrain_rules,
+        preview_rules
+            .as_ref()
+            .map_or(&empty_overlays, |preview| preview.rules.overlay_registry()),
+        cliff_back_impassability,
+    );
     let blocks =
         crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
             asset_manager.get(name)
@@ -1662,6 +1697,36 @@ mod terrain_preview_tests;
 mod tests {
     use super::*;
 
+    /// Restarting the same random map after a Skirmish match: the shell's
+    /// retained staging supplies every start.
+    #[test]
+    fn a_skirmish_rematch_reuses_the_retained_random_map_starts() {
+        let mut staging = crate::map::preview::ScenarioStartStaging {
+            width: 400,
+            height: 200,
+            count: 4,
+            ..Default::default()
+        };
+        for slot in 0..4 {
+            staging.cells[slot] = (slot as i16 + 10, 20);
+        }
+        let rematch = AcceptedRmgStartStaging::from_retained_staging(&staging, Some("randmap.sed"))
+            .expect("random map rematch staging");
+        let table = rematch.waypoint_table_for_admission();
+        assert_eq!(table.len(), 4);
+        assert_eq!((table[&3].rx, table[&3].ry), (13, 20));
+
+        assert!(
+            AcceptedRmgStartStaging::from_retained_staging(&staging, Some("large500.yrm"))
+                .is_none()
+        );
+        let empty = crate::map::preview::ScenarioStartStaging::default();
+        assert!(
+            AcceptedRmgStartStaging::from_retained_staging(&empty, Some(RANDMAP_SED_FILE))
+                .is_none()
+        );
+    }
+
     #[test]
     fn generated_digest_covers_retained_powerups_without_mutating_rules() {
         let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
@@ -2118,6 +2183,7 @@ mod tests {
             },
             None,
             false,
+            true,
         ));
         modal
             .as_mut()
@@ -2179,7 +2245,7 @@ mod tests {
         let mut retention = RandomMapGenerationRetention::default();
         retention.finish_generation(generated_preview(0x412, 10));
         let mut modal = Some(crate::ui::skirmish_shell::RandomMapSetupModalState::open(
-            options, None, false,
+            options, None, false, true,
         ));
         modal
             .as_mut()
@@ -2216,6 +2282,7 @@ mod tests {
             },
             None,
             false,
+            true,
         ));
         cancel_modal
             .as_mut()
@@ -2502,7 +2569,7 @@ mod tests {
             ..Default::default()
         };
         let mut modal =
-            crate::ui::skirmish_shell::RandomMapSetupModalState::open(options, None, false);
+            crate::ui::skirmish_shell::RandomMapSetupModalState::open(options, None, false, true);
         modal.begin_generate();
         let mut runtime =
             crate::app::frontend::skirmish_session::MultiplayerShellRuntime::initialize(

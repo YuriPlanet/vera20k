@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "11 whole original BridgeAndConnectorPass calls over declared terrains: east/west and north/south water bands, a band eleven cells wide, a raised plateau as the first region at accessibility 0 and 100 and as the second, a plateau with a river, one-wide trenches the pinched-cliff raise fills, a small first region that dissolves and green ground; every changed Cell tile, subtile, level, slope, overlay, density and occupation, every scratch region, the rebuilt region list, each repair hut cell and the exit RNG state",
+  "assumptions": [
+    "Existing CliffFixture, TiberiumFieldFixture and StartPointsFixture own original-constructed Cell backing, admission (equal to the declared 24..72 diamond), the stride-49 scratch, the physical temperate clear/cliff/shore TMP registration plus RampBase (20), SlopeSetPieces (10), PavedRoads (15) and PavedRoadEnds (4) tiles, the native theater tile-set globals and the guarded arena. MapClass +F4 map size 24x24 and +FC local rect (2, 5, 22, 16).",
+    "Declared scene: per in-diamond cell a clear, WaterSet or GreenTile tile and a level; no overlay, object or slope. Scratch regions and stamps start -1; the region vector starts empty. Linear neighbour offsets as PathfinderClass::ResizeMapArrays 42AC00 writes them for stride 49. MapSeed ABDFD8 +6C accessibility, +180/+184 generated size (22, 16), +30C default level 0. FPCW 0E7F. All streams seeded by original 65C6D0. Not a complete Generate prefix."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS, with guard bytes after each block that refuse a pool overrun; native code bytes unchanged. No level, tile, region or draw is supplied.",
+    "PlaceBridgeRepairHut lookups: HouseTypeClass index of \"Neutral\" 5117D0 and HouseClass by index 502D30 return a declared house; BuildingTypeClass index of \"CABHUT\" 45E7B0 returns slot 0 of a declared type vector. BuildingClass constructor 43B740 writes only a vtable whose +D8 Unlimbo records the cell, occupies that one cell (+E4) and succeeds. The real constructor's scenario-stream draw and Unlimbo's own admission are not executed."
+  ],
+  "entry_points": {
+    "bridge_and_connector_pass": "0x0058EF10",
+    "raise_pinched": "0x00579010",
+    "flood_build_region": "0x0058C800",
+    "neighbour_list": "0x0058F0C0",
+    "carve_connectors_or_bridges": "0x005905D0",
+    "try_carve_connector": "0x00590970",
+    "place_low_bridge_deck": "0x0058F2C0",
+    "place_bridge_repair_hut": "0x005904B0",
+    "next": "0x0065C780"
+  },
+  "replay_command": "python -m tools.rmg_oracle.bridge_pass",
+  "payload_sha256": "4fc0f1c4e8577559a2ab79d660fa067e1f1a335c42de269a87e8d5d0809eca40"
+}

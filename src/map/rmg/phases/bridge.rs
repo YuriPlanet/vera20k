@@ -57,9 +57,6 @@ const PLATEAU_DILATE_RINGS: i32 = 2;
 /// How far the river jumps on success, in cells along the travel heading.
 pub(crate) const JUMP_CELLS: i32 = 12;
 
-/// Full map extent, for the unclipped clamp-rect axes.
-const FULL: i32 = 0x200;
-
 /// Everything one placement attempt needs from the walk.
 pub(crate) struct BridgeArgs {
     /// Region the fills are tagged with — the river's id at the attempt.
@@ -90,7 +87,8 @@ struct Layout {
 /// Anchor and rects per heading. The anchor is whichever endpoint has the
 /// smaller coordinate along the channel axis: first cell for N and E, last
 /// for S and W.
-fn layout(args: &BridgeArgs) -> Layout {
+/// `full` is the unclipped clamp-rect axis, [`RmgGrid::whole_extent`].
+fn layout(args: &BridgeArgs, full: i32) -> Layout {
     let (fx, fy) = args.first;
     let (lx, ly) = args.last;
     match args.heading_dir {
@@ -101,7 +99,7 @@ fn layout(args: &BridgeArgs) -> Layout {
                 clearance: [ax - 2, ay - 12, span + 5, 12],
                 fill_near: [ax, ay - 4, span + 1, 4],
                 fill_far: [ax, ay - 12, span + 1, 8],
-                clamp: [0, ay - 4, FULL, FULL - (ay - 4)],
+                clamp: [0, ay - 4, full, full - (ay - 4)],
                 seed: (ax, ay - 4),
             }
         }
@@ -112,7 +110,7 @@ fn layout(args: &BridgeArgs) -> Layout {
                 clearance: [ax + 1, ay - 2, 12, span + 5],
                 fill_near: [ax + 1, ay, 4, span + 1],
                 fill_far: [ax + 5, ay, 8, span + 1],
-                clamp: [0, 0, ax + 4, FULL],
+                clamp: [0, 0, ax + 4, full],
                 seed: (ax + 5, ay),
             }
         }
@@ -123,7 +121,7 @@ fn layout(args: &BridgeArgs) -> Layout {
                 clearance: [ax - 2, ay + 1, span + 5, 12],
                 fill_near: [ax, ay + 1, span + 1, 4],
                 fill_far: [ax, ay + 5, span + 1, 8],
-                clamp: [0, 0, FULL, ay + 4],
+                clamp: [0, 0, full, ay + 4],
                 seed: (ax, ay + 1),
             }
         }
@@ -134,7 +132,7 @@ fn layout(args: &BridgeArgs) -> Layout {
                 clearance: [ax - 12, ay - 2, 12, span + 5],
                 fill_near: [ax - 4, ay, 4, span + 1],
                 fill_far: [ax - 12, ay, 8, span + 1],
-                clamp: [ax - 4, 0, FULL - (ax - 4), FULL],
+                clamp: [ax - 4, 0, full - (ax - 4), full],
                 seed: (ax - 4, ay),
             }
         }
@@ -181,7 +179,7 @@ fn fill_water(ctx: &mut BlobCtx<'_>, rect: [i32; 4], region: i32) {
 /// region from then on. That mirrors the original, which does not roll a
 /// failed placement back either.
 pub(crate) fn build(ctx: &mut BlobCtx<'_>, args: &BridgeArgs) -> bool {
-    let layout = layout(args);
+    let layout = layout(args, ctx.grid.whole_extent());
 
     // Clearance: any in-bounds cell ahead that is owned or not bare ground
     // vetoes the crossing before a single draw is consumed.
@@ -541,7 +539,7 @@ mod tests {
             last: (43, 50),
             pool_dims: (30, 30),
         };
-        let layout = layout(&args);
+        let layout = layout(&args, 0x200);
         stamp_waterfall_pieces(&mut ctx, &args, &layout);
 
         // span = 3. End piece A: base+0 at (38,44).
@@ -776,7 +774,7 @@ mod tests {
             last: (42, 50),
             pool_dims: (30, 30),
         };
-        let l = layout(&args);
+        let l = layout(&args, 0x200);
         assert_eq!(l.clearance, [38, 38, 7, 12]);
         assert_eq!(l.fill_near, [40, 46, 3, 4]);
         assert_eq!(l.fill_far, [40, 38, 3, 8]);
@@ -793,7 +791,7 @@ mod tests {
             last: (60, 41),
             pool_dims: (30, 30),
         };
-        let l = layout(&args);
+        let l = layout(&args, 0x200);
         assert_eq!(l.clearance, [48, 39, 12, 8]);
         assert_eq!(l.fill_near, [56, 41, 4, 4]);
         assert_eq!(l.fill_far, [48, 41, 8, 4]);

@@ -164,6 +164,7 @@ impl PreparedSavedLocalView {
         input.planning.reset();
         sidebar.repair_mode_on = modes.repair;
         sidebar.sell_mode_on = modes.sell;
+        sidebar.command_bar_closed = modes.command_bar_closed;
         input.targeting_mode = self.targeting;
         // The preview is derived from the cursor; the next tactical frame
         // recomputes it. The BandBoxLeftUp retry copy (+1190..+1198) loads
@@ -803,6 +804,7 @@ impl MatchInputState {
                 // Active YR PlanMgr is outside Mouse's saved Display body.
                 planning: false,
                 targeting,
+                command_bar_closed: sidebar.command_bar_closed,
             },
         )
     }

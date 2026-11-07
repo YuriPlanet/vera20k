@@ -98,20 +98,44 @@ pub fn run(ctx: &mut StartsCtx<'_>, args: &StartsArgs, zones: &ZoneField) -> Sta
         X87Chop53::ftol_f64_low_masked(if area.lt(floor) { floor } else { area }.to_f64());
 
     rebuild_regions(ctx, zones);
+    let order = assign_start_quotas(ctx.regions, threshold, args.start_quota);
 
+    // Per-region gather + select + waypoint writes, with a running slot
+    // offset that advances by the bucket quota whether or not the bucket
+    // produced waypoints.
+    let mut outcome = StartsOutcome {
+        waypoints: vec![None; args.start_quota.max(0) as usize],
+        region_order: order.clone(),
+        unfilled_start_slots: 0,
+    };
+    let mut offset = 0i32;
+    for &index in &order {
+        place_region_starts(ctx, args, index, offset, &mut outcome);
+        offset += ctx.regions.list[index].start_quota;
+    }
+
+    // The original ends by publishing start/extent preview metadata into the
+    // scenario (packed cells plus isometric pixel mins/extents). Nothing in
+    // the port reads it yet; the emitter task owns that surface.
+    outcome
+}
+
+/// The small-region deletion, score sort and cumulative quota split
+/// (`CreateStartingPoints` 0x00594C47..0x00594E52). Returns the surviving
+/// region indices in bucket order.
+fn assign_start_quotas(regions: &mut Regions, threshold: i32, start_quota: i32) -> Vec<usize> {
     // Delete undersized regions, iterating downward so removals cannot skip
     // entries. The multiplier of the later sort key is captured BEFORE the
     // deletions.
-    let pre_deletion_count = ctx.regions.list.len() as i32;
-    for index in (0..ctx.regions.list.len()).rev() {
-        if ctx.regions.list[index].cell_count < threshold {
-            ctx.regions.list.remove(index);
+    let pre_deletion_count = regions.list.len() as i32;
+    for index in (0..regions.list.len()).rev() {
+        if regions.list[index].cell_count < threshold {
+            regions.list.remove(index);
         }
     }
 
     // Score and sort: ascending key = descending size, unique ids break ties.
-    let mut order: Vec<(i32, usize)> = ctx
-        .regions
+    let mut order: Vec<(i32, usize)> = regions
         .list
         .iter()
         .enumerate()
@@ -127,53 +151,36 @@ pub fn run(ctx: &mut StartsCtx<'_>, args: &StartsArgs, zones: &ZoneField) -> Sta
     // Cumulative-fraction quota split; the last bucket takes the remainder.
     let total: i32 = order
         .iter()
-        .map(|&(_, index)| ctx.regions.list[index].cell_count)
+        .map(|&(_, index)| regions.list[index].cell_count)
         .sum();
     let mut cumulative = 0i32;
     let mut assigned = 0i32;
     for (position, &(_, index)) in order.iter().enumerate() {
-        cumulative += ctx.regions.list[index].cell_count;
+        cumulative += regions.list[index].cell_count;
         let quota = if position == order.len() - 1 {
-            args.start_quota - assigned
+            start_quota - assigned
         } else {
             X87Chop53::ftol_f64_low_masked(
                 TruncF64::from_f64(f64::from(cumulative))
                     .div(TruncF64::from_f64(f64::from(total)))
-                    .mul(TruncF64::from_f64(f64::from(args.start_quota)))
+                    .mul(TruncF64::from_f64(f64::from(start_quota)))
                     .add(TruncF64::from_f64(HALF))
                     .sub(TruncF64::from_f64(f64::from(assigned)))
                     .to_f64(),
             )
         };
-        ctx.regions.list[index].start_quota = quota;
+        regions.list[index].start_quota = quota;
         assigned += quota;
     }
 
-    // Per-region gather + select + waypoint writes, with a running slot
-    // offset that advances by the bucket quota whether or not the bucket
-    // produced waypoints.
-    let mut outcome = StartsOutcome {
-        waypoints: vec![None; args.start_quota.max(0) as usize],
-        region_order: order.iter().map(|&(_, index)| index).collect(),
-        unfilled_start_slots: 0,
-    };
-    let mut offset = 0i32;
-    for &(_, index) in &order {
-        place_region_starts(ctx, args, index, offset, &mut outcome);
-        offset += ctx.regions.list[index].start_quota;
-    }
-
-    // The original ends by publishing start/extent preview metadata into the
-    // scenario (packed cells plus isometric pixel mins/extents). Nothing in
-    // the port reads it yet; the emitter task owns that surface.
-    outcome
+    order.into_iter().map(|(_, index)| index).collect()
 }
 
 /// Teardown + fresh region build over the final map: every unclaimed
 /// reference-ground cell in native scan order seeds a flood fill whose
 /// popped cells are appended to the region's cell list.
 fn rebuild_regions(ctx: &mut StartsCtx<'_>, zones: &ZoneField) {
-    // Teardown 0x0058CE90.
+    // Teardown `RmgRegion::ClearAll @ 0x0058CE90`.
     ctx.scratch.reset_region_ids();
     ctx.regions.list.clear();
     ctx.regions.id_counter = 0;
@@ -185,17 +192,18 @@ fn rebuild_regions(ctx: &mut StartsCtx<'_>, zones: &ZoneField) {
         }
         let id = ctx.regions.id_counter;
         ctx.regions.id_counter += 1;
-        let mut region = RmgRegion {
+        // `RmgRegion::RmgRegion @ 0x0058BF70`: the seed's level and its
+        // Cell 0x004865D0 water test.
+        let seed = ctx.grid.get(x, y);
+        let mut region = RmgRegion::rebuilt(
             id,
-            level: ctx.grid.get(x, y).map_or(0, |cell| cell.level),
-            active: false,
-            cell_count: 0,
-            cells: Vec::new(),
-            start_quota: 0,
-            field_slots: None,
-        };
+            seed.map_or(0, |cell| cell.level),
+            seed.is_some_and(|cell| ctx.ids.is_water_shore_or_waterfall(cell.tile)),
+            0,
+        );
 
-        // LIFO flood 0x00594420: stamp at enqueue, claim + append at pop.
+        // LIFO flood `RmgRegion::FloodFromCell @ 0x00594420`: stamp at
+        // enqueue, claim + append at pop.
         ctx.scratch.get_mut(x, y).stamp = id;
         let mut stack: Vec<(i16, i16)> = vec![(x as i16, y as i16)];
         while let Some((cx, cy)) = stack.pop() {
@@ -556,6 +564,8 @@ mod tests {
                 map_w: args.map_w,
                 local_rect: [2, 5, args.gen_w, args.gen_h],
                 wheel_impassable: wheel,
+                cliff_back_impassability: 2,
+                overlays: &[],
             },
             ZoneKind::Amphibious,
         )
@@ -598,5 +608,487 @@ mod tests {
             (outcome.waypoints.clone(), quotas, slots, locks)
         };
         assert_eq!(snapshot(2024), snapshot(2024));
+    }
+
+    fn int(value: &serde_json::Value) -> i32 {
+        value.as_i64().unwrap() as i32
+    }
+
+    fn pairs(value: &serde_json::Value) -> Vec<(i16, i16)> {
+        value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| (int(&c[0]) as i16, int(&c[1]) as i16))
+            .collect()
+    }
+
+    /// The harness scene on its 16x16 map: clear level-0 cells, then the
+    /// declared tile families, `[level, slope]` and scratch owners.
+    fn native_scene(doc: &serde_json::Value, input: &serde_json::Value) -> (RmgGrid, RmgScratch) {
+        let mut grid = RmgGrid::new(33, 16, 48);
+        let mut scratch = RmgScratch::new(33, 16, 48);
+        for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+            let cell = grid.get_mut(x, y).unwrap();
+            (cell.tile, cell.sub_tile, cell.level, cell.slope) = (0, 0, 0, 0);
+        }
+        let list = |key: &str| input.get(key).map_or(&[][..], |v| v.as_array().unwrap());
+        for c in list("tiles") {
+            let family = c[2].as_str().unwrap();
+            grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile =
+                int(&doc["scene"]["tiles"][family]);
+        }
+        for c in list("rough") {
+            grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile =
+                int(&doc["scene"]["tiles"]["rough"]);
+        }
+        for c in list("terrain") {
+            let cell = grid.get_mut(int(&c[0]), int(&c[1])).unwrap();
+            (cell.level, cell.slope) = (int(&c[2]) as u8, int(&c[3]) as u8);
+        }
+        for c in list("regions") {
+            scratch.get_mut(int(&c[0]), int(&c[1])).region = int(&c[2]);
+        }
+        (grid, scratch)
+    }
+
+    fn native_ids(doc: &serde_json::Value) -> TileIds {
+        let tile = |name: &str| int(&doc["scene"]["tiles"][name]);
+        TileIds {
+            paved_roads: tile("paved_roads"),
+            paved_road_ends: tile("paved_road_ends"),
+            misc_pave: tile("misc_pave"),
+            pave: tile("pave"),
+            ..ids()
+        }
+    }
+
+    fn assert_native_rng(doc: &serde_json::Value, row: &serde_json::Value, rng: RmgRng) {
+        assert_eq!(
+            rng.into_continuation().into_native_parts(),
+            super::super::cliff_native_tests::native_state(doc, &row["rng_after"])
+                .into_native_parts(),
+            "{}: exit RNG",
+            row["input"]["id"]
+        );
+    }
+
+    /// Whole original `RmgRegion::PlaceStartingPoints @ 0x00594870` calls
+    /// from `tools/rmg_oracle/start_points.py`: waypoint slots, start flags,
+    /// the drained field slots and the exit RNG.
+    #[test]
+    fn native_place_starting_points_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/start_points.json");
+        let identity = native_ids(doc);
+        let rows = doc["place"].as_array().unwrap();
+        assert_eq!(rows.len(), 9);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let (mut grid, mut scratch) = native_scene(doc, input);
+            let cells = pairs(&input["cells"]);
+            let mut regions = Regions::default();
+            regions.list.push(RmgRegion {
+                id: 0,
+                level: 0,
+                active: false,
+                cell_count: cells.len() as i32,
+                cells,
+                start_quota: int(&input["quota"]),
+                field_slots: None,
+            });
+            let args = StartsArgs {
+                start_quota: int(&input["start_quota"]),
+                num_players: int(&input["start_quota"]),
+                tiberium_layout: int(&input["layout"]),
+                gen_w: int(&input["gen"][0]),
+                gen_h: int(&input["gen"][1]),
+                map_w: 16,
+            };
+            let slots = row["waypoints"].as_array().unwrap().len();
+            let mut outcome = StartsOutcome {
+                waypoints: vec![None; slots],
+                ..Default::default()
+            };
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut ctx = StartsCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                rng: &mut rng,
+                regions: &mut regions,
+            };
+            place_region_starts(&mut ctx, &args, 0, int(&input["offset"]), &mut outcome);
+            assert_eq!(outcome.unfilled_start_slots, 0, "{context}: unfilled");
+            let waypoints: Vec<(i16, i16)> = outcome
+                .waypoints
+                .iter()
+                .map(|slot| slot.unwrap_or((-1, -1)))
+                .collect();
+            assert_eq!(waypoints, pairs(&row["waypoints"]), "{context}: waypoints");
+            let flags: Vec<(i16, i16)> = (0..33)
+                .flat_map(|y| (0..33).map(move |x| (x, y)))
+                .filter(|&(x, y)| grid.get(x, y).is_some_and(|c| c.start_marker))
+                .map(|(x, y)| (x as i16, y as i16))
+                .collect();
+            assert_eq!(flags, pairs(&row["start_flags"]), "{context}: start flags");
+            let native_slots = (!row["field_slots"].is_null()).then(|| pairs(&row["field_slots"]));
+            assert_eq!(
+                regions.list[0].field_slots, native_slots,
+                "{context}: field slots"
+            );
+            assert_native_rng(doc, row, rng);
+        }
+    }
+
+    /// Whole original `RandomMapGenerator::MarkStartAreas @ 0x005A1FB0`
+    /// calls from the same harness: every changed scratch stamp and lock.
+    #[test]
+    fn native_mark_start_areas_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/start_points.json");
+        let identity = native_ids(doc);
+        let rows = doc["mark"].as_array().unwrap();
+        assert_eq!(rows.len(), 4);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let (mut grid, mut scratch) = native_scene(doc, input);
+            let record = |scratch: &RmgScratch, x: i32, y: i32| {
+                let cell = scratch.get(x, y);
+                [cell.stamp, i32::from(cell.water_lock)]
+            };
+            let diamond: Vec<(i32, i32)> = (0..33)
+                .flat_map(|y| (0..33).map(move |x| (x, y)))
+                .filter(|&(x, y)| scratch.in_diamond(x, y))
+                .collect();
+            let prior: Vec<[i32; 2]> = diamond
+                .iter()
+                .map(|&(x, y)| record(&scratch, x, y))
+                .collect();
+            let players = int(&input["players"]);
+            let args = StartsArgs {
+                start_quota: players,
+                num_players: players,
+                tiberium_layout: 0,
+                gen_w: 12,
+                gen_h: 12,
+                map_w: 16,
+            };
+            let outcome = StartsOutcome {
+                waypoints: pairs(&input["waypoints"]).into_iter().map(Some).collect(),
+                ..Default::default()
+            };
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut regions = Regions::default();
+            let mut ctx = StartsCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                rng: &mut rng,
+                regions: &mut regions,
+            };
+            mark_start_areas(&mut ctx, &args, &outcome);
+            let changed: Vec<[i32; 4]> = diamond
+                .iter()
+                .zip(prior)
+                .filter_map(|(&(x, y), before)| {
+                    let now = record(&scratch, x, y);
+                    (now != before).then_some([x, y, now[0], now[1]])
+                })
+                .collect();
+            let native: Vec<[i32; 4]> = row["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| std::array::from_fn(|i| int(&c[i])))
+                .collect();
+            assert_eq!(changed, native, "{context}: records");
+            assert_eq!(int(&row["draws"]), 0, "{context}: draws");
+            assert_native_rng(doc, row, rng);
+        }
+    }
+
+    /// Terrain bytes per tile id for the zone controls' declared land types:
+    /// 0 clear, 500 water (9), 400 beach (0xA), 300 rock (7).
+    struct LandBlocks;
+
+    impl TileBlocks for LandBlocks {
+        fn block(&self, tile: i32) -> Option<&TileBlock> {
+            static BLOCKS: std::sync::OnceLock<[TileBlock; 4]> = std::sync::OnceLock::new();
+            let blocks = BLOCKS.get_or_init(|| {
+                [0, 9, 0xA, 7].map(|terrain| TileBlock {
+                    width: 1,
+                    height: 1,
+                    subtiles: vec![Some(SubTile {
+                        height: 0,
+                        terrain,
+                        slope: 0,
+                    })],
+                })
+            });
+            Some(match tile {
+                500 => &blocks[1],
+                400 => &blocks[2],
+                300 => &blocks[3],
+                _ => &blocks[0],
+            })
+        }
+    }
+
+    /// Original `CellClass::RecalcZoneType @ 0x00483C80` on every Cell, then
+    /// `CreateStartingPoints @ 0x00594B50..0x00594C47` with the original
+    /// `RebuildZoneConnectivity @ 0x0056C510` and `GetZoneID @ 0x0056D230`
+    /// (`tools/rmg_oracle/start_zones.py`): every zone class and base zone,
+    /// the largest zone, the requested derived row and the rebuilt regions.
+    #[test]
+    fn native_start_zone_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/start_zones.json");
+        let scene = &doc["scene"];
+        let mut wheel = [false; zones::LAND_TYPES];
+        for (land, blocked) in scene["wheel_blocked"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
+            wheel[land] = blocked.as_bool().unwrap();
+        }
+        // The deck overlay's facts through the production rules reader: the
+        // harness gives its type Road land, which every retail LOBRDG has.
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+            return;
+        };
+        let overlays = zones::OverlayZoneFacts::from_registry(
+            crate::rules::ruleset::RuleSet::from_ini(&rules)
+                .expect("retail rules")
+                .overlay_registry(),
+        );
+        let deck = overlays[int(&scene["deck"]) as usize];
+        assert_eq!(
+            (deck.land, deck.early_land, deck.zone_type),
+            (1, true, None)
+        );
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 7);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let mut scratch = RmgScratch::new(33, 16, 48);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                let cell = grid.get_mut(x, y).unwrap();
+                (cell.tile, cell.sub_tile, cell.level, cell.slope) = (0, 0, 0, 0);
+            }
+            for c in input["land"].as_array().unwrap() {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile = match c[2].as_str().unwrap() {
+                    "water" => 500,
+                    "beach" => 400,
+                    "rock" => 300,
+                    other => panic!("{context}: land {other}"),
+                };
+            }
+            for c in input["terrain"].as_array().unwrap() {
+                let cell = grid.get_mut(int(&c[0]), int(&c[1])).unwrap();
+                (cell.level, cell.slope) = (int(&c[2]) as u8, int(&c[3]) as u8);
+            }
+            for (x, y) in pairs(&input["deck"]) {
+                let cell = grid.get_mut(x.into(), y.into()).unwrap();
+                (cell.tile, cell.overlay) = (500, int(&scene["deck"]));
+            }
+            for (x, y) in pairs(&input["hut"]) {
+                grid.get_mut(x.into(), y.into()).unwrap().occupied = true;
+            }
+            let gen_size = (int(&input["gen"][0]), int(&input["gen"][1]));
+            // Land types are declared as the last Recalc leaves them, so the
+            // CliffBack reclass is not applied again here.
+            let field = zones::compute(
+                &grid,
+                &LandBlocks,
+                &ZoneParams {
+                    map_w: 16,
+                    local_rect: [2, 5, gen_size.0, gen_size.1],
+                    wheel_impassable: wheel,
+                    cliff_back_impassability: 0,
+                    overlays: &overlays,
+                },
+                ZoneKind::for_map_type(int(&input["map_type"])),
+            );
+            for y in 0..33 {
+                let classes: String = (0..33)
+                    .map(|x| char::from(b'0' + field.class(x, y)))
+                    .collect();
+                assert_eq!(
+                    classes, row["classes"][y as usize],
+                    "{context}: classes row {y}"
+                );
+                let bases: Vec<i32> = (0..33)
+                    .map(|x| i32::from(field.native_parts(x, y).0))
+                    .collect();
+                let native: Vec<i32> = row["zones"][y as usize]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(int)
+                    .collect();
+                assert_eq!(bases, native, "{context}: base zones row {y}");
+            }
+            let (_, derived, largest) = field.native_parts(0, 0);
+            assert_eq!(
+                i32::from(largest),
+                int(&row["largest"]),
+                "{context}: largest"
+            );
+            let native_derived: Vec<i32> =
+                row["derived"].as_array().unwrap().iter().map(int).collect();
+            let derived: Vec<i32> = derived.iter().map(|&z| i32::from(z)).collect();
+            assert_eq!(derived, native_derived, "{context}: derived row");
+            assert_eq!(
+                i32::from(field.reference),
+                int(&row["reference"]),
+                "{context}: reference"
+            );
+            let identity = ids();
+            let mut regions = Regions::default();
+            let mut rng = RmgRng::new(1);
+            let mut ctx = StartsCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                rng: &mut rng,
+                regions: &mut regions,
+            };
+            rebuild_regions(&mut ctx, &field);
+            let listed: Vec<[i32; 2]> = regions.list.iter().map(|r| [r.id, r.cell_count]).collect();
+            let native: Vec<[i32; 2]> = row["regions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| [int(&r[0]), int(&r[1])])
+                .collect();
+            assert_eq!(listed, native, "{context}: regions");
+            assert_eq!(
+                regions.id_counter,
+                int(&row["next_region_id"]),
+                "{context}: next id"
+            );
+            assert_native_rng(doc, row, rng);
+        }
+    }
+
+    /// Two slices of original `RandomMapGenerator::CreateStartingPoints @
+    /// 0x00594B50` from `tools/rmg_oracle/create_starting_points.py`, with
+    /// declared zones: the teardown and region rebuild (0x00594B50..
+    /// 0x00594C47) on the fixture's physical tiles, and the deletion, sort and
+    /// quota split (0x00594C47..0x00594E52) on declared region records.
+    #[test]
+    fn native_create_starting_points_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/create_starting_points.json");
+        let (mut identity, _) = super::super::cliff_native_tests::physical_tiles();
+        identity.water_base = int(&doc["scene"]["water_base"]);
+        let rebuild = doc["rebuild"].as_array().unwrap();
+        assert_eq!(rebuild.len(), 5);
+        for row in rebuild {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let set = |key: &str| pairs(&input[key]).into_iter().collect::<Vec<_>>();
+            let (ground, typed) = (set("ground"), set("typed"));
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let mut scratch = RmgScratch::new(33, 16, 48);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                let cell = grid.get_mut(x, y).unwrap();
+                (cell.tile, cell.level) = (0, 0);
+            }
+            for c in input["terrain"].as_array().unwrap() {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().level = int(&c[2]) as u8;
+            }
+            for (x, y) in set("water") {
+                grid.get_mut(i32::from(x), i32::from(y)).unwrap().tile = identity.water_base;
+            }
+            let has = |cells: &[(i16, i16)], x: i32, y: i32| cells.contains(&(x as i16, y as i16));
+            let zones =
+                ZoneField::declared(33, |x, y| has(&typed, x, y), |x, y| has(&ground, x, y));
+            let mut regions = Regions::default();
+            let mut rng = RmgRng::new(1);
+            let mut ctx = StartsCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                rng: &mut rng,
+                regions: &mut regions,
+            };
+            rebuild_regions(&mut ctx, &zones);
+            let listed: Vec<serde_json::Value> = regions
+                .list
+                .iter()
+                .map(|r| {
+                    let cells: Vec<[i16; 2]> = r.cells.iter().map(|&(x, y)| [x, y]).collect();
+                    serde_json::json!([
+                        r.id,
+                        r.cell_count,
+                        r.level,
+                        u8::from(r.active),
+                        r.start_quota,
+                        cells
+                    ])
+                })
+                .collect();
+            assert_eq!(
+                &listed[..],
+                row["regions"].as_array().unwrap(),
+                "{context}: regions"
+            );
+            assert_eq!(
+                regions.id_counter,
+                int(&row["next_region_id"]),
+                "{context}: next id"
+            );
+            let mut records = Vec::new();
+            for y in 0..33 {
+                for x in 0..33 {
+                    let record = scratch.get(x, y);
+                    if scratch.in_diamond(x, y) && (record.region, record.stamp) != (-1, -1) {
+                        records.push(serde_json::json!([x, y, record.region, record.stamp]));
+                    }
+                }
+            }
+            assert_eq!(
+                &records[..],
+                row["records"].as_array().unwrap(),
+                "{context}: records"
+            );
+            // The rebuild draws nothing.
+            assert_native_rng(&doc, row, rng);
+        }
+        let split = doc["split"].as_array().unwrap();
+        assert_eq!(split.len(), 6);
+        for row in split {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let mut regions = Regions::default();
+            for r in input["regions"].as_array().unwrap() {
+                regions.list.push(RmgRegion {
+                    id: int(&r[0]),
+                    level: 0,
+                    active: false,
+                    cell_count: int(&r[1]),
+                    cells: Vec::new(),
+                    start_quota: 0,
+                    field_slots: None,
+                });
+            }
+            let order =
+                assign_start_quotas(&mut regions, int(&input["threshold"]), int(&input["quota"]));
+            let ids = |values: &serde_json::Value| -> Vec<i32> {
+                values.as_array().unwrap().iter().map(int).collect()
+            };
+            let survivors: Vec<i32> = regions.list.iter().map(|r| r.id).collect();
+            assert_eq!(survivors, ids(&row["survivors"]), "{context}: survivors");
+            let sorted: Vec<i32> = order.iter().map(|&i| regions.list[i].id).collect();
+            assert_eq!(sorted, ids(&row["order"]), "{context}: order");
+            let quotas: Vec<i32> = order.iter().map(|&i| regions.list[i].start_quota).collect();
+            assert_eq!(quotas, ids(&row["quotas"]), "{context}: quotas");
+            // Nor do the deletion, sort and split (the scene seeds 1).
+            assert_native_rng(&doc, row, RmgRng::new(1));
+        }
     }
 }

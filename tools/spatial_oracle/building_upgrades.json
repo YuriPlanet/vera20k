@@ -708,5 +708,91 @@
       ]
     }
   ],
-  "schema_version": 1
+  "schema_version": 1,
+  "turret_removal": [
+    {
+      "animation_slots": [
+        9
+      ],
+      "count": 0,
+      "host_turret": false,
+      "initial_count": 2,
+      "initial_slots": [
+        "LOWER",
+        "UPGRADE",
+        null
+      ],
+      "lower_turret": false,
+      "name": "top_turret",
+      "slots": [
+        "LOWER",
+        null,
+        null
+      ],
+      "top_turret": true
+    },
+    {
+      "animation_slots": [
+        1
+      ],
+      "count": 1,
+      "host_turret": false,
+      "initial_count": 2,
+      "initial_slots": [
+        "LOWER",
+        "UPGRADE",
+        null
+      ],
+      "lower_turret": true,
+      "name": "lower_turret_only",
+      "slots": [
+        "LOWER",
+        null,
+        null
+      ],
+      "top_turret": false
+    },
+    {
+      "animation_slots": [
+        1
+      ],
+      "count": 1,
+      "host_turret": true,
+      "initial_count": 2,
+      "initial_slots": [
+        "LOWER",
+        "UPGRADE",
+        null
+      ],
+      "lower_turret": false,
+      "name": "host_turret_only",
+      "slots": [
+        "LOWER",
+        null,
+        null
+      ],
+      "top_turret": false
+    },
+    {
+      "animation_slots": [
+        9
+      ],
+      "count": 0,
+      "host_turret": false,
+      "initial_count": 1,
+      "initial_slots": [
+        "UPGRADE",
+        null,
+        null
+      ],
+      "lower_turret": false,
+      "name": "single_turret",
+      "slots": [
+        null,
+        null,
+        null
+      ],
+      "top_turret": true
+    }
+  ]
 }

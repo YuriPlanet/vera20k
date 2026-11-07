@@ -1,10 +1,10 @@
 //! VERA20k — entry point.
 //!
-//! Runs the CLI-only switches (replay verification, retail data check and the
-//! headless spawn probe), then delegates start-up to [`vera20k::entry`], which
-//! owns the logging, panic reporting and event-loop work. Android has no
-//! `main`; its cdylib (the `vera20k-android` crate in `android/`) reaches the
-//! same start-up through `entry::run_with_loop`.
+//! Runs the CLI-only switches (replay verification, retail data check, language
+//! file check and the headless spawn probe), then delegates start-up to
+//! [`vera20k::entry`], which owns the logging, panic reporting and event-loop
+//! work. Android has no `main`; its cdylib (the `vera20k-android` crate in
+//! `android/`) reaches the same start-up through `entry::run_with_loop`.
 //!
 //! Module declarations live in lib.rs so integration tests can import them.
 
@@ -25,6 +25,11 @@ fn main() -> Result<()> {
     }
     if let Some(result) =
         vera20k::app::frontend::launch::try_game_data_check(std::env::args_os().skip(1))
+    {
+        std::process::exit(result?);
+    }
+    if let Some(result) =
+        vera20k::app::frontend::launch::try_language_check(std::env::args_os().skip(1))
     {
         std::process::exit(result?);
     }

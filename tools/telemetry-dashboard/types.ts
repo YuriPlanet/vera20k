@@ -1,8 +1,8 @@
 /**
- * Schema mirror of `src/sim/telemetry.rs` (v30); keep both in step.
+ * Schema mirror of `src/sim/telemetry.rs` (v31); keep both in step.
  */
 
-export const SCHEMA_VERSION = 30;
+export const SCHEMA_VERSION = 31;
 
 export type EntityCategory = "Unit" | "Infantry" | "Aircraft" | "Structure";
 
@@ -336,7 +336,7 @@ export interface PathBatchStats {
   samples: number;
 }
 
-/** Per-phase means of one in-game render, in milliseconds (schema v14). */
+/** Per-phase means of one in-game render, in milliseconds (schema v31). */
 export interface RenderTimingReport {
   frames: number;
   world_ms: number;
@@ -345,6 +345,10 @@ export interface RenderTimingReport {
   ui_ms: number;
   sidebar_ms: number;
   upload_ms: number;
+  lights_ms: number;
+  effects_ms: number;
+  draw_calls_ms: number;
+  handoff_ms: number;
   other_ms: number;
 }
 

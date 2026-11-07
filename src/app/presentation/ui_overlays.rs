@@ -5,8 +5,10 @@
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner_name;
 use crate::app::input::cursor::{
-    current_cursor_feedback_kind, cursor_id_for_feedback, software_cursor_frame_for,
+    CursorTargets, current_cursor_feedback_kind, cursor_id_for_feedback,
+    software_cursor_frame_index,
 };
+use crate::app::input::entity_pick::HoverObject;
 use crate::app::presentation::instances::in_view;
 use crate::app::types::{CursorId, HoverTargetKind, SoftwareCursorSequence};
 use crate::assets::csf_file::{CsfArg, format_csf};
@@ -27,46 +29,23 @@ const UNIT_PIPS_INFANTRY: u32 = 8;
 /// Horizontal pixel spacing between unit health pips (each pip drawn 2px apart).
 const UNIT_PIP_STEP_X: f32 = 2.0;
 
-/// The object under the cursor whose health bar the original draws on hover.
+/// The object under the cursor whose health bar the original draws on hover,
+/// for either Techno health branch, from the frame's cursor `hover`
+/// ([`CursorTargets::hover`]).
 ///
 /// The per-object overlay pass calls the health-bar slot from exactly two arms:
 /// the object is selected, or the object carries the cursor's hover flag and is
 /// *not* selected. The hover flag is set from the cursor's resolved action
 /// target, so a shrouded enemy — which is never an action target — is excluded.
-fn health_bar_hover_target(
-    state: &AppState,
-    local_owner: Option<&str>,
-) -> Option<(u64, HoverTargetKind)> {
-    let sim = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .map(|rt| &rt.simulation)?;
-    let local_owner = local_owner?;
-    let (world_x, world_y) = crate::app::match_runtime::sim_tick::screen_point_to_world(
-        state,
-        state.match_state.input.cursor_x,
-        state.match_state.input.cursor_y,
-    );
-    let hover = crate::app::input::entity_pick::hover_target_at_point(
-        crate::app::input::entity_pick::presented(state, sim),
-        world_x,
-        world_y,
-        local_owner,
-        state.match_state.sandbox_full_visibility,
-    )?;
+pub(crate) fn health_hover_target(hover: Option<HoverObject>) -> Option<u64> {
+    let hover = hover?.techno()?;
     match hover.kind {
         HoverTargetKind::FriendlyStructure
         | HoverTargetKind::EnemyStructure
         | HoverTargetKind::FriendlyUnit
-        | HoverTargetKind::EnemyUnit => Some((hover.stable_id, hover.kind)),
+        | HoverTargetKind::EnemyUnit => Some(hover.stable_id),
         HoverTargetKind::HiddenEnemy => None,
     }
-}
-
-/// The existing resolved hover target for either Techno health branch.
-pub(crate) fn health_hover_target(state: &AppState, local_owner: Option<&str>) -> Option<u64> {
-    health_bar_hover_target(state, local_owner).map(|(id, _)| id)
 }
 
 /// Whether a status-producing object draws its bracket background and pips.
@@ -91,15 +70,18 @@ pub(crate) fn status_visibility(selected: bool, hovered: bool) -> (bool, bool) {
 ///
 /// The reveal gate is not optional: the strip's PIPS fills use the 600
 /// material, which reads no A, so the shroud plane that blacks out an
-/// unexplored enemy's body leaves its pips alone. `object_shown_to_local_owner`
-/// is the same gate screen selection uses; `fog_of_war` matches how the bodies'
-/// A is resolved.
+/// unexplored body leaves its pips alone. `render::shroud_buffer::cell_fill`
+/// blacks out unrevealed and hostile-gap-covered cells for every house alike,
+/// so the strip asks that same cell owner; under the `FogOfWar` game option
+/// it also needs current sight, as the bodies' fog does. With no local player
+/// the shroud plane is not built and every body shows, so every strip does.
+/// Neutral/Special (`MultiplayPassive=`) get no automatic strip; they are
+/// scenery, not one of the players' objects.
 fn health_strip_widened(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
     mode: HealthBarMode,
     full: bool,
-    local_owner: Option<&str>,
     player: Option<crate::sim::intern::InternedId>,
     ignore_visibility: bool,
 ) -> bool {
@@ -108,17 +90,29 @@ fn health_strip_widened(
         HealthBarMode::Always => true,
         HealthBarMode::AlwaysExceptFull => !full,
     };
-    wanted
-        && (ignore_visibility
-            || crate::app::presentation::instances::object_shown_to_local_owner(
-                local_owner,
-                player,
-                sim.fog(),
-                sim.house_alliances().as_map(),
-                &entity.position,
-                sim.interner().resolve(entity.owner()),
-                sim.session().game_options().fog_of_war,
-            ))
+    if !wanted {
+        return false;
+    }
+    if ignore_visibility {
+        return true;
+    }
+    if sim
+        .houses()
+        .get(&entity.owner())
+        .is_some_and(|house| house.multiplay_passive())
+    {
+        return false;
+    }
+    let Some(viewer) = player else {
+        return true;
+    };
+    crate::app::presentation::instances::cell_shows_objects(
+        viewer,
+        sim.fog(),
+        entity.position.rx(),
+        entity.position.ry(),
+        sim.session().game_options().fog_of_war,
+    )
 }
 
 /// Health-bar admission shared by building pips, mobile pips and their extras.
@@ -335,10 +329,16 @@ pub(crate) fn control_group_status_labels(
             slot_by_id.insert(stable_id, slot);
         }
     }
+    // Membership first: most drawn objects are in no group, and the
+    // admission below only reads, so its order changes no label.
+    if slot_by_id.is_empty() {
+        return Vec::new();
+    }
 
     crate::app::presentation::instances::tactical_entity_encounter_order(sim)
         .into_iter()
         .filter_map(|stable_id| {
+            let slot = *slot_by_id.get(&stable_id)?;
             let entity = sim.entities().get(stable_id)?;
             if entity.sinking.is_active()
                 || entity.passenger_role.is_inside_transport()
@@ -360,7 +360,6 @@ pub(crate) fn control_group_status_labels(
             {
                 return None;
             }
-            let slot = *slot_by_id.get(&stable_id)?;
             let digit = char::from(b'0' + slot as u8);
             Some((stable_id, digit))
         })
@@ -598,9 +597,12 @@ pub(crate) fn build_control_group_status_render_instances(
     parents
 }
 
-/// AppState adapter for the production tactical UI build.
+/// AppState adapter for the production tactical UI build. `hovered_entity_id`
+/// is this draw's [`health_hover_target`] for `local_owner`.
 pub(crate) fn build_control_group_status_instances(
     state: &AppState,
+    local_owner: Option<&str>,
+    hovered_entity_id: Option<u64>,
     sw: f32,
     sh: f32,
 ) -> BTreeMap<u64, StatusTextOverlayInstances> {
@@ -614,12 +616,7 @@ pub(crate) fn build_control_group_status_instances(
     ) else {
         return BTreeMap::new();
     };
-    let local_owner = preferred_local_owner_name(state);
-    let local_owner_id = local_owner
-        .as_deref()
-        .and_then(|name| sim.interner().get(name));
-    let hovered_entity_id =
-        health_bar_hover_target(state, local_owner.as_deref()).map(|(stable_id, _)| stable_id);
+    let local_owner_id = local_owner.and_then(|name| sim.interner().get(name));
     let (tactical_width, tactical_height) =
         crate::app::input::camera::tactical_viewport_size(state);
     let zoom = state.match_state.input.zoom_level;
@@ -671,11 +668,10 @@ pub(crate) fn build_building_status_render_instances(
 ) -> BuildingStatusTextInstances {
     let mut labels = BuildingStatusTextInstances::default();
     let current_house = sim.interner().resolve(current_house_id);
-    for entity in sim.entities().values() {
+    for entity in sim.entities().values_of_category(EntityCategory::Structure) {
         //6D944D/9458 tests Mark+74 and body-opportunity+99.43E7C7
         //requires selected, including when the object is also hovered.
-        if entity.category() != EntityCategory::Structure
-            || !body_opportunities.contains(&entity.stable_id())
+        if !body_opportunities.contains(&entity.stable_id())
             || !entity.lifecycle.cell_marked()
             || !entity.selection.is_selected()
             || !crate::map::houses::is_allied_with(
@@ -1503,7 +1499,6 @@ pub(crate) fn techno_extras_for_parent(
         entity,
         health_bars,
         object.is_some_and(|object| entity.health.is_full(object.strength)),
-        local_owner,
         observer_id,
         viewport.ignore_visibility,
     );
@@ -2000,13 +1995,26 @@ pub(crate) fn scale_pip_draws(
 /// Maps game-state intent → CursorId → loaded sequence via HashMap lookup.
 /// The id travels with the sequence because the animation phase is keyed on it —
 /// changing shape restarts the sequence at frame 0.
-fn active_cursor_sequence(state: &AppState) -> Option<(CursorId, &SoftwareCursorSequence)> {
+///
+/// This per-frame resolution stands in for MouseClass's stored shapes. In
+/// gamemd the hover cursor is the *default* one (`SetCursorFromAction`
+/// `0x004AAE90` calls `MouseClass::SetDefaultCursor` `0x005BDA80`), overrides
+/// go through `SetCursor` (`0x005BDC80`), and the mode setters and
+/// `ExitPause` return with `RevertCursor` (`0x005BDAA0`: `SetCursor(Default,
+/// small 0)`). The constructor (`0x005BDA40`) and `Init_Clear` (`0x005BDF50`)
+/// start `DefaultCursor` at row 0. Re-deriving the shape every frame shows the
+/// same row once its owner re-issues it; `GetDefaultCursor` (`0x0040D280`,
+/// slot +0xA0) has no display caller among the 47 `call [reg+0xA0]` sites.
+fn active_cursor_sequence<'a>(
+    state: &'a AppState,
+    targets: &CursorTargets,
+) -> Option<(CursorId, &'a SoftwareCursorSequence)> {
     let cursor = state
         .match_state
         .match_presentation
         .software_cursor
         .as_ref()?;
-    let kind = current_cursor_feedback_kind(state);
+    let kind = current_cursor_feedback_kind(state, targets);
     state.match_state.input.note_shown_cursor(kind);
     let id: CursorId = kind
         .and_then(cursor_id_for_feedback)
@@ -2017,40 +2025,57 @@ fn active_cursor_sequence(state: &AppState) -> Option<(CursorId, &SoftwareCursor
 /// The cursor id the production draw shows now. Like a draw, it notes the
 /// shown cursor, so a held button over the sidebar keeps it.
 pub(crate) fn shown_cursor_id(state: &AppState) -> Option<CursorId> {
-    active_cursor_sequence(state).map(|(id, _)| id)
+    active_cursor_sequence(state, &CursorTargets::read(state)).map(|(id, _)| id)
 }
 
 /// Observation of the same cursor selection used by the production draw.
 /// Map captures admit only a static arrow, so cursor wall time cannot alter it.
 pub(crate) fn static_default_cursor(state: &AppState) -> bool {
     state.use_software_cursor()
-        && active_cursor_sequence(state)
+        && active_cursor_sequence(state, &CursorTargets::read(state))
             .is_some_and(|(id, sequence)| id == CursorId::Default && sequence.interval_ms == 0)
 }
 
-pub(crate) fn build_software_cursor_instances(state: &AppState) -> Vec<SpriteInstance> {
+/// The software cursor frame a draw shows. Its sprite and its texture come
+/// from this one choice, made once per draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SoftwareCursorDraw {
+    id: CursorId,
+    frame: usize,
+}
+
+/// The draw's cursor sprite, for its cursor `targets`.
+pub(crate) fn build_software_cursor_instances(
+    state: &AppState,
+    targets: &CursorTargets,
+) -> (Vec<SpriteInstance>, Option<SoftwareCursorDraw>) {
     if !state.use_software_cursor() || !state.match_state.input.cursor_visibility.is_visible() {
-        return Vec::new();
+        return (Vec::new(), None);
     }
-    let Some((id, sequence)) = active_cursor_sequence(state) else {
-        return Vec::new();
+    let Some((id, sequence)) = active_cursor_sequence(state, targets) else {
+        return (Vec::new(), None);
     };
-    let frame = if id == CursorId::Default
+    // Row 0 is still the shape shown over a node, so its phase steps:
+    // leaving the node restarts the next cursor's animation.
+    let Some(animated) = software_cursor_frame_index(id, sequence) else {
+        return (Vec::new(), None);
+    };
+    let index = if id == CursorId::Default
         && crate::app::input::planning_mode::node_at_cursor(state).is_some()
     {
         //63AC41..4E selects row0's static small frame when only hovering.
-        sequence.frames.get(1)
+        1
     } else {
-        software_cursor_frame_for(id, sequence)
+        animated
     };
-    let Some(frame) = frame else {
-        return Vec::new();
+    let Some(frame) = sequence.frames.get(index) else {
+        return (Vec::new(), None);
     };
     // Cursor rendering: the hotspot pixel must sit exactly at the OS cursor position.
     // Scroll cursors use edge-aligned hotspots, so cursor_x/y represents the hotspot
     // location — subtract the hotspot offset to find the top-left of the sprite.
     // Note: cursor_x/y are in screen space; camera offset is NOT applied (cursor is UI).
-    vec![SpriteInstance {
+    let sprite = SpriteInstance {
         position: [
             state.match_state.input.cursor_x + state.match_state.input.camera_x
                 - sequence.hotspot[0],
@@ -2064,15 +2089,21 @@ pub(crate) fn build_software_cursor_instances(state: &AppState) -> Vec<SpriteIns
         tint: [1.0, 1.0, 1.0],
         alpha: 1.0,
         ..Default::default()
-    }]
+    };
+    (vec![sprite], Some(SoftwareCursorDraw { id, frame: index }))
 }
 
-pub(crate) fn current_software_cursor_texture(state: &AppState) -> Option<&BatchTexture> {
-    if !state.match_state.input.cursor_visibility.is_visible() {
-        return None;
-    }
-    let (id, sequence) = active_cursor_sequence(state)?;
-    Some(&software_cursor_frame_for(id, sequence)?.texture)
+/// The texture of the frame a draw's cursor sprite was built from.
+pub(crate) fn software_cursor_texture(
+    state: &AppState,
+    draw: SoftwareCursorDraw,
+) -> Option<&BatchTexture> {
+    let cursor = state
+        .match_state
+        .match_presentation
+        .software_cursor
+        .as_ref()?;
+    Some(&cursor.get(draw.id)?.frames.get(draw.frame)?.texture)
 }
 
 fn status_entity_visible_plain(
@@ -2415,6 +2446,69 @@ mod tests {
         assert!(drawable(EntityCategory::Infantry, false, false));
     }
 
+    /// One full-health tank on cell (20,20) and one viewer's fog plane. The
+    /// revealed case has `is_cell_revealed` without `is_cell_visible`, the
+    /// state `MapRevealProjection::Transient` leaves after a trigger reveal.
+    fn widened_strip(owner_name: &str, viewer_name: &str, revealed: bool, passive: bool) -> bool {
+        use crate::sim::{
+            combat::Health, game_entity::GameEntity, house_state::HouseState, world::Simulation,
+        };
+        use crate::ui::main_menu_dialogs::options::HealthBarMode::Always;
+        let mut sim = Simulation::new();
+        let viewer = sim.intern(viewer_name);
+        let owner = sim.intern(owner_name);
+        sim.houses_mut_for_test()
+            .get_or_register_for_test(owner, || {
+                let mut house = HouseState::new(owner, 0, None, false, 0, 10);
+                house.set_multiplay_passive_for_test(passive);
+                house
+            });
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
+        if revealed {
+            sim.fog_mut_for_test()
+                .reveal_cells_for_owner(viewer, [(20, 20)]);
+            assert!(sim.fog().is_cell_revealed(viewer, 20, 20));
+            assert!(!sim.fog().is_cell_visible(viewer, 20, 20));
+        }
+        let mut entity = GameEntity::new_at_frame_zero_for_test(
+            1,
+            20,
+            20,
+            4,
+            0,
+            owner,
+            Health::new(100),
+            sim.intern("MGTK"),
+            EntityCategory::Unit,
+            0,
+            5,
+            false,
+        );
+        entity.lifecycle.set_in_limbo_for_test(false);
+        sim.entities_mut_for_test().insert(entity);
+        let entity = sim.entities().get(1).unwrap();
+        let widened = health_strip_widened(&sim, entity, Always, true, Some(viewer), false);
+        health_strip_visibility(&sim, entity, None, Some(viewer), widened).1
+    }
+
+    #[test]
+    fn widened_strips_stay_off_shrouded_cells_for_every_house() {
+        // A pre-placed friendly tank on an unrevealed cell has no body on the
+        // A plane; its strip must not give the position away (#3901).
+        assert!(!widened_strip("Player", "Player", false, false));
+        assert!(!widened_strip("Enemy", "Player", false, false));
+        // Explored ground still draws, so this is not blanket suppression.
+        assert!(widened_strip("Enemy", "Player", true, false));
+        assert!(widened_strip("Player", "Player", true, false));
+    }
+
+    #[test]
+    fn passive_houses_have_no_automatic_widened_strips() {
+        assert!(!widened_strip("Neutral", "Player", true, true));
+        assert!(!widened_strip("Special", "Player", true, true));
+        assert!(widened_strip("Enemy", "Player", true, false));
+    }
+
     /// VERA `[VERA] HealthBars=` widens the hover arm, so each mode keeps the
     /// native strips and the native disguise test: an enemy Mirage worn as
     /// terrain on explored ground stays bare, a hovered full-health tank keeps
@@ -2455,15 +2549,7 @@ mod tests {
             sim.entities_mut_for_test().insert(entity);
             let entity = sim.entities().get(1).unwrap();
             let full = entity.health.is_full(100);
-            let widened = health_strip_widened(
-                &sim,
-                entity,
-                mode,
-                full,
-                Some("Player"),
-                Some(player),
-                false,
-            );
+            let widened = health_strip_widened(&sim, entity, mode, full, Some(player), false);
             health_strip_visibility(&sim, entity, hovered.then_some(1), Some(player), widened).1
         };
         // (mode, disguised, explored, hovered); every tank is at full health.

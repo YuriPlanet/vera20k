@@ -388,10 +388,11 @@ fn surface_word_tint(word: u16) -> [f32; 3] {
 /// Compose this call's already projected lines in Tactical6D4750 Techno order.
 /// Native7049C0 writes a constant opaque color without reading A or Z, so after
 /// resolving overlaps its disjoint final spans may be emitted in row order.
-/// The pixel grid and dirty ranges are derived only from these lines/clip and
-/// are dropped before returning; no presentation cache or simulation state is
-/// retained. Both routes pass the same logical pixels through the half-open
-/// pixel-center scaling in `push_surface_rect` after resolving opaque stores.
+/// The pixel grid and dirty ranges are derived only from these lines/clip;
+/// the grid's allocation outlives the call (`DENSE_PIXELS`), its contents do
+/// not, and no simulation state is retained. Both routes pass the same logical
+/// pixels through the half-open pixel-center scaling in `push_surface_rect`
+/// after resolving opaque stores.
 /// Native primitive/overlap evidence: tools/procedural_drawing_oracle/action_lines.
 fn build_selected_action_line_instances(
     lines: &[ProjectedActionLine],
@@ -408,37 +409,82 @@ fn build_selected_action_line_instances(
     {
         return instances;
     }
-    let color_index = |kind| match kind {
-        SelectedLineKind::Move => 1_u8,
-        SelectedLineKind::Attack => 2_u8,
-    };
+    let color_index = action_line_color_index;
     let width = width as usize;
     let height = height as usize;
     // Small selections keep the direct route. Checked/fallible allocations
     // preserve that same route if a dense viewport cannot be represented.
-    let dense = (lines.len() > 32)
-        .then(|| {
-            let pixel_count = width.checked_mul(height)?;
-            let mut pixels = Vec::new();
-            pixels.try_reserve_exact(pixel_count).ok()?;
-            pixels.resize(pixel_count, 0_u8); // 0 is untouched, not a black pixel.
+    let dense = lines.len() > 32
+        && DENSE_PIXELS.with_borrow_mut(|pixels| {
+            let Some(pixel_count) = width.checked_mul(height) else {
+                return false;
+            };
+            if pixels.len() < pixel_count {
+                if pixels
+                    .try_reserve_exact(pixel_count - pixels.len())
+                    .is_err()
+                {
+                    return false;
+                }
+                pixels.resize(pixel_count, 0_u8); // 0 is untouched, not a black pixel.
+            }
             let mut dirty_rows = Vec::new();
-            dirty_rows.try_reserve_exact(height).ok()?;
+            if dirty_rows.try_reserve_exact(height).is_err() {
+                return false;
+            }
             dirty_rows.resize(height, [width, 0]); // [first, end), empty initially.
-            Some((pixels, dirty_rows))
-        })
-        .flatten();
-    let Some((mut pixels, mut dirty_rows)) = dense else {
+            compose_dense_action_lines(
+                lines,
+                colors,
+                viewport,
+                [width, height],
+                pixels,
+                dirty_rows,
+                &mut instances,
+            );
+            true
+        });
+    if !dense {
         for line in lines {
             let tint = colors[usize::from(color_index(line.kind) - 1)];
             emit_selected_action_line(line.start, line.end, viewport.clip, |rect| {
                 push_surface_rect(&mut instances, rect, tint, viewport);
             });
         }
-        return instances;
-    };
+    }
+    instances
+}
+
+thread_local! {
+    /// The dense route's colour grid, whose allocation is kept between frames
+    /// (a VERA performance cache, not native state). Every byte is 0 between
+    /// calls: each call clears the spans it painted.
+    static DENSE_PIXELS: std::cell::RefCell<Vec<u8>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn action_line_color_index(kind: SelectedLineKind) -> u8 {
+    match kind {
+        SelectedLineKind::Move => 1,
+        SelectedLineKind::Attack => 2,
+    }
+}
+
+/// The dense route: resolve every line's opaque stores in `pixels` (zero on
+/// entry, `[width, height]` row-major), emit the final spans in row order and
+/// clear them again.
+fn compose_dense_action_lines(
+    lines: &[ProjectedActionLine],
+    colors: [[f32; 3]; 2],
+    viewport: TacticalViewport,
+    [width, height]: [usize; 2],
+    pixels: &mut [u8],
+    mut dirty_rows: Vec<[usize; 2]>,
+    instances: &mut Vec<SpriteInstance>,
+) {
+    let [left, top, ..] = viewport.clip;
     for line in lines {
-        let color = color_index(line.kind);
+        let color = action_line_color_index(line.kind);
         emit_selected_action_line(line.start, line.end, viewport.clip, |rect| {
             if rect[2] <= 0 || rect[3] <= 0 {
                 return;
@@ -463,7 +509,10 @@ fn build_selected_action_line_instances(
         });
     }
     for (y, [first, end]) in dirty_rows.into_iter().enumerate() {
-        let row = &pixels[y * width..(y + 1) * width];
+        if first >= end {
+            continue;
+        }
+        let row = &mut pixels[y * width..(y + 1) * width];
         let mut x = first;
         while x < end {
             let color = row[x];
@@ -477,14 +526,14 @@ fn build_selected_action_line_instances(
                 x += 1;
             }
             push_surface_rect(
-                &mut instances,
+                instances,
                 [left + start as i32, top + y as i32, (x - start) as i32, 1],
                 colors[usize::from(color - 1)],
                 viewport,
             );
         }
+        row[first..end].fill(0);
     }
-    instances
 }
 
 /// Integer logical viewport plus VERA's presentation-only zoom. Native rally

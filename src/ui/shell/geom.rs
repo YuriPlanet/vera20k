@@ -53,6 +53,13 @@ pub const LOWER_STRIP_H: i32 = 32;
 /// edge; the surrounding chrome remains 168 pixels wide.
 pub const SDBTNANM_CELL_W_NARROW: i32 = 156;
 
+/// VERA's own: the widest centred caption that stays on the right panel's
+/// art. An SDBTNANM button's red face spans about 13..134 px of the 156-px
+/// cell, whose caption rect, the cell less 2 px, centres text 77 px in (78
+/// pressed); the title window spans 658..774 at 800x600, where the title
+/// rect centres text at 713 (716 in battle). Measured on the art at 1:1.
+pub const RIGHT_PANEL_FACE_W: u32 = 110;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RightPanelRects {
     pub top: RectPx,

@@ -5,6 +5,7 @@ fn main() {
     println!("cargo::rerun-if-changed=build.rs");
     multiplayer_build_identity();
     source_location();
+    shipped_languages();
 
     // Build scripts run on the host; inspect Cargo's target for cross-builds.
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").expect("Cargo sets target OS");
@@ -95,6 +96,41 @@ fn source_location() {
         _ => "github.com/YuriPlanet/vera20k".to_owned(),
     };
     println!("cargo::rustc-env=VERA20K_SOURCE={source}");
+}
+
+/// The language files VERA ships (`src/i18n/vera20k.<tag>.ini`), which
+/// src/i18n/mod.rs compiles in: shipping a language is adding its file.
+/// English, which holds every label, comes first.
+fn shipped_languages() {
+    const DIRECTORY: &str = "src/i18n";
+    println!("cargo::rerun-if-changed={DIRECTORY}");
+    let mut tags: Vec<String> = std::fs::read_dir(DIRECTORY)
+        .expect("read src/i18n")
+        .filter_map(|entry| {
+            let name = entry.expect("read src/i18n entry").file_name();
+            let name = name.to_str()?;
+            Some(
+                name.strip_prefix("vera20k.")?
+                    .strip_suffix(".ini")?
+                    .to_owned(),
+            )
+        })
+        .collect();
+    tags.sort_by_key(|tag| (tag != "en", tag.clone()));
+    assert_eq!(
+        tags.first().map(String::as_str),
+        Some("en"),
+        "src/i18n needs vera20k.en.ini"
+    );
+    let mut code = String::from("pub(super) const FILES: &[(&str, &str)] = &[\n");
+    for tag in &tags {
+        code.push_str(&format!(
+            "    ({tag:?}, include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{DIRECTORY}/vera20k.{tag}.ini\"))),\n"
+        ));
+    }
+    code.push_str("];\n");
+    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"));
+    std::fs::write(out.join("shipped_languages.rs"), code).expect("write shipped_languages.rs");
 }
 
 /// The game's icon and version details, which Explorer, the Start menu and

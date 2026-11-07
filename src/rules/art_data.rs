@@ -18,6 +18,7 @@ use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::native_processing::anim_type_runtime_key;
 use crate::rules::object_type::{BuildingHiddenOccupancyProfile, HIDDEN_OCCUPY_SLOT_COUNT};
 use crate::util::lookup_hash::LookupMap;
+use crate::util::native_string::with_ascii_uppercase;
 use crate::util::native_x87::NativeF64Bits;
 
 /// A war factory's unload art, read by `BuildingTypeClass::LoadVisualAssets
@@ -917,11 +918,13 @@ pub struct ResolvedObjectArt<'a> {
 /// Lookup table for art.ini rendering data.
 #[derive(Debug, Clone)]
 pub struct ArtRegistry {
-    /// Exact ART section -> its sole metadata entry.
-    entries: HashMap<String, ArtEntry>,
+    /// Exact ART section -> its sole metadata entry. Both maps are only
+    /// looked up, and draws look art up for every object each frame, so they
+    /// take the lookup hasher.
+    entries: LookupMap<String, ArtEntry>,
     /// Derived uppercase lookup -> exact entry key for legacy visual consumers.
     /// Rebuilt with entries; preserves their former last-wins folded lookup.
-    entry_names: HashMap<String, String>,
+    entry_names: LookupMap<String, String>,
     /// section ID (uppercase) -> `CanHideThings=`. Missing sections default true.
     can_hide_things: HashMap<String, bool>,
     /// section ID (uppercase) -> `OccupyHeight=`, defaulting to art `Height=`.
@@ -1056,8 +1059,8 @@ pub(crate) fn read_infantry_discharge_frames(section: &IniSection, frames: &mut 
 impl ArtRegistry {
     /// Parse all sections from an art.ini IniFile into the registry.
     pub fn from_ini(ini: &IniFile) -> Self {
-        let mut entries: HashMap<String, ArtEntry> = HashMap::new();
-        let mut entry_names: HashMap<String, String> = HashMap::new();
+        let mut entries: LookupMap<String, ArtEntry> = LookupMap::default();
+        let mut entry_names: LookupMap<String, String> = LookupMap::default();
         let mut can_hide_things: HashMap<String, bool> = HashMap::new();
         let mut occupy_heights: HashMap<String, i32> = HashMap::new();
         let mut anim_runtime_configs: LookupMap<String, AnimTypeRuntimeConfig> =
@@ -1342,8 +1345,8 @@ impl ArtRegistry {
     /// Create an empty registry (used when art.ini is unavailable).
     pub fn empty() -> Self {
         ArtRegistry {
-            entries: HashMap::new(),
-            entry_names: HashMap::new(),
+            entries: LookupMap::default(),
+            entry_names: LookupMap::default(),
             can_hide_things: HashMap::new(),
             occupy_heights: HashMap::new(),
             anim_runtime_configs: LookupMap::default(),
@@ -1356,9 +1359,7 @@ impl ArtRegistry {
 
     /// Look up art entry for an image ID (case-insensitive).
     pub fn get(&self, image_id: &str) -> Option<&ArtEntry> {
-        self.entry_names
-            .get(&image_id.to_uppercase())
-            .and_then(|name| self.entries.get(name))
+        folded_entry_name(&self.entry_names, image_id).and_then(|name| self.entries.get(name))
     }
 
     /// Native Foundation474DA0 uses exact section/key identity. The cached
@@ -1860,7 +1861,16 @@ impl ArtRegistry {
         type_id: &str,
         rules_image: &str,
     ) -> Option<&'a ArtEntry> {
-        self.resolve_object_art(type_id, rules_image).entry
+        // `resolve_object_art`'s entry without building its owned ids: the
+        // rules Image's section, else the type's own. Draws ask this for
+        // every object each frame. Uppercasing an ASCII id twice changes
+        // nothing; other ids take the full path.
+        let image = rules_image.trim();
+        if !(type_id.is_ascii() && image.is_ascii()) {
+            return self.resolve_object_art(type_id, rules_image).entry;
+        }
+        let base = if image.is_empty() { type_id } else { image };
+        self.get(base).or_else(|| self.get(type_id))
     }
 
     /// Resolve the effective image id for an object.
@@ -2028,7 +2038,7 @@ impl ArtRegistry {
 
     /// Mutable lookup; case-insensitive on the key.
     pub fn get_mut(&mut self, image_id: &str) -> Option<&mut ArtEntry> {
-        let name = self.entry_names.get(&image_id.to_uppercase())?;
+        let name = folded_entry_name(&self.entry_names, image_id)?;
         self.entries.get_mut(name)
     }
 
@@ -2485,6 +2495,19 @@ fn apply_generic_letter(name: &str) -> String {
     let mut chars: Vec<char> = name.chars().collect();
     chars[1] = NEW_THEATER_GENERIC_LETTER;
     chars.into_iter().collect()
+}
+
+/// The exact section `image_id` folds to (`str::to_uppercase`). An ASCII id,
+/// whose Unicode uppercase is its ASCII one, is folded on the stack.
+fn folded_entry_name<'a>(
+    names: &'a LookupMap<String, String>,
+    image_id: &str,
+) -> Option<&'a String> {
+    if image_id.is_ascii() {
+        with_ascii_uppercase(image_id, |key| names.get(key))
+    } else {
+        names.get(&image_id.to_uppercase())
+    }
 }
 
 fn normalize_id(value: &str) -> Option<String> {

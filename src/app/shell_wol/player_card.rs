@@ -18,7 +18,7 @@ use crate::ui::shell::list::ListScrollPart;
 use crate::ui::shell::modal::{WolPlayerCardLayout, wol_player_card_layout_on};
 use crate::ui::wol_lobby::{
     CARD_BUDDY, CARD_CLOSE, CARD_COUNTRY, CARD_COUNTRY_ROWS, CARD_MESSAGE, CARD_PROFILE,
-    PLAYER_BADGE_X, WolCardAction, WolPlayerCard,
+    PLAYER_BADGE_X, WolCardAction, WolPlayerCard, badge_name_key,
 };
 use crate::ui::wol_persona::{LOCALE_COUNT, locale_rows};
 use crate::util::time::Instant;
@@ -365,7 +365,8 @@ pub(super) fn key_press(state: &mut AppState, code: Option<KeyCode>) -> bool {
     true
 }
 
-/// The hovered button's help while the card is open.
+/// The hovered button's help while the card is open, else the help of the
+/// row under the pointer.
 pub(super) fn status_help(state: &AppState) -> Option<String> {
     let card = card(state)?;
     let key = match card.buttons.hovered {
@@ -374,7 +375,20 @@ pub(super) fn status_help(state: &AppState) -> Option<String> {
         Some(CARD_BUDDY) if buddy(state, &card.name).is_some() => "VERA:RemoveBuddyHelp",
         Some(CARD_BUDDY) => "VERA:AddBuddyHelp",
         Some(CARD_PROFILE) => "VERA:FullProfileHelp",
-        _ => return Some(String::new()),
+        _ if card.countries_open() => return Some(String::new()),
+        _ => {
+            let (x, y) = state.match_state.input.cursor_px();
+            let help = layout(state)
+                .rows
+                .iter()
+                .zip(rows(state, &card.name))
+                .find(|((caption, value), _)| {
+                    (caption.x..value.x + value.w).contains(&x)
+                        && (value.y..value.y + value.h).contains(&y)
+                })
+                .and_then(|(_, row)| row.help);
+            return Some(help.unwrap_or_default());
+        }
     };
     Some(crate::i18n::fill(
         &label(state, key),
@@ -382,27 +396,48 @@ pub(super) fn status_help(state: &AppState) -> Option<String> {
     ))
 }
 
-/// The open card's rows and buttons: the name with its badge, the clan, the
-/// country (on your own card always, Unknown without one), the season's rank
-/// and OS or Unranked, and the season's wins and losses.
-pub(crate) fn view(state: &AppState) -> Option<PlayerCardView> {
-    let card = card(state)?;
+/// The player list's badge for `name`, which the card shows beside it.
+fn badge(state: &AppState, name: &str) -> Option<&'static str> {
     let lobby = state.frontend.wol.as_ref()?.lobby()?;
-    let name = card.name.as_str();
-    let own = own(state, name);
-    let label = |key: &str| label(state, key);
-    let badge = lobby
+    lobby
         .ui
         .player_rows
         .iter()
         .find(|row| row.name == name)
         .and_then(|row| row.score_icons.iter().find(|(_, x)| *x == PLAYER_BADGE_X))
-        .map(|(file, _)| *file);
-    let mut rows = vec![(label("VERA:Username"), name.to_owned())];
-    rows.extend(clan(state, name).map(|clan| (label("GUI:Clan"), clan)));
-    let country =
-        super::lobby::locale_name(state, name).or_else(|| own.then(|| label("WOL:Locale00")));
-    rows.extend(country.map(|country| (label("VERA:Country"), country)));
+        .map(|(file, _)| *file)
+}
+
+/// One row of the card: its caption, its value and the help it shows under
+/// the pointer.
+struct CardRow {
+    caption: String,
+    value: String,
+    help: Option<String>,
+}
+
+/// The card's rows: the name with its badge, the clan, the country (on your
+/// own card always, Unknown without one), the season's rank and OS or
+/// Unranked, and the season's wins and losses. The badge and the season
+/// explain themselves under the pointer.
+fn rows(state: &AppState, name: &str) -> Vec<CardRow> {
+    let label = |key: &str| label(state, key);
+    let row = |caption: &str, value: String| CardRow {
+        caption: label(caption),
+        value,
+        help: None,
+    };
+    let badge_help = badge(state, name)
+        .and_then(badge_name_key)
+        .map(|key| crate::i18n::fill(&label("VERA:BadgeHelp"), &[("badge", &label(key))]));
+    let mut rows = vec![CardRow {
+        help: badge_help,
+        ..row("VERA:Username", name.to_owned())
+    }];
+    rows.extend(clan(state, name).map(|clan| row("GUI:Clan", clan)));
+    let country = super::lobby::locale_name(state, name)
+        .or_else(|| own(state, name).then(|| label("WOL:Locale00")));
+    rows.extend(country.map(|country| row("VERA:Country", country)));
     let ladder = state
         .frontend
         .wol_lobby_globals
@@ -411,20 +446,37 @@ pub(crate) fn view(state: &AppState) -> Option<PlayerCardView> {
     let season = match ladder {
         Some(record) => crate::i18n::fill(
             &label("VERA:SeasonRank"),
-            &[("rank", &record.rank), ("os", &record.points)],
+            &[("rank", &record.rank), ("os", &record.os_text())],
         ),
         None => label("TXT_UNRANKED"),
     };
-    rows.push((label("VERA:Season"), season));
+    rows.push(CardRow {
+        help: Some(label("VERA:SeasonHelp")),
+        ..row("VERA:Season", season)
+    });
     if let Some(record) = ladder {
-        rows.push((
-            label("VERA:Record"),
+        rows.push(row(
+            "VERA:Record",
             crate::i18n::fill(
                 &label("VERA:WonLost"),
                 &[("wins", &record.wins), ("losses", &record.losses)],
             ),
         ));
     }
+    rows
+}
+
+/// The open card's rows and buttons.
+pub(crate) fn view(state: &AppState) -> Option<PlayerCardView> {
+    let card = card(state)?;
+    let name = card.name.as_str();
+    let own = own(state, name);
+    let label = |key: &str| label(state, key);
+    let badge = badge(state, name);
+    let rows = rows(state, name)
+        .into_iter()
+        .map(|row| (row.caption, row.value))
+        .collect();
     let layout = layout(state);
     let buddy = buddy(state, name).is_some();
     let buttons = buttons(&layout, own)

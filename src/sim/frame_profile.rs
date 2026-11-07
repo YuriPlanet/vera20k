@@ -1,4 +1,5 @@
-//! Per-match frame-time accounting for the end-of-match report.
+//! Per-match frame-time accounting for the end-of-match report and the
+//! in-game performance panel's Most CPU row.
 //!
 //! The dashboard reports one tick cost and one frame rate, but a report that
 //! answers "where did the time go" needs the frame split into phases. This
@@ -22,8 +23,8 @@
 //!   inside the live object pass. Slots without a separate current phase stay
 //!   zero; they do not claim an independently measured subsystem.
 
-use std::ops::Range;
 use crate::util::time::{Duration, Instant};
+use std::ops::Range;
 
 /// A local, enabled-only observer; never held by or serialized with the world.
 pub(crate) struct FrameClock {
@@ -223,6 +224,12 @@ impl FrameProfile {
     /// Completed frame calls measured so far, including a terminal frame.
     pub fn frames(&self) -> u64 {
         self.frames
+    }
+
+    /// Per-phase nanoseconds and frames since the last reset. A reader that
+    /// diffs two samples (the performance panel) sees a reset as fewer frames.
+    pub fn totals_ns(&self) -> (u64, [u128; PHASE_COUNT]) {
+        (self.frames, self.spans_ns)
     }
 
     /// The simulation-side report. `None` before the first frame is measured.

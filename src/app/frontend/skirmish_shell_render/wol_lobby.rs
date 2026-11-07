@@ -192,7 +192,7 @@ pub(crate) fn paint_wol_lobby_children(
             None => {
                 if let Some((_, key)) = SORT_BUTTONS.iter().find(|(known, _)| *known == id) {
                     let caption = if modern && matches!(id, SORT_ALPHA | PLAYER_SORT_ALPHA) {
-                        "Name".to_owned()
+                        crate::i18n::tr("VERA:SortName")
                     } else {
                         label(state, key)
                     };
@@ -540,7 +540,7 @@ pub(super) fn paint_room_limits(
     };
     labels.extend([
         caption(
-            "Max players".to_owned(),
+            crate::i18n::tr("VERA:MaxPlayers"),
             layout.players_label,
             ShellAlign::H_RIGHT | ShellAlign::V_CENTER,
         ),
@@ -550,7 +550,7 @@ pub(super) fn paint_room_limits(
             ShellAlign::H_CENTER | ShellAlign::V_CENTER,
         ),
         caption(
-            "Allow spectators".to_owned(),
+            crate::i18n::tr("VERA:AllowSpectators"),
             crate::ui::skirmish_shell::checkbox_text_rect(layout.spectators, scale),
             ShellAlign::V_CENTER,
         ),
@@ -672,7 +672,7 @@ pub(crate) fn paint_wol_lobby_popup(
                     scale,
                 );
                 labels.push(PaintLabel {
-                    text: "Ranked game".to_owned().into(),
+                    text: crate::i18n::tr("VERA:RankedGame").into(),
                     rect: crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
                     align: ShellAlign::V_CENTER,
                     rgb: SHELL_LABEL_TEXT_RGB,
@@ -681,7 +681,7 @@ pub(crate) fn paint_wol_lobby_popup(
             }
             if let (Some(edit), Some((label, rect))) = (&create.name, layout.name) {
                 labels.push(PaintLabel {
-                    text: "Room name".to_owned().into(),
+                    text: crate::i18n::tr("VERA:RoomName").into(),
                     rect: label,
                     align: ShellAlign::H_RIGHT,
                     rgb: SHELL_LABEL_TEXT_RGB,

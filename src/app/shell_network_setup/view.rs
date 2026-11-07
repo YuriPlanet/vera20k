@@ -267,7 +267,7 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
             };
             let seat = adding || ai.is_some() || vacancy == Some(NetworkVacancy::Open);
             if adding {
-                players.push(item(3, "Add slot".to_owned()));
+                players.push(item(3, crate::i18n::tr("VERA:AddSlot")));
             }
             if !(host && ai.is_some()) {
                 players.push(item(
@@ -288,14 +288,14 @@ pub(crate) fn view(state: &AppState) -> Option<SetupView> {
                 players.push(item(2, label(state, "GUI:Open")));
             }
             if host && human.is_some() && !is_local {
-                players.push(item(2, "Kick".to_owned()));
+                players.push(item(2, crate::i18n::tr("VERA:Kick")));
             }
             if host
                 && !adding
                 && (ai.is_some() || vacancy == Some(NetworkVacancy::Open))
                 && may_remove
             {
-                players.push(item(3, "Remove slot".to_owned()));
+                players.push(item(3, crate::i18n::tr("VERA:RemoveSlot")));
             }
         } else {
             if human.is_some() || !host {
