@@ -174,9 +174,7 @@ fn launch_missile(
         .and_then(|name| rules.super_weapon(name))
         .and_then(|sw| sw.weapon_type.as_deref())
         .and_then(|name| rules.weapon(name));
-    let warhead = weapon
-        .and_then(|weapon| weapon.warhead.as_deref())
-        .and_then(|name| rules.warhead(name));
+    let warhead = weapon.and_then(|weapon| rules.weapon_warhead(weapon));
     let (Some(weapon), Some(warhead), Some(object)) =
         (weapon, warhead, sim.object_type(entity.type_ref(), rules))
     else {

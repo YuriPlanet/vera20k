@@ -388,8 +388,7 @@ mod receiver {
                         object.weapon_at(index)
                     })
                     .and_then(|name| rules.weapon(name))
-                    .and_then(|weapon| weapon.warhead.as_deref())
-                    .and_then(|name| rules.warhead(name))
+                    .and_then(|weapon| rules.weapon_warhead(weapon))
                     .and_then(|wh| wh.ares_rules())
                     .is_some_and(|emp| emp.duration() != 0)
                 }) {

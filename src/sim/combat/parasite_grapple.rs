@@ -167,7 +167,7 @@ impl Simulation {
         let Some(warhead_name) = weapon.warhead.as_deref() else {
             return;
         };
-        let Some(warhead) = rules.warhead(warhead_name) else {
+        let Some(warhead) = rules.weapon_warhead(weapon) else {
             return;
         };
         let Some(target) = self.substrate.entities.get(victim) else {

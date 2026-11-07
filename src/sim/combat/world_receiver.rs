@@ -3057,13 +3057,10 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
         .payload
         .installed_weapon()
         .and_then(|weapon| rules.weapon(world.interner.resolve(weapon)))
-        .and_then(|weapon| weapon.projectile.as_deref())
-        .and_then(|projectile| rules.projectile(projectile))
+        .and_then(|weapon| rules.weapon_projectile(weapon))
         .map_or(0, |projectile| projectile.detonation_altitude);
     let weapon = rules.weapon(NUKE_PAYLOAD_WEAPON);
-    let warhead = weapon
-        .and_then(|weapon| weapon.warhead.as_deref())
-        .and_then(|name| rules.warhead(name));
+    let warhead = weapon.and_then(|weapon| rules.weapon_warhead(weapon));
     let (Some(target_coords), Some(weapon), Some(warhead)) = (target_coords, weapon, warhead)
     else {
         return;
@@ -3357,10 +3354,7 @@ fn emit_detonation_receivers<'r>(
         .installed_weapon()
         .and_then(|weapon| rules.weapon(world.interner.resolve(weapon)))
         && weapon.rad_level > 0
-        && let Some(rad_warhead) = weapon
-            .warhead
-            .as_deref()
-            .and_then(|name| rules.warhead(name))
+        && let Some(rad_warhead) = rules.weapon_warhead(weapon)
     {
         out.effects
             .rad_detonations

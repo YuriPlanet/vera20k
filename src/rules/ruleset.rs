@@ -4438,6 +4438,27 @@ pub struct TypeHandle(pub u32);
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct WeaponHandle(u32);
 
+/// O(1) index into a `RuleSet`'s warheads.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct WarheadHandle(u32);
+
+/// O(1) index into a `RuleSet`'s projectiles.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct ProjectileHandle(u32);
+
+/// A weapon's `Warhead=` and `Projectile=` types, which gamemd's
+/// WeaponTypeClass holds as pointers (`+0xAC`, `+0xA0`), resolved once by
+/// the set that holds the weapon ([`RuleSet::resolve_handles`]), so
+/// per-shot reads skip hashing the names. Derived: never hashed or
+/// serialized.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct WeaponParts {
+    /// The resolving set's serial; 0 for a weapon no set resolved.
+    rules_serial: u64,
+    warhead: Option<WarheadHandle>,
+    projectile: Option<ProjectileHandle>,
+}
+
 /// A weapon name as one `RuleSet` resolved it ([`RuleSet::weapon_handle`]).
 /// [`RuleSet::resolved_weapon`] reads the handle only in that set and looks
 /// the name up anywhere else.
@@ -4450,7 +4471,7 @@ pub struct ResolvedWeapon {
 
 /// The weapons a type's records name — `Weapon[]`, `EliteWeapon[]`,
 /// `OccupyWeapon=` and `EliteOccupyWeapon=` — resolved once by the set that
-/// built the type ([`RuleSet::resolve_type_weapons`]), so per-object reads
+/// built the type ([`RuleSet::resolve_handles`]), so per-object reads
 /// skip hashing the name. Derived: never hashed or serialized.
 #[derive(Clone, Debug, Default)]
 pub struct TypeWeapons {
@@ -4525,10 +4546,16 @@ pub struct RuleSet {
     /// unambiguously into the existing name projection. Rebuilt with Rules;
     /// it never allocates or mutates Type state (see issue1784).
     weapon_array: Vec<(String, bool)>,
-    /// All warheads indexed by ID (e.g., "AP" → WarheadType).
-    warheads: LookupMap<String, WarheadType>,
-    /// All projectiles indexed by ID (e.g., "InvisibleLow" → ProjectileType).
-    projectiles: LookupMap<String, ProjectileType>,
+    /// All warheads' handles indexed by ID (e.g., "AP" → its
+    /// `warhead_types` index). Built once with the set, never changed.
+    warheads: LookupMap<String, WarheadHandle>,
+    /// The warheads `warheads` indexes, one per key.
+    warhead_types: Vec<WarheadType>,
+    /// All projectiles' handles indexed by ID (e.g., "InvisibleLow" → its
+    /// `projectile_types` index). Built once with the set, never changed.
+    projectiles: LookupMap<String, ProjectileHandle>,
+    /// The projectiles `projectiles` indexes, one per key.
+    projectile_types: Vec<ProjectileType>,
     /// Country-level rules indexed by country/house type ID.
     countries: HashMap<String, CountryRules>,
     /// Country identities in native `[Countries]` registration order.
@@ -5158,11 +5185,7 @@ impl RuleSet {
         for (name, conventional, em_effect, anim_list, debris_types, verses, ares_verses) in
             processed.warhead_read_states()
         {
-            if let Some(warhead) = rules
-                .warheads
-                .values_mut()
-                .find(|wh| wh.id.eq_ignore_ascii_case(name))
-            {
+            if let Some(warhead) = rules.warhead_mut(name) {
                 warhead.conventional = conventional;
                 warhead.em_effect = em_effect;
                 warhead.anim_list = anim_list.to_vec();
@@ -5172,11 +5195,7 @@ impl RuleSet {
             }
         }
         for (name, particle_system) in processed.warhead_particle_states() {
-            if let Some(warhead) = rules
-                .warheads
-                .values_mut()
-                .find(|warhead| warhead.id.eq_ignore_ascii_case(name))
-            {
+            if let Some(warhead) = rules.warhead_mut(name) {
                 warhead.particle_system = particle_system.map(str::to_owned);
             }
         }
@@ -5271,11 +5290,7 @@ impl RuleSet {
             }
         }
         for (name, ares) in processed.ares_warhead_states() {
-            if let Some(warhead) = rules
-                .warheads
-                .values_mut()
-                .find(|wh| wh.id.eq_ignore_ascii_case(name))
-            {
+            if let Some(warhead) = rules.warhead_mut(name) {
                 warhead.bind_ares_rules(ares);
             }
         }
@@ -5606,20 +5621,12 @@ impl RuleSet {
         // The registry processor owns native read timing and retained values;
         // the runtime definition receives that result, not another ART read.
         for (name, art, image) in processed.projectile_art_states() {
-            if let Some(projectile) = rules
-                .projectiles
-                .values_mut()
-                .find(|projectile| projectile.id.eq_ignore_ascii_case(name))
-            {
+            if let Some(projectile) = rules.projectile_mut(name) {
                 art.apply_to(image, projectile);
             }
         }
         for (name, (airburst, shrapnel)) in processed.projectile_weapon_states() {
-            if let Some(projectile) = rules
-                .projectiles
-                .values_mut()
-                .find(|projectile| projectile.id.eq_ignore_ascii_case(name))
-            {
+            if let Some(projectile) = rules.projectile_mut(name) {
                 projectile.airburst_weapon = airburst.map(str::to_owned);
                 projectile.shrapnel_weapon = shrapnel.map(str::to_owned);
             }
@@ -5729,7 +5736,7 @@ impl RuleSet {
         processed.rules_type_references().apply_to(&mut rules);
         rules.project_house_masks();
         rules.rebuild_animation_sequences();
-        rules.resolve_type_weapons();
+        rules.resolve_handles();
         Ok(rules)
     }
 
@@ -6469,23 +6476,26 @@ impl RuleSet {
         // every reference-driven allocation, weapons' warheads and the
         // [Radiation] RadSiteWarhead included.
         let warhead_ids: HashSet<String> = parse_registry(ini, "Warheads").into_iter().collect();
-        let mut warheads: LookupMap<String, WarheadType> = LookupMap::default();
+        let mut warheads: LookupMap<String, WarheadHandle> = LookupMap::default();
+        let mut warhead_types: Vec<WarheadType> = Vec::new();
         for warhead_id in &warhead_ids {
             if let Some(section) = ini.section(warhead_id) {
                 // Find-or-allocate by the section's canonical header name, so
                 // two references differing only in case resolve to one type
                 // (the original engine matches case-insensitively).
                 let canonical = section.name.clone();
-                warheads
-                    .entry(canonical.clone())
-                    .or_insert_with(|| WarheadType::from_ini_section(&canonical, section));
+                warheads.entry(canonical.clone()).or_insert_with(|| {
+                    warhead_types.push(WarheadType::from_ini_section(&canonical, section));
+                    WarheadHandle(warhead_types.len() as u32 - 1)
+                });
             } else {
                 log::trace!("Warhead '{}' referenced but has no section", warhead_id);
             }
         }
 
         // Step 4: Collect projectile IDs referenced by weapons and parse them.
-        let mut projectiles: LookupMap<String, ProjectileType> = LookupMap::default();
+        let mut projectiles: LookupMap<String, ProjectileHandle> = LookupMap::default();
+        let mut projectile_types: Vec<ProjectileType> = Vec::new();
         let mut projectile_ids: HashSet<String> = HashSet::new();
         for weapon in &weapon_types {
             if let Some(ref proj_id) = weapon.projectile {
@@ -6499,9 +6509,11 @@ impl RuleSet {
                 // and "Invisiblelow"; this collapses them to one entry, as the
                 // original engine does.
                 let canonical = section.name.clone();
-                projectiles
-                    .entry(canonical.clone())
-                    .or_insert_with(|| ProjectileType::from_ini_section(&canonical, section, None));
+                projectiles.entry(canonical.clone()).or_insert_with(|| {
+                    projectile_types
+                        .push(ProjectileType::from_ini_section(&canonical, section, None));
+                    ProjectileHandle(projectile_types.len() as u32 - 1)
+                });
             } else {
                 log::trace!("Projectile '{}' referenced but has no section", proj_id);
             }
@@ -6654,7 +6666,9 @@ impl RuleSet {
             weapon_types,
             weapon_array: Vec::new(),
             warheads,
+            warhead_types,
             projectiles,
+            projectile_types,
             countries,
             country_ids: country_side_registry.country_ids,
             country_indices: country_side_registry.country_indices,
@@ -6899,7 +6913,7 @@ impl RuleSet {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn with_fresh_serial(mut self) -> Self {
         self.serial = next_rule_set_serial();
-        self.resolve_type_weapons();
+        self.resolve_handles();
         self
     }
 
@@ -7236,10 +7250,11 @@ impl RuleSet {
     }
 
     /// Resolve every type's weapon records against this set's weapons
-    /// ([`TypeWeapons`]). Runs when the set is built, after the records'
+    /// ([`TypeWeapons`]) and every weapon's warhead and projectile
+    /// ([`WeaponParts`]). Runs when the set is built, after the records'
     /// last writer (`RulesTypeReferences::apply_to` sets the occupy
     /// weapons), and when a copy takes its own serial.
-    fn resolve_type_weapons(&mut self) {
+    fn resolve_handles(&mut self) {
         let resolve = |id: Option<&str>| id.and_then(|id| self.weapon_handle(id));
         let resolved: Vec<TypeWeapons> = self
             .object_list
@@ -7265,6 +7280,24 @@ impl RuleSet {
         for (object, weapons) in self.object_list.iter_mut().zip(resolved) {
             object.project_resolved_weapons(weapons);
         }
+        let parts: Vec<WeaponParts> = self
+            .weapon_types
+            .iter()
+            .map(|weapon| WeaponParts {
+                rules_serial: self.serial,
+                warhead: weapon
+                    .warhead
+                    .as_deref()
+                    .and_then(|id| self.warhead_handle(id)),
+                projectile: weapon
+                    .projectile
+                    .as_deref()
+                    .and_then(|id| self.projectile_handle(id)),
+            })
+            .collect();
+        for (weapon, parts) in self.weapon_types.iter_mut().zip(parts) {
+            weapon.project_parts(parts);
+        }
     }
 
     /// Number of WeaponType global88756C allocation slots, including refused
@@ -7283,7 +7316,45 @@ impl RuleSet {
 
     /// Look up a warhead by ID (case-insensitive, gamemd parity).
     pub fn warhead(&self, id: &str) -> Option<&WarheadType> {
-        Self::lookup_ci(&self.warheads, id)
+        self.warhead_handle(id)
+            .map(|handle| &self.warhead_types[handle.0 as usize])
+    }
+
+    /// The handle of the warhead [`Self::warhead`] answers for `id`.
+    fn warhead_handle(&self, id: &str) -> Option<WarheadHandle> {
+        Self::lookup_ci(&self.warheads, id).copied()
+    }
+
+    /// The warhead [`Self::warhead`] answers for `id`, to rewrite. Its
+    /// handle stays the same, so the weapons' resolved parts stay current.
+    fn warhead_mut(&mut self, id: &str) -> Option<&mut WarheadType> {
+        let handle = self.warhead_handle(id)?;
+        Some(&mut self.warhead_types[handle.0 as usize])
+    }
+
+    /// [`Self::warhead`] of `weapon`'s `Warhead=`, through the handle this
+    /// set resolved when it holds `weapon`; debug builds compare the handle
+    /// with the name's.
+    #[inline]
+    pub fn weapon_warhead(&self, weapon: &WeaponType) -> Option<&WarheadType> {
+        let parts = weapon.parts();
+        if parts.rules_serial != self.serial {
+            return weapon.warhead.as_deref().and_then(|id| self.warhead(id));
+        }
+        debug_assert!(
+            !crate::util::debug_checks::live_read_check_enabled()
+                || parts.warhead
+                    == weapon
+                        .warhead
+                        .as_deref()
+                        .and_then(|id| self.warhead_handle(id)),
+            "weapon {:?} resolved its warhead to {:?}, unlike its name",
+            weapon.id,
+            parts.warhead
+        );
+        parts
+            .warhead
+            .map(|handle| &self.warhead_types[handle.0 as usize])
     }
 
     /// Phobos `[InsigniaTypes]` catalog.
@@ -7417,12 +7488,62 @@ impl RuleSet {
 
     /// Look up a projectile by ID (case-insensitive, gamemd parity).
     pub fn projectile(&self, id: &str) -> Option<&ProjectileType> {
-        Self::lookup_ci(&self.projectiles, id)
+        self.projectile_handle(id)
+            .map(|handle| &self.projectile_types[handle.0 as usize])
+    }
+
+    /// The handle of the projectile [`Self::projectile`] answers for `id`.
+    fn projectile_handle(&self, id: &str) -> Option<ProjectileHandle> {
+        Self::lookup_ci(&self.projectiles, id).copied()
+    }
+
+    /// The projectile [`Self::projectile`] answers for `id`, to rewrite. Its
+    /// handle stays the same, so the weapons' resolved parts stay current.
+    fn projectile_mut(&mut self, id: &str) -> Option<&mut ProjectileType> {
+        let handle = self.projectile_handle(id)?;
+        Some(&mut self.projectile_types[handle.0 as usize])
+    }
+
+    /// [`Self::projectile`] of `weapon`'s `Projectile=`, through the handle
+    /// this set resolved when it holds `weapon`; debug builds compare the
+    /// handle with the name's.
+    #[inline]
+    pub fn weapon_projectile(&self, weapon: &WeaponType) -> Option<&ProjectileType> {
+        let parts = weapon.parts();
+        if parts.rules_serial != self.serial {
+            return weapon
+                .projectile
+                .as_deref()
+                .and_then(|id| self.projectile(id));
+        }
+        debug_assert!(
+            !crate::util::debug_checks::live_read_check_enabled()
+                || parts.projectile
+                    == weapon
+                        .projectile
+                        .as_deref()
+                        .and_then(|id| self.projectile_handle(id)),
+            "weapon {:?} resolved its projectile to {:?}, unlike its name",
+            weapon.id,
+            parts.projectile
+        );
+        parts
+            .projectile
+            .map(|handle| &self.projectile_types[handle.0 as usize])
     }
 
     /// Registered projectile types, including their retained animation references.
     pub fn projectiles_iter(&self) -> impl Iterator<Item = &ProjectileType> {
-        self.projectiles.values()
+        self.projectiles
+            .values()
+            .map(|handle| &self.projectile_types[handle.0 as usize])
+    }
+
+    /// Every projectile with its ID, in the ID map's order.
+    fn projectile_entries(&self) -> impl Iterator<Item = (&String, &ProjectileType)> {
+        self.projectiles
+            .iter()
+            .map(|(id, handle)| (id, &self.projectile_types[handle.0 as usize]))
     }
 
     /// Deterministic hash of the processed source INI this RuleSet was built from
@@ -7644,8 +7765,7 @@ impl RuleSet {
         // invalid. Equal flattened INIs can therefore have different flight
         // damage. Preserve the previous hash domain for all-false stock rules.
         let mut degenerating_projectiles: Vec<_> = self
-            .projectiles
-            .values()
+            .projectiles_iter()
             .filter(|projectile| projectile.degenerates)
             .map(|projectile| projectile.id.to_ascii_uppercase())
             .collect();
@@ -7969,8 +8089,7 @@ impl RuleSet {
         }))
         .hash(&mut hasher);
         Self::by_upper_id(
-            self.warheads
-                .iter()
+            self.warhead_entries()
                 .map(|(name, warhead)| (name, warhead.ares_verses_hash_state())),
         )
         .hash(&mut hasher);
@@ -8067,8 +8186,7 @@ impl RuleSet {
                 .collect::<BTreeMap<_, _>>()
                 .hash(&mut hasher);
             Self::by_upper_id(
-                self.warheads
-                    .iter()
+                self.warhead_entries()
                     .map(|(name, wh)| (name, wh.ares_rules())),
             )
             .hash(&mut hasher);
@@ -8303,13 +8421,12 @@ impl RuleSet {
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
         Self::by_upper_id(
-            self.projectiles
-                .iter()
+            self.projectile_entries()
                 .map(|(id, projectile)| (id, &projectile.shrapnel_weapon)),
         )
         .hash(&mut hasher);
         let airburst_weapons =
-            Self::by_upper_id(self.projectiles.iter().filter_map(|(id, projectile)| {
+            Self::by_upper_id(self.projectile_entries().filter_map(|(id, projectile)| {
                 projectile
                     .airburst_weapon
                     .as_ref()
@@ -8322,8 +8439,7 @@ impl RuleSet {
         // A later invalid raw token retains BulletType+294. Equal flattened
         // INIs can therefore differ in the child-fan and parent-cluster gates.
         let airburst_flags = self
-            .projectiles
-            .iter()
+            .projectile_entries()
             .filter(|(_, projectile)| projectile.airburst)
             .map(|(id, _)| id.to_ascii_uppercase())
             .collect::<std::collections::BTreeSet<_>>();
@@ -8336,7 +8452,7 @@ impl RuleSet {
         #[cfg(feature = "phobos")]
         {
             let phobos_projectiles =
-                Self::by_upper_id(self.projectiles.iter().filter_map(|(id, projectile)| {
+                Self::by_upper_id(self.projectile_entries().filter_map(|(id, projectile)| {
                     let value = &projectile.phobos_airburst;
                     (value != &crate::rules::phobos_airburst::PhobosAirburstType::default()).then(
                         || {
@@ -8495,16 +8611,14 @@ impl RuleSet {
         }))
         .hash(&mut hasher);
         Self::by_upper_id(
-            self.warheads
-                .iter()
+            self.warhead_entries()
                 .map(|(id, warhead)| (id, &warhead.debris_types)),
         )
         .hash(&mut hasher);
         #[cfg(feature = "phobos")]
         {
             let jumpjet_overrides = Self::by_upper_id(
-                self.warheads
-                    .iter()
+                self.warhead_entries()
                     .filter(|(_, warhead)| !warhead.jumpjet_override.is_empty())
                     .map(|(id, warhead)| (id, warhead.jumpjet_override)),
             );
@@ -8710,7 +8824,7 @@ impl RuleSet {
         // The live family order is independent of HashMap iteration and may
         // survive earlier passes absent from the current source stack.
         self.weapon_array.hash(&mut hasher);
-        Self::by_upper_id(self.warheads.iter().map(|(name, wh)| {
+        Self::by_upper_id(self.warhead_entries().map(|(name, wh)| {
             (
                 name,
                 (
@@ -8725,7 +8839,7 @@ impl RuleSet {
         #[cfg(feature = "phobos")]
         {
             let warhead_anims =
-                Self::by_upper_id(self.warheads.iter().filter_map(|(name, warhead)| {
+                Self::by_upper_id(self.warhead_entries().filter_map(|(name, warhead)| {
                     (warhead.phobos_anim
                         != crate::rules::phobos_warhead_anim::PhobosWarheadAnimRules::default())
                     .then_some((name, &warhead.phobos_anim))
@@ -8741,11 +8855,12 @@ impl RuleSet {
         }
         #[cfg(feature = "phobos")]
         {
-            let control_anims = Self::by_upper_id(self.warheads.iter().filter_map(|(name, wh)| {
-                wh.mind_control_anim
-                    .as_ref()
-                    .map(|anim| (name, anim.to_ascii_uppercase()))
-            }));
+            let control_anims =
+                Self::by_upper_id(self.warhead_entries().filter_map(|(name, wh)| {
+                    wh.mind_control_anim
+                        .as_ref()
+                        .map(|anim| (name, anim.to_ascii_uppercase()))
+                }));
             if !control_anims.is_empty() {
                 b"phobos-warhead-mind-control-anim-v1".hash(&mut hasher);
                 control_anims.hash(&mut hasher);
@@ -8811,7 +8926,7 @@ impl RuleSet {
         // consumed values in canonical type order, not ART insertion order,
         // authored-key presence, or unrelated presentation metadata.
         b"art-projectile-config-v4".hash(&mut hasher);
-        Self::by_upper_id(self.projectiles.iter().map(|(id, p)| {
+        Self::by_upper_id(self.projectile_entries().map(|(id, p)| {
             (
                 id,
                 (
@@ -10866,7 +10981,16 @@ impl RuleSet {
 
     /// Iterate all parsed warhead types.
     pub fn warheads_iter(&self) -> impl Iterator<Item = &WarheadType> {
-        self.warheads.values()
+        self.warheads
+            .values()
+            .map(|handle| &self.warhead_types[handle.0 as usize])
+    }
+
+    /// Every warhead with its ID, in the ID map's order.
+    fn warhead_entries(&self) -> impl Iterator<Item = (&String, &WarheadType)> {
+        self.warheads
+            .iter()
+            .map(|(id, handle)| (id, &self.warhead_types[handle.0 as usize]))
     }
 
     /// Iterate all parsed weapon types.
@@ -10905,7 +11029,7 @@ impl RuleSet {
         for object in &self.object_list {
             visit(&object.alpha_image);
         }
-        for projectile in self.projectiles.values() {
+        for projectile in self.projectiles_iter() {
             visit(&projectile.alpha_image);
         }
         for particle in &self.particle_types {
@@ -14786,6 +14910,35 @@ Projectile=Invisible
     }
 
     #[test]
+    fn a_weapons_warhead_and_projectile_answer_as_their_names_in_any_rule_set() {
+        // GUN names its types in another case than their sections.
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n0=GI\n[GI]\nStrength=100\nPrimary=GUN\n\
+             [GUN]\nWarhead=wh\nProjectile=shot\n[WH]\n[SHOT]\n",
+        ))
+        .unwrap();
+        // OTHER's only types take the indexes GUN's handles hold, so a handle
+        // read in the wrong set names one of them.
+        let other = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n0=GI\n[GI]\nStrength=100\nPrimary=OTHER\n\
+             [OTHER]\nWarhead=AP\nProjectile=Cannon\n[AP]\n[Cannon]\n",
+        ))
+        .unwrap();
+        let copy = rules.clone().with_fresh_serial();
+        for owner in [&rules, &copy] {
+            let gun = owner.weapon("GUN").unwrap();
+            for set in [&rules, &copy] {
+                let warhead = set.weapon_warhead(gun).unwrap();
+                assert!(std::ptr::eq(warhead, set.warhead("WH").unwrap()));
+                let projectile = set.weapon_projectile(gun).unwrap();
+                assert!(std::ptr::eq(projectile, set.projectile("SHOT").unwrap()));
+            }
+            assert!(other.weapon_warhead(gun).is_none());
+            assert!(other.weapon_projectile(gun).is_none());
+        }
+    }
+
+    #[test]
     fn naval_base_rules_preserve_source_order_defaults_and_buildconst_identity() {
         let ini = IniFile::from_str(
             "[General]\n\
@@ -15428,7 +15581,7 @@ Projectile=Invisible
                 rules.weapon_mut_for_test("GUN").unwrap().range_leptons = 1;
             }),
             ("ShrapnelWeapon", |rules| {
-                rules.projectiles.get_mut("SHOT").unwrap().shrapnel_weapon = Some("GUN".into());
+                rules.projectile_mut("SHOT").unwrap().shrapnel_weapon = Some("GUN".into());
             }),
             ("WeaponType", |rules| {
                 rules.super_weapons.get_mut("NUKE").unwrap().weapon_type = Some("GUN".into());
@@ -15547,7 +15700,7 @@ Projectile=Invisible
             ),
             (
                 "Warhead DebrisTypes",
-                Box::new(move |rules| rules.warheads.get_mut("WH").unwrap().debris_types = names()),
+                Box::new(move |rules| rules.warhead_mut("WH").unwrap().debris_types = names()),
             ),
             (
                 "Particle Warhead",

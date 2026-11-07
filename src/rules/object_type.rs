@@ -2064,7 +2064,7 @@ pub struct ObjectType {
     pub elite_weapon_list: Vec<Option<String>>,
     /// Derived: the weapons `weapon_list`, `elite_weapon_list`,
     /// `occupy_weapon` and `elite_occupy_weapon` name, as the RuleSet that
-    /// built the type resolved them (`RuleSet::resolve_type_weapons`).
+    /// built the type resolved them (`RuleSet::resolve_handles`).
     resolved_weapons: crate::rules::ruleset::TypeWeapons,
     /// Retained WeaponStruct and transport-port coordinates, projected from
     /// the ordered type reader rather than reconstructed from the final Image.

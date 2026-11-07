@@ -503,10 +503,7 @@ pub(crate) fn compute_range_target(
         entities,
     );
 
-    let projectile = weapon
-        .projectile
-        .as_deref()
-        .and_then(|name| rules.projectile(name));
+    let projectile = rules.weapon_projectile(weapon);
     let subject_to_elevation = projectile.is_some_and(|p| p.subject_to_elevation);
     let elevation_bonus = |arm| {
         if subject_to_elevation {
@@ -1081,10 +1078,7 @@ pub fn mapless_in_range(
     if minimum_range_blocks(weapon, src, target) {
         return false;
     }
-    let projectile = weapon
-        .projectile
-        .as_deref()
-        .and_then(|name| rules.projectile(name));
+    let projectile = rules.weapon_projectile(weapon);
     if let Some(projectile) = projectile.filter(|p| p.arcing) {
         return arcing_reaches(src, target, range, projectile, rules);
     }

@@ -1634,18 +1634,14 @@ fn wall_threat_score(ctx: &ScanContext<'_>, cell: (i16, i16)) -> i32 {
     ) else {
         return 0;
     };
-    let Some(warhead) = weapon
-        .warhead
-        .as_deref()
-        .and_then(|name| ctx.rules.warhead(name))
-    else {
+    let Some(warhead) = ctx.rules.weapon_warhead(weapon) else {
         return 0;
     };
-    let fired_at_ground = weapon.projectile.as_deref().is_none_or(|name| {
-        ctx.rules
-            .projectile(name)
-            .is_some_and(|projectile| projectile.ag)
-    });
+    let fired_at_ground = weapon.projectile.is_none()
+        || ctx
+            .rules
+            .weapon_projectile(weapon)
+            .is_some_and(|projectile| projectile.ag);
     if !fired_at_ground || !warhead.wall {
         return 0;
     }

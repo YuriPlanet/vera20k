@@ -68,10 +68,8 @@ pub(super) fn bullet_type<'r>(
     weapon: &crate::rules::weapon_type::WeaponType,
     rules: &'r RuleSet,
 ) -> &'r crate::rules::projectile_type::ProjectileType {
-    weapon
-        .projectile
-        .as_deref()
-        .and_then(|projectile_id| rules.projectile(projectile_id))
+    rules
+        .weapon_projectile(weapon)
         .unwrap_or_else(|| missing_projectile_fallback())
 }
 

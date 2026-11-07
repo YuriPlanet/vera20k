@@ -1540,10 +1540,8 @@ fn support_multiplier(modifier: i32, count: i32) -> i32 {
 /// ReceiveDamage's retaliation block stops (`0x004429B4..0x004429E5`).
 pub(super) fn building_weapon0_aims(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
     weapon_at_index(sim, rules, id, 0).is_some_and(|weapon| {
-        !weapon
-            .projectile
-            .as_deref()
-            .and_then(|projectile| rules.projectile(projectile))
+        !rules
+            .weapon_projectile(weapon)
             .is_some_and(|projectile| projectile.aa)
     })
 }

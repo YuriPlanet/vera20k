@@ -1329,10 +1329,8 @@ fn balloon_hover_destination(
     target: TargetKind,
     rules: &RuleSet,
 ) -> Option<NavTargetRef> {
-    weapon?
-        .projectile
-        .as_deref()
-        .and_then(|name| rules.projectile(name))
+    rules
+        .weapon_projectile(weapon?)
         .is_some_and(|projectile| projectile.vertical)
         .then_some(NavTargetRef::from(target))
 }

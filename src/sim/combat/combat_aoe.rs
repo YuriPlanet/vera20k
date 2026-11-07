@@ -165,7 +165,7 @@ pub fn techno_triggers_cell_inset(
     if !weapon.area_fire {
         return false;
     }
-    let Some(warhead) = super::combat_weapon::warhead_of(rules, weapon) else {
+    let Some(warhead) = rules.weapon_warhead(weapon) else {
         return false;
     };
 

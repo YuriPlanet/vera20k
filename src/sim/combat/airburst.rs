@@ -39,14 +39,10 @@ pub(super) fn emit(world: &mut Simulation, rules: &RuleSet, detonation: &Project
     else {
         return;
     };
-    let Some(child) = weapon
-        .projectile
-        .as_deref()
-        .and_then(|id| rules.projectile(id))
-    else {
+    let Some(child) = rules.weapon_projectile(weapon) else {
         return;
     };
-    let Some(warhead) = weapon.warhead.as_deref().and_then(|id| rules.warhead(id)) else {
+    let Some(warhead) = rules.weapon_warhead(weapon) else {
         return;
     };
     let Some(terrain) = world.resolved_terrain.as_ref() else {
