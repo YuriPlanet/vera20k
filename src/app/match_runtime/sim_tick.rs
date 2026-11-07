@@ -1931,6 +1931,13 @@ fn advance_one_simulation_frame(
                 sim.interner(),
                 local_owner_name.as_deref(),
             );
+            #[cfg(feature = "ares")]
+            hud_messages.extend(super::sound_dispatch::ares_superweapon_messages(
+                &frame_sound_events,
+                sim,
+                &resources.rules,
+                local_owner_name.as_deref(),
+            ));
             assert!(
                 sound_events_delivered <= frame_sound_events.len(),
                 "frame delivered more sound facts than it produced"
