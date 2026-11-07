@@ -1028,17 +1028,28 @@ fn production_gattling_stop_and_release_reach_retained_source_at_native_boundari
         registry.get("GattlingGunAttackLoop1").unwrap(),
     );
     let threshold = recorded_boundary(row, "original_Increase_threshold_component_ticks199");
-    let (_, raw) = trace_draws(|| sim.gattling_increase(id, rules, 199, FrameEffects::default()));
-    assert!(
-        raw.is_empty(),
-        "original retained latch crosses no new report"
-    );
-    assert_main(
-        sim.main_rng(),
-        row,
-        &threshold["after"],
-        "threshold component",
-    );
+    // Ares TechnoClass_UpdateGattling_Cycle (Ares.dll 1004B6C0, hook
+    // 0x70DEBA) tests the stage against the charged value, so the 199-tick
+    // charge (to Stage1=200) already makes the native transition's
+    // Stop/Stop/Loop2, from the same Main state: the native threshold
+    // Increase draws nothing. The native transition Increase then only
+    // charges.
+    #[cfg(not(feature = "ares"))]
+    {
+        let (_, raw) =
+            trace_draws(|| sim.gattling_increase(id, rules, 199, FrameEffects::default()));
+        assert!(
+            raw.is_empty(),
+            "original retained latch crosses no new report"
+        );
+        assert_main(
+            sim.main_rng(),
+            row,
+            &threshold["after"],
+            "threshold component",
+        );
+    }
+    let transition_ticks = if cfg!(feature = "ares") { 199 } else { 1 };
     let transition = recorded_boundary(row, "original_Unit_tail_hard_stage_transition");
     let native_transition_facts = native_gattling_sound_facts(row, transition);
     let transition_prefix = sim.sound_events().len();
@@ -1052,8 +1063,9 @@ fn production_gattling_stop_and_release_reach_retained_source_at_native_boundari
         boundary: transition,
         release: false,
     };
-    let (_, raw) =
-        trace_draws(|| sim.gattling_increase(id, rules, 1, FrameEffects::for_sound(&hard)));
+    let (_, raw) = trace_draws(|| {
+        sim.gattling_increase(id, rules, transition_ticks, FrameEffects::for_sound(&hard))
+    });
     assert_eq!(
         hard.calls.get(),
         native_transition_facts
@@ -1093,6 +1105,18 @@ fn production_gattling_stop_and_release_reach_retained_source_at_native_boundari
         native_transition_facts,
         "native Stop/Stop/Loop2 order after the retained prefix"
     );
+    #[cfg(feature = "ares")]
+    {
+        let state = sim.entities().get(id).unwrap().gattling;
+        assert_eq!(
+            i64::from(state.value()),
+            threshold["after"]["gattling"]["value"].as_i64().unwrap()
+        );
+        let events = sim.sound_events().len();
+        let (_, raw) = trace_draws(|| sim.gattling_increase(id, rules, 1, FrameEffects::default()));
+        assert!(raw.is_empty(), "the stage-1 latch holds below Stage2");
+        assert_eq!(sim.sound_events().len(), events);
+    }
     let state = sim.entities().get(id).unwrap().gattling;
     assert_eq!(
         i64::from(state.stage()),
