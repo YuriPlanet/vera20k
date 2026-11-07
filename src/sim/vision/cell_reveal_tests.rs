@@ -471,8 +471,10 @@ fn seed_cell(view: &mut OwnerVisibility, key: VisibilityCell, input: &Value) {
         ],
         ..Default::default()
     };
-    // This fixture writes native storage directly, outside the cell writers.
+    // This fixture writes native storage directly, outside the cell writers,
+    // so it drops what they derive.
     view.edge_inputs_cache.take();
+    view.stale_frames = StaleFrames::default();
     if let VisibilityCell::Real(index) = key {
         view.publish_knowledge(index);
     }
@@ -1033,4 +1035,62 @@ fn border_refresh_interior_matches_native_lookup_fallback() {
     assert_eq!(interior.ground_flags[65], 8);
     assert_eq!(interior.shroud_knowledge[65].counter(), -3);
     assert_eq!(interior.shroud_knowledge[65].gap_counter(), 2);
+}
+
+/// Each `cells` ground frame on `viewer`'s map is the one its bits give.
+fn assert_border_frames_current(fog: &FogState, viewer: InternedId, cells: &[(u16, u16)]) {
+    for &cell in cells {
+        assert_eq!(
+            fog.by_owner[&viewer].map_cell_edge_cache_for_test(cell).0[0],
+            fog.map_cell_edge_frame(viewer, cell, false, None),
+            "{cell:?}"
+        );
+    }
+}
+
+/// A bulk map shroud (`store_bulk_map_cell`) leaves its cell's and
+/// neighbours' ground frames stale; the next sight border recomputes them,
+/// though the border before it left every frame there current.
+#[test]
+fn a_sight_border_recomputes_the_frames_a_bulk_shroud_left() {
+    let viewer = crate::sim::intern::test_intern("Player");
+    let border = super::super::sight_border_cells((12, 12, 0), 3, 0);
+    let mut fog = FogState::new(24, 24);
+    for cell in [(12, 12), (13, 12), (11, 11)] {
+        fog.reveal_forced_map_cell(viewer, cell, None);
+    }
+    fog.refresh_sight_border(viewer, (12, 12, 0), 3, 0, None);
+    assert_border_frames_current(&fog, viewer, &border);
+    let shrouded = fog.by_owner.get_mut(&viewer).unwrap();
+    shrouded.store_bulk_map_cell((12, 12), true);
+    shrouded.store_bulk_map_cell((13, 12), true);
+    fog.refresh_sight_border(viewer, (12, 12, 0), 3, 0, None);
+    assert_border_frames_current(&fog, viewer, &border);
+}
+
+/// A loaded map's first sight border recomputes every ground frame, the
+/// stale ones its save held included.
+#[test]
+fn a_loaded_maps_first_sight_border_recomputes_its_frames() {
+    let viewer = crate::sim::intern::test_intern("Player");
+    let border = super::super::sight_border_cells((12, 12, 0), 3, 0);
+    let mut fog = FogState::new(24, 24);
+    for cell in [(12, 12), (13, 12), (11, 11)] {
+        fog.reveal_forced_map_cell(viewer, cell, None);
+    }
+    fog.refresh_sight_border(viewer, (12, 12, 0), 3, 0, None);
+    fog.by_owner
+        .get_mut(&viewer)
+        .unwrap()
+        .store_bulk_map_cell((12, 12), true);
+    let mut loaded: FogState =
+        save_codec::deserialize(&save_codec::serialize(&fog).unwrap()).unwrap();
+    assert_ne!(
+        loaded.by_owner[&viewer]
+            .map_cell_edge_cache_for_test((12, 12))
+            .0[0],
+        loaded.map_cell_edge_frame(viewer, (12, 12), false, None)
+    );
+    loaded.refresh_sight_border(viewer, (12, 12, 0), 3, 0, None);
+    assert_border_frames_current(&loaded, viewer, &border);
 }

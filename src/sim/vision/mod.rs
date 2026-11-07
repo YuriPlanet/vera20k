@@ -53,7 +53,7 @@ pub use cell_reveal::SHROUD_EDGE_LUT;
 pub(crate) use cell_reveal::tests::{
     assert_native_cell_history, discovery_corpus, native_map_cell_fixture,
 };
-use cell_reveal::{DummyVisibility, EdgeCells, MapCellEdgeCache};
+use cell_reveal::{DummyVisibility, EdgeCells, MapCellEdgeCache, StaleFrames};
 pub(crate) use cell_reveal::{ListedEdgeCells, MapCellNotification, MapRevealProjection};
 use shroud_knowledge::ShroudKnowledge;
 pub(crate) use shroud_knowledge::SightAdmission;
@@ -221,6 +221,10 @@ pub struct OwnerVisibility {
     /// hashed.
     #[serde(skip)]
     edge_cells: EdgeCells,
+    /// The cells whose ground frame a sight border must recompute; never
+    /// saved or hashed.
+    #[serde(skip)]
+    stale_frames: StaleFrames,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -281,6 +285,7 @@ impl OwnerVisibility {
                 ..TrackedCells::default()
             },
             edge_cells: EdgeCells::complete(),
+            stale_frames: StaleFrames::current(len),
         }
     }
 
@@ -577,6 +582,7 @@ impl OwnerVisibility {
         // The copied transient cells are not listed.
         expanded.tracked.complete = false;
         expanded.edge_cells = EdgeCells::default();
+        expanded.stale_frames = StaleFrames::default();
         expanded
     }
 
