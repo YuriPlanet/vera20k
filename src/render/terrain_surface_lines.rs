@@ -469,7 +469,9 @@ pub(super) struct SurfaceLineGpu {
     work: Vec<([i32; 2], Operation)>,
     /// Derived solely from work's output points; clear on every upload,
     ///prepare and begin. Bounds cross-pixel dependencies, not display state.
-    written: std::collections::HashSet<[i32; 2]>,
+    /// Membership only: every operation of a frame with rays or antialiased
+    /// lines passes through it.
+    written: crate::util::lookup_hash::LookupSet<[i32; 2]>,
     operations: Vec<Operation>,
     instances: Vec<PixelInstance>,
     cover: SnapshotCover,
