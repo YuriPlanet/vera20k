@@ -6,9 +6,11 @@
 //! Live tactical Depth32Float remains the only Z authority. wgpu 27 requires
 //! full-size depth copies, so scissored MRT passes snapshot conservative rects
 //! into integer color and float depth scratch while live Z is not attached.
-//! Terrain edits use dependency waves. Read-only Bullet edits instead reduce
-//! the last admitted body and subsequent shadows in four passes, preserving
-//! exact original sequence with immutable Z. Ordinary draw families are fences.
+//! Terrain edits use dependency waves, in which an edit replays the earlier
+//! edits it overlaps per pixel where it can do so exactly. Read-only Bullet
+//! edits instead reduce the last admitted body and subsequent shadows in four
+//! passes, preserving exact original sequence with immutable Z. Ordinary draw
+//! families are fences.
 
 use super::batch::{
     BatchRenderer, BatchTexture, CameraUniform, SPRITE_INSTANCE_ATTRIBUTES, SpriteInstance,
@@ -26,7 +28,7 @@ mod submission;
 #[path = "terrain_surface_lines.rs"]
 mod surface_lines;
 pub(crate) use batching::TerrainBatchStats;
-use batching::{TerrainBatches, TerrainCommand};
+use batching::{TerrainBatches, TerrainCommand, WINDOW};
 pub(crate) use ion_blasts::IonBlastDraw;
 pub(crate) use packed::{
     PackedComposite, PackedCompositePiece, PackedSpriteKind, packed_joins_waves,
@@ -50,6 +52,77 @@ pub(crate) struct DestinationEditCommand {
     pub piece: TerrainPiece,
     pub render_z: RenderZPolicy,
     pub atlas_slot: usize,
+}
+
+/// One read-write edit of a wave window, as terrain_edit.wgsl's `EditRecord`
+/// holds it.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct EditRecord {
+    quad: [f32; 4],
+    uv: [f32; 4],
+    rect: [u32; 4],
+    light: [u32; 4],
+    params: [u32; 4],
+    earlier: [u32; 4],
+}
+
+impl EditRecord {
+    fn new(instance: &SpriteInstance, command: &TerrainCommand) -> Self {
+        let [x, y] = instance.position;
+        let [width, height] = instance.size;
+        let [u, v] = instance.uv_origin;
+        let [uv_width, uv_height] = instance.uv_size;
+        Self {
+            quad: [x, y, width, height],
+            uv: [u, v, uv_width, uv_height],
+            rect: command.rect,
+            light: instance.palette_light.0,
+            params: [
+                instance.z_adjust.to_bits(),
+                instance.z_gradient,
+                instance.source_palette,
+                u32::from(command.draw.piece == TerrainPiece::Shadow),
+            ],
+            earlier: [command.earlier as u32, (command.earlier >> 32) as u32, 0, 0],
+        }
+    }
+}
+
+/// Whether read-write edit `later` can replay `earlier`, which it overlaps,
+/// from their wave's shared snapshot (terrain_edit.wgsl `replay_earlier`). It
+/// recomputes `earlier`'s pixels from its quad, so that quad must sit on
+/// whole pixels at zoom 1 with one texel per pixel: there every pixel centre
+/// lies half a texel and half a row inside the interpolated value, and the
+/// recomputed pixel equals the one `earlier`'s own fragment draws. Both share
+/// one atlas page, the one bound for `later`. A shadow replays only native
+/// palette bodies, whose stored word it can recompute exactly.
+fn replays<'a>(
+    camera: &CameraUniform,
+    instances: &[SpriteInstance],
+    atlas: &impl Fn(usize) -> Option<&'a BatchTexture>,
+    earlier: &DestinationEditCommand,
+    later: &DestinationEditCommand,
+) -> bool {
+    let instance = &instances[earlier.index as usize];
+    let whole = |value: f32| value.fract() == 0.0;
+    let texel_per_pixel = |page: &BatchTexture| {
+        let size = [page.width as f32, page.height as f32];
+        (0..2).all(|axis| {
+            let origin = instance.uv_origin[axis] * size[axis];
+            (instance.uv_size[axis] * size[axis] - instance.size[axis]).abs() < 1.0 / 64.0
+                && (origin - origin.round()).abs() < 1.0 / 64.0
+        })
+    };
+    earlier.atlas_slot == later.atlas_slot
+        && !(later.piece == TerrainPiece::Shadow
+            && earlier.piece == TerrainPiece::Body
+            && instance.palette_light.0[0] >> 24 == 0)
+        && camera.zoom == 1.0
+        && camera.camera_pos.into_iter().all(whole)
+        && instance.position.into_iter().all(whole)
+        && instance.size.into_iter().all(|v| whole(v) && v >= 1.0)
+        && atlas(earlier.atlas_slot).is_some_and(texel_per_pixel)
 }
 
 struct Targets {
@@ -107,6 +180,8 @@ pub(crate) struct TerrainDrawRenderer {
     camera: CameraUniform,
     batches: TerrainBatches,
     read_only_commands: Vec<TerrainCommand>,
+    /// This frame's read-write wave windows (terrain_edit.wgsl `edits`).
+    edit_records: super::uniform_windows::UniformWindows,
     submission: PassSubmission,
     surface_lines: surface_lines::SurfaceLineGpu,
     ion_blasts: ion_blasts::IonBlastGpu,
@@ -270,12 +345,22 @@ impl TerrainDrawRenderer {
                 super::webgl::camera_source(device, edit_source(webgl)).into(),
             ),
         });
+        let edit_records = super::uniform_windows::UniformWindows::new(
+            device,
+            queue,
+            "Terrain read-write edit windows",
+            1,
+            wgpu::ShaderStages::FRAGMENT,
+            (WINDOW * std::mem::size_of::<EditRecord>()) as u64,
+            16,
+        );
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Terrain edit layout"),
             bind_group_layouts: &[
                 Some(batch.camera_bind_group_layout()),
                 Some(batch.texture_bind_group_layout()),
                 Some(&snapshot_layout),
+                Some(edit_records.layout()),
             ],
             immediate_size: 0,
         });
@@ -285,7 +370,7 @@ impl TerrainDrawRenderer {
                 layout: Some(&layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: Some("vs_main"),
+                    entry_point: Some("vs_ordinal"),
                     buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: std::mem::size_of::<SpriteInstance>() as u64,
                         step_mode: wgpu::VertexStepMode::Instance,
@@ -346,7 +431,7 @@ impl TerrainDrawRenderer {
                 layout: Some(layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: Some("vs_read_only"),
+                    entry_point: Some("vs_ordinal"),
                     buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: std::mem::size_of::<SpriteInstance>() as u64,
                         step_mode: wgpu::VertexStepMode::Instance,
@@ -488,6 +573,7 @@ impl TerrainDrawRenderer {
             targets: None,
             batches: TerrainBatches::default(),
             read_only_commands: Vec::new(),
+            edit_records,
             submission: PassSubmission::new(device, queue),
             camera: CameraUniform {
                 screen_size: [1.0, 1.0],
@@ -557,6 +643,7 @@ impl TerrainDrawRenderer {
     ) {
         self.submission.reset_frame();
         self.packed.begin_frame();
+        self.edit_records.begin_frame();
         self.camera = camera;
         if self
             .targets
@@ -704,7 +791,8 @@ impl TerrainDrawRenderer {
 
     /// Replay one contiguous destination-edit span across atlas pages. The
     /// caller fences every draw handled by another pipeline family.
-    /// ReadWrite overlaps retain dependency waves. A maximal ReadOnly interval
+    /// ReadWrite overlaps retain dependency waves, replaying each other inside
+    /// one where they can (`replays`). A maximal ReadOnly interval
     /// reduces admitted bodies/shadows against one immutable Z snapshot in four
     /// passes; command sequence, never instance/atlas index, selects its order.
     pub(crate) fn draw_span<'a>(
@@ -769,9 +857,9 @@ impl TerrainDrawRenderer {
             let command = TerrainCommand::new(draw, rect);
             if draw.render_z == RenderZPolicy::ReadOnly {
                 if self.batches.stats().pieces != 0 {
-                    stats.accumulate(
-                        self.draw_scheduled(encoder, color, depth, batch, atlas, buffer, &mut tail),
-                    );
+                    stats.accumulate(self.draw_scheduled(
+                        encoder, color, depth, batch, atlas, buffer, instances, &mut tail,
+                    ));
                     self.batches.begin_span(size);
                 }
                 self.read_only_commands.push(command);
@@ -787,13 +875,16 @@ impl TerrainDrawRenderer {
                 self.draw_read_only(encoder, color, depth, batch, atlas, buffer, &mut tail),
             );
             self.read_only_commands.clear();
-            if !self.batches.push(command) {
+            let camera = self.camera;
+            if !self.batches.push_replaying(command, |earlier, later| {
+                replays(&camera, instances, atlas, earlier, later)
+            }) {
                 // Preserve the prior draw/validation behavior if the original
                 // scissor exceeds the prepared attachment; do not index a grid
                 // or let a malformed input weaken any overlap dependency.
-                stats.accumulate(
-                    self.draw_scheduled(encoder, color, depth, batch, atlas, buffer, &mut tail),
-                );
+                stats.accumulate(self.draw_scheduled(
+                    encoder, color, depth, batch, atlas, buffer, instances, &mut tail,
+                ));
                 stats.passes += self.draw_wave(
                     encoder,
                     color,
@@ -802,6 +893,7 @@ impl TerrainDrawRenderer {
                     atlas,
                     buffer,
                     vec![command],
+                    |command| EditRecord::new(&instances[command.draw.index as usize], command),
                     &mut tail,
                 );
                 stats.pieces += 1;
@@ -809,9 +901,9 @@ impl TerrainDrawRenderer {
                 self.batches.begin_span(size);
             }
         }
-        stats.accumulate(
-            self.draw_scheduled(encoder, color, depth, batch, atlas, buffer, &mut tail),
-        );
+        stats.accumulate(self.draw_scheduled(
+            encoder, color, depth, batch, atlas, buffer, instances, &mut tail,
+        ));
         stats.accumulate(
             self.draw_read_only(encoder, color, depth, batch, atlas, buffer, &mut tail),
         );
@@ -827,6 +919,7 @@ impl TerrainDrawRenderer {
         batch: &BatchRenderer,
         atlas: &impl Fn(usize) -> Option<&'a BatchTexture>,
         buffer: &wgpu::Buffer,
+        instances: &[SpriteInstance],
         tail: &mut Option<LiveTail>,
     ) -> TerrainBatchStats {
         let batches = std::mem::take(&mut self.batches);
@@ -841,6 +934,7 @@ impl TerrainDrawRenderer {
                 atlas,
                 buffer,
                 wave.copied().collect(),
+                |command| EditRecord::new(&instances[command.draw.index as usize], command),
                 tail,
             );
         }
@@ -1030,16 +1124,26 @@ impl TerrainDrawRenderer {
         let mut tail = None;
         let commands = vec![TerrainCommand::new(draw, rect)];
         self.draw_wave(
-            encoder, color, depth, batch, &atlas, buffer, commands, &mut tail,
+            encoder,
+            color,
+            depth,
+            batch,
+            &atlas,
+            buffer,
+            commands,
+            |command| EditRecord::new(instance, command),
+            &mut tail,
         );
         if let Some(tail) = tail {
             self.flush_tail(encoder, color, depth, tail, batch, &atlas, buffer);
         }
     }
 
-    /// Snapshot one wave of pairwise-disjoint `commands` and leave their edits
-    /// as the tail: every rectangle is freshly snapped before any member edits
-    /// the live attachments, and an earlier tail lands before the snapshot.
+    /// Snapshot one wave of `commands` and leave their edits as the tail:
+    /// every rectangle is freshly snapped before any member edits the live
+    /// attachments, and an earlier tail lands before the snapshot. Members
+    /// that overlap replay their earlier overlaps from `record`'s window
+    /// records ([`TerrainCommand::earlier`]); the rest are disjoint.
     /// Snapshot and edit use the identical cached absolute scissor; clipping
     /// never resets the SHP row/gradient origin. Returns the passes closed.
     fn draw_wave<'texture>(
@@ -1051,6 +1155,7 @@ impl TerrainDrawRenderer {
         atlas: &impl Fn(usize) -> Option<&'texture BatchTexture>,
         buffer: &wgpu::Buffer,
         commands: Vec<TerrainCommand>,
+        record: impl Fn(&TerrainCommand) -> EditRecord,
         tail: &mut Option<LiveTail>,
     ) -> usize {
         let mut passes = 0;
@@ -1074,7 +1179,7 @@ impl TerrainDrawRenderer {
         };
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Terrain snapshot disjoint wave"),
+                label: Some("Terrain snapshot wave"),
                 color_attachments: &[attachment(&targets.words), attachment(&targets.depth)],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
@@ -1090,7 +1195,18 @@ impl TerrainDrawRenderer {
             }
         }
         self.submission.note_closed_passes(encoder, 1);
-        *tail = Some(LiveTail(Tail::Edits(commands)));
+        let windows = commands
+            .chunks(WINDOW)
+            .map(|window| {
+                // Where nothing replays, the shader reads only empty `earlier`s.
+                if window.iter().all(|command| command.earlier == 0) {
+                    return self.edit_records.zeros();
+                }
+                let records: Vec<_> = window.iter().map(&record).collect();
+                self.edit_records.write(bytemuck::cast_slice(&records))
+            })
+            .collect();
+        *tail = Some(LiveTail(Tail::Edits(commands, windows)));
         passes + 1
     }
 
@@ -1110,35 +1226,44 @@ impl TerrainDrawRenderer {
             .expect("terrain prepare precedes drawing");
         match &tail.0 {
             Tail::Packed(resolve) => self.record_packed_resolve(pass, resolve),
-            Tail::Edits(commands) => {
+            Tail::Edits(commands, windows) => {
                 pass.set_bind_group(0, batch.camera_bind_group(), &[]);
                 pass.set_bind_group(2, &targets.snapshot, &[]);
                 pass.set_vertex_buffer(0, buffer.slice(..));
                 let mut bound_atlas = None;
-                for command in commands {
-                    let draw = command.draw;
-                    if bound_atlas != Some(draw.atlas_slot) {
-                        let texture =
-                            atlas(draw.atlas_slot).expect("scheduled atlas remains available");
-                        pass.set_bind_group(1, &texture.bind_group, &[]);
-                        bound_atlas = Some(draw.atlas_slot);
+                for (window, (records, offset)) in commands.chunks(WINDOW).zip(windows) {
+                    pass.set_bind_group(3, records, &[*offset]);
+                    for (slot, command) in window.iter().enumerate() {
+                        let draw = command.draw;
+                        if bound_atlas != Some(draw.atlas_slot) {
+                            let texture =
+                                atlas(draw.atlas_slot).expect("scheduled atlas remains available");
+                            pass.set_bind_group(1, &texture.bind_group, &[]);
+                            bound_atlas = Some(draw.atlas_slot);
+                        }
+                        let [x, y, width, height] = command.rect;
+                        pass.set_scissor_rect(x, y, width, height);
+                        pass.set_pipeline(match (draw.piece, draw.render_z) {
+                            (TerrainPiece::Body, RenderZPolicy::ReadWrite) => &self.body_pipeline,
+                            (TerrainPiece::Shadow, RenderZPolicy::ReadWrite) => {
+                                &self.shadow_pipeline
+                            }
+                            #[cfg(test)]
+                            (TerrainPiece::Body, RenderZPolicy::ReadOnly) => {
+                                &self.reference_body_pipeline
+                            }
+                            #[cfg(test)]
+                            (TerrainPiece::Shadow, RenderZPolicy::ReadOnly) => {
+                                &self.reference_shadow_pipeline
+                            }
+                            _ => {
+                                unreachable!("destination depth policy validated before scheduling")
+                            }
+                        });
+                        // The vertex range carries the edit's window slot.
+                        let vertex = slot as u32 * 6;
+                        pass.draw(vertex..vertex + 6, draw.index..draw.index + 1);
                     }
-                    let [x, y, width, height] = command.rect;
-                    pass.set_scissor_rect(x, y, width, height);
-                    pass.set_pipeline(match (draw.piece, draw.render_z) {
-                        (TerrainPiece::Body, RenderZPolicy::ReadWrite) => &self.body_pipeline,
-                        (TerrainPiece::Shadow, RenderZPolicy::ReadWrite) => &self.shadow_pipeline,
-                        #[cfg(test)]
-                        (TerrainPiece::Body, RenderZPolicy::ReadOnly) => {
-                            &self.reference_body_pipeline
-                        }
-                        #[cfg(test)]
-                        (TerrainPiece::Shadow, RenderZPolicy::ReadOnly) => {
-                            &self.reference_shadow_pipeline
-                        }
-                        _ => unreachable!("destination depth policy validated before scheduling"),
-                    });
-                    pass.draw(0..6, draw.index..draw.index + 1);
                 }
             }
             Tail::ReadOnly(rects) => {
@@ -1174,7 +1299,7 @@ impl TerrainDrawRenderer {
     ) -> usize {
         let label = match &tail.0 {
             Tail::Packed(resolve) => return self.resolve_packed(encoder, color, depth, resolve),
-            Tail::Edits(_) => "Terrain native disjoint edits",
+            Tail::Edits(..) => "Terrain native wave edits",
             Tail::ReadOnly(_) => "Read-only final ordered destination words",
         };
         self.live_pass(encoder, color, depth, label, |renderer, pass| {
@@ -1235,8 +1360,9 @@ pub(crate) struct LiveTail(Tail);
 enum Tail {
     /// A packed transaction's resolve.
     Packed(packed::PackedResolve),
-    /// One read-write wave's edits, after their snapshot.
-    Edits(Vec<TerrainCommand>),
+    /// One read-write wave's edits, after their snapshot, with the binding
+    /// and offset of each window's records.
+    Edits(Vec<TerrainCommand>, Vec<(wgpu::BindGroup, u32)>),
     /// One read-only band's final words, per clipped rectangle.
     ReadOnly(Vec<[u32; 4]>),
 }
