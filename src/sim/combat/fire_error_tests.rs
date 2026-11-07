@@ -667,7 +667,11 @@ fn ares_heal_and_temporal_fire_errors() {
     assert_eq!(code("U6.healer_vs_full_health_vehicle"), illegal);
     assert_eq!(code("U6.healer_vs_cell"), illegal);
     assert_ne!(evaluate(&wounded_vehicle).0, illegal);
-    assert_eq!(code("I2.medic_vs_vehicle"), illegal, "a full-health vehicle");
+    assert_eq!(
+        code("I2.medic_vs_vehicle"),
+        illegal,
+        "a full-health vehicle"
+    );
     assert_eq!(code("I2.medic_vs_cell"), illegal);
     assert_eq!(code("I2.medic_vs_healthy_infantry"), illegal);
     assert_ne!(code("U10.temporal_idle_moving"), FireError::Moving as i32);

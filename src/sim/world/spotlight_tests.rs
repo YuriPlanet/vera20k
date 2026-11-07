@@ -493,3 +493,39 @@ fn spotlight_tracking_selects_first_nearest_enemy_and_expiry_clears_the_pointer(
         (1, 0, before)
     );
 }
+
+/// Ares 3.0 TechnoClass_Put_1/_2 (1004EDE0, hooks 0x6F6D0E/0x6F6F20): a
+/// `HasSpotlight=` vehicle gets its light when it is put on the map, and a
+/// building keeps exactly one (BuildingClass_Put_DontSpawnSpotlight
+/// 1004EA10, hook 0x441163).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_spotlighted_technos_get_their_light_at_unlimbo() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\nHasSpotlight=yes\n\
+         [BuildingTypes]\n0=LIGHT\n[LIGHT]\nHasSpotlight=yes\nStrength=100\nFoundation=1x1\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(9);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let tank = sim
+        .spawn_object("TANK", "Americans", 5, 5, 0, &rules)
+        .unwrap();
+    let light = sim
+        .spawn_object("LIGHT", "Americans", 9, 9, 0, &rules)
+        .unwrap();
+    for parent in [tank, light] {
+        assert!(
+            sim.substrate
+                .entities
+                .get(parent)
+                .unwrap()
+                .building_light
+                .light()
+                .is_some(),
+            "{parent}"
+        );
+    }
+    assert_eq!(sim.substrate.spotlights.objects.len(), 2);
+}

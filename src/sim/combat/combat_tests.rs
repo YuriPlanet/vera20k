@@ -2750,6 +2750,10 @@ struct RetaliationCase {
     damage: i32,
     verses: &'static str,
     player_return_fire: bool,
+    /// The source rides an open-topped transport (id 3, type SOURCE) in its
+    /// cell; the victim must then turn on whichever of the two the hook
+    /// under test names.
+    rider: bool,
 }
 
 /// ReceiveDamage702A69 asks CanFireAt before the human Sight fallback. This
@@ -2851,6 +2855,7 @@ impl Default for RetaliationCase {
             damage: 1,
             verses: "100%",
             player_return_fire: false,
+            rider: false,
         }
     }
 }
@@ -2893,6 +2898,14 @@ fn retaliates(case: RetaliationCase) -> bool {
             case.source_sub_x,
         ));
     source.lifecycle.set_cell_marked_for_test(true);
+    if case.rider {
+        source.passenger_role = crate::sim::passenger::PassengerRole::boarded_for_test(3, true);
+        let mut transport = make_entity(3, "SOURCE", source_rx, 5, case.source_health);
+        transport.set_owner_for_test(source_owner);
+        transport.set_type_ref_for_test(interner.intern("SOURCE"));
+        transport.lifecycle.set_cell_marked_for_test(true);
+        entities.insert(transport);
+    }
     entities.insert(source);
     let mut victim = make_entity(2, "VICTIM", victim_rx, 5, 100);
     victim.set_owner_for_test(victim_owner);
@@ -2937,10 +2950,23 @@ fn retaliates(case: RetaliationCase) -> bool {
         &mut SimRng::new(11),
         &mut SimRng::new(13),
     );
+    let source = if case.rider { 3 } else { 1 };
     entities
         .get(2)
         .and_then(|victim| victim.attack_target.target())
-        .is_some_and(|attack| attack == TargetKind::Entity(1))
+        .is_some_and(|attack| attack == TargetKind::Entity(source))
+}
+
+/// Ares 3.0 TechnoClass_ReceiveDamage_OpenTopped (1004AD10, hook 0x702A38):
+/// a hit from a rider of an open-topped transport makes the victim
+/// retaliate against the transport.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_retaliation_turns_on_an_open_topped_riders_transport() {
+    assert!(retaliates(RetaliationCase {
+        rider: true,
+        ..Default::default()
+    }));
 }
 
 /// `ShouldRetaliate 0x007089E8..0x00708A26`: unless `PlayerReturnFire=`, a

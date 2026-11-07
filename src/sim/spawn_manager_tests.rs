@@ -1143,7 +1143,9 @@ fn a_v3s_fire_reaches_its_manager_at_the_next_pass() {
 /// (`0x00707B19..0x00707B24`) ignores the control: a live V3's own
 /// Detach_All — a cloak's here — takes the owner arm, which UnInits its
 /// docked missile and regenerates the slot at once; the next pass builds a
-/// new missile whose SpawnOwner is the V3.
+/// new missile whose SpawnOwner is the V3. Ares skips that forward
+/// (1004A910, hook 0x707B19): `ares_own_detach_all_keeps_the_docked_missile`.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn a_live_spawners_own_expiry_rebuilds_its_docked_missile() {
     let rules = make_spawner_rules();
@@ -2997,4 +2999,30 @@ fn retail_missiles_keep_their_launch_coordinate_from_unlimbo() {
             assert!(rocket.is_moving(), "{owner_type}: Move_To took the target");
         }
     }
+}
+
+/// Ares 3.0 TechnoClass_PointerGotInvalid_SpawnCloakOwner (1004A910, hook
+/// 0x707B19): a live V3's own Detach_All no longer reaches its manager, so
+/// the docked missile stays.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_own_detach_all_keeps_the_docked_missile() {
+    let rules = make_spawner_rules();
+    let mut sim = missile_sim();
+    let v3 = sim
+        .spawn_object("V3", "Russians", 10, 10, 0, &rules)
+        .expect("spawn V3");
+    let docked = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(v3)
+            .and_then(|e| e.spawn_manager.clone())
+            .unwrap()
+            .slots[0]
+            .spawn
+    };
+    let missile = docked(&sim).expect("a docked missile");
+    sim.detach_all_pointer_expired(v3, &rules, None, crate::sim::world::FrameEffects::default());
+    assert_eq!(docked(&sim), Some(missile));
+    assert!(sim.substrate.entities.get(missile).unwrap().lifecycle.object_alive());
 }
