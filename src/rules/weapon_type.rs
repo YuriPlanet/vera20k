@@ -89,6 +89,11 @@ pub struct WeaponType {
     /// Ares WeaponTypeExt abduction ([`crate::rules::ares_weapon`]).
     #[cfg(feature = "ares")]
     pub ares_abductor: crate::rules::ares_weapon::AresAbductor,
+    /// Ares `Cursor.Attack`/`Cursor.AttackOutOfRange`
+    /// ([`crate::rules::ares_mouse_cursor`]), bound by the ordered Rules
+    /// reader; presentation only.
+    #[cfg(feature = "ares")]
+    pub ares_cursors: crate::rules::ares_mouse_cursor::WeaponCursors,
     /// Ares `ProjectileRange=` (WeaponTypeExt +0xC8, Valueable<Leptons>,
     /// 100000): the leptons a FireAt bullet of a `Ranged=` type may travel
     /// (TechnoClass_Fire_CreateBullet 1001ADE0, BulletClass_Update_Ranged
@@ -486,6 +491,8 @@ impl WeaponType {
             ares_apply_damage: section.read_ares_nullable_bool("ApplyDamage", None),
             #[cfg(feature = "ares")]
             ares_abductor: crate::rules::ares_weapon::AresAbductor::read(section),
+            #[cfg(feature = "ares")]
+            ares_cursors: Default::default(),
             #[cfg(feature = "ares")]
             ares_projectile_range: section.read_ares_leptons("ProjectileRange", 100000),
             // Constructor 1 (`0x00771DBB`); ReadINI passes it as the default

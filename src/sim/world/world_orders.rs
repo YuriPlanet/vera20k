@@ -1028,6 +1028,30 @@ impl Simulation {
         EngineerBuildingAction::Capture
     }
 
+    /// Ares 3.0 `InfantryClass_GetActionOnObject_EngineerOverFriendlyBuilding
+    /// @ 10025420` (hook `0x51E635`): an Engineer over a `Rubble.Intact` or
+    /// `Rubble.Intact.Remove` building whose house is allied with it (the
+    /// building's owner asks) repairs it at any health.
+    #[cfg(feature = "ares")]
+    pub fn ares_engineer_repairs_rubble(
+        &self,
+        actor_id: u64,
+        target_id: u64,
+        rules: &RuleSet,
+    ) -> bool {
+        let (Some(actor), Some(target)) = (
+            self.substrate.entities.get(actor_id),
+            self.substrate.entities.get(target_id),
+        ) else {
+            return false;
+        };
+        self.object_type(target.type_ref(), rules)
+            .is_some_and(|object| object.building_type_ext().rubble_intact.applies())
+            && self
+                .house_alliances
+                .is_allied(&self.interner, target.owner(), actor.owner())
+    }
+
     /// Object-route Engineer action in Infantry51E49E..51E637. Ordinary
     /// action/threshold vectors: engineer_repair_joined; hut caller/display
     /// vectors: engineer_bridge_cursor_caller; shared geometric query:
@@ -1109,15 +1133,10 @@ impl Simulation {
                 return Some(EngineerBuildingAction::EnterHospital);
             }
             // Ares 3.0 10025420 (hook 0x51E635): over a rubble its house is
-            // allied with (the building's owner asks), the repair action at
-            // any health. RESIDUAL: Ares' RepairTrench cursor (0x5E) has no
-            // VERA cursor; the ordinary repair cursor shows.
+            // allied with, the repair action at any health; the cursor shows
+            // RepairTrench (`app::input::ares_cursor`).
             #[cfg(feature = "ares")]
-            if object.building_type_ext().rubble_intact.applies()
-                && self
-                    .house_alliances
-                    .is_allied(&self.interner, target.owner(), actor.owner())
-            {
+            if self.ares_engineer_repairs_rubble(actor_id, target_id, rules) {
                 return Some(EngineerBuildingAction::Repair(true));
             }
             let full = matches!(

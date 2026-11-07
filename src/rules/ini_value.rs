@@ -425,6 +425,31 @@ impl IniSection {
         current: i32,
         find: impl Fn(&str) -> Option<i32>,
     ) -> i32 {
+        self.read_ares_found_index(key, current, find)
+    }
+
+    /// Ares 3.0 `detail::read<MouseCursorType>` 1000FB50, the same read as
+    /// 1001CC70 over the `[MouseCursors]` list
+    /// ([`crate::rules::ares_mouse_cursor::MouseCursors::find`]): a named
+    /// entry stores its index, `none`/`<none>` stores -1, anything else keeps
+    /// `current`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_ares_mouse_cursor(
+        &self,
+        key: &str,
+        current: i32,
+        find: impl Fn(&str) -> Option<i32>,
+    ) -> i32 {
+        self.read_ares_found_index(key, current, find)
+    }
+
+    #[cfg(any(feature = "ares", feature = "phobos"))]
+    fn read_ares_found_index(
+        &self,
+        key: &str,
+        current: i32,
+        find: impl Fn(&str) -> Option<i32>,
+    ) -> i32 {
         let Some(name) = self.read_name(key, 2048) else {
             return current;
         };

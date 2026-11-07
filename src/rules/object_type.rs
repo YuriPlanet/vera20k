@@ -1212,6 +1212,10 @@ pub struct ObjectType {
     /// BuildingTypeExt CloningFacility (`rules::ares_production`).
     #[cfg(feature = "ares")]
     production: crate::rules::ares_production::ProductionTypeRules,
+    /// TechnoTypeExt `Cursor.*` and BuildingTypeExt `Cursor.Spy`
+    /// (`rules::ares_mouse_cursor`); presentation only.
+    #[cfg(feature = "ares")]
+    ares_cursors: crate::rules::ares_mouse_cursor::TechnoCursors,
     /// Ares3.0 TypeExt+646/+647. Unset uses the class/score default at the
     /// Add/Remove_Tracking owner; an explicit false is a distinct retained input.
     #[cfg(feature = "ares")]
@@ -3178,6 +3182,20 @@ impl ObjectType {
         self.production = production.clone();
     }
 
+    /// The type's Ares `[MouseCursors]` keys (`Cursor.Move`, `Cursor.Spy`, ...).
+    #[cfg(feature = "ares")]
+    pub fn ares_cursors(&self) -> &crate::rules::ares_mouse_cursor::TechnoCursors {
+        &self.ares_cursors
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_ares_cursors(
+        &mut self,
+        cursors: crate::rules::ares_mouse_cursor::TechnoCursors,
+    ) {
+        self.ares_cursors = cursors;
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn ares_production_mut(
         &mut self,
@@ -4244,21 +4262,28 @@ impl ObjectType {
                 .is_present(key)
                 .then(|| SimFixed::from_bits(section.read_range(key, 0) << 8))
         };
-        // The house lists (`0x004750D0`) read `char[128]`. The two
+        // The house lists (`0x004750D0`) read `char[128]`; Ares 3.0
+        // INIClass_ReadHouseTypesList (1005BED0 hook 0x4750EC, strtok
+        // 1005BEF0 hook 0x475107) swaps in its 0x800 buffer. The two
         // prerequisite lists name BuildingTypes, so `RuleSet` parses them.
+        let house_list_capacity = if crate::rules::ARES_ENABLED {
+            0x800
+        } else {
+            0x80
+        };
         let owner: Vec<String> = section
-            .read_list("Owner", 0x80)
+            .read_list("Owner", house_list_capacity)
             .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
             .unwrap_or_default();
 
-        let required_tokens = section.read_list("RequiredHouses", 0x80);
+        let required_tokens = section.read_list("RequiredHouses", house_list_capacity);
         let required_houses_explicitly_empty = required_tokens.as_ref().is_some_and(Vec::is_empty);
         let required_houses: Vec<String> = required_tokens
             .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
             .unwrap_or_default();
 
         let forbidden_houses: Vec<String> = section
-            .read_list("ForbiddenHouses", 0x80)
+            .read_list("ForbiddenHouses", house_list_capacity)
             .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
             .unwrap_or_default();
 
@@ -4757,6 +4782,8 @@ impl ObjectType {
             academy: Default::default(),
             #[cfg(feature = "ares")]
             production: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_cursors: Default::default(),
             #[cfg(feature = "ares")]
             keep_alive: section.read_ares_nullable_bool("KeepAlive", None),
             #[cfg(feature = "ares")]
@@ -5301,6 +5328,13 @@ impl ObjectType {
             max_debris,
             min_debris,
             debris_types: Vec::new(),
+            // Ares 3.0 TechnoTypeClass_LoadFromINI_ListLength (1005BF90,
+            // hook 0x7125DF) reads it through ParseList<int> (1005B030).
+            #[cfg(feature = "ares")]
+            debris_maximums: section
+                .read_ares_int_list("DebrisMaximums")
+                .unwrap_or_default(),
+            #[cfg(not(feature = "ares"))]
             debris_maximums: section.read_int_list("DebrisMaximums").unwrap_or_default(),
             debris_anims: Vec::new(),
             close_range: section.read_bool("CloseRange", false),

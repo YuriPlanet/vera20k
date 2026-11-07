@@ -726,6 +726,30 @@ const PARADROP_INFANTRY_KEYS: [&str; 4] = [
     "YuriParaDropInf",
 ];
 
+/// The `[General]` type lists Ares 3.0 Buf_General (1005BB00, hook
+/// 0x66D55E) reads first, in its order. Its int lists (`*ParaDropNum=`) are
+/// RuleSet's.
+#[cfg(feature = "ares")]
+const ARES_GENERAL_LISTS: [(&str, RulesTypeFamily); 17] = [
+    ("AmerParaDropInf", RulesTypeFamily::Infantry),
+    ("AllyParaDropInf", RulesTypeFamily::Infantry),
+    ("SovParaDropInf", RulesTypeFamily::Infantry),
+    ("YuriParaDropInf", RulesTypeFamily::Infantry),
+    ("AnimToInfantry", RulesTypeFamily::Infantry),
+    ("SecretInfantry", RulesTypeFamily::Infantry),
+    ("SecretUnits", RulesTypeFamily::Vehicle),
+    ("SecretBuildings", RulesTypeFamily::Building),
+    ("HarvesterUnit", RulesTypeFamily::Vehicle),
+    ("BaseUnit", RulesTypeFamily::Vehicle),
+    ("PadAircraft", RulesTypeFamily::Aircraft),
+    ("Shipyard", RulesTypeFamily::Building),
+    ("RepairBay", RulesTypeFamily::Building),
+    ("WeatherConClouds", RulesTypeFamily::Animation),
+    ("WeatherConBolts", RulesTypeFamily::Animation),
+    ("BridgeExplosions", RulesTypeFamily::Animation),
+    ("DefaultMirageDisguises", RulesTypeFamily::Terrain),
+];
+
 /// Result of applying an ordered rules stack.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct ProcessedRulesLayers {
@@ -756,6 +780,47 @@ impl ProcessedRulesLayers {
             .registry_state
             .ares_armors
             .as_ref()
+    }
+
+    /// The Ares `[MouseCursors]` list after the last pass.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_mouse_cursors(&self) -> &crate::rules::ares_mouse_cursor::MouseCursors {
+        &self
+            .native_type_construction_trace
+            .registry_state
+            .ares_mouse_cursors
+    }
+
+    /// Each SuperWeaponType's retained Ares `Cursor`/`NoCursor`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_super_weapon_cursor_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, crate::rules::ares_mouse_cursor::SuperWeaponCursors)> {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.ares_super_weapon_cursors
+        })
+    }
+
+    /// Each TechnoType's retained Ares cursor keys.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_cursor_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            ObjectCategory,
+            &str,
+            crate::rules::ares_mouse_cursor::TechnoCursors,
+        ),
+    > {
+        let registry = self.native_type_construction_trace.registry_state();
+        registry.techno_type_order.iter().map(|&(family, index)| {
+            let member = &registry.families[&family][index];
+            (
+                family.object_category().expect("TechnoType category"),
+                member.native_stored_id.as_str(),
+                member.ares_cursors,
+            )
+        })
     }
 
     /// Phobos `[RadiationTypes]` catalog with the same retained process
@@ -1772,6 +1837,8 @@ impl ProcessedRulesLayers {
                     ares_ivan_bomb_warhead: &member.weapon.ares_ivan_bomb_warhead,
                     #[cfg(feature = "ares")]
                     ares_abductor_anim: member.weapon.ares_abductor_anim.as_deref(),
+                    #[cfg(feature = "ares")]
+                    ares_cursors: member.weapon.ares_cursors,
                 }
             })
     }
@@ -3752,6 +3819,8 @@ pub(crate) struct AresGlobalControls {
     building: crate::rules::ares_building_type::BuildingGlobalRules,
     #[serde(default)]
     tiberium: crate::rules::ares_tiberium::TiberiumGlobalRules,
+    #[serde(default)]
+    drop_pod: crate::rules::superweapon_type::AresDropPodGlobalRules,
 }
 
 #[cfg(feature = "ares")]
@@ -3773,6 +3842,7 @@ impl Default for AresGlobalControls {
             techno_combat: Default::default(),
             building: Default::default(),
             tiberium: Default::default(),
+            drop_pod: Default::default(),
         }
     }
 }
@@ -3789,6 +3859,13 @@ impl AresGlobalControls {
 
     pub(crate) fn tiberium(&self) -> &crate::rules::ares_tiberium::TiberiumGlobalRules {
         &self.tiberium
+    }
+
+    /// RESIDUAL consumer: SW_DropPod::Activate (10070E40) and the DropPod
+    /// locomotor hooks (`docs/ares-superweapon-types.md`, part 4).
+    #[allow(dead_code)]
+    pub(crate) fn drop_pod(&self) -> &crate::rules::superweapon_type::AresDropPodGlobalRules {
+        &self.drop_pod
     }
 
     const fn default_type_select_use_deploy() -> bool {
@@ -3952,6 +4029,11 @@ pub(crate) struct NativeRulesRegistryState {
     phobos_attach_effect_types: Option<AttachEffectTypeCatalog>,
     #[cfg(feature = "ares")]
     ares_global_controls: AresGlobalControls,
+    /// Ares `[MouseCursors]` list (`rules::ares_mouse_cursor`); Process
+    /// retains it, destructive reset rebuilds its defaults.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_mouse_cursors: crate::rules::ares_mouse_cursor::MouseCursors,
     families: HashMap<RulesTypeFamily, Vec<ProcessedType>>,
     /// TechnoTypeClass::Array A8EB04/countA8EB10. Each pair points to the
     /// existing family member; names alone cannot distinguish repeated native
@@ -4072,6 +4154,8 @@ impl Default for NativeRulesRegistryState {
                 .then(AttachEffectTypeCatalog::default),
             #[cfg(feature = "ares")]
             ares_global_controls: AresGlobalControls::default(),
+            #[cfg(feature = "ares")]
+            ares_mouse_cursors: Default::default(),
             families: HashMap::new(),
             techno_type_order: Vec::new(),
             tiberiums: Vec::new(),
@@ -5020,6 +5104,15 @@ struct ProcessedType {
     #[cfg(feature = "ares")]
     #[serde(default)]
     techno_combat: crate::rules::ares_techno_type::AresTechnoTypeRules,
+    /// TechnoTypeExt `Cursor.*` and BuildingTypeExt `Cursor.Spy`
+    /// (`rules::ares_mouse_cursor`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_cursors: crate::rules::ares_mouse_cursor::TechnoCursors,
+    /// SWTypeExt `Cursor`/`NoCursor` (`rules::ares_mouse_cursor`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_super_weapon_cursors: crate::rules::ares_mouse_cursor::SuperWeaponCursors,
     /// Ares TypeExt+150 `IronCurtain.Modifier` and +158
     /// `ForceShield.Modifier`, Valueable<double>, constructor 1.0.
     #[cfg(feature = "ares")]
@@ -5462,6 +5555,8 @@ pub(crate) struct WeaponState<'a> {
     pub(crate) ares_ivan_bomb_warhead: &'a Option<Option<String>>,
     #[cfg(feature = "ares")]
     pub(crate) ares_abductor_anim: Option<&'a str>,
+    #[cfg(feature = "ares")]
+    pub(crate) ares_cursors: crate::rules::ares_mouse_cursor::WeaponCursors,
 }
 
 /// Fields needed by Weapon7729F0, retained on the same live Weapon object.
@@ -5515,6 +5610,11 @@ struct WeaponReadState {
     #[cfg(feature = "ares")]
     #[serde(default)]
     ares_abductor_anim: Option<String>,
+    /// Ares `Cursor.Attack`/`Cursor.AttackOutOfRange` (WeaponTypeExt
+    /// +0xD4/+0xD8), the last reads of 10055520.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_cursors: crate::rules::ares_mouse_cursor::WeaponCursors,
 }
 
 impl ProcessedType {
@@ -5637,6 +5737,10 @@ impl ProcessedType {
             aircraft_crashable: None,
             #[cfg(feature = "ares")]
             techno_combat: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_cursors: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_super_weapon_cursors: Default::default(),
             #[cfg(feature = "ares")]
             curtain_modifiers: default_curtain_modifiers(),
             armor_id: ArmorId::NONE,
@@ -5783,6 +5887,10 @@ struct RulesPassProcessor {
     phobos_attach_effect_types: Option<AttachEffectTypeCatalog>,
     #[cfg(feature = "ares")]
     ares_global_controls: AresGlobalControls,
+    /// Ares `[MouseCursors]` list (`rules::ares_mouse_cursor`); Process
+    /// retains it, destructive reset rebuilds its defaults.
+    #[cfg(feature = "ares")]
+    ares_mouse_cursors: crate::rules::ares_mouse_cursor::MouseCursors,
     ordinary: Option<IniFile>,
     crate_rules: CrateRules,
     powerups: PowerupTable,
@@ -5878,6 +5986,8 @@ impl RulesPassProcessor {
             phobos_attach_effect_types: registry_state.phobos_attach_effect_types,
             #[cfg(feature = "ares")]
             ares_global_controls: registry_state.ares_global_controls,
+            #[cfg(feature = "ares")]
+            ares_mouse_cursors: registry_state.ares_mouse_cursors,
             families: registry_state.families,
             techno_type_order: registry_state.techno_type_order,
             tiberiums: registry_state.tiberiums,
@@ -6029,6 +6139,25 @@ impl RulesPassProcessor {
             self.resolve_existing_list_from(section, "HSBuilding", RulesTypeFamily::Building, 2048)
         }) {
             self.ares_global_controls.hunter_seeker_buildings = buildings;
+        }
+        // 1002A800 then reads DropPodTrailer, DropPodTypes, DropPodMinimum
+        // and DropPodMaximum (both pointer reads Find, never allocate).
+        #[cfg(feature = "ares")]
+        {
+            let general = pass.section("General");
+            let trailer = general.and_then(|section| {
+                self.resolve_existing_type_from(
+                    section,
+                    "DropPodTrailer",
+                    RulesTypeFamily::Animation,
+                )
+            });
+            let types = general.and_then(|section| {
+                self.resolve_existing_techno_type_list_from(section, "DropPodTypes")
+            });
+            self.ares_global_controls
+                .drop_pod
+                .read_pass(general, trailer, types);
         }
         // The same LoadAfterTypeData1002A800 continues with General's
         // BountyEnablers1002AAAB and AudioVisual's BountyDisplay1002AAC5.
@@ -6536,6 +6665,15 @@ impl RulesPassProcessor {
             return;
         };
         for key in BUILDING_LISTS {
+            // Ares 3.0 Buf_AI (1005B830, hook 0x672B0E) replaces the original
+            // 0x80 FindOrAllocate reads (skipped to 0x673950) with ParseList
+            // (1005B340's BuildingType instantiation): the shared 0x800
+            // buffer and Find-only, in this order; AIForcePredictionFudge is
+            // RuleSet's int list.
+            #[cfg(feature = "ares")]
+            let resolved =
+                self.resolve_existing_list_from(section, key, RulesTypeFamily::Building, 0x800);
+            #[cfg(not(feature = "ares"))]
             let resolved = self.resolve_list_from(section, key, RulesTypeFamily::Building, 0x80);
             self.rules_type_references.read_list(key, resolved);
         }
@@ -6730,40 +6868,38 @@ impl RulesPassProcessor {
             self.rules_attack_cursor_on_disguise,
         );
 
+        // Ares 3.0 Buf_General (1005BB00, hook 0x66D55E) reads these lists
+        // at ReadGeneral's start through ParseList (1005B340 and its other
+        // instantiations): ReadString into the shared 0x800 buffer, comma
+        // tokens, Find-only lookups that drop unknown and none tokens. Its
+        // jump hooks then skip the original 0x80 FindOrAllocate reads
+        // (0x66DB93, 0x66DD13, 0x66F34B, 0x66F589, 0x66F7C0, 0x66FA13,
+        // 0x67062F). DefaultMirageDisguises has no skip hook: the original
+        // read at 0x671D3E still follows and replaces a present list.
+        #[cfg(feature = "ares")]
+        for (key, family) in ARES_GENERAL_LISTS {
+            let resolved = self.resolve_existing_list_from(section, key, family, 0x800);
+            self.store_general_list(key, resolved);
+        }
+
         for &(key, family, is_list) in SITES {
             // An ordinary build never reads the NPSE extension, so it neither
             // allocates the canopy's AnimType nor keeps the pointer.
             if key == "VehicleParachute" && !crate::rules::NPATCH_ENABLED {
                 continue;
             }
-            if matches!(
-                key,
-                "MetallicDebris" | "BridgeExplosions" | "WeatherConClouds" | "WeatherConBolts"
-            ) {
-                if let Some(resolved) = self.resolve_list_from(section, key, family, 0x80) {
-                    let lists = &mut self.general_type_lists;
-                    *match key {
-                        "MetallicDebris" => &mut lists.metallic_debris,
-                        "BridgeExplosions" => &mut lists.bridge_explosions,
-                        "WeatherConClouds" => &mut lists.weather_con_clouds,
-                        _ => &mut lists.weather_con_bolts,
-                    } = resolved;
-                }
-            } else if let Some(side) = PARADROP_INFANTRY_KEYS.iter().position(|&k| k == key) {
-                if let Some(resolved) = self.resolve_list_from(section, key, family, 0x80) {
-                    self.general_type_lists.paradrop_infantry[side] = resolved;
-                }
-            } else if let Some(slot) = ["SecretInfantry", "SecretUnits", "SecretBuildings"]
-                .iter()
-                .position(|&name| name == key)
+            #[cfg(feature = "ares")]
+            if key != "DefaultMirageDisguises"
+                && ARES_GENERAL_LISTS.iter().any(|&(name, _)| name == key)
             {
-                if let Some(resolved) = self.resolve_list_from(section, key, family, 0x80) {
-                    self.general_type_lists.secret_lab_choices[slot] = resolved;
-                }
-            } else if key == "AnimToInfantry" {
-                if let Some(resolved) = self.resolve_list_from(section, key, family, 0x80) {
-                    self.general_type_lists.anim_to_infantry = resolved;
-                }
+                continue;
+            }
+            if is_list {
+                // Keep actual FindOrAllocate identities, duplicate slots and
+                // empty/missing-layer retention. Null factory tokens are
+                // excluded by this shared native list reader.
+                let resolved = self.resolve_list_from(section, key, family, 0x80);
+                self.store_general_list(key, resolved);
             } else if let Some(side) = ["AlliedDisguise", "SovietDisguise", "ThirdDisguise"]
                 .iter()
                 .position(|&name| name == key)
@@ -6772,13 +6908,6 @@ impl RulesPassProcessor {
                 // token clears it. Reuse the existing allocating scalar reader.
                 if let Some(resolved) = self.resolve_scalar_from(section, key, family, 0x80) {
                     self.general_type_lists.infantry_disguises[side] = resolved;
-                }
-            } else if key == "DefaultMirageDisguises" {
-                // Keep actual FindOrAllocate identities, duplicate slots and
-                // empty/missing-layer retention. Null factory tokens are
-                // excluded by this shared native list reader.
-                if let Some(resolved) = self.resolve_list_from(section, key, family, 0x80) {
-                    self.general_type_lists.default_mirage_disguises = resolved;
                 }
             } else if matches!(
                 key,
@@ -6866,13 +6995,37 @@ impl RulesPassProcessor {
                 if let Some(resolved) = self.resolve_scalar_from(section, key, family, 0x80) {
                     self.missile_spawn.set_type(missile, resolved);
                 }
-            } else if is_list {
-                let resolved = self.resolve_list_from(section, key, family, 0x80);
-                self.rules_type_references.read_list(key, resolved);
             } else {
                 let resolved = self.resolve_scalar_from(section, key, family, 0x80);
                 self.rules_type_references.read_pointer(key, resolved);
             }
+        }
+    }
+
+    /// Store one `[General]` type list's read: `None` (absent key) keeps the
+    /// retained vector, a present read replaces it.
+    fn store_general_list(&mut self, key: &str, resolved: Option<Vec<String>>) {
+        let lists = &mut self.general_type_lists;
+        let slot = match key {
+            "MetallicDebris" => &mut lists.metallic_debris,
+            "BridgeExplosions" => &mut lists.bridge_explosions,
+            "WeatherConClouds" => &mut lists.weather_con_clouds,
+            "WeatherConBolts" => &mut lists.weather_con_bolts,
+            "AnimToInfantry" => &mut lists.anim_to_infantry,
+            "DefaultMirageDisguises" => &mut lists.default_mirage_disguises,
+            "SecretInfantry" => &mut lists.secret_lab_choices[0],
+            "SecretUnits" => &mut lists.secret_lab_choices[1],
+            "SecretBuildings" => &mut lists.secret_lab_choices[2],
+            _ => match PARADROP_INFANTRY_KEYS.iter().position(|&name| name == key) {
+                Some(side) => &mut lists.paradrop_infantry[side],
+                None => {
+                    self.rules_type_references.read_list(key, resolved);
+                    return;
+                }
+            },
+        };
+        if let Some(resolved) = resolved {
+            *slot = resolved;
         }
     }
 
@@ -6993,6 +7146,10 @@ impl RulesPassProcessor {
             .as_mut()
             .expect("Ares Rules own armor catalog")
             .read_pass(pass);
+        // 1002AEF0 reads [MouseCursors] after ArmorTypes, before any Type
+        // body of this pass names a cursor.
+        #[cfg(feature = "ares")]
+        self.ares_mouse_cursors.read_pass(pass);
         // Ares RulesClass_BeforeTypeData679A15 -> 1002AEF0. This is after
         // registry allocation but before any TechnoType body in this pass.
         // Move out and back while reading the existing registries; this is
@@ -7428,6 +7585,17 @@ impl RulesPassProcessor {
                         }
                     }
                     presentation.eva.read_pass(&raw, _fixed_eva);
+                    // The handler's Initialize names its cursor; 10033370
+                    // reads Cursor/NoCursor after SW.ChargeToDrainRatio.
+                    let cursors = &mut self
+                        .families
+                        .get_mut(&RulesTypeFamily::SuperWeapon)
+                        .unwrap()[index]
+                        .ares_super_weapon_cursors;
+                    if initialized {
+                        cursors.initialize_for_kind(kind);
+                    }
+                    cursors.read_pass(&raw, &self.ares_mouse_cursors);
                     let animation = self.resolve_existing_type_from(
                         &raw,
                         "SW.Animation",
@@ -7655,6 +7823,25 @@ impl RulesPassProcessor {
                                 |name| _fixed_sounds.get(name).map(|entry| entry.id.clone()),
                             ),
                         ]);
+                    } else if is("EMPulse") {
+                        // SW_EMPulse::LoadFromINI10071510: Nullable<AnimTypeClass*>
+                        // and ValueableVector<BuildingTypeClass*>, both Find.
+                        reads.emp_pulse_ball = self.resolve_existing_type_from(
+                            &raw,
+                            "EMPulse.PulseBall",
+                            RulesTypeFamily::Animation,
+                        );
+                        reads.emp_pulse_cannons = self.resolve_existing_list_from(
+                            &raw,
+                            "EMPulse.Cannons",
+                            RulesTypeFamily::Building,
+                            0x800,
+                        );
+                    } else if is("DropPod") {
+                        // SW_DropPod::LoadFromINI10071140:
+                        // ValueableVector<TechnoTypeClass*>, Find.
+                        reads.drop_pod_types =
+                            self.resolve_existing_techno_type_list_from(&raw, "DropPod.Types");
                     }
                     // 10033670: Nullable<WarheadTypeClass*> through the
                     // Warhead factory, for every type.
@@ -8021,6 +8208,11 @@ impl RulesPassProcessor {
                         },
                     );
                     self.family_mut(family)[index].techno_combat = techno_combat;
+                    // 1003DFB0 names [MouseCursors] entries this pass's
+                    // 1002AEF0 already allocated.
+                    self.families.get_mut(&family).unwrap()[index]
+                        .ares_cursors
+                        .read_techno_pass(&raw, &self.ares_mouse_cursors);
                 }
                 #[cfg(feature = "ares")]
                 self.process_factory_owners(family, index, &raw);
@@ -8226,6 +8418,10 @@ impl RulesPassProcessor {
                             self.family_mut(family)[index]
                                 .production
                                 .read_building_pass(&raw);
+                            // 1000DD40 Cursor.Spy, after SlamSound.
+                            self.families.get_mut(&family).unwrap()[index]
+                                .ares_cursors
+                                .read_building_pass(&raw, &self.ares_mouse_cursors);
                         }
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
                         // ReadINI460F50..460F9C: exact Rules key, ReadCoord529CA0,
@@ -8563,19 +8759,51 @@ impl RulesPassProcessor {
                 .techno_references
                 .death_weapon = weapon;
         }
-        if let Some(types) =
-            self.resolve_list_from(raw, "DebrisTypes", RulesTypeFamily::VoxelAnimation, 0x80)
+        // Ares 3.0 TechnoTypeClass_LoadFromINI_ListLength (1005BF90, hook
+        // 0x7125DF) reads these six lists here through ParseList (shared 0x800
+        // buffer, Find-only), DebrisMaximums being ObjectType's int list, and
+        // skips the original reads to 0x712830; SkipLists1/2 (1005C020 hook
+        // 0x713171, 1005C040 hook 0x713C10) skip the later Dock and
+        // Damage/DestroyParticleSystems reads.
+        #[cfg(feature = "ares")]
         {
-            self.family_mut(family)[index]
-                .techno_references
-                .debris_types = types;
+            for (key, list_family) in [
+                ("DamageParticleSystems", RulesTypeFamily::ParticleSystem),
+                ("DestroyParticleSystems", RulesTypeFamily::ParticleSystem),
+                ("Dock", RulesTypeFamily::Building),
+                ("DebrisTypes", RulesTypeFamily::VoxelAnimation),
+                ("DebrisAnims", RulesTypeFamily::Animation),
+            ] {
+                let Some(list) = self.resolve_existing_list_from(raw, key, list_family, 0x800)
+                else {
+                    continue;
+                };
+                let references = &mut self.family_mut(family)[index].techno_references;
+                *match key {
+                    "DamageParticleSystems" => &mut references.damage_particle_systems,
+                    "DestroyParticleSystems" => &mut references.destroy_particle_systems,
+                    "Dock" => &mut references.dock,
+                    "DebrisTypes" => &mut references.debris_types,
+                    _ => &mut references.debris_anims,
+                } = list;
+            }
         }
-        if let Some(anims) =
-            self.resolve_list_from(raw, "DebrisAnims", RulesTypeFamily::Animation, 0x80)
+        #[cfg(not(feature = "ares"))]
         {
-            self.family_mut(family)[index]
-                .techno_references
-                .debris_anims = anims;
+            if let Some(types) =
+                self.resolve_list_from(raw, "DebrisTypes", RulesTypeFamily::VoxelAnimation, 0x80)
+            {
+                self.family_mut(family)[index]
+                    .techno_references
+                    .debris_types = types;
+            }
+            if let Some(anims) =
+                self.resolve_list_from(raw, "DebrisAnims", RulesTypeFamily::Animation, 0x80)
+            {
+                self.family_mut(family)[index]
+                    .techno_references
+                    .debris_anims = anims;
+            }
         }
 
         // TechnoType ReadINI 0x0071284A..0x00712AAD. IsChargeTurret, read at
@@ -8666,6 +8894,8 @@ impl RulesPassProcessor {
         }
         self.family_mut(family)[index].weapon_slots = slots;
 
+        // Ares reads Dock at 0x7125DF instead (above).
+        #[cfg(not(feature = "ares"))]
         if let Some(buildings) =
             self.resolve_list_from(raw, "Dock", RulesTypeFamily::Building, 0x80)
         {
@@ -8722,25 +8952,29 @@ impl RulesPassProcessor {
                 .techno_references
                 .refinery_smoke_particle_system = system;
         }
-        if let Some(systems) = self.resolve_list_from(
-            raw,
-            "DamageParticleSystems",
-            RulesTypeFamily::ParticleSystem,
-            0x80,
-        ) {
-            self.family_mut(family)[index]
-                .techno_references
-                .damage_particle_systems = systems;
-        }
-        if let Some(systems) = self.resolve_list_from(
-            raw,
-            "DestroyParticleSystems",
-            RulesTypeFamily::ParticleSystem,
-            0x80,
-        ) {
-            self.family_mut(family)[index]
-                .techno_references
-                .destroy_particle_systems = systems;
+        // Ares reads both at 0x7125DF instead (above).
+        #[cfg(not(feature = "ares"))]
+        {
+            if let Some(systems) = self.resolve_list_from(
+                raw,
+                "DamageParticleSystems",
+                RulesTypeFamily::ParticleSystem,
+                0x80,
+            ) {
+                self.family_mut(family)[index]
+                    .techno_references
+                    .damage_particle_systems = systems;
+            }
+            if let Some(systems) = self.resolve_list_from(
+                raw,
+                "DestroyParticleSystems",
+                RulesTypeFamily::ParticleSystem,
+                0x80,
+            ) {
+                self.family_mut(family)[index]
+                    .techno_references
+                    .destroy_particle_systems = systems;
+            }
         }
         // TechnoTypeClass::ReadINI712170, original714016..71410F:
         // read the current-default flag before the count/rates and stage gate.
@@ -8835,9 +9069,18 @@ impl RulesPassProcessor {
                 state.damage = raw.read_int("Damage", state.damage);
                 state.speed = raw.read_speed("Speed", state.speed);
                 state.range_leptons = raw.read_range("Range", state.range_leptons);
-                if let Some(anims) =
-                    self.resolve_list_from(&raw, "Anim", RulesTypeFamily::Animation, 0x80)
-                {
+                // Ares 3.0 WeaponTypeClass_LoadFromINI_ListLength (1005C0F0,
+                // hook 0x772462): ParseList, shared 0x800 buffer, Find-only.
+                #[cfg(feature = "ares")]
+                let anims = self.resolve_existing_list_from(
+                    &raw,
+                    "Anim",
+                    RulesTypeFamily::Animation,
+                    0x800,
+                );
+                #[cfg(not(feature = "ares"))]
+                let anims = self.resolve_list_from(&raw, "Anim", RulesTypeFamily::Animation, 0x80);
+                if let Some(anims) = anims {
                     self.family_mut(RulesTypeFamily::Weapon)[index].weapon.anim = anims;
                 }
                 // WeaponTypeClass::ReadINI @ `0x00772080` reads AssaultAnim
@@ -8942,6 +9185,10 @@ impl RulesPassProcessor {
                     self.family_mut(RulesTypeFamily::Weapon)[index]
                         .weapon
                         .ares_abductor_anim = anim;
+                    self.families.get_mut(&RulesTypeFamily::Weapon).unwrap()[index]
+                        .weapon
+                        .ares_cursors
+                        .read_pass(&raw, &self.ares_mouse_cursors);
                 }
             }
             index += 1;
@@ -9050,21 +9297,44 @@ impl RulesPassProcessor {
                 // original reader uses the live field as its ReadBool default.
                 let current = &mut self.family_mut(RulesTypeFamily::Warhead)[index].warhead_anim;
                 current.conventional = raw.read_bool("Conventional", current.conventional);
-                if let Some(list) =
-                    self.resolve_list_from(&raw, "AnimList", RulesTypeFamily::Animation, 0x80)
-                {
+                // Ares 3.0 WarheadTypeClass_LoadFromINI_ListLength (1005C080,
+                // hook 0x75D660) reads AnimList, DebrisMaximums (WarheadType's
+                // int list) and DebrisTypes here through ParseList (shared
+                // 0x800 buffer, Find-only) and skips to 0x75D75D; SkipLists
+                // (1005C0E0, hook 0x75DAE6) skips the later DebrisTypes read.
+                #[cfg(feature = "ares")]
+                let (anim_list, debris_types) = (
+                    self.resolve_existing_list_from(
+                        &raw,
+                        "AnimList",
+                        RulesTypeFamily::Animation,
+                        0x800,
+                    ),
+                    self.resolve_existing_list_from(
+                        &raw,
+                        "DebrisTypes",
+                        RulesTypeFamily::VoxelAnimation,
+                        0x800,
+                    ),
+                );
+                #[cfg(not(feature = "ares"))]
+                let anim_list =
+                    self.resolve_list_from(&raw, "AnimList", RulesTypeFamily::Animation, 0x80);
+                if let Some(list) = anim_list {
                     self.family_mut(RulesTypeFamily::Warhead)[index]
                         .warhead_anim
                         .anim_list = list;
                 }
                 let current = &mut self.family_mut(RulesTypeFamily::Warhead)[index].warhead_anim;
                 current.em_effect = raw.read_bool("EMEffect", current.em_effect);
-                if let Some(types) = self.resolve_list_from(
+                #[cfg(not(feature = "ares"))]
+                let debris_types = self.resolve_list_from(
                     &raw,
                     "DebrisTypes",
                     RulesTypeFamily::VoxelAnimation,
                     0x80,
-                ) {
+                );
+                if let Some(types) = debris_types {
                     self.family_mut(RulesTypeFamily::Warhead)[index]
                         .warhead_anim
                         .debris_types = types;
@@ -9459,6 +9729,11 @@ impl RulesPassProcessor {
             "TiberiumExplosionDamage",
             self.rules_tiberium_explosion_damage,
         );
+        // Ares 3.0 Buf_CombatDamage (1005BA50, hook 0x66BC71) reads the five
+        // Scorches lists and SplashList in place through ParseList (shared
+        // 0x800 buffer, Find-only) and skips to 0x66C287. A Find-only Scorches
+        // read allocates nothing, and no VERA consumer reads the lists.
+        #[cfg(not(feature = "ares"))]
         for key in [
             "Scorches",
             "Scorches1",
@@ -9470,9 +9745,17 @@ impl RulesPassProcessor {
         }
         // CombatDamage66C184..66C287: ctor-empty vector, nonempty
         // ReadString128 replaces it using untrimmed strtok tokens/factories.
-        if let Some(list) =
-            self.resolve_list_from(section, "SplashList", RulesTypeFamily::Animation, 0x80)
-        {
+        #[cfg(not(feature = "ares"))]
+        let splash_list =
+            self.resolve_list_from(section, "SplashList", RulesTypeFamily::Animation, 0x80);
+        #[cfg(feature = "ares")]
+        let splash_list = self.resolve_existing_list_from(
+            section,
+            "SplashList",
+            RulesTypeFamily::Animation,
+            0x800,
+        );
+        if let Some(list) = splash_list {
             self.select_anim.splash_list = list;
         }
         // ReadCombatDamage66C2A1..66C35D, in original read order.
@@ -9852,6 +10135,8 @@ impl RulesPassProcessor {
                     phobos_attach_effect_types: self.phobos_attach_effect_types,
                     #[cfg(feature = "ares")]
                     ares_global_controls: self.ares_global_controls,
+                    #[cfg(feature = "ares")]
+                    ares_mouse_cursors: self.ares_mouse_cursors,
                     families: self.families,
                     techno_type_order: self.techno_type_order,
                     tiberiums: self.tiberiums,

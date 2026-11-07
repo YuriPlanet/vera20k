@@ -2346,7 +2346,9 @@ pub struct ParadropList {
     /// and `<none>` and allocates a name it does not know). The processed
     /// rules own it (`native_processing`).
     pub infantry: Vec<String>,
-    /// `*ParaDropNum=` through the IntVector reader (`0x00475D70`).
+    /// `*ParaDropNum=` through the IntVector reader (`0x00475D70`); Ares
+    /// 3.0 Buf_General (1005BB00, hook 0x66D55E) reads it through
+    /// ParseList<int> (1005B030) instead.
     pub counts: Vec<i32>,
 }
 
@@ -2354,9 +2356,13 @@ impl ParadropList {
     /// The counts as the projected INI holds them; the infantry are the
     /// processed rules' ([`RuleSet::from_processed_rules`]).
     fn read_counts(general: &crate::rules::ini_parser::IniSection, key: &str) -> Self {
+        #[cfg(feature = "ares")]
+        let counts = general.read_ares_int_list(key);
+        #[cfg(not(feature = "ares"))]
+        let counts = general.read_int_list(key);
         Self {
             infantry: Vec::new(),
-            counts: general.read_int_list(key).unwrap_or_default(),
+            counts: counts.unwrap_or_default(),
         }
     }
 }
@@ -4357,6 +4363,13 @@ impl GeneralRules {
                     values: 2,
                 },
             ),
+            // Ares 3.0 Buf_AI (1005B830, hook 0x672B0E): ParseList<int>
+            // (1005B030) replaces the original IntVector read.
+            #[cfg(feature = "ares")]
+            ai_force_prediction_fudge: ai
+                .read_ares_int_list("AIForcePredictionFudge")
+                .unwrap_or_default(),
+            #[cfg(not(feature = "ares"))]
             ai_force_prediction_fudge: ai
                 .read_int_list("AIForcePredictionFudge")
                 .unwrap_or_default(),
@@ -4769,6 +4782,12 @@ pub struct RuleSet {
     emp_sparkles: Option<String>,
     #[cfg(feature = "ares")]
     ares_global_controls: crate::rules::native_processing::AresGlobalControls,
+    /// Presentation projection of the retained Ares `[MouseCursors]` list.
+    #[cfg(feature = "ares")]
+    ares_mouse_cursors: crate::rules::ares_mouse_cursor::MouseCursors,
+    /// Each SuperWeaponType's Ares `Cursor`/`NoCursor`, by uppercase ID.
+    #[cfg(feature = "ares")]
+    ares_super_weapon_cursors: HashMap<String, crate::rules::ares_mouse_cursor::SuperWeaponCursors>,
     /// Derived type-membership index for the lifecycle hooks; rebuilt together
     /// with the RuleSet after every load/reset/pass. The catalog above is its
     /// only source of truth. This cache is not serialized or hashed separately.
@@ -5046,7 +5065,8 @@ impl RuleSet {
     /// RulesExt `[General] RepairStopOnInsufficientFunds` (constructor true).
     #[cfg(feature = "ares")]
     pub(crate) fn ares_repair_stop_on_insufficient_funds(&self) -> bool {
-        self.ares_global_controls.repair_stop_on_insufficient_funds()
+        self.ares_global_controls
+            .repair_stop_on_insufficient_funds()
     }
 
     #[cfg(feature = "ares")]
@@ -5064,6 +5084,37 @@ impl RuleSet {
     #[cfg(feature = "ares")]
     pub(crate) fn ares_veterancy(&self) -> &crate::rules::ares_veterancy::VeterancyGlobalRules {
         self.ares_global_controls.veterancy()
+    }
+
+    /// The Ares `[MouseCursors]` list the client draws cursors from
+    /// ([`crate::rules::ares_mouse_cursor`]); presentation only.
+    #[cfg(feature = "ares")]
+    pub fn ares_mouse_cursors(&self) -> &crate::rules::ares_mouse_cursor::MouseCursors {
+        &self.ares_mouse_cursors
+    }
+
+    /// The `[MouseCursors]` cursors `SWTypeExt::ExtData::WhatAction @
+    /// 10033EB0` shows over a cell superweapon `id` may or may not fire at.
+    /// It answers only for a type a NewSWType handles or whose `Action=` is
+    /// `Custom`; the others keep the stock action cursor. VERA's handled types
+    /// are its implemented handlers (`SuperWeaponKind::has_ares_handler`).
+    #[cfg(feature = "ares")]
+    pub fn ares_super_weapon_cursors(
+        &self,
+        id: &str,
+    ) -> Option<crate::rules::ares_mouse_cursor::SuperWeaponCursors> {
+        let sw = self.super_weapon(id)?;
+        (sw.kind.has_ares_handler()
+            || sw
+                .action
+                .as_deref()
+                .is_some_and(|action| action.eq_ignore_ascii_case("Custom")))
+        .then(|| {
+            self.ares_super_weapon_cursors
+                .get(&sw.id.to_ascii_uppercase())
+                .copied()
+                .unwrap_or_default()
+        })
     }
 
     /// RulesExt BerserkROFMultiplier, AutoRepel and PlayerAutoRepel.
@@ -5451,6 +5502,15 @@ impl RuleSet {
                     .copied()
                 {
                     rules.object_list[handle.0 as usize].bind_ares_production(production);
+                }
+            }
+            for (category, name, cursors) in processed.ares_cursor_states() {
+                if let Some(handle) = rules
+                    .object_category_index
+                    .get(&(category, name.to_ascii_uppercase()))
+                    .copied()
+                {
+                    rules.object_list[handle.0 as usize].bind_ares_cursors(cursors);
                 }
             }
             // Ares ValidateThings100677B0 (hook687C16), after every INI
@@ -6796,6 +6856,7 @@ impl RuleSet {
                 weapon.ares_visuals.bolt_particle_system = state.ares_bolt_particle_system.clone();
                 weapon.ares_ivan_bomb.warhead = state.ares_ivan_bomb_warhead.clone();
                 weapon.ares_abductor.anim = state.ares_abductor_anim.map(str::to_owned);
+                weapon.ares_cursors = state.ares_cursors;
             }
             // A repeated ID replaces the earlier weapon under its key. The
             // reserve is `insert`'s, so the keys iterate in the order they
@@ -7075,6 +7136,13 @@ impl RuleSet {
             emp_sparkles: None,
             #[cfg(feature = "ares")]
             ares_global_controls: processed.ares_global_controls().clone(),
+            #[cfg(feature = "ares")]
+            ares_mouse_cursors: processed.ares_mouse_cursors().clone(),
+            #[cfg(feature = "ares")]
+            ares_super_weapon_cursors: processed
+                .ares_super_weapon_cursor_states()
+                .map(|(name, cursors)| (name.to_ascii_uppercase(), cursors))
+                .collect(),
             #[cfg(feature = "ares")]
             ares_super_weapon_metadata: BTreeMap::new(),
             #[cfg(feature = "phobos")]
