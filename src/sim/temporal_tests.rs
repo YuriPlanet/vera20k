@@ -3172,3 +3172,41 @@ fn ares_health_factor_shortens_a_damaged_targets_warp() {
     assert_eq!(warp(""), 4000);
     assert_eq!(warp("Temporal.HealthFactor=0.5\n"), 2500);
 }
+
+/// Ares TechnoExt::CanWarpTarget (1004F300, hook 0x71AE50): a veteran whose
+/// type has `VeteranAbilities=UNWARPABLE` cannot be warped; a rookie of the
+/// same type can.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_an_unwarpable_veteran_is_not_warped() {
+    let rules = rules_from(
+        &RULES.replace(
+            "[HTNK]\nStrength=400\n",
+            "[HTNK]\nStrength=400\nVeteranAbilities=UNWARPABLE\n",
+        ),
+        ART,
+    );
+    let mut sim = sim(4);
+    let veteran = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
+    let rookie = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 14);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    sim.substrate
+        .entities
+        .get_mut(veteran)
+        .unwrap()
+        .veterancy
+        .set_raw_for_test(crate::util::native_x87::NativeF32Bits::from_bits(
+            1.0f32.to_bits(),
+        ));
+    for target in [veteran, rookie] {
+        sim.temporal_initiate_warp(
+            cleg,
+            Some(target),
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+    }
+    assert_eq!(head_of(&sim, veteran), None);
+    assert_eq!(head_of(&sim, rookie), Some(cleg));
+}

@@ -911,6 +911,18 @@ pub(crate) struct AresChronoWarps {
 
 #[cfg(feature = "ares")]
 impl AresChronoWarps {
+    /// BuildingExt `AboutToChronoshift` (+0xD): set when the lambda
+    /// registers a building (1006F4D0) and cleared when its machine brings it
+    /// back (10070230), which also empties the machine's list.
+    pub(crate) fn about_to_chronoshift(&self, building: u64) -> bool {
+        self.machines.iter().any(|machine| {
+            machine
+                .buildings
+                .iter()
+                .any(|entry| entry.building == building)
+        })
+    }
+
     pub(crate) fn hash_state(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
         if !self.machines.is_empty() {

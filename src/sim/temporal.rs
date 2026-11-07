@@ -598,6 +598,12 @@ impl Simulation {
     /// under the Iron Curtain or a Force Shield (vtable `+0x160`), and not a
     /// Unit still standing in its war factory
     /// ([`Self::unit_in_contact_war_factory`]).
+    ///
+    /// Installed Ares replaces the body (hook `0x71AE50`,
+    /// TechnoExt::CanWarpTarget `1004F300`): the target must also lack the
+    /// `UNWARPABLE` rank ability, a building must not be AboutToChronoshift
+    /// (registered with an Ares ChronoWarp), and only a Unit in a war factory
+    /// that is not Naval stays (GetWarFactoryOf `10045580`, excludeNaval).
     fn can_warp_target(&self, target: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(target) else {
             return false;
@@ -613,6 +619,25 @@ impl Simulation {
             self.session.binary_frame(),
         ) {
             return false;
+        }
+        #[cfg(feature = "ares")]
+        {
+            let unwarpable = self
+                .object_type(entity.type_ref(), rules)
+                .and_then(|object| object.promotion_abilities())
+                .is_some_and(|abilities| abilities.unwarpable(entity.veterancy.raw()));
+            if unwarpable || self.ares_chrono_warps.about_to_chronoshift(target) {
+                return false;
+            }
+            let naval_factory = entity
+                .radio_contacts
+                .slot(0)
+                .and_then(|contact| self.substrate.entities.get(contact))
+                .and_then(|factory| self.object_type(factory.type_ref(), rules))
+                .is_some_and(|factory| factory.naval);
+            if naval_factory {
+                return true;
+            }
         }
         !self.unit_in_contact_war_factory(target, rules)
     }

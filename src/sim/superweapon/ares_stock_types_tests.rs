@@ -153,7 +153,7 @@ fn ares_chrono_warp_uses_the_last_super_and_its_keys() {
     )));
     assert!(events.iter().any(|event| matches!(
         event,
-        SimSoundEvent::AresSuperWeaponFinished { owner, sw_type }
+        SimSoundEvent::AresSuperWeaponFinished { owner, sw_type, message: true }
             if *owner == americans && *sw_type == sphere
     )));
     assert!(

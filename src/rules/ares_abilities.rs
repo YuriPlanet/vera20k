@@ -54,6 +54,13 @@ impl PromotionAbilities {
         self.has_at(5, experience)
     }
 
+    /// `UNWARPABLE` (TypeExt+12F/+136) by the same raw-XP test, as
+    /// TechnoExt::CanWarpTarget 1004F300 inlines HasAresAbility.
+    #[cfg(feature = "ares")]
+    pub(crate) fn unwarpable(&self, experience: NativeF32Bits) -> bool {
+        self.has_at(3, experience)
+    }
+
     /// HasAresAbility over the raw binary32 XP: from two either tier, from
     /// one the veteran tier, below one none.
     #[cfg(feature = "ares")]

@@ -116,7 +116,8 @@ impl SuperWeaponKind {
     /// 1006CFB0 asks each type's HandlesType): SW_ChronoSphere (1006EF00),
     /// SW_ChronoWarp (100700A0), SW_NuclearMissile (10073350),
     /// SW_GeneticMutator (10072080), SW_PsychicDominator (10070980),
-    /// SW_SpyPlane (100757F0). Its handler's Initialize, LoadFromINI,
+    /// SW_SpyPlane (100757F0), SW_LightningStorm (10072C30). Its handler's
+    /// Initialize, LoadFromINI,
     /// Activate and Flags replace the stock reads and Launch case; the other
     /// stock Types keep their stock owners in this port.
     #[cfg(feature = "ares")]
@@ -129,12 +130,13 @@ impl SuperWeaponKind {
                 | Self::GeneticConverter
                 | Self::PsychicDominator
                 | Self::SpyPlane
+                | Self::LightningStorm
         )
     }
 
     /// The handler's Flags: SW_ChronoSphere 1006EE70 (0xFD), SW_ChronoWarp
     /// 10070040 (0x105), SW_NuclearMissile and SW_PsychicDominator the shared
-    /// 4 (100708C0); the new
+    /// 4 (100708C0), SW_LightningStorm 10072B70 (0x44); the new
     /// types answer the shared zero (10003650).
     #[cfg(feature = "ares")]
     pub(crate) const fn ares_flags(self) -> AresSuperWeaponFlags {
@@ -149,6 +151,7 @@ impl SuperWeaponKind {
                 .with(F::PRE_CLICK),
             Self::ChronoWarp => F::NO_ANIM.with(F::NO_EVENT).with(F::POST_CLICK),
             Self::MultiMissile | Self::PsychicDominator => F::NO_EVENT,
+            Self::LightningStorm => F::NO_MESSAGE.with(F::NO_EVENT),
             _ => F::NONE,
         }
     }
@@ -308,6 +311,12 @@ impl AresSuperWeaponEva {
                 "EVA_GeneticMutatorActivated",
                 "EVA_GeneticMutatorDetected",
             ],
+            // SW_LightningStorm::Initialize10072C50.
+            Some(kind) if kind.eq_ignore_ascii_case("LightningStorm") => [
+                "EVA_LightningStormReady",
+                "EVA_LightningStormCreated",
+                "EVA_WeatherDeviceReady",
+            ],
             // SW_NuclearMissile::Initialize10073360.
             Some(kind) if kind.eq_ignore_ascii_case("MultiMissile") => [
                 "EVA_NuclearMissileReady",
@@ -376,7 +385,8 @@ pub enum AresSuperWeaponMessage {
     /// +0x2F0, SWTypeExt::Launch 10032ED0 (firer: the owner).
     Launch,
     /// +0x314, the deferred activation of UnitDelivery's state machine
-    /// (Update 10075DE0; firer: the owner).
+    /// (Update 10075DE0) and the Lightning Storm's start (hook 539EB0,
+    /// 10036B00); firer: the owner.
     Activate,
     /// +0x338, the redirected Lightning Storm/Dominator refusals only.
     Abort,
@@ -441,10 +451,16 @@ impl AresSuperWeaponMessages {
         self.color_scheme
     }
 
-    /// SW_PsychicDominator::Initialize10070990's `Message.Abort`.
+    /// SW_PsychicDominator::Initialize10070990's `Message.Abort`, and
+    /// SW_LightningStorm::Initialize10072C50's Launch, Activate and Abort.
     pub(crate) fn initialize_for_kind(&mut self, kind: Option<&str>) {
-        if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("PsychicDominator")) {
+        let is = |name: &str| kind.is_some_and(|kind| kind.eq_ignore_ascii_case(name));
+        if is("PsychicDominator") {
             self.abort = "Msg:DominatorActive".to_owned();
+        } else if is("LightningStorm") {
+            self.launch = "TXT_LIGHTNING_STORM_APPROACHING".to_owned();
+            self.activate = "TXT_LIGHTNING_STORM".to_owned();
+            self.abort = "Msg:LightningStormActive".to_owned();
         }
     }
 
@@ -870,6 +886,9 @@ impl SuperWeaponType {
                 // SW_SpyPlane::Initialize10075800: the SpyPlane cursor.
                 #[cfg(feature = "ares")]
                 SuperWeaponKind::SpyPlane => Some("SpyPlane".to_string()),
+                // SW_LightningStorm::Initialize10072C50: SW_Cursor 0x32.
+                #[cfg(feature = "ares")]
+                SuperWeaponKind::LightningStorm => Some("LightningStorm".to_string()),
                 _ => section.read_action_name("Action").map(str::to_string),
             },
             // ReadString 0x100, then a 24-byte copy (`0x006CEDB1`,
@@ -1171,6 +1190,138 @@ pub(crate) struct AresSuperWeaponLaunch {
     /// SW_SpyPlane's fields (Initialize 10075800, LoadFromINI 10075880).
     #[serde(default)]
     spy_plane: AresSpyPlaneRules,
+    /// SW_LightningStorm's fields (Initialize 10072C50, LoadFromINI 10072CF0).
+    #[serde(default)]
+    lightning: AresLightningRules,
+}
+
+/// SW_LightningStorm's SWTypeExt fields (`Weather_*`, +0x14..+0x98). The
+/// constructor leaves the Nullables unset, `Lightning.ScatterCount` 1,
+/// `.CloudHeight` -1, `.DebrisMin`/`.DebrisMax` 0 and
+/// `.RadarOutageAffects` none. The four lists are NullableVectors: `None`
+/// falls back to the `[General]` list, `Some` replaces it (even empty).
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresLightningRules {
+    /// `Lightning.Duration` (+0x14), else `LightningStormDuration=`.
+    pub(crate) duration: Option<i32>,
+    /// `Lightning.HitDelay` (+0x1C), else `LightningHitDelay=`.
+    pub(crate) hit_delay: Option<i32>,
+    /// `Lightning.ScatterDelay` (+0x24), else `LightningScatterDelay=`.
+    pub(crate) scatter_delay: Option<i32>,
+    /// `Lightning.ScatterCount` (+0x2C): the scattered cloud's tries.
+    pub(crate) scatter_count: i32,
+    /// `Lightning.Separation` (+0x30), else `LightningSeparation=`.
+    pub(crate) separation: Option<i32>,
+    /// `Lightning.CloudHeight` (+0x38): a negative value takes the first
+    /// bolt's half image height as leptons.
+    pub(crate) cloud_height: i32,
+    /// `Lightning.RadarOutage` (+0x3C), else `LightningStormDuration=`.
+    pub(crate) radar_outage: Option<i32>,
+    /// `Lightning.DebrisMin`/`.DebrisMax` (+0x44/+0x48).
+    pub(crate) debris_min: i32,
+    pub(crate) debris_max: i32,
+    /// `Lightning.PrintText` (+0x4C), else `LightningPrintText=`.
+    pub(crate) print_text: Option<bool>,
+    /// `Lightning.IgnoreLightningRod` (+0x4E).
+    pub(crate) ignore_lightning_rod: bool,
+    /// `Lightning.BoltExplosion` (Nullable<AnimTypeClass*> +0x50), else
+    /// `WeatherConBoltExplosion=`; `Some(None)` is an explicit none.
+    pub(crate) bolt_explosion: Option<Option<String>>,
+    /// `Lightning.Clouds`, `.Bolts`, `.Debris` (+0x58, +0x68, +0x78), else
+    /// `WeatherConClouds=`, `WeatherConBolts=`, `MetallicDebris=`.
+    pub(crate) clouds: Option<Vec<String>>,
+    pub(crate) bolts: Option<Vec<String>>,
+    pub(crate) debris: Option<Vec<String>>,
+    /// `Lightning.Sounds` (NullableIdxVector<VocClass> +0x88), else
+    /// `LightningSounds=`.
+    pub(crate) sounds: Option<Vec<String>>,
+    /// `Lightning.RadarOutageAffects` (+0x98): the Houses the blackout hits.
+    pub(crate) radar_outage_affects: crate::rules::superweapon_targeting::HouseMask,
+}
+
+#[cfg(feature = "ares")]
+impl Default for AresLightningRules {
+    fn default() -> Self {
+        Self {
+            duration: None,
+            hit_delay: None,
+            scatter_delay: None,
+            scatter_count: 1,
+            separation: None,
+            cloud_height: -1,
+            radar_outage: None,
+            debris_min: 0,
+            debris_max: 0,
+            print_text: None,
+            ignore_lightning_rod: false,
+            bolt_explosion: None,
+            clouds: None,
+            bolts: None,
+            debris: None,
+            sounds: None,
+            radar_outage_affects: crate::rules::superweapon_targeting::HouseMask::NONE,
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl AresLightningRules {
+    /// SW_LightningStorm::Initialize10072C50.
+    fn initialize(&mut self) {
+        self.debris_min = 2;
+        self.debris_max = 4;
+        self.ignore_lightning_rod = false;
+        self.scatter_count = 1;
+        self.radar_outage_affects = crate::rules::superweapon_targeting::HouseMask::ENEMIES;
+    }
+
+    /// LoadFromINI10072CF0's reads, in its order; `reads` holds the
+    /// processor's resolution of BoltExplosion and the four lists.
+    fn read_pass(&mut self, section: &IniSection, reads: AresLightningReads) {
+        self.duration = section.read_ares_nullable_int("Lightning.Duration", self.duration);
+        self.radar_outage =
+            section.read_ares_nullable_int("Lightning.RadarOutage", self.radar_outage);
+        self.hit_delay = section.read_ares_nullable_int("Lightning.HitDelay", self.hit_delay);
+        self.scatter_delay =
+            section.read_ares_nullable_int("Lightning.ScatterDelay", self.scatter_delay);
+        self.scatter_count = section.read_ares_int("Lightning.ScatterCount", self.scatter_count);
+        self.separation = section.read_ares_nullable_int("Lightning.Separation", self.separation);
+        self.print_text = section.read_ares_nullable_bool("Lightning.PrintText", self.print_text);
+        self.ignore_lightning_rod =
+            section.read_ares_bool("Lightning.IgnoreLightningRod", self.ignore_lightning_rod);
+        self.debris_min = section.read_ares_int("Lightning.DebrisMin", self.debris_min);
+        self.debris_max = section.read_ares_int("Lightning.DebrisMax", self.debris_max);
+        self.cloud_height = section.read_ares_int("Lightning.CloudHeight", self.cloud_height);
+        if reads.bolt_explosion.is_some() {
+            self.bolt_explosion = reads.bolt_explosion;
+        }
+        if let Some(mask) = crate::rules::superweapon_targeting::HouseMask::read_ares(
+            section,
+            "Lightning.RadarOutageAffects",
+        ) {
+            self.radar_outage_affects = mask;
+        }
+        if let Some([clouds, bolts, debris, sounds]) = reads.lists {
+            self.clouds = clouds;
+            self.bolts = bolts;
+            self.debris = debris;
+            self.sounds = sounds;
+        }
+    }
+}
+
+/// SW_LightningStorm::LoadFromINI10072CF0's type references, which the
+/// ordered Rules processor resolves for the pass: `Lightning.BoltExplosion`
+/// (AnimTypeClass::Find; None: absent or unknown) and, once read, the four
+/// lists after this pass (`Lightning.Clouds`, `.Bolts`, `.Debris` through
+/// AnimTypeClass::Find, `.Sounds` through VocClass::FindIndex; unknown
+/// names are skipped, `<default>` unsets a list).
+#[cfg(feature = "ares")]
+#[derive(Debug, Default)]
+pub(crate) struct AresLightningReads {
+    pub(crate) bolt_explosion: Option<Option<String>>,
+    pub(crate) lists: Option<[Option<Vec<String>>; 4]>,
 }
 
 /// SW_SpyPlane's SWTypeExt fields: `SpyPlane.Type`
@@ -1449,6 +1600,8 @@ pub(crate) struct AresHandlerReads {
     pub(crate) spy_plane_default: Option<Option<String>>,
     /// `SpyPlane.Type` (FindIndex; `none` is index -1).
     pub(crate) spy_plane_type: Option<Option<String>>,
+    /// SW_LightningStorm's references.
+    pub(crate) lightning: AresLightningReads,
 }
 
 #[cfg(feature = "ares")]
@@ -1475,6 +1628,7 @@ impl Default for AresSuperWeaponLaunch {
             deferment: None,
             dominator: AresDominatorRules::default(),
             spy_plane: AresSpyPlaneRules::default(),
+            lightning: AresLightningRules::default(),
         }
     }
 }
@@ -1502,6 +1656,9 @@ impl AresSuperWeaponLaunch {
         }
         if initialized && is("PsychicDominator") {
             self.dominator.initialize();
+        }
+        if initialized && is("LightningStorm") {
+            self.lightning.initialize();
         }
         if initialized
             && is("SpyPlane")
@@ -1602,6 +1759,8 @@ impl AresSuperWeaponLaunch {
             {
                 spy_plane.mission = mission;
             }
+        } else if is("LightningStorm") {
+            self.lightning.read_pass(section, reads.lightning);
         } else if is("HunterSeeker") {
             // SW_HunterSeeker::LoadFromINI10072A30 hard-codes it each pass,
             // after the common read (and Initialize10072990 already did).
@@ -1673,6 +1832,11 @@ impl AresSuperWeaponLaunch {
 
     pub(crate) fn dominator(&self) -> &AresDominatorRules {
         &self.dominator
+    }
+
+    /// SW_LightningStorm's fields.
+    pub(crate) fn lightning(&self) -> &AresLightningRules {
+        &self.lightning
     }
 
     /// SW.CreateRadarEvent.

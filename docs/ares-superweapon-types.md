@@ -54,8 +54,9 @@ plays `SW.Sound`, raises the radar event and prints `Message.Launch`, each unles
 Flags skip it, and remembers the House's last Super (SWLastIndex), which a PostClick
 Super uses as its source.
 
-The other stock Types (Iron Curtain, Force Shield, Lightning Storm, the paradrops, Spy
-Plane, Psychic Reveal) keep their stock owners in this port.
+The other stock Types (Iron Curtain, Force Shield, the paradrops, Psychic Reveal) keep
+their stock owners in this port; parts 2 and 3 below add the Spy Plane and the
+Lightning Storm.
 
 ## Chronosphere
 
@@ -119,8 +120,7 @@ common Launch builds `SW.Animation` (else `IonBlast=`) and plays `SW.Sound` (els
 
 ## Not included
 
-The Lightning Storm's `Light.*` and the nuke flash's later relights (CurrentNukeType)
-are not applied. The other stock redirects, `NoCursor`/`Cursor` and the Ares trigger
+The nuke flash's later relights (CurrentNukeType) are not applied. The other stock redirects, `NoCursor`/`Cursor` and the Ares trigger
 events remain outside this port; part 2 below lists what it adds and what still stays out.
 
 ## Part 2: building chronoshift, make-room, Spy Plane
@@ -180,10 +180,6 @@ computer's planning, and placing it does not extend the base either.
 
 ### Still not included
 
-- Lightning Storm redirect: the `Lightning.*` keys (Duration, RadarOutage, HitDelay,
-  ScatterDelay, ScatterCount, Separation, PrintText, IgnoreLightningRod, DebrisMin,
-  DebrisMax, CloudHeight, BoltExplosion, RadarOutageAffects, Clouds, Bolts, Debris,
-  Sounds), `LightningRod.Modifier` and the storm's `Light.*`: the stock storm runs.
 - EMPulse (`EMPulse.Linked`, `.TargetSelf`, `.PulseDelay`, `.PulseBall`, `.Cannons`).
 - `Type=DropPod` and the `DropPod*` RulesExt keys: it needs the DropPod locomotor
   and CreateWithDroppod.
@@ -191,3 +187,73 @@ computer's planning, and placing it does not extend the base either.
   and `AboutToChronoshift` has no reader (Ares's own CanWarpTarget is not ported).
 - An unknown `SpyPlane.Type` sends nothing (natively it reads out of range), and an
   off-map target cell is not replaced by the shared dummy cell.
+
+## Part 3: Lightning Storm
+
+```ini
+[LightningStormSpecial]
+SW.Deferment=100
+SW.Damage=300
+SW.Range=8
+Lightning.Duration=360
+Lightning.HitDelay=6
+Lightning.ScatterCount=3
+Lightning.Clouds=WCCLOUD1
+Lightning.BoltExplosion=EXPLOLB
+Lightning.RadarOutage=120
+Lightning.RadarOutageAffects=all
+Light.Red=40
+
+[GAPOWR]
+LightningRod=yes
+LightningRod.Modifier=0.5
+```
+
+`Type=LightningStorm` goes to the Ares handler: its Initialize sets
+`Lightning.ScatterCount` 1, `.DebrisMin`/`.DebrisMax` 2/4,
+`.RadarOutageAffects` enemies, the EVA lines (`EVA_LightningStormReady`,
+`EVA_LightningStormCreated`, `EVA_WeatherDeviceReady`) and the messages
+(`TXT_LIGHTNING_STORM_APPROACHING` for Launch, `TXT_LIGHTNING_STORM` for
+Activate, `Msg:LightningStormActive` for Abort). A storm that rages or counts
+down refuses a launch, printing `Message.Abort` for its owner. A launch makes
+the Super the current storm and starts it with `Lightning.Duration` (else
+`LightningStormDuration=`) after `SW.Deferment` (else `LightningDeferment=`);
+the common launch speaks `EVA.Activated` but prints no message and raises no
+radar event.
+
+While that storm is current the stock storm's Start, Process, CreateCloudBolt
+and GroundStrike follow the type's keys, and every draw is `RandomRanged`:
+
+- The countdown prints `Message.Launch` every 225 frames under
+  `Lightning.PrintText` (else `LightningPrintText=`), with no EVA line.
+- The start blacks out the radar of every House `Lightning.RadarOutageAffects`
+  names, for `Lightning.RadarOutage` (else `LightningStormDuration=`) frames,
+  prints `Message.Activate`, plays `SW.ActivationSound` (else `StormSound=`)
+  and, under `SW.CreateRadarEvent`, raises a radar event. Its `Light.*`
+  tints the storm's light.
+- A cloud gathers over the cell every `Lightning.HitDelay` frames and a
+  scattered one every `Lightning.ScatterDelay` frames, with up to
+  `Lightning.ScatterCount` tries inside `SW.Range` (else a square of
+  `LightningCellSpread=`; a height above 0 also limits the distance). A try
+  on a cell whose building is a `LightningRod=` type, or next to one in the
+  same cell, strikes that rod unless `Lightning.IgnoreLightningRod`; a try
+  within `Lightning.Separation` cells of a cloud fails.
+- Clouds are `Lightning.Clouds` at `Lightning.CloudHeight` over the cell (a
+  negative height takes the first bolt's half image height). Strikes take
+  `Lightning.Bolts`, `Lightning.Sounds`, `SW.Damage` (times a struck rod's
+  `LightningRod.Modifier`) and `SW.Warhead`, explode with
+  `Lightning.BoltExplosion` (for that warhead, from any weapon while the storm
+  is current), and throw `Lightning.DebrisMin`..`DebrisMax` pieces of
+  `Lightning.Debris`. Unset lists fall back to the `[General]` ones.
+
+In an Ares build every storm, a trigger's too, strikes a cloud from half its
+frames on and in list order; a trigger's storm otherwise keeps the stock
+rules. A nuke flash with a duration below -1 never ends.
+
+### Still not included after part 3
+
+- EMPulse, `Type=DropPod` with the `DropPod*` keys, the building chronoshift's
+  light and cloak generator, `AboutToChronoshift` and Ares's CanWarpTarget
+  (see part 2's list).
+- A palette built while a storm, nuke flash or Dominator is active takes the
+  stock colours, not the type's `Light.*` (hook `0x555E50`).

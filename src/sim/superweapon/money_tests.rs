@@ -283,9 +283,16 @@ fn superweapon_money_busy_storm_refuses_without_a_second_charge() {
     let before = sim.state_hash();
     assert!(!fire(&mut sim, &rules, owner, id, (10, 10)));
     assert_eq!(sim.state_hash(), before);
+    // Installed Ares asks SW_LightningStorm::AbortFire (10072AB0).
+    #[cfg(not(feature = "ares"))]
     assert!(matches!(
         sim.sound_events.as_slice(),
         [SimSoundEvent::LightningStormRefused { .. }]
+    ));
+    #[cfg(feature = "ares")]
+    assert!(matches!(
+        sim.sound_events.as_slice(),
+        [SimSoundEvent::AresSuperWeaponAborted { .. }]
     ));
 }
 

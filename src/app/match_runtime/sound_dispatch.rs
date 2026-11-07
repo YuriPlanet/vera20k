@@ -753,6 +753,7 @@ pub(super) fn dispatch_sim_sound_events(
             SimSoundEvent::AresSuperWeaponRefused { .. } => continue,
             #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponActivated { .. }
+            | SimSoundEvent::AresLightningStormApproaching { .. }
             | SimSoundEvent::AresSuperWeaponAborted { .. } => continue,
             // 100731FD..10073236: IsAlliedWith(PlayerPtr) on the owner.
             #[cfg(feature = "ares")]
@@ -988,7 +989,7 @@ pub(super) fn dispatch_sim_sound_events(
             SimSoundEvent::LightningStormRefused { .. }
             | SimSoundEvent::PsychicDominatorRefused { .. } => continue,
             #[cfg(feature = "ares")]
-            SimSoundEvent::AresSuperWeaponFinished { owner, sw_type } => {
+            SimSoundEvent::AresSuperWeaponFinished { owner, sw_type, .. } => {
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
                 }
@@ -1183,7 +1184,12 @@ pub(super) fn ares_superweapon_messages(
             SimSoundEvent::AresSuperWeaponDrainRefused { sw_type, .. } => {
                 line(sw_type, M::InsufficientFunds, local)
             }
-            SimSoundEvent::AresSuperWeaponFinished { owner, sw_type } => {
+            SimSoundEvent::AresSuperWeaponFinished {
+                owner,
+                sw_type,
+                message: true,
+            }
+            | SimSoundEvent::AresLightningStormApproaching { owner, sw_type } => {
                 line(sw_type, M::Launch, Some(owner))
             }
             SimSoundEvent::AresSuperWeaponActivated { owner, sw_type } => {
@@ -1652,6 +1658,7 @@ mod tests {
             vec![SimSoundEvent::AresSuperWeaponFinished {
                 owner: enemy,
                 sw_type: typ,
+                message: true,
             }],
             &sim,
         );
@@ -2441,10 +2448,12 @@ mod tests {
                 SimSoundEvent::AresSuperWeaponFinished {
                     owner: remote,
                     sw_type: sphere,
+                    message: true,
                 },
                 SimSoundEvent::AresSuperWeaponFinished {
                     owner: local,
                     sw_type: sphere,
+                    message: true,
                 },
             ],
             &sim,
@@ -2940,6 +2949,7 @@ mod tests {
             SimSoundEvent::AresSuperWeaponFinished {
                 owner: remote,
                 sw_type,
+                message: true,
             },
             SimSoundEvent::AresSuperWeaponDrainRefused {
                 owner: remote,

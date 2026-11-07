@@ -205,6 +205,17 @@ pub(crate) fn select_with_context(
             });
         }
     }
+    // Ares hook 48A59A (100377E0): a current Ares storm's own warhead and
+    // bolt explosion come first.
+    #[cfg(feature = "ares")]
+    if let Some(name) =
+        crate::sim::superweapon::lightning_storm::ares_bolt_explosion(world, rules, warhead)
+    {
+        return Some(SelectedAnim {
+            name: world.interner.intern(name),
+            splashed: false,
+        });
+    }
     // 48A594..48A5A6 compares the retained LightningWarhead pointer, then
     // returns WeatherConBoltExplosion (including its null default).
     if !rules.general.lightning_warhead.is_empty() && warhead.id == rules.general.lightning_warhead

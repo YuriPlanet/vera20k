@@ -25,6 +25,10 @@
 //! computer house fires its own at its rally target unless one rages
 //! (`ai_fire.rs`).
 //!
+//! Ares builds redirect `Type=LightningStorm` to SW_LightningStorm, whose
+//! Activate and hooks rewrite Start, Process, CreateCloudBolt and
+//! GroundStrike while its storm is current: the child module `ares`.
+//!
 //! Evidence: instruction reading at the addresses cited here. Native
 //! execution (`tools/superweapon_oracle.py`, replayed in
 //! `lightning_storm_tests.rs`): Start's retargets, countdown minimum, empty
@@ -106,6 +110,13 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation};
 use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
 
+#[cfg(feature = "ares")]
+mod ares;
+#[cfg(feature = "ares")]
+pub(crate) use ares::bolt_explosion as ares_bolt_explosion;
+#[cfg(feature = "ares")]
+pub(super) use ares::{abort_fire as ares_abort_fire, launch as ares_launch};
+
 /// The empty cell `0x00A9F9F8`, `(0, 0)`: Start draws a cell for it, and the
 /// end of a storm writes it.
 const EMPTY_CELL: (i16, i16) = (0, 0);
@@ -145,6 +156,18 @@ pub struct LightningStorm {
     clouds_present: Vec<AnimId>,
     /// CloudsManifesting (`0x00A9FA60`): every cloud until it strikes.
     clouds_manifesting: Vec<AnimId>,
+    /// Ares: SW_LightningStorm::CurrentLightningStorm (`100C1C8C`), the
+    /// Super (owner, type) whose SWTypeExt the storm hooks read, from its
+    /// Activate until the storm ends. Unset, the hooks keep the stock bodies
+    /// (a trigger's storm).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_super: Option<(InternedId, InternedId)>,
+    /// That type's `Light.*`, which UpdateLighting (hook 53C280) applies
+    /// while the storm rages.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_light: Option<crate::rules::superweapon_type::AresSuperWeaponLighting>,
 }
 
 /// The values `SuperWeaponEffects::ResetAll @ 0x00539760` leaves at each
@@ -162,6 +185,10 @@ impl Default for LightningStorm {
             owner: None,
             clouds_present: Vec::new(),
             clouds_manifesting: Vec::new(),
+            #[cfg(feature = "ares")]
+            ares_super: None,
+            #[cfg(feature = "ares")]
+            ares_light: None,
         }
     }
 }
@@ -170,6 +197,14 @@ impl LightningStorm {
     /// The storm's house, `0x00A9FACC`, while a storm counts down or rages.
     pub(crate) fn owner(&self) -> Option<InternedId> {
         self.owner
+    }
+
+    /// CurrentLightningStorm's `Light.*`, none without one.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_light(
+        &self,
+    ) -> Option<crate::rules::superweapon_type::AresSuperWeaponLighting> {
+        self.ares_super.and(self.ares_light)
     }
 }
 
@@ -255,6 +290,11 @@ pub(crate) fn start(
     mut cell: (i16, i16),
     owner: Option<InternedId>,
 ) {
+    #[cfg(feature = "ares")]
+    if let Some(storm) = ares::current(sim, rules) {
+        ares::start(sim, rules, storm, duration, deferment, cell, owner);
+        return;
+    }
     if cell == EMPTY_CELL
         && !sim.map_cell_in_bounds(cell)
         && let Some([_, _, width, height]) = sim.map_rect()
@@ -358,8 +398,62 @@ pub(crate) fn start(
 ///    warns under `LightningPrintText=` (`0x0053AAE9`,
 ///    [`SimSoundEvent::LightningStormApproaching`]).
 ///
+/// In an Ares build the list work (steps 1 and 2) is always
+/// [`ares::process_lists`], and an Ares storm's rest is [`ares::process`].
+///
 /// Returns whether a strike changed a bridge.
 pub(super) fn process(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) -> bool {
+    #[cfg(feature = "ares")]
+    let bridge_changed = ares::process_lists(sim, rules, overlay_registry, frame_effects);
+    #[cfg(feature = "ares")]
+    if let Some(storm) = ares::current(sim, rules) {
+        ares::process(sim, rules, storm);
+        return bridge_changed;
+    }
+    #[cfg(not(feature = "ares"))]
+    let bridge_changed = process_lists(sim, rules, overlay_registry, frame_effects);
+
+    let frame = sim.session.binary_frame() as i32;
+    let storm = &sim.lightning_storm;
+    if storm.active && !storm.time_to_end {
+        if storm.duration != -1 && storm.start_frame.wrapping_add(storm.duration) < frame {
+            sim.lightning_storm.time_to_end = true;
+            return bridge_changed;
+        }
+        let general = &rules.general;
+        if frame.checked_rem(general.lightning_hit_delay) == Some(0) {
+            let cell = sim.lightning_storm.cell;
+            create_cloud_bolt(sim, rules, cell);
+        }
+        if frame.checked_rem(general.lightning_scatter_delay) == Some(0) {
+            scatter(sim, rules);
+        }
+        return bridge_changed;
+    }
+
+    let storm = &mut sim.lightning_storm;
+    if storm.deferment > 0 {
+        storm.deferment -= 1;
+        if storm.deferment == 0 {
+            let (duration, cell, owner) = (storm.duration, storm.cell, storm.owner);
+            start(sim, rules, duration, 0, cell, owner);
+        } else if storm.deferment % APPROACHING_INTERVAL == 0 && rules.general.lightning_print_text
+        {
+            sim.sound_events
+                .emit(SimSoundEvent::LightningStormApproaching);
+        }
+    }
+    bridge_changed
+}
+
+/// Process's list work (`0x0053A74C..0x0053A8F8`), steps 1 and 2.
+#[cfg(not(feature = "ares"))]
+fn process_lists(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
@@ -405,37 +499,6 @@ pub(super) fn process(
             {
                 sim.lightning_storm.clouds_present.remove(index);
             }
-        }
-    }
-
-    let frame = sim.session.binary_frame() as i32;
-    let storm = &sim.lightning_storm;
-    if storm.active && !storm.time_to_end {
-        if storm.duration != -1 && storm.start_frame.wrapping_add(storm.duration) < frame {
-            sim.lightning_storm.time_to_end = true;
-            return bridge_changed;
-        }
-        let general = &rules.general;
-        if frame.checked_rem(general.lightning_hit_delay) == Some(0) {
-            let cell = sim.lightning_storm.cell;
-            create_cloud_bolt(sim, rules, cell);
-        }
-        if frame.checked_rem(general.lightning_scatter_delay) == Some(0) {
-            scatter(sim, rules);
-        }
-        return bridge_changed;
-    }
-
-    let storm = &mut sim.lightning_storm;
-    if storm.deferment > 0 {
-        storm.deferment -= 1;
-        if storm.deferment == 0 {
-            let (duration, cell, owner) = (storm.duration, storm.cell, storm.owner);
-            start(sim, rules, duration, 0, cell, owner);
-        } else if storm.deferment % APPROACHING_INTERVAL == 0 && rules.general.lightning_print_text
-        {
-            sim.sound_events
-                .emit(SimSoundEvent::LightningStormApproaching);
         }
     }
     bridge_changed
@@ -536,6 +599,11 @@ impl StormCell {
 /// 0)` and listed as manifesting and present. (The coordinate is compared with
 /// the zero coordinate `0x00A9FA30` first, which a cell centre never is.)
 pub(crate) fn create_cloud_bolt(sim: &mut Simulation, rules: &RuleSet, cell: (i16, i16)) {
+    #[cfg(feature = "ares")]
+    if let Some(storm) = ares::current(sim, rules) {
+        ares::create_cloud_bolt(sim, rules, storm, cell);
+        return;
+    }
     let target = StormCell::of(&get_cellclass_fallback(
         sim.resolved_terrain.as_ref(),
         i32::from(cell.0),
@@ -603,6 +671,10 @@ pub(super) fn ground_strike(
     [x, y, _]: [i32; 3],
     frame_effects: FrameEffects<'_>,
 ) -> bool {
+    #[cfg(feature = "ares")]
+    if let Some(storm) = ares::current(sim, rules) {
+        return ares::ground_strike(sim, rules, overlay_registry, storm, [x, y], frame_effects);
+    }
     let general = &rules.general;
     let (target, centre) = {
         let terrain = sim.resolved_terrain.as_ref();

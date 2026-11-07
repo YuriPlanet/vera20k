@@ -173,9 +173,15 @@ impl NukeFlash {
 
     /// The timer test of `LightningStorm::Process`'s head (`0x0053A6D1..
     /// 0x0053A6EA`): a running timer whose start plus duration (wrapping) is
-    /// less than the frame (signed).
+    /// less than the frame (signed). Installed Ares's rewrite of that head
+    /// (`10037330`, hook `0x53A6CF`) runs only a nonnegative duration, so a
+    /// `NukeFlash.Duration` below -1 never ends the flash there.
     fn ran_out(&self, frame: i32) -> bool {
-        self.duration != -1 && self.start.wrapping_add(self.duration) < frame
+        #[cfg(feature = "ares")]
+        let running = self.duration >= 0;
+        #[cfg(not(feature = "ares"))]
+        let running = self.duration != -1;
+        running && self.start.wrapping_add(self.duration) < frame
     }
 }
 

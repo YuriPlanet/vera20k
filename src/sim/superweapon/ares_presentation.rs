@@ -100,14 +100,16 @@ pub(super) fn on_launch(
     }
     // SWTypeExt::Launch10033201..10033242 removes Ready only after the
     // common sound and Message.Launch (printed by every client from this
-    // fact). The client supplies Fire_SW's local-player predicate. No ported
-    // handler holds only one of NoMessage and NoCleanup (ChronoSphere holds
-    // both), so one fact carries both steps.
+    // fact unless NoMessage). The client supplies Fire_SW's local-player
+    // predicate. No ported handler holds NoCleanup without NoMessage
+    // (ChronoSphere holds both, LightningStorm only NoMessage), so one fact
+    // carries both steps.
     if !(flags.has(F::NO_MESSAGE) && flags.has(F::NO_CLEANUP)) {
         sim.sound_events
             .emit(SimSoundEvent::AresSuperWeaponFinished {
                 owner,
                 sw_type: data,
+                message: !flags.has(F::NO_MESSAGE),
             });
     }
 }

@@ -585,6 +585,11 @@ fn click_fire_admission(
     if !instance.click_fire_admits() && !sw.post_click {
         return false;
     }
+    // Installed Ares asks the handler's AbortFire (10072AB0) instead.
+    #[cfg(feature = "ares")]
+    if sw.kind == SuperWeaponKind::LightningStorm {
+        return !super::lightning_storm::ares_abort_fire(sim, owner, sw_type_id);
+    }
     if sw.kind == SuperWeaponKind::LightningStorm && super::lightning_storm::has_deferment(sim) {
         sim.sound_events
             .emit(SimSoundEvent::LightningStormRefused { owner });
@@ -662,6 +667,9 @@ fn launch(
                     frame_effects,
                 );
                 true
+            }
+            SuperWeaponKind::LightningStorm => {
+                super::lightning_storm::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry))
             }
             SuperWeaponKind::GeneticConverter => {
                 super::genetic_converter::ares_launch(
