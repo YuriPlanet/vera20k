@@ -1830,6 +1830,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         b"foot-tesla-charger-v1".hash(hasher);
     }
     // Building+6E6 is retained transition state, independent of HP.
+    if entity.building_art.wall_tower_variant() != -1 {
+        b"building-wall-tower-variant-v1".hash(hasher);
+        entity.building_art.wall_tower_variant().hash(hasher);
+    }
     if entity.building_art.damage_state_active() {
         b"building-damage-state-v1".hash(hasher);
     }

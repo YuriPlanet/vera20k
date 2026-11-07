@@ -603,19 +603,11 @@ pub(super) fn dispatch_draw_passes(
         }
     }
 
-    let mut pass = begin_main_load_pass(encoder, view, &world_depth);
-    pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
-
     // (There is no separate building-turret pass. gamemd draws a building's
     // voxel turret inside the building's retained Display slot, after the
     // body. Atlas page changes preserve that parent and its piece order.)
 
-    // Finish remaining Layer3 families before the distinct retained Top4.
-    drop(pass);
-    state
-        .renderer
-        .terrain_draw_renderer
-        .note_external_passes(encoder, 1);
+    // The distinct retained Top4 follows the Layer3 families.
     let layer = 4;
     merge_passes::draw_native_object_pass(
         encoder,
@@ -654,83 +646,94 @@ pub(super) fn dispatch_draw_passes(
         Some(&state.renderer.combat_light_renderer),
     );
 
-    let mut pass = begin_main_load_pass(encoder, view, &world_depth);
-    pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
-
     // --- Step 8: Debug overlays ---
-    // Drawn above entities, below fog and UI.
-    // Use filled-diamond texture so cells appear as isometric diamonds, not rectangles.
-    let debug_diamond_tex = state
-        .match_state
-        .match_presentation
-        .selection_overlay
-        .as_ref()
-        .map(|o| o.diamond_filled_texture());
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        debug_diamond_tex,
+    // Drawn above entities, below fog and UI, in a pass that opens only while
+    // one of them is on.
+    const DEBUG_OVERLAYS: [&str; 7] = [
         "debug_pathgrid",
-    );
-    let grid_tex = state
-        .match_state
-        .match_presentation
-        .selection_overlay
-        .as_ref()
-        .map(|o| o.diamond_outline_texture());
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        grid_tex,
         "debug_cell_grid",
-    );
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        debug_diamond_tex,
         "debug_path",
-    );
-    // Numbered foot route. The stroke wants the solid white texture: on a
-    // one-pixel-wide line the iso diamond's transparent corners leave a dotted
-    // trail. Nodes mark cells, so the diamond stays right for them. The step
-    // indices are GAME.FNT glyphs — a third texture, hence a third batch.
-    let white_tex = state
-        .match_state
-        .match_presentation
-        .selection_overlay
-        .as_ref()
-        .map(|o| o.white_texture());
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        white_tex,
         "debug_foot_stroke",
-    );
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        debug_diamond_tex,
         "debug_foot_nodes",
-    );
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
         "debug_foot_text",
-    );
-    draw_pooled_no_depth(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        debug_diamond_tex,
         "debug_heightmap",
-    );
+    ];
+    if DEBUG_OVERLAYS.iter().any(|&key| pool.get(key).is_some()) {
+        let mut pass = begin_main_load_pass(encoder, view, &world_depth);
+        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+        // Use filled-diamond texture so cells appear as isometric diamonds, not rectangles.
+        let debug_diamond_tex = state
+            .match_state
+            .match_presentation
+            .selection_overlay
+            .as_ref()
+            .map(|o| o.diamond_filled_texture());
+        draw_pooled_no_depth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            debug_diamond_tex,
+            "debug_pathgrid",
+        );
+        let grid_tex = state
+            .match_state
+            .match_presentation
+            .selection_overlay
+            .as_ref()
+            .map(|o| o.diamond_outline_texture());
+        draw_pooled_no_depth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            grid_tex,
+            "debug_cell_grid",
+        );
+        draw_pooled_no_depth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            debug_diamond_tex,
+            "debug_path",
+        );
+        // Numbered foot route. The stroke wants the solid white texture: on a
+        // one-pixel-wide line the iso diamond's transparent corners leave a dotted
+        // trail. Nodes mark cells, so the diamond stays right for them. The step
+        // indices are GAME.FNT glyphs — a third texture, hence a third batch.
+        let white_tex = state
+            .match_state
+            .match_presentation
+            .selection_overlay
+            .as_ref()
+            .map(|o| o.white_texture());
+        draw_pooled_no_depth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            white_tex,
+            "debug_foot_stroke",
+        );
+        draw_pooled_no_depth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            debug_diamond_tex,
+            "debug_foot_nodes",
+        );
+        draw_pooled_no_depth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            Some(state.renderer.bit_font.atlas()),
+            "debug_foot_text",
+        );
+        draw_pooled_no_depth(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            debug_diamond_tex,
+            "debug_heightmap",
+        );
+    }
 
     // A is consumed by each world blitter, before storing its source color.
     // Native surface stores and destination shadows must not be multiplied
@@ -742,7 +745,6 @@ pub(super) fn dispatch_draw_passes(
     // Evidence: tools/procedural_drawing_oracle/action_lines instruction packet.
     // Native6D9789: the later Extras sweep uses the same Display order,
     // completed body destination and live Z;4BFD30 never writes that Z.
-    drop(pass);
     for (layer, objects) in data.object_layers.iter().enumerate() {
         super::object_extras::draw_object_extras(
             encoder,
@@ -764,25 +766,17 @@ pub(super) fn dispatch_draw_passes(
     }
     // Original6D4664 -> Spotlight5FFFA0 edits the destination after the first
     // rally pass. Preserve this overlap, including the rally's black shadow.
-    // Overlapping lights keep persistent-vector order; disjoint ones share
-    // one scratch copy and pass (`object_stages`, VERA scheduling only).
-    let lights = &state.renderer.combat_light_renderer;
-    let tactical = [tac_x, tac_y, tac_w, tac_h];
-    let screen = state.renderer.batch_renderer.camera_uniform().screen_size;
-    let mut waves = super::object_stages::ObjectStages::new(screen.map(|extent| extent as u32));
-    for record in data.persistent_lights.clone() {
-        if let Some(rect) = lights.footprint(record, tactical) {
-            waves.push(super::object_stages::StageKind::Light, rect, record);
-        }
-    }
-    for (_, records) in waves.take() {
-        if lights.draw_records(encoder, tactical, &records) {
-            state
-                .renderer
-                .terrain_draw_renderer
-                .note_external_passes(encoder, 1);
-        }
-    }
+    // The lights edit in persistent-vector order, many to a pass.
+    let records: Vec<_> = data.persistent_lights.clone().collect();
+    let passes = state.renderer.combat_light_renderer.draw_records(
+        encoder,
+        [tac_x, tac_y, tac_w, tac_h],
+        &records,
+    );
+    state
+        .renderer
+        .terrain_draw_renderer
+        .note_external_passes(encoder, passes);
 
     // Tactical LaserDraw550240, EBolt, LineTrail556D40, then selected
     // radial indicators6D467F edit the destination and
@@ -1555,7 +1549,7 @@ mod tests {
         let ion_blasts = source_offset(".draw_ion_blasts(encoder, view)");
         let building_bases = source_offset("ObjectDrawPhase::BuildingBase");
         let objects = source_offset("for layer in 0..=3 {");
-        let combat_lights = source_offset("for record in data.persistent_lights.clone()");
+        let combat_lights = source_offset("data.persistent_lights.clone().collect()");
         let second_rally = source_offset("\"factory_rally_second\"");
         let target_lines = source_offset("\"target_lines\"");
         let tactical_lines = source_offset("&[data.tactical_lines]");

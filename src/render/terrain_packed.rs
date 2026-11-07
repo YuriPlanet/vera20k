@@ -7,7 +7,7 @@
 //! native framebuffer word order. No immutable-piece shortcut is used there.
 
 use super::batching::{TerrainBatches, TerrainCommand};
-use super::{PackedSurface, TerrainBatchStats, TerrainDrawRenderer, piece_scissor};
+use super::{LiveTail, PackedSurface, Tail, TerrainBatchStats, TerrainDrawRenderer, piece_scissor};
 use crate::render::batch::{
     BatchRenderer, CameraUniform, SPRITE_INSTANCE_ATTRIBUTES, SpriteInstance,
 };
@@ -547,7 +547,7 @@ impl TerrainDrawRenderer {
     /// rectangles are disjoint, whatever their selectors and Z policies: each
     /// resolves its own pixels with its own parameters. Reuse the
     /// destination-edit tile scheduler; displaced neighbor reads remain strict
-    /// sequential fences.
+    /// sequential fences. The last transaction's resolve is left as the tail.
     pub(crate) fn draw_packed_span(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -557,9 +557,10 @@ impl TerrainDrawRenderer {
         buffer: &wgpu::Buffer,
         composites: &[PackedComposite<'_>],
         tactical: [u32; 4],
-    ) -> TerrainBatchStats {
+    ) -> (TerrainBatchStats, Option<LiveTail>) {
         let mut batches = std::mem::take(&mut self.packed.batches);
         let mut stats = TerrainBatchStats::default();
+        let mut tail = None;
         let mut cursor = 0;
         let mut members = Vec::new();
         while cursor < composites.len() {
@@ -569,15 +570,20 @@ impl TerrainDrawRenderer {
                 continue;
             }
             if !packed_joins_waves(first) {
-                stats.accumulate(self.draw_packed_composite(
+                stats.accumulate(self.packed_transaction(
                     encoder,
                     color,
                     depth,
-                    batch,
                     buffer,
-                    &first.pieces,
-                    first.render_z,
+                    &[Member {
+                        pieces: &first.pieces,
+                        render_z: first.render_z,
+                    }],
                     Some(tactical),
+                    self.camera,
+                    batch.camera_bind_group(),
+                    None,
+                    &mut tail,
                 ));
                 cursor += 1;
                 continue;
@@ -607,7 +613,7 @@ impl TerrainDrawRenderer {
                         render_z: composite.render_z,
                     }
                 }));
-                stats.accumulate(self.draw_packed_target(
+                stats.accumulate(self.packed_transaction(
                     encoder,
                     color,
                     depth,
@@ -617,13 +623,14 @@ impl TerrainDrawRenderer {
                     self.camera,
                     batch.camera_bind_group(),
                     None,
+                    &mut tail,
                 ));
             }
             stats.tile_dependencies += batches.stats().tile_dependencies;
             cursor = end;
         }
         self.packed.batches = batches;
-        stats
+        (stats, tail.map(|resolve| LiveTail(Tail::Packed(resolve))))
     }
 
     pub(crate) fn draw_packed_composite(
@@ -686,12 +693,7 @@ impl TerrainDrawRenderer {
         )
     }
 
-    /// Replay `members`, pairwise-disjoint composites (a lone one when it
-    /// reads displaced neighbours), as one transaction. Every piece is
-    /// scissored inside its own composite's rectangle, so outside them
-    /// nothing is admitted and the union's other pixels would only discard;
-    /// the passes cover just them, and each member's pixels resolve with
-    /// only its own snapshot, stencil, selector and Z policy.
+    /// [`Self::packed_transaction`] with its resolve in a pass of its own.
     fn draw_packed_target(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -703,6 +705,46 @@ impl TerrainDrawRenderer {
         camera: CameraUniform,
         camera_group: &wgpu::BindGroup,
         surface: Option<&PackedSurface>,
+    ) -> TerrainBatchStats {
+        let mut tail = None;
+        let mut stats = self.packed_transaction(
+            encoder,
+            color,
+            depth,
+            buffer,
+            members,
+            tactical,
+            camera,
+            camera_group,
+            surface,
+            &mut tail,
+        );
+        if let Some(resolve) = tail {
+            stats.passes += self.resolve_packed(encoder, color, depth, &resolve);
+        }
+        stats
+    }
+
+    /// Record `members`, pairwise-disjoint composites (a lone one when it
+    /// reads displaced neighbours), as one transaction: its scratch passes
+    /// here, its resolve left in `tail`. A previous resolve in `tail` lands
+    /// first: this snapshot reads its pixels and reuses its scratch. Every
+    /// piece is scissored inside its own composite's rectangle, so outside
+    /// them nothing is admitted and the union's other pixels would only
+    /// discard; the passes cover just them, and each member's pixels resolve
+    /// with only its own snapshot, stencil, selector and Z policy.
+    fn packed_transaction(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        buffer: &wgpu::Buffer,
+        members: &[Member<'_, '_>],
+        tactical: Option<[u32; 4]>,
+        camera: CameraUniform,
+        camera_group: &wgpu::BindGroup,
+        surface: Option<&PackedSurface>,
+        tail: &mut Option<PackedResolve>,
     ) -> TerrainBatchStats {
         let tactical = tactical.unwrap_or([
             0,
@@ -748,6 +790,10 @@ impl TerrainDrawRenderer {
         let Some(&(_, first, _)) = transactions.first() else {
             return TerrainBatchStats::default();
         };
+        let mut passes = 0;
+        if let Some(previous) = tail.take() {
+            passes += self.resolve_packed(encoder, color, depth, &previous);
+        }
         // Only a negative offset reads earlier stores of this transaction, so
         // only it orders its words through `results` (compute or WebGL2
         // feedback). Any other resolve blends its snapshot word directly.
@@ -947,52 +993,86 @@ impl TerrainDrawRenderer {
             let x = groups.min(packed.device.limits().max_compute_workgroups_per_dimension);
             pass.dispatch_workgroups(x, groups.div_ceil(x), 1);
         }
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Packed whole composite resolve"),
-                color_attachments: &[attachment(color)],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: depth,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            let mut bound = None;
-            for (&(_, params, writes), &(chunk, uniform_offset)) in transactions.iter().zip(&slots)
-            {
-                if bound != Some(writes) {
-                    pass.set_pipeline(if writes {
-                        &packed.resolve_write
-                    } else {
-                        &packed.resolve_read
-                    });
-                    if let (None, Some((_, results))) = (bound, &stencil.results) {
-                        pass.set_bind_group(1, results, &[]);
-                    }
-                    bound = Some(writes);
-                }
-                pass.set_bind_group(0, binding(chunk), &[uniform_offset]);
-                let [x, y, width, height] = params.rect;
-                pass.set_scissor_rect(x, y, width, height);
-                pass.draw(0..3, 0..1);
-            }
-        }
-        let passes =
-            2 + usize::from(ordered) + usize::from(self.packed_snapshot_pipeline.is_none());
-        self.submission.note_closed_passes(encoder, passes);
+        *tail = Some(PackedResolve {
+            members: transactions
+                .iter()
+                .zip(&slots)
+                .map(|(&(_, params, writes), &(chunk, offset))| {
+                    (params.rect, chunk, offset, writes)
+                })
+                .collect(),
+            results: stencil.results.as_ref().map(|(_, group)| group.clone()),
+            bindings,
+        });
+        let scratch =
+            1 + usize::from(ordered) + usize::from(self.packed_snapshot_pipeline.is_none());
+        self.submission.note_closed_passes(encoder, scratch);
         TerrainBatchStats {
             pieces,
             waves: 1,
-            passes,
+            passes: passes + scratch,
             tile_dependencies: 0,
         }
     }
+
+    /// Draw `resolve` in a pass of its own. Returns the passes closed (one).
+    pub(super) fn resolve_packed(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        resolve: &PackedResolve,
+    ) -> usize {
+        let label = "Packed whole composite resolve";
+        self.live_pass(encoder, color, depth, label, |renderer, pass| {
+            renderer.record_packed_resolve(pass, resolve);
+        })
+    }
+
+    /// Record `resolve` into a pass over the live colour and depth.
+    pub(super) fn record_packed_resolve(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        resolve: &PackedResolve,
+    ) {
+        let packed = &self.packed;
+        let mut bound = None;
+        for &(rect, chunk, uniform_offset, writes) in &resolve.members {
+            if bound != Some(writes) {
+                pass.set_pipeline(if writes {
+                    &packed.resolve_write
+                } else {
+                    &packed.resolve_read
+                });
+                if let (None, Some(results)) = (bound, &resolve.results) {
+                    pass.set_bind_group(1, results, &[]);
+                }
+                bound = Some(writes);
+            }
+            let (_, binding) = resolve
+                .bindings
+                .iter()
+                .find(|&&(bound, _)| bound == chunk)
+                .expect("every slot's chunk is bound");
+            pass.set_bind_group(0, binding, &[uniform_offset]);
+            let [x, y, width, height] = rect;
+            pass.set_scissor_rect(x, y, width, height);
+            pass.draw(0..3, 0..1);
+        }
+    }
+}
+
+/// A packed transaction's resolve into the live colour and depth, after its
+/// scratch passes: in a pass of its own or first in the next pass over them
+/// (`LiveTail`). Nothing else may draw the scratch before it.
+pub(super) struct PackedResolve {
+    /// Per member, in order: its rectangle, uniform chunk and dynamic
+    /// offset, and whether it writes Z.
+    members: Vec<([u32; 4], usize, u32, bool)>,
+    /// One transaction binding per uniform chunk the members' slots lie in.
+    bindings: Vec<(usize, wgpu::BindGroup)>,
+    /// WebGL2's ordered words, beside the transaction binding.
+    results: Option<wgpu::BindGroup>,
 }
 
 /// One composite of a packed transaction: its pieces and Z policy.

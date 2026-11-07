@@ -356,12 +356,46 @@ impl StageReplay<'_> {
             self.buffer
                 .expect("a sprite run has an uploaded instance buffer")
         };
+        let (overlay_atlas, sprite_atlas) = (self.overlay_atlas, self.sprite_atlas);
+        let atlas = |slot| {
+            if slot == 0 {
+                overlay_atlas.map(|atlas| &atlas.texture)
+            } else {
+                sprite_atlas
+                    .and_then(|atlas| atlas.page(slot - 1))
+                    .map(|page| &page.texture)
+            }
+        };
+        // A destination edit's last pass only draws into the live colour and
+        // depth, so the next ordinary pass records it first. The strict-order
+        // test reference keeps it in a pass of its own.
+        #[cfg(test)]
+        let joins = !super::object_stages::SERIAL.get();
+        #[cfg(not(test))]
+        let joins = true;
+        let mut tail = None;
         for (kind, items) in stages {
+            if !(joins && kind == StageKind::Ordinary)
+                && let Some(tail) = tail.take()
+            {
+                stats.passes += terrain.flush_tail(
+                    encoder,
+                    self.color,
+                    self.depth,
+                    tail,
+                    self.batch,
+                    &atlas,
+                    buffer(),
+                );
+            }
             match kind {
                 StageKind::Ordinary => {
                     let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
                         encoder, self.color, self.depth,
                     );
+                    if let Some(tail) = tail.take() {
+                        terrain.record_tail(&mut pass, &tail, self.batch, &atlas, buffer());
+                    }
                     let [x, y, width, height] = self.tactical;
                     pass.set_scissor_rect(x, y, width, height);
                     let mut items = items.iter().peekable();
@@ -411,7 +445,7 @@ impl StageReplay<'_> {
                             _ => unreachable!("a packed stage holds packed composites"),
                         })
                         .collect();
-                    stats.accumulate(terrain.draw_packed_span(
+                    let (span, span_tail) = terrain.draw_packed_span(
                         encoder,
                         self.color,
                         self.depth,
@@ -419,33 +453,28 @@ impl StageReplay<'_> {
                         buffer(),
                         &composites,
                         self.tactical,
-                    ));
+                    );
+                    stats.accumulate(span);
+                    tail = span_tail;
                 }
                 StageKind::EditReadOnly | StageKind::EditReadWrite => {
                     let commands = items.into_iter().map(|item| match item {
                         StageItem::Edit(command) => command,
                         _ => unreachable!("an edit stage holds destination edits"),
                     });
-                    let (overlay_atlas, sprite_atlas) = (self.overlay_atlas, self.sprite_atlas);
-                    stats.accumulate(terrain.draw_span(
+                    let (span, span_tail) = terrain.draw_span_tail(
                         encoder,
                         self.color,
                         self.depth,
                         self.batch,
-                        |slot| {
-                            if slot == 0 {
-                                overlay_atlas.map(|atlas| &atlas.texture)
-                            } else {
-                                sprite_atlas
-                                    .and_then(|atlas| atlas.page(slot - 1))
-                                    .map(|page| &page.texture)
-                            }
-                        },
+                        &atlas,
                         buffer(),
                         &self.ground.instances,
                         commands,
                         self.tactical,
-                    ));
+                    );
+                    stats.accumulate(span);
+                    tail = span_tail;
                 }
                 StageKind::Light => {
                     let records: Vec<_> = items
@@ -456,9 +485,8 @@ impl StageReplay<'_> {
                         })
                         .collect();
                     let lights = self.lights.expect("a planned light has its renderer");
-                    if lights.draw_records(encoder, self.tactical, &records) {
-                        terrain.note_external_passes(encoder, 1);
-                    }
+                    let passes = lights.draw_records(encoder, self.tactical, &records);
+                    terrain.note_external_passes(encoder, passes);
                 }
                 StageKind::Lines => {
                     let ranges: Vec<_> = items
@@ -471,6 +499,17 @@ impl StageReplay<'_> {
                     terrain.draw_surface_lines(encoder, self.color, &ranges);
                 }
             }
+        }
+        if let Some(tail) = tail {
+            stats.passes += terrain.flush_tail(
+                encoder,
+                self.color,
+                self.depth,
+                tail,
+                self.batch,
+                &atlas,
+                buffer(),
+            );
         }
         stats
     }

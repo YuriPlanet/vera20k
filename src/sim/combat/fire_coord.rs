@@ -671,7 +671,7 @@ fn fire_coordinate_base<'r>(
             ))
         });
     let (flh_facing16, fire_facing) = if snap.category == EntityCategory::Structure {
-        building_fire_facings(world, snap, obj, art, aim_facing16)
+        building_fire_facings(world, rules, snap, obj, art, aim_facing16)
     } else {
         (aim_facing16, aim_facing16)
     };
@@ -708,8 +708,8 @@ pub fn firer_art<'r>(rules: &'r RuleSet, obj: &ObjectType) -> Option<&'r ArtEntr
 /// (vt+0x308, `0x0044D7D0`), which picks the 8-way muzzle anim
 /// (`0x006FF2E5`) and heads a `ROT=` or dropping bullet (`0x006FE950`).
 /// - vt+0x2A8: `current` for a building with a turret (HasTurret, vt+0x3FC
-///   `0x004527D0`: `Turret=`, or an upgrade's, dormant with no retail
-///   `PowersUpBuilding=`) or without a TarCom; otherwise the direction
+///   `0x004527D0`: host or installed upgrade) or without a TarCom; otherwise
+///   the direction
 ///   between the two GetCoords.
 /// - vt+0x308: without a TarCom, `current` rounded to 1/256 turn; with a
 ///   turret that is not `TurretAnimIsVoxel=` (`+0x16C5`), rounded to 1/32;
@@ -718,15 +718,15 @@ pub fn firer_art<'r>(rules: &'r RuleSet, obj: &ObjectType) -> Option<&'r ArtEntr
 /// A TarCom no longer stored reads as none: native detaches it.
 fn building_fire_facings(
     world: &Simulation,
+    rules: &RuleSet,
     snap: &FireSource,
     obj: &ObjectType,
     art: Option<&ArtEntry>,
     current: u16,
 ) -> (u16, u16) {
     let entities = &world.substrate.entities;
-    let origin = entities
-        .get(snap.stable_id)
-        .map(|building| coords_xy(super::target_coords(building)));
+    let building = entities.get(snap.stable_id);
+    let origin = building.map(|entity| coords_xy(super::target_coords(entity)));
     let target = snap
         .tar_com
         .and_then(|target| super::resolve_target_coords(&target, world));
@@ -734,7 +734,11 @@ fn building_fire_facings(
         // `0x0044D7F4..0x0044D7FF`: `((current >> 7) + 1) >> 1` as the high byte.
         return (current, u16::from(round_facing16_to_8(current)) << 8);
     };
-    if obj.has_turret {
+    if building.is_some_and(|entity| {
+        entity
+            .building_upgrades()
+            .has_turret(obj, rules, &world.interner)
+    }) {
         // `0x0044D83A..0x0044D844`.
         let fire = if obj.turret_anim_is_voxel {
             facing16_between(aim_origin(origin, obj, art), target)

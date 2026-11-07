@@ -386,12 +386,12 @@ fn line_trail_native_fixture_submission_timings() {
                     wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                 );
                 // Native Systems occupy GROUND2; their children occupy AIR3.
-                // One immutable light upload and the same bounded submission
-                // accounting are used by production retained-object replay.
+                // The same bounded submission accounting is used by
+                // production retained-object replay.
                 for index in 0..light_records.len() {
-                    if lights.draw_records(&mut encoder, [0, 0, size[0], size[1]], &[index]) {
-                        terrain.note_external_passes(&mut encoder, 1);
-                    }
+                    let passes =
+                        lights.draw_records(&mut encoder, [0, 0, size[0], size[1]], &[index]);
+                    terrain.note_external_passes(&mut encoder, passes);
                 }
                 terrain.draw_surface_lines(&mut encoder, &cv, &[prepared_lines]);
                 submissions = terrain.submissions();
