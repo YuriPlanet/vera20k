@@ -1,8 +1,5 @@
 # AI sale after Engineer capture
 
-Reference executable for these native controls: `gamemd.exe`, SHA-256
-`3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`. The reproduction commands below compare its outputs.
-
 `captured_building_sale.py` executes the original capture-to-sale handoff using
 the existing `EngineerJoinedFixture`. The joined reference ends when capture
 returns with the original sale order admitted or refused; one provided

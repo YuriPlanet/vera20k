@@ -1,8 +1,5 @@
 # Ordinary building upgrade controls
 
-Reference executable for these native controls: `gamemd.exe`, SHA-256
-`3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600`. The reproduction commands below compare its outputs.
-
 Run against a supported original executable:
 
 ```sh
