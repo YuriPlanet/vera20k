@@ -812,7 +812,8 @@ fn is_raw_string_start(bytes: &[u8], i: usize) -> bool {
 }
 
 /// `source` without its `#[cfg(test)]` items (attribute plus the following
-/// item, braced or single-statement), as blanked text: `text` is `source` with
+/// item: braced, single-statement, or a field, struct-literal field or
+/// argument up to its comma), as blanked text: `text` is `source` with
 /// comments and literals blanked. `cfg(all(test, …))` and
 /// `cfg(any(test, feature = "test-support"))` count as test-only;
 /// `cfg(any(test, debug_assertions))` does not. The feature gate is read from
@@ -822,6 +823,10 @@ fn strip_test_items(source: &str, text: &str) -> String {
     let mut depth: i64 = 0;
     let mut skip_above: Option<i64> = None;
     let mut awaiting_item = false;
+    // `(`/`[` nesting inside the awaited item, so a `,` or `;` that ends one
+    // of its lines inside a call or list does not end the item.
+    let mut item_nesting: i64 = 0;
+    let ends_item = |line: &str| line.trim_end().ends_with([';', ',']);
     for (line, source_line) in text.lines().zip(source.lines()) {
         let opens = line.bytes().filter(|&b| b == b'{').count() as i64;
         let closes = line.bytes().filter(|&b| b == b'}').count() as i64;
@@ -838,8 +843,11 @@ fn strip_test_items(source: &str, text: &str) -> String {
             if opens > 0 {
                 // Attribute and item share the line.
                 skip_above = Some(depth);
+            } else if !line.trim_end().ends_with(']') && ends_item(line) {
+                // Attribute and a one-line item share the line.
             } else {
                 awaiting_item = true;
+                item_nesting = 0;
             }
         } else if awaiting_item {
             emit = false;
@@ -849,9 +857,25 @@ fn strip_test_items(source: &str, text: &str) -> String {
             } else if opens > 0 {
                 skip_above = Some(depth);
                 awaiting_item = false;
-            } else if trimmed.trim_end().ends_with(';') {
-                // Single-statement item (e.g. `use`), fully consumed.
+            } else if closes > 0 {
+                // The enclosing block closes after a last field without its
+                // comma; the brace is production.
                 awaiting_item = false;
+                emit = true;
+            } else {
+                item_nesting += line
+                    .bytes()
+                    .map(|b| match b {
+                        b'(' | b'[' => 1,
+                        b')' | b']' => -1,
+                        _ => 0,
+                    })
+                    .sum::<i64>();
+                if item_nesting <= 0 && ends_item(line) {
+                    // A single statement (`use`, `let`), a field or an
+                    // argument, fully consumed.
+                    awaiting_item = false;
+                }
             }
         }
 
@@ -963,6 +987,20 @@ fn segment_is_root(segment: &str, root: &str) -> bool {
                 || rest.starts_with(' ')
         }
         _ => rest.is_empty() || rest.starts_with(':') || rest.starts_with(' '),
+    }
+}
+
+/// A test-only field or struct-literal field ends at its comma, so the
+/// production code after it stays scanned.
+#[test]
+fn test_gated_fields_strip_only_themselves() {
+    let source = "struct Rules {\n    #[cfg(test)]\n    pub max: u8,\n    pub kept: u8,\n}\n\
+                  fn read() -> Rules {\n    Rules {\n        #[cfg(test)]\n        max: f(\n            1,\n        ),\n        kept: registry_ids(),\n    }\n}\n\
+                  #[cfg(test)] use crate::x;\nfn after() {}\n";
+    let production = strip_test_items(source, &blank_comments_and_literals(source));
+    assert!(!production.contains("max"), "{production}");
+    for kept in ["pub kept", "fn read", "registry_ids", "fn after"] {
+        assert!(production.contains(kept), "{kept} stripped:\n{production}");
     }
 }
 
