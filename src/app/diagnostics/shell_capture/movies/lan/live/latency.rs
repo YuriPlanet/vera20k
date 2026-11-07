@@ -492,7 +492,7 @@ impl LatencyCapture {
                 self.command_delivery.insert(trace.batch_id, *trace);
             }
         }
-        let fps = live.fixed_frames_per_second();
+        let fps = live.relay_frames_per_second();
         let frontier = live.committed_frontier();
         let recovery = live.recovery_status(
             crate::app::match_runtime::frame_pacer::wall_clock_ms() as u32,

@@ -11,17 +11,20 @@
 //! The BFS placer grows a closest-first blob from an origin: a min-heap keyed
 //! by `approx_sqrt(dist²) + uniform[0,5]`, up to 10 re-seeds, writing ore/gem
 //! overlays and one `TIBTRE` tree per seed generation.
+//!
+//! Native: `RandomMapGenerator::CreateTiberium @ 0x005A23A0` (the driver) and
+//! its field placer `RandomMapGenerator::PlaceTiberiumField @ 0x005A28C0`.
 
 use crate::map::rmg::grid::RmgGrid;
-use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
+use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{Gaussian, TruncF64, approx_sqrt, approx_sqrt_f32};
+use crate::map::rmg::x87::{self, Gaussian, TruncF64, approx_sqrt_f32};
 use crate::util::native_x87::X87Chop53;
 
-use super::blob::{CellHeap, by_key};
 use super::regions::Regions;
 use super::zones::diamond_frame_contains;
+use crate::util::native_heap::NativeHeap;
 
 /// Ore/gem overlay base indices (`0x66` / `0x1B`).
 const ORE_BASE: i32 = 102;
@@ -43,8 +46,6 @@ const GEM_SIZE_SCALE: f64 = 15.0;
 const GEM_SIZE_BASE: i32 = 500;
 /// Pass-2 score running-min seed.
 const SCORE_MIN_INIT: f64 = 9_999_999.0;
-/// BFS priority jitter scale.
-const PRIORITY_JITTER: f64 = 5.0;
 /// Heap capacity multiplier and re-seed cap.
 const HEAP_CAP_MULT: i32 = 10;
 const MAX_SEEDS: i32 = 10;
@@ -154,7 +155,7 @@ pub fn run(ctx: &mut TiberiumCtx<'_>, args: &TiberiumArgs) -> TiberiumOutcome {
                     break value;
                 }
             };
-            let size = X87Chop53::ftol_f64_low_masked(f64::from(per_field_base) + j);
+            let size = jittered_field_size(per_field_base, j);
             if size >= 0 {
                 let origin = ctx.regions.list[index].field_slots.as_ref().unwrap()[i as usize];
                 let is_gem = i == nearest_slot;
@@ -171,16 +172,18 @@ pub fn run(ctx: &mut TiberiumCtx<'_>, args: &TiberiumArgs) -> TiberiumOutcome {
         }
 
         // Pass 2: one field per start, distance-compensated size.
+        // 0x005A26D0..0x005A2719: the sum and the mean are chopped double
+        // operations (`FADD`, `FDIVR`) under the generator's control word.
         let mut scores: Vec<f64> = Vec::with_capacity(quota.max(0) as usize);
         for s in 0..quota {
             let start = waypoint(ctx, global_start_base + s);
-            let mut sum = 0.0f64;
+            let mut sum = TruncF64::zero();
             for &slot in ctx.regions.list[index].field_slots.as_ref().unwrap() {
                 let dx = i32::from(start.0) - i32::from(slot.0);
                 let dy = i32::from(start.1) - i32::from(slot.1);
-                sum += f64::from(approx_sqrt_f32(dx * dx + dy * dy));
+                sum = TruncF64::from_f64(f64::from(approx_sqrt_f32(dx * dx + dy * dy))).add(sum);
             }
-            scores.push(sum / f64::from(field_count));
+            scores.push(mean_distance(sum, field_count));
         }
         let min_score = scores.iter().copied().fold(SCORE_MIN_INIT, f64::min);
         for s in 0..quota {
@@ -205,6 +208,22 @@ pub fn run(ctx: &mut TiberiumCtx<'_>, args: &TiberiumArgs) -> TiberiumOutcome {
         global_start_base += quota;
     }
     outcome
+}
+
+/// A pass-1 field's size: `ftol(FILD base; FADD jitter)` at 0x005A25FB, a
+/// chopped double add.
+fn jittered_field_size(per_field_base: i32, jitter: f64) -> i32 {
+    X87Chop53::ftol_f64_low_masked(
+        TruncF64::from_f64(f64::from(per_field_base))
+            .add(TruncF64::from_f64(jitter))
+            .to_f64(),
+    )
+}
+
+/// A start's mean distance to the field slots: `sum / count`, the chopped
+/// `FDIVR` at 0x005A2715.
+fn mean_distance(sum: TruncF64, count: i32) -> f64 {
+    sum.div(TruncF64::from_f64(f64::from(count))).to_f64()
 }
 
 /// Read a start waypoint slot, treating an unwritten slot as the origin (the
@@ -304,6 +323,26 @@ fn is_tiberium_overlay(overlay: i32) -> bool {
 
 /// Grow one tiberium field from `origin`. Closest-first BFS with up to 10
 /// re-seeds; writes overlays/densities on the grid and records TIBTRE trees.
+///
+/// `PlaceTiberiumField @ 0x005A28C0`. The heap holds pointers into one node
+/// pool of `10 * size` nodes; `local_64` is the next free node. A re-seed puts
+/// the origin in node 0 and sets it to 1 (0x005A2A25); the first write rebinds
+/// the anchor, empties the heap and sets it to 0 (0x005A2B80). Every admission writes the
+/// next node (0x005A2D40) before the heap's full check, and the expanding node
+/// re-reads its coordinate from its node for each direction (0x005A2C8E). So
+/// when the expansion right after the first write starts from node 0 (or any
+/// node below the admissions), an admitted neighbour overwrites it, and the
+/// remaining directions step from that neighbour.
+///
+/// Residual: native's pool is a fixed `10 * size` allocation; admissions past
+/// it write beyond the block (heap corruption). Here the pool grows. Reaching
+/// it needs more than ten admissions per placed cell since the last reset.
+/// The heap's own `count + 1 < 10 * size` refusal (0x005A2DEF) is reachable
+/// only after that overrun: every push uses a fresh node and every pass pops
+/// one, so the heap holds fewer nodes than the pool has handed out.
+///
+/// `tools/rmg_oracle/tiberium_field.py` replays whole original calls of this
+/// function and of `CreateTiberium` against it.
 fn place_field(
     ctx: &mut TiberiumCtx<'_>,
     args: &TiberiumArgs,
@@ -322,8 +361,11 @@ fn place_field(
     let mut anchor = origin;
     let mut placed = 0i32;
     let mut seed_count = 0i32;
-    let mut heap = CellHeap::new(cap);
-    let mut current: Option<(i32, i32)> = None;
+    let mut heap = NativeHeap::<(f32, usize)>::new(cap);
+    let by_priority = |a: &(f32, usize), b: &(f32, usize)| a.0 < b.0;
+    let mut pool: Vec<(i32, i32)> = Vec::with_capacity(cap);
+    let mut next_node = 0usize;
+    let mut current: Option<usize> = None;
     let mut first_written = false;
 
     while placed < target_size {
@@ -333,10 +375,12 @@ fn place_field(
         if current.is_none() {
             // New seed: wipe every claim, re-seed from the same origin.
             ctx.scratch.clear_stamps();
-            heap = CellHeap::new(cap);
+            heap.clear();
+            write_node(&mut pool, 0, origin);
+            next_node = 1;
             ctx.scratch.get_mut(origin.0, origin.1).stamp = field_id;
-            heap.push((0.0, origin), by_key);
-            current = heap.pop(by_key).map(|(_, coord)| coord);
+            heap.push((0.0, 0), by_priority);
+            current = heap.pop(by_priority).map(|(_, node)| node);
             seed_count += 1;
             anchor = origin;
             first_written = false;
@@ -344,7 +388,8 @@ fn place_field(
                 break;
             }
         }
-        let cur = current.unwrap();
+        let node = current.unwrap();
+        let cur = pool[node];
 
         // Pop-write path, gated on the protected/blocked flag (scratch +0x45).
         let blocked = ctx.scratch.get(cur.0, cur.1).water_lock;
@@ -352,8 +397,10 @@ fn place_field(
             if !first_written {
                 anchor = cur;
                 first_written = true;
-                // Rebinding the anchor discards the current frontier.
-                heap = CellHeap::new(cap);
+                // Rebinding the anchor discards the current frontier and
+                // restarts the pool.
+                heap.clear();
+                next_node = 0;
                 if !is_gem {
                     let variant = tibtre_draw(ctx.rng);
                     out.trees
@@ -362,6 +409,10 @@ fn place_field(
                     //5A2C05, before painting5A2C12. Its Unlimbo clears an
                     // old resource first, including on overlapping/reseeded
                     // anchors, so the following empty-cell draw still occurs.
+                    // ObjectClass::Unlimbo 5F4EC0 admits it without
+                    // Can_Enter_Cell (5F4F1B): Generate holds ScenarioInit
+                    // A8E7AC raised from 598A9A to 59934A around this phase
+                    // (598EF4), so an ore cell does not refuse the tree.
                     if let Some(cell) = ctx.grid.get_mut(cur.0, cur.1) {
                         (cell.overlay, cell.density) =
                             crate::map::tiberium_cell::terrain_unlimbo_overlay_fields(
@@ -392,7 +443,8 @@ fn place_field(
 
         // Neighbor admission (runs whether or not the pop wrote resource).
         for dir in 0..8 {
-            let (nx, ny) = RmgGrid::step(cur.0, cur.1, dir);
+            let from = pool[node];
+            let (nx, ny) = RmgGrid::step(from.0, from.1, dir);
             let Some(cell) = ctx.grid.get(nx, ny) else {
                 continue;
             };
@@ -419,17 +471,24 @@ fn place_field(
             }
             let dx = anchor.0 - nx;
             let dy = anchor.1 - ny;
-            let jitter = TruncF64::from_f64(f64::from(ctx.rng.next_u32()))
-                .mul(TruncF64::from_f64(PRIORITY_JITTER))
-                .mul(TruncF64::from_f64(f64::from_bits(RANGE_K_BITS)));
-            let priority = approx_sqrt(TruncF64::from_f64(f64::from(dx * dx + dy * dy)))
-                .add(jitter)
-                .to_f64() as f32;
+            let priority = x87::jittered_distance_key(dx * dx + dy * dy, ctx.rng.next_u32());
+            write_node(&mut pool, next_node, (nx, ny));
             ctx.scratch.get_mut(nx, ny).stamp = field_id;
-            heap.push((priority, (nx, ny)), by_key);
+            heap.push((priority, next_node), by_priority);
+            next_node += 1;
         }
 
-        current = heap.pop(by_key).map(|(_, coord)| coord);
+        current = heap.pop(by_priority).map(|(_, node)| node);
+    }
+}
+
+/// Store a coordinate in pool node `index`, growing the pool past the native
+/// allocation instead of overrunning it.
+fn write_node(pool: &mut Vec<(i32, i32)>, index: usize, coord: (i32, i32)) {
+    if index == pool.len() {
+        pool.push(coord);
+    } else {
+        pool[index] = coord;
     }
 }
 
@@ -516,6 +575,253 @@ mod tests {
         });
         regions.id_counter = 1;
         regions
+    }
+
+    /// 0x005A2B80 restarts the pool under the node being expanded: the
+    /// origin's first admitted neighbour overwrites node 0, and the remaining
+    /// directions step from that neighbour, two cells out.
+    #[test]
+    fn the_first_expansion_steps_from_the_overwritten_node() {
+        let (targs, stride) = args(1, 0);
+        let mut w = world(stride);
+        let identity = ids();
+        let regions = Regions::default();
+        let mut rng = RmgRng::new(7);
+        let mut gauss = Gaussian::default();
+        let origin = (32, 32);
+        let mut out = TiberiumOutcome::default();
+        let mut ctx = TiberiumCtx {
+            grid: &mut w.grid,
+            scratch: &mut w.scratch,
+            ids: &identity,
+            rng: &mut rng,
+            gauss: &mut gauss,
+            regions: &regions,
+            waypoints: &[],
+        };
+        place_field(&mut ctx, &targs, origin, 1, 5, true, &mut out);
+        let first = RmgGrid::step(origin.0, origin.1, 0);
+        let (x, y) = RmgGrid::step(first.0, first.1, 1);
+        assert_eq!((x - origin.0).abs().max((y - origin.1).abs()), 2);
+        assert_eq!(w.scratch.get(x, y).stamp, 5);
+    }
+
+    fn int(value: &serde_json::Value) -> i32 {
+        value.as_i64().unwrap() as i32
+    }
+
+    fn pair(value: &serde_json::Value) -> (i16, i16) {
+        (int(&value[0]) as i16, int(&value[1]) as i16)
+    }
+
+    /// The harness's declared scene: clear level-0 cells, optional non-clear
+    /// (CliffSet base) cells, `+0x45` locks and prior overlay/density pairs.
+    fn native_scene(input: &serde_json::Value, cliff: i32) -> (RmgGrid, RmgScratch) {
+        let mut grid = RmgGrid::new(33, 16, 48);
+        let mut scratch = RmgScratch::new(33, 16, 48);
+        for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+            let cell = grid.get_mut(x, y).unwrap();
+            (cell.tile, cell.sub_tile, cell.level) = (0, 0, 0);
+        }
+        let list = |key: &str| input.get(key).map_or(&[][..], |v| v.as_array().unwrap());
+        for c in list("rough") {
+            grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile = cliff;
+        }
+        for c in list("locked") {
+            scratch.get_mut(int(&c[0]), int(&c[1])).water_lock = true;
+        }
+        for c in list("ore") {
+            let cell = grid.get_mut(int(&c[0]), int(&c[1])).unwrap();
+            (cell.overlay, cell.density) = (int(&c[2]), int(&c[3]) as u8);
+        }
+        (grid, scratch)
+    }
+
+    /// `[x, y, overlay, density, stamp]` per in-diamond cell, row-major.
+    fn native_fields(grid: &RmgGrid, scratch: &RmgScratch) -> Vec<[i32; 5]> {
+        let mut out = Vec::new();
+        for y in 0..33 {
+            for x in 0..33 {
+                if scratch.in_diamond(x, y) {
+                    let cell = grid.get(x, y).unwrap();
+                    let stamp = scratch.get(x, y).stamp;
+                    out.push([x, y, cell.overlay, i32::from(cell.density), stamp]);
+                }
+            }
+        }
+        out
+    }
+
+    /// Compare the changed cells, the TIBTRE list and the exit RNG.
+    fn assert_native_row(
+        doc: &serde_json::Value,
+        row: &serde_json::Value,
+        prior: Vec<[i32; 5]>,
+        world: (&RmgGrid, &RmgScratch),
+        out: &TiberiumOutcome,
+        rng: RmgRng,
+    ) {
+        let context = row["input"]["id"].as_str().unwrap();
+        let trees: Vec<(String, i16, i16)> = row["trees"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| {
+                let name = t[0].as_str().unwrap().to_owned();
+                (name, int(&t[1]) as i16, int(&t[2]) as i16)
+            })
+            .collect();
+        assert_eq!(out.trees, trees, "{context}: trees");
+        let cells: Vec<[i32; 5]> = native_fields(world.0, world.1)
+            .into_iter()
+            .zip(prior)
+            .filter(|(now, before)| now != before)
+            .map(|(now, _)| now)
+            .collect();
+        let native: Vec<[i32; 5]> = row["cells"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| std::array::from_fn(|i| int(&c[i])))
+            .collect();
+        assert_eq!(cells, native, "{context}: cells");
+        assert_eq!(
+            rng.into_continuation().into_native_parts(),
+            super::super::cliff_native_tests::native_state(doc, &row["rng_after"])
+                .into_native_parts(),
+            "{context}: exit RNG"
+        );
+    }
+
+    fn native_args(input: &serde_json::Value) -> TiberiumArgs {
+        let field = |key: &str| input.get(key).map_or(0, int);
+        let rect = input
+            .get("rect")
+            .map_or([0, 0, 16, 16], |r| std::array::from_fn(|i| int(&r[i])));
+        TiberiumArgs {
+            map_type: field("map_type"),
+            resources: field("resources"),
+            tib_option: field("tib_option"),
+            min_tib: field("min_tib"),
+            max_tib: field("max_tib"),
+            map_w: 16,
+            local_rect: rect,
+        }
+    }
+
+    /// Whole original `PlaceTiberiumField @ 0x005A28C0` calls from
+    /// `tools/rmg_oracle/tiberium_field.py`: overlays, densities, stamps,
+    /// TIBTRE names and cells, and the exit RNG.
+    #[test]
+    fn native_place_field_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/tiberium_field.json");
+        let (identity, _) = super::super::cliff_native_tests::physical_tiles();
+        let cliff = int(&doc["scene"]["cliff_base"]);
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 9);
+        for row in rows {
+            let input = &row["input"];
+            let (mut grid, mut scratch) = native_scene(input, cliff);
+            let prior = native_fields(&grid, &scratch);
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut gauss = Gaussian::default();
+            let mut out = TiberiumOutcome::default();
+            let origin = pair(&input["origin"]);
+            place_field(
+                &mut TiberiumCtx {
+                    grid: &mut grid,
+                    scratch: &mut scratch,
+                    ids: &identity,
+                    rng: &mut rng,
+                    gauss: &mut gauss,
+                    regions: &Regions::default(),
+                    waypoints: &[],
+                },
+                &native_args(input),
+                (i32::from(origin.0), i32::from(origin.1)),
+                int(&input["size"]),
+                int(&input["field"]),
+                int(&input["gem"]) != 0,
+                &mut out,
+            );
+            assert_native_row(doc, row, prior, (&grid, &scratch), &out, rng);
+        }
+    }
+
+    /// Whole original `CreateTiberium @ 0x005A23A0` calls from the same
+    /// harness: gem anchors, field-count formula, Gaussian jitter, pass-2
+    /// sizes and every field they place, plus the Gaussian cache left behind.
+    #[test]
+    fn native_create_tiberium_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/tiberium_field.json");
+        let (identity, _) = super::super::cliff_native_tests::physical_tiles();
+        let cliff = int(&doc["scene"]["cliff_base"]);
+        let rows = doc["drivers"].as_array().unwrap();
+        assert_eq!(rows.len(), 4);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let (mut grid, mut scratch) = native_scene(input, cliff);
+            let prior = native_fields(&grid, &scratch);
+            let pairs = |v: &serde_json::Value| -> Vec<(i16, i16)> {
+                v.as_array().unwrap().iter().map(pair).collect()
+            };
+            let mut regions = Regions::default();
+            for (id, region) in input["regions"].as_array().unwrap().iter().enumerate() {
+                let cells = pairs(&region["cells"]);
+                regions.list.push(RmgRegion {
+                    id: id as i32,
+                    level: 0,
+                    active: false,
+                    cell_count: cells.len() as i32,
+                    cells,
+                    start_quota: int(&region["quota"]),
+                    field_slots: (!region["slots"].is_null()).then(|| pairs(&region["slots"])),
+                });
+            }
+            let waypoints: Vec<Option<(i16, i16)>> =
+                pairs(&input["waypoints"]).into_iter().map(Some).collect();
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut gauss = Gaussian::default();
+            let out = run(
+                &mut TiberiumCtx {
+                    grid: &mut grid,
+                    scratch: &mut scratch,
+                    ids: &identity,
+                    rng: &mut rng,
+                    gauss: &mut gauss,
+                    regions: &regions,
+                    waypoints: &waypoints,
+                },
+                &native_args(input),
+            );
+            // A cached variate comes back without a draw.
+            let mut probe = RmgRng::new(0);
+            let value = gauss.next(&mut probe);
+            let cached = probe.next_u32() == RmgRng::new(0).next_u32();
+            assert_eq!(
+                cached,
+                row["gauss_cached"].as_u64().unwrap() != 0,
+                "{context}: cache"
+            );
+            if cached {
+                assert_eq!(
+                    value.to_bits(),
+                    row["gauss_value_bits"].as_u64().unwrap(),
+                    "{context}: cached variate"
+                );
+            }
+            assert_native_row(doc, row, prior, (&grid, &scratch), &out, rng);
+        }
+    }
+
+    /// The pass sizes round toward zero: the jittered size's add (0x005A25FF)
+    /// and the start's mean distance (0x005A2715).
+    #[test]
+    fn field_size_arithmetic_chops() {
+        assert_eq!(jittered_field_size(3000, -1e-13), 2999);
+        let mean = mean_distance(TruncF64::from_f64(1.0), 5);
+        assert_eq!(mean.to_bits(), 0.2f64.to_bits() - 1);
     }
 
     #[test]

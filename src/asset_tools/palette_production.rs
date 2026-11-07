@@ -277,10 +277,6 @@ production_bindings! {
         => "mousepal.pal",
            "Software cursor sprite sheet",
            "render/cursor_atlas.rs:350";
-    Name("mouse.shp"), AnyArchive
-        => "mousepal.pal",
-           "Software cursor sprite sheet, .shp spelling",
-           "render/cursor_atlas.rs:354";
 
     // ------------------------------------------------------------ world anims
     Name("oregath.shp"), AnyArchive
@@ -721,7 +717,7 @@ mod tests {
 //
 // CURSORS — src/render/cursor_atlas.rs
 //   :350  build_software_cursor loads "mousepal.pal" with Palette::from_bytes
-//   :353-354/:359-360  sprite sheet is mouse.sha, falling back to mouse.shp
+//   sprite sheet is mouse.sha only (MouseClass::One_Time 0x005BDF30)
 //
 // WORLD ANIMATION — src/render/sprite_atlas.rs
 //   :1343/:1350  oregath.shp harvest overlay decoded with anim.pal, from_bytes

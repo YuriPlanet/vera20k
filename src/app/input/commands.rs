@@ -135,7 +135,7 @@ fn super_weapon_pointer_target_is_valid(
         .is_some_and(|target| {
             target.category() == crate::map::entities::EntityCategory::Structure
                 && crate::map::houses::is_allied_with(
-                    sim.house_alliances(),
+                    sim.house_alliances().as_map(),
                     sim.interner().resolve(target.owner()),
                     sim.interner().resolve(viewer),
                 )
@@ -771,8 +771,8 @@ pub(crate) fn schedule_command_in_sim(
             let record = sim.encode_destruct_record(owner_id)?;
             CommandEnvelope::synchronized(record, execute_tick)
         }
-        Command::RemovePlayer { house_index } => {
-            let record = sim.encode_remove_player_record(owner_id, house_index)?;
+        Command::RemovePlayer { source } => {
+            let record = sim.encode_remove_player_record(owner_id, source)?;
             CommandEnvelope::synchronized(record, execute_tick)
         }
         Command::Ally { house_index } => {
@@ -786,10 +786,10 @@ pub(crate) fn schedule_command_in_sim(
         payload => CommandEnvelope::new(owner_id, execute_tick, payload),
     };
     let envelope = encode_ordinary_local_command(sim, envelope)?;
-    // PlayerSend6FFDE6 ignores a full OutList's false return. The click is
-    // still handled and its voice/action-line effects are not rolled back.
-    let accepted = sim.issue_local_command(envelope);
-    if sim.session().game_mode().is_network() && !accepted {
+    // Sim-scale deviation: PlayerSend6FFDE6 ignores a full OutList's false
+    // return. Every mode reports the refusal instead, so a full queue fails
+    // closed and can show backpressure rather than dropping the order.
+    if !sim.issue_local_command(envelope) {
         return None;
     }
     Some(execute_tick)
@@ -1009,10 +1009,7 @@ pub(crate) fn schedule_command(state: &mut AppState, owner: &str, payload: Comma
             .match_state
             .sim_runtime
             .as_ref()
-            .is_some_and(|runtime| {
-                runtime.simulation.session().game_mode().is_network()
-                    && runtime.simulation.available_local_command_slots() == 0
-            })
+            .is_some_and(|runtime| runtime.simulation.available_local_command_slots() == 0)
     {
         super::messages::post_command_backpressure(state);
     }
@@ -1023,10 +1020,7 @@ pub(super) fn selection_input_has_capacity(state: &mut AppState, count: usize) -
         .match_state
         .sim_runtime
         .as_ref()
-        .is_some_and(|runtime| {
-            runtime.simulation.session().game_mode().is_network()
-                && count > runtime.simulation.available_local_command_slots()
-        });
+        .is_some_and(|runtime| count > runtime.simulation.available_local_command_slots());
     if blocked {
         super::messages::post_command_backpressure(state);
     }
@@ -1088,7 +1082,7 @@ mod tests {
     use crate::sim::world::Simulation;
 
     #[test]
-    fn repair_click_publishes_a_raw_target_and_still_handles_a_full_outlist() {
+    fn repair_click_publishes_a_raw_target_and_is_refused_by_a_full_queue() {
         let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
             return;
         };
@@ -1119,17 +1113,15 @@ mod tests {
         );
         assert_eq!(&record.payload()[..4], &(building as i32).to_le_bytes());
         assert_eq!(record.payload()[4], 0x34);
-        for _ in 1..128 {
-            assert!(sim.issue_local_command(CommandEnvelope::synchronized(record.clone(), 41)));
-        }
+        let free = sim.available_local_command_slots();
+        let repair = CommandEnvelope::synchronized(record, 41);
+        assert!(sim.issue_local_commands(std::iter::repeat_n(repair, free)));
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Americans", command),
-            Some(41)
+            None,
+            "a full queue refuses the click instead of dropping it"
         );
-        assert_eq!(
-            sim.network_command_queues().local_records().unwrap().len(),
-            128
-        );
+        assert_eq!(sim.pending_local_command_count(), free + 1);
         assert_eq!(sim.state_hash(), before);
     }
 
@@ -1472,12 +1464,12 @@ mod tests {
     }
 
     #[test]
-    fn local_outlist_overflow_keeps_click_success_and_local_options() {
+    fn full_local_queue_refuses_clicks_but_keeps_local_options() {
         let (mut sim, _, _) = two_human_sim();
-        // TryAppend6521C0 admits 128 events globally, before any payload
-        // receiver runs. A stale Stop still occupies its slot. PlayerSend
-        // 6FFDE6..6FFDEE ignores a full OutList's refusal and returns true.
-        for _ in 0..127 {
+        // Sim-scale deviation: TryAppend6521C0 admits 128 events and PlayerSend
+        // 6FFDE6..6FFDEE ignores a full OutList's refusal. VERA's larger queue
+        // refuses the click instead. A stale Stop still occupies its slot.
+        for _ in 1..sim.available_local_command_slots() {
             assert_eq!(
                 schedule_command_in_sim(&mut sim, "Local", Command::Stop { entity_id: 42 }),
                 Some(41)
@@ -1489,8 +1481,8 @@ mod tests {
         );
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),
-            Some(41),
-            "overflow does not turn ordinary input feedback into a refusal"
+            None,
+            "a full queue refuses the click instead of dropping it"
         );
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Local", Command::SetGameSpeed { speed: 2 }),
@@ -1503,13 +1495,13 @@ mod tests {
         // batch cannot free the event queue's occupied slots.
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),
-            Some(41)
+            None
         );
         sim.advance_tick(&due, None, None, None, 33);
         assert_eq!(
             sim.session().game_options().game_speed,
             4,
-            "local Options runs first, then slot 128; the peer's 129th event was dropped"
+            "local Options runs first, then the last slot; the refused peer event never ran"
         );
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Peer", Command::LiveGameSpeed { speed: 6 }),
@@ -1537,7 +1529,10 @@ mod tests {
         assert!(run_due(&mut sim), "a remote EXIT does not end the frame");
         assert!(!sim.quit_requested());
         assert_eq!(sim.take_executed_exit_owner(), None);
-        assert_eq!(sim.take_departed_owners(), [peer]);
+        assert_eq!(
+            sim.take_departed_senders(),
+            [sim.houses().index_of(peer).unwrap() as i8]
+        );
         assert!(sim.houses()[&peer].left_game());
         // 0x005E2BA0: the local human is undefeated, so no Flag_To_Die.
         assert!(!sim.houses()[&peer].is_to_die());
@@ -1548,7 +1543,7 @@ mod tests {
         assert!(!run_due(&mut sim));
         assert!(sim.quit_requested());
         assert_eq!(sim.take_executed_exit_owner(), Some(local));
-        assert!(sim.take_departed_owners().is_empty());
+        assert!(sim.take_departed_senders().is_empty());
     }
 
     #[test]
@@ -1572,12 +1567,8 @@ mod tests {
         sim.houses_mut_for_test()
             .register(HouseState::new(ai, 0, None, false, 0, 10));
         for index in [1, 2] {
-            schedule_command_in_sim(
-                &mut sim,
-                "Local",
-                Command::RemovePlayer { house_index: index },
-            )
-            .unwrap();
+            schedule_command_in_sim(&mut sim, "Local", Command::RemovePlayer { source: index })
+                .unwrap();
         }
         let record = sim
             .encode_remove_player_record(sim.interner().get("Local").unwrap(), 1)
@@ -1601,8 +1592,7 @@ mod tests {
             .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Wol);
         sim.install_network_timing(10);
         sim.install_wol_start(1, Default::default());
-        schedule_command_in_sim(&mut sim, "Local", Command::RemovePlayer { house_index: 2 })
-            .unwrap();
+        schedule_command_in_sim(&mut sim, "Local", Command::RemovePlayer { source: 2 }).unwrap();
         run_due(&mut sim);
         assert!(sim.houses()[&ai].is_to_die());
     }

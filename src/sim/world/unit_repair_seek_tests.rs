@@ -497,10 +497,12 @@ fn map_repair_waits_without_nav_and_a_directed_event_completes_service() {
     // not stop the binary-frame clock before the service timers finish.
     spawn(&mut sim, &rules, "NAPOWR", "Russians", 40, 40);
     let depot = spawn(&mut sim, &rules, "GADEPT", "Americans", 24, 20);
-    let placements =
-        crate::map::entities::parse_map_entities(&crate::rules::ini_parser::IniFile::from_str(
+    let placements = crate::map::entities::parse_map_entities(
+        &crate::rules::ini_parser::IniFile::from_str(
             "[Units]\n0=Americans,MTNK,128,14,20,0,Repair,None,0,-1,0,-1,1,1\n",
-        ));
+        ),
+        4,
+    );
     assert_eq!(placements[0].mission, Some(MissionType::Repair));
     assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 1);
     let tank = sim

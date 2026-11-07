@@ -448,11 +448,13 @@ fn press_allies_box(state: &mut AppState, row: usize) {
 /// `Ally 0x00731840`: queue EVENT_ALLY toward `house` for the player's
 /// House. Gates (`0x00731840..0x00731877`): a nonzero GameMode, the
 /// Scenario's FixedAlliance bit (`0x400`) clear, AlliesAllowed and
-/// AllyChangeAllowed. FixedAlliance is set only by a WOL clan game's
+/// AllyChangeAllowed. VERA's room adds its In-game Allying checkbox
+/// (`GameOptions::ally_change_allowed`) beside the rules' AllyChangeAllowed.
+/// FixedAlliance is set only by a WOL clan game's
 /// Apply_Squad_Alliances (`0x0069B170`); `SpecialClass::Init 0x006B8AE0`
 /// clears it.
-/// RESIDUAL: a full OutList (128 records, `[0xA802C8]`) drops the event
-/// natively; VERA's queue has no such cap.
+/// Sim-scale deviation: a full OutList (128 records, `[0xA802C8]`) drops the
+/// event natively; VERA's far larger queue refuses the click instead.
 pub(crate) fn ally(state: &mut AppState, house: InternedId) {
     let Some(local) = crate::app::input::commands::preferred_local_owner_name(state) else {
         return;
@@ -466,6 +468,7 @@ pub(crate) fn ally(state: &mut AppState, house: InternedId) {
         || sim.session().fixed_alliance()
         || !rules.general.allies_allowed
         || !rules.general.ally_change_allowed
+        || !sim.session().game_options().ally_change_allowed
     {
         return;
     }

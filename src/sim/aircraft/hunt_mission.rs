@@ -145,14 +145,15 @@ struct WorldHunt<'a> {
 }
 
 impl HuntHost for WorldHunt<'_> {
-    type Threat = u64;
+    /// An object, or a wall Cell from the ring walk (a Foot-coerced mask).
+    type Threat = TargetKind;
 
     fn target(&mut self) -> bool {
         let entity = self.sim.substrate.entities.get(self.id).unwrap();
         crate::sim::combat::target_present(entity.attack_target.target(), self.sim)
     }
 
-    fn greatest_threat(&mut self, mask: u32) -> Option<u64> {
+    fn greatest_threat(&mut self, mask: u32) -> Option<TargetKind> {
         let mission = match mask {
             0 => ScanMission::Hunt,
             mask => ScanMission::Quarry {
@@ -169,11 +170,11 @@ impl HuntHost for WorldHunt<'_> {
         )
     }
 
-    fn assign_target(&mut self, threat: Option<u64>) {
+    fn assign_target(&mut self, threat: Option<TargetKind>) {
         self.sim
             .assign_target_represented(
                 self.id,
-                threat.map(TargetKind::Entity),
+                threat,
                 self.rules,
                 None,
                 crate::sim::world::FrameEffects::default(),

@@ -204,9 +204,6 @@ fn build_rules_with_native_reader_context(unread_weapons: bool, context: &str) -
     let mut rules =
         RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art).unwrap()).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     assert_eq!(
         rules.object("MTNK").unwrap().strength,
         signed(&native["inputs"]["strength"])
@@ -1001,7 +998,7 @@ fn assert_recorded_scores(fixture: &SuppliedFootFixture, rules: &RuleSet, row: &
                 rules,
                 &fixture.sim.interner,
                 None,
-                Some(fixture.sim.house_alliances.as_map()),
+                Some(&fixture.sim.house_alliances),
                 coefficients,
                 ThreatReference::Coords(xyz(&score["anchor_xyz"])),
                 None,
@@ -1051,13 +1048,16 @@ fn original_concrete_greatest_threat_matches_winner_latch_and_three_rng_streams(
         assert_eq!(mask.literal_mask(), signed(&scan["mask"]) as u32);
         // Some([0,0,0]) remains the actual native NullCoord argument, not
         // None (which means this adapter should choose its own actor XYZ).
-        let actual = fixture.sim.greatest_threat_represented(
-            &rules,
-            None,
-            fixture.actor,
-            mask,
-            Some(xyz(&scan["point_xyz"])),
-        );
+        let actual = fixture
+            .sim
+            .greatest_threat_represented(
+                &rules,
+                None,
+                fixture.actor,
+                mask,
+                Some(xyz(&scan["point_xyz"])),
+            )
+            .and_then(crate::sim::combat::TargetKind::object_id);
         assert_eq!(actual, expected, "{name}: original class-dispatched winner");
         let actor = fixture.sim.substrate.entities.get(fixture.actor).unwrap();
         assert_eq!(
@@ -1907,13 +1907,16 @@ fn original_full_retail_rescue_matches_native_scan_hit_and_empty_prefix() {
                 .unwrap()
                 .foot_retarget_after_stop
                 .clear_for_rescue();
-            let actual = fixture.sim.greatest_threat_represented(
-                &rules,
-                None,
-                fixture.actor,
-                ScanMission::Hunt,
-                Some(xyz(&scan["anchor_xyz"])),
-            );
+            let actual = fixture
+                .sim
+                .greatest_threat_represented(
+                    &rules,
+                    None,
+                    fixture.actor,
+                    ScanMission::Hunt,
+                    Some(xyz(&scan["anchor_xyz"])),
+                )
+                .and_then(crate::sim::combat::TargetKind::object_id);
             assert_eq!(actual, None, "{name}: original concrete scan return");
             assert_foot_projection(&fixture, row);
             assert_destination_projection(&fixture, row);

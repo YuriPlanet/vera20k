@@ -74,6 +74,7 @@ fn laser(row: &Value) -> Option<LaserDraw> {
             color: LaserDrawColor::House(point::<3>(&laser["inner"]).map(|value| value as u8)),
             age: integer(&laser["age"]),
             duration: integer(&laser["duration"]),
+            fade_start: crate::util::native_x87::NativeF32Bits::ONE,
             fade_end: crate::util::native_x87::NativeF32Bits::from_bits(
                 laser["fade_end_bits"].as_u64().unwrap() as u32,
             ),
@@ -375,6 +376,13 @@ fn production_electric_bolt_pixels_match_native_with_bounded_edge_residuals() {
                     let (lines, _, _, main) = visit_lines(row, index);
                     assert_eq!(main, visit["rng_after"]["main"].as_str().unwrap());
                     let trails = trails(row, visit);
+                    terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |[x, y]| {
+                        match input["alpha"].as_str() {
+                            Some("mixed") => [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize],
+                            Some("black") => 0,
+                            _ => 127,
+                        }
+                    });
                     terrain.begin_surface_lines();
                     let prepared_lines = terrain.prepare_surface_lines(
                         &gpu.device,
@@ -389,11 +397,6 @@ fn production_electric_bolt_pixels_match_native_with_bounded_edge_residuals() {
                         &[],
                         viewport(input),
                         |_| true,
-                        |[x, y]| match input["alpha"].as_str() {
-                            Some("mixed") => [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize],
-                            Some("black") => 0,
-                            _ => 127,
-                        },
                     );
                     let mut encoder = gpu.device.create_command_encoder(&Default::default());
                     if input["z"].is_array() {

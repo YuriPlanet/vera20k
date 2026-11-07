@@ -12,15 +12,19 @@ fn inspection_lists_required_failures_and_keeps_later_readable_archives() {
     let (assets, issues) =
         AssetManager::inspect_install(directory.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
     // Missing MOVMD03 falls through to MOVIES03 in mount_startup_movie_media;
-    // the required failure names that final attempted fallback archive.
+    // the optional issue names that final attempted fallback archive.
     assert_eq!(
         issues
             .iter()
-            .map(|issue| issue.name.as_str())
+            .map(|issue| (issue.name.as_str(), issue.required))
             .collect::<Vec<_>>(),
-        ["cachemd.mix", "cameo.mix", "mapsmd03.mix", "movies03.mix"]
+        [
+            ("cachemd.mix", true),
+            ("cameo.mix", true),
+            ("mapsmd03.mix", false),
+            ("movies03.mix", false)
+        ]
     );
-    assert!(issues.iter().all(|issue| issue.required));
     assert!(issues[1].detail.contains("Invalid MIX archive"));
     assert!(assets.archive("multimd.mix").is_some());
     assert!(matches!(
@@ -28,6 +32,7 @@ fn inspection_lists_required_failures_and_keeps_later_readable_archives() {
         Err(AssetError::AssetNotFound { name }) if name == "cachemd.mix"
     ));
 
+    // Only the test-only FailFast policy still refuses missing media.
     let mut manager = AssetManager::from_ini_probe_root(directory.path()).unwrap();
     assert!(
         manager
@@ -38,6 +43,30 @@ fn inspection_lists_required_failures_and_keeps_later_readable_archives() {
         manager
             .mount_native_movie_media(MediaArchiveMode::STOCK_DIGITAL)
             .is_err()
+    );
+}
+
+#[test]
+fn startup_continues_without_map_and_movie_media() {
+    let directory = audio_test_install("no-media");
+    for name in ["mapsmd03.mix", "multimd.mix", "movmd03.mix"] {
+        std::fs::remove_file(directory.path().join(name)).unwrap();
+    }
+    assert!(AssetManager::new(directory.path(), MediaArchiveMode::STOCK_DIGITAL).is_ok());
+    assert!(AssetManager::new(directory.path(), MediaArchiveMode::CdWildcard).is_ok());
+
+    let (_, issues) =
+        AssetManager::inspect_install(directory.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+    assert_eq!(
+        issues
+            .iter()
+            .map(|issue| (issue.name.as_str(), issue.required))
+            .collect::<Vec<_>>(),
+        [
+            ("mapsmd03.mix", false),
+            ("multimd.mix", false),
+            ("movies03.mix", false)
+        ]
     );
 }
 
@@ -98,9 +127,9 @@ fn inspection_reports_optional_corruption_and_both_cd_media_boundaries() {
             .map(|issue| (issue.name.as_str(), issue.required))
             .collect::<Vec<_>>(),
         [
-            ("MAPSMD*.MIX", true),
+            ("MAPSMD*.MIX", false),
             ("thememd.mix", false),
-            ("MOVMD*.MIX", true)
+            ("MOVMD*.MIX", false)
         ]
     );
 }

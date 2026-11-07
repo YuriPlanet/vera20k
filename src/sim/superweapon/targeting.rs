@@ -5,8 +5,6 @@
 #[cfg(feature = "ares")]
 use crate::map::entities::EntityCategory;
 #[cfg(feature = "ares")]
-use crate::map::houses::is_allied_with;
-#[cfg(feature = "ares")]
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_targeting::TargetReject;
@@ -121,11 +119,9 @@ pub(super) fn prepare(
         let designator = entity.owner() == owner
             && (influence.any_designator || matches(&influence.designators));
         let inhibitor = entity.owner() != owner
-            && !is_allied_with(
-                sim.house_alliances.as_map(),
-                sim.interner.resolve(owner),
-                sim.interner.resolve(entity.owner()),
-            )
+            && !sim
+                .house_alliances
+                .is_allied(&sim.interner, owner, entity.owner())
             && (influence.any_inhibitor || matches(&influence.inhibitors))
             && (entity.category() != EntityCategory::Structure
                 || sim.building_operational_state(entity.stable_id(), rules) == Some(true));
@@ -288,7 +284,10 @@ pub(super) fn check_with_data(
             relation: sim.ares_house_relation(owner, entity.owner()),
         })
         .collect();
-    let shrouded = (!policy.fire_into_shroud()).then(|| {
+    // Ares tests `SW.FireIntoShroud=` only in the player's cursor,
+    // `SWTypeExt::ExtData::WhatAction` (Ares.dll `0x10033EB0`), on the
+    // client's own map; the AI's `CanFireAt` path has no shroud test.
+    let shrouded = (!automatic && !policy.fire_into_shroud()).then(|| {
         crate::sim::vision::cell_is_shrouded(
             &sim.fog,
             &NativeCellQuery::isolated(terrain),
@@ -362,11 +361,7 @@ impl Simulation {
     pub(crate) fn ares_house_relation(&self, owner: InternedId, other: InternedId) -> HouseMask {
         if owner == other {
             HouseMask::OWNER
-        } else if is_allied_with(
-            self.house_alliances.as_map(),
-            self.interner.resolve(owner),
-            self.interner.resolve(other),
-        ) {
+        } else if self.house_alliances.is_allied(&self.interner, owner, other) {
             HouseMask::ALLIES
         } else {
             HouseMask::ENEMIES

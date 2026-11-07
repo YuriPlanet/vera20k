@@ -153,7 +153,7 @@ impl Simulation {
         };
         if target.category() != EntityCategory::Unit
             || crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(self.house_alliances.as_map()),
+                Some(&self.house_alliances),
                 &self.interner,
                 actor.owner(),
                 target.owner(),
@@ -389,11 +389,10 @@ impl Simulation {
         }
         let target = self.substrate.entities.get(target_id)?;
         let target_type = self.object_type(target.type_ref(), rules)?;
-        if !crate::map::houses::is_allied_with(
-            self.house_alliances.as_map(),
-            self.interner.resolve(actor.owner()),
-            self.interner.resolve(target.owner()),
-        ) {
+        if !self
+            .house_alliances
+            .is_allied(&self.interner, actor.owner(), target.owner())
+        {
             return Some(UnitRepairAction::Move);
         }
         // The target's vt+80 (`0x0073FDBD`); every GameEntity is a Techno
@@ -470,7 +469,7 @@ impl Simulation {
         if actor.category() != EntityCategory::Unit
             || !self.house_is_human_player(actor.owner())
             || !combat::combat_weapon::is_ally_by_object(
-                Some(self.house_alliances.as_map()),
+                Some(&self.house_alliances),
                 &self.interner,
                 target.owner(),
                 actor.owner(),
@@ -626,7 +625,7 @@ impl Simulation {
             _ => return None,
         };
         if !combat::combat_weapon::is_ally_by_object(
-            Some(self.house_alliances.as_map()),
+            Some(&self.house_alliances),
             &self.interner,
             actor.owner(),
             target.owner(),
@@ -738,12 +737,22 @@ impl Simulation {
                     crate::sim::movement::ground_pose::position_world_coord(&entity.position);
                 let land = cells.land_type(cells.lookup_world(coord.x, coord.y));
                 land != i32::from(crate::rules::terrain_rules::LandType::Water.as_index())
-                    && !u8::try_from(land)
+                    && u8::try_from(land)
                         .ok()
                         .and_then(|land| rules.terrain_rules.semantics_for_land_type(land))
                         .is_some_and(|row| {
+                            // UnitWhatAction7400A1..7400BE: first passenger,
+                            // strictly below the native double1% threshold.
                             row.cost_for_speed_type(passenger.speed_type)
-                                .is_none_or(|cost| cost != 0)
+                                .is_some_and(|cost| {
+                                    matches!(
+                                        crate::rules::terrain_rules::compare_speed_to_one_percent(
+                                            cost
+                                        ),
+                                        crate::util::native_x87::MaskedX87Ordering::Less
+                                            | crate::util::native_x87::MaskedX87Ordering::Unordered
+                                    )
+                                })
                         })
             });
         stranded
@@ -762,12 +771,24 @@ impl Simulation {
         houses: &crate::sim::houses::Houses,
         owner: InternedId,
     ) -> bool {
-        // House50B6F0: nonzero session mode compares exactly to LocalPlayer;
+        //50B716 loads A83D4C, the persisted native current-house input.
+        //Presentation viewer binding cannot change this receiver's result.
+        Self::is_human_player_on(session, houses, owner, session.current_house())
+    }
+
+    /// [`Self::is_human_player`] asked on the client whose `PlayerPtr`
+    /// (`[0x00A83D4C]`, read at `0x0050B716`) is `player`: a represented
+    /// network client's own house, or the current house.
+    pub(crate) fn is_human_player_on(
+        session: &crate::sim::scenario_session::ScenarioSession,
+        houses: &crate::sim::houses::Houses,
+        owner: InternedId,
+        player: Option<InternedId>,
+    ) -> bool {
+        // House50B6F0: nonzero session mode compares exactly to PlayerPtr;
         // mode zero uses the two native human/control flags.
         if session.game_mode_nonzero() {
-            //50B716 loads A83D4C, the persisted native current-house input.
-            //Presentation viewer binding cannot change this receiver's result.
-            session.current_house() == Some(owner)
+            player == Some(owner)
         } else {
             houses
                 .get(&owner)
@@ -957,11 +978,9 @@ impl Simulation {
             return None;
         }
         if !object.bridge_repair_hut {
-            let allied = crate::map::houses::is_allied_with(
-                self.house_alliances.as_map(),
-                self.interner.resolve(actor.owner()),
-                self.interner.resolve(target.owner()),
-            );
+            let allied =
+                self.house_alliances
+                    .is_allied(&self.interner, actor.owner(), target.owner());
             let passive_occupation = self
                 .houses
                 .get(&target.owner())
@@ -1060,11 +1079,9 @@ impl Simulation {
             return false;
         };
         infiltrator_admits(infantry, building)
-            && !crate::map::houses::is_allied_with(
-                self.house_alliances.as_map(),
-                self.interner.resolve(actor.owner()),
-                self.interner.resolve(target.owner()),
-            )
+            && !self
+                .house_alliances
+                .is_allied(&self.interner, actor.owner(), target.owner())
     }
 
     /// `InfantryClass::Assign_Target`'s infiltration arm
@@ -1361,11 +1378,9 @@ impl Simulation {
             return Ok(BuildingEntryResult::default());
         };
         if !object.bridge_repair_hut {
-            let allied = crate::map::houses::is_allied_with(
-                self.house_alliances.as_map(),
-                self.interner.resolve(owner),
-                self.interner.resolve(building.owner()),
-            );
+            let allied = self
+                .house_alliances
+                .is_allied(&self.interner, owner, building.owner());
             //519D6E's passive-occupation repair branch has no warp gate.
             let repair = allied
                 || (object.can_be_occupied
@@ -1377,10 +1392,12 @@ impl Simulation {
             let refused_capture = building.mission.current().known() == Some(MissionType::Selling)
                 || building.is_warped_out();
             let capturable = object.capturable;
-            let native_type_index = rules
+            let native_type_index = self
+                .interner
                 .type_array_index(
+                    engineer.type_ref(),
                     crate::rules::object_type::ObjectCategory::Infantry,
-                    self.interner.resolve(engineer.type_ref()),
+                    rules,
                 )
                 .unwrap_or(-1);
             //519D82..519EA5: with MultiEngineer on, a hostile building above

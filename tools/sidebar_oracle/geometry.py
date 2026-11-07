@@ -3,7 +3,7 @@ from pathlib import Path
 import struct
 import sys
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32
-from unicorn.x86_const import UC_X86_REG_ECX, UC_X86_REG_ESP
+from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_ESP
 from tools.native_oracle import load_image, run_checked, finish_vectors, provenance, STACK_BASE, STACK_SIZE, SCRATCH, SCRATCH_SIZE, RET_MAGIC
 
 def put32(u,address,value):u.mem_write(address,struct.pack('<I',value&0xffffffff))
@@ -32,7 +32,9 @@ def generate():
   for side in [0,1,2]:
    u=machine();put32(u,0xA8B230,SCRATCH)
    view=initialize_layout(u,w,h,side,SCRATCH+0x4000)
-   cases.append(dict(screen=[w,h],side=side,tactical=view,body=read(u,0x886F90,4),globals=read(u,0xB0B4DC,15)))
+   # GetVisibleSlotCount6AC430: the select-button count Activate6A8330 uses.
+   call(u,0x6AC430);slots=u.reg_read(UC_X86_REG_EAX)
+   cases.append(dict(screen=[w,h],side=side,tactical=view,body=read(u,0x886F90,4),globals=read(u,0xB0B4DC,15),visible_slots=slots))
  gadgets=[]
  for w,h,over_w,over_h in [(28,27,0,0),(32,28,0,0),(64,31,0,0),(52,32,0,0),(46,25,0,0),(46,27,0,0),(72,18,0,0),(168,110,7,0),(168,110,0,9),(-1,-2,0,0)]:
   u=machine();u.mem_write(SCRATCH+256,struct.pack('<HhhH',0,w,h,1))
@@ -117,6 +119,6 @@ if __name__=='__main__' and '--tab-flash' in sys.argv:
   argv=[arg for arg in sys.argv[1:] if arg!='--tab-flash'])
 elif __name__=='__main__':
  finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=lambda:provenance(
-  scope='21 ordinary right-sidebar layouts, 10 shape-gadget header/override cases and three four-tab initialization controls; original native instructions only.',
+  scope='21 ordinary right-sidebar layouts with their visible slot counts, 10 shape-gadget header/override cases and three four-tab initialization controls; original native instructions only.',
   assumptions=['Normal sidebar-right; editor flag clear; scenario side0/1/2.', 'Set_View_Dimensions copies native viewport before InitSurface; rectangle initialization precedes constants.', 'Gadgets have no previously-owned SHP to free. Synthetic signed SHP canvas headers are explicit inputs.', 'Cameo60x48 positions are separate from shape gadgets; original6A82FD/8304 and6ABF6E..BFA7 establish their fixed hit dimensions.'],
-  substitutions=[],entry_points={'screen':0x72AD20,'options_viewport':0x72AD90,'constants':0x6A5090,'layout':0x6A5130,'gadget_shape':0x69DE00,'tab_init_loop':0x6A5411,'tab_gadget_ctor':0x69DCF0,'gadget_disable':0x4E1460}))
+  substitutions=[],entry_points={'screen':0x72AD20,'options_viewport':0x72AD90,'constants':0x6A5090,'layout':0x6A5130,'visible_slots':0x6AC430,'gadget_shape':0x69DE00,'tab_init_loop':0x6A5411,'tab_gadget_ctor':0x69DCF0,'gadget_disable':0x4E1460}))

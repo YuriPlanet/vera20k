@@ -7,6 +7,9 @@
 //!
 //! Windows shows `MessageBoxW`, macOS an `NSAlert` and Linux `zenity` or
 //! `kdialog`, whichever is installed; without either, stderr is all there is.
+//!
+//! Their words come from VERA's language files (`crate::i18n`), in the
+//! language `app::initialize` chose; a failure before that reads in English.
 
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -43,11 +46,8 @@ pub fn report_panic(info: &std::panic::PanicHookInfo<'_>) {
         what.push('…');
     }
     show_fatal(
-        "VERA20k has stopped",
-        &format!(
-            "VERA20k ran into an internal error and has to close.\n\n{what}\n\n{}",
-            log_note()
-        ),
+        &crate::i18n::tr("VERA:CrashTitle"),
+        &crate::i18n::tr_fill("VERA:CrashText", &[("panic", &what), ("log", &log_note())]),
     );
 }
 
@@ -58,37 +58,36 @@ pub(crate) fn report_startup_failure(error: &anyhow::Error) {
         .is_some()
     {
         show_fatal(
-            "VERA20k could not start its graphics",
-            &format!(
-                "VERA20k found no graphics card and driver it can use.\n\n{GRAPHICS_ADVICE}\n\n\
-                 {}\n\nDetails: {error:#}",
-                log_note()
+            &crate::i18n::tr("VERA:GraphicsFailedTitle"),
+            &crate::i18n::tr_fill(
+                "VERA:GraphicsFailedText",
+                &[
+                    ("advice", &crate::i18n::tr(GRAPHICS_ADVICE)),
+                    ("log", &log_note()),
+                    ("error", &format!("{error:#}")),
+                ],
             ),
         );
     } else {
         show_fatal(
-            "VERA20k could not start",
+            &crate::i18n::tr("VERA:StartFailedTitle"),
             &format!("{error:#}\n\n{}", log_note()),
         );
     }
 }
 
+/// What the graphics failure advises on this system, as its text's label.
 #[cfg(target_os = "windows")]
-const GRAPHICS_ADVICE: &str = "It needs DirectX 12 or Vulkan. Update your graphics driver from \
-     NVIDIA, AMD or Intel. Virtual machines and remote desktop sessions often have no such driver.";
+const GRAPHICS_ADVICE: &str = "VERA:GraphicsAdviceWindows";
 #[cfg(target_os = "macos")]
-const GRAPHICS_ADVICE: &str =
-    "It needs Metal graphics. Update macOS; virtual machines often have no Metal support.";
+const GRAPHICS_ADVICE: &str = "VERA:GraphicsAdviceMac";
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-const GRAPHICS_ADVICE: &str = "It needs a Vulkan driver. Install your distribution's Vulkan \
-     packages (for example mesa-vulkan-drivers on Debian and Ubuntu, vulkan-radeon or \
-     vulkan-intel on Arch, or NVIDIA's own driver) and update your graphics driver. Virtual \
-     machines often have no Vulkan support.";
+const GRAPHICS_ADVICE: &str = "VERA:GraphicsAdviceLinux";
 
 fn log_note() -> String {
     match crate::util::logging::log_file() {
-        Some(path) => format!("The log file has the details:\n{}", path.display()),
-        None => "No log file could be written.".to_owned(),
+        Some(path) => crate::i18n::tr_fill("VERA:LogFileDetails", &[("path", &path.display())]),
+        None => crate::i18n::tr("VERA:NoLogFile"),
     }
 }
 

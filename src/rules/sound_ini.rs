@@ -332,6 +332,96 @@ pub struct SoundRegistry {
     defaults: SoundDefaults,
 }
 
+/// Fixed Voc bindings retained by Rules across scenario and RMG resets.
+/// Names represent resolved catalog IDs. Ctor665946/66594C/6659AC and
+///6659B2/6659C4 store -1. YuriMindControl+214 is uninitialized (66594C/52
+/// skip it): deterministic silence until a successful binding is a safety
+/// deviation for invalid custom inputs, not a claimed native default.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub(crate) struct GlobalSoundReferences {
+    /// RulesCtor665886/66588C: +18C/+190 start at -1.
+    gui_build: Option<String>,
+    gui_tab: Option<String>,
+    bomb_ticking: Option<String>,
+    bomb_attach: Option<String>,
+    psychic_reveal: Option<String>,
+    mind_control: Option<String>,
+    mind_cleared: Option<String>,
+    mastermind_overload: Option<String>,
+    /// RulesCtor666009: +6EC starts at -1.
+    building_slam: Option<String>,
+}
+
+impl GlobalSoundReferences {
+    pub(crate) fn ui_sounds(&self) -> [Option<&str>; 3] {
+        [
+            self.gui_build.as_deref(),
+            self.gui_tab.as_deref(),
+            self.building_slam.as_deref(),
+        ]
+    }
+
+    pub(crate) fn bomb_ticking(&self) -> Option<&str> {
+        self.bomb_ticking.as_deref()
+    }
+
+    pub(crate) fn bomb_attach(&self) -> Option<&str> {
+        self.bomb_attach.as_deref()
+    }
+
+    pub(crate) fn psychic_reveal(&self) -> Option<&str> {
+        self.psychic_reveal.as_deref()
+    }
+
+    pub(crate) fn mind_control(&self) -> Option<&str> {
+        self.mind_control.as_deref()
+    }
+
+    pub(crate) fn mind_cleared(&self) -> Option<&str> {
+        self.mind_cleared.as_deref()
+    }
+
+    pub(crate) fn mastermind_overload(&self) -> Option<&str> {
+        self.mastermind_overload.as_deref()
+    }
+
+    pub(crate) fn read_pass(&mut self, pass: &IniFile, sounds: &SoundRegistry) {
+        let Some(section) = pass.section("AudioVisual") else {
+            return;
+        };
+        // ReadAudioVisual6693AC..66942C: each current index survives an
+        // absent, empty or unknown ReadString128 / VocFind7514D0 result.
+        self.gui_build =
+            sounds.read_rules_reference(section, "GUIBuildSound", self.gui_build.take());
+        self.gui_tab = sounds.read_rules_reference(section, "GUITabSound", self.gui_tab.take());
+        // ReadAudioVisual669A60..669AD8 /669FC3..669FF0: current-ID defaults,
+        // ReadString128 and fixed VocFind7514D0. A registered none is a cue.
+        self.bomb_ticking =
+            sounds.read_rules_reference(section, "BombTickingSound", self.bomb_ticking.take());
+        self.bomb_attach =
+            sounds.read_rules_reference(section, "BombAttachSound", self.bomb_attach.take());
+        // ReadAudioVisual669AE3..669B19 precedes PsychicReveal.
+        self.mind_control =
+            sounds.read_rules_reference(section, "YuriMindControlSound", self.mind_control.take());
+        self.psychic_reveal = sounds.read_rules_reference(
+            section,
+            "PsychicRevealActivateSound",
+            self.psychic_reveal.take(),
+        );
+        // ReadAudioVisual669FFC..66A03B /66A0C1..66A100, in native order.
+        self.mastermind_overload = sounds.read_rules_reference(
+            section,
+            "MasterMindOverloadDeathSound",
+            self.mastermind_overload.take(),
+        );
+        self.mind_cleared =
+            sounds.read_rules_reference(section, "MindClearedSound", self.mind_cleared.take());
+        // ReadAudioVisual66AA93..66AAC9, after the earlier AV sound reads.
+        self.building_slam =
+            sounds.read_rules_reference(section, "BuildingSlam", self.building_slam.take());
+    }
+}
+
 impl SoundRegistry {
     /// Parse the selected SOUNDMD.INI into the process Voc registry.
     ///
@@ -441,8 +531,13 @@ impl SoundRegistry {
     /// Voc FindIndex7514D0. Missing, empty and unknown names retain the
     /// previous signed ID (constructor -1); later rules passes do not erase
     /// an earlier valid selection. Names here represent that resolved ID.
-    pub(crate) fn read_rules_reference(&self, section: &IniSection, key: &str) -> Option<String> {
-        section.read_string_with(key, 0x80, None, |current, name| {
+    pub(crate) fn read_rules_reference(
+        &self,
+        section: &IniSection,
+        key: &str,
+        current: Option<String>,
+    ) -> Option<String> {
+        section.read_string_with(key, 0x80, current, |current, name| {
             self.get(name).map(|entry| entry.id.clone()).or(current)
         })
     }

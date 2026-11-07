@@ -10,8 +10,12 @@ use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::list::{ListMetrics, ListScrollInteraction, ShellListGeometry};
 use crate::ui::shell::modal::WolVerifyLayout;
 use crate::ui::wol_shell::WolMessageBox;
-use std::ops::Range;
 use crate::util::time::Instant;
+use std::ops::Range;
+
+/// VERA's room shows `0x130` only once the connection check has taken this
+/// long, so a quick check does not flash a box before the loading screen.
+pub const MODERN_SHOW_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// `0x0084A1F0`: node `i`'s checkbox, stacked by `i` in the template.
 pub const BOXES: [u16; 8] = [0x769, 0x761, 0x764, 0x762, 0x765, 0x768, 0x766, 0x767];
@@ -32,6 +36,7 @@ pub struct WolVerifyDialog {
     pub mismatch: Option<WolMessageBox>,
     /// The mismatch box's OK ([`crate::ui::wol_shell::BOX_OK`]).
     pub ok: ShellButtonInteraction<u16>,
+    opened: Instant,
 }
 
 impl WolVerifyDialog {
@@ -48,7 +53,17 @@ impl WolVerifyDialog {
             scroll: ListScrollInteraction::default(),
             mismatch: None,
             ok: ShellButtonInteraction::default(),
+            opened: Instant::now(),
         }
+    }
+
+    /// Whether the dialog paints at `now`: always in the native dialogs,
+    /// and in VERA's room (`modern`) after [`MODERN_SHOW_DELAY`] or with
+    /// its mismatch box up.
+    pub fn shown(&self, modern: bool, now: Instant) -> bool {
+        !modern
+            || self.mismatch.is_some()
+            || now.saturating_duration_since(self.opened) >= MODERN_SHOW_DELAY
     }
 
     /// The eight resource rows of Verify793280 remain exact for ordinary
@@ -173,6 +188,15 @@ impl WolVerifyDialog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_vera_room_shows_the_check_only_once_it_takes_a_second() {
+        let dialog = WolVerifyDialog::open(vec!["Tester".into(), "Natasha".into()]);
+        let opened = dialog.opened;
+        assert!(dialog.shown(false, opened));
+        assert!(!dialog.shown(true, opened + std::time::Duration::from_millis(999)));
+        assert!(dialog.shown(true, opened + MODERN_SHOW_DELAY));
+    }
 
     #[test]
     fn clicks_hold_node_zero_and_clear_peers() {

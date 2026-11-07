@@ -4,11 +4,12 @@
 
 use crate::app::match_runtime::session::{PauseEventLimiters, SessionMode, WallBucketTimer};
 use crate::app::{App, AppState};
+use crate::ui::main_menu_dialogs::options::{SidebarSize, Zoom};
 use crate::ui::pause_menu::InGameMenuState;
-use crate::ui::shell::geom::ShellScale;
+use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::pause_menu::{
-    InternetSlider, PauseMenuButton, PauseMenuButtonState, PauseMenuLayout, PauseMenuTemplate,
-    pause_menu_layout,
+    DisplayList, InternetSlider, PauseMenuButton, PauseMenuButtonState, PauseMenuLayout,
+    PauseMenuTemplate, pause_menu_layout,
 };
 use crate::ui::shell::trackbar::{TrackbarHold, TrackbarPress};
 use crate::ui::skirmish_shell::SavedSeedMode;
@@ -53,6 +54,179 @@ impl InternetPauseControls {
     }
 }
 
+/// VERA's Display group. The Options profile owns the zoom, sidebar size and
+/// shape, and the window owns full screen; the group copies them each frame.
+/// Each applies at once, as on the main menu's Options pages, and the
+/// profile saves them with the rest of its values. The FPS Counter box reads
+/// and switches the FPS panel itself, which no profile saves.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct DisplayPauseControls {
+    /// The window's `Zoom::choices`, one list row each.
+    pub(crate) zoom_choices: Vec<Zoom>,
+    pub(crate) zoom: Zoom,
+    /// The main menu's Zoom text for each choice, in list order.
+    pub(crate) zoom_labels: Vec<String>,
+    /// The sizes the battle frame has room for, one list row each.
+    pub(crate) sidebar_choices: Vec<SidebarSize>,
+    /// The size in effect, the one the face shows.
+    pub(crate) sidebar: SidebarSize,
+    pub(crate) full_screen: bool,
+    pub(crate) original_shape: bool,
+    /// The open list, if any, and its row under the pointer.
+    pub(crate) open: Option<DisplayList>,
+    pub(crate) hovered: Option<usize>,
+}
+
+/// A row picked from a Display list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DisplayPick {
+    Zoom(Zoom),
+    Sidebar(SidebarSize),
+}
+
+impl DisplayPauseControls {
+    pub(crate) fn rows(&self, list: DisplayList) -> usize {
+        match list {
+            DisplayList::Zoom => self.zoom_choices.len(),
+            DisplayList::Sidebar => self.sidebar_choices.len(),
+        }
+    }
+
+    /// The row the face shows. A fixed zoom this window can't reach shows
+    /// as the largest step, the one it gives way to.
+    pub(crate) fn selected(&self, list: DisplayList) -> usize {
+        let found = match list {
+            DisplayList::Zoom => self.zoom_choices.iter().position(|&z| z == self.zoom),
+            DisplayList::Sidebar => self.sidebar_choices.iter().position(|&s| s == self.sidebar),
+        };
+        found.unwrap_or(self.rows(list).saturating_sub(1))
+    }
+
+    /// A row's text.
+    pub(crate) fn row_label(&self, list: DisplayList, row: usize) -> String {
+        match list {
+            DisplayList::Zoom => self.zoom_labels.get(row).cloned().unwrap_or_default(),
+            DisplayList::Sidebar => self
+                .sidebar_choices
+                .get(row)
+                .map(|size| size.label())
+                .unwrap_or_default(),
+        }
+    }
+
+    /// A left press while a list is open picks the row under it, if any,
+    /// and closes the list either way. Returns the pick when it differs
+    /// from the shown row.
+    fn pick(&mut self, row: Option<usize>) -> Option<DisplayPick> {
+        self.hovered = None;
+        let list = self.open.take()?;
+        let row = row.filter(|&row| row != self.selected(list))?;
+        match list {
+            DisplayList::Zoom => self.zoom_choices.get(row).map(|&z| DisplayPick::Zoom(z)),
+            DisplayList::Sidebar => self
+                .sidebar_choices
+                .get(row)
+                .map(|&s| DisplayPick::Sidebar(s)),
+        }
+    }
+}
+
+/// Copy the profile's display choices and the window's full screen into the
+/// Display group, with the choices this window and battle frame offer.
+pub(crate) fn sync_display_controls(state: &mut AppState) {
+    let window = (
+        state.renderer.gpu.config.width,
+        state.renderer.gpu.config.height,
+    );
+    let battle = App::match_zoom_geometry(state);
+    let profile = &state.persistence.options_profile;
+    let display = &mut state.match_state.match_presentation.display_pause;
+    display.zoom_choices = Zoom::choices(window.0, window.1);
+    display.zoom_labels = display
+        .zoom_choices
+        .iter()
+        .map(|&zoom| {
+            crate::app::frontend::skirmish_shell_render::zoom_label(
+                zoom,
+                window,
+                profile.original_shape,
+            )
+        })
+        .collect();
+    display.zoom = profile.zoom;
+    display.sidebar_choices = SidebarSize::choices(battle.src_width, battle.src_height);
+    display.sidebar = profile
+        .sidebar
+        .in_effect(battle.src_width, battle.src_height);
+    display.full_screen = profile.full_screen;
+    display.original_shape = profile.original_shape;
+}
+
+/// Fit the match to changed display choices, as a window resize does: the
+/// zoom pass, then the sidebar laid out again for the new frame.
+fn refit_match(state: &mut AppState) {
+    App::sync_zoom_pass(state);
+    crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+}
+
+fn play_checkbox_sound(state: &mut AppState) {
+    let sound = state
+        .rules()
+        .and_then(|rules| rules.general.gui_checkbox_sound.clone());
+    App::play_shell_ui_sound_by_id(state, sound.as_deref());
+}
+
+/// The Display group's share of a left press; true when it took it. An open
+/// list takes every press, as a combo's list holds the capture.
+fn display_press(state: &mut AppState, layout: &PauseMenuLayout) -> bool {
+    let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+    let controls = layout.display;
+    let display = &mut state.match_state.match_presentation.display_pause;
+    if let Some(list) = display.open {
+        let row = layout.display_row_at(list, display.rows(list), x, y);
+        if let Some(pick) = display.pick(row) {
+            App::play_skirmish_shell_generic_click_sound(state);
+            let profile = &mut state.persistence.options_profile;
+            match pick {
+                DisplayPick::Zoom(zoom) => profile.zoom = zoom,
+                DisplayPick::Sidebar(size) => profile.sidebar = size,
+            }
+            refit_match(state);
+        }
+        return true;
+    }
+    if let Some(list) = controls.face_at(x, y) {
+        display.open = Some(list);
+        display.hovered = None;
+        App::play_skirmish_shell_generic_click_sound(state);
+        return true;
+    }
+    // Owner6163A0, 6166EE..616708: only the box, not the caption, clicks.
+    let box_at = |rect: RectPx| RectPx::new(rect.x, rect.y, 18, 18).contains(x, y);
+    if box_at(controls.full_screen) {
+        display.full_screen = !display.full_screen;
+        let checked = display.full_screen;
+        App::set_full_screen(state, checked);
+        play_checkbox_sound(state);
+        return true;
+    }
+    if box_at(controls.original_shape) {
+        display.original_shape = !display.original_shape;
+        state.persistence.options_profile.original_shape = display.original_shape;
+        refit_match(state);
+        play_checkbox_sound(state);
+        return true;
+    }
+    if box_at(controls.fps_counter) {
+        // Ctrl+Alt+F's switch: the panel shows or hides at once, over the
+        // menu too, and starts hidden at the next launch.
+        state.renderer.fps_overlay.toggle();
+        play_checkbox_sound(state);
+        return true;
+    }
+    false
+}
+
 /// The template the open in-game menu was created from.
 pub(crate) fn current_template(state: &AppState) -> PauseMenuTemplate {
     state.match_state.match_presentation.pause_menu_template
@@ -90,6 +264,7 @@ pub(crate) fn current_layout(state: &AppState) -> Option<PauseMenuLayout> {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct MultiplayerPauseControl {
+    /// [`crate::i18n`] labels, resolved where they are drawn.
     pub(crate) caption: &'static str,
     pub(crate) enabled: bool,
     pub(crate) status: Option<&'static str>,
@@ -102,25 +277,16 @@ fn multiplayer_control_for(
     pause.available.then(|| {
         let (caption, status) = if pause.pending {
             if pause.paused {
-                (
-                    "Resuming...",
-                    Some("Resume requested - waiting for the relay"),
-                )
+                ("VERA:Resuming", Some("VERA:ResumeRequested"))
             } else {
-                (
-                    "Pausing...",
-                    Some("Pause requested - waiting for the relay"),
-                )
+                ("VERA:Pausing", Some("VERA:PauseRequested"))
             }
         } else if pause.paused && !stopped_here {
-            ("Pausing...", Some("Finishing the shared pause frame"))
+            ("VERA:Pausing", Some("VERA:FinishingPause"))
         } else if pause.paused {
-            (
-                "Resume All Players",
-                Some("Paused for all players - Pause or Options to resume"),
-            )
+            ("VERA:ResumeAllPlayers", Some("VERA:PausedForAllPlayers"))
         } else {
-            ("Pause All Players", None)
+            ("VERA:PauseAllPlayers", None)
         };
         MultiplayerPauseControl {
             caption,
@@ -173,6 +339,10 @@ pub(crate) fn on_open(state: &mut AppState) {
         state.match_state.session.latency_fudge(),
         current_game_speed(state),
     );
+    let display = &mut state.match_state.match_presentation.display_pause;
+    display.open = None;
+    display.hovered = None;
+    sync_display_controls(state);
 }
 
 pub(crate) fn button_states(state: &AppState) -> [PauseMenuButtonState; 7] {
@@ -218,6 +388,11 @@ pub(crate) fn cursor_moved(state: &mut AppState) {
         return;
     };
     let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+    let display = &mut state.match_state.match_presentation.display_pause;
+    if let Some(list) = display.open {
+        display.hovered = layout.display_row_at(list, display.rows(list), x, y);
+        return;
+    }
     let over = hit(state, &layout);
     let pause = &mut state.match_state.match_presentation.internet_pause;
     // A held trackbar owns the capture (`0x0061E4DF`): nothing else sees the
@@ -252,6 +427,9 @@ pub(crate) fn mouse(state: &mut AppState, button: MouseButton, pressed: bool) {
         return;
     };
     let (x, y) = crate::app::frontend::skirmish_shell_render::in_game_shell_cursor(state);
+    if pressed && display_press(state, &layout) {
+        return;
+    }
     if !pressed
         && state
             .match_state
@@ -340,14 +518,23 @@ pub(crate) struct InternetResume {
 /// In mode4 with Session+0x300 clear, each changed trackbar emits its event
 /// only while its limiter has expired, then restarts that limiter for 900
 /// buckets; a refused change only logs. Speed is read after latency.
+///
+/// VERA deviation: a relay-paced match emits neither event. The relay keeps
+/// the lobby's frame rate and never reads LatencyFudge, so a speed event
+/// would only rescale SpeedNormalize's animation delays against an unchanged
+/// pace. The sliders still move and reopen at the live values.
 pub(crate) fn internet_resume(
     controls: &InternetPauseControls,
     latency_fudge: i32,
     game_speed: i32,
     limiters: &mut PauseEventLimiters,
     now_bucket: u32,
+    relay_paced: bool,
 ) -> InternetResume {
     let mut out = InternetResume::default();
+    if relay_paced {
+        return out;
+    }
     let fudge = 3 - controls.positions[InternetSlider::Connection as usize];
     if fudge != latency_fudge {
         if limiters.latency.remaining(now_bucket) == 0 {
@@ -389,12 +576,18 @@ fn resume_internet_events(state: &mut AppState) {
     let latency_fudge = state.match_state.session.latency_fudge();
     let game_speed = current_game_speed(state);
     let now_bucket = crate::app::match_runtime::frame_pacer::wall_clock_bucket();
+    let relay_paced = state
+        .match_state
+        .live_network
+        .as_ref()
+        .is_some_and(|live| live.relay_frames_per_second().is_some());
     let resume = internet_resume(
         &controls,
         latency_fudge,
         game_speed,
         state.match_state.session.pause_event_limiters_mut(),
         now_bucket,
+        relay_paced,
     );
     let Some(owner) = crate::app::input::commands::preferred_local_owner(state) else {
         return;
@@ -422,6 +615,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn display_lists_pick_a_choice_and_close() {
+        // A 1920x1080 window offers Auto, 100%, 150% and 200%; a battle frame
+        // that size has room for all three sidebar sizes.
+        let mut display = DisplayPauseControls {
+            zoom_choices: Zoom::choices(1920, 1080),
+            sidebar_choices: SidebarSize::choices(1920, 1080),
+            open: Some(DisplayList::Zoom),
+            hovered: Some(3),
+            ..Default::default()
+        };
+        assert_eq!(
+            display.pick(Some(3)),
+            Some(DisplayPick::Zoom(Zoom::Percent(200)))
+        );
+        assert_eq!((display.open, display.hovered), (None, None));
+        // Picking the shown row, or pressing off the list, changes nothing.
+        display.open = Some(DisplayList::Zoom);
+        assert_eq!(display.pick(Some(0)), None);
+        display.open = Some(DisplayList::Sidebar);
+        assert_eq!(display.pick(None), None);
+        assert_eq!(display.open, None);
+        display.open = Some(DisplayList::Sidebar);
+        assert_eq!(
+            display.pick(Some(2)),
+            Some(DisplayPick::Sidebar(SidebarSize::ExtraLarge))
+        );
+        assert_eq!(display.row_label(DisplayList::Sidebar, 2), "XL");
+        // A fixed zoom past this window's largest step shows that step.
+        display.zoom = Zoom::Percent(300);
+        assert_eq!(display.selected(DisplayList::Zoom), 3);
+    }
+
+    #[test]
     fn shared_pause_control_waits_for_confirmation_and_remains_resumable() {
         let mut pause = crate::net::live_commands::MultiplayerPauseStatus {
             available: true,
@@ -432,7 +658,7 @@ mod tests {
         };
         let running = multiplayer_control_for(pause, false).unwrap();
         assert!(running.enabled);
-        assert_eq!(running.caption, "Pause All Players");
+        assert_eq!(running.caption, "VERA:PauseAllPlayers");
         pause.pending = true;
         assert!(!multiplayer_control_for(pause, false).unwrap().enabled);
         pause.paused = true;
@@ -440,11 +666,11 @@ mod tests {
         assert!(!multiplayer_control_for(pause, false).unwrap().enabled);
         let stopped = multiplayer_control_for(pause, true).unwrap();
         assert!(stopped.enabled);
-        assert_eq!(stopped.caption, "Resume All Players");
+        assert_eq!(stopped.caption, "VERA:ResumeAllPlayers");
         pause.pending = true;
         assert_eq!(
             multiplayer_control_for(pause, true).unwrap().caption,
-            "Resuming..."
+            "VERA:Resuming"
         );
         pause.available = false;
         assert!(multiplayer_control_for(pause, true).is_none());
@@ -489,13 +715,13 @@ mod tests {
         let mut controls = InternetPauseControls::open(1, 3);
         // Unchanged values emit nothing and arm nothing.
         assert_eq!(
-            internet_resume(&controls, 1, 3, &mut limiters, 100),
+            internet_resume(&controls, 1, 3, &mut limiters, 100, false),
             InternetResume::default()
         );
         controls.set(InternetSlider::Connection, 3);
         controls.set(InternetSlider::Speed, 5);
         assert_eq!(
-            internet_resume(&controls, 1, 3, &mut limiters, 100),
+            internet_resume(&controls, 1, 3, &mut limiters, 100, false),
             InternetResume {
                 latency_fudge: Some(0),
                 game_speed: Some(1),
@@ -503,11 +729,31 @@ mod tests {
         );
         // Within 900 buckets both changes are refused.
         assert_eq!(
-            internet_resume(&controls, 2, 4, &mut limiters, 999),
+            internet_resume(&controls, 2, 4, &mut limiters, 999, false),
             InternetResume::default()
         );
         assert_eq!(
-            internet_resume(&controls, 2, 4, &mut limiters, 1000),
+            internet_resume(&controls, 2, 4, &mut limiters, 1000, false),
+            InternetResume {
+                latency_fudge: Some(0),
+                game_speed: Some(1),
+            }
+        );
+    }
+
+    #[test]
+    fn a_relay_paced_match_sends_neither_slider_event() {
+        let mut limiters = PauseEventLimiters::default();
+        let mut controls = InternetPauseControls::open(1, 3);
+        controls.set(InternetSlider::Connection, 3);
+        controls.set(InternetSlider::Speed, 5);
+        assert_eq!(
+            internet_resume(&controls, 1, 3, &mut limiters, 100, true),
+            InternetResume::default()
+        );
+        // Nothing was sent, so no limiter was armed.
+        assert_eq!(
+            internet_resume(&controls, 1, 3, &mut limiters, 101, false),
             InternetResume {
                 latency_fudge: Some(0),
                 game_speed: Some(1),

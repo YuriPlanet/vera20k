@@ -1,7 +1,10 @@
 //! Shared A3 lifecycle/input. Original5FBEF0/5FB320 and command assignment5FBB38.
 use crate::app::input::hotkeys::{self, BindingAssignmentError, catalog::registered_commands};
-#[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
-use crate::app::web_keyboard::KeyEventExtModifierSupplement;
+#[cfg(any(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+))]
+use crate::app::keyboard_shim::KeyEventExtModifierSupplement;
 use crate::app::{App, AppState};
 use crate::ui::shell::keyboard::*;
 use crate::ui::shell::list::ListMetrics;
@@ -9,7 +12,10 @@ use crate::ui::shell::list::ShellListGeometry;
 use crate::util::time::Instant;
 use winit::event::{ElementState, KeyEvent, MouseButton};
 use winit::keyboard::{Key, KeyCode, KeyLocation, NamedKey};
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(not(any(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+)))]
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 
 /// A keyboard edge after the front-end/dialog admission gates. Both a window
@@ -30,6 +36,16 @@ pub(crate) fn in_game_key_edge(
     edge: InGameKeyEdge<'_>,
     paused_at_event: bool,
 ) {
+    // Releases must clear custom scroll state even when chat or a pause owns
+    // the key. Forget its old direction before resolving a new press as well.
+    if state
+        .match_state
+        .input
+        .camera_scroll_keys
+        .release(edge.physical)
+    {
+        state.match_state.input.keys_held.remove(&edge.physical);
+    }
     // Native chat owns its edit keys before game-local chords or hotkeys.
     if crate::app::input::chat::key_edge(state, &edge) {
         if !edge.state.is_pressed() {
@@ -43,19 +59,6 @@ pub(crate) fn in_game_key_edge(
     // Shared pause keeps network chat usable without admitting gameplay keys.
     // Local modal/capture filtering has already happened in the window owner.
     if !hotkeys::input_admitted_while_paused(paused_at_event, edge.logical) {
-        return;
-    }
-    // Local prototype control; consume the chord before retail key dispatch.
-    let modifiers = state.match_state.input.hotkey_modifiers;
-    if edge.physical == KeyCode::KeyI && modifiers.control_key() && modifiers.alt_key() {
-        if edge.state.is_pressed() && !edge.repeat {
-            let enabled = state.match_state.match_presentation.interpolation.toggle();
-            state.persistence.options_profile.render_interpolation = enabled;
-            log::info!(
-                "Render interpolation prototype: {}",
-                if enabled { "ON" } else { "OFF" }
-            );
-        }
         return;
     }
     let is_escape = matches!(edge.logical, Key::Named(NamedKey::Escape));
@@ -99,7 +102,16 @@ pub(crate) fn in_game_key_edge(
         return;
     }
     if edge.state.is_pressed() {
-        if let Some(scroll_key) = hotkeys::fallback_scroll_key(resolution)
+        if let Some(scroll_key) = hotkeys::camera_command_key(resolution)
+            && !locked
+        {
+            state
+                .match_state
+                .input
+                .camera_scroll_keys
+                .press(edge.physical, scroll_key);
+            state.match_state.input.keys_held.insert(edge.physical);
+        } else if let Some(scroll_key) = hotkeys::fallback_scroll_key(resolution)
             && !locked
         {
             state.match_state.input.keys_held.insert(scroll_key);
@@ -148,18 +160,25 @@ fn layout_and_pointer(state: &AppState) -> Option<(KeyboardLayout, (i32, i32))> 
         pointer,
     ))
 }
+/// A command's name, category or description. VERA's own (`VERA:`) come from
+/// its language files; the game's from the CSF, else the key itself.
 fn localized(state: &AppState, key: &str, parameter: Option<u8>) -> String {
-    let text = state
-        .process_assets
-        .csf
-        .as_ref()
-        .and_then(|csf| csf.get(key))
-        .unwrap_or(key);
+    let text = if key.starts_with("VERA:") {
+        crate::i18n::tr(key)
+    } else {
+        state
+            .process_assets
+            .csf
+            .as_ref()
+            .and_then(|csf| csf.get(key))
+            .unwrap_or(key)
+            .to_owned()
+    };
     match parameter {
         Some(value) => text
             .replace("%2d", &format!("{value:2}"))
             .replace("%d", &value.to_string()),
-        None => text.to_owned(),
+        None => text,
     }
 }
 pub(crate) fn open(state: &mut AppState, parent: KeyboardParent) {
@@ -588,19 +607,23 @@ fn virtual_key_name(vk: u16) -> String {
         };
         String::from_utf16_lossy(&buffer[..length.max(0) as usize])
     }
+    // VERA: Windows names its keys in its own language; elsewhere VERA's
+    // language files name them.
     #[cfg(not(windows))]
     {
+        use crate::i18n::tr;
         match vk {
             0 => String::new(),
-            16 => "Shift".into(),
-            17 => "Ctrl".into(),
-            18 => "Alt".into(),
-            0x13 => "Pause".into(),
-            0x14 => "CapsLock".into(),
-            0x1b => "Esc".into(),
-            0x20 => "Space".into(),
-            0x2c => "PrintScreen".into(),
-            0x90 => "NumLock".into(),
+            0x0d => tr("VERA:KeyEnter"),
+            16 => tr("VERA:KeyShift"),
+            17 => tr("VERA:KeyCtrl"),
+            18 => tr("VERA:KeyAlt"),
+            0x13 => tr("VERA:KeyPause"),
+            0x14 => tr("VERA:KeyCapsLock"),
+            0x1b => tr("VERA:KeyEsc"),
+            0x20 => tr("VERA:KeySpace"),
+            0x2c => tr("VERA:KeyPrintScreen"),
+            0x90 => tr("VERA:KeyNumLock"),
             0x30..=0x5a => char::from_u32(u32::from(vk)).unwrap().to_string(),
             0x70..=0x87 => format!("F{}", vk - 0x6f),
             _ => hotkeys::portable_oem_key_name(vk)

@@ -584,7 +584,7 @@ pub(crate) fn camera_input_idle(state: &AppState) -> bool {
         .iter()
         .all(|key| input.planning.owns_key(*key))
         && input.pending_camera_scroll.is_idle()
-        && !input.minimap_dragging
+        && !input.minimap_press_active()
         && !input.tactical_mouse.captured
         && !input.tactical_mouse.left_held
         && !input.tactical_mouse.right_held
@@ -1233,38 +1233,26 @@ pub(crate) fn queue_keyboard_scroll(state: &mut AppState) {
     {
         return;
     }
+    let held = |arrow| {
+        !state.match_state.match_presentation.message_list.editing()
+            && state
+                .match_state
+                .input
+                .camera_scroll_keys
+                .held(&state.match_state.input.keys_held, arrow)
+    };
     let key_distance = keyboard_scroll_distance(state);
     let mut movement = (0.0, 0.0);
-    if state
-        .match_state
-        .input
-        .keys_held
-        .contains(&winit::keyboard::KeyCode::ArrowLeft)
-    {
+    if held(winit::keyboard::KeyCode::ArrowLeft) {
         movement.0 -= key_distance / state.match_state.input.zoom_level;
     }
-    if state
-        .match_state
-        .input
-        .keys_held
-        .contains(&winit::keyboard::KeyCode::ArrowRight)
-    {
+    if held(winit::keyboard::KeyCode::ArrowRight) {
         movement.0 += key_distance / state.match_state.input.zoom_level;
     }
-    if state
-        .match_state
-        .input
-        .keys_held
-        .contains(&winit::keyboard::KeyCode::ArrowUp)
-    {
+    if held(winit::keyboard::KeyCode::ArrowUp) {
         movement.1 -= key_distance / state.match_state.input.zoom_level;
     }
-    if state
-        .match_state
-        .input
-        .keys_held
-        .contains(&winit::keyboard::KeyCode::ArrowDown)
-    {
+    if held(winit::keyboard::KeyCode::ArrowDown) {
         movement.1 += key_distance / state.match_state.input.zoom_level;
     }
 
@@ -1297,7 +1285,7 @@ pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
     // right-drag gesture. The minimap-drag inhibit is VERA-internal: gamemd's
     // minimap re-centres only on press, while this flag owns the gesture here.
     if !state.match_state.input.tactical_mouse.captured
-        && !state.match_state.input.minimap_dragging
+        && !state.match_state.input.minimap_press_active()
         && !touch_owns_pointer(&state.match_state.input)
     {
         let now = state.match_state.input.edge_scroll.radar_timer();
@@ -1598,6 +1586,12 @@ pub(crate) fn cursor_over_battlefield(state: &AppState) -> bool {
     let (width, height) = tactical_viewport_size(state);
     let (x, y) = state.cursor_position();
     x >= 0.0 && y >= 0.0 && x < width as f32 && y < height as f32
+}
+
+/// Whether [`animate_zoom`] would leave the zoom and camera as they are.
+pub(crate) fn zoom_settled(state: &AppState) -> bool {
+    let input = &state.match_state.input;
+    (input.zoom_level - input.zoom_target).abs() <= 1e-7
 }
 
 /// Animate zoom_level toward zoom_target each frame, adjusting the camera so
@@ -2007,6 +2001,11 @@ fn clamp_camera_point_for_state(
     sw: f32,
     sh: f32,
 ) -> (f32, f32) {
+    // VERA-only: a map picture puts the camera where a map's own preview
+    // shows, which can reach rows past the playable area's edges.
+    if state.platform.capture_presentation.map_picture {
+        return point;
+    }
     let (frame_w, frame_h) = (sw.max(0.0) as u32, sh.max(0.0) as u32);
     let (viewport_w, viewport_h) = state.sidebar_frame_for(frame_w, frame_h).tactical_size();
     let viewport = (viewport_w as f32, viewport_h as f32);
@@ -2086,18 +2085,34 @@ pub(crate) fn tactical_scroll_rect(
     )
 }
 
+/// The world rectangle `(x, y, width, height)` that clamped views of scroll
+/// `area` show: every top-left the clamp allows, across the visible extent.
+/// It starts 30 px left of the area, the half cell `tactical_scroll_rect`
+/// adds back.
+fn shown_world_rect(area: (f32, f32, f32, f32)) -> (f32, f32, f32, f32) {
+    (area.0 - 30.0, area.1, area.2, area.3)
+}
+
+/// The world rectangle the tactical camera can show on the loaded map
+/// (`shown_world_rect` of its scroll rectangle), or None before a simulation
+/// has its LocalSize. Pictures of whole maps (`app::map_picture`) are framed
+/// by it.
+pub(crate) fn tactical_view_area(state: &AppState) -> Option<(f32, f32, f32, f32)> {
+    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let bounds = runtime.view().playfield_authority().0?;
+    Some(shown_world_rect(tactical_scroll_rect(bounds)))
+}
+
 fn clamp_camera_point_to_rect(
     point: (f32, f32),
     area: (f32, f32, f32, f32),
     viewport: (f32, f32),
     zoom: f32,
 ) -> (f32, f32) {
-    let (area_x, area_y, area_w, area_h) = area;
+    let (x_min, y_min, area_w, area_h) = shown_world_rect(area);
     let visible_w = viewport.0 / zoom;
     let visible_h = viewport.1 / zoom;
-    let x_min = area_x - 30.0;
     let x_max = x_min + area_w - visible_w;
-    let y_min = area_y;
     let y_max = y_min + area_h - visible_h;
 
     // Native comparison order is Y low/high, then X low/high. Each side is a

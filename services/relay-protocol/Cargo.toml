@@ -7,10 +7,29 @@ publish = false
 [dependencies]
 hmac = "0.12"
 sha2 = "0.10"
-chacha20poly1305 = { version = "=0.11.0", default-features = false, features = ["zeroize"] }
 getrandom = "=0.3.4"
 zeroize = "1.8"
 thiserror = { workspace = true }
+# Scenario files and reports of the in-process network simulation.
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[features]
+# The in-process network simulation (`netsim`) and its `relay_netsim` runner.
+test-support = ["dep:serde", "dep:serde_json"]
+
+[[example]]
+name = "relay_netsim"
+required-features = ["test-support"]
+
+# Its players are the simulation's headless client.
+[[example]]
+name = "relay_load"
+required-features = ["test-support"]
 
 [lints]
 workspace = true

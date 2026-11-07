@@ -449,7 +449,6 @@ fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
                             zoom: 1.,
                         },
                         |_| false,
-                        |_| panic!("Wave must never query A"),
                     ));
                 }
                 let initial = background

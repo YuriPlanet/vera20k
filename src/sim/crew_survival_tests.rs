@@ -2249,6 +2249,13 @@ fn a_selected_mcvs_crewman_speaks_his_select_voice() {
     for seed in 1..=8 {
         let mut sim = sim_on_arena(seed, &rules);
         let owner = sim.interner.intern("AlliedHuman");
+        // Ares GetCrew1004C7F0 reads the actual Country's side, not only
+        // House.side_index. Keep this a valid retail Allied house in both builds.
+        let country = sim.interner.intern("Americans");
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_country_for_test(Some(country));
         sim.session.set_current_house_for_test(Some(owner));
         let mcv = spawn(&mut sim, &rules, "AMCV", "AlliedHuman", 20, 10);
         sim.substrate
@@ -2657,7 +2664,7 @@ fn ares_fatal_aircraft_parachutes_crew_and_honors_explicit_no_crash() {
     assert_eq!(escaped.len(), 1);
     let pilot = sim.entities().get(escaped[0]).unwrap();
     assert_eq!(sim.interner.resolve(pilot.type_ref()), "CREW");
-    assert!(pilot.is_object_alive() && pilot.is_parachuted());
+    assert!(pilot.is_object_alive() && pilot.is_falling_down());
     assert_eq!(pilot.health.current(), 50);
     assert!(
         sim.entities()

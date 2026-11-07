@@ -90,12 +90,9 @@ fn physical_rules() -> RuleSet {
         )
         .unwrap()
         .into_parts();
-    // The process owner returns fixed ART separately; the normal loader's
-    // init2467 installs it, then binds its parsed signed42-record bank.
+    // The process owner has retained the signed bank; metadata installation
+    // follows without replaying its sequence reads.
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&fixed_art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&fixed_art),
-    );
     rules
 }
 
@@ -153,9 +150,6 @@ fn supplied_rules(input: &Value) -> RuleSet {
         .unwrap()
         .into_parts();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&fixed_art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&fixed_art),
-    );
     rules
 }
 

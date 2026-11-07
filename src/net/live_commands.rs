@@ -16,9 +16,14 @@ mod sequenced;
 mod startup;
 mod timing;
 pub use sequenced::{
-    CommandDeliveryTrace, MultiplayerPauseStatus, SequencedError, SequencedTiming,
+    CommandDeliveryTrace, DeliveryCounters, MatchSpeedChange, MultiplayerPauseStatus,
+    SequencedError, SequencedTiming,
 };
 pub use startup::{StartupAgreement, StartupError};
+/// The relay's turn length, which online playout follows.
+pub use vera20k_relay_protocol::turn_frames;
+/// The relay link measurements a match's network report reads.
+pub use vera20k_relay_protocol::{ClientLinkStats, LinkState};
 
 use crate::sim::world::{NetworkCommandQueues, NetworkQueueContext, NetworkQueuePass};
 
@@ -267,6 +272,29 @@ impl LiveCommandSession {
             .map_or_else(Vec::new, |session| session.take_lost())
     }
 
+    /// The relay's rate changes in frames dispatched so far.
+    pub fn take_speed_changes(&mut self) -> Vec<MatchSpeedChange> {
+        self.sequenced
+            .as_mut()
+            .map_or_else(Vec::new, |session| session.take_speed_changes())
+    }
+
+    /// VERA: true once, when this game reaches a pause that found it catching
+    /// up. `reached` is whether the simulation has reached the pause.
+    pub fn take_caught_up_in_pause(&mut self, reached: bool, current_frame: u32) -> bool {
+        self.sequenced
+            .as_mut()
+            .is_some_and(|session| session.take_caught_up_in_pause(reached, current_frame))
+    }
+
+    /// A hidden window's frames may be throttled by its system, so it never
+    /// reports falling behind the relay's clock.
+    pub fn set_presentation_hidden(&mut self, hidden: bool) {
+        if let Some(session) = &mut self.sequenced {
+            session.set_presentation_hidden(hidden);
+        }
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn mark_sequenced_started_for_test(&mut self) {
         if let Some(session) = &mut self.sequenced {
@@ -297,8 +325,38 @@ impl LiveCommandSession {
             .map_or(0, |session| session.frontier())
     }
 
-    pub fn fixed_frames_per_second(&self) -> Option<u16> {
-        self.sequenced.as_ref().map(|session| session.fps)
+    /// One local simulation tick's wall-clock cost. The relay's pace
+    /// reports carry its recent 90th percentile; nothing else reads it.
+    pub fn record_tick_cost(&mut self, cost: std::time::Duration) {
+        if let Some(session) = self.sequenced.as_mut() {
+            session.record_tick_cost(cost.as_micros().min(u128::from(u32::MAX)) as u32);
+        }
+    }
+
+    /// The relay's current frame rate: the match's own, or slower while a
+    /// player's PC cannot keep up. The simulation keeps the match's own.
+    pub fn relay_frames_per_second(&self) -> Option<u16> {
+        self.sequenced.as_ref().map(|session| session.pace_fps)
+    }
+
+    /// The relay currently seals slower than the match's own rate.
+    pub fn relay_slowed(&self) -> bool {
+        self.sequenced
+            .as_ref()
+            .is_some_and(|session| session.slowed())
+    }
+
+    /// App-only counts of this match's ordered delivery.
+    pub fn delivery_counters(&self) -> Option<DeliveryCounters> {
+        self.sequenced
+            .as_ref()
+            .map(|session| session.delivery_counters())
+    }
+
+    /// The relay's sealed head as this PC last learned it; the frames past
+    /// the local simulation are its backlog.
+    pub fn relay_head_frame(&self) -> Option<u32> {
+        self.sequenced.as_ref().map(|session| session.head_frame())
     }
 
     /// App-only pacing observation. Availability and canonical dispatch remain

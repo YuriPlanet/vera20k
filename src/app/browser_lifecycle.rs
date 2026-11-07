@@ -26,7 +26,7 @@ impl App {
                 .and_then(|owner| sim.interner().get(owner))
                 .and_then(|owner| sim.ready_outcome_for_owner(owner))
         });
-        let result = Self::external_match_result(state)
+        let result = Self::match_result(state)
             .or_else(|| {
                 outcome.map(|outcome| match outcome.kind {
                     crate::sim::house_state::HouseOutcomeKind::Victory => ExternalMatchResult::Won,
@@ -37,7 +37,9 @@ impl App {
         let mut report = if state.frontend.external_launch {
             Self::external_launch_report(Some(state), None)
         } else {
-            ExternalLaunchReport::new(Some(result), None, None)
+            let mut report = ExternalLaunchReport::new(Some(result), None, None);
+            report.network_quality = state.match_state.network_quality.report();
+            report
         };
         if !state.frontend.external_launch {
             report.frames = sim.map_or(0, |sim| sim.session().binary_frame());

@@ -201,7 +201,6 @@ fn apply_incremental(
         RadarTerrainUpdateLayers {
             base_rgba: &mut projection.base_rgba,
             terrain_pixels: &projection.terrain_pixels,
-            surface_pixels: &mut projection.surface_pixels,
             overlay_pixels: &mut projection.overlay_pixels,
             native_surface: projection.native_radar_surface,
             native_terrain: &mut projection.native_radar_terrain,
@@ -755,12 +754,23 @@ fn native_dirty_cell_without_cellclass_change_keeps_generated_surface() {
     let colors = colors();
     let runtime = live_runtime(resolved, OverlayGrid::new(SIDE, SIDE));
     let mut native = projection(&grid, &runtime, &[], expanded_bounds(), &colors);
-    let generated = native.base_rgba.clone();
+    let surface = |native: &MinimapPlayfieldProjection| {
+        let terrain = native
+            .native_radar_terrain
+            .as_ref()
+            .expect("generated surface");
+        (terrain.generated_rgb565().to_vec(), terrain.revision())
+    };
+    let generated = surface(&native);
     apply_incremental(&mut native, &runtime, &[cell], &colors);
+    assert_eq!(
+        surface(&native),
+        generated,
+        "an unchanged CellClass source must not regenerate the surface"
+    );
     assert!(
-        native.base_rgba == generated,
-        "an unchanged CellClass source must not stamp the mapless per-cell color \
-         over the generated surface",
+        native.base_rgba.is_empty(),
+        "nor stamp the mapless per-cell color beside it"
     );
 }
 

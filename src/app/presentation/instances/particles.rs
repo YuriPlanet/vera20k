@@ -287,17 +287,27 @@ pub(super) fn build_particle_instance(
     {
         return;
     }
-    if kind.behaves_like == ParticleBehavesLike::Spark {
-        if let Some(spark) = particle.spark() {
+    // ParticleDraw62CF65..62CF7D: Spark (3) and Railgun (4) both take the
+    // coloured point path at 62D02C, reading the same +B0/+B4/+B8 colour.
+    if matches!(
+        kind.behaves_like,
+        ParticleBehavesLike::Spark | ParticleBehavesLike::Railgun
+    ) {
+        {
+            let start_rgb = particle.start_rgb();
+            let color_index = particle.color_index();
+            let color_accumulator = particle.color_accumulator();
             let command = crate::render::tactical_compat::SparkPointCommand {
                 world: painted.ivec3(),
-                start_rgb: spark.start_rgb,
-                color_index: spark.color_index,
-                color_accumulator: spark.color_accumulator,
+                start_rgb,
+                color_index,
+                color_accumulator,
                 damage: kind.damage,
                 gates: crate::render::tactical_compat::SparkDrawGates {
                     performance_passed: enough_fps,
-                    extra_animations_enabled: detail_level != 0,
+                    // The detail-0 gate (62CEF3) already returned for Spark;
+                    // it never applies to Railgun.
+                    extra_animations_enabled: true,
                     // Active-YR5865E0 is XOR AL,AL; RET4. The conditional
                     // Scenario1000 fog call in62CF11 never rejects this body.
                     fog_passed: true,
@@ -309,9 +319,8 @@ pub(super) fn build_particle_instance(
                     command,
                     &kind.color_list,
                     context.point_viewport,
-                    crate::render::tactical_compat::SparkPointPlanes::Deferred,
                 )
-                .expect("produced Spark state has finite native point arithmetic")
+                .expect("produced point-particle state has finite native arithmetic")
             {
                 let mut planned = PlannedObjectInstance::object(parent, Vec::new());
                 planned.body_draw = Some(ObjectBodyDraw::Surface(SurfaceDraw::Point(point)));
@@ -324,26 +333,7 @@ pub(super) fn build_particle_instance(
         return;
     };
     let image = kind.image.as_str();
-    let native_frame = match kind.behaves_like {
-        // ParticleGetDrawFrame62D830: MOVSX from state+12E. The atlas
-        // accepts nonnegative frames only; stock Smoke is0..19.
-        ParticleBehavesLike::Smoke | ParticleBehavesLike::Gas => {
-            i32::from(particle.animation_state() as i8)
-        }
-        // The separate Fire frame policy retains its existing path;
-        // this mechanism is bounded to stock building damage-Smoke.
-        ParticleBehavesLike::Fire => {
-            // Residual: detached Fire frame selection lacks original evidence.
-            // The existing approximate policy needs a System's facing; do not
-            // invent that facing or retain a fabricated parent association.
-            let Some(system) = system else {
-                return;
-            };
-            let band = (u16::from(system.facing()) / 0x40) & 3;
-            i32::from(band * u16::from(kind.end_state_ai) + u16::from(particle.animation_state()))
-        }
-        ParticleBehavesLike::Spark | ParticleBehavesLike::Railgun => return,
-    };
+    let native_frame = particle.draw_frame(kind);
     let Ok(frame) = u16::try_from(native_frame) else {
         return;
     };

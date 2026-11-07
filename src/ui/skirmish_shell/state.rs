@@ -4,9 +4,11 @@ mod choose_map;
 mod combos;
 mod hit_test;
 mod launch;
+mod opponent_scroll;
 mod player_name;
 mod random_map_setup;
 mod saved_seed_browser;
+mod saved_setup;
 mod trackbars;
 
 #[cfg(test)]
@@ -29,10 +31,15 @@ pub use hit_test::{
     status_help_key_for_hover, status_help_key_for_random_map_setup,
 };
 pub use launch::{launch_session, pack_launch_session_without_start_validation};
+pub use opponent_scroll::{
+    opponent_scroll_deadline, opponent_scroll_geometry, opponent_scroll_held, poll_opponent_scroll,
+};
 
 pub use choose_map::{
-    ChooseMapContext, ChooseMapListPress, ChooseMapModalState, ChooseMapSelection, EjectPrompt,
-    EjectPromptButton, ai_rows_beyond_limit_occupied,
+    ChooseMapContext, ChooseMapListPress, ChooseMapModalState, ChooseMapPrompt,
+    ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
+    ONLINE_MAPS_ROW,
+    SEARCH_MAX_CHARS, ai_rows_beyond_limit_occupied,
 };
 pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{
@@ -54,13 +61,16 @@ pub use saved_seed_browser::{
     SAVED_SEED_DESCRIPTION_MAX_UNITS, SavedSeedBrowserRow, SavedSeedBrowserState,
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
 };
+pub use saved_setup::{SkirmishSavedSetup, SkirmishSetupComputer, SkirmishSetupSeat};
 pub use trackbars::{
     SkirmishTrackbarBounds, game_speed_from_visual_position, game_speed_visual_position,
     handle_option_mouse_down, handle_option_mouse_move, handle_option_mouse_up,
     handle_option_mouse_wheel, trackbar_visual_value,
 };
 
-use crate::skirmish_launch::{AiDifficulty, HOUSE_COLOR_COUNT, LaunchCountry, LaunchStartPosition};
+use crate::skirmish_launch::{
+    AiDifficulty, HOUSE_COLOR_COUNT, LaunchCountry, LaunchStartPosition, NETWORK_PLAYER_SLOT_COUNT,
+};
 
 use self::player_name::inactive_ai_team_default;
 #[cfg(test)]
@@ -71,6 +81,9 @@ use super::layout::{ChooseMapModalButton, ColorComboId, SkirmishCheckboxId, Skir
 pub enum OwnerDrawButton {
     StartGame0x617,
     ChooseMap0x5aa,
+    /// VERA's Save Setup and Load Setup ([`SkirmishSavedSetup`]).
+    SaveSetup,
+    LoadSetup,
     Back0x5c0,
 }
 
@@ -80,6 +93,8 @@ pub enum SkirmishShellAction {
     StartGame,
     BackOrExit,
     ChooseMap,
+    SaveSetup,
+    LoadSetup,
     SelectColor(ColorComboId),
     SelectMap(usize),
 }
@@ -279,6 +294,9 @@ impl SkirmishShellOpponent {
 /// opponent. When persisted slot reading is added, the per-row fallbacks must be
 /// the Easy code for row 1 and the None code for rows 2-7, mapped through the
 /// slot type-code table, not hardcoded all-None.
+///
+/// VERA: the rows go on past the retail seven to 29, for maps with up to
+/// thirty starts; each opens as None, as rows 2-7 do.
 fn default_opponents(first_country: LaunchCountry) -> Vec<SkirmishShellOpponent> {
     let countries = [
         first_country,
@@ -290,10 +308,9 @@ fn default_opponents(first_country: LaunchCountry) -> Vec<SkirmishShellOpponent>
         LaunchCountry::Germany,
     ];
 
-    countries
-        .into_iter()
-        .enumerate()
-        .map(|(idx, country)| {
+    (0..NETWORK_PLAYER_SLOT_COUNT - 1)
+        .map(|idx| {
+            let country = countries[idx % countries.len()];
             let row_type = if idx == 0 {
                 SkirmishAiRowType::Easy
             } else {

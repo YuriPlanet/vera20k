@@ -282,23 +282,23 @@ pub(crate) fn render_score_page(
                 layout.continue_button(),
                 pressed == Some(CONTINUE_BUTTON),
             ),
-            align: ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0),
+            align: ShellAlign::BUTTON_CAPTION,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: None,
         });
     }
     if wave.is_none() && page.page_count() > 1 {
         for (id, caption) in [
-            (crate::ui::score_shell::PREVIOUS_PAGE, "Previous"),
-            (crate::ui::score_shell::NEXT_PAGE, "Next"),
+            (crate::ui::score_shell::PREVIOUS_PAGE, "VERA:Previous"),
+            (crate::ui::score_shell::NEXT_PAGE, "VERA:Next"),
         ] {
             labels.push(PaintLabel {
-                text: caption.to_owned().into(),
+                text: crate::i18n::tr(caption).into(),
                 rect: owner_draw_button_label_rect(
                     layout.paging_button(id).expect("paging button"),
                     pressed == Some(id),
                 ),
-                align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                align: ShellAlign::BUTTON_CAPTION,
                 rgb: SHELL_TEXT_RGB_ENABLED,
                 path_a_reveal: None,
             });
@@ -307,7 +307,14 @@ pub(crate) fn render_score_page(
             .paging_button(crate::ui::score_shell::PREVIOUS_PAGE)
             .expect("paging button");
         labels.push(PaintLabel {
-            text: format!("Page {}/{}", page.page_index() + 1, page.page_count()).into(),
+            text: crate::i18n::tr_fill(
+                "VERA:PageOf",
+                &[
+                    ("page", &(page.page_index() + 1)),
+                    ("pages", &page.page_count()),
+                ],
+            )
+            .into(),
             rect: RectPx::new(rect.x, rect.y - 24, rect.w, 20),
             align: ShellAlign::H_CENTER,
             rgb: SHELL_TEXT_RGB_ENABLED,
@@ -316,15 +323,27 @@ pub(crate) fn render_score_page(
     }
     let text = shell_paint::paint_labels_scaled(&state.renderer.bit_font, &labels, scale.factor());
 
+    // The shell pass draws these in array order with depth off
+    // (`DepthAxis::NONE`), so the list is the paint order: paint mode 1's
+    // panel, then the background. A country card (`[EndGameScreens]
+    // Score*Art=`) is opaque over the whole dialog and would hide the panel,
+    // Continue and the lower strip, so it goes under the chrome instead.
+    let chrome_draw = TexturedDraw {
+        texture: &chrome.texture,
+        instances: chrome_sprites,
+    };
+    let art_draw = TexturedDraw {
+        texture: &art.texture,
+        instances: art_sprites,
+    };
+    let [first, second] = if page.model.background.is_some() {
+        [art_draw, chrome_draw]
+    } else {
+        [chrome_draw, art_draw]
+    };
     let draws = [
-        TexturedDraw {
-            texture: &chrome.texture,
-            instances: chrome_sprites,
-        },
-        TexturedDraw {
-            texture: &art.texture,
-            instances: art_sprites,
-        },
+        first,
+        second,
         TexturedDraw {
             texture: &chrome.texture,
             instances: button_sprites,

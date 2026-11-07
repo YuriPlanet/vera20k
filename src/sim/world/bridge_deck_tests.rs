@@ -28,8 +28,8 @@ fn structural_fallout_retires_effect_only_ground_victim() {
     // structural bridge state. Its ordinary Unlimbo needs Clear/Foot, and
     // this effect-only corridor supplies no OverlayType reader context.
     let clear = terrain.cell_mut_for_test(4, 4).unwrap();
-    clear.speed_costs.foot = Some(100);
-    clear.base_speed_costs.foot = Some(100);
+    clear.speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::ONE);
+    clear.base_speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::ONE);
     sim.resolved_terrain = Some(terrain);
     sim.bridge_state = Some(BridgeRuntimeState::default());
     let owner = sim.interner.intern("Americans");

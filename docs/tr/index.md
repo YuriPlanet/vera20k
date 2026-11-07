@@ -31,6 +31,8 @@ Değişebilen tüm oyun durumu tek bir yapıda tutulur: `Simulation` (`src/sim/w
 
 Uygulama, oyuncu girdisini simülasyon için komutlara dönüştürür. Her kareden sonra yeni durumu render motoruna verir ve o karenin ürettiği sesleri çalar. Render işlemi yalnızca simülasyon durumunu okur; `sim/` ise hiçbir zaman `render/`, `ui/`, `audio/` veya `net/` modüllerine bağımlı değildir.
 
+![Uygulama simülasyona komut gönderir ve dünya durumunu alır; görüntülemeye çizim verilerini gönderir.](../images/architecture.tr.png)
+
 ## Determinizm
 
 Aynı durum, girdiler ve rastgele tohum her platformda ve her işlemcide aynı sonucu vermelidir.

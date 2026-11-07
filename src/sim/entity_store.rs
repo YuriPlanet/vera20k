@@ -35,6 +35,11 @@ pub(crate) struct OwnerChangeAuthority(());
 /// airborne set ([`EntityStore::airborne`]) changes with it.
 pub(crate) struct AirMembershipAuthority(());
 
+/// Only this module can store an Anim in a field [`GameEntity::held_anims`]
+/// names, so the anim-holder index notes the holder
+/// ([`EntityStore::write_held_anim`]).
+pub(crate) struct AnimHolderAuthority(());
+
 /// Container for all game entities, keyed by stable_id.
 ///
 /// All iteration methods return entities in ascending stable_id order, which
@@ -67,6 +72,15 @@ pub struct EntityStore {
     /// stored entity's category never changes (a replacement comes through
     /// [`Self::insert`], which copies it). Kept and rebuilt as `owners` is.
     categories: Vec<EntityCategory>,
+    /// VERA-only: the stored ids of each owner's objects of each category,
+    /// ascending ([`Self::owned_ids`]), for walks that want one house's
+    /// objects of one class without loading the others. The entities' owners
+    /// and categories are the source of truth: [`Self::insert`] and
+    /// [`Self::remove`] keep it, [`Self::change_owner`], the owners' one live
+    /// writer, moves an id between lists, and compaction changes no id.
+    /// Rebuilt on load ([`Self::rebuild_class_registries`]), never saved or
+    /// hashed, and only looked up, never iterated as a map.
+    owned: LookupMap<(InternedId, EntityCategory), Vec<u64>>,
     /// Derived InfantryClass registry, in monotonic construction-ID order.
     /// Uninit retains an entry; remove compacts it. Class/category is immutable
     /// while stored, like indexed identity (replace through remove/insert).
@@ -97,6 +111,18 @@ pub struct EntityStore {
     /// membership's one live writer, writes both. Rebuilt on load, never
     /// saved or hashed.
     airborne: BTreeSet<(u16, u64, u64)>,
+    /// VERA-only: `(Anim, holder)` for each Anim a stored entity may hold in
+    /// a field [`GameEntity::held_anims`] names, so an Anim's expiry
+    /// (`Simulation::notify_anim_pointer_expired`, through
+    /// [`Self::take_anim_holders`]) visits those entities instead of
+    /// re-reading every entity handed out since the last expiry. A superset;
+    /// the entities' fields are the truth. [`Self::insert`] and
+    /// [`Self::write_held_anim`], the only route to storing an Anim in one of
+    /// those fields, add pairs; the expiry takes an Anim's pairs, its
+    /// callbacks clearing every field that names it; a removal drops the
+    /// removed entity's. A field cleared otherwise leaves its pair until
+    /// then. Rebuilt on load, never saved or hashed.
+    anim_holders: BTreeSet<(u64, u64)>,
     /// Which entities may have changed since each reader last took its log
     /// ([`Self::take_touched`]). Every route to a `&mut GameEntity` goes
     /// through the store, so an entity missing from a log has not changed.
@@ -129,11 +155,13 @@ impl Clone for EntityStore {
             slot_of: self.slot_of.clone(),
             owners: self.owners.clone(),
             categories: self.categories.clone(),
+            owned: self.owned.clone(),
             infantry_registry: self.infantry_registry.clone(),
             foot_registry: self.foot_registry.clone(),
             techno_registry: self.techno_registry.clone(),
             building_registry: self.building_registry.clone(),
             airborne: self.airborne.clone(),
+            anim_holders: self.anim_holders.clone(),
             touched: TouchLogs::everything(),
         }
     }
@@ -159,11 +187,13 @@ impl EntityStore {
             slot_of: HashMap::default(),
             owners: Vec::new(),
             categories: Vec::new(),
+            owned: LookupMap::default(),
             infantry_registry: Vec::new(),
             foot_registry: Vec::new(),
             techno_registry: Vec::new(),
             building_registry: Vec::new(),
             airborne: BTreeSet::new(),
+            anim_holders: BTreeSet::new(),
             touched: TouchLogs::everything(),
         }
     }
@@ -177,14 +207,26 @@ impl EntityStore {
         let infantry = category == EntityCategory::Infantry;
         let owner = entity.owner();
         let foot = category.is_foot();
-        // A replaced entity leaves the airborne set; this one joins it if the
+        // A replaced entity leaves its owner's list and the airborne set;
+        // this one joins its owner's list, and the airborne set if the
         // tracker holds it.
-        if let Some(entry) = self.get(id).and_then(airborne_entry) {
-            self.airborne.remove(&entry);
+        if let Some((key, entry)) = self.get(id).map(|replaced| {
+            (
+                (replaced.owner(), replaced.category()),
+                airborne_entry(replaced),
+            )
+        }) {
+            self.unlist_owned(id, key);
+            if let Some(entry) = entry {
+                self.airborne.remove(&entry);
+            }
         }
+        self.list_owned(id, (owner, category));
         if let Some(entry) = airborne_entry(&entity) {
             self.airborne.insert(entry);
         }
+        self.anim_holders
+            .extend(entity.held_anims().map(|anim| (anim, id)));
         let entity = Some(Box::new(entity));
         if let Some(&slot) = self.slot_of.get(&id) {
             self.entities[slot as usize] = entity;
@@ -247,8 +289,14 @@ impl EntityStore {
     pub fn remove(&mut self, stable_id: u64) -> Option<GameEntity> {
         let slot = self.slot_of.remove(&stable_id)? as usize;
         let removed = self.entities[slot].take().map(|entity| *entity);
-        if let Some(entry) = removed.as_ref().and_then(airborne_entry) {
-            self.airborne.remove(&entry);
+        if let Some(entity) = &removed {
+            self.unlist_owned(stable_id, (entity.owner(), entity.category()));
+            if let Some(entry) = airborne_entry(entity) {
+                self.airborne.remove(&entry);
+            }
+            for anim in entity.held_anims() {
+                self.anim_holders.remove(&(anim, stable_id));
+            }
         }
         self.touched.note(stable_id, self.len());
         self.remove_infantry_index(stable_id);
@@ -529,7 +577,7 @@ impl EntityStore {
 
     /// The entities of `category` in stable_id order, chosen by the category
     /// column without loading the others.
-    pub(crate) fn values_of_category(
+    pub fn values_of_category(
         &self,
         category: EntityCategory,
     ) -> impl Iterator<Item = &GameEntity> {
@@ -546,6 +594,62 @@ impl EntityStore {
         self.entities.iter_mut().filter_map(Option::as_deref_mut)
     }
 
+    /// Store an Anim in one of `holder`'s fields [`GameEntity::held_anims`]
+    /// names through `write`, that field's own write, then note every Anim
+    /// the holder holds for [`Self::take_anim_holders`]. The only route to
+    /// such a store: those writes take an [`AnimHolderAuthority`], which
+    /// only this module makes. Clearing a field needs no note. `None` when
+    /// `holder` is not stored.
+    pub(crate) fn write_held_anim<R>(
+        &mut self,
+        holder: u64,
+        write: impl FnOnce(&mut GameEntity, AnimHolderAuthority) -> R,
+    ) -> Option<R> {
+        let slot = *self.slot_of.get(&holder)?;
+        self.touched.note(holder, self.slot_of.len());
+        let entity = self.entities[slot as usize].as_deref_mut()?;
+        let written = write(entity, AnimHolderAuthority(()));
+        self.anim_holders
+            .extend(entity.held_anims().map(|anim| (anim, holder)));
+        Some(written)
+    }
+
+    /// The stored entities that may hold `anim` in a field
+    /// [`GameEntity::held_anims`] names, ascending, leaving none noted for
+    /// it: the caller, `Simulation::notify_anim_pointer_expired`, clears
+    /// every such field naming it. Debug builds check that every stored
+    /// entity holding it is among them (the live-read check).
+    pub(crate) fn take_anim_holders(&mut self, anim: u64) -> Vec<u64> {
+        let noted: Vec<u64> = self
+            .anim_holders
+            .range((anim, 0)..=(anim, u64::MAX))
+            .map(|&(_, holder)| holder)
+            .collect();
+        for &holder in &noted {
+            self.anim_holders.remove(&(anim, holder));
+        }
+        let holders: Vec<u64> = noted
+            .into_iter()
+            .filter(|&holder| self.contains(holder))
+            .collect();
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || self
+                    .par_select(|_, entity| entity.held_anims().any(|held| held == anim))
+                    .iter()
+                    .all(|holder| holders.binary_search(holder).is_ok()),
+            "an entity holds Anim {anim} without a noted pair"
+        );
+        holders
+    }
+
+    /// `(Anim, holder)` for every Anim a stored entity holds.
+    fn walk_anim_holders(&self) -> BTreeSet<(u64, u64)> {
+        self.stored()
+            .flat_map(|(id, entity)| entity.held_anims().map(move |anim| (anim, id)))
+            .collect()
+    }
+
     /// Move an entity to a new owner. It does NOT touch the houses' tracking
     /// or lists; `Simulation::change_owner`, the only production caller,
     /// moves them.
@@ -556,8 +660,49 @@ impl EntityStore {
             && let Some(e) = self.entities[slot as usize].as_deref_mut()
             && e.owner() != new_owner
         {
+            let (old_owner, category) = (e.owner(), e.category());
             e.set_owner_from_store(new_owner, OwnerChangeAuthority(()));
             self.owners[slot as usize] = new_owner;
+            self.unlist_owned(stable_id, (old_owner, category));
+            self.list_owned(stable_id, (new_owner, category));
+        }
+    }
+
+    /// The stored ids of `owner`'s objects of `category`, ascending: the ids
+    /// a walk of every entity in stable_id order keeps for that owner and
+    /// category, without loading the others. Debug builds check them against
+    /// that walk (the live-read check).
+    pub(crate) fn owned_ids(&self, owner: InternedId, category: EntityCategory) -> &[u64] {
+        let ids = self
+            .owned
+            .get(&(owner, category))
+            .map_or(&[][..], Vec::as_slice);
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || ids.iter().copied().eq(self
+                    .stored()
+                    .filter(|(_, entity)| entity.owner() == owner && entity.category() == category)
+                    .map(|(id, _)| id)),
+            "the owned index disagrees with the entities of {owner:?}'s {category:?}"
+        );
+        ids
+    }
+
+    /// Put `id` on the `key` owner's list, in order. Ids mostly arrive
+    /// ascending, so this mostly appends.
+    fn list_owned(&mut self, id: u64, key: (InternedId, EntityCategory)) {
+        let ids = self.owned.entry(key).or_default();
+        if let Err(index) = ids.binary_search(&id) {
+            ids.insert(index, id);
+        }
+    }
+
+    /// Take `id` off the `key` owner's list.
+    fn unlist_owned(&mut self, id: u64, key: (InternedId, EntityCategory)) {
+        if let Some(ids) = self.owned.get_mut(&key)
+            && let Ok(index) = ids.binary_search(&id)
+        {
+            ids.remove(index);
         }
     }
 
@@ -650,9 +795,20 @@ impl EntityStore {
         self.values().filter_map(airborne_entry).collect()
     }
 
-    /// Rebuild class registries from primary storage. Owned by
-    /// Deserialize; synthetic fixtures may also rebuild after raw setup.
+    /// Rebuild class registries, and the owners' lists, from primary storage.
+    /// Owned by Deserialize; synthetic fixtures may also rebuild after raw
+    /// setup.
     pub(crate) fn rebuild_class_registries(&mut self) {
+        let mut owned: LookupMap<(InternedId, EntityCategory), Vec<u64>> = LookupMap::default();
+        // Storage iterates in ascending stable_id order, so each list comes
+        // out sorted.
+        for (id, entity) in self.stored() {
+            owned
+                .entry((entity.owner(), entity.category()))
+                .or_default()
+                .push(id);
+        }
+        self.owned = owned;
         let infantry: Vec<u64> = self
             .stored()
             .filter(|(_, entity)| entity.category() == EntityCategory::Infantry)
@@ -746,6 +902,7 @@ impl<'de> serde::Deserialize<'de> for EntityStore {
         }
         store.rebuild_class_registries();
         store.airborne = store.walk_airborne();
+        store.anim_holders = store.walk_anim_holders();
         Ok(store)
     }
 }
@@ -886,9 +1043,10 @@ mod tests {
     /// across compactions, re-stored ids and ids below the newest; the owner
     /// column follows every entity's owner through them and through
     /// `change_owner`, the category column every entity's category through
-    /// them (and walks of one category keep the stable_id order), and the
-    /// airborne set every entity's tracker membership through them and
-    /// through `set_air_membership`.
+    /// them (and walks of one category keep the stable_id order), each
+    /// owner's list of its objects of a category both, in stable_id order,
+    /// and the airborne set every entity's tracker membership through them
+    /// and through `set_air_membership`.
     #[test]
     fn storage_answers_as_an_ordered_map_through_compactions() {
         let mut store = EntityStore::new();
@@ -1035,6 +1193,16 @@ mod tests {
                             .map(|(&id, _)| id)
                             .collect::<Vec<_>>()
                     );
+                    for house in houses {
+                        assert_eq!(
+                            store.owned_ids(house, class),
+                            owners
+                                .iter()
+                                .filter(|&(id, &owner)| owner == house && categories[id] == class)
+                                .map(|(&id, _)| id)
+                                .collect::<Vec<_>>()
+                        );
+                    }
                 }
                 assert_eq!(
                     store.building_registry,
@@ -1114,6 +1282,14 @@ mod tests {
         assert_eq!(restored.techno_registry, [2, 4, 7]);
         for id in [2, 4, 7] {
             assert_eq!(restored.owner_of(id), Some(store.get(id).unwrap().owner()));
+        }
+        let (americans, russians) = (
+            crate::sim::intern::test_intern("Americans"),
+            crate::sim::intern::test_intern("Russians"),
+        );
+        for copy in [&restored, &store.clone()] {
+            assert_eq!(copy.owned_ids(americans, EntityCategory::Unit), [2, 4]);
+            assert_eq!(copy.owned_ids(russians, EntityCategory::Unit), [7]);
         }
         let airborne: Vec<u64> = restored.airborne().map(GameEntity::stable_id).collect();
         assert_eq!(
@@ -1204,6 +1380,34 @@ mod tests {
         building.set_category_for_test(EntityCategory::Structure);
         store.insert(building);
         assert_eq!(store.foot_registry, [2, 4]);
+    }
+
+    /// An Anim's expiry reaches each stored entity holding the Anim, once
+    /// and ascending, whether a held-Anim write stored it, the entity was
+    /// stored holding it or a load restored it, and no removed holder.
+    #[test]
+    fn anim_holders_reach_every_holder_through_writes_inserts_and_loads() {
+        let hold = |entity: &mut GameEntity, authority: AnimHolderAuthority| {
+            entity.hold_parachute_animation(50, authority)
+        };
+        let mut store = EntityStore::new();
+        let mut stored_holding = make_entity(3);
+        hold(&mut stored_holding, AnimHolderAuthority(()));
+        store.insert(stored_holding);
+        for id in [1, 2, 4] {
+            store.insert(make_entity(id));
+        }
+        for id in [1, 4] {
+            store.write_held_anim(id, hold).unwrap();
+        }
+        store.remove(4);
+        let loaded: EntityStore = crate::util::save_codec::deserialize(
+            &crate::util::save_codec::serialize(&store).unwrap(),
+        )
+        .unwrap();
+        for mut copy in [store.clone(), loaded] {
+            assert_eq!(copy.take_anim_holders(50), [1, 3]);
+        }
     }
 
     #[test]

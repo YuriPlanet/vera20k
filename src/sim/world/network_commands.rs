@@ -74,13 +74,17 @@ impl Simulation {
     /// is the first remaining admitted human in shared House order, after
     /// synchronized EXIT/REMOVEPLAYER retires the old timing row. Neither a
     /// local peer list nor a second cached host participates in this decision.
+    ///
+    /// The result is a command sender, which is its House's index unless
+    /// players share Houses (VERA shared control).
     pub fn network_timing_host_house(&self) -> Option<i8> {
         let timing = self.session.network_command_timing()?;
         let wol = self.session.game_mode() == crate::sim::scenario_session::ScenarioGameMode::Wol;
-        let eligible = |house_id: i8| {
-            timing.admits_source(house_id)
-                && usize::try_from(house_id)
-                    .ok()
+        let eligible = |sender: i8| {
+            timing.admits_source(sender)
+                && self
+                    .session
+                    .network_source_house(sender)
                     .and_then(|index| self.houses.order().get(index))
                     .and_then(|owner| self.houses.get(owner))
                     .is_some_and(|house| {
@@ -90,12 +94,10 @@ impl Simulation {
         if wol && eligible(timing.host_house()) {
             return Some(timing.host_house());
         }
-        self.houses
-            .order()
-            .iter()
-            .enumerate()
-            .filter_map(|(index, _)| i8::try_from(index).ok())
-            .find(|&house| eligible(house))
+        self.session
+            .network_sources(self.houses.order().len())
+            .map(|(sender, _)| sender)
+            .find(|&sender| eligible(sender))
     }
 
     /// Borrow the existing EventClass queues for a post-Logic network pass.
@@ -114,7 +116,7 @@ impl Simulation {
     pub fn network_mirror_allowance(&self) -> usize {
         let synchronized = self.synchronized_network_command_count();
         if self.session.game_mode().is_network() {
-            let source_house = self.local_command_house().unwrap_or(0);
+            let source_house = self.local_command_source().unwrap_or(0);
             NETWORK_COMMAND_CAPACITY.saturating_sub(synchronized).min(
                 NETWORK_SOURCE_DOLIST_CAPACITY
                     .saturating_sub(self.pending_commands.native_house_len(source_house)),
@@ -340,7 +342,7 @@ mod tests {
     /// Building4439C5/44367B uses each actor's House; ARCHIVE4C6780
     /// occupies one OutList slot per selected producer, in click order.
     #[test]
-    fn local_rally_records_preserve_each_actor_and_the_accepted_prefix() {
+    fn local_rally_records_preserve_each_actor_and_refuse_a_partial_batch() {
         let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
             return;
         };
@@ -391,10 +393,12 @@ mod tests {
             }
         }
         sim.take_frame_commands_for_test();
+        // Sim-scale deviation: native ARCHIVE appends keep a prefix of the
+        // producers; VERA refuses a batch its queue cannot hold whole.
         let stop = sim.encode_stop_record(local, first).unwrap();
-        for _ in 0..127 {
-            assert!(sim.issue_local_command(CommandEnvelope::synchronized(stop.clone(), 41)));
-        }
+        let stop = CommandEnvelope::synchronized(stop, 41);
+        let free = sim.available_local_command_slots() - 1;
+        assert!(sim.issue_local_commands(std::iter::repeat_n(stop, free)));
         assert!(!sim.issue_local_command(CommandEnvelope::new(
             local,
             41,
@@ -404,13 +408,10 @@ mod tests {
                 producer_ids: vec![second, first],
             }
         )));
-        let queues = sim.network_command_queues();
-        let records = queues.local_records().unwrap();
-        assert_eq!(records.len(), 128);
-        assert_eq!(records[127].opcode(), 0x1e);
         assert_eq!(
-            ArchiveRecord::decode(records[127]).unwrap().entity_id,
-            second as i32
+            sim.pending_local_command_count(),
+            free,
+            "neither producer's rally is queued"
         );
     }
 
@@ -496,15 +497,13 @@ mod tests {
         .encode()
         .unwrap();
         let mut queues = NetworkCommandQueues::new(&mut sim);
-        for _ in 0..crate::sim::command_queue::DO_LIST_CAPACITY {
+        let capacity = crate::sim::command_queue::SINGLE_PLAYER_DOLIST_CAPACITY;
+        for _ in 0..capacity {
             assert!(queues.admit_received(record.clone()));
         }
         assert_eq!(queues.mirror_allowance(), 0);
         assert!(!queues.admit_received(record));
-        assert_eq!(
-            queues.synchronized_len(),
-            crate::sim::command_queue::DO_LIST_CAPACITY
-        );
+        assert_eq!(queues.synchronized_len(), capacity);
         assert!(
             sim.pending_commands
                 .iter()

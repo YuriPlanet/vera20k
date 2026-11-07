@@ -38,6 +38,10 @@ pub enum SkirmishScenarioSource {
     LoosePkt(String),
     LooseYro(String),
     LooseYrm(String),
+    /// VERA: a map only in the lobby's online map library, by SHA-256. Its
+    /// row comes from the library's copy of the map's header; Choose Map
+    /// downloads the map into VERA's own Maps folder before using it.
+    Online(String),
     Synthetic,
 }
 
@@ -53,6 +57,10 @@ pub struct SkirmishScenarioRecord {
     pub source: SkirmishScenarioSource,
     pub file_name: String,
     pub display_name: String,
+    /// VERA: the string-table label a PKT entry's `Description` names, kept
+    /// so the title reads again in a language picked after the scan
+    /// (`scenario_sources::relabel_records`).
+    pub title_label: Option<String>,
     pub author: Option<String>,
     pub preview: PreviewSection,
     pub multiplayer_start_waypoints: Vec<Waypoint>,
@@ -66,6 +74,11 @@ pub struct SkirmishScenarioRecord {
 }
 
 impl SkirmishScenarioRecord {
+    /// Whether this row is a map only in the online library, with no file here.
+    pub fn is_online(&self) -> bool {
+        matches!(self.source, SkirmishScenarioSource::Online(_))
+    }
+
     pub fn concrete_from_ini(
         source_ordinal: usize,
         source: SkirmishScenarioSource,
@@ -82,6 +95,7 @@ impl SkirmishScenarioRecord {
             source,
             file_name: entry.file_name,
             display_name: entry.display_name,
+            title_label: None,
             author: entry.author,
             preview: entry.preview,
             multiplayer_start_waypoints: entry.multiplayer_start_waypoints,
@@ -131,6 +145,7 @@ impl SkirmishScenarioRecord {
             source: SkirmishScenarioSource::Synthetic,
             file_name: RANDMAP_SED.to_string(),
             display_name: display_name.into(),
+            title_label: None,
             author: None,
             preview: PreviewSection::default(),
             multiplayer_start_waypoints: Vec::new(),
@@ -150,6 +165,7 @@ impl SkirmishScenarioRecord {
             source: source_for_file_name(&entry.file_name),
             file_name: entry.file_name.clone(),
             display_name: entry.display_name.clone(),
+            title_label: None,
             author: entry.author.clone(),
             preview: entry.preview.clone(),
             multiplayer_start_waypoints: entry.multiplayer_start_waypoints.clone(),

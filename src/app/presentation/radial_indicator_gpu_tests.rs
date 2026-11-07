@@ -1,6 +1,6 @@
 //! Offscreen production consumer for the armed native superweapon range rings.
 
-use super::{SuperweaponRangePulse, build};
+use super::{RangePulse, build};
 use crate::map::houses::HouseColorMap;
 use crate::render::batch::BatchRenderer;
 use crate::render::radial_indicator::radius_pixels;
@@ -50,7 +50,7 @@ fn build_nuke(
     sim: &Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     viewport: SurfaceLineViewport,
-    pulse: &mut SuperweaponRangePulse,
+    pulse: &mut RangePulse,
 ) -> Vec<crate::render::radial_indicator::RadialIndicatorDraw> {
     let colors = HouseColorMap::from([(
         "Americans".to_owned(),
@@ -64,11 +64,15 @@ fn build_nuke(
         None,
         Some((16, 16)),
         false,
+        true,
+        &mut RangePulse::default(),
         pulse,
         &colors,
         viewport,
         0,
+        1,
     )
+    .draws
 }
 
 #[test]
@@ -101,7 +105,7 @@ fn armed_nuke_rings_reach_offscreen_surface_line_gpu() {
     };
     // Use the production cell/center path to place the target well inside this
     // offscreen surface, then rebuild with a fresh pulse for the actual draw.
-    let mut probe_pulse = SuperweaponRangePulse::default();
+    let mut probe_pulse = RangePulse::default();
     let probe = build_nuke(&sim, rules, viewport_at_origin, &mut probe_pulse);
     assert!(!probe.is_empty());
     let center = [size[0] as i32 / 2, size[1] as i32 / 2];
@@ -112,7 +116,7 @@ fn armed_nuke_rings_reach_offscreen_surface_line_gpu() {
         ],
         ..viewport_at_origin
     };
-    let mut pulse = SuperweaponRangePulse::default();
+    let mut pulse = RangePulse::default();
     let radials = build_nuke(&sim, rules, viewport, &mut pulse);
     assert_eq!(
         radials.len(),
@@ -184,7 +188,6 @@ fn armed_nuke_rings_reach_offscreen_surface_line_gpu() {
         &radials,
         viewport,
         |_| true,
-        |_| u16::MAX,
     );
     terrain.draw_surface_lines(&mut encoder, &color_view, prepared);
     let reads = [

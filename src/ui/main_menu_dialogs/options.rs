@@ -4,8 +4,8 @@
 //! profile, filesystem, audio device, window, or child-dialog callback.
 //! The `shell` child supplies retail resource geometry and physical-pixel input;
 //! the app shell renderer paints that model through the shared retail compositor.
-//! VERA's own controls sit on a second page of the same dialog
-//! ([`OptionsPage::Vera`]), so the main page keeps retail's look.
+//! Retail's controls and VERA's own share one dialog, sorted into the
+//! [`Category`] pages its right-hand column picks between.
 
 use crate::ui::shell::trackbar::{
     TrackbarHold, TrackbarPress, trackbar_position_from_x, trackbar_press,
@@ -20,11 +20,10 @@ pub(crate) mod shell;
 /// `GUI:Faster`) never show: the init renames them by position. The combo's
 /// own caption, `GUI:SetResolution`, left with the resolution list: the combo
 /// is VERA's [`Zoom`] list now.
-pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 30] = [
+pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 29] = [
     ("GUI:OptionsMenu", "Options"),
     ("GUI:MainMenu", "Main Menu"),
     ("GUI:Keyboard", "Keyboard"),
-    ("GUI:Network", "Network"),
     ("GUI:DisplayOptions", "Display Options"),
     ("GUI:GameOptions", "Game Options"),
     ("GUI:UIOptions", "UI Options"),
@@ -53,83 +52,94 @@ pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 30] = [
     ("TXT_FASTEST", "Fastest"),
 ];
 
-/// VERA's own captions and status help on this page. The retail string table
-/// has nothing for full screen, zoom, the battle shape or the Red Alert 2
-/// loading screen and menu movie, so these are English everywhere.
-pub(crate) const ZOOM_LABEL: &str = "Zoom";
-pub(crate) const ZOOM_HELP: &str =
-    "How big battles look. Auto picks the best size for your screen.";
-pub(crate) const SIDEBAR_LABEL: &str = "Sidebar";
-pub(crate) const SIDEBAR_HELP: &str = "How big the sidebar and bottom bar are in battles.";
-pub(crate) const FULL_SCREEN_LABEL: &str = "Full Screen";
-pub(crate) const FULL_SCREEN_HELP: &str = "Fill the whole screen. Untick it to play in a window.";
-pub(crate) const ORIGINAL_SHAPE_LABEL: &str = "Original 4:3 Shape";
-pub(crate) const ORIGINAL_SHAPE_HELP: &str =
-    "Battles keep the original 4:3 shape, with bars on wide screens.";
-pub(crate) const YR_ORIGINAL_STYLE_LABEL: &str = "Original YR Style";
-pub(crate) const YR_ORIGINAL_STYLE_HELP: &str =
-    "Use Yuri's Revenge's loading screen and menu movie, plus the Skirmish and multiplayer lobby backgrounds.";
-pub(crate) const RENDER_INTERPOLATION_LABEL: &str = "Render Interpolation";
-pub(crate) const RENDER_INTERPOLATION_HELP: &str = "Smooth motion between simulation frames. Adds one frame of visual latency; does not increase simulation speed.";
-pub(crate) const MOUSE_WHEEL_ZOOM_LABEL: &str = "Mouse Wheel Zoom";
-pub(crate) const MOUSE_WHEEL_ZOOM_HELP: &str = "Use the mouse wheel to zoom battles in or out. Turning this off restores the normal view distance.";
-pub(crate) const SHIFT_QUEUE_LABEL: &str = "Shift-Click Batch Queue";
-pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "Developer Options";
-pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "Offline Internet Test Service";
-pub(crate) const WOL_TEST_SERVICE_HELP: &str =
-    "Internet opens with stand-in servers, lobbies and players, for testing its screens.";
-pub(crate) const SKIP_STARTUP_LOGO_LABEL: &str = "Skip Startup Logo";
-pub(crate) const SKIP_STARTUP_LOGO_HELP: &str =
-    "Start without the logo movie; the loading screen still shows. Applies at the next start.";
-pub(crate) const FPS_COUNTER_LABEL: &str = "FPS Counter";
-pub(crate) const FPS_COUNTER_HELP: &str = "Show frames per second in the top-left corner. Off at every start; Ctrl+Alt+F also switches it.";
-pub(crate) const SHIFT_QUEUE_HELP: &str =
-    "Shift-click an infantry, vehicle or aircraft cameo to queue several at once.";
-pub(crate) const DISPLAY_LABEL: &str = "Display";
-pub(crate) const DISPLAY_HELP: &str = "Which screen the game opens on. Auto follows the system.";
-/// VERA's Accessibility band on its page: the first accessibility control, the
-/// strength of the `[Colors]` team-colour bands. Retail's string table has
-/// nothing for either.
-pub(crate) const ACCESSIBILITY_LABEL: &str = "Accessibility";
-pub(crate) const HOUSE_COLOR_STRENGTH_LABEL: &str = "Team Color Strength";
-pub(crate) const HOUSE_COLOR_STRENGTH_HELP: &str = "How strongly team colours stand out, from 1 for the original bands to 10 for the boldest. The next battle uses it.";
+/// VERA's own captions and status help on this page, as labels of VERA's
+/// language files ([`crate::i18n`]): the retail string table has nothing for
+/// full screen, zoom, the battle shape or the Red Alert 2 loading screen and
+/// menu movie.
+pub(crate) const ZOOM_LABEL: &str = "VERA:Zoom";
+pub(crate) const ZOOM_HELP: &str = "VERA:ZoomHelp";
+pub(crate) const SIDEBAR_LABEL: &str = "VERA:Sidebar";
+pub(crate) const SIDEBAR_HELP: &str = "VERA:SidebarHelp";
+pub(crate) const FULL_SCREEN_LABEL: &str = "VERA:FullScreen";
+pub(crate) const FULL_SCREEN_HELP: &str = "VERA:FullScreenHelp";
+pub(crate) const ORIGINAL_SHAPE_LABEL: &str = "VERA:OriginalShape";
+pub(crate) const ORIGINAL_SHAPE_HELP: &str = "VERA:OriginalShapeHelp";
+pub(crate) const YR_ORIGINAL_STYLE_LABEL: &str = "VERA:YrOriginalStyle";
+pub(crate) const YR_ORIGINAL_STYLE_HELP: &str = "VERA:YrOriginalStyleHelp";
+pub(crate) const RENDER_INTERPOLATION_LABEL: &str = "VERA:RenderInterpolation";
+pub(crate) const RENDER_INTERPOLATION_HELP: &str = "VERA:RenderInterpolationHelp";
+pub(crate) const MOUSE_WHEEL_ZOOM_LABEL: &str = "VERA:MouseWheelZoom";
+pub(crate) const MOUSE_WHEEL_ZOOM_HELP: &str = "VERA:MouseWheelZoomHelp";
+pub(crate) const RIGHT_CLICK_ORDERS_LABEL: &str = "VERA:RightClickOrders";
+pub(crate) const RIGHT_CLICK_ORDERS_HELP: &str = "VERA:RightClickOrdersHelp";
+pub(crate) const LOCK_CURSOR_LABEL: &str = "VERA:LockCursor";
+pub(crate) const LOCK_CURSOR_HELP: &str = "VERA:LockCursorHelp";
+pub(crate) const VERA_ICON_LABEL: &str = "VERA:VeraIcon";
+pub(crate) const VERA_ICON_HELP: &str = "VERA:VeraIconHelp";
+pub(crate) const HD_RADAR_LABEL: &str = "VERA:HdRadar";
+pub(crate) const HD_RADAR_HELP: &str = "VERA:HdRadarHelp";
+pub(crate) const SMOOTH_SIDEBAR_LABEL: &str = "VERA:SmoothSidebar";
+pub(crate) const SMOOTH_SIDEBAR_HELP: &str = "VERA:SmoothSidebarHelp";
+/// The Interface page's HD Map Previews (`app::map_picture`). The browser
+/// build cannot start the hidden run that draws a map's picture.
+pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
+    !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
+pub(crate) const HD_MAP_PREVIEWS_LABEL: &str = "VERA:HdMapPreviews";
+pub(crate) const HD_MAP_PREVIEWS_HELP: &str = "VERA:HdMapPreviewsHelp";
+pub(crate) const ORIGINAL_FONT_LABEL: &str = "VERA:OriginalFont";
+pub(crate) const ORIGINAL_FONT_HELP: &str = "VERA:OriginalFontHelp";
+pub(crate) const SHIFT_QUEUE_LABEL: &str = "VERA:ShiftQueue";
+/// The two category pages retail's string table has no band name for.
+pub(crate) const CONTROLS_LABEL: &str = "VERA:Controls";
+pub(crate) const DEVELOPER_OPTIONS_LABEL: &str = "VERA:DeveloperOptions";
+pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "VERA:WolTestService";
+pub(crate) const WOL_TEST_SERVICE_HELP: &str = "VERA:WolTestServiceHelp";
+pub(crate) const SKIP_INTRO_LABEL: &str = "VERA:SkipIntro";
+pub(crate) const SKIP_INTRO_HELP: &str = "VERA:SkipIntroHelp";
+pub(crate) const FPS_COUNTER_LABEL: &str = "VERA:FpsCounter";
+pub(crate) const FPS_COUNTER_HELP: &str = "VERA:FpsCounterHelp";
+/// VERA's end-game switches, the pair of `[EndGameScreens]` presentation
+/// stages. The verdict is what the match shows where it is decided; the score
+/// page is the dialog after it. Each stage owns its picture *and* its music, so
+/// a player can keep one stage and drop the other.
+pub(crate) const CUSTOM_END_GAME_BANNER_LABEL: &str = "VERA:CustomEndGameBanner";
+pub(crate) const CUSTOM_END_GAME_BANNER_HELP: &str = "VERA:CustomEndGameBannerHelp";
+pub(crate) const CUSTOM_END_GAME_SCORE_LABEL: &str = "VERA:CustomEndGameScore";
+pub(crate) const CUSTOM_END_GAME_SCORE_HELP: &str = "VERA:CustomEndGameScoreHelp";
+pub(crate) const CUSTOM_END_GAME_MOVIE_LABEL: &str = "VERA:CustomEndGameMovie";
+pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "VERA:CustomEndGameMovieHelp";
+pub(crate) const SHIFT_QUEUE_HELP: &str = "VERA:ShiftQueueHelp";
+pub(crate) const DISPLAY_LABEL: &str = "VERA:Display";
+pub(crate) const DISPLAY_HELP: &str = "VERA:DisplayHelp";
+/// VERA's health-bar list. The retail string table has nothing for it.
+pub(crate) const HEALTH_BARS_LABEL: &str = "VERA:HealthBars";
+pub(crate) const HEALTH_BARS_HELP: &str = "VERA:HealthBarsHelp";
+/// VERA's strength slider for the `[Colors]` team-colour bands. Retail's
+/// string table has nothing for it.
+pub(crate) const HOUSE_COLOR_STRENGTH_LABEL: &str = "VERA:HouseColorStrength";
+pub(crate) const HOUSE_COLOR_STRENGTH_HELP: &str = "VERA:HouseColorStrengthHelp";
 /// The Display list's first row: the window system's own choice.
-pub(crate) const DISPLAY_AUTO_LABEL: &str = "Auto";
-/// The main page's button to VERA's page, and that page's heading.
-pub(crate) const VERA_OPTIONS_LABEL: &str = "Vera Options";
-pub(crate) const VERA_OPTIONS_HELP: &str =
-    "Settings VERA20K adds: full screen, sidebar size, smooth motion and more.";
-/// VERA's page's Check for Updates: the desktop updater (`app::updater`)
-/// checks once the page has slid out. The browser build has no updater.
+pub(crate) const DISPLAY_AUTO_LABEL: &str = "VERA:DisplayAuto";
+/// VERA's Language list, and the main menu's button that opens it. Its rows
+/// are each language's own name for itself, so they need no translation.
+pub(crate) const LANGUAGE_LABEL: &str = "VERA:Language";
+pub(crate) const LANGUAGE_HELP: &str = "VERA:LanguageHelp";
+/// The Developer page's Check for Updates: the desktop updater
+/// (`app::updater`) checks once the dialog has slid out. The browser build
+/// has no updater.
 pub(crate) const HAS_CHECK_FOR_UPDATES: bool =
     !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
-pub(crate) const CHECK_FOR_UPDATES_LABEL: &str = "Check for Updates";
-pub(crate) const CHECK_FOR_UPDATES_HELP: &str =
-    "Check for a newer VERA20K now, even one you skipped.";
-/// The VERA page's Back reuses retail's caption; its status help is the
-/// Keyboard page's Back help, "Return to the Options Menu."
-/// (`STT:KeyboardButtonBack`).
-const VERA_PAGE_BACK_LABEL: (&str, &str) = ("GUI:Back", "Back");
+pub(crate) const CHECK_FOR_UPDATES_LABEL: &str = "VERA:CheckForUpdates";
+pub(crate) const CHECK_FOR_UPDATES_HELP: &str = "VERA:CheckForUpdatesHelp";
 
-/// Which page of Options shows. The main page keeps retail's controls, with
-/// VERA's Zoom in the resolution combo's place; VERA's own controls are on a
-/// page of their own behind the Vera Options button, so the main page looks
-/// like retail's. Both pages are one dialog with one set of values: switching
-/// pages applies, saves and resets nothing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OptionsPage {
-    Main,
-    Vera,
-}
-
-/// A right-column button on either page.
+/// A button of the dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LauncherButton {
-    /// Keyboard, Network or Main Menu: one of gamemd's parent exits.
+    /// Keyboard or Main Menu: one of gamemd's parent exits.
     Exit(LauncherParentResult),
-    /// Vera Options on the main page, Back on VERA's: shows that page.
-    Page(OptionsPage),
-    /// Check for Updates on VERA's page.
+    /// A category in the right-hand column: shows that category's page.
+    Category(Category),
+    /// Check for Updates on the Developer page.
     CheckForUpdates,
 }
 
@@ -215,12 +225,13 @@ impl SidebarSize {
     /// The combo's rows, top to bottom, where the frame has room for them.
     const ALL: [Self; 3] = [Self::Normal, Self::Large, Self::ExtraLarge];
 
-    pub(crate) const fn label(self) -> &'static str {
-        match self {
-            Self::Normal => "Normal",
-            Self::Large => "Large",
-            Self::ExtraLarge => "XL",
-        }
+    /// The row's text.
+    pub(crate) fn label(self) -> String {
+        crate::i18n::tr(match self {
+            Self::Normal => "VERA:SidebarNormal",
+            Self::Large => "VERA:SidebarLarge",
+            Self::ExtraLarge => "VERA:SidebarExtraLarge",
+        })
     }
 
     /// Frame pixels per 100 sidebar pixels.
@@ -277,6 +288,65 @@ impl SidebarSize {
     }
 }
 
+/// VERA's `[VERA] HealthBars=` health-strip policy: which objects draw a
+/// health strip.
+///
+/// gamemd draws a strip for the selected object and a bracket only when it is
+/// selected, so [`Self::Vanilla`] is the native rule. The other arms are VERA
+/// presentation extensions: they widen the same strip to the objects the local
+/// player can see. Nothing here reaches simulation state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum HealthBarMode {
+    /// gamemd: selected objects draw the strip and bracket, the hovered object
+    /// draws a bare strip, everything else draws nothing.
+    #[default]
+    Vanilla,
+    /// [`Self::Vanilla`], plus a bare strip on every other object the local
+    /// player can see.
+    Always,
+    /// [`Self::Vanilla`], plus a bare strip on every other object the local
+    /// player can see that is below full health.
+    AlwaysExceptFull,
+}
+
+impl HealthBarMode {
+    /// The list's rows, top to bottom; the first is the default.
+    const ALL: [Self; 3] = [Self::Vanilla, Self::Always, Self::AlwaysExceptFull];
+
+    /// The row's text.
+    pub(crate) fn label(self) -> String {
+        crate::i18n::tr(match self {
+            Self::Vanilla => "VERA:HealthBarsOriginal",
+            Self::Always => "VERA:HealthBarsAll",
+            Self::AlwaysExceptFull => "VERA:HealthBarsNotFull",
+        })
+    }
+
+    /// The list's rows, top to bottom.
+    pub(crate) fn choices() -> Vec<Self> {
+        Self::ALL.to_vec()
+    }
+
+    /// The `[VERA] HealthBars` value.
+    pub(crate) const fn ini_value(self) -> i32 {
+        match self {
+            Self::Vanilla => 0,
+            Self::Always => 1,
+            Self::AlwaysExceptFull => 2,
+        }
+    }
+
+    /// A value this build does not know reads as the native rule, so a
+    /// hand-edited INI never hides the original strip.
+    pub(crate) const fn from_ini_value(value: i32) -> Self {
+        match value {
+            1 => Self::Always,
+            2 => Self::AlwaysExceptFull,
+            _ => Self::Vanilla,
+        }
+    }
+}
+
 /// One screen the Display list offers, as the window layer reported it when the
 /// page opened. VERA's own data: no profile or native code names a monitor.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -297,13 +367,24 @@ impl DisplayChoice {
     /// player and is the same for two identical monitors. A screen that
     /// reports no refresh rate leaves it out instead of guessing one.
     pub(crate) fn label(&self, number: usize) -> String {
-        let size = format!("Screen {number}: {}x{}", self.width, self.height);
+        let (width, height) = (&self.width, &self.height);
         match self.refresh_millihertz {
             // A rate the backend does not know, and the zero some virtual
             // adapters report for a mode they do not drive, are both left out
             // rather than shown as a refresh rate of zero.
-            Some(millihertz) if millihertz > 0 => format!("{size} {}Hz", millihertz / 1000),
-            _ => size,
+            Some(millihertz) if millihertz > 0 => crate::i18n::tr_fill(
+                "VERA:DisplayScreenRate",
+                &[
+                    ("number", &number),
+                    ("width", width),
+                    ("height", height),
+                    ("rate", &(millihertz / 1000)),
+                ],
+            ),
+            _ => crate::i18n::tr_fill(
+                "VERA:DisplayScreen",
+                &[("number", &number), ("width", width), ("height", height)],
+            ),
         }
     }
 }
@@ -347,6 +428,10 @@ pub(crate) enum LauncherComboId {
     Zoom,
     Sidebar,
     Display,
+    /// The `[VERA] HealthBars=` list.
+    HealthBars,
+    /// The `[VERA] Language=` list: VERA's interface language.
+    Language,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -354,7 +439,6 @@ pub(crate) struct LauncherOptionsLabels {
     pub(crate) options: String,
     pub(crate) main_menu: String,
     pub(crate) keyboard: String,
-    pub(crate) network: String,
     pub(crate) display_options: String,
     pub(crate) game_options: String,
     pub(crate) ui_options: String,
@@ -369,8 +453,6 @@ pub(crate) struct LauncherOptionsLabels {
     pub(crate) sound_volume: String,
     pub(crate) voice_volume: String,
     pub(crate) blank: String,
-    /// The VERA page's Back.
-    pub(crate) back: String,
     low: String,
     high: String,
     easy: String,
@@ -389,35 +471,33 @@ impl LauncherOptionsLabels {
             options: label(0),
             main_menu: label(1),
             keyboard: label(2),
-            network: label(3),
-            display_options: label(4),
-            game_options: label(5),
-            ui_options: label(6),
-            audio_options: label(7),
-            visual_details: label(8),
-            difficulty: label(9),
-            tooltips: label(10),
-            scroll_rate: label(11),
-            target_lines: label(12),
-            show_hidden: label(13),
-            music_volume: label(14),
-            sound_volume: label(15),
-            voice_volume: label(16),
-            blank: label(17),
-            back: csf(VERA_PAGE_BACK_LABEL.0).unwrap_or_else(|| VERA_PAGE_BACK_LABEL.1.to_string()),
-            low: label(18),
-            high: label(19),
-            easy: label(20),
-            normal: label(21),
-            hard: label(22),
+            display_options: label(3),
+            game_options: label(4),
+            ui_options: label(5),
+            audio_options: label(6),
+            visual_details: label(7),
+            difficulty: label(8),
+            tooltips: label(9),
+            scroll_rate: label(10),
+            target_lines: label(11),
+            show_hidden: label(12),
+            music_volume: label(13),
+            sound_volume: label(14),
+            voice_volume: label(15),
+            blank: label(16),
+            low: label(17),
+            high: label(18),
+            easy: label(19),
+            normal: label(20),
+            hard: label(21),
             scroll_tokens: [
+                label(22),
                 label(23),
                 label(24),
                 label(25),
                 label(26),
                 label(27),
                 label(28),
-                label(29),
             ],
         }
     }
@@ -497,13 +577,55 @@ pub(crate) enum LauncherCheckboxId {
     RenderInterpolation,
     /// VERA's local camera option: the wheel changes battle view distance.
     MouseWheelZoom,
+    /// VERA-only alternative controls: left selects, right commands.
+    RightClickOrders,
+    /// VERA's cursor lock: the pointer stays inside the game window. It
+    /// applies at once and is saved.
+    LockCursor,
+    /// VERA's own box: the window, taskbar and Dock show VERA's artwork
+    /// instead of Red Alert 2's red star (`app::window_icon`). It applies at
+    /// once and is saved; the installed program's own icon stays the red star.
+    VeraIcon,
+    /// VERA's own box: when the sidebar draws at a whole multiple of its
+    /// pixels, the radar draws at that multiple too (`render::radar::hd`).
+    /// Saved; a battle follows it at once.
+    HdRadar,
+    /// VERA's own box: when the sidebar draws at a whole multiple of its
+    /// pixels, its cameos and frame pieces draw from lightly smoothed xBR copies
+    /// at that multiple (`render::sidebar_smoothing`). Saved; a battle
+    /// follows it at once.
+    SmoothSidebar,
+    /// VERA's own box: the setup screens' map preview shows VERA's own
+    /// drawing of the whole map (`app::map_picture`) instead of the
+    /// map's `[PreviewPack]` picture. On by default; saved, and the next
+    /// preview follows it.
+    HdMapPreviews,
+    /// VERA's own box: interface text draws in the game's own GAME.FNT,
+    /// scaled evenly, instead of VERA's vector fonts
+    /// (`render::text_engine`). Characters GAME.FNT lacks still draw from the
+    /// vector fonts. It applies at once and is saved.
+    OriginalFont,
     /// VERA's developer box: the window's FPS readout. Like Full Screen it
     /// shows and changes live state at once, and is never saved: the readout
     /// starts hidden at every launch.
     FpsCounter,
     /// VERA's developer box: the next launch skips `Init_Game`'s logo movie
     /// (`0x0052C5E2`); the splash and the first-run intro still play.
-    SkipStartupLogo,
+    SkipIntro,
+    /// VERA's box: the score page draws the country's own victory or defeat
+    /// picture from `[EndGameScreens]` instead of the side's `MP*SCRN` art. On
+    /// by default — a rules set that names pictures shows them — and it covers
+    /// the picture only. The next finished match reads it, so it needs no live
+    /// apply.
+    CustomEndGameBanner,
+    /// VERA's box: the score page starts the country's own
+    /// `VictoryMusic=`/`DefeatMusic=` theme instead of the side's. Also read
+    /// once per finished match.
+    CustomEndGameScore,
+    /// VERA's box: a finished match waits for a beaten computer commander's
+    /// losing clip before the score page opens and the battle is torn down.
+    /// Read when the match ends, so it needs no live apply either.
+    CustomEndGameMovie,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -532,8 +654,12 @@ pub(crate) enum LauncherOptionsEvent {
     Cue(LauncherCue),
     ZoomSelected(Zoom),
     SidebarSelected(SidebarSize),
+    /// The Health Bars list's pick, applied at once like Sidebar.
+    HealthBarModeSelected(HealthBarMode),
     /// The Display list's pick, applied to the window at once.
     DisplaySelected(DisplayTarget),
+    /// The Language list's pick, a language tag, applied at once.
+    LanguageSelected(String),
     FullScreenChanged(bool),
     OriginalShapeChanged(bool),
     YrOriginalStyleChanged(bool),
@@ -541,8 +667,18 @@ pub(crate) enum LauncherOptionsEvent {
     WolTestServiceChanged(bool),
     RenderInterpolationChanged(bool),
     MouseWheelZoomChanged(bool),
+    RightClickOrdersChanged(bool),
+    LockCursorChanged(bool),
+    VeraIconChanged(bool),
+    HdRadarChanged(bool),
+    SmoothSidebarChanged(bool),
+    HdMapPreviewsChanged(bool),
+    OriginalFontChanged(bool),
     FpsCounterChanged(bool),
-    SkipStartupLogoChanged(bool),
+    SkipIntroChanged(bool),
+    CustomEndGameBannerChanged(bool),
+    CustomEndGameScoreChanged(bool),
+    CustomEndGameMovieChanged(bool),
     /// VERA's team-colour strength, as the level the profile stores.
     HouseColorStrengthChanged(u8),
     ScorePreview(f32),
@@ -556,7 +692,6 @@ pub(crate) enum LauncherOptionsEvent {
 /// projects through `OptionsClass__ApplyFromLauncherDialog @ 0x0055FAA0`.
 pub(crate) enum LauncherParentResult {
     Back,
-    Network,
     Keyboard,
     Terminal,
 }
@@ -565,9 +700,7 @@ pub(crate) enum LauncherParentResult {
 pub(crate) struct LauncherOptionsFrameOutput {
     pub(crate) events: Vec<LauncherOptionsEvent>,
     pub(crate) result: Option<LauncherParentResult>,
-    /// The page a button asked for: the showing page slides out first.
-    pub(crate) page: Option<OptionsPage>,
-    /// Check for Updates: VERA's page slides out, then the updater checks.
+    /// Check for Updates: the dialog slides out, then the updater checks.
     pub(crate) check_for_updates: bool,
 }
 
@@ -585,13 +718,31 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) yr_original_style: bool,
     pub(crate) render_interpolation: bool,
     pub(crate) mouse_wheel_zoom: bool,
+    pub(crate) right_click_orders: bool,
+    pub(crate) lock_cursor: bool,
+    pub(crate) vera_icon: bool,
+    pub(crate) hd_radar: bool,
+    pub(crate) smooth_sidebar: bool,
+    pub(crate) hd_map_previews: bool,
+    pub(crate) original_font: bool,
     pub(crate) shift_queue: bool,
     pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) fps_counter: bool,
-    pub(crate) skip_startup_logo: bool,
+    pub(crate) skip_intro: bool,
+    /// The country's own end-game picture is allowed; see
+    /// [`LauncherCheckboxId::CustomEndGameBanner`].
+    pub(crate) custom_end_game_banner: bool,
+    /// The country's own end-game music is allowed; see
+    /// [`LauncherCheckboxId::CustomEndGameScore`].
+    pub(crate) custom_end_game_score: bool,
+    /// The exit waits for the closing commander clip; see
+    /// [`LauncherCheckboxId::CustomEndGameMovie`].
+    pub(crate) custom_end_game_movie: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
     pub(crate) sidebar: SidebarSize,
+    /// The Health Bars list's choice; like Sidebar, it applies at once.
+    pub(crate) health_bars: HealthBarMode,
     /// VERA's team-colour strength as the slider's position,
     /// [`crate::rules::house_colors::STRENGTH_MIN`] less than the level the
     /// profile stores. Position 0 is gamemd's own bands.
@@ -615,11 +766,22 @@ impl Default for LauncherOptionsValues {
             yr_original_style: false,
             render_interpolation: false,
             mouse_wheel_zoom: false,
+            right_click_orders: false,
+            lock_cursor: false,
+            vera_icon: false,
+            hd_radar: false,
+            smooth_sidebar: false,
+            hd_map_previews: true,
+            original_font: true,
             shift_queue: false,
             wol_test_service: false,
             fps_counter: false,
-            skip_startup_logo: false,
+            skip_intro: false,
+            custom_end_game_banner: false,
+            custom_end_game_score: false,
+            custom_end_game_movie: false,
             sidebar: SidebarSize::Normal,
+            health_bars: HealthBarMode::Vanilla,
             house_color_position: 0,
             score_position: 4,
             sound_position: 7,
@@ -701,6 +863,10 @@ pub(crate) struct OptionsDialogState {
     displays: Vec<DisplayChoice>,
     /// The Display list's current pick.
     display: DisplayTarget,
+    /// The languages the Language list offers, and the tag of the one in
+    /// use. Set by [`Self::set_languages`]; empty until then.
+    languages: Vec<crate::i18n::LanguageChoice>,
+    language: String,
     /// The list that is open, if any.
     open_combo: Option<LauncherComboId>,
     launcher_audio_available: bool,
@@ -711,8 +877,8 @@ pub(crate) struct OptionsDialogState {
     capture: Option<TrackbarHold<LauncherTrackbarId>>,
     pending_events: Vec<LauncherOptionsEvent>,
     pending_result: Option<LauncherParentResult>,
-    page: OptionsPage,
-    pending_page: Option<OptionsPage>,
+    /// The category whose page shows.
+    category: Category,
     pending_update_check: bool,
     shell_interaction: shell::ShellInteraction,
 }
@@ -775,16 +941,37 @@ impl OptionsDialogState {
             zoom,
             displays,
             display,
+            languages: Vec::new(),
+            language: String::new(),
             open_combo: None,
             launcher_audio_available,
             capture: None,
             pending_events: Vec::new(),
             pending_result: None,
-            page: OptionsPage::Main,
-            pending_page: None,
+            category: Category::ALL[0],
             pending_update_check: false,
             shell_interaction: shell::ShellInteraction::default(),
         }
+    }
+
+    /// What the Language list offers, and the tag of the language in use.
+    pub(crate) fn set_languages(
+        &mut self,
+        languages: Vec<crate::i18n::LanguageChoice>,
+        language: String,
+    ) {
+        self.languages = languages;
+        self.language = language;
+    }
+
+    /// After a language change: the retail captions read from the string
+    /// table again, and the slider steps they name with them.
+    pub(crate) fn set_labels(&mut self, labels: LauncherOptionsLabels) {
+        self.detail_caption = detail_caption(&labels, self.values.detail_position);
+        self.difficulty_caption = difficulty_caption(&labels, self.values.difficulty_position);
+        self.scroll_caption =
+            labels.scroll_tokens[usize::from(self.values.scroll_position)].clone();
+        self.labels = labels;
     }
 
     /// The screens the Display list offers, in the window layer's order. The
@@ -981,8 +1168,18 @@ impl OptionsDialogState {
             LauncherCheckboxId::WolTestService => &mut self.values.wol_test_service,
             LauncherCheckboxId::RenderInterpolation => &mut self.values.render_interpolation,
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
+            LauncherCheckboxId::RightClickOrders => &mut self.values.right_click_orders,
+            LauncherCheckboxId::LockCursor => &mut self.values.lock_cursor,
+            LauncherCheckboxId::VeraIcon => &mut self.values.vera_icon,
+            LauncherCheckboxId::HdRadar => &mut self.values.hd_radar,
+            LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
+            LauncherCheckboxId::HdMapPreviews => &mut self.values.hd_map_previews,
+            LauncherCheckboxId::OriginalFont => &mut self.values.original_font,
             LauncherCheckboxId::FpsCounter => &mut self.values.fps_counter,
-            LauncherCheckboxId::SkipStartupLogo => &mut self.values.skip_startup_logo,
+            LauncherCheckboxId::SkipIntro => &mut self.values.skip_intro,
+            LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
+            LauncherCheckboxId::CustomEndGameScore => &mut self.values.custom_end_game_score,
+            LauncherCheckboxId::CustomEndGameMovie => &mut self.values.custom_end_game_movie,
         };
         *slot = !*slot;
         let checked = *slot;
@@ -1010,12 +1207,42 @@ impl OptionsDialogState {
             LauncherCheckboxId::MouseWheelZoom => self
                 .pending_events
                 .push(LauncherOptionsEvent::MouseWheelZoomChanged(checked)),
+            LauncherCheckboxId::RightClickOrders => self
+                .pending_events
+                .push(LauncherOptionsEvent::RightClickOrdersChanged(checked)),
+            LauncherCheckboxId::LockCursor => self
+                .pending_events
+                .push(LauncherOptionsEvent::LockCursorChanged(checked)),
+            LauncherCheckboxId::VeraIcon => self
+                .pending_events
+                .push(LauncherOptionsEvent::VeraIconChanged(checked)),
+            LauncherCheckboxId::HdRadar => self
+                .pending_events
+                .push(LauncherOptionsEvent::HdRadarChanged(checked)),
+            LauncherCheckboxId::SmoothSidebar => self
+                .pending_events
+                .push(LauncherOptionsEvent::SmoothSidebarChanged(checked)),
+            LauncherCheckboxId::HdMapPreviews => self
+                .pending_events
+                .push(LauncherOptionsEvent::HdMapPreviewsChanged(checked)),
+            LauncherCheckboxId::OriginalFont => self
+                .pending_events
+                .push(LauncherOptionsEvent::OriginalFontChanged(checked)),
             LauncherCheckboxId::FpsCounter => self
                 .pending_events
                 .push(LauncherOptionsEvent::FpsCounterChanged(checked)),
-            LauncherCheckboxId::SkipStartupLogo => self
+            LauncherCheckboxId::SkipIntro => self
                 .pending_events
-                .push(LauncherOptionsEvent::SkipStartupLogoChanged(checked)),
+                .push(LauncherOptionsEvent::SkipIntroChanged(checked)),
+            LauncherCheckboxId::CustomEndGameBanner => self
+                .pending_events
+                .push(LauncherOptionsEvent::CustomEndGameBannerChanged(checked)),
+            LauncherCheckboxId::CustomEndGameScore => self
+                .pending_events
+                .push(LauncherOptionsEvent::CustomEndGameScoreChanged(checked)),
+            LauncherCheckboxId::CustomEndGameMovie => self
+                .pending_events
+                .push(LauncherOptionsEvent::CustomEndGameMovieChanged(checked)),
             LauncherCheckboxId::Tooltips
             | LauncherCheckboxId::TargetLines
             | LauncherCheckboxId::ShowHidden => {}
@@ -1052,7 +1279,7 @@ impl OptionsDialogState {
     /// gamemd-derived: ordinary `0xD5` owner-draw buttons emit
     /// `[AudioVisual] GUIMainButtonSound` on admitted primary mouse-down;
     /// `OptionsClass__ShowLauncherDialog @ 0x0055FC80` observes the distinct
-    /// Back/Network/Keyboard result only on the later activation release.
+    /// Back/Keyboard result only on the later activation release.
     pub(crate) fn main_button_mouse_down(&mut self) {
         self.pending_events
             .push(LauncherOptionsEvent::Cue(LauncherCue::MainButton));
@@ -1076,6 +1303,14 @@ impl OptionsDialogState {
             .push(LauncherOptionsEvent::SidebarSelected(size));
     }
 
+    /// The Health Bars list publishes its pick at once too.
+    pub(crate) fn select_health_bars(&mut self, mode: HealthBarMode) {
+        self.values.health_bars = mode;
+        self.open_combo = None;
+        self.pending_events
+            .push(LauncherOptionsEvent::HealthBarModeSelected(mode));
+    }
+
     /// The Display list publishes its pick at once too: the window moves to
     /// that screen straight away. Picking the screen already chosen, or one the
     /// window layer did not list, changes nothing.
@@ -1093,27 +1328,55 @@ impl OptionsDialogState {
             .push(LauncherOptionsEvent::DisplaySelected(display));
     }
 
+    /// The Language list publishes its pick at once: the next frame draws in
+    /// that language. The language in use, or one the list does not offer,
+    /// changes nothing.
+    pub(crate) fn select_language(&mut self, tag: &str) {
+        self.open_combo = None;
+        if self.language == tag || !self.languages.iter().any(|choice| choice.tag == tag) {
+            return;
+        }
+        self.language = tag.to_owned();
+        self.pending_events
+            .push(LauncherOptionsEvent::LanguageSelected(tag.to_owned()));
+    }
+
+    /// The main menu's Language button: the Interface page, its Language list
+    /// open.
+    pub(crate) fn open_language_list(&mut self) {
+        self.select_category(Category::Interface);
+        self.open_combo = Some(LauncherComboId::Language);
+    }
+
     /// gamemd-derived: `OptionsClass__ShowLauncherDialog @ 0x0055FC80` gives
-    /// Back, Network, Keyboard, and terminal completion distinct parent
-    /// results; the first admitted result owns the frame's teardown path.
+    /// Back, Keyboard, and terminal completion distinct parent results; the
+    /// first admitted result owns the frame's teardown path.
     pub(crate) fn request_result(&mut self, result: LauncherParentResult) {
         if !self.requested() {
             self.pending_result = Some(result);
         }
     }
 
-    pub(crate) const fn page(&self) -> OptionsPage {
-        self.page
+    pub(crate) const fn category(&self) -> Category {
+        self.category
     }
 
-    /// Ask for `page`; like a parent result, the first request wins.
-    pub(crate) fn request_page(&mut self, page: OptionsPage) {
-        if !self.requested() {
-            self.pending_page = Some(page);
+    /// Show `category`'s page in place: no slide, and nothing is applied or
+    /// saved. A held slider, an open list and a pressed button don't carry
+    /// over to the new page. A dialog rebuilt after Keyboard closes reopens
+    /// on the page the player left the same way.
+    pub(crate) fn select_category(&mut self, category: Category) {
+        if self.category == category {
+            return;
         }
+        self.category = category;
+        self.open_combo = None;
+        self.capture = None;
+        self.shell_interaction = self.shell_interaction.page_switched();
     }
 
-    /// Ask for Check for Updates; the first request wins here too.
+    /// Ask for Check for Updates; like a parent result, the first request of
+    /// a frame wins.
     pub(crate) fn request_update_check(&mut self) {
         if !self.requested() {
             self.pending_update_check = true;
@@ -1121,16 +1384,7 @@ impl OptionsDialogState {
     }
 
     fn requested(&self) -> bool {
-        self.pending_result.is_some() || self.pending_page.is_some() || self.pending_update_check
-    }
-
-    /// Show `page` once the other has slid out. Nothing is applied or saved;
-    /// a held slider, an open list and a pressed button don't carry over.
-    pub(crate) fn show_page(&mut self, page: OptionsPage) {
-        self.page = page;
-        self.open_combo = None;
-        self.capture = None;
-        self.shell_interaction = shell::ShellInteraction::default();
+        self.pending_result.is_some() || self.pending_update_check
     }
 
     /// gamemd-derived: primary-proc slice `0x0055FDB0..0x0056047A` observes
@@ -1140,10 +1394,128 @@ impl OptionsDialogState {
         LauncherOptionsFrameOutput {
             events: std::mem::take(&mut self.pending_events),
             result: self.pending_result.take(),
-            page: self.pending_page.take(),
             check_for_updates: std::mem::take(&mut self.pending_update_check),
         }
     }
+}
+
+/// The dialog's pages, top to bottom in the right-hand column under retail's
+/// Keyboard. Retail `0xD5` lays its controls out in four bands whose headings
+/// (`GUI:DisplayOptions`, `GUI:GameOptions`, `GUI:UIOptions`,
+/// `GUI:AudioOptions`) name the first four pages; VERA adds the last two.
+/// Picking a page swaps the controls in place; one set of values covers them
+/// all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Category {
+    Display,
+    Gameplay,
+    Interface,
+    Audio,
+    Controls,
+    Developer,
+}
+
+impl Category {
+    /// Every page, in the column's order.
+    pub(crate) const ALL: [Self; 6] = [
+        Self::Display,
+        Self::Gameplay,
+        Self::Interface,
+        Self::Audio,
+        Self::Controls,
+        Self::Developer,
+    ];
+
+    /// The page's controls, top to bottom.
+    pub(crate) const fn settings(self) -> &'static [Setting] {
+        use LauncherCheckboxId as Check;
+        use LauncherComboId as List;
+        use LauncherTrackbarId as Slider;
+        match self {
+            Self::Display => &[
+                Setting::List(List::Zoom),
+                Setting::List(List::Display),
+                Setting::Slider(Slider::HouseColorStrength),
+                Setting::Checkbox(Check::FullScreen),
+                Setting::Checkbox(Check::OriginalShape),
+                Setting::Checkbox(Check::RenderInterpolation),
+                Setting::Checkbox(Check::YrOriginalStyle),
+            ],
+            Self::Gameplay => &[
+                Setting::Slider(Slider::Detail),
+                Setting::Slider(Slider::Difficulty),
+                Setting::Checkbox(Check::TargetLines),
+                Setting::Checkbox(Check::ShowHidden),
+                Setting::Checkbox(Check::ShiftQueue),
+                Setting::Checkbox(Check::CustomEndGameBanner),
+                Setting::Checkbox(Check::CustomEndGameScore),
+                Setting::Checkbox(Check::CustomEndGameMovie),
+            ],
+            Self::Interface if !HAS_HD_MAP_PREVIEWS => &[
+                Setting::List(List::Language),
+                Setting::List(List::Sidebar),
+                Setting::List(List::HealthBars),
+                Setting::Checkbox(Check::Tooltips),
+                Setting::Checkbox(Check::VeraIcon),
+                Setting::Checkbox(Check::HdRadar),
+                Setting::Checkbox(Check::SmoothSidebar),
+                Setting::Checkbox(Check::OriginalFont),
+            ],
+            Self::Interface => &[
+                Setting::List(List::Language),
+                Setting::List(List::Sidebar),
+                Setting::List(List::HealthBars),
+                Setting::Checkbox(Check::Tooltips),
+                Setting::Checkbox(Check::VeraIcon),
+                Setting::Checkbox(Check::HdRadar),
+                Setting::Checkbox(Check::SmoothSidebar),
+                Setting::Checkbox(Check::HdMapPreviews),
+                Setting::Checkbox(Check::OriginalFont),
+            ],
+            Self::Audio => &[
+                Setting::Slider(Slider::Score),
+                Setting::Slider(Slider::Sound),
+                Setting::Slider(Slider::Voice),
+            ],
+            Self::Controls => &[
+                Setting::Slider(Slider::Scroll),
+                Setting::Checkbox(Check::RightClickOrders),
+                Setting::Checkbox(Check::MouseWheelZoom),
+                Setting::Checkbox(Check::LockCursor),
+            ],
+            // The Offline Internet Test Service stays off every page: it swaps
+            // Internet for stand-in servers, so only `[VERA] WolTestService=`
+            // turns it on.
+            Self::Developer => &[
+                Setting::Checkbox(Check::FpsCounter),
+                Setting::Checkbox(Check::SkipIntro),
+            ],
+        }
+    }
+
+    /// The status help for the page's button, a VERA language-file label:
+    /// retail's string table has nothing for VERA's pages. The browser build
+    /// leaves out what it lacks.
+    pub(crate) const fn help(self) -> &'static str {
+        match self {
+            Self::Display => "VERA:DisplayPageHelp",
+            Self::Gameplay => "VERA:GameplayPageHelp",
+            Self::Interface if HAS_HD_MAP_PREVIEWS => "VERA:InterfacePageHelp",
+            Self::Interface => "VERA:InterfacePageHelpBrowser",
+            Self::Audio => "VERA:AudioPageHelp",
+            Self::Controls => "VERA:ControlsPageHelp",
+            Self::Developer if HAS_CHECK_FOR_UPDATES => "VERA:DeveloperPageHelp",
+            Self::Developer => "VERA:DeveloperPageHelpBrowser",
+        }
+    }
+}
+
+/// One control of a page, named by the id its value and events go through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Setting {
+    List(LauncherComboId),
+    Slider(LauncherTrackbarId),
+    Checkbox(LauncherCheckboxId),
 }
 
 #[cfg(test)]
@@ -1415,6 +1787,21 @@ mod tests {
                 LauncherOptionsEvent::SidebarSelected(SidebarSize::Large)
             ]
         );
+
+        // The Health Bars list works the same way, on its own value.
+        use LauncherComboId::HealthBars as HealthBarsList;
+        state.combo_mouse_down(HealthBarsList, frame(4, 5, 180, 24));
+        assert_eq!(state.open_combo, Some(HealthBarsList));
+        state.select_health_bars(HealthBarMode::Always);
+        assert_eq!(state.open_combo, None);
+        assert_eq!(state.values.health_bars, HealthBarMode::Always);
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::ComboOpen),
+                LauncherOptionsEvent::HealthBarModeSelected(HealthBarMode::Always)
+            ]
+        );
     }
 
     #[test]
@@ -1584,29 +1971,18 @@ mod tests {
     }
 
     #[test]
-    fn the_first_request_of_a_frame_wins_across_results_and_pages() {
+    fn the_first_request_of_a_frame_wins_across_results_and_the_update_check() {
         let mut state = state(true);
-        state.request_page(OptionsPage::Vera);
-        state.request_result(LauncherParentResult::Back);
-        let output = state.drain_output();
-        assert_eq!(
-            (output.result, output.page),
-            (None, Some(OptionsPage::Vera))
-        );
-        state.request_result(LauncherParentResult::Keyboard);
-        state.request_page(OptionsPage::Vera);
-        let output = state.drain_output();
-        assert_eq!(
-            (output.result, output.page),
-            (Some(LauncherParentResult::Keyboard), None)
-        );
         state.request_update_check();
-        state.request_page(OptionsPage::Main);
         state.request_result(LauncherParentResult::Back);
         let output = state.drain_output();
+        assert_eq!((output.result, output.check_for_updates), (None, true));
+        state.request_result(LauncherParentResult::Keyboard);
+        state.request_update_check();
+        let output = state.drain_output();
         assert_eq!(
-            (output.result, output.page, output.check_for_updates),
-            (None, None, true)
+            (output.result, output.check_for_updates),
+            (Some(LauncherParentResult::Keyboard), false)
         );
     }
 
@@ -1614,11 +1990,11 @@ mod tests {
     fn escape_is_no_event_and_first_parent_result_wins_one_frame() {
         let mut state = state(true);
         assert!(state.drain_output().events.is_empty());
-        state.request_result(LauncherParentResult::Network);
+        state.request_result(LauncherParentResult::Keyboard);
         state.request_result(LauncherParentResult::Back);
         assert_eq!(
             state.drain_output().result,
-            Some(LauncherParentResult::Network)
+            Some(LauncherParentResult::Keyboard)
         );
         assert_eq!(state.drain_output().result, None);
     }
@@ -1729,5 +2105,74 @@ mod tests {
             DisplayTarget::Fixed("\\\\.\\DISPLAY7".to_owned()),
         );
         assert_eq!(state.display_choices().len(), 4);
+    }
+
+    /// Every control is on exactly one page: one the table leaves out could
+    /// not be reached, and one listed twice would show twice. The diagnostic
+    /// test service is on none.
+    #[test]
+    fn every_control_is_on_exactly_one_page() {
+        use LauncherCheckboxId as Check;
+        use LauncherComboId as List;
+        use LauncherTrackbarId as Slider;
+        let placed: Vec<Setting> = Category::ALL
+            .iter()
+            .flat_map(|page| page.settings())
+            .copied()
+            .collect();
+        let every: Vec<Setting> = [
+            List::Zoom,
+            List::Sidebar,
+            List::Display,
+            List::HealthBars,
+            List::Language,
+        ]
+        .map(Setting::List)
+        .into_iter()
+        .chain(
+            [
+                Slider::Detail,
+                Slider::Difficulty,
+                Slider::Scroll,
+                Slider::Score,
+                Slider::Sound,
+                Slider::Voice,
+                Slider::HouseColorStrength,
+            ]
+            .map(Setting::Slider),
+        )
+        .chain(
+            [
+                Check::Tooltips,
+                Check::TargetLines,
+                Check::ShowHidden,
+                Check::FullScreen,
+                Check::OriginalShape,
+                Check::YrOriginalStyle,
+                Check::RenderInterpolation,
+                Check::MouseWheelZoom,
+                Check::RightClickOrders,
+                Check::LockCursor,
+                Check::VeraIcon,
+                Check::HdRadar,
+                Check::SmoothSidebar,
+                Check::HdMapPreviews,
+                Check::OriginalFont,
+                Check::ShiftQueue,
+                Check::FpsCounter,
+                Check::SkipIntro,
+                Check::CustomEndGameBanner,
+                Check::CustomEndGameScore,
+                Check::CustomEndGameMovie,
+            ]
+            .map(Setting::Checkbox),
+        )
+        .collect();
+        for setting in &every {
+            let pages = placed.iter().filter(|placed| *placed == setting).count();
+            assert_eq!(pages, 1, "{setting:?}");
+        }
+        assert_eq!(placed.len(), every.len());
+        assert!(!placed.contains(&Setting::Checkbox(Check::WolTestService)));
     }
 }

@@ -294,8 +294,8 @@ pub struct QuitConfirmLayout {
 /// skirmish validation and saved-map notices) and `0xD0` (the Westwood Online
 /// `TXT_APIMISSING` box) share this geometry: body static `0x5B0`
 /// (40,40,220,50) and OK (207,175,83,15). F0's hidden Cancel shares that lower
-/// control rect and its visible body uses the same projection. The box centres
-/// on the live screen, not inside the 800x600 shell.
+/// control rect and its visible body uses the same projection. A menu's box
+/// centres on [`menu_popup_area`], one over a match on the match's frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BodyOkLayout {
     pub dialog: RectPx,
@@ -317,7 +317,11 @@ pub struct MessageBoxLayout {
 }
 
 pub fn message_box_layout(kind: ModalKind, screen_w: i32, screen_h: i32) -> MessageBoxLayout {
-    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    message_box_layout_in(kind, menu_popup_area(screen_w, screen_h))
+}
+
+fn message_box_layout_in(kind: ModalKind, area: RectPx) -> MessageBoxLayout {
+    let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
     let ok_y = match kind {
         ModalKind::BodyOk => 175,
         ModalKind::Confirm => 155,
@@ -336,8 +340,8 @@ pub fn message_box_layout(kind: ModalKind, screen_w: i32, screen_h: i32) -> Mess
     }
 }
 
-/// Keep ShellMessageBox__Run (0x005D3490)'s template and CenterWindow
-/// (0x00777080)'s centering in authored pixels, then apply the front-end
+/// Keep ShellMessageBox__Run (0x005D3490)'s template in authored pixels,
+/// centred like every menu box ([`menu_popup_area`]), then apply the front-end
 /// shell's uniform mapping. Retail 640/800 layouts keep their native size.
 /// Source: gamemd.exe RT_DIALOG CE/120/121 and tools/storage_oracle/saved_game_layout.json.
 pub fn message_box_layout_on(
@@ -361,7 +365,12 @@ pub fn message_box_layout_on(
 }
 
 pub fn body_ok_layout(screen_w: i32, screen_h: i32) -> BodyOkLayout {
-    let layout = message_box_layout(ModalKind::BodyOk, screen_w, screen_h);
+    body_ok_layout_in(menu_popup_area(screen_w, screen_h))
+}
+
+/// The box centred on `area`: the match's frame for a box over a match.
+pub fn body_ok_layout_in(area: RectPx) -> BodyOkLayout {
+    let layout = message_box_layout_in(ModalKind::BodyOk, area);
     BodyOkLayout {
         dialog: layout.dialog,
         body: layout.body,
@@ -369,11 +378,15 @@ pub fn body_ok_layout(screen_w: i32, screen_h: i32) -> BodyOkLayout {
     }
 }
 
-/// Center the modal panel on the live screen, then place each control at its
-/// dialog-relative DLU rect (the native modal-centered policy: no fullscreen
-/// re-anchor).
+/// Centre the panel on [`menu_popup_area`], then place each control at its
+/// dialog-relative DLU rect (no fullscreen re-anchor).
 pub fn quit_confirm_layout(screen_w: i32, screen_h: i32) -> QuitConfirmLayout {
-    let layout = message_box_layout(ModalKind::Confirm, screen_w, screen_h);
+    quit_confirm_layout_in(menu_popup_area(screen_w, screen_h))
+}
+
+/// The box centred on `area`: the match's frame for a box over a match.
+pub fn quit_confirm_layout_in(area: RectPx) -> QuitConfirmLayout {
+    let layout = message_box_layout_in(ModalKind::Confirm, area);
     QuitConfirmLayout {
         dialog: layout.dialog,
         body: layout.body,
@@ -417,7 +430,7 @@ pub struct WaitBoxLayout {
 }
 
 pub fn wait_box_layout(screen_w: i32, screen_h: i32) -> WaitBoxLayout {
-    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let dialog = menu_box(screen_w, screen_h);
     WaitBoxLayout {
         dialog,
         text: modal_child(dialog, geom::child_window(51, 14, 197, 54)),
@@ -456,8 +469,13 @@ pub struct WolCreateGameLayout {
     pub clan: Option<RectPx>,
     pub limit: RectPx,
     pub observe: Option<RectPx>,
-    /// VERA's online popup's Players and Allow spectators.
+    /// VERA's online popup's Max players and Allow spectators.
     pub room: Option<crate::ui::room_limits::RoomLimitsLayout>,
+    /// VERA's online popup's Room name caption and edit, a row above the
+    /// password.
+    pub name: Option<(RectPx, RectPx)>,
+    /// VERA's online popup's Ranked game box, below Allow spectators.
+    pub ranked: Option<RectPx>,
     pub ok: RectPx,
     pub cancel: RectPx,
     /// Its own status line `0x695`.
@@ -473,12 +491,12 @@ fn new_edit_window(rect: RectPx) -> RectPx {
 const ONLINE_STATUS_INSET: i32 = 10;
 
 /// `online` is VERA's online lobby on Red Alert 2's box art: no clan or
-/// observer box (the lobby's own Observe box still seats an observer), Limit
-/// Screen Resolution in the clan row under the password field, clear of the
-/// art's Tesla Trooper, then Players and Allow spectators in the limit and
-/// observer rows, and the status line inside the frame.
+/// observer box (the lobby's own Observe box still seats an observer); Room
+/// name, Password, Limit Screen Resolution, Max players, Allow spectators and
+/// Ranked game in the field column clear of the art's Tesla Trooper, and the
+/// status line inside the frame.
 pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> WolCreateGameLayout {
-    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let dialog = menu_box(screen_w, screen_h);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
     let field = child(133, 47, 140, 12);
     let clan = child(34, 76, 234, 14);
@@ -493,6 +511,8 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
         limit,
         observe: Some(observe),
         room: None,
+        name: None,
+        ranked: None,
         ok: child(33, 128, 83, 15),
         cancel: child(184, 128, 83, 15),
         status,
@@ -500,16 +520,29 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
     if !online {
         return layout;
     }
+    // Room name and Password, then the four option rows at the native
+    // 17-unit pitch, and the buttons a row lower than the native box's.
+    let row = |y| child(133, y, 140, 12);
+    let caption = |y| child(11, y + 1, 113, 12);
+    let password_label = caption(58);
+    let password = row(58);
+    let check = |y| RectPx::new(password.x, child(34, y, 234, 14).y, password.w, clan.h);
     WolCreateGameLayout {
+        password_label,
+        password: new_edit_window(password),
         clan: None,
         observe: None,
-        limit: RectPx::new(field.x, clan.y, field.w, clan.h),
+        limit: check(79),
         room: Some(room_limits_layout(
-            layout.password_label,
-            field,
-            limit.y,
-            observe,
+            password_label,
+            password,
+            child(34, 96, 234, 14).y,
+            check(113),
         )),
+        name: Some((caption(40), new_edit_window(row(40)))),
+        ranked: Some(check(130)),
+        ok: child(33, 152, 83, 15),
+        cancel: child(184, 152, 83, 15),
         status: RectPx::new(
             dialog.x + ONLINE_STATUS_INSET,
             status.y,
@@ -520,8 +553,191 @@ pub fn wol_create_game_layout(screen_w: i32, screen_h: i32, online: bool) -> Wol
     }
 }
 
+/// The Create Game box on the lobby page's shell mapping: the retail
+/// placement at `scale`'s retail size, otherwise the 800x600 box scaled with
+/// the page, as [`message_box_layout_on`] does for message boxes.
+pub fn wol_create_game_layout_on(
+    screen_w: i32,
+    screen_h: i32,
+    online: bool,
+    scale: geom::ShellScale,
+) -> WolCreateGameLayout {
+    if scale.is_retail() {
+        return wol_create_game_layout(screen_w, screen_h, online);
+    }
+    let base = wol_create_game_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H, online);
+    let s = |rect| scale.scale_rect(rect);
+    WolCreateGameLayout {
+        dialog: s(base.dialog),
+        password_label: s(base.password_label),
+        password: s(base.password),
+        clan: base.clan.map(s),
+        limit: s(base.limit),
+        observe: base.observe.map(s),
+        room: base
+            .room
+            .map(|room| crate::ui::room_limits::RoomLimitsLayout {
+                players_label: s(room.players_label),
+                players: s(room.players),
+                spectators: s(room.spectators),
+            }),
+        name: base.name.map(|(label, edit)| (s(label), s(edit))),
+        ranked: base.ranked.map(s),
+        ok: s(base.ok),
+        cancel: s(base.cancel),
+        status: s(base.status),
+    }
+}
+
+/// VERA online's account popups (Create Account, its mailed code, Forgot
+/// Password) on the online Create Game box: one caption and edit per field,
+/// OK and Cancel, and a two-line status inside the frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WolAccountFormLayout {
+    pub dialog: RectPx,
+    /// Each field's right-aligned caption and its edit.
+    pub fields: Vec<(RectPx, RectPx)>,
+    /// Login's Remember password box, the row under the fields, as the
+    /// online Create Game box's checkboxes.
+    pub remember: Option<RectPx>,
+    pub ok: RectPx,
+    pub cancel: RectPx,
+    pub status: RectPx,
+}
+
+/// `count` fields and the `remember` row (at most four rows) 18 units apart,
+/// centred on the Create Game box's Room name and Password rows. The box is
+/// centred on `area`, in the shell's authored 800x600 units.
+pub fn wol_account_form_layout(area: RectPx, count: usize, remember: bool) -> WolAccountFormLayout {
+    let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
+    let count = count.min(4 - usize::from(remember)) as i32;
+    let top = 40 + 9 * (4 - count - i32::from(remember));
+    let row = |index: i32| top + 18 * index;
+    let status = child(0, 172, 291, 24);
+    WolAccountFormLayout {
+        dialog,
+        fields: (0..count)
+            .map(|index| {
+                let y = row(index);
+                (
+                    child(11, y + 1, 113, 12),
+                    new_edit_window(child(133, y, 140, 12)),
+                )
+            })
+            .collect(),
+        remember: remember.then(|| {
+            let (edit, check) = (
+                child(133, row(count), 140, 12),
+                child(34, row(count), 234, 14),
+            );
+            RectPx::new(edit.x, check.y, edit.w, check.h)
+        }),
+        ok: child(33, 128, 83, 15),
+        cancel: child(184, 128, 83, 15),
+        status: RectPx::new(
+            dialog.x + ONLINE_STATUS_INSET,
+            status.y,
+            dialog.w - 2 * ONLINE_STATUS_INSET,
+            status.h,
+        ),
+    }
+}
+
+/// The account popup on the login page's shell mapping, as
+/// [`wol_create_game_layout_on`].
+pub fn wol_account_form_layout_on(
+    area: RectPx,
+    count: usize,
+    remember: bool,
+    scale: geom::ShellScale,
+) -> WolAccountFormLayout {
+    let base = wol_account_form_layout(area, count, remember);
+    if scale.is_retail() {
+        return base;
+    }
+    let s = |rect| scale.scale_rect(rect);
+    WolAccountFormLayout {
+        dialog: s(base.dialog),
+        fields: base
+            .fields
+            .iter()
+            .map(|&(caption, edit)| (s(caption), s(edit)))
+            .collect(),
+        remember: base.remember.map(s),
+        ok: s(base.ok),
+        cancel: s(base.cancel),
+        status: s(base.status),
+    }
+}
+
+/// VERA's player card in the online lobby on the online Create Game box: a
+/// caption and value per row, Message and Add or Remove Buddy over Full
+/// Profile and Close, and the status line inside the frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WolPlayerCardLayout {
+    pub dialog: RectPx,
+    /// Each row's right-aligned caption and its value.
+    pub rows: [(RectPx, RectPx); PLAYER_CARD_ROWS],
+    pub message: RectPx,
+    pub buddy: RectPx,
+    pub profile: RectPx,
+    pub close: RectPx,
+    pub status: RectPx,
+}
+
+pub const PLAYER_CARD_ROWS: usize = 5;
+
+/// The account popups' caption and field columns 18 units apart from the
+/// Room name row, and two rows of the online box's OK and Cancel buttons.
+pub fn wol_player_card_layout(screen_w: i32, screen_h: i32) -> WolPlayerCardLayout {
+    let dialog = menu_box(screen_w, screen_h);
+    let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
+    let status = child(0, 186, 291, 12);
+    WolPlayerCardLayout {
+        dialog,
+        rows: std::array::from_fn(|row| {
+            let y = 41 + 18 * row as i32;
+            (child(11, y, 113, 12), child(133, y, 150, 12))
+        }),
+        message: child(33, 134, 83, 15),
+        buddy: child(184, 134, 83, 15),
+        profile: child(33, 152, 83, 15),
+        close: child(184, 152, 83, 15),
+        status: RectPx::new(
+            dialog.x + ONLINE_STATUS_INSET,
+            status.y,
+            dialog.w - 2 * ONLINE_STATUS_INSET,
+            status.h,
+        ),
+    }
+}
+
+/// The player card on the lobby page's shell mapping, as
+/// [`wol_create_game_layout_on`].
+pub fn wol_player_card_layout_on(
+    screen_w: i32,
+    screen_h: i32,
+    scale: geom::ShellScale,
+) -> WolPlayerCardLayout {
+    if scale.is_retail() {
+        return wol_player_card_layout(screen_w, screen_h);
+    }
+    let base = wol_player_card_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H);
+    let s = |rect| scale.scale_rect(rect);
+    WolPlayerCardLayout {
+        dialog: s(base.dialog),
+        rows: base.rows.map(|(caption, value)| (s(caption), s(value))),
+        message: s(base.message),
+        buddy: s(base.buddy),
+        profile: s(base.profile),
+        close: s(base.close),
+        status: s(base.status),
+    }
+}
+
 /// VERA's Create Game box in the LAN lobby, the online box's art and
-/// buttons: Players in the password row, Allow spectators in the clan row.
+/// buttons: Max players in the password row, Allow spectators in the clan row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LanCreateGameLayout {
     pub dialog: RectPx,
@@ -542,7 +758,7 @@ pub fn lan_create_game_layout(screen_w: i32, screen_h: i32) -> LanCreateGameLayo
     }
 }
 
-/// Players beside its caption at `players_y`, the trackbar under `field`'s
+/// Max players beside its caption at `players_y`, the trackbar under `field`'s
 /// left edge, and Allow spectators in `checkbox_row` from the same edge.
 fn room_limits_layout(
     caption: RectPx,
@@ -570,7 +786,7 @@ pub struct WolChannelPasswordLayout {
 }
 
 pub fn wol_channel_password_layout(screen_w: i32, screen_h: i32) -> WolChannelPasswordLayout {
-    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let dialog = menu_box(screen_w, screen_h);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
     WolChannelPasswordLayout {
         dialog,
@@ -578,6 +794,27 @@ pub fn wol_channel_password_layout(screen_w: i32, screen_h: i32) -> WolChannelPa
         password: new_edit_window(child(48, 94, 202, 12)),
         ok: child(49, 163, 83, 15),
         cancel: child(157, 163, 83, 15),
+    }
+}
+
+/// The channel password popup on the lobby page's shell mapping, as
+/// [`wol_create_game_layout_on`].
+pub fn wol_channel_password_layout_on(
+    screen_w: i32,
+    screen_h: i32,
+    scale: geom::ShellScale,
+) -> WolChannelPasswordLayout {
+    if scale.is_retail() {
+        return wol_channel_password_layout(screen_w, screen_h);
+    }
+    let base = wol_channel_password_layout(geom::SHELL_BASE_W, geom::SHELL_BASE_H);
+    let s = |rect| scale.scale_rect(rect);
+    WolChannelPasswordLayout {
+        dialog: s(base.dialog),
+        label: s(base.label),
+        password: s(base.password),
+        ok: s(base.ok),
+        cancel: s(base.cancel),
     }
 }
 
@@ -605,7 +842,12 @@ pub struct WolPageLayout {
 }
 
 pub fn wol_page_layout(screen_w: i32, screen_h: i32) -> WolPageLayout {
-    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    wol_page_layout_in(menu_popup_area(screen_w, screen_h))
+}
+
+/// The box centred on `area`: the match's frame for the in-match page.
+pub fn wol_page_layout_in(area: RectPx) -> WolPageLayout {
+    let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
     WolPageLayout {
         dialog,
@@ -640,7 +882,12 @@ pub struct WolPageReceivedLayout {
 }
 
 pub fn wol_page_received_layout(screen_w: i32, screen_h: i32) -> WolPageReceivedLayout {
-    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    wol_page_received_layout_in(menu_popup_area(screen_w, screen_h))
+}
+
+/// The box centred on `area`: the match's frame for the in-match page.
+pub fn wol_page_received_layout_in(area: RectPx) -> WolPageReceivedLayout {
+    let dialog = centered_modal_dialog_in(area, MESSAGE_BOX_W, MESSAGE_BOX_H);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
     WolPageReceivedLayout {
         dialog,
@@ -670,7 +917,7 @@ pub struct WolAddBuddyLayout {
 }
 
 pub fn wol_add_buddy_layout(screen_w: i32, screen_h: i32) -> WolAddBuddyLayout {
-    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let dialog = menu_box(screen_w, screen_h);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
     WolAddBuddyLayout {
         dialog,
@@ -693,7 +940,7 @@ pub struct WolVerifyLayout {
 }
 
 pub fn wol_verify_layout(screen_w: i32, screen_h: i32) -> WolVerifyLayout {
-    let dialog = centered_modal_dialog(screen_w, screen_h, MESSAGE_BOX_W, MESSAGE_BOX_H);
+    let dialog = menu_box(screen_w, screen_h);
     let child = |x, y, w, h| modal_child(dialog, geom::child_window(x, y, w, h));
     WolVerifyLayout {
         dialog,
@@ -702,12 +949,38 @@ pub fn wol_verify_layout(screen_w: i32, screen_h: i32) -> WolVerifyLayout {
     }
 }
 
-/// Center a modal panel of `(w, h)` on the live screen. Byte-identical to the
-/// skirmish validation-modal centering (`((screen - size) + 1) / 2`, clamped >= 0).
-fn centered_modal_dialog(screen_w: i32, screen_h: i32, w: i32, h: i32) -> RectPx {
+/// Where the front-end's boxes centre in a `screen_w`x`screen_h` window: the
+/// page's content, left of its right button column and above its status strip,
+/// wherever the shell's mapping for that window puts them.
+///
+/// VERA deviation: gamemd's CenterChildWindow (0x00777080) centres a box on
+/// the whole screen, at 800x600 84 px right of the page's content and against
+/// its button column. Boxes over a match keep that centring on the match's
+/// frame (the `_in` layouts).
+fn menu_popup_area(screen_w: i32, screen_h: i32) -> RectPx {
+    let content = |w, h| RectPx::new(0, 0, w - geom::RIGHT_PANEL_WIDTH, h - geom::LOWER_STRIP_H);
+    let scale = geom::ShellScale::for_window(screen_w, screen_h);
+    if scale.is_retail() {
+        content(screen_w, screen_h)
+    } else {
+        scale.scale_rect(content(geom::SHELL_BASE_W, geom::SHELL_BASE_H))
+    }
+}
+
+/// Where a menu's 451x326 box sits: centred on [`menu_popup_area`].
+pub fn menu_box(screen_w: i32, screen_h: i32) -> RectPx {
+    centered_modal_dialog_in(
+        menu_popup_area(screen_w, screen_h),
+        MESSAGE_BOX_W,
+        MESSAGE_BOX_H,
+    )
+}
+
+/// Centre a panel of `(w, h)` on `area` (`((area - size) + 1) / 2`, clamped >= 0).
+fn centered_modal_dialog_in(area: RectPx, w: i32, h: i32) -> RectPx {
     RectPx::new(
-        (((screen_w - w) + 1) / 2).max(0),
-        (((screen_h - h) + 1) / 2).max(0),
+        area.x + (((area.w - w) + 1) / 2).max(0),
+        area.y + (((area.h - h) + 1) / 2).max(0),
         w,
         h,
     )
@@ -871,11 +1144,8 @@ mod tests {
     #[test]
     fn quit_confirm_layout_centers_panel_and_places_controls() {
         let l = quit_confirm_layout(800, 600);
-        // Panel centered on the live screen (round-half-up, clamped).
-        assert_eq!(
-            l.dialog,
-            RectPx::new(175, 137, MESSAGE_BOX_W, MESSAGE_BOX_H)
-        );
+        // Panel centred on the page left of the button column (round-half-up).
+        assert_eq!(l.dialog, RectPx::new(91, 121, MESSAGE_BOX_W, MESSAGE_BOX_H));
         // Controls at the dialog origin + their template DLU rects.
         let child = |dx, dy, dw, dh| {
             let local = geom::child_window(dx, dy, dw, dh);
@@ -888,6 +1158,33 @@ mod tests {
         // DLU x=207, as in the 0x120 template and the retail capture.
         assert!(l.ok.y < l.cancel.y);
         assert_eq!(l.ok.x, l.cancel.x);
+    }
+
+    #[test]
+    fn menu_boxes_centre_on_the_page_left_of_the_button_column() {
+        // The retail pages: the 632x568 and 472x448 areas left of the button
+        // column and above the status strip.
+        assert_eq!(menu_box(800, 600), RectPx::new(91, 121, 451, 326));
+        assert_eq!(menu_box(640, 480), RectPx::new(11, 61, 451, 326));
+        // A fitted page (x2 at 1600x1200) centres a retail-size box on its
+        // scaled content, and a scaled box where the 800x600 one sits.
+        assert_eq!(menu_box(1600, 1200), RectPx::new(407, 405, 451, 326));
+        let scale = geom::ShellScale::from_screen(1600, 1200);
+        assert_eq!(
+            message_box_layout_on(ModalKind::BodyOk, 1600, 1200, scale).dialog,
+            scale.scale_rect(menu_box(800, 600))
+        );
+        // A box over a match keeps gamemd's centring on the frame.
+        assert_eq!(
+            quit_confirm_layout_in(RectPx::new(0, 0, 800, 600)).dialog,
+            RectPx::new(175, 137, 451, 326)
+        );
+    }
+
+    /// `rect` from `dialog`'s corner. The executed tables centre each box on
+    /// the screen; a menu's box centres on the page, its controls in place.
+    fn local(rect: RectPx, dialog: RectPx) -> RectPx {
+        rect.translate(-dialog.x, -dialog.y)
     }
 
     #[test]
@@ -921,8 +1218,10 @@ mod tests {
         for row in corpus["progress_geometry"].as_array().unwrap() {
             let width = row["input"]["width"].as_i64().unwrap() as i32;
             let height = row["input"]["height"].as_i64().unwrap() as i32;
-            let projected = body_ok_layout(width, height);
-            let quit = quit_confirm_layout(width, height);
+            // gamemd's centring on the screen, which boxes over a match keep.
+            let screen = RectPx::new(0, 0, width, height);
+            let projected = body_ok_layout_in(screen);
+            let quit = quit_confirm_layout_in(screen);
             assert_eq!(projected.dialog, rect(&row["dialog_rect"]));
             assert_eq!(quit.dialog, projected.dialog);
             let children = crate::ui::shell::layout::layout_pass(&descriptor, width, height);
@@ -961,11 +1260,11 @@ mod tests {
         // RT_DIALOG 0xC4 through the shared 300x200 DLU modal policy (the
         // relayout tool's MulDiv; the popup was not executed).
         let wait = wait_box_layout(800, 600);
-        assert_eq!(wait.dialog, RectPx::new(175, 137, 451, 326));
-        assert_eq!(wait.disconnect, RectPx::new(339, 308, 126, 25));
-        assert_eq!(wait.text, RectPx::new(252, 160, 297, 89));
-        assert_eq!(wait.check_status, RectPx::new(339, 348, 126, 25));
-        assert_eq!(wait.animation, RectPx::new(277, 402, 249, 34));
+        assert_eq!(wait.dialog, RectPx::new(91, 121, 451, 326));
+        assert_eq!(wait.disconnect, RectPx::new(255, 292, 126, 25));
+        assert_eq!(wait.text, RectPx::new(168, 144, 297, 89));
+        assert_eq!(wait.check_status, RectPx::new(255, 332, 126, 25));
+        assert_eq!(wait.animation, RectPx::new(193, 386, 249, 34));
         let yes_no = yes_no_layout(800, 600);
         let quit = quit_confirm_layout(800, 600);
         assert_eq!((yes_no.yes, yes_no.no), (quit.ok, quit.cancel));
@@ -988,7 +1287,10 @@ mod tests {
                 let (w, h): (i32, i32) = (w.parse().unwrap(), h.parse().unwrap());
                 let create = wol_create_game_layout(w, h, false);
                 let password = wol_channel_password_layout(w, h);
-                assert_eq!(create.dialog, rect(&case["dialog"]), "{key} {size}");
+                let native_dialog = rect(&case["dialog"]);
+                assert_eq!(create.dialog.w, native_dialog.w, "{key} {size}");
+                assert_eq!(create.dialog.h, native_dialog.h, "{key} {size}");
+                assert_eq!(password.dialog, create.dialog);
                 for (id, child) in case["controls"].as_object().unwrap() {
                     let mut native = rect(&child["screen_rect"]);
                     let actual = match (key, id.as_str()) {
@@ -1009,12 +1311,67 @@ mod tests {
                     if id == "0x72C" {
                         native = new_edit_window(native);
                     }
-                    assert_eq!(actual, native, "{key} {size} {id}");
+                    assert_eq!(
+                        local(actual, create.dialog),
+                        local(native, native_dialog),
+                        "{key} {size} {id}"
+                    );
                     checked += 1;
                 }
             }
         }
         assert_eq!(checked, 36);
+    }
+
+    #[test]
+    fn lobby_popups_grow_with_a_scaled_page() {
+        let scale = geom::ShellScale::from_screen(1600, 1200);
+        let retail = wol_create_game_layout(800, 600, true);
+        let scaled = wol_create_game_layout_on(1600, 1200, true, scale);
+        assert_eq!(scaled.dialog, scale.scale_rect(retail.dialog));
+        assert_eq!((scaled.dialog.w, scaled.dialog.h), (902, 652));
+        assert_eq!(
+            scaled.name.unwrap().1,
+            scale.scale_rect(retail.name.unwrap().1)
+        );
+        let password = wol_channel_password_layout_on(1600, 1200, scale);
+        assert_eq!(
+            password.ok,
+            scale.scale_rect(wol_channel_password_layout(800, 600).ok)
+        );
+        // A window the page keeps at retail size keeps the retail placement.
+        assert_eq!(
+            wol_create_game_layout_on(1024, 768, true, geom::ShellScale::RETAIL),
+            wol_create_game_layout(1024, 768, true)
+        );
+    }
+
+    #[test]
+    fn account_popups_keep_their_fields_between_the_title_and_the_buttons() {
+        let screen = menu_popup_area(800, 600);
+        let create = wol_account_form_layout(screen, 4, false);
+        let frame = create.dialog;
+        let (_, first) = create.fields[0];
+        let (_, last) = create.fields[3];
+        // The Create Game box's Room name row, and the last above OK.
+        assert_eq!(
+            first,
+            wol_create_game_layout(800, 600, true).name.unwrap().1
+        );
+        assert!(last.y + last.h < create.ok.y);
+        assert!(create.status.y >= create.ok.y + create.ok.h);
+        assert!(create.status.y + create.status.h <= frame.y + frame.h);
+        // One field sits mid-way between the four's first and last rows.
+        let (_, code) = wol_account_form_layout(screen, 1, false).fields[0];
+        assert!(((code.y - first.y) - (last.y - code.y)).abs() <= 1);
+        // Login's two fields and Remember password take the rows of three
+        // fields, the box in the edits' column.
+        let login = wol_account_form_layout(screen, 2, true);
+        let three = wol_account_form_layout(screen, 3, false);
+        assert_eq!(login.fields[..], three.fields[..2]);
+        let (remember, (_, third)) = (login.remember.unwrap(), three.fields[2]);
+        assert_eq!(remember.x, three.fields[2].1.x - 1);
+        assert!(remember.y <= third.y && remember.y + remember.h >= third.y + third.h);
     }
 
     #[test]
@@ -1032,6 +1389,14 @@ mod tests {
         // Limit sits between the password field and the buttons.
         assert!(online.limit.y >= online.password.y + online.password.h);
         assert!(online.limit.y + online.limit.h <= online.ok.y);
+        // Ranked game sits below Allow spectators, above the buttons, which
+        // stay above the status line.
+        let ranked = online.ranked.unwrap();
+        let spectators = online.room.unwrap().spectators;
+        assert!(inside(ranked), "{ranked:?}");
+        assert!(ranked.y >= spectators.y + spectators.h);
+        assert!(ranked.y + ranked.h <= online.ok.y);
+        assert!(online.ok.y + online.ok.h <= online.status.y);
     }
 
     #[test]
@@ -1049,8 +1414,10 @@ mod tests {
             for (size, case) in corpus["layouts"][key]["sizes"].as_object().unwrap() {
                 let (w, h) = size.split_once('x').unwrap();
                 let (w, h): (i32, i32) = (w.parse().unwrap(), h.parse().unwrap());
-                let page = wol_page_layout(w, h);
-                let received = wol_page_received_layout(w, h);
+                // The executed tables centre on the screen, as the in-match page does.
+                let screen = RectPx::new(0, 0, w, h);
+                let page = wol_page_layout_in(screen);
+                let received = wol_page_received_layout_in(screen);
                 assert_eq!(page.dialog, rect(&case["dialog"]), "{key} {size}");
                 assert_eq!(received.dialog, page.dialog);
                 for (id, child) in case["controls"].as_object().unwrap() {
@@ -1099,7 +1466,12 @@ mod tests {
         for (size, case) in corpus["layouts"]["0x115"]["sizes"].as_object().unwrap() {
             let (w, h) = size.split_once('x').unwrap();
             let layout = wol_add_buddy_layout(w.parse().unwrap(), h.parse().unwrap());
-            assert_eq!(layout.dialog, rect(&case["dialog"]), "{size}");
+            let native_dialog = rect(&case["dialog"]);
+            assert_eq!(
+                (layout.dialog.w, layout.dialog.h),
+                (native_dialog.w, native_dialog.h),
+                "{size}"
+            );
             for (id, child) in case["controls"].as_object().unwrap() {
                 let mut native = rect(&child["screen_rect"]);
                 let actual = match id.as_str() {
@@ -1113,7 +1485,11 @@ mod tests {
                 if child["class"] == "Edit" {
                     native = new_edit_window(native);
                 }
-                assert_eq!(actual, native, "{size} {id}");
+                assert_eq!(
+                    local(actual, layout.dialog),
+                    local(native, native_dialog),
+                    "{size} {id}"
+                );
                 checked += 1;
             }
         }
@@ -1134,7 +1510,12 @@ mod tests {
         for (size, case) in corpus["layouts"]["0x130"]["sizes"].as_object().unwrap() {
             let (w, h) = size.split_once('x').unwrap();
             let layout = wol_verify_layout(w.parse().unwrap(), h.parse().unwrap());
-            assert_eq!(layout.dialog, rect(&case["dialog"]), "{size}");
+            let native_dialog = rect(&case["dialog"]);
+            assert_eq!(
+                (layout.dialog.w, layout.dialog.h),
+                (native_dialog.w, native_dialog.h),
+                "{size}"
+            );
             for (id, child) in case["controls"].as_object().unwrap() {
                 let id = u16::from_str_radix(id.trim_start_matches("0x"), 16).unwrap();
                 let actual = match crate::ui::wol_verify::BOXES.iter().position(|b| *b == id) {
@@ -1142,7 +1523,11 @@ mod tests {
                     None if id == 0x5B2 => layout.title,
                     None => panic!("{id:#x}"),
                 };
-                assert_eq!(actual, rect(&child["screen_rect"]), "{size} {id:#x}");
+                assert_eq!(
+                    local(actual, layout.dialog),
+                    local(rect(&child["screen_rect"]), native_dialog),
+                    "{size} {id:#x}"
+                );
                 checked += 1;
             }
         }

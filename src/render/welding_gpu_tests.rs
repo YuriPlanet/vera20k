@@ -1,5 +1,6 @@
 //! Original ParticleDraw controls through the common surface upload/snapshot
-//! and live signed-Z shader, including full-u16 A and chunk boundaries.
+//! and live signed-Z shader, including the byte A boundaries and chunk
+//! boundaries.
 
 use super::*;
 use crate::render::batch::BatchRenderer;
@@ -7,7 +8,7 @@ use crate::render::tactical_compat::welding_tests as fixture;
 use crate::render::terrain_draw_gpu_tests::{Gpu, camera, encoded, seed_depth_grid};
 
 #[test]
-#[ignore = "requires GPU; original Welding points, full-u16 A, signed live Z, ordered overlap and chunk boundaries"]
+#[ignore = "requires GPU; original Welding points, byte A, signed live Z, ordered overlap and chunk boundaries"]
 fn production_welding_points_match_original_pixels_and_preserve_depth() {
     let gpu = Gpu::new();
     for format in [
@@ -25,7 +26,15 @@ fn production_welding_points_match_original_pixels_and_preserve_depth() {
             let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
             let dv = depth.create_view(&Default::default());
             terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
-            let a = fixture::plane(input, "a");
+            // The production A plane holds bytes, so the fixture's word-only
+            // A rows (256 and up) have no production input.
+            let Ok(a) = fixture::plane(input, "a")
+                .into_iter()
+                .map(u8::try_from)
+                .collect::<Result<Vec<_>, _>>()
+            else {
+                continue;
+            };
             let z = fixture::plane(input, "z");
             let draws: Vec<_> = fixture::prepared_points(input, &row["draws"])
                 .into_iter()
@@ -54,6 +63,9 @@ fn production_welding_points_match_original_pixels_and_preserve_depth() {
                     },
                     color.size(),
                 );
+                terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |[x, y]| {
+                    u16::from(a[(y as u32 * size[0] + x as u32) as usize])
+                });
                 terrain.begin_surface_lines();
                 let prepared = terrain.prepare_surface_lines(
                     &gpu.device,
@@ -70,7 +82,6 @@ fn production_welding_points_match_original_pixels_and_preserve_depth() {
                         zoom: 1.,
                     },
                     |_| false,
-                    |[x, y]| a[(y as u32 * size[0] + x as u32) as usize],
                 );
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
                 seed_depth_grid(&gpu, &mut encoder, &dv, &z, size[0]);

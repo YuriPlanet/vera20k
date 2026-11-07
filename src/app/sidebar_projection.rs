@@ -10,15 +10,22 @@
 //! between rebuilds.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
+use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
-use crate::sim::production::{FactoryView, ProductionCategory, ProductionFactoryVisit};
-use crate::sim::world::{LifecycleOutput, TickLane};
+use crate::sim::production::{
+    BuildOption, FactoryView, ProductionCategory, ProductionFactoryVisit, QueueItemView,
+    ReadyBuildingView,
+};
+use crate::sim::superweapon::SuperWeaponView;
+use crate::sim::world::{LifecycleOutput, Simulation, TickLane};
 use crate::ui::sidebar::cameo_order::{
     Cameo, CameoId, CameoKey, CameoRequestState, CameoStrips, pending_production_affordability,
     pending_production_prediction_rate, pending_production_smoothed_stage,
 };
-use crate::ui::sidebar::{SidebarTab, SidebarView};
+use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
+use crate::ui::sidebar::{ArmedSidebarEntry, SidebarChromeLayoutSpec, SidebarTab, SidebarView};
 
 /// One changed `CreditsClass::AI` step: the `animating(+0xA)` latch plus the
 /// `counting_up(+0x9)` direction that `CreditsClass::Draw @ 0x004A2370` reads
@@ -32,6 +39,9 @@ pub(crate) struct CreditTick {
 pub(crate) struct SidebarProjectionState {
     displayed_credits: HashMap<String, i32>,
     current_view: Option<SidebarView>,
+    /// Counts changes of `current_view`, so a standing picture can tell its
+    /// sidebar is unchanged without keeping a copy (`redraw_gate`).
+    view_revision: u64,
     /// Retained native strip order, keyed to the local house. `None` is the
     /// scenario-init window (`[0xA8E7AC] != 0`), where insertions are silent.
     cameos: Option<(InternedId, CameoStrips)>,
@@ -58,6 +68,120 @@ pub(crate) struct SidebarProjectionState {
     /// These references are independent of Factory completion and the one
     /// current/saved placement transaction. They are not serialized.
     ready_buildings: [Option<u64>; 2],
+    /// The last derived [`SidebarSimInputs`] and the derivation they belong to.
+    sim_inputs: Option<(SimInputsKey, Arc<SidebarSimInputs>)>,
+    /// The cameo candidates of those inputs, with the right strip's
+    /// superweapons they were derived with.
+    kept_cameos: Option<(SimInputsKey, Vec<SuperWeaponView>, Arc<Vec<Cameo>>)>,
+    /// What `current_view` was built from, while it stands for those inputs.
+    view_basis: Option<ViewBasis>,
+}
+
+/// What a refresh builds the view from besides the projection's own strips
+/// and Factory links: the layout, the gadgets, the credits shown and the
+/// [`SidebarSimInputs`] of one world revision. The cameo atlas is installed
+/// with a new world and its rules (`loading::transitions`), so it never
+/// changes under one [`SidebarSimInputs`].
+#[derive(Debug)]
+pub(crate) struct SidebarViewInputs {
+    pub(crate) spec: SidebarChromeLayoutSpec,
+    pub(crate) screen: (f32, f32),
+    pub(crate) tab: SidebarTab,
+    pub(crate) credits: i32,
+    /// Compared by identity: [`SidebarProjectionState::sim_inputs`] derives
+    /// one per world revision, rules and owner.
+    pub(crate) sim: Arc<SidebarSimInputs>,
+    /// Tab, Repair, Sell, scroll down, scroll up and the two top buttons.
+    pub(crate) button_sizes: [Option<[f32; 2]>; 7],
+    pub(crate) armed: Option<ArmedSidebarEntry>,
+    /// The right strip's superweapons.
+    pub(crate) supers: Vec<SuperWeaponView>,
+    pub(crate) gadgets: SidebarGadgetState,
+}
+
+impl PartialEq for SidebarViewInputs {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.sim, &other.sim)
+            && self.spec == other.spec
+            && self.screen == other.screen
+            && self.tab == other.tab
+            && self.credits == other.credits
+            && self.button_sizes == other.button_sizes
+            && self.armed == other.armed
+            && self.supers == other.supers
+            && self.gadgets == other.gadgets
+    }
+}
+
+/// The inputs of a built view, with the strips and Factory links it was
+/// built and drawn from.
+#[derive(Debug)]
+struct ViewBasis {
+    inputs: SidebarViewInputs,
+    cameos: Option<(InternedId, CameoStrips)>,
+    factory_links: HashMap<InternedId, CameoFactoryLink>,
+}
+
+/// What one projection refresh reads from the simulation for the local owner.
+/// These queries walk every rules type, the owner's buildings and factories,
+/// so a pass that only republishes the view reuses them while the world's
+/// [`Simulation::revision`], the rules and the owner are those they were
+/// derived for: between revisions no house, production, power or
+/// superweapon state changes. A new world always comes with its own rules,
+/// and so does a new process string table. Debug builds check each reuse
+/// against a fresh derivation.
+#[derive(Debug, PartialEq)]
+pub(crate) struct SidebarSimInputs {
+    pub(crate) build_options: Vec<BuildOption>,
+    pub(crate) queue_items: Vec<QueueItemView>,
+    pub(crate) ready_buildings: Vec<ReadyBuildingView>,
+    pub(crate) credits: i32,
+    pub(crate) power_produced: i32,
+    pub(crate) power_drained: i32,
+    pub(crate) sw_views: Vec<SuperWeaponView>,
+}
+
+impl SidebarSimInputs {
+    fn derive(sim: &Simulation, rules: &RuleSet, owner: &str) -> Self {
+        use crate::sim::production;
+        let (power_produced, power_drained) =
+            production::power_balance_for_owner(sim, rules, owner);
+        Self {
+            build_options: production::all_build_options_for_owner(sim, rules, owner),
+            queue_items: production::queue_view_for_owner(sim, rules, owner),
+            ready_buildings: production::ready_buildings_for_owner(sim, rules, owner),
+            credits: crate::app::presentation::sidebar_render::counter_credits(sim, owner),
+            power_produced,
+            power_drained,
+            sw_views: crate::sim::superweapon::superweapon_views_for_owner(
+                sim,
+                rules,
+                &sim.interner().get(owner).unwrap_or_default(),
+            ),
+        }
+    }
+}
+
+/// The world revision, rules and owner a kept derivation belongs to.
+#[derive(Debug)]
+struct SimInputsKey {
+    rules: u64,
+    revision: u64,
+    owner: String,
+}
+
+impl SimInputsKey {
+    fn new(sim: &Simulation, rules: &RuleSet, owner: &str) -> Self {
+        Self {
+            rules: rules.serial(),
+            revision: sim.revision(),
+            owner: owner.to_owned(),
+        }
+    }
+
+    fn holds(&self, sim: &Simulation, rules: &RuleSet, owner: &str) -> bool {
+        self.rules == rules.serial() && self.revision == sim.revision() && self.owner == owner
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,13 +211,111 @@ impl PreparedSidebarOrder {
 }
 
 impl SidebarProjectionState {
+    /// The simulation inputs for `owner`: the kept ones when `reuse` and they
+    /// belong to this world revision, rules and owner, else derived anew.
+    pub(crate) fn sim_inputs(
+        &mut self,
+        sim: &Simulation,
+        rules: &RuleSet,
+        owner: &str,
+        reuse: bool,
+    ) -> Arc<SidebarSimInputs> {
+        if reuse
+            && let Some((key, kept)) = &self.sim_inputs
+            && key.holds(sim, rules, owner)
+        {
+            if crate::sim::live_read_check_enabled() {
+                assert_eq!(
+                    **kept,
+                    SidebarSimInputs::derive(sim, rules, owner),
+                    "sidebar inputs changed within world revision {}",
+                    sim.revision()
+                );
+            }
+            return Arc::clone(kept);
+        }
+        let inputs = Arc::new(SidebarSimInputs::derive(sim, rules, owner));
+        self.sim_inputs = Some((SimInputsKey::new(sim, rules, owner), Arc::clone(&inputs)));
+        inputs
+    }
+
+    /// [`cameo_candidates`] of `inputs` and the right strip's `supers`, kept
+    /// on the same terms as [`Self::sim_inputs`].
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn cameo_candidates(
+        &mut self,
+        sim: &Simulation,
+        rules: &RuleSet,
+        csf: Option<&crate::assets::csf_file::CsfFile>,
+        owner: InternedId,
+        owner_name: &str,
+        inputs: &SidebarSimInputs,
+        supers: &[SuperWeaponView],
+        reuse: bool,
+    ) -> Arc<Vec<Cameo>> {
+        let derive = || cameo_candidates(sim, rules, csf, owner, &inputs.build_options, supers);
+        if reuse
+            && let Some((key, kept_supers, kept)) = &self.kept_cameos
+            && key.holds(sim, rules, owner_name)
+            && kept_supers.as_slice() == supers
+        {
+            if crate::sim::live_read_check_enabled() {
+                assert_eq!(
+                    **kept,
+                    derive(),
+                    "sidebar cameos changed within world revision {}",
+                    sim.revision()
+                );
+            }
+            return Arc::clone(kept);
+        }
+        let cameos = Arc::new(derive());
+        self.kept_cameos = Some((
+            SimInputsKey::new(sim, rules, owner_name),
+            supers.to_vec(),
+            Arc::clone(&cameos),
+        ));
+        cameos
+    }
+
     /// Read the retained view without changing credit cadence, targeting, or
     /// scroll state.
     pub(crate) fn view(&self) -> Option<&SidebarView> {
         self.current_view.as_ref()
     }
 
+    /// Changes whenever the retained view does.
+    pub(crate) fn view_revision(&self) -> u64 {
+        self.view_revision
+    }
+
+    /// Whether the retained view was built from `inputs` and the strips and
+    /// Factory links as they stand now, so that building it again would give
+    /// an equal view. The per-pass gadget refresh then keeps it.
+    pub(crate) fn view_holds_for(&self, inputs: &SidebarViewInputs) -> bool {
+        self.view_basis.as_ref().is_some_and(|basis| {
+            basis.inputs == *inputs
+                && basis.cameos == self.cameos
+                && basis.factory_links == self.factory_links
+        })
+    }
+
+    /// Retain a view just built from `inputs` and the current strips and
+    /// Factory links.
+    pub(crate) fn replace_built_view(&mut self, view: SidebarView, inputs: SidebarViewInputs) {
+        self.replace_view(Some(view));
+        self.view_basis = Some(ViewBasis {
+            inputs,
+            cameos: self.cameos.clone(),
+            factory_links: self.factory_links.clone(),
+        });
+    }
+
     pub(crate) fn replace_view(&mut self, view: Option<SidebarView>) {
+        self.view_basis = None;
+        if self.current_view != view {
+            self.view_revision = self.view_revision.wrapping_add(1);
+        }
         if view.is_none() {
             self.clear_ready_building(None);
             self.cameos = None;
@@ -212,7 +434,7 @@ impl SidebarProjectionState {
                     })
                     .collect()
             });
-            crate::sim::snapshot::SavedSidebarOrder::new(*owner, identities, strips.scroll_rows())
+            crate::sim::snapshot::SavedSidebarOrder::new(*owner, identities)
                 .with_flash(deadlines, redraw_until)
                 .with_requests(strips.saved_requests())
                 .with_factory_links(factory_links)
@@ -498,8 +720,11 @@ impl SidebarProjectionState {
         let Some(mut view) = self.current_view.take() else {
             return;
         };
+        self.view_basis = None;
         self.apply_cameo_draw_state(&mut view, sim, rules, owner, armed_building);
         self.current_view = Some(view);
+        // Committed frames only; the world revision moves with them anyway.
+        self.view_revision = self.view_revision.wrapping_add(1);
     }
 
     /// Validate foreign handles against the one Factory registry and retained
@@ -954,16 +1179,17 @@ impl SidebarProjectionState {
             .set_scroll_row(tab, row);
     }
 
-    /// A fired scroll arrow; see [`CameoStrips::queue_page_scroll`].
-    pub(crate) fn queue_page_scroll(
+    /// A fired scroll arrow or scroll command; see [`CameoStrips::queue_scroll`].
+    pub(crate) fn queue_scroll(
         &mut self,
         tab: crate::ui::sidebar::SidebarTab,
         down: bool,
         visible_rows: usize,
+        rows: usize,
     ) -> bool {
         self.cameos
             .as_mut()
-            .is_some_and(|(_, strips)| strips.queue_page_scroll(tab, down, visible_rows))
+            .is_some_and(|(_, strips)| strips.queue_scroll(tab, down, visible_rows, rows))
     }
 
     /// Roll queued scroll rows for `visits` Sidebar Actions (one per
@@ -994,8 +1220,18 @@ impl SidebarProjectionState {
         }
     }
 
-    /// Return the owner's retained display value, seeding a newly observed
-    /// owner from the actual balance without animating during projection build.
+    /// A fresh scenario's counter starts at zero and counts up to the balance:
+    /// InitializeScenarioFromINI reaches InitSideMixFiles, whose
+    /// TabClass::LoadSHPs @ 0x006D02B0 (call 0x00535347) clears
+    /// CreditsClass+4. Saved games run it before MouseClass::Load
+    /// (0x0067E761, 0x0067E870), so loads keep the saved value instead.
+    pub(crate) fn start_scenario_credits_counter(&mut self, owner: Option<&str>) {
+        self.restore_credits_counter(owner, Some(0));
+    }
+
+    /// Return the owner's retained display value. An owner neither started
+    /// nor restored (a save without the counter) is seeded from the actual
+    /// balance without animating during projection build.
     pub(crate) fn displayed_credits_or_seed(&mut self, owner: &str, actual: i32) -> i32 {
         *self
             .displayed_credits
@@ -1004,8 +1240,7 @@ impl SidebarProjectionState {
     }
 
     /// Advance one native CreditsClass AI step for an already observed owner.
-    /// A newly observed owner starts at the actual balance, matching the former
-    /// first-view behavior without making a view read mutate state.
+    /// An owner neither started nor restored starts at the actual balance.
     ///
     /// Returns the step's [`CreditTick`]: `Some(CreditTick { counting_up })`
     /// when the displayed value changed (native sets `animating(+0xA) = 1` and
@@ -1054,37 +1289,34 @@ pub(crate) fn credits_advance_for_frame(frame_committed: bool, tick_lane: TickLa
 /// Project comparison fields from their existing owners. The full build
 /// roster supplies live costs even for a retained cameo about to be removed.
 /// Super additions follow their native type-array order, not interned-ID order.
+///
+/// An object stays available only while the strip keeps it. A finished
+/// product is no exception: `StripClass::Recalculate @ 0x006AA600` removes
+/// the entry whose FindFactory or CanBuild fails (`0x006AA74D..0x006AA7B6`)
+/// whatever its Factory holds. The same House pass's ABANDON has already
+/// released that product when the projection prunes.
 pub(crate) fn cameo_candidates(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     csf: Option<&crate::assets::csf_file::CsfFile>,
     owner: InternedId,
     options: &[crate::sim::production::BuildOption],
-    ready: &[crate::sim::production::ReadyBuildingView],
     supers: &[crate::sim::superweapon::SuperWeaponView],
 ) -> Vec<Cameo> {
-    let object = |id, available, cost| object_cameo(sim, rules, csf, owner, id, available, cost);
     let mut candidates: Vec<_> = options
         .iter()
         .filter_map(|item| {
-            object(
+            object_cameo(
+                sim,
+                rules,
+                csf,
+                owner,
                 item.type_id,
-                item.visible_in_sidebar()
-                    || ready.iter().any(|ready| ready.type_id == item.type_id),
+                item.visible_in_sidebar(),
                 item.cost,
             )
         })
         .collect();
-    for item in ready {
-        if !candidates
-            .iter()
-            .any(|entry| entry.id == CameoId::Object(item.type_id))
-            && let Some(kind) = sim.interner().object_type(item.type_id, rules)
-            && let Some(entry) = object(item.type_id, true, sim.cost_of(owner, kind, rules))
-        {
-            candidates.push(entry);
-        }
-    }
     let mut supers: Vec<_> = supers.iter().collect();
     supers.sort_by_key(|item| rules.super_weapon_index(sim.interner().resolve(item.type_id)));
     candidates.extend(
@@ -1183,7 +1415,7 @@ pub(crate) fn prepare_saved_order(
     if prediction_categories.len() != saved.prediction_categories().len() {
         return Err("saved sidebar has duplicate prediction categories".into());
     }
-    let (owner, saved_strips, scroll_rows) = saved.into_parts();
+    let (owner, saved_strips) = saved.into_parts();
     if sim.session().current_house() != Some(owner) || !sim.houses().contains_key(&owner) {
         return Err("saved sidebar owner differs from the loaded current house".into());
     }
@@ -1214,11 +1446,6 @@ pub(crate) fn prepare_saved_order(
         if identities.len() > 76 {
             return Err(format!(
                 "saved sidebar strip {index} exceeds native admission capacity"
-            ));
-        }
-        if scroll_rows[index] > identities.len().div_ceil(2).saturating_sub(1) {
-            return Err(format!(
-                "saved sidebar strip {index} has an invalid scroll row"
             ));
         }
         for (slot, id) in identities.into_iter().enumerate() {
@@ -1287,7 +1514,9 @@ pub(crate) fn prepare_saved_order(
             strips[index].push(item);
         }
     }
-    let mut strips = CameoStrips::from_retained(strips, scroll_rows);
+    // Load_Game_From_File 67E68F -> TabClass Init 6D03A0 -> SidebarClass Init
+    // 6A5310 -> ToggleSidebar 6A7D70 (0, then 1): every strip shows its top row.
+    let mut strips = CameoStrips::from_retained(strips, [0; 4]);
     strips.restore_flash(flash_deadlines, redraw_until);
     strips.restore_requests(request_states, sim.session().binary_frame() as i32);
     Ok(Some(PreparedSidebarOrder {
@@ -1872,6 +2101,25 @@ mod tests {
             !projection
                 .reconcile_fixture(owner, &[candidate(a)], 3)
                 .build_inserted()
+        );
+    }
+
+    /// TabClass::LoadSHPs 0x006D02B0 zeroes the counter on every fresh
+    /// scenario, even over the previous match's value for the same House, so
+    /// a 10000 start rolls up from 0 by the 0x8F step cap with up ticks.
+    #[test]
+    fn fresh_scenario_counter_rolls_up_from_zero() {
+        let mut projection = SidebarProjectionState::default();
+        projection.displayed_credits_or_seed("Americans", 10_000);
+        projection.start_scenario_credits_counter(Some("Americans"));
+        assert_eq!(projection.displayed_credits_or_seed("Americans", 10_000), 0);
+        assert_eq!(
+            projection.advance_credits("Americans", 10_000),
+            Some(CreditTick { counting_up: true })
+        );
+        assert_eq!(
+            projection.displayed_credits_for_test("Americans"),
+            Some(0x8F)
         );
     }
 

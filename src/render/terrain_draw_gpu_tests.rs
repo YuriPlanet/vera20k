@@ -597,7 +597,7 @@ fn production_no_z_mask_exhausts_words_and_preserves_depth() {
         let cv = color.create_view(&Default::default());
         let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
         let dv = depth.create_view(&Default::default());
-        let surface = renderer.create_packed_surface(&gpu.device, &color, &dv);
+        let surface = renderer.create_packed_surface(&gpu.device, &color, &dv, 1);
         let offset = [137.25, -31.5];
         let ui = CameraUniform {
             camera_pos: offset,
@@ -723,7 +723,7 @@ fn production_no_z_ui_half_blend_matches_native_controls() {
     let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
     let dv = depth.create_view(&Default::default());
     renderer.prepare(&gpu.device, &color, &dv, camera(size));
-    let surface = renderer.create_packed_surface(&gpu.device, &color, &dv);
+    let surface = renderer.create_packed_surface(&gpu.device, &color, &dv, 1);
     let bytes: Vec<_> = rows
         .iter()
         .flat_map(|row| encoded(row["raw"].as_u64().unwrap() as u16, format))
@@ -1616,7 +1616,7 @@ fn production_tree_piece_workload_timing() {
     let mut results = Vec::new();
     // Original frozen800x600 workloads remain literal. The added32-pair
     // disjoint grids fit this target;512 full-size disjoint pairs cannot.
-    // Pixel-disjoint rectangles can still share conservative dependency tiles.
+    // Pixel-disjoint rectangles share dependency tiles but not waves.
     for count in [1usize, 32, 128, 512] {
         for layout in ["dispersed", "repeated", "pixel_disjoint", "tile_disjoint"] {
             if layout.ends_with("disjoint") && count != 32 {
@@ -1711,13 +1711,13 @@ fn production_tree_piece_workload_timing() {
                     if batched {
                         let expected_waves = match layout {
                             "repeated" => 2 * count,
-                            "pixel_disjoint" => 22,
+                            "pixel_disjoint" => 2,
                             "tile_disjoint" => 2,
                             _ => match count {
                                 1 => 2,
-                                32 => 24,
-                                128 => 34,
-                                512 => 58,
+                                32 => 20,
+                                128 => 23,
+                                512 => 54,
                                 _ => unreachable!(),
                             },
                         };

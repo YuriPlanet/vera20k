@@ -186,7 +186,7 @@ impl Simulation {
             || self.team_script_vm.team_for_member(id).is_some()
             || unit.tether.partner().is_some()
             || crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(self.house_alliances.as_map()),
+                Some(&self.house_alliances),
                 &self.interner,
                 owner,
                 source_owner,
@@ -283,7 +283,7 @@ impl Simulation {
                 CrushTarget::from_entity(victim, self.session.binary_frame()),
                 |owner| {
                     crate::sim::combat::combat_weapon::is_ally_by_object(
-                        Some(self.house_alliances.as_map()),
+                        Some(&self.house_alliances),
                         &self.interner,
                         unit.owner(),
                         owner,
@@ -298,7 +298,7 @@ impl Simulation {
             disguised: victim.is_disguised_to(
                 unit.owner(),
                 Some(&self.fog),
-                Some(self.house_alliances.as_map()),
+                Some(&self.house_alliances),
                 &self.interner,
             ),
         }

@@ -41,7 +41,6 @@
 
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::entities::EntityCategory;
-use crate::map::houses::HouseAllianceMap;
 use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::projectile_type::ProjectileType;
 use crate::rules::ruleset::RuleSet;
@@ -52,6 +51,7 @@ use crate::sim::combat::combat_weapon;
 use crate::sim::combat::line_of_fire::{self, LineOfFireInputs};
 use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
+use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::StringInterner;
 use crate::sim::movement::air_movement::{
     is_high_flying, is_high_flying_in_query, is_low_flying_in_query,
@@ -891,7 +891,7 @@ pub fn can_fire_at_target(
     attacker_id: u64,
     target: &TargetKind,
     terrain: &ResolvedTerrainGrid,
-    alliances: Option<&HouseAllianceMap>,
+    alliances: Option<&HouseAlliances>,
     los: &line_of_fire::LineOfFireInputs<'_>,
 ) -> bool {
     let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
@@ -909,6 +909,32 @@ pub fn can_fire_at_target(
 }
 
 impl crate::sim::world::Simulation {
+    /// `TechnoClass::Assign_Target`'s fire-particle teardown
+    /// (`0x006FCF61..0x006FCF86`) after an object or cell target was stored:
+    /// a live `+0x304` system is released unless CanFireAtTarget (vt+0x3AC)
+    /// accepts that target. The NULL case runs in the entity-local setter.
+    pub(crate) fn assign_target_fire_teardown(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) {
+        let Some(target) = self
+            .substrate
+            .entities
+            .get(id)
+            .filter(|entity| entity.fire_particle_system.system().is_some())
+            .and_then(|entity| entity.attack_target.target())
+        else {
+            return;
+        };
+        if !self.techno_can_fire_at_target(id, target, rules, registry)
+            && let Some(entity) = self.substrate.entities.get_mut(id)
+        {
+            entity.release_fire_particle_system();
+        }
+    }
+
     /// [`can_fire_at_target`] for the object `id` against `target`, on the
     /// live map with the house alliances; false without a map.
     pub(crate) fn techno_can_fire_at_target(
@@ -926,11 +952,11 @@ impl crate::sim::world::Simulation {
                 id,
                 &target,
                 terrain,
-                Some(self.house_alliances.as_map()),
+                Some(&self.house_alliances),
                 &LineOfFireInputs {
                     overlay_grid: self.overlay_grid.as_ref(),
                     overlay_registry: registry,
-                    alliances: Some(self.house_alliances.as_map()),
+                    alliances: Some(&self.house_alliances),
                 },
             )
         })
@@ -949,7 +975,7 @@ pub fn can_fire_at_target_in_query(
     attacker_id: u64,
     target: &TargetKind,
     cells: &crate::map::resolved_terrain::NativeCellQuery<'_>,
-    alliances: Option<&HouseAllianceMap>,
+    alliances: Option<&HouseAlliances>,
     los: &line_of_fire::LineOfFireInputs<'_>,
     selection_target: Option<&TargetKind>,
 ) -> bool {

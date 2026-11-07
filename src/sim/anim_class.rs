@@ -19,10 +19,12 @@
 //! through the shared area receiver (AnimAI424513..424654). Authored Overlay
 //! CellAnim provides a live FIRE3 producer; its stock ART Damage is .003.
 //! No common unchanged-stock ordinary positive-Damage producer is established.
-//! RESIDUAL: Terrain CatchFire71C5B0's producer and Terrain-owner attachment/
-//! coordinate integration remain separate work. Detached CellAnim does not
-//! ignite Terrain, attach to it or add it to Logic. That separate fire chain
-//! owns the multiplier's ordinary production activation, timers and detach.
+//! Terrain never burns in YR, so this needs no fire chain. `TerrainClass::
+//! Catch_Fire @ 0x0071C5B0`, the only IsOnFire writer, sits in vtable slot
+//! +0x178 (0x007F53A4) with no virtual call found. `Take_Damage @ 0x0071B920`
+//! uninits a terrain object on a lethal hit, and `Finish_Fire_Death @
+//! 0x0071C6B0` (from AnimClass 0x00422955/0x00424BB0) returns while IsOnFire is
+//! clear.
 
 use crate::sim::world::FrameEffects;
 use std::collections::BTreeMap;
@@ -47,6 +49,7 @@ use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{LifecycleOutput, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SimFixed;
 use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
+use crate::util::lookup_hash::LookupMap;
 use crate::util::native_x87::{NativeF64Bits, NativeX87Error, X87Chop53};
 
 pub type AnimId = u64;
@@ -262,11 +265,13 @@ pub fn anim_translucency_selection(input: AnimTranslucencyInput) -> AnimTransluc
             flags: flags | translucency_flag(input.explicit_translucency),
         };
     }
-    if input.instance_ramp > 15 {
-        return AnimTranslucencyResult { draw: false, flags };
-    }
-    if input.instance_ramp > 5 {
-        flags |= 4;
+    // `0x004231C1..0x004231EE`: a ramp of 1-5 draws at 25%, 6-15 at 50%,
+    // and anything above 15 not at all.
+    match input.instance_ramp {
+        16.. => return AnimTranslucencyResult { draw: false, flags },
+        6..=15 => flags |= 4,
+        1..=5 => flags |= 2,
+        _ => {}
     }
     AnimTranslucencyResult { draw: true, flags }
 }
@@ -467,11 +472,6 @@ impl AnimObject {
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_in_logic_vector_for_test(&mut self, value: bool) {
         self.in_logic_vector = value;
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn set_owner_entity_for_test(&mut self, value: Option<u64>) {
-        self.owner_entity = value;
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -882,6 +882,13 @@ pub(crate) fn anim_world_coords(
 /// which notes it in a touch log for each [`AnimTouchReader`].
 pub struct AnimStore {
     anims: BTreeMap<AnimId, AnimObject>,
+    /// VERA-only: how many stored anims name each owner at `+0xCC`
+    /// (`owner_entity`), so [`Self::another_owned_by`] answers the Anim
+    /// array scans without walking it. The anims' owners are the truth:
+    /// [`Self::insert`] and [`Self::remove`] keep it, and
+    /// [`Self::set_owner_entity`] is the owners' one writer. Rebuilt on load,
+    /// never saved, compared or hashed; only looked up.
+    owner_counts: LookupMap<u64, u32>,
     /// Which anims may have changed since each reader last took its log
     /// ([`Self::take_touched`]). Transient: never saved, compared or hashed.
     touched: TouchLogs<{ AnimTouchReader::COUNT }>,
@@ -936,15 +943,67 @@ impl AnimStore {
 
     pub(crate) fn insert(&mut self, object: AnimObject) -> Option<AnimObject> {
         self.touched.note(object.stable_id, self.anims.len());
-        self.anims.insert(object.stable_id, object)
+        count_owner(&mut self.owner_counts, object.owner_entity);
+        let replaced = self.anims.insert(object.stable_id, object);
+        if let Some(replaced) = &replaced {
+            uncount_owner(&mut self.owner_counts, replaced.owner_entity);
+        }
+        replaced
     }
 
     pub(crate) fn remove(&mut self, id: AnimId) -> Option<AnimObject> {
         let removed = self.anims.remove(&id);
-        if removed.is_some() {
+        if let Some(removed) = &removed {
+            uncount_owner(&mut self.owner_counts, removed.owner_entity);
             self.touched.note(id, self.anims.len());
         }
         removed
+    }
+
+    /// Write `id`'s owner (`+0xCC`), returning the one it replaced, or `None`
+    /// when `id` is not stored. The owners' one writer.
+    pub(crate) fn set_owner_entity(
+        &mut self,
+        id: AnimId,
+        owner: Option<u64>,
+    ) -> Option<Option<u64>> {
+        let stored = self.anims.len();
+        let anim = self.anims.get_mut(&id)?;
+        self.touched.note(id, stored);
+        let replaced = std::mem::replace(&mut anim.owner_entity, owner);
+        uncount_owner(&mut self.owner_counts, replaced);
+        count_owner(&mut self.owner_counts, owner);
+        Some(replaced)
+    }
+
+    /// Install a fixture's owner (`+0xCC`) on a stored anim.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_owner_entity_for_test(&mut self, id: AnimId, owner: Option<u64>) {
+        self.set_owner_entity(id, owner)
+            .expect("the fixture's anim is stored");
+    }
+
+    /// Whether a stored anim other than `id` names `owner` at `+0xCC`: the
+    /// Anim array scan of SetOwnerObject424B79..424BB6 and the destructor
+    ///42291A..42295B, which counts every retained entry (inactive,
+    /// concealed and pending-delete ones too), answered from the owners'
+    /// counts. Debug builds check it against that scan (the live-read check).
+    pub(crate) fn another_owned_by(&self, id: AnimId, owner: u64) -> bool {
+        let own = u32::from(self.get(id).and_then(|anim| anim.owner_entity) == Some(owner));
+        let another = self
+            .owner_counts
+            .get(&owner)
+            .is_some_and(|&count| count > own);
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || another
+                    == self
+                        .anims
+                        .iter()
+                        .any(|(&other, anim)| other != id && anim.owner_entity == Some(owner)),
+            "the Anim owner counts disagree with the Anim array for owner {owner}"
+        );
+        another
     }
 
     /// Store the independently owned attached-Bullet pointer (+0x17C).
@@ -957,8 +1016,13 @@ impl AnimStore {
     }
 
     fn from_anims(anims: BTreeMap<AnimId, AnimObject>) -> Self {
+        let mut owner_counts = LookupMap::default();
+        for anim in anims.values() {
+            count_owner(&mut owner_counts, anim.owner_entity);
+        }
         Self {
             anims,
+            owner_counts,
             touched: TouchLogs::everything(),
         }
     }
@@ -1032,6 +1096,25 @@ impl<'de> Deserialize<'de> for AnimStore {
         struct Saved(BTreeMap<AnimId, AnimObject>);
         let Saved(anims) = Saved::deserialize(deserializer)?;
         Ok(Self::from_anims(anims))
+    }
+}
+
+/// Count one more stored anim naming `owner`.
+fn count_owner(counts: &mut LookupMap<u64, u32>, owner: Option<u64>) {
+    if let Some(owner) = owner {
+        *counts.entry(owner).or_default() += 1;
+    }
+}
+
+/// Count one fewer stored anim naming `owner`, forgetting an owner none names.
+fn uncount_owner(counts: &mut LookupMap<u64, u32>, owner: Option<u64>) {
+    if let Some(owner) = owner
+        && let std::collections::hash_map::Entry::Occupied(mut count) = counts.entry(owner)
+    {
+        *count.get_mut() -= 1;
+        if *count.get() == 0 {
+            count.remove();
+        }
     }
 }
 
@@ -1387,14 +1470,14 @@ impl Simulation {
         waypoint: i32,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
-        let Some(type_name) = rules.anim_type_name_by_index(anim_type_index) else {
+        let Some(type_name) = rules.anim_type_runtime_key_by_index(anim_type_index) else {
             return false;
         };
         let Some([x, y, z]) = self.trigger_waypoint_coord(waypoint) else {
             return false;
         };
         let world_coord = AnimWorldCoord { x, y, z };
-        let type_id = self.interner.intern(type_name);
+        let type_id = self.interner.intern(&type_name);
         let (rx, ry, sub_x, sub_y, level) = world_coord.to_cell_sub_z();
         let descriptor = AnimClassSpawnDescriptor {
             draw_flags: 0x600,
@@ -1573,12 +1656,13 @@ impl Simulation {
         });
         let config = self.sight_reveal_config(rules);
         for owner in owners {
+            let clients = self.fog_viewers();
             let viewers = self.reveal_viewers.direct(
-                &self.fog,
                 self.house_alliances.as_map(),
                 owner,
                 &config,
                 &self.interner,
+                &clients,
             );
             for final_pass in [false, true] {
                 let _ = self.reveal_area(
@@ -1788,24 +1872,9 @@ impl Simulation {
                 index += 1;
                 continue;
             }
-            let start_sound_active = self
-                .substrate
-                .anims
-                .get(id)
-                .is_some_and(|anim| anim.start_sound_active);
-            self.notify_anim_pointer_expired(id);
-            self.substrate.clear_damage_fire_anim_reference(id);
-            self.substrate.release_anim_owner_reference(id);
-            if start_sound_active {
-                // `MapClass::InitCellAttributes @ 0x00568BB0` reaches the
-                // scalar destructor4228E0: Release406060, no StopSound.
-                self.sound_events
-                    .emit(SimSoundEvent::ObjectSoundReleased { owner: id });
-            }
-            self.conceal_anim(id);
-            self.substrate.pending_delete.remove_object(id);
-            let removed_anim = self.substrate.anims.remove(id);
-            debug_assert!(removed_anim.is_some());
+            // MapClass::InitCellAttributes568BB0 uses the same scalar
+            // destructor4228E0: Release406060, without StopSound.
+            self.scalar_delete_anim(id);
             removed += 1;
         }
         removed
@@ -1873,8 +1942,12 @@ impl Simulation {
         let Some(type_id) = self.anim(id).map(|anim| anim.type_id) else {
             return false;
         };
-        let type_name = self.interner.resolve(type_id).to_ascii_uppercase();
-        let Some(config) = rules.art().anim_runtime_config(&type_name).cloned() else {
+        // Borrowed from the rules, not the world: the visit below mutates the
+        // world while it reads the type.
+        let Some(config) = rules
+            .art()
+            .anim_runtime_config(self.interner.resolve(type_id))
+        else {
             self.destroy_anim(id, rules);
             return false;
         };
@@ -1987,7 +2060,7 @@ impl Simulation {
             .general
             .drop_zone_anim
             .as_deref()
-            .is_some_and(|name| name.eq_ignore_ascii_case(&type_name))
+            .is_some_and(|name| name.eq_ignore_ascii_case(self.interner.resolve(type_id)))
             && self.anim_absolute_coord(id).is_some_and(|world| {
                 Self::map_coord_cell(&self.resolved_terrain, world.x, world.y)
                     .and_then(|(x, y)| {
@@ -2411,28 +2484,10 @@ impl Simulation {
         else {
             return;
         };
-        if let Some(building_slot) = self
-            .anim(id)
-            .and_then(|anim| anim.owner_entity.map(|_| anim.building_slot.is_some()))
-        {
-            if building_slot {
-                // A Building slot Anim's expiry below can construct its
-                // successor, which reads and changes Display.
-                self.detach_anim_from_owner(id, rules);
-            } else {
-                // SetOwner(NULL)'s resolved coordinates and pointer
-                // callback, without its temporary Display resubmission:
-                // until this operation's conceal below, nothing reads or
-                // changes Display (the expiry reaches Bullets and
-                // damage-fire slots only), so it is unobservable.
-                self.substrate.release_anim_owner_reference(id);
-                self.substrate
-                    .anims
-                    .get_mut(id)
-                    .expect("the retiring animation still exists")
-                    .world_coord = world;
-            }
-        }
+        // UnInit4255C3 calls owner+60 before SetOwner(NULL)4255CA. Keep
+        // the shared attachment flag and every matching owner link in that
+        // operation, including the ordinary non-Building path.
+        self.detach_anim_from_owner(id, rules);
         if let Some(anim) = self.substrate.anims.get_mut(id) {
             anim.start_sound_active = false;
         }
@@ -2483,6 +2538,7 @@ impl Simulation {
         let sound_active = self.anim(id).is_some_and(|anim| anim.start_sound_active);
         self.notify_anim_pointer_expired(id);
         self.substrate.clear_damage_fire_anim_reference(id);
+        self.substrate.release_last_anim_owner_flag(id);
         self.substrate.release_anim_owner_reference(id);
         self.substrate.clear_building_anim_reference(id);
         if sound_active {
@@ -2500,8 +2556,8 @@ impl Simulation {
     /// AnimClass::SetOwnerObject424B50. Normal detach preserves absolute
     /// coordinates and gates Remove/Submit on the entry Object+74 mark. Attach
     /// always removes, stores owner-relative coordinates, then submits Ground.
-    /// The owner+17C callback is a bare RET for all currently supported Techno
-    /// owners; Object+84's shared-owner flag has no consumer here.
+    /// The owner+17C callback is a bare RET5F43C0 for supported Techno owners.
+    /// Last detach clears Object+84; every attach sets it before publishing CC.
     pub(crate) fn set_anim_owner_object(
         &mut self,
         id: AnimId,
@@ -2516,9 +2572,10 @@ impl Simulation {
             if marked {
                 self.substrate.display.remove(id);
             }
+            self.substrate.release_last_anim_owner_flag(id);
             let absolute = self.anim_absolute_coord(id).expect("live Anim");
+            self.substrate.anims.set_owner_entity(id, None);
             let anim = self.substrate.anims.get_mut(id).expect("live Anim");
-            anim.owner_entity = None;
             anim.world_coord = absolute;
             if marked {
                 self.submit_anim_display(id, rules);
@@ -2529,13 +2586,18 @@ impl Simulation {
                 return false;
             };
             self.substrate.display.remove(id);
+            self.substrate
+                .entities
+                .get_mut(owner_id)
+                .expect("the resolved Anim owner remains stored")
+                .set_attached_anim_flag(true);
             let anim = self.substrate.anims.get_mut(id).expect("live Anim");
             anim.world_coord = AnimWorldCoord {
                 x: anim.world_coord.x.wrapping_sub(owner_coord.x),
                 y: anim.world_coord.y.wrapping_sub(owner_coord.y),
                 z: anim.world_coord.z.wrapping_sub(owner_coord.z),
             };
-            anim.owner_entity = Some(owner_id);
+            self.substrate.anims.set_owner_entity(id, Some(owner_id));
             self.submit_anim_display(id, rules);
         }
         true
@@ -2621,11 +2683,7 @@ impl Simulation {
     pub(crate) fn detach_anim_from_owner(&mut self, id: AnimId, rules: &RuleSet) -> Option<u64> {
         let owner = self.anim(id)?.owner_entity?;
         if let Some(entity) = self.substrate.entities.get_mut(owner) {
-            // TechnoClass::Detach710415/71042F/710443 clear the matching
-            // Techno+0x12C, +0x1D4 and +0x130.
-            entity.expire_behind_anim(id);
-            entity.drain.expire_anim(id);
-            entity.expire_deploy_anim(id);
+            entity.attached_anim_expired(id);
         }
         self.set_anim_owner_object(id, None, rules);
         Some(owner)
@@ -2654,6 +2712,9 @@ impl Simulation {
             self.lifecycle_outputs
                 .emit(LifecycleOutput::DisplayRemove { stable_id: id });
             self.substrate.display.remove(id);
+            if let Some(entity) = self.substrate.entities.get_mut(expired_id) {
+                entity.attached_anim_expired(id);
+            }
             self.substrate.release_anim_owner_reference(id);
             self.substrate.mark_anim_display(id, false);
             if let Some(anim) = self.substrate.anims.get_mut(id) {
@@ -2739,7 +2800,7 @@ impl Simulation {
     ) -> bool {
         if anim.owner_house.is_some_and(|house| {
             crate::sim::combat::combat_weapon::is_ally_by_object(
-                Some(self.house_alliances.as_map()),
+                Some(&self.house_alliances),
                 &self.interner,
                 viewer,
                 house,
@@ -3665,16 +3726,28 @@ impl crate::sim::world::ObjectSubstrate {
             anim.display.marked_on_map = marked;
         }
     }
-    /// Destruction/expiry clear the reference without SetOwner's coordinate
-    /// conversion or intermediate display submission (422961 / 425190).
-    pub(crate) fn release_anim_owner_reference(&mut self, id: AnimId) -> Option<u64> {
-        let owner = self.anims.get_mut(id)?.owner_entity.take()?;
-        if let Some(entity) = self.entities.get_mut(owner) {
-            entity.expire_behind_anim(id);
-            entity.drain.expire_anim(id);
-            entity.expire_deploy_anim(id);
+    /// Retail gamemd.exe SetOwnerObject424B79..424BB6 and active-scenario
+    /// destructor42291A..42295B clear Object+84 only for the last attached
+    /// Anim. Scan the whole retained array, excluding only this Anim: inactive,
+    /// concealed and pending-delete entries still count while CC names owner.
+    /// Owner+17C is bare RET5F43C0 for supported Techno owners. Rust world
+    /// disposal drops the stores; it does not simulate native gate0 exit teardown.
+    pub(crate) fn release_last_anim_owner_flag(&mut self, id: AnimId) {
+        let Some(owner) = self.anims.get(id).and_then(|anim| anim.owner_entity) else {
+            return;
+        };
+        if !self.anims.another_owned_by(id, owner)
+            && let Some(entity) = self.entities.get_mut(owner)
+        {
+            entity.set_attached_anim_flag(false);
         }
-        Some(owner)
+    }
+
+    /// Clear only CC, without SetOwner's coordinate conversion or display
+    /// submission (422961 / 425190). Callers own the distinct +60 and +84
+    /// effects: PointerExpired clears CC without releasing the retained flag.
+    pub(crate) fn release_anim_owner_reference(&mut self, id: AnimId) -> Option<u64> {
+        self.anims.set_owner_entity(id, None)?
     }
     pub(crate) fn set_anim_frame_and_z_adjust(&mut self, id: AnimId, frame: i32, z_adjust: i32) {
         if let Some(anim) = self.anims.get_mut(id) {
@@ -3829,6 +3902,8 @@ pub(crate) fn anim_constructor_draws(
     let bounce = if config.is_meteor {
         let launch = crate::sim::bounce::meteor_launch(
             glam::IVec3::new(coord.x, coord.y, coord.z),
+            // 4223D8: a literal lifetime that only places the start.
+            70,
             config.min_z_vel,
             config.max_xy_vel,
             rng,
@@ -4042,6 +4117,38 @@ mod long_tail_contract_tests {
         ] {
             let result = anim_translucency_selection(input(double_thick, explicit, ramp));
             assert_eq!((result.draw, result.flags), expected);
+        }
+    }
+
+    /// `0x004231C1..0x004231EE`: the `+0x178` bands a fading building
+    /// writes into its slot anims.
+    #[test]
+    fn instance_ramp_bands_draw_at_25_then_50_then_not_at_all() {
+        for (instance_ramp, expected) in [
+            (0, (true, 0)),
+            (1, (true, 2)),
+            (5, (true, 2)),
+            (6, (true, 4)),
+            (15, (true, 4)),
+            (16, (false, 0)),
+        ] {
+            let result = anim_translucency_selection(AnimTranslucencyInput {
+                base_flags: 0,
+                forced_translucent: false,
+                double_thick: false,
+                translucency_detail_level: 0,
+                game_detail_level: 2,
+                translucent_ramp: false,
+                current_frame: 0,
+                end_frame: 10,
+                explicit_translucency: 0,
+                instance_ramp,
+            });
+            assert_eq!(
+                (result.draw, result.flags),
+                expected,
+                "ramp {instance_ramp}"
+            );
         }
     }
 
@@ -4636,9 +4743,8 @@ mod tests {
     }
 
     /// A producer's `owner` attaches inside the constructor without Reveal's
-    /// own Display submit, and Destroy conceals the attached Anim without
-    /// SetOwner(NULL)'s temporary resubmission: Display ends as the native
-    /// constructor, SetOwnerObject, detach and conceal sequence leaves it.
+    /// own Display submit. Destroy follows the shared SetOwner(NULL) detach
+    /// and conceal sequence, leaving Display as those native calls do.
     #[test]
     fn an_owned_anim_leaves_display_as_construct_then_attach_does() {
         let rules = runtime_rules("[A]\nLayer=Ground\n", &[("A", 10)]);
@@ -4763,12 +4869,11 @@ mod tests {
                 .unwrap()
                 .retain_deploy_anim(retained);
             for (id, expected) in [(other, Some(retained)), (retained, None)] {
-                let cleared = if detach_with_coords {
-                    sim.detach_anim_from_owner(id, &rules)
+                if detach_with_coords {
+                    assert_eq!(sim.detach_anim_from_owner(id, &rules), Some(owner_id));
                 } else {
-                    sim.substrate.release_anim_owner_reference(id)
-                };
-                assert_eq!(cleared, Some(owner_id));
+                    assert!(sim.anim_pointer_expired(id, owner_id, &rules));
+                }
                 assert_eq!(sim.anim(id).unwrap().owner_entity, None);
                 let entity = sim.substrate.entities.get(owner_id).unwrap();
                 assert_eq!(entity.deploy_anim(), expected);
@@ -4776,6 +4881,141 @@ mod tests {
                 assert!(!entity.is_fully_deployed());
             }
         }
+    }
+
+    /// SetOwnerObject424B50, destructor4228E0 and PointerExpired425150 have
+    /// distinct effects on the retained Object+84 byte and owner+60 links.
+    #[test]
+    fn attached_animation_transfer_and_expiry_preserve_shared_owner_state() {
+        let rules = runtime_rules("[A]\nEnd=3\n", &[("A", 3)]);
+        let mut sim = Simulation::new();
+        sim.interner = crate::sim::intern::test_interner();
+        for owner in [100, 101] {
+            sim.substrate.entities.insert(GameEntity::test_default(
+                owner,
+                "UNIT",
+                "Americans",
+                10,
+                10,
+            ));
+        }
+        let type_id = sim.interner.intern("A");
+        let first = sim
+            .spawn_anim_object(&rules, runtime_descriptor(type_id, 0))
+            .unwrap();
+        let second = sim
+            .spawn_anim_object(&rules, runtime_descriptor(type_id, 0))
+            .unwrap();
+        for anim in [first, second] {
+            assert!(sim.set_anim_owner_object(anim, Some(100), &rules));
+        }
+        // The native scan includes an inactive Anim while its CC still names
+        // this owner; filtering to Logic/Display/live entries clears too early.
+        sim.substrate
+            .anims
+            .get_mut(second)
+            .unwrap()
+            .runtime
+            .inactive = true;
+        assert!(sim.set_anim_owner_object(first, Some(101), &rules));
+        assert!(sim.substrate.entities.get(100).unwrap().is_parachuted());
+        assert!(sim.substrate.entities.get(101).unwrap().is_parachuted());
+
+        sim.scalar_delete_anim(second);
+        assert!(sim.anim(second).is_none());
+        assert!(!sim.substrate.entities.get(100).unwrap().is_parachuted());
+        sim.substrate
+            .entities
+            .write_held_anim(101, |owner, authority| {
+                owner.hold_parachute_animation(first, authority)
+            })
+            .unwrap();
+        assert!(sim.anim_pointer_expired(first, 101, &rules));
+        assert_eq!(sim.anim(first).unwrap().owner_entity, None);
+        let owner = sim.substrate.entities.get(101).unwrap();
+        assert_eq!(
+            owner.parachute_animation(),
+            None,
+            "owner+60 ran before unlink"
+        );
+        assert!(owner.is_parachuted(), "PointerExpired retains Object+84");
+        sim.scalar_delete_anim(first);
+        assert!(sim.anim(first).is_none());
+        assert!(
+            sim.substrate.entities.get(101).unwrap().is_parachuted(),
+            "a later destructor cannot reconstruct the already-cleared owner"
+        );
+
+        // GameEntity serde is the production snapshot payload. Preserve the
+        // orphaned raw flag, then let ObjectAI consume it in a subsequent fall.
+        let cap = rules.general.parachute_max_fall_rate;
+        let owner = sim.substrate.entities.get_mut(101).unwrap();
+        owner.set_fall_rate_for_test(cap);
+        let bytes = serde_json::to_vec(owner).unwrap();
+        let mut restored: GameEntity = serde_json::from_slice(&bytes).unwrap();
+        restored.lifecycle.set_in_limbo_for_test(false);
+        restored.lifecycle.set_cell_marked_for_test(false);
+        restored.position.put_z(512);
+        restored.begin_bomb_fall();
+        *sim.substrate.entities.get_mut(101).unwrap() = restored;
+        sim.object_ai_fall(101, &rules, None, FrameEffects::default())
+            .unwrap();
+        let owner = sim.substrate.entities.get(101).unwrap();
+        assert!(owner.is_parachuted());
+        assert_eq!(owner.parachute_animation(), None);
+        assert_eq!(
+            owner.fall_rate(),
+            cap,
+            "restored raw flag still selects canopy cap"
+        );
+    }
+
+    /// The owners' counts answer SetOwnerObject424B79's and the destructor
+    /// 42291A's Anim array scan through each owner write, a load, and a
+    /// removal of an Anim that still names its owner.
+    #[test]
+    fn the_last_anim_naming_an_owner_releases_it_through_writes_loads_and_removals() {
+        let rules = runtime_rules("[A]\nEnd=3\n", &[("A", 3)]);
+        let mut sim = Simulation::new();
+        sim.interner = crate::sim::intern::test_interner();
+        for owner in [100, 101] {
+            sim.substrate.entities.insert(GameEntity::test_default(
+                owner,
+                "UNIT",
+                "Americans",
+                10,
+                10,
+            ));
+        }
+        let type_id = sim.interner.intern("A");
+        let [a, b, c] = [0; 3].map(|_| {
+            sim.spawn_anim_object(&rules, runtime_descriptor(type_id, 0))
+                .unwrap()
+        });
+        for (anim, owner) in [(a, 100), (b, 100), (c, 101)] {
+            assert!(sim.set_anim_owner_object(anim, Some(owner), &rules));
+        }
+        let parachuted =
+            |sim: &Simulation, owner| sim.substrate.entities.get(owner).unwrap().is_parachuted();
+        sim.substrate.anims = crate::util::save_codec::deserialize(
+            &crate::util::save_codec::serialize(&sim.substrate.anims).unwrap(),
+        )
+        .unwrap();
+        assert!(sim.set_anim_owner_object(a, Some(101), &rules));
+        assert!(parachuted(&sim, 100), "the loaded b still names 100");
+        // PointerExpired's bare CC clear leaves b no longer naming 100.
+        assert_eq!(sim.substrate.release_anim_owner_reference(b), Some(100));
+        assert!(sim.set_anim_owner_object(c, Some(100), &rules));
+        assert!(parachuted(&sim, 101), "a still names 101");
+        assert!(sim.set_anim_owner_object(c, None, &rules));
+        assert!(!parachuted(&sim, 100), "c was the last Anim naming 100");
+        assert!(sim.set_anim_owner_object(b, Some(101), &rules));
+        assert!(sim.substrate.anims.remove(b).is_some());
+        sim.scalar_delete_anim(a);
+        assert!(
+            !parachuted(&sim, 101),
+            "a was the last stored Anim naming 101"
+        );
     }
 
     #[test]
@@ -6490,7 +6730,9 @@ mod tests {
                 AnimWorldCoord { x: 0, y: 0, z: 0 },
             )
             .unwrap();
-        sim.substrate.anims.get_mut(anim_id).unwrap().owner_entity = Some(building_id);
+        sim.substrate
+            .anims
+            .set_owner_entity_for_test(anim_id, Some(building_id));
         sim.substrate
             .entities
             .get_mut(building_id)

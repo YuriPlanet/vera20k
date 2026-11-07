@@ -77,11 +77,19 @@ const FIRST_SEEN_SCAN_TICKS: u64 = 15;
 /// seven clips; more than this in one frame is a duplicate, not a queue.
 const QUEUE_LIMIT: usize = 8;
 
-/// One house's trouble high-water mark.
+/// One house's trouble baseline.
+///
+/// The baseline is the native loss total as of the last clip, and trouble is a
+/// rise above it. Counting *losses* rather than the buildings still standing
+/// matters: `HouseTracking::buildings` is a live census, so it also falls when a
+/// house sells a structure, when one changes hands or when one leaves tracking
+/// without being destroyed — a commander then called for help over a base that
+/// had lost nothing. `MatchStatistics::buildings_lost` only moves on a real
+/// loss, which is what the moment is about.
 #[derive(Debug, Clone, Copy, Default)]
 struct TroubleWatch {
-    /// Most buildings seen since the last clip.
-    peak: i32,
+    /// Losses already accounted for by the last clip.
+    baseline: u32,
     last_scan_tick: u64,
     /// Wall time before which this house may be in trouble again.
     quiet_until_ms: u64,
@@ -165,7 +173,10 @@ struct Observed {
 struct Scan {
     house: InternedId,
     personality: u16,
-    buildings: i32,
+    /// `MatchStatistics::buildings_lost` — the native loss total, the same one
+    /// `TEvent`/score reporting reads. See [`TroubleWatch`] for why the trouble
+    /// watch counts losses and not the buildings standing.
+    buildings_lost: u32,
     tick: u64,
     seed: u64,
     /// The scanning house's own relation, so the trouble watch asks
@@ -192,7 +203,46 @@ pub(crate) struct CommanderFeedback {
     queue: VecDeque<ClipRequest>,
     /// One-shot diagnostic: the first frame this layer actually ran.
     logged_start: bool,
+    /// How many times this layer has been driven. The verdict wait reads it to
+    /// tell "nothing is owed" from "not looked at yet": the finish that earns
+    /// the last clip can reach the world after this layer's pass for that
+    /// frame, so an empty queue proves nothing until one more pass has run.
+    passes: u64,
+    /// A published result the exit router leaves alone while the loser's
+    /// clip plays. See [`owe_the_verdict_a_clip`].
+    verdict_wait: Option<VerdictWait>,
+    /// Whether the exit router ever left this match's result waiting.
+    /// Survives the release: from then on the router, not [`service`], says
+    /// the withheld line.
+    verdict_held: bool,
+    /// Set once the wait has ended, so it never re-opens.
+    verdict_released: bool,
+    /// When the result's card first went up: the frame the result was
+    /// published, which is also the frame the wait opened. Survives the
+    /// release, so the exit router can charge the card's beat against the time
+    /// it has already been on screen — a clip that played under it has spent
+    /// that beat, and the card is not held again after the clip ends.
+    verdict_card_at_ms: Option<u64>,
+    /// Whether the result's own EVA line has been said after the frame's
+    /// sound delivery withheld it. See [`withholds_verdict_line`].
+    verdict_line_said: bool,
 }
+
+/// A published result waiting for the clip, so the clip finishes before the
+/// card goes up.
+#[derive(Debug, Clone, Copy)]
+struct VerdictWait {
+    /// When the wait started, for the ceiling below.
+    since_ms: u64,
+    /// [`CommanderFeedback::passes`] at that moment.
+    start_passes: u64,
+}
+
+/// How long a result may be held for a clip before the match ends anyway.
+/// A clip is a few seconds and the layer queues at most eight, so this covers
+/// a full enemy roster played back to back; it exists so a stalled decoder or
+/// a missing file can never leave the player on a finished battlefield.
+pub(crate) const MAX_HELD_RESULT_MS: u64 = 45_000;
 
 impl CommanderFeedback {
     /// Drop everything. Used when the feature is switched off, the screen
@@ -202,6 +252,72 @@ impl CommanderFeedback {
     pub(crate) fn retire(&mut self) {
         *self = Self::default();
     }
+
+    /// Whether the exit router is leaving a published result alone for a
+    /// clip. The world stopped on the result's frame, so the score page's
+    /// clock stays stopped too (`MatchState::elapsed_clock_paused`).
+    pub(crate) fn result_waits(&self) -> bool {
+        self.verdict_wait.is_some()
+    }
+
+    /// Whether nothing stands between a flagged result and its withheld
+    /// line: the exit router has not taken the result, and neither this
+    /// layer's queue nor the radar FIFO holds a clip.
+    fn verdict_line_clear(&self, radar_pending: bool) -> bool {
+        !self.verdict_held && self.queue.is_empty() && !radar_pending
+    }
+}
+
+/// Whether the published result is being held back for the losing commander's
+/// clip.
+///
+/// The tactical frame has to keep drawing while this is true: `RadarClass::Draw
+/// 653100` is what advances the clip (`crate::render::radar::anim`), so a frame
+/// the outcome gates throw away leaves the movie on its first frame until the
+/// wait gives up. It is also the reason the verdict banner draws nothing yet —
+/// the card belongs to the beat after the clip, not to the movie.
+pub(crate) fn verdict_is_waiting_for_clip(state: &AppState) -> bool {
+    state
+        .match_state
+        .match_presentation
+        .commander_feedback
+        .result_waits()
+}
+
+/// When the result's card first went up, if a clip held the result back.
+///
+/// The card goes up on the frame the simulation publishes, which is the frame
+/// the clip wait opens. The verdict's beat is measured from here, so a clip
+/// that played under the card has already spent it.
+pub(crate) fn verdict_card_shown_at_ms(state: &AppState) -> Option<u64> {
+    state
+        .match_state
+        .match_presentation
+        .commander_feedback
+        .verdict_card_at_ms
+}
+
+/// Cut the losing commander's clip short because the player asked to leave the
+/// battlefield before it ends.
+///
+/// The match is already decided at this point: the simulation published the
+/// result, latched its terminal score and stopped the score clock on that same
+/// frame (`finalize_terminal_score_snapshot`, `MasterFrame`), so skipping the
+/// clip changes nothing about the numbers. It retires the clip's FIFO and ends
+/// the wait, and the exit router takes the verdict on its next pass — the same
+/// card, the same theme and the same score page the clip would have led to.
+pub(crate) fn skip_verdict_clip(state: &mut AppState, wall_ms: u64) {
+    if !verdict_is_waiting_for_clip(state) {
+        return;
+    }
+    // The clip's own EVA hold and both queues belong to this FIFO.
+    crate::app::radar_movie::retire(state, wall_ms);
+    let feedback = &mut state.match_state.match_presentation.commander_feedback;
+    feedback.queue.clear();
+    feedback.verdict_wait = None;
+    // Never re-open: the verdict is the router's now.
+    feedback.verdict_released = true;
+    log::info!("The commander clip is skipped; the verdict goes out now");
 }
 
 /// The feature's own admit test. Only a live skirmish draws clips, and only
@@ -219,6 +335,12 @@ fn enabled(state: &AppState) -> bool {
             })
             .unwrap_or(true)
         && state.frontend.screen == GameScreen::InGame
+        // Nothing is said once the verdict has landed. The rival's line belongs
+        // before the result, and the route to the score page owns the screen
+        // after it: a clip admitted during the card would play over a frozen
+        // battlefield and push the score page back behind it. The layer drops
+        // its own queue here, which is what keeps that from happening.
+        && state.match_state.scenario_exit.is_none()
         && !state.match_state.match_diagnostics.is_replay_playback()
 }
 
@@ -233,6 +355,161 @@ pub(crate) fn retire(state: &mut AppState) {
         .retire();
 }
 
+/// Whether a finished match could owe the player a clip at all: the layer is
+/// on, this is a skirmish, and some commander exists to speak.
+///
+/// A wrong `true` holds the result's line and the card for one pass, until
+/// this layer has looked and found no clip; a wrong `false` would let a clip
+/// cut the line the player just earned, so the test is generous on purpose.
+pub(crate) fn may_speak(state: &AppState) -> bool {
+    enabled(state)
+        && state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .is_some_and(|runtime| {
+                runtime.simulation.session().game_mode() == ScenarioGameMode::Skirmish
+            })
+        && state
+            .rules()
+            .is_some_and(|rules| !rules.personalities().is_empty())
+}
+
+/// Whether a finished match's card and score page wait for the clip that
+/// earned it.
+///
+/// `Custom End Game Movie` owns this, and [`may_speak`] keeps it to a
+/// skirmish. The two picture switches next to it in Options only paint and
+/// play, so a LAN or WOL game uses them too. This one changes when the exit
+/// router takes the result, never when the simulation publishes it.
+pub(crate) fn holds_terminal_outcome(state: &AppState) -> bool {
+    state.persistence.options_profile.custom_end_game_movie && may_speak(state)
+}
+
+/// Whether this match's verdict waited for a clip at all.
+///
+/// The exit router reads this for the result's theme, which started when the
+/// wait opened so the rest of the clip plays over it. A verdict that never
+/// waited starts it on retail's own timing.
+pub(crate) fn verdict_was_held_for_a_clip(state: &AppState) -> bool {
+    state
+        .match_state
+        .match_presentation
+        .commander_feedback
+        .verdict_held
+}
+
+/// Whether the result's own EVA line is withheld for a clip.
+///
+/// `Flag_To_Win 0x004FCBA9` / `Flag_To_Lose 0x004FCDA1` say it on the frame
+/// the House is flagged, and the clip that kill earns would clear it out of
+/// the queue on its entrance (`RadarMovieCommand::Announce` ->
+/// `clear_eva_queues`). With `Custom End Game Movie` on, the frame's sound
+/// delivery holds it back until [`service`] sees no clip in the way, or the
+/// exit router says it after the clip it waited for.
+pub(crate) fn withholds_verdict_line(state: &AppState) -> bool {
+    holds_terminal_outcome(state)
+        && !state
+            .match_state
+            .match_presentation
+            .commander_feedback
+            .verdict_line_said
+}
+
+/// Take the withheld line for the exit router to say after the clip. `false`
+/// when nothing was withheld or [`service`] has already said it.
+pub(crate) fn take_withheld_verdict_line(state: &mut AppState) -> bool {
+    if !withholds_verdict_line(state) {
+        return false;
+    }
+    state
+        .match_state
+        .match_presentation
+        .commander_feedback
+        .verdict_line_said = true;
+    true
+}
+
+/// Whether the exit router must leave the published result alone while the
+/// clip the finish earned is still playing.
+///
+/// The simulation has published the result on its own frame, and the app runs
+/// no further frame while the result waits (`App::service_match_runtime_once`),
+/// so this delays only the router: the card, the teardown and the score page.
+/// The first call opens the wait, stops the score page's clock and switches
+/// the battlefield theme. The wait ends once this layer has looked at the
+/// world again and neither its own queue nor the radar FIFO holds a clip, or
+/// after [`MAX_HELD_RESULT_MS`]; it never re-opens.
+pub(crate) fn owe_the_verdict_a_clip(
+    state: &mut AppState,
+    outcome: crate::sim::house_state::HouseOutcomeKind,
+    wall_ms: u64,
+) -> bool {
+    let feedback = &state.match_state.match_presentation.commander_feedback;
+    if feedback.verdict_released {
+        return false;
+    }
+    // An open wait outlives the switch, so unticking it never cuts a line
+    // that is halfway said.
+    let Some(wait) = feedback.verdict_wait else {
+        if !holds_terminal_outcome(state) {
+            return false;
+        }
+        log::info!(
+            "The verdict waits for the commander clip ({} queued, {} playing)",
+            feedback.queue.len(),
+            crate::app::radar_movie::has_pending(state),
+        );
+        let feedback = &mut state.match_state.match_presentation.commander_feedback;
+        feedback.verdict_held = true;
+        feedback.verdict_card_at_ms = Some(wall_ms);
+        feedback.verdict_wait = Some(VerdictWait {
+            since_ms: wall_ms,
+            start_passes: feedback.passes,
+        });
+        // The world stopped on the frame that published the result, so the
+        // score page's time stops here rather than when the clip ends. The
+        // open wait keeps it stopped through the clip's own pause and resume
+        // ([`CommanderFeedback::result_waits`]).
+        state.match_state.scenario_elapsed_clock.pause(wall_ms);
+        crate::app::match_runtime::sim_tick::start_verdict_theme(state, outcome, wall_ms);
+        return true;
+    };
+    let outstanding = !feedback.queue.is_empty() || crate::app::radar_movie::has_pending(state);
+    if wall_ms.saturating_sub(wait.since_ms) >= MAX_HELD_RESULT_MS {
+        log::warn!(
+            "The commander clip is still pending after {MAX_HELD_RESULT_MS} ms; \
+             the verdict goes out"
+        );
+    } else if outstanding || feedback.passes <= wait.start_passes {
+        return true;
+    } else {
+        log::info!("The commander clip has finished; the verdict goes out");
+    }
+    let feedback = &mut state.match_state.match_presentation.commander_feedback;
+    feedback.verdict_wait = None;
+    feedback.verdict_released = true;
+    false
+}
+
+/// Whether buildings lost since the last clip are enough to call for help.
+/// `needed` is `[CommanderFeedback] TroubleBuildingsLost=`; a value below one
+/// still means "one building", so the watch never fires on nothing.
+fn trouble_loss(lost: u32, needed: i32) -> Option<u32> {
+    (i64::from(lost) >= i64::from(needed).max(1)).then_some(lost)
+}
+
+/// The house's rules name, for log lines that would otherwise print an id the
+/// reader cannot map back to a commander.
+fn house_name(state: &AppState, house: InternedId) -> String {
+    state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .map(|runtime| runtime.simulation.resolve(house).to_string())
+        .unwrap_or_else(|| format!("{house:?}"))
+}
+
 /// Drive the clip queue. Called once per frame outside the simulation gate, so
 /// a paused game finishes the sentence it started.
 pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
@@ -240,7 +517,41 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
     // `renderer` mutably while the queue is mutated, and both live in `state`.
     let mut feedback = std::mem::take(&mut state.match_state.match_presentation.commander_feedback);
     feedback.service_inner(state, wall_ms);
+    // Counted whether or not the layer did anything this pass: the verdict's
+    // question is "has this layer looked at the world since the match ended",
+    // and a retired layer has looked and found nothing to say.
+    feedback.passes = feedback.passes.saturating_add(1);
     state.match_state.match_presentation.commander_feedback = feedback;
+    say_the_verdict_line_when_clear(state);
+}
+
+/// Say the result's withheld line once this layer has looked at the world and
+/// no clip is in the way: on the pass after the kill when the kill earned no
+/// clip, or once the last clip has ended. Defeats are observed on every pass,
+/// so a clip the kill earns is already queued here. A result the exit router
+/// has taken, or leaves waiting, gets its line from the router.
+fn say_the_verdict_line_when_clear(state: &mut AppState) {
+    if !withholds_verdict_line(state)
+        || !state
+            .match_state
+            .match_presentation
+            .commander_feedback
+            .verdict_line_clear(crate::app::radar_movie::has_pending(state))
+    {
+        return;
+    }
+    let Some(outcome) = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+        let sim = &runtime.simulation;
+        sim.houses().get(&sim.session().current_house()?)?.outcome()
+    }) else {
+        return;
+    };
+    state
+        .match_state
+        .match_presentation
+        .commander_feedback
+        .verdict_line_said = true;
+    crate::app::match_runtime::sim_tick::play_outcome_eva(state, outcome.kind);
 }
 
 impl CommanderFeedback {
@@ -286,7 +597,7 @@ impl CommanderFeedback {
             .is_some_and(|house| house.is_defeated());
         // The alliance map the tactical presentation itself reads: the same
         // answer the player sees on screen decides who is a friendly commander.
-        let alliances = sim.house_alliances();
+        let alliances = sim.house_alliances().as_map();
         let local_name = sim.resolve(local);
         // First contact is the local player's own sight test, so it runs on its
         // own cadence and stops as soon as every opponent has been met. Allies
@@ -398,7 +709,7 @@ impl CommanderFeedback {
                     scans.push(Scan {
                         house: house_id,
                         personality,
-                        buildings: house.tracking().buildings(),
+                        buildings_lost: house.stats().buildings_lost(),
                         tick,
                         seed: feedback_seed(index, 1, tick),
                         relation,
@@ -490,13 +801,12 @@ impl CommanderFeedback {
             .map(|rules| rules.commander_feedback())
             .unwrap_or_default();
         // Read-only half: update the watch, decide whether this is an emergency.
-        let quiet_until_ms = {
+        let (quiet_until_ms, lost) = {
             let watch = self.trouble.entry(scan.house).or_insert(TroubleWatch {
-                peak: scan.buildings,
+                baseline: scan.buildings_lost,
                 ..TroubleWatch::default()
             });
             watch.last_scan_tick = scan.tick;
-            watch.peak = watch.peak.max(scan.buildings);
             // A call for help is spoken to friends. An opponent losing
             // buildings is not something this layer has a line for, and the
             // enemy defeat lines it does have belong to the moment the house
@@ -504,22 +814,21 @@ impl CommanderFeedback {
             if !speaks_to(FeedbackEvent::InTrouble, scan.relation) {
                 return;
             }
-            // Recovering and losing again is a new emergency; the high-water
-            // mark follows the house up so a rebuilt base can fall once more.
-            let lost = watch.peak - scan.buildings;
-            if lost < rules.trouble_buildings_lost {
+            // Recovering and losing again is a new emergency: the baseline
+            // follows the house up so a rebuilt base can fall once more.
+            let lost = scan.buildings_lost.saturating_sub(watch.baseline);
+            if trouble_loss(lost, rules.trouble_buildings_lost).is_none() {
                 if lost > 0 {
                     log::debug!(
-                        "Commander feedback: {:?} lost {lost} of {} buildings, \
+                        "Commander feedback: {} lost {lost} building(s) since the last clip; \
                          {} are needed for InTrouble",
-                        scan.house,
-                        watch.peak,
-                        rules.trouble_buildings_lost
+                        house_name(state, scan.house),
+                        rules.trouble_buildings_lost.max(1),
                     );
                 }
                 return;
             }
-            watch.quiet_until_ms
+            (watch.quiet_until_ms, lost)
         };
         if wall_ms < quiet_until_ms {
             return;
@@ -539,8 +848,12 @@ impl CommanderFeedback {
             .checked_mul(1000)
             .filter(|quiet| *quiet > 0)
             .unwrap_or_else(|| u64::from(rules.trouble_quiet_seconds).saturating_mul(1000));
+        log::info!(
+            "Commander feedback: {} is in trouble ({lost} building(s) lost since the last clip)",
+            house_name(state, scan.house),
+        );
         if let Some(watch) = self.trouble.get_mut(&scan.house) {
-            watch.peak = scan.buildings;
+            watch.baseline = scan.buildings_lost;
             watch.quiet_until_ms = wall_ms + quiet_ms;
         }
     }
@@ -609,8 +922,8 @@ impl CommanderFeedback {
                 continue;
             }
             log::info!(
-                "Commander feedback: {video}.BIK for {:?} ({}, {:?})",
-                request.house,
+                "Commander feedback: {video}.BIK for {} ({}, {:?})",
+                house_name(state, request.house),
                 request.relation.label(),
                 request.entry.event
             );
@@ -807,6 +1120,27 @@ mod tests {
             .is_none(),
             "an event with no entries has nothing to play"
         );
+    }
+
+    /// A commander calls for help over buildings it has *lost*, not over a
+    /// building census that happens to be lower: a house that sells a
+    /// structure, hands one over or drops one from tracking has a smaller
+    /// `HouseTracking::buildings` and has lost nothing, and crying for help
+    /// over that reads as a bug.
+    #[test]
+    fn trouble_counts_losses_and_not_the_buildings_standing() {
+        assert_eq!(
+            trouble_loss(0, 1),
+            None,
+            "an untouched house is never in trouble"
+        );
+        assert_eq!(trouble_loss(1, 1), Some(1), "one lost building is enough");
+        assert_eq!(trouble_loss(2, 3), None, "fewer than the threshold");
+        assert_eq!(trouble_loss(3, 3), Some(3));
+        // A threshold the rules left at zero or negative is still "one", never
+        // "nothing" — otherwise every scan would be an emergency.
+        assert_eq!(trouble_loss(0, 0), None);
+        assert_eq!(trouble_loss(1, -5), Some(1));
     }
 
     /// Two entries for the same event must be reachable, and the same

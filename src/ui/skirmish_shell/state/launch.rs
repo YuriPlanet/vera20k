@@ -2,9 +2,9 @@
 
 use crate::map::scenario_menu::MapMenuEntry;
 use crate::skirmish_launch::{
-    HOUSE_COLOR_COUNT, LaunchStartPosition, LaunchTeam, LaunchValidationError, PreFillHouseRoster,
-    SKIRMISH_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchSession,
-    SkirmishLocalSlot,
+    HOUSE_COLOR_COUNT, LaunchStartPosition, LaunchTeam, LaunchValidationError,
+    NETWORK_PLAYER_SLOT_COUNT, PreFillHouseRoster, SkirmishAiSlot, SkirmishLaunchMode,
+    SkirmishLaunchSession, SkirmishLocalSlot,
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 
@@ -16,7 +16,8 @@ fn launch_start_position(
 ) -> Result<LaunchStartPosition, LaunchValidationError> {
     match start_position {
         LaunchStartPosition::Auto => Ok(LaunchStartPosition::Auto),
-        LaunchStartPosition::Position(position) if position < SKIRMISH_PLAYER_SLOT_COUNT as u8 => {
+        // VERA's maps with more than eight starts list them up to thirty.
+        LaunchStartPosition::Position(position) if position < NETWORK_PLAYER_SLOT_COUNT as u8 => {
             Ok(LaunchStartPosition::Position(position))
         }
         LaunchStartPosition::Position(position) => {

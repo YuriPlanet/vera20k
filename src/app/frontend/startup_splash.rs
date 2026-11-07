@@ -6,7 +6,7 @@
 //! like the menus, so it lines up with the menu that follows it.
 //!
 //! It also carries VERA20K's own legal notices, which gamemd's splash lacks; see
-//! [`LEGAL_NOTICE`] and [`BINK_NOTICE`].
+//! [`legal_notice`] and [`ffmpeg_notice`].
 
 use crate::util::time::{Duration, Instant};
 
@@ -14,10 +14,10 @@ use anyhow::{Context, Result};
 
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::csf_file::CsfFile;
-use crate::assets::fnt_file::FntFile;
 use crate::assets::pal_file::Palette;
 use crate::assets::shp_file::ShpFile;
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
+use crate::render::bit_font::BitFont;
 use crate::render::gpu::GpuContext;
 use crate::render::shell_surface_present::ShellSurfacePresenter;
 use crate::render::shell_ui_style_assets::{
@@ -78,7 +78,7 @@ const fn splash_art(yr_original_style: bool) -> SplashArt {
 }
 /// How long the splash stays up at least: 6 s, the maintainer's choice.
 const MINIMUM_VISIBLE_TIME: Duration = Duration::from_millis(6000);
-const TEXT_COLOR: [u8; 4] = [255, 255, 255, 255];
+const TEXT_TINT: [f32; 3] = [1.0, 1.0, 1.0];
 
 const COPYRIGHT_KEY: &str = "TXT_COPYRIGHT";
 const COPYRIGHT_FALLBACK: &str = "© 2000, 2001 ELECTRONIC ARTS INC. ALL RIGHTS RESERVED";
@@ -96,20 +96,25 @@ const TRADEMARK_BOTTOM_FALLBACK: &str =
 /// VERA20K's GPLv3 "Appropriate Legal Notices" (sections 0 and 5(d)): the
 /// copyright, the right to share under the license, no warranty, and where to
 /// read the license and get the source (a release build names its commit;
-/// build.rs). Drawn top right, opposite "Loading...". In GAME.FNT each row stays
-/// right of Yuri's Revenge's logo at 800x600, and the three end above the art the
-/// retail test compares. Because the program shows them, modified versions must
-/// keep showing such a notice.
-const LEGAL_NOTICE: [&str; 3] = [
-    "VERA20K © 2026 Halvor Nikolai Rusten and contributors",
-    "You may share it under the GNU GPL v3. It has no warranty.",
-    concat!("License and source: ", env!("VERA20K_SOURCE")),
-];
+/// build.rs), in the language in use. Drawn top right, opposite "Loading...". In
+/// GAME.FNT each English row stays right of Yuri's Revenge's logo at 800x600,
+/// and the three end above the art the retail test compares. Because the
+/// program shows them, modified versions must keep showing such a notice.
+fn legal_notice() -> [String; 3] {
+    [
+        crate::i18n::tr("VERA:LegalCopyright"),
+        crate::i18n::tr("VERA:LegalShare"),
+        crate::i18n::tr_fill("VERA:LegalSource", &[("source", &env!("VERA20K_SOURCE"))]),
+    ]
+}
 
-/// The Bink decoder's LGPL 2.1 (section 6) puts FFmpeg's copyright, as FFmpeg
-/// shows it, and a reference to that license's text among the copyright notices
-/// a program shows. Drawn bottom left, above the trademark lines.
-const BINK_NOTICE: &str = "Bink decoder © the FFmpeg developers. License: LGPL-2.1-or-later.txt";
+/// The LGPL 2.1 (section 6) of the code ported from FFmpeg, the Bink decoder and
+/// the sidebar's xBR scaler, puts FFmpeg's copyright, as FFmpeg shows it, and a
+/// reference to that license's text among the copyright notices a program
+/// shows. Drawn bottom left, above the trademark lines.
+fn ffmpeg_notice() -> String {
+    crate::i18n::tr("VERA:LegalFfmpeg")
+}
 
 /// The minimum on-screen hold, anchored at the first successful present.
 ///
@@ -141,7 +146,20 @@ impl VisibleHold {
 pub(crate) struct StartupSplashPresentation {
     texture: BatchTexture,
     instance_buffer: wgpu::Buffer,
+    /// The text, drawn over the art at the window's resolution.
+    lines: Vec<SplashLine>,
+    /// Where the composition sits in the window, and its width there.
+    placement: RectPx,
+    composition_width: u32,
     hold: VisibleHold,
+}
+
+/// One line of splash text with its top-left in composition pixels.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SplashLine {
+    text: String,
+    x: i32,
+    y: i32,
 }
 
 impl StartupSplashPresentation {
@@ -150,7 +168,7 @@ impl StartupSplashPresentation {
         batch: &BatchRenderer,
         assets: &AssetManager,
         csf: Option<&CsfFile>,
-        font: &FntFile,
+        font: &BitFont,
         client_width: u32,
         client_height: u32,
         yr_original_style: bool,
@@ -161,14 +179,9 @@ impl StartupSplashPresentation {
         );
 
         let ([width, height], placement) = splash_placement(client_width, client_height);
-        let rgba = compose_startup_splash(
-            assets,
-            csf,
-            font,
-            width as usize,
-            height as usize,
-            yr_original_style,
-        )?;
+        let rgba =
+            compose_startup_splash(assets, width as usize, height as usize, yr_original_style)?;
+        let lines = splash_lines(csf, font, width as i32, height as i32);
         let texture = batch.create_texture(gpu, &rgba, width, height);
         let instance = SpriteInstance {
             position: [placement.x as f32, placement.y as f32],
@@ -188,8 +201,30 @@ impl StartupSplashPresentation {
         Ok(Self {
             texture,
             instance_buffer,
+            lines,
+            placement,
+            composition_width: width,
             hold: VisibleHold::default(),
         })
+    }
+
+    /// The text's glyphs at the window's resolution: each line keeps its
+    /// composition position, scaled with the art onto the window.
+    fn text_instances(&self, font: &BitFont) -> Vec<SpriteInstance> {
+        let scale = self.placement.w as f32 / self.composition_width as f32;
+        let mut instances = Vec::new();
+        for line in &self.lines {
+            instances.extend(font.build_text(
+                &line.text,
+                self.placement.x as f32 + line.x as f32 * scale,
+                self.placement.y as f32 + line.y as f32 * scale,
+                scale,
+                0.0,
+                TEXT_TINT,
+                [0.0, 0.0],
+            ));
+        }
+        instances
     }
 
     pub(crate) fn mark_presented(&mut self, now: Instant) {
@@ -210,6 +245,7 @@ pub(crate) fn render_and_present(
     presenter: &ShellSurfacePresenter,
     depth: &wgpu::TextureView,
     fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
+    font: &BitFont,
     splash: Option<&StartupSplashPresentation>,
 ) -> Result<bool> {
     batch.update_camera(
@@ -228,6 +264,8 @@ pub(crate) fn render_and_present(
     else {
         return Ok(false);
     };
+    let text =
+        splash.and_then(|splash| batch.create_instance_buffer(gpu, &splash.text_instances(font)));
     let source_view = presenter.source_render_view();
     let mut encoder = gpu
         .device
@@ -268,9 +306,12 @@ pub(crate) fn render_and_present(
                 1,
             );
         }
+        if let Some((buffer, count)) = &text {
+            batch.draw_with_buffer_ui_passthrough(&mut pass, font.atlas(), buffer, *count);
+        }
     }
     presenter.encode_present(&mut encoder, &output.texture);
-    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture);
+    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present(&gpu.queue);
     Ok(true)
@@ -294,12 +335,10 @@ fn splash_placement(client_width: u32, client_height: u32) -> ([u32; 2], RectPx)
     }
 }
 
-/// gamemd's splash for a `client_width` x `client_height` client: the art
-/// centred 1:1 and the text anchored to the client's corners.
+/// gamemd's splash art for a `client_width` x `client_height` client, centred
+/// 1:1; [`splash_lines`] places its text.
 fn compose_startup_splash(
     assets: &AssetManager,
-    csf: Option<&CsfFile>,
-    font: &FntFile,
     client_width: usize,
     client_height: usize,
     yr_original_style: bool,
@@ -367,82 +406,47 @@ fn compose_startup_splash(
         log::warn!("Drawing startup splash text over black without its art");
     }
 
+    Ok(canvas)
+}
+
+/// gamemd's splash text for a `client_width` x `client_height` composition,
+/// anchored to its corners: the copyright and brand bottom right, "Loading..."
+/// top left with VERA20K's notice opposite, and the trademark lines and the
+/// FFmpeg notice bottom left.
+fn splash_lines(
+    csf: Option<&CsfFile>,
+    font: &BitFont,
+    client_width: i32,
+    client_height: i32,
+) -> Vec<SplashLine> {
     let copyright = csf_text(csf, COPYRIGHT_KEY, COPYRIGHT_FALLBACK);
     let brand = csf_text(csf, BRAND_KEY, BRAND_FALLBACK);
     let loading = csf_text(csf, LOADING_KEY, LOADING_FALLBACK);
     let trademark_top = csf_text(csf, TRADEMARK_TOP_KEY, TRADEMARK_TOP_FALLBACK);
     let trademark_bottom = csf_text(csf, TRADEMARK_BOTTOM_KEY, TRADEMARK_BOTTOM_FALLBACK);
 
-    let first_bottom_y = client_height as i32 - 40;
-    let second_bottom_y = first_bottom_y + 3 + font.cell_height as i32;
+    let row = 3 + font.cell_height as i32;
+    let first_bottom_y = client_height - 40;
+    let second_bottom_y = first_bottom_y + row;
+    let right = |text: &str| client_width - font.text_width(text) as i32 - 10;
+    let line = |text: &str, x: i32, y: i32| SplashLine {
+        text: text.to_owned(),
+        x,
+        y,
+    };
 
-    draw_text(
-        &mut canvas,
-        client_width,
-        client_height,
-        font,
-        &copyright,
-        client_width as i32 - font.text_width(&copyright) as i32 - 10,
-        first_bottom_y,
-    );
-    draw_text(
-        &mut canvas,
-        client_width,
-        client_height,
-        font,
-        &brand,
-        client_width as i32 - font.text_width(&brand) as i32 - 10,
-        second_bottom_y,
-    );
-    draw_text(
-        &mut canvas,
-        client_width,
-        client_height,
-        font,
-        &loading,
-        10,
-        10,
-    );
-    for (row, line) in LEGAL_NOTICE.into_iter().enumerate() {
-        draw_text(
-            &mut canvas,
-            client_width,
-            client_height,
-            font,
-            line,
-            client_width as i32 - font.text_width(line) as i32 - 10,
-            10 + row as i32 * (3 + font.cell_height as i32),
-        );
+    let mut lines = vec![
+        line(&copyright, right(&copyright), first_bottom_y),
+        line(&brand, right(&brand), second_bottom_y),
+        line(&loading, 10, 10),
+    ];
+    for (index, notice) in legal_notice().iter().enumerate() {
+        lines.push(line(notice, right(notice), 10 + index as i32 * row));
     }
-    draw_text(
-        &mut canvas,
-        client_width,
-        client_height,
-        font,
-        &trademark_top,
-        10,
-        first_bottom_y,
-    );
-    draw_text(
-        &mut canvas,
-        client_width,
-        client_height,
-        font,
-        &trademark_bottom,
-        10,
-        second_bottom_y,
-    );
-    draw_text(
-        &mut canvas,
-        client_width,
-        client_height,
-        font,
-        BINK_NOTICE,
-        10,
-        first_bottom_y - 3 - font.cell_height as i32,
-    );
-
-    Ok(canvas)
+    lines.push(line(&trademark_top, 10, first_bottom_y));
+    lines.push(line(&trademark_bottom, 10, second_bottom_y));
+    lines.push(line(&ffmpeg_notice(), 10, first_bottom_y - row));
+    lines
 }
 
 fn centered_offset(client_extent: i32, art_extent: i32) -> i32 {
@@ -489,95 +493,45 @@ fn blit_rgba_clipped(
     }
 }
 
-fn draw_text(
-    canvas: &mut [u8],
-    canvas_width: usize,
-    canvas_height: usize,
-    font: &FntFile,
-    text: &str,
-    x: i32,
-    y: i32,
-) {
-    let mut cursor_x = x;
-    for ch in text.chars() {
-        let codepoint = ch as u32;
-        if codepoint > u16::MAX as u32 {
-            continue;
-        }
-        let Some(glyph) = font.glyph(codepoint as u16) else {
-            continue;
-        };
-        for glyph_y in 0..font.bitmap_rows as usize {
-            let target_y = y + glyph_y as i32;
-            if !(0..canvas_height as i32).contains(&target_y) {
-                continue;
-            }
-            for glyph_x in 0..glyph.width as usize {
-                let target_x = cursor_x + glyph_x as i32;
-                if !(0..canvas_width as i32).contains(&target_x) {
-                    continue;
-                }
-                let glyph_offset = (glyph_y * glyph.width as usize + glyph_x) * 4;
-                if glyph.rgba.get(glyph_offset + 3).copied().unwrap_or(0) == 0 {
-                    continue;
-                }
-                let canvas_offset = (target_y as usize * canvas_width + target_x as usize) * 4;
-                canvas[canvas_offset..canvas_offset + 4].copy_from_slice(&TEXT_COLOR);
-            }
-        }
-        cursor_x += glyph.width as i32 + 1;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::assets::asset_manager::MediaArchiveMode;
 
     #[test]
-    fn legal_notice_is_drawn_right_aligned_opposite_loading() {
-        // An empty root has no splash art, so only text marks the canvas.
-        let root = crate::map::source::test_support::TestDirectory::new("splash-notice");
-        let assets = AssetManager::from_loose_root_for_test(root.path());
-        let font = FntFile::solid_for_test(2);
-        let (width, height) = (800, 600);
-        let composed = compose_startup_splash(&assets, None, &font, width, height, false)
-            .expect("compose the text-only splash");
+    fn legal_notice_is_placed_right_aligned_opposite_loading() {
+        let font = crate::render::bit_font::tests::make_test_font(&[], 4);
+        let lines = splash_lines(None, &font, 800, 600);
+        let find = |text: &str| lines.iter().find(|line| line.text == text).expect(text);
 
-        for (row, line) in LEGAL_NOTICE.into_iter().enumerate() {
-            let y = 10 + row * (3 + font.cell_height as usize);
-            let white: Vec<usize> = (width / 2..width)
-                .filter(|x| composed[(y * width + x) * 4..][..4] == TEXT_COLOR)
-                .collect();
-            let line_width = font.text_width(line) as usize;
-            assert_eq!(white.first(), Some(&(width - 10 - line_width)), "{line}");
-            assert_eq!(white.last(), Some(&(width - 11)), "{line}");
+        let loading = find(LOADING_FALLBACK);
+        assert_eq!((loading.x, loading.y), (10, 10));
+        for (row, notice) in legal_notice().iter().enumerate() {
+            let line = find(notice);
+            assert_eq!(
+                line.x + font.text_width(notice) as i32,
+                800 - 10,
+                "{notice}"
+            );
+            assert_eq!(line.y, 10 + row as i32 * (3 + font.cell_height as i32));
         }
     }
 
     #[test]
-    fn bink_notice_is_drawn_left_aligned_above_the_trademark_lines() {
-        let root = crate::map::source::test_support::TestDirectory::new("splash-bink-notice");
-        let assets = AssetManager::from_loose_root_for_test(root.path());
-        let font = FntFile::solid_for_test(2);
-        let (width, height) = (800, 600);
-        let composed = compose_startup_splash(&assets, None, &font, width, height, false)
-            .expect("compose the text-only splash");
+    fn ffmpeg_notice_is_placed_left_aligned_above_the_trademark_lines() {
+        let font = crate::render::bit_font::tests::make_test_font(&[], 4);
+        let lines = splash_lines(None, &font, 800, 600);
+        let find = |text: &str| lines.iter().find(|line| line.text == text).expect(text);
 
-        let y = height - 40 - 3 - font.cell_height as usize;
-        let white: Vec<usize> = (0..width / 2)
-            .filter(|x| composed[(y * width + x) * 4..][..4] == TEXT_COLOR)
-            .collect();
-        assert_eq!(white.first(), Some(&10));
-        assert_eq!(
-            white.last(),
-            Some(&(10 + font.text_width(BINK_NOTICE) as usize - 1))
-        );
+        let trademark = find(TRADEMARK_TOP_FALLBACK);
+        let ffmpeg = find(&ffmpeg_notice());
+        assert_eq!((trademark.x, trademark.y), (10, 600 - 40));
+        assert_eq!(ffmpeg.x, 10);
+        assert_eq!(ffmpeg.y, trademark.y - 3 - font.cell_height as i32);
     }
 
     fn compare_composed_splash_to_retail_shape(
         assets: &AssetManager,
-        font: &FntFile,
         art: SplashArt,
         width: usize,
         height: usize,
@@ -609,7 +563,7 @@ mod tests {
         let frame_rgba = shape
             .frame_to_rgba(0, &palette)
             .expect("decode retail splash frame 0");
-        let composed = compose_startup_splash(assets, None, font, width, height, yr_original_style)
+        let composed = compose_startup_splash(assets, width, height, yr_original_style)
             .expect("compose production startup splash");
 
         let origin_x = centered_offset(width as i32, shape.width as i32) + frame.frame_x as i32;
@@ -713,7 +667,7 @@ mod tests {
 
     #[test]
     #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]
-    fn retail_composition_draws_both_looks_and_keeps_missing_small_art_text_only() {
+    fn retail_composition_draws_both_looks_and_leaves_missing_small_art_black() {
         use crate::assets::asset_manager::AssetManager;
 
         let retail_dir = std::path::PathBuf::from(
@@ -721,26 +675,20 @@ mod tests {
         );
         let assets = AssetManager::new(&retail_dir, MediaArchiveMode::STOCK_DIGITAL)
             .expect("load retail RA2/YR assets");
-        let font = FntFile::from_bytes(assets.get_ref("GAME.FNT").expect("retail GAME.FNT"))
-            .expect("parse retail GAME.FNT");
 
-        compare_composed_splash_to_retail_shape(&assets, &font, YR_SPLASH, 800, 600);
+        compare_composed_splash_to_retail_shape(&assets, YR_SPLASH, 800, 600);
         // The unchecked default draws RA2's unsuffixed originals the same way.
-        compare_composed_splash_to_retail_shape(&assets, &font, RA2_SPLASH, 800, 600);
+        compare_composed_splash_to_retail_shape(&assets, RA2_SPLASH, 800, 600);
 
         let small_art_available = assets.get_ref(YR_SPLASH.small).is_some();
+        // Without the small art the text still draws, over black.
         if !small_art_available {
-            let composed = compose_startup_splash(&assets, None, &font, 640, 480, true)
+            let composed = compose_startup_splash(&assets, 640, 480, true)
                 .expect("compose missing-small-art splash");
             let center = (240 * 640 + 320) * 4;
             assert_eq!(&composed[center..center + 4], &[0, 0, 0, 255]);
-            let white_loading_pixels = (10..100)
-                .flat_map(|x| (10..30).map(move |y| (y * 640 + x) * 4))
-                .filter(|offset| composed[*offset..*offset + 4] == TEXT_COLOR)
-                .count();
-            assert!(white_loading_pixels > 0, "missing small art retains text");
         } else {
-            compare_composed_splash_to_retail_shape(&assets, &font, YR_SPLASH, 640, 480);
+            compare_composed_splash_to_retail_shape(&assets, YR_SPLASH, 640, 480);
         }
     }
 

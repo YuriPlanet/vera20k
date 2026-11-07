@@ -24,10 +24,11 @@ use crate::assets::pal_file::Palette;
 use crate::render::gpu::GpuContext;
 use crate::rules::house_colors::{HouseColorIndex, HouseColorRamps, NO_REMAP};
 
-/// Maximum number of houses supported in the per-house ramp texture
-/// (per project_scale_target). Row 0 is reserved for the no-remap fallback,
-/// so up to MAX_HOUSES - 1 distinct houses are addressable.
-pub const MAX_HOUSES: u32 = 32;
+/// Rows of the per-house ramp texture: row 0 is the no-remap fallback and
+/// row `hc + 1` holds `[Colors]` entry `hc`, so every `u8` entry below
+/// `NO_REMAP` has a row. Mental Omega lists 43 schemes; its Soviet
+/// `SovietLoad` is entry 41, which a 32-row texture dropped (black vehicles).
+pub const HOUSE_RAMP_ROWS: u32 = 256;
 
 /// Number of palette entries (RA2 standard: 256 colors).
 pub const PALETTE_ENTRIES: u32 = 256;
@@ -45,7 +46,7 @@ pub struct PaletteSet {
     /// pre-Phase-1 atlas semantics and the sRGB surface output.
     pub palette_tex: wgpu::Texture,
     pub palette_view: wgpu::TextureView,
-    /// 16 × MAX_HOUSES Rgba8UnormSrgb texture: house_ramp[house][i] = RGB substitute
+    /// 16 × HOUSE_RAMP_ROWS Rgba8UnormSrgb texture: house_ramp[house][i] = RGB substitute
     /// for palette byte (16 + i). Row 0 is the no-remap fallback — populated
     /// with the theater palette's [16, 32) RGB range, so units with
     /// `HouseColorIndex == NO_REMAP` (civilians, neutrals) render their
@@ -130,7 +131,7 @@ impl PaletteSet {
             label: Some("voxel_house_ramp_tex"),
             size: wgpu::Extent3d {
                 width: RAMP_SIZE,
-                height: MAX_HOUSES,
+                height: HOUSE_RAMP_ROWS,
                 depth_or_array_layers: 1,
             },
             mip_level_count: 1,
@@ -151,11 +152,11 @@ impl PaletteSet {
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(RAMP_SIZE * 4),
-                rows_per_image: Some(MAX_HOUSES),
+                rows_per_image: Some(HOUSE_RAMP_ROWS),
             },
             wgpu::Extent3d {
                 width: RAMP_SIZE,
-                height: MAX_HOUSES,
+                height: HOUSE_RAMP_ROWS,
                 depth_or_array_layers: 1,
             },
         );
@@ -236,7 +237,7 @@ impl PaletteSet {
     }
 }
 
-/// Build the per-house ramp texture as MAX_HOUSES × 16 RGBA bytes, row-major.
+/// Build the per-house ramp texture as HOUSE_RAMP_ROWS × 16 RGBA bytes, row-major.
 /// Row 0 = theater palette's [16, 32) range (no-remap fallback for units
 /// whose `HouseColorIndex == NO_REMAP`). Sampling this row reproduces the
 /// raw palette colors for remap-range bytes.
@@ -252,7 +253,7 @@ fn build_house_ramp_bytes(
     houses: &[HouseColorIndex],
 ) -> Vec<u8> {
     let row_bytes: usize = (RAMP_SIZE * 4) as usize;
-    let mut out: Vec<u8> = vec![0u8; (MAX_HOUSES * RAMP_SIZE * 4) as usize];
+    let mut out: Vec<u8> = vec![0u8; (HOUSE_RAMP_ROWS * RAMP_SIZE * 4) as usize];
     // Row 0: theater palette [16, 32) — no-remap fallback.
     for (i, c) in palette.colors()[16..16 + RAMP_SIZE as usize]
         .iter()
@@ -270,8 +271,8 @@ fn build_house_ramp_bytes(
             continue; // NO_REMAP samples row 0 (the theater fallback above).
         }
         let row: usize = house.0 as usize + 1;
-        if row >= MAX_HOUSES as usize {
-            continue; // out of texture range (safety; shouldn't happen for stock [Colors]).
+        if row >= HOUSE_RAMP_ROWS as usize {
+            continue; // unreachable: every entry below NO_REMAP has a row.
         }
         let row_start: usize = row * row_bytes;
         let ramp = ramps.ramp(house);
@@ -354,6 +355,24 @@ mod tests {
         let row4_start = 4 * row_bytes;
         for i in 0..row_bytes {
             assert_eq!(bytes[row4_start + i], 0, "row 4 byte {} not zero", i);
+        }
+    }
+
+    #[test]
+    fn build_house_ramp_keeps_entries_past_the_thirty_second() {
+        // Mental Omega's SovietLoad is [Colors] entry 41.
+        let pal: Palette = dummy_palette();
+        let schemes: Vec<crate::rules::color_scheme::ColorSchemeEntry> = (0..255u8)
+            .map(|i| crate::rules::color_scheme::ColorSchemeEntry {
+                name: format!("S{i}"),
+                hsv: [i, 200, 240],
+            })
+            .collect();
+        let ramps = HouseColorRamps::from_schemes(&schemes);
+        for hc in [HouseColorIndex(41), HouseColorIndex(254)] {
+            assert!(ramps.ramp(hc).iter().any(|c| c.r | c.g | c.b != 0));
+            let bytes = build_house_ramp_bytes(&pal, &ramps, &[hc]);
+            assert_row_matches(&bytes, hc.0 as usize + 1, ramps.ramp(hc));
         }
     }
 

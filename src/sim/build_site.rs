@@ -231,8 +231,10 @@ pub(crate) fn is_clear_to_build(
         }
         // The LandType's float speed for this SpeedType is not 0.0
         // (`0x0047CA4D..0x0047CA6A`).
-        Some(speed) => semantics
-            .is_some_and(|land| land.cost_for_speed_type(speed).is_none_or(|cost| cost != 0)),
+        Some(speed) => semantics.is_some_and(|land| {
+            land.cost_for_speed_type(speed)
+                .is_none_or(|cost| !cost.is_zero())
+        }),
     }
 }
 
@@ -303,11 +305,9 @@ pub(crate) fn flush_for_placement(
         let Some(object) = sim.substrate.entities.get(id) else {
             continue;
         };
-        let allied = crate::map::houses::is_allied_with(
-            sim.house_alliances.as_map(),
-            sim.interner.resolve(object.owner()),
-            sim.interner.resolve(house),
-        );
+        let allied = sim
+            .house_alliances
+            .is_allied(&sim.interner, object.owner(), house);
         if object.category() == EntityCategory::Structure {
             // Flush45EF68..45EF7B skips this host, then scans the remaining
             // foundation cells. Overlay admission above still applies.

@@ -7,6 +7,7 @@ use crate::assets::pal_file::Palette;
 use crate::assets::shp_file::ShpFile;
 use crate::render::atlas_growth;
 use crate::render::batch::{BatchRenderer, BatchTexture};
+use crate::render::cell_window::ArtExtent;
 use crate::render::overlay_atlas::{OverlaySpriteEntry, stored_frame_offset};
 use crate::rules::effect_asset_catalog::load_overlay_shape;
 use crate::rules::overlay_types::{OverlayTypeFlags, OverlayTypeRegistry, is_high_bridge_index};
@@ -27,9 +28,18 @@ pub struct BridgeAtlasKey {
 pub struct BridgeAtlas {
     pub texture: BatchTexture,
     entries: HashMap<String, HashMap<(BridgeFrameKind, u16), OverlaySpriteEntry>>,
+    /// Union of every shadow entry's rectangle, fixed with `entries` at
+    /// construction.
+    shadow_extent: ArtExtent,
 }
 
 impl BridgeAtlas {
+    /// The union of every shadow sprite's rectangle; bounds the cells whose
+    /// shadow can reach a view (`render::cell_window`).
+    pub fn shadow_extent(&self) -> ArtExtent {
+        self.shadow_extent
+    }
+
     pub fn body_entry(&self, name: &str, frame: u16) -> Option<&OverlaySpriteEntry> {
         self.entries.get(name)?.get(&(BridgeFrameKind::Body, frame))
     }
@@ -366,7 +376,17 @@ fn pack_bridge_sprites(
         atlas_height,
         Some(&source_indices),
     );
-    BridgeAtlas { texture, entries }
+    let shadow_extent = ArtExtent::of(entries.values().flat_map(|frames| {
+        frames
+            .iter()
+            .filter(|((kind, _), _)| *kind == BridgeFrameKind::Shadow)
+            .map(|(_, entry)| entry)
+    }));
+    BridgeAtlas {
+        texture,
+        entries,
+        shadow_extent,
+    }
 }
 
 #[cfg(test)]

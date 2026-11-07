@@ -1,13 +1,14 @@
 //! VERA's Create Game choices for its own rooms, which the online and LAN
-//! Create Game boxes both offer: the most players a room seats, on a Players
-//! trackbar like Generate Map's, and whether later arrivals may watch.
+//! Create Game boxes both offer: the most people a room holds, players and
+//! spectators together, on a Max players trackbar like Generate Map's, and
+//! whether later arrivals may watch. The map decides the player seats.
 
 use crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT;
 use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::trackbar::{TrackbarHold, TrackbarPress, TrackbarRange};
 
-/// What the host of VERA's room chose at Create Game: the most players it
-/// seats, and whether later arrivals may watch once those seats are taken.
+/// What the host of VERA's room chose at Create Game: the most people it
+/// holds, and whether later arrivals may watch once its seats are taken.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RoomLimits {
     pub(crate) players: u8,
@@ -17,13 +18,13 @@ pub(crate) struct RoomLimits {
 impl Default for RoomLimits {
     fn default() -> Self {
         Self {
-            players: 8,
+            players: NETWORK_PLAYER_SLOT_COUNT as u8,
             spectators: true,
         }
     }
 }
 
-/// The Players trackbar: two up to every row a room has.
+/// The Max players trackbar: two up to every row a room has.
 pub(crate) const PLAYERS: TrackbarRange =
     TrackbarRange::new(2, NETWORK_PLAYER_SLOT_COUNT as i32, 1);
 
@@ -147,7 +148,7 @@ mod tests {
         assert_eq!(
             picker.limits,
             RoomLimits {
-                players: 8,
+                players: 30,
                 spectators: false
             }
         );

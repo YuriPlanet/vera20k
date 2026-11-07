@@ -40,9 +40,9 @@ pub(crate) fn software_cursor(
     state: &AppState,
     depth: f32,
 ) -> Option<(&BatchTexture, SpriteInstance)> {
-    // Outside the client area the system arrow owns the pointer; mouse.shp would
-    // otherwise stay painted at its last client position next to it.
-    if !state.platform.pointer_in_client {
+    // Outside the client area, or over an inactive window, the system arrow
+    // owns the pointer; mouse.shp would otherwise stay painted next to it.
+    if !state.platform.owns_pointer() {
         return None;
     }
     let cursor = state

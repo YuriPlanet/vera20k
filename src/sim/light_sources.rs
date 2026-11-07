@@ -8,9 +8,7 @@ use std::collections::BTreeMap;
 
 use crate::map::lighting::{PointLight, point_light_from_object};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::intern::StringInterner;
 use crate::sim::scenario_session::{ScenarioLightingProfile, ScenarioLightingState};
-use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::Simulation;
 
 /// The palette operation that accompanies a global cell refresh. Native
@@ -71,10 +69,16 @@ pub enum LightingEvent {
     },
 }
 
-/// Native source pointers are discarded during Building load (454174), so
-/// neither these records nor outgoing operations are serialized as pointers.
-/// The existing eager restore path is a compatibility reconstruction, not a
-/// claim to native Cell34 lazy reinitialization.
+/// Native saves the light vector whole and reloads it (`0x0067E074`, the
+/// factory `0x006BFCCC`), but BuildingClass::Load clears `+0x614`
+/// (`0x00454174`): a loaded building's light shines on as an ownerless
+/// source that its building's later lifecycle calls never reach.
+/// RESIDUAL: VERA saves neither these records nor the outgoing events, and
+/// gives every building its light back after a load
+/// ([`Simulation::rebuild_lighting_sources_after_load`]). So a lamp saved lit
+/// still goes dark when it dies, is sold or loses power, and one saved dark
+/// can light again. Seen only after loading a save, at a later change to a
+/// lit building's light.
 #[derive(Debug, Clone, Default)]
 pub struct LightingSources {
     buildings: BTreeMap<u64, PointLight>,
@@ -108,8 +112,10 @@ impl LightingSources {
         self.pending.clear();
     }
 
-    /// Native554A60/A80 suppress repeated writes to an already matching48.
-    /// Death44264C and sell449F1E/44A20B disable before destruction effects.
+    /// Enable (`0x00554A60`) and Deactivate (`0x00554A80`) skip a light
+    /// already in that state (`+0x48`). Death (`0x0044264C`), undeploy
+    /// (`0x00449F1E`) and sale (`0x0044A20B`) deactivate before the
+    /// building's UnInit.
     pub fn set_building_light_active(&mut self, id: u64, active: bool) {
         let Some(source) = self.buildings.get_mut(&id) else {
             return;
@@ -170,12 +176,15 @@ impl Simulation {
             .publish(LightingEvent::RetainAnimIntensity { anim, cell });
     }
 
-    /// Preserve the existing eager restore projection while resetting the
-    /// outgoing timeline. Native lazy post-load reconstruction remains open.
-    /// VERA-only: the light cache, rebuilt from each alive (`+0x90`), unlimboed
-    /// (`+0x81`), Marked (`+0x74`), undying object with Health above 0.
+    /// VERA-only, as [`LightingSources`] records: the lights of the alive
+    /// (`+0x90`), unlimboed (`+0x81`), Marked (`+0x74`), undying buildings
+    /// with Health above 0 that have one by now: each that has opened
+    /// (`+0x6E4`, [`Self::light_building`] at Grand_Opening) and, in a
+    /// campaign, each other, which its Unlimbo lit (`0x00440D4D`). The
+    /// outgoing timeline restarts empty.
     pub fn rebuild_lighting_sources_after_load(&mut self, rules: &RuleSet) {
         self.lighting_sources = LightingSources::default();
+        let campaign = !self.session.game_mode_nonzero();
         let ids: Vec<_> = self
             .entities()
             .values()
@@ -185,17 +194,12 @@ impl Simulation {
                     && entity.lifecycle.cell_marked()
                     && !entity.death.is_dying()
                     && entity.health.current() > 0
+                    && (campaign || entity.building_art.actually_placed())
             })
             .map(|entity| entity.stable_id())
             .collect();
         for id in ids {
-            Self::allocate_building_light(
-                &self.interner,
-                &self.substrate,
-                &mut self.lighting_sources,
-                id,
-                rules,
-            );
+            self.light_building(id, rules);
             // This eager compatibility projection must retain saved6EA.
             // Temporal660 alone does not disable614; DisableStuff does.
             if self
@@ -209,39 +213,36 @@ impl Simulation {
         self.lighting_sources.pending.clear();
     }
 
-    /// Successful Unlimbo440DFD / construction446767 allocates only when614
-    /// is null, then calls554A60(0). Parameter conversion is the same existing
-    /// map-light conversion; its floating inputs have presentation-only use.
-    pub fn allocate_building_light(
-        interner: &StringInterner,
-        substrate: &ObjectSubstrate,
-        lighting_sources: &mut LightingSources,
-        id: u64,
-        rules: &RuleSet,
-    ) {
-        if lighting_sources.buildings.contains_key(&id) {
+    /// The light block BuildingClass::Unlimbo (`0x00440D6C..0x00440E02`) and
+    /// Grand_Opening's first opening (`0x004466D5..0x0044676C`) share: a type
+    /// with `LightIntensity=` (`+0xE34`) creates its LightSource at GetCoords
+    /// (vt+0x48 = `0x00447AC0`) when `+0x614` is null, then Enables it
+    /// (`0x00554A60`), which turns an existing, disabled light back on.
+    pub(crate) fn light_building(&mut self, id: u64, rules: &RuleSet) {
+        if self.lighting_sources.buildings.contains_key(&id) {
+            self.lighting_sources.set_building_light_active(id, true);
             return;
         }
-        let Some(entity) = substrate.entities.get(id) else {
+        let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
         if entity.category() != crate::map::entities::EntityCategory::Structure {
             return;
         }
-        let Some(object) = interner.object_type(entity.type_ref(), rules) else {
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return;
         };
+        let light = object.building_light();
         let Some(source) = point_light_from_object(
-            entity.position.rx(),
-            entity.position.ry(),
-            object.building_light().visibility_leptons(),
-            object.building_light().intensity_units(),
-            object.building_light().tint_units(),
+            crate::sim::movement::ground_pose::object_center_xy(entity),
+            light.visibility_leptons(),
+            light.intensity_units(),
+            light.tint_units(),
         ) else {
             return;
         };
-        lighting_sources.buildings.insert(id, source.clone());
-        lighting_sources.pending.push(LightingEvent::Building {
+        self.lighting_sources.buildings.insert(id, source.clone());
+        self.lighting_sources.pending.push(LightingEvent::Building {
             id,
             source: Some(source),
         });

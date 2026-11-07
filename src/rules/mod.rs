@@ -16,12 +16,11 @@
 //!   0x00887180 (required); `LANGRULE.INI` with a valid `[Digest]` gets a full
 //!   `RulesClass::Process` (retail ships none); `AIMD.INI` -> g_AIINI.
 //! - `ScenarioClass::Full_Init` 0x00686B20, in order:
-//!   1. scenario basename: Full_Init caches `entry GameMode == 0` at
-//!      0x00686B3D, then checks current mode at 0x00686C8B; 0x00686C9D skips
-//!      the basename `.INI` Process at 0x00686D35 unless entry mode was nonzero
-//!      and current mode is Campaign (0). Normal campaign startup is 0 -> 0 and
-//!      skips this pass; the transition that could admit it is not established
-//!      by the bounded campaign-start corpus;
+//!   1. scenario basename, Campaign only (0x00686C8B): Full_Init caches
+//!      `entry GameMode == 0` at 0x00686B3D, and 0x00686C9D skips the basename
+//!      `.INI` Process at 0x00686D35 while that flag is set. 0x00687599 then
+//!      clears it (0x006875A8) and reruns the body from 0x00686B5D, so every
+//!      campaign start reads the file on the second pass;
 //!   2. multiplayer: `[Countries]`, `[General]`, HouseType bodies from RULESMD;
 //!   3. reset 0x006686C0 (random maps call it too, 0x0059A0F0): destroy type
 //!      registries; Process RULESMD (0x00668A27), LANGRULE (0x00668B05); re-read
@@ -117,6 +116,7 @@
 //! - rules/ does NOT depend on (outside tests): sim/, render/, ui/, audio/, net/
 
 pub mod airstrike;
+pub(crate) mod threat_coefficients;
 #[cfg(feature = "phobos")]
 pub mod airstrike_targets;
 pub mod attach_effect;
@@ -212,6 +212,7 @@ mod country_parent_tests;
 #[cfg(test)]
 mod country_veterancy_tests;
 pub mod effect_asset_catalog;
+pub mod end_game;
 pub mod error;
 pub mod flh;
 pub mod foundation;

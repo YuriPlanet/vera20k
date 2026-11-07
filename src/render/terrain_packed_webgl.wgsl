@@ -5,17 +5,11 @@
 // the ordered compute results; the fragment writes them to an R32Uint target.
 @group(1) @binding(0) var fallback_results: texture_2d<u32>;
 
-fn fallback_linear(p: vec2u) -> i32 {
-    return i32(p.y * params.surface_width + p.x) + params.offset_words;
-}
-fn fallback_neighbor(p: vec2u) -> vec2i {
-    let linear = fallback_linear(p);
-    return vec2i(linear % i32(params.surface_width), linear / i32(params.surface_width));
-}
 // resolve_pixel's feedback condition: the neighbor is an earlier store here.
 fn fallback_feeds(p: vec2u) -> bool {
-    let neighbor = fallback_neighbor(p);
-    return params.offset_words < 0 && fallback_linear(p) >= 0
+    let linear = neighbor_linear(p);
+    let neighbor = neighbor_of(linear);
+    return params.offset_words < 0 && linear >= 0
         && inside(vec2u(neighbor)) && admitted(vec2u(neighbor));
 }
 fn fallback_source(p: vec2u) -> u32 {
@@ -28,10 +22,10 @@ fn fs_feedback(@builtin(position) position: vec4f) -> @location(0) u32 {
     var first = p;
     var links = 0u;
     while fallback_feeds(first) {
-        first = vec2u(fallback_neighbor(first));
+        first = vec2u(neighbor_of(neighbor_linear(first)));
         links += 1u;
     }
-    var word = blend(fallback_source(first), textureLoad(old_words, fallback_neighbor(first), 0).r);
+    var word = blend(fallback_source(first), textureLoad(old_words, neighbor_of(neighbor_linear(first)), 0).r);
     var linear = first.y * params.surface_width + first.x;
     for (var link = 0u; link < links; link += 1u) {
         linear += u32(-params.offset_words);

@@ -186,8 +186,12 @@ impl ZoneRecord {
         record
     }
 
+    /// Record 0, the Outside sentinel, has no seed: Original581F90 clears its
+    /// temporary record's +20 (58205F) and copies it (58A59F). Bridge pairs can
+    /// target it, and 42C580 estimates that edge before passability rejects it.
     pub(crate) fn native_threat_index(self) -> Option<i32> {
         self.native_threat_index
+            .or((self.zone_id == ZONE_INVALID).then_some(0))
     }
 }
 

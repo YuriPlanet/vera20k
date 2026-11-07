@@ -37,6 +37,7 @@ fn birth(value: &Value) -> LaserBirth {
                 spread: std::array::from_fn(|i| integer(&value["spread"][i]) as u8),
             }
         },
+        fade_start: crate::util::native_x87::NativeF32Bits::ONE,
         fade_end: crate::util::native_x87::NativeF32Bits::from_bits(
             value["fade_end_bits"].as_u64().unwrap() as u32,
         ),
@@ -73,7 +74,7 @@ fn original_general_main_continuation_is_sampled_once_per_composite() {
             .observations()
             .map(|value| serde_json::to_value(value).unwrap())
             .collect::<Vec<_>>();
-        let ((), trace) = crate::sim::rng::trace_draws(|| lasers.composite(&mut main.draws()));
+        let (_, trace) = crate::sim::rng::trace_draws(|| lasers.composite(&mut main.draws()));
         assert_eq!(
             main.native_state_hex(),
             row["rng_after"]["main"].as_str().unwrap(),

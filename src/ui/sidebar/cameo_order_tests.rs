@@ -875,9 +875,8 @@ fn original_complete_recalculate_preserves_order_and_adjusts_each_strip_scroll()
     }
 }
 
-#[test]
-fn scroll_arrows_queue_a_page_and_roll_one_row_per_visit() {
-    // Sidebar Action 0x006A7780 queues; StripClass::AI 0x006A8B30 rolls.
+/// Eleven Vehicle cameos: six rows, four visible, so the last TopRow is 2.
+fn eleven_vehicle_strips() -> CameoStrips {
     let mut interner = StringInterner::new();
     let entries = (0..11)
         .map(|i| Cameo {
@@ -894,14 +893,20 @@ fn scroll_arrows_queue_a_page_and_roll_one_row_per_visit() {
             },
         })
         .collect();
-    let mut strips = CameoStrips::from_retained([vec![], vec![], vec![], entries], [0; 4]);
+    CameoStrips::from_retained([vec![], vec![], vec![], entries], [0; 4])
+}
+
+#[test]
+fn scroll_arrows_queue_a_page_and_roll_one_row_per_visit() {
+    // Sidebar Action 0x006A7780 queues; StripClass::AI 0x006A8B30 rolls.
+    let mut strips = eleven_vehicle_strips();
     let tab = SidebarTab::Vehicle;
     // Six rows, four visible: the last TopRow is 2.
     assert!(
-        !strips.queue_page_scroll(tab, false, 4),
+        !strips.queue_scroll(tab, false, 4, 4),
         "R-UP at the top scolds"
     );
-    assert!(strips.queue_page_scroll(tab, true, 4));
+    assert!(strips.queue_scroll(tab, true, 4, 4));
     let mut rows = Vec::new();
     for _ in 0..4 {
         strips.step_pending_scroll(4);
@@ -913,10 +918,28 @@ fn scroll_arrows_queue_a_page_and_roll_one_row_per_visit() {
         "the blocked remainder is dropped"
     );
     assert!(
-        !strips.queue_page_scroll(tab, true, 4),
+        !strips.queue_scroll(tab, true, 4, 4),
         "R-DN at the end scolds"
     );
-    assert!(strips.queue_page_scroll(tab, false, 4));
+    assert!(strips.queue_scroll(tab, false, 4, 4));
     strips.step_pending_scroll(4);
     assert_eq!(strips.scroll_row(tab), 1);
+}
+
+#[test]
+fn scroll_commands_queue_one_row_each_until_the_next_visit() {
+    // SidebarClass::Scroll 0x006A6A00 gates on TopRow, not on the queue.
+    let mut strips = eleven_vehicle_strips();
+    let tab = SidebarTab::Vehicle;
+    for _ in 0..3 {
+        assert!(strips.queue_scroll(tab, true, 4, 1));
+    }
+    assert_eq!(strips.scroll_row(tab), 0, "StripClass::AI moves the strip");
+    let mut rows = Vec::new();
+    for _ in 0..3 {
+        strips.step_pending_scroll(4);
+        rows.push(strips.scroll_row(tab));
+    }
+    assert_eq!(rows, [1, 2, 2], "the row past the end is dropped");
+    assert!(!strips.has_pending_scroll());
 }

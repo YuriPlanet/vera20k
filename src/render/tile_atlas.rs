@@ -19,6 +19,7 @@ use crate::map::theater::{TileImage, TileKey};
 use crate::render::atlas_growth;
 use crate::render::batch::BatchRenderer;
 use crate::render::batch::BatchTexture;
+use crate::util::lookup_hash::LookupMap;
 
 /// Padding between tiles in the atlas (pixels). Prevents texture bleeding
 /// from bilinear filtering at tile boundaries.
@@ -51,8 +52,9 @@ pub struct TileAtlas {
     /// Pre-built bind group for the Z-depth pipeline (color + sampler + R8 depth).
     /// Used by `draw_with_buffer_zdepth()` in the render pass.
     pub zdepth_bind_group: wgpu::BindGroup,
-    /// Tile key → UV rectangle + rendering metadata.
-    uv_map: HashMap<TileKey, TileUV>,
+    /// Tile key → UV rectangle + rendering metadata. Lookup-only: the
+    /// terrain instance build reads it for every visible cell each draw.
+    uv_map: LookupMap<TileKey, TileUV>,
 }
 
 impl TileAtlas {
@@ -89,14 +91,11 @@ pub fn build_atlas(
             texture,
             depth_texture_view,
             zdepth_bind_group,
-            uv_map: HashMap::new(),
+            uv_map: LookupMap::default(),
         };
     }
 
-    // The shared shelf plan sorts tallest first and keeps input order between
-    // equal heights, so key order breaks those ties deterministically.
-    let mut sorted_keys: Vec<TileKey> = tiles.keys().copied().collect();
-    sorted_keys.sort_by_key(|key| (key.tile_id, key.sub_tile));
+    let sorted_keys = packing_order(tiles.keys().copied());
     let sizes: Vec<[u32; 2]> = sorted_keys
         .iter()
         .map(|key| [tiles[key].width, tiles[key].height])
@@ -126,7 +125,8 @@ pub fn build_atlas(
     // Allocate RGBA color buffer and R8 depth buffer (same layout), then blit tiles.
     let mut rgba: Vec<u8> = vec![0u8; (atlas_width * atlas_height * 4) as usize];
     let mut depth_buf: Vec<u8> = vec![0u8; (atlas_width * atlas_height) as usize];
-    let mut uv_map: HashMap<TileKey, TileUV> = HashMap::with_capacity(plan.placements.len());
+    let mut uv_map: LookupMap<TileKey, TileUV> =
+        LookupMap::with_capacity_and_hasher(plan.placements.len(), Default::default());
     let aw: f32 = atlas_width as f32;
     let ah: f32 = atlas_height as f32;
 
@@ -230,5 +230,34 @@ fn blit_tile(rgba: &mut [u8], atlas_width: u32, px: u32, py: u32, tile: &TileIma
         if src_end <= tile.rgba.len() && dst_end <= rgba.len() {
             rgba[dst_start..dst_end].copy_from_slice(&tile.rgba[src_start..src_end]);
         }
+    }
+}
+
+/// The order tiles enter the shared shelf plan. The plan sorts tallest first
+/// and keeps input order between equal heights, so the whole key, variant
+/// included, breaks those ties: the tile map's own order differs per run.
+fn packing_order(keys: impl IntoIterator<Item = TileKey>) -> Vec<TileKey> {
+    let mut keys: Vec<TileKey> = keys.into_iter().collect();
+    keys.sort_by_key(|key| (key.tile_id, key.sub_tile, key.variant));
+    keys
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Variants of one sub-tile pack in variant order whatever order the tile
+    /// map hands them over, so the atlas layout is the same on every run.
+    #[test]
+    fn variants_of_one_sub_tile_pack_in_variant_order() {
+        let key = |tile_id, sub_tile, variant| TileKey {
+            tile_id,
+            sub_tile,
+            variant,
+        };
+        assert_eq!(
+            packing_order([key(4, 1, 2), key(4, 1, 0), key(3, 9, 1), key(4, 1, 1)]),
+            [key(3, 9, 1), key(4, 1, 0), key(4, 1, 1), key(4, 1, 2)]
+        );
     }
 }

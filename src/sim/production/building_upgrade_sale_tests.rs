@@ -173,7 +173,7 @@ fn selling_installed_turret_upgrade_drops_the_counted_stack_after_one_refund() {
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
     let owner = sim.interner.get("Americans").unwrap();
     sim.session.set_current_house_for_test(Some(owner));
-    let placements = crate::map::entities::parse_map_entities(&map);
+    let placements = crate::map::entities::parse_map_entities(&map, 4);
     assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 3);
     let turret = sim.interner.get("GAPILL").unwrap();
     let host = sim.entities().get(1).unwrap();

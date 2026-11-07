@@ -2,8 +2,13 @@
 //! shore-piece tiles along it. Its verdict decides whether the blob commits
 //! or rolls back, so every detail here is on the bit-exact path.
 //!
-//! Four full-map passes in native scan order: erosion, thin-water cleanup,
-//! then two piece-selection passes (straight/outer pieces, inner corners).
+//! gamemd: `MapClass::RmgFinalizeWaterShore` 0x0057A0C0, called only by the
+//! random-map water routines 0x0059A6C0, 0x0059BBC0, `GrowLake` 0x0059C920,
+//! `CarveRiver` 0x0059D510 and `BuildRiverBridge` 0x0059E740.
+//!
+//! Four full-map passes in native scan order: erosion (0x0057A430), thin-water
+//! cleanup (0x0057A320, result discarded), then two piece-selection passes
+//! (0x0057ACF0 with pass 1, straight/outer pieces, then pass 2, inner corners).
 //! The selection passes draw one bounded uniform per iterated cell — even
 //! cells that do nothing — which makes the tiler a heavy, load-bearing
 //! consumer of the draw stream.
@@ -29,7 +34,8 @@ const PIECE_ORIENT: [i32; SHORE_PIECES] = [
     3, 3, 1, 1, 7, 7, 5, 5, 4, 4,
 ];
 
-/// Block-anchor offset per piece (1-based piece p at index p-1).
+/// Block-anchor offset per piece (1-based piece p at index p-1): the table at
+/// `0x00ABDB68..` that `Rmg__InitShorePieceAnchors @ 0x0057A9C0` writes.
 const PIECE_ANCHOR: [(i16, i16); SHORE_PIECES] = [
     (0, -1),
     (0, -1),
@@ -131,7 +137,8 @@ pub struct ShoreCtx<'a> {
     pub rng: &'a mut RmgRng,
 }
 
-/// Narrow water predicate: the first 14 tiles of the water set only.
+/// Narrow water predicate: the first 14 tiles of the water set only, as
+/// `MapClass::RmgShoreWaterMask @ 0x0057B210` tests each neighbour.
 fn is_water(ids: &TileIds, tile: i32) -> bool {
     ids.water_base != -1 && tile >= ids.water_base && tile < ids.water_base + 0x0E
 }
@@ -139,6 +146,8 @@ fn is_water(ids: &TileIds, tile: i32) -> bool {
 /// Run the shore tiler for `region_id`. `keep` mirrors the original's flag:
 /// water-seed/flood-fill callers pass true (region checks bypassed), the
 /// mode-3/4 drivers pass false. Returns the commit verdict.
+/// `MapClass::RmgFinalizeWaterShore @ 0x0057A0C0`; native comparison in
+/// `cliff_native_tests::native_water_shore_controls`.
 pub fn run(ctx: &mut ShoreCtx<'_>, region_id: i32, keep: bool) -> bool {
     ctx.scratch.invalidate_shore_masks();
 
@@ -170,7 +179,7 @@ pub fn run(ctx: &mut ShoreCtx<'_>, region_id: i32, keep: bool) -> bool {
 ///
 /// The cached value is returned for ANY mode once that mode's prechecks pass
 /// — the payload is shared, only the gates differ. Computation does NOT store
-/// back; only pass A stores.
+/// back; only pass A stores. `MapClass::RmgShoreWaterMask @ 0x0057B210`.
 fn compute_mask(ctx: &mut ShoreCtx<'_>, x: i32, y: i32, mode: i32) -> i32 {
     let Some(cell) = ctx.grid.get(x, y) else {
         return 0;
@@ -222,6 +231,7 @@ fn compute_mask(ctx: &mut ShoreCtx<'_>, x: i32, y: i32, mode: i32) -> i32 {
 ///
 /// The recursion's own verdict is discarded — a foreign-region hit inside the
 /// recursion does not fail the pass; only the top-level iterator visit can.
+/// `MapClass::RmgErodeShoreLand @ 0x0057A430`.
 fn erode(ctx: &mut ShoreCtx<'_>, x: i32, y: i32, region_id: i32, keep: bool) -> bool {
     let mask2 = compute_mask(ctx, x, y, 2);
     if ctx.scratch.in_diamond(x, y) {
@@ -287,7 +297,8 @@ fn erode(ctx: &mut ShoreCtx<'_>, x: i32, y: i32, region_id: i32, keep: bool) -> 
     true
 }
 
-/// Pass B worker: revert water spikes to empty cells.
+/// Pass B worker: revert water spikes to empty cells
+/// (`MapClass::RmgClearWaterSpike @ 0x0057A320`).
 fn cleanup(ctx: &mut ShoreCtx<'_>, x: i32, y: i32, region_id: i32, keep: bool) {
     let Some(cell) = ctx.grid.get(x, y) else {
         return;
@@ -323,7 +334,8 @@ fn cleanup(ctx: &mut ShoreCtx<'_>, x: i32, y: i32, region_id: i32, keep: bool) {
     }
 }
 
-/// Passes C/D worker: pick a shore piece for the cell and stamp it.
+/// Passes C/D worker: pick a shore piece for the cell and stamp it
+/// (`MapClass::RmgSelectShorePiece @ 0x0057ACF0`).
 fn select(
     ctx: &mut ShoreCtx<'_>,
     x: i32,
@@ -431,7 +443,7 @@ fn select(
 
 /// Shoreline run-length walk: `a` advances along `walk_dir` starting one step
 /// from the cell, `b` is `a` stepped toward the water (`water_dir`); the run
-/// continues while `a` is land and `b` is water.
+/// continues while `a` is land and `b` is water. Inline in `0x0057ACF0`.
 fn run_length(ctx: &mut ShoreCtx<'_>, x: i32, y: i32, walk_dir: usize, water_dir: usize) -> i32 {
     let mut len = 1;
     let (mut ax, mut ay) = RmgGrid::step(x, y, walk_dir);
@@ -457,7 +469,10 @@ fn run_length(ctx: &mut ShoreCtx<'_>, x: i32, y: i32, walk_dir: usize, water_dir
     len
 }
 
-/// The stamping tail shared by both selection passes.
+/// The stamping tail shared by both selection passes (`0x0057B12D..`): the
+/// origin is the cell plus the piece's anchor from the table at `0x00ABDB64`,
+/// which the static initializer `Rmg__InitShorePieceAnchors @ 0x0057A9C0`
+/// fills.
 fn stamp(
     ctx: &mut ShoreCtx<'_>,
     x: i32,

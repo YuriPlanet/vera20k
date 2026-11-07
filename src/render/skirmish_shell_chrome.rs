@@ -96,7 +96,7 @@ const TRACKBAR_FRAME_BORDER: i32 = 2;
 /// BC/BD/C2/C9 place their speed, credits and units sliders at 129x21 and the
 /// co-op difficulty slider at 266x22, or 266x21 on WOL's host C2
 /// (`0x0060B950` placement, `tools/storage_oracle/lan_lobby.json`).
-pub const TRACKBAR_FRAMES: [(i32, i32, i32); 9] = [
+pub const TRACKBAR_FRAMES: [(i32, i32, i32); 10] = [
     (129, 22, 50),
     (226, 22, 50),
     (263, 21, 50),
@@ -106,6 +106,8 @@ pub const TRACKBAR_FRAMES: [(i32, i32, i32); 9] = [
     (129, 21, 50),
     (266, 22, 0),
     (266, 21, 0),
+    // The online pause menu FF's Connection and Game Speed (60B7A0).
+    (210, 21, 50),
 ];
 const SKIRMISH_FLAG_PCX_NAMES: [&str; 12] = [
     "usai.pcx", "japi.pcx", "frai.pcx", "geri.pcx", "gbri.pcx", "djbi.pcx", "arbi.pcx", "lati.pcx",
@@ -672,7 +674,7 @@ pub fn build_skirmish_shell_chrome_atlas(
         );
     }
 
-    for name in ["STARTBUT.SHP", "mmpb.shp"] {
+    for name in [START_MARKER_SHP, "mmpb.shp"] {
         push_optional(
             &mut rendered,
             render_shp_entry(assets, name, &shell_palette, 0),
@@ -916,6 +918,15 @@ fn setup_background_pair(
 
 fn load_shell_palette(assets: &AssetManager) -> Option<Palette> {
     load_named_palette(assets, "SHELL.PAL")
+}
+
+/// The skirmish preview's start marker, drawn by `DrawStartPositions 0x00640710`.
+const START_MARKER_SHP: &str = "STARTBUT.SHP";
+
+/// The start marker piece the atlas packs (frame 0 on its canvas in
+/// SHELL.PAL), for pictures of a map drawn outside the shell.
+pub(crate) fn start_marker_art(assets: &AssetManager) -> Option<ChromePiece> {
+    render_shp_entry(assets, START_MARKER_SHP, &load_shell_palette(assets)?, 0)
 }
 
 /// Shell palettes come from ConvertClass__BuildFromPaletteFile `0x0072ADE0`,

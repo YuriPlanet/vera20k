@@ -151,7 +151,11 @@ fn cell_has_structural_bridge(sim: &Simulation, cell: (u16, u16)) -> bool {
 ///   transport's House (`HouseClass::Is_Ally` by object, `0x004F9A90`).
 ///
 /// Without map cells no cell is open.
-fn octant_cell_open(sim: &Simulation, cell: (u16, u16), transport_owner: &str) -> bool {
+fn octant_cell_open(
+    sim: &Simulation,
+    cell: (u16, u16),
+    transport_owner: crate::sim::intern::InternedId,
+) -> bool {
     let Some(terrain) = sim.resolved_terrain.as_ref() else {
         return false;
     };
@@ -160,7 +164,7 @@ fn octant_cell_open(sim: &Simulation, cell: (u16, u16), transport_owner: &str) -
     if terrain
         .land_speed_costs(cells.land_type(native))
         .cost_for_speed_type(SpeedType::Foot)
-        == Some(0)
+        .is_some_and(|cost| cost.is_zero())
     {
         return false;
     }
@@ -174,11 +178,8 @@ fn octant_cell_open(sim: &Simulation, cell: (u16, u16), transport_owner: &str) -
     sim.nearest_cell_object(cell, MovementLayer::Ground, None)
         .and_then(|id| sim.substrate.entities.get(id))
         .is_none_or(|object| {
-            crate::map::houses::is_allied_with(
-                sim.house_alliances.as_map(),
-                transport_owner,
-                sim.interner.resolve(object.owner()),
-            )
+            sim.house_alliances
+                .is_allied(&sim.interner, transport_owner, object.owner())
         })
 }
 
@@ -200,7 +201,7 @@ fn octant_cell_open(sim: &Simulation, cell: (u16, u16), transport_owner: &str) -
 /// octant instead (`0x00740DC5`) is not represented: no stock YR unit sets
 /// the key and it is not parsed.
 fn pick_exit_octant(sim: &Simulation, entity: &GameEntity) -> Option<((u16, u16), usize)> {
-    let owner = sim.interner.resolve(entity.owner());
+    let owner = entity.owner();
     let base = (entity.position.rx(), entity.position.ry());
     // `0x00740B9F..BAD`: the body's `Current()` (`+0x388`), full 16 bits.
     let facing16 = entity.body_facing_current(sim.session.binary_frame());
@@ -294,8 +295,8 @@ enum EjectOutcome {
 /// (`0x0073DA7C`), vehicles through `Find_Nearby_Passable_Cell` seeded at the
 /// exit cell (`0x0073DADD`), whose result overwrites the exit-cell slot
 /// `[ESP+0x14]` (`0x0073DAE8`). `Unlimbo(coord, octant * 32)` follows
-/// (`0x0073DB6A`); on success the passenger's transporter link `+0x11C` is
-/// cleared, `Queue_Mission(Move)` (`0x0073DBDB`) and `Set_Destination` to the
+/// (`0x0073DB6A`); on success the passenger's Transporter `+0x11C` is
+/// cleared (`0x0073DBD1`), `Queue_Mission(Move)` (`0x0073DBDB`) and `Set_Destination` to the
 /// cell BEYOND (`[ESP+0x30]`) on the strict pass or to `[ESP+0x14]` on the
 /// relaxed pass (`0x0073DBE1`..`0x0073DC06`) — the exit cell for infantry,
 /// the FNPC placement cell for a vehicle passenger — and `LeaveTransportSound`
@@ -516,8 +517,12 @@ fn eject_head_passenger(
             {
                 log::warn!("Unload target {pax_id}: {cause}");
             }
-            // Unit73DBDB queues the passenger's Move directly, before
-            // class destination73DC06; it does not execute a player event.
+            // `0x0073DBD1`: Transporter (`+0x11C`) = NULL. Unit73DBDB then
+            // queues the passenger's Move directly, before class
+            // destination73DC06; it does not execute a player event.
+            if let Some(passenger) = sim.substrate.entities.get_mut(pax_id) {
+                passenger.passenger_role.clear_transporter();
+            }
             sim.queue_order_mission(pax_id, MissionType::Move, rules);
             if let Err(cause) = sim.assign_destination_represented(
                 pax_id,

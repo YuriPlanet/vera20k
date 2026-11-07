@@ -31,6 +31,8 @@ Allt föränderligt speltillstånd ligger i en enda struct, `Simulation` (`src/s
 
 Appen gör om spelarens inmatning till kommandon för simuleringen. Efter varje bildruta lämnar den det nya tillståndet till renderaren och spelar upp ljuden som bildrutan gav upphov till. Renderingen läser bara simuleringens tillstånd, och `sim/` är aldrig beroende av `render/`, `ui/`, `audio/` eller `net/`.
 
+![Applikationen skickar kommandon till simuleringen, som returnerar världstillståndet; applikationen skickar renderingsdata till renderingen.](../images/architecture.sv.png)
+
 ## Determinism
 
 Samma tillstånd, inmatning och slumpfrö måste ge samma resultat på varje plattform och processor.

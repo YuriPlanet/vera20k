@@ -12,6 +12,7 @@ use crate::assets::shp_file::ShpFile;
 use crate::render::atlas_growth;
 use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
+use crate::render::sidebar_smoothing::{self, SmoothCopy, SmoothSource};
 use crate::rules::ruleset::RuleSet;
 
 const CAMEO_PADDING: u32 = 2;
@@ -38,9 +39,33 @@ pub struct SidebarCameoAtlas {
     alt_entries: HashMap<String, SidebarCameoEntry>,
     /// Per-SuperWeaponType icons, independent of object IDs and filenames.
     superweapon_entries: HashMap<String, SidebarCameoEntry>,
+    /// The atlas image and its cameos, kept for VERA's smooth sidebar
+    /// (`render::sidebar_smoothing`).
+    smooth_source: SmoothSource,
+    /// Their copy at the sidebar's draw scale while it is on.
+    smooth: Option<SmoothCopy>,
 }
 
 impl SidebarCameoAtlas {
+    /// Follow the smooth sidebar's scale; None draws the atlas's own pixels.
+    pub fn set_smooth_scale(
+        &mut self,
+        gpu: &GpuContext,
+        batch: &BatchRenderer,
+        scale: Option<u32>,
+    ) {
+        sidebar_smoothing::follow_scale(&mut self.smooth, &self.smooth_source, scale, gpu, batch);
+    }
+
+    /// The texture the sidebar draws its cameos from: the smooth copy when
+    /// there is one. It keeps the atlas's layout, so entries map unchanged.
+    pub fn sidebar_texture(&self) -> &BatchTexture {
+        self.smooth
+            .as_ref()
+            .and_then(SmoothCopy::texture)
+            .unwrap_or(&self.texture)
+    }
+
     pub fn superweapon(&self, type_id: &str) -> Option<&SidebarCameoEntry> {
         self.superweapon_entries.get(&type_id.to_ascii_uppercase())
     }
@@ -82,6 +107,9 @@ struct RenderedCameo {
     canvas_height: u32,
     crop_x: u32,
     crop_y: u32,
+    /// Its baked-in name (`sidebar_smoothing::cameo_name_pixels`), one flag
+    /// per pixel of `rgba`; empty when it has none.
+    sharp: Vec<bool>,
 }
 
 pub fn build_sidebar_cameo_atlas(
@@ -379,13 +407,22 @@ pub(crate) struct NativePcxImage {
     pub(crate) height: u32,
 }
 
-/// gamemd PCX blit6BA580: embedded palette, then RGB(255,0,255) keyed in the
-/// packed surface-word domain; only 8-bit indexed files load. No house remap
-/// or cameo.pal applies. Ares PCX cameos and Phobos' superweapon sidebar art
-/// (`PCX::BlitToSurface`) both draw through it.
+/// gamemd PCX blit 6BA580: embedded palette, then RGB(255,0,255) keyed in the
+/// packed surface-word domain. No house remap or cameo.pal applies. Ares PCX
+/// cameos and Phobos' superweapon sidebar art (`PCX::BlitToSurface`) both draw
+/// through it.
+///
+/// 8-bit indexed files always load. A 3-plane 24-bit file loads only with
+/// Phobos: 630310 packs its red, green and blue planes into the display word
+/// (630619..630665), and Phobos `RGB_PCX_Loader` (6B9D9C,
+/// `src/Misc/Hooks.PCX.cpp`) has the PCX cache load 6B9D00 keep that 16-bit
+/// surface. Without Phobos, the load's palette conversion (6B9DA3..6B9EC1)
+/// reads it as one byte per pixel and garbles it; VERA keeps the SHP fallback
+/// instead.
 #[cfg(any(feature = "ares", feature = "phobos"))]
 pub(crate) fn decode_native_pcx(bytes: &[u8]) -> Option<NativePcxImage> {
     let image = crate::assets::pcx_file::PcxFile::from_bytes(bytes).ok()?;
+    #[cfg(not(feature = "phobos"))]
     if !image.is_indexed() {
         return None;
     }
@@ -424,6 +461,7 @@ fn render_pcx_cameo(
         canvas_height: 48,
         crop_x: 0,
         crop_y: 0,
+        sharp: Vec::new(),
     })
 }
 
@@ -441,8 +479,19 @@ fn render_shp_frame0(key: &str, data: &[u8], palette: &Palette) -> Option<Render
         return None;
     }
     let mut full_rgba = vec![0u8; (full_w * full_h * 4) as usize];
-    blit_frame_into_full_bounds(&mut full_rgba, full_w, full_h, frame, &frame_rgba);
-    rendered_cameo_from_canvas(key, full_rgba, full_w, full_h)
+    blit_frame_into_full_bounds(&mut full_rgba, full_w, full_h, frame, &frame_rgba, 4);
+    let mut cameo = rendered_cameo_from_canvas(key, full_rgba, full_w, full_h)?;
+    let mut indices = vec![0u8; (full_w * full_h) as usize];
+    blit_frame_into_full_bounds(&mut indices, full_w, full_h, frame, &frame.pixels, 1);
+    let name =
+        sidebar_smoothing::cameo_name_pixels(&indices, full_w as usize, full_h as usize, palette);
+    cameo.sharp = (cameo.crop_y..cameo.crop_y + cameo.height)
+        .flat_map(|y| {
+            let start = (y * full_w + cameo.crop_x) as usize;
+            name[start..start + cameo.width as usize].iter().copied()
+        })
+        .collect();
+    Some(cameo)
 }
 
 /// Phobos `[AudioVisual] MissingCameo=` for a type whose own cameo did not
@@ -525,12 +574,14 @@ fn push_unique(candidates: &mut Vec<String>, candidate: String) {
     }
 }
 
+/// Place a frame's pixels, `bytes` bytes each, on its SHP's full canvas.
 fn blit_frame_into_full_bounds(
-    full_rgba: &mut [u8],
+    full: &mut [u8],
     full_w: u32,
     full_h: u32,
     frame: &crate::assets::shp_file::ShpFrame,
-    frame_rgba: &[u8],
+    frame_pixels: &[u8],
+    bytes: u32,
 ) {
     let fw = frame.frame_width as u32;
     let fh = frame.frame_height as u32;
@@ -541,13 +592,13 @@ fn blit_frame_into_full_bounds(
         if dst_y >= full_h {
             break;
         }
-        let src_start = (y * fw * 4) as usize;
-        let dst_start = ((dst_y * full_w + fx) * 4) as usize;
+        let src_start = (y * fw * bytes) as usize;
+        let dst_start = ((dst_y * full_w + fx) * bytes) as usize;
         let copy_w = fw.min(full_w.saturating_sub(fx));
-        let byte_count = (copy_w * 4) as usize;
-        if src_start + byte_count <= frame_rgba.len() && dst_start + byte_count <= full_rgba.len() {
-            full_rgba[dst_start..dst_start + byte_count]
-                .copy_from_slice(&frame_rgba[src_start..src_start + byte_count]);
+        let byte_count = (copy_w * bytes) as usize;
+        if src_start + byte_count <= frame_pixels.len() && dst_start + byte_count <= full.len() {
+            full[dst_start..dst_start + byte_count]
+                .copy_from_slice(&frame_pixels[src_start..src_start + byte_count]);
         }
     }
 }
@@ -570,6 +621,7 @@ fn rendered_cameo_from_canvas(
         canvas_height,
         crop_x,
         crop_y,
+        sharp: Vec::new(),
     })
 }
 
@@ -677,6 +729,8 @@ fn pack_cameos(
         return None;
     }
     let mut rgba = vec![0u8; (atlas_width * atlas_height * 4) as usize];
+    let mut sharp = vec![false; (atlas_width * atlas_height) as usize];
+    let mut pieces = Vec::with_capacity(cameos.len());
     let mut entries = HashMap::with_capacity(cameos.len());
     let mut alt_entries = HashMap::new();
     let mut superweapon_entries = HashMap::new();
@@ -693,6 +747,11 @@ fn pack_cameos(
             rgba[dst_start..dst_start + byte_count]
                 .copy_from_slice(&cameo.rgba[src_start..src_start + byte_count]);
         }
+        for (y, flags) in cameo.sharp.chunks_exact(cameo.width as usize).enumerate() {
+            let start = ((py as usize + y) * atlas_width as usize) + px as usize;
+            sharp[start..start + flags.len()].copy_from_slice(flags);
+        }
+        pieces.push([px, py, cameo.width, cameo.height]);
         let target = match cameo.kind {
             CameoKind::Ordinary => &mut entries,
             CameoKind::Promoted => &mut alt_entries,
@@ -715,6 +774,9 @@ fn pack_cameos(
         entries,
         alt_entries,
         superweapon_entries,
+        smooth_source: SmoothSource::new(rgba, [atlas_width, atlas_height], pieces)
+            .with_sharp_pixels(sharp),
+        smooth: None,
     })
 }
 
@@ -928,6 +990,34 @@ mod tests {
         {
             assert_eq!([cameo.canvas_width, cameo.canvas_height], [2, 2]);
             assert_eq!(&cameo.rgba[0..4], &[200, 10, 180, 255]);
+        }
+    }
+
+    #[cfg(any(feature = "ares", feature = "phobos"))]
+    #[test]
+    fn a_24_bit_pcx_loads_only_with_phobos() {
+        // 2x1 in three RLE planes: magenta, then a colour. `C1 FF` is a
+        // one-byte run; a literal FF would read as a run marker.
+        let mut bytes = vec![0u8; 128];
+        bytes[0] = 0x0a;
+        bytes[2] = 1;
+        bytes[3] = 8;
+        bytes[8..10].copy_from_slice(&1u16.to_le_bytes());
+        bytes[65] = 3;
+        bytes[66..68].copy_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&[0xc1, 0xff, 17]); // red plane
+        bytes.extend_from_slice(&[0, 41]); // green plane
+        bytes.extend_from_slice(&[0xc1, 0xff, 83]); // blue plane
+        let image = super::decode_native_pcx(&bytes);
+        #[cfg(feature = "phobos")]
+        {
+            let image = image.unwrap();
+            assert_eq!([image.width, image.height], [2, 1]);
+            assert_eq!(image.rgba, [255, 0, 255, 0, 17, 41, 83, 255]);
+        }
+        #[cfg(not(feature = "phobos"))]
+        {
+            assert!(image.is_none());
         }
     }
 

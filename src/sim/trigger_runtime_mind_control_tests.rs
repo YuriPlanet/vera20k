@@ -37,9 +37,6 @@ fn retail_all02_mind_control_attack_starts_the_authored_stallone_script() {
         .unwrap()
         .into_parts();
     rules.install_art_data(retail_ini_fixture::art_registry(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let overlay =
         crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&processed, Some(&art));
     let ai = crate::rules::retail_sources::select_ini(&assets, "AIMD.INI")

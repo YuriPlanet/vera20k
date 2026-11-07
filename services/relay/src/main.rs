@@ -6,7 +6,10 @@ use std::net::{SocketAddr, UdpSocket};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use vera20k_relay_protocol::{ForwardDatagram, MAX_DATAGRAM, RelayError, RelayServer, SecretKey};
+use vera20k_relay_protocol::{
+    ForwardDatagram, MAX_DATAGRAM, MacFailureCounts, OrderingCounts, RelayError, RelayServer,
+    SecretKey,
+};
 
 /// Aggregate operational counts only. No request, endpoint, room identity,
 /// authentication material or error body enters the relay's journal.
@@ -24,6 +27,10 @@ struct TrafficCounts {
     rate_limited: u64,
     counter_exhausted: u64,
     entropy_unavailable: u64,
+    // Ordering push datagrams and their bytes; each also counts in `forwarded`
+    // or `send_errors`.
+    pushed: u64,
+    pushed_bytes: u64,
 }
 
 impl TrafficCounts {
@@ -42,9 +49,12 @@ impl TrafficCounts {
         *count += 1;
     }
 
-    fn report(&self, seconds: u64, rooms: usize) {
+    fn report(&self, seconds: u64, rooms: usize, ordering: OrderingCounts, mac: MacFailureCounts) {
         eprintln!(
-            "VERA20k relay interval_s={seconds} rooms={rooms} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={}",
+            "VERA20k relay interval_s={seconds} rooms={rooms} slowdowns={} raises={} catching_up_s={} received={} forwarded={} send_errors={} malformed={} authentication={} expired={} replay={} unregistered={} full={} rate_limited={} counter_exhausted={} entropy_unavailable={} pushed={} pushed_bytes={} pull_replies={} desyncs={} push_packets={:?} push_bytes={:?} piggybacked_records={} down_lost={} retransmitted_records={} readers_avg={:?} offline_unsent={} mac_failures={} unknown_sessions={} session_alerts={}",
+            ordering.slowdowns,
+            ordering.raises,
+            ordering.catching_up_s,
             self.received,
             self.forwarded,
             self.send_errors,
@@ -57,6 +67,26 @@ impl TrafficCounts {
             self.rate_limited,
             self.counter_exhausted,
             self.entropy_unavailable,
+            self.pushed,
+            self.pushed_bytes,
+            ordering.pull_replies,
+            ordering.desyncs,
+            ordering.push_packets,
+            ordering.push_bytes,
+            ordering.piggybacked_records,
+            ordering.down_lost_packets,
+            ordering.retransmitted_records,
+            // Average subscribed readers per state: good, lossy, congested,
+            // offline (spec §10.2).
+            ordering
+                .reader_states
+                .map(|seen| seen as f64 / ordering.reader_passes.max(1) as f64),
+            ordering.offline_unsent_packets,
+            // Statistics only: no count drops a datagram (compaction spec
+            // §6.4). An alert is a session failing over 4096 tags a minute.
+            mac.failures,
+            mac.unknown_sessions,
+            mac.session_alerts,
         );
     }
 }
@@ -69,7 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state_dir = std::env::var_os("STATE_DIRECTORY")
         .or_else(|| std::env::var_os("VERA_RELAY_STATE_DIR"))
         .map(PathBuf::from)
-        .ok_or("relay encrypted journal requires STATE_DIRECTORY or VERA_RELAY_STATE_DIR")?;
+        .ok_or("relay journal requires STATE_DIRECTORY or VERA_RELAY_STATE_DIR")?;
     let mut server = RelayServer::with_journal(SecretKey::new(key), 1024, &state_dir)?;
     let mut buffer = [0u8; MAX_DATAGRAM + 1];
     let mut counts = TrafficCounts::default();
@@ -97,16 +127,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut counts,
                 server.drain_federation(monotonic_ms, now),
             );
-            send_datagrams(
-                &socket,
-                &mut counts,
-                server.drain_ordering_push(monotonic_ms, now),
-            );
+            let pushed = server.drain_ordering_push(monotonic_ms, now);
+            counts.pushed += pushed.len() as u64;
+            counts.pushed_bytes += pushed
+                .iter()
+                .map(|datagram| datagram.bytes.len() as u64)
+                .sum::<u64>();
+            send_datagrams(&socket, &mut counts, pushed);
             passed_ms = Some(clock_origin.elapsed().as_millis().min(u128::from(u64::MAX)) as u64);
         }
         let elapsed = reported_at.elapsed().as_secs();
         if elapsed >= 60 {
-            counts.report(elapsed, server.room_count());
+            counts.report(
+                elapsed,
+                server.room_count(),
+                server.take_ordering_counts(),
+                server.take_mac_failure_counts(),
+            );
             counts = TrafficCounts::default();
             reported_at = Instant::now();
         }

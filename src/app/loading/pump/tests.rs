@@ -1014,6 +1014,7 @@ fn gsi_04_12_generated_prefix_uses_accepted_staging_once() {
     regenerated_map.cells = [(60, 60), (60, 140), (140, 60), (140, 140)]
         .into_iter()
         .map(|(rx, ry)| MapCell {
+            legacy_ice_byte: 0,
             rx,
             ry,
             tile_index: 0,
@@ -1624,6 +1625,7 @@ fn gsi_04_12_stock_ffa_preview_can_only_supply_loading_fallback_pixels() {
         crate::map::rmg::emit::empty_map_file(&crate::map::rmg::RmgOptions::default(), 100, 100);
     map.cells = vec![
         MapCell {
+            legacy_ice_byte: 0,
             rx: 60,
             ry: 60,
             tile_index: 0,
@@ -1631,6 +1633,7 @@ fn gsi_04_12_stock_ffa_preview_can_only_supply_loading_fallback_pixels() {
             z: 0,
         },
         MapCell {
+            legacy_ice_byte: 0,
             rx: 60,
             ry: 140,
             tile_index: 0,
@@ -1638,6 +1641,7 @@ fn gsi_04_12_stock_ffa_preview_can_only_supply_loading_fallback_pixels() {
             z: 0,
         },
         MapCell {
+            legacy_ice_byte: 0,
             rx: 140,
             ry: 60,
             tile_index: 0,
@@ -2212,6 +2216,7 @@ fn network_load_with_remote_peer(
     remote.name = "Remote".into();
     remote.raw_slot_index = Some(1);
     remote.slot.color_index = 1;
+    remote.slot.start_position = LaunchStartPosition::Position(1);
     launch.humans.push(remote);
     launch.rebuild_house_roster();
     let rules = crate::rules::ruleset::RuleSet::from_ini(
@@ -2254,6 +2259,7 @@ fn loading_timeout_retires_only_live_peer_and_flags_existing_house_before_instal
             crate::app::match_runtime::network_match::ConnectionDestroyed {
                 owner: peer,
                 key: "TXT_CONNECTION_LOST",
+                player: None,
             }
         ]
     );
@@ -2493,4 +2499,16 @@ fn cancelled_admission_cannot_release_a_ready_result_and_returns_the_same_asset_
         std::sync::Arc::ptr_eq(&restored.bytes, &same.bytes),
         "no second lease return"
     );
+}
+
+#[test]
+fn a_loaded_network_screen_holds_until_its_install_time() {
+    let mut session = LoadingSession::from_request(LoadingRequest::generic_map_load("hold"));
+    assert!(
+        !session.holds_loaded_screen(0),
+        "no hold before every player loads"
+    );
+    session.install_after_ms = Some(1_000 + NETWORK_LOADED_HOLD_MS);
+    assert!(session.holds_loaded_screen(1_000 + NETWORK_LOADED_HOLD_MS - 1));
+    assert!(!session.holds_loaded_screen(1_000 + NETWORK_LOADED_HOLD_MS));
 }

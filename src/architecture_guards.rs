@@ -311,7 +311,7 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 "util/config.rs",
                 "util/logging.rs",
                 // Switches that only remove debug assertions.
-                "sim/touch_log.rs",
+                "util/debug_checks.rs",
                 "sim/world/master_frame.rs",
                 // Retail probes that movement_bridge_retail_tests.rs includes
                 // by `#[path]`, which the test-gate scan cannot see.
@@ -331,6 +331,9 @@ fn engine_platform_and_process_reads_have_pinned_files() {
                 "map/rmg/saved_seeds.rs",
                 "map/scenario_sources.rs",
                 "map/source/cache.rs",
+                // A received map's case-folded name check; a file it finds is
+                // kept only when it holds the same verified bytes.
+                "map/source.rs",
             ],
         ),
         (
@@ -408,21 +411,21 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/team_script_vm/reinforcements.rs", 2),
                 ("sim/trigger_runtime.rs", 1),
                 ("sim/world/aircraft_fire_location.rs", 1),
-                ("sim/world/camera_home.rs", 1),
+                ("sim/world/camera_home.rs", 2),
                 ("sim/world/command_schedule.rs", 3),
                 ("sim/world/fog_objects.rs", 1),
                 ("sim/world/gap_generator.rs", 1),
                 ("sim/world/house_defeat.rs", 9),
                 ("sim/world/jumpjet_cruise.rs", 1),
-                ("sim/world/lifecycle.rs", 5),
-                ("sim/world/mod.rs", 6),
+                ("sim/world/lifecycle.rs", 6),
+                ("sim/world/mod.rs", 7),
                 ("sim/world/object_turn.rs", 1),
                 ("sim/world/planning.rs", 2),
                 ("sim/world/shroud_refresh.rs", 18),
                 ("sim/world/techno_ai.rs", 1),
                 ("sim/world/techno_ai/mission_handlers.rs", 1),
                 ("sim/world/techno_ai_cloak.rs", 3),
-                ("sim/world/world_commands.rs", 4),
+                ("sim/world/world_commands.rs", 6),
                 ("sim/world/world_orders.rs", 2),
                 ("sim/world/world_spawn.rs", 1),
                 ("sim/world/world_spawn/construction.rs", 1),
@@ -443,7 +446,11 @@ fn engine_per_client_reads_have_pinned_callers() {
         ),
         (
             "is_human_player",
-            &[("sim/world/crash.rs", 1), ("sim/world/world_orders.rs", 2)],
+            &[
+                ("sim/world/crash.rs", 1),
+                ("sim/world/mod.rs", 1),
+                ("sim/world/world_orders.rs", 2),
+            ],
         ),
         (
             "house_is_human_player",
@@ -479,9 +486,11 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "owned_by_current_house",
             &[
-                ("sim/cloak_disguise.rs", 9),
-                ("sim/game_entity.rs", 2),
+                ("sim/cloak_disguise.rs", 13),
+                ("sim/combat/greatest_threat.rs", 1),
+                ("sim/game_entity.rs", 3),
                 ("sim/miner/ore_scan.rs", 1),
+                ("sim/world/camera_home.rs", 1),
                 ("sim/world/lifecycle.rs", 8),
                 ("sim/world/object_entry.rs", 1),
             ],
@@ -489,12 +498,13 @@ fn engine_per_client_reads_have_pinned_callers() {
         (
             "discovered_by_current_house",
             &[
+                ("sim/combat/greatest_threat.rs", 1),
                 ("sim/combat/world_fire.rs", 1),
                 ("sim/house_state.rs", 5),
                 ("sim/power_system.rs", 2),
                 ("sim/production/production_tech.rs", 1),
                 ("sim/trigger_runtime.rs", 1),
-                ("sim/world/lifecycle.rs", 10),
+                ("sim/world/lifecycle.rs", 11),
                 ("sim/world/mod.rs", 1),
                 ("sim/world/shroud_refresh.rs", 1),
                 ("sim/world/world_commands.rs", 1),
@@ -798,8 +808,66 @@ fn is_raw_string_start(bytes: &[u8], i: usize) -> bool {
     bytes.get(j) == Some(&b'"')
 }
 
+#[test]
+fn test_item_scan_keeps_production_after_gated_variants_and_match_arms() {
+    // SoundReferenceSource's test-support variant and arm are both comma
+    // terminated. Neither may hide the next production RuleSet impl.
+    let source = r#"
+enum Source<'a> {
+    Live(&'a Ini),
+    #[cfg(any(test, feature = "test-support"))]
+    Fixture(&'a Ini),
+}
+fn after_variant() { registry_ids(); }
+fn select(source: Source<'_>) {
+    match source {
+        Source::Live(ini) => production(ini),
+        #[cfg(any(test, feature = "test-support"))]
+        Source::Fixture(ini) => fixture_only(ini),
+    }
+}
+fn after_arm() { registry_ids(); }
+"#;
+    let production = strip_test_items(source, &blank_comments_and_literals(source));
+    assert_eq!(count_identifier(&production, "registry_ids"), 2);
+    assert_eq!(count_identifier(&production, "fixture_only"), 0);
+    assert!(production.contains("Source::Live"));
+}
+
+#[test]
+fn test_item_scan_consumes_nested_comma_items_and_whole_function_headers() {
+    let source = r#"
+enum Source {
+    #[cfg(test)]
+    Fixture(
+        (One, Two),
+        Result<Three, Four>,
+    ),
+    Live,
+}
+#[cfg(test)]
+fn fixture_only<T>(
+    pair: (One, Two),
+    callback: impl Fn([u8; 2], T),
+)
+where
+    T: From<(Three, Four)>,
+{
+    fixture_body();
+}
+#[cfg(any(test, debug_assertions))]
+fn debug_production() { registry_ids(); }
+fn after_function() { registry_ids(); }
+"#;
+    let production = strip_test_items(source, &blank_comments_and_literals(source));
+    assert_eq!(count_identifier(&production, "registry_ids"), 2);
+    assert_eq!(count_identifier(&production, "Fixture"), 0);
+    assert_eq!(count_identifier(&production, "fixture_body"), 0);
+    assert!(production.contains("Live"));
+}
+
 /// `source` without its `#[cfg(test)]` items (attribute plus the following
-/// item, braced or single-statement), as blanked text: `text` is `source` with
+/// item, braced or terminated by `;`/`,`), as blanked text: `text` is `source` with
 /// comments and literals blanked. `cfg(all(test, …))` and
 /// `cfg(any(test, feature = "test-support"))` count as test-only;
 /// `cfg(any(test, debug_assertions))` does not. The feature gate is read from
@@ -809,6 +877,8 @@ fn strip_test_items(source: &str, text: &str) -> String {
     let mut depth: i64 = 0;
     let mut skip_above: Option<i64> = None;
     let mut awaiting_item = false;
+    let mut item_delimiters = Vec::new();
+    let mut awaiting_function = false;
     for (line, source_line) in text.lines().zip(source.lines()) {
         let opens = line.bytes().filter(|&b| b == b'{').count() as i64;
         let closes = line.bytes().filter(|&b| b == b'}').count() as i64;
@@ -827,6 +897,8 @@ fn strip_test_items(source: &str, text: &str) -> String {
                 skip_above = Some(depth);
             } else {
                 awaiting_item = true;
+                item_delimiters.clear();
+                awaiting_function = false;
             }
         } else if awaiting_item {
             emit = false;
@@ -836,9 +908,44 @@ fn strip_test_items(source: &str, text: &str) -> String {
             } else if opens > 0 {
                 skip_above = Some(depth);
                 awaiting_item = false;
-            } else if trimmed.trim_end().ends_with(';') {
-                // Single-statement item (e.g. `use`), fully consumed.
-                awaiting_item = false;
+            } else {
+                // A declaration's `where` clause may contain top-level
+                // commas after its parameter list. It still ends at its
+                // body or semicolon. Ignore a visibility group's parens
+                // when identifying the declaration, but not tuple variants
+                // or function-pointer fields.
+                let declaration = trimmed
+                    .strip_prefix("pub(")
+                    .and_then(|visibility| visibility.split_once(')').map(|(_, rest)| rest))
+                    .unwrap_or(trimmed);
+                let head = declaration.split(['(', ':', '=']).next().unwrap_or("");
+                awaiting_function |= count_identifier(head, "fn") > 0;
+
+                let mut previous = 0;
+                for b in line.bytes() {
+                    match b {
+                        b'(' => item_delimiters.push(b')'),
+                        b'[' => item_delimiters.push(b']'),
+                        b'<' => item_delimiters.push(b'>'),
+                        b')' | b']' | b'>'
+                            if item_delimiters.last() == Some(&b)
+                                && !(b == b'>' && matches!(previous, b'-' | b'=')) =>
+                        {
+                            item_delimiters.pop();
+                        }
+                        b';' if item_delimiters.is_empty() => {
+                            awaiting_item = false;
+                            break;
+                        }
+                        b',' if item_delimiters.is_empty() && !awaiting_function => {
+                            // Enum variants, fields and expression match arms.
+                            awaiting_item = false;
+                            break;
+                        }
+                        _ => {}
+                    }
+                    previous = b;
+                }
             }
         }
 
@@ -1654,6 +1761,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
              through vt+0x38 (0x00540D10) only when its bool argument is set",
         ),
         (
+            "net/live_commands/sequenced.rs",
+            "set_presentation_hidden",
+            "whether the game window is hidden, reported by the app: a hidden window, which \
+             its system may throttle, never reports falling behind the relay's clock",
+        ),
+        (
             "net/reliable.rs",
             "set_timing",
             "Set_Timing (0x00540C60) stores the manager's +0x58..+0x60 and copies them into \
@@ -1729,8 +1842,8 @@ fn mutable_handouts_and_setters_are_owner_operations() {
         (
             "sim/combat/object_health.rs",
             "set",
-            "the Strength store of the native death paths (Crush 0x007416A0, \
-             KillPassengers 0x00707CB0, KillOccupants 0x004585C0)",
+            "the native +0x6C stores outside ReceiveDamage listed on Health::set, \
+             such as a crash's kill (0x004DEC72) and a parasite's death (0x0062A46A)",
         ),
         (
             "sim/game_entity.rs",
@@ -1825,6 +1938,12 @@ fn mutable_handouts_and_setters_are_owner_operations() {
             "sim/movement/teleport_movement.rs",
             "set_warping_in",
             "Techno+0x271, cleared by TimerCheck's expiry and state 7",
+        ),
+        (
+            "sim/object_fall.rs",
+            "set_attached_anim_flag",
+            "Object+84: SetOwnerObject 0x00424B50 sets it when an Anim attaches and the last \
+             detach (0x00424B79, 0x0042291A) clears it, both through anim_class",
         ),
         (
             "sim/object_fall.rs",

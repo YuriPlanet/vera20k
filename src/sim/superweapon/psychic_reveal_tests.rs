@@ -123,11 +123,12 @@ fn the_launch_matches_native() {
 /// Case 11 through a production click on retail rules
 /// (`PsychicRevealRadius=15`, `AllyReveal=yes`) on a map whose `Size=` is
 /// the corpus's 50x50 diamond, at a cell raised four levels: the launcher's
-/// map, and the map of the house it names its ally, gain exactly the cells
-/// RevealArea hands its leaf in `tools/spatial_oracle/reveal_area.json`'s
-/// row at (75, 50), z 416, radius 10 (the walk clamps 15 to 10:
-/// `reveal_area_tests`), its centre lifted two cells. A house that names the
-/// launcher its ally, unanswered, gains nothing.
+/// map gains exactly the cells RevealArea hands its leaf in
+/// `tools/spatial_oracle/reveal_area.json`'s row at (75, 50), z 416, radius
+/// 10 (the walk clamps 15 to 10: `reveal_area_tests`), its centre lifted two
+/// cells. The computer house it names its ally has no client map (RevealArea
+/// writes only PlayerPtr's, `0x00567AB0..0x00567B12`), and a house that names
+/// the launcher its ally, unanswered, gains nothing.
 #[test]
 fn a_launch_maps_the_native_cells_for_its_house_and_allies() {
     let Some(rules) = retail_rules_binding(&[]) else {
@@ -189,6 +190,6 @@ fn a_launch_maps_the_native_cells_for_its_house_and_allies() {
             .collect()
     };
     assert_eq!(revealed(americans), native);
-    assert_eq!(revealed(russians), native);
+    assert!(revealed(russians).is_empty(), "a computer ally has no map");
     assert!(revealed(yuri).is_empty());
 }

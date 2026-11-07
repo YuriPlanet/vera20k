@@ -86,6 +86,32 @@ browser has the File System Access API (Chrome, Edge), the launcher keeps a read
 handle to the chosen folder in a separate `vera20k-wasm-launcher` database and
 offers one-click Continue on the next visit; other browsers ask for the folder again.
 
+## Multi-threaded build (experimental)
+
+`--threads` runs simulation work on a Rayon pool of Web Workers. It combines
+with `--network` and `--lan`, and needs a pinned nightly, because the standard
+library has to be rebuilt with Wasm atomics. Desktop and default browser builds
+stay on stable.
+
+```sh
+rustup toolchain install nightly-2026-10-15 --profile minimal --component rust-src --target wasm32-unknown-unknown
+python3 tools/wasm/build.py --threads
+python3 tools/wasm/serve.py
+```
+
+Shared memory requires cross-origin isolation, so the page must be served with
+`Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp`. `serve.py` sends both; a plain
+`http.server` does not, and the host page then reports the missing headers when the pool fails to start.
+Other hosts must send them too and await `initThreadPool(workers)` after
+`init()`; without that call the package runs simulation work serially.
+
+Rendering, audio and input stay on the main thread, which spins while the pool
+works. It runs no engine code during that time, because waiting on a contended
+lock traps there. Results do not depend on the pool size. A panic on a worker
+aborts that worker and leaves the main thread spinning, so the tab freezes
+instead of reporting `engine-error`.
+
 ## Compatibility boundary
 
 All browser implementations require both the `wasm` Cargo feature and the
@@ -171,7 +197,8 @@ set_lifecycle_callback(event => {
   scenario exit paths (win/loss, abort, disconnect or engine shutdown).
   `match` contains `result`, `exit_code`, `mode`, `match_id`, `source_index`,
   `frames`, `duration_seconds`, `opponents_left` and nullable `reason`, using
-  the existing external-launch result vocabulary. It also includes `map`
+  the existing external-launch result vocabulary, and nullable
+  `network_quality` (see below). It also includes `map`
   (the consumed map source), nullable `map_name` (the map's `[Basic] Name`;
   retail multiplayer maps usually have none), `local_house` (the local
   house's simulation name), decimal-string `seed`,
@@ -179,6 +206,17 @@ set_lifecycle_callback(event => {
   `kills`, `losses`, `built`, `raw_score` and `score`; they read the simulation's
   finalized snapshot without new RNG draws. `scores: null` means no terminal
   score snapshot was produced, including abort and cooperative paths.
+  `network_quality` is present for an online relay match only:
+  `played_seconds` (the time the record watched the match in play), `catch_up`
+  (`episodes`, `seconds`, `max_backlog_frames`, `skipped_draws`), `network`
+  (`gaps`, `repair_pulls`, nullable `command_round_trip_ms` with `mean`, `max`
+  and `samples`, `max_jitter_reserve_ms`, `underruns`), `performance`
+  (nullable `tick_ms_p50`, `tick_ms_p99`, `fps_p50`, `fps_p5`, and
+  `unfocused_seconds`), `pacing` (`slowdowns`, `slowed_by` Houses,
+  `slowed_seconds`) and `outcome` (nullable `desync_frame`, `reconnects`).
+  These are wall-clock observations of this client; desktop `-SPAWN` writes
+  the same object into `spawn_result.json`, and every client logs it once as
+  `Network quality:` when the match returns its transport.
   Ordinary menu launches keep their normal score/menu flow. A campaign
   restart ends the match as `quit`; loading a saved game from inside a match
   replaces it without a `match-ended`.

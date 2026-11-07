@@ -183,9 +183,6 @@ fn retail_production_world(history: &Value) -> Option<(SimRuntime, InternedId)> 
         .unwrap()
         .into_parts();
     rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&fixed_art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&fixed_art),
-    );
     let owner_name = input["house"].as_str().unwrap();
     let country_name = input["country"].as_str().unwrap();
     let authored_house = map.ini.section(owner_name).unwrap();

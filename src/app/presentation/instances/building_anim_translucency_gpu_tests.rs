@@ -574,7 +574,7 @@ impl SlotScene {
             None
         );
         assert!(!crate::map::houses::is_allied_with(
-            self.scene.sim().house_alliances(),
+            self.scene.sim().house_alliances().as_map(),
             ATTACKER_OWNER,
             PLANT_OWNER
         ));
@@ -655,11 +655,13 @@ impl SlotScene {
             sim,
             viewer_id,
             building,
+            &|_| true,
             anim_word,
             crate::render::batch::DepthAxis::NONE.origin_y,
             crate::render::batch::DepthAxis::NONE.world_height,
             viewport,
             material.state,
+            0,
             2,
         );
         assert_eq!((sim.state_hash(), sim.rng_state()), before);

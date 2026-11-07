@@ -102,9 +102,6 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) network_socket: u16,
     pub(crate) network_card: i32,
     pub(crate) network_destination: String,
-    // SessionClass__ReadMultiPlayerSettings 6981E6..698228 and D7 560480.
-    pub(crate) network_send_delay: bool,
-    pub(crate) network_port: i32,
 
     // [WOnline]'s nine WOL preferences, outside OptionsClass: the same
     // profile object (RA2MD.INI in native) `WOL_Main`'s reader `0x0077DED0` reads at every WOL
@@ -129,10 +126,11 @@ pub(crate) struct RetailOptionsProfile {
     /// 2's. Only those surfaces read it; see
     /// [`LauncherCheckboxId::YrOriginalStyle`](crate::ui::main_menu_dialogs::options::LauncherCheckboxId::YrOriginalStyle).
     pub(crate) yr_original_style: bool,
-    /// `[VERA] SkipStartupLogo=`: start without the logo movie `Init_Game`
-    /// plays before its splash. Off by default, so new profiles play it like
-    /// gamemd; the splash and the first-run intro play either way.
-    pub(crate) skip_startup_logo: bool,
+    /// `[VERA] SkipIntro=`: start straight at the main menu, without the logo
+    /// movie, the splash and the first-run intro that `Init_Game` plays before
+    /// it. Off by default, so new profiles start like gamemd. A profile from
+    /// before the rename keeps its `SkipStartupLogo=` choice.
+    pub(crate) skip_intro: bool,
     /// `[VERA] RenderInterpolation=`: client-only motion smoothing. Off by
     /// default, so new profiles draw the original tick-stepped motion; it never
     /// changes the simulation rate or saves.
@@ -140,6 +138,37 @@ pub(crate) struct RetailOptionsProfile {
     /// `[VERA] MouseWheelZoom=`: let the mouse wheel change the battle's
     /// view distance. Off by default; this is a local camera preference.
     pub(crate) mouse_wheel_zoom: bool,
+    /// `[VERA] RightClickOrders=`: left selects, right issues context orders.
+    /// VERA-only input preference; off by default.
+    pub(crate) right_click_orders: bool,
+    /// `[VERA] LockCursor=`: keep the pointer inside the game window. Off
+    /// unless the player turns it on, so a new install leaves the pointer free.
+    pub(crate) lock_cursor: bool,
+    /// `[VERA] VeraIcon=`: the window, taskbar and Dock show VERA's artwork
+    /// instead of Red Alert 2's red star. Off by default; the installed
+    /// program's own icon stays the red star either way.
+    pub(crate) vera_icon: bool,
+    /// `[VERA] HdRadar=`: when the sidebar draws at a whole multiple of its
+    /// pixels, the radar draws at that multiple too (`render::radar::hd`).
+    /// Off by default; presentation only.
+    pub(crate) hd_radar: bool,
+    /// `[VERA] SmoothSidebar=`: when the sidebar draws at a whole multiple of
+    /// its pixels, its cameos and frame pieces draw from lightly smoothed xBR
+    /// copies at that multiple (`render::sidebar_smoothing`). Off by default;
+    /// presentation only.
+    pub(crate) smooth_sidebar: bool,
+    /// `[VERA] HdMapPreviews=`: the setup screens' map preview shows VERA's
+    /// own drawing of the whole map (`app::map_picture`) in place of
+    /// the map's `[PreviewPack]` picture. On by default; presentation only.
+    pub(crate) hd_map_previews: bool,
+    /// `[VERA] OriginalFont=`: interface text draws in the game's own
+    /// GAME.FNT, scaled evenly, instead of VERA's vector fonts
+    /// ([`crate::render::text_engine`]). On by default, so text looks as the
+    /// game shipped; presentation only.
+    pub(crate) original_font: bool,
+    /// `[VERA] WindowMaximized=`: whether the window was last left maximised.
+    /// [`Self::window_placement`] keeps the size it returns to.
+    pub(crate) window_maximized: bool,
     /// `[VERA] HouseColorStrength=`: how strongly VERA boosts the `[Colors]`
     /// team-color bands, 1 (gamemd's own ramps) through 10. Presentation only:
     /// it never reaches simulation state, and a battle reads it when its
@@ -170,20 +199,76 @@ pub(crate) struct RetailOptionsProfile {
     /// its personality and its trigger weights either way, and the simulation
     /// never reads it.
     pub(crate) commander_feedback: bool,
+    /// `[VERA] CustomEndGameBanner=`: the match's own verdict, shown where the
+    /// match is decided — the country's `VictoryArt=`/`DefeatArt=` picture
+    /// drawn over the tactical view where the retail `GRFXTXT` banner sits,
+    /// and its `VictoryMusic=`/`DefeatMusic=` theme started with it. Off by
+    /// default like every VERA box, so the retail banner shows and the battle
+    /// theme runs on until the player ticks it in Options. Presentation only: the simulation never reads
+    /// it, and the score page has its own switch below.
+    pub(crate) custom_end_game_banner: bool,
+    /// `[VERA] CustomEndGameScore=`: the score page's own picture and theme —
+    /// `VictoryArt=`/`DefeatArt=` as its background instead of the side's, and
+    /// `VictoryMusic=`/`DefeatMusic=` as its theme instead of the side's
+    /// `WinTheme`/`LoseTheme`. Separate from the verdict switch so a player can
+    /// keep one and drop the other. Presentation only.
+    pub(crate) custom_end_game_score: bool,
+    /// `[VERA] CustomEndGameMovie=`: let a destroyed computer commander's
+    /// losing clip finish before the card and the score page. The simulation
+    /// still publishes the result on its own frame; only the exit waits. Off
+    /// restores gamemd's immediate handoff, which cuts the clip. Presentation
+    /// only, and skirmish only: the clip layer's own `CommanderFeedback=`
+    /// switch still decides whether clips exist at all.
+    pub(crate) custom_end_game_movie: bool,
+    /// `[VERA] HealthBars=`: which objects draw the health strip besides
+    /// gamemd's selected/hovered pair, as a
+    /// [`HealthBarMode`](crate::ui::main_menu_dialogs::options::HealthBarMode)
+    /// value. Defaults to the native rule. Client presentation only: the
+    /// simulation never reads it, and the profile writer round-trips the value.
+    pub(crate) health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode,
     /// `[VERA] TranslateChat=`: the language received online chat is
     /// translated into, or `None`, the default, for off. Only the `/translate`
     /// chat command changes it ([`Self::commit_chat_translation`]).
     pub(crate) translate_chat: Option<crate::ui::chat_translation::ChatLanguage>,
+    /// `[VERA] Language=`: the tag of the interface language the player chose
+    /// ([`crate::i18n`]); `None`, the default, follows the system's languages.
+    /// Only the Language list changes it; Options' accept writes it out.
+    pub(crate) language: Option<String>,
     /// `[VERA] SkipUpdate=`: the release the player chose to skip when the
     /// updater offered it; empty, the default, offers every newer release.
     /// Only the updater changes it ([`Self::commit_skipped_update`]).
     pub(crate) skipped_update: String,
+    /// `[VERA] OnlineName=`: the name of the last successful online sign-in,
+    /// as a guest or an account; empty, the default, until one succeeds.
+    /// Only that sign-in changes it ([`Self::commit_online_name`]).
+    pub(crate) online_name: String,
+    /// `[VERA] OnlineLocale=`: the country (`WOL:Locale%02d`) the player chose
+    /// on their player card, which every online sign-in sends; 0, the
+    /// default, sends none. Only that card changes it
+    /// ([`Self::commit_online_locale`]).
+    pub(crate) online_locale: i32,
     /// `[VERA] Display=`: the screen the game opens on, by the window system's
     /// own name (`\\.\DISPLAY1`). Absent or empty means the system's choice,
     /// which is how every earlier build behaved. A name no longer attached
     /// stays here and opens on the system's choice, like [`Self::zoom`]'s
     /// unknown steps.
     pub(crate) display: crate::ui::main_menu_dialogs::options::DisplayTarget,
+    /// `[VERA] WindowX/WindowY/WindowWidth/WindowHeight`: where the windowed
+    /// game last sat, so the next launch opens there. `None` until the player
+    /// moves or resizes the window; a zero width reads as unset.
+    pub(crate) window_placement: Option<WindowPlacement>,
+}
+
+/// The windowed game's last placement: the outer top-left corner in the
+/// desktop's physical pixels (the frame monitors report theirs in) and the
+/// drawable size in logical units, so a screen of another scale opens it as
+/// large as it looked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct WindowPlacement {
+    pub(crate) x: i32,
+    pub(crate) y: i32,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
 }
 
 /// The two process-start products obtained from one physical `VERA.INI`
@@ -233,26 +318,40 @@ impl Default for RetailOptionsProfile {
             network_socket: u16::MAX,
             network_card: 0,
             network_destination: String::new(),
-            network_send_delay: false,
-            network_port: 0,
             wol_preferences: Default::default(),
             full_screen: false,
             zoom: crate::ui::main_menu_dialogs::options::Zoom::Auto,
             original_shape: false,
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
             yr_original_style: false,
-            skip_startup_logo: false,
+            skip_intro: false,
             render_interpolation: false,
             mouse_wheel_zoom: false,
+            right_click_orders: false,
+            lock_cursor: false,
+            vera_icon: false,
+            hd_radar: false,
+            smooth_sidebar: false,
+            hd_map_previews: true,
+            original_font: true,
+            window_maximized: false,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
             wol_test_service: false,
             solo_skirmish: false,
             commander_feedback: true,
+            custom_end_game_banner: false,
+            custom_end_game_score: false,
+            custom_end_game_movie: false,
+            health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode::Vanilla,
             translate_chat: None,
+            language: None,
             skipped_update: String::new(),
+            online_name: String::new(),
+            online_locale: 0,
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
+            window_placement: None,
         }
     }
 }
@@ -269,7 +368,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 15],
+    pub(crate) vera: [(&'static str, String); 32],
 }
 
 impl RetailOptionsLoad {
@@ -453,9 +552,6 @@ impl RetailOptionsProfile {
         self.network_socket = network.read_int("Socket", i32::from(self.network_socket)) as u16;
         self.network_card = network.read_int("NetCard", self.network_card);
         self.network_destination = network.read_string("DestNet", "", 0x40);
-        let multiplayer = ini.section_or_empty("MultiPlayer");
-        self.network_send_delay = multiplayer.read_bool("SendDelay", false);
-        self.network_port = multiplayer.read_int("PortNumberOverride", 0);
         self.wol_preferences = read_wol_preferences(ini.section_or_empty(WONLINE_SECTION));
 
         if let Some(vera) = ini.section(VERA_SECTION) {
@@ -468,10 +564,21 @@ impl RetailOptionsProfile {
                 vera.read_int("Sidebar", self.sidebar.ini_value()),
             );
             self.yr_original_style = vera.read_bool("YROriginalStyle", self.yr_original_style);
-            self.skip_startup_logo = vera.read_bool("SkipStartupLogo", self.skip_startup_logo);
+            // `SkipStartupLogo=` named this switch while it skipped only the
+            // logo; the writer drops it.
+            let legacy_skip = vera.read_bool("SkipStartupLogo", self.skip_intro);
+            self.skip_intro = vera.read_bool("SkipIntro", legacy_skip);
             self.render_interpolation =
                 vera.read_bool("RenderInterpolation", self.render_interpolation);
             self.mouse_wheel_zoom = vera.read_bool("MouseWheelZoom", self.mouse_wheel_zoom);
+            self.right_click_orders = vera.read_bool("RightClickOrders", self.right_click_orders);
+            self.lock_cursor = vera.read_bool("LockCursor", self.lock_cursor);
+            self.vera_icon = vera.read_bool("VeraIcon", self.vera_icon);
+            self.hd_radar = vera.read_bool("HdRadar", self.hd_radar);
+            self.smooth_sidebar = vera.read_bool("SmoothSidebar", self.smooth_sidebar);
+            self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
+            self.original_font = vera.read_bool("OriginalFont", self.original_font);
+            self.window_maximized = vera.read_bool("WindowMaximized", self.window_maximized);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
             self.house_color_strength = crate::rules::house_colors::clamped_strength(
@@ -486,15 +593,50 @@ impl RetailOptionsProfile {
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
+            self.custom_end_game_banner =
+                vera.read_bool("CustomEndGameBanner", self.custom_end_game_banner);
+            self.custom_end_game_score =
+                vera.read_bool("CustomEndGameScore", self.custom_end_game_score);
+            self.custom_end_game_movie =
+                vera.read_bool("CustomEndGameMovie", self.custom_end_game_movie);
+            // Absent keeps the current value; a value this build does not know
+            // reads as the native rule instead of hiding the original strip.
+            self.health_bars = crate::ui::main_menu_dialogs::options::HealthBarMode::from_ini_value(
+                vera.read_int("HealthBars", self.health_bars.ini_value()),
+            );
             if let Some(value) = vera.read_name("TranslateChat", 16) {
                 self.translate_chat = crate::ui::chat_translation::ChatLanguage::from_tag(value);
+            }
+            // Empty, as a profile that never picked one writes it, follows
+            // the system again.
+            if let Some(value) = vera.read_name("Language", 16) {
+                self.language = Some(value).filter(|tag| !tag.is_empty()).map(str::to_owned);
             }
             if let Some(value) = vera.read_name("SkipUpdate", 16) {
                 self.skipped_update = value.to_owned();
             }
+            if let Some(value) =
+                vera.read_name("OnlineName", crate::ui::wol_account::NAME_LIMIT + 1)
+            {
+                self.online_name = value.to_owned();
+            }
+            let locale = vera.read_int("OnlineLocale", self.online_locale);
+            if (0..crate::ui::wol_persona::LOCALE_COUNT).contains(&locale) {
+                self.online_locale = locale;
+            }
             if let Some(value) = vera.read_name("Display", DISPLAY_CAPACITY) {
                 self.display =
                     crate::ui::main_menu_dialogs::options::DisplayTarget::from_ini_value(value);
+            }
+            let width = vera.read_int("WindowWidth", 0);
+            let height = vera.read_int("WindowHeight", 0);
+            if width > 0 && height > 0 {
+                self.window_placement = Some(WindowPlacement {
+                    x: vera.read_int("WindowX", 0),
+                    y: vera.read_int("WindowY", 0),
+                    width: width as u32,
+                    height: height as u32,
+                });
             }
         }
     }
@@ -520,6 +662,7 @@ impl RetailOptionsProfile {
         // Retail provenance: Options/Video/Audio write set, order, and lexical
         // forms — `OptionsClass__WriteToINI` @ `0x005FAD10`, helpers
         // `0x005275C0`, `0x00529560`, and `0x005285B0`.
+        let placement = self.window_placement;
         FormattedProfileSections {
             options: [
                 ("GameSpeed", self.game_speed.to_string()),
@@ -581,10 +724,7 @@ impl RetailOptionsProfile {
                     "YROriginalStyle",
                     format_bool(self.yr_original_style).to_string(),
                 ),
-                (
-                    "SkipStartupLogo",
-                    format_bool(self.skip_startup_logo).to_string(),
-                ),
+                ("SkipIntro", format_bool(self.skip_intro).to_string()),
                 ("ShiftQueue", format_bool(self.shift_queue).to_string()),
                 ("ShiftQueueCount", self.shift_queue_count.to_string()),
                 (
@@ -597,6 +737,18 @@ impl RetailOptionsProfile {
                     format_bool(self.commander_feedback).to_string(),
                 ),
                 (
+                    "CustomEndGameBanner",
+                    format_bool(self.custom_end_game_banner).to_string(),
+                ),
+                (
+                    "CustomEndGameScore",
+                    format_bool(self.custom_end_game_score).to_string(),
+                ),
+                (
+                    "CustomEndGameMovie",
+                    format_bool(self.custom_end_game_movie).to_string(),
+                ),
+                (
                     "RenderInterpolation",
                     format_bool(self.render_interpolation).to_string(),
                 ),
@@ -604,10 +756,44 @@ impl RetailOptionsProfile {
                     "MouseWheelZoom",
                     format_bool(self.mouse_wheel_zoom).to_string(),
                 ),
+                (
+                    "RightClickOrders",
+                    format_bool(self.right_click_orders).to_string(),
+                ),
                 ("HouseColorStrength", self.house_color_strength.to_string()),
                 ("Display", self.display.ini_value().to_owned()),
+                ("WindowX", placement.map_or(0, |p| p.x).to_string()),
+                ("WindowY", placement.map_or(0, |p| p.y).to_string()),
+                ("WindowWidth", placement.map_or(0, |p| p.width).to_string()),
+                (
+                    "WindowHeight",
+                    placement.map_or(0, |p| p.height).to_string(),
+                ),
+                (
+                    "WindowMaximized",
+                    format_bool(self.window_maximized).to_string(),
+                ),
+                ("LockCursor", format_bool(self.lock_cursor).to_string()),
+                ("VeraIcon", format_bool(self.vera_icon).to_string()),
+                ("HealthBars", self.health_bars.ini_value().to_string()),
+                ("HdRadar", format_bool(self.hd_radar).to_string()),
+                (
+                    "SmoothSidebar",
+                    format_bool(self.smooth_sidebar).to_string(),
+                ),
+                (
+                    "HdMapPreviews",
+                    format_bool(self.hd_map_previews).to_string(),
+                ),
+                ("OriginalFont", format_bool(self.original_font).to_string()),
+                ("Language", self.language.clone().unwrap_or_default()),
             ],
         }
+    }
+
+    /// The face [`Self::original_font`] selects.
+    pub(crate) fn font_mode(&self) -> crate::render::text_engine::FontMode {
+        font_mode(self.original_font)
     }
 
     /// Transform one raw profile snapshot without performing filesystem I/O.
@@ -641,7 +827,7 @@ impl RetailOptionsProfile {
         crate::util::ini_writer::remove_ini_keys(
             &output,
             VERA_SECTION,
-            &["RA2Look", "SoundDefaultsApplied"],
+            &["RA2Look", "SoundDefaultsApplied", "SkipStartupLogo"],
         )
     }
 
@@ -652,13 +838,6 @@ impl RetailOptionsProfile {
     /// from destroying profile bytes owned by other systems.
     pub(crate) fn commit_settings(&self, ra2_dir: &Path) -> io::Result<()> {
         profile_file::update(ra2_dir, |input| self.transform_settings(input))
-    }
-
-    /// D7's accepted firewall settings write only these two MultiPlayer keys
-    /// (NetworkOptionsDialog__DlgProc_D7 at 560480). LAN fields are written
-    /// by the parent Options writer.
-    pub(crate) fn commit_network_options(&self, ra2_dir: &Path) -> io::Result<()> {
-        profile_file::update(ra2_dir, |input| self.transform_network_options(input))
     }
 
     /// WOL Options' writer `0x0077DFD0`: the nine `[WOnline]` keys in the
@@ -686,6 +865,29 @@ impl RetailOptionsProfile {
         )
     }
 
+    /// The online sign-in's writer: `[VERA] OnlineName=` alone.
+    pub(crate) fn commit_online_name(&self, settings_dir: &Path) -> io::Result<()> {
+        profile_file::update(settings_dir, |input| self.transform_online_name(input))
+    }
+
+    fn transform_online_name(&self, input: &[u8]) -> Vec<u8> {
+        set_ini_values(
+            input,
+            VERA_SECTION,
+            &[("OnlineName", self.online_name.as_str())],
+        )
+    }
+
+    /// The player card's writer: `[VERA] OnlineLocale=` alone.
+    pub(crate) fn commit_online_locale(&self, settings_dir: &Path) -> io::Result<()> {
+        profile_file::update(settings_dir, |input| self.transform_online_locale(input))
+    }
+
+    fn transform_online_locale(&self, input: &[u8]) -> Vec<u8> {
+        let locale = self.online_locale.to_string();
+        set_ini_values(input, VERA_SECTION, &[("OnlineLocale", locale.as_str())])
+    }
+
     fn transform_chat_translation(&self, input: &[u8]) -> Vec<u8> {
         let tag = self.translate_chat.map_or("off", |language| language.tag());
         set_ini_values(input, VERA_SECTION, &[("TranslateChat", tag)])
@@ -706,17 +908,6 @@ impl RetailOptionsProfile {
                 ("DisplayLatin", p.display_latin.to_string()),
                 ("DisplayBuddies", format_bool(p.display_buddies).to_owned()),
                 ("DisplayClan", format_bool(p.display_clan).to_owned()),
-            ],
-        )
-    }
-
-    fn transform_network_options(&self, input: &[u8]) -> Vec<u8> {
-        apply_formatted_section(
-            input,
-            "MultiPlayer",
-            &[
-                ("SendDelay", format_bool(self.network_send_delay).to_owned()),
-                ("PortNumberOverride", self.network_port.to_string()),
             ],
         )
     }
@@ -760,6 +951,15 @@ fn upper_only_volume(value: f64) -> f32 {
     // An explicit branch matters for NaN: native's ordered comparison is
     // false, so NaN passes through instead of `min` selecting the other input.
     if value >= 1.0 { 1.0 } else { value as f32 }
+}
+
+/// `[VERA] OriginalFont=`'s face: GAME.FNT when set, the vector fonts otherwise.
+pub(crate) fn font_mode(original_font: bool) -> crate::render::text_engine::FontMode {
+    if original_font {
+        crate::render::text_engine::FontMode::Original
+    } else {
+        crate::render::text_engine::FontMode::Modern
+    }
 }
 
 fn format_bool(value: bool) -> &'static str {
@@ -847,78 +1047,15 @@ mod tests {
     #[test]
     fn network_settings_read_native_defaults_and_narrow_socket_only() {
         let defaults = load_snapshot(&RetailStartupOptions::default(), b"").retained_profile;
-        assert_eq!(
-            (
-                defaults.network_socket,
-                defaults.network_card,
-                defaults.network_port
-            ),
-            (65535, 0, 0)
-        );
-        assert!(!defaults.network_send_delay);
+        assert_eq!((defaults.network_socket, defaults.network_card), (65535, 0));
         assert!(defaults.network_destination.is_empty());
-        let loaded = load_snapshot(&RetailStartupOptions::default(), b"[Network]\nSocket=65536\nNetCard=-2\nDestNet=  aa.bb.cc.dd  \n[MultiPlayer]\nSendDelay=yes\nPortNumberOverride=-1\n").retained_profile;
-        assert_eq!(
-            (
-                loaded.network_socket,
-                loaded.network_card,
-                loaded.network_port
-            ),
-            (0, -2, -1)
-        );
-        assert!(loaded.network_send_delay);
+        let loaded = load_snapshot(
+            &RetailStartupOptions::default(),
+            b"[Network]\nSocket=65536\nNetCard=-2\nDestNet=  aa.bb.cc.dd  \n",
+        )
+        .retained_profile;
+        assert_eq!((loaded.network_socket, loaded.network_card), (0, -2));
         assert_eq!(loaded.network_destination, "aa.bb.cc.dd");
-    }
-
-    #[test]
-    fn d7_commit_keeps_lan_pending_until_parent_options_write() {
-        let input = b"; keep\r\n[Network]\r\nSocket=5\r\nNetCard=1\r\nDestNet=1.2.3.4\r\n[MultiPlayer]\r\nHandle=unchanged\r\nSendDelay=no\r\nPortNumberOverride=0\r\n";
-        let profile = RetailOptionsProfile {
-            network_socket: 123,
-            network_card: 2,
-            network_destination: "aa.bb.cc.dd".into(),
-            network_send_delay: true,
-            network_port: -1,
-            ..Default::default()
-        };
-        let d7 = profile.transform_network_options(input);
-        let parsed = IniFile::from_bytes(&d7).unwrap();
-        assert_eq!(parsed.section_or_empty("Network").read_int("Socket", 0), 5);
-        assert_eq!(
-            parsed
-                .section_or_empty("MultiPlayer")
-                .read_string("Handle", "", 64),
-            "unchanged"
-        );
-        assert!(
-            parsed
-                .section_or_empty("MultiPlayer")
-                .read_bool("SendDelay", false)
-        );
-        assert_eq!(
-            parsed
-                .section_or_empty("MultiPlayer")
-                .read_int("PortNumberOverride", 0),
-            -1
-        );
-        let parent = profile.transform_settings(&d7);
-        let parsed = IniFile::from_bytes(&parent).unwrap();
-        assert_eq!(
-            parsed.section_or_empty("Network").read_int("Socket", 0),
-            123
-        );
-        assert_eq!(
-            parsed
-                .section_or_empty("Network")
-                .read_string("DestNet", "", 64),
-            "aa.bb.cc.dd"
-        );
-        assert_eq!(
-            parsed
-                .section_or_empty("MultiPlayer")
-                .read_int("PortNumberOverride", 0),
-            -1
-        );
     }
 
     #[test]
@@ -1401,7 +1538,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(load.retained_profile.original_shape);
         assert_eq!(load.retained_profile.sidebar, SidebarSize::Large);
         assert!(!load.retained_profile.yr_original_style);
-        assert!(!load.retained_profile.skip_startup_logo);
+        assert!(!load.retained_profile.skip_intro);
         assert!(load.retained_profile.shift_queue);
         assert!(load.retained_profile.wol_test_service);
         assert!(load.retained_profile.solo_skirmish);
@@ -1416,7 +1553,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
             original_shape: true,
             sidebar: SidebarSize::ExtraLarge,
             yr_original_style: true,
-            skip_startup_logo: true,
+            skip_intro: true,
             shift_queue: true,
             shift_queue_count: 7,
             wol_test_service: true,
@@ -1428,7 +1565,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 .unwrap();
         assert!(
             output.contains(
-                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nYROriginalStyle=yes\r\nSkipStartupLogo=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\nSoloSkirmish=yes\r\n"
+                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nYROriginalStyle=yes\r\nSkipIntro=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\nSoloSkirmish=yes\r\n"
             ),
             "{output}"
         );
@@ -1438,11 +1575,22 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(reread.retained_profile.original_shape);
         assert_eq!(reread.retained_profile.sidebar, SidebarSize::ExtraLarge);
         assert!(reread.retained_profile.yr_original_style);
-        assert!(reread.retained_profile.skip_startup_logo);
+        assert!(reread.retained_profile.skip_intro);
         assert!(reread.retained_profile.shift_queue);
         assert!(reread.retained_profile.wol_test_service);
         assert!(reread.retained_profile.solo_skirmish);
         assert_eq!(reread.retained_profile.shift_queue_count, 7);
+
+        // A profile saved while the switch was `SkipStartupLogo=` keeps its
+        // choice, and the next write renames the key.
+        let legacy = b"[VERA]\nSkipStartupLogo=yes\n";
+        let load = load_snapshot(&RetailStartupOptions::default(), legacy);
+        assert!(load.retained_profile.skip_intro);
+        let written = String::from_utf8(load.retained_profile.transform_settings(legacy)).unwrap();
+        assert!(
+            written.contains("SkipIntro=yes") && !written.contains("SkipStartupLogo"),
+            "{written}"
+        );
     }
 
     #[test]
@@ -1470,6 +1618,57 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                 .retained_profile
                 .translate_chat,
             None
+        );
+    }
+
+    #[test]
+    fn window_state_round_trips_and_a_zero_width_reads_unset() {
+        let startup = RetailStartupOptions::default();
+        let placed = RetailOptionsProfile {
+            window_placement: Some(WindowPlacement {
+                x: -1200,
+                y: 40,
+                width: 1280,
+                height: 720,
+            }),
+            ..RetailOptionsProfile::default()
+        };
+        let output = placed.transform_settings(b"");
+        assert_eq!(
+            load_snapshot(&startup, &output)
+                .retained_profile
+                .window_placement,
+            placed.window_placement
+        );
+        let unset = RetailOptionsProfile::default().transform_settings(b"");
+        let unset = load_snapshot(&startup, &unset).retained_profile;
+        assert_eq!(unset.window_placement, None);
+        // The lock starts off, a window starts unmaximised, its icon is the
+        // red star, the radar is native and the sidebar sharp, map previews
+        // are VERA's own and text draws in GAME.FNT; all seven round-trip.
+        assert!(!unset.lock_cursor && !unset.window_maximized && !unset.vera_icon);
+        assert!(!unset.hd_radar && !unset.smooth_sidebar && unset.hd_map_previews);
+        assert_eq!(
+            unset.font_mode(),
+            crate::render::text_engine::FontMode::Original
+        );
+        let changed = RetailOptionsProfile {
+            lock_cursor: true,
+            window_maximized: true,
+            vera_icon: true,
+            hd_radar: true,
+            smooth_sidebar: true,
+            hd_map_previews: false,
+            original_font: false,
+            ..RetailOptionsProfile::default()
+        }
+        .transform_settings(b"");
+        let changed = load_snapshot(&startup, &changed).retained_profile;
+        assert!(changed.lock_cursor && changed.window_maximized && changed.vera_icon);
+        assert!(changed.hd_radar && changed.smooth_sidebar && !changed.hd_map_previews);
+        assert_eq!(
+            changed.font_mode(),
+            crate::render::text_engine::FontMode::Modern
         );
     }
 
@@ -1542,6 +1741,51 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
     }
 
     #[test]
+    fn online_name_round_trips_and_survives_the_quit_writer() {
+        let startup = RetailStartupOptions::default();
+        let input = b"[VERA]\nTranslateChat=off\n";
+        let mut profile = load_snapshot(&startup, input).retained_profile;
+        assert_eq!(profile.online_name, "");
+        profile.online_name = "Boris_2".to_owned();
+        let written = profile.transform_online_name(input);
+        assert!(String::from_utf8_lossy(&written).contains("TranslateChat=off"));
+        // Quit writes the profile loaded at startup, which predates the sign-in.
+        let quit = load_snapshot(&startup, input)
+            .retained_profile
+            .transform_settings(&written);
+        assert_eq!(
+            load_snapshot(&startup, &quit).retained_profile.online_name,
+            "Boris_2"
+        );
+    }
+
+    #[test]
+    fn online_locale_round_trips_survives_the_quit_writer_and_drops_unknown_ones() {
+        let startup = RetailStartupOptions::default();
+        let input = b"[VERA]\nOnlineName=Boris_2\n";
+        let mut profile = load_snapshot(&startup, input).retained_profile;
+        assert_eq!(profile.online_locale, 0);
+        profile.online_locale = 15;
+        let written = profile.transform_online_locale(input);
+        assert!(String::from_utf8_lossy(&written).contains("OnlineName=Boris_2"));
+        let quit = load_snapshot(&startup, input)
+            .retained_profile
+            .transform_settings(&written);
+        assert_eq!(
+            load_snapshot(&startup, &quit)
+                .retained_profile
+                .online_locale,
+            15
+        );
+        // WOL:Locale37 is the last the retail CSF names.
+        for (value, kept) in [("37", 37), ("38", 0), ("-1", 0)] {
+            let input = format!("[VERA]\nOnlineLocale={value}\n");
+            let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
+            assert_eq!(profile.online_locale, kept, "{value}");
+        }
+    }
+
+    #[test]
     fn mouse_wheel_zoom_preference_round_trips_in_the_existing_vera_section() {
         let startup = RetailStartupOptions::default();
         assert!(
@@ -1563,6 +1807,33 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let reloaded = load_snapshot(&startup, &written).retained_profile;
         assert!(!reloaded.mouse_wheel_zoom);
         assert!(!reloaded.render_interpolation);
+        assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+    }
+
+    #[test]
+    fn right_click_orders_preference_defaults_off_and_round_trips() {
+        let startup = RetailStartupOptions::default();
+        assert!(
+            !load_snapshot(&startup, b"")
+                .retained_profile
+                .right_click_orders
+        );
+        let input = b"[VERA]\nRightClickOrders=yes\nUnowned=keep\n";
+        let mut profile = load_snapshot(&startup, input).retained_profile;
+        assert!(profile.right_click_orders);
+        let written = profile.transform_settings(input);
+        assert!(
+            load_snapshot(&startup, &written)
+                .retained_profile
+                .right_click_orders
+        );
+        profile.right_click_orders = false;
+        let written = profile.transform_settings(&written);
+        assert!(
+            !load_snapshot(&startup, &written)
+                .retained_profile
+                .right_click_orders
+        );
         assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
     }
 
@@ -1612,6 +1883,97 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
                     .retained_profile
                     .commander_feedback,
                 expected
+            );
+        }
+    }
+
+    /// `[VERA] HealthBars=` is the client health-strip policy: zero is the
+    /// native rule and the default, and a value this build does not know reads
+    /// as it, so a hand-edited INI never hides the original strip.
+    #[test]
+    fn health_bar_modes_read_and_round_trip() {
+        use crate::ui::main_menu_dialogs::options::HealthBarMode;
+
+        let startup = RetailStartupOptions::default();
+        assert_eq!(
+            load_snapshot(&startup, b"").retained_profile.health_bars,
+            HealthBarMode::Vanilla
+        );
+        for (value, expected) in [
+            (0, HealthBarMode::Vanilla),
+            (1, HealthBarMode::Always),
+            (2, HealthBarMode::AlwaysExceptFull),
+            (7, HealthBarMode::Vanilla),
+        ] {
+            let input = format!("[VERA]\nHealthBars={value}\nUnowned=keep\n");
+            let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
+            assert_eq!(profile.health_bars, expected, "HealthBars={value}");
+            let written = String::from_utf8(profile.transform_settings(input.as_bytes())).unwrap();
+            assert!(written.contains("Unowned=keep"), "{written}");
+            assert_eq!(
+                load_snapshot(&startup, written.as_bytes())
+                    .retained_profile
+                    .health_bars,
+                expected,
+                "HealthBars={value} survives the profile writer"
+            );
+        }
+    }
+
+    /// The three `CustomEndGame*=` switches start off and are independent:
+    /// turning one on never touches the other two, so a player can take the
+    /// score page's picture without the battlefield verdict, or both without
+    /// waiting for the closing movie.
+    #[test]
+    fn the_custom_end_game_switches_round_trip_independently() {
+        let startup = RetailStartupOptions::default();
+        let stock = load_snapshot(&startup, b"").retained_profile;
+        assert!(!stock.custom_end_game_banner, "verdict defaults off");
+        assert!(!stock.custom_end_game_score, "score page defaults off");
+        assert!(!stock.custom_end_game_movie, "movie defaults off");
+        for key in [
+            "CustomEndGameBanner",
+            "CustomEndGameScore",
+            "CustomEndGameMovie",
+        ] {
+            let input = format!("[VERA]\n{key}=yes\nUnowned=keep\n");
+            let profile = load_snapshot(&startup, input.as_bytes()).retained_profile;
+            let (banner, score, movie) = (
+                profile.custom_end_game_banner,
+                profile.custom_end_game_score,
+                profile.custom_end_game_movie,
+            );
+            let on = match key {
+                "CustomEndGameBanner" => banner,
+                "CustomEndGameScore" => score,
+                _ => movie,
+            };
+            assert!(on, "{key}=yes switched its own key on");
+            assert_eq!(
+                (banner, score, movie),
+                (
+                    key == "CustomEndGameBanner",
+                    key == "CustomEndGameScore",
+                    key == "CustomEndGameMovie"
+                ),
+                "{key}=yes left the other two alone"
+            );
+            let written = profile.transform_settings(input.as_bytes());
+            let text = String::from_utf8_lossy(&written).into_owned();
+            assert!(text.contains("Unowned=keep"));
+            assert!(
+                text.contains(&format!("{key}=yes")),
+                "{key} is written back"
+            );
+            let reloaded = load_snapshot(&startup, &written).retained_profile;
+            assert_eq!(
+                (
+                    reloaded.custom_end_game_banner,
+                    reloaded.custom_end_game_score,
+                    reloaded.custom_end_game_movie
+                ),
+                (banner, score, movie),
+                "{key} survives a write and reread"
             );
         }
     }

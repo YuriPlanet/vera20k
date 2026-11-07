@@ -10,8 +10,7 @@
 //!
 //! This replaced an egui proportional-font painter that used a fixed
 //! `(230,240,255)`, a radar-relative anchor and an invented `+1,+1` black
-//! shadow. Evidence: `docs/gap-scans/2026-08-02-phase4/survey-GSI-02.14.md`
-//! R12a (`CreditsClass::Draw`, decompiled 2026-08-02) and ranked gap 1.
+//! shadow. Evidence: `CreditsClass::Draw`.
 //!
 //! ## Dependency rules
 //! - Part of the app layer — may depend on everything.

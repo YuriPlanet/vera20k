@@ -12,12 +12,14 @@
 
 use crate::map::theater::TheaterData;
 use crate::rules::locomotor_type::SpeedType;
+use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::terrain_rules::TerrainRules;
 
 #[cfg(any(test, feature = "test-support"))]
 use super::executed_stages;
 use super::phases::shore::TileBlocks;
 use super::phases::tech_buildings::TechType;
+use super::phases::zones::OverlayZoneFacts;
 use super::pipeline::{self, LAND_TYPES, PipelineInputs};
 use super::rng::{RANGE_K_BITS, RmgRng};
 use super::scratch::RmgScratch;
@@ -25,9 +27,6 @@ use super::tiles::TileIds;
 use super::x87::{Gaussian, TruncF64};
 use super::{GeneratedMap, MapGeometry, RmgOptions, RmgSettings, Stage, emit, grid};
 use crate::util::retail_trig::TrigTable;
-
-/// Wheel speed at or below this percent classifies the land as wheel-impassable.
-const WHEEL_IMPASSABLE_MAX: u8 = 1;
 
 /// Per-land-type "Wheel speed <= 1%" flags for the zone classifier, read from
 /// the terrain rules' rows in `LandType` order (the classifier's
@@ -39,7 +38,10 @@ pub fn wheel_impassable_from_rules(rules: &TerrainRules) -> [bool; LAND_TYPES] {
             .ok()
             .and_then(|land| rules.semantics_for_land_type(land))
             .and_then(|row| row.cost_for_speed_type(SpeedType::Wheel))
-            .is_some_and(|wheel| wheel <= WHEEL_IMPASSABLE_MAX)
+            .is_some_and(|wheel| {
+                crate::rules::terrain_rules::compare_speed_to_one_percent(wheel)
+                    != crate::util::native_x87::MaskedX87Ordering::Greater
+            })
     })
 }
 
@@ -50,6 +52,10 @@ pub struct ResolvedTheaterInputs {
     /// Resolved tile ids, including the theater's cliff/waterfall ranges.
     pub ids: TileIds,
     pub wheel_impassable: [bool; LAND_TYPES],
+    /// Low byte of `[General] CliffBackImpassability=`.
+    pub cliff_back_impassability: u8,
+    /// What the start-zone classifier reads from each overlay type, by id.
+    pub overlay_zones: Vec<OverlayZoneFacts>,
     /// Per-tile `Morphable=` flag, indexed by flat tile id.
     pub morphable: Vec<bool>,
     /// The generator's sine table: always the retail table in production.
@@ -59,13 +65,20 @@ pub struct ResolvedTheaterInputs {
 
 impl ResolvedTheaterInputs {
     /// Snapshot a theater + rules into the resolved input set.
-    pub fn from_theater(theater: &TheaterData, rules: &TerrainRules) -> Self {
+    pub fn from_theater(
+        theater: &TheaterData,
+        rules: &TerrainRules,
+        overlays: &OverlayTypeRegistry,
+        cliff_back_impassability: u8,
+    ) -> Self {
         let morphable = (0..theater.lookup.len())
             .map(|tile| theater.lookup.is_morphable(tile as u16))
             .collect();
         Self {
             ids: TileIds::resolve(theater),
             wheel_impassable: wheel_impassable_from_rules(rules),
+            cliff_back_impassability,
+            overlay_zones: OverlayZoneFacts::from_registry(overlays),
             morphable,
             trig: Some(TrigTable::embedded()),
         }
@@ -195,10 +208,13 @@ pub fn generate_map_observed(
         blocks,
         morphable: &morphable,
         wheel_impassable: resolved.wheel_impassable,
+        cliff_back_impassability: resolved.cliff_back_impassability,
+        overlay_zones: &resolved.overlay_zones,
         tech_types,
         trig: resolved.trig,
         map_type: options.map_type,
         accessibility: options.accessibility,
+        region_size: options.region_size,
         theater: options.theater,
         num_players: options.num_players,
         bridge_enabled,
@@ -331,6 +347,8 @@ mod tests {
                 w[3] = true; // Rock, as in stock rules
                 w
             },
+            cliff_back_impassability: 2,
+            overlay_zones: Vec::new(),
             morphable: Vec::new(),
         }
     }
@@ -464,6 +482,43 @@ mod tests {
         }
     }
 
+    /// Map type 0's start-phase flips (`CreateStartingPoints @ 0x00594B50`,
+    /// 0x00594EA6..0x00594ED5) place a tech building on a start-free island,
+    /// and the trace binds it to its entity. Retail tiles, so the sea
+    /// separates islands into their own regions.
+    #[test]
+    fn map_type_zero_places_tech_at_start_flips() {
+        let Some((settings, resolved, blocks)) = retail_inputs() else {
+            return;
+        };
+        let types = [TechType {
+            name: "CATECH".to_string(),
+            footprint: vec![(0, 0)],
+        }];
+        let placed = (1..=8).find_map(|seed| {
+            let mut options = options(0, 0);
+            options.seed = seed;
+            let generated = generate_map(&options, &settings, &resolved, &blocks, &types);
+            let emitted =
+                generated
+                    .construction_trace
+                    .events
+                    .iter()
+                    .find_map(|event| match event.outcome {
+                        RmgConstructionOutcome::Emitted { entity_index, cell } => {
+                            Some((entity_index, cell))
+                        }
+                        RmgConstructionOutcome::Discarded => None,
+                    })?;
+            Some((generated, emitted))
+        });
+        let (generated, (entity_index, cell)) =
+            placed.expect("a map-type-0 seed wins a flip and places");
+        let entity = &generated.map_file.entities[entity_index];
+        assert_eq!(entity.type_id, "CATECH");
+        assert_eq!((entity.cell_x, entity.cell_y), cell);
+    }
+
     type Projection = (Vec<i32>, Vec<(u16, u16, u8, u8)>, Vec<(u8, u16, u16)>);
 
     /// The comparable content of a generated map: what the emitter projected
@@ -487,17 +542,51 @@ mod tests {
     type ObservedRun = (GeneratedMap, Vec<GenerationPoint>, Vec<GenerationSnapshot>);
 
     fn observe_run(options: &RmgOptions) -> ObservedRun {
-        let resolved = resolved();
-        let blocks = one_by_one();
-        let settings = RmgSettings::default();
+        observe_run_with(options, &RmgSettings::default(), &resolved(), &one_by_one())
+    }
+
+    fn observe_run_with(
+        options: &RmgOptions,
+        settings: &RmgSettings,
+        resolved: &ResolvedTheaterInputs,
+        blocks: &dyn TileBlocks,
+    ) -> ObservedRun {
         let mut points = Vec::new();
         let mut snapshots = Vec::new();
         let generated =
-            generate_map_observed(options, &settings, &resolved, &blocks, &[], &mut |view| {
+            generate_map_observed(options, settings, resolved, blocks, &[], &mut |view| {
                 points.push(view.point());
                 snapshots.push(view.snapshot());
             });
         (generated, points, snapshots)
+    }
+
+    /// Retail TEMPERATE generator inputs, or `None` when the install skips.
+    ///
+    /// The synthetic fixture has no relief ahead of the island passes (its
+    /// rivers are off) and admits no connector, so the witnesses of those two
+    /// stages read retail data instead.
+    fn retail_inputs() -> Option<(
+        RmgSettings,
+        ResolvedTheaterInputs,
+        crate::map::rmg::theater_blocks::TheaterTileBlocks,
+    )> {
+        let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets()?;
+        let rules = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini")?;
+        let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE")
+            .expect("retail TEMPERATE theater");
+        let ruleset = crate::rules::ruleset::RuleSet::from_ini(&rules).expect("retail rules");
+        let resolved = ResolvedTheaterInputs::from_theater(
+            &theater,
+            &TerrainRules::from_ini(&rules),
+            ruleset.overlay_registry(),
+            ruleset.general.cliff_back_impassability,
+        );
+        let blocks =
+            crate::map::rmg::theater_blocks::TheaterTileBlocks::build(&theater.lookup, |name| {
+                assets.get(name)
+            });
+        Some((RmgSettings::load(&assets), resolved, blocks))
     }
 
     /// [`observe_run`] of `options(map_type, theater)`, run once per test
@@ -613,8 +702,8 @@ mod tests {
     // ---- The generation matrix -------------------------------------------
     //
     // Everything below is a REGRESSION RATCHET, never parity evidence: the
-    // inputs are synthetic and both sides of every comparison come from this
-    // build. It can expose a panic, a gate regression, or nondeterminism. It
+    // inputs are synthetic (retail for the island-pass and accessibility
+    // witnesses) and both sides of every comparison come from this build. It can expose a panic, a gate regression, or nondeterminism. It
     // cannot show the generator agrees with the original.
     //
     // The synthetic fixture leaves whole systems inert, so the matrix must not
@@ -663,8 +752,12 @@ mod tests {
     #[test]
     #[ignore = "slow; run when changing what it covers"]
     fn accessibility_moves_island_maps_and_leaves_the_others_alone() {
-        let cells = |m: &GeneratedMap| {
-            m.map_file
+        let Some((settings, resolved, blocks)) = retail_inputs() else {
+            return;
+        };
+        let cells = |options: &RmgOptions| {
+            generate_map(options, &settings, &resolved, &blocks, &[])
+                .map_file
                 .cells
                 .iter()
                 .map(|c| c.tile_index)
@@ -675,7 +768,7 @@ mod tests {
             low.accessibility = 0;
             let mut high = matrix_options(map_type, 0, seed);
             high.accessibility = 100;
-            cells(&run_cell(&low)) != cells(&run_cell(&high))
+            cells(&low) != cells(&high)
         };
 
         for map_type in [3, 4] {
@@ -837,8 +930,16 @@ mod tests {
     #[test]
     #[ignore = "slow; run when changing what it covers"]
     fn island_passes_reshape_only_the_island_map_types() {
+        let Some((settings, resolved, blocks)) = retail_inputs() else {
+            return;
+        };
         let changed = |map_type, seed| {
-            let (_, points, snapshots) = observe_run(&matrix_options(map_type, 0, seed));
+            let (_, points, snapshots) = observe_run_with(
+                &matrix_options(map_type, 0, seed),
+                &settings,
+                &resolved,
+                &blocks,
+            );
             let index_of = |point: GenerationPoint| {
                 points
                     .iter()

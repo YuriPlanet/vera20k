@@ -213,16 +213,19 @@ pub(crate) enum PlacementFeedback {
 
 /// `PlaceBeacon`'s presentation gate (`0x00430CD4..0x00430CF3`): GameMode
 /// 0 and 5 present nothing; the local House's beacon answers locally and any
-/// other House's only when the player may see it.
+/// other House's only when the player may see it. VERA shared control: a
+/// received record is never the local placement, though a teammate's names
+/// the local House; answering it locally would send it back.
 pub(crate) fn placement_feedback(
     mode: SessionMode,
     house: usize,
     local: Option<usize>,
     visible: bool,
+    received: bool,
 ) -> PlacementFeedback {
     if !feedback_mode(mode) {
         PlacementFeedback::None
-    } else if Some(house) == local {
+    } else if Some(house) == local && !received {
         PlacementFeedback::Local
     } else if visible {
         PlacementFeedback::Detected
@@ -323,6 +326,7 @@ pub(crate) fn place_beacon(
     {
         return;
     }
+    let received = slot.is_some();
     let Some(slot) = state
         .match_state
         .match_presentation
@@ -342,6 +346,7 @@ pub(crate) fn place_beacon(
         house,
         local_house_index(state),
         visible,
+        received,
     ) {
         PlacementFeedback::None => {}
         PlacementFeedback::Local => {
@@ -551,26 +556,31 @@ mod tests {
     fn placement_feedback_is_local_or_allied_and_never_offline() {
         let lan = SessionMode::Lan;
         assert_eq!(
-            placement_feedback(lan, 1, Some(1), false),
+            placement_feedback(lan, 1, Some(1), false, false),
             PlacementFeedback::Local
         );
         assert_eq!(
-            placement_feedback(lan, 2, Some(1), true),
+            placement_feedback(lan, 2, Some(1), true, false),
             PlacementFeedback::Detected
         );
         assert_eq!(
-            placement_feedback(lan, 2, Some(1), false),
+            placement_feedback(lan, 2, Some(1), false, false),
             PlacementFeedback::None
         );
         for offline in [SessionMode::Skirmish, SessionMode::Campaign] {
             assert_eq!(
-                placement_feedback(offline, 1, Some(1), true),
+                placement_feedback(offline, 1, Some(1), true, false),
                 PlacementFeedback::None
             );
         }
         assert_eq!(
-            placement_feedback(SessionMode::Wol, 3, Some(3), false),
+            placement_feedback(SessionMode::Wol, 3, Some(3), false, false),
             PlacementFeedback::Local
+        );
+        // VERA shared control: a teammate's beacon on the shared House.
+        assert_eq!(
+            placement_feedback(lan, 1, Some(1), true, true),
+            PlacementFeedback::Detected
         );
         assert_eq!(coord_cell([10 * 256 + 128, 255, 0]), Some((10, 0)));
     }

@@ -66,6 +66,7 @@ class MapObservationTests(unittest.TestCase):
         self.sidebar_frames = []
         self.tooltip_frames = {}
         self.tactical_extent = None
+        self.internal_extent = None
         self.change = lambda manifest: None
         self.result = ChildResult(42, 0, False, b'child output\n', b'', ())
         environment = patch.dict('os.environ', {}, clear=True)
@@ -106,7 +107,8 @@ class MapObservationTests(unittest.TestCase):
             'lifecycle': {'window_hidden': True, 'window_focused': False,
                           'focus_violations': 0, 'input_violations': 0},
             'render': {'ready': True, 'sidebar_view_present': True,
-                       'surface_extent': [width, height], 'internal_extent': [width, height],
+                       'surface_extent': [width, height],
+                       'internal_extent': self.internal_extent or [width, height],
                        'unit_atlas': deepcopy(self.unit_atlas),
                        'presentation_clock': self.clock(ticks),
                        'camera': {'requested_cell': self.profile.get('camera_cell'),
@@ -296,6 +298,27 @@ class MapObservationTests(unittest.TestCase):
         for value in (None, 0, 1, 'true', [], {}):
             with self.subTest(value=value), self.assertRaises(ValidationError):
                 observation._profile_extensions(dict(self.profile, observe_crates=value))
+
+    def test_presentation_admits_a_zoomed_frame_and_rejects_unknown_values(self):
+        self.profile.update(schema_version=observation.PROFILE_V2,
+                            presentation={'zoom': 0, 'sidebar': 150, 'hd_radar': True,
+                                          'smooth_sidebar': True})
+        self.profile_path.write_text(json.dumps(self.profile))
+        self.internal_extent = [1, 1]
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        for bad in ({'zoom': 125, 'sidebar': 100}, {'zoom': 50, 'sidebar': 100},
+                    {'zoom': 100, 'sidebar': 120}, {'zoom': 100},
+                    {'zoom': 100, 'sidebar': 100, 'hd_radar': 1},
+                    {'zoom': 100, 'sidebar': 100, 'smooth_sidebar': 'yes'}):
+            with self.subTest(bad=bad), self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile, presentation=bad))
+        with self.assertRaises(ValidationError):
+            observation._profile_extensions(dict(self.profile, cursor_position=[1, 1]))
+        del self.profile['presentation']
+        self.profile_path.write_text(json.dumps(self.profile))
+        shutil.rmtree(self.output)
+        self.assertEqual(self.run_capture()['status'], 'INVALID')
 
     def test_crate_slots_reject_empty_duplicate_and_malformed_rows(self):
         slot = {'slot': 3, 'cell': [10, 12], 'start_frame': 50,
@@ -599,6 +622,21 @@ class MapObservationTests(unittest.TestCase):
         self.assertNotIn('local_input', transcript['frames'][1]['input'])
         self.assertEqual(transcript['commands'][0]['payload'], {'Stop': {'entity_id': 7}})
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+
+    def test_drag_receipts_keep_held_cursors_and_reject_them_elsewhere(self):
+        self.gesture_profile()
+        self.gesture_receipts[1]['held_cursor'] = {'press': 'Select', 'before_release': 'Select'}
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        receipts = report['capture']['observations']['gesture_input']['receipts']
+        self.assertEqual(receipts[1]['held_cursor'], {'press': 'Select', 'before_release': 'Select'})
+        bad = [(1, {'press': 'Select'}), (1, {'press': '', 'before_release': None}), (0, {})]
+        for index, (ordinal, held) in enumerate(bad):
+            with self.subTest(ordinal=ordinal, held=held):
+                self.output = self.root / f'bad-held-cursor-{index}'
+                self.change = lambda manifest, ordinal=ordinal, held=held: manifest['observations'][
+                    'gesture_input']['receipts'][ordinal].update(held_cursor=held)
+                self.assertEqual(self.run_capture()['status'], 'INVALID')
 
     def test_observed_commands_preserve_serde_unit_variants_and_reject_missing_tags(self):
         self.gesture_profile()
@@ -1506,6 +1544,36 @@ class MapObservationTests(unittest.TestCase):
                 child.assert_not_called()
                 self.assertFalse(self.output.exists())
 
+    def test_modifier_clicks_use_the_local_input_policy_and_reject_bad_modifiers(self):
+        # Synthetic receipts: Rust holds the literal keys through the shared
+        # modifier owner; these values are not a click-routing comparator.
+        self.keyboard_profile()
+        for request, receipt in zip(self.profile['gestures'], self.gesture_receipts):
+            request['gesture'] = {'kind': 'click', 'position': [1, 1], 'modifiers': ['Ctrl', 'Alt']}
+            receipt['gesture'] = deepcopy(request['gesture'])
+            receipt.pop('keyboard')
+            receipt['left_press_captured'] = True
+        self.profile_path.write_text(json.dumps(self.profile))
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        data = report['capture']['observations']['gesture_input']
+        self.assertEqual(data['policy'], observation.KEYBOARD_GESTURE_POLICY)
+        self.assertEqual(data['receipts'][0]['gesture']['modifiers'], ['Ctrl', 'Alt'])
+        valid = deepcopy(self.profile)
+        invalid = [{'kind': 'click', 'position': [1, 1], 'modifiers': names}
+                   for names in (['Ctrl', 'Ctrl'], ['Control'], 'Ctrl', None)]
+        invalid += [{'kind': 'drag', 'from': [1, 1], 'to': [4, 4], 'modifiers': ['Shift']},
+                    {'kind': 'minimap', 'position': [6, 2], 'modifiers': ['Ctrl']}]
+        for index, gesture in enumerate(invalid):
+            with self.subTest(case=index), patch.object(observation, 'run_child') as child:
+                candidate = deepcopy(valid)
+                candidate['gestures'][0]['gesture'] = gesture
+                self.profile_path.write_text(json.dumps(candidate))
+                self.output = self.root / f'bad-click-modifiers-{index}'
+                with self.assertRaises(ValidationError):
+                    self.run_capture()
+                child.assert_not_called()
+
     def test_key_receipts_require_real_edges_binding_metadata_and_local_observations(self):
         self.keyboard_profile()
         changes = [lambda row: row.pop('keyboard'),
@@ -2186,7 +2254,7 @@ class MapObservationTests(unittest.TestCase):
                    lambda data: data.update(policy='unknown'),
                    lambda data: data.update(extra=True),
                    lambda data: data.update(tactical_extent=[9, 6]),
-                   lambda data: data.update(tactical_extent=[5, 5]),
+                   lambda data: data.update(tactical_extent=[3, 3]),
                    lambda data: data.update(tactical_extent=[True, 6]),
                    lambda data: data['receipts'].reverse(),
                    lambda data: data['receipts'].pop(),
@@ -4062,7 +4130,8 @@ class MapObservationTests(unittest.TestCase):
     def test_profile_version_order_field_types_and_budgets_are_checked_before_spawn(self):
         profile = deepcopy(self.profile)
         cases = [dict(profile, commands=[]), dict(profile, observe_owners=[]),
-                 dict(profile, camera_cell=[87, 53]), dict(profile, terrain_cells=[]),
+                 dict(profile, camera_cell=[87, 53]),
+                 dict(profile, terrain_cells=[]),
                  dict(profile, schema_version='unknown'), dict(profile, extra=True)]
         modern = dict(profile, schema_version=observation.PROFILE_V2)
         cases.extend(dict(modern, **extension) for extension in (

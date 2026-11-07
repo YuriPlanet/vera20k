@@ -108,7 +108,7 @@ fn retail_tsunami_harv_tire_water_expiry_constructs_wake_then_first_splash() {
             !cell.outside_playfield
                 && !cell.ground_walk_blocked
                 && cell.land_type != crate::rules::terrain_rules::LandType::Water.as_index()
-                && cell.speed_costs.track.is_some_and(|cost| cost > 0)
+                && cell.speed_costs.track.is_some_and(|cost| !cost.is_zero())
         })
         .max_by_key(|cell| cell.rx.abs_diff(SOURCE_CELL.0) + cell.ry.abs_diff(SOURCE_CELL.1))
         .map(|cell| (cell.rx, cell.ry))
@@ -306,7 +306,7 @@ fn retail_gastank_natural_dry_expiry_constructs_twlt036_damages_and_retires() {
             !cell.outside_playfield
                 && !cell.ground_walk_blocked
                 && cell.land_type != crate::rules::terrain_rules::LandType::Water.as_index()
-                && cell.speed_costs.track.is_some_and(|cost| cost > 0)
+                && cell.speed_costs.track.is_some_and(|cost| !cost.is_zero())
         })
         .max_by_key(|cell| cell.rx.abs_diff(source.0) + cell.ry.abs_diff(source.1))
         .map(|cell| (cell.rx, cell.ry))

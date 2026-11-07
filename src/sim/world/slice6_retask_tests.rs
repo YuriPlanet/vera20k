@@ -43,9 +43,6 @@ fn slice6_rules() -> RuleSet {
     let art = IniFile::from_str(crate::rules::retail_ini_fixture::GI_ART_EXCERPT);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     rules
 }
 
@@ -79,7 +76,7 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
         recruitable_b: true,
         group: -1,
         follows: None,
-        structure_upgrades: [None, None, None],
+        structure_columns: Default::default(),
         structure_ai_sellable: false,
         structure_ai_repairable: false,
         structure_online: true,
@@ -416,7 +413,10 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // variant, render offset and radar colours (tag v2): hash composition only.
 // A temporary control restoring the v1 fold gave the previous value, with
 // every tripwire above green. Control removed. Previous: 0x5725_6E95_8F9E_04F8.
-const SLICE6_BASELINE_HASH: u64 = 0xD3E2_D02E_809A_1CCD;
+// #3710 folds the game options' room bans (all off here): hash composition
+// only. A temporary control omitting that fold gave the previous value, with
+// every tripwire above green. Control removed. Previous: 0xD3E2_D02E_809A_1CCD.
+const SLICE6_BASELINE_HASH: u64 = 0xD8C3_5827_8CA8_5375;
 
 #[test]
 fn replay_hash_stable_through_slice6() {

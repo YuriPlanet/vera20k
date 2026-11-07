@@ -4,7 +4,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::app::match_runtime::session::{NetworkMapMetadata, NetworkVacancy};
-use crate::app::shell_network_setup::HostOptions;
+use crate::app::shell_network_setup::{HostOptions, NetworkSetupEvent};
+use crate::app::shell_wol::{WolHighScoreRecord, WolLadderRecord};
 use crate::ui::wol_lobby::{WolChannel, WolMember};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -175,6 +176,12 @@ pub(super) struct Options {
     pub vacancies: [Vacancy; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT],
     pub observer_row: Option<u8>,
     pub cooperative_difficulty: i32,
+    /// Cooperative's campaign record, the `C0` text LAN sends as its own
+    /// type `0x17` packet (`0x0049D680` through `0x005E3720`). Online it
+    /// rides in the options, so every revision and a late join carry it.
+    /// Absent in every other mode: lobbies before it refuse the field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cooperative_campaign: Option<String>,
     pub seed: Option<u32>,
 }
 
@@ -195,6 +202,21 @@ impl Options {
             cooperative_difficulty: self.cooperative_difficulty,
             seed: self.seed,
         })
+    }
+
+    /// What a guest's options sink makes of one host options event: the
+    /// host's `C0` first, as the native host sends it ahead of its options
+    /// (`+0x94` at the join accept `0x007A6E5A`, Use Map's `+0x60` before
+    /// its publish), so the campaign's country refresh never outlives the
+    /// host's rows; then the options themselves.
+    pub fn into_setup_events(mut self, local: &str) -> anyhow::Result<Vec<NetworkSetupEvent>> {
+        let campaign = self.cooperative_campaign.take();
+        let options = self.into_options(local)?;
+        Ok(campaign
+            .map(NetworkSetupEvent::CooperativeCampaign)
+            .into_iter()
+            .chain([NetworkSetupEvent::HostSetup(options)])
+            .collect())
     }
 }
 
@@ -220,6 +242,10 @@ pub(super) struct Session {
     // The operator's welcome, when one is set; the game's own otherwise.
     #[serde(default)]
     pub motd: Option<String>,
+    /// An account's password sign-in with `remember`: this computer's
+    /// remembered sign-in (docs/lobby-protocol.md "Accounts").
+    #[serde(default)]
+    pub sign_in_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -271,4 +297,92 @@ pub(super) struct Start {
     pub seed: u32,
     pub users: Vec<StartUser>,
     pub relay: RelayGrant,
+}
+
+/// The `ladder` event for the names a `ladder` command asked for, or the
+/// rated players' tables the lobby sends unasked after a rated game, or none
+/// when a season starts or ends: the running season's records, which a name
+/// without a rated game there lacks, and the badge points of those that have
+/// played one.
+#[derive(Deserialize)]
+pub(super) struct Ladder {
+    /// The running season's number; `None` when none runs, as from a lobby
+    /// from before seasons.
+    #[serde(default)]
+    pub season: Option<u32>,
+    pub records: Vec<LadderRecord>,
+    /// Absent from a lobby from before all-time badges.
+    #[serde(default)]
+    pub high_scores: Vec<HighScoreRecord>,
+}
+
+impl Ladder {
+    /// The ladder table from the season's records, and the high-score table,
+    /// whose points pick the badges (`0x00783B80`), from the badge points.
+    pub(super) fn tables(&self) -> (Vec<WolLadderRecord>, Vec<WolHighScoreRecord>) {
+        (
+            self.records.iter().map(WolLadderRecord::from).collect(),
+            self.high_scores
+                .iter()
+                .map(WolHighScoreRecord::from)
+                .collect(),
+        )
+    }
+}
+
+/// A player's badge points, the points that pick the badge of their OS, and
+/// their rank in the running season, 0 when unranked.
+#[derive(Deserialize)]
+pub(super) struct HighScoreRecord {
+    pub name: String,
+    pub points: u32,
+    pub rank: u32,
+}
+
+/// A player's season record: `points` their OS rounded and `os` their OS to
+/// the hundredth, which a lobby from before it leaves out.
+#[derive(Deserialize)]
+pub(super) struct LadderRecord {
+    pub name: String,
+    pub points: u32,
+    #[serde(default)]
+    pub os: Option<f64>,
+    pub rank: u32,
+    pub wins: u32,
+    pub losses: u32,
+    pub disconnects: u32,
+}
+
+/// The lobby's counts in the native record's signed fields.
+fn signed(count: u32) -> i32 {
+    i32::try_from(count).unwrap_or(i32::MAX)
+}
+
+impl From<&LadderRecord> for WolLadderRecord {
+    fn from(record: &LadderRecord) -> Self {
+        Self {
+            name: record.name.clone(),
+            wins: signed(record.wins),
+            losses: signed(record.losses),
+            points: signed(record.points),
+            os_hundredths: record.os.map_or_else(
+                || signed(record.points).saturating_mul(100),
+                |os| (os * 100.0).round().max(0.0) as i32,
+            ),
+            rank: signed(record.rank),
+            disconnects: signed(record.disconnects),
+        }
+    }
+}
+
+/// The co-op icon's campaign bits have no lobby source and stay clear.
+impl From<&HighScoreRecord> for WolHighScoreRecord {
+    fn from(record: &HighScoreRecord) -> Self {
+        Self {
+            name: record.name.clone(),
+            points: record.points,
+            rank: record.rank,
+            coop: 0,
+        }
+    }
 }

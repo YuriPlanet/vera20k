@@ -14,9 +14,10 @@
 //! - Part of assets/ — no dependencies on game modules.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 
 use crate::assets::error::AssetError;
+use crate::util::lookup_hash::LookupMap;
+use crate::util::native_string::with_ascii_uppercase;
 use crate::util::read_helpers::read_u32_le;
 
 #[cfg(feature = "ares")]
@@ -46,6 +47,12 @@ pub struct CsfFile {
     // Ares's override hook frees the old value before reading its replacement.
     // A malformed body can therefore leave a registered label with a null value.
     entries: CsfEntries,
+    /// VERA's localization layer (the client's `i18n`), lookup-only:
+    /// `len`/`entries` still describe the loaded files. The player's language
+    /// answers ahead of the table, so it can translate the game's own labels;
+    /// English answers only labels neither has.
+    overrides: LookupMap<String, CsfText>,
+    fallbacks: LookupMap<String, CsfText>,
 }
 
 /// Raw diagnostics retain the existing map semantics. The active Ares table
@@ -53,7 +60,7 @@ pub struct CsfFile {
 /// duplicate slots even when every supplemental file has unique labels.
 #[derive(Debug, Clone)]
 enum CsfEntries {
-    Raw(HashMap<String, Option<CsfText>>),
+    Raw(LookupMap<String, Option<CsfText>>),
     #[cfg(feature = "ares")]
     Ares(Vec<(String, Option<CsfText>)>),
 }
@@ -116,7 +123,10 @@ impl CsfFile {
         // so a malformed count cannot steer the allocation before any record
         // is parsed.
         let possible_entries = (data.len() / 22) as u32;
-        let mut entries = HashMap::with_capacity(label_count.min(possible_entries) as usize);
+        let mut entries = LookupMap::with_capacity_and_hasher(
+            label_count.min(possible_entries) as usize,
+            Default::default(),
+        );
         let mut offset: usize = 24;
 
         // Retail walks records until the next read/magic check fails;
@@ -137,6 +147,8 @@ impl CsfFile {
             version,
             language,
             entries: CsfEntries::Raw(entries),
+            overrides: LookupMap::default(),
+            fallbacks: LookupMap::default(),
         })
     }
 
@@ -255,13 +267,43 @@ impl CsfFile {
             .map(|text| (text.stored_key.as_str(), text.raw.as_str()))
     }
 
+    /// Install VERA's localized text for `key` behind the loaded table: it
+    /// answers only when the table has no text for that label. The text is
+    /// used as written: CSF whitespace normalization is a property of the
+    /// binary table, not of VERA's string files.
+    pub fn set_fallback(&mut self, key: &str, value: &str) {
+        self.fallbacks
+            .insert(key.to_ascii_uppercase(), localized(key, value));
+    }
+
+    /// Install the player's language's text for `key` ahead of the loaded
+    /// table: it answers even for a label the table has.
+    pub fn set_override(&mut self, key: &str, value: &str) {
+        self.overrides
+            .insert(key.to_ascii_uppercase(), localized(key, value));
+    }
+
+    /// Drop every installed text, before a language change installs its own.
+    pub fn clear_localization(&mut self) {
+        self.overrides.clear();
+        self.fallbacks.clear();
+    }
+
     fn lookup_text(&self, key: &str) -> Option<&CsfText> {
-        let key = key.to_ascii_uppercase();
-        match &self.entries {
-            CsfEntries::Raw(entries) => entries.get(&key)?.as_ref(),
-            #[cfg(feature = "ares")]
-            CsfEntries::Ares(labels) => labels[native_label_search(labels, &key)?].1.as_ref(),
-        }
+        // The UI looks labels up every frame: fold the key on the stack.
+        with_ascii_uppercase(key, |key| {
+            let loaded = match &self.entries {
+                CsfEntries::Raw(entries) => entries.get(key).and_then(Option::as_ref),
+                #[cfg(feature = "ares")]
+                CsfEntries::Ares(labels) => {
+                    native_label_search(labels, key).and_then(|slot| labels[slot].1.as_ref())
+                }
+            };
+            self.overrides
+                .get(key)
+                .or(loaded)
+                .or_else(|| self.fallbacks.get(key))
+        })
     }
 
     /// Native initialized-table lookup. Missing labels are visible, not an
@@ -301,6 +343,14 @@ impl CsfFile {
                     .filter_map(|(k, v)| v.as_ref().map(|v| (k.as_str(), v.value.as_str()))),
             ),
         }
+    }
+}
+
+fn localized(key: &str, value: &str) -> CsfText {
+    CsfText {
+        value: value.to_owned(),
+        raw: value.to_owned(),
+        stored_key: key.to_ascii_uppercase(),
     }
 }
 
@@ -615,6 +665,8 @@ pub fn test_csf(entries: &[(&str, &str)]) -> CsfFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "ares")]
+    use std::collections::HashMap;
 
     #[test]
     fn a_huge_header_label_count_cannot_steer_the_map_reservation() {

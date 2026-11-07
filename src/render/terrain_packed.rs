@@ -79,8 +79,8 @@ pub(super) fn packed_source(webgl: bool) -> String {
     );
     let tail = patch(
         &source[source.find("@vertex").expect("packed full-screen passes")..],
-        "let word = results[local_index(p)];",
-        "let word = textureLoad(fallback_results, vec2i(p), 0).r;",
+        "word = results[local_index(p)];",
+        "word = textureLoad(fallback_results, vec2i(p), 0).r;",
     );
     crate::render::tactical_shader::source(&format!(
         "{shared}\n{}\n{tail}",
@@ -539,6 +539,7 @@ impl TerrainDrawRenderer {
         let mut stats = TerrainBatchStats::default();
         let mut cursor = 0;
         let mut pieces = Vec::new();
+        let mut members = Vec::new();
         while cursor < composites.len() {
             let first = &composites[cursor];
             if first.pieces.is_empty() {
@@ -577,18 +578,23 @@ impl TerrainDrawRenderer {
             }
             for wave in batches.waves() {
                 pieces.clear();
+                members.clear();
                 for command in wave {
                     pieces.extend_from_slice(&composites[command.draw].pieces);
+                    members.push(command.rect);
                 }
-                stats.accumulate(self.draw_packed_composite(
+                stats.accumulate(self.draw_packed_target(
                     encoder,
                     color,
                     depth,
-                    batch,
                     buffer,
                     &pieces,
+                    Some(&members),
                     first.render_z,
                     Some(tactical),
+                    self.camera,
+                    batch.camera_bind_group(),
+                    None,
                 ));
             }
             stats.tile_dependencies += batches.stats().tile_dependencies;
@@ -615,6 +621,7 @@ impl TerrainDrawRenderer {
             depth,
             buffer,
             pieces,
+            None,
             render_z,
             tactical,
             self.camera,
@@ -649,6 +656,7 @@ impl TerrainDrawRenderer {
             depth,
             buffer,
             pieces,
+            None,
             RenderZPolicy::None,
             None,
             camera,
@@ -657,6 +665,10 @@ impl TerrainDrawRenderer {
         )
     }
 
+    /// `members` are a wave's pairwise-disjoint composite rectangles (one
+    /// composite when `None`). Every piece is scissored inside its own
+    /// composite's rectangle, so outside them nothing is admitted and the
+    /// union's other pixels would only discard; the passes cover just them.
     fn draw_packed_target(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -664,6 +676,7 @@ impl TerrainDrawRenderer {
         depth: &wgpu::TextureView,
         buffer: &wgpu::Buffer,
         pieces: &[PackedCompositePiece<'_>],
+        members: Option<&[[u32; 4]]>,
         render_z: RenderZPolicy,
         tactical: Option<[u32; 4]>,
         camera: CameraUniform,
@@ -679,7 +692,11 @@ impl TerrainDrawRenderer {
             camera.screen_size[0] as u32,
             camera.screen_size[1] as u32,
         ]);
-        let rect = composite_rect(pieces, camera, tactical);
+        // A surface drawn at whole surface pixels per camera pixel clips in
+        // camera pixels, then scales: each of its pieces covers the blocks.
+        let scale = surface.map_or(1, |surface| surface.scale);
+        let scaled = |rect: [u32; 4]| rect.map(|value| value * scale);
+        let rect = composite_rect(pieces, camera, tactical).map(scaled);
         let Some(rect) = rect else {
             return TerrainBatchStats::default();
         };
@@ -696,7 +713,16 @@ impl TerrainDrawRenderer {
             .map(|surface| &surface.targets)
             .unwrap_or_else(|| self.targets.as_ref().expect("packed draw after prepare"));
         let size = targets.source_color.size();
-        let read_rect = read_halo(rect, offset, size.width, size.height);
+        // Only a negative offset reads earlier stores of this transaction, so
+        // only it orders its words through `results` (compute or WebGL2
+        // feedback). Any other resolve blends its snapshot word directly.
+        let ordered = offset < 0;
+        // An ordered resolve reads neighbours' admission anywhere in the
+        // union, so its passes keep covering the whole union.
+        let members = match members {
+            Some(members) if !ordered => members,
+            _ => std::slice::from_ref(&rect),
+        };
         let params = Params {
             rect,
             surface_width: size.width,
@@ -704,7 +730,11 @@ impl TerrainDrawRenderer {
             offset_words: offset,
             reads_depth: u32::from(render_z != RenderZPolicy::None),
         };
-        let bytes = u64::from(rect[2]) * u64::from(rect[3]) * 4;
+        let bytes = if ordered {
+            u64::from(rect[2]) * u64::from(rect[3]) * 4
+        } else {
+            4
+        };
         assert!(
             self.packed.compute.is_none()
                 || bytes <= self.packed.device.limits().max_storage_buffer_binding_size,
@@ -782,8 +812,11 @@ impl TerrainDrawRenderer {
             });
             pass.set_pipeline(&self.snapshot_pipeline);
             pass.set_bind_group(0, &targets.source, &[]);
-            pass.set_scissor_rect(read_rect[0], read_rect[1], read_rect[2], read_rect[3]);
-            pass.draw(0..3, 0..1);
+            for &member in members {
+                let [x, y, width, height] = read_halo(member, offset, size.width, size.height);
+                pass.set_scissor_rect(x, y, width, height);
+                pass.draw(0..3, 0..1);
+            }
         }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -795,12 +828,14 @@ impl TerrainDrawRenderer {
                 multiview_mask: None,
             });
             pass.set_pipeline(&packed.clear);
-            pass.set_scissor_rect(rect[0], rect[1], rect[2], rect[3]);
-            pass.draw(0..3, 0..1);
+            for &[x, y, width, height] in members {
+                pass.set_scissor_rect(x, y, width, height);
+                pass.draw(0..3, 0..1);
+            }
             pass.set_vertex_buffer(0, buffer.slice(..));
             pass.set_bind_group(0, camera_group, &[]);
             for piece in pieces {
-                let Some(clip) = piece_scissor(piece.instance, camera, tactical) else {
+                let Some(clip) = piece_scissor(piece.instance, camera, tactical).map(scaled) else {
                     continue;
                 };
                 assert_eq!(
@@ -820,7 +855,9 @@ impl TerrainDrawRenderer {
                 pass.draw(0..6, piece.index..piece.index + 1);
             }
         }
-        if let (Some(feedback), Some((results, _))) = (&packed.feedback, &stencil.results) {
+        if let (true, Some(feedback), Some((results, _))) =
+            (ordered, &packed.feedback, &stencil.results)
+        {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("WebGL2 packed ordered feedback"),
                 color_attachments: &[attachment(results)],
@@ -834,23 +871,14 @@ impl TerrainDrawRenderer {
             pass.set_scissor_rect(rect[0], rect[1], rect[2], rect[3]);
             pass.draw(0..3, 0..1);
         }
-        if let Some(compute) = &packed.compute {
+        if let (true, Some(compute)) = (ordered, &packed.compute) {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Native packed ordered feedback"),
                 timestamp_writes: None,
             });
             pass.set_pipeline(compute);
             pass.set_bind_group(0, &transaction, &[uniform_offset]);
-            let invocations = if offset < 0 {
-                offset.unsigned_abs()
-            } else {
-                rect[2] * rect[3]
-            };
-            // A disjoint wave's union can span a supported 4096x4096 viewport.
-            // wgpu-types27.0.1 Limits::default caps each dispatch dimension at
-            //65535, not its product; keep work within the requested device limit.
-            // https://github.com/gfx-rs/wgpu/blob/v27.0.1/wgpu-types/src/lib.rs
-            let groups = invocations.div_ceil(64);
+            let groups = offset.unsigned_abs().div_ceil(64);
             let x = groups.min(packed.device.limits().max_compute_workgroups_per_dimension);
             pass.dispatch_workgroups(x, groups.div_ceil(x), 1);
         }
@@ -879,14 +907,17 @@ impl TerrainDrawRenderer {
             if let Some((_, results)) = &stencil.results {
                 pass.set_bind_group(1, results, &[]);
             }
-            pass.set_scissor_rect(rect[0], rect[1], rect[2], rect[3]);
-            pass.draw(0..3, 0..1);
+            for &[x, y, width, height] in members {
+                pass.set_scissor_rect(x, y, width, height);
+                pass.draw(0..3, 0..1);
+            }
         }
-        self.submission.note_closed_passes(encoder, 4);
+        let passes = if ordered { 4 } else { 3 };
+        self.submission.note_closed_passes(encoder, passes);
         TerrainBatchStats {
             pieces: pieces.len(),
             waves: 1,
-            passes: 4,
+            passes,
             tile_dependencies: 0,
         }
     }

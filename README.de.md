@@ -7,8 +7,9 @@
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter macOS (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="Bibliothekstests unter macOS" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter Linux (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Bibliothekstests unter Linux" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Letzter Testlauf der Bibliothek unter Windows (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Bibliothekstests unter Windows" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="Letzter WebAssembly-Build (manuell gestartet)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="WebAssembly-Build" height="23" align="middle"></a>
   <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Discord beitreten" height="23" align="middle"></a>
-  <img src="https://img.shields.io/badge/QQ_Gruppe-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-Gruppe" height="23" align="middle">
+  <img src="https://img.shields.io/badge/QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-Gruppe" height="23" align="middle">
 </p>
 
 # VERA20K
@@ -20,6 +21,12 @@ Red Alert 2: Yuri's Revenge.
 VERA20K wird von Spielern für Spieler gemacht, und die Spieler haben das letzte Wort, wohin sich
 das Projekt entwickelt.
 
+**Wir brauchen mehr Maintainer.** Wenn du beim Review von PRs helfen, neue Mitwirkende
+unterstützen oder dich um einen Teil der Engine kümmern möchtest, sag uns auf
+[Discord](https://discord.gg/kmjRUn5m5F) oder in der QQ-Gruppe (1097193563) Bescheid.
+
+**Hab keine Scheu, einen PR zu öffnen.** Er muss nicht perfekt sein; wir helfen dir beim Rest.
+
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: Gefechtseinstellungen und eine Szene aus dem Spiel" width="100%">
 
 ## Projektziele
@@ -29,19 +36,7 @@ das Projekt entwickelt.
 3. Bekannte RTS-Funktionen integrieren und einige, die es noch nie gab.
 4. Integrierter Mehrspieler-Client
 
-## Aktueller Stand
-
-**In aktiver Entwicklung.**
-
-- **Gefechte:** Unter Windows, Linux und macOS spielbar, mit Originalkarten und zufällig
-  generierten Karten, Basisbau, Rohstoffernte, Kämpfen sowie Speichern und Laden.
-- **Kampagnen:** Missionen lassen sich starten; die Unterstützung bleibt unvollständig.
-- **KI:** Teile der ursprünglichen KI übernehmen den Basisbau und skriptgesteuerte Angriffe.
-- **Laufende Arbeiten:** Originaltreue des Spielverhaltens, Grafik und Leistung.
-- **Mehrspielermodus:** Aktuelle Quellcode-Builds unterstützen LAN- und Online-Spiele auf macOS und Linux.
-- **Größenordnung:** Zwei aufeinanderfolgende Online-Partien bestanden die Funktionsprüfung mit
-  30 unabhängigen Client-Prozessen und jeweils mehr als 20.000 aktiven mobilen Einheiten.
-  Die Linux-Clients teilten sich virtuelle Maschinen; flüssige Echtzeitleistung ist damit nicht belegt.
+Die [Roadmap](https://github.com/orgs/YuriPlanet/projects/1) zeigt die aktuellen Prioritäten und zukünftigen Pläne.
 
 ## Herunterladen und spielen
 
@@ -49,16 +44,21 @@ Lade den Installer für Windows, macOS oder Linux von der
 [Release-Seite](https://github.com/YuriPlanet/vera20k/releases) herunter. Er findet dein
 Yuri's Revenge und richtet VERA20K in einem neuen Ordner ein.
 
-Nutze **Options** für Ton und Steuerung und **Vera Options** für VERA-spezifische Funktionen.
-
 Wie du Einzelspieler-Gefechte oder Kampagnen von YR über einen CnCNet-Client startest, steht in der
 [Offline-Client-Einrichtung](integrations/cncnet/README.md).
 
 ## Mitmachen
 
-Hilfe ist willkommen. Du kannst Code schreiben, die Engine refaktorieren, das Spiel testen,
-Ideen einbringen oder es neben dem Original spielen und uns sagen, was sich falsch anfühlt.
-Öffne einen PR, und wir kümmern uns um den Rest.
+Hilfe ist überall willkommen, und diese Bereiche brauchen sie am meisten. Jeder Bereich
+verlinkt auf seine Seite in der Roadmap, mit der laufenden Arbeit und dem nächsten Schritt:
+
+- **[Spielmechanik und Kampf](https://github.com/YuriPlanet/vera20k/issues/3830):** Einheitenverhalten, Schaden und zuverlässige Gefechte.
+- **[Leistung](https://github.com/YuriPlanet/vera20k/issues/3831):** Bildrate und Reaktionsfähigkeit in großen Schlachten und auf älterer Hardware.
+- **[Mehrspielermodus](https://github.com/YuriPlanet/vera20k/issues/3832):** Online-Partien beitreten, starten und am Laufen halten sowie zuverlässiges Koop-Spiel.
+- **[Oberfläche und Audio](https://github.com/YuriPlanet/vera20k/issues/3833):** Menüs, Texte, Übersetzungen und Ton.
+- **[Kampagnen](https://github.com/YuriPlanet/vera20k/issues/3834):** Missionen lassen sich starten, aber sie bis zum Ende durchzuspielen braucht noch Arbeit: Ziele, Trigger, geskriptete Übergänge, Speichern/Laden und der Wechsel zur nächsten Mission.
+- **[Mod-Kompatibilität](https://github.com/YuriPlanet/vera20k/issues/3835):** Funktionen aus Ares und Phobos, ohne die Standardwerte des Originalspiels zu ändern.
+- **[Testen](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** VERA20K neben dem Original spielen und melden, was sich anders spielt.
 
 Mitwirkende können Verantwortung für Bereiche der Engine übernehmen und haben dabei viel
 Spielraum für Änderungen, die VERA20K voranbringen.
@@ -93,8 +93,6 @@ Du brauchst:
   der Rust-Installer anbietet; unter macOS `xcode-select --install`; unter Debian und Ubuntu
   `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`.
 
-VERA20K wurde bereits unter Windows, Linux und macOS gespielt.
-
 ```sh
 git clone https://github.com/YuriPlanet/vera20k.git
 cd vera20k
@@ -112,12 +110,12 @@ ursprüngliche Engine mit Ghidra, übertragen dann ihr Verhalten nach Rust und p
 
 ## Anpassung
 
-Die Kartenkapazität wird ohne Build-Schalter automatisch gewählt: Die Summe von `Size`-Breite und -Höhe darf bis zu 1024 betragen. Bis 512 bleibt die bisherige Adressierung erhalten, darüber gilt das erweiterte Raster. Generator, Speicherstandversionen und Prüfgrenzen: [große Karten](README.md#large-maps).
+Die Kartenkapazität wird ohne Build-Schalter automatisch gewählt: Die Summe von `Size`-Breite und -Höhe darf bis zu 1024 betragen.
 
 VERA20K spielt sich standardmäßig wie das Originalspiel. Jede andere neue Funktion, auch Erweiterungen
 aus Mods wie Ares, muss ausgeschaltet bleiben, bis sie auf einem dieser Wege aktiviert wird:
 
-- **Eine VERA-Spieleroption** unter **Options → Vera Options**, gespeichert im Abschnitt `[VERA]` in `VERA.INI`.
+- **Eine VERA-Spieleroption** unter **Options**, gespeichert im Abschnitt `[VERA]` in `VERA.INI`.
 - **Eine Build-Option**, z. B. `--features ares` für die unterstützten [Ares-Erweiterungen](docs/ares.md).
 - **Ein INI-Schlüssel**, den eine Mod oder eine Karte setzt.
 
@@ -143,15 +141,18 @@ des Quellcodes von Command & Conquer und Red Alert unter der GPL, World-Altering
 Final Alert, YRpp, Ares, Phobos und viele andere.
 
 Copyright © 2026 Halvor Nikolai Rusten und die Mitwirkenden an VERA20K.
-Lizenziert unter der [GPLv3](LICENSE-GPL). Dieses Repository enthält keine Spieldateien.
+Lizenziert unter der [GPLv3](LICENSE-GPL) mit [zusätzlichen Bedingungen](LEGAL.md#additional-terms).
+Dieses Repository enthält keine Spieldateien.
 Command & Conquer und Red Alert sind Marken von Electronic Arts Inc. Die Screenshots und das
 App-Symbol, der rote Stern aus Red Alert 2, zeigen Spielgrafiken, die Electronic Arts gehören.
 VERA20K steht in keiner Verbindung zu Electronic Arts und wird nicht von Electronic Arts
 unterstützt.
 
+**Lies den [rechtlichen Hinweis](LEGAL.md), bevor du VERA20K weitergibst, verkaufst oder forkst.**
+
 ## Dokumentation
 
-- [Kompilieren und starten](#kompilieren-und-starten): Voraussetzungen und Bauen aus dem Quellcode.
+- [WebAssembly-Vorschau](docs/wasm.md): ein optionaler Einzelspieler-Build, der im Browser läuft.
 - [INI-Profile](docs/ini-roots.md): Regel-, Grafik- und KI-Dateien auswählen.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) und [NPatch](docs/npatch.md): Unterstützung der Erweiterungen und ihre Grenzen.
 - [Engine-Überblick](docs/index.md): Aufbau des Codes und wie die Teile der Engine zusammenspielen.

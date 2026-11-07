@@ -39,6 +39,7 @@ fn retail_cold_and_post_reset_animation_ordinals_match_original_registries() {
         &art,
         None,
         &crate::rules::sound_ini::EvaRegistry::default(),
+        &crate::rules::sound_ini::SoundRegistry::default(),
     )
     .unwrap();
     for row in rows.iter().filter(|row| row["case_kind"] == "anim_catalog") {

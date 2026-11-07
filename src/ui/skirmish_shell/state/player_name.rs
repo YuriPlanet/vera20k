@@ -3,9 +3,11 @@
 use crate::map::scenario_menu::MapMenuEntry;
 use crate::sim::game_options::GameOptions;
 use crate::skirmish_launch::{
-    LaunchCountry, LaunchStartPosition, SKIRMISH_PLAYER_SLOT_COUNT, SkirmishLaunchOptions,
+    LaunchCountry, LaunchStartPosition, NETWORK_PLAYER_SLOT_COUNT, SKIRMISH_PLAYER_SLOT_COUNT,
+    SkirmishLaunchOptions,
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
+use crate::ui::shell::list::ListScrollInteraction;
 use crate::ui::shell::trackbar::TrackbarHold;
 
 use super::super::SkirmishStatics;
@@ -361,7 +363,15 @@ pub struct SkirmishShellState {
     pub build_off_ally: bool,
     pub crates: bool,
     pub mcv_redeploy: bool,
+    /// Player rows 1.. : the retail seven, then VERA's rows up to thirty
+    /// players for maps with more starts.
     pub opponents: Vec<SkirmishShellOpponent>,
+    /// VERA: the index in [`Self::opponents`] of the first computer row the
+    /// page shows. A map with more than eight starts scrolls its computer
+    /// rows under the player's own row; 0 on a retail map.
+    pub(crate) first_opponent: usize,
+    /// VERA: the capture and arrow repeat of the scrollbar beside those rows.
+    pub(crate) opponent_scroll: ListScrollInteraction,
     pub selected_mode_allies_allowed: bool,
     pub selected_mode_must_ally: bool,
     pub pressed_owner_draw_button: Option<OwnerDrawButton>,
@@ -448,6 +458,8 @@ impl Default for SkirmishShellState {
             crates: options.crates,
             mcv_redeploy: options.mcv_redeploy,
             opponents: default_opponents(LaunchCountry::Russia),
+            first_opponent: 0,
+            opponent_scroll: ListScrollInteraction::default(),
             selected_mode_allies_allowed: true,
             selected_mode_must_ally: false,
             pressed_owner_draw_button: None,
@@ -495,6 +507,38 @@ impl SkirmishShellState {
     pub fn drain_pending_ui_sounds(&mut self) -> Vec<SkirmishShellUiSound> {
         std::mem::take(&mut self.pending_ui_sounds)
     }
+
+    /// The retail row slot (`0..8`) showing player row `row`: the player's
+    /// own row always takes slot 0, a computer row only while scrolled into
+    /// view.
+    pub fn row_slot(&self, row: usize) -> Option<usize> {
+        if row == 0 {
+            return Some(0);
+        }
+        row.checked_sub(self.first_opponent)
+            .filter(|slot| (1..SKIRMISH_PLAYER_SLOT_COUNT).contains(slot))
+    }
+
+    /// The player row that retail row slot `slot` shows.
+    pub fn slot_row(&self, slot: usize) -> usize {
+        if slot == 0 {
+            0
+        } else {
+            self.first_opponent + slot
+        }
+    }
+
+    /// The computer rows in view, as (retail row slot, player row, its
+    /// opponent); the map's capacity still hides rows
+    /// ([`player_row_visible`]).
+    pub fn paged_opponents(&self) -> impl Iterator<Item = (usize, usize, &SkirmishShellOpponent)> {
+        (1..SKIRMISH_PLAYER_SLOT_COUNT).filter_map(move |slot| {
+            let row = self.slot_row(slot);
+            self.opponents
+                .get(row - 1)
+                .map(|opponent| (slot, row, opponent))
+        })
+    }
 }
 
 /// A hover message to the status line ([`SkirmishStatics::hover`]). Returns
@@ -525,25 +569,40 @@ pub(super) fn inactive_ai_team_default(state: &SkirmishShellState) -> i32 {
 
 /// Whether a complete player-row control group is visible for the selected map.
 /// Slot zero is the local row and never hides; opponent rows are bounded by the
-/// selected map's native player-capacity query.
+/// selected map's native player-capacity query, and VERA's past the eighth
+/// show while scrolled into view.
 pub fn player_row_visible(state: &SkirmishShellState, maps: &[MapMenuEntry], row: usize) -> bool {
     if row == 0 {
         return true;
     }
-    let capacity = maps
-        .get(state.selected_map_idx)
-        .map(|map| visible_player_capacity(map.player_capacity))
-        .unwrap_or(SKIRMISH_PLAYER_SLOT_COUNT)
-        .min(SKIRMISH_PLAYER_SLOT_COUNT);
-    row < capacity
+    row < selected_player_rows(state, maps) && state.row_slot(row).is_some()
 }
 
-fn visible_player_capacity(capacity: i32) -> usize {
-    capacity.clamp(0, SKIRMISH_PLAYER_SLOT_COUNT as i32) as usize
+/// The player rows the selected map admits: the retail eight with no map.
+pub(super) fn selected_player_rows(state: &SkirmishShellState, maps: &[MapMenuEntry]) -> usize {
+    maps.get(state.selected_map_idx)
+        .map_or(SKIRMISH_PLAYER_SLOT_COUNT, |map| {
+            admitted_player_rows(map.player_capacity)
+        })
+}
+
+/// A map's player capacity as rows: VERA seats up to thirty players, as its
+/// rooms do; a retail map declares eight or fewer.
+fn admitted_player_rows(capacity: i32) -> usize {
+    capacity.clamp(0, NETWORK_PLAYER_SLOT_COUNT as i32) as usize
+}
+
+/// The last [`SkirmishShellState::first_opponent`] for `rows` admitted player
+/// rows, which shows the map's last seven computer rows; 0 for eight rows or
+/// fewer.
+pub(super) fn last_first_opponent(rows: usize) -> usize {
+    rows.saturating_sub(SKIRMISH_PLAYER_SLOT_COUNT)
 }
 
 fn reset_rows_hidden_by_capacity(state: &mut SkirmishShellState, capacity: i32) {
-    let capacity = visible_player_capacity(capacity);
+    let capacity = admitted_player_rows(capacity);
+    state.first_opponent = state.first_opponent.min(last_first_opponent(capacity));
+    state.opponent_scroll.cancel();
     let visible_opponents = capacity.saturating_sub(1);
     let team_default = inactive_ai_team_default(state);
     for opponent in state.opponents.iter_mut().skip(visible_opponents) {
@@ -587,15 +646,17 @@ pub fn accept_selected_map(
     true
 }
 
-/// Apply the native first-open row hide pass for the initially selected map.
+/// Apply the native first-open row hide pass for the initially selected map
+/// and scroll back to the first rows. Native runs the pass only below eight
+/// players; at eight or more it would reset none of the retail rows, so
+/// running it always changes only VERA's rows past the map's capacity.
 pub fn initialize_rows_for_selected_map(state: &mut SkirmishShellState, maps: &[MapMenuEntry]) {
+    state.first_opponent = 0;
     let capacity = maps
         .get(state.selected_map_idx)
         .map(|map| map.player_capacity)
         .unwrap_or(SKIRMISH_PLAYER_SLOT_COUNT as i32);
-    if capacity < SKIRMISH_PLAYER_SLOT_COUNT as i32 {
-        reset_rows_hidden_by_capacity(state, capacity);
-    }
+    reset_rows_hidden_by_capacity(state, capacity);
 }
 
 #[cfg(test)]

@@ -19,6 +19,13 @@ use std::collections::HashMap;
 /// (`0x006539D0`) passes `mini = 1` to either branch; a row whose
 /// `miniFrame` is `-1` falls back to its main set
 /// even under the mini flag (`0x005BDCA3`).
+///
+/// MouseClass's other table readers: `SetSmallFrames` (`0x005BDAB0`, vtable
+/// slot +0x54) has no caller — no direct reference, and none of the 81
+/// `call [reg+0x54]` sites is on the display; `GetCursorStartFrame` /
+/// `GetCursorFrameCount` (`0x005BE970`/`0x005BE990`) serve only
+/// `Tactical::DrawWaypointPaths`, whose YR paths are always empty (see
+/// `sim::world::planning`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum CursorId {
     Default,
@@ -159,6 +166,9 @@ pub(crate) struct PlanningBadge {
 }
 
 impl SoftwareCursor {
+    /// Frames 433/434 are rows 76/77's `StartFrame`, which the planning draw
+    /// reads through `MouseClass::GetCursorBaseFrame` (`0x005BDB90`, small
+    /// flag 0) from `0x00731CE0`/`0x00731CD0`.
     pub(crate) fn planning_badge(&self, frame: usize) -> Option<&PlanningBadge> {
         self.planning_badges.get(frame.checked_sub(433)?)?.as_ref()
     }
@@ -633,16 +643,13 @@ pub(crate) fn build_software_cursor(
     let palette = asset_manager
         .get_ref("mousepal.pal")
         .and_then(|data| Palette::from_bytes(data).ok())?;
-    let shp = if let Some(load) = asset_manager
-        .load_file_from_mix("mouse.sha")
-        .or_else(|| asset_manager.load_file_from_mix("mouse.shp"))
-    {
+    // MouseClass::One_Time (0x005BDF30) loads MOUSE.SHA and nothing else;
+    // MouseClass__FreeCursorShapes (0x005BE940) frees it at shutdown, which
+    // dropping this owner covers.
+    let shp = if let Some(load) = asset_manager.load_file_from_mix("mouse.sha") {
         ShpFile::from_bytes(&load.bytes).ok()?
     } else {
-        let shp_data = asset_manager
-            .get_ref("mouse.sha")
-            .or_else(|| asset_manager.get_ref("mouse.shp"))?;
-        ShpFile::from_bytes(shp_data).ok()?
+        ShpFile::from_bytes(asset_manager.get_ref("mouse.sha")?).ok()?
     };
     if shp.frames.is_empty() {
         return None;

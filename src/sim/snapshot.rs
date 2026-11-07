@@ -56,19 +56,22 @@ pub enum SavedCameoId {
     SuperWeapon(InternedId),
 }
 
-/// Identity/order and per-strip scroll rows survive save/load; comparison keys are projections of
+/// Identity/order survive save/load; comparison keys are projections of
 /// the restored simulation, canonical rules and current process string table.
 /// Strip indices are building, defense, infantry and vehicle, respectively.
 ///
-/// Mouse Save5BE6D0 writes the whole 0x556C object at5BE715..5BE71C, including
+/// SidebarClass Save 6AC5E0 / Load 6AC5D0 only forward to RadarClass; Mouse
+/// Save5BE6D0 writes the whole 0x556C object at5BE715..5BE71C, including
 /// four strips at +1544, stride F94. Load5BDF70 reads it at5BE089..5BE092;
 /// no-init5BE9B0->6A4F20 resets progress6AC7C0, preserving count/type/order.
+/// Each strip's saved TopRow is absent: Load_Game_From_File calls TabClass Init
+/// 6D03A0 at 67E68F, whose SidebarClass Init 6A5310 hides and shows the shown
+/// sidebar, and ToggleSidebar 6A7D70 zeroes every strip's TopRow on the show.
 /// This neutral transport does not introduce a sim dependency on a UI owner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavedSidebarOrder {
     owner: InternedId,
     strips: [Vec<SavedCameoId>; 4],
-    scroll_rows: [usize; 4],
     flash_deadlines: [Vec<i32>; 4],
     redraw_until: i32,
     request_states: [Vec<u8>; 4],
@@ -81,14 +84,13 @@ pub struct SavedSidebarOrder {
 }
 
 impl SavedSidebarOrder {
-    pub fn new(owner: InternedId, strips: [Vec<SavedCameoId>; 4], scroll_rows: [usize; 4]) -> Self {
+    pub fn new(owner: InternedId, strips: [Vec<SavedCameoId>; 4]) -> Self {
         let flash_deadlines = std::array::from_fn(|index| vec![0; strips[index].len()]);
         let request_states = std::array::from_fn(|index| vec![0; strips[index].len()]);
         let factory_links = std::array::from_fn(|index| vec![None; strips[index].len()]);
         Self {
             owner,
             strips,
-            scroll_rows,
             flash_deadlines,
             redraw_until: 0,
             request_states,
@@ -174,8 +176,8 @@ impl SavedSidebarOrder {
         &self.strips
     }
 
-    pub fn into_parts(self) -> (InternedId, [Vec<SavedCameoId>; 4], [usize; 4]) {
-        (self.owner, self.strips, self.scroll_rows)
+    pub fn into_parts(self) -> (InternedId, [Vec<SavedCameoId>; 4]) {
+        (self.owner, self.strips)
     }
 }
 
@@ -1369,7 +1371,7 @@ fn restore_object_references(
 
         // A bomb's planter (`BombClass+0x24`) is a pointer its expiry nulls
         // (`BombListClass::PointerGotInvalid @ 0x00439150`).
-        if let Some(planter) = entity.bomb.and_then(|bomb| bomb.planter()) {
+        if let Some(planter) = entity.bomb.as_ref().and_then(|bomb| bomb.planter()) {
             require_resolved_reference(
                 entity_ids.contains(&planter),
                 "EntityStore",
@@ -1525,8 +1527,16 @@ fn restore_object_references(
 
         for (field, system_id) in [
             (
+                "fire_particle_system",
+                entity.fire_particle_system.system(),
+            ),
+            (
                 "spark_particle_system",
                 entity.spark_particle_system.system(),
+            ),
+            (
+                "railgun_particle_system",
+                entity.railgun_particle_system.system(),
             ),
             (
                 "damage_smoke_system_id",
@@ -2046,9 +2056,6 @@ impl Simulation {
             .occupancy
             .restore_memberships(&self.substrate.entities)
             .map_err(|reason| SnapshotRestoreError::InvalidCellMembership { reason })?;
-        // VERA-only compatibility: the retired frame-start scan setting keeps
-        // its serialized slot, but every restored object scans live.
-        self.scan_batch = None;
         Ok(())
     }
 
@@ -5771,7 +5778,7 @@ mod tests {
         sim.fog.reveal_all_for_owner(owner);
         crate::sim::vision::apply_gap_generators(
             &mut sim.fog,
-            sim.house_alliances.as_map(),
+            &sim.house_alliances,
             &[(gapper, 6, 6, 2)],
             &sim.interner,
         );
