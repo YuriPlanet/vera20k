@@ -5346,6 +5346,10 @@ impl RuleSet {
                 .get(&(category, name.to_ascii_uppercase()))
                 .copied()
             {
+                rules.object_list[handle.0 as usize].bind_crew_rules(crew);
+            }
+        }
+        #[cfg(feature = "ares")]
         for (category, name, retained) in processed.techno_combat_states() {
             if let Some(handle) = rules
                 .object_category_index
@@ -5353,10 +5357,6 @@ impl RuleSet {
                 .copied()
             {
                 rules.object_list[handle.0 as usize].bind_techno_combat_rules(retained);
-            }
-        }
-        #[cfg(feature = "ares")]
-                rules.object_list[handle.0 as usize].bind_crew_rules(crew);
             }
         }
         #[cfg(feature = "ares")]
@@ -7218,6 +7218,7 @@ impl RuleSet {
             .as_deref()
             .is_some_and(|prism_type| object.id.eq_ignore_ascii_case(prism_type))
     }
+
     /// The RocketStruct a Rocket owner of this type flies by and whether its
     /// Type is the CMisl type ([`MissileSpawnRules::rocket_block`]). Ares
     /// builds take a `Missile.Custom` AircraftType's own block first: hooks
@@ -7295,7 +7296,6 @@ impl RuleSet {
             .techno_combat()
             .missile()
     }
-
 
     /// Resolve one name within a specific native TechnoType registry.
     /// Category plus case-insensitive ID is the stable analogue of the

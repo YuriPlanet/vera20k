@@ -2863,9 +2863,6 @@ impl ObjectType {
         self.crew = crew.clone();
     }
 
-    #[cfg(feature = "ares")]
-    pub(crate) fn cloak_power(&self) -> &crate::rules::ares_cloak_power::CloakPowerTypeRules {
-        &self.cloak_power
     /// The type's TechnoTypeExt combat and movement keys.
     #[cfg(feature = "ares")]
     pub(crate) fn techno_combat(&self) -> &crate::rules::ares_techno_type::AresTechnoTypeRules {
@@ -2880,6 +2877,9 @@ impl ObjectType {
         self.techno_combat = rules.clone();
     }
 
+    #[cfg(feature = "ares")]
+    pub(crate) fn cloak_power(&self) -> &crate::rules::ares_cloak_power::CloakPowerTypeRules {
+        &self.cloak_power
     }
 
     #[cfg(feature = "ares")]
@@ -4725,6 +4725,8 @@ impl ObjectType {
             #[cfg(feature = "ares")]
             crew: Default::default(),
             #[cfg(feature = "ares")]
+            techno_combat: Default::default(),
+            #[cfg(feature = "ares")]
             cloak_power: Default::default(),
             #[cfg(feature = "ares")]
             cloak_sounds: [None, None],
@@ -4733,8 +4735,6 @@ impl ObjectType {
             #[cfg(feature = "ares")]
             explicit_factory: Default::default(),
             // ReadINI7144AF then7144C9. The shared bool reader folds only
-            techno_combat: Default::default(),
-            #[cfg(feature = "ares")]
             // post-allocation passes retained by native_processing, preserving
             // an earlier false when a later key is missing or malformed.
             can_approach_target: section.read_bool("CanApproachTarget", true),

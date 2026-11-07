@@ -7707,6 +7707,30 @@ impl RulesPassProcessor {
                     );
                     member.aircraft_crashable =
                         raw.read_ares_nullable_bool("Crashable", member.aircraft_crashable);
+                    // TechnoTypeExt Initialize (1003DEC0) and the chain's
+                    // LoadFromINIFile reads (1003DFB0): Find-only pointers.
+                    let mut techno_combat = std::mem::take(&mut member.techno_combat);
+                    techno_combat.read_pass(
+                        &raw,
+                        &native_stored_id,
+                        family == RulesTypeFamily::Aircraft,
+                        |key, kind| {
+                            use crate::rules::ares_techno_type::TypeRef;
+                            let family = match kind {
+                                TypeRef::Animation => RulesTypeFamily::Animation,
+                                TypeRef::Warhead => RulesTypeFamily::Warhead,
+                                TypeRef::Weapon => RulesTypeFamily::Weapon,
+                            };
+                            self.resolve_existing_type_from(&raw, key, family)
+                        },
+                        |name| {
+                            self.find_existing(RulesTypeFamily::Animation, name)
+                                .map(|index| {
+                                    self.resolved_type_key(RulesTypeFamily::Animation, index)
+                                })
+                        },
+                    );
+                    self.family_mut(family)[index].techno_combat = techno_combat;
                 }
                 #[cfg(feature = "ares")]
                 self.process_factory_owners(family, index, &raw);
@@ -7749,30 +7773,6 @@ impl RulesPassProcessor {
                         .emp_type
                         .as_mut()
                         .expect("TechnoType EMP extension")
-                    // TechnoTypeExt Initialize (1003DEC0) and the chain's
-                    // LoadFromINIFile reads (1003DFB0): Find-only pointers.
-                    let mut techno_combat = std::mem::take(&mut member.techno_combat);
-                    techno_combat.read_pass(
-                        &raw,
-                        &native_stored_id,
-                        family == RulesTypeFamily::Aircraft,
-                        |key, kind| {
-                            use crate::rules::ares_techno_type::TypeRef;
-                            let family = match kind {
-                                TypeRef::Animation => RulesTypeFamily::Animation,
-                                TypeRef::Warhead => RulesTypeFamily::Warhead,
-                                TypeRef::Weapon => RulesTypeFamily::Weapon,
-                            };
-                            self.resolve_existing_type_from(&raw, key, family)
-                        },
-                        |name| {
-                            self.find_existing(RulesTypeFamily::Animation, name)
-                                .map(|index| {
-                                    self.resolved_type_key(RulesTypeFamily::Animation, index)
-                                })
-                        },
-                    );
-                    self.family_mut(family)[index].techno_combat = techno_combat;
                         .read_pass(&raw, sparkle);
                     // TechnoTypeExt::LoadFromINI1003DEC0 calls the shared
                     // descriptor reader10058A50 at1003E8D4, before subclasses.
