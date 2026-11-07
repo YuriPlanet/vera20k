@@ -414,20 +414,35 @@ pub(crate) struct PlayerScore {
     pub(crate) coop: u32,
 }
 
+/// `0x00783B80`'s badges, highest first: the high-score points each starts
+/// at, its PCX and VERA's name for it, as the game names none.
+const BADGES: [(u32, &str, &str); 10] = [
+    (2001, "comchief.pcx", "VERA:LobbyBadgeCommanderInChief"),
+    (1501, "stargen.pcx", "VERA:LobbyBadgeFiveStarGeneral"),
+    (1001, "general.pcx", "VERA:LobbyBadgeGeneral"),
+    (501, "briggenr.pcx", "VERA:LobbyBadgeBrigadierGeneral"),
+    (251, "colonel.pcx", "VERA:LobbyBadgeColonel"),
+    (151, "major.pcx", "VERA:LobbyBadgeMajor"),
+    (81, "lieutena.pcx", "VERA:LobbyBadgeLieutenant"),
+    (61, "sergeant.pcx", "VERA:LobbyBadgeSergeant"),
+    (32, "corporal.pcx", "VERA:LobbyBadgeCorporal"),
+    (0, "private.pcx", "VERA:LobbyBadgePrivate"),
+];
+
 /// `0x00783B80`: the badge of the high-score points.
 fn badge(points: u32) -> &'static str {
-    match points {
-        2001.. => "comchief.pcx",
-        1501.. => "stargen.pcx",
-        1001.. => "general.pcx",
-        501.. => "briggenr.pcx",
-        251.. => "colonel.pcx",
-        151.. => "major.pcx",
-        81.. => "lieutena.pcx",
-        61.. => "sergeant.pcx",
-        32.. => "corporal.pcx",
-        _ => "private.pcx",
-    }
+    BADGES
+        .iter()
+        .find(|(from, ..)| points >= *from)
+        .map_or("private.pcx", |(_, file, _)| file)
+}
+
+/// The text key of the badge drawn from `file`.
+pub(crate) fn badge_name_key(file: &str) -> Option<&'static str> {
+    BADGES
+        .iter()
+        .find(|(_, pcx, _)| *pcx == file)
+        .map(|(.., key)| *key)
 }
 
 /// `0x00783C80`'s high-score cells (`0x007845A8..0x007847F0`): the rank's
@@ -1193,5 +1208,21 @@ mod tests {
             [("comchief.pcx", 0x3D)]
         );
         assert_eq!(score_icons(score(32, 1000, 0), 4), [("corporal.pcx", 0x3D)]);
+    }
+
+    /// The hover help names every badge the list draws, in each language.
+    #[test]
+    fn every_badge_the_list_draws_has_a_name() {
+        let mut csf = crate::assets::csf_file::test_csf(&[("GUI:Ok", "OK")]);
+        crate::i18n::apply(&mut csf);
+        for points in [0, 31, 32, 60, 61, 1500, 1501, 2000, 2001] {
+            let key = badge_name_key(badge(points)).expect("a named badge");
+            assert!(!csf.text(key).starts_with("MISSING:"), "{key}");
+        }
+        assert_eq!(
+            badge_name_key(badge(2001)),
+            Some("VERA:LobbyBadgeCommanderInChief")
+        );
+        assert_eq!(badge_name_key("number1.pcx"), None);
     }
 }

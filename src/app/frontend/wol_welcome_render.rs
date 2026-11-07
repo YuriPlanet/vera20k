@@ -482,6 +482,9 @@ pub(crate) fn render_wol_page(
         for (text, rect) in &layout.texts {
             let caption = match filled.iter().find(|(id, _)| Some(*id) == text.id) {
                 Some((_, value)) => value.as_str().into(),
+                // An empty template caption is no label: the persona heading
+                // stays blank without a nickname.
+                None if text.key.is_empty() => continue,
                 None => resolve_csf(state, text.key),
             };
             if caption.is_empty() {
@@ -905,7 +908,7 @@ pub(crate) fn render_wol_page(
         labels.push(PaintLabel {
             text,
             rect: owner_draw_button_label_rect(button.rect, *pressed),
-            align: ShellAlign(ShellAlign::H_CENTER.0 | ShellAlign::V_CENTER.0),
+            align: ShellAlign::BUTTON_CAPTION,
             rgb: crate::app::frontend::skirmish_shell_render::wol_button_label_rgb(*enabled),
             path_a_reveal: None,
         });
@@ -914,7 +917,7 @@ pub(crate) fn render_wol_page(
         labels.push(PaintLabel {
             text: resolve_csf(state, key),
             rect: page.title,
-            align: ShellAlign::H_CENTER,
+            align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: Some(shell_reveal_path_a(window)),
         });

@@ -18,10 +18,11 @@ use anyhow::{Context, Result, ensure};
 /// VERA's Inno Setup AppId (`.github/release/windows/vera20k.iss`).
 const VERA_APP_ID: &[u8] = b"{9C9BFC32-A7B8-48ED-A428-72333354BDDB}";
 
-/// A reason the player can act on, shown instead of the generic failure.
+/// A reason the player can act on, in the language in use, shown instead of
+/// the generic failure.
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
-pub(super) struct Hint(pub &'static str);
+pub(super) struct Hint(pub String);
 
 /// The release package this process runs from: what an update replaces.
 #[derive(Debug, Clone)]
@@ -73,9 +74,7 @@ pub(super) fn check_replaceable(package: &Package) -> Result<()> {
         Package::Windows(folder) => {
             ensure!(
                 writable_folder(folder),
-                Hint(
-                    "VERA20K cannot replace its files in this folder. Download the new version from vera20k.org."
-                )
+                Hint(crate::i18n::tr("VERA:UpdateFolderLocked"))
             );
             Ok(())
         }
@@ -88,14 +87,14 @@ pub(super) fn check_replaceable(package: &Package) -> Result<()> {
                 .any(|part| part.as_os_str() == "AppTranslocation");
             ensure!(
                 !translocated && bundle.parent().is_some_and(writable_folder),
-                Hint("Move VERA20K to your Applications folder and start it from there to update.")
+                Hint(crate::i18n::tr("VERA:UpdateMoveToApplications"))
             );
             Ok(())
         }
         Package::AppImage(image) => {
             ensure!(
                 image.parent().is_some_and(writable_folder),
-                Hint("VERA20K cannot replace its AppImage in this folder.")
+                Hint(crate::i18n::tr("VERA:UpdateAppImageLocked"))
             );
             Ok(())
         }

@@ -324,7 +324,7 @@ fn production_airstrike_beam_matches_original_pixels_and_preserves_depth() {
             );
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
             clear(&mut encoder, &cv, &dv, old_z, wgpu::LoadOp::Load);
-            terrain.draw_surface_lines(&mut encoder, &cv, prepared);
+            terrain.draw_surface_lines(&mut encoder, &cv, &[prepared]);
             let reads = [
                 gpu.read(&mut encoder, &color),
                 gpu.read(&mut encoder, &depth),

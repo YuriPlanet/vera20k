@@ -52,14 +52,15 @@ pub(crate) const NO_SPY: u16 = 0x7F0A;
 pub(crate) const NO_STOLEN_TECH: u16 = 0x7F0B;
 pub(crate) const ROOM_CHECKBOXES: [u16; 6] =
     [BRIDGES, ALLYING, NO_YURI, NO_FRANCE, NO_SPY, NO_STOLEN_TECH];
-/// Their labels; the retail string table has none for them.
+/// Their labels in VERA's language files; the retail string table has none
+/// for them.
 pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 6] = [
-    "Destroyable Bridges",
-    "In-game Allying",
-    "No Yuri",
-    "No France",
-    "No Spy",
-    "No Stolen Tech",
+    "VERA:DestroyableBridges",
+    "VERA:InGameAllying",
+    "VERA:NoYuri",
+    "VERA:NoFrance",
+    "VERA:NoSpy",
+    "VERA:NoStolenTech",
 ];
 /// The trackbars VERA's room moves into Game Options; Difficulty stays.
 pub(crate) const OPTION_TRACKBARS: [u16; 3] = [SPEED, CREDITS, UNITS];
@@ -115,9 +116,10 @@ impl SetupDialog {
     }
     /// VERA's room captions BC's map button "Choose Map": retail's
     /// `GUI:ChooseMap` text, "Customize Battle", reads as the game settings
-    /// the room keeps under Game Options. `None` keeps the CSF caption.
+    /// the room keeps under Game Options. The caption's label in VERA's
+    /// language files; `None` keeps the CSF caption.
     pub(crate) fn button_label(self, id: u16) -> Option<&'static str> {
-        (self.modern && id == CHOOSE_MAP).then_some("Choose Map")
+        (self.modern && id == CHOOSE_MAP).then_some("VERA:ChooseMap")
     }
     /// Rows one roster page shows.
     pub(crate) const fn rows_per_page(self) -> usize {
@@ -1218,7 +1220,7 @@ mod tests {
         for flavor in [SetupFlavor::Lan, SetupFlavor::Wol] {
             assert_eq!(
                 dialog(true, flavor, true).button_label(CHOOSE_MAP),
-                Some("Choose Map")
+                Some("VERA:ChooseMap")
             );
             assert_eq!(dialog(true, flavor, false).button_label(CHOOSE_MAP), None);
         }

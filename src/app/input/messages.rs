@@ -1,5 +1,5 @@
 //! Chat/system message surface driver (study §3.1): anchors the
-//! `ui::messages::MessageList` to the tactical viewport (x+3 / y / w−14),
+//! `ui::messages::MessageList` to the tactical viewport,
 //! posts system messages (insert sound = [AudioVisual] IncomingMessage),
 //! expires rows on Main_Tick against the advancing process wall clock,
 //! and builds the text instances drawn between sidebar text and tooltip.
@@ -11,12 +11,6 @@ use crate::app::AppState;
 use crate::render::batch::SpriteInstance;
 use crate::ui::game_screen::GameScreen;
 
-/// Native Init anchors: x = tactical_x + 3, y = tactical_y, w = tactical_w − 14.
-/// RESIDUAL: Set_View_Dimensions then sets the width to tactical_w − 8
-/// (`MessageListClass::SetWidth @ 0x005D4AD0`, from 0x004A8BC9) whenever the
-/// match changes video mode or a save loads; lines wrap 6 px early here.
-const MESSAGE_X_INSET: i32 = 3;
-const MESSAGE_WIDTH_INSET: i32 = 14;
 /// Fallback while match color schemes are unavailable.
 const MESSAGE_RGB_SYSTEM: [f32; 3] = [1.0, 1.0, 1.0];
 /// `0xF0` native 16 ms timer buckets.
@@ -129,9 +123,10 @@ pub(crate) fn post_type_select_feedback(state: &mut AppState, csf_key: &str) {
     post_silent_house_feedback(state, csf_key, TYPE_SELECT_MESSAGE_TIMEOUT_MS);
 }
 
-///63A0D0/639FD0/639130 use the same silent730A90 HUD owner with duration1E0.
-/// Their separate ScoldSound belongs to the planning input owner.
-pub(crate) fn post_planning_refusal(state: &mut AppState, csf_key: &str) {
+/// PlanMgr's refusals (63A0D0/639FD0/639130/638120/637270) and help
+/// (63A120/63A1B0) use the same silent730A90 HUD owner with duration1E0.
+/// A refusal's separate ScoldSound belongs to the planning input owner.
+pub(crate) fn post_planning_message(state: &mut AppState, csf_key: &str) {
     post_silent_house_feedback(state, csf_key, 0x1E0 * 16);
 }
 
@@ -718,7 +713,7 @@ pub(crate) fn post_match_speed(state: &mut AppState, text: &str) {
 pub(super) fn post_command_backpressure(state: &mut AppState) {
     post_grey_row(
         state,
-        "Commands are still being sent. Try again shortly.",
+        &crate::i18n::tr("VERA:CommandsStillSending"),
         false,
         true,
     );
@@ -828,12 +823,15 @@ fn sync_view(state: &mut AppState) {
         .message_list
         .set_typing(typing);
     // The list spans the tactical viewport: the frame left of the sidebar.
+    // VERA's FPS panel holds the viewport's top left while it shows, and the
+    // list and its edit line start below it.
     let tactical_w = crate::app::input::camera::tactical_viewport_size(state).0 as i32;
-    state.match_state.match_presentation.message_list.set_view(
-        MESSAGE_X_INSET,
-        0,
-        (tactical_w - MESSAGE_WIDTH_INSET).max(0),
-    );
+    let top = state.renderer.fps_overlay.message_top();
+    state
+        .match_state
+        .match_presentation
+        .message_list
+        .set_view(0, top, tactical_w);
 }
 
 /// Prepare one successful offline TextLabel paint, using raw wall time for
@@ -883,15 +881,17 @@ pub(crate) fn ime_edit_rect(state: &AppState) -> Option<crate::ui::shell::geom::
     let list = &state.match_state.match_presentation.message_list;
     let edit = list.edit_line()?;
     let font = &state.renderer.bit_font;
-    // The message rows are tactical pixels; the zoom pass stretches them over
-    // the window.
-    let sx = state.renderer.gpu.config.width as f32 / state.render_width().max(1) as f32;
-    let sy = state.renderer.gpu.config.height as f32 / state.render_height().max(1) as f32;
+    // The message rows are frame pixels, which a zoomed match shows scaled
+    // and centred in the window.
+    let (x, y) = (list.x() as f32, edit.y as f32);
+    let ((x, y), scale) = state.tactical_zoom().map_or(((x, y), 1.0), |zoom| {
+        (zoom.source_to_window(x, y), zoom.scale())
+    });
     Some(crate::ui::shell::geom::RectPx::new(
-        (list.x() as f32 * sx) as i32,
-        (edit.y as f32 * sy) as i32,
-        (font.text_width(&edit.text) as f32 * sx) as i32,
-        (font.cell_height() as f32 * sy) as i32,
+        x as i32,
+        y as i32,
+        (font.text_width(&edit.text) as f32 * scale) as i32,
+        (font.cell_height() * scale) as i32,
     ))
 }
 
@@ -1401,7 +1401,7 @@ mod tests {
         assert!(list.messages().is_empty());
 
         // Admission failure cannot play the message-insertion sound.
-        list.set_view(3, 0, 0);
+        list.set_view(0, 0, 0);
         let rejected =
             add_localized_message(&mut list, Some(&csf), &post, resumed_wall_ms + 2, &|_| 8);
         assert_eq!(rejected.added, 0);

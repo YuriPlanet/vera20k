@@ -90,6 +90,11 @@ pub struct SavedCursorModes {
     /// distinct legacy Display waypoint byte at +11B3.
     pub planning: bool,
     pub targeting: Option<SavedTargeting>,
+    /// TabClass IsCommandBarOpen (+0x5544) is in the same raw Mouse body;
+    /// TabClass::NoInit 5BE9B0 and the postload Init 6D03A0 /
+    /// ToggleSidebar 6D04F0 keep it, so a load shows the bar as saved.
+    #[serde(default)]
+    pub command_bar_closed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

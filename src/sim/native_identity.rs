@@ -69,6 +69,8 @@ impl NativeUniqueIdCursor {
     }
 
     /// The campaign's one MapClass::Resize565C10 follows House Read_INI.
+    /// InitializeScenarioFromINI's call at `0x006874E2` goes through
+    /// `RadarClass::CreateEmptyMap @ 0x00653F50`, which only forwards to it.
     /// Fill consumes no native IDs; mapreader4AD026 then saves this checkpoint
     /// before theater construction and the saved+0x2710 overwrite.
     pub(crate) fn finish_campaign_prefix_after_resize(

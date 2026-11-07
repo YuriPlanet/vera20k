@@ -743,9 +743,8 @@ impl App {
             crate::app::match_runtime::scenario_exit::ScenarioExitDestination::Score {
                 title: crate::app::match_runtime::scenario_exit::outcome_title(
                     crate::sim::house_state::HouseOutcomeKind::Defeat,
-                )
-                .to_string(),
-                detail: "You left the battle.".to_string(),
+                ),
+                detail: crate::i18n::tr("VERA:YouLeftTheBattle"),
                 model: crate::app::match_runtime::sim_tick::build_aborted_score_screen_model(
                     state,
                     elapsed_seconds,

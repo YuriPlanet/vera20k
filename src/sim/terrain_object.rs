@@ -86,6 +86,12 @@ impl std::hash::Hash for TerrainObjectState {
 }
 
 impl TerrainObjectState {
+    /// The map/RMG constructor `TerrainClass::Constructor @ 0x0071BB90`.
+    /// `TerrainClass::Constructor_Default @ 0x0071BDF0` (typeless, no
+    /// Health/Create_ID/Unlimbo) has one caller, TClassFactory<TerrainClass>
+    /// CreateInstance at 0x006BF3CF, a COM factory reached only through its
+    /// vtable (0x007F37BC) to rebuild objects from a native save stream.
+    /// VERA restores this state from its own snapshot instead.
     pub fn new(
         stable_id: u64,
         type_ref: InternedId,
@@ -357,6 +363,8 @@ impl TerrainObjectState {
             && (game_mode.is_single_player() || self.native_unique_id != Some(-2))
     }
 
+    /// `TerrainClass::Class_Of @ 0x0071D150` (vtable slot +0x88) returns
+    /// Type (+0xC8); its virtual callers read this one immutable reference.
     pub const fn type_ref(&self) -> InternedId {
         self.type_ref
     }
@@ -1021,6 +1029,12 @@ impl TerrainObjectStore {
             return TerrainAreaReceiveResult::Damaged { remaining };
         }
 
+        // Take_Damage71B920's ordinary lethal arm (71BAEF..71BB22) sets
+        // IsCrumbling and restarts Stage at rate2/value0, the body of the
+        // unreferenced `TerrainClass::Start_To_Crumble @ 0x0071C8E0`, then
+        // UnInits in the same call (71BB2C..71BB73). No crumble frame or
+        // AI71C730 crumble test runs, so no IsCrumbling is retained. Its
+        // IsOnFire arm is dormant: only the uncalled Catch_Fire71C5B0 sets it.
         terrain.health = 0;
         finalizing_terrain.insert(stable_id);
         TerrainAreaReceiveResult::Lethal(TerrainLethalDamage {

@@ -334,26 +334,32 @@ pub(crate) fn tactical_mouse(state: &mut AppState, button: MouseButton, btn_stat
         }
         MouseButton::Right => {
             if btn_state.is_pressed() {
-                // The native right press has no game effect at all: it records
-                // the pan anchor and takes the capture, and only does that when
-                // no other button already holds it. Everything the player sees
-                // happens on the release edge.
+                // PlanMgr's right press 0x0063AAC0 runs first (0x006932D0).
+                crate::app::input::planning_mode::right_press(state);
+                // Otherwise the native right press has no game effect: it
+                // records the pan anchor and takes the capture, and only does
+                // that when no other button already holds it. Everything the
+                // player sees happens on the release edge.
                 if state.match_state.input.tactical_mouse.press_may_arm() {
                     state.match_state.input.tactical_mouse.begin_right_drag((
                         state.match_state.input.cursor_x,
                         state.match_state.input.cursor_y,
                     ));
                 }
-            } else if let Some(is_click) = state.match_state.input.tactical_mouse.end_right_press()
-            {
-                // Dispatch a click only when the drag threshold was never
-                // crossed. A right drag that panned the map ends silently;
-                // the selection survives it.
-                if is_click {
-                    handle_tactical_right_click(state);
+            } else {
+                // 0x0069338A: PlanMgr's release 0x0063AB00 precedes the
+                // capture test.
+                crate::app::input::planning_mode::right_release(state);
+                if let Some(is_click) = state.match_state.input.tactical_mouse.end_right_press() {
+                    // Dispatch a click only when the drag threshold was never
+                    // crossed. A right drag that panned the map ends silently;
+                    // the selection survives it.
+                    if is_click {
+                        handle_tactical_right_click(state);
+                    }
+                    // The native release tears the band rectangle down too.
+                    state.match_state.input.selection_state.cancel_drag();
                 }
-                // The native release tears the band rectangle down too.
-                state.match_state.input.selection_state.cancel_drag();
             }
         }
         _ => {}
@@ -1410,6 +1416,9 @@ fn apply_sidebar_action_inner(state: &mut AppState, action: SidebarAction) {
     }
     match action {
         SidebarAction::None => {}
+        // `RadarClass::AI @ 0x00653850`: input 0x80F3 (OPTBTN) writes
+        // in-scenario state 1, the options menu; 0x80F2 (DIPLOBTN) goes
+        // through the diplomacy owner's state 8/9 choice.
         SidebarAction::OpenPauseMenu => open_pause_menu(state),
         SidebarAction::OpenDiplomacy => crate::app::input::diplomacy::open(
             state,
@@ -1981,10 +1990,10 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::Options => handle_options_hotkey(state),
         HotkeyCommand::CenterView => crate::app::input::camera::center_view_on_selection(state),
         HotkeyCommand::Follow => crate::app::input::camera::toggle_follow_target(state),
-        HotkeyCommand::PlanningMode => crate::app::input::planning_mode::toggle(state),
-        // DeleteCommand731A10: a planning node, else the selected beacon.
+        HotkeyCommand::PlanningMode => crate::app::input::planning_mode::toggle(state, false),
+        // DeleteCommand731A10: the retained planning node, else the selected beacon.
         HotkeyCommand::Delete => {
-            if !crate::app::input::planning_mode::delete_at_cursor(state) {
+            if !crate::app::input::planning_mode::delete_highlighted(state) {
                 crate::app::input::beacon::delete_selected(state);
             }
         }
@@ -2033,7 +2042,45 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::AutoLoad => crate::app::input::autoload::hotkey_pressed(state),
         #[cfg(not(feature = "verax"))]
         HotkeyCommand::AutoLoad => {}
+        // A chord runs in the window owner before this dispatch; a binding on
+        // a typing key reaches here, after the chat edit.
+        HotkeyCommand::FpsCounter | HotkeyCommand::LockCursor | HotkeyCommand::FullScreen => {
+            run_window_command(state, command)
+        }
+        HotkeyCommand::RenderInterpolation => {
+            let enabled = state.match_state.match_presentation.interpolation.toggle();
+            state.persistence.options_profile.render_interpolation = enabled;
+            log::info!(
+                "Render interpolation prototype: {}",
+                if enabled { "ON" } else { "OFF" }
+            );
+        }
     }
+}
+
+/// VERA's every-screen commands ([`HotkeyBindings::window_command`]): from the
+/// window owner's key handling on every screen, or from a battle's hotkey
+/// dispatch for a binding on a typing key.
+///
+/// [`HotkeyBindings::window_command`]: crate::app::input::hotkeys::HotkeyBindings::window_command
+pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
+    match command {
+        HotkeyCommand::LockCursor => crate::app::input::cursor::toggle_cursor_confinement(state),
+        // A capture keeps its fixed surface.
+        HotkeyCommand::FullScreen if state.platform.capture_client_size.is_none() => {
+            let full_screen = state.platform.window.fullscreen().is_none();
+            crate::app::App::set_full_screen(state, full_screen);
+        }
+        HotkeyCommand::FpsCounter => {
+            let shown = state.renderer.fps_overlay.toggle();
+            if let Some(dialog) = state.frontend.options_dialog.as_mut() {
+                dialog.sync_fps_counter(shown);
+            }
+            log::info!("FPS overlay: {}", if shown { "shown" } else { "hidden" });
+        }
+        _ => return,
+    }
+    state.platform.window.request_redraw();
 }
 
 /// A superweapon cameo press. Phobos's `FireTacticalSW` keys call
@@ -2148,7 +2195,7 @@ pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: 
         }
         8 => HotkeyCommand::StopObject,
         9 => {
-            crate::app::input::planning_mode::toggle(state);
+            crate::app::input::planning_mode::toggle(state, true);
             return;
         }
         10 => HotkeyCommand::AllToCheer,
@@ -2390,6 +2437,21 @@ pub(crate) fn is_ctrl_held(state: &AppState) -> bool {
 /// matching gamemd's `What_Action_OnCell` Alt-overrides-Ctrl rule.
 pub(crate) fn is_alt_held(state: &AppState) -> bool {
     state.match_state.input.hotkey_modifiers.alt_key()
+}
+
+/// [`selected_stable_ids_in_order`] of `state`'s world and ledger. It walks
+/// every object, so a draw reads it once and hands it to its consumers.
+pub(crate) fn selected_in_order(state: &AppState) -> Vec<u64> {
+    selected_stable_ids_in_order(
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        state.rules(),
+        &state.match_state.input.selection_order,
+        state.match_state.input.selection_order_pending,
+    )
 }
 
 /// Read the player-side selection vector in native order. While a selection

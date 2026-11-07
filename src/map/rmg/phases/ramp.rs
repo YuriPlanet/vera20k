@@ -117,6 +117,8 @@ pub fn ramp_tile(ramp_base: i32, slope: u8) -> i32 {
 ///
 /// The sweep itself is not diamond-guarded: the corner probes are what
 /// establish the rect is on the map, exactly as in the original.
+///
+/// Native: `RmgRegion::RectIsCarveable @ 0x00594010`.
 pub fn rect_is_carveable(
     grid: &mut RmgGrid,
     scratch: &RmgScratch,

@@ -26,6 +26,10 @@ use crate::map::rmg::scratch::RmgScratch;
 ///
 /// `region_count` is the number of ids the partition has issued; ids run
 /// `0..region_count`.
+///
+/// Steps 1-5 of `RmgRegion::BuildNeighbourListAndCellCount @ 0x0058F0C0`. Native
+/// collects the border through the cell-iterator walk 0x0058D410; the flag
+/// array discards that order, so the linear collector gives the same list.
 pub(crate) fn neighbour_ids(scratch: &RmgScratch, region: i32, region_count: i32) -> Vec<i32> {
     if region_count <= 0 {
         return Vec::new();
@@ -86,25 +90,23 @@ pub(crate) fn border_cells_of(scratch: &RmgScratch, region: i32) -> Vec<(i32, i3
     border
 }
 
-/// How many cells `region` owns.
+/// How many cells `region` owns: step 6 of `RmgRegion::BuildNeighbourListAndCellCount
+/// @ 0x0058F0C0`.
 ///
 /// Counted over the whole working grid rather than taken from the flood that
-/// built the region, and **the cell at (0, 0) is never counted** — the original
-/// skips any slot whose packed coordinate is zero. That corner sits outside the
-/// playable diamond on every real map, so the exclusion does no work in
-/// practice; it is kept because a count that silently differs by one is exactly
-/// the sort of thing that surfaces much later as an off-by-one somewhere else.
-/// The active connector/low-deck driver uses this to gate whether a region is
-/// substantial enough for its candidate search.
+/// built the region. The original skips every slot whose *stored* packed
+/// coordinate is (0, 0) (`*(short*)slot != 0 || *(short*)(slot+2) != 0`), and
+/// only in-diamond records carry a coordinate, so slots outside the diamond
+/// are never counted even when they hold the region's id. The active
+/// connector/low-deck driver uses this to gate whether a region is substantial
+/// enough for its candidate search.
 pub(crate) fn region_cell_count(scratch: &RmgScratch, region: i32) -> i32 {
     let width = scratch.width() as i32;
     let mut count = 0;
     for y in 0..width {
         for x in 0..width {
-            if x == 0 && y == 0 {
-                continue;
-            }
-            if scratch.get(x, y).region == region {
+            let cell = scratch.get(x, y);
+            if cell.region == region && (cell.x, cell.y) != (0, 0) {
                 count += 1;
             }
         }
@@ -178,14 +180,20 @@ mod tests {
     }
 
     #[test]
-    fn the_cell_count_skips_the_origin() {
-        // (0, 0) is never counted. It lies outside the playable diamond on a
-        // real map, so this is inert there -- but the count must still be the
-        // original's, not a tidied-up one.
+    fn the_cell_count_skips_slots_without_a_coordinate() {
+        // 0x58F0C0 skips every slot whose stored packed coordinate is (0, 0):
+        // the origin and every record outside the diamond, which
+        // RmgScratch::new never stamps.
         let mut s = scratch();
         paint(&mut s, (44, 48, 4, 4), 5);
         assert_eq!(region_cell_count(&s, 5), 16, "the painted block");
         s.get_mut(0, 0).region = 5;
         assert_eq!(region_cell_count(&s, 5), 16, "the origin does not add one");
+        s.get_mut(1, 1).region = 5;
+        assert_eq!(
+            region_cell_count(&s, 5),
+            16,
+            "an unstamped slot does not add one"
+        );
     }
 }

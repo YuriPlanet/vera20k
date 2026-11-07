@@ -56,4 +56,5 @@ pass — the table-base `lea` at `0x005BDC95`, the dispatch `jmp` at `0x004AB453
 the `call [edx+0x48]` at `0x004AB43C`, and the Building vtable slots `+0x4E4`
 and `+0x444` — the last two being addresses this repository already recorded
 from stock analysis in [`../voxel_oracle/building_barrel.md`](../voxel_oracle/building_barrel.md).
-Regenerate against an unpatched `gamemd.exe` to drop that dependency.
+The 86 descriptor rows read from an unpatched retail `gamemd.exe` match the
+fixture field for field.

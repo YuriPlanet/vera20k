@@ -145,6 +145,9 @@ impl RadiationBeams {
     pub(crate) fn draws(&self) -> &[SurfaceDraw] {
         &self.draws
     }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.live.is_empty()
+    }
     /// The last composite's lines under the current camera.
     pub(crate) fn shown(&mut self, camera: [i32; 2]) -> &[SurfaceDraw] {
         if camera != self.camera {

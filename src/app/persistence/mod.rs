@@ -308,6 +308,7 @@ impl PreparedLoad {
         // InfantryLoad521A0C -> TechnoNoInit6F4335 resets the transition
         // clock. This user-file seam is separate from internal continuations.
         simulation.restart_cloak_progress_after_player_load();
+        simulation.reconstruct_building_repair_progress_after_player_load();
         simulation.restore_after_snapshot_load()?;
         crate::sim::production::validate_restored_factory_state(&simulation, rules)?;
         simulation.rebuild_caches_after_load(terrain_template, terrain_speed_config, rules);
@@ -944,6 +945,7 @@ mod tests {
         in_game_menu: crate::ui::pause_menu::InGameMenuState,
     }
 
+    mod building_repair_restore_tests;
     mod cloak_restore_tests;
     mod factory_restore_tests;
     mod infantry_death_restore_tests;
