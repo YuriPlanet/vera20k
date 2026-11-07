@@ -2918,8 +2918,6 @@ impl GameEntity {
             .is_some_and(|body| body.state() == 0)
     }
 
-    /// Building440042..440074: compare actual health, publish the new sample
-    /// and tell the host to invalidate the owning House's derived state.
     /// Whether [`Self::sample_building_health_for_power`] changes the sample.
     pub(crate) fn building_health_sample_changes(&self) -> bool {
         self.category == EntityCategory::Structure
@@ -2928,6 +2926,8 @@ impl GameEntity {
                 .differs(self.health.current())
     }
 
+    /// Building440042..440074: compare actual health, publish the new sample
+    /// and tell the host to invalidate the owning House's derived state.
     pub fn sample_building_health_for_power(&mut self) -> bool {
         self.category == EntityCategory::Structure
             && self
