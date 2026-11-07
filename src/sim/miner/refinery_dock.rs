@@ -39,8 +39,8 @@
 //! unloading miner sends it RUN_AWAY (0x17): the latch drops and Harvest takes
 //! over (`radio::receive`, Unit `0x00737A98`). A tethered miner on Enter that
 //! reaches the pad of a refinery in its Selling mission sends DOCK_NOW, gets
-//! NEGATORY and Scatters (Per_Cell `0x0073A5CE..0x0073A5E4`,
-//! `Simulation::unit_dock_now`).
+//! NEGATORY and calls Scatter (Per_Cell `0x0073A5CE..0x0073A5E4`,
+//! `Simulation::unit_dock_now`), which moves it only when it has no NavCom.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — sim/radio, sim/mission, sim/movement, sim/world.

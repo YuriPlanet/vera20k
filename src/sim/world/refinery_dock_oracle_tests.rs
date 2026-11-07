@@ -1106,19 +1106,14 @@ fn per_cell_dock_now_matches_the_original_track_end_arm() {
         let mut expected = row.clone();
         if let Some(scatter) = scatter {
             // The oracle records Scatter(&0xB1CFE8, 1, 0) without running it,
-            // so its NavCom stays null; the Unit Scatter runs here and sends
-            // the miner to a neighbouring cell.
+            // so the row certifies the call and its arguments, not the cell:
+            // that is the Unit Scatter's own (scatter_tests). It runs here, so
+            // the miner's NavCom is the cell it chose.
             assert_eq!(scatter.as_array().unwrap()[2..], [1, 0], "{context}");
             let miner = s.sim.substrate.entities.get(s.miner).unwrap();
-            let (x, y) = (miner.position.rx(), miner.position.ry());
             let Some(NavTargetRef::Cell { rx, ry }) = miner.navigation.nav_com() else {
                 panic!("{context}: the refusal Scatters the miner");
             };
-            assert_eq!(
-                (rx.abs_diff(x).max(ry.abs_diff(y))),
-                1,
-                "{context}: Scatter's neighbouring cell"
-            );
             expected["state"]["miner_nav"] = serde_json::json!([rx, ry]);
         }
         compare_state(&s, &expected, &context);

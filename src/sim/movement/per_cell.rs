@@ -196,10 +196,12 @@ impl Simulation {
             effects,
         );
         // 0x0073A5CE..0x0073A5E4: an answer other than 1 or 5 Scatters the
-        // Unit, vt+0x174(&0xB1CFE8, 1, 0). A dock in its Selling mission
-        // answers NEGATORY (Building `0x0043C6FC`) and a building that is no
-        // dock answers 0 (the Techno fallback); no receiver answers DOCK_NOW
-        // with 5.
+        // Unit, vt+0x174(&0xB1CFE8, 1, 0). Only a Building gets DOCK_NOW
+        // here, and no Building answers 5: any Building in its Selling
+        // mission answers NEGATORY (`0x0043C6F6`, ahead of the dock cases)
+        // and one that is no dock answers 0 (the Techno fallback). This
+        // Scatter does nothing while the unit still has a NavCom
+        // (`0x00743B1D..0x00743B2D`), as it does after a Drive arrival.
         if reply != crate::sim::radio::RadioResponse::Roger {
             let _ = self.scatter(
                 id,
@@ -297,6 +299,17 @@ impl Simulation {
         if reason == PerCellReason::Arrival {
             crate::sim::miner::per_cell_release_dock_contact(self, rules, id, effects);
         }
+        // Not ported: `0x0073AE1B..0x0073AFD3`. A stopped Unit (Is_Moving,
+        // `0x0073AE65`) whose own cell its Can_Enter_Cell refuses with 7
+        // (`0x0073AE7E`), off a bridge there and not sinking, Scatters on
+        // Enter (vt+0x174(&0xB1CFE8, 1, 1)) and otherwise blows itself up
+        // with C4Warhead and its Health (`0x0073AEC1..0x0073AFB0`), skipping
+        // the crush and the Foot body. Trigger: an arrival in a cell the unit
+        // can no longer enter, such as inside a building whose radio contact
+        // dropped mid-track. No miner reaches it: a refinery's pad is the
+        // east column of a `Bib=` foundation, which Can_Enter_Cell admits
+        // whatever the contact (`0x0073F7D3..0x0073F821`). Effect: VERA
+        // leaves the unit in that cell. Frequency: rare. Downstream: none.
         // 73AFD4..73B06E is common to reasons0/2 and precedes the fresh
         // +1B8/full-cell crush query73B074 and the Foot continuation.
         if let (Some(cell), Some(registry)) = (entry_cell, registry) {
