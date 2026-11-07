@@ -748,9 +748,10 @@ impl Simulation {
                 .collect();
             self.fog.defer_plane_writes(kept);
         }
-        // The pass's sight walks ask each owner's viewers once until the ally
-        // graph changes (`vision::RevealViewers`).
-        self.reveal_viewers.begin();
+        // The pass's sight walks ask the client maps once, and each owner's
+        // viewers once until the ally graph changes (`vision::RevealViewers`).
+        let clients = self.fog_viewers();
+        self.reveal_viewers.begin(clients);
         let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
             #[cfg(feature = "debug-tools")]
             let debug_before = sim

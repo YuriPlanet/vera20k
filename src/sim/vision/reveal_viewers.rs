@@ -1,5 +1,5 @@
-//! VERA-only: each owner's reveal viewers, remembered through the passes that
-//! ask them for every moving source.
+//! VERA-only: the client maps and each owner's reveal viewers, remembered
+//! through the passes that ask them for every moving source.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -8,19 +8,25 @@ use super::VisionConfig;
 use crate::map::houses::HouseAllianceMap;
 use crate::sim::intern::{InternedId, StringInterner};
 
-/// Each owner's [`super::direct_reveal_viewers`] and [`super::allied_viewers`],
-/// remembered from [`Self::begin`] to [`Self::end`], which bracket the object
-/// pass and the fog pass. An answer depends on the owner, the client maps, the
-/// ally graph, `AllyReveal=` and the interned names. A change of client maps
+/// The pass's client maps (`Simulation::fog_viewers`) and each owner's
+/// [`super::direct_reveal_viewers`] and [`super::allied_viewers`], remembered
+/// from [`Self::begin`] to [`Self::end`], which bracket the object pass and
+/// the fog pass. The client maps depend on the game mode, the current House,
+/// the House order and each House's human flags, which only scenario setup
+/// and loads write. An answer depends on the owner, the client maps, the ally
+/// graph, `AllyReveal=` and the interned names. A change of client maps
 /// forgets every answer; inside the bracket names only grow, so their count
 /// keys the answers, with `AllyReveal=` beside each direct one; the ally
-/// graph's writers (`install_house_alliances`, `set_ally_bit`) forget them. Outside the bracket every ask computes afresh,
-/// so a graph written between passes needs no forgetting. Callers pass the
-/// Simulation's own client maps, alliances and interner. Debug builds check each
-/// remembered answer against a fresh one. Never saved or hashed.
+/// graph's writers (`install_house_alliances`, `set_ally_bit`) forget them.
+/// Outside the bracket every ask computes afresh, so a graph written between
+/// passes needs no forgetting. Callers pass the Simulation's own client maps,
+/// alliances and interner. Debug builds check each remembered answer against
+/// a fresh one. Never saved or hashed.
 #[derive(Debug, Default)]
 pub(crate) struct RevealViewers {
     remembering: bool,
+    /// The pass's client maps, from `begin` to `end`.
+    pass_clients: Option<Arc<[InternedId]>>,
     /// The interned names the answers were computed with.
     names: usize,
     /// The client maps the answers were computed among.
@@ -30,17 +36,24 @@ pub(crate) struct RevealViewers {
 }
 
 impl RevealViewers {
-    /// Start remembering, from no answers.
-    pub(crate) fn begin(&mut self) {
+    /// Start remembering the pass's `clients`, and answers from none.
+    pub(crate) fn begin(&mut self, clients: Arc<[InternedId]>) {
         debug_assert!(!self.remembering, "one pass remembers at a time");
         self.forget();
+        self.pass_clients = Some(clients);
         self.remembering = true;
     }
 
-    /// Stop remembering, and drop the answers.
+    /// Stop remembering, and drop the client maps and the answers.
     pub(crate) fn end(&mut self) {
         self.forget();
+        self.pass_clients = None;
         self.remembering = false;
+    }
+
+    /// The client maps [`Self::begin`] remembered, while the pass runs.
+    pub(crate) fn pass_clients(&self) -> Option<Arc<[InternedId]>> {
+        self.pass_clients.clone()
     }
 
     /// Drop the answers: the ally graph changed.

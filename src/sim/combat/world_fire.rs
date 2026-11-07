@@ -1108,10 +1108,10 @@ fn reveal_on_fire(
         // stable House order.
         FireDisclosurePath::Spawner => {
             clients = world.fog_viewers();
-            &clients
+            &clients[..]
         }
         FireDisclosurePath::Shot if admitted.is_empty() => return,
-        FireDisclosurePath::Shot => &admitted,
+        FireDisclosurePath::Shot => &admitted[..],
     };
     let context = crate::sim::world::UninitContext::new(rules, None);
     let config = world.sight_reveal_config(rules);
