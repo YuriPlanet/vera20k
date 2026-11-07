@@ -100,6 +100,22 @@ pub(crate) struct BuildingTypeExtRules {
     /// `SellTime` (`+0x218`, Nullable<double>, minutes): the sale's
     /// pack-up duration, else the build-up's.
     pub(crate) sell_time: Option<NativeF64Bits>,
+    /// `Returnable` (`+0xDC`, Nullable<bool>): a captured tech building goes
+    /// back to its first owner when its holder is destroyed, else
+    /// `[General] ReturnStructures=`.
+    pub(crate) returnable: Option<bool>,
+    /// `AIBuildCounts` (`+0x1EC`, ValueableVector<int>): per AI difficulty,
+    /// how many of this type a computer base plans (at least one).
+    pub(crate) ai_build_counts: Vec<i32>,
+    /// `AIExtraCounts` (`+0x1F8`, ValueableVector<int>): per AI difficulty,
+    /// up to how many more it plans at random.
+    pub(crate) ai_extra_counts: Vec<i32>,
+    /// Art `DockUnloadCell` (`+0x248`, Valueable<Point2D>): the pad offset
+    /// from the dock's north-west cell.
+    pub(crate) dock_unload_cell: [i32; 2],
+    /// Art `DockUnloadFacing` (`+0x250`, Valueable<Facing32>, 0..31): the
+    /// facing a unit docks and unloads at.
+    pub(crate) dock_unload_facing: i32,
 }
 
 impl Default for BuildingTypeExtRules {
@@ -116,6 +132,11 @@ impl Default for BuildingTypeExtRules {
             is_passable: false,
             buildup_time: None,
             sell_time: None,
+            returnable: None,
+            ai_build_counts: Vec::new(),
+            ai_extra_counts: Vec::new(),
+            dock_unload_cell: [3, 1],
+            dock_unload_facing: 8,
         }
     }
 }
@@ -143,8 +164,22 @@ impl BuildingTypeExtRules {
     pub(crate) fn read_pass(
         &mut self,
         section: &IniSection,
+        art: &IniSection,
         references: BuildingTypeExtReferences,
     ) {
+        // The art keys come first, from the type's Image= section: the
+        // Point2D reader 1000FAE0 and the Facing32 reader 1000FBF0.
+        self.dock_unload_cell = read_point(art, "DockUnloadCell", self.dock_unload_cell);
+        self.dock_unload_facing = art.read_string_with(
+            "DockUnloadFacing",
+            2048,
+            self.dock_unload_facing,
+            |current, value| {
+                crate::rules::ini_value::parse_ares_int(value)
+                    .filter(|facing| (0..32).contains(facing))
+                    .unwrap_or(current)
+            },
+        );
         self.uc_pass_through =
             section.read_ares_double_bits("UC.PassThrough", self.uc_pass_through);
         self.uc_fatal_rate = section.read_ares_double_bits("UC.FatalRate", self.uc_fatal_rate);
@@ -185,7 +220,14 @@ impl BuildingTypeExtRules {
         if let Some(occupiers) = references.allowed_occupiers {
             self.allowed_occupiers = occupiers;
         }
+        self.returnable = section.read_ares_nullable_bool("Returnable", self.returnable);
         self.is_passable = section.read_ares_bool("IsPassable", self.is_passable);
+        if let Some(counts) = section.read_ares_int_list("AIBuildCounts") {
+            self.ai_build_counts = counts;
+        }
+        if let Some(counts) = section.read_ares_int_list("AIExtraCounts") {
+            self.ai_extra_counts = counts;
+        }
         self.buildup_time =
             section.read_ares_nullable_double_bits("BuildupTime", self.buildup_time);
         self.sell_time = section.read_ares_nullable_double_bits("SellTime", self.sell_time);
@@ -232,6 +274,38 @@ impl BuildingTypeExtRules {
         }
     }
 
+    /// `Returnable.Get(RulesExt ReturnStructures)`.
+    pub(crate) fn returnable(&self, return_structures: bool) -> bool {
+        self.returnable.unwrap_or(return_structures)
+    }
+
+    /// The extra copies of this type a computer base plan takes at the
+    /// difficulty `index` (`HouseClass_GenerateAIBuildList_CountExtra @
+    /// 10023940`): none without an `AIBuildCounts` entry; else that count
+    /// (at least one, the planned node itself) plus `RandomRanged(0,
+    /// max(extra, 0))` when an `AIExtraCounts` entry exists, minus one.
+    pub(crate) fn ai_extra_copies(
+        &self,
+        index: usize,
+        mut random_ranged: impl FnMut(i32, i32) -> i32,
+    ) -> i32 {
+        let Some(&count) = self.ai_build_counts.get(index) else {
+            return 0;
+        };
+        let mut count = count.max(1);
+        if let Some(&extra) = self.ai_extra_counts.get(index) {
+            count = count.wrapping_add(random_ranged(0, extra.max(0)));
+        }
+        // `1 < count` (`10023A0D`) guards the insertion loop.
+        if count > 1 { count - 1 } else { 0 }
+    }
+
+    /// The dock's unload facing as a 16-bit direction (`DockUnloadFacing
+    /// << 11`, `TechnoExt::GetDockUnloadFacing @ 10044C00`).
+    pub(crate) fn dock_unload_direction(&self) -> u16 {
+        (self.dock_unload_facing << 11) as u16
+    }
+
     /// `EngineerRepairable.Get(Repairable)`.
     pub(crate) fn engineer_repairable(&self, repairable: bool) -> bool {
         self.engineer_repairable.unwrap_or(repairable)
@@ -248,9 +322,10 @@ impl BuildingTypeExtRules {
     }
 }
 
-/// The building chain's RulesExt globals, read by `LoadAfterTypeData`
-/// (`1002A800`). The constructor (`1002A360`) sets `EngineerDamage` to 0.0
-/// and `EngineerAlwaysCaptureTech` to true.
+/// The building chain's RulesExt globals, read by `LoadBeforeTypeData`
+/// (`1002AB60`) and `LoadAfterTypeData` (`1002A800`). The constructor
+/// (`1002A360`) sets `EngineerDamage` to 0.0, `EngineerAlwaysCaptureTech`
+/// to true and `ReturnStructures` to false.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BuildingGlobalRules {
     /// `[General] EngineerDamage` (RulesExt `+0x10`, Valueable<double>): the
@@ -260,6 +335,9 @@ pub(crate) struct BuildingGlobalRules {
     /// `[General] EngineerAlwaysCaptureTech` (`+0x18`, Valueable<bool>): a
     /// building first owned by a `MultiplayPassive=` house is always captured.
     pub(crate) engineer_always_capture_tech: bool,
+    /// `[General] ReturnStructures` (`+0x4A`, Valueable<bool>): the
+    /// `Returnable=` default.
+    pub(crate) return_structures: bool,
 }
 
 impl Default for BuildingGlobalRules {
@@ -267,11 +345,20 @@ impl Default for BuildingGlobalRules {
         Self {
             engineer_damage: NativeF64Bits::POSITIVE_ZERO,
             engineer_always_capture_tech: true,
+            return_structures: false,
         }
     }
 }
 
 impl BuildingGlobalRules {
+    /// `1002AB60`'s `[General] ReturnStructures` read, before the types.
+    pub(crate) fn read_before_type_data(&mut self, pass: &crate::rules::ini_parser::IniFile) {
+        if let Some(section) = pass.section("General") {
+            self.return_structures =
+                section.read_ares_bool("ReturnStructures", self.return_structures);
+        }
+    }
+
     /// `1002A800`'s two `[General]` reads, ahead of `HSBuilding`.
     pub(crate) fn read_after_type_data(&mut self, pass: &crate::rules::ini_parser::IniFile) {
         if let Some(section) = pass.section("General") {
@@ -282,6 +369,26 @@ impl BuildingGlobalRules {
                 self.engineer_always_capture_tech,
             );
         }
+    }
+}
+
+/// `detail::read<Point2D> @ 1000FAE0`: ReadString(2048), then
+/// `detail::parse<int>(value, 2)`; any parsed value stores both words. A
+/// one-value read stores an uninitialized second word natively; VERA keeps
+/// the previous point there, as it does for the coordinate reader.
+fn read_point(section: &IniSection, key: &str, current: [i32; 2]) -> [i32; 2] {
+    let pair = section.read_ares_partial_int_pair(
+        key,
+        crate::rules::ini_value::PartialIntPair {
+            low: current[0],
+            high: current[1],
+            values: 2,
+        },
+    );
+    if pair.values == 2 {
+        [pair.low, pair.high]
+    } else {
+        current
     }
 }
 
@@ -313,7 +420,9 @@ mod tests {
     fn rubble_reads_keep_the_constructor_strengths_and_clear_on_blank() {
         let mut rules = BuildingTypeExtRules::default();
         let empty = IniFile::from_str("[B]\nStrength=1\n");
-        rules.read_pass(empty.section("B").unwrap(), Default::default());
+        let art = IniFile::empty();
+        let art = art.section_or_empty("B");
+        rules.read_pass(empty.section("B").unwrap(), art, Default::default());
         assert_eq!(
             [
                 rules.rubble_destroyed.strength,
@@ -328,6 +437,7 @@ mod tests {
         );
         rules.read_pass(
             ini.section("B").unwrap(),
+            art,
             BuildingTypeExtReferences {
                 rubble_types: [Some(Some("RUBBLE".into())), None],
                 rubble_anims: [None, Some(Some("FIRE".into()))],
@@ -346,6 +456,7 @@ mod tests {
         assert!(!rules.engineer_repairable(true));
         rules.read_pass(
             empty.section("B").unwrap(),
+            art,
             BuildingTypeExtReferences {
                 rubble_types: [Some(None), None],
                 ..Default::default()
@@ -360,15 +471,46 @@ mod tests {
     #[test]
     fn sell_time_falls_back_to_the_buildup_time() {
         let general = NativeF64Bits::from_bits(0.06f64.to_bits());
+        let art = IniFile::empty();
+        let art = art.section_or_empty("B");
         let mut rules = BuildingTypeExtRules::default();
         assert_eq!(rules.buildup_and_sell_time(general), (general, general));
         let ini = IniFile::from_str("[B]\nBuildupTime=0.5\n");
-        rules.read_pass(ini.section("B").unwrap(), Default::default());
+        rules.read_pass(ini.section("B").unwrap(), art, Default::default());
         let half = NativeF64Bits::from_bits(0.5f64.to_bits());
         assert_eq!(rules.buildup_and_sell_time(general), (half, half));
         let ini = IniFile::from_str("[B]\nSellTime=2\nBuildupTime=none\n");
-        rules.read_pass(ini.section("B").unwrap(), Default::default());
+        rules.read_pass(ini.section("B").unwrap(), art, Default::default());
         let two = NativeF64Bits::from_bits(2.0f64.to_bits());
         assert_eq!(rules.buildup_and_sell_time(general), (half, two));
+    }
+
+    /// The art `DockUnloadCell` (`1000FAE0`) takes two values, and
+    /// `DockUnloadFacing` (`1000FBF0`) one in 0..31; anything else keeps
+    /// the current value (the constructor's 3,1 and 8, east).
+    #[test]
+    fn dock_unload_art_keys_take_two_values_and_a_32_step_facing() {
+        let mut rules = BuildingTypeExtRules::default();
+        assert_eq!(rules.dock_unload_cell, [3, 1]);
+        assert_eq!(rules.dock_unload_direction(), 0x4000);
+        let ini = IniFile::from_str("[B]\nDockUnloadCell=9,9\n");
+        for (text, cell, direction) in [
+            (
+                "DockUnloadCell=2,-1\nDockUnloadFacing=16\n",
+                [2, -1],
+                0x8000,
+            ),
+            ("DockUnloadCell=5\nDockUnloadFacing=32\n", [2, -1], 0x8000),
+            ("DockUnloadFacing=31\n", [2, -1], 0xF800),
+        ] {
+            let art = IniFile::from_str(&format!("[B]\n{text}"));
+            rules.read_pass(
+                ini.section("B").unwrap(),
+                art.section_or_empty("B"),
+                Default::default(),
+            );
+            assert_eq!(rules.dock_unload_cell, cell, "{text:?}");
+            assert_eq!(rules.dock_unload_direction(), direction);
+        }
     }
 }

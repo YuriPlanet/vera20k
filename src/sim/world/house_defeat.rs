@@ -844,6 +844,15 @@ impl Simulation {
                 ordinal += 1;
                 continue;
             }
+            // Ares 3.0 10024150 (hook 0x004FC731, Blowup_All only): a
+            // returned structure is skipped (0x004FC770).
+            #[cfg(feature = "ares")]
+            if subset == HouseBlowupSubset::All
+                && self.ares_return_structure(id, house, rules, registry, frame_effects)
+            {
+                ordinal += 1;
+                continue;
+            }
             //4FC731/4FC7D1/4FC879/4FC929 reads Health before Temporal
             //release; callbacks do not replace that already captured damage.
             let Some(health) = self.substrate.entities.get(id).map(|e| e.health.current()) else {
@@ -876,6 +885,80 @@ impl Simulation {
             self.commit_direct_damage_receiver(rules, registry, event, frame_effects);
             last = Some(id);
         }
+    }
+
+    /// Ares 3.0 `HouseClass_DestroyAll_ReturnStructures @ 10024150` (hook
+    /// `0x004FC731`): outside a campaign, a building `house` is blowing up
+    /// whose first owner (`+0x14C`) is a `MultiplayPassive=` house goes back
+    /// to it instead of dying, when `Returnable=` (else `[General]
+    /// ReturnStructures=`) allows and it changed hands or is garrisoned. Its
+    /// occupants die first (`KillOccupants(NULL)`, which can end a raid);
+    /// then, still `house`'s, it joins the first owner unannounced
+    /// (`SetOwningHouse(owner, false)`, which refuses its current owner),
+    /// takes Guard (`ResetOrdersToGuard`, `vt+0x3D0`) and, if
+    /// `NeedsEngineer=`, loses its engineer and is disabled. Answers whether
+    /// it was spared; otherwise Blowup_All kills it as usual. VERA's first
+    /// owner is never null, so Ares' Civilian-side fallback for one has no
+    /// counterpart.
+    #[cfg(feature = "ares")]
+    fn ares_return_structure(
+        &mut self,
+        id: u64,
+        house: InternedId,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> bool {
+        if !self.session.game_mode_nonzero() {
+            return false;
+        }
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if entity.category() != crate::map::entities::EntityCategory::Structure {
+            return false;
+        }
+        let first_owner = entity.initial_owner();
+        if !self
+            .houses
+            .get(&first_owner)
+            .is_some_and(|owner| owner.multiplay_passive())
+        {
+            return false;
+        }
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return false;
+        };
+        let occupants = entity.passenger_role.occupants().count();
+        let needs_engineer = object.needs_engineer;
+        if !(first_owner != house || occupants > 0)
+            || !object
+                .building_type_ext()
+                .returnable(rules.ares_building_globals().return_structures)
+        {
+            return false;
+        }
+        if occupants > 0 {
+            crate::sim::passenger::garrison_eject::kill_building_occupants(
+                self,
+                id,
+                UninitContext::new(rules, registry).with_effects(frame_effects),
+            );
+        }
+        if self.substrate.entities.get(id).map(|entity| entity.owner()) != Some(house)
+            || first_owner == house
+        {
+            return false;
+        }
+        self.change_owner_with_rules(id, first_owner, rules, registry, frame_effects);
+        if self.substrate.entities.get(id).map(|entity| entity.owner()) != Some(first_owner) {
+            return false;
+        }
+        self.reset_orders_to_guard(id, rules, frame_effects);
+        if needs_engineer {
+            self.disable_returned_tech_building(id, rules);
+        }
+        true
     }
 
     /// Blowup_All's predicate (`0x004FC6F1..0x004FC731`) for one Techno:

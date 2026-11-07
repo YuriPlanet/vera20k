@@ -86,6 +86,7 @@ impl UnloadImage {
 }
 
 /// The body facing the Unload window centres on (`0x0073DF8A`).
+#[cfg(not(feature = "ares"))]
 const UNLOAD_FACING: u16 = crate::sim::radio::receive::DOCK_FACING;
 
 /// Mission_Unload harvester Status (+0xBC) values: dumping and finishing.
@@ -115,6 +116,7 @@ pub(crate) fn mission_unload(
     // B 0x0073DF56: the hull must sit in the 8-bit East window
     // (raw 0x3F80..=0x407F); otherwise turn (unless the turret is mid-swing).
     let raw = entity.body_facing_current(now);
+    #[cfg(not(feature = "ares"))]
     if (((u32::from(raw) >> 7) + 1) & 0x1FE) != 0x80 {
         if !entity.turret_rotation_latch.is_set()
             && let Some(entity) = sim.substrate.entities.get_mut(id)
@@ -122,6 +124,18 @@ pub(crate) fn mission_unload(
             crate::sim::movement::drive_do_turn(entity, UNLOAD_FACING, now);
         }
         return 5;
+    }
+    // Ares 3.0 10014910 (hook 0x0073DF66): the hull must face the dock's
+    // DockUnloadFacing exactly, and a mid-swing turret counts as facing it.
+    #[cfg(feature = "ares")]
+    {
+        let facing = crate::sim::radio::receive::dock_unload_facing(sim, id, rules);
+        if raw != facing && !entity.turret_rotation_latch.is_set() {
+            if let Some(entity) = sim.substrate.entities.get_mut(id) {
+                crate::sim::movement::drive_do_turn(entity, facing, now);
+            }
+            return 5;
+        }
     }
     // C 0x0073DFBD: the first pass arms the stage and the latch.
     let unloading = entity

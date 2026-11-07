@@ -41,13 +41,21 @@ use crate::sim::world::{FrameEffects, Simulation};
 /// The hull facing a Unit turns to on PREPARE_TO_DOCK (`0x007376E6`): east.
 pub(crate) const DOCK_FACING: u16 = 0x4000;
 
+/// The literal pad offset of `0x0043CA80..0x0043CA8D` (`add dx,3; inc ax`).
+const DOCK_PAD_OFFSET: [i32; 2] = [3, 1];
+
 /// The pad cell a DockUnload/Weeder dock sends in MOVE_HERE
 /// (`0x0043CA71..0x0043CAB8`): its NW cell (`Get_Cell`, Location / 256) plus
 /// (3, 1), CellStruct int16 adds. The stock refinery pad is this cell.
 pub(crate) fn dock_pad_cell(rx: u16, ry: u16) -> (u16, u16) {
+    dock_pad_cell_at(rx, ry, DOCK_PAD_OFFSET)
+}
+
+/// The pad cell for an offset: each word is added as a CellStruct short.
+fn dock_pad_cell_at(rx: u16, ry: u16, offset: [i32; 2]) -> (u16, u16) {
     (
-        (rx as i16).wrapping_add(3) as u16,
-        (ry as i16).wrapping_add(1) as u16,
+        (rx as i16).wrapping_add(offset[0] as i16) as u16,
+        (ry as i16).wrapping_add(offset[1] as i16) as u16,
     )
 }
 
@@ -515,6 +523,12 @@ fn building_docking(
     let pad_dock = object.dock_unload || object.weeder;
     let helipad = object.helipad;
     let (rx, ry) = (building.position.rx(), building.position.ry());
+    // Ares 3.0 10014540 (hook 0x0043CA80) reads the pad offset from the
+    // type's art DockUnloadCell (default 3, 1).
+    #[cfg(feature = "ares")]
+    let pad_offset = object.building_type_ext().dock_unload_cell;
+    #[cfg(not(feature = "ares"))]
+    let pad_offset = DOCK_PAD_OFFSET;
     // Building43C882/43CB0C..CBC0: Hospital bypasses the general dock's
     // HELLO/NeedToMove arm. Full contacts may release a finished patient.
     if object.hospital {
@@ -672,7 +686,7 @@ fn building_docking(
     }
     // 0x0043CA71..0x0043CAB8: the pad is Get_Cell() + (3, 1), CellStruct
     // int16 adds on the NW foundation cell.
-    let pad = dock_pad_cell(rx, ry);
+    let pad = dock_pad_cell_at(rx, ry, pad_offset);
     let arrived = transmit(
         sim,
         building_id,
@@ -1129,6 +1143,27 @@ fn transport_has_room(
     )
 }
 
+/// The facing a docking unit turns to: east ([`DOCK_FACING`]), or in Ares
+/// builds `TechnoExt::GetDockUnloadFacing @ 10044C00`: the art
+/// `DockUnloadFacing` of the building in its first radio contact slot
+/// (`HasAnyLink`, `GetNthLink(0)`), else east.
+#[cfg_attr(not(feature = "ares"), allow(unused_variables))]
+pub(crate) fn dock_unload_facing(sim: &Simulation, unit: u64, rules: &RuleSet) -> u16 {
+    #[cfg(feature = "ares")]
+    if let Some(dock) = sim
+        .substrate
+        .entities
+        .get(unit)
+        .and_then(|entity| entity.radio_contacts.slot(0))
+        .and_then(|dock| sim.substrate.entities.get(dock))
+        .filter(|dock| dock.category() == EntityCategory::Structure)
+        && let Some(object) = sim.object_type(dock.type_ref(), rules)
+    {
+        return object.building_type_ext().dock_unload_direction();
+    }
+    DOCK_FACING
+}
+
 /// PREPARE_TO_DOCK, `UnitClass::Receive_Radio` case 0x16 (`0x007376AD`):
 /// turn the hull to exactly [`DOCK_FACING`] unless the turret is mid-swing
 /// (`+0x6AF`); once facing and stopped, a tethered unit on Enter whose first
@@ -1152,11 +1187,14 @@ fn unit_prepare_to_dock(
         effects,
     );
     let frame = sim.session.binary_frame();
+    let facing = dock_unload_facing(sim, unit, rules);
     let Some(entity) = sim.substrate.entities.get_mut(unit) else {
         return RadioResponse::Roger;
     };
-    if !entity.turret_rotation_latch.is_set() && entity.body_facing_current(frame) != DOCK_FACING {
-        crate::sim::movement::drive_do_turn(entity, DOCK_FACING, frame);
+    // Ares 3.0 10014970 (hook 0x007376D9) compares and turns to the dock's
+    // DockUnloadFacing ([`dock_unload_facing`]).
+    if !entity.turret_rotation_latch.is_set() && entity.body_facing_current(frame) != facing {
+        crate::sim::movement::drive_do_turn(entity, facing, frame);
         return RadioResponse::Roger;
     }
     if crate::sim::movement::motion_query::is_moving(entity).unwrap_or(false) {
@@ -2637,6 +2675,32 @@ mod tests {
         let refinery = sim.substrate.entities.get(2).expect("refinery");
         assert!(refinery.radio_contacts.contains(1));
         assert!(!refinery.radio_contacts.contains(3));
+    }
+
+    /// Ares 3.0 `TechnoExt::GetDockUnloadFacing @ 10044C00`: a unit linked
+    /// to a dock faces that type's art `DockUnloadFacing` (16: south), and
+    /// east without a link.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_dock_unload_facing_reads_the_linked_dock() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[BuildingTypes]\n0=GAREFN\n[GAREFN]\nStrength=900\n",
+            ),
+            &crate::rules::ini_parser::IniFile::from_str("[GAREFN]\nDockUnloadFacing=16\n"),
+        )
+        .unwrap();
+        let mut sim = Simulation::new();
+        spawn_refinery(&mut sim, 2, "Americans", 1);
+        spawn_miner(&mut sim, 1, "Americans");
+        assert_eq!(super::dock_unload_facing(&sim, 1, &rules), 0x4000);
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .radio_contacts
+            .insert(2);
+        assert_eq!(super::dock_unload_facing(&sim, 1, &rules), 0x8000);
     }
 
     #[test]

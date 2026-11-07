@@ -214,6 +214,37 @@ pub(crate) fn recalc_base_plan(
         }
     }
 
+    // Ares 3.0 HouseClass_GenerateAIBuildList_CountExtra 10023940 (hook
+    // 0x00505C95) runs on the copied list, which still matches `priority`
+    // node for node: past the yard at 0, each type's first node takes its
+    // AIBuildCounts/AIExtraCounts copies for the House difficulty (+0x184),
+    // each inserted at RandomRanged(i + 1, Count). The count is re-read as
+    // the list grows, so inserted copies are visited (and skipped) too.
+    #[cfg(feature = "ares")]
+    {
+        let mut index = 1;
+        while index < priority.len() {
+            let candidate = priority[index];
+            if !priority[..index]
+                .iter()
+                .any(|seen| seen.base_plan_type_index == candidate.base_plan_type_index)
+            {
+                let copies = candidate
+                    .building_type_ext()
+                    .ai_extra_copies(difficulty.table_index(), |low, high| {
+                        scenario_rng.next_range_i32_inclusive(low, high)
+                    });
+                for _ in 0..copies {
+                    let at = scenario_rng
+                        .next_range_i32_inclusive(index as i32 + 1, priority.len() as i32)
+                        as usize;
+                    priority.insert(at, candidate);
+                }
+            }
+            index += 1;
+        }
+    }
+
     assert!(
         priority.len() >= 3,
         "active Recalc priority contains its three native seed entries"
@@ -488,6 +519,41 @@ mod tests {
             1,
             "a type without the key keeps the stock single node"
         );
+    }
+
+    /// Ares 10023940: `AIBuildCounts=3` plans a type three times (two extra
+    /// nodes after its first), `AIExtraCounts` adds up to its value more, and
+    /// a difficulty without an entry keeps the single node and draws nothing.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_ai_build_counts_add_copies_after_the_first_node() {
+        let rules = basic_rules(
+            "7=TEST\n",
+            "[TEST]\nOwner=Americans,Russians,YuriCountry\n\
+             AIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
+             AIBuildCounts=3,3\nAIExtraCounts=0,2\n",
+        );
+        let test_index = rules.object("TEST").unwrap().base_plan_type_index;
+        let copies = |difficulty| {
+            let (plan, rng) = generated_values(&rules, "Americans", 0, difficulty, 0x505C95);
+            let values = values(&plan);
+            let first = values
+                .iter()
+                .position(|value| *value == test_index)
+                .unwrap();
+            assert!(values[..first].iter().all(|value| *value != test_index));
+            (
+                values.iter().filter(|value| **value == test_index).count(),
+                rng,
+            )
+        };
+        assert_eq!(copies(HouseDifficulty::Hard).0, 3);
+        let (normal, _) = copies(HouseDifficulty::Normal);
+        assert!((3..=5).contains(&normal), "{normal}");
+        // The fixture draws nothing else, so no draw at all here.
+        let (easy, rng) = copies(HouseDifficulty::Easy);
+        assert_eq!(easy, 1);
+        assert_eq!(rng.logical_state(), SimRng::new(0x505C95).logical_state());
     }
 
     /// NPSE C2C331..C2C367 repeats the eligible vector before the

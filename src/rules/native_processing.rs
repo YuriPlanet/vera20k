@@ -3762,9 +3762,7 @@ impl AresGlobalControls {
         &self.veterancy
     }
 
-    pub(crate) fn techno_combat(
-        &self,
-    ) -> &crate::rules::ares_techno_type::TechnoCombatGlobalRules {
+    pub(crate) fn techno_combat(&self) -> &crate::rules::ares_techno_type::TechnoCombatGlobalRules {
         &self.techno_combat
     }
 
@@ -3797,6 +3795,8 @@ impl AresGlobalControls {
         self.veterancy.read_before_type_data(pass);
         //1002AB60 also reads BerserkROFMultiplier, AutoRepel, PlayerAutoRepel.
         self.techno_combat.read_before_type_data(pass);
+        //1002AB60 also reads ReturnStructures in General.
+        self.building.read_before_type_data(pass);
         if let Some(mission) = pass
             .section("CombatDamage")
             .and_then(|section| section.read_name("EMPAIRecoverMission", 2048))
@@ -4899,6 +4899,11 @@ struct ProcessedType {
     #[cfg(feature = "ares")]
     #[serde(default)]
     building_type_ext: crate::rules::ares_building_type::BuildingTypeExtRules,
+    /// Extension<WarheadTypeClass>::LoadFromINI 10051D10 has left its first
+    /// state, which ran the `NUKE` warhead's Initialize.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_warhead_loaded: bool,
     /// TechnoTypeExt Experience.* and Promote.* (`rules::ares_veterancy`).
     #[cfg(feature = "ares")]
     #[serde(default)]
@@ -5498,6 +5503,8 @@ impl ProcessedType {
             infiltration: Default::default(),
             #[cfg(feature = "ares")]
             building_type_ext: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_warhead_loaded: false,
             #[cfg(feature = "ares")]
             veterancy: Default::default(),
             #[cfg(feature = "ares")]
@@ -7254,6 +7261,11 @@ impl RulesPassProcessor {
                         if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("Protect")) {
                             presentation.height = 5;
                         }
+                        presentation.messages.initialize_for_kind(kind);
+                        // SW_GeneticMutator::Initialize10072090: AnimHeight 5.
+                        if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("GeneticConverter")) {
+                            presentation.height = 5;
+                        }
                         // SW_ChronoSphere::Initialize1006EF10: the anims show
                         // to the owner's team (3), 5 leptons up.
                         if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("ChronoSphere")) {
@@ -7404,6 +7416,16 @@ impl RulesPassProcessor {
                                     RulesTypeFamily::Animation,
                                 )
                             });
+                    } else if is("PsychicDominator") {
+                        // 10070A40: Nullable<AnimTypeClass*>, Find only.
+                        reads.dominator_anims = [
+                            "Dominator.FirstAnim",
+                            "Dominator.SecondAnim",
+                            "Dominator.ControlAnim",
+                        ]
+                        .map(|key| {
+                            self.resolve_existing_type_from(&raw, key, RulesTypeFamily::Animation)
+                        });
                     } else if is("MultiMissile") {
                         // SW_NuclearMissile::Initialize10073360 allocates its
                         // payload weapon and finds PSIWARN; LoadFromINI
@@ -7976,8 +7998,11 @@ impl RulesPassProcessor {
                                 RulesTypeFamily::Infantry,
                                 2048,
                             );
+                            // DockUnloadCell/DockUnloadFacing come from the
+                            // type's Image= art section.
                             self.family_mut(family)[index].building_type_ext.read_pass(
                                 &raw,
+                                fixed_art.section_or_empty(&image),
                                 crate::rules::ares_building_type::BuildingTypeExtReferences {
                                     rubble_types,
                                     rubble_anims,
@@ -8868,13 +8893,17 @@ impl RulesPassProcessor {
                     .families
                     .get_mut(&RulesTypeFamily::Warhead)
                     .expect("Warhead family exists during its reader")[index];
-                let nuke = member.native_stored_id.eq_ignore_ascii_case("NUKE");
-                member
-                    .ares_warhead
-                    .as_mut()
-                    .expect("WH Ares extension")
-                    .combat_mut()
-                    .initialize_once(nuke, nuke_ball);
+                if !member.ares_warhead_loaded {
+                    member.ares_warhead_loaded = true;
+                    if member.native_stored_id.eq_ignore_ascii_case("NUKE") {
+                        member
+                            .ares_warhead
+                            .as_mut()
+                            .expect("WH Ares extension")
+                            .combat_mut()
+                            .initialize_nuke(nuke_ball);
+                    }
+                }
                 let section = pass.section(&member.native_stored_id);
                 if let Some(section) = section {
                     let ares = member.ares_warhead.as_mut().expect("WH Ares extension");
