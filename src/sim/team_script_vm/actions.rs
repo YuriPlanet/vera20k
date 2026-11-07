@@ -932,7 +932,13 @@ impl Simulation {
                 frame_effects,
             ),
             54 => self.team_action_regroup_at_base(team_id, first, rules, registry, frame_effects),
-            55 => self.team_action_iron_curtain(team_id, rules, registry, frame_effects),
+            55 => self.team_action_iron_curtain(
+                team_id,
+                action.argument,
+                rules,
+                registry,
+                frame_effects,
+            ),
             56 => self.team_action_chronoshift(
                 team_id,
                 ChronoshiftTarget::Building(action.argument),

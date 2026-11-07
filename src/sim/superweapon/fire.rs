@@ -132,14 +132,7 @@ impl Simulation {
         #[cfg(not(feature = "ares"))]
         {
             let _ = automatic;
-            if selection.is_some()
-                || matches!(
-                    sw.kind,
-                    SuperWeaponKind::GenericWarhead
-                        | SuperWeaponKind::UnitDelivery
-                        | SuperWeaponKind::HunterSeeker
-                )
-            {
+            if selection.is_some() || sw.kind.is_extension() {
                 return false;
             }
         }
@@ -392,20 +385,36 @@ fn click_fire(
             return false;
         };
         let human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
-        let called_launch = if human {
+        // Ares ClickFire10035130 drops the computer's FirestormActive branch:
+        // every House toggles with the type's GetChargeToDrainRatio.
+        #[cfg(feature = "ares")]
+        let toggles = true;
+        #[cfg(not(feature = "ares"))]
+        let toggles = human;
+        #[cfg(feature = "ares")]
+        let was_draining = super_instance(sim, owner, sw_type_id)
+            .is_some_and(|instance| instance.charge_drain_state() == 2);
+        let called_launch = if toggles {
             let frame = sim.session.binary_frame();
+            let ratio = super::charge_to_drain_ratio(rules, sw);
             let Some(instance) = super_instance(sim, owner, sw_type_id) else {
                 return false;
             };
-            instance.click_charge_drain(sw, frame, rules.general.charge_to_drain_ratio)
+            instance.click_charge_drain(sw, frame, ratio)
         } else {
             // HouseCtor4F573A clears +1FA; no enabled fresh writer has been
             // established. Native6CBA52 tests that byte, without human timer
             // conversion. Do not manufacture a Firestorm effect/toggle here.
+            let _ = human;
             true
         };
+        // 10035130's draining arm calls SWTypeExt::Deactivate after the timer.
+        #[cfg(feature = "ares")]
+        if was_draining && !called_launch {
+            super::deactivate_ares_handler(sim, rules, owner, sw);
+        }
         if called_launch {
-            launch(
+            let effect_launched = launch(
                 sim,
                 rules,
                 owner,
@@ -415,6 +424,15 @@ fn click_fire(
                 overlay_registry,
                 frame_effects,
             );
+            // Launch reaches the common SWTypeExt::Launch10032ED0 for a new
+            // type here too. Its money step never settles: Fire_SW refuses a
+            // charge-drain type with Money.Amount before this click.
+            #[cfg(feature = "ares")]
+            if effect_launched && sw.kind.has_ares_handler() {
+                super::ares_presentation::on_launch(sim, rules, owner, sw_type_id, cell);
+            }
+            #[cfg(not(feature = "ares"))]
+            let _ = effect_launched;
         }
         return called_launch;
     }
@@ -602,7 +620,9 @@ fn launch(
         #[cfg(not(feature = "ares"))]
         SuperWeaponKind::GenericWarhead
         | SuperWeaponKind::UnitDelivery
-        | SuperWeaponKind::HunterSeeker => {}
+        | SuperWeaponKind::HunterSeeker
+        | SuperWeaponKind::Protect
+        | SuperWeaponKind::Battery => {}
         SuperWeaponKind::MultiMissile => {
             super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
         }
@@ -698,6 +718,27 @@ fn launch(
                 super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
             }
             return activated;
+        }
+        #[cfg(feature = "ares")]
+        SuperWeaponKind::Protect => {
+            super::protect::launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                sw,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
+            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            return true;
+        }
+        #[cfg(feature = "ares")]
+        SuperWeaponKind::Battery => {
+            super::battery::activate(sim, rules, owner, sw);
+            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            return true;
         }
     }
     true

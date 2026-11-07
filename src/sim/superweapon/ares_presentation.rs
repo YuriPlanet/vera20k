@@ -4,6 +4,8 @@
 //! UnitDelivery100A8E70, GenericWarhead100A8ECC and HunterSeeker100A9280 share GetAnim
 //! 1006D0C0 (null fallback), GetSound1006D1C0 (-1 fallback), and Flags
 //! 10003650 (zero); none suppresses the common animation/sound/Ready cleanup.
+//! Battery shares them too; Protect's GetAnim (10074A90) falls back to
+//! `IronCurtainInvokeAnim=`.
 
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_targeting::HouseMask;
@@ -23,10 +25,18 @@ pub(super) fn on_launch(
     };
     let presentation = &super::financial_type(rules, sw).presentation;
     let mut coord = super::deck_coords(sim, cell);
-    // Launch10033068..100330F9: GetAnim (base Nullable fallback nullptr),
-    // add the signed height, construct regardless of visibility, then write
+    // Launch10033068..100330F9: GetAnim (base Nullable fallback nullptr;
+    // SW_Protect::GetAnim10074A90 falls back to IronCurtainInvokeAnim), add
+    // the signed height, construct regardless of visibility, then write
     // Hidden. No OwnerHouse store is made by this producer.
-    if let Some(Some(name)) = &presentation.animation {
+    let animation = match &presentation.animation {
+        Some(animation) => animation.clone(),
+        None if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Protect => {
+            Some(rules.general.iron_curtain_invoke_anim.clone())
+        }
+        None => None,
+    };
+    if let Some(name) = &animation {
         coord[2] = coord[2].wrapping_add(presentation.height);
         if let Some(anim) = super::spawn_super_anim(sim, rules, name, coord) {
             let mask = presentation.visibility;
@@ -67,8 +77,23 @@ pub(super) fn on_launch(
             flags: 0,
         });
     }
+    // Launch10033153..10033167: a type-13 radar event at the launch cell
+    // while SW.CreateRadarEvent holds; none of these handlers sets NoEvent.
+    if rules
+        .super_weapon_metadata(&sw.id)
+        .is_some_and(|metadata| metadata.launch().radar_event())
+    {
+        sim.sound_events.emit(SimSoundEvent::RadarEvent {
+            radar: crate::sim::radar::RadarEventRequest::new(
+                crate::sim::radar::RadarEventType::ImpactSilent,
+                cell.0,
+                cell.1,
+            ),
+        });
+    }
     // SWTypeExt::Launch10033201..10033242 removes Ready only after the
-    // common sound. The client supplies Fire_SW's local-player predicate.
+    // common sound and Message.Launch (printed by every client from this
+    // fact). The client supplies Fire_SW's local-player predicate.
     sim.sound_events
         .emit(SimSoundEvent::AresSuperWeaponFinished {
             owner,

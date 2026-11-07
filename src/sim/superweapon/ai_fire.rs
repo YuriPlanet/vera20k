@@ -110,7 +110,9 @@ impl AiFireArm {
             | SuperWeaponKind::ChronoSphere
             | SuperWeaponKind::ChronoWarp
             | SuperWeaponKind::NoEffect
-            | SuperWeaponKind::HunterSeeker => Self::None,
+            | SuperWeaponKind::HunterSeeker
+            | SuperWeaponKind::Protect
+            | SuperWeaponKind::Battery => Self::None,
         }
     }
 }
@@ -289,11 +291,11 @@ fn extension_constraints(
 }
 
 /// Sidebar select hook10034DA0: base CanFire, which `SW.AutoFire` without
-/// `SW.ManualFire` skips, precedes the wallet, which precedes the UseAI
-/// constraint warning; that AutoFire-only type is then refused silently.
-/// The constraint result is the view's `constraints_blocked`. The
-/// AutoFire-only refusal applies to the two extension types whose automatic
-/// launch VERA ports.
+/// `SW.ManualFire` skips, refuses with `EVA.Impatient`; then the wallet,
+/// then the UseAI constraint warning; an AutoFire-only or a draining
+/// `SW.Unstoppable` type is then refused silently. The constraint result is
+/// the view's `constraints_blocked`. The AutoFire-only refusal applies to the
+/// extension types whose automatic launch VERA ports.
 #[cfg(feature = "ares")]
 pub(super) fn manual_cameo_refusal(
     rules: &RuleSet,
@@ -301,19 +303,22 @@ pub(super) fn manual_cameo_refusal(
     native_can_fire: bool,
     can_afford: bool,
     constraints_blocked: bool,
+    unstoppable: bool,
 ) -> Option<super::AresCameoRefusal> {
     use super::AresCameoRefusal as R;
     let manual_disabled = rules
         .super_weapon_target_policy(&sw.id)
         .is_some_and(|policy| policy.auto_fire() && !policy.manual_fire());
     if !native_can_fire && !manual_disabled {
-        None
+        Some(R::NotReady)
     } else if !can_afford {
         Some(R::InsufficientFunds)
     } else if constraints_blocked {
         Some(R::CannotFire)
+    } else if manual_disabled {
+        Some(R::ManualFireDisabled)
     } else {
-        manual_disabled.then_some(R::ManualFireDisabled)
+        unstoppable.then_some(R::Unstoppable)
     }
 }
 

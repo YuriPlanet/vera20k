@@ -381,6 +381,16 @@ pub(super) fn dispatch_sim_sound_events(
                         });
                     }
                 }
+                // Ares SW_Protect::Activate10074750: StartSound at the cell.
+                #[cfg(feature = "ares")]
+                if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Protect
+                    && let Some(sound_id) = sw.start_sound.clone()
+                {
+                    output.push(GameSoundEvent::VocAt {
+                        sound_id,
+                        source: Some(anim_world_sound_source(world)),
+                    });
+                }
                 continue;
             }
             SimSoundEvent::SuperWeaponLaunched {
@@ -718,6 +728,25 @@ pub(super) fn dispatch_sim_sound_events(
             #[cfg(feature = "ares")]
             SimSoundEvent::AresSuperWeaponRefused { .. } => continue,
             #[cfg(feature = "ares")]
+            SimSoundEvent::AresSuperWeaponActivated { .. } => continue,
+            // SuperClass_Update_DrainMoney100358A0 plays the cue on every
+            // client while the House is ControlledByHuman (the sim's gate).
+            #[cfg(feature = "ares")]
+            SimSoundEvent::AresSuperWeaponDrainRefused { sw_type, .. } => {
+                let Some(event) = sim
+                    .interner()
+                    .try_resolve(sw_type)
+                    .and_then(|name| rules.super_weapon(name))
+                    .and_then(|sw| sw.insufficient_funds_eva.as_deref())
+                else {
+                    continue;
+                };
+                GameSoundEvent::Eva {
+                    event: event.to_owned(),
+                    type_override: None,
+                }
+            }
+            #[cfg(feature = "ares")]
             SimSoundEvent::SuperWeaponInsufficientFunds { owner, sw_type } => {
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
@@ -908,33 +937,10 @@ pub(super) fn dispatch_sim_sound_events(
                 // listener's (`eva_producers::super_weapon_detected_allowed`)
                 // and the line comes off the `[SuperWeaponTypes]`
                 // list index (`0x00446948` jump table).
-                let Some(local_name) = local_owner_name else {
-                    continue;
-                };
-                let owner_name = sim.interner().resolve(owner).to_string();
-                let type_name = sim.interner().resolve(sw_type).to_string();
-                let local_defeated = sim.local_player_defeated();
-                // `0x004468FA..0x00446935`: `AuxBuilding=` absent, or
-                // the building's own house owns one
-                // (`CountOwnedInstances` on `Owner+0x5550`).
-                // Optional Ares lists use the same grant availability owner.
-                #[cfg(not(feature = "ares"))]
-                let aux_satisfied = rules.super_weapon(&type_name).is_none_or(|sw| {
-                    crate::sim::superweapon::super_weapon_available(sim, rules, owner, &sw.id)
-                });
-                #[cfg(feature = "ares")]
-                let aux_satisfied =
-                    crate::sim::superweapon::super_weapon_available(sim, rules, owner, &type_name);
-                if !eva_producers::super_weapon_detected_allowed(
-                    sim.house_alliances().as_map(),
-                    &owner_name,
-                    local_name,
-                    local_defeated,
-                    sim.session().game_mode_nonzero(),
-                    aux_satisfied,
-                ) {
+                if !super_weapon_detection_admitted(sim, rules, owner, sw_type, local_owner_name) {
                     continue;
                 }
+                let type_name = sim.interner().resolve(sw_type).to_string();
                 let Some(event) = rules
                     .super_weapon_order
                     .iter()
@@ -981,6 +987,102 @@ pub(super) fn dispatch_sim_sound_events(
         };
         output.push(app_event);
     }
+}
+
+/// `BuildingClass::OnConstructionComplete 0x004468AD..0x00446935`'s
+/// listener gates for one detection fact: the EVA line and, with Ares, the
+/// `Message.Detected` line its hook (100349D0) prints at the same point.
+fn super_weapon_detection_admitted(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    owner: crate::sim::intern::InternedId,
+    sw_type: crate::sim::intern::InternedId,
+    local_owner_name: Option<&str>,
+) -> bool {
+    let Some(local_name) = local_owner_name else {
+        return false;
+    };
+    let owner_name = sim.interner().resolve(owner).to_string();
+    let type_name = sim.interner().resolve(sw_type).to_string();
+    // `0x004468FA..0x00446935`: `AuxBuilding=` absent, or the building's own
+    // house owns one (`CountOwnedInstances` on `Owner+0x5550`). Optional Ares
+    // lists use the same grant availability owner.
+    #[cfg(not(feature = "ares"))]
+    let aux_satisfied = rules.super_weapon(&type_name).is_none_or(|sw| {
+        crate::sim::superweapon::super_weapon_available(sim, rules, owner, &sw.id)
+    });
+    #[cfg(feature = "ares")]
+    let aux_satisfied =
+        crate::sim::superweapon::super_weapon_available(sim, rules, owner, &type_name);
+    eva_producers::super_weapon_detected_allowed(
+        sim.house_alliances().as_map(),
+        &owner_name,
+        local_name,
+        sim.local_player_defeated(),
+        sim.session().game_mode_nonzero(),
+        aux_satisfied,
+    )
+}
+
+/// The SWTypeExt::PrintMessage10033BD0 lines the frame's Super facts print,
+/// beside their EVA lines: `Message.Detected` past the detection gates (hook
+/// 4468F4, firer the owner), `Message.Ready` for the local owner's
+/// readiness (hook 6CBDD7, firer the player), `Message.InsufficientFunds`
+/// for its ClickFire refusal (10035130, firer the player), a money drain
+/// refusal on a human-controlled House (100358A0, firer the player),
+/// `Message.Launch` on every client after a new type's launch (Launch
+/// 10032ED0, firer the owner) and `Message.Activate` when UnitDelivery's
+/// deferment ends (10075DE0, firer the owner).
+#[cfg(feature = "ares")]
+pub(super) fn ares_superweapon_messages(
+    events: &[SimSoundEvent],
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    local_owner_name: Option<&str>,
+) -> Vec<crate::app::input::messages::HudMessage> {
+    use crate::app::input::messages::HudMessage;
+    use crate::rules::superweapon_type::AresSuperWeaponMessage as M;
+    let interner = sim.interner();
+    let local = local_owner_name.and_then(|name| interner.get(name));
+    let line = |sw_type, message, firer| {
+        Some(HudMessage::AresSuperWeaponMessage {
+            sw_type,
+            message,
+            firer,
+        })
+    };
+    events
+        .iter()
+        .filter_map(|event| match *event {
+            SimSoundEvent::SuperWeaponDetected { owner, sw_type } => {
+                super_weapon_detection_admitted(sim, rules, owner, sw_type, local_owner_name)
+                    .then(|| line(sw_type, M::Detected, Some(owner)))
+                    .flatten()
+            }
+            SimSoundEvent::SuperWeaponReady { owner, .. }
+            | SimSoundEvent::SuperWeaponInsufficientFunds { owner, .. }
+                if Some(owner) != local =>
+            {
+                None
+            }
+            SimSoundEvent::SuperWeaponReady { owner, sw_type } => {
+                line(sw_type, M::Ready, Some(owner))
+            }
+            SimSoundEvent::SuperWeaponInsufficientFunds { owner, sw_type } => {
+                line(sw_type, M::InsufficientFunds, Some(owner))
+            }
+            SimSoundEvent::AresSuperWeaponDrainRefused { sw_type, .. } => {
+                line(sw_type, M::InsufficientFunds, local)
+            }
+            SimSoundEvent::AresSuperWeaponFinished { owner, sw_type } => {
+                line(sw_type, M::Launch, Some(owner))
+            }
+            SimSoundEvent::AresSuperWeaponActivated { owner, sw_type } => {
+                line(sw_type, M::Activate, Some(owner))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 fn wall_sell_sound_for_local(
@@ -1210,7 +1312,9 @@ pub(crate) fn superweapon_launch_cue(
         | K::NoEffect
         | K::GenericWarhead
         | K::UnitDelivery
-        | K::HunterSeeker => SuperWeaponLaunchCue::default(),
+        | K::HunterSeeker
+        | K::Protect
+        | K::Battery => SuperWeaponLaunchCue::default(),
     }
 }
 
@@ -2606,6 +2710,60 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Ares PrintMessage callers: Ready (6CBDD7) and the ClickFire funds
+    /// refusal only for the local owner, Launch (10032ED0) on every client
+    /// with the owner as firer, a drain refusal (100358A0) in the player's
+    /// colour wherever the sim announced it.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_superweapon_message_lines_follow_their_printing_hooks() {
+        use crate::app::input::messages::HudMessage;
+        use crate::rules::superweapon_type::AresSuperWeaponMessage as M;
+        let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[SuperWeaponTypes]\n0=Cell\n[Cell]\nType=Battery\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let local = sim.intern("Local");
+        let remote = sim.intern("Remote");
+        let sw_type = sim.intern("Cell");
+        let events = [
+            SimSoundEvent::SuperWeaponReady {
+                owner: local,
+                sw_type,
+            },
+            SimSoundEvent::SuperWeaponReady {
+                owner: remote,
+                sw_type,
+            },
+            SimSoundEvent::SuperWeaponInsufficientFunds {
+                owner: remote,
+                sw_type,
+            },
+            SimSoundEvent::AresSuperWeaponFinished {
+                owner: remote,
+                sw_type,
+            },
+            SimSoundEvent::AresSuperWeaponDrainRefused {
+                owner: remote,
+                sw_type,
+            },
+        ];
+        let line = |message, firer| HudMessage::AresSuperWeaponMessage {
+            sw_type,
+            message,
+            firer,
+        };
+        assert_eq!(
+            ares_superweapon_messages(&events, &sim, &rules, Some("Local")),
+            [
+                line(M::Ready, Some(local)),
+                line(M::Launch, Some(remote)),
+                line(M::InsufficientFunds, Some(local)),
+            ]
+        );
     }
 
     /// ClickFire's refusal lines (`LightningStorm::PrintMessage @

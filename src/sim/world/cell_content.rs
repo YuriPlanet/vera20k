@@ -108,7 +108,7 @@ impl Simulation {
 
     /// `CellClass::GetContent`: the deck list (`+0xE8`) when the cell has a
     /// `BridgeHead` (`+0x140 & 0x100`), otherwise the ground list (`+0xE4`).
-    #[cfg(feature = "phobos")]
+    #[cfg(any(feature = "phobos", feature = "ares"))]
     pub(crate) fn native_cell_content(
         &self,
         cell: (u16, u16),
@@ -122,7 +122,7 @@ impl Simulation {
     }
 
     /// `CellClass::ContainsBridge`: the cell's `BridgeHead` flag.
-    #[cfg(feature = "phobos")]
+    #[cfg(any(feature = "phobos", feature = "ares"))]
     pub(crate) fn cell_has_bridge_head(&self, cell: (u16, u16)) -> bool {
         self.resolved_terrain.as_ref().is_some_and(|terrain| {
             crate::sim::cell_rect::get_cellclass_fallback(

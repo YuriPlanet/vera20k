@@ -142,6 +142,16 @@ impl Simulation {
             // operational unless two retained Tesla chargers bypass it.
             online: entity.building_online(),
             tesla_chargers: entity.tesla_charge.chargers().len() as i32,
+            charger_bypass: {
+                #[cfg(feature = "ares")]
+                let keep = self
+                    .power_states
+                    .get(&entity.owner())
+                    .is_some_and(|state| state.keeps_online(&object.id));
+                #[cfg(not(feature = "ares"))]
+                let keep = false;
+                if keep { 0 } else { 2 }
+            },
             emp_remaining: entity.emp_remaining(),
             health: entity.health.current(),
             powered: object.powered,

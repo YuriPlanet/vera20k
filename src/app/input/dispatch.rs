@@ -2139,7 +2139,18 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
         }
         super::superweapon_cameo::SuperWeaponClick::Target => {
             queue_selection_snapshot_command(state, Vec::new(), false);
-            push_local_eva(state, sidebar_eva::EVA_SELECT_TARGET);
+            // Ares 10034D60 (hook 6AAF9D) plays the type's EVA.SelectTarget,
+            // whose constructor default is the stock literal.
+            #[cfg(feature = "ares")]
+            let cue = state
+                .rules()
+                .and_then(|rules| rules.super_weapon(section))
+                .and_then(|sw| sw.select_target_eva.clone());
+            #[cfg(not(feature = "ares"))]
+            let cue = Some(sidebar_eva::EVA_SELECT_TARGET.to_owned());
+            if let Some(cue) = cue {
+                push_local_eva(state, &cue);
+            }
         }
         super::superweapon_cameo::SuperWeaponClick::Launch(sw_type_id) => {
             let owner = preferred_local_owner_name(state).unwrap_or_default();
@@ -2156,6 +2167,15 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
     if click == super::superweapon_cameo::SuperWeaponClick::Refused
         && let Some(refusal) = selection.as_ref().and_then(|(view, _)| view.ares_refusal)
     {
+        // 10034DA0: CanFire's refusal plays EVA.Impatient (default -1).
+        if refusal == crate::sim::superweapon::AresCameoRefusal::NotReady
+            && let Some(cue) = state
+                .rules()
+                .and_then(|rules| rules.super_weapon(section))
+                .and_then(|sw| sw.impatient_eva.clone())
+        {
+            push_local_eva(state, &cue);
+        }
         crate::app::input::messages::post_ares_superweapon_refusal(state, section, refusal);
     }
 }

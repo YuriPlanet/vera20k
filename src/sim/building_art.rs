@@ -453,13 +453,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.building_art.actually_placed = true;
         }
-        Self::announce_super_weapon_building_complete(
-            &mut self.interner,
-            &self.substrate,
-            &mut self.sound_events,
-            id,
-            rules,
-        );
+        self.announce_super_weapon_building_complete(id, rules);
         if !captured && !scenario_initialization {
             if crate::sim::production::spawn_building_free_unit(self, id, rules, registry, effects)
             {

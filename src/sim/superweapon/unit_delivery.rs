@@ -241,6 +241,14 @@ fn apply(
     registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
+    // Update10075DE0 prints Message.Activate first. Its firer is the
+    // Super's owner; the request retains the resolved payload owner, which
+    // differs only for a non-invoker Deliver.Owner (colour with FirerColor).
+    sim.sound_events
+        .emit(SimSoundEvent::AresSuperWeaponActivated {
+            owner: request.owner,
+            sw_type: request.sw_type,
+        });
     if !sim.houses.contains_key(&request.owner) {
         return;
     }

@@ -60,6 +60,12 @@ pub enum SuperWeaponKind {
     UnitDelivery,
     /// Ares extension: launch UnitClass payloads from designated buildings.
     HunterSeeker,
+    /// Ares `Type=Protect` (SW_Protect, vtable index 4): an Iron Curtain over
+    /// a rectangle or range with its own duration, sounds and blackout.
+    Protect,
+    /// Ares 3.0 `Type=Battery` (SW_Battery, index 17): a charge-drain power
+    /// that adds House power and keeps listed buildings online while active.
+    Battery,
     /// Constructor Type=-1: no recognized name has replaced it. Launch's
     /// unsigned guard6CC3AC returns without a case; ordinary ClickFire still
     /// consumes readiness or its one-time grant. This is not an extension.
@@ -67,12 +73,22 @@ pub enum SuperWeaponKind {
 }
 
 impl SuperWeaponKind {
-    /// The three implemented NewSWType Activate owners, absent from retail builds.
+    /// The implemented NewSWType Activate owners, absent from retail builds.
     #[cfg(feature = "ares")]
     pub(crate) const fn has_ares_handler(self) -> bool {
+        self.is_extension()
+    }
+
+    /// An Ares new-type identity. Default builds never parse one, but forged
+    /// rule records must still be refused by the shared extension gates.
+    pub const fn is_extension(self) -> bool {
         matches!(
             self,
-            Self::GenericWarhead | Self::UnitDelivery | Self::HunterSeeker
+            Self::GenericWarhead
+                | Self::UnitDelivery
+                | Self::HunterSeeker
+                | Self::Protect
+                | Self::Battery
         )
     }
 
@@ -93,6 +109,8 @@ impl SuperWeaponKind {
             Self::PsychicReveal => 11,
             Self::UnitDelivery => 0x101,
             Self::HunterSeeker => 0x102,
+            Self::Protect => 0x103,
+            Self::Battery => 0x104,
             Self::GenericWarhead => -1,
             Self::NoEffect => -1,
         }
@@ -119,6 +137,10 @@ impl SuperWeaponKind {
             "hunterseeker" => Some(Self::HunterSeeker),
             #[cfg(feature = "ares")]
             "genericwarhead" => Some(Self::GenericWarhead),
+            #[cfg(feature = "ares")]
+            "protect" => Some(Self::Protect),
+            #[cfg(feature = "ares")]
+            "battery" => Some(Self::Battery),
             _ => None,
         }
     }
@@ -148,6 +170,8 @@ pub(crate) struct AresSuperWeaponPresentation {
     pub(crate) messages: AresSuperWeaponMessages,
     #[serde(default)]
     pub(crate) eva: AresSuperWeaponEva,
+    #[serde(default)]
+    pub(crate) texts: AresSuperWeaponTexts,
 }
 
 /// Fixed-catalog references. The ordered SWType reader owns initialization and
@@ -178,19 +202,26 @@ impl AresSuperWeaponEva {
         eva: &crate::rules::sound_ini::EvaRegistry,
     ) {
         // SWTypeExt ctor100316C5/CF/D9 initializes all three ordinals to -1.
-        // HunterSeeker Initialize10072990 resolves its three literal names.
-        // GenericWarhead10071860 and UnitDelivery100759D0 set only AI mode.
-        if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("HunterSeeker")) {
-            self.ready = eva
-                .entry("EVA_HunterSeekerReady")
-                .map(|entry| entry.name.clone());
-            self.activated = eva
-                .entry("EVA_HunterSeekerLaunched")
-                .map(|entry| entry.name.clone());
-            self.detected = eva
-                .entry("EVA_HunterSeekerDetected")
-                .map(|entry| entry.name.clone());
-        }
+        // HunterSeeker Initialize10072990 and Protect's non-ForceShield arm
+        // (10074B60) resolve their three literal names. GenericWarhead
+        // 10071860, UnitDelivery100759D0 and Battery1006ECA0 set only AI mode.
+        let names = match kind {
+            Some(kind) if kind.eq_ignore_ascii_case("HunterSeeker") => [
+                "EVA_HunterSeekerReady",
+                "EVA_HunterSeekerLaunched",
+                "EVA_HunterSeekerDetected",
+            ],
+            Some(kind) if kind.eq_ignore_ascii_case("Protect") => [
+                "EVA_IronCurtainReady",
+                "EVA_IronCurtainActivated",
+                "EVA_IronCurtainDetected",
+            ],
+            _ => return,
+        };
+        let find = |name| eva.entry(name).map(|entry| entry.name.clone());
+        self.ready = find(names[0]);
+        self.activated = find(names[1]);
+        self.detected = find(names[2]);
     }
 
     pub(crate) fn read_pass(
@@ -218,6 +249,28 @@ impl AresSuperWeaponEva {
     }
 }
 
+/// Which SWTypeExt `Message.*` label a PrintMessage (10033BD0) call passes.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum AresSuperWeaponMessage {
+    /// +0x2A8, BuildingClass_Place_AnnounceSW 100349D0 (firer: the owner).
+    Detected,
+    /// +0x2CC, AnnounceReady 100350D0 / AnnounceQuantity 10035070 (firer:
+    /// the local player).
+    Ready,
+    /// +0x2F0, SWTypeExt::Launch 10032ED0 (firer: the owner).
+    Launch,
+    /// +0x314, the deferred activation of UnitDelivery's state machine
+    /// (Update 10075DE0; firer: the owner).
+    Activate,
+    /// +0x338, the redirected Lightning Storm/Dominator refusals only.
+    Abort,
+    /// +0x35C.
+    InsufficientFunds,
+    /// +0x380.
+    CannotFire,
+}
+
 /// SWTypeExt message/style fields. The ordered reader owns mutation; clients
 /// resolve the retained CSF key through the existing message-list transport.
 #[cfg(feature = "ares")]
@@ -227,18 +280,33 @@ pub struct AresSuperWeaponMessages {
     insufficient_funds: String,
     firer_color: bool,
     color_scheme: i32,
+    #[serde(default)]
+    detected: String,
+    #[serde(default)]
+    ready: String,
+    #[serde(default)]
+    launch: String,
+    #[serde(default)]
+    activate: String,
+    #[serde(default)]
+    abort: String,
 }
 
 #[cfg(feature = "ares")]
 impl Default for AresSuperWeaponMessages {
     fn default() -> Self {
-        // Ctor100318D9/E5 clears both CSF labels/pointers;100318EB/F5
-        // writes Color=-1 and FirerColor=false.
+        // Ctor100318D9/E5 clears the CSF labels/pointers (CannotFire's label
+        // is set after, below);100318EB/F5 writes Color=-1 and FirerColor=0.
         Self {
             cannot_fire: String::new(),
             insufficient_funds: String::new(),
             firer_color: false,
             color_scheme: -1,
+            detected: String::new(),
+            ready: String::new(),
+            launch: String::new(),
+            activate: String::new(),
+            abort: String::new(),
         }
     }
 }
@@ -258,18 +326,111 @@ impl AresSuperWeaponMessages {
         self.color_scheme
     }
 
+    /// The retained CSF label of one PrintMessage caller; empty prints nothing.
+    pub fn label(&self, message: AresSuperWeaponMessage) -> &str {
+        match message {
+            AresSuperWeaponMessage::Detected => &self.detected,
+            AresSuperWeaponMessage::Ready => &self.ready,
+            AresSuperWeaponMessage::Launch => &self.launch,
+            AresSuperWeaponMessage::Activate => &self.activate,
+            AresSuperWeaponMessage::Abort => &self.abort,
+            AresSuperWeaponMessage::InsufficientFunds => &self.insufficient_funds,
+            AresSuperWeaponMessage::CannotFire => &self.cannot_fire,
+        }
+    }
+
     fn read_pass(&mut self, section: &IniSection, color_scheme: i32) {
-        // Load1003380E/24/BE and CsfText::Read10076510: ReadString2048,
-        // then copy at most31 bytes without trimming the short copy again.
+        // Load1003380E/24 then Detected..CannotFire (10033839..100338BE) and
+        // CsfText::Read10076510: ReadString2048, then copy at most31 bytes
+        // without trimming the short copy again.
         self.firer_color = section.read_ares_bool("Message.FirerColor", self.firer_color);
         self.color_scheme = color_scheme;
         for (key, label) in [
+            ("Message.Detected", &mut self.detected),
+            ("Message.Ready", &mut self.ready),
+            ("Message.Launch", &mut self.launch),
+            ("Message.Activate", &mut self.activate),
+            ("Message.Abort", &mut self.abort),
             ("Message.InsufficientFunds", &mut self.insufficient_funds),
             ("Message.CannotFire", &mut self.cannot_fire),
         ] {
-            *label = section.read_string_with(key, 2048, label.clone(), |_, name| {
-                crate::rules::ini_value::truncate_native_bytes(name, 31).to_owned()
-            });
+            *label = read_csf_label(section, key, label);
+        }
+    }
+}
+
+/// CsfText::Read10076510 over ReadString2048: a present value replaces the
+/// label with its first 31 bytes; absent or empty keeps it.
+#[cfg(feature = "ares")]
+fn read_csf_label(section: &IniSection, key: &str, label: &str) -> String {
+    section.read_string_with(key, 2048, label.to_owned(), |_, name| {
+        crate::rules::ini_value::truncate_native_bytes(name, 31).to_owned()
+    })
+}
+
+/// SWTypeExt `Text.*` (+0x3AC..+0x43C), the labels the replaced
+/// SuperClass::NameReadiness (hook 6CC2B0, Ares.dll 100356A0) returns for
+/// every type. An empty label shows no status text.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct AresSuperWeaponTexts {
+    preparing: String,
+    hold: String,
+    ready: String,
+    charging: String,
+    active: String,
+}
+
+#[cfg(feature = "ares")]
+impl Default for AresSuperWeaponTexts {
+    fn default() -> Self {
+        // Ctor10031460 writes the four labels after its member init; the
+        // stock NameReadiness strings, so default builds keep their labels.
+        Self {
+            preparing: String::new(),
+            hold: "TXT_HOLD".to_owned(),
+            ready: "TXT_READY".to_owned(),
+            charging: "TXT_CHARGING".to_owned(),
+            active: "TXT_FIRESTORM_ON".to_owned(),
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl AresSuperWeaponTexts {
+    pub fn preparing(&self) -> &str {
+        &self.preparing
+    }
+    pub fn hold(&self) -> &str {
+        &self.hold
+    }
+    pub fn ready(&self) -> &str {
+        &self.ready
+    }
+    pub fn charging(&self) -> &str {
+        &self.charging
+    }
+    pub fn active(&self) -> &str {
+        &self.active
+    }
+
+    /// SW_HunterSeeker::Initialize10072990 replaces the Ready label.
+    pub(crate) fn initialize_for_kind(&mut self, kind: Option<&str>) {
+        if kind.is_some_and(|kind| kind.eq_ignore_ascii_case("HunterSeeker")) {
+            self.ready = "TXT_RELEASE".to_owned();
+        }
+    }
+
+    /// LoadFromINI10033370's Text.Preparing, Ready, Hold, Charging, Active.
+    fn read_pass(&mut self, section: &IniSection) {
+        for (key, label) in [
+            ("Text.Preparing", &mut self.preparing),
+            ("Text.Ready", &mut self.ready),
+            ("Text.Hold", &mut self.hold),
+            ("Text.Charging", &mut self.charging),
+            ("Text.Active", &mut self.active),
+        ] {
+            *label = read_csf_label(section, key, label);
         }
     }
 }
@@ -286,6 +447,7 @@ impl Default for AresSuperWeaponPresentation {
             sound: None,
             messages: AresSuperWeaponMessages::default(),
             eva: AresSuperWeaponEva::default(),
+            texts: AresSuperWeaponTexts::default(),
         }
     }
 }
@@ -312,6 +474,7 @@ impl AresSuperWeaponPresentation {
             self.visibility = mask;
         }
         self.messages.read_pass(section, message_color);
+        self.texts.read_pass(section);
     }
 }
 
@@ -387,6 +550,14 @@ pub struct SuperWeaponType {
     /// Owner-local refusal cue resolved against the fixed EVAMD catalog.
     /// The process audio binder owns defaults and ordered unknown retention.
     pub insufficient_funds_eva: Option<String>,
+    /// Ares `EVA.Impatient` (+0x1B8, ctor -1): the cue a press on a cameo
+    /// that cannot fire plays (sidebar hook 10034DA0, gamemd's empty
+    /// `0x006CC070`). Bound like the refusal cue.
+    pub impatient_eva: Option<String>,
+    /// Ares `EVA.SelectTarget` (+0x1C0, ctor FindIndex("EVA_SelectTarget")):
+    /// the cue entering targeting plays (hook 6AAF9D, 10034D60), replacing
+    /// gamemd's literal `EVA_SelectTarget` (`0x006AAF9D`).
+    pub select_target_eva: Option<String>,
     /// `SpecialSound=` (`+0xC0`, `0x006CEB74`): the cue SuperClass::AI
     /// plays when a Force Shield's countdown runs out (`0x006CBCCF`). A read
     /// stores VocClass::FindIndex (`0x007514D0`) of the name; an absent key
@@ -441,6 +612,12 @@ impl SuperWeaponType {
     #[cfg(feature = "ares")]
     pub fn ares_messages(&self) -> &AresSuperWeaponMessages {
         &self.presentation.messages
+    }
+
+    /// The NameReadiness labels (hook 6CC2B0), for every type.
+    #[cfg(feature = "ares")]
+    pub fn ares_texts(&self) -> &AresSuperWeaponTexts {
+        &self.presentation.texts
     }
 
     /// Only implemented extension handlers own the Ares announcement path.
@@ -514,6 +691,14 @@ impl SuperWeaponType {
                 // the first pass's stock read; a later Action= is not modeled.
                 #[cfg(feature = "ares")]
                 SuperWeaponKind::HunterSeeker => None,
+                // SW_Battery::LoadFromINI1006ECC0 writes Action=None every
+                // pass; its launch needs no target.
+                #[cfg(feature = "ares")]
+                SuperWeaponKind::Battery => None,
+                // SW_Protect::Initialize10074B60 installs the custom action
+                // and SW_Cursor=IronCurtain; VERA names that cursor by action.
+                #[cfg(feature = "ares")]
+                SuperWeaponKind::Protect => Some("IronCurtain".to_string()),
                 #[cfg(feature = "ares")]
                 SuperWeaponKind::UnitDelivery => Some(
                     section
@@ -533,7 +718,14 @@ impl SuperWeaponType {
             sidebar_pcx: section.read_ares_pcx_filename("SidebarPCX"),
             show_timer: section.read_bool("ShowTimer", false),
             disableable_from_shell: section.read_bool("DisableableFromShell", false),
-            use_charge_drain: section.read_bool("UseChargeDrain", false),
+            // SW_Battery::LoadFromINI1006ECC0 forces UseChargeDrain each pass.
+            use_charge_drain: {
+                #[cfg(feature = "ares")]
+                let battery = kind == SuperWeaponKind::Battery;
+                #[cfg(not(feature = "ares"))]
+                let battery = false;
+                battery || section.read_bool("UseChargeDrain", false)
+            },
             // Ares LoadFromINIFile derives these from the new type's Flags,
             // not user tags. GenericWarhead is an ordinary one-click type.
             pre_click: !extension_kind && section.read_bool("PreClick", false),
@@ -558,6 +750,8 @@ impl SuperWeaponType {
             #[cfg(not(feature = "ares"))]
             money_amount: 0,
             insufficient_funds_eva: None,
+            impatient_eva: None,
+            select_target_eva: Some("EVA_SelectTarget".to_owned()),
             unit_delivery: None,
             hunter_seeker: None,
             special_sound: section.read_name("SpecialSound", 0x80).map(str::to_string),
@@ -667,6 +861,9 @@ pub(crate) struct AresSuperWeaponAvailability {
     required_houses: u32,
     forbidden_houses: u32,
     shots: i32,
+    /// `SW.AlwaysGranted` (+0x20D, ctor false, read after SW.AffectsHouse).
+    #[serde(default)]
+    always_granted: bool,
 }
 
 /// Immutable availability metadata for every registered definition, including
@@ -681,23 +878,193 @@ pub(crate) struct AresSuperWeaponMetadata {
     charge: AresSuperWeaponCharge,
     influence: crate::rules::superweapon_influence::SuperWeaponInfluence,
     targeting: crate::rules::superweapon_targeting::AresSuperWeaponTargetingState,
+    launch: AresSuperWeaponLaunch,
 }
 
 /// SWTypeExt+284/+285: constructor10031460 clears AX at10031471 and
 /// stores the pair at1003185F. The ordered 3.0 reader10033A9C/10033AB2
 /// uses Valueable<bool>::Read (1000EBF0), retaining on absent/invalid input.
+/// The charge-drain fields share this owner: `SW.ChargeToDrainRatio`
+/// (Nullable<double> +0x220, ctor unset), `Money.DrainAmount`/`.DrainDelay`
+/// (Valueable<int> +0x1A4/+0x1A8, ctor 0) and `SW.Unstoppable`
+/// (Valueable<bool> +0x1E6, ctor false); no handler Initialize writes them.
 #[cfg(feature = "ares")]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AresSuperWeaponCharge {
     pub(crate) initial_ready: bool,
     pub(crate) virtual_charge: bool,
+    #[serde(default)]
+    charge_to_drain_ratio: Option<crate::util::native_x87::NativeF64Bits>,
+    #[serde(default)]
+    money_drain_amount: i32,
+    #[serde(default)]
+    money_drain_delay: i32,
+    #[serde(default)]
+    unstoppable: bool,
 }
 
 #[cfg(feature = "ares")]
 impl AresSuperWeaponCharge {
+    /// LoadFromINI10033370's keys of this owner, in its order: Unstoppable
+    /// (+0x1E6), Money.DrainAmount/DrainDelay, the ratio (Nullable<double>
+    /// 10008CE0), then the SW.InitialReady/VirtualCharge pair.
     pub(super) fn read_pass(&mut self, section: &IniSection) {
+        self.unstoppable = section.read_ares_bool("SW.Unstoppable", self.unstoppable);
+        self.money_drain_amount =
+            section.read_ares_int("Money.DrainAmount", self.money_drain_amount);
+        self.money_drain_delay = section.read_ares_int("Money.DrainDelay", self.money_drain_delay);
+        self.charge_to_drain_ratio = section
+            .read_ares_nullable_double_bits("SW.ChargeToDrainRatio", self.charge_to_drain_ratio);
         self.initial_ready = section.read_ares_bool("SW.InitialReady", self.initial_ready);
         self.virtual_charge = section.read_ares_bool("SW.VirtualCharge", self.virtual_charge);
+    }
+
+    /// GetChargeToDrainRatio10032690: the type's ratio, else
+    /// `[General] ChargeToDrainRatio=` (Rules+0xEC0).
+    pub(crate) fn charge_to_drain_ratio(
+        &self,
+        rules_ratio: crate::util::native_x87::NativeF64Bits,
+    ) -> crate::util::native_x87::NativeF64Bits {
+        self.charge_to_drain_ratio.unwrap_or(rules_ratio)
+    }
+
+    /// `Money.DrainAmount` and `Money.DrainDelay`.
+    pub(crate) fn money_drain(&self) -> (i32, i32) {
+        (self.money_drain_amount, self.money_drain_delay)
+    }
+
+    pub(crate) fn unstoppable(&self) -> bool {
+        self.unstoppable
+    }
+}
+
+/// SWTypeExt launch fields and the Protect/Battery handler payloads, read by
+/// the ordered Rules owner in LoadFromINI10033370's order: the common
+/// `SW.CreateRadarEvent` (+0x1E4, ctor true), `SW.Range` (+0x230/+0x234,
+/// ctor (-1.0, -1)) and `SW.Group` (+0x27C, ctor 0), then the type's own
+/// LoadFromINI.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresSuperWeaponLaunch {
+    radar_event: bool,
+    group: i32,
+    /// SWRange: binary32 WidthOrRange and the signed Height.
+    range: (u32, i32),
+    /// SW_Protect::LoadFromINI10074C20: Nullable<int> Protect.Duration
+    /// (+0xD8), Protect.PowerOutage (+0xE8), Protect.PlayFadeSoundTime (+0xE0).
+    protect_duration: Option<i32>,
+    protect_power_outage: Option<i32>,
+    protect_fade_sound_time: Option<i32>,
+    /// SW_Battery::LoadFromINI1006ECC0: Battery.Power (+0x184, ctor 0) and
+    /// the Find-only BuildingType vectors KeepOnline (+0x188), Overpower
+    /// (+0x194); a present list replaces, unknown names are skipped.
+    battery_power: i32,
+    battery_keep_online: Vec<String>,
+    battery_overpower: Vec<String>,
+}
+
+#[cfg(feature = "ares")]
+impl Default for AresSuperWeaponLaunch {
+    fn default() -> Self {
+        Self {
+            radar_event: true,
+            group: 0,
+            range: ((-1.0_f32).to_bits(), -1),
+            protect_duration: None,
+            protect_power_outage: None,
+            protect_fade_sound_time: None,
+            battery_power: 0,
+            battery_keep_online: Vec::new(),
+            battery_overpower: Vec::new(),
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl AresSuperWeaponLaunch {
+    /// One pass of this type's section. `battery` holds the caller's
+    /// Find-only resolution of the two Battery vectors (None: key absent).
+    pub(crate) fn read_pass(
+        &mut self,
+        section: &IniSection,
+        kind: Option<&str>,
+        battery: (Option<Vec<String>>, Option<Vec<String>>),
+    ) {
+        let is = |name: &str| kind.is_some_and(|kind| kind.eq_ignore_ascii_case(name));
+        self.radar_event = section.read_ares_bool("SW.CreateRadarEvent", self.radar_event);
+        // 10033698..100336F8: ReadString(0x800); a first ','-strtok token
+        // stores atof as binary32 and Height 0, a second token atoi.
+        if let Some(tokens) = section.read_list("SW.Range", 0x800)
+            && let Some(first) = tokens.first()
+        {
+            let width = crate::rules::ini_value::parse_leading_f64(first) as f32;
+            let height = tokens
+                .get(1)
+                .map_or(0, |token| crate::rules::ini_value::crt_atoi(token));
+            self.range = (width.to_bits(), height);
+        }
+        self.group = section.read_ares_int("SW.Group", self.group);
+        if is("HunterSeeker") {
+            // SW_HunterSeeker::LoadFromINI10072A30 hard-codes it each pass,
+            // after the common read (and Initialize10072990 already did).
+            self.radar_event = false;
+        } else if is("Protect") {
+            self.protect_duration =
+                section.read_ares_nullable_int("Protect.Duration", self.protect_duration);
+            self.protect_power_outage =
+                section.read_ares_nullable_int("Protect.PowerOutage", self.protect_power_outage);
+            self.protect_fade_sound_time = section
+                .read_ares_nullable_int("Protect.PlayFadeSoundTime", self.protect_fade_sound_time);
+        } else if is("Battery") {
+            self.battery_power = section.read_ares_int("Battery.Power", self.battery_power);
+            let (keep_online, overpower) = battery;
+            if let Some(keep_online) = keep_online {
+                self.battery_keep_online = keep_online;
+            }
+            if let Some(overpower) = overpower {
+                self.battery_overpower = overpower;
+            }
+        }
+    }
+
+    /// SW.CreateRadarEvent.
+    pub(crate) fn radar_event(&self) -> bool {
+        self.radar_event
+    }
+
+    /// SW.Group, the script argument Ares's action 55 matches (10039EF0).
+    pub(crate) fn group(&self) -> i32 {
+        self.group
+    }
+
+    /// SW.Range as SWRange: (WidthOrRange, Height); empty while both are
+    /// negative.
+    pub(crate) fn range(&self) -> (f32, i32) {
+        (f32::from_bits(self.range.0), self.range.1)
+    }
+
+    pub(crate) fn protect_duration(&self) -> Option<i32> {
+        self.protect_duration
+    }
+
+    pub(crate) fn protect_power_outage(&self) -> Option<i32> {
+        self.protect_power_outage
+    }
+
+    pub(crate) fn protect_fade_sound_time(&self) -> Option<i32> {
+        self.protect_fade_sound_time
+    }
+
+    pub(crate) fn battery_power(&self) -> i32 {
+        self.battery_power
+    }
+
+    pub(crate) fn battery_keep_online(&self) -> &[String] {
+        &self.battery_keep_online
+    }
+
+    pub(crate) fn battery_overpower(&self) -> &[String] {
+        &self.battery_overpower
     }
 }
 
@@ -710,6 +1077,7 @@ impl AresSuperWeaponMetadata {
         charge: &AresSuperWeaponCharge,
         influence: &crate::rules::superweapon_influence::SuperWeaponInfluence,
         targeting: crate::rules::superweapon_targeting::AresSuperWeaponTargetingState,
+        launch: &AresSuperWeaponLaunch,
     ) -> Self {
         Self {
             availability: availability.clone(),
@@ -718,7 +1086,13 @@ impl AresSuperWeaponMetadata {
             charge: charge.clone(),
             influence: influence.clone(),
             targeting,
+            launch: launch.clone(),
         }
+    }
+
+    /// The SWTypeExt launch fields and handler payloads.
+    pub(crate) fn launch(&self) -> &AresSuperWeaponLaunch {
+        &self.launch
     }
 
     pub(crate) fn availability(&self) -> &AresSuperWeaponAvailability {
@@ -756,6 +1130,7 @@ impl Default for AresSuperWeaponAvailability {
             required_houses: u32::MAX,
             forbidden_houses: 0,
             shots: -1,
+            always_granted: false,
         }
     }
 }
@@ -765,6 +1140,13 @@ impl AresSuperWeaponAvailability {
     pub(crate) fn read_allowance_pass(&mut self, section: &IniSection) {
         self.allow_player = section.read_ares_bool("SW.AllowPlayer", self.allow_player);
         self.allow_ai = section.read_ares_bool("SW.AllowAI", self.allow_ai);
+        self.always_granted = section.read_ares_bool("SW.AlwaysGranted", self.always_granted);
+    }
+
+    /// GetSuperWeaponStatuses10038F10: an available always-granted type is
+    /// Available, PowerSourced and Charging without a provider building.
+    pub(crate) fn always_granted(&self) -> bool {
+        self.always_granted
     }
 
     pub(crate) fn read_house_pass(&mut self, mut read: impl FnMut(&str, u32) -> u32) {
@@ -969,6 +1351,90 @@ mod tests {
     }
 
     use crate::rules::ini_parser::IniFile;
+
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_common_labels_charge_and_launch_fields_retain_ordered_layers() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        let base = IniFile::from_str(
+            "[BuildingTypes]\n0=PLANT\n[PLANT]\nStrength=10\n\
+             [SuperWeaponTypes]\n0=Seek\n1=Cell\n2=Shield\n\
+             [Seek]\nType=HunterSeeker\nSW.CreateRadarEvent=yes\nText.Hold=TXT_WAIT\n\
+             EVA.Impatient=Hurry\n\
+             [Cell]\nType=Battery\nBattery.Power=40\nBattery.KeepOnline=PLANT,LATER\n\
+             SW.Group=3\nMessage.Launch=MSG:Launch\nSW.ChargeToDrainRatio=2\nSW.Range=4.5\n\
+             Money.DrainAmount=-7\nSW.Unstoppable=yes\nSW.AlwaysGranted=yes\n\
+             [Shield]\nType=Protect\nProtect.Duration=300\nSW.AnimationHeight=-2\n",
+        );
+        let mut layers = RulesLayerStack::new(base);
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str(
+                "[Cell]\nSW.ChargeToDrainRatio=bad\nSW.Group=x\nBattery.KeepOnline=\n\
+                 Text.Preparing=TXT_PREP\nEVA.SelectTarget=none\n\
+                 [Shield]\nProtect.Duration=?\n",
+            ),
+        );
+        let processed = layers.process_with_fixed_art(&IniFile::empty()).unwrap();
+        let mut rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).unwrap();
+        let eva = crate::rules::sound_ini::EvaRegistry::from_ini(&IniFile::from_str(
+            "[DialogList]\n0=EVA_SelectTarget\n1=Hurry\n",
+        ));
+        rules.bind_type_eva_references(processed.ini(), &eva);
+        let metadata = |name| rules.super_weapon_metadata(name).unwrap();
+        let seek = rules.super_weapon("Seek").unwrap();
+        assert_eq!(
+            (seek.ares_texts().ready(), seek.ares_texts().hold()),
+            ("TXT_RELEASE", "TXT_WAIT"),
+            "Initialize10072990 replaces Ready before the read"
+        );
+        assert!(
+            !metadata("Seek").launch().radar_event(),
+            "10072A30 hard-codes it after the common read"
+        );
+        assert_eq!(
+            (
+                seek.impatient_eva.as_deref(),
+                seek.select_target_eva.as_deref()
+            ),
+            (Some("Hurry"), Some("EVA_SelectTarget"))
+        );
+        let cell = rules.super_weapon("Cell").unwrap();
+        let launch = metadata("Cell").launch();
+        assert_eq!(
+            (launch.group(), launch.battery_power(), launch.range()),
+            (3, 40, (4.5, 0))
+        );
+        assert_eq!(launch.battery_keep_online(), ["PLANT".to_owned()]);
+        assert!(launch.radar_event());
+        let charge = metadata("Cell").charge();
+        assert_eq!(
+            charge
+                .charge_to_drain_ratio(crate::util::native_x87::NativeF64Bits::ONE)
+                .bits(),
+            2.0_f64.to_bits()
+        );
+        assert_eq!(charge.money_drain(), (-7, 0));
+        assert!(charge.unstoppable() && metadata("Cell").availability().always_granted());
+        assert_eq!(
+            cell.ares_messages().label(AresSuperWeaponMessage::Launch),
+            "MSG:Launch"
+        );
+        assert_eq!(cell.ares_texts().preparing(), "TXT_PREP");
+        assert_eq!(cell.ares_texts().active(), "TXT_FIRESTORM_ON");
+        assert_eq!(cell.select_target_eva, None, "an explicit none clears");
+        let shield = rules.super_weapon("Shield").unwrap();
+        assert_eq!(metadata("Shield").launch().protect_duration(), Some(300));
+        assert_eq!(
+            shield.presentation.height, -2,
+            "the read follows Initialize's 5"
+        );
+        assert_eq!(
+            shield.ares_eva().unwrap().ready(),
+            None,
+            "the stock lines are absent from this catalog"
+        );
+    }
 
     #[test]
     fn parse_lightning_storm_special() {

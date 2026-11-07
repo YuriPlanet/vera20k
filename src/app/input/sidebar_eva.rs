@@ -26,6 +26,9 @@ pub(crate) const EVA_TRAINING: &str = "EVA_Training";
 pub(crate) const EVA_ON_HOLD: &str = "EVA_OnHold";
 pub(crate) const EVA_CANCELED: &str = "EVA_Canceled";
 pub(crate) const EVA_UNABLE_TO_COMPLY: &str = "EVA_UnableToComply";
+/// gamemd's literal at `0x006AAF9D`; Ares builds play the type's
+/// `EVA.SelectTarget` instead, whose constructor default is this name.
+#[cfg(not(feature = "ares"))]
 pub(crate) const EVA_SELECT_TARGET: &str = "EVA_SelectTarget";
 pub(crate) const EVA_NEW_CONSTRUCTION_OPTIONS: &str = "EVA_NewConstructionOptions";
 pub(crate) const EVA_CANNOT_DEPLOY_HERE: &str = "EVA_CannotDeployHere";

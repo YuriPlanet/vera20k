@@ -108,12 +108,36 @@ impl Simulation {
         let Some(building) = substrate.entities.get(id) else {
             return;
         };
-        if !interner
-            .object_type(building.type_ref(), rules)
-            .is_some_and(|object| object.overpowerable)
-        {
+        let Some(object) = interner.object_type(building.type_ref(), rules) else {
             return;
+        };
+        // Ares BuildingClass_Update_Battery10014690 (hook 44019D), after the
+        // stock sample below and for every building: a `Battery.Overpower`
+        // type of an active battery is overpowered. Nothing clears it again
+        // for a type that is not Overpowerable.
+        #[cfg(feature = "ares")]
+        let battery = power_states
+            .get(&building.owner())
+            .is_some_and(|state| state.overpowers(&object.id));
+        #[cfg(not(feature = "ares"))]
+        let battery = false;
+        if object.overpowerable {
+            Self::sample_tesla_charge(substrate, power_states, id);
         }
+        if battery {
+            substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .tesla_charge
+                .overpowered = true;
+        }
+    }
+
+    /// The stock Overpowerable block (4400F9..440196): prune changed
+    /// chargers, then sample +661.
+    fn sample_tesla_charge(substrate: &mut ObjectSubstrate, power_states: &PowerStates, id: u64) {
+        let building = substrate.entities.get(id).unwrap();
         let count = building.tesla_charge.chargers.len();
         // Reverse stable removal is native's order; no temporary list or
         // unconditional mutable store access is needed for unchanged chargers.

@@ -166,6 +166,7 @@ pub(crate) fn launch(
                     id,
                     category,
                     Some(owner),
+                    rules.general.iron_curtain_duration,
                     frame_effects,
                 );
                 curtained += 1;
@@ -251,6 +252,7 @@ pub(crate) fn at_waypoint(
                     id,
                     category,
                     None,
+                    rules.general.iron_curtain_duration,
                     frame_effects,
                 );
             }
@@ -260,18 +262,20 @@ pub(crate) fn at_waypoint(
     true
 }
 
-/// One dispatch of ObjectClass vt+154. Both Super6CCFF8 and Action6E37C9
+/// One dispatch of ObjectClass vt+154 with its duration argument, the Iron
+/// Curtain's (force byte 0). Super6CCFF8 and Action6E37C9 pass
+/// `IronCurtainDuration=`; Ares SW_Protect::Activate10074750 its own. All
 /// enter the same Infantry522600 / Foot4DEAE0 / Building457C90 overrides.
-fn curtain_object(
+pub(super) fn curtain_object(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     category: EntityCategory,
     house: Option<InternedId>,
+    duration: i32,
     frame_effects: FrameEffects<'_>,
 ) {
-    let duration = rules.general.iron_curtain_duration;
     match category {
         EntityCategory::Infantry => {
             // Phobos redirects `InfantryClass::IronCurtain` to the Foot path
