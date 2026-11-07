@@ -564,7 +564,10 @@ fn tracker_bucket(x: i32, y: i32) -> usize {
 /// Native builds it once per Foundation index from the foundation size
 /// tables; `RadarClass::GetFoundationPixels @ 0x00656580` returns the entry
 /// for a building's type. Computing it from the same width and height here
-/// gives the same pixels.
+/// gives the same pixels. Ares 3.0 builds a custom foundation's shape by the
+/// same rows from its width and height (UpdateFoundationRadarShape 1000F510,
+/// called for every type by 10015580, hook `0x006563B0`) and returns it for
+/// a Foundation past the 22 stock ones (10015540, hook `0x00656584`).
 pub(super) fn radar_foundation_brush(
     foundation_width: u32,
     foundation_height: u32,

@@ -1607,6 +1607,8 @@ fn apply_resolved_skirmish_launch_session(
             }
             // Battle5D7062 skips Unit construction and its RNG when505310
             // finds no Owner-compatible BaseUnit. The House still exists.
+            // Ares 3.0 MPGameMode_SpawnBaseUnit_BaseUnit 10023C80 (hook
+            // 0x5D705E) keeps that and only logs.
             let Some(mcv_type) = launch_mcv_type_for_country(
                 LaunchCountry::from_country_index(u32::from(country.0)),
                 rules,

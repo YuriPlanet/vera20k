@@ -890,3 +890,35 @@ fn unit_delivery_no_base_normal_building_reserves_no_base_space() {
     assert_ne!(reserved(&sim, ordinary), 0);
     assert_eq!(reserved(&sim, delivered), 0);
 }
+
+/// Ares MapClass_CanBuildingTypeBePlacedHere_Ignore (10014890, hook
+/// 0x004A8FF5): a `Deliver.BaseNormal=no` building gives its house no
+/// own-base adjacency, but with BuildOffAlly an `EligibileForAllyBuilding`
+/// one still counts as its own ally's base.
+#[test]
+fn unit_delivery_no_base_normal_building_still_serves_build_off_ally() {
+    let rules = rules(
+        "[Delivery]\nSW.Deferment=0\nDeliver.Types=GAPOWR\nDeliver.BaseNormal=no\n\
+         [GAPOWR]\nEligibileForAllyBuilding=yes\n",
+    );
+    let mut sim = world(&rules);
+    fire(&mut sim, &rules, "Americans", (12, 10));
+    let delivered = payloads(&sim, "GAPOWR")[0];
+    let entity = sim.substrate.entities.get(delivered).unwrap();
+    let (rx, ry) = (entity.position.rx(), entity.position.ry());
+    let placed = rules.object("GAPOWR").unwrap();
+    for build_off_ally in [false, true] {
+        sim.session.game_options_mut_for_test().build_off_ally = build_off_ally;
+        assert_eq!(
+            crate::sim::production::is_within_build_area(
+                &sim,
+                &rules,
+                "Americans",
+                placed,
+                rx + 2,
+                ry
+            ),
+            build_off_ally
+        );
+    }
+}

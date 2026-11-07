@@ -531,3 +531,39 @@ fn default_build_refuses_forged_paid_commands_and_saved_selection_state() {
     assert_eq!(before, sim.state_hash());
     assert!(sim.sound_events.is_empty());
 }
+
+/// Ares 10034C70 (hook 0x4FAF2A): a Fire_SW whose ClickFire refused (the
+/// Super is still charged) alerts no computer house; one that launched does.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_a_super_still_charged_after_fire_alerts_no_house() {
+    let mut rules = rules();
+    rules.general.ai_super_defense_distance = 1_000_000;
+    rules.general.ai_super_defense_probability = vec![100, 100, 100];
+    for (granted, alerted) in [(false, false), (true, true)] {
+        let mut sim = sim(&rules, false, &[]);
+        let owner = sim.interner.intern(OWNER);
+        sim.spawn_object_at_height("NAMISL", OWNER, 10, 10, 0, 0, &rules)
+            .unwrap();
+        let sw_type_id = sim.interner.intern("NukeSpecial");
+        let mut instance = SuperWeaponInstance::new(sw_type_id, owner, 0);
+        instance.is_active = granted;
+        instance.is_ready = true;
+        sim.super_weapons
+            .map_mut_for_test()
+            .entry(owner)
+            .or_default()
+            .insert(sw_type_id, instance);
+        sim.fire_super_weapon(
+            &rules,
+            owner,
+            sw_type_id,
+            (33, 44),
+            None,
+            crate::sim::world::FrameEffects::default(),
+            false,
+        );
+        let (_, frame) = sim.houses[&owner].super_weapon_defense();
+        assert_eq!(frame != -100, alerted, "granted {granted}");
+    }
+}

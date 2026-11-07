@@ -434,6 +434,13 @@ fn the_best_rally_target_matches_native() {
                 }
             })
             .collect();
+        // Ares 10034C50 (hook 0x50CFAA) drops a cloaked entry without its
+        // draw: those rows hold the stock answer only
+        // (`ares_a_cloaked_rally_target_is_skipped_without_a_draw`).
+        #[cfg(feature = "ares")]
+        if entries.iter().any(|entry| entry.cloaked) {
+            continue;
+        }
         let mut rng = SimRng::new(int(&row["seed"]) as u64);
         assert_eq!(
             pick_best_rally_target(&entries, &mut rng),
@@ -446,6 +453,25 @@ fn the_best_rally_target_matches_native() {
             "{row}"
         );
     }
+}
+
+/// Ares 10034C50 (hook 0x50CFAA): a cloaked enemy is worth nothing and is no
+/// candidate, so the visible one wins whatever their values, and the cloaked
+/// entry draws nothing (the single pick's `RandomRanged(0, 0)` draws none).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_a_cloaked_rally_target_is_skipped_without_a_draw() {
+    let entry = |cell, value, cloaked| RallyEntry {
+        candidate: true,
+        value,
+        cell,
+        in_playfield: true,
+        cloaked,
+    };
+    let entries = [entry((5, 5), 900, true), entry((9, 9), 1, false)];
+    let mut rng = SimRng::new(0x50CFAA);
+    assert_eq!(pick_best_rally_target(&entries, &mut rng), (9, 9));
+    assert_eq!(rng.logical_state(), SimRng::new(0x50CFAA).logical_state());
 }
 
 /// AI_TryFireSW over each row's Supers: production `try_fire` on a house in

@@ -276,6 +276,9 @@ impl CenteredShapeStrip {
         alpha: f32,
     ) -> Vec<SpriteInstance> {
         let mut instances = Vec::with_capacity(preview.cells.len());
+        //Ares10015340/100153B0 (hooks 4A8C77/4A8DD7) lift SetActiveFoundation's
+        //120- and SetPendingFoundation's 50-cell copies; previews hold the
+        //whole list.
         //6D5030 / Ares100155C0 walks actual-list bounds X outer/Y inner;
         //The ordinary preview contains its bit2 active cells, possibly sparse
         //or outside declared X/Y. Pending-bit4 drawing is a separate residual.
