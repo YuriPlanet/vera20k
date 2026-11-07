@@ -754,11 +754,10 @@ fn unit(facts: &FireFacts, query: &mut impl FireQuery, check_range: bool) -> Fir
     // whether a turreted, non-Gattling type's SelectWeapon(NULL) weapon has
     // a `Temporal=` warhead (0x00741210), so an IFV moves and fires its other
     // gunner weapons.
-    let warping = if cfg!(feature = "ares") {
-        firer.temporal_gunner_weapon
-    } else {
-        firer.temporal.is_some()
-    };
+    #[cfg(feature = "ares")]
+    let warping = firer.temporal_gunner_weapon;
+    #[cfg(not(feature = "ares"))]
+    let warping = firer.temporal.is_some();
     if warping && firer.navcom {
         return FireError::Moving;
     }
