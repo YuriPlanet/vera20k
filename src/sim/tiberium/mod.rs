@@ -219,6 +219,16 @@ pub(crate) fn resolved_cell_accepts_tiberium(cell: &ResolvedTerrainCell) -> bool
         && cell.bridge_flags() & (BRIDGE_FLAG_STRUCTURAL | BRIDGE_FLAG_DESTROYED_OR_RAMP) == 0
 }
 
+/// The building half of `CellClass::CanPlaceTiberium` (`0x004838E0`,
+/// `0x00483918..0x00483960`): a live Building (`+0x6C` > 0) whose type has
+/// neither `Invisible=` (`+0xC9A`) nor `InvisibleInGame=` (`+0x1701`) refuses
+/// ore.
+///
+/// Residual: native tests only the first Building in the cell's object list,
+/// and VERA tests every Structure in the cell. Trigger: a cell whose first
+/// Building is dead or invisible also holds a live, visible one. Effect:
+/// native admits ore there and VERA refuses it. Frequency: none in ordinary
+/// play, where building foundations never share a cell. Downstream: none.
 pub(crate) fn live_cell_rejects_tiberium(
     cell: (u16, u16),
     context: TiberiumPlacementObjectContext<'_>,
