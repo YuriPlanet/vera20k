@@ -20,6 +20,12 @@ const STARTER: &[u8] = b"; Personal gameplay changes. Original game files are ne
 ;[E1]
 ;Cost=100
 ;Strength=200
+
+; Let explosions dent open ground, as in Tiberian Sun; the nuke needs Deform= too.
+;[CombatDamage]
+;TerrainDeformation=yes
+;[NUKE]
+;Deform=100%
 ";
 
 /// Create an inactive starter only when missing; always load the player's

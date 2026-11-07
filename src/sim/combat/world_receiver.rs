@@ -3595,6 +3595,15 @@ fn continue_area_damage(
             world.spawn_particle_in_system(system, position, position, rules);
         }
     }
+    // VERA terrain deformation: Tiberian Sun rolled its crater after the
+    // Explodes branch.
+    world.roll_terrain_deformation(
+        rules,
+        context.warhead,
+        context.impact,
+        context.cell,
+        context.damage,
+    );
     //48A437..48A479 follows both the bridge and Explodes branches. WH.Particle
     //uses the outer sourceHouse and also constructs one immediate child.
     if let Some(type_id) = context

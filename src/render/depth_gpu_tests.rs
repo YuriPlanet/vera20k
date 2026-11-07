@@ -926,6 +926,7 @@ fn stock_cliff_decoder_and_terrain_instances_occlude_shp_and_indexed_voxels() {
         origin_x: 0.0,
         origin_y: -100.0,
         bridge_middle_tiles: None,
+        deformation_tiles: Vec::new(),
     };
     let lookup = |id, sub, variant| {
         assert_eq!((id, sub, variant), (tile_id, 2, 0));

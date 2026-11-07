@@ -1074,6 +1074,7 @@ impl ZoneGrid {
         let base_topology = zone_build::rebuild_base_zone_topology(
             self.base_topology.movement_classes.clone(),
             self.base_topology.levels.clone(),
+            resolved_terrain.terrain_deformation(),
             bridge_records,
             self.width,
             self.height,

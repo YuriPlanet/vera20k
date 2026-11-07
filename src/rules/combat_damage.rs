@@ -17,6 +17,9 @@
 
 use crate::rules::ini_parser::IniSection;
 
+/// VERA's `DeformLowestLevel=` default.
+const DEFORM_LOWEST_LEVEL: i32 = -4;
+
 /// Default particle-system fallbacks read from `[CombatDamage]`.
 ///
 /// Each reference is the stored ID of a Type (a `ParticleSystemType` resolved
@@ -39,6 +42,16 @@ pub struct CombatDamageDefaults {
     /// Signed, unclamped destroyable-cliff chance compared against one
     /// Scenario RandomRanged(0,99) draw. Native constructor default is 100.
     pub collapse_chance: i32,
+    /// VERA's `TerrainDeformation=`: warheads with `Deform=` may lower the
+    /// ground they explode on (see `docs/terrain-deformation.md`). gamemd
+    /// still reads `Deform=` and `DeformThreshhold=` but nothing uses them,
+    /// so retail warheads that set them stay inert unless this is on.
+    /// Default no.
+    pub terrain_deformation: bool,
+    /// VERA's `DeformLowestLevel=`: the lowest Level deformation lowers a
+    /// corner to, a signed int clamped to a cell Level's `-128..=127`.
+    /// Default -4.
+    pub deform_lowest_level: i32,
     /// `RailgunDamageRadius=`: the most a Techno may sit from a railgun line
     /// and still be hit. `RulesClass::Constructor` writes 0x80
     /// (`0x00665CDE`); `ReadCombatDamage` (`0x0066BC18..0x0066BC31`) reads a
@@ -172,6 +185,10 @@ impl CombatDamageDefaults {
             tiberium_explosion_damage: section.read_int("TiberiumExplosionDamage", 100),
             max_damage: section.read_int("MaxDamage", 1000),
             collapse_chance: section.read_int("CollapseChance", 100),
+            terrain_deformation: section.read_bool("TerrainDeformation", false),
+            deform_lowest_level: section
+                .read_int("DeformLowestLevel", DEFORM_LOWEST_LEVEL)
+                .clamp(i32::from(i8::MIN), i32::from(i8::MAX)),
             railgun_damage_radius: section.read_int("RailgunDamageRadius", 0x80),
             ballistic_scatter: section.read_range("BallisticScatter", 0x100),
             crush: section.read_range("Crush", 0x180),
@@ -211,6 +228,8 @@ impl Default for CombatDamageDefaults {
             tiberium_explosion_damage: 100,
             max_damage: 1000,
             collapse_chance: 100,
+            terrain_deformation: false,
+            deform_lowest_level: DEFORM_LOWEST_LEVEL,
             railgun_damage_radius: 0x80,
             ballistic_scatter: 0x100,
             crush: 0x180,

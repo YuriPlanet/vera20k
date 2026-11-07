@@ -950,7 +950,11 @@ where
             );
         }
     }
-    sim.install_resolved_terrain_for_new_map(resolved_terrain.clone());
+    let mut terrain = resolved_terrain.clone();
+    // VERA terrain deformation follows the scenario's rules before any zone
+    // is built from this grid.
+    terrain.set_terrain_deformation(rules.combat_damage.terrain_deformation);
+    sim.install_resolved_terrain_for_new_map(terrain);
     // Active `CellClass` overlay identity exists before the Techno map
     // sections are read. Install the already-resolved grid now so every
     // UnitClass virtual Unlimbo sees ore, walls, and structural bridges.

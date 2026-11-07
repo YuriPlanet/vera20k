@@ -3639,6 +3639,7 @@ fn load_map_first_step(
                                                         &td.iso_palette,
                                                         td.extension,
                                                         &grid,
+                                                        rules.combat_damage.terrain_deformation,
                                                         services.gpu,
                                                         services.batch,
                                                     ),

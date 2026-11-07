@@ -14,7 +14,8 @@ use crate::map::rmg::tiles::TileIds;
 use crate::map::rmg::x87::{Gaussian, TruncF64};
 use crate::util::native_x87::X87Chop53;
 
-use super::hills_corners::{self, CornerGrid, Morphable};
+use super::hills_corners::{self, Morphable, RmgCornerCells};
+use crate::map::corner_heights::{CornerGrid, FinalTiles};
 
 /// Height a shore-piece neighbour is seeded to.
 const SHORE_SEED_HEIGHT: f64 = 0.5;
@@ -65,9 +66,19 @@ pub fn run(ctx: &mut HillsCtx<'_>, args: &HillsArgs, morphable: Morphable<'_>) {
     water_seed(ctx.grid, ctx.scratch, ctx.ids);
     walk(ctx.scratch, ctx.gauss, ctx.rng, args.ruggedness);
     let span = args.map_w + args.map_h - 1;
-    let mut corners = CornerGrid::build(ctx.grid, ctx.scratch, span, ctx.ids, morphable);
-    hills_corners::morph(ctx.grid, ctx.scratch, &mut corners, ctx.ids, morphable);
-    corners.finalize(ctx.grid, ctx.scratch, ctx.ids, morphable);
+    let cells = RmgCornerCells {
+        grid: ctx.grid,
+        scratch: ctx.scratch,
+        morphable,
+    };
+    let mut corners = CornerGrid::build(&cells, (1, 1), span + 1, hills_corners::RMG_HEIGHTS);
+    hills_corners::morph(&cells, &mut corners);
+    let tiles = FinalTiles {
+        clear: ctx.ids.clear,
+        ramp_base: ctx.ids.ramp_base,
+    };
+    let finals = corners.finalize(&cells, ctx.grid.native_cells(), tiles);
+    hills_corners::write_finals(ctx.grid, &finals);
     hills_corners::quad_cleanup(ctx.grid);
 }
 

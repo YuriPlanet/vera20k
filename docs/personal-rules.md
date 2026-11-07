@@ -21,6 +21,9 @@ replace art, sounds, AI scripts or other mod assets.
 Restart VERA after editing and start a new game or mission. Loading an existing
 save restores its saved rules.
 
+The same file switches on VERA's optional [terrain deformation](terrain-deformation.md),
+which lets explosions dent open ground as in Tiberian Sun.
+
 ## Mission and map priority
 
 By default, missions, game modes and maps keep their own rule overrides. Your

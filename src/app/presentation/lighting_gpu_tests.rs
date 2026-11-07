@@ -98,6 +98,7 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         origin_x: 0.0,
         origin_y: 0.0,
         bridge_middle_tiles: None,
+        deformation_tiles: Vec::new(),
     };
     let mut lighting = MatchLighting::default();
     lighting.install(

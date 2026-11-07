@@ -249,6 +249,9 @@ pub struct TerrainGrid {
     /// Bridge middle tiles a live publication can write, for the atlas
     /// pre-load. None when the theater lacks BridgeMiddle1/2 or both sets.
     pub bridge_middle_tiles: Option<crate::map::theater::BridgeMiddleTiles>,
+    /// Tiles terrain deformation can write, for the atlas pre-load when the
+    /// rules switch it on ([`ResolvedTerrainGrid::deformation_atlas_tiles`]).
+    pub deformation_tiles: Vec<u16>,
 }
 
 /// Convert isometric cell coordinates to screen-space pixel position — **the
@@ -574,6 +577,7 @@ pub fn build_terrain_grid_from_resolved(
         origin_x: min_x,
         origin_y: min_y,
         bridge_middle_tiles,
+        deformation_tiles: resolved.deformation_atlas_tiles(),
     }
 }
 
