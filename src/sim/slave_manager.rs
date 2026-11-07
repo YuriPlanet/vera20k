@@ -298,7 +298,10 @@ impl SlaveManager {
 
 /// The slave side, on the slave itself: SlaveOwner (`TechnoClass+0x2DC`),
 /// the master whose manager holds it, and its Storage (`+0x33C`), one bale
-/// per level of ore or gems. Only this module writes it.
+/// per level of ore or gems. The cargo is the Storage of every object
+/// without a [`crate::sim::miner::Miner`], which covers all infantry, a
+/// freed slave and a Full team's masterless SLAV or WEEDGUY. Only this
+/// module writes it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SlaveLink {
     owner: Option<u64>,
@@ -314,6 +317,12 @@ impl SlaveLink {
     /// The Storage levels the slave carries, in the order it cut them.
     pub fn cargo(&self) -> &[CargoBale] {
         &self.cargo
+    }
+
+    /// [`crate::sim::miner::add_amount`] on this hold: the slave's harvest
+    /// and [`GameEntity::add_storage_bales`].
+    pub(crate) fn add_bales(&mut self, bale: CargoBale, amount: u16) {
+        crate::sim::miner::add_amount(&mut self.cargo, bale, amount);
     }
 
     /// A slave of `master` carrying `cargo`, for fixtures.
@@ -1513,7 +1522,7 @@ impl Simulation {
                 cell,
             ) && let Some(entity) = self.substrate.entities.get_mut(slave)
             {
-                entity.slave.cargo.push(bale);
+                entity.slave.add_bales(bale, 1);
             }
             return (harvest_rate, false);
         }
