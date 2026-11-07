@@ -76,12 +76,6 @@
 //!   `UnitClass::What_Action` gives the Harvest action to a
 //!   ResourceGatherer/ResourceDestination type. The dispatch treats it as
 //!   the plain Unit it is natively (`techno_ai/mission_handlers.rs`).
-//! - FreeSlaves callers other than the death arm (`0x00702065`), the Temporal
-//!   erase (`0x0071AAA7`) and the destructor (`0x006F4571`): the Teleport
-//!   post-warp (`0x00718998`, `0x00718AEF`) and the Jumpjet crash
-//!   (`0x0054CEDF`) pass their own killer; VERA's destructor fallback hands
-//!   those slaves to the Civilian house instead. No stock Slave Miner warps or
-//!   flies.
 //!
 //! ## Dependency rules
 //! - Part of sim/; sim/ never depends on render/, ui/, audio/, net/.
