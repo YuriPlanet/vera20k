@@ -1414,3 +1414,22 @@ fn grinder_arrival_refunds_the_infesting_drone_before_forced_release() {
     );
     assert_eq!(arena.eater_of(tank), None);
 }
+
+/// Ares FootClass_PointerGotInvalid_Parasite10048280 (hook4D99AA) and
+/// ParasiteClass_PointerGotInvalid_Cloak100482D0 (hook62A283): the host's
+/// cloak Detach_All(false) keeps the drone attached; only a removal ejects.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_a_cloaking_host_keeps_its_drone() {
+    let rules = rules();
+    let mut arena = Arena::new(&rules);
+    let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
+    let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+    arena.infect(&rules, drone, tank);
+    arena.sim.detach_all(
+        tank,
+        false,
+        crate::sim::world::UninitContext::with_rules(&rules),
+    );
+    assert_eq!(arena.eater_of(tank), Some(drone));
+}

@@ -4195,6 +4195,10 @@ impl Simulation {
             #[cfg(feature = "phobos")]
             self.phobos_tracking_before_limbo(stable_id);
             self.house_removed_from_game(stable_id, context.rules(), context.effects());
+            // Ares BuildingClass_Remove_Academy (hook 0x00445905 ->
+            // 10023690) precedes them: a marked academy leaves its owner's list.
+            #[cfg(feature = "ares")]
+            self.update_ares_academy_membership(stable_id, false, context.rules());
             // BuildingClass::Limbo 0x00445946..0x00445988: an opened
             // Helipad's docks leave its house's AirportDocks.
             let rules = context.rules();
@@ -6142,6 +6146,7 @@ impl Simulation {
                 self.foot_parasite_pointer_expired(
                     listener_id,
                     expired_id,
+                    control == PointerExpiryControl::Uninit,
                     context.rules(),
                     context.effects(),
                 );
