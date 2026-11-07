@@ -1067,6 +1067,15 @@ fn mission_unload_matches_the_original_harvester_branch() {
     for row in corpus["mission_unload"].as_array().unwrap() {
         let input = &row["input"];
         let context = input["name"].as_str().unwrap().to_string();
+        // Ares hook 0x0073DF66 replaces the East window these two rows
+        // probe (`ares_mission_unload_faces_the_dock_exactly`).
+        #[cfg(feature = "ares")]
+        if matches!(
+            context.as_str(),
+            "unload_window_low_edge" | "unload_facing_west_latch"
+        ) {
+            continue;
+        }
         let mut s = scene(input);
         radio::take_transmit_log();
         let mut stream = s.sim.scenario_rng.clone();
@@ -1080,6 +1089,36 @@ fn mission_unload_matches_the_original_harvester_branch() {
         compare_delay(&s, row, delay, &mut stream, &context);
         compare_state(&s, row, &context);
         compare_unload(&s, row, &context);
+    }
+}
+
+/// Ares 3.0 `10014910` (hook `0x0073DF66`): Mission_Unload compares the hull
+/// with the dock's DockUnloadFacing exactly (east for this refinery), so the
+/// stock window's low edge turns and waits as the outside row does, and a
+/// mid-swing turret counts as facing it, so the latched west row arms the
+/// unload as the first pass does.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_mission_unload_faces_the_dock_exactly() {
+    let rows = corpus()["mission_unload"].as_array().unwrap();
+    for (name, waits) in [
+        ("unload_window_low_edge", true),
+        ("unload_facing_west_latch", false),
+    ] {
+        let row = rows
+            .iter()
+            .find(|row| row["input"]["name"] == name)
+            .unwrap();
+        let mut s = scene(&row["input"]);
+        let delay = crate::sim::miner::mission_unload(
+            &mut s.sim,
+            &s.rules,
+            s.miner,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let miner = s.sim.substrate.entities.get(s.miner).unwrap();
+        let unloading = miner.miner.as_ref().unwrap().unload_active();
+        assert_eq!((delay == 5, unloading), (waits, !waits), "{name}");
     }
 }
 

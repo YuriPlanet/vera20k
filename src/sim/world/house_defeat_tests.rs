@@ -1335,7 +1335,14 @@ fn ares_blowup_returns_a_captured_tech_building_to_its_passive_owner() {
             .spawn_object_at_height("OIL", "house1", 10, 10, 0, 0, &rules)
             .unwrap();
         sim.change_owner_with_rules(oil, houses[0], &rules, None, Default::default());
-        assert!(sim.substrate.entities.get(oil).unwrap().building_has_engineer.is_set());
+        assert!(
+            sim.substrate
+                .entities
+                .get(oil)
+                .unwrap()
+                .building_has_engineer
+                .is_set()
+        );
 
         sim.house_blowup(
             houses[0],

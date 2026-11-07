@@ -171,14 +171,16 @@ impl BuildupAssetCatalog {
         catalog
     }
 
-    /// Ares: the sale's frame rate of `type_id` (`SellFrameDuration`, 0 when
-    /// its Buildup SHP is unbound).
+    /// Ares: the sale's frame rate of `type_id` (`SellFrameDuration`). A
+    /// control installed without one (a fixture) sells at its own rate, as a
+    /// type without `SellTime=` does; an unbound type keeps the constructor's
+    /// rate 0.
     #[cfg(feature = "ares")]
     pub fn sell_rate(&self, type_id: &str) -> i32 {
         self.sell_rates
             .get(&type_id.to_ascii_uppercase())
             .copied()
-            .unwrap_or(0)
+            .unwrap_or_else(|| self.control(type_id)[2])
     }
 
     /// The construction control of `type_id` ([`NO_BUILDUP`] when unbound).

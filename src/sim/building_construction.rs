@@ -79,6 +79,12 @@ impl Default for BuildingBody {
 impl BuildingBody {
     pub(crate) fn bind_control(&mut self, control: [i32; 3]) {
         self.construction_control = control;
+        // Ares: without a bound SellTime the sale runs at the control's own
+        // rate (`1000F450` with `SellTime` unset); `bind_sell_rate` follows.
+        #[cfg(feature = "ares")]
+        {
+            self.sell_rate = control[2];
+        }
     }
     #[cfg(feature = "ares")]
     pub(crate) fn bind_sell_rate(&mut self, rate: i32) {
