@@ -25,7 +25,7 @@ WORKFLOW = ".github/workflows/windows-signing-check.yml"
 PAYLOAD_ARTIFACT = "windows-signing-payload-unsigned"
 PACKAGE_FILES = {
     "vera20k.exe", "config.toml.example", "README.txt", "LICENSE-GPL",
-    "LGPL-2.1-or-later.txt", "THIRD_PARTY_LICENSES.html",
+    "THIRD_PARTY_LICENSES.html",
 }
 SIGNED_FILES = {"vera20k.exe", "uninstaller.exe"}
 UNINSTALLER_NAME = re.compile(r"uninst-7\.1\.0-[0-9a-f]{10}\.e(?:32|64)", re.IGNORECASE)

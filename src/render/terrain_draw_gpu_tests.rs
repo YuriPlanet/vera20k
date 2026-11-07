@@ -863,18 +863,37 @@ fn production_tree_signed_depth_and_repeated_overlap_match_original_leaves() {
                 contents: bytemuck::cast_slice(&instances),
                 usage: wgpu::BufferUsages::VERTEX,
             });
-        for repeated in [false, true] {
+        // Disjoint pieces are one snapshot/edit wave. Repeated in one span,
+        // each overlaps itself: on the same atlas slot the repeat replays the
+        // first inside their wave (`replays`); on another slot (the same
+        // texture) they need two waves, which draw against the live depth
+        // test where the adapter has it.
+        for (repeated, slot) in [(false, 0), (true, 0), (true, 1)] {
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
-            if !repeated {
-                clear(
-                    &mut encoder,
-                    &cv,
-                    &dv,
-                    old,
-                    wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                );
-            }
-            terrain.draw_span(
+            clear(
+                &mut encoder,
+                &cv,
+                &dv,
+                old,
+                wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+            );
+            let commands = |atlas_slot| {
+                selected
+                    .iter()
+                    .enumerate()
+                    .map(move |(i, c)| DestinationEditCommand {
+                        atlas_slot,
+                        ..terrain_command(
+                            i as u32,
+                            if c[0].as_i64() == Some(1) {
+                                TerrainPiece::Shadow
+                            } else {
+                                TerrainPiece::Body
+                            },
+                        )
+                    })
+            };
+            let stats = terrain.draw_span(
                 &mut encoder,
                 &cv,
                 &dv,
@@ -882,18 +901,15 @@ fn production_tree_signed_depth_and_repeated_overlap_match_original_leaves() {
                 |_| Some(&atlas),
                 &buffer,
                 &instances,
-                selected.iter().enumerate().map(|(i, c)| {
-                    terrain_command(
-                        i as u32,
-                        if c[0].as_i64() == Some(1) {
-                            TerrainPiece::Shadow
-                        } else {
-                            TerrainPiece::Body
-                        },
-                    )
-                }),
+                commands(0).chain(commands(slot).take(if repeated { usize::MAX } else { 0 })),
                 [0, 0, size[0], size[1]],
             );
+            let waves = if slot == 1 && !terrain.depth_tested_edits() {
+                2
+            } else {
+                1
+            };
+            assert_eq!(stats.waves, waves, "repeat={repeated}, slot={slot}");
             let reads = [
                 gpu.read(&mut encoder, &color),
                 gpu.read(&mut encoder, &depth),
@@ -1600,6 +1616,10 @@ fn production_replayed_wave_edits_match_one_pass_each() {
     ] {
         let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
         let mut terrain = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+        // Replays and strict waves alone, as on an adapter without the live
+        // depth test; `terrain` draws what still needs two waves against it.
+        let mut waves_only = TerrainDrawRenderer::new(&gpu.device, &gpu.queue, format, &batch);
+        waves_only.disable_depth_tested_edits();
         // Pages of a texel per pixel with source holes; the second draws
         // other colours.
         let indices: Vec<u8> = (0..256u32)
@@ -1661,7 +1681,12 @@ fn production_replayed_wave_edits_match_one_pass_each() {
             camera.zoom = zoom;
             batch.write_camera(&gpu.queue, camera);
             let mut outputs = Vec::new();
-            for batched in [false, true] {
+            for mode in ["serial", "waves", "depth-tested"] {
+                let terrain = if mode == "waves" {
+                    &mut waves_only
+                } else {
+                    &mut terrain
+                };
                 let color = gpu.target(size, format);
                 let cv = color.create_view(&Default::default());
                 let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
@@ -1675,7 +1700,7 @@ fn production_replayed_wave_edits_match_one_pass_each() {
                     32760,
                     wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                 );
-                if batched {
+                if mode != "serial" {
                     let stats = terrain.draw_span(
                         &mut encoder,
                         &cv,
@@ -1687,7 +1712,11 @@ fn production_replayed_wave_edits_match_one_pass_each() {
                         commands.iter().copied(),
                         tactical,
                     );
-                    waves.push(stats.waves);
+                    if mode == "waves" {
+                        waves.push(stats.waves);
+                    } else {
+                        assert_eq!(stats.waves, 1, "{stats:?}");
+                    }
                 } else {
                     for (instance, &command) in instances.iter().zip(&commands) {
                         terrain.draw_piece(
@@ -1709,20 +1738,23 @@ fn production_replayed_wave_edits_match_one_pass_each() {
                 ];
                 outputs.push(gpu.finish(encoder, &reads, size));
             }
-            for (attachment, (serial, batched)) in outputs[0].iter().zip(&outputs[1]).enumerate() {
-                let mismatches = serial
-                    .as_chunks::<4>()
-                    .0
-                    .iter()
-                    .zip(batched.as_chunks::<4>().0)
-                    .enumerate()
-                    .filter(|(_, (a, b))| a != b)
-                    .take(8)
-                    .collect::<Vec<_>>();
-                assert!(
-                    mismatches.is_empty(),
-                    "{format:?}, {camera_pos:?}, zoom {zoom}, attachment {attachment}: {mismatches:?}"
-                );
+            for (mode, scheduled) in ["waves", "depth-tested"].iter().zip(&outputs[1..]) {
+                for (attachment, (serial, batched)) in outputs[0].iter().zip(scheduled).enumerate()
+                {
+                    let mismatches = serial
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .zip(batched.as_chunks::<4>().0)
+                        .enumerate()
+                        .filter(|(_, (a, b))| a != b)
+                        .take(8)
+                        .collect::<Vec<_>>();
+                    assert!(
+                        mismatches.is_empty(),
+                        "{mode}, {format:?}, {camera_pos:?}, zoom {zoom}, attachment {attachment}: {mismatches:?}"
+                    );
+                }
             }
         }
         // Whole-pixel cameras at zoom 1 replay; the others keep strict waves.

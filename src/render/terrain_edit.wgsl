@@ -13,6 +13,7 @@ struct AdmittedPixel { index: u32, candidate: i32 };
 
 // Native Z of the row `world_y` falls in, for a blit whose top row and height
 // are `top_height` (world pixels), walked with `z_gradient` and `z_adjust`.
+// `candidate_range` in terrain_draw.rs bounds this walk on the CPU.
 fn edit_z(world_y: f32, top_height: vec2f, z_adjust: f32, z_gradient: u32) -> i32 {
     let height = max(i32(round(top_height.y)), 1);
     let top = i32(round(top_height.x));
