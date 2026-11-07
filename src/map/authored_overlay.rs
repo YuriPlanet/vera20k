@@ -178,6 +178,7 @@ pub(crate) enum MapLoadDirtyKind {
 pub(crate) trait AuthoredOverlayLoadHost {
     type Handle: Copy;
     type Error;
+    type CellAnim;
 
     fn try_construct_overlay(
         &mut self,
@@ -227,7 +228,13 @@ pub(crate) trait AuthoredOverlayLoadHost {
         handle: Self::Handle,
         request: OverlayCellAnim<'_>,
         terrain: &ResolvedTerrainGrid,
-    ) -> Result<(), Self::Error>;
+    ) -> Result<Self::CellAnim, Self::Error>;
+
+    fn tint_cell_anim(
+        &mut self,
+        anim: Self::CellAnim,
+        tiberium: crate::rules::tiberium_type::TiberiumTypeId,
+    );
 
     fn finish_common(&mut self, handle: Self::Handle) -> Result<(), Self::Error>;
 
@@ -720,6 +727,7 @@ struct FinalizerMarkHost<'a, 'resources, H: AuthoredOverlayLoadHost> {
 
 impl<H: AuthoredOverlayLoadHost> OverlayMarkHost for FinalizerMarkHost<'_, '_, H> {
     type Error = AuthoredOverlayFinalizeError<H::Error>;
+    type CellAnim = H::CellAnim;
 
     fn tiberium_error(error: crate::rules::overlay_types::TiberiumImageError) -> Self::Error {
         AuthoredOverlayFinalizeError::Tiberium(error)
@@ -867,10 +875,21 @@ impl<H: AuthoredOverlayLoadHost> OverlayMarkHost for FinalizerMarkHost<'_, '_, H
             .map_err(AuthoredOverlayFinalizeError::Host)
     }
 
-    fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<(), Self::Error> {
+    fn spawn_cell_anim(
+        &mut self,
+        request: OverlayCellAnim<'_>,
+    ) -> Result<Self::CellAnim, Self::Error> {
         self.host
             .spawn_cell_anim(self.handle, request, self.terrain)
             .map_err(AuthoredOverlayFinalizeError::Host)
+    }
+
+    fn tint_cell_anim(
+        &mut self,
+        anim: Self::CellAnim,
+        tiberium: crate::rules::tiberium_type::TiberiumTypeId,
+    ) {
+        self.host.tint_cell_anim(anim, tiberium);
     }
 
     fn recalc(&mut self, cell: NativeOverlayCellTarget) -> Result<(), Self::Error> {
@@ -1176,6 +1195,7 @@ mod tests {
              [Tiberiums]\n0=Riparius\n\
              [Riparius]\nImage=1\nMaxDensity=12\n",
         );
+        let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
         (
             OverlayTypeRegistry::from_ini(&ini, None),
             TiberiumTypeRegistry::from_ini(&ini),
@@ -1249,7 +1269,8 @@ mod tests {
         Recalc(AuthoredOverlayCellRef, FinalizedOverlayCell),
         WallZone(AuthoredOverlayCellRef),
         BlockerIncrement(AuthoredOverlayCellRef),
-        CellAnim(u32, String, NativeOverlayCellTarget, [i32; 2], Option<u8>),
+        CellAnim(u32, String, NativeOverlayCellTarget, [i32; 2]),
+        CellAnimTint(u32, u8),
         FinishCommon(u32),
         FinishSlope(u32),
         Drain,
@@ -1268,6 +1289,7 @@ mod tests {
     impl AuthoredOverlayLoadHost for LoadHost {
         type Handle = u32;
         type Error = Infallible;
+        type CellAnim = u32;
 
         fn try_construct_overlay(
             &mut self,
@@ -1345,15 +1367,22 @@ mod tests {
             handle: Self::Handle,
             request: OverlayCellAnim<'_>,
             _terrain: &ResolvedTerrainGrid,
-        ) -> Result<(), Self::Error> {
+        ) -> Result<Self::CellAnim, Self::Error> {
             self.events.push(LoadEvent::CellAnim(
                 handle,
                 request.anim.to_string(),
                 request.cell,
                 request.anim_xy,
-                request.tiberium.map(|tiberium| tiberium.0),
             ));
-            Ok(())
+            Ok(handle)
+        }
+
+        fn tint_cell_anim(
+            &mut self,
+            anim: Self::CellAnim,
+            tiberium: crate::rules::tiberium_type::TiberiumTypeId,
+        ) {
+            self.events.push(LoadEvent::CellAnimTint(anim, tiberium.0));
         }
 
         fn finish_common(&mut self, handle: Self::Handle) -> Result<(), Self::Error> {
@@ -1677,7 +1706,6 @@ mod tests {
                     "SPARK".to_string(),
                     NativeOverlayCellTarget::Real(8),
                     [2 * 256 + 128 + 0x180, 256 + 128 + 0x180],
-                    None,
                 ),
                 LoadEvent::Recalc(
                     real(8, (2, 1)),
@@ -1867,6 +1895,7 @@ mod tests {
              [Tiberiums]\n0=Riparius\n\
              [Riparius]\nImage=1\n",
         );
+        let crate_ini = crate::rules::tiberium_type::with_tiberium_image_slots(&crate_ini);
         let crate_registry = OverlayTypeRegistry::from_ini(&crate_ini, None);
         let crate_tiberium = TiberiumTypeRegistry::from_ini(&crate_ini);
         let mut crate_terrain = flat_terrain(12, 12);

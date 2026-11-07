@@ -1095,9 +1095,16 @@ mod tests {
         //48738A's growth flag precedes classification; an earlier null type
         //must stay untouched while disabled, then stop the reached lookup.
         let cold = crate::rules::tiberium_type::with_tiberium_image_slots(&IniFile::from_str(
-            "[Tiberiums]\n0=Cold\n1=Bound\n[Cold]\nValue=1\n[Bound]\nImage=1\n[OverlayTypes]\n0=ORE\n[ORE]\nTiberium=yes\n",
+            "[Tiberiums]\n0=Cold\n1=Bound\n[Cold]\nValue=1\n[Bound]\nImage=1\n\
+             [Animations]\n0=FIRE01\n[OverlayTypes]\n0=ORE\n\
+             [ORE]\nTiberium=yes\nLand=Road\nCellAnim=FIRE01\n",
         ));
-        let cold = RuleSet::from_ini(&cold).unwrap();
+        let mut cold = RuleSet::from_ini_with_fixed_art_for_test(&cold, &art).unwrap();
+        cold.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
+        assert_eq!(
+            cold.bind_anim_class_assets(&["FIRE01".into()], &assets, "TEM", "TEMPERATE"),
+            0
+        );
         let mut blocked = Simulation::new();
         blocked.overlay_grid = Some(OverlayGrid::new(32, 32));
         blocked
@@ -1142,6 +1149,56 @@ mod tests {
                 TiberiumImageError::UnboundImage(TiberiumTypeId(0))
             ))
         ));
+
+        // Mark5FD1AE constructs the CellAnim (delay0 -> Start424CE0)
+        // BEFORE GetTiberiumType5FD1BB reaches the earlier null binding.
+        // ReadINI5FE8C9..5FE8E7 coerces Tiberium + Land=Clear to Tiberium
+        // land. Road avoids that independent, earlier germination lookup.
+        blocked.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(5000));
+        assert!(matches!(
+            crate::sim::crates::construct_runtime_overlay(
+                &mut blocked,
+                &cold.crate_rules,
+                &cold,
+                cold.overlay_registry(),
+                (12, 12),
+                0,
+                OverlayRecalc::Immediate,
+                FrameEffects::default(),
+            ),
+            Err(RuntimeOverlayError::Tiberium(
+                TiberiumImageError::UnboundImage(TiberiumTypeId(0))
+            ))
+        ));
+        let (&child_id, child) = blocked
+            .anims()
+            .next()
+            .expect("CellAnim allocation must precede the failed Tiberium lookup");
+        let overlays: Vec<_> = blocked.load_objects.retained_overlay_ids().collect();
+        assert_eq!(overlays.len(), 1);
+        let overlay = blocked
+            .load_objects
+            .snapshot(
+                LoadOverlayHandle::from_stable_id(overlays[0]),
+                &blocked.substrate.pending_delete,
+            )
+            .unwrap();
+        assert_eq!(
+            overlay.native_id.map(|id| id.wrapping_add(1)),
+            Some(child.native_unique_id())
+        );
+        assert_eq!(child.runtime().delay_remaining, 0);
+        assert!(child.start_sound_active());
+        assert!(
+            blocked.sound_events.iter().any(|event| matches!(
+                event,
+                crate::sim::world::SimSoundEvent::AnimationStarted { anim_id, sound_id, world }
+                    if *anim_id == child_id
+                        && sound_id == "BUILDINGFIREBIG"
+                        && *world == child.world_coord()
+            )),
+            "retail FIRE01 Start must emit its sound before classification fails"
+        );
     }
 
     /// `NativeCellObjectView` is the Rust read of `Cell+0xE4 FirstObject != 0`:

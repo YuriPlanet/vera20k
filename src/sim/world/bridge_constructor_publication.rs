@@ -135,6 +135,7 @@ struct BridgeMarkHost<'p, 'a> {
 
 impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
     type Error = String;
+    type CellAnim = crate::sim::overlay_mark_host::OverlayCellAnimHandle;
 
     fn tiberium_error(error: crate::rules::overlay_types::TiberiumImageError) -> Self::Error {
         error.to_string()
@@ -240,7 +241,7 @@ impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
         Err("bridge reconstruction hosts no wall Mark".into())
     }
 
-    fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<(), String> {
+    fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<Self::CellAnim, String> {
         let rules = self.publication.rules;
         let ground = crate::sim::overlay_mark_host::OverlayCellAnimGround::read(
             self.publication.terrain(),
@@ -254,8 +255,17 @@ impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
             crate::sim::anim_class::AnimConstructorInput::Runtime,
             self.publication.frame_effects,
         )
-        .map(|_| ())
         .map_err(|error| error.to_string())
+    }
+
+    fn tint_cell_anim(
+        &mut self,
+        anim: Self::CellAnim,
+        tiberium: crate::rules::tiberium_type::TiberiumTypeId,
+    ) {
+        self.publication
+            .sim
+            .tint_overlay_cell_anim(self.publication.rules, anim, tiberium);
     }
 
     fn recalc(&mut self, cell: Cell) -> Result<(), String> {

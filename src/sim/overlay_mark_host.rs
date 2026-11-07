@@ -121,6 +121,7 @@ impl<'a> SimulationMarkHost<'a> {
 
 impl OverlayMarkHost for SimulationMarkHost<'_> {
     type Error = RuntimeOverlayError;
+    type CellAnim = OverlayCellAnimHandle;
 
     fn tiberium_error(error: crate::rules::overlay_types::TiberiumImageError) -> Self::Error {
         error.into()
@@ -340,17 +341,27 @@ impl OverlayMarkHost for SimulationMarkHost<'_> {
         Ok(())
     }
 
-    fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<(), RuntimeOverlayError> {
+    fn spawn_cell_anim(
+        &mut self,
+        request: OverlayCellAnim<'_>,
+    ) -> Result<Self::CellAnim, RuntimeOverlayError> {
         let rules = self.rules;
         let ground = OverlayCellAnimGround::read(self.terrain(), &request);
-        self.sim.construct_overlay_cell_anim(
+        Ok(self.sim.construct_overlay_cell_anim(
             rules,
             request,
             ground,
             AnimConstructorInput::Runtime,
             self.effects,
-        )?;
-        Ok(())
+        )?)
+    }
+
+    fn tint_cell_anim(
+        &mut self,
+        anim: Self::CellAnim,
+        tiberium: crate::rules::tiberium_type::TiberiumTypeId,
+    ) {
+        self.sim.tint_overlay_cell_anim(self.rules, anim, tiberium);
     }
 
     fn recalc(&mut self, cell: NativeCellIdentity) -> Result<(), RuntimeOverlayError> {
@@ -425,6 +436,13 @@ pub(crate) struct OverlayCellAnimGround {
     cell: Option<(u16, u16)>,
 }
 
+/// The new Anim and the original Mark cell, retained only until the caller
+/// finishes the post-construction tint block. The Anim store owns the object.
+pub(crate) struct OverlayCellAnimHandle {
+    id: AnimId,
+    cell: Option<(u16, u16)>,
+}
+
 impl OverlayCellAnimGround {
     pub(crate) fn read(terrain: &ResolvedTerrainGrid, request: &OverlayCellAnim<'_>) -> Self {
         let z = crate::sim::movement::ground_pose::query_ground_height(
@@ -453,10 +471,8 @@ impl Simulation {
     /// `OverlayClass::Mark @ 0x005FD124..0x005FD1F4`: construct the CellAnim
     /// at the Overlay's Location plus `0x180` on the ground height
     /// `MapClass @ 0x00578080` reports at the Location, with `(0, 1, 0x600,
-    /// 0, 0)`. Only a cell that resolved a TiberiumClass enters the tint
-    /// block: that class's Color scheme into `+0xD4` and the cell's `+0x10A`
-    /// signed light intensity into `+0xFC`, independently of depth `+0x100`.
-    /// Otherwise the constructor's values stay. Source: original instructions.
+    /// 0, 0)`, including delay-zero Start. Mark performs its live-cell
+    /// classification only after this call. Source: original instructions.
     pub(crate) fn construct_overlay_cell_anim(
         &mut self,
         rules: &RuleSet,
@@ -464,7 +480,7 @@ impl Simulation {
         ground: OverlayCellAnimGround,
         constructor: AnimConstructorInput,
         effects: crate::sim::world::FrameEffects<'_>,
-    ) -> Result<AnimId, AnimSpawnError> {
+    ) -> Result<OverlayCellAnimHandle, AnimSpawnError> {
         let [x, y] = request.anim_xy;
         let ground_z = ground.z;
         let type_name = self.interner.intern(request.anim);
@@ -488,23 +504,34 @@ impl Simulation {
             constructor,
             effects,
         )?;
-        let Some(tiberium) = request
-            .tiberium
-            .and_then(|type_id| rules.tiberium_types.get(type_id))
-        else {
-            return Ok(anim_id);
+        Ok(OverlayCellAnimHandle {
+            id: anim_id,
+            cell: ground.cell,
+        })
+    }
+
+    /// Mark5FD1C5..5FD1F4: apply the post-Start class's Color and the original
+    /// cell's retained intensity, independently of depth. The shared Mark
+    /// owner has already classified the current cell after construction.
+    pub(crate) fn tint_overlay_cell_anim(
+        &mut self,
+        rules: &RuleSet,
+        anim: OverlayCellAnimHandle,
+        tiberium: crate::rules::tiberium_type::TiberiumTypeId,
+    ) {
+        let Some(tiberium) = rules.tiberium_types.get(tiberium) else {
+            return;
         };
         let remap_color = u8::try_from(tiberium.color_scheme() / 2)
             .ok()
             .map(crate::rules::house_colors::HouseColorIndex);
         if let Some(color) = remap_color {
             assert!(self.substrate.anims.set_anim_remap(
-                anim_id,
+                anim.id,
                 crate::sim::anim_class::AnimRemap::ColorScheme(color),
             ));
         }
-        self.retain_anim_cell_light(anim_id, ground.cell);
-        Ok(anim_id)
+        self.retain_anim_cell_light(anim.id, anim.cell);
     }
 }
 
