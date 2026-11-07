@@ -112,6 +112,16 @@ class NativeCallTrace:
         return index
 
 
+def stored_value(size: int, value: int) -> int:
+    """The bytes a UC_HOOK_MEM_WRITE store writes, as an unsigned integer.
+
+    For a store narrower than its source register, Unicorn passes the whole
+    register on some hosts (arm64) and only the stored bytes on others
+    (x86-64), so recording the raw hook value makes a corpus host-dependent.
+    """
+    return value & ((1 << (8 * size)) - 1)
+
+
 def reconstruct_byte_spans(before: bytes, changed: list) -> bytes:
     """Reconstruct the exact byte-delta receipt without executing a VM."""
     reconstructed = bytearray(before)

@@ -17,7 +17,7 @@ from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX,
                                UC_X86_REG_EIP, UC_X86_REG_ESP, UC_X86_REG_ESI,
                                UC_X86_REG_EDI, UC_X86_REG_EBP, UC_X86_REG_EBX)
-from tools.native_oracle import (RET_MAGIC, finish_vectors,
+from tools.native_oracle import (RET_MAGIC, finish_vectors, stored_value,
                                  provenance, run_checked)
 from tools.projectile_oracle.bridge_render_inputs import lexical
 from tools.projectile_oracle.guided_step import i32
@@ -106,7 +106,7 @@ def reader_receipts(*, refinery_dock=False, root=None):
         if address in fields or CONTROLS <= address < CONTROLS + 32 * 32:
             writes.append(dict(layer=current[0], pc=hex(uc.reg_read(UC_X86_REG_EIP)),
                                field=fields.get(address, 'mission_control'),
-                               address=hex(address), size=size, value=value))
+                               address=hex(address), size=size, value=stored_value(size, value)))
 
     h, w = u.hook_add(UC_HOOK_CODE, observe), u.hook_add(UC_HOOK_MEM_WRITE, written)
     try:
@@ -397,16 +397,16 @@ class AttackReturn:
             self.writes.append(dict(instruction=self.instruction, phase=self.phase,
                                     pc=hex(u.reg_read(UC_X86_REG_EIP)),
                                     field='miner_contact_slot' if address == MINER_ITEMS else 'refinery_contact_slot',
-                                    address=hex(address), size=size, value=value))
+                                    address=hex(address), size=size, value=stored_value(size, value)))
         if address - ACTOR in FIELDS or ACTOR + 0x33C <= address < ACTOR + 0x34C:
             self.writes.append(dict(instruction=self.instruction, phase=self.phase,
                                     pc=hex(u.reg_read(UC_X86_REG_EIP)),
                                     field=FIELDS.get(address - ACTOR, 'cargo'),
-                                    offset=hex(address - ACTOR), size=size, value=value))
+                                    offset=hex(address - ACTOR), size=size, value=stored_value(size, value)))
         if self.idle_control_receipt is not None and address == ACTOR + 0x3B8:
             self.writes.append(dict(instruction=self.instruction, phase=self.phase,
                                     pc=hex(u.reg_read(UC_X86_REG_EIP)), field='burst_index',
-                                    offset='0x3b8', size=size, value=value))
+                                    offset='0x3b8', size=size, value=stored_value(size, value)))
 
     def invoke(self, entry, this=ACTOR, args=(), *, seam=False):
         end = self.call(entry, this, list(args), (RET_MAGIC, APPROACH) if seam else RET_MAGIC)
