@@ -538,7 +538,12 @@ impl MinimapRenderer {
             .map(|r| &r.house_color_ramps)
             .unwrap_or(&default_ramps);
         let projection = self.radar_projection_facts();
+        let terrain = self.native_radar_terrain.as_ref();
         let winners = self.radar_tracker.visible_winners(|entry| {
+            let pixel_cell = match terrain {
+                Some(terrain) => Some(terrain.visibility_cell((entry.x, entry.y))),
+                None => projection.mapless_pixel_to_cell(entry.x, entry.y),
+            };
             radar_pixel_candidate_eligible(
                 entry,
                 entities,
@@ -550,7 +555,7 @@ impl MinimapRenderer {
                 game_mode_nonzero,
                 rules,
                 interner,
-                projection,
+                pixel_cell,
                 cells.as_ref(),
             )
         });

@@ -322,8 +322,9 @@ pub(super) fn build_radar_object_update(
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> RadarObjectUpdate {
     let resolved_terrain = cells.map(crate::map::resolved_terrain::NativeCellQuery::terrain);
-    let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
-    let object = rules.and_then(|rules| rules.object(type_str));
+    let object = rules
+        .zip(interner)
+        .and_then(|(rules, interner)| interner.object_type(entity.type_ref(), rules));
     let [raw_x, raw_y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
     let origin = projection.native_surface.map_or_else(
         || {
