@@ -356,7 +356,7 @@ impl Simulation {
         let owner = entity.owner();
         let cell = (entity.position.rx(), entity.position.ry());
         let refinery = object.refinery;
-        let powered = object.powered;
+        let powered = Self::anim_power_policy(object, entity);
         let damaged = requested_damage_state(
             entity.health,
             object.strength,
@@ -708,7 +708,10 @@ impl Simulation {
         )?;
         let enabled = self.substrate.entities.get(id)?.building_art.stuff_enabled
             && self.building_operational_state(id, rules) == Some(true);
-        if !enabled && object.powered && self.building_anim_power_flags(id, slot, rules).powered {
+        if !enabled
+            && Self::anim_power_policy(object, self.substrate.entities.get(id)?)
+            && self.building_anim_power_flags(id, slot, rules).powered
+        {
             self.substrate.anims.get_mut(new_id)?.pause();
         }
         // RESIDUAL (dormant): `0x00451AFB..0x00451B10` hides a slot-9 anim
@@ -730,6 +733,22 @@ impl Simulation {
     pub(crate) fn building_has_anim(&self, id: u64, slot: u8, rules: &RuleSet) -> bool {
         self.building_anim_config(id, slot, rules)
             .is_some_and(|config| !config.anim_type.is_empty())
+    }
+
+    /// Ares firestorm walls (`BuildingExt::ExtData::UpdateFirewall @
+    /// 10013280`) construct their anims themselves and store them in the
+    /// Special (`+0x584`) or SpecialTwo (`+0x588`) slot, not through
+    /// `0x00451890`: no other slot or the damage flag changes, and the anim
+    /// keeps its constructor's offsets (`sim::ares_firestorm`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn install_ares_firewall_anim(&mut self, id: u64, slot: u8, anim: u64) {
+        let Some(entity) = self.substrate.entities.get_mut(id) else {
+            return;
+        };
+        entity.building_art.anim_slots[usize::from(slot)] = Some(anim);
+        if let Some(object) = self.substrate.anims.get_mut(anim) {
+            object.enter_ares_firewall_slot(id, slot);
+        }
     }
 
     pub fn clear_building_anim_slot(&mut self, id: u64, slot: u8) {
@@ -1064,6 +1083,22 @@ pub fn building_image(entity: &GameEntity, has_buildup: bool) -> BuildingImage {
     }
 }
 
+/// GetCurrentFrame's FirestormWall test (`0x0043EFB3`): the retained frame
+/// of a stock `FirestormWall=` type, whose only writer is gone from YR (the
+/// constructor's 0); the Ares hook replaces the test
+/// ([`crate::sim::ares_firestorm::firewall_body_frame`]).
+fn firestorm_body_frame(entity: &GameEntity, object: &ObjectType) -> Option<i32> {
+    #[cfg(feature = "ares")]
+    {
+        crate::sim::ares_firestorm::firewall_body_frame(entity, object)
+    }
+    #[cfg(not(feature = "ares"))]
+    {
+        let _ = entity;
+        object.firestorm_wall.then_some(0)
+    }
+}
+
 /// Current `BuildingClass::GetCurrentFrame @ 0x0043EF90`, shared by live
 /// DrawBody and the immutable FoggedObject constructor (`0x004D10DC`).
 /// Image selection and DrawBody's opening-gate override are separate callers.
@@ -1082,7 +1117,7 @@ pub fn current_body_frame(
             state: entity.building_body_state().unwrap_or(1),
             base_frame: entity.construction_stage_value(),
             laser_frame: object.laser_fence.then_some(0),
-            firestorm_frame: object.firestorm_wall.then_some(0),
+            firestorm_frame: firestorm_body_frame(entity, object),
             gate_stages: object
                 .gate
                 .then_some(art.map_or(9, |entry| entry.building_gate_stages)),
@@ -1127,7 +1162,7 @@ pub(crate) fn receiver_body_frame(
             },
             base_frame: 0,
             laser_frame: object.laser_fence.then_some(0),
-            firestorm_frame: object.firestorm_wall.then_some(0),
+            firestorm_frame: firestorm_body_frame(entity, object),
             gate_stages: object
                 .gate
                 .then_some(art.map_or(9, |art| art.building_gate_stages)),

@@ -464,6 +464,10 @@ pub enum ProjectileCollisionResponse {
     },
     /// The world's answer to [`ProjectileCollisionPhase::ImpactLadder`].
     ImpactLadder(ImpactLadderWorld),
+    /// The world's answer to [`ProjectileCollisionPhase::AresFirestorm`]:
+    /// the bullet burns.
+    #[cfg(feature = "ares")]
+    AresFirestorm,
 }
 
 /// The target virtual requested at a Bullet AI boundary. Object410540
@@ -487,6 +491,11 @@ pub enum ProjectileCollisionPhase {
     /// `0x00468D80` asks the target and the warhead for
     /// [`resolve_impact_coord`]; the candidate is the bullet's Location.
     ImpactLadder,
+    /// Ares BulletClass_Update_Ranged (`1001AC90`, hook `0x467B94`) asks,
+    /// after the commit, whether the candidate cell holds an active
+    /// firestorm wall that burns the bullet.
+    #[cfg(feature = "ares")]
+    AresFirestorm,
 }
 
 /// The Target facts `BulletClass` impact resolution (`0x00468D80`) reads.
@@ -1746,6 +1755,10 @@ pub struct ProjectileAdvanceResult {
     pub detonations: Vec<ProjectileDetonation>,
     pub expired: Vec<u64>,
     nuke_impacts: Vec<ProjectileNukeImpact>,
+    /// A firestorm wall burnt the bullet (Ares hook `0x467B94`); it is in
+    /// `expired` too.
+    #[cfg(feature = "ares")]
+    pub(crate) ares_firestormed: bool,
 }
 
 impl ProjectileAdvanceResult {
@@ -2192,6 +2205,15 @@ impl ProjectileStore {
         }
     }
 
+    /// Ares TechnoClass_Fire_FSW (`10024C00`) replaces only the Target
+    /// (`+0x10C`) of a bullet whose path crosses a firestorm wall.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_firestorm_retarget(&mut self, id: u64, target: ProjectileTarget) {
+        if let Some(projectile) = self.get_mut(id) {
+            projectile.target = target;
+        }
+    }
+
     /// `BulletClass::Construct @ 0x004664C0`'s Owner (`+0xB0`) on a re-fired
     /// bullet.
     pub(crate) fn set_owner(&mut self, id: u64, owner: u64) {
@@ -2277,6 +2299,8 @@ impl ProjectileStore {
                     ProjectileCollisionPhase::Ordinary { .. } => None,
                     ProjectileCollisionPhase::Shared => collides_at(projectile, candidate),
                     ProjectileCollisionPhase::ImpactLadder => None,
+                    #[cfg(feature = "ares")]
+                    ProjectileCollisionPhase::AresFirestorm => None,
                 },
                 None,
             ) else {
@@ -2626,6 +2650,21 @@ impl ProjectileStore {
             }
         }
         projectile.position = selected_candidate;
+        // Ares BulletClass_Update_Ranged (1001AC90, hook 0x467B94), after
+        // the replicated SetLocation: a bullet the world burns in a firestorm
+        // wall's cell is UnInit'ed there, before any impact (0x467FBA).
+        #[cfg(feature = "ares")]
+        if collides_at(
+            projectile,
+            selected_candidate,
+            ProjectileCollisionPhase::AresFirestorm,
+        )
+        .is_some()
+        {
+            result.ares_firestormed = true;
+            result.expired.push(id);
+            return Some(result);
+        }
         let collision_impact = (!impact_flag)
             .then(|| {
                 collides_at(
@@ -2637,6 +2676,10 @@ impl ProjectileStore {
             .flatten()
             .map(|response| match response {
                 ProjectileCollisionResponse::TargetZClamp(impact) => impact,
+                #[cfg(feature = "ares")]
+                ProjectileCollisionResponse::AresFirestorm => {
+                    unreachable!("only the shared probe answers here")
+                }
                 ProjectileCollisionResponse::Ordinary { .. }
                 | ProjectileCollisionResponse::ImpactLadder(_) => {
                     unreachable!("only the shared probe answers here")

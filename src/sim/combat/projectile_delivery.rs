@@ -373,6 +373,34 @@ pub(crate) fn admit_fired_bullet(
     bullet_id: u64,
     bullet: FiredBullet,
 ) {
+    let _ = admit_bullet(world, rules, weapon, bullet_id, bullet, false);
+}
+
+/// [`admit_fired_bullet`] for TechnoClass::Fire's own shot, whose Ares
+/// TechnoClass_Fire_FSW (`10024C00`, hooks `0x6FF008` and `0x6FF860`) runs
+/// between the construction and BulletClass::Fire
+/// ([`Simulation::ares_fire_at_firestorm`]). False when BulletClass::Fire
+/// refuses: a firestorm wall burnt the `Inviso=` bullet (Ares `1001A940`
+/// UnInits it, so Fire answers its cleared IsAlive, `0x00468B5D`), and the
+/// shot resumes as a failed launch (`0x006FF01E`).
+pub(crate) fn admit_techno_fired_bullet(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    weapon: &WeaponType,
+    bullet_id: u64,
+    bullet: FiredBullet,
+) -> bool {
+    admit_bullet(world, rules, weapon, bullet_id, bullet, true)
+}
+
+fn admit_bullet(
+    world: &mut Simulation,
+    rules: &RuleSet,
+    weapon: &WeaponType,
+    bullet_id: u64,
+    bullet: FiredBullet,
+    techno_fire: bool,
+) -> bool {
     let projectile_type = bullet
         .payload
         .projectile_type()
@@ -398,6 +426,12 @@ pub(crate) fn admit_fired_bullet(
             .admitted_spawns
             .push((bullet_id, delivery.inviso, spawn));
     }
+    #[cfg(feature = "ares")]
+    if techno_fire {
+        world.ares_fire_at_firestorm(bullet_id, bullet.origin, bullet.target_position, rules);
+    }
+    #[cfg(not(feature = "ares"))]
+    let _ = techno_fire;
     if delivery.inviso {
         let on_bridge = bullet.target_on_bridge;
         let placement = inviso_fire_placement(
@@ -408,12 +442,19 @@ pub(crate) fn admit_fired_bullet(
             bullet.origin,
             bullet.target_position,
         );
+        // Ares 1001A940 (hook 0x4688BD): a firestorm wall on the way burns
+        // the bullet before the obstacle walk.
+        #[cfg(feature = "ares")]
+        if world.ares_inviso_firestorm(bullet_id, placement, rules) {
+            return false;
+        }
         #[cfg(feature = "ares")]
         let placement = world.ares_inviso_obstacle(bullet_id, placement, rules);
         world
             .projectiles
             .fire_inviso(bullet_id, placement, on_bridge);
     }
+    true
 }
 
 impl Simulation {
@@ -462,9 +503,8 @@ impl Simulation {
     /// result is overwritten (`0x0046897D`), so default builds stand it on
     /// `placement` even through a wall.
     ///
-    /// RESIDUAL: the hook's `MapClass::FindFirstFirestorm` arm, which
-    /// immolates the bullet at an active Ares firestorm wall; VERA has no
-    /// active firestorm wall.
+    /// Its firestorm arm, which runs first, is
+    /// [`Simulation::ares_inviso_firestorm`].
     #[cfg(feature = "ares")]
     pub(crate) fn ares_inviso_obstacle(
         &self,

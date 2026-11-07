@@ -178,9 +178,19 @@ impl Simulation {
             return Ok(false);
         }
         // Ares 3.0 InfantryClass_Update 10014DB0 (hook 0x51BD4C): an `IsPassable`
-        // building is ignored (0x51BD7D).
+        // building is ignored (0x51BD7D); a `Firestorm.Wall` one takes the
+        // stock FirestormWall branch (0x51BD56) in place of `FirestormWall=`:
+        // only while its owner's firestorm is up does the man scatter.
         #[cfg(feature = "ares")]
         if object.building_type_ext().is_passable {
+            return Ok(false);
+        }
+        #[cfg(feature = "ares")]
+        if object.building_type_ext().firestorm_wall {
+            if !self.ares_firestorm.is_active(building.owner()) {
+                return Ok(false);
+            }
+        } else if object.laser_fence {
             return Ok(false);
         }
         // RESIDUAL: specialized fence state. This prefix compares LaserFence+618
@@ -188,6 +198,9 @@ impl Simulation {
         // owners are absent. Such types retain the prior no-Scatter behavior
         // until those separate mechanisms establish the required state.
         // Stock GAPILE and all ordinary barracks have both type flags false.
+        // (Ares builds own the firestorm arm above; the hook leaves the stock
+        // `FirestormWall=` flag unread.)
+        #[cfg(not(feature = "ares"))]
         if object.laser_fence || object.firestorm_wall {
             return Ok(false);
         }
@@ -852,8 +865,10 @@ impl Simulation {
             return Ok(outcome);
         }
 
-        // Ares 3.0 10014BA0 (hook 0x4DA53E) heals a live Foot in tiberium
-        // right after FootAI's TechnoAI call, ahead of 4DA54E.
+        // Ares 3.0 10014BA0 (hook 0x4DA53E) burns a live Foot standing in
+        // an active firestorm wall, then heals one in tiberium, right after
+        // FootAI's TechnoAI call; the hook then replays 4DA53E..548's
+        // Object+90 reload, so a burnt Foot returns here.
         #[cfg(feature = "ares")]
         if !tube_active_at_entry
             && sim.substrate.entities.get(stable_id).is_some_and(|entity| {
@@ -863,7 +878,17 @@ impl Simulation {
                 )
             })
         {
+            outcome.bridge_state_changed |=
+                sim.ares_foot_firestorm(stable_id, rules, overlay_registry, object_ctx.effects);
             sim.ares_foot_tiberium_heal(stable_id, rules);
+            if sim
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_none_or(|entity| entity.death.is_dying() || !entity.lifecycle.object_alive())
+            {
+                return Ok(outcome);
+            }
         }
         // Foot4DA54E follows the post-TechnoAI Object+90 gate above.
         // An entry-active Tube bypasses FootAI; it must retain the byte.

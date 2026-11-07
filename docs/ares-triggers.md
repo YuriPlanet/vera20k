@@ -79,6 +79,8 @@ into that House's index first (hook `0x71EE79`).
 - 148: the announcer voice becomes Value (at least -1) when it is below the
   voice count (three stock tags plus `[EVATypes]`); the client applies it.
 - 149: the triggering object, while alive, joins group Value.
+- 92/93 (Activate/Deactivate Firestorm) raise or drop the trigger House's
+  firestorm ([ares-firestorm.md](ares-firestorm.md)).
 - 98 (play a sound at a random waypoint) chooses among every defined
   waypoint, without the 400 cap, and draws nothing when none is defined
   (`0x10039B60`, hook `0x6E1780`).
@@ -101,8 +103,6 @@ into that House's index first (hook `0x71EE79`).
 
 - Reverse engineering (Grinding `ReverseEngineersVictims`) is not ported, so
   78 is never met and 79/80 are never raised.
-- Actions 92/93 (Activate/DeactivateFirestorm) need the Ares firestorm state
-  (`SetFirestormState 0x10022590`), which VERA lacks; they keep the stock body.
 - 76 from a drain running out or a hold runs its Triggers without the frame's
   sound boundary and overlay table, which those House passes do not receive.
 - PrepareSaveToINI's parameter kinds (hook `0x71F39B`) and the action write

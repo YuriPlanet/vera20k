@@ -1434,6 +1434,13 @@ impl Simulation {
         if techno_alive_on_entry {
             self.spatial_threat_after_unlimbo(stable_id, context.rules(), context.terrain());
         }
+        // Ares 3.0 TechnoClass_Put_1/_2 (1004EDE0, hooks 0x6F6D0E and
+        // 0x6F6F20): every successful TechnoClass::Unlimbo, the dead arm
+        // included, gives a `HasSpotlight=` Techno its BuildingLight here;
+        // BuildingClass_Put_DontSpawnSpotlight (1004EA10, hook 0x441163)
+        // skips the building's own construction below.
+        #[cfg(feature = "ares")]
+        self.construct_spotlight(stable_id, context.rules());
         // FootClass::Unlimbo @ 0x004D7170 dispatches active Drive/Ship
         // Force_Slope at 0x004D71A9 only after TechnoClass placement succeeds.
         // This precedes display/Logic exposure and must not run on either
@@ -1665,6 +1672,23 @@ impl Simulation {
                 self.freeze_building_in_fog(viewer, stable_id, false, context);
             }
         }
+        // Ares 3.0 BuildingClass_Put_FirestormWall (10014A70, hook
+        // 0x440D01) connects a placed firestorm wall section to its
+        // neighbours (`UpdateFirewallLinks`).
+        #[cfg(feature = "ares")]
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+        {
+            self.ares_update_firewall_links(
+                stable_id,
+                context.rules(),
+                context.registry(),
+                context.effects(),
+            );
+        }
         // Building440D07: recompute from the PRE-append House+68. Failed
         // Mark and the earlier dead arms never reach it.
         if let Some(owner) = self
@@ -1704,6 +1728,7 @@ impl Simulation {
         self.mark_building_base_reservation_with_arg(stable_id, false, context);
         self.light_building_at_unlimbo(stable_id, context);
         self.discover_building_owner_after_unlimbo(stable_id, context);
+        #[cfg(not(feature = "ares"))]
         self.construct_spotlight(stable_id, context.rules());
         // Unlimbo44119C clears this object's retained primary before
         //448070 asks the owning house for another live primary.
@@ -4310,6 +4335,23 @@ impl Simulation {
                 context.effects(),
             );
         }
+        // Ares 3.0 BuildingClass_Remove_FirestormWall (10014A70, hook
+        // 0x445DF4) after the base Limbo disconnects a firestorm wall
+        // section from its neighbours (`UpdateFirewallLinks`).
+        #[cfg(feature = "ares")]
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+        {
+            self.ares_update_firewall_links(
+                stable_id,
+                context.rules(),
+                context.registry(),
+                context.effects(),
+            );
+        }
         // Building445DF4..445E14 follows the base Limbo, including the
         // already-limbo branch4458CE. This is one House/category callback,
         // never a global eligibility sweep or a boolean-transition latch.
@@ -6151,15 +6193,23 @@ impl Simulation {
                 // `+0x2D0 != 0`. This is the only mechanism that drops a
                 // destroyed wing target, so without it a Carrier keeps sending
                 // its Hornets at a corpse. The forward sits OUTSIDE the control
-                // test, so it runs on a cloak dive as well as on UnInit.
-                crate::sim::spawn_manager::notify_pointer_expired(
-                    self,
-                    listener_id,
-                    expired_id,
-                    context.rules(),
-                    context.registry(),
-                    context.effects(),
-                );
+                // test, so it runs on a cloak dive as well as on UnInit. Ares
+                // 3.0 TechnoClass_PointerGotInvalid_SpawnCloakOwner (1004A910,
+                // hook 0x707B19) skips it for the manager's own owner unless
+                // it is removed, so a cloaking carrier keeps its spawns.
+                if !(cfg!(feature = "ares")
+                    && control == PointerExpiryControl::DetachAll
+                    && expired_id == listener_id)
+                {
+                    crate::sim::spawn_manager::notify_pointer_expired(
+                        self,
+                        listener_id,
+                        expired_id,
+                        context.rules(),
+                        context.registry(),
+                        context.effects(),
+                    );
+                }
                 // The CaptureManager forward — `0x00707B14 CALL 0x00471F90` —
                 // sits inside the `if (control != 0)` block opened at
                 // `0x00707AE7`, so a dive leaves mind-control links alone while

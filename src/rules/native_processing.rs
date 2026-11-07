@@ -3821,6 +3821,8 @@ pub(crate) struct AresGlobalControls {
     tiberium: crate::rules::ares_tiberium::TiberiumGlobalRules,
     #[serde(default)]
     drop_pod: crate::rules::superweapon_type::AresDropPodGlobalRules,
+    #[serde(default)]
+    firestorm: crate::rules::ares_firestorm::FirestormGlobalRules,
 }
 
 #[cfg(feature = "ares")]
@@ -3843,6 +3845,7 @@ impl Default for AresGlobalControls {
             building: Default::default(),
             tiberium: Default::default(),
             drop_pod: Default::default(),
+            firestorm: Default::default(),
         }
     }
 }
@@ -3859,6 +3862,10 @@ impl AresGlobalControls {
 
     pub(crate) fn tiberium(&self) -> &crate::rules::ares_tiberium::TiberiumGlobalRules {
         &self.tiberium
+    }
+
+    pub(crate) fn firestorm(&self) -> &crate::rules::ares_firestorm::FirestormGlobalRules {
+        &self.firestorm
     }
 
     /// RESIDUAL consumer: SW_DropPod::Activate (10070E40) and the DropPod
@@ -6181,6 +6188,36 @@ impl RulesPassProcessor {
                     2048,
                 )
             });
+            // 1002AAF0 sets the firestorm anims' Find defaults on the
+            // rulesmd.ini pass only; 1002A800 reads the firestorm keys after
+            // TogglePower and before BountyEnablers (Find-only pointers).
+            let default_anims = primary_rules.then(|| {
+                crate::rules::ares_firestorm::FIRESTORM_DEFAULT_ANIMS.map(|name| {
+                    find_existing_type(&self.families, RulesTypeFamily::Animation, name)
+                        .map(|index| self.resolved_type_key(RulesTypeFamily::Animation, index))
+                })
+            });
+            let audio_visual = pass.section("AudioVisual");
+            let anims = crate::rules::ares_firestorm::FIRESTORM_ANIM_KEYS.map(|key| {
+                audio_visual.and_then(|section| {
+                    self.resolve_existing_type_from(section, key, RulesTypeFamily::Animation)
+                })
+            });
+            let warhead = pass.section("CombatDamage").and_then(|section| {
+                self.resolve_existing_type_from(
+                    section,
+                    "FirestormWarhead",
+                    RulesTypeFamily::Warhead,
+                )
+            });
+            self.ares_global_controls.firestorm.read_after_type_data(
+                pass,
+                crate::rules::ares_firestorm::FirestormReferences {
+                    default_anims,
+                    anims,
+                    warhead,
+                },
+            );
             self.ares_global_controls
                 .bounty
                 .read_after_type_data(pass, enablers);

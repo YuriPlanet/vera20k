@@ -65,6 +65,8 @@ pub(crate) mod radar_jammer; // Ares RadarJamRadius= jammers (JammerClass 100685
 #[cfg(feature = "ares")]
 pub(crate) mod ares_degrade; // Ares low-power degrading (DamageDelay 100247A0)
 #[cfg(feature = "ares")]
+pub(crate) mod ares_firestorm; // Ares firestorm walls (UpdateFirewall 10013280)
+#[cfg(feature = "ares")]
 pub(crate) mod ares_garrison; // Ares urban combat and raidable garrisons
 #[cfg(feature = "ares")]
 pub(crate) mod ares_rubble; // Ares advanced rubble (SwitchRubble 1000F2B0)

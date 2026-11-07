@@ -192,6 +192,8 @@ pub(crate) mod ares_building_type;
 #[cfg(feature = "ares")]
 pub(crate) mod ares_bullet_type;
 #[cfg(feature = "ares")]
+pub(crate) mod ares_firestorm;
+#[cfg(feature = "ares")]
 pub(crate) mod ares_prism_forwarding;
 #[cfg(feature = "ares")]
 pub mod ares_cloak_power;

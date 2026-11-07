@@ -56,7 +56,8 @@ AlliedSolidTransparency=yes     ; buildings let their owner's allies through
   1001A940` (hook `0x4688BD`): an `Inviso=` bullet stands on the first
   obstacle between its launch and its placement, at that cell's centre, for
   FireAt's and shrapnel's bullets alike. Without Ares the original walk's
-  result is overwritten.
+  result is overwritten. Its firestorm arm, which runs first, is in
+  [ares-firestorm.md](ares-firestorm.md).
 - `sim/combat/shrapnel.rs`: `BulletClass_Shrapnel_WeaponType1/2`
   (`1001ABF0`, hooks `0x46A5B2`/`0x46AA27`) give each shrapnel fragment its
   weapon, which its detonation reads (`RadLevel=`, Ivan bombs) and which a
@@ -73,8 +74,6 @@ an Ares build: their only callers sit inside the code the hooks above skip.
 
 ## Not covered
 
-- The firestorm arm of `0x4688BD` (`MapClass::FindFirstFirestorm`,
-  `ImmolateVictim`): VERA has no active Ares firestorm wall.
 - The other BulletTypeExt keys: `Parachuted` (`46867F`), `Splits`,
   `RetargetSelf`, `RetargetAccuracy`, `AirburstSpread` and `AroundTarget`
   (the airburst tail `469EBA`, `1001A090`, which Ares builds skip),

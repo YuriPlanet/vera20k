@@ -1462,6 +1462,8 @@ impl Simulation {
         self.unit_deliveries.hash_state(hasher);
         #[cfg(feature = "ares")]
         self.ares_chrono_warps.hash_state(hasher);
+        #[cfg(feature = "ares")]
+        self.ares_firestorm.hash_state(hasher);
         for (owner, weapons) in self.super_weapons.iter() {
             owner.hash(hasher);
             for (type_id, inst) in weapons {
@@ -1869,6 +1871,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     {
         b"building-online-latch-off-v1".hash(hasher);
     }
+    #[cfg(feature = "ares")]
+    if entity.building_online.ares_toggled_off() {
+        b"ares-building-toggled-off-v1".hash(hasher);
+    }
     if entity.building_has_engineer.is_set() {
         b"building-has-engineer-v1".hash(hasher);
     }
@@ -1917,6 +1923,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     if !entity.sensor_array_counter.is_zero() {
         b"ares-sensor-array-counter-v1".hash(hasher);
         entity.sensor_array_counter.hash(hasher);
+    }
+    #[cfg(feature = "ares")]
+    if !entity.ares_firestorm_wall.is_zero() {
+        b"ares-firestorm-wall-frame-v1".hash(hasher);
+        entity.ares_firestorm_wall.hash(hasher);
     }
     #[cfg(feature = "ares")]
     if entity.sonar_timer != crate::sim::timer::CdTimer::default() {

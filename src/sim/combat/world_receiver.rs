@@ -54,10 +54,21 @@ pub(crate) fn apply_foot_radiation(
         return None;
     }
     let entity = world.substrate.entities.get(stable_id)?;
+    // Ares 3.0 FootClass_Update_RadImmune (10049490, hook 0x4DA584): the
+    // rank's RADIMMUNE skips the whole radiation block.
+    #[cfg(feature = "ares")]
+    let rad_immune = world
+        .interner
+        .object_type(entity.type_ref(), rules)
+        .and_then(|object| object.promotion_abilities())
+        .is_some_and(|abilities| abilities.rad_immune(entity.veterancy.raw()));
+    #[cfg(not(feature = "ares"))]
+    let rad_immune = false;
     if !matches!(
         entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
     ) || !entity.lifecycle.object_alive()
+        || rad_immune
         || entity.mover_facts.immune_to_radiation()
         || crate::sim::movement::air_movement::is_high_flying(
             entity,
@@ -1338,6 +1349,25 @@ pub(crate) fn commit_entities(
         {
             continue;
         }
+        // Ares 3.0 BuildingClass_ReceiveDamage_FSW (10014A90, hook 0x4423E7),
+        // past the type gates: an active firestorm wall section returns 0
+        // and the hit shortens its House's firestorm drain instead.
+        #[cfg(feature = "ares")]
+        if world
+            .substrate
+            .entities
+            .get(target_id)
+            .is_some_and(|target| {
+                target.category() == EntityCategory::Structure
+                    && !super::receiver_call::building_type_gate_returns_zero(
+                        world.interner.object_type(target.type_ref(), rules),
+                        event.receiver_flags,
+                    )
+            })
+            && world.ares_firestorm_absorbs_damage(target_id, event.damage, rules)
+        {
+            continue;
+        }
         // Building4422F9..44234A copies its sparse contacts before calling
         // Techno442425. Destroy/Stun can remove the live links before the
         // concrete NowDead loop442511 resumes, so this per-receiver snapshot
@@ -1833,6 +1863,17 @@ pub(crate) fn commit_entities(
         // tail (`0x00702B47..0x00702D0B`), whose Scatter can run its locomotor
         // Process at once.
         if synchronous_retaliation {
+            // Ares 3.0 TechnoClass_ReceiveDamage_OpenTopped (1004AD10, hook
+            // 0x702A38): a source riding an open-topped transport (+0x82,
+            // +0x11C) hands the whole retaliation decision to that transport.
+            #[cfg(feature = "ares")]
+            let attacker_id = world
+                .substrate
+                .entities
+                .get(attacker_id)
+                .filter(|source| source.passenger_role.in_open_transport())
+                .and_then(|source| source.passenger_role.transporter())
+                .unwrap_or(attacker_id);
             let retaliates = attacker_id != RAD_NO_ATTACKER && {
                 #[cfg(any(test, feature = "test-support"))]
                 death

@@ -1453,6 +1453,35 @@ fn stock_refinery_free_unit_spawns_on_building_up_completion_once() {
     assert_eq!(unit_ids(&sim, "Americans", "CMIN").len(), 1);
 }
 
+/// Ares 10014390 (hook 0x446E9F): a FreeUnit without `Harvester=` is born
+/// on Area_Guard instead of Harvest.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_non_harvester_free_unit_is_born_guarding_the_area() {
+    let ini = IniFile::from_str(
+        "[Countries]\n0=Americans\n[VehicleTypes]\n0=TANK\n\
+         [BuildingTypes]\n0=GACNST\n1=GAREFN\n\
+         [GACNST]\nOwner=Americans\nFactory=BuildingType\n\
+         [GAREFN]\nOwner=Americans\nStrength=1000\nRefinery=yes\nFreeUnit=TANK\n\
+         [TANK]\nSpeedType=Track\nCost=700\nSpeed=4\n[Clear]\nBuildable=yes\n",
+    );
+    let art_ini = IniFile::from_str("[GACNST]\nFoundation=4x4\n[GAREFN]\nFoundation=4x3\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art_ini).unwrap();
+    rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art_ini));
+    let mut sim = placement_sim();
+    let mut grid = PathGrid::new(64, 64);
+    spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 14, 20);
+    let refinery_id = ready_and_place(&mut sim, &rules, "Americans", "GAREFN", 20, 20);
+    block_building_foundation(&mut grid, &rules, "GAREFN", 20, 20);
+    install_refinery_test_terrain(&mut sim);
+    set_ticks_until_completion(&mut sim, refinery_id, 1);
+    sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+    let tanks = unit_ids(&sim, "Americans", "TANK");
+    assert_eq!(tanks.len(), 1);
+    let tank = sim.substrate.entities.get(tanks[0]).unwrap();
+    assert_eq!(tank.mission.current().known(), Some(MissionType::AreaGuard));
+}
+
 #[test]
 fn stock_4x3_refinery_free_unit_is_refused_its_footprint_and_placed_by_the_nearby_search() {
     // The primary cell is `(bx + W/2, by + H/2 + 1)`, which for a 4x3 refinery at
@@ -3503,7 +3532,9 @@ fn sell_back_admits_by_control_buildup_and_firestorm_wall() {
         assert_eq!(clicks(&sim), 0);
 
         let mut sim = scene(&rules, "GAFWLL");
-        assert!(can_sell_building(&sim, &rules, 1));
+        // Ares' hook 0x449518 (10014A20) asks `Firestorm.Wall` instead of
+        // `FirestormWall=`; Sell_Back keeps the stock flag.
+        assert_eq!(can_sell_building(&sim, &rules, 1), !cfg!(feature = "ares"));
         assert!(
             sell_back(
                 &mut sim,

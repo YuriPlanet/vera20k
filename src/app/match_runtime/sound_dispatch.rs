@@ -1435,7 +1435,8 @@ pub(crate) fn superweapon_launch_cue(
         | K::Protect
         | K::Battery
         | K::SonarPulse
-        | K::EMPulse => SuperWeaponLaunchCue::default(),
+        | K::EMPulse
+        | K::Firestorm => SuperWeaponLaunchCue::default(),
     }
 }
 

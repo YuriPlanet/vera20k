@@ -1706,6 +1706,11 @@ pub struct Simulation {
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) ares_chrono_warps: crate::sim::superweapon::AresChronoWarps,
+    /// The Houses whose Ares firestorm is up (HouseClass+0x1FA); owned by
+    /// `sim::ares_firestorm`, saved and hashed.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_firestorm: crate::sim::ares_firestorm::FirestormHouses,
     /// IonBlastClass's vector (`0x00AA0118`), owned by `ion_blast`. Native
     /// saves no blast; Rust retains pending damaging effects for match restore.
     #[serde(
@@ -4618,6 +4623,8 @@ impl Simulation {
             unit_deliveries: Default::default(),
             #[cfg(feature = "ares")]
             ares_chrono_warps: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_firestorm: Default::default(),
             ion_blasts: Vec::new(),
             alpha_shapes: Default::default(),
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
@@ -5610,6 +5617,12 @@ impl Simulation {
             if inviso {
                 #[cfg(feature = "ares")]
                 let placement = self.ares_shrapnel_flak_placement(stable_id, placement, rules);
+                // Ares 1001A940 (hook 0x4688BD): a firestorm wall on the way
+                // burns the child before the obstacle walk.
+                #[cfg(feature = "ares")]
+                if self.ares_inviso_firestorm(stable_id, placement, rules) {
+                    continue;
+                }
                 #[cfg(feature = "ares")]
                 let placement = self.ares_inviso_obstacle(stable_id, placement, rules);
                 self.projectiles.fire_inviso(stable_id, placement, false);

@@ -117,6 +117,14 @@ impl PassiveScan {
         self.acquired = true;
     }
 
+    /// Ares TechnoClass_Fire_FSW (`10024C00`) stores the same byte (YRpp's
+    /// ShouldLoseTargetNow) when a firestorm wall took the firer's bullet,
+    /// so its next passive scan may drop the target.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_lose_target_now(&mut self) {
+        self.acquired = true;
+    }
+
     /// Assign_Target's first statement (`0x006FCDC4`) and the off-mission
     /// clear (`0x006FA5F0`).
     pub(crate) fn clear_acquired(&mut self) {

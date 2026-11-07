@@ -73,6 +73,10 @@ pub enum SuperWeaponKind {
     /// cannons at the cell (their Missile mission) or detonates each one's
     /// weapon on itself.
     EMPulse,
+    /// Ares `Type=Firestorm` (SW_Firewall, index 3): a charge-drain power
+    /// that raises its owner's firestorm while it drains
+    /// (`sim::ares_firestorm`).
+    Firestorm,
     /// Constructor Type=-1: no recognized name has replaced it. Launch's
     /// unsigned guard6CC3AC returns without a case; ordinary ClickFire still
     /// consumes readiness or its one-time grant. This is not an extension.
@@ -172,6 +176,7 @@ impl SuperWeaponKind {
                 | Self::Battery
                 | Self::SonarPulse
                 | Self::EMPulse
+                | Self::Firestorm
         )
     }
 
@@ -196,6 +201,7 @@ impl SuperWeaponKind {
             Self::Battery => 0x104,
             Self::SonarPulse => 0x105,
             Self::EMPulse => 0x106,
+            Self::Firestorm => 0x107,
             Self::GenericWarhead => -1,
             Self::NoEffect => -1,
         }
@@ -230,6 +236,9 @@ impl SuperWeaponKind {
             "sonarpulse" => Some(Self::SonarPulse),
             #[cfg(feature = "ares")]
             "empulse" => Some(Self::EMPulse),
+            // SW_Firewall::GetTypeString 1006D7E0.
+            #[cfg(feature = "ares")]
+            "firestorm" => Some(Self::Firestorm),
             _ => None,
         }
     }
@@ -857,6 +866,10 @@ impl SuperWeaponType {
                 // pass; its launch needs no target.
                 #[cfg(feature = "ares")]
                 SuperWeaponKind::Battery => None,
+                // SW_Firewall::LoadFromINI10071620 writes Action=None every
+                // pass too.
+                #[cfg(feature = "ares")]
+                SuperWeaponKind::Firestorm => None,
                 // SW_Protect::Initialize10074B60 installs the custom action
                 // and SW_Cursor=IronCurtain; VERA names that cursor by action.
                 #[cfg(feature = "ares")]
@@ -922,13 +935,14 @@ impl SuperWeaponType {
             sidebar_palette: section.read_name("SidebarPalette", 2048).map(str::to_owned),
             show_timer: section.read_bool("ShowTimer", false),
             disableable_from_shell: section.read_bool("DisableableFromShell", false),
-            // SW_Battery::LoadFromINI1006ECC0 forces UseChargeDrain each pass.
+            // SW_Battery::LoadFromINI1006ECC0 and SW_Firewall's (10071620)
+            // force UseChargeDrain each pass.
             use_charge_drain: {
                 #[cfg(feature = "ares")]
-                let battery = kind == SuperWeaponKind::Battery;
+                let forced = matches!(kind, SuperWeaponKind::Battery | SuperWeaponKind::Firestorm);
                 #[cfg(not(feature = "ares"))]
-                let battery = false;
-                battery || section.read_bool("UseChargeDrain", false)
+                let forced = false;
+                forced || section.read_bool("UseChargeDrain", false)
             },
             // Ares LoadFromINIFile (10033370's tail) derives these from the
             // handler's Flags, not user tags: only the Chronosphere pair has
@@ -1938,6 +1952,9 @@ impl AresSuperWeaponLaunch {
         } else if is("HunterSeeker") {
             // SW_HunterSeeker::LoadFromINI10072A30 hard-codes it each pass,
             // after the common read (and Initialize10072990 already did).
+            self.radar_event = false;
+        } else if is("Firestorm") {
+            // SW_Firewall::LoadFromINI10071620 hard-codes it each pass.
             self.radar_event = false;
         } else if is("Protect") {
             self.protect_duration =

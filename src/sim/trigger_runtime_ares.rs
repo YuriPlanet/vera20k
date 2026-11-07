@@ -266,9 +266,8 @@ impl Simulation {
     }
 
     /// TActionExt::Execute (Ares.dll 100396C0, hook 0x6DD8D7) for Ares' own
-    /// actions 146..149; `None` keeps the stock switch. Actions 92/93
-    /// (Firestorm) need the Ares firestorm state, which VERA lacks; 98's
-    /// replacement lives in its stock owner.
+    /// actions 146..149 and the Firestorm actions 92/93; `None` keeps the
+    /// stock switch. 98's replacement lives in its stock owner.
     pub(super) fn ares_execute_action(
         &mut self,
         action: &RuntimeAction,
@@ -280,6 +279,23 @@ impl Simulation {
     ) -> Option<bool> {
         let value = action.value;
         Some(match action.entry.kind {
+            92 | 93 => {
+                // ActivateFirestorm/DeactivateFirestorm: the trigger's House
+                // raises or drops its firestorm (SetFirestormState 10022590)
+                // unless it already is so; handled either way. Native reads
+                // a null House; VERA refuses.
+                let Some(house) = context.incoming_house else {
+                    return Some(false);
+                };
+                self.ares_set_firestorm_state(
+                    house,
+                    action.entry.kind == 92,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                );
+                true
+            }
             146 => {
                 // AuxPower: the House FindHouseByIndex6E45E0 selects by
                 // Value gains Value2 (+0x48) power. Native writes through a

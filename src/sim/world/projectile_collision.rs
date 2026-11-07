@@ -23,6 +23,9 @@ pub(super) struct ProjectileCollisionWorld<'a> {
     pub overlay_registry: Option<&'a crate::rules::overlay_types::OverlayTypeRegistry>,
     pub rules: &'a RuleSet,
     pub map_size: Option<(i32, i32)>,
+    /// The Houses whose Ares firestorm is up (`sim::ares_firestorm`).
+    #[cfg(feature = "ares")]
+    pub ares_firestorm: &'a crate::sim::ares_firestorm::FirestormHouses,
 }
 
 impl ProjectileCollisionWorld<'_> {
@@ -142,7 +145,44 @@ impl ProjectileCollisionWorld<'_> {
                     self.impact_ladder(projectile, candidate),
                 ))
             }
+            #[cfg(feature = "ares")]
+            ProjectileCollisionPhase::AresFirestorm => self
+                .ares_firestorm(projectile, candidate)
+                .then_some(ProjectileCollisionResponse::AresFirestorm),
         }
+    }
+
+    /// Ares BulletClass_Update_Ranged (`1001AC90`, hook `0x467B94`): while
+    /// any firestorm is up, a bullet whose type is not `IgnoresFirestorm=`
+    /// burns at `candidate` when its cell's building (MapClass::GetCellAt,
+    /// CellClass::GetBuilding) is an active firestorm wall not of its
+    /// firer's House.
+    #[cfg(feature = "ares")]
+    fn ares_firestorm(&self, projectile: &Projectile, candidate: ProjectileCoord) -> bool {
+        if !self.ares_firestorm.any_active()
+            || projectile
+                .payload()
+                .projectile_type()
+                .and_then(|id| self.rules.projectile(self.interner.resolve(id)))
+                .is_some_and(|kind| kind.bullet_type_ext.ignores_firestorm)
+        {
+            return false;
+        }
+        let Some(building) = self.building(&self.cell(candidate)) else {
+            return false;
+        };
+        let firer_house = self
+            .entities
+            .get(projectile.source_id())
+            .map(|firer| firer.owner());
+        crate::sim::ares_firestorm::is_active_firestorm_wall(
+            self.ares_firestorm,
+            self.entities,
+            self.interner,
+            self.rules,
+            building,
+            firer_house,
+        )
     }
 
     /// The Target and warhead facts `0x00468D80` reads, with the bullet at
@@ -718,6 +758,8 @@ mod tests {
             overlay_registry: None,
             rules: crate::rules::ruleset::RuleSet::empty_for_test(),
             map_size: Some((2, 3)),
+            #[cfg(feature = "ares")]
+            ares_firestorm: &sim.ares_firestorm,
         }
     }
 

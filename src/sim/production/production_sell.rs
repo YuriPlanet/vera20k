@@ -431,10 +431,19 @@ pub fn can_sell_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
     if entity.ares_raid.raided() {
         return false;
     }
+    // Ares 3.0 BuildingClass_IsSellable_FirestormWall (10014A20, hook
+    // 0x449518) tests `Firestorm.Wall` in place of `FirestormWall=`, then
+    // the stock owner test (`0x00449522`): only while its House's firestorm
+    // is down.
+    #[cfg(feature = "ares")]
+    let wall_sale =
+        object.building_type_ext().firestorm_wall && !sim.ares_firestorm.is_active(entity.owner());
+    #[cfg(not(feature = "ares"))]
+    let wall_sale = object.firestorm_wall;
     entity.category() == EntityCategory::Structure
         && entity.drain.draining_me().is_none()
         && !object.unsellable
-        && (buildup_sale || object.firestorm_wall)
+        && (buildup_sale || wall_sale)
 }
 
 /// A building type's `UndeploysInto=` unit type (`Type+0x408`), resolved as

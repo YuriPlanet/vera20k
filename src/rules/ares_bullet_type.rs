@@ -11,6 +11,8 @@
 //!   garrison's occupants (`sim::ares_garrison`).
 //! - `BallisticScatter.Min` and `.Max` (`+0x34`, `+0x3C`): FireAt's launch
 //!   scatter magnitude (`10019930`, `10019980`).
+//! - The stock ObjectType `IgnoresFirestorm=`, which only the Ares firestorm
+//!   walls read of a projectile (`sim::ares_firestorm`).
 //!
 //! ## Dependency rules
 //! - Part of rules/ — no dependencies on sim/, render/, ui/, audio/, etc.
@@ -35,6 +37,11 @@ pub(crate) struct BulletTypeExtRules {
     pub(crate) ballistic_scatter_min: Option<i32>,
     /// `BallisticScatter.Max` (`+0x3C`, Nullable<Leptons>).
     pub(crate) ballistic_scatter_max: Option<i32>,
+    /// ObjectType `IgnoresFirestorm=` (`+0x239`, constructor false), which
+    /// `ObjectTypeClass::ReadINI @ 0x005F92D0` reads with ReadBool; the Ares
+    /// firestorm checks of a shot read it (`10024C00`, `1001A940`,
+    /// `1001AC90`).
+    pub(crate) ignores_firestorm: bool,
 }
 
 impl Default for BulletTypeExtRules {
@@ -45,6 +52,7 @@ impl Default for BulletTypeExtRules {
             subject_to_trenches: true,
             ballistic_scatter_min: None,
             ballistic_scatter_max: None,
+            ignores_firestorm: false,
         }
     }
 }
@@ -63,6 +71,7 @@ impl BulletTypeExtRules {
             section.read_ares_nullable_leptons("BallisticScatter.Min", ext.ballistic_scatter_min);
         ext.ballistic_scatter_max =
             section.read_ares_nullable_leptons("BallisticScatter.Max", ext.ballistic_scatter_max);
+        ext.ignores_firestorm = section.read_bool("IgnoresFirestorm", ext.ignores_firestorm);
         ext
     }
 

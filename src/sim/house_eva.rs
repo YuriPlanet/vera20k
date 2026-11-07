@@ -22,6 +22,8 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_options::GameOptions;
 use crate::sim::intern::InternedId;
+#[cfg(feature = "ares")]
+use crate::sim::world::FrameEffects;
 use crate::sim::world::{SimSoundEvent, Simulation};
 
 /// `evamd.ini` section played at `0x004F8BA0`.
@@ -51,11 +53,18 @@ pub fn speak_delay_frames(rules: &RuleSet, options: &GameOptions) -> i32 {
 /// ReadAI `0x00672BB9`) and tests each type's `+0x5550` count above zero
 /// (`CounterClass::GetItemCount @ 0x0049FAE0`). It reads three entries with
 /// no bound; a shorter list is read past its end natively and ends here.
+///
+/// Ares HouseClass_Update_BuildConst (`1002F5A0`, hook `0x004F8C97`) tests
+/// every BuildConst entry instead, bounds-checked.
 fn owns_construction_yard(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> bool {
     let Some(house) = sim.houses.get(&owner) else {
         return false;
     };
-    rules.build_const_types.iter().take(3).any(|name| {
+    #[cfg(feature = "ares")]
+    let entries = rules.build_const_types.len();
+    #[cfg(not(feature = "ares"))]
+    let entries = 3;
+    rules.build_const_types.iter().take(entries).any(|name| {
         sim.interner.get(name).is_some_and(|type_id| {
             house
                 .tracking()
@@ -115,6 +124,14 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
         .power_states
         .get(&owner)
         .is_some_and(|power| power.low_power());
+    // Ares HouseClass_Update_BuildConst (1002F5A0, hook 0x004F8C97) first
+    // drops the House's firestorm when it is short (SetFirestormState
+    // false). Native runs it for the local player's House only; VERA for
+    // each human-controlled one, as this whole body.
+    #[cfg(feature = "ares")]
+    if short {
+        sim.ares_set_firestorm_state(owner, false, rules, None, FrameEffects::default());
+    }
     if !short {
         guard = false;
     } else if owns_construction_yard(sim, rules, owner) && !guard {

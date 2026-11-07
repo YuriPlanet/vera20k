@@ -345,6 +345,13 @@ fn infantry_target_admission(
     // Get_Mission (vt+0x184, 0x005B3040): current, else the queued mission.
     let eligible = match mover.mission.effective().known() {
         Some(MissionType::Enter | MissionType::Capture | MissionType::Eaten) => true,
+        // Ares 3.0 InfantryClass_IsCellOccupied_C4Ability 10025580 (hook
+        // 0x0051C325) also admits a rank holding the C4 ability.
+        #[cfg(feature = "ares")]
+        Some(MissionType::Sabotage) => {
+            crate::sim::combat::veterancy::holds_c4(mover.veterancy.rank_kind(), obj)
+        }
+        #[cfg(not(feature = "ares"))]
         Some(MissionType::Sabotage) => obj.c4,
         Some(MissionType::AreaGuard | MissionType::Patrol | MissionType::Guard) => obj.engineer,
         _ => false,
@@ -1372,9 +1379,18 @@ fn full_foot_entry<'a>(
                 continue;
             }
             // Ares 3.0 10014D70 (hook 0x51C4C8): an `IsPassable` building
-            // is ignored.
+            // is ignored; a `Firestorm.Wall` one takes the stock
+            // FirestormWall branch (0x51C4D2): its owner's firestorm refuses
+            // the cell, else the building is ignored.
             #[cfg(feature = "ares")]
             if infantry && bt.building_type_ext().is_passable {
+                continue;
+            }
+            #[cfg(feature = "ares")]
+            if infantry && bt.building_type_ext().firestorm_wall {
+                if live.sim.ares_firestorm.is_active(b.owner) {
+                    return Ok(7);
+                }
                 continue;
             }
             if bt.gate {
@@ -1417,9 +1433,17 @@ fn full_foot_entry<'a>(
                     continue;
                 }
                 // Ares 3.0 10015100 (hook 0x73F7B0): an `IsPassable`
-                // building is ignored.
+                // building is ignored; a `Firestorm.Wall` one takes the stock
+                // FirestormWall branch (0x73F7BA) as for infantry.
                 #[cfg(feature = "ares")]
                 if bt.building_type_ext().is_passable {
+                    continue;
+                }
+                #[cfg(feature = "ares")]
+                if bt.building_type_ext().firestorm_wall {
+                    if live.sim.ares_firestorm.is_active(b.owner) {
+                        return Ok(7);
+                    }
                     continue;
                 }
                 // Ares 3.0 UnitClass_IsCellOccupied_Bib (1005D550, hook

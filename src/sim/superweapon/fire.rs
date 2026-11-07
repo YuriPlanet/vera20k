@@ -352,6 +352,20 @@ impl Simulation {
         }
         // `0x004FAEC6..0x004FAEF2`: every house, last to first.
         let houses: Vec<InternedId> = self.houses.order().iter().rev().copied().collect();
+        // Ares 3.0 HouseClass_SWDefendAgainst_Aborted 10034C70 (hook
+        // 0x004FAF2A): a Super still charged (`+0x6F`) did not fire, and no
+        // house is alerted (no draw).
+        #[cfg(feature = "ares")]
+        let houses = if self
+            .super_weapons
+            .get(&owner)
+            .and_then(|supers| supers.get(&sw_type_id))
+            .is_some_and(|instance| instance.is_ready())
+        {
+            Vec::new()
+        } else {
+            houses
+        };
         for house in houses {
             alert_super_weapon_defense(
                 &self.session,
@@ -429,6 +443,7 @@ fn click_fire(
                 owner,
                 sw_type_id,
                 sw,
+                human,
                 frame_effects.with_overlay_registry(overlay_registry),
             );
         }
@@ -749,7 +764,8 @@ fn launch(
         | SuperWeaponKind::Protect
         | SuperWeaponKind::Battery
         | SuperWeaponKind::SonarPulse
-        | SuperWeaponKind::EMPulse => {}
+        | SuperWeaponKind::EMPulse
+        | SuperWeaponKind::Firestorm => {}
         SuperWeaponKind::MultiMissile => {
             super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
         }
@@ -870,6 +886,25 @@ fn launch(
         #[cfg(feature = "ares")]
         SuperWeaponKind::Battery => {
             super::battery::activate(sim, rules, owner, sw);
+            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            return true;
+        }
+        #[cfg(feature = "ares")]
+        SuperWeaponKind::Firestorm => {
+            // ClickFire's isPlayer (Fire_SW passes `this == PlayerPtr`),
+            // projected as a human-controlled House.
+            let is_player = sim
+                .houses
+                .get(&owner)
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+            super::firewall::activate(
+                sim,
+                rules,
+                owner,
+                is_player,
+                overlay_registry,
+                frame_effects,
+            );
             super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
             return true;
         }

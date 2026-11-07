@@ -631,6 +631,11 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) sensor_array_counter: crate::sim::sensor_lifecycle::SensorArrayCounter,
+    /// A firestorm wall section's FirestormWallFrame (Building+0x61C),
+    /// owned by `sim::ares_firestorm`.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_firestorm_wall: crate::sim::ares_firestorm::FirestormWallFrame,
     /// Ares TechnoExt+0x44 SonarTimer (constructor stopped): while it runs,
     /// CloakDisallowed (10043A40) keeps the object from cloaking.
     /// SW_SonarPulse::Activate100753A0 and the warhead `Sonar.Duration`
@@ -2220,6 +2225,8 @@ impl GameEntity {
             radar_jam: Default::default(),
             #[cfg(feature = "ares")]
             sensor_array_counter: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_firestorm_wall: Default::default(),
             #[cfg(feature = "ares")]
             sonar_timer: Default::default(),
             building_has_engineer: Default::default(),

@@ -5148,6 +5148,15 @@ impl RuleSet {
         self.ares_global_controls.tiberium()
     }
 
+    /// RulesExt's firestorm anims, warhead and damage coefficient
+    /// (`+0xF0..+0x108`, `sim::ares_firestorm`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_firestorm_globals(
+        &self,
+    ) -> &crate::rules::ares_firestorm::FirestormGlobalRules {
+        self.ares_global_controls.firestorm()
+    }
+
     /// Ares RulesExt+70, used by SW_HunterSeeker::Activate100728EB.
     #[cfg(feature = "ares")]
     pub(crate) fn hunter_seeker_buildings(&self) -> &[String] {
@@ -8355,6 +8364,18 @@ impl RuleSet {
                 })
                 .collect::<BTreeMap<_, _>>()
                 .hash(&mut hasher);
+            // ObjectType IgnoresFirestorm=, which only the Ares firestorm
+            // walls read; folded only once a type sets it.
+            let ignores_firestorm = self
+                .object_list
+                .iter()
+                .filter(|object| object.ignores_firestorm)
+                .map(|object| (object.category, object.id.to_ascii_uppercase()))
+                .collect::<std::collections::BTreeSet<_>>();
+            if !ignores_firestorm.is_empty() {
+                b"ares-ignores-firestorm-v1".hash(&mut hasher);
+                ignores_firestorm.hash(&mut hasher);
+            }
             b"ares-keep-alive-v1".hash(&mut hasher);
             let influence_types = self
                 .object_list

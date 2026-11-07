@@ -53,6 +53,10 @@ mod emp_pulse;
 #[cfg(all(test, feature = "ares"))]
 mod emp_pulse_tests;
 mod fire;
+#[cfg(feature = "ares")]
+mod firewall;
+#[cfg(all(test, feature = "ares"))]
+mod firewall_tests;
 pub mod force_shield;
 #[cfg(feature = "ares")]
 mod generic_warhead;
@@ -498,6 +502,15 @@ fn default_can_lose() -> bool {
 }
 
 impl SuperWeaponInstance {
+    /// The timer arm of `10014A90` (`+0x30`/`+0x38`): GetTimeLeft less
+    /// `amount`, at least 0, restarts at `frame`. A draining Super's drain
+    /// ends sooner; a charging one charges sooner.
+    #[cfg(feature = "ares")]
+    fn shorten_for_firestorm_hit(&mut self, frame: i32, amount: i32) {
+        let left = self.charge_timer().remaining(frame);
+        self.store_charge_timer(CdTimer::started(frame, left.wrapping_sub(amount).max(0)));
+    }
+
     /// 100226D0: called only after an admitted Ares Activate returned true.
     #[cfg(feature = "ares")]
     fn record_ares_launch(&mut self, frame: i32) {
@@ -1720,7 +1733,15 @@ pub(crate) fn tick_house_superweapon_instances(
         // that ran out deactivates its new type.
         #[cfg(feature = "ares")]
         if drain_ended && let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) {
-            deactivate_ares_handler(sim, rules, owner, type_id, sw, FrameEffects::default());
+            deactivate_ares_handler(
+                sim,
+                rules,
+                owner,
+                type_id,
+                sw,
+                true,
+                FrameEffects::default(),
+            );
         }
         if let Some([x, y, z]) = fade
             && let Some(sound_id) = rules
@@ -1782,11 +1803,13 @@ fn drain_money(
     true
 }
 
-/// SWTypeExt::Deactivate100325D0: the new type's Deactivate (only Battery's,
-/// 1006EC40, has a body among the ported types), then trigger event 76
-/// (superweapon deactivated, source the Super) on the owner's House Tags.
-/// A stock type without a handler returns before both. The drain-expiry and
-/// hold passes reach this without the frame's effects and overlay table.
+/// SWTypeExt::Deactivate100325D0: the new type's Deactivate (Battery's
+/// 1006EC40 and the Firestorm's 100715F0 have bodies among the ported
+/// types), then trigger event 76 (superweapon deactivated, source the Super)
+/// on the owner's House Tags. A stock type without a handler returns before
+/// both. The drain-expiry and hold passes reach this without the frame's
+/// effects and overlay table. `is_player` is ClickFire's (the drain expiry
+/// passes true, the loss and hold false).
 #[cfg(feature = "ares")]
 pub(super) fn deactivate_ares_handler(
     sim: &mut Simulation,
@@ -1794,13 +1817,20 @@ pub(super) fn deactivate_ares_handler(
     owner: InternedId,
     typ: InternedId,
     sw: &SuperWeaponType,
+    is_player: bool,
     effects: FrameEffects<'_>,
 ) {
     if !sw.kind.has_ares_handler() {
         return;
     }
-    if sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Battery {
-        battery::deactivate(sim, rules, owner, sw);
+    match sw.kind {
+        crate::rules::superweapon_type::SuperWeaponKind::Battery => {
+            battery::deactivate(sim, rules, owner, sw);
+        }
+        crate::rules::superweapon_type::SuperWeaponKind::Firestorm => {
+            firewall::deactivate(sim, rules, owner, is_player, effects);
+        }
+        _ => {}
     }
     sim.raise_ares_super_event(
         owner,
@@ -1869,6 +1899,35 @@ pub(crate) fn construct_house_supers(
 
 /// Supers are constructed by the scenario House owner before map objects.
 /// Storage-key order is not the original SuperWeaponTypes registry order.
+/// Ares BuildingClass_ReceiveDamage_FSW (`10014A90`): `owner`'s first
+/// `Type=Firestorm` Super (HouseClass::FindSuperWeapon, in
+/// `[SuperWeaponTypes]` order) has `amount` frames taken off its charge
+/// timer, which restarts now ([`SuperWeaponInstance::shorten_for_firestorm_hit`]).
+#[cfg(feature = "ares")]
+pub(crate) fn shorten_ares_firestorm_drain(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    amount: i32,
+) {
+    let Some(type_id) = house_super_order(sim, rules, owner)
+        .into_iter()
+        .find(|&id| {
+            rules
+                .super_weapon(sim.interner.resolve(id))
+                .is_some_and(|sw| {
+                    sw.kind == crate::rules::superweapon_type::SuperWeaponKind::Firestorm
+                })
+        })
+    else {
+        return;
+    };
+    let frame = sim.session.binary_frame() as i32;
+    if let Some(instance) = sim.super_weapons.instance_mut(&owner, &type_id) {
+        instance.shorten_for_firestorm_hit(frame, amount);
+    }
+}
+
 fn house_super_order(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Vec<InternedId> {
     let Some(weapons) = sim.super_weapons.get(&owner) else {
         return Vec::new();
@@ -2378,7 +2437,15 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
         let (changed, deactivated) = changed;
         #[cfg(feature = "ares")]
         if deactivated {
-            deactivate_ares_handler(sim, rules, owner, type_id, sw, FrameEffects::default());
+            deactivate_ares_handler(
+                sim,
+                rules,
+                owner,
+                type_id,
+                sw,
+                false,
+                FrameEffects::default(),
+            );
         }
         if changed {
             sim.houses.request_house_tech_tree_recheck(owner);

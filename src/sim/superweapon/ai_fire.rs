@@ -114,7 +114,8 @@ impl AiFireArm {
             | SuperWeaponKind::Protect
             | SuperWeaponKind::Battery
             | SuperWeaponKind::SonarPulse
-            | SuperWeaponKind::EMPulse => Self::None,
+            | SuperWeaponKind::EMPulse
+            | SuperWeaponKind::Firestorm => Self::None,
         }
     }
 }
@@ -830,6 +831,13 @@ fn pick_best_rally_target(entries: &[RallyEntry], rng: &mut SimRng) -> (i16, i16
     let mut picks: Vec<(i16, i16)> = Vec::new();
     for entry in entries {
         let mut value = if entry.in_playfield { entry.value } else { 0 };
+        // Ares 3.0 HouseClass_PickOffensiveSWTarget 10034C50 (hook
+        // 0x0050CFAA, size 0, resuming at 0x0050CFC9) replaces the cloaked
+        // entry's draw: its value becomes 0 and it is no candidate.
+        #[cfg(feature = "ares")]
+        if entry.cloaked {
+            continue;
+        }
         if entry.cloaked {
             value = rng.next_range_i32_inclusive(0, best.wrapping_add(10));
         }

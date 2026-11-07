@@ -1579,6 +1579,12 @@ pub(crate) fn techno_extras_for_parent(
         let (Some(rules), Some(object), Some(shape)) = (rules, object, overlay.pips()) else {
             return strip;
         };
+        // Ares TechnoClass_DrawHealthBar_FirestormWall (100150D0, hook
+        // 0x6F64CB): a `Firestorm.Wall` section draws no bar (0x6F6832).
+        #[cfg(feature = "ares")]
+        if object.ares_firestorm_wall() {
+            return strip;
+        }
         let geometry = BuildingBarGeometry::new(rules, object);
         let (ax, ay) = geometry.edge;
         let num_pips = geometry.num_pips;

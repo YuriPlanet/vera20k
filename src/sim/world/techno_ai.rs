@@ -479,6 +479,8 @@ impl Simulation {
             overlay_registry: ctx.overlay_registry,
             rules,
             map_size: self.map_size_diamond(),
+            #[cfg(feature = "ares")]
+            ares_firestorm: &self.ares_firestorm,
         };
         let nuke_ball_type = || crate::sim::superweapon::nuke::nuke_ball_type(rules);
         #[cfg(feature = "ares")]
@@ -511,6 +513,10 @@ impl Simulation {
             )
             .expect("projectile remained present for its Logic slot");
         let terminal = !result.expired.is_empty() || !result.detonations.is_empty();
+        #[cfg(feature = "ares")]
+        if result.ares_firestormed {
+            self.ares_burn_flying_bullet(id, rules);
+        }
         // The rest of a `NUKE` impact precedes the slot's detonations.
         for &impact in result.nuke_impacts() {
             crate::sim::superweapon::nuke::impact(self, rules, impact);
@@ -1131,6 +1137,16 @@ fn techno_ai_shell(
             // LogicVector visit so nested death effects precede the next slot.
             outcome.bridge_state_changed |=
                 sim.tick_pending_building_detonation(id, rules, ctx.overlay_registry, ctx.effects);
+            // Ares BuildingClass_Update_FirestormWall (10014B40, hook
+            // 0x440378) ahead of the range drop: a `Firestorm.Wall` section's
+            // flicker and victims (`UpdateFirewall(false)`).
+            #[cfg(feature = "ares")]
+            if sim.substrate.entities.get(id).is_some_and(|entity| {
+                sim.object_type(entity.type_ref(), rules)
+                    .is_some_and(|object| object.building_type_ext().firestorm_wall)
+            }) {
+                sim.ares_update_firewall(id, false, rules, ctx.overlay_registry, ctx.effects);
+            }
             // The range drop that ends the Update (`0x00440378`).
             building_missions::range_drop(sim, id, rules, ctx);
         }
@@ -2069,44 +2085,67 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     if sim.owner_is_human(house) {
         return;
     }
+    let Some(target) = entity.attack_target.target() else {
+        return;
+    };
+    let Some(obj) = sim.interner.object_type(entity.type_ref(), rules) else {
+        return;
+    };
     // `0x004F9AF0` tests the target's Object flag first: a cell is never
     // allied.
-    let Some(TargetKind::Entity(target_id)) = entity.attack_target.target() else {
-        return;
+    let target = match target {
+        TargetKind::Entity(target_id) => sim.substrate.entities.get(target_id),
+        _ => None,
     };
-    let Some(target) = sim.substrate.entities.get(target_id) else {
-        return;
+    let allied = target.is_some_and(|target| {
+        combat_weapon::is_ally_by_object(
+            Some(&sim.house_alliances),
+            &sim.interner,
+            house,
+            target.owner(),
+        )
+    });
+    // Ares 3.0 TechnoClass_Update_LoseTarget (1004E4C0, hook 0x6FA361): a
+    // healer (`0x006F3970(-1) < 0`) keeps an allied target and takes a
+    // non-allied one, a cell included, to the drop below (0x006FA39D);
+    // anything else keeps the stock test.
+    let drops = if cfg!(feature = "ares") {
+        allied
+            != (combat_weapon::weapon_damage_value(
+                entity,
+                obj,
+                &sim.substrate.entities,
+                rules,
+                &sim.interner,
+            ) < 0)
+    } else {
+        allied
     };
-    if !combat_weapon::is_ally_by_object(
-        Some(&sim.house_alliances),
-        &sim.interner,
-        house,
-        target.owner(),
-    ) {
+    if !drops {
         return;
     }
-    let (Some(obj), Some(target_obj)) = (
-        sim.interner.object_type(entity.type_ref(), rules),
-        sim.interner.object_type(target.type_ref(), rules),
-    ) else {
+    let target_obj = target.and_then(|target| sim.interner.object_type(target.type_ref(), rules));
+    if target.is_some() && target_obj.is_none() {
         return;
-    };
+    }
     let infantry = entity.category() == EntityCategory::Infantry;
-    let target_building = target.category() == EntityCategory::Structure;
+    let target_building = target
+        .and_then(|target| target_obj.map(|target_obj| (target, target_obj)))
+        .filter(|(target, _)| target.category() == EntityCategory::Structure);
     let occupiable = infantry
-        && target_building
-        && crate::sim::passenger::can_dock_occupier_garrison(
-            entity,
-            target,
-            obj,
-            target_obj,
-            target.passenger_role.occupants(),
-            rules,
-            sim,
-        );
+        && target_building.is_some_and(|(target, target_obj)| {
+            crate::sim::passenger::can_dock_occupier_garrison(
+                entity,
+                target,
+                obj,
+                target_obj,
+                target.passenger_role.occupants(),
+                rules,
+                sim,
+            )
+        });
     let engineer = infantry && obj.engineer;
-    let overpowers = target_building
-        && target_obj.overpowerable
+    let overpowers = target_building.is_some_and(|(_, target_obj)| target_obj.overpowerable)
         && target_scan::weapon_at_index(sim, rules, id, 1)
             .and_then(|weapon| combat_weapon::warhead_of(rules, weapon))
             .is_some_and(|warhead| warhead.electric_assault);
@@ -4140,6 +4179,44 @@ mod tests {
             .set_is_human_for_test(true);
         allied_target_drop_step(&mut sim, 1, &rules);
         assert!(held(&sim), "a human house keeps it");
+    }
+
+    /// Ares 3.0 TechnoClass_Update_LoseTarget (1004E4C0, hook 0x6FA361): a
+    /// computer house's healer keeps an allied target and lets an enemy go,
+    /// the reverse of the stock drop.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_computer_healer_keeps_allies_and_drops_enemies() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [VehicleTypes]\n0=MEDTNK\n1=MTNK\n\n\
+             [MEDTNK]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             Strength=300\nArmor=heavy\nSpeed=6\nSight=10\nPrimary=Mend\n\n\
+             [MTNK]\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             Strength=300\nArmor=heavy\nSpeed=6\nSight=10\nPrimary=105mm\n\n\
+             [Mend]\nDamage=-50\nROF=50\nRange=6\nWarhead=AP\n\n\
+             [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\n\
+             [AP]\nVerses=100%,100%,90%,75%,75%,75%,60%,30%,20%,0%,0%\n",
+        ))
+        .expect("healer rules parse");
+        for (target_owner, kept) in [("Soviet", true), ("Americans", false)] {
+            let mut sim = Simulation::new();
+            insert_scannable(&mut sim, 1, "Soviet", "MEDTNK", EntityCategory::Unit);
+            insert_scannable(&mut sim, 2, target_owner, "MTNK", EntityCategory::Unit);
+            let soviet = sim.interner.intern("Soviet");
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    soviet, 0, None, false, 0, 10,
+                ));
+            sim.substrate
+                .entities
+                .get_mut(1)
+                .unwrap()
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(2)));
+            allied_target_drop_step(&mut sim, 1, &rules);
+            assert_eq!(target_of(&sim, 1).is_some(), kept, "{target_owner}");
+        }
     }
 
     /// `TechnoClass::AI_Update @ 0x006F9F0D..0x006F9F6E`: a berserk object
