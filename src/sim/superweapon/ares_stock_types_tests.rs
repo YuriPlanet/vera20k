@@ -6,7 +6,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_targeting::{HouseMask, TargetMask};
-use crate::sim::superweapon::chronosphere_tests::{charge_chronosphere, click, world_with};
+use crate::sim::superweapon::chronosphere_tests::{charge_chronosphere, click, step, world_with};
 use crate::sim::world::{SimSoundEvent, Simulation};
 
 /// Retail rules with `patch` merged over RULESMD, the Chronosphere anims
@@ -565,4 +565,199 @@ fn ares_mutator_spares_cyborgs_and_kills_natural_infantry() {
         sim.substrate.entities.get(cyborg).unwrap().health.current(),
         strength
     );
+}
+
+/// Whether `id` is gone or dying.
+fn dead(sim: &Simulation, id: u64) -> bool {
+    sim.substrate
+        .entities
+        .get(id)
+        .is_none_or(|entity| entity.health.current() == 0 || entity.death.is_dying())
+}
+
+/// The ChronoSphere then the ChronoWarp from the fixture source to `target`.
+fn chronoshift(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: crate::sim::intern::InternedId,
+    target: (u16, u16),
+) {
+    let source = crate::sim::superweapon::chronosphere_tests::SOURCE;
+    charge_chronosphere(sim, owner);
+    click(sim, rules, owner, "ChronoSphereSpecial", source);
+    click(sim, rules, owner, "ChronoWarpSpecial", target);
+}
+
+/// TeleportLocomotionClass_MakeRoom (1004B980, hook 0x718275): a Unit
+/// arriving on a `Chronoshift.Crushable=no` tank dies instead of it, and
+/// with `ChronoInfantryCrush=no` arriving infantry dies on a tank.
+#[test]
+fn ares_make_room_spares_uncrushable_units_and_kills_crush_shy_infantry() {
+    let Some(rules) = retail_ares_rules(
+        "[General]\nChronoInfantryCrush=no\n[HTNK]\nChronoshift.Crushable=no\n\
+         [ChronoSphereSpecial]\nChronosphere.KillOrganic=no\n",
+    ) else {
+        return;
+    };
+    assert!(!rules.ares_chrono_infantry_crush());
+    let (rules, mut sim, americans) = world_with(rules, 64, &[]);
+    let spawn = |sim: &mut Simulation, kind: &str, owner: &str, (x, y): (u16, u16)| {
+        sim.spawn_object_at_height(kind, owner, x, y, 0, 0, &rules)
+            .unwrap()
+    };
+    let source = crate::sim::superweapon::chronosphere_tests::SOURCE;
+    let target = (40, 40);
+    let tank = spawn(&mut sim, "MTNK", "Americans", source);
+    let gi = spawn(&mut sim, "E1", "Americans", (source.0 - 1, source.1));
+    let uncrushable = spawn(&mut sim, "HTNK", "Russians", target);
+    let under_gi = spawn(&mut sim, "MTNK", "Russians", (target.0 - 1, target.1));
+    chronoshift(&mut sim, &rules, americans, target);
+    for _ in 0..200 {
+        step(&mut sim, &rules);
+        if [tank, gi].iter().all(|&id| {
+            sim.substrate
+                .entities
+                .get(id)
+                .is_none_or(|entity| entity.chrono_warp().is_none())
+        }) {
+            break;
+        }
+    }
+    assert!(dead(&sim, tank) && !dead(&sim, uncrushable));
+    assert!(dead(&sim, gi) && !dead(&sim, under_gi));
+}
+
+/// SW_ChronoWarp's Building arm and ChronoWarpStateMachine (1006F4D0,
+/// 10070230): a building in `SW.AffectsTarget` is warped out at once and
+/// moves by the target's offset `ChronoDelay` frames after the launch.
+#[test]
+fn ares_chrono_warp_moves_a_building_after_chrono_delay() {
+    let Some(rules) = retail_ares_rules("[ChronoSphereSpecial]\nSW.AffectsTarget=all\n") else {
+        return;
+    };
+    let (rules, mut sim, americans) = world_with(rules, 64, &[]);
+    let source = crate::sim::superweapon::chronosphere_tests::SOURCE;
+    let target = (40, 40);
+    let plant = sim
+        .spawn_object_at_height("GAPOWR", "Americans", source.0, source.1, 0, 0, &rules)
+        .unwrap();
+    chronoshift(&mut sim, &rules, americans, target);
+    let at = |sim: &Simulation| {
+        let entity = sim.substrate.entities.get(plant).unwrap();
+        (
+            entity.position.rx(),
+            entity.position.ry(),
+            entity.is_warped_out(),
+        )
+    };
+    assert_eq!(at(&sim), (source.0, source.1, true));
+    let delay = rules.general.chrono_delay as usize;
+    for _ in 1..delay {
+        step(&mut sim, &rules);
+    }
+    assert_eq!(at(&sim), (source.0, source.1, true));
+    step(&mut sim, &rules);
+    assert_eq!(at(&sim), (target.0, target.1, false));
+    assert!(!dead(&sim, plant));
+}
+
+/// An unplaceable building goes back to its origin and, under the
+/// `Chronosphere.BlowUnplaceable` default, takes its Strength as C4 damage.
+#[test]
+fn ares_chrono_warp_blows_up_an_unplaceable_building() {
+    let Some(rules) = retail_ares_rules("[ChronoSphereSpecial]\nSW.AffectsTarget=all\n") else {
+        return;
+    };
+    let (rules, mut sim, americans) = world_with(rules, 64, &[]);
+    let source = crate::sim::superweapon::chronosphere_tests::SOURCE;
+    let target = (40, 40);
+    let plant = sim
+        .spawn_object_at_height("GAPOWR", "Americans", source.0, source.1, 0, 0, &rules)
+        .unwrap();
+    sim.spawn_object_at_height("NAPOWR", "Russians", target.0, target.1, 0, 0, &rules)
+        .unwrap();
+    chronoshift(&mut sim, &rules, americans, target);
+    for _ in 0..=rules.general.chrono_delay {
+        step(&mut sim, &rules);
+    }
+    let entity = sim.substrate.entities.get(plant);
+    assert!(entity.is_none_or(|entity| (entity.position.rx(), entity.position.ry()) == source));
+    assert!(dead(&sim, plant));
+}
+
+/// The lambda's `Force_Track(-1, coordsUnitSource)` (1006F4D0; Drive
+/// 0x4B0C40 stores it as head and destination) outlives the warp: nothing
+/// in the Teleport states (0x7192F0), its END (0x719EE0) or the Foot AI
+/// tail resets the piggybacked Drive, so once it is active again its
+/// Process (0x4B0500 -> Process_Movement 0x4B2630) paths to the source
+/// cell and the tank drives back, as gamemd with Ares does.
+#[test]
+fn ares_warped_tank_heads_back_to_its_source() {
+    use crate::rules::locomotor_type::LocomotorKind;
+    use crate::sim::movement::track_process::TrackFamily;
+    let Some(rules) = retail_ares_rules("") else {
+        return;
+    };
+    let (rules, mut sim, americans) = world_with(rules, 64, &[]);
+    let source = crate::sim::superweapon::chronosphere_tests::SOURCE;
+    let target = (40, 40);
+    let tank = sim
+        .spawn_object_at_height("MTNK", "Americans", source.0, source.1, 0, 0, &rules)
+        .unwrap();
+    let here = crate::sim::movement::ground_pose::object_get_coords(
+        sim.substrate.entities.get(tank).unwrap(),
+        sim.resolved_terrain.as_ref(),
+    );
+    chronoshift(&mut sim, &rules, americans, target);
+    let drive = |sim: &Simulation| {
+        let entity = sim.substrate.entities.get(tank).unwrap();
+        let locomotor = entity.locomotor.as_ref().unwrap();
+        (locomotor.active_kind() == LocomotorKind::Drive && entity.chrono_warp().is_none())
+            .then(|| locomotor.track_destination(TrackFamily::Drive))
+    };
+    let mut frames = 0;
+    while drive(&sim).is_none() && frames < 200 {
+        step(&mut sim, &rules);
+        frames += 1;
+    }
+    let entity = sim.substrate.entities.get(tank).unwrap();
+    assert_eq!((entity.position.rx(), entity.position.ry()), target);
+    assert_eq!(drive(&sim), Some(Some(here)));
+    for _ in 0..60 {
+        step(&mut sim, &rules);
+    }
+    let entity = sim.substrate.entities.get(tank).unwrap();
+    assert_ne!((entity.position.rx(), entity.position.ry()), target);
+}
+
+/// SW_SpyPlane (Initialize 10075800, LoadFromINI 10075880, Activate
+/// 10075780): `SpyPlane.Count` planes of the found `SpyPlane.Type` take off
+/// (in `SpyPlane.Mission`); Initialize clears `SW.CreateRadarEvent`.
+#[test]
+fn ares_spy_plane_sends_its_count_of_its_type() {
+    let Some(rules) = retail_ares_rules(
+        "[SpyPlaneSpecial]\nSpyPlane.Count=2\nSpyPlane.Type=PDPLANE\nSpyPlane.Mission=Move\n",
+    ) else {
+        return;
+    };
+    let metadata = rules.super_weapon_metadata("SpyPlaneSpecial").unwrap();
+    let spy_plane = metadata.launch().spy_plane();
+    assert_eq!(spy_plane.plane.as_deref(), Some("PDPLANE"));
+    assert_eq!(spy_plane.mission, crate::sim::mission::MissionType::Move);
+    assert!(!metadata.launch().radar_event());
+    let (rules, mut sim, americans) = super::spy_plane_tests::world(rules);
+    crate::sim::superweapon::chronosphere_tests::charge_super(
+        &mut sim,
+        americans,
+        "SpyPlaneSpecial",
+    );
+    click(&mut sim, &rules, americans, "SpyPlaneSpecial", (40, 40));
+    let planes: Vec<_> = sim
+        .substrate
+        .entities
+        .values()
+        .filter(|entity| sim.interner.resolve(entity.type_ref()) == "PDPLANE")
+        .map(|entity| (entity.owner(), entity.is_mission_only()))
+        .collect();
+    assert_eq!(planes, [(americans, true); 2]);
 }

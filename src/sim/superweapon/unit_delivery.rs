@@ -308,6 +308,11 @@ fn place(
     ) else {
         return;
     };
+    // Ares PlaceUnits (10075A60) marks a `Deliver.BaseNormal=no` building
+    // NoBaseNormal before Put, so its Unlimbo reserves no base space.
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        entity.set_unit_delivery_base_normal(request.base_normal);
+    }
     let mut hash = StateHasher::new();
     request.owner.hash(&mut hash);
     request.sw_type.hash(&mut hash);
@@ -388,9 +393,6 @@ fn place(
     if !placed {
         sim.discard_constructed_limbo(id, rules, effects);
         return;
-    }
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.set_unit_delivery_base_normal(request.base_normal);
     }
     let mission = if payload.category == ObjectCategory::Building {
         MissionType::Guard

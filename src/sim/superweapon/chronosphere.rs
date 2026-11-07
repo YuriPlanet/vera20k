@@ -645,6 +645,7 @@ pub(super) fn ares_launch_warp(
         source,
         target,
     };
+    let mut buildings = Vec::new();
     for id in super::protect::area_technos(sim, range, source) {
         ares_chronoport(
             sim,
@@ -655,7 +656,19 @@ pub(super) fn ares_launch_warp(
             id,
             overlay_registry,
             frame_effects,
+            &mut buildings,
         );
+    }
+    // `newStateMachine(ChronoDelay + 1, Coords, pSource, ...)`: the machine
+    // reads the source Super's owner and type.
+    if !buildings.is_empty() {
+        sim.ares_chrono_warps.machines.push(AresChronoWarpMachine {
+            start_frame: sim.session.binary_frame(),
+            duration: rules.general.chrono_delay.wrapping_add(1),
+            owner,
+            sw_type: source_type,
+            buildings,
+        });
     }
     true
 }
@@ -676,9 +689,7 @@ struct AresChronoWarp {
 ///   neither counts as a vehicle (`Chronoshift.IsVehicle` with
 ///   `Chronosphere.ReconsiderBuildings`, or an `UndeploysInto=` one with
 ///   `Chronosphere.AffectsUndeployable`) nor is allowed by
-///   `Chronosphere.AffectsBuildings`, or a vehicle one without the Units bit.
-///   The building chronoshift itself (the lambda's building arm and
-///   ChronoWarpStateMachine) is not ported: such a Building stays in place;
+///   `Chronosphere.AffectsBuildings`, or a vehicle one without the Units bit;
 /// - skipped while immobilized (the warp latch), in the air, warping out or
 ///   in, `Warpable=no` without `Chronosphere.AffectsUnwarpable`, curtained
 ///   without `Chronosphere.AffectsIronCurtain`, or a Unit in a war factory
@@ -689,8 +700,13 @@ struct AresChronoWarp {
 /// - otherwise a `Naval=` Foot's eater lets go (suppression 500, ExitUnit), a
 ///   Foot in a Tank Bunker leaves it (ClearBunker), `Chronosphere.KillCargo`
 ///   kills its passengers (TechnoExt::KillCargo 100455E0, no killer), and the
-///   Foot is armed for the warp ([`ares_arm_chrono_warp`]).
+///   Foot is armed for the warp ([`ares_arm_chrono_warp`]);
+/// - a Building instead empties its Tank Bunker (UnloadBunker `0x004593A0`,
+///   EmptyBunker `0x004595C0`), sends OVER_OUT to each contact, has its
+///   passengers killed under `KillCargo` and starts its chronoshift
+///   ([`ares_begin_building_chronoshift`]), joining `buildings`.
 #[cfg(feature = "ares")]
+#[allow(clippy::too_many_arguments)]
 fn ares_chronoport(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -700,6 +716,7 @@ fn ares_chronoport(
     id: u64,
     overlay_registry: Option<&OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
+    buildings: &mut Vec<AresChronoWarpBuilding>,
 ) {
     use crate::rules::superweapon_targeting::TargetMask;
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -719,20 +736,19 @@ fn ares_chronoport(
         return;
     }
     let category = entity.category();
+    let mut is_vehicle = false;
     if category == EntityCategory::Structure {
         if object.bridge_repair_hut {
             return;
         }
         let undeployer = chrono.affect_undeployable && object.undeploys_into.is_some();
-        let vehicle = undeployer || (chrono.reconsider_buildings && chronoshift.is_vehicle);
+        is_vehicle = undeployer || (chrono.reconsider_buildings && chronoshift.is_vehicle);
         if !undeployer
-            && (!vehicle && !targeting.chrono_affect_buildings()
-                || vehicle && !targeting.affects_target().intersects(TargetMask::UNIT))
+            && (!is_vehicle && !targeting.chrono_affect_buildings()
+                || is_vehicle && !targeting.affects_target().intersects(TargetMask::UNIT))
         {
             return;
         }
-        log::debug!("ares chronoshift of building {id} is not ported; it stays in place");
-        return;
     }
     let (organic, teleporter, strength, warpable, naval) = (
         object.organic,
@@ -821,13 +837,347 @@ fn ares_chronoport(
             .is_some_and(|building| building.category() == EntityCategory::Structure)
     {
         crate::sim::docking::bunker_link::clear_bunker(sim, bunker, rules, frame_effects);
+    } else if category == EntityCategory::Structure
+        && sim
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|building| building.bunker.occupant().is_some())
+    {
+        // `pBunker->UnloadBunker(); pBunker->EmptyBunker();`
+        crate::sim::docking::bunker_link::release_sell_destroy(sim, id, rules, frame_effects);
+        crate::sim::docking::bunker_link::release_normal(sim, id, rules, frame_effects);
+    }
+    if category == EntityCategory::Structure {
+        // SendToEachLink(RequestRedraw) only redraws; SendToEachLink
+        // (NotifyUnlink) is the OVER_OUT to every contact.
+        crate::sim::radio::broadcast_break(sim, id, rules, frame_effects);
     }
     if chrono.kill_cargo {
         let context = crate::sim::world::UninitContext::new(rules, overlay_registry)
             .with_effects(frame_effects);
         sim.ares_kill_cargo(id, context);
     }
+    if category == EntityCategory::Structure {
+        if let Some(building) = ares_begin_building_chronoshift(
+            sim,
+            rules,
+            warp,
+            id,
+            is_vehicle,
+            overlay_registry,
+            frame_effects,
+        ) {
+            buildings.push(building);
+        }
+        return;
+    }
     ares_arm_chrono_warp(sim, rules, warp, id, overlay_registry, frame_effects);
+}
+
+/// One building a ChronoWarpStateMachine moves (Ares
+/// `ChronoWarpContainer`): the building, its target cell (its cell moved by
+/// the target's offset from the source), its Location when the warp began
+/// and whether it places like a vehicle.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresChronoWarpBuilding {
+    building: u64,
+    target: (i16, i16),
+    origin: [i32; 3],
+    is_vehicle: bool,
+}
+
+/// An Ares `ChronoWarpStateMachine`: its clock (SWStateMachine `Clock`,
+/// started at the launch for `ChronoDelay + 1` frames), the source Super's
+/// owner and type, and its buildings.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresChronoWarpMachine {
+    start_frame: u32,
+    duration: i32,
+    owner: InternedId,
+    sw_type: InternedId,
+    buildings: Vec<AresChronoWarpBuilding>,
+}
+
+/// The running ChronoWarpStateMachines (Ares `SWStateMachine::Array`'s
+/// ChronoWarp entries), in registration order. Saved and hashed.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresChronoWarps {
+    machines: Vec<AresChronoWarpMachine>,
+}
+
+#[cfg(feature = "ares")]
+impl AresChronoWarps {
+    pub(crate) fn hash_state(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        if !self.machines.is_empty() {
+            b"ares-chrono-warp-machines-v1".hash(hasher);
+            self.machines.hash(hasher);
+        }
+    }
+}
+
+/// The lambda's Building arm (Ares 3.0 `1006F4D0`): the building becomes
+/// untargetable (the detach sweep `0x0070D4A0`), every Bullet aimed at it
+/// loses its target (`0x00468430`), it counts as warped out (`+0x270`, with
+/// BuildingExt `AboutToChronoshift`), its owner rechecks tech tree and
+/// power, and its temporal goes offline (`0x004521C0`: the online latch
+/// and slot anims). The redraw (`UpdatePlacement(Redraw)`) is presentation.
+/// Its target is its cell moved by the target's offset from the source.
+#[cfg(feature = "ares")]
+fn ares_begin_building_chronoshift(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    warp: &AresChronoWarp,
+    id: u64,
+    is_vehicle: bool,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) -> Option<AresChronoWarpBuilding> {
+    sim.stop_all_targeting_on_detach(id, rules, overlay_registry, frame_effects);
+    sim.lose_projectile_targets(id, rules);
+    let entity = sim.substrate.entities.get_mut(id)?;
+    entity.set_ares_chronoshifting(true);
+    let owner = entity.owner();
+    let (rx, ry) = (entity.position.rx() as i16, entity.position.ry() as i16);
+    sim.houses.request_house_tech_tree_recheck(owner);
+    Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, owner, false);
+    sim.substrate.set_building_online_for_temporal(id, false);
+    let entity = sim.substrate.entities.get(id)?;
+    let origin =
+        crate::sim::movement::ground_pose::object_location(entity, sim.resolved_terrain.as_ref());
+    let target = (
+        rx.wrapping_sub(warp.source.0 as i16)
+            .wrapping_add(warp.target.0 as i16),
+        ry.wrapping_sub(warp.source.1 as i16)
+            .wrapping_add(warp.target.1 as i16),
+    );
+    Some(AresChronoWarpBuilding {
+        building: id,
+        target,
+        origin: [origin.x, origin.y, origin.z],
+        is_vehicle,
+    })
+}
+
+/// SWStateMachine::UpdateAll's ChronoWarp entries (inlined in the
+/// LogicClass::Update hook 0x55AFB3, Ares 3.0 `1006E140`): each machine runs
+/// [`ares_chrono_warp_update`], then leaves once its clock has run out.
+#[cfg(feature = "ares")]
+pub(super) fn ares_tick_chrono_warps(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) {
+    let machines = std::mem::take(&mut sim.ares_chrono_warps.machines);
+    let mut kept = Vec::with_capacity(machines.len());
+    for mut machine in machines {
+        ares_chrono_warp_update(sim, rules, &mut machine, overlay_registry, frame_effects);
+        let passed = sim.session.binary_frame().wrapping_sub(machine.start_frame) as i32;
+        if passed < machine.duration {
+            kept.push(machine);
+        }
+    }
+    kept.append(&mut sim.ares_chrono_warps.machines);
+    sim.ares_chrono_warps.machines = kept;
+}
+
+/// ChronoWarpStateMachine::Update (Ares 3.0 `10070230`), by the frames
+/// since its launch:
+/// - 1: every building redraws (presentation);
+/// - its duration less one: every building leaves the map (Remove, and
+///   `ActuallyPlacedOnMap` +0x6E4 drops), then each one not under a
+///   Temporal erase comes back facing its current facing rounded to eight
+///   bits: on the first cell of the CellSpread (radius 10 for a vehicle,
+///   else 0) around its target where `CanPlaceAt` (`0x00464AC0`) admits it
+///   and Put (Unlimbo) succeeds, at the cell's coordinates with the bridge
+///   height; else, inside the `0xA8E7AC` bracket, back at its origin with
+///   Place(false) (Grand_Opening). It is no longer warped out, its owner
+///   rechecks power and tech tree and its temporal comes back online
+///   (`0x00452210`). An unplaced vehicle, or any unplaced building under
+///   the source's `Chronosphere.BlowUnplaceable`, takes its Strength as
+///   `C4Warhead=` damage, ignoring defenses, credited to the Super's owner;
+/// - its duration: the owner rechecks power, radar and tech tree.
+#[cfg(feature = "ares")]
+fn ares_chrono_warp_update(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    machine: &mut AresChronoWarpMachine,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) {
+    let passed = sim.session.binary_frame().wrapping_sub(machine.start_frame) as i32;
+    if passed == 1 {
+        return;
+    }
+    if passed == machine.duration {
+        sim.houses.request_house_tech_tree_recheck(machine.owner);
+        Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, machine.owner, true);
+        return;
+    }
+    if passed != machine.duration.wrapping_sub(1) {
+        return;
+    }
+    // InvalidatePointer drops a building that leaves the game.
+    let buildings: Vec<_> = std::mem::take(&mut machine.buildings)
+        .into_iter()
+        .filter(|item| {
+            sim.substrate
+                .entities
+                .get(item.building)
+                .is_some_and(|entity| entity.lifecycle.object_alive())
+        })
+        .collect();
+    let context =
+        crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(frame_effects);
+    for item in &buildings {
+        sim.techno_limbo_with_context(item.building, context);
+        if let Some(entity) = sim.substrate.entities.get_mut(item.building) {
+            entity.building_art.clear_actually_placed();
+        }
+    }
+    let blow_unplaceable = rules
+        .super_weapon(sim.interner.resolve(machine.sw_type))
+        .and_then(|sw| rules.super_weapon_metadata(&sw.id))
+        .is_some_and(|metadata| metadata.launch().chronosphere().blow_unplaceable);
+    for item in &buildings {
+        ares_chrono_warp_put_back(
+            sim,
+            rules,
+            machine.owner,
+            item,
+            blow_unplaceable,
+            overlay_registry,
+            frame_effects,
+        );
+    }
+}
+
+/// One building's return in [`ares_chrono_warp_update`].
+#[cfg(feature = "ares")]
+fn ares_chrono_warp_put_back(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    item: &AresChronoWarpBuilding,
+    blow_unplaceable: bool,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) {
+    use crate::sim::world::PlacementEvidence;
+    let id = item.building;
+    let frame = sim.session.binary_frame();
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    // `pBld->TemporalTargetingMe` (+0x278) skips the return.
+    if entity.temporal.is_warped() {
+        return;
+    }
+    let dir = crate::util::direction_tables::quantize::round_facing16_to_8(
+        entity.body_facing_current(frame),
+    );
+    let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+        return;
+    };
+    let mut success = false;
+    let spread = if item.is_vehicle { 10 } else { 0 };
+    for (dx, dy) in crate::sim::cell_rect::cell_spread_offsets(spread) {
+        let cell = (
+            item.target.0.wrapping_add(dx),
+            item.target.1.wrapping_add(dy),
+        );
+        if cell.0 < 0
+            || cell.1 < 0
+            || !crate::sim::build_site::can_place_building_at(
+                sim,
+                rules,
+                overlay_registry,
+                object,
+                cell,
+                None,
+                None,
+                None,
+            )
+        {
+            continue;
+        }
+        let [x, y, z] = deck_coords(sim, (cell.0 as u16, cell.1 as u16));
+        if sim
+            .reveal_constructed_object_at_coord_with_overlay_context(
+                id,
+                DriveCoord { x, y, z },
+                dir,
+                PlacementEvidence::EvaluateMark,
+                rules,
+                overlay_registry,
+                frame_effects,
+            )
+            .is_some()
+        {
+            success = true;
+            break;
+        }
+    }
+    if !success {
+        let [x, y, z] = item.origin;
+        sim.with_object_placement_scope(|sim| {
+            let _ = sim.reveal_constructed_object_at_coord_with_overlay_context(
+                id,
+                DriveCoord { x, y, z },
+                dir,
+                PlacementEvidence::EvaluateMark,
+                rules,
+                overlay_registry,
+                frame_effects,
+            );
+            let scenario_initialization = sim.object_placement_scope_active();
+            sim.grand_opening(
+                id,
+                false,
+                scenario_initialization,
+                rules,
+                overlay_registry,
+                frame_effects,
+            );
+        });
+    }
+    let Some(entity) = sim.substrate.entities.get_mut(id) else {
+        return;
+    };
+    entity.set_ares_chronoshifting(false);
+    let building_owner = entity.owner();
+    Simulation::invalidate_house_power(&sim.houses, &mut sim.power_states, building_owner, false);
+    sim.houses.request_house_tech_tree_recheck(building_owner);
+    sim.substrate.set_building_online_for_temporal(id, true);
+    if !success && (item.is_vehicle || blow_unplaceable) {
+        let Some(strength) = sim
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| sim.object_type(entity.type_ref(), rules))
+            .map(|object| object.strength)
+        else {
+            return;
+        };
+        let event = crate::sim::combat::EntityDamageEvent::direct_receiver(
+            id,
+            strength,
+            0,
+            crate::sim::combat::RAD_NO_ATTACKER,
+            Some(owner),
+            sim.interner.intern(&rules.bridge_warheads.c4_name),
+            crate::sim::combat::ReceiverCallFlags {
+                ignore_defenses: true,
+                arg6: true,
+            },
+        );
+        sim.commit_direct_damage_receiver(rules, overlay_registry, event, frame_effects);
+    }
 }
 
 /// The lambda's Foot arm (Ares 3.0 `1006F4D0`): from the Foot's GetCoords
@@ -841,6 +1191,14 @@ fn ares_chronoport(
 /// locomotor, then the latch, the destination (`+0x288`), the radio OVER_OUT
 /// to every contact, the warping House (`+0x42C`) and the destination setter
 /// at the destination cell (vt+0x480(cell, 1)).
+///
+/// Unlike case 4's, this Force_Track leaves a Drive or Ship heading for its
+/// source: Force_Track (`0x004B0C40`) stores the coordinates as head and
+/// destination, nothing in the Teleport states (`0x007192F0`), their
+/// Update_Position, PostWarpValidation and Stop_Moving, Teleport's END
+/// (`0x00719EE0`) or the Foot AI tail resets the stashed locomotor, and its
+/// next Process (`0x004B0500`, Process_Movement `0x004B2630`) asks Find_Path
+/// for the source cell: the Unit drives back unless it cannot reach it.
 #[cfg(feature = "ares")]
 fn ares_arm_chrono_warp(
     sim: &mut Simulation,

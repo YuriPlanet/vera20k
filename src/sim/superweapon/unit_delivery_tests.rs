@@ -866,3 +866,27 @@ fn superweapon_money_delivery_settles_once_at_enqueue_and_survives_save_and_prov
         }
     }
 }
+
+/// Ares BuildingExt::IsBaseNormal (10011810, hook 0x00440C08): PlaceUnits
+/// marks a `Deliver.BaseNormal=no` building NoBaseNormal before Put, so its
+/// Unlimbo reserves no base space; an ordinary building of the type does.
+#[test]
+fn unit_delivery_no_base_normal_building_reserves_no_base_space() {
+    let rules = rules("[Delivery]\nSW.Deferment=0\nDeliver.Types=GAPOWR\nDeliver.BaseNormal=no\n");
+    let mut sim = world(&rules);
+    fire(&mut sim, &rules, "Americans", (12, 10));
+    let delivered = payloads(&sim, "GAPOWR")[0];
+    let ordinary = sim
+        .spawn_object("GAPOWR", "Americans", 20, 20, 0, &rules)
+        .unwrap();
+    let reserved = |sim: &Simulation, id: u64| {
+        let entity = sim.substrate.entities.get(id).unwrap();
+        sim.substrate.base_reservations.raw_mask(
+            sim.resolved_terrain.as_ref(),
+            i32::from(entity.position.rx()),
+            i32::from(entity.position.ry()),
+        )
+    };
+    assert_ne!(reserved(&sim, ordinary), 0);
+    assert_eq!(reserved(&sim, delivered), 0);
+}

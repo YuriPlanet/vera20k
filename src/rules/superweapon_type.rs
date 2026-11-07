@@ -115,8 +115,8 @@ impl SuperWeaponKind {
     /// A stock Type that Ares hands to its NewSWType (`FindHandler`
     /// 1006CFB0 asks each type's HandlesType): SW_ChronoSphere (1006EF00),
     /// SW_ChronoWarp (100700A0), SW_NuclearMissile (10073350),
-    /// SW_GeneticMutator (10072080), SW_PsychicDominator (10070980). Its
-    /// handler's Initialize, LoadFromINI,
+    /// SW_GeneticMutator (10072080), SW_PsychicDominator (10070980),
+    /// SW_SpyPlane (100757F0). Its handler's Initialize, LoadFromINI,
     /// Activate and Flags replace the stock reads and Launch case; the other
     /// stock Types keep their stock owners in this port.
     #[cfg(feature = "ares")]
@@ -128,6 +128,7 @@ impl SuperWeaponKind {
                 | Self::MultiMissile
                 | Self::GeneticConverter
                 | Self::PsychicDominator
+                | Self::SpyPlane
         )
     }
 
@@ -323,6 +324,13 @@ impl AresSuperWeaponEva {
                 "EVA_IronCurtainActivated",
                 "EVA_IronCurtainDetected",
             ],
+            // SW_SpyPlane::Initialize10075800 names only the ready line.
+            Some(kind) if kind.eq_ignore_ascii_case("SpyPlane") => {
+                self.ready = eva
+                    .entry("EVA_SpyPlaneReady")
+                    .map(|entry| entry.name.clone());
+                return;
+            }
             _ => return,
         };
         let find = |name| eva.entry(name).map(|entry| entry.name.clone());
@@ -468,18 +476,9 @@ impl AresSuperWeaponMessages {
             ("Message.InsufficientFunds", &mut self.insufficient_funds),
             ("Message.CannotFire", &mut self.cannot_fire),
         ] {
-            *label = read_csf_label(section, key, label);
+            *label = section.read_ares_csf_label(key, label);
         }
     }
-}
-
-/// CsfText::Read10076510 over ReadString2048: a present value replaces the
-/// label with its first 31 bytes; absent or empty keeps it.
-#[cfg(feature = "ares")]
-fn read_csf_label(section: &IniSection, key: &str, label: &str) -> String {
-    section.read_string_with(key, 2048, label.to_owned(), |_, name| {
-        crate::rules::ini_value::truncate_native_bytes(name, 31).to_owned()
-    })
 }
 
 /// SWTypeExt `Text.*` (+0x3AC..+0x43C), the labels the replaced
@@ -544,7 +543,7 @@ impl AresSuperWeaponTexts {
             ("Text.Charging", &mut self.charging),
             ("Text.Active", &mut self.active),
         ] {
-            *label = read_csf_label(section, key, label);
+            *label = section.read_ares_csf_label(key, label);
         }
     }
 }
@@ -868,6 +867,9 @@ impl SuperWeaponType {
                 // SW_PsychicDominator::Initialize10070990: its cursor.
                 #[cfg(feature = "ares")]
                 SuperWeaponKind::PsychicDominator => Some("PsychicDominator".to_string()),
+                // SW_SpyPlane::Initialize10075800: the SpyPlane cursor.
+                #[cfg(feature = "ares")]
+                SuperWeaponKind::SpyPlane => Some("SpyPlane".to_string()),
                 _ => section.read_action_name("Action").map(str::to_string),
             },
             // ReadString 0x100, then a 24-byte copy (`0x006CEDB1`,
@@ -1166,6 +1168,33 @@ pub(crate) struct AresSuperWeaponLaunch {
     /// SW_PsychicDominator's fields (Initialize 10070990, LoadFromINI 10070A40).
     #[serde(default)]
     dominator: AresDominatorRules,
+    /// SW_SpyPlane's fields (Initialize 10075800, LoadFromINI 10075880).
+    #[serde(default)]
+    spy_plane: AresSpyPlaneRules,
+}
+
+/// SW_SpyPlane's SWTypeExt fields: `SpyPlane.Type`
+/// (ValueableIdx<AircraftTypeClass> +0x08), `SpyPlane.Count` (Valueable<int>
+/// +0x0C, ctor 1) and `SpyPlane.Mission` (Valueable<Mission> +0x10, ctor
+/// SpyplaneApproach). `plane` is the type's ID; `None` is index -1 (the
+/// constructor's index 0 never survives Initialize).
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresSpyPlaneRules {
+    pub(crate) plane: Option<String>,
+    pub(crate) count: i32,
+    pub(crate) mission: crate::rules::mission_data::MissionType,
+}
+
+#[cfg(feature = "ares")]
+impl Default for AresSpyPlaneRules {
+    fn default() -> Self {
+        Self {
+            plane: None,
+            count: 1,
+            mission: crate::rules::mission_data::MissionType::SpyplaneApproach,
+        }
+    }
 }
 
 /// SW_PsychicDominator's SWTypeExt fields (+0x112..+0x140), clear in the
@@ -1415,6 +1444,11 @@ pub(crate) struct AresHandlerReads {
     pub(crate) nuke_defaults: Option<(Option<String>, Option<String>)>,
     /// `Nuke.Payload`, `Nuke.TakeOff`, `Nuke.PsiWarning` (Find reads).
     pub(crate) nuke: [Option<Option<String>>; 3],
+    /// SW_SpyPlane::Initialize's `AircraftTypeClass::FindIndex("SPYP")`,
+    /// present when this pass ran it.
+    pub(crate) spy_plane_default: Option<Option<String>>,
+    /// `SpyPlane.Type` (FindIndex; `none` is index -1).
+    pub(crate) spy_plane_type: Option<Option<String>>,
 }
 
 #[cfg(feature = "ares")]
@@ -1440,6 +1474,7 @@ impl Default for AresSuperWeaponLaunch {
             mutate: AresMutateRules::default(),
             deferment: None,
             dominator: AresDominatorRules::default(),
+            spy_plane: AresSpyPlaneRules::default(),
         }
     }
 }
@@ -1467,6 +1502,17 @@ impl AresSuperWeaponLaunch {
         }
         if initialized && is("PsychicDominator") {
             self.dominator.initialize();
+        }
+        if initialized
+            && is("SpyPlane")
+            && let Some(plane) = reads.spy_plane_default.clone()
+        {
+            // SW_SpyPlane::Initialize10075800.
+            self.spy_plane = AresSpyPlaneRules {
+                plane,
+                ..AresSpyPlaneRules::default()
+            };
+            self.radar_event = false;
         }
         if initialized && is("GeneticConverter") {
             // SW_GeneticMutator::Initialize10072090.
@@ -1543,6 +1589,19 @@ impl AresSuperWeaponLaunch {
             }
             self.nuke.silo_launch =
                 section.read_ares_bool("Nuke.SiloLaunch", self.nuke.silo_launch);
+        } else if is("SpyPlane") {
+            // 10075880: Count, Type, Mission. An unknown mission keeps it.
+            let spy_plane = &mut self.spy_plane;
+            spy_plane.count = section.read_ares_int("SpyPlane.Count", spy_plane.count);
+            if let Some(plane) = reads.spy_plane_type {
+                spy_plane.plane = plane;
+            }
+            if let Some(mission) = section
+                .read_name("SpyPlane.Mission", 2048)
+                .and_then(crate::rules::mission_data::MissionType::from_map_name)
+            {
+                spy_plane.mission = mission;
+            }
         } else if is("HunterSeeker") {
             // SW_HunterSeeker::LoadFromINI10072A30 hard-codes it each pass,
             // after the common read (and Initialize10072990 already did).
@@ -1608,6 +1667,10 @@ impl AresSuperWeaponLaunch {
     }
 
     /// SW_PsychicDominator's fields.
+    pub(crate) fn spy_plane(&self) -> &AresSpyPlaneRules {
+        &self.spy_plane
+    }
+
     pub(crate) fn dominator(&self) -> &AresDominatorRules {
         &self.dominator
     }

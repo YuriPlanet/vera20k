@@ -595,6 +595,20 @@ impl Simulation {
         ) {
             let mut next = self.cell_objects(cell, layer).next();
             while let Some(member) = next {
+                // Ares 3.0 1004B980 (hook 0x718275) replaces the walk; it reads
+                // each successor before the kill, as the vanilla loop does.
+                #[cfg(feature = "ares")]
+                self.ares_chrono_make_room(
+                    id,
+                    owner_infantry,
+                    member,
+                    coord,
+                    &mut blocked,
+                    rules,
+                    registry,
+                    effects,
+                );
+                #[cfg(not(feature = "ares"))]
                 self.chrono_telefrag(
                     id,
                     owner_infantry,
@@ -630,7 +644,76 @@ impl Simulation {
         true
     }
 
+    /// TeleportLocomotionClass_MakeRoom (Ares 3.0 `1004B980`, hook
+    /// `0x718275`, resuming at `0x7184CE`) for one object of the destination
+    /// cell's list: an object is protected while under the Iron Curtain or
+    /// when its TechnoTypeExt `Chronoshift.Crushable` is off. With RulesExt
+    /// `ChronoInfantryCrush=no` arriving infantry dies on anything but
+    /// infantry; infantry on infantry kills only the unprotected one at
+    /// exactly `coord`; a protected object kills the arriving one, an
+    /// unprotected Foot dies, and anything else sends the arrival to
+    /// another cell. Every kill is the victim's Strength as `C4Warhead=`,
+    /// ignoring defenses, with no attacker or house.
+    #[cfg(feature = "ares")]
+    #[allow(clippy::too_many_arguments)]
+    fn ares_chrono_make_room(
+        &mut self,
+        id: u64,
+        owner_infantry: bool,
+        member: CellObjectMember,
+        coord: DriveCoord,
+        blocked: &mut bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let crush_infantry = rules.ares_chrono_infantry_crush();
+        // A TerrainClass is no infantry, no Techno and never curtained.
+        let (other, object_infantry, protected, object_foot) = match member {
+            CellObjectMember::Entity(other) => {
+                let frame = self.session.binary_frame();
+                let Some(entity) = self.substrate.entities.get(other) else {
+                    return;
+                };
+                let crushable = self
+                    .object_type(entity.type_ref(), rules)
+                    .is_none_or(|object| object.ares_chronoshift().crushable);
+                (
+                    Some(other),
+                    entity.category() == EntityCategory::Infantry,
+                    crate::sim::superweapon::invulnerability::is_invulnerable(
+                        entity.invulnerability.as_ref(),
+                        frame,
+                    ) || !crushable,
+                    foot(entity.category()),
+                )
+            }
+            _ => (None, false, false, false),
+        };
+        let victim = if !crush_infantry && owner_infantry && !object_infantry {
+            Some(id)
+        } else if !protected && object_infantry && owner_infantry {
+            other.filter(|&other| {
+                self.substrate.entities.get(other).is_some_and(|entity| {
+                    super::ground_pose::object_get_coords(entity, self.resolved_terrain.as_ref())
+                        == coord
+                })
+            })
+        } else if protected {
+            Some(id)
+        } else if object_foot {
+            other
+        } else {
+            *blocked = true;
+            None
+        };
+        if let Some(victim) = victim {
+            self.chrono_c4_kill(victim, rules, registry, effects);
+        }
+    }
+
     /// One object of Update_Position's walk (`0x007182DC..0x0071842A`).
+    #[cfg(not(feature = "ares"))]
     fn chrono_telefrag(
         &mut self,
         id: u64,
