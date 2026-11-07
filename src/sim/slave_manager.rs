@@ -1852,7 +1852,10 @@ impl Simulation {
 
 impl crate::sim::world::ObjectSubstrate {
     fn slave_manager_mut(&mut self, master: u64) -> Option<&mut SlaveManager> {
-        self.entities.get_mut(master)?.slave_manager.as_mut()
+        self.entities
+            .get_mut_if(master, |entity| entity.slave_manager.is_some())?
+            .slave_manager
+            .as_mut()
     }
     fn set_manager_state(&mut self, master: u64, state: ManagerState, frame: i32) {
         if let Some(manager) = self.slave_manager_mut(master) {

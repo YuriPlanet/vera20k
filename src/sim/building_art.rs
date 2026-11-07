@@ -214,17 +214,8 @@ impl crate::sim::world::ObjectSubstrate {
     /// (`0x0043FE56`) steps either tint stage or the flash.
     pub(crate) fn relight_building_anims(&mut self, id: u64, frame: u32) {
         let airstrike_active = self.airstrike_tint_active(id);
-        if let Some(entity) = self.entities.get_mut(id)
-            && entity.category() == crate::map::entities::EntityCategory::Structure
-        {
-            entity.building_art.capture_tint_sample(
-                frame,
-                entity.flashing.flashed(),
-                entity.invulnerability.as_ref(),
-                &entity.airstrike_tint,
-                airstrike_active,
-            );
-        }
+        self.entities
+            .capture_building_tint_sample(id, frame, airstrike_active);
     }
 
     /// Building vt+0x148 `Flash` (`0x00456E00`): the Techno body

@@ -162,6 +162,18 @@ pub(crate) fn advance_crash_spin(state: &mut RockingState, balloon_hover: bool) 
     }
 }
 
+/// Whether [`update`] can change `entity`: it sinks, or it holds a rocking
+/// state that crashes or is not at rest. A state at rest
+/// ([`RockingState::at_rest`]) comes out of an ordinary visit as it went in,
+/// with no damage request.
+pub(crate) fn updates(entity: &GameEntity) -> bool {
+    entity.sinking.is_active()
+        || entity
+            .rocking
+            .as_ref()
+            .is_some_and(|state| entity.crash.is_crashing() || !state.at_rest())
+}
+
 /// The host runs this once at Techno6FA236, before the Foot parasite tail.
 /// A true result requests the existing actual C4 receiver after this borrow.
 pub(crate) fn update(

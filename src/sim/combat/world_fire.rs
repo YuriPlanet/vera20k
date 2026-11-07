@@ -2774,7 +2774,9 @@ pub(crate) fn visit_fire(
                     run.effects(),
                 );
                 infantry_tail = reach.infantry_fire_frame.then_some(id);
-            } else if let Some(actor) = world.substrate.entities.get_mut(id) {
+            } else if let Some(actor) = world.substrate.entities.get_mut_if(id, |actor| {
+                actor.mission_leaf.foot_firing_sequence_latch() != 0
+            }) {
                 //520AD2: absence of TarCom clears the raw firing latch.
                 actor.mission_leaf.set_foot_firing_sequence(0);
             }

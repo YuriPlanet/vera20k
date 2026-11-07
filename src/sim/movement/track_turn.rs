@@ -69,7 +69,7 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) -> TrackProcessEntry {
         let frame = self.session.binary_frame();
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
+        let Some(entity) = self.substrate.entities.get(id) else {
             return TrackProcessEntry::Return;
         };
         if entity.death.is_dying() || !entity.lifecycle.object_alive() {
@@ -94,10 +94,23 @@ impl Simulation {
             self.track_navcom_stop(id, rules, effects);
             return TrackProcessEntry::Return;
         }
-        let current = super::ground_pose::position_world_coord(&entity.position);
-        let loco = entity.locomotor.as_mut().unwrap();
+        let loco = entity.locomotor.as_ref().unwrap();
         let family = TrackFamily::from_kind(loco.active_kind()).unwrap();
-        loco.ensure_installed_track_state();
+        // The sample reads; it takes the object only to install the class's
+        // missing track state or to store a changed latch.
+        if loco.track_turn_latched(family).is_none() {
+            self.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .locomotor
+                .as_mut()
+                .unwrap()
+                .ensure_installed_track_state();
+        }
+        let entity = self.substrate.entities.get(id).unwrap();
+        let current = super::ground_pose::position_world_coord(&entity.position);
+        let loco = entity.locomotor.as_ref().unwrap();
         let mut latched = loco.track_turn_latched(family).unwrap();
         let valid = loco.track_valid(family).unwrap();
         let destination = loco.track_destination(family);
@@ -112,12 +125,18 @@ impl Simulation {
             return TrackProcessEntry::Return;
         }
         let rotating = entity.body_facing.is_rotating(frame);
+        let was_latched = latched;
         let completed = sample(&mut latched, rotating);
-        entity
-            .locomotor
-            .as_mut()
-            .unwrap()
-            .store_track_turn_latched(family, latched);
+        if latched != was_latched {
+            self.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .locomotor
+                .as_mut()
+                .unwrap()
+                .store_track_turn_latched(family, latched);
+        }
         // Drive4B0788 ->4B078C..893 / Ship69FE35: live rotation
         // returns through the Process tail, never fresh ProcessMovement.
         if rotating {
@@ -170,25 +189,22 @@ impl Simulation {
         // native code. Publish the existing owed setter before reading the
         // class coordinates, as the active-track continuation already does.
         self.complete_pending_order(id, rules, registry, effects);
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
-            return;
-        };
-        let Some(loco) = entity.locomotor.as_ref() else {
-            return;
-        };
         // Ship's separate tail and existing Stop adapter are outside this
         // Drive chain. Keep its behavior until its continuation is ported.
-        if loco.active_kind() == LocomotorKind::Drive
-            && entity.lifecycle.object_alive()
-            && loco.track_destination(TrackFamily::Drive).is_none()
-            && loco.track_head(TrackFamily::Drive).is_none()
-            && entity
-                .navigation
-                .path_replay()
-                .remaining_directions()
-                .is_empty()
-            && entity.foot_speed.speed_fraction_is_positive()
-        {
+        if let Some(entity) = self.substrate.entities.get_mut_if(id, |entity| {
+            entity.locomotor.as_ref().is_some_and(|loco| {
+                loco.active_kind() == LocomotorKind::Drive
+                    && entity.lifecycle.object_alive()
+                    && loco.track_destination(TrackFamily::Drive).is_none()
+                    && loco.track_head(TrackFamily::Drive).is_none()
+                    && entity
+                        .navigation
+                        .path_replay()
+                        .remaining_directions()
+                        .is_empty()
+                    && entity.foot_speed.speed_fraction_is_positive()
+            })
+        }) {
             entity
                 .foot_speed
                 .set_speed_fraction(crate::util::fixed_math::SIM_ZERO);

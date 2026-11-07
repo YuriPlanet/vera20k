@@ -165,11 +165,11 @@ impl Veterancy {
         flashing: &mut Flashing,
         elite_flash_timer: i32,
     ) -> Option<Promotion> {
-        let prev = self.rank_cache;
-        let curr = veterancy_level(self.raw);
-        if prev == curr {
+        if !self.rank_changed() {
             return None;
         }
+        let prev = self.rank_cache;
+        let curr = veterancy_level(self.raw);
         self.rank_cache = curr;
         if prev == LEVEL_UNSAMPLED {
             return None;
@@ -182,6 +182,12 @@ impl Veterancy {
             LEVEL_VETERAN => Some(Promotion::Veteran),
             _ => None,
         }
+    }
+
+    /// Whether the rank differs from the cached one: what
+    /// [`Self::sample_promotion`] acts on. Otherwise it changes nothing.
+    pub(crate) fn rank_changed(&self) -> bool {
+        self.rank_cache != veterancy_level(self.raw)
     }
 
     /// Award one kill's experience to its recipient, if the recipient can hold it.

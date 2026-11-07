@@ -125,7 +125,10 @@ pub struct EntityStore {
     anim_holders: BTreeSet<(u64, u64)>,
     /// Which entities may have changed since each reader last took its log
     /// ([`Self::take_touched`]). Every route to a `&mut GameEntity` goes
-    /// through the store, so an entity missing from a log has not changed.
+    /// through the store, so an entity missing from a log has not changed,
+    /// but for the mission AI counter and a building's tint sample, which
+    /// change every frame and no reader derives from
+    /// ([`Self::count_mission_ai_visit`], [`Self::capture_building_tint_sample`]).
     touched: TouchLogs<{ TouchReader::COUNT }>,
 }
 
@@ -448,6 +451,47 @@ impl EntityStore {
         }
         self.touched.note(stable_id, self.slot_of.len());
         Some(entity)
+    }
+
+    /// Step `stable_id`'s mission AI counter (`+0xC4`) for one AI visit
+    /// (`0x006FA646..0x006FA64F`) without a note in the touch logs: every
+    /// techno steps it every frame, and no product derived from the logs
+    /// reads it. No-op if the entity is absent.
+    pub(crate) fn count_mission_ai_visit(&mut self, stable_id: u64) {
+        if let Some(entity) = self.unlogged_mut(stable_id) {
+            entity.mission.increment_ai_counter();
+        }
+    }
+
+    /// Keep a building's relight light at `frame` for the draw
+    /// ([`crate::sim::building_art::BuildingArt::capture_tint_sample`])
+    /// without a note in the touch logs: every building relights every
+    /// frame, and no product derived from the logs reads the sample. No-op
+    /// for an absent entity or one that is not a building.
+    pub(crate) fn capture_building_tint_sample(
+        &mut self,
+        stable_id: u64,
+        frame: u32,
+        airstrike_active: bool,
+    ) {
+        if let Some(entity) = self.unlogged_mut(stable_id)
+            && entity.category() == EntityCategory::Structure
+        {
+            entity.building_art.capture_tint_sample(
+                frame,
+                entity.flashing.flashed(),
+                entity.invulnerability.as_ref(),
+                &entity.airstrike_tint,
+                airstrike_active,
+            );
+        }
+    }
+
+    /// `stable_id`'s entity without a note: only for the writes the touch
+    /// log's contract excepts.
+    fn unlogged_mut(&mut self, stable_id: u64) -> Option<&mut GameEntity> {
+        let slot = *self.slot_of.get(&stable_id)?;
+        self.entities[slot as usize].as_deref_mut()
     }
 
     /// Check if an entity exists.

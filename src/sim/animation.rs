@@ -335,6 +335,12 @@ impl UnitFiringCounter {
         self.value = self.value.wrapping_sub(1).max(-1);
     }
 
+    /// Whether the countdown moves: every value but the resting -1, which
+    /// [`tick_unit_firing_counter`] leaves as it is.
+    pub(crate) const fn counting(self) -> bool {
+        self.value != -1
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     /// Install an original comparison or persistence fixture's raw counter.
     pub fn set_for_test(&mut self, value: i32) {
@@ -382,13 +388,37 @@ pub(crate) fn tick_foot_body_frame_counter(
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
     binary_frame: u32,
 ) {
+    if foot_body_frame_due(
+        entity,
+        rules,
+        cadence,
+        hover_attack,
+        deploy_to_land,
+        terrain,
+        binary_frame,
+    ) {
+        entity.body_frame_counter.advance();
+    }
+}
+
+/// Whether [`tick_foot_body_frame_counter`] advances `entity`'s counter at
+/// `binary_frame`; otherwise it changes nothing.
+pub(crate) fn foot_body_frame_due(
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: crate::sim::movement::SpeedRules<'_>,
+    cadence: FootBodyCadence,
+    hover_attack: bool,
+    deploy_to_land: bool,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    binary_frame: u32,
+) -> bool {
     if !entity.category().is_foot()
         || entity.death.is_dying()
         || !entity.lifecycle.object_alive()
         || entity.lifecycle.in_limbo()
         || entity.is_falling_down()
     {
-        return;
+        return false;
     }
 
     if entity.locomotor.is_none()
@@ -396,7 +426,7 @@ pub(crate) fn tick_foot_body_frame_counter(
         || entity.is_warped_out()
         || entity.is_warping_in()
     {
-        return;
+        return false;
     }
     // Foot4DA886..4DAA01: the same+538 feeds SHP and voxel drawing.
     // HoverAttack is Type+390, not TurretSpins. Native deploy6E0 only
@@ -407,14 +437,11 @@ pub(crate) fn tick_foot_body_frame_counter(
             && entity.attack_target.target().is_some()
             && hover_attack
             && !entity.is_fully_deployed());
-    let due = (walking && (binary_frame as i32) % cadence.walk_rate == 0)
+    (walking && (binary_frame as i32) % cadence.walk_rate == 0)
         || (cadence.idle_rate != 0 && !moving && (binary_frame as i32) % cadence.idle_rate == 0)
         // GetHeight (vt+0x1C8) at `0x004DA9CD`.
         || (deploy_to_land
-            && crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0);
-    if due {
-        entity.body_frame_counter.advance();
-    }
+            && crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0)
 }
 
 /// Unit73C64B..73C725: an active firing counter precedes Stand/Walk and

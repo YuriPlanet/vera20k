@@ -8048,15 +8048,16 @@ fn repro_second_vehicle_ordered_onto_an_occupied_cell() {
     );
 }
 
-/// Idle objects are handed out mutably only for their own turn, plus an
-/// infantry's frame-end animation clock: the per-frame walks read first and
-/// borrow only what they change. The tanks carry turrets, whose idle return
-/// the facing pass sets every frame. Every hand-out lands in the entity store's
-/// touch logs, whose per-object budget (`TouchLog::note`) a 20k-object world
-/// overran when each walk borrowed every entity, so the blocker plane and
-/// the kept Ground keys rebuilt from every object each tick.
+/// Idle objects stay out of the touch logs. The per-frame walks read first
+/// and borrow only what they change, so an idle object is handed out mutably
+/// only on the frames its Guard handler runs (every 14 to 16 frames here) and
+/// an idle building never: the mission AI counter and a building's tint
+/// sample, which change every frame, are written without a note. The logs'
+/// readers (the blocker plane, the kept Ground keys and the expiry listener
+/// index) re-read every object named, so when each walk borrowed every
+/// entity, a 20k-object world was re-read almost whole every frame.
 #[test]
-fn idle_objects_are_handed_out_only_for_their_own_turn() {
+fn idle_objects_stay_out_of_the_touch_logs() {
     use crate::sim::entity_store::TouchReader;
     use crate::sim::touch_log::Touched;
 
@@ -8100,22 +8101,26 @@ fn idle_objects_are_handed_out_only_for_their_own_turn() {
         .substrate
         .entities
         .take_touched(TouchReader::BlockerPlane);
-    let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
-    let Touched::Ids(ids) = sim
-        .substrate
-        .entities
-        .take_touched(TouchReader::BlockerPlane)
-    else {
-        panic!("an idle tick overflowed the touch log");
-    };
-    // A log drops a repeat of its last id, so this counts the runs of
-    // hand-outs; an object's own turn is one run.
-    let handed_out = |id: u64| ids.iter().filter(|&&noted| noted == id).count();
-    for &id in vehicles.iter().chain(&buildings) {
-        assert!(handed_out(id) <= 1, "idle vehicle or building {id}");
+    let mut ticks = BTreeMap::<u64, usize>::new();
+    for _ in 0..40 {
+        let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
+        let Touched::Ids(ids) = sim
+            .substrate
+            .entities
+            .take_touched(TouchReader::BlockerPlane)
+        else {
+            panic!("an idle tick overflowed the touch log");
+        };
+        for id in ids.into_iter().collect::<BTreeSet<_>>() {
+            *ticks.entry(id).or_default() += 1;
+        }
     }
-    for &id in &infantry {
-        assert!(handed_out(id) <= 2, "idle infantry {id}");
+    let handed_out = |id: u64| ticks.get(&id).copied().unwrap_or(0);
+    for &id in vehicles.iter().chain(&infantry) {
+        assert!(handed_out(id) <= 3, "idle vehicle or infantry {id}");
+    }
+    for &id in &buildings {
+        assert_eq!(handed_out(id), 0, "idle building {id}");
     }
 }
 
