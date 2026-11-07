@@ -188,9 +188,6 @@ pub struct KeyboardLayout {
     pub title: RectPx,
     pub back: RectPx,
     pub footer: RectPx,
-    /// The family page's `0x71C` monitor, where every scaled family page puts
-    /// it; zero-sized in the in-game frame, which has no such static.
-    pub warning: RectPx,
     pub category: RectPx,
     pub commands: RectPx,
     pub group: RectPx,
@@ -236,36 +233,25 @@ impl KeyboardLayout {
                 scale.scale_rect(r)
             }
         };
-        let (title, back, footer, warning) = if let Some((shell, size)) = shell {
+        let (title, back, footer) = if let Some((shell, size)) = shell {
             (
                 in_game_shell::right_panel_title_rect(width),
                 shell.lower_button_rect(width, size),
                 in_game_shell::status_line_rect(height),
-                RectPx::new(0, 0, 0, 0),
             )
         } else if scale.is_retail() {
             // The front-end page is a family page: its heading, Back and
             // status line sit where every family page puts them.
             let page =
                 super::menu_page::compute_layout(&KEYBOARD_PAGE, width as u32, height as u32);
-            (
-                page.title,
-                page.buttons[0].rect,
-                page.status_help,
-                page.warning_monitor,
-            )
+            (page.title, page.buttons[0].rect, page.status_help)
         } else {
             let page = super::menu_page::compute_responsive_layout(
                 &KEYBOARD_PAGE,
                 width as u32,
                 height as u32,
             );
-            (
-                page.title,
-                page.buttons[0].rect,
-                page.status_help,
-                page.warning_monitor,
-            )
+            (page.title, page.buttons[0].rect, page.status_help)
         };
         let mut category = dlu(63, 83, 138, 146);
         category.h =
@@ -274,7 +260,6 @@ impl KeyboardLayout {
             title,
             back,
             footer,
-            warning,
             category,
             commands: dlu(224, 82, 136, 110),
             group: dlu(63, 98, 138, 95),
