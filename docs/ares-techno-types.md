@@ -104,19 +104,104 @@ turret (1004B320, 0x6F9E50) follow their keys.
 
 ## Not covered
 
-- `SelfHealing.CombatDelay`: Ares replaces the whole self-heal pulse
-  (`SelfHealing.Rate/.Amount/.Max`, 10044E80, hooks 0x70BE80 and 0x6FA743),
-  which is not ported.
-- `FallRate.*`: Ares replaces ObjectClass::Update's fall step (10049BA0, hook
-  0x5F3FB2) for every object, an integer step in place of the 1.4 free-fall
-  gravity and the Parachute pointer in place of `+0x84`; not ported.
-- `AirRate`, `Carryall.*`, `NoManualUnload`, `NoManualEnter`, `NoSelfGuardArea`
-  (the stock self-click Area Guard arm is not ported), `DigIn`/`DigOut` and
-  their sounds, `Assaulter.Level`, `DamageSparksParticleSystems`, and the
-  group 6 keys (`Drain.*`, `InitialPayload.*`, `IsBomb`, `IsCow`, `IsDesolator*`,
-  `Convert.Deploy`, `EnemyUIName`, `RadialIndicatorRadius`, `CameoPalette`, the
-  `HunterSeeker.*` speeds).
+- `NoSelfGuardArea` (the stock self-click Area Guard arm is not ported) and
+  `DamageSparksParticleSystems`; the rest is in part 2 below.
 - A `Missile.Weapon` without a `Projectile=`: Ares dereferences the null
   BulletType; VERA detonates it without one.
 - A zero-`Strength=` type: Ares' smoke and spark gates compare a NaN health
   ratio as not damaged, where the stock tests VERA keeps count it as damaged.
+
+## Part 2: self heal, falls, transports and type roles
+
+```ini
+[MyTank]                         ; TechnoType
+SelfHealing.Rate=                ; minutes, else [General] RepairRate
+SelfHealing.Amount=1             ; .RookieAmount, .VeteranAmount, .EliteAmount
+SelfHealing.Max=100%             ; .RookieMax ...; heals up to Strength * Max + 1
+SelfHealing.CombatDelay=0        ; frames a damaging hit holds the pulse off
+FallRate.Parachute=1             ; FallRate step under a canopy
+FallRate.NoParachute=1           ; free-fall step (stock gravity is 1.4)
+FallRate.ParachuteMax=           ; else [General] ParachuteMaxFallRate
+FallRate.NoParachuteMax=         ; else [General] NoParachuteMaxFallRate
+AirRate=0                        ; airborne body frame every AirRate frames
+NoManualUnload=no                ; the player cannot unload it
+NoManualEnter=no                 ; the player cannot order passengers in
+IsDesolator=                     ; DESO: yes; the deployed radiation shim
+IsDesolator.RadDependant=        ; DESO: yes; read, no 3.0 consumer
+IsCow=                           ; COW: yes; the biased idle roll
+IsBomb=no                        ; a paradropped Foot lands as a bomb
+Drain.Local=no                   ; a drained plant loses only Drain.Amount
+Drain.Amount=0                   ; > 0 caps the drain, <= 0 floors it at -n
+ReloadAmount=1                   ; now also a building's, on its reload clock
+```
+
+## Self heal
+
+GetSelfHealAmount (10044E80) replaces the eligibility virtual (hook 0x70BE80)
+and its `+1` in AI_Update (hook 0x6FA743): nothing while the combat timer
+(TechnoExt+0x5C) runs, the stock SelfHealing/SELF_HEAL gate, a global
+`Frame % max(ftol(rate * 900), 1)` (so a zero rate pulses every frame
+instead of faulting), and up to `SelfHealing.%sAmount` while Health is below
+`clamp(ftol(Strength * SelfHealing.%sMax) + 1, 1, Strength)`. A crashing or
+sinking techno skips both its own and the House pulses (1004B820). The
+ReceiveDamage aftermath (1004AB50, hook 0x702819) starts the timer for a
+nonzero result of an initially positive hit. The stock pulse heals above
+Strength, so its native replays (`signed_health_tests`) run in default builds
+only.
+
+## Falls and transports
+
+ObjectClass_Update_MaxFallRate (10049BA0, hook 0x5F3FB2) steps every falling
+Techno by its `FallRate.*` (default 1, also free fall) and selects the arm by
+the Parachute pointer (+0x88) rather than +84; an object without a TechnoType
+(a flaming guy) steps 1 either way; the stock free-fall replay
+(`drop_as_bomb_oracle_tests`) runs in default builds only. `AirRate` decides an airborne Foot's body counter alone (100493D0, hook
+0x4DA8B2). `NoManualUnload` leaves a Unit transport's and an Aircraft's self
+click with no action (1004BEF0, 0x740031; 10048A90, 0x417DD2) and refuses an
+unbunkered transport in CanDeploySlashUnload (10049E70, 0x700EEC);
+`NoManualEnter` refuses the passenger rows (1004BEA0, 0x74031A; 100176E0,
+0x51ED8E).
+
+## Type roles
+
+`IsDesolator` replaces `ImmuneToRadiation=` in the deployed Guard shim
+(100497C0/100497F0, hooks 0x5215F9/0x52138C) and the `DESO` ID in infantry
+Mission_Unload (10049790, 0x51F76D); `IsCow` replaces the `COW` ID in the
+idle roll (10049740, 0x51CE9A), whose EMP arm takes no bias and leaves the
+roll register holding the frame. `IsBomb` raises IsABomb at the paradrop
+canopy (10047C60, 0x5F5ADD). A `Drain.Local` plant or drainer subtracts the
+limited drain from the House output in place of zeroing it, which then never
+stays negative (10024690/10024760, hooks 0x508D32/0x508D4A). A building
+other than a Hospital or Armory reloads through TechnoClass::Reload (100478E0,
+hook 0x43FE8E), so `ReloadAmount` and the reload clock reach it where the
+stock visit refills an empty magazine at once.
+
+## Where VERA20K owns part 2
+
+- `rules/ares_techno_type.rs`: every key above (`self_healing`, `fall_rate`,
+  `movement`, `roles`).
+- `sim/combat/veterancy.rs` (`ares_self_heal_amount`), `sim/world/techno_ai.rs`
+  (the pulse), `sim/vehicle_theft/driver_kill.rs` (the combat timer).
+- `sim/object_fall.rs`, `sim/game_entity.rs`, `sim/movement/parachute_descent.rs`:
+  the fall step and IsBomb.
+- `sim/animation.rs`: AirRate; `sim/deploy.rs`, `app/input/context_order.rs`:
+  NoManualUnload; `sim/world/world_orders.rs`: NoManualEnter.
+- `sim/world/techno_ai/mission_handlers.rs`, `sim/deploy.rs`: IsDesolator;
+  `sim/infantry.rs`: IsCow; `sim/power_system.rs`: Drain.Local;
+  `sim/world/techno_ai/building_missions.rs`: the building reload.
+
+## Not covered in part 2
+
+- `Carryall.Allowed`, `Carryall.SizeLimit`: VERA has no Carryall tote
+  (hooks 0x417D75, 0x416E37); retail has no carryall.
+- `DigIn`, `DigOut`, `DigInSound`, `DigOutSound`: the Tunnel locomotor is
+  not ported. `Assaulter.Level`: the stock `Assaulter=` arm of
+  CanBeOccupiedBy (hook 0x457DB7) is not ported.
+- `Convert.Deploy` (1004C070, hook 0x73DE90), which also replaces the stock
+  +6E1 test of every simple deployer's Unload; `InitialPayload.Nums` with
+  `InitialPayload.Types` (hooks 0x446EE2, 0x4D718C).
+- Presentation: `EnemyUIName`, `RadialIndicatorRadius` (hooks 0x4566B0,
+  0x41BE80), `CameoPalette`.
+- The infantry `NoManualEnter` hook also admits Ares tunnels, not ported.
+- The `HunterSeeker.*` speeds and proximities need the unported hunter
+  flight (hooks 0x4CCB84..0x4D8D95).
