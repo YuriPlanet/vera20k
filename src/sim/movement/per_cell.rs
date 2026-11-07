@@ -215,6 +215,128 @@ impl Simulation {
         false
     }
 
+    /// `UnitClass::Per_Cell_Process`'s own-cell arm (`0x0073AE1B..0x0073AFD3`),
+    /// reason 2 only, after the rearm timer. It takes the cell at the unit's
+    /// Location (`0x0073AE3B`, `0x00565730`) and acts when the locomotor is
+    /// not moving (Is_Moving, `0x0073AE65`), the unit's own Can_Enter_Cell
+    /// refuses that cell with 7 (`0x0073AE7E`, called with (cell, -1, -1,
+    /// NULL, 1)), it is not on a bridge over a cell with flag 0x100
+    /// (`0x0073AE8D..0x0073AEA0`) and it is not sinking (`+0x3CD`).
+    /// - On Enter (`+0xAC` is 7) it Scatters, vt+0x174(&0xB1CFE8, 1, 1)
+    ///   (`0x0073AFC0..0x0073AFCE`), and the crush and Foot tail follow.
+    /// - Otherwise it blows itself up with C4Warhead (Rules `+0xFA8`) for its
+    ///   strength (`+0x6C`): the `SelectAnim @ 0x0048A4F0` animation for the
+    ///   cell's LandType (`+0xEC`) at its Location (`0x0073AEC1..0x0073AF47`),
+    ///   the `0x0048A620` flash at its GetCoords (`0x0073AF4C..0x0073AF8B`),
+    ///   then ReceiveDamage(&strength, 0, C4Warhead, NULL, 1, 0, NULL)
+    ///   (`0x0073AF90..0x0073AFB0`), and returns true: the call ends before
+    ///   the crush and the Foot body. A null C4Warhead leaves the flash and
+    ///   the damage inert, and the call still ends.
+    ///
+    /// Residual: native allocates the anim before SelectAnim (`0x0073AEC1`),
+    /// so a null pick (0 strength, or no C4Warhead) still runs AnimClass's
+    /// constructor (`0x00421EA0`) on a null type; VERA constructs nothing.
+    /// Retail C4Warhead is Super, which lists `AnimList=`, so only a unit at 0
+    /// strength gets there. Rare; the constructor's own writes are the risk.
+    ///
+    /// A miner on its refinery's pad never gets here: the pad is the east
+    /// column of a `Bib=` foundation, which Can_Enter_Cell admits whatever
+    /// the radio contact (`0x0073F7D3..0x0073F821`). Nor does a warp
+    /// arrival: Teleport Process calls this Per_Cell_Process (`0x0071971C`)
+    /// before its own Stop_Moving (`0x00719725`), so Is_Moving is still set.
+    fn unit_per_cell_own_cell_refusal(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return false;
+        };
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        let location = super::ground_pose::object_location(entity, Some(terrain));
+        if super::motion_query::is_moving(entity) != Some(false) {
+            return false;
+        }
+        let cell = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain)
+            .lookup_world(location.x, location.y);
+        let refused = self.foot_can_enter(
+            id,
+            cell,
+            crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
+            rules,
+            registry,
+        ) == Ok(7);
+        if !refused
+            || entity.on_bridge()
+                && crate::sim::cell_rect::get_cellclass_fallback_leptons(
+                    Some(terrain),
+                    location.x,
+                    location.y,
+                )
+                .bridge_flags_0x1180()
+                    & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
+                    != 0
+            || entity.sinking.is_active()
+        {
+            return false;
+        }
+        if entity.mission.current() == MissionId::from_known(MissionType::Enter) {
+            let _ = self.scatter(
+                id,
+                None,
+                super::scatter::ScatterFlags::new(true, true),
+                rules,
+                registry,
+                effects,
+            );
+            return false;
+        }
+        let strength = entity.health.current();
+        let center = super::ground_pose::object_get_coords(entity, Some(terrain));
+        let Some(warhead) = rules.warhead(&rules.bridge_warheads.c4_name) else {
+            return true;
+        };
+        let warhead_ref = self.interner.intern(&warhead.id);
+        let at = crate::sim::projectile::ProjectileCoord::new(location.x, location.y, location.z);
+        let land = crate::sim::combat::detonation_anim::land_at(self, at);
+        if let Some(effect) = crate::sim::combat::detonation_anim::effect(
+            self, rules, warhead, strength, land, at, at, false,
+        ) {
+            crate::sim::world::damage_consequences::admit_explosion_effect(self, rules, effect);
+        }
+        self.combat_light_requests
+            .emit(crate::sim::combat::CombatLightRequest::Impact {
+                target_id: None,
+                damage: strength,
+                warhead_ref,
+                coord: crate::sim::projectile::ProjectileCoord::new(center.x, center.y, center.z),
+                force_create: false,
+                flags: 0,
+            });
+        self.commit_direct_damage_receiver(
+            rules,
+            registry,
+            crate::sim::combat::EntityDamageEvent::direct_receiver(
+                id,
+                strength,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                warhead_ref,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6: false,
+                },
+            ),
+            effects,
+        );
+        true
+    }
+
     /// `UnitClass::Per_Cell_Process @ 0x00739EC0`: the Unit's own arrival
     /// work, then the Foot body (`0x0073A4FB`, `0x0073B0A0`).
     pub(super) fn unit_per_cell_process(
@@ -299,17 +421,14 @@ impl Simulation {
         if reason == PerCellReason::Arrival {
             crate::sim::miner::per_cell_release_dock_contact(self, rules, id, effects);
         }
-        // Not ported: `0x0073AE1B..0x0073AFD3`. A stopped Unit (Is_Moving,
-        // `0x0073AE65`) whose own cell its Can_Enter_Cell refuses with 7
-        // (`0x0073AE7E`), off a bridge there and not sinking, Scatters on
-        // Enter (vt+0x174(&0xB1CFE8, 1, 1)) and otherwise blows itself up
-        // with C4Warhead and its Health (`0x0073AEC1..0x0073AFB0`), skipping
-        // the crush and the Foot body. Trigger: an arrival in a cell the unit
-        // can no longer enter, such as inside a building whose radio contact
-        // dropped mid-track. No miner reaches it: a refinery's pad is the
-        // east column of a `Bib=` foundation, which Can_Enter_Cell admits
-        // whatever the contact (`0x0073F7D3..0x0073F821`). Effect: VERA
-        // leaves the unit in that cell. Frequency: rare. Downstream: none.
+        // `0x0073AE1B..0x0073AFD3`: a stopped unit its own cell refuses
+        // scatters on Enter; otherwise it blows itself up and returns before
+        // the crush and the Foot body.
+        if reason == PerCellReason::Arrival
+            && self.unit_per_cell_own_cell_refusal(id, rules, registry, effects)
+        {
+            return;
+        }
         // 73AFD4..73B06E is common to reasons0/2 and precedes the fresh
         // +1B8/full-cell crush query73B074 and the Foot continuation.
         if let (Some(cell), Some(registry)) = (entry_cell, registry) {

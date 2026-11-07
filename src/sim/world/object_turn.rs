@@ -440,7 +440,16 @@ impl Simulation {
                 ctx.effects,
             )?;
             process.per_cell_ran = true;
-            // 0x00719725 Stop_Moving: the tick retired the request.
+            // 0x00719725: Process's own Stop_Moving, after the arrival
+            // Per_Cell_Process, which still read Is_Moving set.
+            if let Some(locomotor) = sim
+                .substrate
+                .entities
+                .get_mut(stable_id)
+                .and_then(|entity| entity.locomotor.as_mut())
+            {
+                locomotor.teleport_process_stop();
+            }
             // 0x0071972E CellClass::PickupCrate (`0x00481A00`) on the
             // destination cell for the linked Foot; its answer is not read.
             let cell = sim
