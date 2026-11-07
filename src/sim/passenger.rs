@@ -85,7 +85,6 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::houses::Houses;
 use crate::sim::intern::{InternedId, StringInterner};
-use crate::sim::power_system::PowerStates;
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::ObjectSubstrate;
@@ -771,12 +770,14 @@ impl PassengerRole {
     }
 
     /// The `OpenTopped=` transport this entity rides in, if any, from the
-    /// carrier relation. It stands in for gamemd's `+0x82` and Transporter
-    /// (`+0x11C`, [`Self::transporter`]) reads, which can differ for cargo
-    /// that `CargoClass::AddPassenger` loaded (vera20k#3838). Read by weapon
-    /// selection, the fire coordinate, InRange, GetFireError, FireAt's damage
-    /// and muzzle anim, kill credit, navigation and the Temporal
-    /// warp-distance check.
+    /// carrier relation. This stands in for the `TechnoClass+0x82`
+    /// InOpenToppedTransport gate that native readers test before their
+    /// `+0x11C` read (for example GetFireError `0x006FC57D`, RecordKill
+    /// `0x00702E9D`, GetFLH `0x00523259`); the `+0x11C` value itself is
+    /// [`Self::transporter`], which can differ once a garrison or cargo
+    /// relation is involved (vera20k#3838). Read by weapon selection, the
+    /// fire coordinate, InRange, GetFireError, FireAt's damage and muzzle
+    /// anim, kill credit, navigation and the Temporal warp-distance check.
     pub fn open_transport_id(&self) -> Option<u64> {
         self.inside_transport()
             .and_then(|(id, open)| open.then_some(id))
@@ -1463,65 +1464,63 @@ impl Simulation {
                         .is_some_and(|kind| kind.gunner)
             })
         {
-            remove_gunner(
+            self.remove_gunner(rules, transport_id, passenger);
+        }
+    }
+
+    /// `UnitClass` vtable `+0x4D8` (`0x007464E0`): the virtual RemoveGunner
+    /// dispatch. `FootClass::RemovePassenger @ 0x004DE670` calls it when the
+    /// last cargo member leaves; `InfantryClass::ReceiveDamage`'s result-4 arm
+    /// (`0x00518093..0x005180E2`) calls it for a dying rider whose
+    /// `Transporter` (`+0x11C`) is a `Gunner=` Unit. Temporal ownership moves
+    /// to `pax_id` first; mode0 selection always follows, even with no
+    /// passenger or temporal.
+    pub(crate) fn remove_gunner(
+        &mut self,
+        rules: &RuleSet,
+        transport_id: u64,
+        pax_id: Option<u64>,
+    ) {
+        let Some(transport) = self.substrate.entities.get(transport_id) else {
+            return;
+        };
+        let Some(object) = self.interner.object_type(transport.type_ref(), rules) else {
+            return;
+        };
+        // Aircraft/Foot bind this virtual slot to the 4DE760 stub.
+        if transport.category() != EntityCategory::Unit || !object.gunner {
+            return;
+        }
+        // 746502..746528 samples the IFV before transfer/LetGo. The receiving
+        // passenger's current burst/rank/House are read after LetGo below.
+        let donor_rearming = transport
+            .rearm_timer
+            .remaining(self.session.binary_frame() as i32)
+            != 0;
+        if let Some(pax_id) = pax_id
+            && Self::temporal_remove_gunner(
+                &mut self.substrate,
+                &mut self.houses,
+                &mut self.power_states,
+                transport_id,
+                pax_id,
+            )
+            && donor_rearming
+        {
+            rearm_transferred_gunner(
                 &self.interner,
                 &self.session,
                 &mut self.scenario_rng,
                 &mut self.substrate,
-                &mut self.houses,
-                &mut self.power_states,
+                &self.houses,
                 rules,
-                transport_id,
-                passenger,
+                pax_id,
+                0,
             );
         }
-    }
-}
-
-fn remove_gunner(
-    interner: &StringInterner,
-    session: &ScenarioSession,
-    scenario_rng: &mut SimRng,
-    substrate: &mut ObjectSubstrate,
-    houses: &mut Houses,
-    power_states: &mut PowerStates,
-    rules: &RuleSet,
-    transport_id: u64,
-    pax_id: Option<u64>,
-) {
-    let Some(transport) = substrate.entities.get(transport_id) else {
-        return;
-    };
-    let Some(object) = interner.object_type(transport.type_ref(), rules) else {
-        return;
-    };
-    // Aircraft/Foot bind this virtual slot to the 4DE760 stub.
-    if transport.category() != crate::map::entities::EntityCategory::Unit || !object.gunner {
-        return;
-    }
-    // 746502..746528 samples the IFV before transfer/LetGo. The receiving
-    // passenger's current burst/rank/House are read after LetGo below.
-    let donor_rearming = transport
-        .rearm_timer
-        .remaining(session.binary_frame() as i32)
-        != 0;
-    if let Some(pax_id) = pax_id
-        && Simulation::temporal_remove_gunner(substrate, houses, power_states, transport_id, pax_id)
-        && donor_rearming
-    {
-        rearm_transferred_gunner(
-            interner,
-            session,
-            scenario_rng,
-            substrate,
-            &*houses,
-            rules,
-            pax_id,
-            0,
-        );
-    }
-    if let Some(transport) = substrate.entities.get_mut(transport_id) {
-        transport.set_gunner_weapon(0, object);
+        if let Some(transport) = self.substrate.entities.get_mut(transport_id) {
+            transport.set_gunner_weapon(0, object);
+        }
     }
 }
 
