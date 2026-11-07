@@ -30,8 +30,55 @@ pub(crate) struct AresTechnoTypeRules {
     /// `Initialize` ran (ExtMap state 1): it seeds once, at the type's first
     /// reached read.
     initialized: bool,
+    /// `Gattling.Cycle` (+0x322, false).
+    gattling_cyclic: bool,
     /// AircraftType-only custom missile block and its rocket puffs.
     missile: Option<Box<CustomMissileRules>>,
+    ammo: AmmoTypeRules,
+}
+
+/// TechnoTypeExt+0x458..+0x468, the reload amounts and the out-of-ammo
+/// weapon.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AmmoTypeRules {
+    /// `ReloadAmount` (+0x458, 1).
+    reload_amount: i32,
+    /// `EmptyReloadAmount` (Nullable +0x45C/+0x460, unset).
+    empty_reload_amount: Option<i32>,
+    /// `NoAmmoAmount` (+0x464, 0).
+    no_ammo_amount: i32,
+    /// `NoAmmoWeapon` (+0x468, -1).
+    no_ammo_weapon: i32,
+}
+
+impl Default for AmmoTypeRules {
+    fn default() -> Self {
+        Self {
+            reload_amount: 1,
+            empty_reload_amount: None,
+            no_ammo_amount: 0,
+            no_ammo_weapon: -1,
+        }
+    }
+}
+
+impl AmmoTypeRules {
+    /// The rounds one `TechnoClass::Reload` adds (TechnoClass_Reload_
+    /// ReloadAmount, Ares.dll 10047A70, hook 0x6FB05B): `ReloadAmount`, or
+    /// `EmptyReloadAmount` when set and the count is zero.
+    pub(crate) fn reload_amount(&self, ammo: i32) -> i32 {
+        match self.empty_reload_amount {
+            Some(empty) if ammo == 0 => empty,
+            _ => self.reload_amount,
+        }
+    }
+
+    /// The weapon index `What_Weapon_Should_I_Use` answers once the count is
+    /// at or below `NoAmmoAmount` (TechnoClass_SelectWeapon_NoAmmoWeapon,
+    /// Ares.dll 10047AE0, hook 0x6F3410); the caller tests `Ammo= >= 0`.
+    pub(crate) fn no_ammo_weapon(&self, ammo: i32) -> Option<i32> {
+        (self.no_ammo_weapon >= 0 && ammo <= self.no_ammo_amount).then_some(self.no_ammo_weapon)
+    }
 }
 
 /// TechnoTypeExt+0x32D..+0x37C, read for an AircraftType only (`#245`).
@@ -117,6 +164,7 @@ impl AresTechnoTypeRules {
                 self.missile = Some(Box::new(missile));
             }
         }
+        self.gattling_cyclic = section.read_ares_bool("Gattling.Cycle", self.gattling_cyclic);
         // 1003DFB0: "#245 custom missiles", after Gattling.Cycle.
         if let Some(missile) = self.missile.as_deref_mut() {
             missile.custom = section.read_ares_bool("Missile.Custom", missile.custom);
@@ -148,11 +196,28 @@ impl AresTechnoTypeRules {
             pointer("Missile.Weapon", TypeRef::Weapon, weapon);
             pointer("Missile.EliteWeapon", TypeRef::Weapon, elite_weapon);
         }
+        // After the crush block and ReloadRate.
+        let ammo = &mut self.ammo;
+        ammo.reload_amount = section.read_ares_int("ReloadAmount", ammo.reload_amount);
+        ammo.empty_reload_amount =
+            section.read_ares_nullable_int("EmptyReloadAmount", ammo.empty_reload_amount);
+        ammo.no_ammo_amount = section.read_ares_int("NoAmmoAmount", ammo.no_ammo_amount);
+        ammo.no_ammo_weapon = section.read_ares_int("NoAmmoWeapon", ammo.no_ammo_weapon);
     }
 
     /// The AircraftType's missile fields; `None` for other types.
     pub(crate) fn missile(&self) -> Option<&CustomMissileRules> {
         self.missile.as_deref()
+    }
+
+    pub(crate) fn ammo(&self) -> &AmmoTypeRules {
+        &self.ammo
+    }
+
+    /// `Gattling.Cycle`: a charge at the cap restarts the stages
+    /// (TechnoClass_UpdateGattling_Cycle, Ares.dll 1004B6C0, hook 0x70DEBA).
+    pub(crate) fn gattling_cyclic(&self) -> bool {
+        self.gattling_cyclic
     }
 }
 

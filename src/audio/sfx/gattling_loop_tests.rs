@@ -329,6 +329,7 @@ fn apply_native_stage_report(
         &table,
         elite,
         call["args"][0].as_i64().unwrap() as i32,
+        None,
         |index| {
             assert_eq!(index, 2, "original stage1 ground weapon slot");
             Some(reports.len() as i32)

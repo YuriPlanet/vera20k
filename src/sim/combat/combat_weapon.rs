@@ -139,6 +139,8 @@ pub struct AttackerFacts {
     /// `AircraftClass+0x6CA` spawn retreat/collision flag
     /// (`SpawnRetreat__Push 0x0054E47D`).
     pub aircraft_spawn_collision: bool,
+    /// `TechnoClass+0x2FC` Ammo, which Ares' NoAmmoWeapon arm reads.
+    pub ammo: i32,
 }
 
 /// Flight virtuals are queried only where the selection ladder asks them.
@@ -836,6 +838,15 @@ fn techno_what_weapon_should_i_use<'r>(
     if let Some(slot) = attacker.open_transport_weapon {
         return slot;
     }
+    // Ares TechnoClass_SelectWeapon_NoAmmoWeapon (Ares.dll 10047AE0, hook
+    // 0x6F3410, before H): a type with `Ammo= >= 0` fires `NoAmmoWeapon`
+    // once its count is at or below `NoAmmoAmount`.
+    #[cfg(feature = "ares")]
+    if obj.ammo >= 0
+        && let Some(slot) = obj.techno_combat().ammo().no_ammo_weapon(attacker.ammo)
+    {
+        return slot;
+    }
     let techno = target.techno();
     let secondary_aa = projectile_aa(rules, secondary);
     let secondary_warhead = warhead_of(rules, secondary);
@@ -1068,6 +1079,7 @@ pub fn attacker_facts(entity: &GameEntity, obj: &ObjectType) -> AttackerFacts {
         mission_is_unload: entity.mission.effective().known() == Some(MissionType::Unload),
         is_overpowered_building: entity.tesla_charge.is_overpowered(),
         aircraft_spawn_collision: false,
+        ammo: entity.ammo().map_or(-1, |ammo| ammo.current()),
     }
 }
 
@@ -1723,6 +1735,7 @@ mod tests {
             mission_is_unload: false,
             is_overpowered_building: false,
             aircraft_spawn_collision: false,
+            ammo: -1,
         }
     }
 
@@ -1954,6 +1967,31 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    /// Ares NoAmmoWeapon (Ares.dll 10047AE0, hook 0x6F3410): once Ammo is
+    /// at or below `NoAmmoAmount` the ladder answers `NoAmmoWeapon` right
+    /// after the open-topped arm; above it the ladder runs on to slot 0.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_no_ammo_weapon_answers_at_low_ammo() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=LAUNCH\n1=TGT\n[LAUNCH]\nStrength=100\nAmmo=4\n\
+             NoAmmoAmount=1\nNoAmmoWeapon=1\nPrimary=W0\nSecondary=W1\n\
+             [TGT]\nStrength=100\n[W0]\nDamage=10\nWarhead=WH\nProjectile=P\n\
+             [W1]\nDamage=10\nWarhead=WH\nProjectile=P\n[P]\nAG=yes\n[WH]\nVerses=100%\n",
+        ))
+        .unwrap();
+        let launcher = rules.object("LAUNCH").unwrap();
+        let target = techno(rules.object("TGT").unwrap(), TechnoKind::Unit);
+        let select = |ammo| {
+            let mut attacker = facts(TechnoKind::Unit);
+            attacker.ammo = ammo;
+            what_weapon_should_i_use(&rules, launcher, &attacker, Some(&target), |index| {
+                rules.weapon(weapon_for_index(launcher, 0, index)?.weapon_id?)
+            })
+        };
+        assert_eq!((select(2), select(1), select(0)), (0, 1, 1));
     }
 
     // ---- Class overrides ---------------------------------------------------

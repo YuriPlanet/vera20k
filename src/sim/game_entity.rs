@@ -1202,7 +1202,14 @@ impl GameEntity {
             && self.ammo().is_some_and(|ammo| ammo.current() < object.ammo)
             && self.ammo_reload_timer.remaining(now) == 0
         {
-            self.ammo_mut().unwrap().reload_round();
+            let ammo = self.ammo_mut().unwrap();
+            #[cfg(feature = "ares")]
+            ammo.reload_rounds(
+                object.techno_combat().ammo().reload_amount(ammo.current()),
+                object.ammo,
+            );
+            #[cfg(not(feature = "ares"))]
+            ammo.reload_round();
             // Foot/Unit Mark(2)4D3780 returns immediately, before any
             // callback or spatial write. No redraw event is synthesized.
             self.start_reloading_ammo(object, now);
@@ -2675,6 +2682,34 @@ mod tests {
         let native = native_cloak_fixture();
         let rows = native["cloak_transition"].as_array().unwrap();
         assert_eq!(rows.len(), 256);
+    /// Ares ReloadAmount/EmptyReloadAmount (Ares.dll 10047A70, hook
+    /// 0x6FB05B): Reload adds `EmptyReloadAmount` to an empty count, else
+    /// `ReloadAmount`, capped by `Ammo=`; a negative amount stops at zero.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_reload_adds_the_type_amounts() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[VehicleTypes]\n0=MTNK\n1=DRAIN\n[MTNK]\nAmmo=5\nReload=10\nReloadAmount=2\n\
+             EmptyReloadAmount=4\n[DRAIN]\nAmmo=5\nReload=10\nReloadAmount=-3\n",
+            ))
+            .unwrap();
+        let reload = |name: &str, from: i32| {
+            let object = rules.object(name).unwrap();
+            let mut entity = GameEntity::test_default(1, name, "Americans", 10, 20);
+            let mut ammo = TechnoAmmo::new(5);
+            ammo.set_current_for_test(from);
+            entity.install_ammo_for_test(Some(ammo));
+            entity.reload_techno_ammo(object, 0);
+            entity.ammo().unwrap().current()
+        };
+        assert_eq!(
+            (reload("MTNK", 0), reload("MTNK", 1), reload("MTNK", 4)),
+            (4, 3, 5)
+        );
+        assert_eq!((reload("DRAIN", 4), reload("DRAIN", 2)), (1, 0));
+    }
+
         let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 20);
         for row in rows {
             let mut cloak = CloakRuntime::new(0);
