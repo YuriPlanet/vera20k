@@ -55,7 +55,7 @@ pub(crate) fn append_prepared(
 ) {
     // 6D0A20: native sidebar converter, frame0, clipped to the tactical-bottom
     // surface. The spacer covers the strip as `spacer_pieces` lays it out:
-    // 1:1 and cropped as native up to 1080-pixel frames, partly stretched in
+    // 1:1 and cropped as native up to 1024-pixel frames, partly stretched in
     // wider ones. Its NeedsRedraw gate (set by RequestRedraw 6D0F00 for
     // triggers and mission timers, RequestTimedRedraw 6D0EC0) only skips
     // unchanged frames; VERA draws the bar every frame.

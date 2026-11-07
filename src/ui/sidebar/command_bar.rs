@@ -113,8 +113,11 @@ pub struct SpacerPiece {
 /// draws the canvas once at its own size (`6D0A20`, and `72F540` under the
 /// in-battle menus), which reaches a closed bar's caps only in frames up to
 /// 1080 pixels wide, beyond which a gap stays black. VERA's frames take any
-/// size, so a wider strip keeps the left half, the rail's riveted end, at its
-/// size and stretches the right half, plain rail, to the strip's end.
+/// size, so a strip wider than the canvas (frames over 1024 pixels wide with
+/// the 856-pixel LSPACER) keeps the left half, the rail's riveted end, at its
+/// size and stretches the right half, plain rail, to the strip's end. Frames
+/// 1025 to 1080 pixels wide had no gap and now show that rail up to 13%
+/// stretched, which keeps the stretch continuous as the frame widens.
 pub fn spacer_pieces(strip_w: u32, spacer_w: u32) -> [Option<SpacerPiece>; 2] {
     if strip_w <= spacer_w {
         let whole = SpacerPiece {
