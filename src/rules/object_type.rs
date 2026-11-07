@@ -2844,6 +2844,13 @@ impl ObjectType {
         }
     }
 
+    /// Ares `SensorArray.Warn=` (TypeExt+204, default true): a sensed
+    /// enemy of this type raises the radar event (hook70DA95).
+    #[cfg(feature = "ares")]
+    pub fn sensor_array_warn(&self) -> bool {
+        self.cloak_power.sensor_array_warn()
+    }
+
     /// The cloak (`false`) or decloak (`true`) sound override, `None` when
     /// unset. Hooks70380A/70375B use it before their Rules fallbacks.
     #[cfg(feature = "ares")]
@@ -3421,6 +3428,10 @@ impl ObjectType {
             } else {
                 self.gap_radius_in_cells
             })
+        } else if crate::rules::ARES_ENABLED && self.sensor_array {
+            // Ares GetRangeOfRadial_SensorArray10016D30 (hook4566F9) shows
+            // the SensorsSight the array deposits.
+            i32::from(self.sensors_sight)
         } else if self.sensor_array || self.cloak_generator {
             i32::from(self.cloak_radius_in_cells)
         } else {

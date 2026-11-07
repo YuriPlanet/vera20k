@@ -73,6 +73,15 @@ fn constructors_and_each_admitted_radial_reader_history_match_original() {
         let object = rules.object(row["type"].as_str().unwrap()).unwrap();
         assert_fields(object, &row["after"]);
         for (flag, expected) in row["range_by_268"].as_array().unwrap().iter().enumerate() {
+            // Ares hook4566F9 shows a sensor array's SensorsSight instead
+            // (`sim::sensor_lifecycle`'s Ares test).
+            if crate::rules::ARES_ENABLED
+                && object.sensor_array
+                && object.psychic_detection_radius <= 0
+                && !object.gap_generator
+            {
+                continue;
+            }
             assert_eq!(
                 object.building_sensor_range(flag != 0, None),
                 expected.as_i64().unwrap() as i32

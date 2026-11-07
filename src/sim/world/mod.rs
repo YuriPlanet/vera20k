@@ -6367,6 +6367,12 @@ impl Simulation {
                 stable_id,
             );
         }
+        // Ares ChangeOwnership_SensorArrayA10016CA0 (hook448B70) removes an
+        // active sensor array for the old owner before the gap removal.
+        #[cfg(feature = "ares")]
+        if category == EntityCategory::Structure {
+            self.ares_sensor_array_dispatch(stable_id, false, rules, registry);
+        }
         if category == EntityCategory::Structure {
             //448260: gap removal precedes ordinary sight release and owner
             //swap. This order differs from Techno Limbo's sight-then-gap.
@@ -6744,6 +6750,10 @@ impl Simulation {
             );
         }
         if category == EntityCategory::Structure {
+            // Ares ChangeOwnership_SensorArrayB10016CD0 (hook448C3E) adds the
+            // array for the new owner before448C69's primary factory.
+            #[cfg(feature = "ares")]
+            self.ares_sensor_array_dispatch(stable_id, true, rules, registry);
             crate::sim::production::initialize_factory_primary(self, rules, stable_id);
             //448CEF: Grand_Opening(1) also runs on an already placed
             //building; its6E4 gate prevents repeating first-opening slots.

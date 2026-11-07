@@ -462,6 +462,10 @@ impl Simulation {
         if let Some(building) = self.substrate.entities.get_mut(building_id) {
             building.display_production_to.clear();
         }
+        // Ares Destroy_SensorArray10016CA0 (hook4416A2) removes an active
+        // sensor array ahead of the gap and RevealToAll steps.
+        #[cfg(feature = "ares")]
+        self.ares_sensor_array_dispatch(building_id, false, rules, None);
         let Some(entity) = self.substrate.entities.get(building_id) else {
             return;
         };

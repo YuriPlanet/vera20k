@@ -256,10 +256,19 @@ impl Simulation {
         // The dispatcher opens with its `PowersUnit=` arms
         // (`sim::powered_unit`).
         self.powered_center_edge(id, operational, rules, frame_effects);
+        // Ares hook4549F8 (10016E30) updates a sensor array on the on edge
+        // right after that arm.
+        #[cfg(feature = "ares")]
+        if operational {
+            self.update_ares_sensor_array(id, rules, registry);
+        }
         // The `0x004549B0` off edge frees a Psychic Tower's captives
         // (`0x00454B3D`) before its gap and power slots.
         if !operational {
             self.free_all_captures(id, rules, registry, frame_effects);
+            // Ares hook454B5F (10016E30) on the off edge.
+            #[cfg(feature = "ares")]
+            self.update_ares_sensor_array(id, rules, registry);
         }
         if let Some((_, radius)) = self.gap_operational_state(id, rules) {
             // `0x00454B91..0x00454BEB`: the off edge's removal (`+0x269` set)

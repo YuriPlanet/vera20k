@@ -948,6 +948,12 @@ fn techno_ai_shell(
             }
             // The Gattling block after the Techno AI (`0x0043FE5B..0x0043FF8B`).
             techno_common_post(sim, id, rules, ctx.effects);
+            // Ares BuildingClass_Update_SensorArray10016E30 (hook43FE69),
+            // after Update's IsAlive test.
+            #[cfg(feature = "ares")]
+            if ai_alive(&sim.substrate, id) {
+                sim.update_ares_sensor_array(id, rules, ctx.overlay_registry);
+            }
             building_missions::gattling_idle(
                 &sim.interner,
                 &sim.session,

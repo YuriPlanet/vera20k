@@ -604,6 +604,11 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) radar_jam: crate::sim::radar_jammer::RadarJamState,
+    /// Ares BuildingExt+4C SensorArrayActiveCounter, owned by
+    /// `sim::sensor_lifecycle`.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) sensor_array_counter: i32,
     /// HasEngineer (`BuildingClass+0x6CC`), a [`HasEngineer`] that
     /// `sim::building_art` owns.
     ///
@@ -2101,6 +2106,8 @@ impl GameEntity {
             powered_by: None,
             #[cfg(feature = "ares")]
             radar_jam: Default::default(),
+            #[cfg(feature = "ares")]
+            sensor_array_counter: 0,
             building_has_engineer: Default::default(),
             building_light: Default::default(),
             damage_fires: Default::default(),

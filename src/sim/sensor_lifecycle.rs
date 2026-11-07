@@ -256,6 +256,15 @@ impl Simulation {
         else {
             return;
         };
+        // Ares SensorArrayActivate10016D60 (hook455828) replaces the array's
+        // Is_Operational gate with its own, counted one.
+        #[cfg(feature = "ares")]
+        let sight = {
+            if sight.is_some() {
+                self.ares_sensor_array_activate(stable_id, rules, registry);
+            }
+            None::<u16>
+        };
         if (sight.is_none() && detect_radius.is_none())
             || self.building_operational_state(stable_id, rules) != Some(true)
         {
@@ -315,12 +324,159 @@ impl Simulation {
         else {
             return;
         };
+        // Ares SensorArrayDeactivate10016DB0 (hook4556E1) removes only an
+        // active array, with the SensorsSight its add used.
+        #[cfg(feature = "ares")]
+        let cloak_radius = {
+            if cloak_radius.is_some() {
+                self.ares_sensor_array_deactivate(stable_id, rules, registry);
+            }
+            None::<i8>
+        };
         if let Some(radius) = cloak_radius {
             self.apply_building_sensor_remove(owner, center, radius.max(0) as u16, rules, registry);
         }
         if let Some(radius) = detect_radius {
             // No resident callback, as for the add.
             self.fog.disguise_detect_remove_at(owner, center, radius);
+        }
+    }
+
+    /// Ares BuildingClass_SensorArrayActivate10016D60 (hook455828), the body
+    /// of AddSensorArrayAt455820: an online (vt+0x350, the shared4555D0
+    /// adapter), not Deactivated building counts the call in BuildingExt+4C
+    /// and adds its SensorsSight circle only when the count was zero.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_sensor_array_activate(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
+        if self.building_operational_state(stable_id, rules) != Some(true) {
+            return;
+        }
+        let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
+            return;
+        };
+        if entity.deactivated.is_offline() {
+            return;
+        }
+        let was = entity.sensor_array_counter;
+        entity.sensor_array_counter = was.wrapping_add(1);
+        if was != 0 {
+            return;
+        }
+        let Some((owner, center, sight)) =
+            self.substrate.entities.get(stable_id).and_then(|entity| {
+                Some((
+                    entity.owner(),
+                    crate::sim::world::object_get_coords_cell(entity)?,
+                    self.interner
+                        .object_type(entity.type_ref(), rules)?
+                        .sensors_sight,
+                ))
+            })
+        else {
+            return;
+        };
+        self.apply_sensor_add(owner, center, u16::from(sight), rules, registry);
+    }
+
+    /// Ares BuildingClass_SensorArrayDeactivate10016DB0 (hook4556E1), the
+    /// body of RemoveSensorArrayAt4556D0: only a positive count removes, with
+    /// SensorsSight rather than CloakRadiusInCells, and clears the count.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_sensor_array_deactivate(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
+        let Some(entity) = self.substrate.entities.get_mut(stable_id) else {
+            return;
+        };
+        if entity.sensor_array_counter <= 0 {
+            return;
+        }
+        entity.sensor_array_counter = 0;
+        let Some((owner, center, sight)) =
+            self.substrate.entities.get(stable_id).and_then(|entity| {
+                Some((
+                    entity.owner(),
+                    crate::sim::world::object_get_coords_cell(entity)?,
+                    self.interner
+                        .object_type(entity.type_ref(), rules)?
+                        .sensors_sight,
+                ))
+            })
+        else {
+            return;
+        };
+        self.apply_building_sensor_remove(owner, center, u16::from(sight), rules, registry);
+    }
+
+    /// Ares BuildingExt::UpdateSensorArray, reached for `SensorArray=` types
+    /// from Building Update (hook43FE69), both operational edges (hooks4549F8
+    /// and454B5F, 10016E30) and DisableStuff (hook4524A3, 10016D00): an
+    /// online, not Deactivated array is active; a change activates or
+    /// deactivates it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn update_ares_sensor_array(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(stable_id) else {
+            return;
+        };
+        if entity.category() != EntityCategory::Structure
+            || !self
+                .interner
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|object| object.sensor_array)
+        {
+            return;
+        }
+        let was_active = entity.sensor_array_counter > 0;
+        let active = !entity.deactivated.is_offline()
+            && self.building_operational_state(stable_id, rules) == Some(true);
+        if active == was_active {
+            return;
+        }
+        if active {
+            self.ares_sensor_array_activate(stable_id, rules, registry);
+        } else {
+            self.ares_sensor_array_deactivate(stable_id, rules, registry);
+        }
+    }
+
+    /// Ares ChangeOwnership_SensorArrayA/Destroy_SensorArray10016CA0 and
+    /// ChangeOwnership_SensorArrayB10016CD0: a `SensorArray=` building
+    /// dispatches RemoveSensorArrayAt (vt+0x4F8) or AddSensorArrayAt
+    /// (vt+0x4F4) with the empty cell.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_sensor_array_dispatch(
+        &mut self,
+        stable_id: u64,
+        activate: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
+        if !self
+            .substrate
+            .entities
+            .get(stable_id)
+            .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
+            .is_some_and(|object| object.sensor_array)
+        {
+            return;
+        }
+        if activate {
+            self.ares_sensor_array_activate(stable_id, rules, registry);
+        } else {
+            self.ares_sensor_array_deactivate(stable_id, rules, registry);
         }
     }
 
@@ -492,6 +648,9 @@ mod tests {
     /// (`0x00449AD4`). Limbo's removals (`0x004556D0`, `0x00455980`) read the
     /// type, not the add, and decrement without a clamp around the foundation
     /// centre (41, 41).
+    // Ares hooks455828/4556E1/43FE69 replace these stock counter skews
+    // (`ares_sensor_array_follows_power_and_removes_what_it_added`).
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn napsis_construction_stamps_nothing_yet_limbo_still_debits_both_circles() {
         let rules = rules();
@@ -545,6 +704,55 @@ mod tests {
     /// building's one stamp is its discovery opening's, centred on GetCoords
     /// (`0x00447AC0`): the 2x2 foundation's centre cell (41, 41), not its
     /// north-west cell.
+    /// Ares BuildingExt::UpdateSensorArray through the actual Building
+    /// AI (hook43FE69) and Limbo: the array follows its power, removes the
+    /// SensorsSight circle it added (hook4556E1), and an inactive array's
+    /// Limbo debits nothing.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_sensor_array_follows_power_and_removes_what_it_added() {
+        let rules = rules();
+        let mut sim = sim_with_map_authority();
+        let id = map_placed_napsis(&mut sim, &rules);
+        let owner = sim.substrate.entities.get(id).unwrap().owner();
+        let row = 41 * usize::from(sim.fog.width());
+        let sensor = |sim: &Simulation, x: usize| {
+            sim.fog
+                .sensors_by_house()
+                .get(&owner)
+                .map_or(0, |cells| cells[row + x])
+        };
+        let counter =
+            |sim: &Simulation| sim.substrate.entities.get(id).unwrap().sensor_array_counter;
+        assert_eq!((counter(&sim), sensor(&sim, 27)), (1, 1));
+        let visit = |sim: &mut Simulation| {
+            sim.object_ai_visit_one(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
+        };
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .set_building_online_for_test(false);
+        visit(&mut sim);
+        assert_eq!((counter(&sim), sensor(&sim, 27)), (0, 0));
+        assert_eq!(sensor(&sim, 60), 0, "SensorsSight, not CloakRadiusInCells");
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .set_building_online_for_test(true);
+        visit(&mut sim);
+        assert_eq!((counter(&sim), sensor(&sim, 27)), (1, 1));
+        sim.substrate
+            .entities
+            .get_mut(id)
+            .unwrap()
+            .set_building_online_for_test(false);
+        visit(&mut sim);
+        sim.techno_limbo_with_rules(id, &rules, None);
+        assert_eq!((sensor(&sim, 27), sensor(&sim, 60)), (0, 0));
+    }
+
     #[test]
     fn map_placed_napsis_stamps_both_circles_once_around_its_foundation_centre() {
         let rules = rules();
@@ -581,6 +789,9 @@ mod tests {
     /// `DetectDisguiseRange=15`, the captor takes `-1` over the
     /// `CloakRadiusInCells=20` sensor circle and over the 15-cell disguise
     /// circle.
+    // Ares hooks455828/4556E1/43FE69 replace these stock counter skews
+    // (`ares_sensor_array_follows_power_and_removes_what_it_added`).
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn selling_a_captured_psychic_sensor_debits_the_captor_and_leaves_the_first_owner_detecting() {
         let rules = rules();

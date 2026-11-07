@@ -1895,6 +1895,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         entity.radar_jam.hash(hasher);
     }
     #[cfg(feature = "ares")]
+    if entity.sensor_array_counter != 0 {
+        b"ares-sensor-array-counter-v1".hash(hasher);
+        entity.sensor_array_counter.hash(hasher);
+    }
+    #[cfg(feature = "ares")]
     entity.hash_attach_effects(hasher);
     #[cfg(feature = "phobos")]
     entity.hash_phobos_attach_effects(hasher);

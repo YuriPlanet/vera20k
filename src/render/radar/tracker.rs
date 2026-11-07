@@ -218,6 +218,11 @@ pub(super) struct RadarObjectUpdate {
     pub origin: (i32, i32),
     pub event_source_cell: Option<(u16, u16)>,
     pub enemy_sensed_prefilter: bool,
+    /// Ares `SensorArray.Warn=`: TechnoClass_RadarTrackingUpdate_
+    /// AnnounceDetected10016E60 (hook70DA95) skips the type-5 event of a
+    /// type that does not warn.
+    #[cfg(feature = "ares")]
+    pub sensor_array_warn: bool,
     pub foundation: Option<(u32, u32)>,
     pub radar_scale: f32,
     pub discovery_observed: bool,
@@ -408,7 +413,11 @@ impl RetainedRadarTracker {
                 .collect();
             self.register(update.stable_id, &pixels, update.local_front);
         }
-        if visibility.out_code != 0 && update.enemy_sensed_prefilter {
+        #[cfg(feature = "ares")]
+        let warns = update.sensor_array_warn;
+        #[cfg(not(feature = "ares"))]
+        let warns = true;
+        if visibility.out_code != 0 && update.enemy_sensed_prefilter && warns {
             update
                 .event_source_cell
                 .map(|cell| RadarSensedPresentationEvent {
@@ -616,6 +625,8 @@ mod tests {
             origin: (40, 60),
             event_source_cell: Some((10, 20)),
             enemy_sensed_prefilter: true,
+            #[cfg(feature = "ares")]
+            sensor_array_warn: true,
             foundation: None,
             radar_scale: 1.0,
             discovery_observed: true,

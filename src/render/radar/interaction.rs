@@ -438,6 +438,8 @@ mod tests {
             origin: (40, 60),
             event_source_cell: None,
             enemy_sensed_prefilter: true,
+            #[cfg(feature = "ares")]
+            sensor_array_warn: true,
             foundation,
             radar_scale: 1.0,
             discovery_observed: true,
