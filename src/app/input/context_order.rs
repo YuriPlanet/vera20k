@@ -476,10 +476,8 @@ pub(crate) fn attack_action(
                 rules,
                 sim.interner(),
             )
-            && (weapon
-                .projectile
-                .as_deref()
-                .and_then(|name| rules.projectile(name))
+            && (rules
+                .weapon_projectile(weapon)
                 .is_some_and(|projectile| !projectile.ag)
                 || kind.emp_pulse_cannon
                 || actor.mission.current().known()

@@ -830,10 +830,8 @@ fn fireat_launch_source(
     fire: &super::fire_coord::FireCoordinate,
     weapon: &crate::rules::weapon_type::WeaponType,
 ) -> FireAtLaunchSource {
-    let dropping = weapon
-        .projectile
-        .as_deref()
-        .and_then(|id| rules.projectile(id))
+    let dropping = rules
+        .weapon_projectile(weapon)
         .is_some_and(|projectile| projectile.dropping);
     match object_get_coords(world, snap.stable_id).filter(|_| dropping) {
         Some(coord) => FireAtLaunchSource {
@@ -878,10 +876,8 @@ fn fireat_launch_aim(
         LaunchSpeedProjectile, fireat_launch_distance, weapon_launch_speed,
     };
     let speed_projectile = |weapon: &crate::rules::weapon_type::WeaponType| {
-        weapon
-            .projectile
-            .as_deref()
-            .and_then(|id| rules.projectile(id))
+        rules
+            .weapon_projectile(weapon)
             .map(|projectile| LaunchSpeedProjectile {
                 rot: projectile.rot,
                 floater: projectile.floater,
@@ -1667,10 +1663,7 @@ pub(super) fn emit_admitted_fire(
             tarcom,
         );
         let origin = launch_source.coord;
-        let projectile_type = weapon
-            .projectile
-            .as_deref()
-            .and_then(|projectile_id| rules.projectile(projectile_id));
+        let projectile_type = rules.weapon_projectile(weapon);
         // `TechnoClass::FireAt` step order, `0x006FE663`..`0x006FEA52`:
         // resolve the target delta, scatter it, recompute the facing from the
         // scattered delta, clamp the launch speed to half the straight-line
@@ -2414,10 +2407,8 @@ fn fireat_estimate_debit(
     let marked = foot
         && crate::sim::movement::motion_query::is_moving(firer).unwrap_or(false)
         && !obj.jumpjet;
-    let inaccurate = weapon
-        .projectile
-        .as_deref()
-        .and_then(|id| rules.projectile(id))
+    let inaccurate = rules
+        .weapon_projectile(weapon)
         .is_some_and(|projectile| projectile.inaccurate);
     let Some(TargetKind::Entity(target_id)) = tarcom else {
         return;
@@ -3528,7 +3519,7 @@ pub(crate) fn estimated_damage_on(
             )
         })
         .then(|| NativeF64Bits::from_bits(rules.general.veteran_armor.to_bits()));
-    let warhead = combat_weapon::warhead_of(rules, weapon);
+    let warhead = rules.weapon_warhead(weapon);
     damage::estimate::estimated_damage(&damage::estimate::EstimateInputs {
         damage: weapon.damage,
         zeroed: weapon.is_sonic || weapon.use_fire_particles,

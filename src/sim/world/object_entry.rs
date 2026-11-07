@@ -1102,9 +1102,7 @@ fn full_foot_entry<'a>(
             let allied = live_overlay
                 .wall_owner
                 .is_some_and(|o| mover.allied_with(live, o));
-            let warhead = weapon0
-                .and_then(|w| w.warhead.as_deref())
-                .and_then(|name| live.rules.warhead(name));
+            let warhead = weapon0.and_then(|w| live.rules.weapon_warhead(w));
             if infantry {
                 //51C1BB..51C223: a wall at damage stage DamageLevels (+0x2A0)
                 //is no wall to Infantry. Otherwise the primary warhead needs
@@ -1193,8 +1191,7 @@ fn full_foot_entry<'a>(
                 let weapon = combat_weapon::weapon_for_index(obj, e.veterancy.rank(), selected)
                     .and_then(|record| record.weapon(live.rules));
                 if !weapon
-                    .and_then(|w| w.warhead.as_deref())
-                    .and_then(|name| live.rules.warhead(name))
+                    .and_then(|w| live.rules.weapon_warhead(w))
                     .is_some_and(|w| w.wood)
                 {
                     return Ok(7);
@@ -1688,8 +1685,7 @@ fn unit_post_walk_tail(
     }
     if mover
         .weapon0
-        .and_then(|w| w.projectile.as_deref())
-        .and_then(|name| live.rules.projectile(name))
+        .and_then(|w| live.rules.weapon_projectile(w))
         .is_some_and(|p| p.ag)
     {
         5

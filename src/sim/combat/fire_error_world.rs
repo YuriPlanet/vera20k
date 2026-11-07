@@ -189,11 +189,8 @@ impl<'a> FireSubject<'a> {
     }
 
     fn weapon_facts(&self, weapon: &WeaponType, target_obj: Option<&ObjectType>) -> WeaponFacts {
-        let warhead = combat_weapon::warhead_of(self.rules, weapon);
-        let projectile = weapon
-            .projectile
-            .as_deref()
-            .and_then(|id| self.rules.projectile(id));
+        let warhead = self.rules.weapon_warhead(weapon);
+        let projectile = self.rules.weapon_projectile(weapon);
         let armor = target_obj.map(ObjectType::armor_id);
         WeaponFacts {
             damage: weapon.damage,

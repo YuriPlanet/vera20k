@@ -272,8 +272,7 @@ pub(crate) fn init_temporal(object_type: &ObjectType, rules: &RuleSet) -> Tempor
     let temporal = crate::sim::combat::combat_weapon::weapon_for_index(object_type, 0, 0)
         .and_then(|record| record.weapon_id)
         .and_then(|weapon_name| rules.weapon(weapon_name))
-        .and_then(|weapon| weapon.warhead.as_deref())
-        .and_then(|warhead| rules.warhead(warhead))
+        .and_then(|weapon| rules.weapon_warhead(weapon))
         .is_some_and(|warhead| warhead.temporal);
     TemporalState {
         link: temporal.then(TemporalLink::default),

@@ -333,10 +333,7 @@ pub(crate) fn line_of_fire_blocking_cell<'a>(
     los: &LineOfFireInputs<'_>,
 ) -> Option<CellRef<'a>> {
     // `WeaponType+0xA0`, the projectile, written at 0x007729AA.
-    let projectile = weapon
-        .projectile
-        .as_deref()
-        .and_then(|name| rules.projectile(name));
+    let projectile = rules.weapon_projectile(weapon);
     let subject_to_cliffs = projectile.is_some_and(|p| p.subject_to_cliffs);
     let subject_to_walls = projectile.is_some_and(|p| p.subject_to_walls);
 
@@ -354,11 +351,7 @@ pub(crate) fn line_of_fire_blocking_cell<'a>(
 
     // `WeaponType+0xAC`, the warhead, written at 0x00772992; `Wall=` is
     // `WarheadType+0x144`, key string 0x0081AC58, read at 0x0075D508.
-    let warhead_breaks_walls = weapon
-        .warhead
-        .as_deref()
-        .and_then(|name| rules.warhead(name))
-        .is_some_and(|wh| wh.wall);
+    let warhead_breaks_walls = rules.weapon_warhead(weapon).is_some_and(|wh| wh.wall);
     if warhead_breaks_walls
         && matches!(
             crate::sim::cell_kernel::wall_connection_step(

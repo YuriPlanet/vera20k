@@ -1910,7 +1910,7 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let overpowers = target_building
         && target_obj.overpowerable
         && target_scan::weapon_at_index(sim, rules, id, 1)
-            .and_then(|weapon| combat_weapon::warhead_of(rules, weapon))
+            .and_then(|weapon| rules.weapon_warhead(weapon))
             .is_some_and(|warhead| warhead.electric_assault);
     if engineer || overpowers || occupiable || entity.berserk.is_active() {
         return;

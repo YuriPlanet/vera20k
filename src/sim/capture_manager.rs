@@ -615,7 +615,7 @@ pub(crate) fn init_capture_manager(
     let weapon_name =
         crate::sim::combat::combat_weapon::weapon_for_index(object_type, 0, 0)?.weapon_id?;
     let weapon = rules.weapon(weapon_name)?;
-    let warhead = rules.warhead(weapon.warhead.as_deref()?)?;
+    let warhead = rules.weapon_warhead(weapon)?;
     warhead
         .mind_control
         .then(|| CaptureManagerState::constructed(weapon.damage, weapon.infinite_mind_control))

@@ -293,8 +293,7 @@ pub(crate) fn type_allocates_parasite(
 ) -> bool {
     category != EntityCategory::Structure
         && weapon_zero(rules, object, veterancy)
-            .and_then(|weapon| weapon.warhead.as_deref())
-            .and_then(|warhead| rules.warhead(warhead))
+            .and_then(|weapon| rules.weapon_warhead(weapon))
             .is_some_and(|warhead| warhead.parasite)
 }
 
@@ -539,7 +538,7 @@ impl Simulation {
         let Some(warhead_name) = weapon.warhead.as_deref() else {
             return;
         };
-        let Some(warhead) = rules.warhead(warhead_name) else {
+        let Some(warhead) = rules.weapon_warhead(weapon) else {
             return;
         };
         if !state.damage.expired(frame as i32) {
@@ -1206,10 +1205,8 @@ impl Simulation {
             firer,
             UninitContext::new(rules, registry).with_effects(effects),
         );
-        let parasite = weapon
-            .warhead
-            .as_deref()
-            .and_then(|name| rules.warhead(name))
+        let parasite = rules
+            .weapon_warhead(weapon)
             .is_some_and(|warhead| warhead.parasite);
         // 0x006FF809..0x006FF81F: lock a Foot target for 20 frames.
         if parasite

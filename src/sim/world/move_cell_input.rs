@@ -514,10 +514,7 @@ impl Simulation {
         ) else {
             return false;
         };
-        let warhead = weapon
-            .warhead
-            .as_deref()
-            .and_then(|name| rules.warhead(name));
+        let warhead = rules.weapon_warhead(weapon);
         let overlay_cell = self
             .overlay_grid
             .as_ref()
