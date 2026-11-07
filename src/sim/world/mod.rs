@@ -5116,6 +5116,72 @@ impl Simulation {
         self.finish_terrain_navigation_changes(rules, &[]);
     }
 
+    /// Run `body` against the live map's `CellClass::IncreaseTiberium @
+    /// 0x00487190` context (`crate::sim::tiberium::place_tiberium` on the
+    /// scenario RNG), then join the new overlays to their registries and
+    /// publish the placed cells. A world without terrain or an overlay grid
+    /// has no Cell to write: `body` does not run and nothing is drawn.
+    pub(crate) fn increase_tiberium_cells(
+        &mut self,
+        rules: &RuleSet,
+        registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+        body: impl FnOnce(
+            &mut crate::sim::tiberium::PlaceTiberiumContext<'_>,
+        ) -> Vec<crate::sim::tiberium::TiberiumPlacement>,
+    ) {
+        let binary_frame = self.session.binary_frame();
+        let growth_enabled = self.ore_growth_config.grows();
+        let spread_enabled = self.ore_growth_config.spreads();
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return;
+        };
+        let live_objects = crate::sim::tiberium::TiberiumPlacementObjectContext::new(
+            &self.substrate.entities,
+            &self.substrate.occupancy,
+            &self.substrate.raw_cell_occupation,
+            rules,
+            &self.interner,
+            self.terrain_objects.cell_index(),
+        );
+        let admission = crate::sim::tiberium::NewTiberiumAdmission::runtime(terrain, live_objects);
+        let Some(grid) = self.overlay_grid.as_mut() else {
+            return;
+        };
+        let mut context = crate::sim::tiberium::PlaceTiberiumContext {
+            overlay_grid: grid,
+            ore_growth_state: &mut self.ore_growth_state,
+            overlay_registry: registry,
+            tiberium_types: &rules.tiberium_types,
+            resolved_terrain: Some(terrain),
+            source_object_cells: self.terrain_objects.spawning_cells(),
+            new_cell_admission: Some(admission),
+            live_objects: Some(admission.live_objects().object_view()),
+            rng: &mut self.scenario_rng,
+            binary_frame,
+            growth_enabled,
+            spread_enabled,
+            dirty_cells: Some(&mut self.dirty_cells),
+        };
+        let placements = body(&mut context);
+        drop(context);
+        let mut placed_cells = Vec::with_capacity(placements.len());
+        let mut receipts = Vec::new();
+        for placement in placements {
+            placed_cells.push(placement.cell());
+            receipts.extend(placement.into_overlay_construction());
+        }
+        // Place487190's overlay constructor joins the runtime registries and
+        // its Mark republishes the cell's land, as the ore drivers publish
+        // theirs.
+        Self::publish_overlay_constructions(
+            &mut self.native_unique_ids,
+            &mut self.load_objects,
+            &mut self.substrate,
+            receipts,
+        );
+        self.publish_tiberium_cells(rules, registry, &placed_cells);
+    }
+
     pub(crate) fn publish_overlay_constructions(
         native_unique_ids: &mut Option<NativeUniqueIdCursor>,
         load_objects: &mut LoadObjectLifecycle,
@@ -5495,7 +5561,9 @@ impl Simulation {
     /// spawn captured ([`ProjectileStore::fire_inviso`]); its OnBridge stays
     /// clear, as only FireAt copies one.
     ///
-    /// RESIDUAL: a child has no WeaponType. The constructor zeroes `+0x130`
+    /// RESIDUAL (default builds; Ares gives the child its shrapnel weapon,
+    /// [`Self::ares_shrapnel_flak_placement`]): a child has no WeaponType.
+    /// The constructor zeroes `+0x130`
     /// (`0x00466401`) and only SetWeaponType (`0x0046B260`, called from
     /// `0x0044CAFF`, `0x006CDB7E`, `0x006E34E6`, `0x006FE573` and
     /// `0x0070D764`) writes it, so a `FlakScatter=` child would fault reading
@@ -5534,6 +5602,8 @@ impl Simulation {
                     .push((stable_id, inviso, projectile));
             }
             if inviso {
+                #[cfg(feature = "ares")]
+                let placement = self.ares_shrapnel_flak_placement(stable_id, placement, rules);
                 #[cfg(feature = "ares")]
                 let placement = self.ares_inviso_obstacle(stable_id, placement, rules);
                 self.projectiles.fire_inviso(stable_id, placement, false);
