@@ -914,6 +914,7 @@ pub(super) fn capability_cursor_for_hover(
                 crate::sim::world::EngineerBuildingAction::EnterGrinder => {
                     CursorFeedbackKind::Grind
                 }
+                crate::sim::world::EngineerBuildingAction::NoEnter => CursorFeedbackKind::NoEnter,
             };
         }
 

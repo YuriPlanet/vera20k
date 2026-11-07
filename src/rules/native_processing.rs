@@ -3705,6 +3705,8 @@ pub(crate) struct AresGlobalControls {
     veterancy: crate::rules::ares_veterancy::VeterancyGlobalRules,
     #[serde(default)]
     techno_combat: crate::rules::ares_techno_type::TechnoCombatGlobalRules,
+    #[serde(default)]
+    building: crate::rules::ares_building_type::BuildingGlobalRules,
 }
 
 #[cfg(feature = "ares")]
@@ -3721,6 +3723,7 @@ impl Default for AresGlobalControls {
             warhead: Default::default(),
             veterancy: Default::default(),
             techno_combat: Default::default(),
+            building: Default::default(),
         }
     }
 }
@@ -3729,6 +3732,10 @@ impl Default for AresGlobalControls {
 impl AresGlobalControls {
     pub(crate) fn warhead(&self) -> &crate::rules::ares_warhead::WarheadGlobalRules {
         &self.warhead
+    }
+
+    pub(crate) fn building(&self) -> &crate::rules::ares_building_type::BuildingGlobalRules {
+        &self.building
     }
 
     const fn default_type_select_use_deploy() -> bool {
@@ -5865,8 +5872,13 @@ impl RulesPassProcessor {
         self.allocate_insignia_types(pass);
         self.process_type_data(pass, fixed_art, fixed_eva, primary_rules, fixed_sounds);
         // RulesExt LoadAfterTypeData: installed679CAF ->1002C9B0 ->1002AAF0
-        // ->1002A800 reads HSBuilding at1002A8DD with the BuildingType
+        // ->1002A800 reads EngineerDamage and EngineerAlwaysCaptureTech,
+        // then HSBuilding at1002A8DD with the BuildingType
         // pointer-vector reader10010850, which finds and never allocates.
+        #[cfg(feature = "ares")]
+        self.ares_global_controls
+            .building
+            .read_after_type_data(pass);
         #[cfg(feature = "ares")]
         if let Some(buildings) = pass.section("SpecialWeapons").and_then(|section| {
             self.resolve_existing_list_from(section, "HSBuilding", RulesTypeFamily::Building, 2048)

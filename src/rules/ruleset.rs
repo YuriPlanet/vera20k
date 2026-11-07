@@ -5032,6 +5032,14 @@ impl RuleSet {
         self.ares_global_controls.techno_combat()
     }
 
+    /// RulesExt EngineerDamage and EngineerAlwaysCaptureTech.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_building_globals(
+        &self,
+    ) -> &crate::rules::ares_building_type::BuildingGlobalRules {
+        self.ares_global_controls.building()
+    }
+
     /// RulesExt DamageAirConsiderBridges and IronCurtainFlash.
     #[cfg(feature = "ares")]
     pub(crate) fn ares_warhead_globals(&self) -> &crate::rules::ares_warhead::WarheadGlobalRules {
@@ -8501,9 +8509,14 @@ impl RuleSet {
                     )
                 })
                 .collect::<BTreeMap<_, _>>();
-            if !building_type_ext.is_empty() {
+            let building_globals = self.ares_building_globals();
+            if !building_type_ext.is_empty()
+                || building_globals
+                    != &crate::rules::ares_building_type::BuildingGlobalRules::default()
+            {
                 b"ares-building-type-ext-rules-v1".hash(&mut hasher);
                 building_type_ext.hash(&mut hasher);
+                building_globals.hash(&mut hasher);
             }
             let crews = self
                 .object_list

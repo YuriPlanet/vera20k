@@ -14,7 +14,8 @@ const RULES: &str = "[InfantryTypes]\n0=ENGI\n\
     Rubble.Destroyed=RUIN\nRubble.Destroyed.Strength=-50\n\
     [RUIN]\nStrength=400\nRepairable=yes\nRubble.Intact=BLDG\n\
     [SHED]\nStrength=500\nRepairable=yes\nEngineerRepairable=no\n\
-    [Warheads]\n0=Super\n[Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n";
+    [Warheads]\n0=Super\n[Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+    [General]\nEngineerCaptureLevel=0.5\n[CombatDamage]\nC4Warhead=Super\n";
 
 fn arena() -> (Simulation, RuleSet) {
     let rules = RuleSet::from_ini_with_fixed_art_for_test(
@@ -177,5 +178,63 @@ fn engineer_repairable_no_keeps_engineers_off_a_damaged_building() {
             .get(engineer)
             .unwrap()
             .is_object_alive()
+    );
+}
+
+/// `GetEngineerEnterEnemyBuildingAction @ 10025220` with MultiEngineer on: a
+/// hostile building above `EngineerCaptureLevel` bars the engineer while
+/// `EngineerDamage` is 0 (the constructor default); with
+/// `EngineerDamage=25%` it is damaged by ceil(1000 * 0.25) and the engineer
+/// is spent on arrival (hook `0x519D9C`).
+#[test]
+fn engineer_damage_decides_a_hostile_building_above_the_capture_level() {
+    let (mut sim, rules) = arena();
+    sim.session_mut_for_test()
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+    sim.session_mut_for_test()
+        .game_options_mut_for_test()
+        .multi_engineer = true;
+    let americans = sim.interner.intern("Americans");
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(americans));
+    let building = sim
+        .spawn_object("BLDG", "Russians", 10, 10, 0, &rules)
+        .unwrap();
+    let probe = sim
+        .spawn_object("ENGI", "Americans", 4, 4, 0, &rules)
+        .unwrap();
+    assert_eq!(
+        sim.engineer_building_action(probe, building, &rules),
+        Some(EngineerBuildingAction::NoEnter)
+    );
+
+    let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
+    ini.merge(&IniFile::from_str("[General]\nEngineerDamage=25%\n"));
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &ini,
+        &IniFile::from_str(
+            "[BLDG]\nFoundation=2x2\n[RUIN]\nFoundation=2x2\n[SHED]\nFoundation=2x2\n",
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        sim.engineer_building_action(probe, building, &rules),
+        Some(EngineerBuildingAction::Damage)
+    );
+    let engineer = arrive(&mut sim, &rules, building);
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(building)
+            .unwrap()
+            .health
+            .current(),
+        750
+    );
+    assert!(
+        !sim.substrate
+            .entities
+            .get(engineer)
+            .is_some_and(|engineer| engineer.is_object_alive())
     );
 }

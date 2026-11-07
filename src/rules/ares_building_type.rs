@@ -10,6 +10,8 @@
 //!   engineer's repair action and arrival (`sim::world::world_orders`).
 //! - Urban combat and garrisons (`UC.*`, `Bunker.Raidable`,
 //!   `CanBeOccupiedBy`, `+0x68..+0x80`, `+0xD0`): `sim::ares_garrison`.
+//! - RulesExt `EngineerDamage` and `EngineerAlwaysCaptureTech`
+//!   ([`BuildingGlobalRules`]): an engineer entering a hostile building.
 
 use crate::rules::ares_warhead::HouseSelector;
 use crate::rules::foundation::Foundation;
@@ -212,6 +214,43 @@ impl BuildingTypeExtRules {
                 .allowed_occupiers
                 .iter()
                 .any(|id| id.eq_ignore_ascii_case(infantry_type))
+    }
+}
+
+/// The building chain's RulesExt globals, read by `LoadAfterTypeData`
+/// (`1002A800`). The constructor (`1002A360`) sets `EngineerDamage` to 0.0
+/// and `EngineerAlwaysCaptureTech` to true.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct BuildingGlobalRules {
+    /// `[General] EngineerDamage` (RulesExt `+0x10`, Valueable<double>): the
+    /// share of a hostile building's Strength an engineer's entry destroys
+    /// once it is above `EngineerCaptureLevel`; 0 bars his entry instead.
+    pub(crate) engineer_damage: NativeF64Bits,
+    /// `[General] EngineerAlwaysCaptureTech` (`+0x18`, Valueable<bool>): a
+    /// building first owned by a `MultiplayPassive=` house is always captured.
+    pub(crate) engineer_always_capture_tech: bool,
+}
+
+impl Default for BuildingGlobalRules {
+    fn default() -> Self {
+        Self {
+            engineer_damage: NativeF64Bits::POSITIVE_ZERO,
+            engineer_always_capture_tech: true,
+        }
+    }
+}
+
+impl BuildingGlobalRules {
+    /// `1002A800`'s two `[General]` reads, ahead of `HSBuilding`.
+    pub(crate) fn read_after_type_data(&mut self, pass: &crate::rules::ini_parser::IniFile) {
+        if let Some(section) = pass.section("General") {
+            self.engineer_damage =
+                section.read_ares_double_bits("EngineerDamage", self.engineer_damage);
+            self.engineer_always_capture_tech = section.read_ares_bool(
+                "EngineerAlwaysCaptureTech",
+                self.engineer_always_capture_tech,
+            );
+        }
     }
 }
 

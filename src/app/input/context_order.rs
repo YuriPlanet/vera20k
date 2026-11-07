@@ -3939,7 +3939,8 @@ fn engineer_capture_orders(
                         destination: Some(TargetKind::Entity(hover.stable_id)),
                     });
                 }
-                EngineerBuildingAction::Repair(false) => {}
+                // Ares NoEnter (10025220) gives no order either.
+                EngineerBuildingAction::Repair(false) | EngineerBuildingAction::NoEnter => {}
             }
         }
         false

@@ -68,6 +68,9 @@ pub enum EngineerBuildingAction {
     Repair(bool),
     EnterHospital,
     EnterGrinder,
+    /// Ares only: a hostile building above `EngineerCaptureLevel` while
+    /// `EngineerDamage` is 0 (`10025220`'s NoEnter, 0x1F).
+    NoEnter,
 }
 
 /// Unit73FD7C..73FE43's healing-weapon post-processing of an object action.
@@ -320,6 +323,7 @@ pub enum InfiltrateAction {
 /// `a = ftol(S * R * 0.5)`, `c = S * ((1 - R * 0.5) * 0.5)` and the damage is
 /// `ftol(c)` when `c` compares below `H - a` (or unordered), else `H - a`.
 /// It never takes the building below `S * R * 0.5`.
+#[cfg(not(feature = "ares"))]
 fn multi_engineer_damage(health: combat::Health, strength: i32, condition_red: f64) -> Option<i32> {
     use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
     //519DB8..519DCE: HealthRatio5F5C60 above Rules+1708; TEST AH,41.
@@ -966,6 +970,49 @@ impl Simulation {
                 })
     }
 
+    /// Ares `InfantryExt::GetEngineerEnterEnemyBuildingAction @ 10025220`:
+    /// outside a campaign, and in skirmish only with MultiEngineer, a
+    /// hostile building above `EngineerCaptureLevel` (Health over Strength in
+    /// float precision) is damaged, or barred while `EngineerDamage` is 0,
+    /// unless `EngineerAlwaysCaptureTech` holds for a building whose
+    /// initial owner (`+0x14C`) is `MultiplayPassive=`. Otherwise it is
+    /// captured.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_engineer_enemy_building_action(
+        &self,
+        building_id: u64,
+        rules: &RuleSet,
+    ) -> EngineerBuildingAction {
+        use crate::sim::scenario_session::ScenarioGameMode;
+        let mode = self.session.game_mode();
+        let allow_damage = (mode != ScenarioGameMode::Skirmish
+            || self.session.game_options().multi_engineer)
+            && mode != ScenarioGameMode::Campaign;
+        let Some(building) = self.substrate.entities.get(building_id) else {
+            return EngineerBuildingAction::Capture;
+        };
+        let Some(object) = self.object_type(building.type_ref(), rules) else {
+            return EngineerBuildingAction::Capture;
+        };
+        let globals = rules.ares_building_globals();
+        let tech = self
+            .houses
+            .get(&building.initial_owner())
+            .is_some_and(|house| house.multiplay_passive());
+        let ratio = building.health.current() as f32 / object.strength as f32;
+        if allow_damage
+            && (!tech || !globals.engineer_always_capture_tech)
+            && f32::from_bits(rules.general.engineer_capture_level.bits()) < ratio
+        {
+            return if f64::from_bits(globals.engineer_damage.bits()) > 0.0 {
+                EngineerBuildingAction::Damage
+            } else {
+                EngineerBuildingAction::NoEnter
+            };
+        }
+        EngineerBuildingAction::Capture
+    }
+
     /// Object-route Engineer action in Infantry51E49E..51E637. Ordinary
     /// action/threshold vectors: engineer_repair_joined; hut caller/display
     /// vectors: engineer_bridge_cursor_caller; shared geometric query:
@@ -1014,22 +1061,29 @@ impl Simulation {
                 if !object.capturable {
                     return None;
                 }
+                // Ares 3.0 10025540/10025550 (hooks 0x51E5BB, 0x51E5E1): the
+                // action is GetEngineerEnterEnemyBuildingAction's.
+                #[cfg(feature = "ares")]
+                return Some(self.ares_engineer_enemy_building_action(target_id, rules));
                 //51E5C6 compares threshold < health ratio (C0), not the
                 //opposite. Equality returns Capture; masked NaN keeps C0=1.
-                use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering};
-                return Some(
-                    if matches!(
-                        X87::compare(
-                            X87::load_f32(rules.general.engineer_capture_level),
-                            target.health.ratio(object.strength),
-                        ),
-                        MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
-                    ) {
-                        EngineerBuildingAction::Damage
-                    } else {
-                        EngineerBuildingAction::Capture
-                    },
-                );
+                #[cfg(not(feature = "ares"))]
+                {
+                    use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering};
+                    return Some(
+                        if matches!(
+                            X87::compare(
+                                X87::load_f32(rules.general.engineer_capture_level),
+                                target.health.ratio(object.strength),
+                            ),
+                            MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
+                        ) {
+                            EngineerBuildingAction::Damage
+                        } else {
+                            EngineerBuildingAction::Capture
+                        },
+                    );
+                }
             }
             //ConditionGreen is the native forced1.0, not an authored key.
             if object.hospital
@@ -1521,15 +1575,32 @@ impl Simulation {
             //519D82..519EA5: with MultiEngineer on, a hostile building above
             //ConditionRed takes damage and consumes the Engineer before the
             //Capturable, Selling and warp tests.
-            if !repair
+            #[cfg(not(feature = "ares"))]
+            let multi_engineer = (!repair
                 && self.session.game_mode_nonzero()
-                && self.session.game_options().multi_engineer
-                && let Some(damage) = multi_engineer_damage(
-                    building.health,
-                    object.strength,
-                    rules.general.condition_red,
-                )
-            {
+                && self.session.game_options().multi_engineer)
+                .then(|| {
+                    multi_engineer_damage(
+                        building.health,
+                        object.strength,
+                        rules.general.condition_red,
+                    )
+                })
+                .flatten();
+            // Ares 3.0 InfantryClass_UpdatePosition_MultiEngineer (hook
+            // 0x519D9C): the Damage action destroys
+            // ceil(Strength * EngineerDamage) and spends him (0x51A010);
+            // anything else goes on to the capture (0x519EAA).
+            #[cfg(feature = "ares")]
+            let multi_engineer = (!repair
+                && self.ares_engineer_enemy_building_action(building_id, rules)
+                    == EngineerBuildingAction::Damage)
+                .then(|| {
+                    let share =
+                        f64::from_bits(rules.ares_building_globals().engineer_damage.bits());
+                    (f64::from(object.strength) * share).ceil() as i32
+                });
+            if let Some(damage) = multi_engineer {
                 let warhead = self.interner.intern(&rules.bridge_warheads.c4_name);
                 let receipt = self.commit_direct_damage_receiver(
                     rules,
