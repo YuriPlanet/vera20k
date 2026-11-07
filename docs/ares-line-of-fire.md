@@ -57,6 +57,11 @@ AlliedSolidTransparency=yes     ; buildings let their owner's allies through
   obstacle between its launch and its placement, at that cell's centre, for
   FireAt's and shrapnel's bullets alike. Without Ares the original walk's
   result is overwritten.
+- `sim/combat/shrapnel.rs`: `BulletClass_Shrapnel_WeaponType1/2`
+  (`1001ABF0`, hooks `0x46A5B2`/`0x46AA27`) give each shrapnel fragment its
+  weapon, which its detonation reads (`RadLevel=`, Ivan bombs) and which a
+  `FlakScatter=` Inviso fragment's Fire placement divides by
+  (`Simulation::ares_shrapnel_flak_placement`).
 - `sim/combat/world_fire.rs`: `TechnoClass_Fire_BallisticScatter1/2`
   (`10019930`, `10019980`, hooks `0x6FE709`/`0x6FE7FE`) take the scatter
   draw's bounds from `BallisticScatter.Min/.Max`.
@@ -73,8 +78,12 @@ an Ares build: their only callers sit inside the code the hooks above skip.
 - The other BulletTypeExt keys: `Parachuted` (`46867F`), `Splits`,
   `RetargetSelf`, `RetargetAccuracy`, `AirburstSpread` and `AroundTarget`
   (the airburst tail `469EBA`, `1001A090`, which Ares builds skip),
-  `AnimLength` (`468000`), `AttachedSystem` (`5F4FE7`) and the anim palette
-  (`468379`).
+  `AnimLength` (`468000`, `1001A840`: the client draw path has no global
+  frame and the atlas holds 32 facings; Ares' own facing conversion,
+  `0x3FFF - ftol(angle * 65535/2pi)`, can also pick a neighbouring facing
+  at bucket edges), `AttachedSystem` (`5F4FE7`) and the anim palette
+  (`468379`). None is set by retail rules; retail's only `Airburst=`
+  projectile (`V3AirburstP`) is fired by no weapon.
 - The original walk's oracle vectors (`line_walk_vectors.json`,
   `shared_collision_vectors.json`) run in default builds only; the Ares
   bodies are covered by their own tests.

@@ -417,6 +417,42 @@ pub(crate) fn admit_fired_bullet(
 }
 
 impl Simulation {
+    /// SpawnShrapnel's Fire of an Ares child, which holds its shrapnel
+    /// weapon (`1001ABF0`, hooks `0x46A5B2`/`0x46AA27`): a `FlakScatter=`
+    /// Inviso child takes Fire's flak placement with that weapon's `Range=`
+    /// ([`inviso_fire_placement`]), two Scenario draws.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_shrapnel_flak_placement(
+        &mut self,
+        bullet_id: u64,
+        placement: ProjectileCoord,
+        rules: &RuleSet,
+    ) -> ProjectileCoord {
+        let Some(bullet) = self.projectiles.get(bullet_id) else {
+            return placement;
+        };
+        let origin = bullet.position();
+        let payload = bullet.payload();
+        let flak_scatter = payload
+            .projectile_type()
+            .and_then(|id| rules.projectile(self.interner.resolve(id)))
+            .is_some_and(|kind| kind.flak_scatter);
+        let Some(weapon) = payload
+            .installed_weapon()
+            .and_then(|id| rules.weapon(self.interner.resolve(id)))
+        else {
+            return placement;
+        };
+        inviso_fire_placement(
+            &mut self.scenario_rng,
+            rules,
+            flak_scatter,
+            weapon,
+            origin,
+            placement,
+        )
+    }
+
     /// Ares `BulletClass_SetMovement_Obstacle @ 1001A940` (hook `0x4688BD`),
     /// `BulletClass::Fire`'s Inviso arm: the bullet stands on the first
     /// obstacle between the coordinate Fire was given (its Unlimbo location)
@@ -492,7 +528,8 @@ impl Simulation {
 /// FireAt sets to its fired weapon at `0x006FE573`) and `origin` the
 /// coordinate Fire was given.
 /// SpawnShrapnel's Fire leaves its children on their target
-/// (`Simulation::admit_projectile_spawns`).
+/// (`Simulation::admit_projectile_spawns`), unless Ares gave them their
+/// weapon (`Simulation::ares_shrapnel_flak_placement`).
 fn inviso_fire_placement(
     scenario_rng: &mut crate::sim::rng::SimRng,
     rules: &RuleSet,

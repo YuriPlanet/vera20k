@@ -9875,6 +9875,33 @@ fn projectile_shrapnel_reads_the_bullets_location_not_its_impact() {
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
 }
 
+/// Ares `BulletClass_Shrapnel_WeaponType1/2` (1001ABF0, hooks 0x46A5B2 and
+/// 0x46AA27) give each fragment its shrapnel weapon (+0x130), which the
+/// child's detonation (RadLevel, IvanBomb) reads; without Ares it has none.
+#[test]
+fn projectile_shrapnel_fragment_holds_its_weapon_only_in_ares() {
+    let rules = shrapnel_admission_rules(1);
+    let mut sim = shrapnel_world(
+        &rules,
+        vec![make_entity_owned(1, "MTNK", 2, 2, 100, "Soviet")],
+    );
+    let tree_type = sim.interner.intern("TREE01");
+    sim.terrain_objects.insert_constructed(
+        crate::sim::terrain_object::TerrainObjectState::for_test(900, tree_type, 5, 5),
+        false,
+    );
+    sim.terrain_objects.add_to_cell(900, (5, 5));
+    let fragments = commit_shrapnel_at_5_5(&mut sim, &rules);
+    let child = sim.interner.intern("CHILD");
+    assert_eq!(
+        fragments
+            .iter()
+            .map(|fragment| fragment.payload().installed_weapon())
+            .collect::<Vec<_>>(),
+        vec![crate::rules::ARES_ENABLED.then_some(child)]
+    );
+}
+
 /// The bullet cell's first ground object may be a tree, which is no
 /// building: shrapnel is thrown (`0x0046A3F8..0x0046A406`).
 #[test]
