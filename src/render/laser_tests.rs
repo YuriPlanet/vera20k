@@ -259,7 +259,7 @@ fn production_laser_pixels_match_original_software_surface() {
                 } else {
                     clear(&mut encoder, &cv, &dv, z[0], wgpu::LoadOp::Load);
                 }
-                terrain.draw_surface_lines(&mut encoder, &cv, prepared_lines);
+                terrain.draw_surface_lines(&mut encoder, &cv, &[prepared_lines]);
                 let reads = [
                     gpu.read(&mut encoder, &color),
                     gpu.read(&mut encoder, &depth),

@@ -121,7 +121,7 @@ fn production_radial_pixels_match_original_in_both_formats_and_immutable_depth()
                 );
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
                 seed_depth_grid(&gpu, &mut encoder, &dv, &depths, 160);
-                terrain.draw_surface_lines(&mut encoder, &cv, prepared);
+                terrain.draw_surface_lines(&mut encoder, &cv, &[prepared]);
                 let reads = [
                     gpu.read(&mut encoder, &color),
                     gpu.read(&mut encoder, &depth),

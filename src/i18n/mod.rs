@@ -1113,7 +1113,8 @@ mod tests {
                 .contains("reads right to left")
         );
         for (tag, text) in shipped::FILES {
-            assert!(!Language::from_file(tag, text).right_to_left, "{tag}");
+            let right_to_left = Language::from_file(tag, text).right_to_left;
+            assert_eq!(right_to_left, *tag == "ar", "{tag}");
         }
     }
 

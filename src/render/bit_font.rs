@@ -2,16 +2,15 @@
 //! emission for every text path, owned by `RendererState.bit_font` and shared
 //! by `render::shell_text` (Path A) and `render::sidebar_text` (Path B).
 //!
-//! gamemd's `BitFont` draws GAME.FNT. VERA draws through
-//! [`crate::render::text_engine`] in one of two [`FontMode`]s:
-//! - Modern: the bundled vector fonts, shaped and drawn at window resolution.
-//! - Original: GAME.FNT. Text it fully covers keeps native measurement and
-//!   wrapping (the ports below) and draws its glyphs scaled evenly; text it
-//!   cannot draw (Cyrillic, Greek, Arabic, the hanzi it boxes) is shaped with
-//!   the bundled fonts filling the gaps.
+//! gamemd's `BitFont` draws GAME.FNT, and so does VERA, through
+//! [`crate::render::text_engine`]. Text GAME.FNT fully covers keeps native
+//! measurement and wrapping (the ports below) and draws its glyphs scaled
+//! evenly; other text (Cyrillic, Greek, Arabic, Thai, the hanzi it boxes) is
+//! shaped with GAME.FNT's missing letters drawn in its style and the bundled
+//! fonts behind them, drawn in whole pixels like it.
 //!
 //! Public surface:
-//!   - [`BitFont::from_fnt`] / [`BitFont::vector_only`] constructors
+//!   - [`BitFont::from_fnt`] / [`BitFont::without_fnt`] constructors
 //!   - [`BitFont::text_width`] / [`BitFont::wrap_layout`] for measurement
 //!   - [`BitFont::fit_box`] / [`BitFont::fit_line`] / [`BitFont::fitted`] to
 //!     squeeze text too long for its box
@@ -26,7 +25,7 @@ use std::sync::Arc;
 use crate::assets::fnt_file::{FntFile, FntGlyph};
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::shell_text_reveal::{PathAReveal, encoded_unit_rgb};
-pub use crate::render::text_engine::{Fit, FontMode};
+pub use crate::render::text_engine::Fit;
 use crate::render::text_engine::{ShapedText, TextEngine};
 
 /// Hardcoded inter-glyph spacing.
@@ -115,7 +114,7 @@ pub(crate) struct BitFontCaptureObservation<'a> {
 /// Texture fields are `Option<BatchTexture>` so pure-measurement tests can
 /// construct a `BitFont` without a GPU context (`atlas`/`darken_texture`
 /// accessors `expect` Some -- production callers always populate via
-/// `from_fnt`/`vector_only`).
+/// `from_fnt`/`without_fnt`).
 pub struct BitFont {
     source_identity: Option<crate::assets::fnt_file::FntSourceIdentity>,
     /// The engine's glyph atlas as of this frame ([`Self::begin_frame`]).
@@ -132,7 +131,6 @@ pub struct BitFont {
     pub(crate) tab_origin: u32,
     pub(crate) darken_texture: Option<BatchTexture>,
     engine: RefCell<TextEngine>,
-    mode: FontMode,
     /// GPU-free test fonts: every text takes the native path and places
     /// whole cells, as GAME.FNT's own glyph table did.
     cells_only: bool,
@@ -244,15 +242,6 @@ impl BitFont {
         self.cell_height as f32
     }
 
-    pub fn mode(&self) -> FontMode {
-        self.mode
-    }
-
-    /// Switch the face every text path draws in, from the next measurement.
-    pub fn set_mode(&mut self, mode: FontMode) {
-        self.mode = mode;
-    }
-
     /// The interface language's tag, for region-specific CJK glyph forms
     /// and its reading direction (`i18n::right_to_left`).
     pub fn set_locale(&mut self, locale: &str) {
@@ -260,15 +249,6 @@ impl BitFont {
         self.engine
             .get_mut()
             .set_locale(Some(locale), right_to_left);
-    }
-
-    /// Measure and draw in `mode` for the length of `draw`, whatever the font
-    /// option says.
-    pub fn with_mode<R>(&mut self, mode: FontMode, draw: impl FnOnce(&BitFont) -> R) -> R {
-        let chosen = std::mem::replace(&mut self.mode, mode);
-        let result = draw(self);
-        self.mode = chosen;
-        result
     }
 
     /// Measure and draw at `fit` for the length of `draw`.
@@ -342,10 +322,15 @@ impl BitFont {
         Ok(fit)
     }
 
-    /// Take `previous`'s face and language, for a font rebuilt from a
-    /// scenario's GAME.FNT.
+    /// Whether this font was built from `fnt`'s exact bytes, so building one
+    /// from `fnt` would give this font again.
+    pub(crate) fn is_built_from(&self, fnt: &FntFile) -> bool {
+        self.source_identity.is_some() && self.source_identity.as_ref() == fnt.source_identity()
+    }
+
+    /// Take `previous`'s language, for a font rebuilt from a scenario's
+    /// GAME.FNT.
     pub fn inherit_settings(&mut self, previous: &BitFont) {
-        self.mode = previous.mode;
         let (locale, right_to_left) = {
             let engine = previous.engine.borrow();
             (engine.locale().map(str::to_owned), engine.right_to_left())
@@ -365,14 +350,13 @@ impl BitFont {
         }
     }
 
-    /// Whether `text` takes the native GAME.FNT paths: Original mode, no
-    /// squeeze and every character drawn by GAME.FNT itself.
+    /// Whether `text` takes the native GAME.FNT paths: no squeeze and every
+    /// character drawn by GAME.FNT itself.
     fn native(&self, text: &str) -> bool {
         if self.cells_only {
             return true;
         }
         self.fit.get() == Fit::NONE
-            && self.mode == FontMode::Original
             && !self.glyphs.is_empty()
             && text.chars().all(|c| match c {
                 '\t' | '\r' | '\n' | ' ' => true,
@@ -386,7 +370,7 @@ impl BitFont {
     fn shape(&self, text: &str, max_width: u32) -> Arc<ShapedText> {
         self.engine
             .borrow_mut()
-            .shape(self.mode, text, max_width, self.fit.get())
+            .shape(text, max_width, self.fit.get())
     }
 
     /// ComputeTextRect4A59E0: whole-string width, horizontal alignment and
@@ -1049,9 +1033,10 @@ impl BitFont {
     }
 
     /// Without GAME.FNT (no game files yet, or a damaged archive): the
-    /// bundled fonts alone, whatever the font option says.
-    pub fn vector_only(device: &wgpu::Device, queue: &wgpu::Queue, batch: &BatchRenderer) -> Self {
-        let engine = TextEngine::new(Some((device, queue, batch)));
+    /// letters it lacks, drawn in its style, stand in for all of its own,
+    /// with the bundled fonts behind them.
+    pub fn without_fnt(device: &wgpu::Device, queue: &wgpu::Queue, batch: &BatchRenderer) -> Self {
+        let engine = TextEngine::without_fnt(Some((device, queue, batch)));
         Self {
             source_identity: None,
             atlas_texture: engine.atlas_texture().cloned(),
@@ -1065,7 +1050,6 @@ impl BitFont {
             tab_origin: TAB_ORIGIN,
             darken_texture: None,
             engine: RefCell::new(engine),
-            mode: FontMode::default(),
             cells_only: false,
             fit: Cell::new(Fit::NONE),
             raster: Cell::new(TextRaster::NATIVE),
@@ -1189,7 +1173,6 @@ impl BitFont {
             tab_origin: TAB_ORIGIN,
             darken_texture,
             engine: RefCell::new(engine),
-            mode: FontMode::default(),
             cells_only: false,
             fit: Cell::new(Fit::NONE),
             raster: Cell::new(TextRaster::NATIVE),
@@ -1201,8 +1184,7 @@ impl BitFont {
 pub(crate) mod tests {
     use super::*;
 
-    /// A GPU-free font that shapes every text with the bundled fonts, as
-    /// [`BitFont::vector_only`] does.
+    /// A GPU-free font that shapes every text with the bundled fonts alone.
     pub(crate) fn make_vector_test_font() -> BitFont {
         BitFont {
             source_identity: None,
@@ -1217,25 +1199,21 @@ pub(crate) mod tests {
             tab_origin: TAB_ORIGIN,
             darken_texture: None,
             engine: RefCell::new(TextEngine::new(None)),
-            mode: FontMode::Modern,
             cells_only: false,
             fit: Cell::new(Fit::NONE),
             raster: Cell::new(TextRaster::NATIVE),
         }
     }
 
-    /// A GPU-free font in the Original font option: `fnt` itself, falling
-    /// back to the bundled fonts for what it lacks, as [`BitFont::from_fnt`]
-    /// builds it.
+    /// A GPU-free font of `fnt` itself, falling back to the bundled fonts
+    /// for what it lacks, as [`BitFont::from_fnt`] builds it.
     pub(crate) fn make_original_test_font(fnt: &FntFile) -> BitFont {
-        let mut font = BitFont::with_fnt(fnt, None);
-        font.set_mode(FontMode::Original);
-        font
+        BitFont::with_fnt(fnt, None)
     }
 
     /// Build a measurement-only BitFont without a GPU context, for pure-logic
     /// tests. Atlas/darken textures are left as None -- production callers
-    /// always populate both via `from_fnt`/`vector_only`.
+    /// always populate both via `from_fnt`/`without_fnt`.
     pub(crate) fn make_test_font(glyph_widths: &[(u16, u32)], space_width: u32) -> BitFont {
         let mut glyphs = HashMap::new();
         for (cp, w) in glyph_widths {
@@ -1269,7 +1247,6 @@ pub(crate) mod tests {
             tab_origin: TAB_ORIGIN,
             darken_texture: None,
             engine: RefCell::new(TextEngine::new(None)),
-            mode: FontMode::Original,
             cells_only: true,
             fit: Cell::new(Fit::NONE),
             raster: Cell::new(TextRaster::NATIVE),
@@ -1342,6 +1319,17 @@ pub(crate) mod tests {
         data[glyphs + STRIDE + 1] = 0xFF;
         data[glyphs + STRIDE + 2] = 0xFF;
         FntFile::from_bytes(&data).expect("synthetic FNT parses")
+    }
+
+    /// A scenario that reads the GAME.FNT bytes the font was built from keeps
+    /// the font (`install_world_presentation`); other bytes rebuild it.
+    #[test]
+    fn a_font_is_built_from_its_own_fnt_bytes_only() {
+        let fnt = two_record_fnt();
+        let font = make_original_test_font(&fnt);
+        assert!(font.is_built_from(&two_record_fnt()));
+        assert!(!font.is_built_from(&FntFile::solid_for_test(7)));
+        assert!(!make_vector_test_font().is_built_from(&fnt));
     }
 
     #[test]
