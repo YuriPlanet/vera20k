@@ -134,6 +134,22 @@ fn health_strip_visibility(
     widened: bool,
 ) -> (bool, bool) {
     let selected = entity.selection.is_selected();
+    // Ares TechnoClass_DrawExtras_Submerged10048350 (hook6F5388) also
+    // treats an object below the surface (IsSurfaced5F6C10: GetHeight >
+    // -20) whose cell the player senses as selected here.
+    #[cfg(feature = "ares")]
+    let selected = selected
+        || (entity.category() != crate::map::entities::EntityCategory::Aircraft
+            && crate::sim::movement::air_movement::queried_flight_height(
+                entity,
+                sim.resolved_terrain()
+                    .map(crate::map::resolved_terrain::NativeCellQuery::isolated)
+                    .as_ref(),
+            ) <= -20
+            && player.is_some_and(|player| {
+                sim.fog()
+                    .has_sensor_for_house(player, entity.position.rx(), entity.position.ry())
+            }));
     let hovered = (widened || hovered_id == Some(entity.stable_id()))
         && (selected
             || !player.is_some_and(|player| {
@@ -2483,6 +2499,44 @@ mod tests {
         assert!(drawable(EntityCategory::Unit, false, true));
         assert!(drawable(EntityCategory::Unit, true, false));
         assert!(drawable(EntityCategory::Infantry, false, false));
+    }
+
+    /// Ares TechnoClass_DrawExtras_Submerged10048350 (hook6F5388): a
+    /// subterranean enemy the player senses shows its strip unselected.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_a_sensed_subterranean_object_draws_its_strip() {
+        use crate::sim::{combat::Health, game_entity::GameEntity, world::Simulation};
+        let draws = |depth: i32, sensed: bool| {
+            let mut sim = Simulation::new();
+            let player = sim.intern("Player");
+            let owner = sim.intern("Enemy");
+            *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
+            if sensed {
+                sim.fog_mut_for_test().increment_sensor_at(player, 20, 20);
+            }
+            let mut entity = GameEntity::new_at_frame_zero_for_test(
+                1,
+                20,
+                20,
+                0,
+                0,
+                owner,
+                Health::new(100),
+                sim.intern("DRILL"),
+                EntityCategory::Unit,
+                0,
+                5,
+                false,
+            );
+            entity.position.set_exact_z_leptons_for_test(Some(depth));
+            sim.entities_mut_for_test().insert(entity);
+            let entity = sim.entities().get(1).unwrap();
+            health_strip_visibility(&sim, entity, None, Some(player), false).1
+        };
+        assert!(draws(-20, true));
+        assert!(!draws(-19, true), "IsSurfaced holds above -20");
+        assert!(!draws(-40, false));
     }
 
     /// VERA `[VERA] HealthBars=` widens the hover arm, so each mode keeps the

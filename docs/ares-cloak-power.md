@@ -44,7 +44,9 @@ DeactivateDimOperator=0.65 ; ... while missing its Operator
 - `sim/sensor_lifecycle.rs`: the sensor-array activation counter
   (`10016D60`, `10016DB0`, `10016E30`) and its capture/destruction moves.
 - `app/presentation/lighting.rs`: the Unit voxel dim (`1004CEA0`);
-  `render/radar/tracker.rs`: `SensorArray.Warn` (`10016E60`).
+  `render/radar/tracker.rs`: `SensorArray.Warn` (`10016E60`);
+  `app/presentation/ui_overlays.rs`: the health strip of a sensed object
+  below the surface (`10048350`).
 
 ## Not covered
 
