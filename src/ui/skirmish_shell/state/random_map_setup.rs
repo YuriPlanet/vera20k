@@ -125,11 +125,16 @@ const THEATER_ITEMS: [SetupComboItem; 2] = [
     item("Name:Snow", "Snow", 1),
 ];
 
-const SIZE_ITEMS: [SetupComboItem; 4] = [
+/// The original's four sizes, then VERA's larger ones (`rmg::EXTENDED_SIZES`).
+const SIZE_ITEMS: [SetupComboItem; 8] = [
     item("TXT_MAPSIZE_SMALL", "Small", 0),
     item("TXT_MAPSIZE_MEDIUM", "Medium", 1),
     item("TXT_MAPSIZE_LARGE", "Large", 2),
     item("TXT_MAPSIZE_VERY_LARGE", "Very Large", 3),
+    item("VERA:MapSizeHuge", "Huge", 4),
+    item("VERA:MapSizeGiant", "Giant", 5),
+    item("VERA:MapSizeEnormous", "Enormous", 6),
+    item("VERA:MapSizeColossal", "Colossal", 7),
 ];
 
 const RESOURCE_ITEMS: [SetupComboItem; 4] = [
@@ -161,7 +166,9 @@ pub enum AcceptOutcome {
 
 /// The Players slider's range, 2..8 in steps of 1 (`TBM_SETRANGE` at
 /// `0x0059722C`; no `0x4AB`).
-pub const PLAYERS_RANGE: TrackbarRange = TrackbarRange::new(2, 8, 1);
+/// The original trackbar spans 2..=8; VERA's generator seats up to thirty.
+pub const PLAYERS_RANGE: TrackbarRange =
+    TrackbarRange::new(2, crate::map::rmg::MAX_PLAYERS, 1);
 
 /// The Create Random Map dialog.
 #[derive(Debug, Clone)]

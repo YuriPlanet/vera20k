@@ -49,8 +49,9 @@ const BLACK_PIXEL_SUBSTITUTE: [u8; 3] = [0x80, 0x80, 0x80];
 const MARKER_SIZE: i32 = 4;
 const MARKER_RGB: [u8; 3] = [0xF0, 0x00, 0x00];
 const MARKER_ORIGIN_BIAS: i32 = -1;
-/// Only the first eight waypoints get a marker.
-pub const MARKER_WAYPOINT_COUNT: u8 = 8;
+/// The original marks only the first eight waypoints, all a random map has.
+/// VERA marks every start of a random map for up to thirty players.
+pub const MARKER_WAYPOINT_COUNT: u8 = super::MAX_PLAYERS as u8;
 
 /// Project a cell centre to the preview's coordinate space.
 ///
