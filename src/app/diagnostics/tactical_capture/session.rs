@@ -5,8 +5,8 @@
 //! the real renderer, and publishes one transactional final readback. It does
 //! not focus the window, inject desktop input, or grant simulation state.
 
-use std::path::Path;
 use crate::util::time::{Duration, Instant};
+use std::path::Path;
 
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::{Value, json};
@@ -184,14 +184,10 @@ impl TacticalCaptureSession {
                     seed_name == crate::app::shell_random_map::RANDMAP_SED_FILE,
                     "generated capture requires the normal accepted RandMap.Sed record"
                 );
-                let path = state
-                    .platform
-                    .game_config
-                    .as_ref()
-                    .unwrap()
-                    .paths
-                    .ra2_dir
-                    .join(seed_name);
+                let path = crate::map::source::random_map_dir(
+                    &state.platform.game_config.as_ref().unwrap().paths.ra2_dir,
+                )
+                .join(seed_name);
                 let bytes = std::fs::read(&path).context("read capture setup seed")?;
                 let ini = crate::rules::ini_parser::IniFile::from_bytes(&bytes)
                     .context("parse capture setup seed")?;
@@ -1089,9 +1085,12 @@ impl TacticalCaptureSession {
             && aperture.y >= 0.0
             && aperture.x + aperture.w <= sidebar.panel_rect.x + sidebar.panel_rect.w
             && aperture.y + aperture.h <= state.render_height() as f32;
-        let cursor_id = crate::app::input::cursor::current_cursor_feedback_kind(state)
-            .and_then(crate::app::input::cursor::cursor_id_for_feedback)
-            .unwrap_or(CursorId::Default);
+        let cursor_id = crate::app::input::cursor::current_cursor_feedback_kind(
+            state,
+            &crate::app::input::cursor::CursorTargets::read(state),
+        )
+        .and_then(crate::app::input::cursor::cursor_id_for_feedback)
+        .unwrap_or(CursorId::Default);
         let cursor_ready = state.use_software_cursor()
             && cursor_id == CursorId::Default
             && state.match_state.input.cursor_x == profile.capture.post_load_cursor.x as f32
@@ -1119,7 +1118,7 @@ impl TacticalCaptureSession {
                 .keys_held
                 .iter()
                 .all(|key| state.match_state.input.planning.owns_key(*key))
-            && !state.match_state.input.minimap_dragging
+            && !state.match_state.input.minimap_press_active()
             && !state
                 .match_state
                 .match_presentation
@@ -1341,9 +1340,15 @@ impl TacticalCaptureSession {
             "cursor": {
                 "x": state.match_state.input.cursor_x,
                 "y": state.match_state.input.cursor_y,
-                "id": format!("{:?}", crate::app::input::cursor::current_cursor_feedback_kind(state)
+                "id": format!(
+                    "{:?}",
+                    crate::app::input::cursor::current_cursor_feedback_kind(
+                        state,
+                        &crate::app::input::cursor::CursorTargets::read(state),
+                    )
                     .and_then(crate::app::input::cursor::cursor_id_for_feedback)
-                    .unwrap_or(CursorId::Default)),
+                    .unwrap_or(CursorId::Default)
+                ),
             }
         }))
     }

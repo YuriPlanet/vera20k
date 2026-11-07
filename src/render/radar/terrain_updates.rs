@@ -8,14 +8,14 @@ use std::collections::HashMap;
 
 use super::current_cell::CurrentRadarCellAuthority;
 use super::geometry::NativeRadarSurfaceGeometry;
-use super::helpers::{MINIMAP_WIDTH, OverlayPixel, RadarSurfacePixel, TerrainPixels, set_pixel};
-use super::projection::{aperture_pixel, rasterize_native_terrain};
+use super::helpers::{MINIMAP_WIDTH, OverlayPixel, TerrainPixels, set_pixel};
+use super::projection::aperture_pixel;
 use super::terrain::{NativeRadarCellColors, NativeRadarCellUpdate, NativeRadarTerrainSurface};
 
 pub(crate) struct RadarTerrainUpdateLayers<'a> {
+    /// The mapless fallback's terrain; a generated surface keeps its own.
     pub base_rgba: &'a mut Vec<u8>,
     pub terrain_pixels: &'a TerrainPixels,
-    pub surface_pixels: &'a mut Vec<RadarSurfacePixel>,
     pub overlay_pixels: &'a mut Vec<OverlayPixel>,
     pub native_surface: Option<NativeRadarSurfaceGeometry>,
     pub native_terrain: &'a mut Option<NativeRadarTerrainSurface>,
@@ -23,7 +23,7 @@ pub(crate) struct RadarTerrainUpdateLayers<'a> {
 
 /// A retained-radar terrain update staged before final frame composition.
 ///
-/// CPU pixels may already have changed when an upload fails. The retained
+/// Retained pixels may already have changed when an upload fails. The retained
 /// generation is deliberately committed only by [`Self::finish_with_upload`],
 /// so the next presentation visit re-runs the idempotent CellClass projection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,9 +115,10 @@ pub(super) fn apply_radar_terrain_dirty_cells(
         return;
     };
     // The generated surface bakes overlay precedence into its raw RGB and a
-    // changed batch re-rasterizes the whole base. The mapless per-cell terrain
-    // and overlay layers are not drawn beside it, so they are not maintained;
-    // stamping them would leave a non-native pixel when nothing changed.
+    // changed batch regenerates it for the GPU to compose. The mapless
+    // per-cell terrain and overlay layers are not drawn beside it, so they are
+    // not maintained; stamping them would leave a non-native pixel when
+    // nothing changed.
     let terrain_brightness = surface.terrain_brightness();
     let changes = cells.iter().filter_map(|&(rx, ry)| {
         let (left, right) = authority.tile_radar_colors(rx, ry, terrain_brightness)?;
@@ -132,11 +133,7 @@ pub(super) fn apply_radar_terrain_dirty_cells(
                 .map(|(color, _)| color),
         })
     });
-    if surface.set_cell_states(changes) {
-        let (rgba, pixels) = rasterize_native_terrain(surface);
-        *layers.base_rgba = rgba;
-        *layers.surface_pixels = pixels;
-    }
+    surface.set_cell_states(changes);
 }
 
 /// Mapless fallback (no generated surface): restamp each dirty cell's terrain

@@ -306,11 +306,20 @@ const INCLUSIVE_RANGE_BIAS: NativeF64Bits = NativeF64Bits::from_bits(0x3ff0_0000
 /// the double `1.4`. It is NOT read from the type.
 const DEBRIS_GRAVITY: NativeF64Bits = NativeF64Bits::from_bits(0x3ff6_6666_6000_0000);
 
-/// `VoxelAnimClass::Constructor @ 0x007493B0`, the ordinary (non-`IsMeteor`)
-/// arm at `0x007494F0`..`0x00749663` — the one a death's `DebrisTypes=` takes.
+/// `VoxelAnimClass::Constructor @ 0x007493B0`. The third native argument
+/// is the owner House; trigger action 43 and meteor children pass null.
 ///
-/// Seven draws, in this exact order, all on the shared scenario stream
-/// (`[0x00A8B230] + 0x218`):
+/// The `IsMeteor` arm (`0x00749668`..`0x0074981F`) takes the shared
+/// [`meteor_launch`](crate::sim::bounce::meteor_launch) prefix from the Type
+/// `Duration`, which it stores as the shortened countdown. Unlimbo
+/// (`0x00749794`) places the object at the launch start, one raw draw
+/// (`0x007497A5`) picks the spin like the ordinary arm's, and
+/// `BounceClass::Init` starts at that start without the ordinary arm's +10.
+/// Seven draws in all, like the ordinary arm.
+///
+/// The ordinary (non-`IsMeteor`) arm at `0x007494F0`..`0x00749663` is the
+/// one a death's `DebrisTypes=` takes. Seven draws, in this exact order, all
+/// on the shared scenario stream (`[0x00A8B230] + 0x218`):
 /// - four `Random__Next()` at `0x0074951D`, `0x00749531`, `0x00749544`,
 ///   `0x00749559`, then
 /// - three `RandomRanged(-0xFFFF, 0xFFFF)` inside [`BounceState::init`].
@@ -338,6 +347,38 @@ pub fn spawn_debris_piece(
     origin: IVec3,
     rng: &mut SimRng,
 ) -> Result<VoxelAnimObject, NativeX87Error> {
+    if voxel_anim_type.is_meteor {
+        let launch = crate::sim::bounce::meteor_launch(
+            origin,
+            voxel_anim_type.duration,
+            voxel_anim_type.min_z_vel,
+            voxel_anim_type.max_xy_vel,
+            rng,
+        )?;
+        let spin = spin_angle(voxel_anim_type, rng.next_u32())?;
+        let bounce = BounceState::init(
+            launch.start,
+            voxel_anim_type.elasticity,
+            DEBRIS_GRAVITY,
+            NativeF64Bits::POSITIVE_ZERO,
+            launch.velocity,
+            spin,
+            rng,
+        )?;
+        return Ok(VoxelAnimObject {
+            stable_id,
+            native_unique_id,
+            type_id,
+            duration: launch.duration,
+            marked_for_deletion: false,
+            owner_house,
+            location: launch.start.to_array(),
+            lifecycle: ObjectLifecycle::default(),
+            bounce,
+            in_logic_vector: false,
+        });
+    }
+
     let start = IVec3::new(
         origin.x,
         origin.y,
@@ -372,17 +413,7 @@ pub fn spawn_debris_piece(
         X87Chop53::load_i32(abs_before_modulo(x_draw, xy_divisor)),
         X87Chop53::load_f64(voxel_anim_type.max_xy_vel)?,
     ))?;
-    let angular_divisor = X87Chop53::ftol_i64(X87Chop53::add(
-        X87Chop53::sub(
-            X87Chop53::load_f64(voxel_anim_type.max_angular_velocity)?,
-            X87Chop53::load_f64(voxel_anim_type.min_angular_velocity)?,
-        ),
-        bias,
-    ))? as i32;
-    let rotation_angle_per_tick = X87Chop53::store_f64(X87Chop53::add(
-        X87Chop53::load_i32(abs_before_modulo(angular_draw, angular_divisor)),
-        X87Chop53::load_f64(voxel_anim_type.min_angular_velocity)?,
-    ))?;
+    let rotation_angle_per_tick = spin_angle(voxel_anim_type, angular_draw)?;
 
     let bounce = BounceState::init(
         start,
@@ -406,6 +437,23 @@ pub fn spawn_debris_piece(
         bounce,
         in_logic_vector: false,
     })
+}
+
+/// Both constructor arms' spin (`0x007495FE..0x00749644`,
+/// `0x007497AA..0x007497F6`): `|draw| % ftol(MaxAngularVelocity -
+/// MinAngularVelocity + 1.0) + MinAngularVelocity`, stored as a double.
+fn spin_angle(voxel_anim_type: &VoxelAnimType, draw: u32) -> Result<NativeF64Bits, NativeX87Error> {
+    let divisor = X87Chop53::ftol_i64(X87Chop53::add(
+        X87Chop53::sub(
+            X87Chop53::load_f64(voxel_anim_type.max_angular_velocity)?,
+            X87Chop53::load_f64(voxel_anim_type.min_angular_velocity)?,
+        ),
+        X87Chop53::load_f64(INCLUSIVE_RANGE_BIAS)?,
+    ))? as i32;
+    X87Chop53::store_f64(X87Chop53::add(
+        X87Chop53::load_i32(abs_before_modulo(draw, divisor)),
+        X87Chop53::load_f64(voxel_anim_type.min_angular_velocity)?,
+    ))
 }
 
 /// Which list the SHP half of the death block draws its anim from.

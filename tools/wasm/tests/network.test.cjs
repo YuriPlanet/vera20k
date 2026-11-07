@@ -16,7 +16,10 @@ function fixture() {
       this.sent = [];
       sockets.push(this);
     }
-    send(bytes) { this.sent.push(Uint8Array.from(bytes)); }
+    send(bytes) {
+      if (bytes.buffer instanceof SharedArrayBuffer) throw new TypeError('value must not be shared');
+      this.sent.push(Uint8Array.from(bytes));
+    }
     close() { this.closed = true; }
     opened() { this.readyState = Socket.OPEN; this.onopen(); }
     packet(bytes) { this.onmessage({data: Uint8Array.from(bytes).buffer}); }
@@ -59,6 +62,17 @@ test('compiled origin and separate channels carry unchanged bounded datagrams', 
   assert.throws(() => api.veraSocketOpen('wss://remote.example/other', 'primary', 827));
   api.veraSocketClose(primary);
   api.veraSocketClose(alternate);
+});
+
+test('a datagram viewing shared Wasm memory is sent without reconnecting', () => {
+  const {api, sockets} = fixture();
+  const id = api.veraSocketOpen('wss://proxy.example', 'primary', 827);
+  sockets[0].opened();
+  const view = new Uint8Array(new SharedArrayBuffer(4));
+  view.set([9, 8, 7, 6]);
+  assert.equal(api.veraSocketSend(id, view), 0);
+  assert.deepEqual(sockets[0].sent, [Uint8Array.of(9, 8, 7, 6)]);
+  assert.equal(sockets[0].closed, undefined);
 });
 
 test('reconnect changes only the physical route and rejects stale connection callbacks', () => {

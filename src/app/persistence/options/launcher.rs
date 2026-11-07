@@ -8,9 +8,9 @@
 use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
 use crate::ui::main_menu_dialogs::options::{
-    DisplayTarget, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels, LauncherOptionsPacked,
-    LauncherOptionsValues, LauncherParentResult, OptionsDialogState, SidebarSize, Zoom,
-    admitted_initial_position, admitted_volume_position,
+    DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels,
+    LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult, OptionsDialogState,
+    SidebarSize, Zoom, admitted_initial_position, admitted_volume_position,
 };
 
 /// Project the retained signed profile into the fresh native-shaped controls.
@@ -36,11 +36,22 @@ pub(crate) fn launcher_values_from_profile(
         yr_original_style: profile.yr_original_style,
         render_interpolation: profile.render_interpolation,
         mouse_wheel_zoom: profile.mouse_wheel_zoom,
+        right_click_orders: profile.right_click_orders,
+        lock_cursor: profile.lock_cursor,
+        vera_icon: profile.vera_icon,
+        hd_radar: profile.hd_radar,
+        smooth_sidebar: profile.smooth_sidebar,
+        hd_map_previews: profile.hd_map_previews,
+        original_font: profile.original_font,
         shift_queue: profile.shift_queue,
         wol_test_service: profile.wol_test_service,
         fps_counter: false,
-        skip_startup_logo: profile.skip_startup_logo,
+        skip_intro: profile.skip_intro,
+        custom_end_game_banner: profile.custom_end_game_banner,
+        custom_end_game_score: profile.custom_end_game_score,
+        custom_end_game_movie: profile.custom_end_game_movie,
         sidebar: profile.sidebar,
+        health_bars: profile.health_bars,
         // The slider's position is the stored level less the retail strength,
         // so gamemd's own bands sit at the left end.
         house_color_position: profile
@@ -89,6 +100,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn play_cue(&mut self, cue: LauncherCue);
     fn store_zoom(&mut self, zoom: Zoom);
     fn store_sidebar(&mut self, size: SidebarSize);
+    /// The `[VERA] HealthBars=` list's pick; presentation only.
+    fn store_health_bars(&mut self, mode: HealthBarMode);
     /// Move the window to the picked screen, or hand it back to the system.
     fn set_display(&mut self, display: DisplayTarget);
     fn set_full_screen(&mut self, full_screen: bool);
@@ -96,10 +109,30 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_yr_original_style(&mut self, yr_original_style: bool);
     fn store_render_interpolation(&mut self, enabled: bool);
     fn store_mouse_wheel_zoom(&mut self, enabled: bool);
+    fn store_right_click_orders(&mut self, enabled: bool);
+    fn store_lock_cursor(&mut self, locked: bool);
+    /// Show VERA's artwork or the red star on the window, taskbar and Dock.
+    fn store_vera_icon(&mut self, vera_icon: bool);
+    /// Draw the radar at the sidebar's window scale (`[VERA] HdRadar=`).
+    fn store_hd_radar(&mut self, enabled: bool);
+    /// Draw the sidebar's art from lightly smoothed xBR copies (`[VERA] SmoothSidebar=`).
+    fn store_smooth_sidebar(&mut self, enabled: bool);
+    /// Show VERA's own map pictures in the setup screens (`[VERA] HdMapPreviews=`).
+    fn store_hd_map_previews(&mut self, enabled: bool);
+    /// Draw interface text in GAME.FNT instead of the vector fonts (`[VERA] OriginalFont=`).
+    fn store_original_font(&mut self, enabled: bool);
+    /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
+    fn store_language(&mut self, tag: String);
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
     fn set_fps_counter(&mut self, shown: bool);
-    fn store_skip_startup_logo(&mut self, skip: bool);
+    fn store_skip_intro(&mut self, skip: bool);
+    /// Whether a finished match draws the country's own end-game picture.
+    fn store_custom_end_game_banner(&mut self, enabled: bool);
+    /// Whether a finished match starts the country's own end-game music.
+    fn store_custom_end_game_score(&mut self, enabled: bool);
+    /// Whether the exit lets the closing commander clip finish.
+    fn store_custom_end_game_movie(&mut self, enabled: bool);
     /// VERA's team-colour strength, as the level the profile stores.
     fn store_house_color_strength(&mut self, strength: u8);
 }
@@ -115,7 +148,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::Cue(cue) => operations.play_cue(cue),
         LauncherOptionsEvent::ZoomSelected(zoom) => operations.store_zoom(zoom),
         LauncherOptionsEvent::SidebarSelected(size) => operations.store_sidebar(size),
+        LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
+        LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),
         LauncherOptionsEvent::FullScreenChanged(full_screen) => {
             operations.set_full_screen(full_screen);
         }
@@ -131,6 +166,21 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::MouseWheelZoomChanged(enabled) => {
             operations.store_mouse_wheel_zoom(enabled);
         }
+        LauncherOptionsEvent::RightClickOrdersChanged(enabled) => {
+            operations.store_right_click_orders(enabled);
+        }
+        LauncherOptionsEvent::LockCursorChanged(locked) => operations.store_lock_cursor(locked),
+        LauncherOptionsEvent::VeraIconChanged(vera_icon) => operations.store_vera_icon(vera_icon),
+        LauncherOptionsEvent::HdRadarChanged(enabled) => operations.store_hd_radar(enabled),
+        LauncherOptionsEvent::SmoothSidebarChanged(enabled) => {
+            operations.store_smooth_sidebar(enabled);
+        }
+        LauncherOptionsEvent::HdMapPreviewsChanged(enabled) => {
+            operations.store_hd_map_previews(enabled);
+        }
+        LauncherOptionsEvent::OriginalFontChanged(enabled) => {
+            operations.store_original_font(enabled);
+        }
         LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
             operations.store_shift_queue(shift_queue);
         }
@@ -138,8 +188,17 @@ pub(crate) fn dispatch_launcher_preview_event(
             operations.store_wol_test_service(wol_test_service);
         }
         LauncherOptionsEvent::FpsCounterChanged(shown) => operations.set_fps_counter(shown),
-        LauncherOptionsEvent::SkipStartupLogoChanged(skip) => {
-            operations.store_skip_startup_logo(skip);
+        LauncherOptionsEvent::SkipIntroChanged(skip) => {
+            operations.store_skip_intro(skip);
+        }
+        LauncherOptionsEvent::CustomEndGameBannerChanged(enabled) => {
+            operations.store_custom_end_game_banner(enabled);
+        }
+        LauncherOptionsEvent::CustomEndGameScoreChanged(enabled) => {
+            operations.store_custom_end_game_score(enabled);
+        }
+        LauncherOptionsEvent::CustomEndGameMovieChanged(enabled) => {
+            operations.store_custom_end_game_movie(enabled);
         }
         LauncherOptionsEvent::HouseColorStrengthChanged(strength) => {
             operations.store_house_color_strength(strength);
@@ -178,8 +237,6 @@ pub(crate) trait LauncherParentOperations {
     fn apply_voice_output(&mut self, value: f32);
     fn primary_dropped(&mut self);
     fn persist_profile(&mut self);
-    fn prepare_network_settings(&mut self);
-    fn route_network(&mut self);
     fn route_keyboard(&mut self);
     fn reopen_parent(&mut self);
 }
@@ -219,7 +276,7 @@ fn apply_launcher_parent(
 ///
 /// gamemd-derived: `OptionsClass__ShowLauncherDialog @ 0x0055FC80` always
 /// applies and destroys the primary before child preparation/route or the one
-/// final write. Network/Keyboard then rebuild a fresh primary without writing.
+/// final write. Keyboard then rebuilds a fresh primary without writing.
 pub(crate) fn dispatch_launcher_parent_result(
     operations: &mut impl LauncherParentOperations,
     dialog: OptionsDialogState,
@@ -235,11 +292,6 @@ pub(crate) fn dispatch_launcher_parent_result(
         LauncherParentResult::Back | LauncherParentResult::Terminal => {
             operations.persist_profile();
         }
-        LauncherParentResult::Network => {
-            operations.prepare_network_settings();
-            operations.route_network();
-            operations.reopen_parent();
-        }
         LauncherParentResult::Keyboard => {
             operations.route_keyboard();
             operations.reopen_parent();
@@ -250,6 +302,24 @@ pub(crate) fn dispatch_launcher_parent_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Health Bars list starts on the retained profile's mode, so the page
+    /// never shows a different strip policy from the one the battle draws.
+    #[test]
+    fn health_bar_mode_reaches_the_dialog_from_the_profile() {
+        use crate::ui::main_menu_dialogs::options::HealthBarMode;
+        for mode in [
+            HealthBarMode::Vanilla,
+            HealthBarMode::Always,
+            HealthBarMode::AlwaysExceptFull,
+        ] {
+            let profile = RetailOptionsProfile {
+                health_bars: mode,
+                ..RetailOptionsProfile::default()
+            };
+            assert_eq!(launcher_values_from_profile(&profile).health_bars, mode);
+        }
+    }
 
     #[test]
     fn profile_projection_uses_reject_to_zero_edges() {
@@ -323,7 +393,7 @@ mod tests {
             unit_action_lines: false,
             show_hidden: true,
             yr_original_style: true,
-            skip_startup_logo: true,
+            skip_intro: true,
             render_interpolation: false,
             mouse_wheel_zoom: true,
             shift_queue: true,
@@ -334,7 +404,7 @@ mod tests {
         assert!(!booleans.target_lines);
         assert!(booleans.show_hidden);
         assert!(booleans.yr_original_style);
-        assert!(booleans.skip_startup_logo);
+        assert!(booleans.skip_intro);
         assert!(!booleans.render_interpolation);
         assert!(booleans.mouse_wheel_zoom);
         assert!(booleans.shift_queue);

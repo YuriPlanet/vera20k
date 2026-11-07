@@ -3,7 +3,6 @@
 //! Separated from animation.rs to stay within the 400-line file limit.
 
 use crate::rules::art_data::ArtRegistry;
-use crate::rules::infantry_sequence::parse_infantry_sequence_registry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::RuleSet;
@@ -618,19 +617,9 @@ fn infantry_action_fixture_with(
          Idle1=56,15,0{hint}\nIdle2=71,15,0,E\nDie1=134,15,0\nDie2=149,15,0\n\
          {sequence_lines}",
     ));
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    let mut rules =
+        RuleSet::from_ini_with_fixed_art_and_sounds_for_test(&ini, &art, sound_names).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(&parse_infantry_sequence_registry(&art));
-    if !sound_names.is_empty() {
-        let mut catalog = String::from("[SoundList]\n");
-        for (index, name) in sound_names.iter().enumerate() {
-            catalog.push_str(&format!("{index}={name}\n"));
-        }
-        rules.bind_type_sound_references(
-            &ini,
-            &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(&catalog)),
-        );
-    }
     assert_eq!(
         rules
             .animation_sequence("E1")
@@ -970,6 +959,122 @@ fn sequence_sound_plays_on_its_stage_frame_after_a_step() {
 /// the stage growing past the count, so a Walk sound plays once per cycle of
 /// real stage steps (Techno `0x006FABC4`, then the sequencer).
 #[test]
+fn layered_slave_sequence_keeps_runtime_frames_and_sound_in_one_bank() {
+    use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
+    use crate::rules::sound_ini::SoundRegistry;
+    use crate::sim::stage::StageClass;
+    use crate::sim::timer::CdTimer;
+    use std::sync::Arc;
+
+    let Some((root, mut art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let sequence = art
+        .section_or_empty("SLAV")
+        .read_string("Sequence", "", 0x20);
+    assert!(!sequence.is_empty(), "the retail slave names its sequence");
+    art.merge(&IniFile::from_str(&format!(
+        "[{sequence}]\nWalkSounds=2 SlaveAttack\n\
+         [PARTIALSLAV]\nSequence=PartialSlave\n[PartialSlave]\nWalk=100\n",
+    )));
+    let stock = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(&root, &art, &["SlaveAttack"])
+        .unwrap();
+    let stock_walk = *stock
+        .animation_sequence_in_category(crate::rules::object_type::ObjectCategory::Infantry, "SLAV")
+        .unwrap()
+        .infantry_action(3)
+        .unwrap();
+    assert_eq!(stock_walk.frames_per_facing, 6);
+    let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+        root,
+        None,
+        art,
+        Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=SlaveAttack\n",
+        ))),
+        Arc::default(),
+    )
+    .unwrap();
+    let (rules, _, _, _) = owner
+        .load_scenario(
+            NativeScenarioRulesPrefix::Campaign(None),
+            &IniFile::from_str("[BuildingTypes]\nSEQUENCEPROBE=SLAV\n[SLAV]\nImage=PARTIALSLAV\n"),
+        )
+        .unwrap()
+        .into_parts();
+    let walk = rules
+        .animation_sequence_in_category(crate::rules::object_type::ObjectCategory::Infantry, "SLAV")
+        .unwrap()
+        .infantry_action(3)
+        .unwrap();
+    assert_eq!(walk.start_frame, 100);
+    assert_eq!(walk.frames_per_facing, stock_walk.frames_per_facing);
+    assert_eq!(walk.facings, stock_walk.facings);
+
+    let mut sim = crate::sim::world::Simulation::with_seed(0);
+    let house = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            house, 0, None, true, 0, 10,
+        ));
+    assert_eq!(
+        rules.object("SLAV").unwrap().category,
+        crate::rules::object_type::ObjectCategory::Building
+    );
+    let infantry = rules
+        .object_in_category(crate::rules::object_type::ObjectCategory::Infantry, "SLAV")
+        .unwrap();
+    let id = sim
+        .construct_resolved_object_limbo_at_height(
+            infantry,
+            "Americans",
+            10,
+            10,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .lifecycle
+        .set_in_limbo_for_test(false);
+    assert!(
+        sim.infantry_do_action(
+            id,
+            3,
+            false,
+            &rules,
+            crate::sim::world::FrameEffects::default()
+        )
+        .unwrap()
+    );
+    set_infantry_walk_motion(&mut sim, id, true);
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .install_native_stage_fixture(StageClass::from_native_fixture(
+            8,
+            1,
+            CdTimer::from_raw(0, 2),
+            2,
+            1,
+        ));
+    sim.sound_events.clear_for_test();
+    assert!(!sim.infantry_sequencer(id, &rules, crate::sim::world::FrameEffects::default()));
+    let actor = sim.substrate.entities.get(id).unwrap();
+    assert_eq!(actor.infantry_sprite_pose(), Some((3, 8)));
+    assert_eq!(resolve_shp_frame(walk, 224, 8), 102);
+    assert!(
+        matches!(sim.sound_events.as_slice(), [crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }] if sound_id == "SlaveAttack")
+    );
+}
+
+#[test]
 fn walk_sequence_sound_plays_once_per_cycle_of_stage_steps() {
     use crate::sim::stage::StageClass;
     use crate::sim::timer::CdTimer;
@@ -1217,7 +1322,6 @@ fn animation_catalog_rules(ready_start: u16) -> RuleSet {
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini)
         .expect("animation catalog rules with fixed ART supplied to UnitType reads");
     rules.install_art_data(ArtRegistry::from_ini(&art_ini));
-    rules.bind_animation_sequences(&parse_infantry_sequence_registry(&art_ini));
     rules
 }
 
@@ -1283,7 +1387,6 @@ fn mirage_voxel_unit_shp_layout_does_not_create_a_second_stand_walk_clock() {
     let art = IniFile::from_str("[IMAGE]\nVoxel=yes\nFacings=8\nWalkFrames=6\nStandingFrames=1\n");
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(&parse_infantry_sequence_registry(&art));
     assert!(
         rules.animation_sequence("ACTOR").is_some(),
         "a Unit keeps its actual immutable SHP layout even when its normal body is voxel"

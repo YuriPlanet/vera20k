@@ -3,6 +3,9 @@
 //! Original FoggedObjectClass building constructor4D0EF0 records type/frame,
 //! owner and location, not a live Building pointer. DrawAll4D1890 uses these
 //! records after the original object has changed or ceased to exist.
+//! Only BuildingClass::FreezeInFog (`0x00457AA0`) makes them: the overlay
+//! (`0x004D0980`), smudge (`0x004D0C40`) and terrain (`0x004D1370`)
+//! constructors have no callers, so DrawAll's cases for those never run.
 
 use serde::{Deserialize, Serialize};
 

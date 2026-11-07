@@ -118,9 +118,9 @@ fn holds_what_rebinds_on_every_reached_pass() {
     };
 
     assert_eq!(holds_what("KEPT"), rules.p_type_id_by_name("Smoke2"));
-    for system in ["OMITTED", "CLEARED"] {
-        assert_eq!(holds_what(system), None, "{system}");
-    }
+    assert_eq!(holds_what("OMITTED"), rules.p_type_id_by_name(""));
+    assert!(holds_what("OMITTED").is_some());
+    assert_eq!(holds_what("CLEARED"), None);
     let named_none = rules.p_type_id_by_name("none");
     assert!(named_none.is_some());
     assert_eq!(holds_what("NAMEDNONE"), named_none);
@@ -758,6 +758,7 @@ fn after_rules_class_references(context: RulesProcessContext) -> RuleSet {
             trace.into_registry_state_discarding_events(),
             context,
             &crate::rules::sound_ini::EvaRegistry::default(),
+            &crate::rules::sound_ini::SoundRegistry::default(),
         )
         .unwrap();
     RuleSet::from_processed_rules(&processed).unwrap()
@@ -1019,6 +1020,7 @@ fn retail_published_references_are_pinned() {
                             skip_root_color_add_and_mode: false,
                         },
                         &crate::rules::sound_ini::EvaRegistry::default(),
+                        &crate::rules::sound_ini::SoundRegistry::default(),
                     )
                     .unwrap();
                 assert_eq!(publish(&reset), published, "{mode:?} after a reset");

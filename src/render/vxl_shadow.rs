@@ -101,16 +101,29 @@ pub(crate) fn body_sample_offset(center: [f32; 2], offset: [i32; 2]) -> Option<[
     Some(result)
 }
 
-/// The stencil of a selected VXL section at a supplied matrix.
+/// 756860's raster of one section's stencil before its stores: the 8.8
+/// origin and column steps, and the crop.
+#[derive(Debug, Clone)]
+pub(crate) struct StencilRaster {
+    pub limb: usize,
+    pub origin: [u16; 2],
+    pub step_x: [u16; 2],
+    pub step_y: [u16; 2],
+    pub rect: [i32; 6],
+}
+
+/// The stencil raster of a selected VXL section at a supplied matrix, with a
+/// crop the 256-square buffer holds.
 /// `VoxelAnimClass::DrawIt` passes 753F90 the bounce body's drawing matrix
 /// directly, with the identity viewer and no HVA (`0x00749CE8`).
-pub(crate) fn render_matrix(
+pub(crate) fn prepare_matrix(
     vxl: &VxlFile,
     matrix: super::Mat4,
     shadow_index: i32,
     considered_aircraft: bool,
-) -> Option<VxlSprite> {
-    let limb = vxl.limbs.get(usize::try_from(shadow_index).ok()?)?;
+) -> Option<StencilRaster> {
+    let limb_index = usize::try_from(shadow_index).ok()?;
+    let limb = vxl.limbs.get(limb_index)?;
     let nx = usize::from(limb.size_x);
     let ny = usize::from(limb.size_y);
     if nx == 0 || ny == 0 {
@@ -151,32 +164,65 @@ pub(crate) fn render_matrix(
             load(256.0)?,
         ))? as u16;
     }
+    limb.native_spans.as_ref()?;
+    let [_, _, x, y, w, h] = rect;
+    if x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > 256 || y + h > 256 {
+        return None;
+    }
+    Some(StencilRaster {
+        limb: limb_index,
+        origin,
+        step_x,
+        step_y,
+        rect,
+    })
+}
+
+/// The columns 756860 marks, those whose start offset is not -1, as
+/// `x | y << 8` in its order. None when an offset cannot be read, which
+/// fails its raster.
+pub(crate) fn stencil_columns(limb: &super::VxlLimb) -> Option<Vec<u32>> {
     let spans = limb.native_spans.as_ref()?;
-    let mut visibility = vec![0u8; 65536];
-    let mut row = origin;
-    for y in 0..ny {
-        let mut xy = row;
+    let nx = usize::from(limb.size_x);
+    let mut columns = Vec::new();
+    for y in 0..usize::from(limb.size_y) {
         for x in 0..nx {
             let p = spans
                 .start_offset
                 .checked_add((y * nx + x).checked_mul(4)?)?;
             let start = i32::from_le_bytes(spans.body.get(p..p + 4)?.try_into().ok()?);
             if start != -1 {
-                let address = usize::from(xy[0] >> 8) | usize::from(xy[1] & 0xff00);
-                // The second byte is adjacent, not independently wrapped X.
-                *visibility.get_mut(address)? = 1;
-                *visibility.get_mut(address + 1)? = 1;
+                columns.push(x as u32 | (y as u32) << 8);
             }
-            xy[0] = xy[0].wrapping_add(step_x[0]);
-            xy[1] = xy[1].wrapping_add(step_x[1]);
         }
-        row[0] = row[0].wrapping_add(step_y[0]);
-        row[1] = row[1].wrapping_add(step_y[1]);
     }
-    let [ox, oy, x, y, w, h] = rect;
-    if x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > 256 || y + h > 256 {
-        return None;
+    Some(columns)
+}
+
+/// The visibility-map byte 756860 marks first for `column` (`x | y << 8`):
+/// the high bytes of its separately wrapped 8.8 Y and X words.
+pub(crate) fn stencil_address(raster: &StencilRaster, column: u32) -> u16 {
+    let (x, y) = ((column & 0xff) as u16, (column >> 8) as u16);
+    let [word_x, word_y]: [u16; 2] = std::array::from_fn(|axis| {
+        raster.origin[axis]
+            .wrapping_add(raster.step_y[axis].wrapping_mul(y))
+            .wrapping_add(raster.step_x[axis].wrapping_mul(x))
+    });
+    (word_x >> 8) | (word_y & 0xff00)
+}
+
+/// `raster`'s stencil: two adjacent bytes at each marked column. None when
+/// a column's offset cannot be read or its second byte falls past the
+/// buffer.
+pub(crate) fn render_raster(vxl: &VxlFile, raster: &StencilRaster) -> Option<VxlSprite> {
+    let mut visibility = vec![0u8; 65536];
+    for column in stencil_columns(vxl.limbs.get(raster.limb)?)? {
+        let address = usize::from(stencil_address(raster, column));
+        // The second byte is adjacent, not independently wrapped X.
+        *visibility.get_mut(address)? = 1;
+        *visibility.get_mut(address + 1)? = 1;
     }
+    let [ox, oy, x, y, w, h] = raster.rect;
     let mut pixels = Vec::with_capacity((w * h) as usize);
     for row in y..y + h {
         let p = (row * 256 + x) as usize;
@@ -190,6 +236,30 @@ pub(crate) fn render_matrix(
         offset_x: ox as f32,
         offset_y: oy as f32,
     })
+}
+
+/// [`prepare_matrix`]'s stencil, rasterized.
+pub(crate) fn render_matrix(
+    vxl: &VxlFile,
+    matrix: super::Mat4,
+    shadow_index: i32,
+    considered_aircraft: bool,
+) -> Option<VxlSprite> {
+    render_raster(
+        vxl,
+        &prepare_matrix(vxl, matrix, shadow_index, considered_aircraft)?,
+    )
+}
+
+/// [`render_matrix`] as an image for the GPU raster.
+pub(crate) fn matrix_image(
+    vxl: &VxlFile,
+    matrix: super::Mat4,
+    shadow_index: i32,
+    considered_aircraft: bool,
+) -> Option<super::VoxelImage<'_>> {
+    let raster = prepare_matrix(vxl, matrix, shadow_index, considered_aircraft)?;
+    Some(super::VoxelImage::Stencil { vxl, raster })
 }
 
 fn projected_quad(

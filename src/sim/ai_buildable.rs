@@ -78,7 +78,7 @@ pub(crate) fn first_owner_compatible<'a>(
 }
 
 pub(crate) fn owner_allows(candidate: &ObjectType, country_bit: u32, rules: &RuleSet) -> bool {
-    !candidate.owner.is_empty() && rules.house_type_mask(&candidate.owner) & country_bit != 0
+    !candidate.owner.is_empty() && candidate.owner_mask(rules) & country_bit != 0
 }
 
 /// Exact identity/shell tail of `HouseClass__FirstBuildableFromArray`.
@@ -103,7 +103,7 @@ pub fn candidate_allowed(
     }
     // FirstBuildable505259 skips ForbiddenHouses==-1, including a
     // nonempty authored list whose parsed OR-mask is all bits set.
-    let forbidden = rules.house_type_mask(&candidate.forbidden_houses);
+    let forbidden = candidate.forbidden_houses_mask(rules);
     if forbidden != u32::MAX && forbidden & country.actual != 0 {
         return false;
     }

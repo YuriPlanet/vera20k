@@ -39,14 +39,8 @@ pub(crate) struct FlareStyle {
     pub(crate) z_adjust: i32,
 }
 
-pub(super) fn build(
-    from: DriveCoord,
-    target: DriveCoord,
-    wall_ms: u32,
-    main: &MainRngDraws,
-    style: FlareStyle,
-    view: SurfaceLineViewport,
-) -> Vec<SurfaceDraw> {
+/// One designation's flare shade.
+fn shade(main: &MainRngDraws) -> i32 {
     //705905 draws the stock 190..270 shade. Phobos's hook at 7058F6 resumes
     //at 705976, past that call, and draws its 745..1000 scale from the same
     //process Main stream instead.
@@ -54,7 +48,35 @@ pub(super) fn build(
     let random = main.ranged(190, 270);
     #[cfg(feature = "phobos")]
     let random = main.ranged(745, 1000);
-    geometry(from, wobble(target, wall_ms), random, style, view)
+    random
+}
+
+/// The flare shade each designating Techno drew at the last composite:
+/// Techno705860 requests one per Main_Tick's composite, and a draw between
+/// composites shows the same beam again.
+#[derive(Debug, Default)]
+pub(crate) struct AirstrikeShades {
+    shades: Vec<(u64, i32)>,
+}
+
+impl AirstrikeShades {
+    /// One composite's requests, in Tactical's designation order (after the
+    /// Laser and Bolt requests, `0x006D48F1`).
+    pub(crate) fn step(&mut self, calls: &[TacticalLineCall], main: &MainRngDraws) {
+        self.shades.clear();
+        for call in calls {
+            if let TacticalLineCall::Designation { id, .. } = *call {
+                self.shades.push((id, shade(main)));
+            }
+        }
+    }
+
+    fn get(&self, id: u64) -> Option<i32> {
+        self.shades
+            .iter()
+            .find(|(held, _)| *held == id)
+            .map(|&(_, shade)| shade)
+    }
 }
 
 ///705860 requests one Main ranged value, even if clipping/A/Z hides the beam.
@@ -172,8 +194,12 @@ pub(crate) enum TacticalLineCall {
     Opaque {
         rect: [i32; 4],
         word: u16,
+        /// The A offset of a store kept only where A is nonzero.
+        a_offset: Option<[i32; 2]>,
     },
     Designation {
+        /// The designating Techno.
+        id: u64,
         coords: [DriveCoord; 2],
         style: FlareStyle,
     },
@@ -183,13 +209,19 @@ pub(crate) enum TacticalLineCall {
 /// At logical zoom1 their resolved rectangles and RGB565 words can feed the
 /// same surface command stream as the following translucent beam. Geometry
 /// and action-line admission remain with target_lines, not another producer.
+/// A psychic detection dash keeps its A gate: `a_offset` takes a drained
+/// pixel to the A pixel its gate reads (the stores' rounded camera minus the
+/// floored camera of the surface and A planes).
 pub(crate) fn drain_opaque(
     calls: &mut Vec<TacticalLineCall>,
     instances: &mut Vec<crate::render::batch::SpriteInstance>,
     camera: [i32; 2],
+    a_offset: [i32; 2],
 ) {
+    use crate::render::draw_state::{FX_SURFACE_A_NONZERO, FX_SURFACE_A_ZERO};
     for instance in instances.drain(..) {
         debug_assert_eq!(instance.alpha, 1.);
+        debug_assert_eq!(instance.draw_state.fx_flags & FX_SURFACE_A_ZERO, 0);
         let rect = [
             instance.position[0] as i32 - camera[0],
             instance.position[1] as i32 - camera[1],
@@ -198,26 +230,52 @@ pub(crate) fn drain_opaque(
         ];
         let word = crate::render::native_surface_format::RGB565
             .pack_rgb8(instance.tint.map(|v| (v * 255.).round() as u8));
-        calls.push(TacticalLineCall::Opaque { rect, word });
+        let a_offset =
+            (instance.draw_state.fx_flags & FX_SURFACE_A_NONZERO != 0).then_some(a_offset);
+        calls.push(TacticalLineCall::Opaque {
+            rect,
+            word,
+            a_offset,
+        });
     }
 }
 
+/// The action stores and designation beams, each beam with its last
+/// composite's shade and its target wobbled by that composite's clock
+/// (`0x006D482D`). A designation that has drawn no shade yet waits for the
+/// next composite.
 pub(crate) fn composite(
     calls: &[TacticalLineCall],
     wall_ms: u32,
-    main: &MainRngDraws,
+    shades: &AirstrikeShades,
     view: SurfaceLineViewport,
 ) -> Vec<SurfaceDraw> {
     let mut draws = Vec::new();
     for call in calls {
         match *call {
-            TacticalLineCall::Opaque { rect, word } => {
-                draws.push(SurfaceDraw::OpaqueRect { rect, word })
-            }
+            TacticalLineCall::Opaque {
+                rect,
+                word,
+                a_offset: None,
+            } => draws.push(SurfaceDraw::OpaqueRect { rect, word }),
+            TacticalLineCall::Opaque {
+                rect,
+                word,
+                a_offset: Some(a_offset),
+            } => draws.push(SurfaceDraw::GatedOpaqueRect {
+                rect,
+                word,
+                a_offset,
+            }),
             TacticalLineCall::Designation {
+                id,
                 coords: [from, to],
                 style,
-            } => draws.extend(build(from, to, wall_ms, main, style, view)),
+            } => {
+                if let Some(shade) = shades.get(id) {
+                    draws.extend(geometry(from, wobble(to, wall_ms), shade, style, view));
+                }
+            }
         }
     }
     draws

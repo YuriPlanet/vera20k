@@ -877,9 +877,13 @@ fn retail_sniper_ifv_guard_scan_uses_its_boarded_weapon_range() {
         let target = sim
             .spawn_object("E2", "Russians", x + distance, y, 192, rules)
             .expect("spawn visible infantry target");
+        // The player has seen the enemy: the campaign scan gate needs +0x41B.
+        crate::sim::arena_fixture::discover(&mut sim, target);
         let owner = entity(&sim, ifv).owner();
         sim.fog.reveal_all_for_owner(owner);
-        let pick = sim.greatest_threat_represented(rules, None, ifv, ScanMission::Guard, None);
+        let pick = sim
+            .greatest_threat_represented(rules, None, ifv, ScanMission::Guard, None)
+            .and_then(crate::sim::combat::TargetKind::object_id);
         assert_eq!(
             pick,
             expected_pick.then_some(target),
@@ -892,7 +896,8 @@ fn retail_sniper_ifv_guard_scan_uses_its_boarded_weapon_range() {
         // accepting the distant infantry once its longer-range gunner leaves.
         unload_at_clear_exit(&mut sim, rules, ifv, passenger);
         assert_eq!(
-            sim.greatest_threat_represented(rules, None, ifv, ScanMission::Guard, None),
+            sim.greatest_threat_represented(rules, None, ifv, ScanMission::Guard, None)
+                .and_then(crate::sim::combat::TargetKind::object_id),
             None,
             "empty IFV Guard scan at {distance} cells"
         );

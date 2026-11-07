@@ -7,10 +7,11 @@
 //! table and later asks read the copy. The world stays the source of truth:
 //! the tables are emptied before each batch, never saved or hashed, and debug
 //! builds compare every reuse with a fresh read. Asks outside a batch read
-//! the world directly.
+//! the world directly. A batch asks about a few thousand of the map's cells,
+//! so the tables mark what they keep and the reset empties only those.
 
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use crate::map::cell_index::NativeCellIdentity as Cell;
 use crate::map::entities::EntityCategory;
@@ -33,6 +34,37 @@ pub(crate) struct EntryFacts {
     /// Each real cell's [`PlainCell`] bits, 0 until asked.
     plain: Vec<AtomicU32>,
     blockers: Vec<OnceLock<BlockerFacts>>,
+    /// The real cells whose `cells` or `plain` entry this batch filled.
+    cells_kept: KeptBits,
+    /// The slots whose `blockers` entry this batch filled.
+    blockers_kept: KeptBits,
+}
+
+/// One bit per table entry, set when an ask fills it, so a reset empties only
+/// the filled entries. Searches on several threads may set one bit at once.
+#[derive(Default)]
+struct KeptBits(Vec<AtomicU64>);
+
+impl KeptBits {
+    fn mark(&self, index: usize) {
+        let (word, bit) = (&self.0[index / 64], 1u64 << (index % 64));
+        if word.load(Ordering::Relaxed) & bit == 0 {
+            word.fetch_or(bit, Ordering::Relaxed);
+        }
+    }
+
+    /// `empty` every marked entry and clear the marks, then fit them to `len`
+    /// entries.
+    fn empty_marked(&mut self, len: usize, mut empty: impl FnMut(usize)) {
+        for (word_index, word) in self.0.iter_mut().enumerate() {
+            let mut bits = std::mem::take(word.get_mut());
+            while bits != 0 {
+                empty(word_index * 64 + bits.trailing_zeros() as usize);
+                bits &= bits - 1;
+            }
+        }
+        self.0.resize_with(len.div_ceil(64), AtomicU64::default);
+    }
 }
 
 impl std::fmt::Debug for EntryFacts {
@@ -48,23 +80,31 @@ impl EntryFacts {
     /// Forget every kept fact and fit the tables to `cells` real cells and
     /// `slots` entity slots, before a batch.
     pub(crate) fn reset(&mut self, cells: usize, slots: usize) {
-        crate::sim::parallel::for_each_mut(&mut self.cells, |kept| {
-            kept.take();
+        let (kept_cells, plain) = (&mut self.cells, &mut self.plain);
+        self.cells_kept.empty_marked(cells, |index| {
+            kept_cells[index].take();
+            *plain[index].get_mut() = 0;
         });
         self.cells.resize_with(cells, OnceLock::new);
-        crate::sim::parallel::for_each_mut(&mut self.plain, |kept| {
-            *kept.get_mut() = 0;
-        });
         self.plain.resize_with(cells, AtomicU32::default);
-        crate::sim::parallel::for_each_mut(&mut self.blockers, |kept| {
-            kept.take();
+        let blockers = &mut self.blockers;
+        self.blockers_kept.empty_marked(slots, |slot| {
+            blockers[slot].take();
         });
         self.blockers.resize_with(slots, OnceLock::new);
     }
 
-    /// Real cell `index`'s facts, kept from this batch's first ask.
+    /// Real cell `index`'s facts, kept from this batch's first ask
+    /// ([`Self::keep`]).
     pub(super) fn cell(&self, index: usize, read: impl Fn() -> CellFacts) -> &CellFacts {
-        let kept = self.cells[index].get_or_init(&read);
+        let kept = &self.cells[index];
+        let kept = match kept.get() {
+            Some(kept) => kept,
+            None => {
+                self.cells_kept.mark(index);
+                Self::keep(kept, read())
+            }
+        };
         debug_assert!(
             !crate::sim::touch_log::live_read_check_enabled() || *kept == read(),
             "real cell {index} changed during a path batch"
@@ -80,6 +120,7 @@ impl EntryFacts {
         let cell = match kept.load(Ordering::Relaxed) {
             0 => {
                 let cell = read();
+                self.cells_kept.mark(index);
                 kept.store(cell.0, Ordering::Relaxed);
                 cell
             }
@@ -92,14 +133,32 @@ impl EntryFacts {
         cell
     }
 
-    /// The facts of the entity in `slot`, kept from this batch's first ask.
+    /// The facts of the entity in `slot`, kept from this batch's first ask
+    /// ([`Self::keep`]).
     pub(super) fn blocker(&self, slot: usize, read: impl Fn() -> BlockerFacts) -> &BlockerFacts {
-        let kept = self.blockers[slot].get_or_init(&read);
+        let kept = &self.blockers[slot];
+        let kept = match kept.get() {
+            Some(kept) => kept,
+            None => {
+                self.blockers_kept.mark(slot);
+                Self::keep(kept, read())
+            }
+        };
         debug_assert!(
             !crate::sim::touch_log::live_read_check_enabled() || *kept == read(),
             "the entity in slot {slot} changed during a path batch"
         );
         kept
+    }
+
+    /// Keep the `read` facts in `kept`, unless another search kept its own
+    /// first, and return the kept ones. Each search reads before the lock,
+    /// which then holds only for the copy, so searches asking at once read
+    /// side by side instead of waiting for one read. Every read sees the one
+    /// unchanged world, so the copies are equal and either may stay.
+    fn keep<T>(kept: &OnceLock<T>, read: T) -> &T {
+        let _ = kept.set(read);
+        kept.get().expect("kept just now")
     }
 }
 
@@ -219,7 +278,7 @@ impl PlainCell {
                     .speed_costs
                     .cost_for_speed_type(speed)
                     .map_or(0, |cost| {
-                        (1 << (8 + n)) | (u32::from(cost != 0) << (16 + n))
+                        (1 << (8 + n)) | (u32::from(!cost.is_zero()) << (16 + n))
                     })
             })
             .fold(0, |rows, row| rows | row);
@@ -253,10 +312,18 @@ impl PlainCell {
         self.0 as u8 as i8
     }
 
-    /// Whether the land row for `speed` is nonzero, when the cell has one
-    /// ([`CellFacts::speed_costs`]).
-    pub(super) fn row_nonzero(self, speed: SpeedType) -> Option<bool> {
-        let n = Self::SPEEDS.iter().position(|&known| known == speed)?;
+    /// The row the word keeps for SpeedType `speed`, for
+    /// [`Self::row_nonzero`]; `None` for one it keeps none for.
+    pub(super) fn speed_row(speed: SpeedType) -> Option<u32> {
+        Self::SPEEDS
+            .iter()
+            .position(|&known| known == speed)
+            .map(|n| n as u32)
+    }
+
+    /// Whether the land row `n` ([`Self::speed_row`]) is nonzero, when the
+    /// cell has one ([`CellFacts::speed_costs`]).
+    pub(super) fn row_nonzero(self, n: u32) -> Option<bool> {
         (self.0 >> (8 + n) & 1 != 0).then_some(self.0 >> (16 + n) & 1 != 0)
     }
 }
@@ -336,5 +403,105 @@ impl EntryFacts {
             sim.substrate.entities.slot_count(),
         );
         facts
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cell_facts(level: i8) -> CellFacts {
+        CellFacts {
+            coord: (1, 2),
+            level,
+            slope: 0,
+            flags: 0,
+            ground: (0, None),
+            deck: (0, None),
+            in_playfield: true,
+            overlay: OverlayCell::default(),
+            terrain_object: false,
+            ground_listed: false,
+            deck_listed: false,
+            speed_costs: SpeedCostProfile::default(),
+        }
+    }
+
+    fn blocker(id: u64, rx: u16) -> BlockerFacts {
+        BlockerFacts::of(&GameEntity::test_default(id, "MTNK", "Americans", rx, 0), 0)
+    }
+
+    /// A reset empties what the last batch kept on both sides of a mark-word
+    /// boundary, and a slot kept before the table shrinks comes back empty
+    /// when it regrows.
+    #[test]
+    fn a_reset_forgets_every_fact_the_last_batch_kept() {
+        let mut facts = EntryFacts::default();
+        facts.reset(130, 70);
+        for index in [0, 63, 64, 129] {
+            facts.cell(index, || cell_facts(1));
+            facts.plain(index, || PlainCell(PlainCell::KNOWN | 1));
+        }
+        facts.blocker(69, || blocker(1, 5));
+        facts.reset(130, 10);
+        facts.reset(130, 70);
+        for index in [0, 63, 64, 129] {
+            assert_eq!(facts.cell(index, || cell_facts(2)).level, 2);
+            assert_eq!(
+                facts.plain(index, || PlainCell(PlainCell::KNOWN | 2)),
+                PlainCell(PlainCell::KNOWN | 2)
+            );
+        }
+        assert_eq!(facts.blocker(69, || blocker(2, 9)).rx, 9);
+    }
+
+    /// Two searches asking about one cell, or one blocker, at once both
+    /// read it, neither waiting for the other's read, and both get the facts
+    /// the table keeps.
+    #[test]
+    fn searches_asking_at_once_read_side_by_side() {
+        use std::sync::atomic::AtomicUsize;
+        let mut facts = EntryFacts::default();
+        facts.reset(1, 1);
+        let reading = AtomicUsize::new(0);
+        // Each search's first read waits until the other's has started.
+        let side_by_side = || {
+            reading.fetch_add(1, Ordering::SeqCst);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while reading.load(Ordering::SeqCst) % 2 != 0 {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "a search waited for the other's read"
+                );
+                std::thread::yield_now();
+            }
+        };
+        let at_once = |ask: &(dyn Fn(&dyn Fn()) + Sync)| {
+            std::thread::scope(|scope| {
+                for _ in 0..2 {
+                    scope.spawn(|| ask(&side_by_side));
+                }
+            });
+        };
+        at_once(&|wait| {
+            let first = std::cell::Cell::new(true);
+            let kept = facts.cell(0, || {
+                if first.replace(false) {
+                    wait();
+                }
+                cell_facts(3)
+            });
+            assert_eq!(*kept, cell_facts(3));
+        });
+        at_once(&|wait| {
+            let first = std::cell::Cell::new(true);
+            let kept = facts.blocker(0, || {
+                if first.replace(false) {
+                    wait();
+                }
+                blocker(1, 5)
+            });
+            assert_eq!(*kept, blocker(1, 5));
+        });
     }
 }

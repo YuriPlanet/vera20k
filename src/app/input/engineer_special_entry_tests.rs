@@ -285,7 +285,10 @@ fn stopping_before_entry_does_not_grind_or_hide_the_engineer() {
         for planning in [false, true] {
             let (mut sim, rules, actor, hover) = scene(hospital);
             click(&mut sim, &rules, actor, &hover, planning);
-            for _ in 0..2 {
+            // A plan's order publishes at the frame-5 send boundary
+            // (PlanMgr 0x00637550) and runs even after a later Stop, so let
+            // it start first; the engineer is still cells from the door.
+            for _ in 0..10 {
                 step(&mut sim, &rules);
             }
             assert!(sim.apply_command(

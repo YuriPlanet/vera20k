@@ -2,6 +2,7 @@
 
 use crate::render::batch::SpriteInstance;
 
+use super::geometry::NativeRadarSurfaceGeometry;
 use super::minimap::MinimapRenderer;
 use super::projection::minimap_screen_point_to_camera_top_left;
 use super::viewport::{
@@ -84,22 +85,67 @@ fn clamp_native_radar_click_cell(
 }
 
 fn signed_tracker_or_inverse_cell(
-    surface: super::geometry::NativeRadarSurfaceGeometry,
+    surface: NativeRadarSurfaceGeometry,
     pixel: (i32, i32),
     tracker_cell: Option<(i16, i16)>,
 ) -> (i16, i16) {
     tracker_cell.unwrap_or_else(|| surface.surface_pixel_to_signed_cell(pixel))
 }
 
+/// The pixels one radar point reads. Native reads one generated pixel for
+/// both the object lookup and the empty-click inverse.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RadarPick {
+    /// The geometry whose inverse names an empty click's cell.
+    inverse: NativeRadarSurfaceGeometry,
+    object_pixel: (i32, i32),
+    cell_pixel: (i32, i32),
+}
+
+impl RadarPick {
+    const fn native(surface: NativeRadarSurfaceGeometry, pixel: (i32, i32)) -> Self {
+        Self {
+            inverse: surface,
+            object_pixel: pixel,
+            cell_pixel: pixel,
+        }
+    }
+
+    /// The native gate admits `cursor`. The HD radar draws objects on the
+    /// native grid and terrain at `hd_scale` times it, so it reads the HD
+    /// pixel under the window pixel's `centre`: objects at the native pixel
+    /// holding it, and the cell its terrain shows there.
+    fn at(
+        surface: NativeRadarSurfaceGeometry,
+        rect: [f32; 4],
+        hd_scale: Option<u32>,
+        cursor: (f32, f32),
+        centre: (f32, f32),
+    ) -> Option<Self> {
+        let screen = NativeRadarScreenGeometry::new(surface, rect);
+        let pixel = screen.screen_to_surface_pixel(cursor)?;
+        let Some(scale) = hd_scale else {
+            return Some(Self::native(surface, pixel));
+        };
+        let fine = screen.fine_surface_pixel(centre, scale);
+        let blocks = scale as i32;
+        Some(Self {
+            inverse: surface.subdivided(scale),
+            object_pixel: (fine.0 / blocks, fine.1 / blocks),
+            cell_pixel: fine,
+        })
+    }
+}
+
 fn native_input_target_at_pixel(
-    surface: super::geometry::NativeRadarSurfaceGeometry,
+    pick: RadarPick,
     tracker: &super::tracker::RetainedRadarTracker,
     simulation: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
-    pixel: (i32, i32),
 ) -> NativeRadarInputTarget {
-    let hit = tracker_object_signed_cell(tracker, simulation, rules, pixel);
-    let signed = signed_tracker_or_inverse_cell(surface, pixel, hit.map(|(_, cell)| cell));
+    let hit = tracker_object_signed_cell(tracker, simulation, rules, pick.object_pixel);
+    let signed =
+        signed_tracker_or_inverse_cell(pick.inverse, pick.cell_pixel, hit.map(|(_, cell)| cell));
     NativeRadarInputTarget {
         cell: (signed.0 as u16, signed.1 as u16),
         tracker_hit: hit.map(|(id, _)| id),
@@ -211,22 +257,23 @@ impl MinimapRenderer {
 
     /// `RadarClass::GetObjectAtRadarPixel @ 0x00656750`: screen to generated
     /// pixel, reverse tracker lookup, then exact x87 cell inverse fallback.
+    /// `centre` is the middle of the window pixel under `screen`, in the same
+    /// layout space; only the HD radar reads it ([`RadarPick::at`]).
     pub(crate) fn native_input_target_in_rect(
         &self,
         screen: (f32, f32),
+        centre: (f32, f32),
         rect: [f32; 4],
         simulation: &crate::sim::world::Simulation,
         rules: &crate::rules::ruleset::RuleSet,
     ) -> Option<NativeRadarInputTarget> {
         let surface = self.native_radar_surface?;
-        let pixel =
-            NativeRadarScreenGeometry::new(surface, rect).screen_to_surface_pixel(screen)?;
+        let pick = RadarPick::at(surface, rect, self.hd_scale(), screen, centre)?;
         Some(native_input_target_at_pixel(
-            surface,
+            pick,
             &self.radar_tracker,
             simulation,
             rules,
-            pixel,
         ))
     }
 
@@ -236,6 +283,7 @@ impl MinimapRenderer {
         &self,
         screen_x: f32,
         screen_y: f32,
+        centre: (f32, f32),
         rect_x: f32,
         rect_y: f32,
         rect_w: f32,
@@ -248,6 +296,7 @@ impl MinimapRenderer {
     ) -> Option<NativeRadarCameraTarget> {
         let input = self.native_input_target_in_rect(
             (screen_x, screen_y),
+            centre,
             [rect_x, rect_y, rect_w, rect_h],
             simulation,
             rules,
@@ -407,6 +456,7 @@ mod tests {
                 veteran_radar_invisible: false,
             }),
             local_front: false,
+            surface_edge: None,
         }
     }
 
@@ -684,7 +734,8 @@ mod tests {
             update.origin = pixel;
             tracker.update_object(update, false);
         }
-        let input_target = native_input_target_at_pixel(surface, &tracker, sim, rules, pixel);
+        let input_target =
+            native_input_target_at_pixel(RadarPick::native(surface, pixel), &tracker, sim, rules);
         assert_eq!(
             input_target.tracker_hit,
             (input["tracked"] != false).then_some(id)
@@ -766,6 +817,33 @@ mod tests {
         assert_ne!(
             world, level_only,
             "the slope contribution cannot be reconstructed from Level"
+        );
+    }
+
+    #[test]
+    fn hd_radar_click_takes_the_cell_drawn_under_the_window_pixel() {
+        let surface = NativeRadarSurfaceGeometry::from_raw_rect(30, 20, 300, 180).unwrap();
+        let rect = [100.0, 50.0, 140.0, 108.0];
+        let content = NativeRadarScreenGeometry::new(surface, rect).content_rect();
+        // A sidebar at 3x: the window pixel on the last third of native pixel
+        // (10, 20), which the native gate rounds to the next one over.
+        let corner = (content[0] + 10.0 + 2.0 / 3.0, content[1] + 20.0 + 1.0 / 3.0);
+        let centre = (corner.0 + 0.5 / 3.0, corner.1 + 0.5 / 3.0);
+        assert_eq!(
+            RadarPick::at(surface, rect, None, corner, centre),
+            Some(RadarPick::native(surface, (11, 20)))
+        );
+        let pick = RadarPick::at(surface, rect, Some(3), corner, centre).unwrap();
+        // Objects: the native pixel drawn there. Terrain: the HD pixel drawn
+        // there, and the cell whose shroud and fog the HD radar paints on it.
+        assert_eq!((pick.object_pixel, pick.cell_pixel), ((10, 20), (32, 61)));
+        let cell = signed_tracker_or_inverse_cell(pick.inverse, pick.cell_pixel, None);
+        // The cell the HD radar's composition reads for that pixel.
+        assert_eq!(
+            (cell.0 as u16, cell.1 as u16),
+            surface
+                .subdivided(3)
+                .surface_pixel_to_visibility_cell(pick.cell_pixel)
         );
     }
 

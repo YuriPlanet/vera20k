@@ -152,9 +152,10 @@ fn rules() -> RuleSet {
 }
 
 fn rules_from(text: &str) -> RuleSet {
-    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+    let mut rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
         &IniFile::from_str(text),
         &IniFile::from_str(ART),
+        &["YuriMindControl", "MindCleared", "MasterMindOverloadVoice"],
     )
     .expect("mind control rules");
     let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(ART));
@@ -393,6 +394,54 @@ fn capture_takes_the_target_and_records_its_house() {
     // Computer house: one RandomRanged(1, 100), and every stock choice hunts.
     assert_eq!(queued_mission(&sim, gi), Some(MissionType::Hunt));
     assert_eq!(sim.scenario_rng.state(), replay.state());
+}
+
+/// Owner+60's Techno::Detach71043D releases only the matching ring, without
+/// freeing the captive. A different Anim of the same type is independent.
+#[test]
+fn attached_animation_retirement_clears_only_the_matching_control_ring() {
+    let rules = rules();
+    let mut sim = sim(3);
+    let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
+    let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
+    assert!(sim.capture_unit(
+        yuri,
+        gi,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default()
+    ));
+    let first = sim
+        .substrate
+        .entities
+        .get(gi)
+        .unwrap()
+        .mind_control
+        .ring_anim
+        .unwrap();
+    sim.attach_control_ring(gi, "MINDANIM", &rules);
+    let current = sim
+        .substrate
+        .entities
+        .get(gi)
+        .unwrap()
+        .mind_control
+        .ring_anim
+        .unwrap();
+    assert_ne!(first, current);
+    sim.destroy_anim(first, &rules);
+    let captive = sim.substrate.entities.get(gi).unwrap();
+    assert_eq!(captive.mind_control.ring_anim, Some(current));
+    assert!(
+        captive.is_parachuted(),
+        "the other attached Anim still counts"
+    );
+    sim.destroy_anim(current, &rules);
+    let captive = sim.substrate.entities.get(gi).unwrap();
+    assert_eq!(captive.mind_control.ring_anim, None);
+    assert_eq!(captive.mind_control.controller(), Some(yuri));
+    assert!(!captive.is_parachuted());
+    assert_eq!(victims(&sim, yuri), [gi]);
 }
 
 /// A captured building wears its ring at its GetCoords (`0x00447AC0`, the
@@ -1722,13 +1771,19 @@ fn an_attack_order_captures_without_damage() {
     assert_eq!(victims(&sim, mind), [gi]);
 }
 
-/// Retail `rulesmd.ini` (the local `ini/`; skipped without it): the stock
-/// controllers' managers and the mind-control globals bind.
+/// Real startup/mode/map readers retain stock cues over bad map overrides;
+/// a type's unknown first override still falls back through live FreeUnit.
 #[test]
 fn retail_rules_bind_the_stock_controllers() {
-    let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+    let patch = IniFile::from_str(
+        "[AudioVisual]\nYuriMindControlSound=Unknown\nMindClearedSound=Unknown\n\
+         MasterMindOverloadDeathSound=Unknown\n[E1]\nMindClearedSound=Unknown\n",
+    );
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
+    else {
         return;
     };
+    let mut rules = retail.rules;
     let limits = |kind: &str| {
         init_capture_manager(rules.object(kind).unwrap(), &rules)
             .map(|manager| (manager.max_control, manager.infinite))
@@ -1770,6 +1825,39 @@ fn retail_rules_bind_the_stock_controllers() {
             "{kind}"
         );
     }
+    let frames = crate::assets::shp_file::ShpFile::frame_count_from_bytes(
+        &crate::rules::retail_ini_fixture::retail_archive_bytes("MINDANIM.SHP").unwrap(),
+    )
+    .unwrap();
+    rules.bind_anim_frame_count_for_test("MINDANIM", i32::from(frames));
+    let mut sim = sim(37);
+    let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
+    let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
+    assert!(sim.capture_unit(yuri, gi, &rules, None, FrameEffects::default()));
+    let ring = sim
+        .substrate
+        .entities
+        .get(gi)
+        .unwrap()
+        .mind_control
+        .ring_anim
+        .unwrap();
+    sim.sound_events.clear_for_test();
+    let rng = sim.scenario_rng.native_state_hex();
+    assert!(sim.free_unit(yuri, gi, &rules, None, FrameEffects::default()));
+    assert_eq!(voc_sounds(&sim), ["MindCleared"]);
+    assert_eq!(owner(&sim, gi), "Americans");
+    assert!(
+        sim.substrate
+            .entities
+            .get(gi)
+            .unwrap()
+            .mind_control
+            .ring_anim
+            .is_none()
+    );
+    assert!(sim.anim(ring).is_none_or(|anim| !anim.in_logic_vector()));
+    assert_eq!(sim.scenario_rng.native_state_hex(), rng);
 }
 
 /// UnitClass::Deploy's CanDeploySlashUnload refuses a mind-controlled unit
@@ -2267,6 +2355,7 @@ fn a_due_ivan_bomb_precedes_the_same_turn_mastermind_overload() {
         assert!(controller.lifecycle.object_alive());
         let expired = controller
             .bomb
+            .as_ref()
             .unwrap()
             .expired(sim.session.binary_frame() as i32);
         if expired {
@@ -2808,5 +2897,46 @@ fn warhead_mind_control_anim_overrides_the_global_ring() {
             .interner
             .resolve(fallback_sim.anim(ring).unwrap().type_id()),
         "MINDANIM"
+    );
+}
+
+/// TechnoClass::ChangeOwner deselects the local player's selected object
+/// before the owner swap (`0x007014B9..0x007014CF`); another house's
+/// selected byte is left alone.
+#[test]
+fn a_captured_selected_unit_of_the_local_player_is_deselected() {
+    let rules = rules();
+    let mut sim = sim(3);
+    let local = sim.interner.get("Americans");
+    sim.session.set_current_house_for_test(local);
+    let mut captured = Vec::new();
+    for (owner, ry) in [("Americans", 10), ("Russians", 14)] {
+        let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, ry);
+        let victim = spawn(&mut sim, &rules, "E1", owner, 12, ry);
+        sim.substrate
+            .entities
+            .get_mut(victim)
+            .unwrap()
+            .selection
+            .select();
+        let effects = crate::sim::world::FrameEffects::default();
+        assert!(sim.capture_unit(yuri, victim, &rules, None, effects));
+        captured.push(victim);
+    }
+    let selected = |id| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .selection
+            .is_selected()
+    };
+    assert!(
+        !selected(captured[0]),
+        "the local player's captive leaves the selection"
+    );
+    assert!(
+        selected(captured[1]),
+        "only the local player's selection changes"
     );
 }

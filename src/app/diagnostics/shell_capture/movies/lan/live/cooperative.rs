@@ -9,6 +9,12 @@
 //! House to win (the map TAction's owner, the same mutation on both), BC6
 //! opens with Quit only, both press it, and `0xBC7` opens. The guest then
 //! presses its Continue back to the shell.
+//!
+//! The online variant plays the same chooser in a VERA room over the
+//! deployed lobby and wins the first stage the same way. BC6's Continue
+//! there leaves at once for the kept room, which comes back on the next
+//! stage without `TXT_SAVE_CAMP_AVAILABLE` in either setup's chat; the host
+//! starts it as a first start, and it runs over the relay.
 
 use super::*;
 use crate::app::diagnostics::shell_capture::movies::abort_return::AbortReturnInput;
@@ -16,12 +22,15 @@ use crate::app::diagnostics::shell_capture::movies::abort_return::AbortReturnInp
 /// Both players open the menu at this committed frame, so each B6 still
 /// counts two live humans and offers Observe.
 const OBSERVE_FRAME: u32 = 150;
-/// Native frames the retried mission must run.
+/// Native frames the mission after BC6 must run.
 const RETRY_FRAMES: u32 = 90;
 /// Render frames BC6 stays open before Continue, as a player's reaction:
 /// a peer still finishing the match reads round records as in-match
 /// packets and drops them, as `0x0048D1E0` does.
 const CONTINUE_DELAY: u32 = 60;
+/// How long the kept room may take to seat both players on the next stage:
+/// the partner's re-seat and the host's options cross the lobby's polls.
+const ROOM_WAIT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CoopPhase {
@@ -31,6 +40,7 @@ enum CoopPhase {
     Playing,
     Observing,
     AwaitResult,
+    AwaitRoom,
     AwaitNext,
     Retry,
     AwaitCampaignEnd,
@@ -46,6 +56,9 @@ pub(super) enum CoopEnding {
     /// The last stage is won and `0xBC7` opens; `continue_to_shell` presses
     /// its Continue.
     CampaignEnd { continue_to_shell: bool },
+    /// Online: the first stage is won, BC6's Continue returns both players
+    /// to the kept room on the next stage, and the host starts it there.
+    Advance,
 }
 
 pub(super) struct CooperativeRun {
@@ -53,33 +66,55 @@ pub(super) struct CooperativeRun {
     /// The host takes Use Saved Campaign instead of the Soviet row.
     saved: bool,
     ending: CoopEnding,
+    /// A WOL room over the deployed lobby instead of the LAN service.
+    online: bool,
     campaign_end: Option<Value>,
     abort: Option<AbortReturnInput>,
     first_map: Option<String>,
     result: Option<Value>,
-    retry_startup: Option<Value>,
-    retry_first_frame: u32,
+    /// The stage the kept room came back on.
+    next_map: Option<String>,
+    room_since: Option<Instant>,
+    /// The mission after BC6: the retried one, or online the next stage.
+    next_startup: Option<Value>,
+    next_first_frame: u32,
     result_frame: Option<u32>,
 }
 
 impl CooperativeRun {
-    pub(super) fn new(saved: bool, ending: CoopEnding) -> Self {
+    pub(super) fn new(saved: bool, ending: CoopEnding, online: bool) -> Self {
         Self {
             phase: CoopPhase::OpenChooser,
             saved,
             ending,
+            online,
             campaign_end: None,
             abort: None,
             first_map: None,
             result: None,
-            retry_startup: None,
-            retry_first_frame: 0,
+            next_map: None,
+            room_since: None,
+            next_startup: None,
+            next_first_frame: 0,
             result_frame: None,
         }
     }
 
     pub(super) fn done(&self) -> bool {
         self.phase == CoopPhase::Done
+    }
+
+    /// Both processes flag every human House to win at the same frame.
+    pub(super) fn flags_win(&self) -> bool {
+        self.ending != CoopEnding::Retry
+    }
+
+    fn setup_settled(&self, state: &AppState, host: bool) -> bool {
+        if self.online {
+            super::online::online_setup_settled(state, host)
+        } else {
+            setup_settled(state, host)
+        }
     }
 
     /// The host's BC: Choose Map, Cooperative, the Soviet row, Use Map. True
@@ -93,7 +128,7 @@ impl CooperativeRun {
     ) -> Result<bool> {
         match self.phase {
             CoopPhase::OpenChooser
-                if rendered == PresentedShell::NetworkSetup && setup_settled(state, true) =>
+                if rendered == PresentedShell::NetworkSetup && self.setup_settled(state, true) =>
             {
                 setup_button(state, crate::ui::multiplayer_setup::CHOOSE_MAP)?;
                 self.phase = CoopPhase::Chooser;
@@ -124,7 +159,7 @@ impl CooperativeRun {
                 self.phase = CoopPhase::ChooserReturn;
             }
             CoopPhase::ChooserReturn
-                if rendered == PresentedShell::NetworkSetup && setup_settled(state, true) =>
+                if rendered == PresentedShell::NetworkSetup && self.setup_settled(state, true) =>
             {
                 let launch = state.match_state.session.network_setup().context("BC")?;
                 ensure!(
@@ -157,12 +192,68 @@ impl CooperativeRun {
         }
     }
 
-    /// The campaign-end variant holds the simulation at the win frame, so
-    /// both processes flag the win before the same tick.
+    /// A winning variant holds the simulation at the win frame, so both
+    /// processes flag the win before the same tick.
     pub(super) fn holds_simulation(&self, state: &AppState) -> bool {
         self.phase == CoopPhase::Playing
-            && matches!(self.ending, CoopEnding::CampaignEnd { .. })
+            && self.flags_win()
             && committed_frame(state).is_ok_and(|frame| frame >= OBSERVE_FRAME)
+    }
+
+    /// Online, BC6's Continue returns both players to the kept room. True
+    /// once it seats both on Cooperative's stage after the won one. Retail's
+    /// rematch `+0xAC` (`0x005C46E0`) seats them without a join, so the
+    /// partner's return must not print `+0x94`'s saved-campaign notice.
+    pub(super) fn room_returned(
+        &mut self,
+        state: &AppState,
+        host: bool,
+        route: &mut Vec<Value>,
+        frame: u32,
+    ) -> Result<bool> {
+        if self.phase != CoopPhase::AwaitRoom || !self.setup_settled(state, host) {
+            return Ok(false);
+        }
+        let launch = state
+            .match_state
+            .session
+            .network_setup()
+            .context("kept room")?;
+        let next = launch.selected_map_file.clone();
+        if launch.humans.len() == 2
+            && launch.mode.id == cooperative_mode(state)?.id
+            && next.is_some()
+            && next != self.first_map
+        {
+            let notice =
+                App::csf_label(state, "TXT_SAVE_CAMP_AVAILABLE", "TXT_SAVE_CAMP_AVAILABLE");
+            let shown = state
+                .frontend
+                .multiplayer_setup
+                .as_ref()
+                .is_some_and(|setup| {
+                    setup
+                        .chat
+                        .lines
+                        .iter()
+                        .any(|line| String::from_utf16_lossy(&line.text) == notice)
+                });
+            ensure!(
+                !shown,
+                "the kept room printed {notice:?} for the partner's return"
+            );
+            route.push(json!({"render_frame":frame,"action":"kept room back in Cooperative on the next stage","map":next}));
+            self.next_map = next;
+            self.phase = CoopPhase::AwaitNext;
+            return Ok(true);
+        }
+        ensure!(
+            self.room_since.get_or_insert_with(Instant::now).elapsed() < ROOM_WAIT,
+            "the kept room did not come back on the next stage: mode {}, map {next:?}, {} players",
+            launch.mode.id,
+            launch.humans.len()
+        );
+        Ok(false)
     }
 
     /// Everything after the first mission loaded.
@@ -186,7 +277,7 @@ impl CooperativeRun {
                             == crate::skirmish_modes::MpModeClass::Cooperative),
                     "the live match is not Cooperative"
                 );
-                if matches!(self.ending, CoopEnding::CampaignEnd { .. }) {
+                if self.flags_win() {
                     let committed = committed_frame(state)?;
                     ensure!(
                         committed == OBSERVE_FRAME,
@@ -221,9 +312,10 @@ impl CooperativeRun {
                 if frame < opened + CONTINUE_DELAY {
                     return Ok(());
                 }
+                // Online, the relay transport ends with the mission.
                 ensure!(
                     state.match_state.live_network.is_none()
-                        && state.match_state.lan_service.is_some(),
+                        && (self.online || state.match_state.lan_service.is_some()),
                     "BC6 kept the match's private channels"
                 );
                 let page = state
@@ -231,61 +323,67 @@ impl CooperativeRun {
                     .coop_score_page
                     .as_ref()
                     .context("BC6 page")?;
-                if matches!(self.ending, CoopEnding::CampaignEnd { .. }) {
-                    ensure!(
-                        page.victory && !page.model.can_continue && page.campaign_end.is_some(),
-                        "the last stage's win must offer only Quit and the campaign end"
-                    );
-                    self.result = Some(json!({"render_frame":frame,"victory":page.victory,
-                        "rows":page.model.rows.iter().map(|row| row.name.clone()).collect::<Vec<_>>()}));
-                    let rect = crate::app::input::coop_score::layout(state)
-                        .control_rect(crate::ui::coop_score_shell::QUIT)
-                        .context("BC6 Quit")?;
-                    set_window_pointer_to_rect_center(state, rect);
-                    crate::app::input::coop_score::cursor_moved(state);
-                    crate::app::input::coop_score::mouse(state, MouseButton::Left, true);
-                    crate::app::input::coop_score::mouse(state, MouseButton::Left, false);
-                    MoviesCapture::restore_neutral_pointer(state);
-                    route.push(json!({"render_frame":frame,"action":"BC6 opened after the last stage; Quit clicked"}));
-                    self.phase = CoopPhase::AwaitCampaignEnd;
-                    return Ok(());
+                let rows = page
+                    .model
+                    .rows
+                    .iter()
+                    .map(|row| row.name.clone())
+                    .collect::<Vec<_>>();
+                match self.ending {
+                    CoopEnding::CampaignEnd { .. } => {
+                        ensure!(
+                            page.victory && !page.model.can_continue && page.campaign_end.is_some(),
+                            "the last stage's win must offer only Quit and the campaign end"
+                        );
+                        self.result =
+                            Some(json!({"render_frame":frame,"victory":page.victory,"rows":rows}));
+                        press_score_button(state, crate::ui::coop_score_shell::QUIT)?;
+                        route.push(json!({"render_frame":frame,"action":"BC6 opened after the last stage; Quit clicked"}));
+                        self.phase = CoopPhase::AwaitCampaignEnd;
+                    }
+                    CoopEnding::Advance => {
+                        ensure!(
+                            page.victory && page.model.can_continue && page.campaign_end.is_none(),
+                            "a won stage with stages left must offer Continue"
+                        );
+                        self.result =
+                            Some(json!({"render_frame":frame,"victory":page.victory,"rows":rows}));
+                        press_score_button(state, crate::ui::coop_score_shell::CONTINUE)?;
+                        route.push(json!({"render_frame":frame,"action":"BC6 opened after the won stage; Continue clicked"}));
+                        self.phase = CoopPhase::AwaitRoom;
+                    }
+                    CoopEnding::Retry => {
+                        ensure!(
+                            !page.victory && page.model.can_continue,
+                            "both humans observing loses a mission that can be retried"
+                        );
+                        let next = state
+                            .match_state
+                            .session
+                            .network_setup()
+                            .and_then(|launch| launch.selected_map_file.clone());
+                        ensure!(
+                            next.is_some() && next == self.first_map,
+                            "a defeat keeps the mission: {:?} -> {next:?}",
+                            self.first_map
+                        );
+                        self.result = Some(json!({"render_frame":frame,"victory":page.victory,
+                            "rows":rows,"next_map":next}));
+                        press_score_button(state, crate::ui::coop_score_shell::CONTINUE)?;
+                        ensure!(
+                            state
+                                .match_state
+                                .session
+                                .cooperative_round()
+                                .is_some_and(|round| round.local_ready()),
+                            "BC6 Continue did not mark the local player ready"
+                        );
+                        route.push(
+                            json!({"render_frame":frame,"action":"BC6 opened; Continue clicked"}),
+                        );
+                        self.phase = CoopPhase::AwaitNext;
+                    }
                 }
-                ensure!(
-                    !page.victory && page.model.can_continue,
-                    "both humans observing loses a mission that can be retried"
-                );
-                let next = state
-                    .match_state
-                    .session
-                    .network_setup()
-                    .and_then(|launch| launch.selected_map_file.clone());
-                ensure!(
-                    next.is_some() && next == self.first_map,
-                    "a defeat keeps the mission: {:?} -> {next:?}",
-                    self.first_map
-                );
-                self.result = Some(json!({"render_frame":frame,"victory":page.victory,
-                    "rows":page.model.rows.iter().map(|row| row.name.clone()).collect::<Vec<_>>(),
-                    "next_map":next}));
-                let layout = crate::app::input::coop_score::layout(state);
-                let rect = layout
-                    .control_rect(crate::ui::coop_score_shell::CONTINUE)
-                    .context("BC6 Continue")?;
-                set_window_pointer_to_rect_center(state, rect);
-                crate::app::input::coop_score::cursor_moved(state);
-                crate::app::input::coop_score::mouse(state, MouseButton::Left, true);
-                crate::app::input::coop_score::mouse(state, MouseButton::Left, false);
-                MoviesCapture::restore_neutral_pointer(state);
-                ensure!(
-                    state
-                        .match_state
-                        .session
-                        .cooperative_round()
-                        .is_some_and(|round| round.local_ready()),
-                    "BC6 Continue did not mark the local player ready"
-                );
-                route.push(json!({"render_frame":frame,"action":"BC6 opened; Continue clicked"}));
-                self.phase = CoopPhase::AwaitNext;
             }
             CoopPhase::AwaitNext => {
                 if state.frontend.screen != GameScreen::InGame {
@@ -293,11 +391,28 @@ impl CooperativeRun {
                 }
                 ensure!(
                     state.match_state.live_network.is_some(),
-                    "the retried mission has no real command transport"
+                    "the mission after BC6 has no real command transport"
                 );
-                self.retry_startup = Some(startup_receipt(state)?);
-                self.retry_first_frame = committed_frame(state)?;
-                route.push(json!({"render_frame":frame,"action":"BC6 round over UDP; retried mission loaded"}));
+                let advance = self.ending == CoopEnding::Advance;
+                if advance {
+                    let loaded = state
+                        .match_state
+                        .session
+                        .network_setup()
+                        .and_then(|launch| launch.selected_map_file.clone());
+                    ensure!(
+                        loaded == self.next_map,
+                        "the next stage loaded {loaded:?}, not the kept room's {:?}",
+                        self.next_map
+                    );
+                }
+                self.next_startup = Some(startup_receipt(state)?);
+                self.next_first_frame = committed_frame(state)?;
+                route.push(json!({"render_frame":frame,"action":if advance {
+                    "the kept room's next stage loaded over the relay"
+                } else {
+                    "BC6 round over UDP; retried mission loaded"
+                }}));
                 self.phase = CoopPhase::Retry;
             }
             CoopPhase::AwaitCampaignEnd => {
@@ -367,10 +482,11 @@ impl CooperativeRun {
             CoopPhase::Retry => {
                 ensure!(
                     state.frontend.screen == GameScreen::InGame,
-                    "the retried mission left gameplay"
+                    "the mission after BC6 left gameplay"
                 );
-                if committed_frame(state)? >= self.retry_first_frame + RETRY_FRAMES {
-                    route.push(json!({"render_frame":frame,"action":"retried mission ran"}));
+                if committed_frame(state)? >= self.next_first_frame + RETRY_FRAMES {
+                    route.push(json!({"render_frame":frame,"action":
+                        if self.ending == CoopEnding::Advance { "next stage ran" } else { "retried mission ran" }}));
                     self.phase = CoopPhase::Done;
                 }
             }
@@ -381,7 +497,7 @@ impl CooperativeRun {
 
     pub(super) fn receipt(&self, state: &AppState) -> Result<Value> {
         ensure!(self.done(), "live co-op capture has not finished");
-        if self.ending != CoopEnding::Retry {
+        if matches!(self.ending, CoopEnding::CampaignEnd { .. }) {
             return Ok(json!({"first_map":self.first_map,"result":self.result,
                 "campaign_end":self.campaign_end,"screen":format!("{:?}",state.frontend.screen)}));
         }
@@ -389,13 +505,34 @@ impl CooperativeRun {
             .match_state
             .sim_runtime
             .as_ref()
-            .context("retried simulation")?
+            .context("simulation after BC6")?
             .simulation;
-        Ok(json!({"first_map":self.first_map,"result":self.result,
-            "retry_startup":self.retry_startup,"retry_first_native_frame":self.retry_first_frame,
+        let mut receipt = json!({"first_map":self.first_map,"result":self.result,
             "final_native_frame":sim.session().binary_frame(),
-            "checksum_failure":format!("{:?}",sim.pending_network_failure())}))
+            "checksum_failure":format!("{:?}",sim.pending_network_failure())});
+        if self.ending == CoopEnding::Advance {
+            receipt["next_map"] = json!(self.next_map);
+            receipt["next_startup"] = json!(self.next_startup);
+            receipt["next_first_native_frame"] = json!(self.next_first_frame);
+        } else {
+            receipt["retry_startup"] = json!(self.next_startup);
+            receipt["retry_first_native_frame"] = json!(self.next_first_frame);
+        }
+        Ok(receipt)
     }
+}
+
+/// Clicks one of BC6's buttons through its ordinary mouse input.
+fn press_score_button(state: &mut AppState, control: u16) -> Result<()> {
+    let rect = crate::app::input::coop_score::layout(state)
+        .control_rect(control)
+        .with_context(|| format!("BC6 control {control:#06x}"))?;
+    set_window_pointer_to_rect_center(state, rect);
+    crate::app::input::coop_score::cursor_moved(state);
+    crate::app::input::coop_score::mouse(state, MouseButton::Left, true);
+    crate::app::input::coop_score::mouse(state, MouseButton::Left, false);
+    MoviesCapture::restore_neutral_pointer(state);
+    Ok(())
 }
 
 fn committed_frame(state: &AppState) -> Result<u32> {

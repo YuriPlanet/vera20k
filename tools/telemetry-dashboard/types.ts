@@ -1,8 +1,8 @@
 /**
- * Schema mirror of `src/sim/telemetry.rs` (v29); keep both in step.
+ * Schema mirror of `src/sim/telemetry.rs` (v30); keep both in step.
  */
 
-export const SCHEMA_VERSION = 29;
+export const SCHEMA_VERSION = 30;
 
 export type EntityCategory = "Unit" | "Infantry" | "Aircraft" | "Structure";
 
@@ -122,6 +122,16 @@ export interface TerrainGrid {
   land_types: string;
   slope_types: string;
   deck_rises: string;
+}
+
+export interface NetworkSample {
+  /** Frames the relay has sealed past the local simulation. */
+  backlog_frames: number;
+  catching_up: boolean;
+  /** Draws skipped while catching up, this match. */
+  skipped_draws: number;
+  /** The relay seals slower than the match's own rate. */
+  relay_slowed: boolean;
 }
 
 export interface TimingSample {
@@ -396,6 +406,8 @@ export interface TelemetrySnapshot {
   report_point: ReportPoint | null;
   render: RenderTimingReport | null;
   logs: LogBatch | null;
+  /** Online relay matches only (schema v30). */
+  network: NetworkSample | null;
   /** Absent in ordinary builds, including the read-only telemetry dashboard. */
   debug_tools?: DebugToolsReport | null;
 }

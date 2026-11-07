@@ -9,6 +9,24 @@ use super::build::{
 use super::tubes::auto_tube_direction_for_tile;
 use super::*;
 
+/// The CliffBack neighbour test of `CellClass::RecalcAttributes @
+/// 0x0047D2B0` (all three writer sites share it): a cell is behind a cliff
+/// when one of six neighbours, probed in this order and stopping at the first
+/// hit, stands at least four levels above it. `level_at` reads a neighbour's
+/// signed level, a missing cell's through the shared Dummy.
+pub(crate) fn is_behind_cliff(
+    x: i16,
+    y: i16,
+    level: i8,
+    mut level_at: impl FnMut(i16, i16) -> i8,
+) -> bool {
+    const OFFSETS: [(i16, i16); 6] = [(0, -1), (-1, 0), (2, 2), (1, 1), (-1, 1), (1, -1)];
+    let threshold = i16::from(level).wrapping_add(4);
+    OFFSETS
+        .into_iter()
+        .any(|(dx, dy)| i16::from(level_at(x.wrapping_add(dx), y.wrapping_add(dy))) >= threshold)
+}
+
 /// Non-Clone input adapter for `CellClass::RecalcAttributes`. Authored loading
 /// owns its lazy asset cache and animation latch; the admitted runtime bridge
 /// path borrows immutable resident inputs and supplies current playfield bounds.
@@ -24,7 +42,9 @@ pub(crate) struct LoadCellRecalcState<'a> {
     terrain_rules: Option<&'a TerrainRules>,
     overlay_types: &'a OverlayTypeRegistry,
     playfield: Option<PlayfieldBounds>,
-    pub(super) lat_config: Option<lat::LatConfig>,
+    /// Authored loading owns its LAT groups; the runtime bridge path borrows
+    /// its catalog's, as every foot mark's Recalc reaches it.
+    pub(super) lat_config: Option<std::borrow::Cow<'a, lat::LatConfig>>,
     pub(super) slope_config: Option<lat::SlopeFixupConfig>,
     pub(super) cliff_back_impassability: u8,
     metadata_cache: HashMap<TileKey, TileMetadata>,
@@ -45,7 +65,8 @@ impl<'a> LoadCellRecalcState<'a> {
         pixel_conversion_bounds: PixelConversionBounds,
     ) -> Self {
         let ids = crate::map::rmg::tiles::TileIds::from_keys(&theater_data.rmg_tiles);
-        let lat_config = lat_enabled.then(|| lat::LatConfig::from_tile_ids(&ids));
+        let lat_config =
+            lat_enabled.then(|| std::borrow::Cow::Owned(lat::LatConfig::from_tile_ids(&ids)));
         let slope_config = lat_enabled.then(|| lat::SlopeFixupConfig::from_tile_ids(&ids));
         Self {
             theater_data: Some(theater_data),
@@ -172,7 +193,7 @@ impl<'a> LoadCellRecalcState<'a> {
             terrain_rules: Some(&catalog.terrain_rules),
             overlay_types,
             playfield: bounds,
-            lat_config: catalog.lat_config.clone(),
+            lat_config: catalog.lat_config.as_ref().map(std::borrow::Cow::Borrowed),
             slope_config: catalog.slope_config,
             cliff_back_impassability: catalog.cliff_back_impassability,
             metadata_cache: HashMap::new(),
@@ -549,7 +570,7 @@ impl ResolvedTerrainGrid {
                 }
 
                 if level_override != -1 {
-                    self.cells[index].level = level_override as u8;
+                    self.set_cell_level(index, level_override as u8);
                 }
                 self.cells[index].height_in_pixels = retained_height_in_pixels;
 
@@ -635,7 +656,7 @@ impl ResolvedTerrainGrid {
             (x, y.wrapping_add(1)),
             (x.wrapping_sub(1), y),
         ];
-        let lat_tile = state.lat_config.as_ref().map_or(tile, |lat_config| {
+        let lat_tile = state.lat_config.as_deref().map_or(tile, |lat_config| {
             lat::lat_fixed_tile_live(tile, lat_config, || {
                 cardinal_coords.map(|(nx, ny)| self.authored_load_neighbor_tile(nx, ny))
             })
@@ -670,27 +691,21 @@ impl ResolvedTerrainGrid {
     }
 
     pub(super) fn authored_load_cell_is_behind_cliff(&self, index: usize) -> bool {
-        const OFFSETS: [(i16, i16); 6] = [(0, -1), (-1, 0), (2, 2), (1, 1), (-1, 1), (1, -1)];
         let cell = &self.cells[index];
-        let x = cell.rx as i16;
-        let y = cell.ry as i16;
-        let threshold = i16::from(cell.level as i8).wrapping_add(4);
-        for (dx, dy) in OFFSETS {
-            let nx = x.wrapping_add(dx);
-            let ny = y.wrapping_add(dy);
-            let neighbor_level = if let Some(neighbor_index) = self.native_fixed_cell_index(nx, ny)
-            {
-                self.cells[neighbor_index].level as i8
-            } else {
-                self.shared_cell_dummy
-                    .stamp_coord(i32::from(nx), i32::from(ny));
-                self.shared_cell_dummy.snapshot().level
-            };
-            if i16::from(neighbor_level) >= threshold {
-                return true;
-            }
-        }
-        false
+        is_behind_cliff(
+            cell.rx as i16,
+            cell.ry as i16,
+            cell.level as i8,
+            |nx, ny| {
+                if let Some(neighbor_index) = self.native_fixed_cell_index(nx, ny) {
+                    self.cells[neighbor_index].level as i8
+                } else {
+                    self.shared_cell_dummy
+                        .stamp_coord(i32::from(nx), i32::from(ny));
+                    self.shared_cell_dummy.snapshot().level
+                }
+            },
+        )
     }
 
     fn apply_authored_load_cliff_back_rock(

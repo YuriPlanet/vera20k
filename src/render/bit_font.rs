@@ -1,21 +1,33 @@
-//! Lower-layer bitmap font: atlas, glyph table, measurement, wrap state
-//! machine, missing-glyph fallback. Owned by `RendererState.bit_font` and shared
+//! The interface text engine's front: measurement, wrapping and sprite
+//! emission for every text path, owned by `RendererState.bit_font` and shared
 //! by `render::shell_text` (Path A) and `render::sidebar_text` (Path B).
 //!
-//! Glyph data comes from a parsed [`crate::assets::fnt_file::FntFile`]
-//! (GAME.FNT). Falls back to a hardcoded 5x7 path when the FNT is unavailable.
+//! gamemd's `BitFont` draws GAME.FNT. VERA draws through
+//! [`crate::render::text_engine`] in one of two [`FontMode`]s:
+//! - Modern: the bundled vector fonts, shaped and drawn at window resolution.
+//! - Original: GAME.FNT. Text it fully covers keeps native measurement and
+//!   wrapping (the ports below) and draws its glyphs scaled evenly; text it
+//!   cannot draw (Cyrillic, Greek, Arabic, the hanzi it boxes) is shaped with
+//!   the bundled fonts filling the gaps.
 //!
 //! Public surface:
-//!   - [`BitFont::from_fnt`] / [`BitFont::fallback_5x7`] constructors
+//!   - [`BitFont::from_fnt`] / [`BitFont::vector_only`] constructors
 //!   - [`BitFont::text_width`] / [`BitFont::wrap_layout`] for measurement
+//!   - [`BitFont::fit_box`] / [`BitFont::fit_line`] / [`BitFont::fitted`] to
+//!     squeeze text too long for its box
 //!   - [`BitFont::build_text`] for sprite-instance emission
 //!   - [`BitFont::missing_color_xor`] for caller-side tint adjustment
 
+use std::borrow::Cow;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::assets::fnt_file::{FntFile, FntGlyph};
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::shell_text_reveal::{PathAReveal, encoded_unit_rgb};
+pub use crate::render::text_engine::{Fit, FontMode};
+use crate::render::text_engine::{ShapedText, TextEngine};
 
 /// Hardcoded inter-glyph spacing.
 pub const CHAR_SPACING: u32 = 1;
@@ -27,22 +39,41 @@ pub const TAB_ORIGIN: u32 = 0;
 pub const CELL_HEIGHT: u32 = 17;
 /// Bitmap rows per glyph for GAME.FNT.
 pub const BITMAP_ROWS: u32 = 16;
-/// Source codepoint for the missing-glyph fallback (CP1252 'deg').
-pub const MISSING_GLYPH_CODEPOINT: u16 = 0xB0;
+/// Source codepoint for the missing-glyph stand-in: the letter `X`. Native
+/// reaches it as the lookup-table **byte offset** `0xB0` (`0x0043472A`), so the
+/// codepoint is `0xB0 / 2`; reading the offset as a codepoint gave the old
+/// value `0xB0`, which is CP1252 'deg' - slot #133 of retail `GAME.FNT`, width
+/// 4, where `X` is slot #58, width 7.
+pub const MISSING_GLYPH_CODEPOINT: u16 = 0x58;
 /// Darken-strip alpha for sidebar Ready overlay.
 pub const DARKEN_ALPHA: u8 = 175;
 /// Default fallback space width when FNT lacks a glyph at 0x20 (defensive).
 const DEFAULT_SPACE_WIDTH: u32 = 4;
-/// Codepoint range packed into the atlas (ASCII + Latin-1 + CJK/fullwidth).
-/// End-exclusive at u16::MAX, which is reserved for the missing-glyph sentinel.
-const PACKED_CODEPOINT_RANGE: std::ops::Range<u16> = 0x20..0xFFFF;
+/// GAME.FNT's baseline row when it has no 'H' to measure it from.
+const DEFAULT_BASELINE_ROW: u32 = 13;
 
-/// UV + pixel-width record for a single glyph in the atlas.
+/// A GAME.FNT glyph: its pixel width and the outline font's glyph for it.
+/// Test fonts without an outline font place whole cells at `uv_*`.
 #[derive(Clone, Copy, Debug)]
 pub struct GlyphEntry {
     pub uv_origin: [f32; 2],
     pub uv_size: [f32; 2],
     pub pixel_width: f32,
+    pub(crate) glyph_id: u16,
+    /// Drawn on the full-cell CJK grid ([`crate::render::text_engine::fonts::is_cjk_sized`]).
+    pub(crate) cjk: bool,
+}
+
+impl GlyphEntry {
+    fn new(codepoint: u16, pixel_width: u32, glyph_id: u16) -> Self {
+        Self {
+            uv_origin: [0.0; 2],
+            uv_size: [0.0; 2],
+            pixel_width: pixel_width as f32,
+            glyph_id,
+            cjk: crate::render::text_engine::fonts::is_cjk_sized(u32::from(codepoint)),
+        }
+    }
 }
 
 /// One line in a wrap layout -- half-open byte range into the source string.
@@ -51,6 +82,9 @@ pub struct LineSpan {
     pub start_byte: usize,
     pub end_byte: usize,
     pub width: u32,
+    /// The line's paragraph runs right to left, so its start edge is the
+    /// right one.
+    pub rtl: bool,
 }
 
 /// Result of [`BitFont::wrap_layout`] -- total bounds + per-line spans.
@@ -59,10 +93,12 @@ pub struct WrapLayout {
     pub width: u32,
     pub height: u32,
     pub lines: Vec<LineSpan>,
+    /// A word wider than a line was split across lines.
+    pub split_word: bool,
 }
 
 /// Immutable atlas observation; `source_identity == None` identifies the
-/// built-in 5x7 fallback (or a GPU-free synthetic test font).
+/// built-in fallback (or a GPU-free synthetic test font).
 pub(crate) struct BitFontCaptureObservation<'a> {
     pub(crate) source_identity: Option<&'a crate::assets::fnt_file::FntSourceIdentity>,
     pub(crate) atlas_dimensions: Option<[u32; 2]>,
@@ -73,15 +109,19 @@ pub(crate) struct BitFontCaptureObservation<'a> {
     pub(crate) darken_texture_present: bool,
 }
 
-/// Atlas-backed bitmap font + measurement + missing-glyph fallback.
+/// The text engine front: GAME.FNT's metrics for the native paths, the
+/// shaping engine and its glyph atlas.
 ///
 /// Texture fields are `Option<BatchTexture>` so pure-measurement tests can
 /// construct a `BitFont` without a GPU context (`atlas`/`darken_texture`
 /// accessors `expect` Some -- production callers always populate via
-/// `from_fnt`/`fallback_5x7`).
+/// `from_fnt`/`vector_only`).
 pub struct BitFont {
     source_identity: Option<crate::assets::fnt_file::FntSourceIdentity>,
+    /// The engine's glyph atlas as of this frame ([`Self::begin_frame`]).
     pub(crate) atlas_texture: Option<BatchTexture>,
+    /// GAME.FNT's own drawings, without the code points it points at its
+    /// shared placeholder box.
     pub(crate) glyphs: HashMap<u16, GlyphEntry>,
     pub(crate) missing_glyph: Option<GlyphEntry>,
     pub(crate) cell_height: u32,
@@ -91,6 +131,83 @@ pub struct BitFont {
     pub(crate) tab_width: u32,
     pub(crate) tab_origin: u32,
     pub(crate) darken_texture: Option<BatchTexture>,
+    engine: RefCell<TextEngine>,
+    mode: FontMode,
+    /// GPU-free test fonts: every text takes the native path and places
+    /// whole cells, as GAME.FNT's own glyph table did.
+    cells_only: bool,
+    /// The squeeze every measurement and draw takes ([`Self::fitted`]).
+    fit: Cell<Fit>,
+    /// Where the text drawn now lands ([`Self::set_raster`]).
+    raster: Cell<TextRaster>,
+}
+
+/// Where the text a [`BitFont`] emits lands, and how finely it rasterizes
+/// ([`BitFont::set_raster`]). Text laid out for one pass at `p`, its camera
+/// included, lands at `origin + (p - camera) * scale` in a pass whose camera
+/// is at the origin, with every glyph drawn `scale` times as large; a clip
+/// rect, in the first pass's pixels, at `origin + rect * scale`. A zoomed
+/// match lays its text out in the frame and draws it in the window
+/// (`app::presentation::window_ui`), so it shows the window's pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextRaster {
+    pub scale: f32,
+    pub origin: [f32; 2],
+    pub camera: [f32; 2],
+}
+
+impl TextRaster {
+    /// Text drawn in the pass it is laid out for.
+    pub const NATIVE: Self = Self {
+        scale: 1.0,
+        origin: [0.0; 2],
+        camera: [0.0; 2],
+    };
+
+    pub fn point(self, [x, y]: [f32; 2]) -> [f32; 2] {
+        [
+            self.origin[0] + (x - self.camera[0]) * self.scale,
+            self.origin[1] + (y - self.camera[1]) * self.scale,
+        ]
+    }
+
+    /// A box, frame or picture laid out with the text, moved and grown alike.
+    pub fn quad(self, instance: SpriteInstance) -> SpriteInstance {
+        SpriteInstance {
+            position: self.point(instance.position),
+            size: instance.size.map(|length| length * self.scale),
+            ..instance
+        }
+    }
+}
+
+/// The Path-A reveal a TextLabel draws for its inclusive count (see
+/// [`BitFont::build_text_label`]); zero draws the whole text plainly.
+pub(crate) fn text_label_reveal(count: u32, base_rgb: [u8; 3]) -> PathAReveal {
+    PathAReveal {
+        count: if count == 0 { 0 } else { count + 1 },
+        range: crate::ui::messages::TEXT_LABEL_HIGHLIGHT_UNITS,
+        base_rgb,
+        highlight_rgb: [255; 3],
+    }
+}
+
+/// `text` without `\r` and `\n`, which the single-line native paths skip, and
+/// for each kept byte its offset in `text`.
+fn single_line(text: &str) -> (Cow<'_, str>, Option<Vec<u32>>) {
+    if !text.contains(['\r', '\n']) {
+        return (Cow::Borrowed(text), None);
+    }
+    let mut kept = String::with_capacity(text.len());
+    let mut offsets = Vec::with_capacity(text.len());
+    for (at, c) in text.char_indices() {
+        if c == '\r' || c == '\n' {
+            continue;
+        }
+        kept.push(c);
+        offsets.extend((0..c.len_utf8() as u32).map(|i| at as u32 + i));
+    }
+    (Cow::Owned(kept), Some(offsets))
 }
 
 impl BitFont {
@@ -115,7 +232,7 @@ impl BitFont {
             .expect("BitFont atlas not populated (test-only ctor)")
     }
     /// Darken-strip texture for the sidebar Ready overlay. Returns `None`
-    /// when the BitFont was built via the 5x7 fallback path (sentinel that
+    /// when the BitFont was built via the fallback path (sentinel that
     /// callers treat as "no FNT loaded, skip sidebar text rendering").
     pub fn darken_texture(&self) -> Option<&BatchTexture> {
         self.darken_texture.as_ref()
@@ -125,6 +242,151 @@ impl BitFont {
     }
     pub fn cell_height(&self) -> f32 {
         self.cell_height as f32
+    }
+
+    pub fn mode(&self) -> FontMode {
+        self.mode
+    }
+
+    /// Switch the face every text path draws in, from the next measurement.
+    pub fn set_mode(&mut self, mode: FontMode) {
+        self.mode = mode;
+    }
+
+    /// The interface language's tag, for region-specific CJK glyph forms
+    /// and its reading direction (`i18n::right_to_left`).
+    pub fn set_locale(&mut self, locale: &str) {
+        let right_to_left = crate::i18n::right_to_left(locale);
+        self.engine
+            .get_mut()
+            .set_locale(Some(locale), right_to_left);
+    }
+
+    /// Measure and draw in `mode` for the length of `draw`, whatever the font
+    /// option says.
+    pub fn with_mode<R>(&mut self, mode: FontMode, draw: impl FnOnce(&BitFont) -> R) -> R {
+        let chosen = std::mem::replace(&mut self.mode, mode);
+        let result = draw(self);
+        self.mode = chosen;
+        result
+    }
+
+    /// Measure and draw at `fit` for the length of `draw`.
+    pub fn fitted<R>(&self, fit: Fit, draw: impl FnOnce(&BitFont) -> R) -> R {
+        let outer = self.fit.replace(fit);
+        let result = draw(self);
+        self.fit.set(outer);
+        result
+    }
+
+    /// Draw every text for `raster` from now on; returns the raster it
+    /// replaces, for the caller to put back. Measurement is unchanged.
+    pub fn set_raster(&self, raster: TextRaster) -> TextRaster {
+        self.raster.replace(raster)
+    }
+
+    pub fn raster(&self) -> TextRaster {
+        self.raster.get()
+    }
+
+    /// The first [`Fit`] step, from the one [`Self::fitted`] set, at which
+    /// `text` wraps into `max_width` native pixels without splitting a word
+    /// and in no more lines than `max_height` holds whole (at least one, or
+    /// as many as the text's own line breaks make; 0 holds any number). The
+    /// tightest when none does.
+    pub fn fit_box(&self, text: &str, max_width: u32, max_height: u32) -> Fit {
+        if max_width == 0 || text.is_empty() {
+            return self.fit.get();
+        }
+        let rows = match max_height {
+            0 => usize::MAX,
+            height => {
+                (height.saturating_sub(self.bitmap_rows) / self.cell_height.max(1) + 1) as usize
+            }
+        }
+        .max(text.split('\n').count());
+        self.first_fit(|font| {
+            let layout = font.wrap_layout(text, max_width);
+            layout.lines.len() <= rows && !layout.split_word && layout.width <= max_width
+        })
+        .unwrap_or_else(|tightest| {
+            crate::render::text_audit::cut_off(text, max_width);
+            tightest
+        })
+    }
+
+    /// The first [`Fit`] step, from the one [`Self::fitted`] set, at which
+    /// `text` is no wider than `max_width` native pixels on one line; the
+    /// tightest when none is.
+    pub fn fit_line(&self, text: &str, max_width: u32) -> Fit {
+        self.first_fit(|font| font.text_width(text) <= max_width)
+            .unwrap_or_else(|tightest| {
+                crate::render::text_audit::cut_off(text, max_width);
+                tightest
+            })
+    }
+
+    /// The first step that `fits`, or the tightest as the error when none
+    /// does. GPU-free test fonts draw their cells as they are.
+    pub(crate) fn first_fit(&self, fits: impl Fn(&BitFont) -> bool) -> Result<Fit, Fit> {
+        let mut fit = self.fit.get();
+        if self.cells_only {
+            return Ok(fit);
+        }
+        while !self.fitted(fit, &fits) {
+            let Some(tighter) = fit.tighter() else {
+                return Err(fit);
+            };
+            fit = tighter;
+        }
+        Ok(fit)
+    }
+
+    /// Take `previous`'s face and language, for a font rebuilt from a
+    /// scenario's GAME.FNT.
+    pub fn inherit_settings(&mut self, previous: &BitFont) {
+        self.mode = previous.mode;
+        let (locale, right_to_left) = {
+            let engine = previous.engine.borrow();
+            (engine.locale().map(str::to_owned), engine.right_to_left())
+        };
+        self.engine
+            .get_mut()
+            .set_locale(locale.as_deref(), right_to_left);
+    }
+
+    /// Start a frame: the glyph atlas may empty or grow here, never while
+    /// instances that sample it are being built.
+    pub fn begin_frame(&mut self, device: &wgpu::Device, batch: &BatchRenderer) {
+        let engine = self.engine.get_mut();
+        engine.begin_frame(Some((device, batch)));
+        if let Some(texture) = engine.atlas_texture() {
+            self.atlas_texture = Some(texture.clone());
+        }
+    }
+
+    /// Whether `text` takes the native GAME.FNT paths: Original mode, no
+    /// squeeze and every character drawn by GAME.FNT itself.
+    fn native(&self, text: &str) -> bool {
+        if self.cells_only {
+            return true;
+        }
+        self.fit.get() == Fit::NONE
+            && self.mode == FontMode::Original
+            && !self.glyphs.is_empty()
+            && text.chars().all(|c| match c {
+                '\t' | '\r' | '\n' | ' ' => true,
+                // GAME.FNT has no right-to-left letters, and its native paths
+                // would draw them left to right.
+                _ if crate::i18n::is_right_to_left_letter(c) => false,
+                _ => u16::try_from(c as u32).is_ok_and(|cp| self.glyphs.contains_key(&cp)),
+            })
+    }
+
+    fn shape(&self, text: &str, max_width: u32) -> Arc<ShapedText> {
+        self.engine
+            .borrow_mut()
+            .shape(self.mode, text, max_width, self.fit.get())
     }
 
     /// ComputeTextRect4A59E0: whole-string width, horizontal alignment and
@@ -162,19 +424,62 @@ impl BitFont {
         tint: [f32; 3],
         camera_offset: [f32; 2],
     ) -> Vec<SpriteInstance> {
-        let mut instances = Vec::with_capacity(text.len());
+        let missing_tint = Self::missing_color_xor(tint);
+        let ([x, y], scale) = self.rastered([x, y], scale, camera_offset);
+        if self.native(text) {
+            let mut instances = Vec::with_capacity(text.len());
+            self.native_glyph_pens(text, x, scale, |glyph, pen_x, missing| {
+                let tint = if missing { missing_tint } else { tint };
+                instances.extend(self.native_instance(glyph, [pen_x, y], scale, depth, tint));
+                true
+            });
+            return instances;
+        }
+        let (line, _) = single_line(text);
+        let shaped = self.shape(&line, 0);
+        let mut instances = Vec::with_capacity(line.len());
+        let mut engine = self.engine.borrow_mut();
+        for shaped_line in &shaped.lines {
+            engine.emit_line(
+                shaped_line,
+                [x, y],
+                scale,
+                depth,
+                |glyph| Some(if glyph.missing { missing_tint } else { tint }),
+                &mut instances,
+            );
+        }
+        instances
+    }
+
+    /// A text's pen `[x, y]` and glyph `scale`, laid out with `camera_offset`
+    /// added, where the raster in use draws them.
+    fn rastered(&self, [x, y]: [f32; 2], scale: f32, camera_offset: [f32; 2]) -> ([f32; 2], f32) {
+        let raster = self.raster.get();
+        (
+            raster.point([x + camera_offset[0], y + camera_offset[1]]),
+            scale * raster.scale,
+        )
+    }
+
+    /// Walk `text` the way native `BitFont` advances its pen: `visit` gets
+    /// each drawn glyph, its pen x in device pixels and whether it is the
+    /// missing-glyph stand-in, and returns `false` to stop. Spaces, tabs and
+    /// line breaks move the pen without a glyph.
+    fn native_glyph_pens(
+        &self,
+        text: &str,
+        x: f32,
+        scale: f32,
+        mut visit: impl FnMut(GlyphEntry, f32, bool) -> bool,
+    ) {
         let mut cursor_x = x;
         let spacing = self.char_spacing as f32 * scale;
-        let h = self.bitmap_rows as f32 * scale;
-        let missing_tint = Self::missing_color_xor(tint);
         let mut emitted = 0u32;
-
         for ch in text.chars() {
-            // \r/\n are layout-only control chars.
-            if ch == '\r' || ch == '\n' {
-                continue;
-            }
             match ch {
+                // \r/\n are layout-only control chars.
+                '\r' | '\n' => continue,
                 '\t' => {
                     let cell_x = ((cursor_x - x) / scale) as u32;
                     let advanced = cell_x + self.tab_width;
@@ -193,34 +498,54 @@ impl BitFont {
                 }
                 _ => {}
             }
-            let cp = ch as u32;
-            let (entry, use_missing_tint) = if cp <= u16::MAX as u32 {
-                match self.glyphs.get(&(cp as u16)) {
-                    Some(g) => (Some(*g), false),
-                    None => (self.missing_glyph, true),
-                }
-            } else {
-                (self.missing_glyph, true)
+            let (entry, missing) = match u16::try_from(ch as u32)
+                .ok()
+                .and_then(|cp| self.glyphs.get(&cp))
+            {
+                Some(g) => (Some(*g), false),
+                None => (self.missing_glyph, true),
             };
             let Some(entry) = entry else { continue };
             if emitted > 0 {
                 cursor_x += spacing;
             }
-            let w = entry.pixel_width * scale;
-            instances.push(SpriteInstance {
-                position: [cursor_x + camera_offset[0], y + camera_offset[1]],
-                size: [w, h],
-                uv_origin: entry.uv_origin,
-                uv_size: entry.uv_size,
+            if !visit(entry, cursor_x, missing) {
+                return;
+            }
+            cursor_x += entry.pixel_width * scale;
+            emitted += 1;
+        }
+    }
+
+    /// One native glyph with its cell's top-left at `pen`.
+    fn native_instance(
+        &self,
+        glyph: GlyphEntry,
+        pen: [f32; 2],
+        scale: f32,
+        depth: f32,
+        tint: [f32; 3],
+    ) -> Option<SpriteInstance> {
+        if self.cells_only {
+            return Some(SpriteInstance {
+                position: pen,
+                size: [glyph.pixel_width * scale, self.bitmap_rows as f32 * scale],
+                uv_origin: glyph.uv_origin,
+                uv_size: glyph.uv_size,
                 depth,
-                tint: if use_missing_tint { missing_tint } else { tint },
+                tint,
                 alpha: 1.0,
                 ..Default::default()
             });
-            cursor_x += w;
-            emitted += 1;
         }
-        instances
+        self.engine.borrow_mut().place_original_glyph(
+            glyph.glyph_id,
+            glyph.cjk,
+            pen,
+            scale,
+            depth,
+            tint,
+        )
     }
 
     /// TextLabel's original434500 emission uses an inclusive UTF-16 count;
@@ -252,12 +577,7 @@ impl BitFont {
             depth,
             camera_offset,
             0,
-            PathAReveal {
-                count: if count == 0 { 0 } else { count + 1 },
-                range: 8,
-                base_rgb,
-                highlight_rgb: [255; 3],
-            },
+            text_label_reveal(count, base_rgb),
         )
         .0
     }
@@ -266,7 +586,8 @@ impl BitFont {
     ///
     /// Every UTF-16 code unit consumes a one-based reveal position;
     /// spaces/tabs consume a unit without emitting a quad, and surrogate
-    /// halves independently take the existing missing-glyph path.
+    /// halves independently take the existing missing-glyph path. Shaped
+    /// text reveals a cluster with its first unit.
     pub fn build_text_path_a(
         &self,
         text: &str,
@@ -278,14 +599,10 @@ impl BitFont {
         already_consumed: u32,
         reveal: PathAReveal,
     ) -> (Vec<SpriteInstance>, u32) {
-        let mut instances = Vec::with_capacity(text.len());
-        let mut cursor_x = x;
-        let spacing = self.char_spacing as f32 * scale;
-        let h = self.bitmap_rows as f32 * scale;
-        let mut emitted = 0u32;
+        // Each unit's encoded colour, until the reveal cuts the text off.
+        let mut unit_rgb: Vec<[u8; 3]> = Vec::with_capacity(text.len());
         let mut consumed = already_consumed;
-
-        for code_unit in text.encode_utf16() {
+        for _ in text.encode_utf16() {
             let Some(unit_position) = consumed.checked_add(1) else {
                 break;
             };
@@ -293,10 +610,95 @@ impl BitFont {
                 break;
             };
             consumed = unit_position;
-            if code_unit == u16::from(b'\r') || code_unit == u16::from(b'\n') {
-                continue;
+            unit_rgb.push(encoded_rgb);
+        }
+        // UI tints multiply the encoded texel (`palette_light`), so the
+        // encoded COLORREF bytes are the tint.
+        let tint_of = |unit: usize| {
+            unit_rgb
+                .get(unit)
+                .map(|rgb| rgb.map(|c| f32::from(c) / 255.0))
+        };
+        let ([x, y], scale) = self.rastered([x, y], scale, camera_offset);
+
+        let mut instances = Vec::with_capacity(text.len());
+        if self.native(text) {
+            let mut units = text.encode_utf16().enumerate().filter(|&(_, unit)| {
+                unit != u16::from(b'\r')
+                    && unit != u16::from(b'\n')
+                    && unit != u16::from(b'\t')
+                    && unit != u16::from(b' ')
+            });
+            self.native_glyph_pens_utf16(text, x, scale, |glyph, pen_x, missing| {
+                let Some((unit, _)) = units.next() else {
+                    return false;
+                };
+                let Some(tint) = tint_of(unit) else {
+                    return false;
+                };
+                let tint = if missing {
+                    Self::missing_color_xor(tint)
+                } else {
+                    tint
+                };
+                instances.extend(self.native_instance(glyph, [pen_x, y], scale, depth, tint));
+                true
+            });
+            return (instances, consumed);
+        }
+
+        let (line, offsets) = single_line(text);
+        // UTF-16 unit index of every byte of `text`.
+        let mut unit_at = vec![0u32; text.len() + 1];
+        let mut unit = 0u32;
+        for (at, c) in text.char_indices() {
+            for slot in &mut unit_at[at..at + c.len_utf8()] {
+                *slot = unit;
             }
+            unit += c.len_utf16() as u32;
+        }
+        let shaped = self.shape(&line, 0);
+        let mut engine = self.engine.borrow_mut();
+        for shaped_line in &shaped.lines {
+            engine.emit_line(
+                shaped_line,
+                [x, y],
+                scale,
+                depth,
+                |glyph| {
+                    let byte = offsets.as_ref().map_or(glyph.cluster, |map| {
+                        map.get(glyph.cluster as usize)
+                            .copied()
+                            .unwrap_or(glyph.cluster)
+                    });
+                    let tint = tint_of(unit_at[byte as usize] as usize)?;
+                    Some(if glyph.missing {
+                        Self::missing_color_xor(tint)
+                    } else {
+                        tint
+                    })
+                },
+                &mut instances,
+            );
+        }
+        (instances, consumed)
+    }
+
+    /// [`Self::native_glyph_pens`] over UTF-16 units, as Path A walks them: a
+    /// surrogate half is its own (missing) glyph.
+    fn native_glyph_pens_utf16(
+        &self,
+        text: &str,
+        x: f32,
+        scale: f32,
+        mut visit: impl FnMut(GlyphEntry, f32, bool) -> bool,
+    ) {
+        let mut cursor_x = x;
+        let spacing = self.char_spacing as f32 * scale;
+        let mut emitted = 0u32;
+        for code_unit in text.encode_utf16() {
             match code_unit {
+                value if value == u16::from(b'\r') || value == u16::from(b'\n') => continue,
                 value if value == u16::from(b'\t') => {
                     let cell_x = ((cursor_x - x) / scale) as u32;
                     let advanced = cell_x + self.tab_width;
@@ -315,12 +717,7 @@ impl BitFont {
                 }
                 _ => {}
             }
-
-            // UI tints multiply the encoded texel (`palette_light`), so the
-            // encoded COLORREF bytes are the tint.
-            let tint = encoded_rgb.map(|channel| f32::from(channel) / 255.0);
-            let missing_tint = Self::missing_color_xor(tint);
-            let (entry, use_missing_tint) = match self.glyphs.get(&code_unit) {
+            let (entry, missing) = match self.glyphs.get(&code_unit) {
                 Some(glyph) => (Some(*glyph), false),
                 None => (self.missing_glyph, true),
             };
@@ -328,27 +725,41 @@ impl BitFont {
             if emitted > 0 {
                 cursor_x += spacing;
             }
-            let w = entry.pixel_width * scale;
-            instances.push(SpriteInstance {
-                position: [cursor_x + camera_offset[0], y + camera_offset[1]],
-                size: [w, h],
-                uv_origin: entry.uv_origin,
-                uv_size: entry.uv_size,
-                depth,
-                tint: if use_missing_tint { missing_tint } else { tint },
-                alpha: 1.0,
-                ..Default::default()
-            });
-            cursor_x += w;
+            if !visit(entry, cursor_x, missing) {
+                return;
+            }
+            cursor_x += entry.pixel_width * scale;
             emitted += 1;
         }
-        (instances, consumed)
     }
 
     pub fn wrap_layout(&self, text: &str, max_width: u32) -> WrapLayout {
         if text.is_empty() {
             return WrapLayout::default();
         }
+        if self.native(text) {
+            return self.wrap_layout_native(text, max_width);
+        }
+        let shaped = self.shape(text, max_width);
+        let lines: Vec<LineSpan> = shaped
+            .lines
+            .iter()
+            .map(|line| LineSpan {
+                start_byte: line.start,
+                end_byte: line.end,
+                width: line.width.ceil() as u32,
+                rtl: line.rtl,
+            })
+            .collect();
+        WrapLayout {
+            width: lines.iter().map(|line| line.width).max().unwrap_or(0),
+            height: self.cell_height * lines.len() as u32,
+            lines,
+            split_word: shaped.lines.iter().any(|line| line.split),
+        }
+    }
+
+    fn wrap_layout_native(&self, text: &str, max_width: u32) -> WrapLayout {
         let mut lines: Vec<LineSpan> = Vec::new();
         let mut line_start_byte: usize = 0;
         let mut line_x: u32 = 0;
@@ -359,6 +770,7 @@ impl BitFont {
         let mut last_space: Option<(usize, u32)> = None;
         let mut prev_char: Option<char> = None;
         let mut y_lines: u32 = 1;
+        let mut split_word = false;
 
         let chars: Vec<(usize, char)> = text.char_indices().collect();
         let mut i = 0;
@@ -385,6 +797,7 @@ impl BitFont {
                         start_byte: line_start_byte,
                         end_byte: byte_off,
                         width: line_x,
+                        rtl: false,
                     });
                     max_line_width = max_line_width.max(line_x);
                     line_start_byte = next_byte_off;
@@ -429,6 +842,7 @@ impl BitFont {
                     start_byte: line_start_byte,
                     end_byte: chars[space_index].0,
                     width: space_x,
+                    rtl: false,
                 });
                 max_line_width = max_line_width.max(space_x);
                 // gamemd 434F60..434F64 rewinds the scanner to the saved
@@ -450,10 +864,14 @@ impl BitFont {
                 // separate emission start and scan cursor; remeasuring the
                 // deferred glyph changes subsequent native line boundaries.
                 let deferred_byte = chars[i - 1].0;
+                // Hanzi break between any two; anything else was a word.
+                split_word |=
+                    !crate::render::text_engine::fonts::is_cjk_sized(chars[i - 1].1 as u32);
                 lines.push(LineSpan {
                     start_byte: line_start_byte,
                     end_byte: deferred_byte,
                     width: line_x,
+                    rtl: false,
                 });
                 max_line_width = max_line_width.max(line_x);
                 line_start_byte = deferred_byte;
@@ -468,6 +886,7 @@ impl BitFont {
             start_byte: line_start_byte,
             end_byte: text.len(),
             width: line_x,
+            rtl: false,
         });
         max_line_width = max_line_width.max(line_x);
 
@@ -475,6 +894,7 @@ impl BitFont {
             width: max_line_width,
             height: self.cell_height * y_lines,
             lines,
+            split_word,
         }
     }
 
@@ -497,6 +917,9 @@ impl BitFont {
     /// dark-strip width and h-center anchor; matches the value
     /// `ComputeTextRect` and `FUN_00434CD0`'s wrap-accumulator use.
     pub fn text_width(&self, text: &str) -> u32 {
+        if !self.native(text) {
+            return self.shape(&single_line(text).0, 0).width().ceil() as u32;
+        }
         let mut x: u32 = 0;
         let mut count: u32 = 0;
         for ch in text.chars() {
@@ -531,6 +954,79 @@ impl BitFont {
         x + count * self.char_spacing
     }
 
+    /// The longest start of `text` that fits `fit_width`, cut the way the
+    /// shell's owner-drawn labels cut theirs: GAME.FNT text loses whole
+    /// UTF-16 units, each measured as [`Self::text_width`] measures a
+    /// character and ending at a NUL; shaped text loses whole characters.
+    pub fn truncate_to_width<'a>(&self, text: &'a str, fit_width: u32) -> Cow<'a, str> {
+        if self.native(text) {
+            let mut utf16: Vec<u16> = text.encode_utf16().collect();
+            if self.utf16_text_width(&utf16) <= fit_width {
+                return Cow::Borrowed(text);
+            }
+            while !utf16.is_empty() && self.utf16_text_width(&utf16) > fit_width {
+                utf16.pop();
+            }
+            return Cow::Owned(String::from_utf16_lossy(&utf16));
+        }
+        if self.text_width(text) <= fit_width {
+            return Cow::Borrowed(text);
+        }
+        // Each kept character count's end; shaped widths grow with the count,
+        // so the longest fitting start is a binary search.
+        let ends: Vec<usize> = text
+            .char_indices()
+            .map(|(start, c)| start + c.len_utf8())
+            .collect();
+        let (mut kept, mut over) = (0, ends.len());
+        while kept < over {
+            let mid = (kept + over).div_ceil(2);
+            if self.text_width(&text[..ends[mid - 1]]) <= fit_width {
+                kept = mid;
+            } else {
+                over = mid - 1;
+            }
+        }
+        Cow::Owned(text[..kept.checked_sub(1).map_or(0, |last| ends[last])].to_owned())
+    }
+
+    fn utf16_text_width(&self, units: &[u16]) -> u32 {
+        const TAB: u16 = b'\t' as u16;
+        const CR: u16 = b'\r' as u16;
+        const LF: u16 = b'\n' as u16;
+        const SPACE: u16 = b' ' as u16;
+
+        let mut x: u32 = 0;
+        let mut count: u32 = 0;
+        for unit in units.iter().copied() {
+            match unit {
+                0 => break,
+                TAB => {
+                    let advanced = x + self.tab_width;
+                    x = advanced - ((advanced.saturating_sub(self.tab_origin)) % self.tab_width);
+                    continue;
+                }
+                CR | LF => continue,
+                SPACE => {
+                    x += self.space_width;
+                    count += 1;
+                }
+                other => {
+                    let w = self
+                        .glyphs
+                        .get(&other)
+                        .map(|g| g.pixel_width as u32)
+                        .or_else(|| self.missing_glyph.as_ref().map(|g| g.pixel_width as u32));
+                    if let Some(w) = w {
+                        x += w;
+                        count += 1;
+                    }
+                }
+            }
+        }
+        x + count * self.char_spacing
+    }
+
     /// Tint adjustment for missing-glyph fallback rendering -- caller XORs
     /// the input tint to produce the visible "wrong color" effect that
     /// distinguishes missing glyphs at a glance. Faithful 32-bit port of the
@@ -552,58 +1048,68 @@ impl BitFont {
         ]
     }
 
-    pub fn fallback_5x7(device: &wgpu::Device, queue: &wgpu::Queue, batch: &BatchRenderer) -> Self {
-        const GLYPH_W: u32 = 5;
-        const GLYPH_H: u32 = 7;
-        const GLYPH_PAD: u32 = 1;
-        const ATLAS_COLUMNS: usize = 8;
-
-        let supported = fallback_5x7_glyphs();
-        let rows = supported.len().div_ceil(ATLAS_COLUMNS);
-        let cell_w = GLYPH_W + GLYPH_PAD * 2;
-        let cell_h = GLYPH_H + GLYPH_PAD * 2;
-        let atlas_w = (ATLAS_COLUMNS as u32) * cell_w;
-        let atlas_h = (rows as u32) * cell_h;
-        let mut rgba = vec![0u8; (atlas_w * atlas_h * 4) as usize];
-        let mut glyphs = HashMap::new();
-
-        for (idx, (ch, bitmap)) in supported.iter().enumerate() {
-            let col = (idx % ATLAS_COLUMNS) as u32;
-            let row = (idx / ATLAS_COLUMNS) as u32;
-            let origin_x = col * cell_w + GLYPH_PAD;
-            let origin_y = row * cell_h + GLYPH_PAD;
-            write_5x7_glyph_bitmap(&mut rgba, atlas_w, origin_x, origin_y, bitmap);
-            glyphs.insert(
-                *ch as u16,
-                GlyphEntry {
-                    uv_origin: [
-                        origin_x as f32 / atlas_w as f32,
-                        origin_y as f32 / atlas_h as f32,
-                    ],
-                    uv_size: [
-                        GLYPH_W as f32 / atlas_w as f32,
-                        GLYPH_H as f32 / atlas_h as f32,
-                    ],
-                    pixel_width: GLYPH_W as f32,
-                },
-            );
-        }
-
+    /// Without GAME.FNT (no game files yet, or a damaged archive): the
+    /// bundled fonts alone, whatever the font option says.
+    pub fn vector_only(device: &wgpu::Device, queue: &wgpu::Queue, batch: &BatchRenderer) -> Self {
+        let engine = TextEngine::new(Some((device, queue, batch)));
         Self {
             source_identity: None,
-            atlas_texture: Some(
-                batch.create_texture_on_device(device, queue, &rgba, atlas_w, atlas_h, None),
-            ),
-            glyphs,
+            atlas_texture: engine.atlas_texture().cloned(),
+            glyphs: HashMap::new(),
             missing_glyph: None,
-            cell_height: GLYPH_H + 1,
-            bitmap_rows: GLYPH_H,
-            space_width: GLYPH_W,
+            cell_height: CELL_HEIGHT,
+            bitmap_rows: BITMAP_ROWS,
+            space_width: DEFAULT_SPACE_WIDTH,
             char_spacing: CHAR_SPACING,
             tab_width: TAB_WIDTH,
             tab_origin: TAB_ORIGIN,
             darken_texture: None,
+            engine: RefCell::new(engine),
+            mode: FontMode::default(),
+            cells_only: false,
+            fit: Cell::new(Fit::NONE),
+            raster: Cell::new(TextRaster::NATIVE),
         }
+    }
+
+    /// The stand-in bitmap for a codepoint the font does not carry.
+    ///
+    /// gamemd-derived: `BitFont`'s ctor calls `0x00434700` right after the
+    /// loader (`0x004338ED`), which reads `word ptr [lookup table + 0xB0]`
+    /// (`0x0043472A`) - a byte offset, so the source codepoint is
+    /// `0xB0 / 2 = 0x58`, the letter `X` - copies that glyph's width byte
+    /// (`0x00434743..0x00434748`) and then copies its rows as `not row_byte`
+    /// (`0x00434764..0x00434774`). Inverting the 1-bit mask, not the colour,
+    /// is what makes the cell fill where the glyph was clear.
+    fn missing_glyph_stand_in(src: &FntGlyph) -> FntGlyph {
+        let width = src.width.max(1) as usize;
+        let rows = src.rgba.len() / (width * 4);
+        let mut rgba = vec![0u8; width * rows * 4];
+        for row in 0..rows {
+            for x in 0..width {
+                let i = (row * width + x) * 4;
+                let set = src.rgba.get(i + 3).copied().unwrap_or(0) != 0;
+                if !set {
+                    rgba[i] = 255;
+                    rgba[i + 1] = 255;
+                    rgba[i + 2] = 255;
+                    rgba[i + 3] = 255;
+                }
+            }
+        }
+        FntGlyph {
+            slot: src.slot,
+            width: src.width,
+            rgba,
+        }
+    }
+
+    /// The record the stand-in is cut from. Native's row-cache builder
+    /// (`0x00434700`) indexes the lookup table at the **byte** offset
+    /// `0xB0`, so the source codepoint is `0x58` ('X'), not `0xB0` ('deg').
+    fn missing_glyph_record(fnt: &FntFile) -> Option<FntGlyph> {
+        fnt.glyph(MISSING_GLYPH_CODEPOINT)
+            .map(Self::missing_glyph_stand_in)
     }
 
     pub fn from_fnt(
@@ -612,132 +1118,67 @@ impl BitFont {
         batch: &BatchRenderer,
         fnt: &FntFile,
     ) -> Self {
-        let mut entries: Vec<(u16, &FntGlyph)> = Vec::new();
-        for cp in PACKED_CODEPOINT_RANGE {
-            if let Some(g) = fnt.glyph(cp) {
-                entries.push((cp, g));
-            }
-        }
+        Self::with_fnt(fnt, Some((device, queue, batch)))
+    }
 
-        // Synthesize the missing-glyph bitmap: inverted '°' (codepoint 0xB0).
-        // Source is white-on-transparent; invert RGB on set pixels so the
-        // fallback is visually distinct against tinted destinations.
-        let missing_owned: Option<FntGlyph> = fnt.glyph(MISSING_GLYPH_CODEPOINT).map(|src| {
-            let mut rgba = src.rgba.clone();
-            let mut i = 0;
-            while i + 3 < rgba.len() {
-                let a = rgba[i + 3];
-                rgba[i] = !rgba[i] & a;
-                rgba[i + 1] = !rgba[i + 1] & a;
-                rgba[i + 2] = !rgba[i + 2] & a;
-                i += 4;
-            }
-            FntGlyph {
-                width: src.width,
-                rgba,
-            }
-        });
+    /// [`Self::from_fnt`]'s font; without `gpu` it only measures and lays
+    /// out, for tests.
+    fn with_fnt(fnt: &FntFile, gpu: Option<(&wgpu::Device, &wgpu::Queue, &BatchRenderer)>) -> Self {
+        let missing = Self::missing_glyph_record(fnt);
+        let baseline_row = fnt
+            .glyph(u16::from(b'H'))
+            .and_then(|glyph| {
+                let width = glyph.width as usize;
+                (0..fnt.bitmap_rows as usize)
+                    .rev()
+                    .find(|row| {
+                        (0..width).any(|x| {
+                            glyph
+                                .rgba
+                                .get((row * width + x) * 4 + 3)
+                                .is_some_and(|&a| a != 0)
+                        })
+                    })
+                    .map(|row| row as u32 + 1)
+            })
+            .unwrap_or(DEFAULT_BASELINE_ROW);
+        let outline = crate::render::text_engine::fnt_font::FntFont::build(
+            fnt,
+            baseline_row,
+            missing.as_ref(),
+        );
+        let mut engine = TextEngine::new(gpu);
+        let glyph_ids = outline.glyph_ids.clone();
+        engine.set_original_font(outline);
 
-        if entries.is_empty() && missing_owned.is_none() {
-            log::warn!("FNT has no glyphs, falling back to hardcoded font");
-            return Self::fallback_5x7(device, queue, batch);
-        }
-
-        // Reserve a sentinel codepoint for the missing glyph that won't collide
-        // with the packed range. u16::MAX is well outside 0x20..0x180.
-        const MISSING_SENTINEL: u16 = u16::MAX;
-        let mut all_entries: Vec<(u16, &FntGlyph)> = Vec::with_capacity(entries.len() + 1);
-        for e in &entries {
-            all_entries.push((e.0, e.1));
-        }
-        if let Some(ref g) = missing_owned {
-            all_entries.push((MISSING_SENTINEL, g));
-        }
-
-        let row_h = fnt.bitmap_rows;
-        let pad = 1u32;
-        let max_atlas_w = 4096u32;
-
-        struct Placement {
-            x: u32,
-            y: u32,
-        }
-        let mut placements: Vec<Placement> = Vec::with_capacity(all_entries.len());
-        let mut cursor_x = 0u32;
-        let mut cursor_y = 0u32;
-        let mut atlas_w = 0u32;
-
-        for (_cp, g) in &all_entries {
-            let w = g.width + pad * 2;
-            if cursor_x + w > max_atlas_w {
-                cursor_x = 0;
-                cursor_y += row_h + pad * 2;
-            }
-            placements.push(Placement {
-                x: cursor_x + pad,
-                y: cursor_y + pad,
-            });
-            cursor_x += w;
-            if cursor_x > atlas_w {
-                atlas_w = cursor_x;
-            }
-        }
-        let atlas_h = cursor_y + row_h + pad * 2;
-
-        let mut rgba = vec![0u8; (atlas_w * atlas_h * 4) as usize];
-        let mut glyphs = HashMap::new();
-        let mut missing_glyph = None;
-
-        for (idx, (cp, g)) in all_entries.iter().enumerate() {
-            let pl = &placements[idx];
-            for row in 0..row_h {
-                for col in 0..g.width {
-                    let src = ((row * g.width + col) * 4) as usize;
-                    if src + 3 >= g.rgba.len() {
-                        continue;
-                    }
-                    let dst_x = pl.x + col;
-                    let dst_y = pl.y + row;
-                    let dst = ((dst_y * atlas_w + dst_x) * 4) as usize;
-                    rgba[dst..dst + 4].copy_from_slice(&g.rgba[src..src + 4]);
-                }
-            }
-            let entry = GlyphEntry {
-                uv_origin: [pl.x as f32 / atlas_w as f32, pl.y as f32 / atlas_h as f32],
-                uv_size: [
-                    g.width as f32 / atlas_w as f32,
-                    row_h as f32 / atlas_h as f32,
-                ],
-                pixel_width: g.width as f32,
-            };
-            if *cp == MISSING_SENTINEL {
-                missing_glyph = Some(entry);
-            } else {
-                glyphs.insert(*cp, entry);
-            }
-        }
-
+        let glyphs: HashMap<u16, GlyphEntry> = fnt
+            .drawn_codepoints()
+            .filter_map(|(cp, glyph)| {
+                let id = *glyph_ids.get(&cp)?;
+                Some((cp, GlyphEntry::new(cp, glyph.width, id)))
+            })
+            .collect();
+        let missing_glyph =
+            missing.map(|glyph| GlyphEntry::new(MISSING_GLYPH_CODEPOINT, glyph.width, 0));
         let space_width = fnt
             .glyph(0x20)
             .map(|g| g.width)
             .unwrap_or(DEFAULT_SPACE_WIDTH);
-        let atlas_texture =
-            batch.create_texture_on_device(device, queue, &rgba, atlas_w, atlas_h, None);
-        let darken_texture =
-            batch.create_texture_on_device(device, queue, &[0u8, 0, 0, DARKEN_ALPHA], 1, 1, None);
+        let darken_texture = gpu.map(|(device, queue, batch)| {
+            batch.create_texture_on_device(device, queue, &[0u8, 0, 0, DARKEN_ALPHA], 1, 1, None)
+        });
 
         log::info!(
-            "BitFont atlas: {}x{} px, {} glyphs (+missing={}), space_width={}",
-            atlas_w,
-            atlas_h,
+            "BitFont: GAME.FNT draws {} code points (+missing={}), baseline row {}, space_width={}",
             glyphs.len(),
             missing_glyph.is_some(),
+            baseline_row,
             space_width
         );
 
         Self {
             source_identity: fnt.source_identity().cloned(),
-            atlas_texture: Some(atlas_texture),
+            atlas_texture: engine.atlas_texture().cloned(),
             glyphs,
             missing_glyph,
             cell_height: fnt.cell_height,
@@ -746,440 +1187,55 @@ impl BitFont {
             char_spacing: CHAR_SPACING,
             tab_width: TAB_WIDTH,
             tab_origin: TAB_ORIGIN,
-            darken_texture: Some(darken_texture),
+            darken_texture,
+            engine: RefCell::new(engine),
+            mode: FontMode::default(),
+            cells_only: false,
+            fit: Cell::new(Fit::NONE),
+            raster: Cell::new(TextRaster::NATIVE),
         }
     }
-}
-
-fn write_5x7_glyph_bitmap(
-    rgba: &mut [u8],
-    atlas_w: u32,
-    origin_x: u32,
-    origin_y: u32,
-    rows: &[&str; 7],
-) {
-    for (y, row) in rows.iter().enumerate() {
-        for (x, pixel) in row.as_bytes().iter().enumerate() {
-            if *pixel != b'#' {
-                continue;
-            }
-            let idx = (((origin_y + y as u32) * atlas_w + (origin_x + x as u32)) * 4) as usize;
-            rgba[idx..idx + 4].copy_from_slice(&[255, 255, 255, 255]);
-        }
-    }
-}
-
-/// The built-in 5x7 glyph table. Each entry is seven 5-character rows where `#`
-/// sets a pixel. Visible to the crate so the headless asset tools can burn
-/// labels into rendered sheets without a font dependency or a second table.
-pub(crate) fn fallback_5x7_glyphs() -> Vec<(char, [&'static str; 7])> {
-    vec![
-        (
-            ' ',
-            [
-                ".....", ".....", ".....", ".....", ".....", ".....", ".....",
-            ],
-        ),
-        (
-            '-',
-            [
-                ".....", ".....", ".....", ".###.", ".....", ".....", ".....",
-            ],
-        ),
-        (
-            ':',
-            [
-                ".....", "..#..", ".....", ".....", "..#..", ".....", ".....",
-            ],
-        ),
-        (
-            '/',
-            [
-                "....#", "...#.", "..#..", ".#...", "#....", ".....", ".....",
-            ],
-        ),
-        (
-            '0',
-            [
-                "#####", "#...#", "#...#", "#...#", "#...#", "#...#", "#####",
-            ],
-        ),
-        (
-            '1',
-            [
-                "..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###.",
-            ],
-        ),
-        (
-            '2',
-            [
-                "#####", "....#", "....#", "#####", "#....", "#....", "#####",
-            ],
-        ),
-        (
-            '3',
-            [
-                "#####", "....#", "..##.", "....#", "....#", "....#", "#####",
-            ],
-        ),
-        (
-            '4',
-            [
-                "#...#", "#...#", "#...#", "#####", "....#", "....#", "....#",
-            ],
-        ),
-        (
-            '5',
-            [
-                "#####", "#....", "#....", "#####", "....#", "....#", "#####",
-            ],
-        ),
-        (
-            '6',
-            [
-                "#####", "#....", "#....", "#####", "#...#", "#...#", "#####",
-            ],
-        ),
-        (
-            '7',
-            [
-                "#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#...",
-            ],
-        ),
-        (
-            '8',
-            [
-                "#####", "#...#", "#...#", "#####", "#...#", "#...#", "#####",
-            ],
-        ),
-        (
-            '9',
-            [
-                "#####", "#...#", "#...#", "#####", "....#", "....#", "#####",
-            ],
-        ),
-        (
-            'A',
-            [
-                ".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#",
-            ],
-        ),
-        (
-            'B',
-            [
-                "####.", "#...#", "#...#", "####.", "#...#", "#...#", "####.",
-            ],
-        ),
-        (
-            'C',
-            [
-                ".####", "#....", "#....", "#....", "#....", "#....", ".####",
-            ],
-        ),
-        (
-            'D',
-            [
-                "####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####.",
-            ],
-        ),
-        (
-            'E',
-            [
-                "#####", "#....", "#....", "####.", "#....", "#....", "#####",
-            ],
-        ),
-        (
-            'F',
-            [
-                "#####", "#....", "#....", "####.", "#....", "#....", "#....",
-            ],
-        ),
-        (
-            'G',
-            [
-                ".####", "#....", "#....", "#.###", "#...#", "#...#", ".###.",
-            ],
-        ),
-        (
-            'H',
-            [
-                "#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#",
-            ],
-        ),
-        (
-            'I',
-            [
-                "#####", "..#..", "..#..", "..#..", "..#..", "..#..", "#####",
-            ],
-        ),
-        (
-            'J',
-            [
-                "#####", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##..",
-            ],
-        ),
-        (
-            'K',
-            [
-                "#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#",
-            ],
-        ),
-        (
-            'L',
-            [
-                "#....", "#....", "#....", "#....", "#....", "#....", "#####",
-            ],
-        ),
-        (
-            'M',
-            [
-                "#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#",
-            ],
-        ),
-        (
-            'N',
-            [
-                "#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#", "#...#",
-            ],
-        ),
-        (
-            'O',
-            [
-                ".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###.",
-            ],
-        ),
-        (
-            'P',
-            [
-                "####.", "#...#", "#...#", "####.", "#....", "#....", "#....",
-            ],
-        ),
-        (
-            'Q',
-            [
-                ".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#",
-            ],
-        ),
-        (
-            'R',
-            [
-                "####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#",
-            ],
-        ),
-        (
-            'S',
-            [
-                ".####", "#....", "#....", ".###.", "....#", "....#", "####.",
-            ],
-        ),
-        (
-            'T',
-            [
-                "#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#..",
-            ],
-        ),
-        (
-            'U',
-            [
-                "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###.",
-            ],
-        ),
-        (
-            'V',
-            [
-                "#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#..",
-            ],
-        ),
-        (
-            'W',
-            [
-                "#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#",
-            ],
-        ),
-        (
-            'X',
-            [
-                "#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#",
-            ],
-        ),
-        (
-            'Y',
-            [
-                "#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#..",
-            ],
-        ),
-        (
-            'Z',
-            [
-                "#####", "....#", "...#.", "..#..", ".#...", "#....", "#####",
-            ],
-        ),
-        (
-            'a',
-            [
-                ".....", ".....", ".###.", "....#", ".####", "#...#", ".####",
-            ],
-        ),
-        (
-            'b',
-            [
-                "#....", "#....", "####.", "#...#", "#...#", "#...#", "####.",
-            ],
-        ),
-        (
-            'c',
-            [
-                ".....", ".....", ".####", "#....", "#....", "#....", ".####",
-            ],
-        ),
-        (
-            'd',
-            [
-                "....#", "....#", ".####", "#...#", "#...#", "#...#", ".####",
-            ],
-        ),
-        (
-            'e',
-            [
-                ".....", ".....", ".###.", "#...#", "#####", "#....", ".###.",
-            ],
-        ),
-        (
-            'f',
-            [
-                "..##.", ".#...", ".#...", "####.", ".#...", ".#...", ".#...",
-            ],
-        ),
-        (
-            'g',
-            [
-                ".....", ".####", "#...#", "#...#", ".####", "....#", ".###.",
-            ],
-        ),
-        (
-            'h',
-            [
-                "#....", "#....", "####.", "#...#", "#...#", "#...#", "#...#",
-            ],
-        ),
-        (
-            'i',
-            [
-                "..#..", ".....", "..#..", "..#..", "..#..", "..#..", "..#..",
-            ],
-        ),
-        (
-            'j',
-            [
-                "...#.", ".....", "...#.", "...#.", "...#.", "#..#.", ".##..",
-            ],
-        ),
-        (
-            'k',
-            [
-                "#....", "#....", "#..#.", "#.#..", "##...", "#.#..", "#..#.",
-            ],
-        ),
-        (
-            'l',
-            [
-                ".##..", "..#..", "..#..", "..#..", "..#..", "..#..", ".###.",
-            ],
-        ),
-        (
-            'm',
-            [
-                ".....", ".....", "##.#.", "#.#.#", "#.#.#", "#...#", "#...#",
-            ],
-        ),
-        (
-            'n',
-            [
-                ".....", ".....", "####.", "#...#", "#...#", "#...#", "#...#",
-            ],
-        ),
-        (
-            'o',
-            [
-                ".....", ".....", ".###.", "#...#", "#...#", "#...#", ".###.",
-            ],
-        ),
-        (
-            'p',
-            [
-                ".....", "####.", "#...#", "#...#", "####.", "#....", "#....",
-            ],
-        ),
-        (
-            'q',
-            [
-                ".....", ".####", "#...#", "#...#", ".####", "....#", "....#",
-            ],
-        ),
-        (
-            'r',
-            [
-                ".....", ".....", ".####", "#....", "#....", "#....", "#....",
-            ],
-        ),
-        (
-            's',
-            [
-                ".....", ".....", ".####", "#....", ".###.", "....#", "####.",
-            ],
-        ),
-        (
-            't',
-            [
-                ".#...", ".#...", "####.", ".#...", ".#...", ".#...", "..##.",
-            ],
-        ),
-        (
-            'u',
-            [
-                ".....", ".....", "#...#", "#...#", "#...#", "#...#", ".####",
-            ],
-        ),
-        (
-            'v',
-            [
-                ".....", ".....", "#...#", "#...#", "#...#", ".#.#.", "..#..",
-            ],
-        ),
-        (
-            'w',
-            [
-                ".....", ".....", "#...#", "#...#", "#.#.#", "#.#.#", ".#.#.",
-            ],
-        ),
-        (
-            'x',
-            [
-                ".....", ".....", "#...#", ".#.#.", "..#..", ".#.#.", "#...#",
-            ],
-        ),
-        (
-            'y',
-            [
-                ".....", "#...#", "#...#", ".####", "....#", "...#.", ".##..",
-            ],
-        ),
-        (
-            'z',
-            [
-                ".....", ".....", "#####", "...#.", "..#..", ".#...", "#####",
-            ],
-        ),
-    ]
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
 
+    /// A GPU-free font that shapes every text with the bundled fonts, as
+    /// [`BitFont::vector_only`] does.
+    pub(crate) fn make_vector_test_font() -> BitFont {
+        BitFont {
+            source_identity: None,
+            atlas_texture: None,
+            glyphs: HashMap::new(),
+            missing_glyph: None,
+            cell_height: CELL_HEIGHT,
+            bitmap_rows: BITMAP_ROWS,
+            space_width: DEFAULT_SPACE_WIDTH,
+            char_spacing: CHAR_SPACING,
+            tab_width: TAB_WIDTH,
+            tab_origin: TAB_ORIGIN,
+            darken_texture: None,
+            engine: RefCell::new(TextEngine::new(None)),
+            mode: FontMode::Modern,
+            cells_only: false,
+            fit: Cell::new(Fit::NONE),
+            raster: Cell::new(TextRaster::NATIVE),
+        }
+    }
+
+    /// A GPU-free font in the Original font option: `fnt` itself, falling
+    /// back to the bundled fonts for what it lacks, as [`BitFont::from_fnt`]
+    /// builds it.
+    pub(crate) fn make_original_test_font(fnt: &FntFile) -> BitFont {
+        let mut font = BitFont::with_fnt(fnt, None);
+        font.set_mode(FontMode::Original);
+        font
+    }
+
     /// Build a measurement-only BitFont without a GPU context, for pure-logic
     /// tests. Atlas/darken textures are left as None -- production callers
-    /// always populate both via `from_fnt`/`fallback_5x7`.
+    /// always populate both via `from_fnt`/`vector_only`.
     pub(crate) fn make_test_font(glyph_widths: &[(u16, u32)], space_width: u32) -> BitFont {
         let mut glyphs = HashMap::new();
         for (cp, w) in glyph_widths {
@@ -1189,6 +1245,8 @@ pub(crate) mod tests {
                     uv_origin: [0.0, 0.0],
                     uv_size: [1.0, 1.0],
                     pixel_width: *w as f32,
+                    glyph_id: 0,
+                    cjk: false,
                 },
             );
         }
@@ -1200,6 +1258,8 @@ pub(crate) mod tests {
                 uv_origin: [0.0, 0.0],
                 uv_size: [0.0, 0.0],
                 pixel_width: 5.0,
+                glyph_id: 0,
+                cjk: false,
             }),
             cell_height: CELL_HEIGHT,
             bitmap_rows: BITMAP_ROWS,
@@ -1208,6 +1268,11 @@ pub(crate) mod tests {
             tab_width: TAB_WIDTH,
             tab_origin: TAB_ORIGIN,
             darken_texture: None,
+            engine: RefCell::new(TextEngine::new(None)),
+            mode: FontMode::Original,
+            cells_only: true,
+            fit: Cell::new(Fit::NONE),
+            raster: Cell::new(TextRaster::NATIVE),
         }
     }
 
@@ -1227,6 +1292,70 @@ pub(crate) mod tests {
         // 'b': x += 6 = 70, count = 2.
         // End: x + count * char_spacing = 70 + 2 = 72.
         assert_eq!(font.text_width("a\tb"), 72);
+    }
+
+    /// Native's stand-in is the `X` glyph with its 1-bit rows inverted, so the
+    /// cell fills where the glyph was clear and keeps the source width byte.
+    #[test]
+    fn the_missing_glyph_stand_in_complements_the_mask() {
+        let src = FntGlyph {
+            slot: 1,
+            width: 3,
+            rgba: vec![
+                255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0,
+            ],
+        };
+        let stand_in = BitFont::missing_glyph_stand_in(&src);
+        assert_eq!(
+            stand_in.width, 3,
+            "the width byte is copied, not recomputed"
+        );
+        let alpha: Vec<u8> = (0..6).map(|pixel| stand_in.rgba[pixel * 4 + 3]).collect();
+        assert_eq!(
+            alpha,
+            vec![0, 0, 255, 255, 255, 255],
+            "lit pixels clear and clear pixels fill, as `not row_byte` does"
+        );
+    }
+
+    /// Two-record font: codepoint `0x58` ('X') width 7 with clear rows,
+    /// codepoint `0xB0` ('deg') width 4 with set rows, so picking the wrong
+    /// source changes the observed width.
+    fn two_record_fnt() -> FntFile {
+        const HEADER_BYTES: usize = 4 + 6 * 4;
+        const TABLE_BYTES: usize = 65536 * 2;
+        const STRIDE: usize = 3; // 1 width byte + 2 rows of 1 byte
+        let mut data = vec![0u8; HEADER_BYTES + TABLE_BYTES + STRIDE * 2];
+        data[..4].copy_from_slice(&0x546E_6F66u32.to_le_bytes());
+        for (i, field) in [20u32, 1, 2, 3, 2, STRIDE as u32].iter().enumerate() {
+            data[4 + i * 4..8 + i * 4].copy_from_slice(&field.to_le_bytes());
+        }
+        for (codepoint, index) in [(0x58u16, 1u16), (0xB0, 2)] {
+            // The retail table stores 1-based glyph indices.
+            let off = HEADER_BYTES + codepoint as usize * 2;
+            data[off..off + 2].copy_from_slice(&index.to_le_bytes());
+        }
+        let glyphs = HEADER_BYTES + TABLE_BYTES;
+        data[glyphs] = 7; // 'X': width 7, both rows clear
+        data[glyphs + STRIDE] = 4; // 'deg': width 4, both rows set
+        data[glyphs + STRIDE + 1] = 0xFF;
+        data[glyphs + STRIDE + 2] = 0xFF;
+        FntFile::from_bytes(&data).expect("synthetic FNT parses")
+    }
+
+    #[test]
+    fn the_missing_glyph_record_uses_the_table_byte_offset() {
+        let record = BitFont::missing_glyph_record(&two_record_fnt())
+            .expect("the fixture carries the stand-in");
+        assert_eq!(
+            record.width, 7,
+            "the stand-in is the record at byte offset 0xB0 (codepoint 0x58, 'X'), not 0xB0 ('deg')"
+        );
+        assert!(
+            record.rgba.chunks(4).all(|pixel| pixel[3] == 255),
+            "'X' is clear where it is set in 'deg', so the cell fills"
+        );
     }
 
     #[test]

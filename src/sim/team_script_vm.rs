@@ -474,8 +474,16 @@ impl TeamAiInstallDiagnostic {
         }
     }
 
+    /// A fixed-AIMD resolution loss refuses the install, except an AITrigger
+    /// naming an absent TeamType. AITriggerTypeClass::Read_INI (`0x0041F580`)
+    /// looks the name up with TeamTypeClass::Find (`0x006F0FC0`, call at
+    /// `0x0041F665`), which returns null without allocating, and keeps the
+    /// trigger; Is_Eligible (`0x0041E720`) then rejects a null primary team at
+    /// `0x0041E754`. Mental Omega 3.3.6's AIMO ships one such trigger
+    /// (`FOETR176LB-G` -> `FOETT176LB-G`).
     pub(crate) fn is_fixed_source_refusal(&self) -> bool {
         self.source() == TeamAiDefinitionSource::FixedAimd
+            && !matches!(self, Self::MissingAiTriggerTeamType { .. })
     }
 }
 
@@ -547,6 +555,12 @@ impl From<crate::sim::combat::TargetKind> for TeamTarget {
 pub struct TeamScriptState {
     id: u64,
     owner: InternedId,
+    /// Team+30, Script_Scout6EE800's selected House. Constructor6E8AB0
+    /// clears it; Load6EC51E..527 fixes its pointer. It persists across
+    /// action visits. Houses never retire during a Rust scenario; a new
+    /// scenario replaces both registries, so entity-u64 expiry cannot alias it.
+    #[serde(default)]
+    scout_house: Option<InternedId>,
     team_type_id: Option<InternedId>,
     task_force_id: Option<InternedId>,
     script_id: InternedId,
@@ -1262,6 +1276,7 @@ impl TeamScriptState {
         Self {
             id,
             owner,
+            scout_house: None,
             team_type_id,
             task_force_id,
             script_id,
@@ -1361,6 +1376,10 @@ impl TeamScriptVm {
             team.task_force_id.hash(hasher);
             team.script_id.hash(hasher);
             team.owner.hash(hasher);
+            if let Some(house) = team.scout_house {
+                b"team-scout-house-v1".hash(hasher);
+                house.hash(hasher);
+            }
             team.cursor.hash(hasher);
             team.advance_pending.hash(hasher);
             // The retired test-only wait counter, always 0.
@@ -1611,8 +1630,6 @@ pub(crate) fn join_team_for_test(
 }
 
 #[cfg(test)]
-mod type_conversion_tests;
-#[cfg(test)]
 mod firesale_retail_tests;
 #[cfg(test)]
 mod group_recruitment_tests;
@@ -1626,6 +1643,8 @@ mod path_threat_input_tests;
 mod recruit_oracle_tests;
 #[cfg(test)]
 pub(crate) mod reinforcements_tests;
+#[cfg(test)]
+mod type_conversion_tests;
 
 #[cfg(test)]
 mod tests {

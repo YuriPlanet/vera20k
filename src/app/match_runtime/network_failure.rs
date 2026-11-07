@@ -6,8 +6,9 @@ use crate::app::{App, AppState};
 use crate::sim::world::NetworkInterruption;
 use crate::ui::shell::controller::{DialogController, ShellKey};
 use crate::ui::shell::descriptor::DialogId;
+use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::layout::LaidOutControl;
-use crate::ui::shell::modal::{body_ok_layout, control};
+use crate::ui::shell::modal::{body_ok_layout_in, control};
 use winit::event::{KeyEvent, MouseButton};
 use winit::keyboard::PhysicalKey;
 
@@ -49,20 +50,32 @@ pub(crate) fn labels(
 /// An online match's connection failure is the relay's ordered stream, not
 /// another player (their silence removes only their House), so it names the
 /// game server rather than "the other system".
+///
+/// VERA-only: a frame that failed in a network match (`frame_stopped`) is an
+/// error, not a desync, so the box says so and points at the log instead of
+/// the checksum box's own out-of-sync text.
 pub(crate) fn vera_body(state: &AppState) -> Option<String> {
+    if state.match_state.frame_stopped {
+        let mut body = crate::i18n::tr("VERA:MatchInternalError");
+        if let Some(path) = crate::util::logging::log_file() {
+            body.push_str("\n\n");
+            body.push_str(&crate::i18n::tr_fill(
+                "VERA:LogFileDetails",
+                &[("path", &path.display())],
+            ));
+        }
+        return Some(body);
+    }
     match interruption(state)? {
-        NetworkInterruption::NewerClientRequired => Some(format!(
-            "This online match needs a newer VERA20k. Download it from {}",
-            crate::app::shell_wol::RELEASES_URL
+        NetworkInterruption::NewerClientRequired => Some(crate::i18n::tr_fill(
+            "VERA:MatchNeedsNewerVera",
+            &[("url", &crate::app::shell_wol::RELEASES_URL)],
         )),
         NetworkInterruption::ConnectionFailed
             if state.match_state.session_mode()
                 == crate::app::match_runtime::session::SessionMode::Wol =>
         {
-            Some(
-                "The connection to the VERA20k game server failed, so this match cannot continue."
-                    .to_owned(),
-            )
+            Some(crate::i18n::tr("VERA:GameServerConnectionFailed"))
         }
         _ => None,
     }
@@ -149,10 +162,11 @@ pub(crate) fn take_acknowledged(state: &mut AppState) -> bool {
     true
 }
 
+/// The box keeps gamemd's centring on the match's frame.
 fn button_feed(width: i32, height: i32) -> [LaidOutControl; 1] {
     [LaidOutControl {
         id: control::OK,
-        rect: body_ok_layout(width, height).ok,
+        rect: body_ok_layout_in(RectPx::new(0, 0, width, height)).ok,
     }]
 }
 

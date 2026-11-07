@@ -154,6 +154,31 @@ impl RocketRuntime {
         f32::from_bits(self.current_pitch)
     }
 
+    /// The bits `RocketLocomotionClass::Draw_Matrix @ 0x00663470` adds to the
+    /// draw key under the facing, or `None` where it keys the draw -1: none
+    /// at zero pitch (`0x006634C1`), 0x20 when CurrentPitch equals the
+    /// block's unrounded PitchInitial quarter turns (`0x0066352C..0x00663541`)
+    /// and 0x40 at its stored PitchFinal product (`0x0066351B`,
+    /// `0x00663547..0x00663557`). The block is the owner type's
+    /// ([`crate::rules::missile_spawn::MissileSpawnRules::rocket_block`],
+    /// `0x006634E8..0x0066351B`).
+    pub fn draw_key_bits(&self, block: &MissileSpawnParams) -> Option<u32> {
+        let pitch = self.pitch_value();
+        let half_pi = f64_value(HALF_PI);
+        let equal = |value| X87Chop53::compare(pitch, value) == X87Ordering::Equal;
+        if equal(X87Chop53::load_i32(0)) {
+            Some(0)
+        } else if equal(X87Chop53::mul(f32_value(block.pitch_initial), half_pi)) {
+            Some(0x20)
+        } else if equal(f32_value(NativeF32Bits::from_bits(quarter_turns(
+            block.pitch_final,
+        )))) {
+            Some(0x40)
+        } else {
+            None
+        }
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_mission_state_for_test(&mut self, state: i32) {
         self.mission_state = state;
@@ -957,5 +982,26 @@ mod tests {
                 "{name}: the flight ends where the original's does"
             );
         }
+    }
+
+    /// `Draw_Matrix @ 0x00663470` keys a pitched V3 only at the stored
+    /// PitchFinal product. It compares the PitchInitial product unrounded,
+    /// so Move_To's binary32 start pitch (retail 0.21) keys -1.
+    #[test]
+    fn draw_key_caches_a_pitched_rocket_only_at_the_stored_pitch_final() {
+        let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let spawn = &battle.rules.missile_spawn;
+        let (block, _) = spawn.rocket_block(&spawn.v3.type_name);
+        let mut rocket = RocketRuntime::constructed(0);
+        assert_eq!(rocket.draw_key_bits(block), Some(0));
+        move_to(&mut rocket, block, DriveCoord { x: 1, y: 1, z: 0 }, 0);
+        assert_ne!(rocket.current_pitch, 0);
+        assert_eq!(rocket.draw_key_bits(block), None);
+        rocket.current_pitch = quarter_turns(block.pitch_final);
+        assert_eq!(rocket.draw_key_bits(block), Some(0x40));
+        rocket.current_pitch += 1;
+        assert_eq!(rocket.draw_key_bits(block), None);
     }
 }

@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use super::{InternedId, OwnerVisibility};
+use super::{DummyVisibility, InternedId, MapCellEdgeCache, OwnerVisibility, ShroudKnowledge};
 use crate::map::resolved_terrain::NativeCellQuery;
 
 /// Every viewer's [`OwnerVisibility`], keyed by viewer.
@@ -22,11 +22,55 @@ use crate::map::resolved_terrain::NativeCellQuery;
 /// read of a plane with writes waiting panics. The kept viewers are the ones
 /// the pass reads: the human players and the current house, whose map the
 /// app's sound boundary also reads (`advance_live_object_pass`).
+///
+/// Between [`Self::journal`] and [`Self::end_journal`], the first use of a
+/// plane that can write it keeps a copy of its grids, so the end can tell
+/// which planes the writes changed.
 #[derive(Debug, Clone, Default)]
 pub struct Planes {
     planes: BTreeMap<InternedId, Plane>,
     /// While deferring, the viewers whose writes apply at once.
     kept: Option<Vec<InternedId>>,
+    /// While journaling, each used plane's grids before its first use, its
+    /// waiting writes applied; `None` for a plane the journal saw made.
+    journal: Option<BTreeMap<InternedId, Option<Grids>>>,
+}
+
+/// A plane's grids: every array its writes change, without the derived
+/// lists and caches, which follow the grids.
+#[derive(Debug, Clone)]
+struct Grids {
+    width: u16,
+    height: u16,
+    cells: Vec<u8>,
+    ground_flags: Vec<u8>,
+    shroud_knowledge: Vec<ShroudKnowledge>,
+    map_cell_edge_cache: Vec<MapCellEdgeCache>,
+    dummy_visibility: DummyVisibility,
+}
+
+impl Grids {
+    fn of(view: &OwnerVisibility) -> Self {
+        Self {
+            width: view.width,
+            height: view.height,
+            cells: view.cells.clone(),
+            ground_flags: view.ground_flags.clone(),
+            shroud_knowledge: view.shroud_knowledge.clone(),
+            map_cell_edge_cache: view.map_cell_edge_cache.clone(),
+            dummy_visibility: view.dummy_visibility,
+        }
+    }
+
+    fn matches(&self, view: &OwnerVisibility) -> bool {
+        self.width == view.width
+            && self.height == view.height
+            && self.dummy_visibility == view.dummy_visibility
+            && self.cells == view.cells
+            && self.ground_flags == view.ground_flags
+            && self.shroud_knowledge == view.shroud_knowledge
+            && self.map_cell_edge_cache == view.map_cell_edge_cache
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -103,6 +147,7 @@ impl Planes {
 
     /// `viewer`'s plane, its waiting writes applied.
     pub fn get_mut(&mut self, viewer: &InternedId) -> Option<&mut OwnerVisibility> {
+        self.note(*viewer);
         self.planes.get_mut(viewer).map(Plane::settled)
     }
 
@@ -112,6 +157,7 @@ impl Planes {
         viewer: InternedId,
         new: impl FnOnce() -> OwnerVisibility,
     ) -> &mut OwnerVisibility {
+        self.note(viewer);
         self.planes
             .entry(viewer)
             .or_insert_with(|| Plane::new(new()))
@@ -120,6 +166,7 @@ impl Planes {
 
     /// Replace `viewer`'s plane; the old one, its waiting writes applied.
     pub fn insert(&mut self, viewer: InternedId, view: OwnerVisibility) -> Option<OwnerVisibility> {
+        self.note(viewer);
         let mut old = self.planes.insert(viewer, Plane::new(view))?;
         old.settled();
         Some(old.view)
@@ -155,6 +202,7 @@ impl Planes {
 
     /// Every plane by viewer, its waiting writes applied.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (&InternedId, &mut OwnerVisibility)> {
+        self.note_every();
         self.planes
             .iter_mut()
             .map(|(viewer, plane)| (viewer, plane.settled()))
@@ -162,11 +210,60 @@ impl Planes {
 
     /// Every plane, its waiting writes applied.
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut OwnerVisibility> {
+        self.note_every();
         self.planes.values_mut().map(Plane::settled)
     }
 
     pub fn clear(&mut self) {
+        self.note_every();
         self.planes.clear();
+    }
+
+    /// Start keeping each plane's grids before its first use that can write
+    /// it, until [`Self::end_journal`].
+    pub(super) fn journal(&mut self) {
+        assert!(self.journal.is_none(), "plane journals do not nest");
+        self.journal = Some(BTreeMap::new());
+    }
+
+    /// Stop journaling: each plane used since [`Self::journal`], and whether
+    /// its grids changed (or it was made or removed), in viewer order.
+    pub(super) fn end_journal(&mut self) -> Vec<(InternedId, bool)> {
+        let journal = self.journal.take().expect("journaling");
+        journal
+            .into_iter()
+            .map(|(viewer, before)| {
+                let now = self.planes.get_mut(&viewer).map(Plane::settled);
+                let changed = match (before, now) {
+                    (Some(before), Some(now)) => !before.matches(now),
+                    (None, None) => false,
+                    _ => true,
+                };
+                (viewer, changed)
+            })
+            .collect()
+    }
+
+    /// Before a use of `viewer`'s plane that can write it: while journaling,
+    /// keep its grids unless already kept.
+    fn note(&mut self, viewer: InternedId) {
+        let Some(journal) = &mut self.journal else {
+            return;
+        };
+        if let std::collections::btree_map::Entry::Vacant(entry) = journal.entry(viewer) {
+            let plane = self.planes.get_mut(&viewer);
+            entry.insert(plane.map(|plane| Grids::of(plane.settled())));
+        }
+    }
+
+    /// [`Self::note`] for every plane.
+    fn note_every(&mut self) {
+        if self.journal.is_some() {
+            let viewers: Vec<_> = self.planes.keys().copied().collect();
+            for viewer in viewers {
+                self.note(viewer);
+            }
+        }
     }
 
     /// Leave the source writes to every plane but `kept`'s waiting until
@@ -203,6 +300,7 @@ impl Planes {
         cells: &[(u16, u16)],
         native_cells: Option<&NativeCellQuery<'_>>,
     ) {
+        self.note(viewer);
         let defer = self
             .kept
             .as_ref()
@@ -244,6 +342,7 @@ impl From<BTreeMap<InternedId, OwnerVisibility>> for Planes {
                 .map(|(viewer, view)| (viewer, Plane::new(view)))
                 .collect(),
             kept: None,
+            journal: None,
         }
     }
 }

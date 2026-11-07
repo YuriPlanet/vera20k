@@ -44,7 +44,7 @@ pub(crate) struct Lasers {
 
 impl Lasers {
     /// 54FE60 copies inputs once; ctor timer is {Frame,1}, step/rate1,
-    /// fades=true, blinks=false and intensity start1. House RGB is bound
+    /// fades=true and blinks=false. House RGB is bound
     /// here once; future source death/recoloring cannot change the copy.
     pub(crate) fn create(
         &mut self,
@@ -83,10 +83,11 @@ impl Lasers {
     }
 
     /// Tactical550240 visits reverse birth order on every composite,
-    /// including repeated draws without Logic. General55048F..550550
-    /// requests each channel's Main ranged draw before sampling detail or
-    /// clipping. Equal zero bounds still make three requests, with no raw
-    /// stream advance. Only this owner refreshes the derived color cache.
+    /// including composites without Logic (a scenario-pause tick).
+    /// General55048F..550550 requests each channel's Main ranged draw before
+    /// sampling detail or clipping. Equal zero bounds still make three
+    /// requests, with no raw stream advance. Only this owner refreshes the
+    /// derived color cache.
     pub(crate) fn composite(&mut self, main: &mut MainRngDraws) {
         for laser in self.live.iter_mut().rev() {
             if laser.birth.duration <= 0 {
@@ -131,6 +132,7 @@ impl Lasers {
             color: laser.color,
             age: laser.age,
             duration: laser.birth.duration,
+            fade_start: laser.birth.fade_start,
             fade_end: laser.birth.fade_end,
         })
     }
@@ -165,6 +167,10 @@ impl Lasers {
     /// No laser data is serialized, resurrected, or reconstructed on restore.
     pub(crate) fn clear_on_load(&mut self) {
         self.live.clear();
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.live.is_empty()
     }
 }
 

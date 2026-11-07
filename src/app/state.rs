@@ -9,7 +9,7 @@ use super::{OverlayTypeRegistry, ResolvedTerrainGrid};
 
 mod platform;
 
-pub(crate) use platform::PlatformState;
+pub(crate) use platform::{CapturePresentation, PlatformState};
 
 /// All initialized state. Created in `resumed()` when the window is available.
 /// pub(crate) so the app presentation/render paths can access fields.
@@ -59,6 +59,12 @@ impl AppState {
             .is_some_and(|config| config.graphics.translucent_fog)
     }
 
+    /// `[VERA] HealthBars=`: the client health-strip policy. Presentation only;
+    /// the simulation never reads it.
+    pub(crate) fn health_bar_mode(&self) -> crate::ui::main_menu_dialogs::options::HealthBarMode {
+        self.persistence.options_profile.health_bars
+    }
+
     /// Is the match frozen because the window is not the foreground? Only the
     /// configured freeze, and only offline: `Main_Tick` (`0x0055D38D`) sleeps
     /// until reactivated in GameMode 0 or 5, but a network game sleeps 10 ms
@@ -66,6 +72,16 @@ impl AppState {
     pub(crate) fn focus_freeze_active(&self) -> bool {
         self.platform.focus_freeze_configured()
             && self.match_state.session_mode().is_single_player()
+    }
+
+    /// The game folder map lookups start from: the configured one, else the
+    /// asset manager's.
+    pub(crate) fn ra2_dir(&self) -> Option<&std::path::Path> {
+        self.platform
+            .game_config
+            .as_ref()
+            .map(|config| config.paths.ra2_dir.as_path())
+            .or_else(|| self.process_assets.manager().map(|assets| assets.ra2_dir()))
     }
 
     /// Current projection: frontend/result use physical window pixels; tactical
@@ -93,27 +109,59 @@ impl AppState {
         self.render_dimensions().1
     }
 
-    /// The sidebar's place and size in the match frame (`ui::sidebar::frame`).
+    /// The sidebar's place and size in the match frame (`ui::sidebar::frame`),
+    /// drawn at the window's pixels when the match zooms.
     pub(crate) fn sidebar_frame(&self) -> crate::ui::sidebar::SidebarFrame {
+        let zoom = self
+            .match_zoom_pass()
+            .map_or(100, |pass| pass.geometry().percent);
         self.sidebar_frame_for(self.render_width(), self.render_height())
+            .in_window(zoom, self.hd_radar() || self.smooth_sidebar())
     }
 
-    /// The same for a frame of `width` x `height`. Captures keep the native
-    /// size, as they keep the zoom at 100%.
+    /// Whether VERA's HD radar is on (`[VERA] HdRadar=`); a capture takes its
+    /// profile's choice (`CapturePresentation`).
+    pub(crate) fn hd_radar(&self) -> bool {
+        if self.platform.capture_client_size.is_some() {
+            self.platform.capture_presentation.hd_radar
+        } else {
+            self.persistence.options_profile.hd_radar
+        }
+    }
+
+    /// Whether VERA's smooth sidebar is on (`[VERA] SmoothSidebar=`); a
+    /// capture takes its profile's choice (`CapturePresentation`).
+    pub(crate) fn smooth_sidebar(&self) -> bool {
+        if self.platform.capture_client_size.is_some() {
+            self.platform.capture_presentation.smooth_sidebar
+        } else {
+            self.persistence.options_profile.smooth_sidebar
+        }
+    }
+
+    /// Whether the setup screens show VERA's own map pictures
+    /// (`[VERA] HdMapPreviews=`, `app::map_picture`). Captures keep the map's
+    /// `[PreviewPack]` picture, which retail comparisons check, and the
+    /// browser build cannot start the hidden run that draws one.
+    pub(crate) fn hd_map_previews(&self) -> bool {
+        crate::ui::main_menu_dialogs::options::HAS_HD_MAP_PREVIEWS
+            && self.platform.capture_client_size.is_none()
+            && self.persistence.options_profile.hd_map_previews
+    }
+
+    /// The same for a frame of `width` x `height`. Captures take their own
+    /// size (`CapturePresentation`), Normal unless the profile says.
     pub(crate) fn sidebar_frame_for(
         &self,
         width: u32,
         height: u32,
     ) -> crate::ui::sidebar::SidebarFrame {
-        let percent = if self.platform.capture_client_size.is_some() {
-            100
+        let size = if self.platform.capture_client_size.is_some() {
+            self.platform.capture_presentation.sidebar
         } else {
-            self.persistence
-                .options_profile
-                .sidebar
-                .percent(width, height)
+            self.persistence.options_profile.sidebar
         };
-        crate::ui::sidebar::SidebarFrame::new(width, height, percent)
+        crate::ui::sidebar::SidebarFrame::new(width, height, size.percent(width, height))
     }
 
     /// The zoom pass a match frame goes through: the battlefield and the
@@ -174,11 +222,11 @@ impl AppState {
     /// Asset-independent status cards and diagnostic modals use the OS cursor,
     /// and so does the pointer once it leaves the client area: mouse.shp has no
     /// art for the title bar or resize border, and the OS arrow is drawn there
-    /// whether VERA asks for it or not. Main-menu dialogs (Options, Keyboard,
+    /// whether VERA asks for it or not. The same holds over an inactive window. Main-menu dialogs (Options, Keyboard,
     /// the exit confirm) are shell pages that draw mouse.shp themselves, so
     /// they keep it; excluding them showed the OS arrow beside it.
     pub(crate) fn use_software_cursor(&self) -> bool {
-        self.platform.pointer_in_client
+        self.platform.owns_pointer()
             && !(self.frontend.screen == crate::ui::game_screen::GameScreen::MainMenu
                 && self.frontend.main_menu_shell_error.is_some())
             && self

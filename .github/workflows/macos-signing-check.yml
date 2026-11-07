@@ -4,9 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       build_run:
-        description: Completed main-branch Release run containing macos-unsigned
+        description: Completed main-branch Release run containing the image's unsigned artifact
         required: true
         type: string
+      target:
+        description: Which Mac image to sign
+        type: choice
+        options: [macos-arm64, macos-x64]
+        default: macos-arm64
 
 permissions:
   contents: read
@@ -16,7 +21,8 @@ jobs:
   check:
     if: github.ref == 'refs/heads/main'
     runs-on: macos-latest
-    timeout-minutes: 45
+    # Apple's two-hour wait (notarize.py) plus signing, upload and stapling.
+    timeout-minutes: 150
     environment: macos-signing
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,7 +52,7 @@ jobs:
           PY
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: macos-unsigned
+          name: ${{ inputs.target }}-unsigned
           path: unsigned
           run-id: ${{ inputs.build_run }}
           github-token: ${{ github.token }}

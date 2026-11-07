@@ -620,10 +620,12 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
     let family = stock_offline_start_callback_family(session)?;
     let mut start_header = crate::map::preview::ScenarioStartHeader::default();
     start_header.read_ini(&map_data.ini);
+    // A shared House is one participant.
     let launch_participant_count = (session
         .humans
         .iter()
-        .filter(|human| !human.is_observer())
+        .enumerate()
+        .filter(|(index, human)| !human.is_observer() && session.house_leader(*index) == *index)
         .count() as i32)
         .wrapping_add(session.ai_player_count)
         .max(0) as usize;
@@ -1126,7 +1128,6 @@ const DEFICIENT_START_RECT_H: u16 = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkirmishLaunchApplyResult {
-    pub local_owner: Option<String>,
     pub spawned_mcvs: u32,
     pub active_slots: usize,
 }
@@ -1140,7 +1141,9 @@ pub struct NormalizedSkirmishSlot {
     pub(crate) team: LaunchTeam,
     pub is_human: bool,
     pub observer: bool,
-    pub source_human_index: Option<usize>,
+    /// The humans who control this House, its leader first; empty for AI.
+    /// VERA shared control: players on one start share a House.
+    pub controllers: Vec<LaunchController>,
     /// A human node's handle, CreateHouses' source for House+0x1602A.
     pub handle: Option<String>,
     pub(crate) difficulty: HouseDifficulty,
@@ -1152,6 +1155,32 @@ pub struct NormalizedSkirmishSlot {
     /// (native behaviour, no clips) or to `none`, and
     /// [`crate::rules::personality::personality_for_house`] does the rest.
     pub commander: Option<String>,
+}
+
+/// One human controlling a launch House.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LaunchController {
+    /// The human's index in `SkirmishLaunchSession::humans`.
+    pub human_index: usize,
+    /// The sender byte of this human's command records: its place in the
+    /// color-sorted human order (CreateHouses687F66), which is its House
+    /// index unless players share Houses.
+    pub source: i8,
+}
+
+impl NormalizedSkirmishSlot {
+    /// The human node this House was built for (688137), its leader.
+    pub fn source_human_index(&self) -> Option<usize> {
+        self.controllers
+            .first()
+            .map(|controller| controller.human_index)
+    }
+
+    pub fn is_controlled_by(&self, human_index: usize) -> bool {
+        self.controllers
+            .iter()
+            .any(|controller| controller.human_index == human_index)
+    }
 }
 
 /// Sim-owned behavioral launch descriptor (F09).
@@ -1289,7 +1318,7 @@ pub fn initialize_skirmish_launch_houses(
     // cannot clear or replace the current house.
     let current_house = slots
         .iter()
-        .find(|slot| slot.source_human_index == Some(session.local_player_index))
+        .find(|slot| slot.is_controlled_by(session.local_player_index))
         .map(|slot| {
             let id = sim
                 .interner
@@ -1303,22 +1332,19 @@ pub fn initialize_skirmish_launch_houses(
     // before the color-ordered House array is consulted. Native source node0
     // is the current local node (CreateHouses6880F8..68810F); VERA represents
     // that identity by local_player_index, independently of host node order.
-    let scenario_side = session
-        .humans
-        .get(session.local_player_index)
-        .map(|human| {
-            let country = if human.is_observer() {
-                LaunchCountry::America
-            } else {
-                human.slot.country
-            };
+    // A player who shares a House plays its leader's Country.
+    let scenario_side = slots
+        .iter()
+        .find(|slot| slot.is_controlled_by(session.local_player_index))
+        .map(|slot| {
             let name = rules
-                .country_name(country.index())
+                .country_name(slot.country.index())
                 .expect("accepted local Country exists");
             rules.country_side_index_raw(name).unwrap_or(0)
         })
         .unwrap_or(0);
     sim.session.install_scenario_side(scenario_side);
+    install_shared_house_sources(sim, &slots, session.local_player_index);
     let observers = slots
         .iter()
         .filter(|slot| slot.observer)
@@ -1333,23 +1359,53 @@ pub fn initialize_skirmish_launch_houses(
             sim.houses
                 .get_mut(&id)
                 .expect("created launch House")
-                .assign_player_control(slot.source_human_index == Some(session.local_player_index));
+                .assign_player_control(slot.is_controlled_by(session.local_player_index));
         }
     }
     populate_special_houses(sim, house_roster, rules);
 }
 
+/// VERA shared control: when players share Houses, record which House each
+/// command sender controls and this process's own sender. Otherwise every
+/// sender is its House index, as in gamemd, and nothing is installed.
+fn install_shared_house_sources(
+    sim: &mut Simulation,
+    slots: &[NormalizedSkirmishSlot],
+    local_player_index: usize,
+) {
+    let controllers = slots.iter().enumerate().flat_map(|(house, slot)| {
+        slot.controllers
+            .iter()
+            .map(move |controller| (controller, house))
+    });
+    if controllers
+        .clone()
+        .all(|(controller, house)| usize::try_from(controller.source) == Ok(house))
+    {
+        return;
+    }
+    let mut source_houses = vec![0; controllers.clone().count()];
+    let mut local_source = None;
+    for (controller, house) in controllers {
+        source_houses[controller.source as usize] =
+            u8::try_from(house).expect("human Houses come first");
+        if controller.human_index == local_player_index {
+            local_source = Some(controller.source);
+        }
+    }
+    sim.session
+        .install_shared_house_sources(source_houses, local_source);
+}
+
 /// Commit the explicit launch-session diplomacy graph at the post-crate boundary.
 pub(crate) fn apply_skirmish_launch_alliances(
     sim: &mut Simulation,
-    house_roster: &HouseRoster,
     session: &SkirmishLaunchSession,
     rules: &RuleSet,
 ) {
     let slots = normalized_launch_slots(session);
     sim.install_house_alliances(
         crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(launch_alliance_map(
-            house_roster,
             &slots,
             &session.mode,
         )),
@@ -1525,10 +1581,6 @@ fn apply_resolved_skirmish_launch_session(
     project_pre_fill_start_assignment(sim, &slots, &start_assignment);
     let assignments = &start_assignment.placements;
     let mut spawned_mcvs = 0;
-    let mut local_owner = slots
-        .iter()
-        .find(|slot| slot.source_human_index == Some(session.local_player_index))
-        .map(|slot| slot.owner_name.clone());
 
     if session.options.bases {
         for (slot_idx, waypoint) in assignments {
@@ -1584,9 +1636,6 @@ fn apply_resolved_skirmish_launch_session(
                     waypoint.rx,
                     waypoint.ry
                 );
-                if slot.source_human_index == Some(session.local_player_index) {
-                    local_owner = None;
-                }
             }
         }
 
@@ -1623,7 +1672,6 @@ fn apply_resolved_skirmish_launch_session(
     );
 
     SkirmishLaunchApplyResult {
-        local_owner,
         spawned_mcvs,
         active_slots: slots.len(),
     }
@@ -1662,7 +1710,7 @@ fn project_pre_fill_start_assignment(
 /// the startup crates, AI credits and alliances that VERA's
 /// `finalize_scenario_post_map` runs later. The reveal reads none of them,
 /// and a noncampaign CellPUT already discovered every object for the current
-/// house (`discover_cell_put_object`), so no effect is known.
+/// house (`discover_by_player`), so no effect is known.
 pub fn apply_launch_shroud_option(
     sim: &mut Simulation,
     context: crate::sim::world::UninitContext<'_>,
@@ -1710,8 +1758,22 @@ pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<Normalize
     );
     let mut humans: Vec<_> = session.humans.iter().enumerate().collect();
     humans.sort_by_key(|(index, human)| (human.slot.color_index, human.house_source_order(*index)));
-    let mut slots = Vec::with_capacity(humans.len() + session.opponents.len());
-    for (index, human) in humans {
+    let mut slots: Vec<NormalizedSkirmishSlot> =
+        Vec::with_capacity(humans.len() + session.opponents.len());
+    // VERA shared control: a player who shares a start joins its leader's
+    // House instead of building one. Every human keeps the source its place
+    // in this order gives it.
+    let mut members = Vec::new();
+    for (source, (index, human)) in humans.into_iter().enumerate() {
+        let controller = LaunchController {
+            human_index: index,
+            source: i8::try_from(source).expect("at most 30 human nodes"),
+        };
+        let leader = session.house_leader(index);
+        if leader != index {
+            members.push((leader, controller));
+            continue;
+        }
         let mut owner_name = human.name.clone();
         let mut suffix = 0;
         while used_names.contains(&normalize_house_name(&owner_name)) {
@@ -1735,11 +1797,19 @@ pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<Normalize
             team: human.slot.team,
             is_human: true,
             observer: human.is_observer(),
-            source_human_index: Some(index),
+            controllers: vec![controller],
             handle: Some(human.name.clone()),
             difficulty: HouseDifficulty::Normal,
             commander: None,
         });
+    }
+    for (leader, controller) in members {
+        slots
+            .iter_mut()
+            .find(|slot| slot.source_human_index() == Some(leader))
+            .expect("a shared start's leader builds its House")
+            .controllers
+            .push(controller);
     }
     for (index, opponent) in session.opponents.iter().enumerate() {
         slots.push(NormalizedSkirmishSlot {
@@ -1750,7 +1820,7 @@ pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<Normalize
             team: opponent.team,
             is_human: false,
             observer: false,
-            source_human_index: None,
+            controllers: Vec::new(),
             handle: None,
             difficulty: HouseDifficulty::from_native(opponent.difficulty.as_i32())
                 .expect("native AI difficulty"),
@@ -1819,7 +1889,10 @@ pub fn populate_launch_houses(
     // Resolved once: the catalog and these switches are the same for every
     // slot, and the base plan is built before the loop.
     let feedback = rules.commander_feedback();
-    for slot in slots {
+    // The slot ordinal seeds the commander pick, so a launch whose assignment
+    // table names a commander of the wrong side still ends up with one
+    // commander per house instead of the same stand-in three times.
+    for (slot_index, slot) in slots.iter().enumerate() {
         let name_id = sim.interner.intern(&slot.owner_name);
         let country_name = rules
             .country_name(slot.country.index())
@@ -1921,6 +1994,7 @@ pub fn populate_launch_houses(
                 rules.personalities(),
                 country_name,
                 requested,
+                slot_index,
             );
             house.set_personality(personality);
             if let Some(definition) = personality
@@ -1999,12 +2073,17 @@ pub fn apply_skirmish_ai_opening_credits(houses: &mut crate::sim::houses::Houses
     }
 }
 
+/// The launch diplomacy graph: team and co-op alliances between the slots.
+///
+/// A map House's `Allies=` takes no part. `HouseClass::Read_INI @ 0x005009B0`,
+/// its only reader on an authored map, runs only when `Session.GameMode` is 0
+/// (campaign; `0x0068776E..0x006877B9`), and `ScenarioClass::Create_Houses
+/// @ 0x00687F10` builds Neutral and Special with no allies.
 pub fn launch_alliance_map(
-    house_roster: &HouseRoster,
     slots: &[NormalizedSkirmishSlot],
     mode: &crate::skirmish_launch::SkirmishLaunchMode,
 ) -> crate::map::houses::HouseAllianceMap {
-    let mut alliances = house_roster.alliance_map();
+    let mut alliances = crate::map::houses::HouseAllianceMap::new();
     for slot in slots {
         alliances
             .entry(normalize_house_name(&slot.owner_name))
@@ -3157,7 +3236,7 @@ mod tests {
         for row in corpus["type_inputs"].as_array().unwrap() {
             let object = rules.object(row["id"].as_str().unwrap()).unwrap();
             assert_eq!(
-                rules.house_type_mask(&object.owner),
+                object.owner_mask(&rules),
                 row["owner_mask"].as_u64().unwrap() as u32,
                 "{} Owner mask",
                 row["id"],
@@ -3291,6 +3370,11 @@ mod tests {
         source.push_str(&format!(
             "[VehicleTypes]\n0={type_id}\n[{type_id}]\nTechLevel=1\n"
         ));
+        #[cfg(feature = "ares")]
+        source.push_str(
+            "[BuildingTypes]\n0=QUALIFIER_FACTORY\n\
+             [QUALIFIER_FACTORY]\nStrength=100\nFactory=UnitType\nOwner=Americans,Alliance\n",
+        );
         for row in gate["rows"].as_array().unwrap() {
             let mut ini = IniFile::from_str(&source);
             ini.merge(&IniFile::from_str(gate["owner_layer"].as_str().unwrap()));
@@ -3298,7 +3382,7 @@ mod tests {
             let rules = RuleSet::from_ini(&ini).unwrap();
             let object = rules.object(type_id).unwrap();
             assert_eq!(
-                rules.house_type_mask(&object.owner),
+                object.owner_mask(&rules),
                 gate["owner_mask"].as_u64().unwrap() as u32
             );
             assert_eq!(
@@ -3327,6 +3411,19 @@ mod tests {
             let country = sim.interner.intern(actual_country);
             sim.houses
                 .register(HouseState::new(owner, -1, Some(country), false, 0, 10));
+            #[cfg(feature = "ares")]
+            {
+                // The Ares CanBuild suffix also requires an online factory;
+                // leave that gate open while comparing the Country qualifiers.
+                let factory = sim
+                    .spawn_object("QUALIFIER_FACTORY", "QualifierHouse", 10, 10, 0, &rules)
+                    .unwrap();
+                sim.substrate
+                    .entities
+                    .get_mut(factory)
+                    .unwrap()
+                    .finish_building_construction_for_test();
+            }
             assert_eq!(
                 crate::sim::production::can_build(&sim, &rules, owner, object, false, false)
                     == crate::sim::production::CanBuild::Yes,
@@ -4381,6 +4478,56 @@ mod tests {
         assert!(MatchLaunchDescriptor::from_resolved(unresolved_remote).is_err());
     }
 
+    /// VERA shared control: players who pick the same start build one House,
+    /// led by the lowest row, and each sends as its own source.
+    #[test]
+    fn humans_on_one_start_share_a_house_as_separate_senders() {
+        let mut session = one_player_battle_launch("shared.map").session().clone();
+        let template = session.humans[0].clone();
+        // CreateHouses687F66 color order: Ally, Rival, Host.
+        session.humans = [("Host", 3, 0), ("Ally", 1, 0), ("Rival", 2, 1)]
+            .into_iter()
+            .enumerate()
+            .map(|(row, (name, color, start))| {
+                let mut human = template.clone();
+                human.name = name.into();
+                human.raw_slot_index = Some(row as u8);
+                human.slot.color_index = color;
+                human.slot.start_position = LaunchStartPosition::Position(start);
+                human
+            })
+            .collect();
+        session.local_player_index = 1;
+        session.rebuild_house_roster();
+        assert_eq!(session.required_start_count(), 2);
+        let mut cooperative = session.clone();
+        cooperative.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        assert_eq!(cooperative.house_leader(1), 1, "Cooperative shares nothing");
+
+        let descriptor = MatchLaunchDescriptor::from_resolved(session).unwrap();
+        let mut sim = Simulation::new();
+        sim.session
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Lan);
+        initialize_skirmish_launch_houses(
+            &mut sim,
+            &HouseRoster::default(),
+            &techno_constructor_start_rules(),
+            &descriptor,
+        );
+        let host = sim.interner.get("Host").unwrap();
+        let rival = sim.interner.get("Rival").unwrap();
+        assert_eq!(sim.houses.len(), 4, "two player Houses, Neutral, Special");
+        assert_eq!(sim.houses.order()[..2], [rival, host]);
+        // The Ally plays the Host's House.
+        assert_eq!(sim.session.current_house(), Some(host));
+        assert!(sim.houses[&host].player_control());
+        assert_eq!(
+            sim.session.network_sources(4).collect::<Vec<_>>(),
+            [(0, 1), (1, 0), (2, 1)]
+        );
+        assert_eq!(sim.session.local_shared_house_source(), Some(0));
+    }
+
     /// `[0xAC1198]` holds the last observer; a VERA room's every observer
     /// House gets its treatment.
     #[test]
@@ -4738,9 +4885,10 @@ mod tests {
             ry: 40,
         };
         let mut map = one_start_prefix_map(start);
-        map.entities = crate::map::entities::parse_map_entities(&IniFile::from_str(
-            "[Structures]\n0=Neutral,CABHUT,256,30,30,0,None\n",
-        ));
+        map.entities = crate::map::entities::parse_map_entities(
+            &IniFile::from_str("[Structures]\n0=Neutral,CABHUT,256,30,30,0,None\n"),
+            4,
+        );
         let roster = HouseRoster::default();
         let overlays = OverlayTypeRegistry::empty();
         for (handle, with_ai, owner_key) in [
@@ -4883,10 +5031,6 @@ mod tests {
                     } else {
                         1 + u32::from(with_ai)
                     }
-                );
-                assert_eq!(
-                    result.local_owner.as_deref(),
-                    (!block_placement).then_some(owner_key)
                 );
                 assert_eq!(
                     sim.entities().len(),
@@ -5200,7 +5344,10 @@ mod tests {
             team: LaunchTeam::None,
             is_human: true,
             observer: false,
-            source_human_index: Some(0),
+            controllers: vec![LaunchController {
+                human_index: 0,
+                source: 0,
+            }],
             handle: None,
             difficulty: HouseDifficulty::Normal,
             commander: None,
@@ -5733,6 +5880,7 @@ mod tests {
         map_b.header.fill = "Water".to_string();
         map_b.header.level = 9;
         map_b.cells.push(MapCell {
+            legacy_ice_byte: 0,
             rx: 36,
             ry: 36,
             tile_index: 777,
@@ -5766,7 +5914,7 @@ mod tests {
             recruitable_b: true,
             group: -1,
             follows: None,
-            structure_upgrades: [None, None, None],
+            structure_columns: Default::default(),
             structure_ai_sellable: false,
             structure_ai_repairable: false,
             structure_online: true,
@@ -6242,7 +6390,7 @@ mod tests {
         let overlays = OverlayTypeRegistry::from_ini(&ini, None);
         let map = MapFile::from_bytes(
             b"[Map]\nTheater=TEMPERATE\nSize=0,0,40,40\nLocalSize=2,2,36,32\n\
-              [Basic]\nName=GSI 04.12 owner fixture\n\
+              [Basic]\nName=GSI 04.12 owner fixture\nNewINIFormat=4\n\
               [Structures]\n\
               0=Neutral,CABHUT,256,30,30,0,None\n\
               1=Neutral,CATHOSP,256,32,32,0,None\n\

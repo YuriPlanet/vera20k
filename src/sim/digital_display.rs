@@ -36,11 +36,8 @@ pub fn values_for_display(
             let mut maximum = object.strength;
             if entity.disguise.as_ref().is_some_and(|d| d.is_disguised())
                 && !viewer.is_some_and(|viewer| {
-                    crate::map::houses::is_allied_with(
-                        sim.house_alliances(),
-                        sim.interner().resolve(entity.owner()),
-                        sim.interner().resolve(viewer),
-                    )
+                    sim.house_alliances()
+                        .is_allied(sim.interner(), entity.owner(), viewer)
                 })
                 && object
                     .digital_display_health_fake_at_disguise()

@@ -8,7 +8,11 @@ not redirect these reads. A present name is lowercased and limited to 31 bytes.
 `none` and `<none>` are literal attempted filenames, not clear tokens.
 
 The existing asset manager and PCX decoder supply indexed pixels and their
-embedded palette. A promoted loaded PCX takes precedence over the normal PCX;
+embedded palette. With `--features phobos`, a 3-plane 24-bit PCX loads too, its
+colours used as stored: Phobos `RGB_PCX_Loader` (`0x6B9D9C`) keeps the 16-bit
+surface gamemd's decoder packs from it. Without Phobos, gamemd's palette
+conversion garbles such a file, and VERA keeps the SHP fallback instead. A
+promoted loaded PCX takes precedence over the normal PCX;
 the normal PCX takes precedence over a promoted SHP. A failed PCX load falls
 back to the existing SHP path. Successfully loaded transparent PCXs stay
 selected. RGB565-packed magenta is transparent; black is opaque. The destination
@@ -25,6 +29,8 @@ establishes bounded filename reading, selection, palette packing and word
 transparency. Renderer regressions consume these goldens and pass synthetic
 PCX files through the production decoder and collector. The controls supply
 some runtime services; they do not execute the complete native file decoder,
-GPU presentation or DLL startup. 24-bit PCXs and whole-mod visual parity are
-not established. Existing guessed SHP fallback filenames remain a separate
-pre-existing limitation. No mod assets or resource adapters are included.
+GPU presentation or DLL startup. The 24-bit path comes from reading the
+decoder, the cache load and Phobos source, not from this corpus. Whole-mod
+visual parity is not established. Existing guessed SHP fallback filenames
+remain a separate pre-existing limitation. No mod assets or resource adapters
+are included.

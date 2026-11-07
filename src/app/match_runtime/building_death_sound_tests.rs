@@ -301,7 +301,7 @@ fn history(
     );
     assert!(!object.can_be_occupied && !object.explodes);
     assert!(!crate::map::houses::is_allied_with(
-        sim.house_alliances(),
+        sim.house_alliances().as_map(),
         sim.resolve(neutral),
         &local
     ));
@@ -392,7 +392,7 @@ fn history(
             ground
                 .base_speed_costs
                 .cost_for_speed_type(tank.speed_type)
-                .is_some_and(|cost| cost > 0),
+                .is_some_and(|cost| f32::from_bits(cost.bits()) > 0.0),
             "actual Track/buildable Hills ground, which can be Road rather than Clear"
         );
     }

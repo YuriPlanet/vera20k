@@ -54,9 +54,6 @@ fn rules(collision: bool) -> RuleSet {
             .rate_logic_frames,
         1,
     );
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     rules
 }
 

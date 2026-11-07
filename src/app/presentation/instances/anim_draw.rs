@@ -1,12 +1,16 @@
-//! AnimClass DrawIt422CA0: the HasBounce ground shadow, the ordinary or Flat
-//! body and the optional Shadow= pass.
+//! AnimClass DrawIt422CA0: the HasBounce ground shadow, the Tiled, Flat or
+//! ordinary body and the optional Shadow= pass.
 //!
 //! Callers retain admission, palette selection, coordinates and Display order.
-//! This owner resolves the source rectangles and their separate draw flags.
-//! Tiled and the special RING1 path retain their previous body presentation;
-//! their separate native draw arms are outside this port. Bouncer and IsMeteor
-//! types have no body arm of their own: the instance's HasBounce byte only adds
-//! the ground shadow ahead of the ordinary or Flat body.
+//! This owner resolves the source rectangles and their separate draw flags,
+//! and the Tiled column's own palette ([`tiled_column`]). Of the two retail
+//! Tiled types only IONBEAM is spawned, by IonBlast's frame 0 for TAction94,
+//! which no retail map uses; gamemd reads Rules ChronoBeam (CHRONOBM) only in
+//! its reader. RING1 takes the ordinary arms: the D3D ring (422CB9..422FC9)
+//! needs 8A0DF0, which is 0 in the image and only ever stored 0 (WinMain
+//! 6BDD98/6BDE37). Bouncer and IsMeteor types have no body arm of their own:
+//! the instance's HasBounce byte only adds the ground shadow ahead of the
+//! body.
 
 use super::helpers::{
     apply_shape_z_adjust, compute_sprite_depth_params_lifted, in_view, lifted_z_adjust,
@@ -15,7 +19,8 @@ use crate::app::presentation::render::draw_plan_lowering::{ObjectPieceInstance, 
 use crate::render::batch::{DepthAxis, SpriteInstance};
 use crate::render::draw_state::DrawState;
 use crate::render::native_z::{ZGradient, pack_z_gradient};
-use crate::render::sprite_atlas::{ShpSpriteEntry, ShpSpriteKey, SpriteAtlas};
+use crate::render::palette_light::PaletteLight;
+use crate::render::sprite_atlas::{ShpSpriteEntry, ShpSpriteKey, SpriteAtlas, tiled_anim_key};
 use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::terrain_draw::TerrainPiece;
 use crate::rules::art_data::AnimTypeRuntimeConfig;
@@ -23,6 +28,7 @@ use crate::rules::art_data::AnimTypeRuntimeConfig;
 pub(super) struct AnimDrawInput<'a> {
     pub key: &'a ShpSpriteKey,
     /// A zero-size body frame has no atlas entry but can have a visible shadow.
+    /// A Tiled body draws its frame from [`tiled_anim_key`] instead.
     pub entry: Option<&'a ShpSpriteEntry>,
     /// Resolved Anim draw point, before either frame's crop or YDrawOffset.
     pub point: [f32; 2],
@@ -97,19 +103,20 @@ fn depth_policy(flags: u32) -> RenderZPolicy {
     }
 }
 
-/// Whether the body takes the ported ordinary/Flat arms (4237AE/423728).
-/// Tiled and the special RING1 path are excluded; a Bouncer or IsMeteor body
-/// takes them like any other, after its HasBounce ground shadow.
-pub(super) fn ordinary_anim_type(name: &str, config: Option<&AnimTypeRuntimeConfig>) -> bool {
-    !name.eq_ignore_ascii_case("RING1") && config.is_none_or(|config| !config.tiled)
-}
-
 pub(super) fn anim_draw_pieces(
     atlas: &SpriteAtlas,
     input: AnimDrawInput<'_>,
 ) -> Vec<ObjectPieceInstance> {
+    // Tiled423636 precedes the Flat and ordinary arms; a Bouncer or IsMeteor
+    // body takes them like any other, after its HasBounce ground shadow.
+    let tiled = input.config.is_some_and(|config| config.tiled);
+    let entry = if tiled {
+        atlas.get(&tiled_anim_key(&input.key.type_id, input.key.frame))
+    } else {
+        input.entry
+    };
     let mut body = input.body;
-    if let Some(entry) = input.entry {
+    if let Some(entry) = entry {
         body.position = [
             input.point[0] + entry.offset_x,
             input.point[1] + entry.offset_y,
@@ -119,7 +126,6 @@ pub(super) fn anim_draw_pieces(
         body.uv_size = entry.uv_size;
         body.source_palette = entry.source_palette;
     }
-    let ordinary = ordinary_anim_type(&input.key.type_id, input.config);
     let mut pieces = Vec::with_capacity(3);
     let visible = |instance: &SpriteInstance| {
         in_view(
@@ -136,17 +142,21 @@ pub(super) fn anim_draw_pieces(
     };
     // HasBounce423358 precedes the building tint and every body arm.
     if let Some(shadow) =
-        bounce_ground_shadow(&input, body).filter(|shadow| visible(&shadow.instance))
+        bounce_ground_shadow(&input, entry, body).filter(|shadow| visible(&shadow.instance))
     {
         pieces.push(shadow);
     }
-    if !ordinary {
-        if let Some(entry) = input.entry.filter(|_| visible(&body)) {
-            pieces.push(ObjectPieceInstance {
-                target: ObjectTexture::ShpPage(entry.page as usize),
-                render_z: input.legacy_policy,
-                instance: body,
-            });
+    if tiled {
+        if let Some(entry) = entry {
+            let frame_zero = tiled_anim_key(&input.key.type_id, 0);
+            let height = atlas
+                .get(&frame_zero)
+                .map_or(0, |frame| frame.pixel_size[1] as i32);
+            pieces.extend(
+                tiled_column(&input, entry, body, height)
+                    .into_iter()
+                    .filter(|tile| visible(&tile.instance)),
+            );
         }
         return pieces;
     }
@@ -168,7 +178,7 @@ pub(super) fn anim_draw_pieces(
         body.z_adjust -= 1.0;
         body.depth = apply_shape_z_adjust(body.depth, -1, input.axis.world_height);
     }
-    if let Some(entry) = input.entry.filter(|_| visible(&body)) {
+    if let Some(entry) = entry.filter(|_| visible(&body)) {
         pieces.push(ObjectPieceInstance {
             target: ObjectTexture::ShpPage(entry.page as usize),
             render_z: input.legacy_policy,
@@ -244,9 +254,10 @@ pub(super) fn anim_draw_pieces(
 /// entry, so it draws no shadow either.
 fn bounce_ground_shadow(
     input: &AnimDrawInput<'_>,
+    entry: Option<&ShpSpriteEntry>,
     body: SpriteInstance,
 ) -> Option<ObjectPieceInstance> {
-    let (drop, entry) = (input.bounce_drop_px?, input.entry?);
+    let (drop, entry) = (input.bounce_drop_px?, entry?);
     let y_draw_offset = input.config.map_or(0, |config| config.y_draw_offset);
     let row = input.point[1] + drop as f32;
     let mut shadow = body;
@@ -277,6 +288,57 @@ fn bounce_ground_shadow(
         render_z: depth_policy(BOUNCE_SHADOW_FLAGS),
         instance: shadow,
     })
+}
+
+/// DrawIt's Tiled arm (`0x00423644..0x0042371B`): the body frame again and
+/// again up the screen. `height` is frame 0's stored height h
+/// (`SHPStruct::GetFrameBounds @ 0x0069E7E0`). The first tile's row is the
+/// draw point less h/2, and its Z term `YDrawOffset + ZAdjust -
+/// AdjustForZ - 50`, 48 below the ordinary body's; each next tile rises h
+/// rows and its Z term falls h/2 + h. The loop stops after the tile whose
+/// row, before YDrawOffset, is above the view. Every tile draws through the
+/// literal ANIM.PAL Convert (`[0x0087F6C0]`) with no remap, the selected
+/// flags plus Z read (`0x004236A4`), gradient 2 and the shared intensity and
+/// colour word: neither the cell, ColorScheme nor AltPalette Convert DrawIt
+/// selected reaches it. No Shadow= pass follows.
+///
+/// RESIDUAL: an empty frame 0 (h = 0) never moves the row, so gamemd loops
+/// forever unless the first row is already above the view; VERA draws the
+/// first tile alone.
+fn tiled_column(
+    input: &AnimDrawInput<'_>,
+    entry: &ShpSpriteEntry,
+    body: SpriteInstance,
+    height: i32,
+) -> Vec<ObjectPieceInstance> {
+    let half = height / 2;
+    let mut tile = body;
+    tile.palette_light = PaletteLight::plain(53, body.palette_light.brightness())
+        .with_colour_word(body.palette_light.colour_word());
+    tile.tint = [1.0; 3];
+    tile.alpha = 1.0;
+    tile.draw_state = DrawState::from_native_selector(0, (input.flags & 6) as u8);
+    tile.z_gradient = pack_z_gradient(ZGradient::Vertical, false);
+    let mut tiles = Vec::new();
+    for k in 0.. {
+        // The row and Z term relative to the ordinary body's.
+        let rise = half + k * height;
+        let z = -48 - k * (half + height);
+        let row = input.point[1] - rise as f32;
+        tile.position = [input.point[0] + entry.offset_x, row + entry.offset_y];
+        tile.z_adjust = body.z_adjust + z as f32;
+        tile.depth = apply_shape_z_adjust(body.depth, z + rise, input.axis.world_height);
+        tiles.push(ObjectPieceInstance {
+            target: ObjectTexture::ShpPage(entry.page as usize),
+            render_z: input.legacy_policy,
+            instance: tile,
+        });
+        // `y < 0` at 0x004236FC, after the draw; NaN stops it too.
+        if height <= 0 || !(row >= input.viewport[1]) {
+            break;
+        }
+    }
+    tiles
 }
 
 #[cfg(test)]

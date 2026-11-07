@@ -7,8 +7,9 @@
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="آخر تشغيل لاختبارات المكتبة على macOS (تُشغّل يدويًا)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="اختبارات المكتبة على macOS" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="آخر تشغيل لاختبارات المكتبة على Linux (تُشغّل يدويًا)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="اختبارات المكتبة على Linux" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="آخر تشغيل لاختبارات المكتبة على Windows (تُشغّل يدويًا)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="اختبارات المكتبة على Windows" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="آخر تشغيل لبناء WebAssembly (يُشغّل يدويًا)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="بناء WebAssembly" height="23" align="middle"></a>
   <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="انضم إلى Discord" height="23" align="middle"></a>
-  <img src="https://img.shields.io/badge/QQ_group-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="مجموعة QQ" height="23" align="middle">
+  <img src="https://img.shields.io/badge/QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="مجموعة QQ" height="23" align="middle">
 </p>
 
 <div dir="rtl">
@@ -20,6 +21,12 @@
 
 مشروع VERA20K من صنع اللاعبين ومن أجلهم، وللاعبين الكلمة الأخيرة في تحديد مساره.
 
+**نحتاج إلى المزيد من القائمين على المشروع.** إذا كنت ترغب في المساعدة في مراجعة طلبات PR، أو
+توجيه المساهمين الجدد، أو تولي مسؤولية جزء من المحرك، فأخبرنا على [Discord](https://discord.gg/kmjRUn5m5F)
+أو في مجموعة QQ (1097193563).
+
+**لا تتردد في إرسال PR.** لا يلزم أن يكون مثاليًا، وسنساعدك في الباقي.
+
 <img src="docs/images/vera20k-screenshots.png" alt="شاشة إعداد المناوشات ومشهد من اللعب في VERA20K" width="100%">
 
 ## أهداف المشروع
@@ -29,18 +36,7 @@
 3. إضافة ميزات معروفة من ألعاب الاستراتيجية في الوقت الحقيقي (RTS)، وأخرى لم يسبق لها مثيل.
 4. عميل مدمج للعب متعدد اللاعبين
 
-## الوضع الحالي
-
-**قيد التطوير النشط.**
-
-- **المناوشات:** قابلة للعب على Windows وLinux وmacOS، مع خرائط اللعبة الأصلية والخرائط العشوائية،
-  وبناء القواعد وجمع الموارد والقتال وحفظ اللعبة وتحميلها.
-- **الحملات:** يمكن بدء المهام؛ ما زال الدعم غير مكتمل.
-- **الذكاء الاصطناعي:** تتولى أجزاء من الذكاء الاصطناعي الأصلي بناء القواعد وتنفيذ هجمات مبرمجة.
-- **العمل المستمر:** تحسين دقة أسلوب اللعب والرسوم والأداء.
-- **اللعب الجماعي:** تدعم البُنى الحالية من الشيفرة المصدرية اللعب عبر الشبكة المحلية والإنترنت على macOS وLinux.
-- **حجم المعارك:** اجتازت مباراتان متتاليتان عبر الإنترنت التحقق الوظيفي، بمشاركة 30 عملية عميل مستقلة وأكثر من 20,000 وحدة متحركة نشطة في كل مباراة.
-  تقاسمت عمليات عميل Linux آلات افتراضية؛ ولا يثبت ذلك سلاسة الأداء في الزمن الحقيقي.
+اطّلع على [خارطة الطريق](https://github.com/orgs/YuriPlanet/projects/1) لمعرفة الأولويات الحالية والخطط المستقبلية.
 
 ## التنزيل واللعب
 
@@ -48,15 +44,21 @@
 [صفحة الإصدارات](https://github.com/YuriPlanet/vera20k/releases). يعثر البرنامج على نسختك من
 Yuri's Revenge ويثبّت VERA20K في مجلد جديد.
 
-استخدم **Options** للصوت والتحكم، و**Vera Options** لميزات VERA الخاصة.
-
 لتشغيل مناوشات YR أو حملاتها للاعب واحد عبر عميل CnCNet، راجع
 [إعداد العميل دون اتصال](integrations/cncnet/README.md).
 
 ## المساهمة
 
-نرحب بالمساعدة. يمكنك كتابة الكود، أو إعادة هيكلة المحرك، أو اختبار اللعبة، أو مشاركة الأفكار، أو لعبها
-جنبًا إلى جنب مع الأصل وإخبارنا بما يبدو غير صحيح. افتح PR وسنتولى الأمر من هناك.
+نرحب بالمساعدة في أي مجال، لكن المجالات التالية هي الأحوج إليها. يرتبط كل مجال بصفحته في خارطة
+الطريق، وفيها العمل الجاري والخطوة التالية:
+
+- **[أسلوب اللعب والقتال](https://github.com/YuriPlanet/vera20k/issues/3830):** سلوك الوحدات والضرر وثبات المناوشات.
+- **[الأداء](https://github.com/YuriPlanet/vera20k/issues/3831):** معدل الإطارات وسرعة الاستجابة في المعارك الكبيرة وعلى الأجهزة القديمة.
+- **[اللعب الجماعي](https://github.com/YuriPlanet/vera20k/issues/3832):** الانضمام إلى المباريات عبر الإنترنت وبدؤها واستمرارها، وموثوقية اللعب التعاوني.
+- **[الواجهة والصوت](https://github.com/YuriPlanet/vera20k/issues/3833):** القوائم والنصوص والترجمات والصوت.
+- **[الحملات](https://github.com/YuriPlanet/vera20k/issues/3834):** يمكن بدء المهام، لكن إكمالها حتى النهاية ما زال يحتاج إلى عمل: الأهداف والمحفزات والانتقالات المبرمجة والحفظ والتحميل والانتقال إلى المهمة التالية.
+- **[التوافق مع التعديلات](https://github.com/YuriPlanet/vera20k/issues/3835):** ميزات Ares وPhobos، دون تغيير الإعدادات الافتراضية للعبة الأصلية.
+- **[الاختبار](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** العب VERA20K جنبًا إلى جنب مع اللعبة الأصلية وأبلغ عمّا يختلف في اللعب.
 
 يمكن للمساهمين تولي مسؤولية أجزاء من المحرك، مع حرية واسعة لإجراء تغييرات تدفع VERA20K إلى الأمام.
 
@@ -87,8 +89,6 @@ Yuri's Revenge ويثبّت VERA20K في مجلد جديد.
 - **أدوات البناء:** على Windows أدوات بناء C++ من Visual Studio، ويعرض مثبّت Rust تثبيتها؛ وعلى macOS الأمر
   `xcode-select --install`؛ وعلى Debian وUbuntu الأمر `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`.
 
-وقد استُخدم VERA20K للعب على Windows وLinux وmacOS.
-
 <div dir="ltr">
 
 ```sh
@@ -109,12 +109,12 @@ cargo run --release --bin vera20k
 
 ## التخصيص
 
-تُختار سعة الخريطة تلقائيًا دون خيار بناء: يمكن أن يصل مجموع العرض والارتفاع في `Size` إلى 1024. حتى 512 تبقى العنونة الأصلية، وفوق ذلك تُستخدم الشبكة الموسعة. للمولّد وإصدارات الحفظ وحدود التحقق، راجع [الخرائط الكبيرة](README.md#large-maps).
+تُختار سعة الخريطة تلقائيًا دون خيار بناء: يمكن أن يصل مجموع العرض والارتفاع في `Size` إلى 1024.
 
 يعمل VERA20K افتراضيًا مثل اللعبة الأصلية. يجب أن تبقى كل ميزة جديدة أخرى، بما في ذلك الإضافات القادمة
 من تعديلات مثل Ares، معطّلة إلى أن تُفعَّل بإحدى الطرق التالية:
 
-- **خيار للاعب في VERA**، ضمن **Options → Vera Options**، يُحفظ في القسم `[VERA]` من `VERA.INI`.
+- **خيار للاعب في VERA**، ضمن **Options**، يُحفظ في القسم `[VERA]` من `VERA.INI`.
 - **خيار بناء**، مثل `--features ares` لتضمين [إضافات Ares](docs/ares.md) المدعومة.
 - **مفتاح INI**، يضبطه تعديل أو خريطة.
 
@@ -138,14 +138,17 @@ cargo run --release --bin vera20k
 وYRpp وAres وPhobos وكثيرين غيرهم.
 
 حقوق النشر © 2026 Halvor Nikolai Rusten والمساهمون في VERA20K.
-المشروع مرخّص بموجب [GPLv3](LICENSE-GPL). لا يحتوي هذا المستودع على أي ملفات للعبة. تُعد
+المشروع مرخّص بموجب [GPLv3](LICENSE-GPL) مع [شروط إضافية](LEGAL.md#additional-terms).
+لا يحتوي هذا المستودع على أي ملفات للعبة. تُعد
 Command & Conquer وRed Alert علامتين تجاريتين لشركة Electronic Arts Inc.، وتعرض لقطات الشاشة
 وأيقونة التطبيق، أي النجمة الحمراء من Red Alert 2، رسومات من اللعبة تملكها Electronic Arts.
 لا يتبع VERA20K شركة Electronic Arts ولا يحظى بتأييدها.
 
+**اقرأ [الإشعار القانوني](LEGAL.md) قبل أن تشارك VERA20K أو تبيعه أو تنشئ نسخة متفرعة منه.**
+
 ## التوثيق
 
-- [البناء والتشغيل](#البناء-والتشغيل): المتطلبات والبناء من الشيفرة المصدرية.
+- [معاينة WebAssembly](docs/wasm.md): بنية اختيارية للعب الفردي تعمل في المتصفح.
 - [ملفات تعريف INI](docs/ini-roots.md): اختيار ملفات القواعد والرسوم والذكاء الاصطناعي.
 - [Ares](docs/ares.md) و[Phobos](docs/phobos.md) و[NPatch](docs/npatch.md): دعم الإضافات وحدوده.
 - [نظرة عامة على المحرك](docs/index.md): تنظيم الشيفرة وكيف تترابط أجزاء المحرك.

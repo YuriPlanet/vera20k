@@ -224,6 +224,19 @@ impl FootPathRequest {
         &self.visit.snap
     }
 
+    /// Whether this Walk request runs with its Process argument 0: the
+    /// recursion of a refused step's retry (0x75B716, 0x75BABB, 0x75BC04),
+    /// whose next refusal takes the argument-0 arms instead of retrying.
+    pub(super) fn walk_retry_spent(&self) -> bool {
+        !self.visit.walk_retry_allowed
+    }
+
+    /// Resume as that recursion would: the batched answer of a waiting
+    /// recursion (`path_batch`).
+    pub(super) fn spend_walk_retry(&mut self) {
+        self.visit.walk_retry_allowed = false;
+    }
+
     /// Find_Path's core search (`Simulation::foot_core_search`) calls this
     /// between its Mark0/Mark1, or before Mark0 for a batched path search
     /// whose `foot_entry` emulates the lift (`foot_path::MoverLift`). The

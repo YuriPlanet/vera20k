@@ -14,6 +14,7 @@ use winit::event::MouseButton;
 
 #[path = "command_bar_input.rs"]
 mod command_bar;
+pub(crate) use command_bar::tooltips as command_bar_tooltips;
 
 use crate::app::AppState;
 use crate::app::presentation::sidebar_render::current_sidebar_view;
@@ -369,8 +370,12 @@ fn sync_regions(state: &mut AppState, _view: &SidebarView) {
 /// per visible item, id = ID_CAMEO_BASE + slot, rect from the item; the unused
 /// tail is disabled (skipped by hit-test + walk). Cameos are appended after the
 /// chrome buttons — all groups occupy disjoint rects, so order is observationally
-/// irrelevant (one pinned order for hit + draw, O7/G20). The pool grows on
-/// demand and is never auto-shrunk; growth is gated to NOT run while a region
+/// irrelevant (one pinned order for hit + draw, O7/G20). StripClass Activate
+/// 6A8330 / ActivateButtons 6A93F0 add a select button for every visible slot
+/// and Deactivate 6A83E0 / RemoveButtons 6A94B0 remove all 60. Disabling the
+/// empty tail matches: on an empty slot SelectClass::Action only sets the
+/// normal cursor (6AAD61) and passes flags 0 on (6AAD79 -> 6AB94F).
+/// The pool grows on demand and is never auto-shrunk; growth is gated to NOT run while a region
 /// holds capture (defensive — cameos themselves are never sticky).
 fn sync_cameos(state: &mut AppState, view: &SidebarView) {
     let frame = state.sidebar_frame();
@@ -459,6 +464,18 @@ pub(crate) fn handle_mouse_button_event(
     if crate::app::input::campaign_input::is_locked(state) {
         return GadgetConsume::Consumed;
     }
+    // VERA's radar order owns one button. The retail gadget's sticky byte
+    // releases on either button, so keep unrelated edges out of that walk
+    // until the owning release; otherwise capture can escape to the map.
+    if state.persistence.options_profile.right_click_orders
+        && state
+            .match_state
+            .input
+            .minimap_press_button()
+            .is_some_and(|owner| owner != button)
+    {
+        return GadgetConsume::Consumed;
+    }
     let Some(view) = current_sidebar_view(state).cloned() else {
         return GadgetConsume::NotConsumed;
     };
@@ -488,7 +505,7 @@ pub(crate) fn idle_tick(state: &mut AppState) {
         return;
     }
     let _ = run_tick(state, &view, 0);
-    crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+    crate::app::presentation::sidebar_render::republish_sidebar_projection(state);
 }
 
 fn run_tick(state: &mut AppState, view: &SidebarView, key: u16) -> GadgetConsume {
@@ -667,9 +684,10 @@ fn apply_gadget_result(state: &mut AppState, view: &SidebarView, result: u16) {
         // plays ScoldSound and queues nothing. StripClass::AI rolls the queue.
         ID_SCROLL_DOWN | ID_SCROLL_UP => {
             let presentation = &mut state.match_state.match_presentation;
-            let queued = presentation.sidebar_projection.queue_page_scroll(
+            let queued = presentation.sidebar_projection.queue_scroll(
                 presentation.active_sidebar_tab,
                 id == ID_SCROLL_DOWN,
+                view.layout.side2_tile_count,
                 view.layout.side2_tile_count,
             );
             let sound = state.rules().and_then(|rules| {

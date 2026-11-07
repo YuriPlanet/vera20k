@@ -222,12 +222,13 @@ impl Simulation {
                 .clamp(0, i32::from(u16::MAX)) as u16;
             let config = self.sight_reveal_config(rules);
             let heights = self.sight_height_grid(&config);
+            let clients = self.fog_viewers();
             let viewers = self.reveal_viewers.direct(
-                &self.fog,
                 self.house_alliances.as_map(),
                 owner,
                 &config,
                 &self.interner,
+                &clients,
             );
             let _ = self.reveal_area(
                 &viewers,

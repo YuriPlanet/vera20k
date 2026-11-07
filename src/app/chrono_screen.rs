@@ -23,9 +23,14 @@ pub(crate) struct ChronoScreenPresentation {
 impl ChronoScreenPresentation {
     /// The existing4F4480 interception also suppresses tactical draw-owned
     /// counters; consumers must not advance them behind a retained surface.
-    #[cfg(feature = "ares")]
     pub(crate) fn overrides_tactical_draw(&self) -> bool {
         self.draw.is_some()
+    }
+
+    /// Whether a draw command or surface capture is pending: the next draws
+    /// consume them.
+    pub(crate) fn active(&self) -> bool {
+        self.draw.is_some() || self.capture_prior || self.capture_destination
     }
 
     pub(crate) fn before_frame(

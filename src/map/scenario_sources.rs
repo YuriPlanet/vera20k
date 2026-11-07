@@ -81,7 +81,6 @@ pub fn list_skirmish_scenario_records_with_assets(
             &pkt,
             SkirmishScenarioSource::MissionsMdPkt,
             csf,
-            PktTitleStyle::Verbatim,
             |file_name| {
                 assets
                     .get_ref(file_name)
@@ -117,7 +116,6 @@ fn append_loose_pkt_records(
             &pkt,
             SkirmishScenarioSource::LoosePkt(file_name),
             csf,
-            PktTitleStyle::Verbatim,
             |map_file| {
                 read_map_ini_for_metadata(&ra2_dir.join(map_file)).or_else(|| {
                     assets
@@ -168,7 +166,6 @@ fn append_loose_yro_records(
             &pkt,
             SkirmishScenarioSource::LooseYro(file_name),
             csf,
-            PktTitleStyle::YroPlayerCountSuffix,
             |map_file| {
                 manager
                     .get_ref(map_file)
@@ -183,20 +180,50 @@ fn append_loose_yrm_records(
     records: &mut Vec<SkirmishScenarioRecord>,
     ra2_dir: &Path,
 ) -> Result<()> {
-    for (path, file_name) in loose_files_with_extension(ra2_dir, "yrm")? {
-        let Some(ini) = read_map_ini_for_metadata(&path) else {
-            continue;
-        };
-        records.push(SkirmishScenarioRecord::concrete_from_ini(
-            records.len(),
-            SkirmishScenarioSource::LooseYrm(file_name),
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or_default(),
-            &ini,
-        ));
+    let mut files = loose_files_with_extension(ra2_dir, "yrm")?;
+    // VERA's downloaded maps follow; a game-folder file of the same name is
+    // the one a lookup finds (`source::local_map_path`).
+    if let Some(downloaded) = crate::map::source::downloaded_maps_dir()
+        && crate::util::file_system::exists(downloaded)
+    {
+        // An unreadable Maps folder lists nothing, not a failed scan.
+        let kept = loose_files_with_extension(downloaded, "yrm").unwrap_or_else(|error| {
+            log::warn!("Could not list {}: {error}", downloaded.display());
+            Vec::new()
+        });
+        for (path, file_name) in kept {
+            if !files
+                .iter()
+                .any(|(_, name)| name.eq_ignore_ascii_case(&file_name))
+            {
+                files.push((path, file_name));
+            }
+        }
+    }
+    for (path, file_name) in files {
+        if let Some(record) = loose_yrm_record(&path, file_name, records.len()) {
+            records.push(record);
+        }
     }
     Ok(())
+}
+
+/// The Choose Map row of one loose `.yrm` file, from its own `[Basic]`;
+/// `None` when it does not read as a map.
+pub fn loose_yrm_record(
+    path: &Path,
+    file_name: String,
+    ordinal: usize,
+) -> Option<SkirmishScenarioRecord> {
+    let ini = read_map_ini_for_metadata(path)?;
+    Some(SkirmishScenarioRecord::concrete_from_ini(
+        ordinal,
+        SkirmishScenarioSource::LooseYrm(file_name),
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default(),
+        &ini,
+    ))
 }
 
 fn loose_files_with_extension(ra2_dir: &Path, extension: &str) -> Result<Vec<(PathBuf, String)>> {
@@ -236,6 +263,15 @@ enum PktTitleStyle {
     YroPlayerCountSuffix,
 }
 
+impl PktTitleStyle {
+    fn of(source: &SkirmishScenarioSource) -> Self {
+        match source {
+            SkirmishScenarioSource::LooseYro(_) => Self::YroPlayerCountSuffix,
+            _ => Self::Verbatim,
+        }
+    }
+}
+
 /// Longest title the record's title slot holds, in characters.
 ///
 /// The native slot is 0x2C wide chars, but after the copy-and-append the
@@ -257,12 +293,34 @@ fn truncate_pkt_title(title: &str) -> String {
     title.chars().take(PKT_TITLE_MAX_CHARS).collect()
 }
 
+/// Sets `record`'s title from `title`, its PKT entry's own text, finished in
+/// the style of the record's source.
+fn finish_pkt_title(record: &mut SkirmishScenarioRecord, title: String) {
+    let style = PktTitleStyle::of(&record.source);
+    record.display_name = match (style, record.min_players, record.max_players) {
+        (PktTitleStyle::YroPlayerCountSuffix, Some(min), Some(max)) => {
+            truncate_pkt_title(&format!("{title}{}", yro_player_count_suffix(min, max)))
+        }
+        _ => title,
+    };
+}
+
+/// VERA: reads each title the string table names again from `csf`. The scan
+/// read them in the language then in use, and a language picked since gives
+/// the table other texts.
+pub fn relabel_records(records: &mut [SkirmishScenarioRecord], csf: &CsfFile) {
+    for record in records {
+        if let Some(label) = record.title_label.clone() {
+            finish_pkt_title(record, csf.text(&label).into_owned());
+        }
+    }
+}
+
 fn append_pkt_records<F>(
     records: &mut Vec<SkirmishScenarioRecord>,
     pkt: &IniFile,
     source: SkirmishScenarioSource,
     csf: Option<&CsfFile>,
-    title_style: PktTitleStyle,
     mut map_ini: F,
 ) where
     F: FnMut(&str) -> Option<IniFile>,
@@ -280,8 +338,8 @@ fn append_pkt_records<F>(
             continue;
         };
         let entry_section = pkt.section_or_empty(map_stem);
-        let display_name = pkt_display_name(pkt, map_stem, csf)
-            .unwrap_or_else(|| display_name_from_basic_or_file(&map_ini, &file_name));
+        let (display_name, title_label) = pkt_display_name(pkt, map_stem, csf)
+            .unwrap_or_else(|| (display_name_from_basic_or_file(&map_ini, &file_name), None));
         let fields = PktEntryFields {
             display_name,
             // The mode filter, like the title and the player bounds, is a
@@ -301,17 +359,9 @@ fn append_pkt_records<F>(
             &map_ini,
             fields,
         );
-        if title_style == PktTitleStyle::YroPlayerCountSuffix {
-            let (Some(min), Some(max)) = (record.min_players, record.max_players) else {
-                records.push(record);
-                continue;
-            };
-            record.display_name = truncate_pkt_title(&format!(
-                "{}{}",
-                record.display_name,
-                yro_player_count_suffix(min, max)
-            ));
-        }
+        record.title_label = title_label;
+        let title = std::mem::take(&mut record.display_name);
+        finish_pkt_title(&mut record, title);
         records.push(record);
     }
 }
@@ -324,15 +374,20 @@ fn pkt_player_count(value: i32) -> Option<u8> {
 /// otherwise `Description` is a string-table label (`0x00529160`, 0x3FF
 /// bytes). Native branches on `DescriptionText` being present and fetches
 /// even an empty label, and caps the fetched text at 0x2B units; Rust falls
-/// through to the next source instead.
-fn pkt_display_name(pkt: &IniFile, map_stem: &str, csf: Option<&CsfFile>) -> Option<String> {
+/// through to the next source instead. A label's text comes with the label,
+/// which [`relabel_records`] reads again.
+fn pkt_display_name(
+    pkt: &IniFile,
+    map_stem: &str,
+    csf: Option<&CsfFile>,
+) -> Option<(String, Option<String>)> {
     let section = pkt.section(map_stem)?;
     if let Some(value) = section.read_name("DescriptionText", 0x2C) {
-        return Some(value.to_string());
+        return Some((value.to_string(), None));
     }
     section.read_name("Description", 0x400).map(|label| {
-        csf.map(|csf| csf.text(label).into_owned())
-            .unwrap_or_else(|| label.to_string())
+        let text = csf.map_or_else(|| label.to_string(), |csf| csf.text(label).into_owned());
+        (text, Some(label.to_string()))
     })
 }
 
@@ -486,7 +541,6 @@ mod tests {
             &pkt,
             SkirmishScenarioSource::MissionsMdPkt,
             Some(&csf),
-            PktTitleStyle::Verbatim,
             |file_name| match file_name {
                 "Zoo.MAP" => Some(IniFile::from_str("[Basic]\nName=Basic Zoo\n")),
                 "Alpha.MAP" => Some(IniFile::from_str("[Basic]\nName=Basic Alpha\n")),
@@ -529,7 +583,6 @@ mod tests {
             &retail_shaped_pkt(),
             SkirmishScenarioSource::MissionsMdPkt,
             None,
-            PktTitleStyle::Verbatim,
             bare_map_payload,
         );
 
@@ -549,13 +602,41 @@ mod tests {
             &retail_shaped_pkt(),
             SkirmishScenarioSource::LooseYro("CrctBrd.yro".to_string()),
             None,
-            PktTitleStyle::YroPlayerCountSuffix,
             bare_map_payload,
         );
 
         // Equal bounds print one number; differing bounds print the span.
         assert_eq!(records[0].display_name, "Dustbowl (2)");
         assert_eq!(records[1].display_name, "Circuit Board (2-4)");
+    }
+
+    #[test]
+    fn a_language_change_reads_table_titles_again_with_their_yro_span() {
+        let pkt = IniFile::from_str(
+            "[MultiMaps]\n1=Zoo\n2=Alpha\n\
+             [Zoo]\nDescriptionText=Zoo Display\n\
+             [Alpha]\nDescription=GUI:AlphaName\nMinPlayers=2\nMaxPlayers=2\n",
+        );
+        let mut csf = build_test_csf(&[("GUI:AlphaName", "Alpha")]);
+        let mut records = Vec::new();
+        for source in [
+            SkirmishScenarioSource::MissionsMdPkt,
+            SkirmishScenarioSource::LooseYro("pack.yro".to_string()),
+        ] {
+            append_pkt_records(&mut records, &pkt, source, Some(&csf), bare_map_payload);
+        }
+
+        csf.set_override("GUI:AlphaName", "Альфа");
+        relabel_records(&mut records, &csf);
+
+        let names: Vec<&str> = records
+            .iter()
+            .map(|record| record.display_name.as_str())
+            .collect();
+        assert_eq!(
+            names,
+            ["Zoo Display", "Альфа", "Zoo Display (2-4)", "Альфа (2)"]
+        );
     }
 
     #[test]
@@ -572,7 +653,6 @@ mod tests {
             &pkt,
             SkirmishScenarioSource::LooseYro("long.yro".to_string()),
             None,
-            PktTitleStyle::YroPlayerCountSuffix,
             bare_map_payload,
         );
 

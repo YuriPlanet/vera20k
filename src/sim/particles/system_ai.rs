@@ -1,10 +1,9 @@
 //! Per-tick particle-system AI dispatch.
 //!
-//! Drives each active system at its shared LogicVector slot. Gas and Smoke remain
-//! in storage because synchronous damage can append children to that same
-//! system; other behaviors temporarily take/reinsert their owned body.
-//! Ordinary Smoke, Spark and Gas are connected. Fire retains movement/damage
-//! residuals; Railgun body is still absent.
+//! Drives each active system at its shared LogicVector slot. Gas, Smoke and
+//! Fire remain in storage because synchronous damage can append children to
+//! that same system; Spark and Railgun temporarily take/reinsert their owned
+//! body.
 
 use crate::rules::particle_system_type::ParticleSystemBehavesLike;
 use crate::rules::particle_type::ParticleBehavesLike;
@@ -20,14 +19,16 @@ use super::spark::{
 };
 use super::spark_world::{SparkCollisionWorld, SparkWorldError};
 
-// Errors retained at the production Spark begin/query/finish boundary. Railgun
-// alone remains dormant in the behavior dispatch below.
+// Errors retained at the production Spark begin/query/finish boundary and
+// the Railgun particle body.
 #[derive(Debug, Error)]
 pub(crate) enum SparkSystemTickError {
     #[error(transparent)]
     Kernel(#[from] SparkKernelError),
     #[error(transparent)]
     World(#[from] SparkWorldError),
+    #[error(transparent)]
+    Railgun(#[from] super::railgun::RailgunParticleError),
 }
 
 /// The shared signed UID/EC cadence in Smoke62C540, Gas62C313 and
@@ -57,14 +58,16 @@ pub(super) fn finish_lifetime(p: &mut super::Particle) {
 
 /// One AI_Dispatch62CE40 owner, selected by the PARTICLE's behavior rather
 /// than its containing system. Spark retains its begin/query/finish boundary.
+/// `source_house` and `owner` are the parent system's `+0xFC` and `+0xE0`.
 pub(super) fn tick_particle(
     p: &mut super::Particle,
     sim: &mut Simulation,
     rules: &RuleSet,
     source_house: Option<InternedId>,
+    owner: Option<u64>,
 ) {
     if let Err(error) =
-        tick_particle_with_query(p, sim, rules, source_house, |sim, rules, motion| {
+        tick_particle_with_query(p, sim, rules, source_house, owner, |sim, rules, motion| {
             SparkCollisionWorld::new(sim, rules)?.query(motion)
         })
     {
@@ -80,6 +83,7 @@ fn tick_particle_with_query<F>(
     sim: &mut Simulation,
     rules: &RuleSet,
     source_house: Option<InternedId>,
+    owner: Option<u64>,
     mut query: F,
 ) -> Result<(), SparkSystemTickError>
 where
@@ -91,6 +95,9 @@ where
 {
     let pt = rules.particle_type(p.type_id);
     match pt.behaves_like {
+        // ParticleClass::AI_Dispatch62CE40: unsigned >4 skips subtype AI
+        // but still reaches the shared RemainingEC decrement at62CE86.
+        ParticleBehavesLike::Unknown => {}
         ParticleBehavesLike::Smoke => {
             super::smoke::tick_particle(p, pt, sim.session.binary_frame(), sim.particle_rng())
         }
@@ -104,7 +111,13 @@ where
             source_house,
             crate::sim::world::UninitContext::with_rules(rules),
         ),
-        ParticleBehavesLike::Fire => super::fire::tick_particle(p, pt, sim.particle_rng()),
+        ParticleBehavesLike::Fire => super::fire::tick_particle(
+            p,
+            sim,
+            rules,
+            owner,
+            &mut super::fire::LiveFire(crate::sim::world::UninitContext::with_rules(rules)),
+        ),
         ParticleBehavesLike::Spark => {
             let motion = begin_particle_tick(p, gravity_as_stored_f32(rules.general.gravity)?)?;
             let collision = query(sim, rules, motion)?;
@@ -119,12 +132,30 @@ where
             return Ok(()); // Spark finish calls the same lifetime owner.
         }
         ParticleBehavesLike::Railgun => {
-            // RESIDUAL: Railgun body62C3A0 (dispatch62CE81) remains unported;
-            // the shared lifetime tail still runs.
+            // Dispatch62CE81 -> AI_Railgun62C3A0, then the shared tail.
+            super::railgun::tick_particle(p, pt, sim.particle_rng())?;
         }
     }
     finish_lifetime(p);
     Ok(())
+}
+
+/// `ParticleClass::Move_Dispatch @ 0x0062D5E0`, which AI_Gas, AI_Smoke and
+/// AI_Fire call for each particle, by the particle's own behavior: Gas
+/// (`0x0062D2A0`), Smoke (`0x0062D3F0`) or Fire (`0x0062D609`). Spark and
+/// Railgun particles do not move here.
+pub(super) fn move_dispatch(p: &mut super::Particle, sim: &Simulation, rules: &RuleSet) {
+    let pt = rules.particle_type(p.type_id);
+    match pt.behaves_like {
+        ParticleBehavesLike::Gas => super::gas::move_gas(p, sim, rules),
+        ParticleBehavesLike::Smoke => {
+            super::smoke::move_smoke(p, pt, rules.general.wind_direction(), sim)
+        }
+        ParticleBehavesLike::Fire => super::fire::move_fire(p, sim),
+        ParticleBehavesLike::Spark
+        | ParticleBehavesLike::Railgun
+        | ParticleBehavesLike::Unknown => {}
+    }
 }
 
 /// Dispatch one particle-system object at its current LogicVector slot.
@@ -142,19 +173,44 @@ pub(crate) fn tick_particle_system(
         return false;
     };
     let behavior = rules.particle_system_type(sys.type_id).behaves_like;
+    // AI_Railgun reads the done byte first (`0x0062F242`).
+    apply_fire_link_release(sim, id);
     if behavior == ParticleSystemBehavesLike::Gas {
         // Gas damage may synchronously kill another animal and append to this
         // same system. Retain its body in storage through those callbacks.
         super::gas::tick_system(sim, rules, id, context);
     } else if behavior == ParticleSystemBehavesLike::Smoke {
         super::smoke::tick_system(sim, rules, id);
+    } else if behavior == ParticleSystemBehavesLike::Fire {
+        super::fire::tick_system(sim, rules, id, context);
     } else {
         let mut sys = sim.substrate.particle_systems.take_for_tick(id).unwrap();
         tick_one_system(&mut sys, sim, rules);
         sim.substrate.particle_systems.reinsert_after_tick(sys);
     }
+    finish_system_visit(sim, id, context);
+    true
+}
+
+/// An owner's `+0x304` release, applied before a read of the system's done
+/// byte ([`super::ParticleSystem::apply_fire_link_release`]).
+pub(super) fn apply_fire_link_release(sim: &mut Simulation, id: u64) {
+    let substrate = &mut sim.substrate;
+    if let Some(sys) = substrate.particle_systems.get_mut(id) {
+        sys.apply_fire_link_release(&substrate.entities);
+    }
+}
+
+/// The tail of `ParticleSystemClass::AI @ 0x0062FD60` after the subtype AI:
+/// the lifetime count and the done-and-empty retirement.
+pub(super) fn finish_system_visit(
+    sim: &mut Simulation,
+    id: u64,
+    context: crate::sim::world::UninitContext<'_>,
+) {
+    apply_fire_link_release(sim, id);
     let Some(sys) = sim.substrate.particle_systems.get_mut(id) else {
-        return true;
+        return;
     };
 
     // `ParticleSystemClass::AI @ 0x0062FD60`: decrement `+0xEC`, and when the
@@ -172,7 +228,6 @@ pub(crate) fn tick_particle_system(
     if retires {
         sim.retire_particle_system(id, context);
     }
-    true
 }
 
 /// Compatibility batch entry for focused particle tests. Production
@@ -192,13 +247,14 @@ pub fn tick_particle_systems(sim: &mut Simulation, rules: &RuleSet) {
 fn tick_one_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleSet) {
     let behaves_like = rules.particle_system_type(sys.type_id).behaves_like;
     match behaves_like {
+        // SystemAI62FD60 skips subtype work (including child visits) for -1,
+        // then still reaches its lifetime and retirement tail.
+        ParticleSystemBehavesLike::Unknown => {}
         ParticleSystemBehavesLike::Smoke => unreachable!("Smoke retains its body during callbacks"),
         ParticleSystemBehavesLike::Gas => unreachable!("Gas retains its body during callbacks"),
-        ParticleSystemBehavesLike::Fire => tick_fire(sys, sim, rules),
+        ParticleSystemBehavesLike::Fire => unreachable!("Fire retains its body during callbacks"),
         ParticleSystemBehavesLike::Spark => tick_spark(sys, sim, rules),
-        ParticleSystemBehavesLike::Railgun => {
-            // Tier 3 — no-op.
-        }
+        ParticleSystemBehavesLike::Railgun => super::railgun::tick_system(sys, sim, rules),
     }
 }
 
@@ -219,10 +275,6 @@ fn tick_spark(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleSet) {
             sys.stable_id
         );
     }
-}
-
-fn tick_fire(sys: &mut ParticleSystem, sim: &mut Simulation, rules: &RuleSet) {
-    super::fire::tick_system(sys, sim, rules);
 }
 
 /// The per-particle half of `AI_Spark`: `ParticleClass::AI_Dispatch` forward
@@ -255,7 +307,14 @@ where
     ) -> Result<SparkCollisionFacts, SparkWorldError>,
 {
     for particle in &mut sys.particles {
-        tick_particle_with_query(particle, sim, rules, sys.owner_house, &mut query)?;
+        tick_particle_with_query(
+            particle,
+            sim,
+            rules,
+            sys.owner_house,
+            sys.owner_entity,
+            &mut query,
+        )?;
     }
 
     // Native container cleanup walks backward so removals cannot perturb the
@@ -274,6 +333,99 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn particle_births_share_state_across_system_behaviors() {
+        let root = "[ParticleSystems]\n0=S\n[S]\nBehavesLike=Spark\nHoldsWhat=P\n\
+                    ParticleCap=2\nSparkSpawnFrames=1\nLifetime=20\n\
+                    [Particles]\n0=P\n1=F\n2=U\n\
+                    [P]\nBehavesLike=Railgun\nMaxEC=100\nColorList=(12,34,56)\n\
+                    [F]\nBehavesLike=Fire\nMaxEC=100\nEndStateAI=7\nStartStateAI=2\n\
+                    [U]\nName=Unknown\n";
+        let rules = RuleSet::from_ini(&IniFile::from_str(root)).unwrap();
+        let mut sim = Simulation::with_seed(29);
+        let origin = IVec3::new(128, 128, 100);
+        let system = sim
+            .spawn_particle_system(
+                rules.ps_type_id_by_name("S").unwrap(),
+                origin,
+                None,
+                None,
+                origin,
+                None,
+                &rules,
+            )
+            .unwrap();
+        tick_particle_system(
+            &mut sim,
+            &rules,
+            system,
+            crate::sim::world::UninitContext::with_rules(&rules),
+        );
+        let child = &sim.particle_systems().get(system).unwrap().particles()[0];
+        assert_eq!(child.start_rgb(), [12, 34, 56]);
+        assert!(child.lifetime_remaining() >= 99);
+        assert_eq!(child.origin(), origin);
+        assert_eq!(child.target(), origin);
+        assert_ne!(child.color_accumulator(), NativeF64Bits::POSITIVE_ZERO);
+        let saved_child: Particle =
+            serde_json::from_slice(&serde_json::to_vec(child).unwrap()).unwrap();
+        assert_eq!(saved_child.float_position(), child.float_position());
+        assert_eq!(saved_child.color_accumulator(), child.color_accumulator());
+
+        // An unknown system skips even existing children but still ages itself.
+        let mut layers =
+            crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(root));
+        layers.push(
+            crate::rules::native_processing::RulesLayerKind::Scenario,
+            IniFile::from_str("[S]\nLifetime=20\n"),
+        );
+        let unknown_system_rules = RuleSet::from_rules_layers(&layers).unwrap();
+        let child_lifetime = child.lifetime_remaining();
+        let old_lifetime = sim.particle_systems().get(system).unwrap().lifetime();
+        let old_rng = sim.main_rng.logical_state();
+        tick_particle_system(
+            &mut sim,
+            &unknown_system_rules,
+            system,
+            crate::sim::world::UninitContext::with_rules(&unknown_system_rules),
+        );
+        let system = sim.particle_systems().get(system).unwrap();
+        assert_eq!(system.lifetime(), old_lifetime - 1);
+        assert_eq!(system.particles()[0].lifetime_remaining(), child_lifetime);
+        assert_eq!(sim.main_rng.logical_state(), old_rng);
+
+        let unknown_id = rules.p_type_id_by_name("U").unwrap();
+        let mut unknown = Particle::new(
+            unknown_id,
+            origin,
+            origin,
+            rules.particle_type(unknown_id),
+            &mut sim,
+        );
+        let old_rng = sim.main_rng.logical_state();
+        tick_particle(&mut unknown, &mut sim, &rules, None, None);
+        assert!(unknown.marked_for_deletion());
+        assert_eq!(unknown.coords(), origin);
+        assert_eq!(unknown.draw_frame(rules.particle_type(unknown_id)), 0);
+        assert_eq!(sim.main_rng.logical_state(), old_rng);
+
+        let fire_id = rules.p_type_id_by_name("F").unwrap();
+        let fire = Particle::new(
+            fire_id,
+            origin,
+            IVec3::new(128, 1024, 100),
+            rules.particle_type(fire_id),
+            &mut sim,
+        );
+        assert_eq!(fire.draw_frame(rules.particle_type(fire_id)), 9);
+        let restored: Particle =
+            serde_json::from_slice(&serde_json::to_vec(&fire).unwrap()).unwrap();
+        assert_eq!(restored.draw_frame(rules.particle_type(fire_id)), 9);
+        let mut signed_type = rules.particle_type(fire_id).clone();
+        signed_type.end_state_ai = (-7_i8) as u8;
+        assert_eq!(restored.draw_frame(&signed_type), -5);
+    }
 
     #[test]
     fn smoke_host_stays_visible_when_gas_child_damage_creates_another_smoke_system() {
@@ -329,7 +481,7 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::particle_system_type::ParticleSystemTypeId;
     use crate::rules::particle_type::ParticleTypeId;
-    use crate::sim::particles::{Particle, ParticleSystem, SparkRuntimeState};
+    use crate::sim::particles::{Particle, ParticleSystem};
     use crate::sim::rng::SimRng;
     use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
     use glam::IVec3;
@@ -410,7 +562,7 @@ mod tests {
             "[General]\nWindDirection=1\n[ParticleSystems]\n\
              1=Sys\n\
              [Sys]\n\
-             BehavesLike={behaves_like}\n\
+             BehavesLike={behaves_like}\nHoldsWhat=<none>\n\
              SpawnCutoff=13\n\
              Lifetime={lifetime}\n",
         );
@@ -446,14 +598,7 @@ mod tests {
         let mut particle = Particle::test_fixture(ParticleTypeId(0), IVec3::new(x, 0, 100));
         particle.origin = IVec3::ZERO;
         particle.lifetime_remaining = lifetime;
-        particle.spark = Some(SparkRuntimeState {
-            velocity_x: NativeF32Bits::POSITIVE_ZERO,
-            velocity_y: NativeF32Bits::POSITIVE_ZERO,
-            velocity_z: NativeF32Bits::POSITIVE_ZERO,
-            start_rgb: [255; 3],
-            color_index: 0,
-            color_accumulator: NativeF64Bits::POSITIVE_ZERO,
-        });
+        particle.start_rgb = [255; 3];
         particle
     }
 
@@ -566,18 +711,16 @@ SpawnSparkPercentage=1
     }
 
     #[test]
-    fn spark_and_railgun_systems_survive_a_tick_with_nothing_to_do() {
-        // Spark dispatch is live (`tick_spark`), Railgun is still a no-op.
-        // Neither may retire a system early: the fixture system has exhausted
-        // its spawn frames and holds no particles, so `AI_Spark`'s guard at
-        // `0x0062E855` falls straight through and the lifetime alone governs.
-        for behaves in ["Spark", "Railgun"] {
-            let rules = build_rules(behaves, 100);
-            let mut sim = Simulation::new();
-            insert_live_system(&mut sim, fake_system(ParticleSystemTypeId(0), 100));
-            tick_particle_systems(&mut sim, &rules);
-            assert_eq!(sim.particle_systems().len(), 1, "{behaves} should survive");
-        }
+    fn spark_system_survives_a_tick_with_nothing_to_do() {
+        // Spark may not retire a system early: the fixture system has
+        // exhausted its spawn frames and holds no particles, so `AI_Spark`'s
+        // guard at `0x0062E855` falls straight through and the lifetime alone
+        // governs.
+        let rules = build_rules("Spark", 100);
+        let mut sim = Simulation::new();
+        insert_live_system(&mut sim, fake_system(ParticleSystemTypeId(0), 100));
+        tick_particle_systems(&mut sim, &rules);
+        assert_eq!(sim.particle_systems().len(), 1, "Spark should survive");
     }
 
     #[test]
@@ -625,10 +768,7 @@ SpawnSparkPercentage=1
         ));
         assert_eq!(sys.particles[0].coords, IVec3::new(11, 0, 100));
         assert_eq!(sys.particles[0].lifetime_remaining, 9);
-        assert_eq!(
-            sys.particles[0].spark.unwrap().velocity_z.bits(),
-            0xc0c0_0000
-        );
+        assert_eq!(sys.particles[0].direction[2].bits(), 0xc0c0_0000);
         assert_eq!(sim.rng_state().scenario, rng_before);
     }
 

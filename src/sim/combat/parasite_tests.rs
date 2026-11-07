@@ -90,13 +90,16 @@ impl Arena {
         sim.session.set_map_height_for_test(SIZE);
         // Retail [Clear]: Foot/Track/Wheel 100%, Hover 50%, Amphibious 80%.
         let clear = crate::rules::terrain_rules::SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            wheel: Some(100),
+            foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
             float: None,
-            amphibious: Some(80),
+            amphibious: Some(crate::rules::terrain_rules::test_speed_percent(80)),
             float_beach: None,
-            hover: Some(50),
+            hover: Some(crate::util::native_x87::NativeF32Bits::from_bits(
+                0x3f00_0000,
+            )),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         };
         let cell = |x, y| {
             let mut cell = crate::map::resolved_terrain::test_flat_cell(x, y);
@@ -382,6 +385,9 @@ fn drone_bites_on_its_weapon_rate_until_the_host_dies_then_drops_off() {
     let mut arena = Arena::new(&rules);
     let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
     let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+    // The drone's House is unregistered, so its Guard scan, which finds the
+    // tank, runs as a human player's: the campaign scan gate needs +0x41B.
+    crate::sim::arena_fixture::discover(&mut arena.sim, tank);
     // A player's tank: ReceiveDamage's scatter tail moves a computer's host
     // off its cell at a bite (`0x00702C8A`).
     let owner = arena.sim.entities().get(tank).unwrap().owner();
@@ -465,6 +471,9 @@ fn a_paid_repair_radio_request_releases_the_drone_after_the_heal() {
     let mut arena = Arena::new(&rules);
     let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
     let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+    // The drone's House is unregistered, so its Guard scan, which finds the
+    // tank, runs as a human player's: the campaign scan gate needs +0x41B.
+    crate::sim::arena_fixture::discover(&mut arena.sim, tank);
     // A player's tank, before the sourceless hit: ReceiveDamage's scatter tail
     // moves a computer's (`0x00702C8A`).
     let owner = arena.sim.entities().get(tank).unwrap().owner();

@@ -29,6 +29,22 @@ class MacNotarizationTests(unittest.TestCase):
             self.assertEqual(run.call_args.args[0][:3], ["xcrun", "stapler", "validate"])
             self.assertEqual(image.read_bytes(), b"installer fixture")
 
+    def test_a_ticket_check_that_cannot_reach_apple_is_tried_again(self):
+        unreachable = notarize.CommandFailed("xcrun failed (68): ", 68)
+        with patch.object(notarize, "command", side_effect=[unreachable, unreachable, ""]) as run, \
+             patch.object(notarize.time, "sleep") as sleep:
+            notarize.stapler("validate", Path("app.dmg"))
+        self.assertEqual(run.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_an_invalid_ticket_fails_without_another_try(self):
+        invalid = notarize.CommandFailed("xcrun failed (65): ", 65)
+        with patch.object(notarize, "command", side_effect=[invalid]) as run, \
+             patch.object(notarize.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, r"\(65\)"):
+                notarize.stapler("validate", Path("app.dmg"))
+        self.assertEqual(run.call_count, 1)
+
     def test_promotion_verification_is_read_only_and_detaches_on_app_rejection(self):
         for reject_app in (False, True):
             with self.subTest(reject_app=reject_app), tempfile.TemporaryDirectory() as temporary:

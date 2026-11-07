@@ -63,21 +63,18 @@ fn geometry(
     BulletGeometry { body, shadow }
 }
 
-pub(crate) fn build_projectile_visual_instances(
-    state: &AppState,
-    objects: &mut Vec<PlannedObjectInstance>,
-    order: &NativeDisplayOrder,
-) {
-    let Some(rt) = state.match_state.sim_runtime.as_ref() else {
-        return;
-    };
+/// One Display member's Bullet, if `id` names one that draws. The caller
+/// visits the members in Display order, so a voxel Bullet's render meets
+/// the buffers the render before it left.
+pub(crate) fn projectile_visitor<'a>(
+    state: &'a AppState,
+    order: &'a NativeDisplayOrder,
+) -> Option<impl FnMut(&mut Vec<PlannedObjectInstance>, u64) + 'a> {
+    let rt = state.match_state.sim_runtime.as_ref()?;
     let atlas = state.match_state.match_presentation.sprite_atlas.as_ref();
     let assets = state.process_assets.manager();
-    let mut pose_cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
     let sim = &rt.simulation;
-    let Some(terrain) = sim.resolved_terrain() else {
-        return;
-    };
+    let terrain = sim.resolved_terrain()?;
     let rules = &rt.resources.rules;
     let input = &state.match_state.input;
     let (_, _, width, height) = crate::app::input::camera::tactical_viewport_px(state);
@@ -95,16 +92,25 @@ pub(crate) fn build_projectile_visual_instances(
     let viewer = local_owner
         .as_deref()
         .and_then(|name| sim.interner().get(name));
-    for (_, projectile) in sim.projectiles().iter() {
+    let scheme_rgb = state
+        .match_state
+        .match_presentation
+        .lighting
+        .grid()
+        .color_scheme_rgb();
+    Some(move |objects: &mut Vec<PlannedObjectInstance>, id: u64| {
+        let Some(projectile) = sim.projectiles().get(id) else {
+            return;
+        };
         let Some(type_id) = projectile
             .payload()
             .projectile_type()
             .map(|id| sim.interner().resolve(id))
         else {
-            continue;
+            return;
         };
         let Some(kind) = rules.projectile(type_id) else {
-            continue;
+            return;
         };
         let scheme = projectile
             .firer_house()
@@ -134,7 +140,7 @@ pub(crate) fn build_projectile_visual_instances(
                 sim.session().game_options().fog_of_war,
             )
         {
-            continue;
+            return;
         }
         if let Some(object) = projectile_draw_instance_sampled(
             projectile,
@@ -142,26 +148,43 @@ pub(crate) fn build_projectile_visual_instances(
             kind,
             type_id,
             scheme,
+            scheme_rgb,
             atlas,
             terrain,
             [input.camera_x, input.camera_y],
             [width, height],
             axis,
             order,
+            // Bullet46B0C0 draws uncached in the style 0xB43180 holds.
             |image, matrix| {
-                pose_cache.render_matrix(
-                    assets?,
-                    image,
-                    matrix,
-                    0,
-                    true,
-                    crate::render::vxl_raster::VxlLighting::Diffuse,
-                )
+                let mut images = state
+                    .match_state
+                    .match_presentation
+                    .voxel_images
+                    .borrow_mut();
+                let mut cache = state.renderer.vxl_pose_frame_cache.borrow_mut();
+                let mut render = |depth_tested, depth| {
+                    cache.render_matrix(
+                        assets?,
+                        image,
+                        matrix,
+                        0,
+                        true,
+                        crate::render::vxl_raster::VxlLighting::Diffuse,
+                        depth_tested,
+                        depth,
+                    )
+                };
+                let clean = render(images.part_style(false), None)?;
+                if !images.render_part(false, clean.native_size()).stale {
+                    return Some(clean);
+                }
+                render(true, Some(images.depth_map()))
             },
         ) {
             objects.push(object);
         }
-    }
+    })
 }
 
 /// Shared production adapter used by full SHP/atlas/GPU native comparisons.
@@ -186,6 +209,7 @@ pub(crate) fn projectile_draw_instance(
         kind,
         type_id,
         scheme,
+        [1000; 3],
         atlas,
         terrain,
         camera,
@@ -202,6 +226,7 @@ pub(crate) fn projectile_draw_instance_sampled(
     kind: &ProjectileType,
     type_id: &str,
     scheme: HouseColorIndex,
+    scheme_rgb: [i32; 3],
     atlas: Option<&SpriteAtlas>,
     terrain: &ResolvedTerrainGrid,
     camera: [f32; 2],
@@ -240,7 +265,10 @@ pub(crate) fn projectile_draw_instance_sampled(
         let runtime_scheme = u32::try_from(kind.color_scheme()).ok()?;
         let remap_row = runtime_scheme / 2 + 1;
         let shades = if runtime_scheme & 1 == 0 { 1 } else { 53 };
-        let palette_light = PaletteLight::new([1000; 3], shades, 1000, true);
+        // ColorScheme[Type+2D4]+30C (`0x0046B1E3..0x0046B23C`): RecalcLighting
+        // (`0x0053AD00`) retints only schemes with more than one shade.
+        let rgb = if shades > 1 { scheme_rgb } else { [1000; 3] };
+        let palette_light = PaletteLight::new(rgb, shades, 1000, true);
         // Flat46B1AC..46B21A: flags2800 select Convert+98 ->494B60,
         // a strict Z-read/no-write leaf, gradient0 and file-backed81AF00=-65.
         // Non-Flat flags800 retain Convert+6C ->493DF0 (no Z test/store),
@@ -329,7 +357,12 @@ pub(crate) fn projectile_draw_instance_sampled(
                 source_palette: entry.source_palette,
                 depth,
                 tint: crate::map::lighting::DEFAULT_TINT,
-                palette_light: PaletteLight::plain(53, 1000),
+                // The shadow darkens through the theater Convert (`0x00468308..
+                // 0x00468374`); only the body takes the type's Convert.
+                palette_light: match piece {
+                    TerrainPiece::Shadow => PaletteLight::plain(53, 1000),
+                    _ => bullet_shp_palette_light(kind, scheme_rgb),
+                },
                 alpha: 1.0,
                 z_adjust: geometry.z_adjust as f32,
                 z_gradient: 0,
@@ -338,6 +371,20 @@ pub(crate) fn projectile_draw_instance_sampled(
         });
     }
     Some(PlannedObjectInstance::object(parent, pieces))
+}
+
+/// Bullet468090's SHP body Convert at intensity 1000
+/// (`0x0046837F..0x0046841D`): AnimPalette takes the plain ANIM Convert;
+/// FirersPalette a house ColorScheme's LightConvert (`+0x30C`), which carries
+/// the scheme RGB RecalcLighting (`0x0053AD00`) gives it during a storm,
+/// Dominator or nuke flash and after a trigger retint; else the plain theater
+/// Convert.
+fn bullet_shp_palette_light(kind: &ProjectileType, scheme_rgb: [i32; 3]) -> PaletteLight {
+    if kind.firers_palette && !kind.anim_palette {
+        PaletteLight::color_scheme(scheme_rgb, 1000)
+    } else {
+        PaletteLight::plain(53, 1000)
+    }
 }
 
 #[cfg(test)]
@@ -351,6 +398,27 @@ mod flight_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Retail JUMP (the terror drone's leap) is FirersPalette; Cannon is not.
+    /// During a storm the house schemes carry Ion's alternate RGB, which only
+    /// the FirersPalette body takes.
+    #[test]
+    fn firers_palette_bullet_takes_the_house_scheme_retint() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+            return;
+        };
+        let mut grid = crate::map::lighting::CellLightGrid::new();
+        grid.set_alternate_rgb(Some([870, 300, 400]));
+        let rgb = grid.color_scheme_rgb();
+        assert_eq!(
+            bullet_shp_palette_light(rules.projectile("JUMP").unwrap(), rgb),
+            PaletteLight::color_scheme([870, 300, 400], 1000)
+        );
+        assert_eq!(
+            bullet_shp_palette_light(rules.projectile("Cannon").unwrap(), rgb),
+            PaletteLight::plain(53, 1000)
+        );
+    }
 
     #[test]
     fn projectile_bridge_height_matches_original_object_projection() {

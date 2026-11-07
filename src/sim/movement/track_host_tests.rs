@@ -640,8 +640,8 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
                     (0..32).map(move |x| {
                         let mut cell =
                             crate::map::resolved_terrain::ResolvedTerrainCell::clear_for_test(x, y);
-                        cell.speed_costs.track = Some(100);
-                        cell.speed_costs.float = Some(100);
+                        cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+                        cell.speed_costs.float = Some(crate::util::native_x87::NativeF32Bits::ONE);
                         if family == TrackFamily::Ship {
                             cell.zone_type = crate::map::resolved_terrain::zone_class::WATER;
                             cell.ground_walk_blocked = true;

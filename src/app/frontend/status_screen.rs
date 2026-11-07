@@ -2,9 +2,9 @@
 //! and missing modal artwork. These are VERA presentation, not retail parity.
 //!
 //! The card is drawn from three sources only: a one-pixel fill texture for its
-//! frame and rules, a baked radial-gradient texture for the buttons, and
-//! [`crate::render::status_font`]'s in-repo face for its type. Nothing here
-//! reads a retail asset, so the card renders correctly when the game
+//! frame and rules, a baked radial-gradient texture for the buttons, and VERA's
+//! bundled vector fonts ([`crate::render::text_engine`]) for its type. Nothing
+//! here reads a retail asset, so the card renders correctly when the game
 //! installation is missing or incomplete — the situation it exists for.
 //!
 //! Look: black field, #FFFF00 type, and buttons carrying the Red Alert 2 read —
@@ -19,8 +19,9 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use crate::app::input::precedence::{InputLayer, ModalPage, ScreenPage};
 use crate::app::{App, AppState, BUILD_STAMP};
 use crate::render::batch::{BatchRenderer, BatchTexture, DepthAxis, SpriteInstance};
+use crate::render::bit_font::{BitFont, FontMode};
 use crate::render::gpu::GpuContext;
-use crate::render::status_font::StrokeFace;
+use crate::render::text_engine::fonts::{BASELINE, CAP_HEIGHT};
 use crate::ui::pause_menu::{InGameMenuState, ModalOutcome};
 use crate::ui::shell::geom::RectPx;
 
@@ -31,18 +32,37 @@ enum Action {
     Resume,
     Abort,
     Leave,
+    /// Open the import dialog on the startup-failure card.
+    ImportAssets,
+    /// Ask the platform for the folder holding the retail installation.
+    ChooseFolder,
+    /// Leave the import dialog.
+    CancelImport,
+    /// Dismiss the finished import dialog.
+    CloseImport,
 }
 
 impl Action {
     fn label(self, state: &AppState) -> Cow<'_, str> {
         let (key, fallback) = match self {
-            Self::Quit => (None, "Quit"),
-            Self::BackToMenu => (None, "Back To Menu"),
-            Self::Resume => (Some("GUI:ResumeMission"), "Resume Mission"),
-            Self::Abort => (Some("GUI:AbortMission"), "Abort Mission"),
-            Self::Leave => (Some("GUI:Leave"), "Quit"),
+            // VERA's own words: these cards show before, or without, the
+            // game's string table.
+            Self::Quit => return crate::i18n::tr("VERA:Quit").into(),
+            Self::BackToMenu => return crate::i18n::tr("VERA:BackToMenu").into(),
+            Self::ImportAssets => return crate::i18n::tr("VERA:ImportGameFiles").into(),
+            Self::ChooseFolder => return crate::i18n::tr("VERA:ChooseFolder").into(),
+            Self::CancelImport => return crate::i18n::tr("VERA:Cancel").into(),
+            Self::CloseImport => return crate::i18n::tr("VERA:Close").into(),
+            // The game's own labels, on the in-game cards.
+            Self::Resume => ("GUI:ResumeMission", "Resume Mission"),
+            Self::Abort => ("GUI:AbortMission", "Abort Mission"),
+            Self::Leave => ("GUI:Leave", "Quit"),
         };
-        key.and_then(|key| state.process_assets.csf.as_ref()?.get(key))
+        state
+            .process_assets
+            .csf
+            .as_ref()
+            .and_then(|csf| csf.get(key))
             .map_or(Cow::Borrowed(fallback), Cow::Borrowed)
     }
 
@@ -57,6 +77,34 @@ impl Action {
                 state,
                 ModalOutcome::LeaveMatch { destruct: false },
             ),
+            // The import dialog is self-contained: it owns the step, and the
+            // picker itself belongs to the platform (`ui::asset_import`).
+            Self::ImportAssets => {
+                state.frontend.asset_import.open();
+                state.platform.window.request_redraw();
+            }
+            Self::ChooseFolder => {
+                if !crate::ui::asset_import::choose_folder() {
+                    // The build has no system picker. Say so on the card: a
+                    // button that only writes to the log looks broken.
+                    state
+                        .frontend
+                        .asset_import
+                        .fail(crate::i18n::tr("VERA:NoFolderPicker"));
+                }
+                state.platform.window.request_redraw();
+            }
+            Self::CancelImport => {
+                state.frontend.asset_import.press_right();
+                if crate::util::folder_picker::cancel_import() {
+                    state.frontend.asset_import.cancel_copy();
+                }
+                state.platform.window.request_redraw();
+            }
+            Self::CloseImport => {
+                state.frontend.asset_import.close();
+                state.platform.window.request_redraw();
+            }
         }
     }
 }
@@ -75,7 +123,7 @@ impl Buttons {
     /// same decision (`input::precedence`).
     fn for_state(state: &AppState) -> Option<Self> {
         match crate::app::input::precedence::input_layer(state) {
-            InputLayer::Page(ModalPage::ShellError) => Some(Self::QUIT),
+            InputLayer::Page(ModalPage::ShellError) => Some(Self::for_shell_error(state)),
             InputLayer::Screen(ScreenPage::ResultCard) => Some(Self::BACK_TO_MENU),
             InputLayer::Screen(ScreenPage::InGameCard) => Some(
                 if state.match_state.match_presentation.in_game_menu
@@ -92,6 +140,52 @@ impl Buttons {
 
     fn actions(self) -> Vec<Action> {
         self.0.into_iter().flatten().collect()
+    }
+
+    /// The startup-failure card: the plain quit, or the import dialog's step
+    /// while one is open. Without a loaded installation the import is the way
+    /// out that does not need a file browser.
+    fn for_shell_error(state: &AppState) -> Self {
+        use crate::ui::asset_import::ImportStep;
+        match state.frontend.asset_import.step() {
+            ImportStep::Closed
+                if crate::ui::asset_import::AVAILABLE
+                    && state.process_assets.manager().is_none() =>
+            {
+                Self([Some(Action::ImportAssets), Some(Action::Quit)])
+            }
+            ImportStep::Closed => Self::QUIT,
+            ImportStep::ChooseFolder | ImportStep::Failed(_) => {
+                Self([Some(Action::ChooseFolder), Some(Action::CancelImport)])
+            }
+            ImportStep::Copying { .. } => Self([None, Some(Action::CancelImport)]),
+            ImportStep::Cancelling => Self::NONE,
+            ImportStep::Done => Self([Some(Action::CloseImport), None]),
+        }
+    }
+}
+
+/// The buttons the startup-failure card shows right now, for the render path
+/// that paints the same decision `handle_event` acts on.
+pub(crate) fn shell_error_buttons(state: &AppState) -> Buttons {
+    Buttons::for_shell_error(state)
+}
+
+/// Move the importing thread's progress and outcome into the dialog.
+///
+/// The copy belongs to the platform thread that can read the chosen tree, so it
+/// reports through `util::import_status` and the card drains it here, on the
+/// frame it draws.
+fn apply_import_events(state: &mut AppState) {
+    use crate::util::import_status::ImportEvent;
+    for event in crate::util::import_status::drain() {
+        match event {
+            ImportEvent::Started => state.frontend.asset_import.start_copy(None),
+            ImportEvent::Progress(bytes) => state.frontend.asset_import.advance_copy(bytes),
+            ImportEvent::Done(path) => state.frontend.asset_import.finish_copy(path),
+            ImportEvent::Failed(reason) => state.frontend.asset_import.fail(reason),
+            ImportEvent::Cancelled => state.frontend.asset_import.close(),
+        }
     }
 }
 
@@ -250,7 +344,14 @@ pub(crate) fn handle_event(
                         actions.first().copied()
                     }
                     PhysicalKey::Code(KeyCode::Escape) => actions.iter().copied().find(|action| {
-                        matches!(action, Action::Resume | Action::Quit | Action::BackToMenu)
+                        matches!(
+                            action,
+                            Action::Resume
+                                | Action::Quit
+                                | Action::BackToMenu
+                                | Action::CancelImport
+                                | Action::CloseImport
+                        )
                     }),
                     _ => None,
                 };
@@ -301,10 +402,63 @@ fn push_frame(out: &mut Vec<SpriteInstance>, rect: RectPx, thickness: i32, color
     );
 }
 
-/// One baked face plus the instances that use it.
-struct TypeRun<'a> {
-    face: &'a StrokeFace,
-    instances: Vec<SpriteInstance>,
+/// One type size on the card: VERA's vector fonts scaled so their capitals
+/// stand `cap_px` tall.
+#[derive(Clone, Copy)]
+struct CardType {
+    scale: f32,
+    gap: f32,
+}
+
+impl CardType {
+    fn new(cap_px: f32, gap: f32) -> Self {
+        Self {
+            scale: cap_px / CAP_HEIGHT,
+            gap,
+        }
+    }
+
+    fn cap_px(self) -> f32 {
+        CAP_HEIGHT * self.scale
+    }
+
+    fn line_px(self, font: &BitFont) -> f32 {
+        (font.cell_height() * self.scale + self.gap).round()
+    }
+
+    fn text_width(self, font: &BitFont, text: &str) -> f32 {
+        font.text_width(text) as f32 * self.scale
+    }
+
+    /// `text` broken into lines no wider than `max_width` pixels.
+    fn wrap(self, font: &BitFont, text: &str, max_width: f32) -> Vec<String> {
+        let layout = font.wrap_layout(text, (max_width / self.scale).max(1.0) as u32);
+        layout
+            .lines
+            .iter()
+            .map(|line| text[line.start_byte..line.end_byte].trim_end().to_owned())
+            .collect()
+    }
+
+    fn push_text(
+        self,
+        font: &BitFont,
+        out: &mut Vec<SpriteInstance>,
+        text: &str,
+        x: f32,
+        baseline: f32,
+        tint: [f32; 3],
+    ) {
+        out.extend(font.build_text(
+            text,
+            x,
+            baseline - BASELINE * self.scale,
+            self.scale,
+            TYPE_DEPTH,
+            tint,
+            [0.0; 2],
+        ));
+    }
 }
 
 pub(crate) fn render(
@@ -315,12 +469,11 @@ pub(crate) fn render(
     detail: &str,
     buttons: Buttons,
 ) {
+    apply_import_events(state);
     state.frontend.status_screen_drawn = true;
-    // The in-repo stroke face is a skeleton: its capitals are unambiguous where
-    // its lowercase forms are not, so the card sets every string in caps. That
-    // also matches the Red Alert 2 front end's own casing.
+    // The heading and the buttons are set in capitals, as the Red Alert 2
+    // front end sets its own; the message keeps its case to stay readable.
     let title = title.to_uppercase();
-    let detail = detail.to_uppercase();
     let layout = CardLayout::new(
         state.renderer.gpu.config.width,
         state.renderer.gpu.config.height,
@@ -383,45 +536,30 @@ pub(crate) fn render(
     let renderer = &mut state.renderer;
     let gpu = &renderer.gpu;
     let batch = &renderer.batch_renderer;
-    let font = &mut renderer.status_font;
     let inner_w = (layout.width - layout.pad * 2) as f32;
 
-    // Line advance is a property of the size: 45% of the cap height between
-    // baselines reads the same at every scale.
+    // Line advance is a property of the size: half the cap height between
+    // lines reads the same at every scale.
     let gap_for = |cap: f32| (cap * 0.5).round();
-    let title_face = font.face(
-        gpu,
-        batch,
-        layout.title_cap,
-        1.55,
-        gap_for(layout.title_cap),
-    );
-    let body_face = font.face(gpu, batch, layout.body_cap, 1.15, gap_for(layout.body_cap));
-    let small_face = font.face(
-        gpu,
-        batch,
-        layout.small_cap,
-        1.05,
-        gap_for(layout.small_cap),
-    );
+    let heading = CardType::new(layout.title_cap, gap_for(layout.title_cap));
+    let body = CardType::new(layout.body_cap, gap_for(layout.body_cap));
+    let small = CardType::new(layout.small_cap, gap_for(layout.small_cap));
     let stamp_cap = (layout.small_cap * 0.9).max(7.0);
-    let stamp_face = font.face(gpu, batch, stamp_cap, 1.0, gap_for(stamp_cap));
+    let stamp = CardType::new(stamp_cap, gap_for(stamp_cap));
 
-    let mut runs: Vec<TypeRun<'_>> = Vec::new();
-
-    {
-        let face = font.get(title_face);
-        let mut instances = Vec::new();
-        let baseline = layout.pad as f32 + face.cap_px() + 2.0 * layout.scale;
-        face.push_text(
-            &mut instances,
+    // The card keeps VERA's vector fonts whatever the font option says: it
+    // shows before, or without, the game's own files.
+    let text = renderer.bit_font.with_mode(FontMode::Modern, |font| {
+        let mut text = Vec::new();
+        let baseline = layout.pad as f32 + heading.cap_px() + 2.0 * layout.scale;
+        heading.push_text(
+            font,
+            &mut text,
             &title,
             layout.pad as f32,
             baseline,
             TEXT_YELLOW,
-            TYPE_DEPTH,
         );
-        runs.push(TypeRun { face, instances });
 
         // A #FF0000 rule separates the heading from the message, with a short
         // black rule beneath it.
@@ -449,30 +587,18 @@ pub(crate) fn render(
         );
 
         // Body paragraphs: the first states the failure, the rest the advice.
-        let body = font.get(body_face);
-        let small = font.get(small_face);
         let footer = (layout.button_y as f32 - 14.0 * layout.scale).max(0.0);
         let area_top = sub_rule_y as f32 + (20.0 * layout.scale).round();
 
         // A numbered step hangs its continuation lines under the text rather
         // than under the number, which is what keeps a wrapped list readable.
-        fn list_indent(face: &StrokeFace, paragraph: &str) -> f32 {
-            let mut chars = paragraph.char_indices();
-            let Some((_, first)) = chars.next() else {
-                return 0.0;
-            };
-            if !first.is_ascii_digit() {
-                return 0.0;
+        let list_indent = |face: CardType, paragraph: &str| {
+            let mut chars = paragraph.chars();
+            match (chars.next(), chars.next()) {
+                (Some(first), Some('.')) if first.is_ascii_digit() => face.text_width(font, "1. "),
+                _ => 0.0,
             }
-            let Some((dot, second)) = chars.next() else {
-                return 0.0;
-            };
-            if second != '.' {
-                return 0.0;
-            }
-            let _ = dot;
-            face.text_width("1. ")
-        }
+        };
 
         // Lay the paragraphs out first, then centre the block between the rules
         // and the button row: a one-line message otherwise leaves a dead band.
@@ -497,11 +623,11 @@ pub(crate) fn render(
             }
             let face = if first { body } else { small };
             let indent = list_indent(face, paragraph);
-            let lines = face.wrap(paragraph, inner_w - indent);
+            let lines = face.wrap(font, paragraph, inner_w - indent);
             if !first {
                 block_height += (face.cap_px() * 0.45).round().max(2.0);
             }
-            block_height += lines.len() as f32 * face.line_px();
+            block_height += lines.len() as f32 * face.line_px(font);
             planned.push(Planned {
                 first,
                 indent,
@@ -512,8 +638,6 @@ pub(crate) fn render(
         let slack = (footer - area_top - block_height).max(0.0);
         let mut boundary = area_top + slack * 0.45;
 
-        let mut body_instances = Vec::new();
-        let mut small_instances = Vec::new();
         for paragraph in planned {
             let face = if paragraph.first { body } else { small };
             if paragraph.lines.is_empty() {
@@ -528,63 +652,39 @@ pub(crate) fn render(
                 if baseline > footer {
                     break;
                 }
-                let targets = if paragraph.first {
-                    &mut body_instances
-                } else {
-                    &mut small_instances
-                };
                 let x = layout.pad as f32 + if index == 0 { 0.0 } else { paragraph.indent };
-                face.push_text(targets, line, x, baseline, TEXT_YELLOW, TYPE_DEPTH);
-                boundary += face.line_px();
+                face.push_text(font, &mut text, line, x, baseline, TEXT_YELLOW);
+                boundary += face.line_px(font);
             }
         }
-        runs.push(TypeRun {
-            face: body,
-            instances: body_instances,
-        });
-        runs.push(TypeRun {
-            face: small,
-            instances: small_instances,
-        });
 
-        // Button labels, centred in their panels.
-        // The label uses the body size: a heading-sized label overruns the
-        // button it sits in at every window size.
-        let label_face = font.get(body_face);
-        let mut label_instances = Vec::new();
+        // Button labels, centred in their panels. The label uses the body
+        // size: a heading-sized label overruns the button it sits in at every
+        // window size.
         for (rect, label) in button_rects.iter().zip(&labels) {
-            let width = label_face.text_width(label);
-            label_face.push_text(
-                &mut label_instances,
+            let width = body.text_width(font, label);
+            body.push_text(
+                font,
+                &mut text,
                 label,
                 rect.x as f32 + (rect.w as f32 - width) / 2.0,
-                rect.y as f32 + (rect.h as f32 + label_face.cap_px()) / 2.0,
+                rect.y as f32 + (rect.h as f32 + body.cap_px()) / 2.0,
                 TEXT_YELLOW,
-                TYPE_DEPTH,
             );
         }
-        runs.push(TypeRun {
-            face: label_face,
-            instances: label_instances,
-        });
 
         // Build stamp at the bottom right, clear of the frame.
-        let stamp = font.get(stamp_face);
-        let mut stamp_instances = Vec::new();
-        let width = stamp.text_width(BUILD_STAMP);
+        let width = stamp.text_width(font, BUILD_STAMP);
         stamp.push_text(
-            &mut stamp_instances,
+            font,
+            &mut text,
             BUILD_STAMP,
             layout.width as f32 - layout.pad as f32 - width,
             layout.height as f32 - layout.margin as f32 - (12.0 * layout.scale),
             TEXT_DIM,
-            TYPE_DEPTH,
         );
-        runs.push(TypeRun {
-            face: stamp,
-            instances: stamp_instances,
-        });
-    }
+        text
+    });
 
     let fill: &BatchTexture = &renderer.status_screen_fill;
     let glow: &BatchTexture = &renderer.status_card_glow;
@@ -599,10 +699,7 @@ pub(crate) fn render(
     );
     let glow_buffer = batch.create_instance_buffer(gpu, &glows);
     let shape_buffer = batch.create_instance_buffer(gpu, &shapes);
-    let run_buffers: Vec<Option<(wgpu::Buffer, u32)>> = runs
-        .iter()
-        .map(|run| batch.create_instance_buffer(gpu, &run.instances))
-        .collect();
+    let text_buffer = batch.create_instance_buffer(gpu, &text);
 
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("Utility status card"),
@@ -633,10 +730,8 @@ pub(crate) fn render(
     if let Some((buffer, count)) = &shape_buffer {
         batch.draw_with_buffer_passthrough(&mut pass, fill, buffer, *count);
     }
-    for (run, buffer) in runs.iter().zip(&run_buffers) {
-        if let Some((buffer, count)) = buffer {
-            batch.draw_with_buffer_passthrough(&mut pass, run.face.texture(), buffer, *count);
-        }
+    if let Some((buffer, count)) = &text_buffer {
+        batch.draw_with_buffer_passthrough(&mut pass, renderer.bit_font.atlas(), buffer, *count);
     }
 }
 

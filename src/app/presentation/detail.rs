@@ -106,6 +106,13 @@ impl DetailState {
         self.frame_rate
     }
 
+    /// Whether minimum + buffer wraps (signed INI values). Each
+    /// [`Self::minimum_frame_rate`] query can then flip the latch, so two
+    /// draws with the same inputs need not agree.
+    pub(crate) fn threshold_wraps(&self) -> bool {
+        self.minimum.checked_add(self.buffer).is_none()
+    }
+
     pub(crate) fn observation(&self) -> DetailObservation {
         DetailObservation {
             frame_rate: self.frame_rate,

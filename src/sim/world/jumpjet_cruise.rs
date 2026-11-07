@@ -674,7 +674,7 @@ impl Simulation {
     /// shrouded on its map (`MapClass::IsShrouded @ 0x00586360`). So an enemy
     /// jumpjet flying into ground the player has mapped is discovered there;
     /// a Jumpjet's PerCell runs only at touchdown. Outside a campaign a Cell
-    /// put (`0x0047E953..0x0047E9DC`, [`Self::discover_cell_put_object`]) has
+    /// put (`0x0047E953..0x0047E9DC`, [`Self::discover_by_player`]) has
     /// already discovered every object it puts down, so the probe only acts
     /// in a campaign. Answers the player when the probe discovers.
     fn jumpjet_discovery_due(&self, id: u64) -> Vec<crate::sim::intern::InternedId> {

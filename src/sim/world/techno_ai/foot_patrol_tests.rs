@@ -16,9 +16,10 @@ fn map_authored_patrol_acquires_and_returns_during_ordinary_frames() {
     sim.session.game_options_mut_for_test().short_game = false;
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    let placements = crate::map::entities::parse_map_entities(&IniFile::from_str(
-        "[Units]\n0=Americans,MTNK,256,10,10,0,Patrol,None,0,-1,0,0,1,1\n",
-    ));
+    let placements = crate::map::entities::parse_map_entities(
+        &IniFile::from_str("[Units]\n0=Americans,MTNK,256,10,10,0,Patrol,None,0,-1,0,0,1,1\n"),
+        4,
+    );
     assert_eq!(placements[0].mission, Some(MissionType::Patrol));
     assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 1);
     let id = sim.substrate.entities.iter_sorted().next().unwrap().0;

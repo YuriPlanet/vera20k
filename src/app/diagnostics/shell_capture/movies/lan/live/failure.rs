@@ -336,10 +336,10 @@ impl FailureCapture {
         for event in sim.pending_command_snapshot() {
             match event.payload {
                 Command::ExitMatch => anyhow::bail!("failure route queued semantic EXIT"),
-                Command::RemovePlayer { house_index } => {
+                Command::RemovePlayer { source } => {
                     ensure!(self.mode == Mode::Timeout, "EA Quit queued REMOVEPLAYER");
                     ensure!(
-                        Some(house_index) == self.peer_house,
+                        Some(source) == self.peer_house,
                         "REMOVEPLAYER selected another House"
                     );
                 }
@@ -633,8 +633,18 @@ impl FailureCapture {
         );
         let online = self.wait.as_ref().context("Quit held frame")?.info.mode
             == crate::net::live_commands::LiveCommandMode::Wol;
+        // This host's VERA room comes back right after the match
+        // (`return_after_match`), alone; the original-style room returns to BB.
+        let room = !online && !state.frontend.native_shell_ui;
         let settled = if online {
             super::online::online_lobby_settled(state)
+        } else if room {
+            setup_settled(state, true)
+                && state
+                    .match_state
+                    .session
+                    .network_setup()
+                    .is_some_and(|launch| launch.humans.len() == 1)
         } else {
             state.frontend.lan.is_some() && lobby_settled(state)
         };
@@ -665,7 +675,7 @@ impl FailureCapture {
             "EA Quit dropped the portable LAN service"
         );
         ensure!(
-            state.match_state.session.network_setup().is_none()
+            (room || state.match_state.session.network_setup().is_none())
                 && state.frontend.loading_session.is_none(),
             "EA Quit retained setup/loading"
         );
@@ -680,10 +690,10 @@ impl FailureCapture {
         self.returned = Some(
             json!({"native_frame":sim.session().binary_frame(),"tick":sim.session().tick(),"held_frame":held.frame,
             "held_tail_commits":sim.session().binary_frame().wrapping_sub(held.frame),"live_owner_retired":true,"lan_service_retained":true,
-            "network_wait_cleared":true,"pending_exit":false}),
+            "network_wait_cleared":true,"pending_exit":false,"reopened_room":room}),
         );
         route.push(json!({"render_frame":render,"native_frame":sim.session().binary_frame(),
-            "action":if self.mode == Mode::Startup { "startup ConnectionFailed OK returned to settled lobby after one held-tail commit" } else { "EA Quit returned to settled lobby after one held-tail commit" },"online":online}));
+            "action":if self.mode == Mode::Startup { "startup ConnectionFailed OK returned to settled lobby after one held-tail commit" } else if room { "EA Quit returned to the host's reopened room after one held-tail commit" } else { "EA Quit returned to settled lobby after one held-tail commit" },"online":online}));
         Ok(true)
     }
 

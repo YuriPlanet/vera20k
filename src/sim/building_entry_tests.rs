@@ -937,8 +937,8 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
             .unwrap()
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
-        cell.speed_costs.foot = Some(cost);
-        cell.base_speed_costs.foot = Some(cost);
+        cell.speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(cost));
+        cell.base_speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(cost));
     };
     for &cell in &adjacent {
         block_foot(&mut sim, cell, true);
@@ -1195,8 +1195,8 @@ fn a_bio_reactor_scan_uses_location_cell_on_a_multi_cell_foundation() {
             .unwrap()
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
-        terrain.speed_costs.foot = Some(cost);
-        terrain.base_speed_costs.foot = Some(cost);
+        terrain.speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(cost));
+        terrain.base_speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(cost));
     };
     let step = |cell: (u16, u16), delta: (i32, i32), scale: i32| {
         (
@@ -1328,8 +1328,8 @@ fn a_bio_reactor_relaxed_scan_wraps_from_octant_seven() {
             .unwrap()
             .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
-        terrain.speed_costs.foot = Some(cost);
-        terrain.base_speed_costs.foot = Some(cost);
+        terrain.speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(cost));
+        terrain.base_speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(cost));
     };
     for delta in directions {
         set_foot(&mut sim, step(delta, 1), 0);
@@ -2808,16 +2808,13 @@ fn retail_all01_script64_conscript_admits_a_map_civilian_garrison() {
             .ini
     });
     let mut owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
-    let (mut rules, _, fixed_art, _) = owner
+    let (rules, _, _, _) = owner
         .load_scenario(
             NativeScenarioRulesPrefix::Campaign(named.as_ref()),
             &map.ini,
         )
         .unwrap()
         .into_parts();
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&fixed_art),
-    );
     assert!(rules.object("E2").expect("retail Conscript").occupier);
     let civilian = map
         .entities

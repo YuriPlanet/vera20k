@@ -10,7 +10,7 @@
 
 use super::Particle;
 use super::wind::{SMOKE_WIND_DX, SMOKE_WIND_DY};
-use crate::rules::particle_type::{ParticleBehavesLike, ParticleType};
+use crate::rules::particle_type::ParticleType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::rng::SimRng;
 use crate::sim::world::Simulation;
@@ -22,7 +22,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         return;
     };
     let pst = rules.particle_system_type(sys.type_id);
-    let owner_house = sys.owner_house;
+    let (owner_house, owner_entity) = (sys.owner_house, sys.owner_entity);
     // ParticleSystemAI62ED40 / ParticleAIDispatch62CE40: child Gas damage
     // calls ReceiveDamage synchronously. Keep this registered system resident
     // while that callback inserts another Ground system and reads GetYSort.
@@ -55,7 +55,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         .and_then(|sys| sys.particles.get(index))
         .cloned()
     {
-        super::system_ai::tick_particle(&mut p, sim, rules, owner_house);
+        super::system_ai::tick_particle(&mut p, sim, rules, owner_house, owner_entity);
         sim.substrate
             .particle_systems
             .commit_particle_tick(id, index, p);
@@ -77,10 +77,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
         };
         let pt = rules.particle_type(p.type_id);
         if !p.marked_for_deletion {
-            if pt.behaves_like == ParticleBehavesLike::Smoke {
-                move_smoke(&mut p, pt, rules.general.wind_direction(), sim);
-            }
-            // RESIDUAL: mixed Gas/Fire MoveDispatch bodies remain incomplete.
+            super::system_ai::move_dispatch(&mut p, sim, rules);
             sim.substrate
                 .particle_systems
                 .commit_particle_tick(id, index, p);
@@ -119,6 +116,7 @@ pub(super) fn tick_system(sim: &mut Simulation, rules: &RuleSet, id: u64) {
 
     //62F047: Smoke ignores Spawns and ParticleCap. Offset draws precede
     //the HoldsWhat lookup, even when the type index is absent.
+    super::system_ai::apply_fire_link_release(sim, id);
     let Some(sys) = sim.particle_systems().get(id) else {
         return;
     };

@@ -13,6 +13,9 @@
 #                    (same key and state directory)
 #   BOUND=S          every other source presses Leave ACT_SECONDS+S into the
 #                    match (default 60); on a score screen Leave is Continue
+#   PACING=on|off    relay: sign a VO2C certificate with that pacing flag
+#   RELAY_PORT=P     relay: loopback UDP port (default 5000)
+#   SERVICE_PORT=P   relay: the mock match API's port (default 8787)
 # Scripted actions use the spawn-only VERA20K_SPAWN_LEAVE_AFTER_SECONDS and
 # VERA20K_SPAWN_RESIGN_AFTER_SECONDS switches. Logs land in OUT_DIR.
 set -eu
@@ -39,17 +42,20 @@ extra="--players $players"
 [ -n "${SPECTATORS:-}" ] && extra="$extra --spectators $SPECTATORS"
 
 relay_pid=""
+relay_port=${RELAY_PORT:-5000}
+service_port=${SERVICE_PORT:-8787}
 if [ "$mode" = relay ]; then
   relay=${VERA20K_RELAY_BIN:-$(ls -t "$root"/target/owned-worktrees/*/debug/vera20k-relay 2>/dev/null | head -n 1)}
   [ -x "$relay" ] || { echo "build first: python3 -m tools.cargo_run -- build -p vera20k-relay" >&2; exit 2; }
   key=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
   mkdir -p "$out/relay-state" && chmod 700 "$out/relay-state"
-  VERA_RELAY_BIND=127.0.0.1:5000 VERA_RELAY_STATE_DIR="$out/relay-state" VERA_RELAY_TICKET_KEY=$key \
+  VERA_RELAY_BIND=127.0.0.1:$relay_port VERA_RELAY_STATE_DIR="$out/relay-state" VERA_RELAY_TICKET_KEY=$key \
     "$relay" > "$out/relay.log" 2>&1 &
   relay_pid=$!
   pids="$pids $relay_pid"
   # shellcheck disable=SC2086
   VERA_RELAY_TICKET_KEY=$key node "$root/tools/spawn/spawn-e2e.mjs" relay --out "$out" --ra2 "$ra2" $extra \
+    --port "$service_port" --relay "127.0.0.1:$relay_port" ${PACING:+--pacing "$PACING"} \
     > "$out/service.log" 2>&1 &
   pids="$pids $!"
   until grep -q "match API on" "$out/service.log" 2>/dev/null; do sleep 0.2; done
@@ -88,7 +94,7 @@ if [ "$kill_target" != none ]; then
     if [ "$kill_target" = relay ] && [ -n "${RELAY_RESTART:-}" ]; then
       sleep "$RELAY_RESTART"
       echo "$(date -u +%FT%TZ) relay restarted" >> "$out/kill.log"
-      VERA_RELAY_BIND=127.0.0.1:5000 VERA_RELAY_STATE_DIR="$out/relay-state" VERA_RELAY_TICKET_KEY=$key \
+      VERA_RELAY_BIND=127.0.0.1:$relay_port VERA_RELAY_STATE_DIR="$out/relay-state" VERA_RELAY_TICKET_KEY=$key \
         exec "$relay" >> "$out/relay.log" 2>&1
     fi
   ) &

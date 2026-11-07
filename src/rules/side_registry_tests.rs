@@ -155,6 +155,7 @@ fn setup_processor(controls: &Value, row: &Value) -> RulesPassProcessor {
             &art,
             &crate::rules::sound_ini::EvaRegistry::default(),
             false,
+            &crate::rules::sound_ini::SoundRegistry::default(),
         )
         .unwrap();
     processor
@@ -163,6 +164,7 @@ fn setup_processor(controls: &Value, row: &Value) -> RulesPassProcessor {
             &art,
             &crate::rules::sound_ini::EvaRegistry::default(),
             false,
+            &crate::rules::sound_ini::SoundRegistry::default(),
         )
         .unwrap();
     assert_registry(&processor.families, &row["before"], "direct reader setup");
@@ -251,7 +253,7 @@ fn ordered_country_side_name_lookup_matches_original_signed_controls() {
         let token = row["token"].as_str().unwrap();
         let expected = row["result"].as_i64().unwrap() as i32;
         assert_eq!(processor.country_index_of_name(token), expected, "{row}");
-        let (_, trace, _) = processor.finish();
+        let (_, trace) = processor.finish();
         let processed = RulesLayerStack::new(IniFile::empty())
             .process_with_fixed_art_and_registry_state(
                 &IniFile::empty(),

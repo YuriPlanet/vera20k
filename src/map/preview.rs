@@ -66,7 +66,7 @@ pub const START_STAGING_SLOTS: usize = 8;
 /// `'W'` options string carries to its guests.
 ///
 /// The host's random-map dialog writes it at Generate
-/// (`ComputeScenarioHeaderFromMap 0x0058B830`); a guest's options parser
+/// (`ComputeScenarioHeaderFromMap 0x0058B820`); a guest's options parser
 /// overwrites it from every `'W'` it receives (`0x005E3E96..0x005E40C6`).
 /// Full_Init copies `cells` into waypoints 0..7 for a random map
 /// (`0x006873E6..0x0068740E`) before House start assignment.

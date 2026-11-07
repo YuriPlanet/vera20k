@@ -80,6 +80,16 @@ impl LineTrails {
         self.segments.clear();
     }
 
+    /// Whether no trail is attached or still fading.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.trails.is_empty()
+    }
+
+    /// The last composite's segments, in world coordinates.
+    pub(crate) fn shown(&self) -> &[LineTrailSegment] {
+        &self.segments
+    }
+
     /// Exactly one call per tactical composite, even when no sim frame passed.
     /// Owner absence also detaches, covering a presentation handoff after removal.
     /// Registry compaction is stable and linear; reverse visit order is retained.

@@ -4,6 +4,11 @@ pub(crate) mod ime;
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
 
+// The host awaits `initThreadPool(workers)` after `init()`, before any
+// simulation work. Without it the same package runs that work serially.
+#[cfg(feature = "wasm-threads")]
+pub use wasm_bindgen_rayon::init_thread_pool;
+
 thread_local! {
     static CANVAS: RefCell<Option<web_sys::HtmlCanvasElement>> = const { RefCell::new(None) };
     static STATUS: RefCell<Option<js_sys::Function>> = const { RefCell::new(None) };
@@ -158,6 +163,9 @@ pub fn initialize() {
         console(info);
     }));
     let _ = console_log::init_with_level(log::Level::Info);
+    // The page's first status lines come before the engine reads its
+    // settings: they follow the browser's languages until then.
+    crate::i18n::init(None, None);
     crate::util::file_system::set_persistence_callbacks(
         |path, bytes, modified_ms| {
             WRITE.with(|slot| {
@@ -313,7 +321,9 @@ pub fn prepare_audio() -> Result<(), JsValue> {
     if MUSIC.with(|slot| slot.borrow().is_some()) && SFX.with(|slot| slot.borrow().is_some()) {
         Ok(())
     } else {
-        Err(JsValue::from_str("Browser audio output unavailable"))
+        Err(JsValue::from_str(&crate::i18n::tr(
+            "VERA:BrowserAudioUnavailable",
+        )))
     }
 }
 
@@ -349,7 +359,9 @@ pub fn start_spawn(
     spawn_ini: String,
 ) -> Result<(), JsValue> {
     if !LIFECYCLE.with(|slot| slot.borrow().may_start(true)) {
-        return Err(JsValue::from_str("Game already started; reload to restart"));
+        return Err(JsValue::from_str(&crate::i18n::tr(
+            "VERA:GameAlreadyStarted",
+        )));
     }
     let request = read_spawn(spawn_ini)?;
     let mut app = crate::app::App::new(
@@ -424,18 +436,20 @@ fn run(
 ) -> Result<(), JsValue> {
     use winit::platform::web::EventLoopExtWebSys;
     if !LIFECYCLE.with(|slot| slot.borrow().may_start(external)) {
-        return Err(JsValue::from_str("Game already started; reload to restart"));
+        return Err(JsValue::from_str(&crate::i18n::tr(
+            "VERA:GameAlreadyStarted",
+        )));
     }
     let event_loop =
         winit::event_loop::EventLoop::new().map_err(|e| JsValue::from_str(&e.to_string()))?;
     LIFECYCLE
         .with(|slot| slot.borrow_mut().start(external))
-        .map_err(JsValue::from_str)?;
+        .map_err(|error| JsValue::from_str(&error))?;
     install_config();
     WAKE.with(|slot| *slot.borrow_mut() = Some(event_loop.create_proxy()));
     CANVAS.with(|slot| *slot.borrow_mut() = Some(canvas));
     STATUS.with(|slot| *slot.borrow_mut() = Some(on_status));
-    status("Starting engine");
+    status(&crate::i18n::tr("VERA:StartingEngine"));
     event_loop.spawn_app(app);
     Ok(())
 }

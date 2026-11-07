@@ -55,9 +55,6 @@ fn fixture_with_art(extra: &str, art: Option<&IniFile>) -> (Simulation, RuleSet)
     };
     if let Some(art) = art {
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(art));
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(art),
-        );
         assert_eq!(
             rules
                 .animation_sequence("E1")
@@ -431,12 +428,14 @@ fn infantry_same_frame_firer_death_keeps_electric_consequences() {
                 sim.substrate.entities.contains(infantry),
                 inf_death == 2 && visit < 3
             );
+            // This [Spark] authors no ColorList, so its sparks age and the
+            // system may retire (0x0062C494 holds the colour, no error); a
+            // repeated discharge would be another system.
+            assert!(
+                sim.particle_systems().iter().all(|(id, _)| *id == spark_id),
+                "no repeated death discharge"
+            );
         }
-        assert_eq!(
-            sim.particle_systems().len(),
-            1,
-            "no repeated death discharge"
-        );
     }
 }
 
@@ -1090,19 +1089,21 @@ pub(super) fn test_playfield_bounds() -> crate::sim::cell_rect::PlayfieldBounds 
 pub(super) fn test_terrain_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
         speed_costs: SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            wheel: Some(100),
-            hover: Some(100),
-            amphibious: Some(100),
+            foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             ..SpeedCostProfile::default()
         },
         base_speed_costs: SpeedCostProfile {
-            foot: Some(100),
-            track: Some(100),
-            wheel: Some(100),
-            hover: Some(100),
-            amphibious: Some(100),
+            foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             ..SpeedCostProfile::default()
         },
         ..crate::map::resolved_terrain::test_flat_cell(rx, ry)

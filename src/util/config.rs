@@ -80,6 +80,19 @@ impl PathsConfig {
         &self.legacy_settings_dir
     }
 
+    /// VERA's own folder for maps it downloads or receives and for the
+    /// random-map dialog's files, so nothing is written into the retail
+    /// installation (`map::source::keep_received_map`, `random_map_dir`).
+    pub fn downloaded_maps_dir(&self) -> PathBuf {
+        self.settings_dir.join("Maps")
+    }
+
+    /// VERA's own pictures of maps for the setup screens' previews, by each
+    /// map's SHA-256 (`app::map_picture`).
+    pub fn map_pictures_dir(&self) -> PathBuf {
+        self.settings_dir.join("MapPreviews")
+    }
+
     fn separate_settings_from_assets(&mut self) -> Result<()> {
         if resolved_directory(&self.settings_dir).starts_with(resolved_directory(&self.ra2_dir)) {
             self.settings_dir = default_settings_dir()?;
@@ -101,7 +114,21 @@ pub fn default_settings_dir() -> Result<PathBuf> {
     Ok(PathBuf::from("/saves/profile"))
 }
 
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(target_os = "android")]
+pub fn default_settings_dir() -> Result<PathBuf> {
+    // Android has neither HOME nor a writable working directory at start-up;
+    // the cdylib hands its `internal_data_path` over before anything reads a
+    // setting, and that folder is also where config.toml, VERA.INI, saves and
+    // logs live once app_bundle has entered it.
+    crate::util::platform_dir::get()
+        .map(Path::to_path_buf)
+        .context("no Android data directory: android_main must call entry::adopt_android_data_dir")
+}
+
+#[cfg(not(any(
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+)))]
 pub fn default_settings_dir() -> Result<PathBuf> {
     if cfg!(target_os = "windows") {
         if let Some(path) = std::env::var_os("LOCALAPPDATA")

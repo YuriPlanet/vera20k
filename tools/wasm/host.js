@@ -1,4 +1,6 @@
 import init, { import_file, prepare_audio, restore_user_file, set_persistence_callbacks, start_game } from './pkg/vera20k.js';
+// Only a --threads package exports initThreadPool.
+import * as engine from './pkg/vera20k.js';
 
 const $ = selector => document.querySelector(selector);
 const status = $('#status');
@@ -21,6 +23,8 @@ const steps = { browser: $('#step-browser'), folder: $('#step-folder'), start: $
 // Ignore executable installers and development metadata. The same formats
 // may also appear in nested game resource folders.
 const RESOURCE = /\.(mix|mmx|yrm|map|ini|pkt|csf|fnt|wav|aud|shp|pal|vxl|hva|tmp|pcx|bik)$/i;
+// Red Alert 2's own map archive: the engine never mounts it, so it would only hold memory.
+const UNUSED = /^multi\.mix$/i;
 
 const TEXT = {
     en: {
@@ -34,12 +38,14 @@ const TEXT = {
         insecure: 'Open this page over HTTPS or from localhost; WebGPU needs a secure page.',
         noGpu: 'This browser has no WebGPU. Use a recent Chrome or Edge.',
         engineFailed: error => `Could not load the engine: ${error}`,
+        notIsolated: 'This multi-threaded build needs COOP and COEP headers; the site is not sending them.',
         reading: 'Reading folder…',
         found: folder => `Using the game folder inside “${folder}”.`,
         noFiles: 'No game files found in that folder. Pick the Yuri’s Revenge install folder.',
         notYr: 'ra2md.mix was not found; this may not be a Yuri’s Revenge folder.',
         startReady: 'Ready. Click Start game.',
         importing: (n, total, name) => `Importing ${n}/${total}: ${name}`,
+        audioUnavailable: error => `Audio unavailable: ${error}`,
         startFailed: error => `Could not start: ${error}. Reload the page to try again.`,
         helpTitle: 'Help', helpHeading: 'Where is my game folder?', close: 'Close',
         help1: 'Pick the Yuri’s Revenge install folder: the one that contains <code>ra2md.mix</code> and <code>ra2.mix</code>.',
@@ -71,12 +77,14 @@ const TEXT = {
         insecure: '请通过 HTTPS 或 localhost 打开本页；WebGPU 需要安全页面。',
         noGpu: '当前浏览器不支持 WebGPU，请使用新版 Chrome 或 Edge。',
         engineFailed: error => `引擎加载失败：${error}`,
+        notIsolated: '多线程版本需要 COOP 和 COEP 响应头，但当前网站没有发送。',
         reading: '正在读取文件夹…',
         found: folder => `已使用“${folder}”中的游戏目录。`,
         noFiles: '该文件夹中没有游戏文件，请选择《尤里的复仇》安装目录。',
         notYr: '未找到 ra2md.mix，这可能不是《尤里的复仇》目录。',
         startReady: '准备就绪，点击“开始游戏”',
         importing: (n, total, name) => `正在导入 ${n}/${total}：${name}`,
+        audioUnavailable: error => `音频不可用：${error}`,
         startFailed: error => `无法启动：${error}。请刷新页面重试。`,
         helpTitle: '帮助', helpHeading: '游戏文件夹在哪里？', close: '关闭',
         help1: '选择《尤里的复仇》安装目录，即包含 <code>ra2md.mix</code> 和 <code>ra2.mix</code> 的文件夹。',
@@ -140,6 +148,7 @@ fullscreen.addEventListener('change', () => {
     try { localStorage.setItem('vera20k-fullscreen', fullscreen.checked ? '1' : '0'); } catch {}
 });
 
+let workers = 0;
 // A plain-text report for bug reports: build, browser, GPU, memory, storage and the folder check.
 async function diagnosticReport() {
     const lines = [
@@ -147,6 +156,7 @@ async function diagnosticReport() {
         `Browser: ${navigator.userAgent}`,
         `Screen: ${screen.width}×${screen.height} @${devicePixelRatio}x, window ${innerWidth}×${innerHeight}`,
         `CPU threads: ${navigator.hardwareConcurrency ?? '?'}, memory: ${navigator.deviceMemory ?? '?'} GB, secure: ${isSecureContext}`,
+        `Workers: ${workers}, cross-origin isolated: ${globalThis.crossOriginIsolated ?? '?'}`,
     ];
     try {
         const adapter = await navigator.gpu?.requestAdapter();
@@ -296,7 +306,7 @@ function choose(entries) {
     selection = entries
         .filter(([path]) => path.startsWith(root))
         .map(([path, file]) => [path.slice(root.length), file])
-        .filter(([path]) => RESOURCE.test(path));
+        .filter(([path]) => RESOURCE.test(path) && !UNUSED.test(path));
 
     if (!selection.length) {
         showManifest(null);
@@ -384,7 +394,7 @@ async function launch() {
     picker.disabled = true;
     drop.setAttribute('aria-disabled', 'true');
     try {
-        try { prepare_audio(); } catch (error) { show(`Audio unavailable: ${error}`); }
+        try { prepare_audio(); } catch (error) { show(TEXT[lang].audioUnavailable(error)); }
         progress.hidden = false;
         const bar = progress.firstElementChild;
         const total = selection.reduce((sum, [, file]) => sum + file.size, 0) || 1;
@@ -408,6 +418,11 @@ async function launch() {
 
 try {
     await init();
+    if (engine.initThreadPool) {
+        // The main thread spins while the pool works, so it counts as one of the CPU threads.
+        workers = Math.max(1, (navigator.hardwareConcurrency ?? 2) - 1);
+        await engine.initThreadPool(workers);
+    }
     try { await restore(); } catch (error) { storageError(error); }
     set_persistence_callbacks((path, bytes, modified) => {
         // Copy before returning: the source may refer to transient Wasm memory.
@@ -491,7 +506,8 @@ try {
     }
 } catch (error) {
     setStep(steps.browser, 'error');
-    setStatus('err', 'engineFailed', String(error));
+    const unisolated = engine.initThreadPool && !globalThis.crossOriginIsolated;
+    setStatus('err', 'engineFailed', unisolated ? TEXT[lang].notIsolated : String(error));
 }
 window.addEventListener('beforeunload', event => {
     if (pending || storageFailed) { event.preventDefault(); event.returnValue = ''; }

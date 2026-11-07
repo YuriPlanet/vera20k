@@ -152,7 +152,6 @@ impl PreparedSavedGame {
         );
         init_helpers::bind_rules_asset_closure(
             &mut rules,
-            view.rules_owner.fixed_art(),
             &overlay_registry,
             saved.scheduler_anim_roots(),
             &[],
@@ -193,7 +192,6 @@ impl PreparedSavedGame {
         );
         init_helpers::bind_rules_asset_closure(
             &mut rules,
-            view.rules_owner.fixed_art(),
             &overlay_registry,
             saved.scheduler_anim_roots(),
             &[],

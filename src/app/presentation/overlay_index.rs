@@ -19,33 +19,42 @@
 //! render without a simulation); in-match, live `OverlayGrid` identity always
 //! wins in `overlay_render_identity`.
 
+use std::collections::BTreeSet;
+
 use crate::map::overlay::OverlayEntry;
+use crate::render::cell_window::CellWindow;
 
 #[derive(Default)]
 pub(crate) struct OverlayRenderIndex {
     entries: Vec<OverlayEntry>,
+    /// Derived `(ry, rx, slot)` for every entry, ordered by cell row-major
+    /// and then slot. `entries` is the source of truth: `replace_from_source`
+    /// rebuilds this, `upsert_occupied` adds each appended slot, and
+    /// `remove_cells` rebuilds it when `retain` shifts slots. Debug builds
+    /// check it against `entries` on every window query.
+    by_cell: BTreeSet<(u16, u16, usize)>,
 }
 
 impl OverlayRenderIndex {
     /// Install the source-map overlay list, in source order.
     pub(crate) fn replace_from_source(&mut self, entries: Vec<OverlayEntry>) {
         self.entries = entries;
+        self.rebuild_by_cell();
     }
 
     /// Upsert authoritative occupied cells by coordinate: existing
     /// coordinates keep their slot (only the seed identity refreshes); new
     /// coordinates append in candidate order. Returns inserted-or-changed.
     pub(crate) fn upsert_occupied(&mut self, candidates: Vec<OverlayEntry>) -> usize {
-        let mut by_coordinate: std::collections::HashMap<(u16, u16), usize> = self
-            .entries
-            .iter()
-            .enumerate()
-            .map(|(index, entry)| ((entry.rx, entry.ry), index))
-            .collect();
         let mut synced = 0;
         for candidate in candidates {
-            let coordinate = (candidate.rx, candidate.ry);
-            if let Some(&index) = by_coordinate.get(&coordinate) {
+            // A repeated coordinate resolves to its last slot.
+            let slot = self
+                .by_cell
+                .range((candidate.ry, candidate.rx, 0)..=(candidate.ry, candidate.rx, usize::MAX))
+                .next_back()
+                .map(|&(_, _, slot)| slot);
+            if let Some(index) = slot {
                 let entry = &mut self.entries[index];
                 if entry.overlay_id != candidate.overlay_id || entry.frame != candidate.frame {
                     entry.overlay_id = candidate.overlay_id;
@@ -53,7 +62,8 @@ impl OverlayRenderIndex {
                     synced += 1;
                 }
             } else {
-                by_coordinate.insert(coordinate, self.entries.len());
+                self.by_cell
+                    .insert((candidate.ry, candidate.rx, self.entries.len()));
                 self.entries.push(candidate);
                 synced += 1;
             }
@@ -74,7 +84,40 @@ impl OverlayRenderIndex {
         let before = self.entries.len();
         self.entries
             .retain(|entry| !removed.contains(&(entry.rx, entry.ry)));
-        before - self.entries.len()
+        let dropped = before - self.entries.len();
+        if dropped != 0 {
+            self.rebuild_by_cell();
+        }
+        dropped
+    }
+
+    fn rebuild_by_cell(&mut self) {
+        self.by_cell = cell_slots(&self.entries);
+    }
+
+    /// The entries whose cell lies in `window`, in index order: one range
+    /// query per window row, then the slots sorted.
+    pub(crate) fn entries_in(&self, window: CellWindow) -> impl Iterator<Item = &OverlayEntry> {
+        debug_assert!(
+            self.by_cell == cell_slots(&self.entries),
+            "the overlay cell index disagrees with its entries"
+        );
+        let mut slots: Vec<usize> = match window {
+            CellWindow::Whole => (0..self.entries.len()).collect(),
+            CellWindow::Bands { .. } => window
+                .rows()
+                .into_iter()
+                .flat_map(|(first, last)| first..=last)
+                .filter_map(|ry| window.row(ry).map(|row| (ry, row)))
+                .flat_map(|(ry, (first, last))| {
+                    self.by_cell
+                        .range((ry, first, 0)..=(ry, last, usize::MAX))
+                        .map(|&(_, _, slot)| slot)
+                })
+                .collect(),
+        };
+        slots.sort_unstable();
+        slots.into_iter().map(|slot| &self.entries[slot])
     }
 
     pub(crate) fn iter(&self) -> std::slice::Iter<'_, OverlayEntry> {
@@ -84,6 +127,15 @@ impl OverlayRenderIndex {
     pub(crate) fn as_slice(&self) -> &[OverlayEntry] {
         &self.entries
     }
+}
+
+/// `(ry, rx, slot)` for every entry.
+fn cell_slots(entries: &[OverlayEntry]) -> BTreeSet<(u16, u16, usize)> {
+    entries
+        .iter()
+        .enumerate()
+        .map(|(slot, entry)| (entry.ry, entry.rx, slot))
+        .collect()
 }
 
 #[cfg(test)]
@@ -138,5 +190,30 @@ mod tests {
         index.upsert_occupied(restored);
         let coords: Vec<_> = index.iter().map(|e| (e.rx, e.ry)).collect();
         assert_eq!(coords, vec![(5, 5), (3, 3), (9, 9), (1, 1), (7, 7), (2, 2)]);
+    }
+
+    /// A window query returns index order, not cell order, after `retain`
+    /// shifts the slots, and an upsert finds the shifted slot.
+    #[test]
+    fn window_query_keeps_index_order_after_removal() {
+        let mut index = OverlayRenderIndex::default();
+        index.replace_from_source(vec![
+            entry(6, 2, 1, 0),
+            entry(2, 6, 1, 0),
+            entry(4, 4, 1, 0),
+            entry(40, 40, 1, 0),
+        ]);
+        assert_eq!(index.upsert_occupied(vec![entry(3, 3, 1, 0)]), 1);
+        assert_eq!(index.remove_cells(&[(2, 6)]), 1);
+        assert_eq!(index.upsert_occupied(vec![entry(4, 4, 2, 0)]), 1);
+        let window = CellWindow::Bands {
+            diff: (-5, 5),
+            sum: (0, 12),
+        };
+        let found: Vec<_> = index
+            .entries_in(window)
+            .map(|e| (e.rx, e.ry, e.overlay_id))
+            .collect();
+        assert_eq!(found, [(6, 2, 1), (4, 4, 2), (3, 3, 1)]);
     }
 }

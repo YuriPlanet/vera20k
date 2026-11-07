@@ -28,7 +28,7 @@ pub struct ProductionFactoryVisit {
 }
 
 /// One queued item formatted for UI rendering.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct QueueItemView {
     pub type_id: InternedId,
     pub display_name: String,
@@ -41,7 +41,7 @@ pub struct QueueItemView {
 }
 
 /// One completed building waiting for placement.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ReadyBuildingView {
     pub type_id: InternedId,
     pub display_name: String,
@@ -257,7 +257,7 @@ impl ProductionCategory {
 }
 
 /// One build option exposed to UI.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BuildOption {
     pub type_id: InternedId,
     pub display_name: String,

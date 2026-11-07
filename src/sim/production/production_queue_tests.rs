@@ -1174,13 +1174,9 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         .unwrap()
         .entity_id
         .unwrap();
-    for _ in 0..128 {
-        assert!(live.issue_local_command(CommandEnvelope::new(
-            owner,
-            0,
-            Command::Stop { entity_id: 999 },
-        )));
-    }
+    let free = live.available_local_command_slots();
+    let stop = CommandEnvelope::new(owner, 0, Command::Stop { entity_id: 999 });
+    assert!(live.issue_local_commands(std::iter::repeat_n(stop, free)));
     // The app's pre-Logic drain must not free any of the local slots.
     let due = live.take_due_commands();
     assert!(due.is_empty());
@@ -1226,7 +1222,7 @@ fn full_local_outlist_drops_strip_place_and_replay_keeps_it_dropped() {
         )
         .unwrap();
     let admitted = output.take_admitted_commands();
-    assert_eq!(admitted.len(), 129);
+    assert_eq!(admitted.len(), free + 1);
     assert_eq!(admitted[0], future);
     assert!(
         admitted[1..]
@@ -2195,8 +2191,8 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
     assert_eq!(credits_for_owner(&sim, "Americans"), 50_700);
     for cell in terrain.cells_mut_for_test() {
         cell.land_type = crate::rules::terrain_rules::LandType::Clear.as_index();
-        cell.speed_costs.track = Some(100);
-        cell.speed_costs.wheel = Some(100);
+        cell.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::ONE);
+        cell.speed_costs.wheel = Some(crate::util::native_x87::NativeF32Bits::ONE);
         cell.zone_type = crate::map::resolved_terrain::zone_class::GROUND;
     }
     let clear_grid = PathGrid::from_resolved_terrain(&terrain);
@@ -2540,8 +2536,13 @@ fn a_held_build_at_its_build_limit_resumes_on_produce() {
         queue_view_for_owner(&sim, &rules, "Americans")[0].state,
         BuildQueueState::Paused
     );
-    let option = super::production_tech::build_option_for_owner(&sim, &rules, "Americans", "AMCV")
-        .expect("the type stays listed");
+    let option = super::production_tech::build_option_for_owner(
+        &sim,
+        &rules,
+        sim.interner.get("Americans"),
+        "AMCV",
+    )
+    .expect("the type stays listed");
     assert_eq!(
         option.reason,
         Some(super::BuildDisabledReason::AtBuildLimit)

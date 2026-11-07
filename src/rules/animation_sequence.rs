@@ -364,22 +364,21 @@ impl SequenceSet {
 /// on an app-side atlas refresh before their animation or death timing advances.
 pub(crate) fn build_animation_sequence_catalog(
     rules: &crate::rules::ruleset::RuleSet,
-    infantry_sequences: Option<&crate::rules::infantry_sequence::InfantrySequenceRegistry>,
 ) -> BTreeMap<String, SequenceSet> {
     let mut catalog = BTreeMap::new();
 
     for type_id in &rules.infantry_ids {
-        let Some(object) = rules.object(type_id) else {
+        let Some(object) =
+            rules.object_in_category(crate::rules::object_type::ObjectCategory::Infantry, type_id)
+        else {
             continue;
         };
-        let sequence_name = rules
-            .art()
-            .resolve_metadata_entry(&object.id, &object.image)
-            .and_then(|entry| entry.sequence.as_deref());
-        let sequence_set = sequence_name
-            .and_then(|name| infantry_sequences?.get(&name.to_ascii_uppercase()))
-            .map(crate::rules::infantry_sequence::build_sequence_set)
-            .unwrap_or_else(default_infantry_sequences);
+        // ReadSequenceData523D00 has already updated the native type's bank.
+        // Neither an Image change nor late ART binding may replay that read.
+        let sequence_set = object
+            .infantry_sequence_bank()
+            .expect("InfantryType constructor owns a sequence bank")
+            .sequence_set();
         catalog.insert(object.id.clone(), sequence_set);
     }
 

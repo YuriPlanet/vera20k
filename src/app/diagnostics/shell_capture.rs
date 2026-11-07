@@ -17,9 +17,9 @@ use serde::Serialize;
 use crate::app::AppState;
 use crate::app::frontend::main_menu_shell_render::Ra2tsDialogOwner;
 use crate::app::frontend::shell_transition::{MainMenuEntryPresentToken, ShellSlideKind};
-use crate::render::frame_readback::PendingBgra8Readback;
+use crate::render::frame_readback::PendingTextureReadback;
 use crate::ui::game_screen::GameScreen;
-use crate::ui::main_menu_dialogs::options::OptionsPage;
+use crate::ui::main_menu_dialogs::options::Category;
 use crate::ui::main_menu_shell::MainMenuMovieBase;
 use crate::ui::shell::static_reveal::Kind1PaintWindow;
 
@@ -54,6 +54,10 @@ const CHECKPOINT_CAMPAIGN_0X94_ENTRY_PREFIX: &str = "campaign-0x94-entry-tick-";
 const CHECKPOINT_CAMPAIGN_ALL1_LOADING_FIRST: &str = "campaign-all1-loading-first-frame";
 const CHECKPOINT_CAMPAIGN_SOV1_LOADING_FIRST: &str = "campaign-sov1-loading-first-frame";
 const CHECKPOINT_CAMPAIGN_ALL1_FIRST_LIVE: &str = "campaign-all1-first-live-frame";
+/// `campaign-trigger-trace-<MAP>-tick-<N>[-push-<X>-<Y>]`: a retail mission
+/// run to tick N, recording every trigger Spring. Without `-push` there is no
+/// player input; with it the player's armed units attack-move toward Cell X,Y.
+const CHECKPOINT_CAMPAIGN_TRIGGER_TRACE_PREFIX: &str = "campaign-trigger-trace-";
 const CHECKPOINT_CAMPAIGN_SOV1_FIRST_LIVE: &str = "campaign-sov1-first-live-frame";
 const CHECKPOINT_CAMPAIGN_ALL1_ABORT_RETURN: &str = "campaign-all1-abort-return";
 const CHECKPOINT_CAMPAIGN_SOV1_ABORT_RETURN: &str = "campaign-sov1-abort-return";
@@ -80,37 +84,14 @@ const CHECKPOINT_CAMPAIGN_BACK_RETURN: &str = "campaign-back-return";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-steady";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
 const CHECKPOINT_OPTIONS_0XD5_STEADY: &str = "options-0xd5-steady";
-/// Vera Options pressed on the settled `0xD5`: VERA's page settled.
-const CHECKPOINT_OPTIONS_VERA_STEADY: &str = "options-vera-steady";
-const NETWORK_OPTIONS_CHECKPOINTS: [(&str, movies::NetworkOptionsTarget); 7] = [
-    (
-        "network-options-0xd7-steady",
-        movies::NetworkOptionsTarget::Steady,
-    ),
-    (
-        "network-options-0xd7-cards",
-        movies::NetworkOptionsTarget::Cards,
-    ),
-    (
-        "network-options-0xd7-invalid-port",
-        movies::NetworkOptionsTarget::InvalidPort,
-    ),
-    (
-        "network-options-0xd7-warning-1",
-        movies::NetworkOptionsTarget::Warning1,
-    ),
-    (
-        "network-options-0xd7-warning-2",
-        movies::NetworkOptionsTarget::Warning2,
-    ),
-    (
-        "network-options-0xd7-back",
-        movies::NetworkOptionsTarget::Back,
-    ),
-    (
-        "network-options-0xd7-save-return",
-        movies::NetworkOptionsTarget::SaveReturn,
-    ),
+/// A page's column button pressed on the settled `0xD5`: that page showing.
+const OPTIONS_SETTINGS_CHECKPOINTS: [(&str, Category); 6] = [
+    ("options-0xd5-settings-display", Category::Display),
+    ("options-0xd5-settings-gameplay", Category::Gameplay),
+    ("options-0xd5-settings-interface", Category::Interface),
+    ("options-0xd5-settings-audio", Category::Audio),
+    ("options-0xd5-settings-controls", Category::Controls),
+    ("options-0xd5-settings-developer", Category::Developer),
 ];
 const CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE: &str = "main-menu-0xe2-network-bounce";
 const CHECKPOINT_WOL_0X10E_STEADY: &str = "wol-0x10e-steady";
@@ -122,11 +103,20 @@ const CHECKPOINT_WOL_0X10E_BACK: &str = "wol-0x10e-back";
 const WOL_QUICK_MATCH_POINT: (i32, i32) = (720, 220);
 const CHECKPOINT_OPTIONS_0XD5_ENTRY_PREFIX: &str = "options-0xd5-entry-tick-";
 /// `options-0xd5-hover-<control>`: the pointer rests on a control (like the
-/// retail helper's hover capture) so the status line shows its help.
-const OPTIONS_0XD5_HOVER_CHECKPOINTS: [(&str, (i32, i32)); 3] = [
-    ("options-0xd5-hover-difficulty", (180, 214)),
-    ("options-0xd5-hover-tooltips", (175, 315)),
-    ("options-0xd5-hover-music", (140, 480)),
+/// retail helper's hover capture) so the status line shows its help. Each
+/// entry names the page its control is on; the points are at 800x600.
+const OPTIONS_0XD5_HOVER_CHECKPOINTS: [(&str, Category, (i32, i32)); 3] = [
+    (
+        "options-0xd5-hover-difficulty",
+        Category::Gameplay,
+        (224, 157),
+    ),
+    (
+        "options-0xd5-hover-tooltips",
+        Category::Interface,
+        (160, 158),
+    ),
+    ("options-0xd5-hover-music", Category::Audio, (200, 97)),
 ];
 /// `skirmish-0x102-hover-<control>`: once `0x102` settles the pointer rests
 /// on a control, as in the retail stills `sk-hover-start.png` and
@@ -266,10 +256,8 @@ pub enum ShellCaptureCheckpoint {
     LoadSavedGame0xB7Entry(u32),
     /// Main Menu -> Options: `0xD5` settled.
     Options0xD5Steady,
-    /// Then Vera Options: VERA's page settled.
-    OptionsVeraSteady,
-    /// Ordinary D5 -> D7 with explicit service/settings inputs.
-    NetworkOptions(movies::NetworkOptionsTarget),
+    /// Then a page's column button: that page showing.
+    OptionsSettings(Category),
     Lan(movies::LanTarget),
     Wol(movies::WolTarget),
     /// Network on `0xE2`: after its teardown slide and a new `0xE2`'s entry
@@ -329,7 +317,7 @@ pub enum ShellCaptureCheckpoint {
     Skirmish0x105ListOpen,
     /// Use Map on `0x105` asks to eject AI players; the answer's dialog
     /// settles (`CHECKPOINT_SKIRMISH_0X105_EJECT_*`).
-    Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton),
+    Skirmish0x105Eject(crate::ui::skirmish_shell::ChooseMapPromptButton),
     /// The same route's eject box, unanswered.
     Skirmish0x105EjectBox,
     /// Choose Map `0x6B` settled after Skirmish's Choose Map.
@@ -438,6 +426,38 @@ impl ShellCaptureCheckpoint {
             return Ok(Self::CampaignOpening(movies::OpeningTarget::SovietGroups(
                 tick,
             )));
+        }
+        if let Some(rest) = value.strip_prefix(CHECKPOINT_CAMPAIGN_TRIGGER_TRACE_PREFIX) {
+            let (map, tick) = rest
+                .split_once("-tick-")
+                .context("trigger trace checkpoint is <MAP>-tick-<N>")?;
+            let scenario = *movies::RETAIL_CAMPAIGN_MAPS
+                .iter()
+                .find(|name| name.strip_suffix(".MAP").unwrap().eq_ignore_ascii_case(map))
+                .with_context(|| format!("{map:?} is not a retail campaign map"))?;
+            let (tick, push) = match tick.split_once("-push-") {
+                Some((tick, cell)) => {
+                    let (x, y) = cell
+                        .split_once('-')
+                        .context("trigger trace push is -push-<X>-<Y>")?;
+                    let x: u16 = x.parse().context("trigger trace push X")?;
+                    let y: u16 = y.parse().context("trigger trace push Y")?;
+                    (tick, Some((x, y)))
+                }
+                None => (tick, None),
+            };
+            let tick: u64 = tick
+                .parse()
+                .context("trigger trace tick is not an integer")?;
+            ensure!(
+                (1..=30000).contains(&tick),
+                "trigger trace tick must be 1..=30000"
+            );
+            return Ok(Self::CampaignOpening(movies::OpeningTarget::TriggerTrace {
+                scenario,
+                tick,
+                push,
+            }));
         }
         if let Some(tick) = value.strip_prefix("campaign-sov02-fortresses-tick-") {
             let tick: u64 = tick
@@ -562,10 +582,10 @@ impl ShellCaptureCheckpoint {
                 Ok(Self::Skirmish0x105SeedBrowserReturn)
             }
             CHECKPOINT_SKIRMISH_0X105_EJECT_CANCEL => Ok(Self::Skirmish0x105Eject(
-                crate::ui::skirmish_shell::EjectPromptButton::Cancel,
+                crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel,
             )),
             CHECKPOINT_SKIRMISH_0X105_EJECT_OK => Ok(Self::Skirmish0x105Eject(
-                crate::ui::skirmish_shell::EjectPromptButton::Ok,
+                crate::ui::skirmish_shell::ChooseMapPromptButton::Ok,
             )),
             CHECKPOINT_SKIRMISH_0X102_CHOOSE_MAP_RETURN => Ok(Self::Skirmish0x102ChooseMapReturn),
             CHECKPOINT_SKIRMISH_START_BLANK => Ok(Self::SkirmishStartBlank),
@@ -722,22 +742,21 @@ impl ShellCaptureCheckpoint {
             CHECKPOINT_CAMPAIGN_BACK_RETURN => Ok(Self::CampaignBackReturn),
             CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY => Ok(Self::LoadSavedGame0xB7Steady),
             CHECKPOINT_OPTIONS_0XD5_STEADY => Ok(Self::Options0xD5Steady),
-            CHECKPOINT_OPTIONS_VERA_STEADY => Ok(Self::OptionsVeraSteady),
             CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE => Ok(Self::MainMenu0xE2NetworkBounce),
             CHECKPOINT_WOL_0X10E_STEADY => Ok(Self::Wol0x10ESteady),
             CHECKPOINT_WOL_0X10E_HOVER_QUICK_MATCH => Ok(Self::Wol0x10EHoverQuickMatch),
             CHECKPOINT_WOL_0X10E_API_MISSING => Ok(Self::Wol0x10EApiMissing),
             CHECKPOINT_WOL_0X10E_BACK => Ok(Self::Wol0x10EBack),
             _ => {
-                if let Some((_, target)) = NETWORK_OPTIONS_CHECKPOINTS
+                if let Some((_, category)) = OPTIONS_SETTINGS_CHECKPOINTS
                     .iter()
                     .find(|(name, _)| *name == value)
                 {
-                    return Ok(Self::NetworkOptions(*target));
+                    return Ok(Self::OptionsSettings(*category));
                 }
                 if let Some(index) = OPTIONS_0XD5_HOVER_CHECKPOINTS
                     .iter()
-                    .position(|(name, _)| *name == value)
+                    .position(|(name, ..)| *name == value)
                 {
                     return Ok(Self::Options0xD5Hover(index));
                 }
@@ -898,6 +917,9 @@ impl ShellCaptureCheckpoint {
             Self::CampaignOpening(movies::OpeningTarget::SovietFortresses(_)) => {
                 "campaign-sov02-fortresses-tick"
             }
+            Self::CampaignOpening(movies::OpeningTarget::TriggerTrace { .. }) => {
+                "campaign-trigger-trace"
+            }
             Self::CampaignOpening(movies::OpeningTarget::TimerRunning) => {
                 "campaign-sov1-opening-timer-running"
             }
@@ -912,7 +934,13 @@ impl ShellCaptureCheckpoint {
             Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
             Self::LoadSavedGame0xB7Entry(_) => "load-saved-game-0xb7-entry",
             Self::Options0xD5Steady => CHECKPOINT_OPTIONS_0XD5_STEADY,
-            Self::OptionsVeraSteady => CHECKPOINT_OPTIONS_VERA_STEADY,
+            Self::OptionsSettings(category) => {
+                OPTIONS_SETTINGS_CHECKPOINTS
+                    .iter()
+                    .find(|(_, candidate)| *candidate == category)
+                    .expect("every Category has an options checkpoint")
+                    .0
+            }
             Self::Lan(target) => {
                 movies::LAN_CHECKPOINTS
                     .iter()
@@ -925,13 +953,6 @@ impl ShellCaptureCheckpoint {
                     .iter()
                     .find(|(_, candidate)| *candidate == target)
                     .expect("WOL checkpoint")
-                    .0
-            }
-            Self::NetworkOptions(target) => {
-                NETWORK_OPTIONS_CHECKPOINTS
-                    .iter()
-                    .find(|(_, candidate)| *candidate == target)
-                    .expect("D7 checkpoint")
                     .0
             }
             Self::MainMenu0xE2NetworkBounce => CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE,
@@ -958,10 +979,10 @@ impl ShellCaptureCheckpoint {
             Self::Skirmish0x105SeedBrowserReturn => CHECKPOINT_SKIRMISH_0X105_SEED_BROWSER_RETURN,
             Self::Skirmish0x105ListOpen => CHECKPOINT_SKIRMISH_0X105_LIST_OPEN,
             Self::Skirmish0x105EjectBox => CHECKPOINT_SKIRMISH_0X105_EJECT_BOX,
-            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton::Cancel) => {
+            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel) => {
                 CHECKPOINT_SKIRMISH_0X105_EJECT_CANCEL
             }
-            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::EjectPromptButton::Ok) => {
+            Self::Skirmish0x105Eject(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok) => {
                 CHECKPOINT_SKIRMISH_0X105_EJECT_OK
             }
             Self::Skirmish0x6BSteady => CHECKPOINT_SKIRMISH_0X6B_STEADY,
@@ -1098,29 +1119,31 @@ impl ShellCaptureCheckpoint {
                 hover: None,
                 press: movies::WolPress::MainMenu,
             },
-            Self::NetworkOptions(target) => movies::MoviesTarget::NetworkOptions(target),
             Self::Lan(target) => movies::MoviesTarget::Lan(target),
             Self::Wol(target) => movies::MoviesTarget::Wol(target),
             Self::Options0xD5Steady => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: None,
-                page: OptionsPage::Main,
+                category: Category::Display,
             },
-            Self::OptionsVeraSteady => movies::MoviesTarget::Options0xD5 {
+            Self::OptionsSettings(category) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: None,
-                page: OptionsPage::Vera,
+                category,
             },
             Self::Options0xD5Entry(tick) => movies::MoviesTarget::Options0xD5 {
                 entry_tick: Some(tick),
                 hover: None,
-                page: OptionsPage::Main,
+                category: Category::Display,
             },
-            Self::Options0xD5Hover(index) => movies::MoviesTarget::Options0xD5 {
-                entry_tick: None,
-                hover: Some(OPTIONS_0XD5_HOVER_CHECKPOINTS[index].1),
-                page: OptionsPage::Main,
-            },
+            Self::Options0xD5Hover(index) => {
+                let (_, category, point) = OPTIONS_0XD5_HOVER_CHECKPOINTS[index];
+                movies::MoviesTarget::Options0xD5 {
+                    entry_tick: None,
+                    hover: Some(point),
+                    category,
+                }
+            }
             Self::CreditsRollFrame(frame) => movies::MoviesTarget::Credits { frame },
             Self::SneakPeekFrame(frame) => movies::MoviesTarget::SneakPeek { frame },
             Self::MainMenu0xE2SlideOut(tick) => movies::MoviesTarget::SlideOut {
@@ -1148,6 +1171,13 @@ pub struct ShellCaptureRequest {
     timeout: Option<Duration>,
     live_lan: Option<LiveLanConfig>,
     live_online: Option<LiveOnlineConfig>,
+    /// `--modern-font`: draw text in VERA's vector fonts, as unticking the
+    /// Original Font option does; the sealed capture profile otherwise draws
+    /// GAME.FNT.
+    modern_font: bool,
+    /// `--language <tag>`: VERA's interface language, such as `zh-CN` or the
+    /// pseudo-language `qps-ploc`; English otherwise, whatever the system's.
+    language: Option<String>,
 }
 
 /// Nonsecret username and match inputs for an ordinary online UI run.
@@ -1174,6 +1204,9 @@ pub(crate) struct LiveOnlineConfig {
     pub loading_host_loss: Option<String>,
     /// External owned kill after ordinary100, before the original host installs live gameplay.
     pub startup_host_loss: Option<String>,
+    /// Each round queues through the lobby's Quick Match; the matchbot sets
+    /// the match up and the configured host must be its host.
+    pub quick_match: bool,
     pub loading_output: Option<PathBuf>,
     pub loading_cancel: Option<LoadingCancelConfig>,
     pub observe_loading: bool,
@@ -1268,15 +1301,19 @@ impl ShellCaptureRequest {
     /// BD's Accept; the live LAN and online runs play as players do.
     pub(crate) fn native_shell_ui(&self) -> bool {
         match self.checkpoint.movies_target() {
-            Some(movies::MoviesTarget::Wol(target)) => !matches!(
-                target,
-                movies::WolTarget::ModernLobby
-                    | movies::WolTarget::ModernCreate
-                    | movies::WolTarget::ModernRoomOptions
-                    | movies::WolTarget::ModernSpectators
-                    | movies::WolTarget::ModernOptions
-                    | movies::WolTarget::ModernUsername
-            ),
+            Some(movies::MoviesTarget::Wol(target)) => {
+                !target.online_login()
+                    && !matches!(
+                        target,
+                        movies::WolTarget::ModernLobby
+                            | movies::WolTarget::ModernCreate
+                            | movies::WolTarget::ModernPlayerCard
+                            | movies::WolTarget::ModernChangeCountry
+                            | movies::WolTarget::ModernRoomOptions
+                            | movies::WolTarget::ModernSpectators
+                            | movies::WolTarget::ModernOptions
+                    )
+            }
             Some(movies::MoviesTarget::WolWelcome {
                 provider: crate::app::shell_wol::WolProvider::Unavailable,
                 ..
@@ -1380,6 +1417,7 @@ where
     let mut online_start = None;
     let mut online_frames = None;
     let mut online_simple = false;
+    let mut online_quick_match = false;
     let mut online_latency = false;
     let mut online_mass = false;
     let mut online_network_checkpoint = None;
@@ -1390,6 +1428,8 @@ where
     let mut online_loading_cancel_checkpoint = None;
     let mut observe_loading = false;
     let mut profile_check = false;
+    let mut modern_font = false;
+    let mut language = None;
 
     while let Some(flag) = args.next() {
         let flag = flag
@@ -1577,6 +1617,15 @@ where
                 ensure!(!profile_check, "duplicate --network-profile-check");
                 profile_check = true;
             }
+            "--modern-font" => {
+                ensure!(!modern_font, "duplicate --modern-font");
+                modern_font = true;
+            }
+            "--language" => set_once(
+                &mut language,
+                next_utf8(&mut args, "value after --language")?,
+                "--language",
+            )?,
             "--online-exit-checkpoint" => set_once(
                 &mut online_exit_checkpoint,
                 next_utf8(&mut args, "value after --online-exit-checkpoint")?,
@@ -1590,6 +1639,10 @@ where
                 ensure!(!online_simple, "duplicate --online-simple-input");
                 online_simple = true;
             }
+            "--online-quick-match" => {
+                ensure!(!online_quick_match, "duplicate --online-quick-match");
+                online_quick_match = true;
+            }
             _ => bail!("unknown shell-capture option {flag:?}"),
         }
     }
@@ -1600,17 +1653,30 @@ where
     let cursor_y = cursor_y.context("missing required --cursor-y")?;
     let output_dir = output_dir.context("missing required --output")?;
 
+    // The settled main menu also captures in any larger window, to compare
+    // its scaled drawing, with the pointer resting at the window's centre.
+    let scaled_main_menu = checkpoint == ShellCaptureCheckpoint::MainMenu0xE2Steady
+        && (width, height) != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
+        && width >= 640
+        && height >= 480;
     ensure!(
         (width == EXPECTED_WIDTH && height == EXPECTED_HEIGHT)
-            || (online_latency && width == 640 && height == 480),
-        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (640x480 also allowed for --online-latency), got {width}x{height}",
+            || (online_latency && width == 640 && height == 480)
+            || scaled_main_menu,
+        "checkpoint {} requires exactly {EXPECTED_WIDTH}x{EXPECTED_HEIGHT} (640x480 also allowed for --online-latency, a larger window for the main menu), got {width}x{height}",
         checkpoint.as_str()
     );
+    let neutral = if scaled_main_menu {
+        (width / 2, height / 2)
+    } else {
+        (EXPECTED_CURSOR_X, EXPECTED_CURSOR_Y)
+    };
     ensure!(
-        cursor_x == EXPECTED_CURSOR_X && cursor_y == EXPECTED_CURSOR_Y,
-        "checkpoint {} requires neutral cursor ({EXPECTED_CURSOR_X},{EXPECTED_CURSOR_Y}), got \
-         ({cursor_x},{cursor_y})",
-        checkpoint.as_str()
+        (cursor_x, cursor_y) == neutral,
+        "checkpoint {} requires neutral cursor ({},{}), got ({cursor_x},{cursor_y})",
+        checkpoint.as_str(),
+        neutral.0,
+        neutral.1
     );
     validate_new_output_dir(&output_dir)?;
     let online = matches!(checkpoint, ShellCaptureCheckpoint::Lan(target) if target.online());
@@ -1667,14 +1733,16 @@ where
         let host = online_host.unwrap_or_else(|| account.clone());
         for name in [&account, &host] {
             ensure!(
-                !name.is_empty()
-                    && name.len() <= 24
-                    && name
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || b"_-".contains(&byte)),
+                crate::ui::wol_account::valid_name(name),
                 "online account names must contain 1-24 letters, digits, underscores or hyphens"
             );
         }
+        // The host's room is "<host>'s_game", cut at the room name edit's 24
+        // units (`popups::ROOM_NAME_LIMIT`), and guests look for the whole name.
+        ensure!(
+            host.len() + "'s_game".len() <= 24,
+            "the online host name must leave room for 's_game in a 24-character room name"
+        );
         ensure!(
             online_start.is_none_or(
                 |start| start < crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as u32
@@ -1693,6 +1761,23 @@ where
                     && !online_mass
                     && online_frames.is_none_or(|frames| frames == 300)),
             "online failure capture requires two players, simple input and exactly300 prefix frames"
+        );
+        ensure!(
+            !matches!(checkpoint, ShellCaptureCheckpoint::Lan(target) if target.live_cooperative())
+                || (players == 2
+                    && online_map.is_none()
+                    && online_start.is_none()
+                    && online_ai.is_none()
+                    && online_mode_id.is_none()
+                    && !online_mass
+                    && !online_latency
+                    && !profile_check
+                    && online_network_checkpoint.is_none()
+                    && online_exit_checkpoint.is_none()
+                    && online_loading_host_loss.is_none()
+                    && online_startup_host_loss.is_none()
+                    && online_loading_cancel.is_none()),
+            "online co-op capture requires two players and no map, start, AI, mode or other diagnostic option; the campaign picks its maps"
         );
         ensure!(
             !online_latency
@@ -1803,6 +1888,24 @@ where
             "more than two players requires --online-simple-input or --online-mass-input"
         );
         ensure!(
+            !online_quick_match
+                || (players == 2
+                    && online_ai.is_none()
+                    && online_mode_id.is_none()
+                    && online_map.is_none()
+                    && online_start.is_none()
+                    && !online_failure
+                    && !online_latency
+                    && !online_mass
+                    && !profile_check
+                    && online_network_checkpoint.is_none()
+                    && online_exit_checkpoint.is_none()
+                    && online_loading_host_loss.is_none()
+                    && online_startup_host_loss.is_none()
+                    && online_loading_cancel.is_none()),
+            "--online-quick-match requires a normal online pair; the matchbot sets the match up"
+        );
+        ensure!(
             !online_map
                 .as_deref()
                 .is_some_and(|file| file.eq_ignore_ascii_case("RandMap.Sed"))
@@ -1902,6 +2005,7 @@ where
                 .map(|_| output_dir.clone()),
             loading_host_loss: online_loading_host_loss,
             startup_host_loss: online_startup_host_loss,
+            quick_match: online_quick_match,
         })
     } else {
         ensure!(
@@ -1922,7 +2026,8 @@ where
                 && online_startup_host_loss.is_none()
                 && online_loading_cancel.is_none()
                 && online_loading_cancel_checkpoint.is_none()
-                && !observe_loading,
+                && !observe_loading
+                && !online_quick_match,
             "online options require an online live checkpoint"
         );
         None
@@ -2028,6 +2133,8 @@ where
         timeout,
         live_lan,
         live_online,
+        modern_font,
+        language,
     }))
 }
 
@@ -2231,7 +2338,7 @@ pub(crate) enum ShellCompletionHandoff {
 
 struct PendingSequenceReadback {
     identity: EntrySequenceFrameIdentity,
-    readback: PendingBgra8Readback,
+    readback: PendingTextureReadback,
     submission: wgpu::SubmissionIndex,
 }
 
@@ -2273,7 +2380,7 @@ impl EntrySequenceState {
     fn record(
         &mut self,
         identity: EntrySequenceFrameIdentity,
-        readback: PendingBgra8Readback,
+        readback: PendingTextureReadback,
         submission: wgpu::SubmissionIndex,
     ) -> Result<()> {
         self.validate_next(identity)?;
@@ -2463,10 +2570,37 @@ impl ShellCaptureSession {
             .is_some_and(|capture| capture.owns_simulation_steps(state))
     }
 
+    /// The live LAN and online battle observers check every committed frame,
+    /// so the runtime runs one frame per render for them.
+    pub(crate) fn observes_every_frame(&self) -> bool {
+        self.movies
+            .as_ref()
+            .is_some_and(|capture| capture.observes_every_frame())
+    }
+
     pub(crate) fn prepare_state(&mut self, state: &mut AppState) {
         state.match_state.input.cursor_x = self.request.cursor_x as f32;
         state.match_state.input.cursor_y = self.request.cursor_y as f32;
         state.frontend.native_shell_ui = self.request.native_shell_ui();
+        if self.request.modern_font {
+            state.persistence.options_profile.original_font = false;
+            state
+                .renderer
+                .bit_font
+                .set_mode(state.persistence.options_profile.font_mode());
+        }
+        // As the Language list applies a pick; a language no file provides
+        // fails the capture instead of drawing English under its name.
+        let language = self
+            .request
+            .language
+            .clone()
+            .unwrap_or_else(|| crate::i18n::DEFAULT_LANGUAGE.to_owned());
+        if !state.use_language(&language) {
+            self.fail(format!(
+                "--language {language}: no language file provides it"
+            ));
+        }
         self.started_at = Some(Instant::now());
     }
 
@@ -2493,7 +2627,8 @@ impl ShellCaptureSession {
                 ShellCaptureCheckpoint::CampaignOpening(
                     movies::OpeningTarget::SovietTick(tick)
                     | movies::OpeningTarget::SovietNavy(tick)
-                    | movies::OpeningTarget::SovietFortresses(tick),
+                    | movies::OpeningTarget::SovietFortresses(tick)
+                    | movies::OpeningTarget::TriggerTrace { tick, .. },
                 ) => MAX_CAPTURE_FRAMES + tick as u32,
                 _ => MAX_CAPTURE_FRAMES,
             };
@@ -2547,7 +2682,23 @@ impl ShellCaptureSession {
         }
         match &self.skirmish {
             Some(capture) => capture.ready(state),
-            None => steady_main_menu_capture_ready(MainMenuCaptureSnapshot::from_state(state)),
+            None => {
+                let mut snapshot = MainMenuCaptureSnapshot::from_state(state);
+                let window = (self.request.width, self.request.height);
+                // A scaled main-menu capture: its own window and centred
+                // pointer stand for the reference surface and neutral point.
+                if window != (EXPECTED_WIDTH, EXPECTED_HEIGHT)
+                    && (snapshot.width, snapshot.height) == window
+                    && (snapshot.cursor_x, snapshot.cursor_y)
+                        == ((window.0 / 2) as f32, (window.1 / 2) as f32)
+                {
+                    snapshot.width = EXPECTED_WIDTH;
+                    snapshot.height = EXPECTED_HEIGHT;
+                    snapshot.cursor_x = EXPECTED_CURSOR_X as f32;
+                    snapshot.cursor_y = EXPECTED_CURSOR_Y as f32;
+                }
+                steady_main_menu_capture_ready(snapshot)
+            }
         }
     }
 
@@ -2744,7 +2895,7 @@ impl ShellCaptureSession {
     pub(crate) fn record_entry_sequence_submission(
         &mut self,
         identity: EntrySequenceFrameIdentity,
-        readback: PendingBgra8Readback,
+        readback: PendingTextureReadback,
         submission: wgpu::SubmissionIndex,
     ) -> Result<()> {
         self.entry_sequence
@@ -3624,6 +3775,28 @@ mod tests {
         assert_eq!(config.account, "Peer");
         assert_eq!(config.host, "Host");
         assert_eq!(config.players, 2);
+        assert!(!config.quick_match);
+    }
+
+    #[test]
+    fn online_quick_match_capture_leaves_the_match_to_the_matchbot() {
+        let output = new_output_path("online-quick-match");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-guest".into();
+        values.extend(args(&[
+            "--online-account",
+            "Peer",
+            "--online-host",
+            "Host",
+            "--online-quick-match",
+        ]));
+        let AppLaunchMode::ShellCapture(request) = parse_launch_args(values.clone()).unwrap()
+        else {
+            panic!("capture")
+        };
+        assert!(request.live_online.unwrap().quick_match);
+        values.extend(args(&["--online-map", "host-only.map"]));
+        assert!(parse_launch_args(values).is_err());
     }
 
     #[test]
@@ -3637,6 +3810,29 @@ mod tests {
         assert!(parse_launch_args(values.clone()).is_err());
         *values.last_mut().unwrap() = "--online-create-account".into();
         assert!(parse_launch_args(values).is_err());
+    }
+
+    /// A guest looks for "<host>'s_game", which the room name edit cuts at
+    /// 24 characters.
+    #[test]
+    fn online_host_names_leave_room_for_the_room_suffix() {
+        let output = new_output_path("online-host-name");
+        let mut values = valid_args(&output);
+        values[1] = "online-live-coop-guest".into();
+        values.extend(args(&[
+            "--online-account",
+            "Guest",
+            "--online-host",
+            "seventeen-chars-x",
+        ]));
+        assert!(parse_launch_args(values.clone()).is_ok());
+        *values.last_mut().unwrap() = "eighteen-chars-xyz".into();
+        assert!(
+            parse_launch_args(values)
+                .unwrap_err()
+                .to_string()
+                .contains("room for 's_game")
+        );
     }
 
     #[test]
@@ -4034,19 +4230,26 @@ mod tests {
 
     #[test]
     fn options_hover_checkpoints_round_trip_their_names() {
-        for (name, _) in OPTIONS_0XD5_HOVER_CHECKPOINTS
+        for (name, ..) in OPTIONS_0XD5_HOVER_CHECKPOINTS {
+            let checkpoint = ShellCaptureCheckpoint::parse(name).expect("hover checkpoint");
+            assert_eq!(checkpoint.as_str(), name);
+        }
+        for (name, _) in SKIRMISH_0X102_HOVER_CHECKPOINTS
             .into_iter()
-            .chain(SKIRMISH_0X102_HOVER_CHECKPOINTS)
             .chain(SKIRMISH_0X105_HOVER_CHECKPOINTS)
         {
             let checkpoint = ShellCaptureCheckpoint::parse(name).expect("hover checkpoint");
             assert_eq!(checkpoint.as_str(), name);
         }
         assert!(ShellCaptureCheckpoint::parse("options-0xd5-hover-nothing").is_err());
-        let vera =
-            ShellCaptureCheckpoint::parse(CHECKPOINT_OPTIONS_VERA_STEADY).expect("VERA page");
-        assert_eq!(vera, ShellCaptureCheckpoint::OptionsVeraSteady);
-        assert_eq!(vera.as_str(), CHECKPOINT_OPTIONS_VERA_STEADY);
+        for (name, category) in OPTIONS_SETTINGS_CHECKPOINTS {
+            let checkpoint = ShellCaptureCheckpoint::parse(name).expect("settings checkpoint");
+            assert_eq!(
+                checkpoint,
+                ShellCaptureCheckpoint::OptionsSettings(category)
+            );
+            assert_eq!(checkpoint.as_str(), name);
+        }
     }
 
     #[test]
@@ -4070,18 +4273,6 @@ mod tests {
             assert_eq!(
                 checkpoint.movies_target(),
                 Some(movies::MoviesTarget::Wol(target))
-            );
-        }
-    }
-
-    #[test]
-    fn network_options_checkpoints_route_through_production_options() {
-        for (name, target) in NETWORK_OPTIONS_CHECKPOINTS {
-            let checkpoint = ShellCaptureCheckpoint::parse(name).expect("D7 checkpoint");
-            assert_eq!(checkpoint.as_str(), name);
-            assert_eq!(
-                checkpoint.movies_target(),
-                Some(movies::MoviesTarget::NetworkOptions(target))
             );
         }
     }
@@ -4503,6 +4694,57 @@ mod tests {
     }
 
     #[test]
+    fn trigger_trace_checkpoint_selects_the_named_retail_mission_and_its_side() {
+        use crate::ui::campaign_shell::CampaignSide;
+        for (name, side, scenario, tick, push) in [
+            (
+                "campaign-trigger-trace-all04dmd-tick-9000",
+                CampaignSide::Allied,
+                "ALL04DMD.MAP",
+                9000,
+                None,
+            ),
+            (
+                "campaign-trigger-trace-SOV07TMD-tick-1",
+                CampaignSide::Soviet,
+                "SOV07TMD.MAP",
+                1,
+                None,
+            ),
+            (
+                "campaign-trigger-trace-ALL02UMD-tick-18000-push-83-88",
+                CampaignSide::Allied,
+                "ALL02UMD.MAP",
+                18000,
+                Some((83, 88)),
+            ),
+        ] {
+            let target = movies::OpeningTarget::TriggerTrace {
+                scenario,
+                tick,
+                push,
+            };
+            assert_eq!(
+                ShellCaptureCheckpoint::parse(name).unwrap().movies_target(),
+                Some(movies::MoviesTarget::CampaignStart {
+                    side,
+                    target: movies::CampaignStartTarget::Opening(target),
+                })
+            );
+        }
+        for invalid in [
+            "campaign-trigger-trace-ALL08UMD-tick-100",
+            "campaign-trigger-trace-ALL01UMD-tick-0",
+            "campaign-trigger-trace-ALL01UMD-tick-30001",
+            "campaign-trigger-trace-ALL01UMD",
+            "campaign-trigger-trace-ALL01UMD-tick-100-push-5",
+            "campaign-trigger-trace-ALL01UMD-tick-100-push--1-5",
+        ] {
+            assert!(ShellCaptureCheckpoint::parse(invalid).is_err());
+        }
+    }
+
+    #[test]
     fn network_bounce_checkpoint_round_trips() {
         let checkpoint = ShellCaptureCheckpoint::parse(CHECKPOINT_MAIN_MENU_0XE2_NETWORK_BOUNCE)
             .expect("network bounce checkpoint");
@@ -4841,9 +5083,29 @@ mod tests {
             .iter()
             .position(|value| value == "--width")
             .expect("width");
-        values[width + 1] = OsString::from("1024");
+        values[width + 1] = OsString::from("600");
         let err = parse_launch_args(values).expect_err("must reject");
         assert!(err.to_string().contains("requires exactly 800x600"));
+    }
+
+    #[test]
+    fn a_scaled_main_menu_capture_rests_the_pointer_at_the_window_centre() {
+        let set = |values: &mut Vec<OsString>, flag: &str, value: &str| {
+            let at = values.iter().position(|v| v == flag).expect("flag");
+            values[at + 1] = OsString::from(value);
+        };
+        let output = new_output_path("scaled");
+        let mut values = valid_args(&output);
+        set(&mut values, "--width", "1440");
+        set(&mut values, "--height", "1080");
+        let err = parse_launch_args(values.clone()).expect_err("off-centre pointer");
+        assert!(
+            err.to_string()
+                .contains("requires neutral cursor (720,540)")
+        );
+        set(&mut values, "--cursor-x", "720");
+        set(&mut values, "--cursor-y", "540");
+        assert!(parse_launch_args(values).is_ok());
     }
 
     #[test]

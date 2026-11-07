@@ -5,10 +5,12 @@
 //! A side-colored one-pixel rectangle indicates the current camera viewport.
 //!
 //! ## Implementation
-//! - Terrain image is generated at map load and whenever mutable MapClass
-//!   LocalSize authority changes.
-//! - Unit dots are overlaid on demand by copying the base image and stamping dots.
-//! - The combined image is only re-uploaded when sim/fog state changes.
+//! - Terrain is generated at map load and whenever mutable MapClass
+//!   LocalSize authority or a cell's radar colour changes.
+//! - Each sim/fog change lists the object, radar-event and beacon pixels in
+//!   update order; the GPU composes them over the terrain, shroud and fog
+//!   ([`super::compose`]). Only the terrain, the viewer's cell flags and the
+//!   pixel list are uploaded, each when it changed.
 //! - A separate 2x2 white pixel texture is tinted for the viewport rectangle lines.
 //!
 //! ## Screen-space rendering trick
@@ -33,16 +35,18 @@ use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
 use std::collections::HashMap;
 
+use super::compose::{RadarCompositor, RadarStore, RadarVisibility};
 use super::current_cell::CurrentRadarCellAuthority;
 use super::events::{ClientRadarEvents, RadarEventSource};
 use super::geometry::NativeRadarSurfaceGeometry;
-pub(crate) use super::helpers::minimap_overlay_datum;
+use super::hd::HdRadar;
 use super::helpers::{
-    COLOR_SHROUD, MINIMAP_DEPTH, MINIMAP_HEIGHT, MINIMAP_WIDTH, RadarSurfacePixel,
-    cell_visibility_color, dim_color, set_pixel, surface_visibility_color,
+    COLOR_SHROUD, MINIMAP_DEPTH, MINIMAP_HEIGHT, MINIMAP_WIDTH, cell_visibility_color, dim_color,
+    set_pixel,
 };
 pub use super::helpers::{OverlayClassification, default_minimap_rect};
 use super::helpers::{OverlayPixel, TerrainPixels};
+pub(crate) use super::helpers::{minimap_overlay_datum, overlay_classification};
 #[cfg(test)]
 use super::projection::minimap_screen_point_to_camera_top_left;
 use super::projection::{MinimapPlayfieldProjection, aperture_pixel, generated_primary_copy_frame};
@@ -93,14 +97,18 @@ fn playfield_authority_needs_reconcile(
 
 /// Minimap renderer — manages terrain image, unit overlay, and viewport rectangle.
 pub struct MinimapRenderer {
-    /// Base terrain image in the fixed native 140x108 radar aperture, rebuilt
-    /// on a playfield-authority revision.
+    /// The mapless fallback's terrain in the fixed native 140x108 radar
+    /// aperture, rebuilt on a playfield-authority revision; empty with a
+    /// generated surface.
     base_terrain_rgba: Vec<u8>,
-    /// GPU texture containing the current minimap image (terrain + unit dots).
-    map_texture: BatchTexture,
-    /// Raw GPU texture handle for `write_texture()` reuse (avoids per-frame alloc).
-    map_texture_raw: wgpu::Texture,
-    /// Reusable RGBA scratch buffer for rebuilding the minimap texture.
+    /// The GPU composition and the pictures drawn from it.
+    compositor: RadarCompositor,
+    /// This update's object, radar-event and beacon pixels, in store order.
+    stores: Vec<RadarStore>,
+    /// The fog generation, viewer and full-visibility switch whose cell
+    /// flags the compositor holds.
+    uploaded_visibility: Option<(u64, Option<InternedId>, bool)>,
+    /// The mapless fallback's composed terrain and overlays.
     rgba_scratch: Vec<u8>,
     /// Tiny 2x2 white pixel texture for drawing the viewport rectangle lines.
     white_texture: BatchTexture,
@@ -110,9 +118,6 @@ pub struct MinimapRenderer {
     pub(super) world_width: f32,
     pub(super) world_height: f32,
     terrain_pixels: TerrainPixels,
-    /// Exact generated-primary pixels, including each pixel's native inverse
-    /// shroud/fog cell and packed terrain color.
-    surface_pixels: Vec<RadarSurfacePixel>,
     /// Per-cell overlay metadata. Authoritative radar surfaces bake these into
     /// raw RGB before sampling; only the mapless fallback stamps them later and
     /// updates them for dirty cells.
@@ -164,7 +169,6 @@ impl MinimapRenderer {
         playfield_bounds: Option<PlayfieldBounds>,
         playfield_revision: u64,
     ) -> Self {
-        let pixel_count: usize = (MINIMAP_WIDTH * MINIMAP_HEIGHT * 4) as usize;
         let resolved_terrain = runtime.and_then(|runtime| runtime.view().resolved_terrain());
         let projection = MinimapPlayfieldProjection::derive(
             grid,
@@ -176,16 +180,16 @@ impl MinimapRenderer {
             runtime.map(CurrentRadarCellAuthority::from_runtime),
         );
 
-        let (map_texture_raw, map_texture) = batch.create_updatable_texture(
+        let mut compositor = RadarCompositor::new(device, queue, batch);
+        install_base_picture(
+            &mut compositor,
             device,
             queue,
+            projection.native_radar_terrain.as_ref(),
             &projection.base_rgba,
-            MINIMAP_WIDTH,
-            MINIMAP_HEIGHT,
-            wgpu::FilterMode::Nearest,
         );
         let white_texture: BatchTexture = create_white_texture(device, queue, batch);
-        let rgba_scratch: Vec<u8> = vec![0u8; pixel_count];
+        let rgba_scratch: Vec<u8> = vec![0u8; projection.base_rgba.len()];
 
         log::info!(
             "Minimap created: {}x{} px, {} terrain cells, {} overlay pixels",
@@ -197,8 +201,9 @@ impl MinimapRenderer {
 
         Self {
             base_terrain_rgba: projection.base_rgba,
-            map_texture,
-            map_texture_raw,
+            compositor,
+            stores: Vec::new(),
+            uploaded_visibility: None,
             rgba_scratch,
             white_texture,
             world_origin_x: projection.world_origin_x,
@@ -206,7 +211,6 @@ impl MinimapRenderer {
             world_width: projection.world_width,
             world_height: projection.world_height,
             terrain_pixels: projection.terrain_pixels,
-            surface_pixels: projection.surface_pixels,
             overlay_pixels: projection.overlay_pixels,
             map_offset_x: projection.map_offset_x,
             map_offset_y: projection.map_offset_y,
@@ -230,6 +234,36 @@ impl MinimapRenderer {
             radar_events: ClientRadarEvents::default(),
             viewport_state: NativeRadarViewportState::default(),
         }
+    }
+
+    /// VERA's HD radar: draw the radar at `scale` times its native pixels, or
+    /// natively for none or 1. Only a generated surface has an HD form; the
+    /// mapless fallback stays native.
+    pub(crate) fn set_hd_scale(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        scale: Option<u32>,
+    ) {
+        let scale = scale
+            .filter(|&scale| scale > 1)
+            .filter(|_| self.native_radar_terrain.is_some());
+        if self.hd_scale() == scale {
+            return;
+        }
+        let Some(terrain) = &mut self.native_radar_terrain else {
+            return;
+        };
+        terrain.set_hd_scale(scale);
+        // The next encode draws the new picture from the retained stores.
+        self.compositor
+            .set_hd(device, queue, batch, scale.map(|scale| (scale, &*terrain)));
+    }
+
+    /// The HD radar's scale while it is drawn.
+    pub(super) fn hd_scale(&self) -> Option<u32> {
+        self.compositor.hd().map(HdRadar::scale)
     }
 
     /// Synchronously install a changed normalized LocalSize authority and
@@ -276,7 +310,6 @@ impl MinimapRenderer {
         self.world_width = projection.world_width;
         self.world_height = projection.world_height;
         self.terrain_pixels = projection.terrain_pixels;
-        self.surface_pixels = projection.surface_pixels;
         self.overlay_pixels = projection.overlay_pixels;
         self.map_offset_x = projection.map_offset_x;
         self.map_offset_y = projection.map_offset_y;
@@ -284,6 +317,15 @@ impl MinimapRenderer {
         self.map_pixel_h = projection.map_pixel_h;
         self.native_radar_surface = projection.native_radar_surface;
         self.native_radar_terrain = projection.native_radar_terrain;
+        // The next `set_hd_scale` builds the HD radar for the new surface.
+        install_base_picture(
+            &mut self.compositor,
+            &gpu.device,
+            &gpu.queue,
+            self.native_radar_terrain.as_ref(),
+            &self.base_terrain_rgba,
+        );
+        self.uploaded_visibility = None;
         self.structural_bridge_radar_color =
             super::helpers::structural_bridge_radar_color(overlay_radar_colors);
         self.playfield_bounds = playfield_bounds;
@@ -301,26 +343,6 @@ impl MinimapRenderer {
             self.radar_tracker.reset_for_load_or_view();
             self.radar_events.restart_tracker_baseline();
         }
-
-        gpu.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.map_texture_raw,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &self.base_terrain_rgba,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(MINIMAP_WIDTH * 4),
-                rows_per_image: Some(MINIMAP_HEIGHT),
-            },
-            wgpu::Extent3d {
-                width: MINIMAP_WIDTH,
-                height: MINIMAP_HEIGHT,
-                depth_or_array_layers: 1,
-            },
-        );
         true
     }
 
@@ -347,6 +369,7 @@ impl MinimapRenderer {
         // next full reconcile derives from restored live CellClass authority;
         // it never relies on a dirty replay from the abandoned timeline.
         self.last_radar_terrain_dirty_generation = u64::MAX;
+        self.uploaded_visibility = None;
         self.installed_playfield_authority = None;
         self.radar_tracker.reset_for_load_or_view();
         self.radar_events.restart_tracker_baseline();
@@ -366,12 +389,14 @@ impl MinimapRenderer {
         self.radar_events = events;
     }
 
-    /// Update the minimap texture with unit dot overlays from the ECS world.
-    /// Copies terrain, overlays, and entity dots, then re-uploads to the GPU.
+    /// Update the radar from the ECS world: the terrain's dirty cells, the
+    /// viewer's shroud and fog, then the object, radar-event and beacon
+    /// pixels, uploaded for [`Self::encode_composition`] to compose.
     /// Returns a dirty generation only after completion so the app can ack it;
-    /// unchanged simulation/view inputs reuse the existing texture.
+    /// unchanged simulation/view inputs reuse the existing picture.
     pub fn update_unit_dots(
         &mut self,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
         entities: &crate::sim::entity_store::EntityStore,
         logic_order: &[u64],
@@ -414,7 +439,6 @@ impl MinimapRenderer {
             RadarTerrainUpdateLayers {
                 base_rgba: &mut self.base_terrain_rgba,
                 terrain_pixels: &self.terrain_pixels,
-                surface_pixels: &mut self.surface_pixels,
                 overlay_pixels: &mut self.overlay_pixels,
                 native_surface: self.native_radar_surface,
                 native_terrain: &mut self.native_radar_terrain,
@@ -433,84 +457,10 @@ impl MinimapRenderer {
             self.radar_tracker.reset_for_load_or_view();
             self.radar_events.reset_for_view_change();
         }
-        let size: u32 = MINIMAP_WIDTH;
-        {
-            let rgba: &mut Vec<u8> = &mut self.rgba_scratch;
-
-            // Fill scratch buffer: either shroud + fog-aware terrain, or base terrain copy.
-            if let Some(local_owner) = local_owner.filter(|_| !full_visibility) {
-                for pixel in rgba.as_chunks_mut::<4>().0 {
-                    pixel.copy_from_slice(&COLOR_SHROUD);
-                }
-                let pixels: &[RadarSurfacePixel] = if self.native_radar_terrain.is_some() {
-                    &self.surface_pixels
-                } else {
-                    // The fallback has no authoritative generated surface.
-                    // It retains the legacy per-cell presentation path.
-                    &[]
-                };
-                for terrain_pixel in pixels {
-                    let color = match surface_visibility_color(local_owner, fog, terrain_pixel) {
-                        Some(color) => color,
-                        None => continue,
-                    };
-                    if let Some((x, y)) = aperture_pixel(
-                        self.native_radar_surface,
-                        (terrain_pixel.px, terrain_pixel.py),
-                    ) {
-                        set_pixel(rgba, size, x, y, color);
-                    }
-                }
-                if self.native_radar_terrain.is_none() {
-                    for terrain_pixel in self.terrain_pixels.iter() {
-                        let color = match cell_visibility_color(local_owner, fog, terrain_pixel) {
-                            Some(color) => color,
-                            None => continue,
-                        };
-                        if let Some((x, y)) =
-                            aperture_pixel(None, (terrain_pixel.px, terrain_pixel.py))
-                        {
-                            set_pixel(rgba, size, x, y, color);
-                        }
-                    }
-                }
-            } else {
-                rgba.copy_from_slice(&self.base_terrain_rgba);
-            }
-
-            // With authoritative native terrain, CellClass::GetRadarColor has
-            // already applied overlay precedence in the raw RGB buffer before
-            // weighted sampling. Retain the old stamp only for mapless fallback.
-            for overlay in self
-                .overlay_pixels
-                .iter()
-                .filter(|_| self.native_radar_terrain.is_none())
-            {
-                if let Some(local_owner) = local_owner.filter(|_| !full_visibility) {
-                    if !fog.is_cell_revealed(local_owner, overlay.rx, overlay.ry) {
-                        continue;
-                    }
-                    let mut color: [u8; 4] = overlay.color;
-                    if overlay.classification == OverlayClassification::Bridge {
-                        color = dim_color(color, 0.5);
-                    }
-                    if let Some((x, y)) =
-                        aperture_pixel(self.native_radar_surface, (overlay.px, overlay.py))
-                    {
-                        set_pixel(rgba, size, x, y, color);
-                    }
-                } else {
-                    let mut color = overlay.color;
-                    if overlay.classification == OverlayClassification::Bridge {
-                        color = dim_color(color, 0.5);
-                    }
-                    if let Some((x, y)) =
-                        aperture_pixel(self.native_radar_surface, (overlay.px, overlay.py))
-                    {
-                        set_pixel(rgba, size, x, y, color);
-                    }
-                }
-            }
+        // A generated surface's terrain, shroud and fog are composed on the
+        // GPU; the mapless fallback composes its own here.
+        if self.native_radar_terrain.is_none() {
+            self.compose_fallback_terrain(local_owner.filter(|_| !full_visibility), fog);
         }
 
         // Trigger/action precedes LogicClass: action 40 clears all, forces the
@@ -604,7 +554,7 @@ impl MinimapRenderer {
                 cells.as_ref(),
             )
         });
-        let rgba: &mut Vec<u8> = &mut self.rgba_scratch;
+        self.stores.clear();
         for entry in winners {
             let Some(entity) = entities.get(entry.stable_id) else {
                 continue;
@@ -635,10 +585,10 @@ impl MinimapRenderer {
             };
             if entry.x >= 0
                 && entry.y >= 0
-                && let Some((x, y)) =
+                && let Some(pixel) =
                     aperture_pixel(self.native_radar_surface, (entry.x as u32, entry.y as u32))
             {
-                set_pixel(rgba, size, x, y, color);
+                self.stores.extend(RadarStore::at(pixel, color));
             }
         }
 
@@ -649,11 +599,10 @@ impl MinimapRenderer {
         // RDRBEACN counts). The event outlines must remain after object pixels.
         if let Some(surface) = self.native_radar_surface {
             self.radar_events.draw(
-                rgba,
-                MINIMAP_WIDTH,
-                MINIMAP_HEIGHT,
+                (MINIMAP_WIDTH, MINIMAP_HEIGHT),
                 surface.generated_size(),
                 surface.aperture_offset(),
+                |pixel, color| self.stores.extend(RadarStore::at(pixel, color)),
             );
             // Then the beacons (`0x0065756E -> 0x00431700 -> 0x00430650`),
             // clipped to the generated surface.
@@ -664,41 +613,80 @@ impl MinimapRenderer {
                 let center = surface.world_to_surface_pixel(beacon.coord[0], beacon.coord[1], true);
                 art.blit_radar(beacon.house, binary_frame, center, |(x, y), color| {
                     if let (Ok(x), Ok(y)) = (u32::try_from(x), u32::try_from(y))
-                        && let Some((x, y)) = aperture_pixel(Some(surface), (x, y))
+                        && let Some(pixel) = aperture_pixel(Some(surface), (x, y))
                     {
-                        set_pixel(rgba, size, x, y, color);
+                        self.stores.extend(RadarStore::at(pixel, color));
                     }
                 });
             }
         }
 
+        let visibility = (fog_generation, visibility_owner, full_visibility);
         let consumed_radar_terrain_generation = staged_radar_terrain_update.finish_infallible(
             &mut self.last_radar_terrain_dirty_generation,
             || {
-                queue.write_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture: &self.map_texture_raw,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    rgba,
-                    wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(size * 4),
-                        rows_per_image: Some(MINIMAP_HEIGHT),
-                    },
-                    wgpu::Extent3d {
-                        width: size,
-                        height: MINIMAP_HEIGHT,
-                        depth_or_array_layers: 1,
-                    },
-                );
+                if let Some(terrain) = &self.native_radar_terrain {
+                    self.compositor.refresh_terrain(queue, terrain);
+                    if self.uploaded_visibility != Some(visibility) {
+                        let shown = match local_owner.filter(|_| !full_visibility) {
+                            None => RadarVisibility::Revealed,
+                            Some(owner) => fog.by_owner().get(&owner).map_or(
+                                RadarVisibility::Shrouded,
+                                |plane| RadarVisibility::Plane {
+                                    flags: plane.cells_raw(),
+                                    size: (plane.width(), plane.height()),
+                                },
+                            ),
+                        };
+                        self.compositor.set_visibility(device, queue, shown);
+                        self.uploaded_visibility = Some(visibility);
+                    }
+                } else {
+                    self.compositor.set_fallback_base(queue, &self.rgba_scratch);
+                }
+                self.compositor.set_stores(device, queue, &self.stores);
+                self.compositor.request();
             },
         );
         self.last_sim_tick = sim_tick;
         (self.last_fog_generation, self.last_visibility_owner) = (fog_generation, visibility_owner);
         consumed_radar_terrain_generation
+    }
+
+    /// The mapless fallback's terrain and overlays, under `viewer`'s shroud
+    /// and fog (every cell revealed without one), into `rgba_scratch`.
+    fn compose_fallback_terrain(&mut self, viewer: Option<InternedId>, fog: &FogState) {
+        let rgba = &mut self.rgba_scratch;
+        let size = MINIMAP_WIDTH;
+        if let Some(viewer) = viewer {
+            for pixel in rgba.as_chunks_mut::<4>().0 {
+                pixel.copy_from_slice(&COLOR_SHROUD);
+            }
+            for terrain_pixel in self.terrain_pixels.iter() {
+                if let Some(color) = cell_visibility_color(viewer, fog, terrain_pixel)
+                    && let Some((x, y)) = aperture_pixel(None, (terrain_pixel.px, terrain_pixel.py))
+                {
+                    set_pixel(rgba, size, x, y, color);
+                }
+            }
+        } else {
+            rgba.copy_from_slice(&self.base_terrain_rgba);
+        }
+        for overlay in &self.overlay_pixels {
+            if viewer.is_some_and(|viewer| !fog.is_cell_revealed(viewer, overlay.rx, overlay.ry)) {
+                continue;
+            }
+            let color = if overlay.classification == OverlayClassification::Bridge {
+                dim_color(overlay.color, 0.5)
+            } else {
+                overlay.color
+            };
+            if let Some((x, y)) =
+                aperture_pixel(self.native_radar_surface, (overlay.px, overlay.py))
+            {
+                set_pixel(rgba, size, x, y, color);
+            }
+        }
     }
 
     fn radar_projection_facts(&self) -> RadarProjectionFacts {
@@ -774,7 +762,10 @@ impl MinimapRenderer {
     }
 
     /// Spacebar review of the eight most recent accepted event cells.
-    pub(crate) fn cycle_radar_event(&mut self, now: crate::util::time::Instant) -> Option<(u16, u16)> {
+    pub(crate) fn cycle_radar_event(
+        &mut self,
+        now: crate::util::time::Instant,
+    ) -> Option<(u16, u16)> {
         self.radar_events.cycle_cell(now)
     }
 
@@ -823,20 +814,51 @@ impl MinimapRenderer {
         }
     }
 
-    /// Already-composed pixel input retained by the ordinary radar housing.
-    pub(crate) fn composed_rgba(&self) -> (&[u8], [u32; 2]) {
-        (&self.rgba_scratch, [MINIMAP_WIDTH, MINIMAP_HEIGHT])
+    /// Compose the pictures an update asked for: encode it before the
+    /// sidebar draws [`Self::map_texture`] and the housing keeps
+    /// [`Self::native_map_texture`].
+    pub fn encode_composition(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        self.compositor.encode(device, encoder);
     }
 
-    /// Get a reference to the minimap texture for drawing.
+    /// The minimap picture for drawing: the HD radar's while it is on. Both
+    /// fill the same normalized copy frame.
     pub fn map_texture(&self) -> &BatchTexture {
-        &self.map_texture
+        self.compositor
+            .hd()
+            .map_or(self.compositor.picture(), HdRadar::picture)
+    }
+
+    /// The native 140x108 picture, which the radar housing retains.
+    pub fn native_map_texture(&self) -> &BatchTexture {
+        self.compositor.picture()
     }
 
     /// Get a reference to the white texture for drawing viewport lines.
     pub fn white_texture(&self) -> &BatchTexture {
         &self.white_texture
     }
+}
+
+/// Give `compositor` the generated surface, or the mapless fallback's
+/// `base` terrain, and nothing over it yet.
+fn install_base_picture(
+    compositor: &mut RadarCompositor,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    terrain: Option<&NativeRadarTerrainSurface>,
+    base: &[u8],
+) {
+    compositor.set_surface(device, queue, terrain);
+    if terrain.is_none() {
+        compositor.set_fallback_base(queue, base);
+    }
+    compositor.set_visibility(device, queue, RadarVisibility::Revealed);
+    compositor.set_stores(device, queue, &[]);
 }
 
 #[cfg(test)]

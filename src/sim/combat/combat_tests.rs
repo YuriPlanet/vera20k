@@ -236,7 +236,6 @@ fn infantry_fire_frame_rules_with(patch: &str) -> RuleSet {
 [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,0%,0%\n",
     );
     rules_ini.merge(&IniFile::from_str(patch));
-    let mut rules = RuleSet::from_ini(&rules_ini).expect("infantry rules should parse");
     // Supplied reader-built records make native action admission explicit.
     // SecondaryFire/SecondaryProne are authored controls, not stock GI ART.
     let art_ini = IniFile::from_str(
@@ -245,11 +244,10 @@ fn infantry_fire_frame_rules_with(patch: &str) -> RuleSet {
          FireProne=212,6,6\nDie1=56,15,0\nDeployed=292,1,0\nDeployedFire=292,6,0\n\
          SecondaryFire=164,6,6\nSecondaryProne=212,6,6\n",
     );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&rules_ini, &art_ini)
+        .expect("infantry rules should parse");
     let art = crate::rules::art_data::ArtRegistry::from_ini(&art_ini);
     rules.install_art_data(art);
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini),
-    );
     rules
 }
 
@@ -271,17 +269,15 @@ fn guardian_gi_rules() -> RuleSet {
 [SA]\nVerses=100%,80%,80%,50%,25%,25%,75%,50%,25%,100%,100%\n\n\
 [GUARDWH]\nVerses=20%,20%,20%,100%,50%,100%,10%,10%,10%,100%,100%\n",
     );
-    let mut rules = RuleSet::from_ini(&ini).expect("guardian GI rules should parse");
     // Reader-built Deployed/DeployedFire records admit the real Do_Action.
     // The discharge keys are deliberately absent: their native defaults are 0.
     let art_ini = IniFile::from_str(
         "[GGI]\nSequence=GGISequence\n\
          [GGISequence]\nReady=0,1,1\nGuard=0,1,1\nDeployed=292,1,0\nDeployedFire=292,6,0\n",
     );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art_ini)
+        .expect("guardian GI rules should parse");
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini),
-    );
     rules
 }
 
@@ -925,7 +921,7 @@ fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
                 &rules,
                 &sim.interner,
                 &sim.houses,
-                sim.house_alliances.as_map(),
+                &sim.house_alliances,
                 false,
                 0,
                 None,
@@ -941,7 +937,7 @@ fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
             &rules,
             &sim.interner,
             &sim.houses,
-            sim.house_alliances.as_map(),
+            &sim.house_alliances,
             false,
             0,
             None,
@@ -954,7 +950,7 @@ fn retail_bridge_repair_hut_area_hit_returns_before_the_techno_receiver() {
             &rules,
             &sim.interner,
             &sim.houses,
-            sim.house_alliances.as_map(),
+            &sim.house_alliances,
             false,
             0,
             None,
@@ -1687,8 +1683,10 @@ fn retail_berserk_gi_targets_its_own_house() {
     let ally = sim
         .spawn_object("E1", "Russians", 11, 10, 0, &rules)
         .unwrap();
-    let scan =
-        |sim: &mut Simulation, mask| sim.greatest_threat_represented(&rules, None, gi, mask, None);
+    let scan = |sim: &mut Simulation, mask| {
+        sim.greatest_threat_represented(&rules, None, gi, mask, None)
+            .and_then(crate::sim::combat::TargetKind::object_id)
+    };
     let masks = [ScanMission::Guard, ScanMission::Hunt];
     for mask in masks {
         assert_eq!(scan(&mut sim, mask), None, "calm, {mask:?}");
@@ -1736,8 +1734,10 @@ fn retail_gi_scan_asks_only_its_own_house_about_allies() {
             &rules,
         );
     };
-    let scan =
-        |sim: &mut Simulation, mask| sim.greatest_threat_represented(&rules, None, gi, mask, None);
+    let scan = |sim: &mut Simulation, mask| {
+        sim.greatest_threat_represented(&rules, None, gi, mask, None)
+            .and_then(crate::sim::combat::TargetKind::object_id)
+    };
     let masks = [ScanMission::Guard, ScanMission::Hunt];
     one_way(&mut sim, "Americans", "Russians");
     for mask in masks {
@@ -1759,7 +1759,7 @@ fn retail_gi_scan_asks_only_its_own_house_about_allies() {
 /// (`0x006FC1CC`).
 #[test]
 fn retail_berserk_gi_shoots_its_own_house() {
-    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules() else {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
         return;
     };
     let mut sim = Simulation::with_seed(0x5CA7);
@@ -2806,7 +2806,7 @@ fn stock_sniper_damage_retaliation_uses_wall_context_before_sight_fallback() {
             world: &sim,
             rules,
             overlay_registry: Some(&registry),
-            fog: Some(sim.fog.fire_view(sim.house_alliances.as_map())),
+            fog: Some(sim.fog.fire_view(&sim.house_alliances)),
             firer: actor,
             obj: sniper,
             target: Some(TargetKind::Entity(source)),
@@ -6375,12 +6375,12 @@ fn gsi_08_01_a_shared_cell_offers_only_its_list_head() {
         crate::sim::combat::line_of_fire::LineOfFireInputs {
             overlay_grid: None,
             overlay_registry: None,
-            alliances: Some(&HouseAllianceMap::new()),
+            alliances: Some(&HouseAlliances::default()),
         },
         None,
         None,
     )
-    .target();
+    .object();
     assert!(
         pick == Some(20),
         "the cell's list head is the candidate, not the lower stable id"
@@ -6422,12 +6422,12 @@ fn mapless_guard_pick(shell: &str) -> Option<u64> {
         crate::sim::combat::line_of_fire::LineOfFireInputs {
             overlay_grid: None,
             overlay_registry: None,
-            alliances: Some(&HouseAllianceMap::new()),
+            alliances: Some(&HouseAlliances::default()),
         },
         None,
         None,
     )
-    .target()
+    .object()
 }
 
 /// Without resolved terrain the Guard scan's CanFireAt arm asks the shared
@@ -6469,12 +6469,12 @@ fn gsi_08_01_unarmed_building_loses_to_a_tank_at_equal_distance() {
         crate::sim::combat::line_of_fire::LineOfFireInputs {
             overlay_grid: None,
             overlay_registry: None,
-            alliances: Some(&HouseAllianceMap::new()),
+            alliances: Some(&HouseAlliances::default()),
         },
         None,
         None,
     )
-    .target();
+    .object();
     // Not a "threat class" tie-break — gamemd has none. `[GAPOWR]` carries no
     // weapon and `ThreatPosed=0`, so the human-attacker building gate at
     // `TechnoClass::Evaluate_Candidate @ 0x006F85AB` refuses it outright and
@@ -6825,8 +6825,9 @@ fn crushable_fence_falls_to_any_crusher_and_plays_its_crush_sound() {
          [ROBO]\nCrusher=yes\nLocomotor={4A582742-9839-11D1-B709-00A024DDAFD1}\n\
          [BFRT]\nCrusher=yes\nMovementZone=CrusherAll\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
     );
-    let rules = RuleSet::from_ini(&ini).expect("rules parse");
-    let registry = OverlayTypeRegistry::from_ini(&ini, None);
+    let rules = RuleSet::from_ini_with_sounds_for_test(&ini, &["WallCrushBlack"])
+        .expect("rules and fixed sound catalog parse");
+    let registry = rules.overlay_registry().clone();
     assert_eq!(
         registry.flags(3).and_then(|f| f.crush_sound.as_deref()),
         Some("WallCrushBlack")
@@ -8142,6 +8143,10 @@ fn combat_resolves_in_live_object_order_not_stable_id() {
 /// Desolator-shaped rules: a deployable radiation infantry, a soft infantry
 /// victim, a heavy-armor vehicle victim, and a building.
 fn radiation_rules() -> RuleSet {
+    radiation_rules_with_art(&IniFile::empty())
+}
+
+fn radiation_rules_with_art(art: &IniFile) -> RuleSet {
     let ini = crate::sim::arena_fixture::clear_ground_ini(
         "\
 [General]\nVeteranArmor=1.5\n\n\
@@ -8159,7 +8164,7 @@ fn radiation_rules() -> RuleSet {
 [RadSite]\nVerses=100%,100%,100%,50%,10%,10%,0%,0%,0%,100%,100%\nInfDeath=7\nRadiation=yes\n\n\
 [Radiation]\nRadDurationMultiple=1\nRadApplicationDelay=16\nRadLevelMax=500\nRadLevelDelay=90\nRadLevelFactor=.2\nRadSiteWarhead=RadSite\n",
     );
-    RuleSet::from_ini(&ini).expect("radiation rules should parse")
+    RuleSet::from_ini_with_fixed_art_for_test(&ini, art).expect("radiation rules should parse")
 }
 
 /// A canonical map is required by Foot's GetCoords -> Map::GetCell lookup.
@@ -8854,14 +8859,11 @@ fn phobos_merge_at_one_center_keeps_the_existing_bound_type() {
 /// closed and it does not fire again.
 #[test]
 fn deployed_desolator_self_irradiates_and_refires_below_third() {
-    let mut rules = radiation_rules();
     let art = IniFile::from_str(
         "[DESO]\nSequence=DesoFixture\n[DesoFixture]\nDeployed=100,1,0\nDeployedFire=100,3,0\n",
     );
+    let mut rules = radiation_rules_with_art(&art);
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let mut sim = crate::sim::world::Simulation::new();
     // Infantry AreaFire compares actual Cell identities. Supply the map that
     // owns both the firer's ObjectGetCell result and its self-target Cell.

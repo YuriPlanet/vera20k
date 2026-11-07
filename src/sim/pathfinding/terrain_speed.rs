@@ -306,8 +306,9 @@ mod tests {
                 .map(|rx| {
                     let mut cell = test_flat_cell(rx, 0);
                     cell.speed_costs = SpeedCostProfile {
-                        track: Some(100),
-                        float: Some(100),
+                        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                        float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
                         ..Default::default()
                     };
                     cell
@@ -389,7 +390,10 @@ mod tests {
                 cell.level = LEVEL;
                 // A land row the clamp will not swallow.
                 cell.speed_costs = SpeedCostProfile {
-                    track: Some(50),
+                    track: Some(crate::util::native_x87::NativeF32Bits::from_bits(
+                        0x3f00_0000,
+                    )),
+                    winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
                     ..Default::default()
                 };
                 if (rx, ry) == RAMP {
@@ -453,7 +457,8 @@ mod tests {
     #[test]
     fn gsi_04_04_speed_profile_preserves_zero_multiplier() {
         let profile = SpeedCostProfile {
-            foot: Some(0),
+            foot: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             ..Default::default()
         };
         assert_eq!(
@@ -468,22 +473,26 @@ mod tests {
     #[test]
     fn speed_multiplier_clamps_at_one() {
         let fast = SpeedCostProfile {
-            foot: Some(120),
+            foot: Some(crate::util::native_x87::NativeF32Bits::from_bits(
+                1.2_f32.to_bits(),
+            )),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             ..Default::default()
         };
         assert_eq!(fast.speed_multiplier_for(SpeedType::Foot), SIM_ONE);
 
-        // 80% is below the cap, so it passes through as the fraction 80/100
-        // (no clamp). Compare against the same fixed-point division the
-        // implementation performs — a `lit("0.8")` literal differs by 1 ULP
-        // because 0.8 is not exactly representable in binary fixed-point.
+        // An exactly representable half-speed row remains below the cap.
         let slow = SpeedCostProfile {
-            foot: Some(80),
+            foot: Some(crate::rules::terrain_rules::test_speed_percent(50)),
+            winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
             ..Default::default()
         };
-        let pass_through = SimFixed::from_num(80u8) / SimFixed::from_num(100u8);
+        let pass_through = SimFixed::from_num(0.5);
         assert_eq!(slow.speed_multiplier_for(SpeedType::Foot), pass_through);
-        assert!(pass_through < SIM_ONE, "80% must stay below the 1.0 cap");
+        assert!(
+            pass_through < SIM_ONE,
+            "half speed must stay below the 1.0 cap"
+        );
     }
 
     /// GSI-06.04 G1: the retail health test is `ratio <= ConditionYellow`, so a

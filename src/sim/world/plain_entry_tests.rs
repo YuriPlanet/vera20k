@@ -151,6 +151,13 @@ fn east(sim: &Simulation, height: i32) -> InfantryEntryArgs {
 #[test]
 fn a_plain_step_answers_as_the_full_body() {
     let (mut sim, rules, registry) = fixture();
+    // An interior target, whose backstep is found by its index.
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    assert!(
+        terrain
+            .interior_cells()
+            .is_some_and(|interior| interior.contains((16, 15)))
+    );
     let answered = |sim: &Simulation, id, height| {
         let (plain, full) = step(sim, &rules, &registry, id, east(sim, height));
         assert_eq!(plain.map(Ok), Some(full.clone()), "mover {id}");
@@ -168,10 +175,12 @@ fn a_plain_step_answers_as_the_full_body() {
         assert_eq!(answered(&sim, id, 0), 0);
     }
     // A zero Wheel row refuses only the truck.
-    terrain_cell(&mut sim, TARGET).speed_costs.wheel = Some(0);
+    terrain_cell(&mut sim, TARGET).speed_costs.wheel =
+        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
     assert_eq!(answered(&sim, ENGINEER, 0), 0);
     assert_eq!(answered(&sim, TRUCK, 0), 7);
-    terrain_cell(&mut sim, TARGET).speed_costs.foot = Some(0);
+    terrain_cell(&mut sim, TARGET).speed_costs.foot =
+        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
     assert_eq!(answered(&sim, ENGINEER, 0), 7);
     sim.substrate
         .entities

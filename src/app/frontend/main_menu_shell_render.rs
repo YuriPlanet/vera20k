@@ -8,7 +8,8 @@ use anyhow::Result;
 use crate::app::frontend::shell_layout;
 use crate::app::frontend::shell_pass::{owner_draw_button_label_rect, resolve_csf};
 use crate::app::frontend::shell_transition::{
-    ColumnDraw, MainMenuEntryPaintFrame, MainMenuEntryPresentToken, ShellFrameWave,
+    ColumnDraw, ExternalMenuWait, MainMenuEntryPaintFrame, MainMenuEntryPresentToken,
+    ShellFrameWave, external_menu_wait,
 };
 use crate::app::{AppState, BUILD_STAMP};
 use crate::render::batch::SpriteInstance;
@@ -171,6 +172,38 @@ fn main_menu_status_csf_key(hovered_button: Option<MainMenuControlId>) -> Option
     hovered_button.map(tooltip_csf_key_for_control)
 }
 
+/// What 0xE2 shows in place of its live controls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MainMenuCover {
+    /// Buttons, statics and the hover status line.
+    Live,
+    /// The empty shell backdrop: shuttered column, no statics, no movie.
+    Backdrop,
+    /// VERA: the backdrop of an external network launch that is joining its
+    /// match (docs/spawn.md), with a connecting notice on the status line.
+    /// gamemd has no such launch; buttons that could not be pressed made the
+    /// wait look frozen.
+    Joining,
+}
+
+impl MainMenuCover {
+    fn new(modal: bool, external: Option<ExternalMenuWait>) -> Self {
+        match external {
+            _ if modal => Self::Backdrop,
+            Some(ExternalMenuWait::Joining) => Self::Joining,
+            Some(ExternalMenuWait::Reporting) => Self::Backdrop,
+            None => Self::Live,
+        }
+    }
+
+    fn of(state: &AppState) -> Self {
+        Self::new(
+            state.frontend.shell_message_box.is_some() || state.frontend.quit_cascade.is_some(),
+            external_menu_wait(state),
+        )
+    }
+}
+
 /// Path-A tint for a right-panel kind-1 static (heading `0x694`, status line
 /// `0x695`): yellow text with a white highlight trail.
 pub(crate) fn shell_reveal_path_a(window: Kind1RevealWindow) -> PathAReveal {
@@ -196,7 +229,7 @@ fn main_menu_paint_labels<'a>(
 ) -> Vec<PaintLabel<'a>> {
     use crate::render::shell_text::ShellAlign;
     let mut out = Vec::new();
-    let button_align = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+    let button_align = ShellAlign::BUTTON_CAPTION;
     // The slide engine draws the button frames only (`0x006071E0`).
     for button in layout.buttons.iter().filter(|_| captions) {
         let pressed = pressed_button == Some(button.id);
@@ -213,7 +246,7 @@ fn main_menu_paint_labels<'a>(
         out.push(PaintLabel {
             text: main_menu_title_text(state),
             rect: layout.title,
-            align: ShellAlign::H_CENTER,
+            align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: Some(shell_reveal_path_a(window)),
         });
@@ -322,14 +355,17 @@ pub(crate) fn ensure_movie_for_current_layout(
         state
             .frontend
             .main_menu_shell_error
-            .get_or_insert_with(|| "Game archives are unavailable.".to_owned());
+            .get_or_insert_with(|| crate::i18n::tr("VERA:GameArchivesUnavailable"));
         return Ok(());
     };
     let asset_name = layout.movie_base.asset_name();
 
     let Some((bytes, source)) = menu_movie_bytes(assets, asset_name, yr_original_style) else {
         log::warn!("Missing main-menu movie asset {asset_name}");
-        state.frontend.main_menu_shell_error = Some(format!("Missing menu movie: {asset_name}"));
+        state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+            "VERA:MenuMovieMissing",
+            &[("movie", &asset_name)],
+        ));
         return Ok(());
     };
 
@@ -344,8 +380,13 @@ pub(crate) fn ensure_movie_for_current_layout(
         Ok(movie) => movie,
         Err(err) => {
             log::warn!("Failed to load main-menu movie {asset_name} from {source}: {err:#}");
-            state.frontend.main_menu_shell_error = Some(format!(
-                "Could not load {asset_name} from {source}: {err:#}"
+            state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+                "VERA:MenuMovieUnreadable",
+                &[
+                    ("movie", &asset_name),
+                    ("source", &source),
+                    ("error", &format!("{err:#}")),
+                ],
             ));
             return Ok(());
         }
@@ -492,8 +533,8 @@ fn render_main_menu_shell_to_target_inner(
     // (`0x0052FEC0`). Retail leaves the destroyed box's last image on screen
     // through the quit fade (nothing repaints after OK); here the backdrop
     // shows alone (evidence note residual).
-    let backdrop =
-        state.frontend.shell_message_box.is_some() || state.frontend.quit_cascade.is_some();
+    let cover = MainMenuCover::of(state);
+    let backdrop = cover != MainMenuCover::Live;
     if !backdrop {
         ensure_movie_for_current_layout(state, Ra2tsDialogOwner::MainMenu0xE2)?;
     }
@@ -503,7 +544,7 @@ fn render_main_menu_shell_to_target_inner(
         state
             .frontend
             .main_menu_shell_error
-            .get_or_insert_with(|| "Required game-menu artwork is unavailable.".to_owned());
+            .get_or_insert_with(|| crate::i18n::tr("VERA:MenuArtworkUnavailable"));
         return Ok(MainMenuShellRenderResult::Fallback);
     }
 
@@ -523,8 +564,10 @@ fn render_main_menu_shell_to_target_inner(
         state.frontend.main_menu_movie_last_step = now;
         if let Err(err) = movie.step(&state.renderer.gpu, elapsed) {
             log::warn!("Failed to step main-menu RA2TS movie: {err:#}");
-            state.frontend.main_menu_shell_error =
-                Some(format!("Could not play the menu movie: {err:#}"));
+            state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+                "VERA:MenuMovieFailed",
+                &[("error", &format!("{err:#}"))],
+            ));
             return Ok(MainMenuShellRenderResult::Fallback);
         }
     }
@@ -539,13 +582,18 @@ fn render_main_menu_shell_to_target_inner(
     } else {
         crate::app::frontend::menu_page_render::paint_shell_monitor(state)
     };
-    let status_label = if leaving || backdrop {
+    let status_label = if leaving || cover == MainMenuCover::Backdrop {
         None
     } else {
-        let hovered = crate::ui::main_menu_shell::hovered_control(&state.frontend.shell_controller);
-        let status_text = main_menu_status_csf_key(hovered)
-            .map(|key| resolve_csf(state, key).into_owned())
-            .unwrap_or_default();
+        let status_text = if cover == MainMenuCover::Joining {
+            resolve_csf(state, "GUI:ConnectingToPlayers").into_owned()
+        } else {
+            let hovered =
+                crate::ui::main_menu_shell::hovered_control(&state.frontend.shell_controller);
+            main_menu_status_csf_key(hovered)
+                .map(|key| resolve_csf(state, key).into_owned())
+                .unwrap_or_default()
+        };
         crate::app::frontend::menu_page_render::paint_shell_status_line(
             state,
             status_text,
@@ -968,6 +1016,21 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_launch_wait_covers_the_menu_controls() {
+        // docs/spawn.md: a joining network launch takes no shell input, so it
+        // must not paint the live buttons; it names what it waits for.
+        assert_eq!(
+            MainMenuCover::new(false, Some(ExternalMenuWait::Joining)),
+            MainMenuCover::Joining
+        );
+        assert_eq!(
+            MainMenuCover::new(false, Some(ExternalMenuWait::Reporting)),
+            MainMenuCover::Backdrop
+        );
+        assert_eq!(MainMenuCover::new(false, None), MainMenuCover::Live);
+    }
 
     #[test]
     #[ignore = "requires RA2_DIR with installed retail RA2/YR assets"]

@@ -240,7 +240,7 @@ fn an_aircraft_click_keeps_a_river_cell() {
         let order = sim.decode_native_command_record(&record, 0).unwrap();
         assert!(sim.apply_command("Local", &order.payload, Some(&rules)));
     }
-    let graph = sim.planning_draw_graph(owner, &[gi, harrier], None, None);
+    let graph = sim.planning_draw_graph(owner, None, None);
     assert_eq!(graph.nodes.len(), 1, "one river click is one shared node");
     assert_eq!(graph.nodes[0].coord, DriveCoord::cell(9, 5, 0));
     assert_eq!(graph.nodes[0].members, vec![gi, harrier]);
@@ -755,4 +755,41 @@ fn a_wall_warhead_reaches_the_attack_rung_over_an_enemy_wall() {
     assert!(!admits(gi, (8, 4)), "SA has no Wall=");
     assert!(!admits(tank, (6, 6)), "an own wall");
     assert!(!admits(tank, (10, 4)), "no overlay and no cliff");
+}
+
+/// The TerrainFire rung after it (`0x00700A46`, vt+0x398 `0x0070EF00`): a
+/// map giving the Grizzly's 105mm `TerrainFire=` admits the retail rock
+/// SROCK01, which is `IsARock=` but not `LegalTarget=`; the GI's M60 does
+/// not.
+#[test]
+fn a_terrain_fire_weapon_reaches_the_attack_rung_over_a_rock() {
+    let patch = IniFile::from_str("[105mm]\nTerrainFire=yes\n");
+    let Some(fixture) =
+        crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
+    else {
+        return;
+    };
+    let registry =
+        OverlayTypeRegistry::from_ini(&fixture.processed_rules, Some(fixture.fixed_art.as_ref()));
+    let rock = registry.id_for_name("SROCK01").expect("retail SROCK01");
+    assert!(
+        registry
+            .flags(rock)
+            .is_some_and(|flags| flags.is_a_rock && !flags.legal_target)
+    );
+    let (mut sim, rules, gi) = Simulation::walk_cell_input_test_scene_with(fixture.rules, false);
+    let tank = sim
+        .spawn_object("MTNK", "Local", 6, 4, 0, &rules)
+        .expect("retail MTNK spawns");
+    sim.resolve_type_handles(&rules);
+    let (width, height) = {
+        let terrain = sim.resolved_terrain.as_ref().unwrap();
+        (terrain.width(), terrain.height())
+    };
+    let mut grid = crate::sim::overlay_grid::OverlayGrid::new(width, height);
+    grid.place_overlay(8, 4, rock, 0);
+    sim.overlay_grid = Some(grid);
+    let admits = |id, cell| sim.cell_attack_rung_admits(id, cell, &rules, Some(&registry));
+    assert!(admits(tank, (8, 4)));
+    assert!(!admits(gi, (8, 4)), "M60 has no TerrainFire=");
 }

@@ -15,6 +15,10 @@ pub(super) fn sync(state: &mut AppState) {
     sync_planning_button(gadgets, state.match_state.input.planning.active());
 }
 
+/// TabClass::ReceiveNotice @ 0x006D1770 (the planning notice sink) turns the
+/// PlanningMode button on for Planning__StartMode's 0x11C7 and off for
+/// EndMode's 0x11C8; mirroring the PlanMgr owner each frame gives the same
+/// toggle without a second state.
 fn sync_planning_button(gadgets: &mut InGameGadgets, active: bool) {
     if let Some(handles) = gadgets.command_bar
         && let Some(gadget) = gadgets.list.get_mut(handles[9])
@@ -25,6 +29,16 @@ fn sync_planning_button(gadgets: &mut InGameGadgets, active: bool) {
     }
 }
 
+/// TabClass::Init @ 0x006D03A0 -> InitCommandBarButtons @ 0x006D0FD0 gives
+/// command `i` ID 0xD6 + i, flags 5 (Team01..03 0x55, PlanningMode a toggle)
+/// and places it at its ButtonList slot only when it ends before the right
+/// cap, the same slots the bar draws. The hide (0xF0) and show (0xF1)
+/// buttons share LENDCAP at the open and closed cap points. Closing removes
+/// the command buttons (RemoveCommandBarButtons @ 0x006D04D0); here they are
+/// disabled instead. TabClass::ToggleSidebar @ 0x006D04F0 re-adds them (or
+/// the show button) when the sidebar is shown; only SidebarClass::Init_Clear
+/// (0x006A507C) and Init's hide-then-show (0x006A5560) pass 0, so in a
+/// scenario the sidebar stays shown and its hidden branch has no effect.
 fn sync_prepared(
     gadgets: &mut InGameGadgets,
     layout: Option<&(
@@ -70,6 +84,64 @@ fn sync_prepared(
             }
         }
     }
+}
+
+/// TabClass::AddCommandBarButtons @ 0x006D1200 gives each placed command
+/// button its `Tip:*` label in this order (the first four inline, the rest
+/// through ShapeButtonClass::SetToolTip 0x006D09C0), and the hide button
+/// 0xF0 `Tip:ThumbOpen` last. A command without a slot has no button
+/// (ShapeButtonClass::GetButton 0x006CFD40 returns NULL) and gets no tip.
+const COMMAND_TIPS: [(usize, &str); 11] = [
+    (5, "Tip:AttackMove"),
+    (7, "Tip:Beacon"),
+    (10, "Tip:Cheer"),
+    (4, "Tip:Deploy"),
+    (6, "Tip:Guard"),
+    (9, "Tip:PlanningMode"),
+    (8, "Tip:Stop"),
+    (0, "Tip:Team01"),
+    (1, "Tip:Team02"),
+    (2, "Tip:Team03"),
+    (3, "Tip:TypeSelect"),
+];
+
+/// The command bar's registered tooltips `(id, gadget rect, CSF label)`, in
+/// registration order. The open bar carries the command buttons and the hide
+/// button (AddCommandBarButtons 0x006D1200, from ToggleSidebar 0x006D04F0,
+/// Action 0x006D094D and OpenCommandBar 0x006D1610). Closing removes them
+/// all and adds the show button 0xF1 `Tip:ThumbClosed` (Action 0x80F0
+/// branch, CloseCommandBar 0x006D1660, ToggleSidebar's closed branch
+/// 0x006D0530). The tip bounds are the button's own rectangle.
+pub(crate) fn tooltips(gadgets: &InGameGadgets) -> Vec<(u16, GadgetRect, &'static str)> {
+    let Some(handles) = gadgets.command_bar else {
+        return Vec::new();
+    };
+    let placed = |handle| {
+        gadgets
+            .list
+            .get(handle)
+            .filter(|gadget| !gadget.is_disabled)
+            .map(|gadget| (gadget.id, gadget.rect))
+    };
+    let thumb = placed(handles[11]);
+    let mut tips: Vec<_> = COMMAND_TIPS
+        .iter()
+        .filter_map(|&(command, label)| {
+            placed(handles[command]).map(|(id, rect)| (id, rect, label))
+        })
+        .collect();
+    if let Some((id, rect)) = thumb {
+        tips.push((
+            id,
+            rect,
+            if id == 0xF0 {
+                "Tip:ThumbOpen"
+            } else {
+                "Tip:ThumbClosed"
+            },
+        ));
+    }
+    tips
 }
 
 pub(super) fn apply(state: &mut AppState, result: u16) -> bool {
@@ -201,6 +273,45 @@ mod tests {
         sync_planning_button(&mut gadgets, true);
         assert!(
             matches!(gadgets.list.get(handle).unwrap().behavior, GadgetBehavior::Button(button) if button.is_on)
+        );
+    }
+
+    #[test]
+    fn command_bar_tips_follow_add_command_bar_buttons_order_and_bar_state() {
+        let layout = |open| {
+            CommandBarLayout::new([800, 600], 168, [28, 32], [52, 32], [28, 32], open).unwrap()
+        };
+        // Retail UIMD.INI [AdvancedCommandBar] ButtonList:
+        // Team01,Team02,TypeSelect,Deploy,Guard,PlanningMode.
+        let slots = vec![Some(0), Some(1), Some(3), Some(4), Some(6), Some(9)];
+        let native = sidebar::SidebarFrame::native(800, 600);
+        let mut gadgets = InGameGadgets::new();
+        sync_prepared(
+            &mut gadgets,
+            Some(&(layout(true), slots.clone())),
+            false,
+            native,
+        );
+        let tips = tooltips(&gadgets);
+        let labels: Vec<_> = tips.iter().map(|tip| (tip.0, tip.2)).collect();
+        assert_eq!(
+            labels,
+            [
+                (0xDA, "Tip:Deploy"),
+                (0xDC, "Tip:Guard"),
+                (0xDF, "Tip:PlanningMode"),
+                (0xD6, "Tip:Team01"),
+                (0xD7, "Tip:Team02"),
+                (0xD9, "Tip:TypeSelect"),
+                (0xF0, "Tip:ThumbOpen"),
+            ]
+        );
+        assert_eq!(tips[3].1, GadgetRect::new(32, 568, 52, 32));
+        assert_eq!(tips[6].1, GadgetRect::new(4, 568, 28, 32));
+        sync_prepared(&mut gadgets, Some(&(layout(false), slots)), true, native);
+        assert_eq!(
+            tooltips(&gadgets),
+            [(0xF1, GadgetRect::new(576, 568, 28, 32), "Tip:ThumbClosed")]
         );
     }
 

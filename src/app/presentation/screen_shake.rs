@@ -41,6 +41,13 @@ impl ScreenShakeState {
         }
     }
 
+    /// Whether the next Input event at `binary_frame` moves the offset: an
+    /// even frame decays any offset left, an odd one holds it. Every service
+    /// pass sends one, so a paused odd frame keeps a shake standing.
+    pub(crate) fn decays_at(&self, binary_frame: u32) -> bool {
+        binary_frame & 1 == 0 && self.offset_px != [0, 0]
+    }
+
     /// Derived presentation cache; updated only after the corresponding GPU
     /// frame is presented, never from a later Logic write.
     pub(crate) fn record_presented(&mut self, offset_px: [i32; 2]) {
@@ -118,5 +125,21 @@ mod tests {
 
         // The first ordinary service after unpausing resumes pre-render Input.
         assert_eq!(shake.service_offset_snapshot(Some(12), false), [-7, -2]);
+    }
+
+    #[test]
+    fn a_paused_odd_frame_holds_the_shake_and_an_even_one_decays_it() {
+        let mut shake = ScreenShakeState::default();
+        assert!(!shake.decays_at(12));
+        shake.apply_updates(&[ScreenShakeUpdate {
+            x: Some(3),
+            y: None,
+        }]);
+        assert!(!shake.decays_at(13));
+        assert_eq!(shake.service_offset_snapshot(Some(13), true), [3, 0]);
+        assert_eq!(shake.service_offset_snapshot(Some(13), true), [3, 0]);
+        assert!(shake.decays_at(12));
+        assert_eq!(shake.service_offset_snapshot(Some(12), true), [3, 0]);
+        assert_eq!(shake.service_offset_snapshot(Some(12), true), [-2, 0]);
     }
 }

@@ -9,16 +9,20 @@ use crate::sim::world::{DelayedFire, PendingBuildingFire};
 use crate::util::fixed_math::SimFixed;
 
 fn rules() -> RuleSet {
-    RuleSet::from_ini(&IniFile::from_str(
-        "[General]\nCloakingStages=9\nCloakDelay=.02\n\
+    RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(
+            "[General]\nCloakingStages=9\nCloakDelay=.02\n\
          [AudioVisual]\nCloakSound=NavalUnitEmerge\n\
          [VehicleTypes]\n0=SUB\n1=RANKED\n2=DEST\n\
-         [BuildingTypes]\n0=NAYARD\n\
+         [BuildingTypes]\n0=NAYARD\n1=GAPOWR\n\
          [SUB]\nStrength=600\nSpeed=4\nCloakable=yes\nCloakingSpeed=1\nSensorsSight=7\n\
          [DEST]\nStrength=600\nSpeed=6\nSensors=yes\nSensorsSight=8\n\
          [RANKED]\nStrength=600\nSpeed=4\nVeteranAbilities=CLOAK\nEliteAbilities=CLOAK\n\
-         [NAYARD]\nStrength=1000\nWeaponsFactory=yes\n",
-    ))
+         [NAYARD]\nStrength=1000\nWeaponsFactory=yes\n\
+         [GAPOWR]\nStrength=750\n",
+        ),
+        &IniFile::from_str("[GAPOWR]\nFoundation=2x2\n"),
+    )
     .expect("stock cloak rules")
 }
 
@@ -941,9 +945,11 @@ fn completing_the_cloak_scatters_only_a_computer_owned_unit() {
     // refuses an active Teleport locomotor.
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[General]\nCloakingStages=9\nCloakDelay=.02\n\
-         [VehicleTypes]\n0=SUB\n\
+         [VehicleTypes]\n0=SUB\n[InfantryTypes]\n0=CLOAKER\n\
          [SUB]\nStrength=600\nSpeed=4\nCloakable=yes\nCloakingSpeed=1\n\
-         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [CLOAKER]\nStrength=100\nSpeed=4\nCloakable=yes\nCloakingSpeed=1\n\
+         Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n",
     ))
     .expect("ground cloak rules");
     let mut sim = Simulation::with_seed(0xC10A_C002);
@@ -960,6 +966,10 @@ fn completing_the_cloak_scatters_only_a_computer_owned_unit() {
         .unwrap();
     let computer = sim
         .spawn_object_at_height("SUB", "Russians", 20, 20, 0, 0, &rules)
+        .unwrap();
+    // `0x006FBC0B..0x006FBC15`: only a Unit scatters.
+    let infantry = sim
+        .spawn_object_at_height("CLOAKER", "Russians", 30, 30, 0, 0, &rules)
         .unwrap();
     let state = |sim: &Simulation, id| {
         sim.substrate
@@ -983,12 +993,20 @@ fn completing_the_cloak_scatters_only_a_computer_owned_unit() {
     for _ in 0..30 {
         assert!(!nav(&sim, computer), "no NavCom before the completion");
         sim.advance_tick(&[], Some(&rules), Some(&grid), None, 33);
-        if state(&sim, computer) == 2 {
+        if state(&sim, computer) == 2 && state(&sim, infantry) == 2 {
             break;
         }
     }
-    assert_eq!((state(&sim, human), state(&sim, computer)), (2, 2));
+    assert_eq!(
+        (
+            state(&sim, human),
+            state(&sim, computer),
+            state(&sim, infantry)
+        ),
+        (2, 2, 2)
+    );
     assert!(!nav(&sim, human));
+    assert!(!nav(&sim, infantry), "a cloaked infantryman stays put");
     assert!(
         nav(&sim, computer),
         "the computer's sub scatters on completion"
@@ -1202,4 +1220,75 @@ fn attach_effect_cloakable_and_force_decloak_move_the_gates() {
     let facts = stock_cloak_tick_facts(&sim, sub, &rules, None).expect("sub facts");
     assert!(!facts.can_auto_cloak, "ForceDecloak vetoes the ready check");
     assert!(facts.should_uncloak, "ForceDecloak requests the decloak");
+}
+
+/// `BuildingClass::UpdateCloak @ 0x00454DB0` for a building a Cloak crate
+/// granted: it starts cloaking on its first visit, fades one stage per visit
+/// (`+0x6ED`) and is fully cloaked at 15. An enemy `Sensors=` unit beside its
+/// foundation (`BuildingClass::ShouldUncloak @ 0x004578C0`) starts the
+/// uncloak; it fades back and, with the sensor still there, stays uncloaked
+/// (`BuildingClass::CanCloak @ 0x00457770`).
+#[test]
+fn a_cloak_granted_building_fades_out_and_a_sensor_beside_it_brings_it_back() {
+    use crate::sim::cloak_disguise::VisualCharacterQuery;
+
+    let (mut sim, rules, sub) = spawned_sub();
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_retail_clear_grid(
+        64, 64,
+    ));
+    let (rx, ry) = sim
+        .substrate
+        .entities
+        .get(sub)
+        .map(|entity| (entity.position.rx(), entity.position.ry()))
+        .unwrap();
+    // A 2x2 power plant at (rx + 4, ry): the scan's last column is rx + 6.
+    let id = sim
+        .spawn_object_at_height("GAPOWR", "Soviet", rx + 4, ry, 0, 0, &rules)
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .stealth_ability
+        .grant();
+    let visit = |sim: &mut Simulation| {
+        tick_stock_cloak_producer(
+            sim,
+            id,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let entity = sim.substrate.entities.get(id).unwrap();
+        let cloak = entity.cloak.as_ref().unwrap();
+        // GetFireError's query (0x006FC25B): the firer's house holds no
+        // sensor here.
+        let seen = entity.visual_character(
+            rules.general.cloaking_stages,
+            false,
+            false,
+            VisualCharacterQuery::sensor(true, false, false),
+        );
+        (cloak.state(), cloak.building_stage(), seen)
+    };
+    assert_eq!(visit(&mut sim), (1, 0, 0));
+    let sounds = sim.sound_events.len();
+    assert_eq!(sounds, 1);
+    let fade: Vec<_> = (1..=15).map(|_| visit(&mut sim)).collect();
+    assert_eq!(fade[4], (1, 5, 1));
+    assert_eq!(fade[5], (1, 6, 2));
+    assert_eq!(fade[10], (1, 11, 5));
+    assert_eq!(fade[14], (2, 15, 5));
+    assert_eq!(visit(&mut sim), (2, 15, 5), "no sensor beside it");
+
+    sim.spawn_object_at_height("DEST", "Americans", rx + 6, ry + 1, 0, 0, &rules)
+        .unwrap();
+    assert_eq!(visit(&mut sim), (3, 15, 5));
+    assert_eq!(sim.sound_events.len(), sounds + 1);
+    let back: Vec<_> = (1..=15).map(|_| visit(&mut sim)).collect();
+    assert_eq!(back[13], (3, 1, 1));
+    assert_eq!(back[14], (0, 0, 0));
+    assert_eq!(visit(&mut sim), (0, 0, 0), "the sensor blocks a new cloak");
+    assert_eq!(sim.sound_events.len(), sounds + 1);
 }

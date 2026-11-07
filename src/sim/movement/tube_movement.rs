@@ -1035,7 +1035,8 @@ mod tests {
         .expect("rules");
         let mut terrain = explicit_terrain(vec![2, 2]);
         for x in 0..=3 {
-            terrain.cell_mut_for_test(x, 0).unwrap().speed_costs.foot = Some(100);
+            terrain.cell_mut_for_test(x, 0).unwrap().speed_costs.foot =
+                Some(crate::util::native_x87::NativeF32Bits::ONE);
         }
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");

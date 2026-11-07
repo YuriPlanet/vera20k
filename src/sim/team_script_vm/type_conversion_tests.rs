@@ -209,11 +209,11 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
         sim.object_ai_visit_one(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
     };
     visit(&mut sim, light_id);
-    let before_turn = sim.building_spotlight(light_id, &rules).unwrap();
+    let before_turn = sim.building_spotlight(light_id, None, &rules).unwrap();
     assert_eq!(before_turn.glow_flags, 4);
     sim.detach_all_pointer_expired(foot_id, &rules, None, FrameEffects::empty());
     assert!(
-        sim.building_spotlight(light_id, &rules).is_some(),
+        sim.building_spotlight(light_id, None, &rules).is_some(),
         "cloak-style detach retains the light's parent"
     );
     let frame = sim.session.binary_frame();
@@ -228,11 +228,11 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
     cloaked.establish_unlimbo_fully_cloaked();
     sim.substrate.entities.get_mut(foot_id).unwrap().cloak = Some(cloaked);
     assert!(
-        sim.building_spotlight(light_id, &rules).is_none(),
+        sim.building_spotlight(light_id, None, &rules).is_none(),
         "cloaked parent suppresses drawing without deleting its light"
     );
     sim.substrate.entities.get_mut(foot_id).unwrap().cloak = old_cloak;
-    assert!(sim.building_spotlight(light_id, &rules).is_some());
+    assert!(sim.building_spotlight(light_id, None, &rules).is_some());
     sim.substrate
         .entities
         .get_mut(foot_id)
@@ -240,7 +240,7 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
         .body_facing
         .snap(0x4000, frame);
     visit(&mut sim, light_id);
-    let after_turn = sim.building_spotlight(light_id, &rules).unwrap();
+    let after_turn = sim.building_spotlight(light_id, None, &rules).unwrap();
     assert_ne!(
         before_turn.coord, after_turn.coord,
         "the existing light follows the Foot's facing"
@@ -288,7 +288,11 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
             .light(),
         Some(light_id)
     );
-    assert!(restored.building_spotlight(light_id, &rules).is_some());
+    assert!(
+        restored
+            .building_spotlight(light_id, None, &rules)
+            .is_some()
+    );
     restored.techno_deactivate(foot_id, &rules, FrameEffects::empty());
     assert!(
         restored
@@ -299,7 +303,11 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
             .light()
             .is_none()
     );
-    assert!(restored.building_spotlight(light_id, &rules).is_none());
+    assert!(
+        restored
+            .building_spotlight(light_id, None, &rules)
+            .is_none()
+    );
     restored.techno_reactivate(foot_id, &rules, FrameEffects::empty());
     let recreated = restored
         .entities()
@@ -325,7 +333,11 @@ fn script68_converts_in_place_keeps_team_and_updates_native_counts_health_ammo_a
         "NEW"
     );
     restored.techno_limbo_with_rules(foot_id, &rules, None);
-    assert!(restored.building_spotlight(recreated, &rules).is_none());
+    assert!(
+        restored
+            .building_spotlight(recreated, None, &rules)
+            .is_none()
+    );
     let fresh = restored
         .spawn_object_at_height("FOOT2", "Americans", 16, 12, 0, 0, &rules)
         .unwrap();

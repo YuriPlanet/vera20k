@@ -303,11 +303,9 @@ pub(super) fn emit_projectile_shrapnel(
                     continue;
                 };
                 if source_owner.is_some_and(|owner| {
-                    crate::map::houses::is_allied_with(
-                        world.house_alliances.as_map(),
-                        world.interner.resolve(owner),
-                        world.interner.resolve(target.owner()),
-                    )
+                    world
+                        .house_alliances
+                        .is_allied(&world.interner, owner, target.owner())
                 }) {
                     continue;
                 }

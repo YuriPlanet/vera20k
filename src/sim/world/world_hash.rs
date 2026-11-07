@@ -676,6 +676,10 @@ impl Simulation {
             b"path-batch-v2".hash(hasher);
             batch.hash(hasher);
         }
+        // Whether target scans are batched; their answers live within a pass.
+        if self.scan_batch.is_some() {
+            b"scan-batch-v1".hash(hasher);
+        }
 
         self.substrate.fold_raw_cell_occupation(hasher);
         self.substrate.fold_hidden_occupation(hasher);
@@ -717,6 +721,33 @@ impl Simulation {
         self.hash_projectiles(hasher);
     }
 
+    /// Whether something retains the shared dummy cell, so that its live
+    /// coordinate is state ([`Self::hash_shared_cell_dummy`] folds it then).
+    /// Otherwise nothing reads the coordinate: the next lookup that hands
+    /// the dummy out stamps it first.
+    pub(super) fn shared_cell_dummy_retained(&self) -> bool {
+        let entities: Vec<_> = self.substrate.entities.values().collect();
+        self.cells_anchor_dummy()
+            || self.entities_target_dummy(&entities)
+            || self.dummy_retained_beyond_cells_and_entities(&self.effective_shared_cell_dummy())
+    }
+
+    /// Whether the dummy's own bridge anchor, a Team script or a projectile
+    /// retains it.
+    fn dummy_retained_beyond_cells_and_entities(
+        &self,
+        dummy: &crate::map::resolved_terrain::SharedCellDummy,
+    ) -> bool {
+        dummy.native_anchor() == Some(crate::map::cell_index::NativeCellIdentity::Dummy)
+            || self
+                .resolved_terrain
+                .as_ref()
+                .is_some_and(|terrain| self.team_script_vm.retains_dummy_cell(terrain))
+            || self.projectiles.iter().any(|(_, projectile)| {
+                projectile.target() == crate::sim::projectile::ProjectileTarget::DummyCell
+            })
+    }
+
     /// The shared dummy cell's state, and its live coordinate while its own
     /// bridge anchor, a real cell's bridge anchor or an entity's target
     /// (`cells_or_entities_retain_dummy`), or a projectile retains it.
@@ -728,8 +759,6 @@ impl Simulation {
         let shared_dummy_handle = self.effective_shared_cell_dummy();
         let shared_dummy = shared_dummy_handle.snapshot();
         let gap_flags = shared_dummy_handle.retained_bridge_flags() & 0xC00;
-        let bridge_keeps_dummy = shared_dummy_handle.native_anchor()
-            == Some(crate::map::cell_index::NativeCellIdentity::Dummy);
         {
             let extra_flags = shared_dummy_handle.raw_flags()
                 & !crate::map::bridge_facts::RETAINED_CELLCLASS_BRIDGE_FLAG_MASK;
@@ -769,15 +798,8 @@ impl Simulation {
         // live-state authority rather than Scenario payload authority.
         b"shared-cell-dummy-overlay-v1".hash(hasher);
         shared_dummy_overlay.hash(hasher);
-        if bridge_keeps_dummy
-            || cells_or_entities_retain_dummy
-            || self
-                .resolved_terrain
-                .as_ref()
-                .is_some_and(|terrain| self.team_script_vm.retains_dummy_cell(terrain))
-            || self.projectiles.iter().any(|(_, projectile)| {
-                projectile.target() == crate::sim::projectile::ProjectileTarget::DummyCell
-            })
+        if cells_or_entities_retain_dummy
+            || self.dummy_retained_beyond_cells_and_entities(&shared_dummy_handle)
         {
             // Retained Cell pointers make the live coordinate affect future
             // range, Team orders, approach and projectile behavior.
@@ -1013,6 +1035,9 @@ impl Simulation {
             sys.lifetime().hash(hasher);
             sys.facing().hash(hasher);
             sys.done_spawning().hash(hasher);
+            if sys.owner_fire_link() {
+                0x304_u16.hash(hasher);
+            }
             sys.alive().hash(hasher);
             sys.in_limbo().hash(hasher);
             // The rest of the saved system state. `in_logic_vector` is not
@@ -1146,6 +1171,7 @@ impl Simulation {
                 score.hash(hasher);
             }
             house.enemy_house().hash(hasher);
+            house.hash_scouted_houses(hasher);
 
             if let Some((rx, ry)) = house.base_center() {
                 1u8.hash(hasher);
@@ -1242,6 +1268,12 @@ impl Simulation {
             {
                 b"house-strategy-timer-v1".hash(hasher);
                 house.strategy_timer().hash(hasher);
+            }
+            if *house.enemy_search_timer()
+                != crate::sim::house_state::enemy_search_timer_at_construction()
+            {
+                b"house-enemy-search-timer-v1".hash(hasher);
+                house.enemy_search_timer().hash(hasher);
             }
             house.team_creation().hash_state(hasher);
             if *house.ai_unit_choices() != Default::default() {
@@ -1556,25 +1588,18 @@ fn hash_particle(p: &crate::sim::particles::Particle, hasher: &mut impl Hasher) 
     p.translucency().hash(hasher);
     p.marked_for_deletion().hash(hasher);
     p.origin().to_array().hash(hasher);
-    p.direction().map(|v| v.to_bits()).hash(hasher);
+    p.direction().map(|v| v.bits()).hash(hasher);
     p.motion().map(|v| v.bits()).hash(hasher);
     p.velocity().bits().hash(hasher);
     p.damage_counter().hash(hasher);
     p.state_ai_advance().hash(hasher);
     (p.drift_x(), p.drift_y(), p.drift_z()).hash(hasher);
-    p.prev_delta().map(|v| v.to_bits()).hash(hasher);
-    match p.spark() {
-        None => 0_u8.hash(hasher),
-        Some(spark) => {
-            1_u8.hash(hasher);
-            spark.velocity_x.bits().hash(hasher);
-            spark.velocity_y.bits().hash(hasher);
-            spark.velocity_z.bits().hash(hasher);
-            spark.start_rgb.hash(hasher);
-            spark.color_index.hash(hasher);
-            spark.color_accumulator.bits().hash(hasher);
-        }
-    }
+    p.prev_delta().hash(hasher);
+    p.target().to_array().hash(hasher);
+    p.float_position().map(|value| value.bits()).hash(hasher);
+    p.start_rgb().hash(hasher);
+    p.color_index().hash(hasher);
+    p.color_accumulator().bits().hash(hasher);
 }
 
 /// One entity's components, in the order the state hash folds them.
@@ -2096,6 +2121,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         cloak.step_timer().timer().duration().hash(hasher);
         cloak.recloak_delay().start_frame().hash(hasher);
         cloak.recloak_delay().duration().hash(hasher);
+        cloak.building_stage().hash(hasher);
     } else {
         0u8.hash(hasher);
     }
@@ -2265,10 +2291,14 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
             // A Foot can own cargo while riding another transport (Unit
             // PerCell 0x0073A730..0x0073A77C). Only append a live parent
             // relation, preserving ordinary outside-cargo hash controls.
-            if let Some((parent, open_topped)) = role.inside_transport() {
+            if let Some(link) = role.carrier_link() {
                 3u8.hash(hasher);
-                parent.hash(hasher);
-                open_topped.hash(hasher);
+                link.transport_id().hash(hasher);
+                link.open_topped().hash(hasher);
+                // `+0x11C`, folded only when set (see the arm below).
+                if role.transporter() == Some(link.transport_id()) {
+                    4u8.hash(hasher);
+                }
             }
             // `UnitClass+0x6E4` keep-count, written only by a
             // transport's own Unload state 0. Folded only when set so
@@ -2279,18 +2309,29 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
             }
         }
         None => {
-            if let Some((transport_id, open_topped)) = role.inside_transport() {
+            if let Some(link) = role.carrier_link() {
                 3u8.hash(hasher);
-                transport_id.hash(hasher);
-                // `+0x82`, folded only when set so a closed transport's
-                // cargo keeps its historical hash.
-                if open_topped {
+                link.transport_id().hash(hasher);
+                // `+0x82` and `+0x11C`, folded only when set so cargo that
+                // CargoClass::AddPassenger loaded keeps its historical hash.
+                if link.open_topped() {
                     1u8.hash(hasher);
+                }
+                if role.transporter() == Some(link.transport_id()) {
+                    4u8.hash(hasher);
                 }
             } else {
                 0u8.hash(hasher);
             }
         }
+    }
+    // `+0x11C` naming another hull than the carrier relation, or none: a
+    // soldier an aircraft unloaded keeps it (`PassengerRole::transporter`).
+    if let Some(transporter) = role.transporter()
+        && role.carrier_link().map(|link| link.transport_id()) != Some(transporter)
+    {
+        5u8.hash(hasher);
+        transporter.hash(hasher);
     }
     // BuildingCtor43B8DC..43B907 and GetCount4581F0: independent vector,
     // not Cargo+114. The unique empty/zero constructor state adds no bytes,
@@ -2461,6 +2502,15 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     // ReceiveDamage damage-Smoke `+0x310` identity. This gates later
     // spawn/RNG and remains set while a marked system drains.
     entity.damage_smoke_system_id.system().hash(hasher);
+    // The Railgun `+0x314` link gates the next railgun shot. Hashed only
+    // when set, so objects that never fired a railgun hash as before.
+    if let Some(system) = entity.railgun_particle_system.system() {
+        system.hash(hasher);
+    }
+    // The Fire `+0x304` link gates the next fire shot, hashed the same way.
+    if let Some(system) = entity.fire_particle_system.system() {
+        (0x304_u16, system).hash(hasher);
+    }
 }
 
 /// One locomotor object, field for field, and the object its piggyback slot
@@ -3658,8 +3708,7 @@ mod particle_hash_tests {
     use super::Simulation;
     use crate::rules::particle_system_type::ParticleSystemTypeId;
     use crate::rules::particle_type::ParticleTypeId;
-    use crate::sim::particles::{Particle, ParticleSystem, SparkRuntimeState};
-    use crate::util::fixed_math::SimFixed;
+    use crate::sim::particles::{Particle, ParticleSystem};
     use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
     use glam::IVec3;
 
@@ -3675,11 +3724,10 @@ mod particle_hash_tests {
         id
     }
 
-    fn particle_with_spark(spark: Option<SparkRuntimeState>) -> Particle {
+    fn test_particle() -> Particle {
         let mut particle = Particle::test_fixture(ParticleTypeId(0), IVec3::new(-1, 2, 3));
         particle.set_origin_for_test(IVec3::ZERO);
         particle.set_lifetime_remaining_for_test(9);
-        particle.set_spark_for_test(spark);
         particle
     }
 
@@ -3692,49 +3740,21 @@ mod particle_hash_tests {
     }
 
     #[test]
-    fn every_raw_spark_field_changes_the_state_hash() {
-        let base = SparkRuntimeState {
-            velocity_x: NativeF32Bits::from_bits(0x0000_0000),
-            velocity_y: NativeF32Bits::from_bits(0x3f80_0000),
-            velocity_z: NativeF32Bits::from_bits(0xc0c0_0000),
-            start_rgb: [80, 255, 255],
-            color_index: 0,
-            color_accumulator: NativeF64Bits::POSITIVE_ZERO,
-        };
-        let base_hash = hash_with_particle(particle_with_spark(Some(base)));
-        let variants = [
-            SparkRuntimeState {
-                velocity_x: NativeF32Bits::NEGATIVE_ZERO,
-                ..base
-            },
-            SparkRuntimeState {
-                velocity_y: NativeF32Bits::from_bits(0x4000_0000),
-                ..base
-            },
-            SparkRuntimeState {
-                velocity_z: NativeF32Bits::from_bits(0xc100_0000),
-                ..base
-            },
-            SparkRuntimeState {
-                start_rgb: [255, 255, 100],
-                ..base
-            },
-            SparkRuntimeState {
-                color_index: -1,
-                ..base
-            },
-            SparkRuntimeState {
-                color_accumulator: NativeF64Bits::NEGATIVE_ZERO,
-                ..base
-            },
+    fn common_particle_color_and_position_fields_change_the_state_hash() {
+        let base = test_particle();
+        let base_hash = hash_with_particle(base.clone());
+        let edits: [fn(&mut Particle); 5] = [
+            |p| p.set_color_for_test([80, 255, 255], 0, NativeF64Bits::POSITIVE_ZERO),
+            |p| p.set_color_for_test([0; 3], -1, NativeF64Bits::POSITIVE_ZERO),
+            |p| p.set_color_for_test([0; 3], 0, NativeF64Bits::NEGATIVE_ZERO),
+            |p| p.float_position_mut_for_test()[0] = NativeF32Bits::NEGATIVE_ZERO,
+            |p| p.set_target_for_test(IVec3::ONE),
         ];
-        for variant in variants {
-            assert_ne!(
-                base_hash,
-                hash_with_particle(particle_with_spark(Some(variant)))
-            );
+        for edit in edits {
+            let mut changed = base.clone();
+            edit(&mut changed);
+            assert_ne!(base_hash, hash_with_particle(changed));
         }
-        assert_ne!(base_hash, hash_with_particle(particle_with_spark(None)));
     }
 
     fn hash_with_system(system: ParticleSystem) -> u64 {
@@ -3747,8 +3767,7 @@ mod particle_hash_tests {
     #[test]
     fn saved_system_and_particle_fields_change_the_state_hash() {
         let mut base = fake_system(IVec3::ZERO);
-        base.particles_mut_for_test()
-            .push(particle_with_spark(None));
+        base.particles_mut_for_test().push(test_particle());
         let base_hash = hash_with_system(base.clone());
         let owner_house = Simulation::new().interner.intern("Americans");
         type Edit = Box<dyn Fn(&mut ParticleSystem)>;
@@ -3768,7 +3787,8 @@ mod particle_hash_tests {
             Box::new(move |s| s.set_owner_house_for_test(Some(owner_house))),
             Box::new(|s| s.particles_mut_for_test()[0].set_origin_for_test(IVec3::new(0, 0, 1))),
             Box::new(|s| {
-                s.particles_mut_for_test()[0].direction_mut_for_test()[1] = SimFixed::from_num(1)
+                s.particles_mut_for_test()[0].direction_mut_for_test()[1] =
+                    crate::util::native_x87::NativeF32Bits::ONE
             }),
             Box::new(|s| {
                 s.particles_mut_for_test()[0].motion_mut_for_test()[1] =
@@ -3783,9 +3803,7 @@ mod particle_hash_tests {
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_x_for_test(1)),
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_y_for_test(1)),
             Box::new(|s| s.particles_mut_for_test()[0].set_drift_z_for_test(1)),
-            Box::new(|s| {
-                s.particles_mut_for_test()[0].prev_delta_mut_for_test()[2] = SimFixed::from_num(1)
-            }),
+            Box::new(|s| s.particles_mut_for_test()[0].prev_delta_mut_for_test()[2] = 1),
         ];
         for (index, edit) in edits.iter().enumerate() {
             let mut system = base.clone();

@@ -335,6 +335,7 @@ impl OverlayTypeRegistry {
                     skip_root_color_add_and_mode: false,
                 },
                 &crate::rules::sound_ini::EvaRegistry::default(),
+                &crate::rules::sound_ini::SoundRegistry::default(),
             )
             .unwrap_or_else(|failure| {
                 panic!(
@@ -350,20 +351,21 @@ impl OverlayTypeRegistry {
     pub fn from_processed_rules(
         processed: &crate::rules::native_processing::ProcessedRulesLayers,
     ) -> Self {
-        let mut registry = Self::from_projected_ini(processed.ini());
-        for (index, (_, damage_levels, explodes, cell_anim, image)) in
+        let mut registry = Self::from_projected_ini(processed.ini(), processed.terrain_rules());
+        for (index, (_, damage_levels, explodes, cell_anim, image, crush_sound)) in
             processed.overlay_type_states().enumerate()
         {
             registry.flags[index].damage_levels = damage_levels;
             registry.flags[index].explodes = explodes;
             registry.flags[index].cell_anim = cell_anim.map(str::to_ascii_uppercase);
+            registry.flags[index].crush_sound = crush_sound.map(str::to_owned);
             registry.images.push(image.clone());
         }
         assert_eq!(registry.names.len(), registry.images.len());
         registry
     }
 
-    fn from_projected_ini(ini: &IniFile) -> Self {
+    fn from_projected_ini(ini: &IniFile, terrain_rules: &TerrainRules) -> Self {
         let section = match ini.section("OverlayTypes") {
             Some(s) => s,
             None => {
@@ -394,7 +396,8 @@ impl OverlayTypeRegistry {
 
         // Native registry allocation follows declaration order; numeric key
         // text is not a sorting authority.
-        let terrain_rules = TerrainRules::from_ini(ini);
+        // Land is a retained global table, not a re-read of merged INI keys.
+        // RecalcAttributes47D2B0 and RecalcZoneType483C80 use that same table.
         let clear_semantics = terrain_rules.semantics_for_land_type(LandType::Clear.as_index());
         let clear_speed_costs = clear_semantics.map(|semantics| semantics.speed_costs);
         let clear_ground_blocked =
@@ -422,8 +425,9 @@ impl OverlayTypeRegistry {
                 let land_speed_costs = land_semantics.map(|semantics| semantics.speed_costs);
                 let land_ground_blocked =
                     land_semantics.is_some_and(|semantics| semantics.ground_blocked);
-                let land_wheel_speed_zero =
-                    land_speed_costs.is_some_and(|speed_costs| speed_costs.wheel == Some(0));
+                let land_wheel_speed_zero = land_speed_costs.is_some_and(|speed_costs| {
+                    speed_costs.wheel.is_some_and(|speed| speed.is_zero())
+                });
                 // OverlayTypeClass::ReadINI5FE7B1..5FE7DA stores all of EAX,
                 // with no clamp. The retained pass reader uses current values.
                 let strength = type_section.read_int("Strength", 1);
@@ -438,10 +442,8 @@ impl OverlayTypeRegistry {
                     // The retained reader below supplies this, never flattened text.
                     explodes: false,
                     wall: type_section.read_bool("Wall", false),
-                    // ObjectType ReadString 0x80 (`0x005F93A8`).
-                    crush_sound: type_section
-                        .read_name("CrushSound", 0x80)
-                        .map(str::to_string),
+                    // Project the retained ObjectType+1F0 binding above.
+                    crush_sound: None,
                     draw_flat: type_section.read_bool("DrawFlat", true),
                     armor_is_wood: type_section
                         .read_name("Armor", 0x80)
@@ -477,8 +479,9 @@ impl OverlayTypeRegistry {
                     track,
                     land_speed_costs: clear_speed_costs,
                     land_ground_blocked: clear_ground_blocked,
-                    land_wheel_speed_zero: clear_speed_costs
-                        .is_some_and(|speed_costs| speed_costs.wheel == Some(0)),
+                    land_wheel_speed_zero: clear_speed_costs.is_some_and(|speed_costs| {
+                        speed_costs.wheel.is_some_and(|speed| speed.is_zero())
+                    }),
                     ..OverlayTypeFlags::default()
                 });
             }
@@ -518,6 +521,7 @@ impl OverlayTypeRegistry {
         self.images.hash(state);
         for flags in &self.flags {
             flags.damage_levels.hash(state);
+            flags.crush_sound.hash(state);
         }
         if self.flags.iter().any(|flags| flags.explodes) {
             b"overlay-explodes-v1".hash(state);
@@ -1000,7 +1004,7 @@ NoUseTileLandType=no
         assert!(flags.land_wheel_speed_zero);
         assert_eq!(
             flags.land_speed_costs.expect("Tiberium speed row").wheel,
-            Some(0)
+            Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
         );
     }
 

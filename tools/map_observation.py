@@ -99,7 +99,8 @@ EXTENSION_FIELDS = frozenset(('commands', 'gestures', 'observe_owners', 'observe
                               'observe_audio', 'allow_load_segments',
                               'observe_tooltips',
                               'camera_cell', 'cursor_position', 'terrain_cells',
-                              'observe_super_weapons', 'observe_diplomacy', 'observe_sidebar_steps'))
+                              'observe_super_weapons', 'observe_diplomacy', 'observe_sidebar_steps',
+                              'presentation'))
 ASCII_UPPER = str.maketrans('abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ')
 COPIES = {'profile': 'profile.json', 'config': 'config.toml', 'contract': 'contract.json'}
 # Process Main RNG reads (native global 0x886B88): `rng.main` and every
@@ -345,13 +346,22 @@ def _screen_point(value: Any, label: str, extent: tuple[int, int]) -> list[int]:
     return point
 
 
-def _gesture(value: Any, label: str, extent: tuple[int, int]) -> None:
+def _gesture(value: Any, label: str, extent: tuple[int, int],
+             drag_end_extent: tuple[int, int] | None = None) -> None:
     gesture = require_object(value, label)
     if 'button' in gesture:
         if gesture.get('kind') not in ('click', 'sidebar') or gesture['button'] not in ('left', 'right'):
             raise ValidationError(f'{label}.button requires click/sidebar and literal left/right')
+    if 'modifiers' in gesture:
+        if gesture.get('kind') not in ('click', 'key'):
+            raise ValidationError(f'{label}.modifiers requires a click or key gesture')
+        modifiers = require_array(gesture['modifiers'], f'{label}.modifiers')
+        if (len(modifiers) > 4 or any(type(value) is not str or value not in ('Ctrl', 'Shift', 'Alt', 'Super')
+                                      for value in modifiers) or len(set(modifiers)) != len(modifiers)):
+            raise ValidationError(f'{label}.modifiers must be unique literal Ctrl/Shift/Alt/Super keys')
     if gesture.get('kind') in ('click', 'minimap'):
-        require_exact_keys(gesture, ('kind', 'position', *(('button',) if 'button' in gesture else ())), label)
+        require_exact_keys(gesture, ('kind', 'position', *(('button',) if 'button' in gesture else ()),
+                                    *(('modifiers',) if 'modifiers' in gesture else ())), label)
         _screen_point(gesture['position'], f'{label}.position', extent)
     elif gesture.get('kind') == 'minimap_object':
         require_exact_keys(gesture, ('kind', 'entity_id'), label)
@@ -359,7 +369,7 @@ def _gesture(value: Any, label: str, extent: tuple[int, int]) -> None:
     elif gesture.get('kind') == 'drag':
         require_exact_keys(gesture, ('kind', 'from', 'to'), label)
         start = _screen_point(gesture['from'], f'{label}.from', extent)
-        end = _screen_point(gesture['to'], f'{label}.to', extent)
+        end = _screen_point(gesture['to'], f'{label}.to', drag_end_extent or extent)
         if start == end:
             raise ValidationError(f'{label} drag endpoints must differ')
     elif gesture.get('kind') == 'key':
@@ -370,11 +380,6 @@ def _gesture(value: Any, label: str, extent: tuple[int, int]) -> None:
         key = require_string(gesture['key'], f'{label}.key')
         if key != 'Escape' and not (len(key) == 1 and key.isascii() and key.isalnum()):
             raise ValidationError(f'{label}.key must be one ASCII letter/digit or Escape')
-        if 'modifiers' in gesture:
-            modifiers = require_array(gesture['modifiers'], f'{label}.modifiers')
-            if (len(modifiers) > 4 or any(type(value) is not str or value not in ('Ctrl', 'Shift', 'Alt', 'Super')
-                                          for value in modifiers) or len(set(modifiers)) != len(modifiers)):
-                raise ValidationError(f'{label}.modifiers must be unique literal Ctrl/Shift/Alt/Super keys')
     elif gesture.get('kind') == 'command_bar':
         require_exact_keys(gesture, ('kind', 'command'), label)
         command = require_string(gesture['command'], f'{label}.command')
@@ -410,7 +415,7 @@ def _right_button_gesture(gesture: Mapping[str, Any]) -> bool:
 
 def _observes_local_input(profile: Mapping[str, Any]) -> bool:
     return any(row['gesture']['kind'] in ('key', 'minimap', 'minimap_object') or _right_button_gesture(row['gesture'])
-               for row in profile.get('gestures', []))
+               or bool(row['gesture'].get('modifiers')) for row in profile.get('gestures', []))
 
 
 def _gesture_policy(profile: Mapping[str, Any]) -> str:
@@ -535,6 +540,22 @@ def _profile_extensions(profile: Mapping[str, Any], *, production_commands: bool
             _bounded_int(audio[key], f'profile.observe_audio.{key}', 1, maximum)
     if 'allow_load_segments' in profile and type(profile['allow_load_segments']) is not bool:
         raise ValidationError('profile.allow_load_segments must be a boolean')
+    if 'presentation' in profile:
+        # The `[VERA]` Zoom/Sidebar/HdRadar/SmoothSidebar values; Rust owns their
+        # effect on the frame.
+        presentation = require_object(profile['presentation'], 'profile.presentation')
+        optional = tuple(key for key in ('hd_radar', 'smooth_sidebar') if key in presentation)
+        require_exact_keys(presentation, ('zoom', 'sidebar') + optional, 'profile.presentation')
+        for key in optional:
+            if type(presentation[key]) is not bool:
+                raise ValidationError(f'profile.presentation.{key} must be a boolean')
+        zoom = _bounded_int(presentation['zoom'], 'profile.presentation.zoom', 0, 10_000)
+        if zoom != 0 and (zoom < 100 or zoom % 50):
+            raise ValidationError('profile.presentation.zoom must be 0 (Auto) or a 50-step percent from 100')
+        if require_int(presentation['sidebar'], 'profile.presentation.sidebar') not in (100, 150, 200):
+            raise ValidationError('profile.presentation.sidebar must be 100, 150 or 200')
+        if 'gestures' in profile or 'cursor_position' in profile:
+            raise ValidationError('profile.presentation cannot combine with gestures or cursor_position')
     commands = require_array(profile.get('commands', []), 'profile.commands')
     if len(commands) > 1024:
         raise ValidationError('profile.commands exceeds 1024 rows')
@@ -2616,6 +2637,7 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
         keyboard = request['gesture']['kind'] == 'key'
         command_bar = request['gesture']['kind'] == 'command_bar'
         minimap = request['gesture']['kind'] in ('minimap', 'minimap_object')
+        drag = request['gesture']['kind'] == 'drag'
         right = _right_button_gesture(request['gesture'])
         require_exact_keys(row, ('ordinal', 'issue_after_step', 'issued_simulation_tick',
                                  'issued_binary_frame', 'gesture', 'before', 'after',
@@ -2625,7 +2647,8 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
                                  *(('sidebar',) if sidebar else ()),
                                  *(('command_bar',) if command_bar else ()),
                                  *(('keyboard',) if keyboard else ()),
-                                 *(('minimap',) if minimap else ())), row_label)
+                                 *(('minimap',) if minimap else ()),
+                                 *(('held_cursor',) if drag and 'held_cursor' in row else ())), row_label)
         tick, frame = _segment_clock(request['issue_after_step'], segments, after_inputs=True, gesture_ordinal=index)
         for key, expected in (('ordinal', index), ('issue_after_step', request['issue_after_step']),
                               ('issued_simulation_tick', tick), ('issued_binary_frame', frame)):
@@ -2633,7 +2656,9 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
         _require_equal(row['gesture'], request['gesture'], f'{row_label}.gesture')
         gesture_extent = ((profile['width'], profile['height'])
                           if minimap else extent)
-        _gesture(row['gesture'], f'{row_label}.gesture', gesture_extent)
+        # A drag starts on the battlefield and may end over the sidebar.
+        _gesture(row['gesture'], f'{row_label}.gesture', gesture_extent,
+                 (profile['width'], profile['height']))
         if command_bar:
             sample_count += _command_bar_gesture(row['command_bar'], request['gesture']['command'],
                 f'{row_label}.command_bar', (profile['width'], profile['height']))
@@ -2651,6 +2676,13 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
             require_value(row[key], expected, f'{row_label}.{key}')
         if right:
             require_value(row['right_press_captured'], True, f'{row_label}.right_press_captured')
+        if drag and 'held_cursor' in row:
+            # Captures made before the field existed omit it.
+            held = require_object(row['held_cursor'], f'{row_label}.held_cursor')
+            require_exact_keys(held, ('press', 'before_release'), f'{row_label}.held_cursor')
+            for key in ('press', 'before_release'):
+                if held[key] is not None and not require_string(held[key], f'{row_label}.held_cursor.{key}'):
+                    raise ValidationError(f'{row_label}.held_cursor.{key} is empty')
         for key in ('before', 'after'):
             sample_count += _input_observation(row[key], f'{row_label}.{key}', local_input=local_input)
         if minimap:
@@ -3233,8 +3265,16 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
     for key in ('ready', 'sidebar_view_present'):
         require_value(render.get(key), True, f'render.{key}')
     width, height = _integer(profile, 'width', 1), _integer(profile, 'height', 1)
-    for key in ('internal_extent', 'surface_extent'):
-        _require_equal(render.get(key), [width, height], f'render.{key}')
+    _require_equal(render.get('surface_extent'), [width, height], 'render.surface_extent')
+    if 'presentation' in profile:
+        # A zoomed battle frame is the window over the zoom.
+        extent = require_array(render.get('internal_extent'), 'render.internal_extent')
+        if len(extent) != 2:
+            raise ValidationError('render.internal_extent must contain exactly two dimensions')
+        for axis, limit in enumerate((width, height)):
+            _bounded_int(extent[axis], f'render.internal_extent[{axis}]', 1, limit)
+    else:
+        _require_equal(render.get('internal_extent'), [width, height], 'render.internal_extent')
     unit_atlas = _unit_atlas(render.get('unit_atlas'))
     frame = require_object(manifest.get('frame'), 'frame')
     frame_snapshot = require_regular_file(directory / 'frame.bgra', 'frame',
@@ -3263,18 +3303,10 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
     return _Capture(evidence, manifest_snapshot, frame_snapshot, frame['surface_format'], clock)
 
 
-def capture(*, profile_path: Path, contract_path: Path, output: Path,
-            working_directory: Path, executable: Path | None = None,
-            build_label: str | None = None, build_profile: str | None = None) -> dict[str, Any]:
-    profile_snapshot, profile = load_json_file(profile_path, 'map observation profile')
-    _profile_extensions(profile)
-    # Only wrapper resource budgets are interpreted here. Rust owns launch admission.
-    timeout = _integer(profile, 'timeout_seconds', 1)
-    contract = load_contract(contract_path)
-    reject_denied_environment(contract)
-    if timeout > contract.document['absolute_max_child_timeout_seconds']:
-        raise ValidationError('profile timeout exceeds checked contract maximum')
-    cwd = require_directory(working_directory, 'working directory')
+def vera20k_executable(executable: Path | None = None, build_label: str | None = None,
+                       build_profile: str | None = None) -> Path:
+    """The release or fast vera20k to run: `executable`, the one in build label
+    `build_label`, or the one this checkout recorded, of `build_profile` when given."""
     if executable is not None and (build_label is not None or build_profile is not None):
         raise ValidationError('executable is mutually exclusive with build_label and build_profile')
     if build_profile is not None and build_profile not in CAPTURE_PROFILES:
@@ -3298,6 +3330,22 @@ def capture(*, profile_path: Path, contract_path: Path, output: Path,
         if not recorded:
             raise ValidationError(f'no verified {wanted} vera20k; build with tools.cargo_run first')
         executable, = recorded
+    return executable
+
+
+def capture(*, profile_path: Path, contract_path: Path, output: Path,
+            working_directory: Path, executable: Path | None = None,
+            build_label: str | None = None, build_profile: str | None = None) -> dict[str, Any]:
+    profile_snapshot, profile = load_json_file(profile_path, 'map observation profile')
+    _profile_extensions(profile)
+    # Only wrapper resource budgets are interpreted here. Rust owns launch admission.
+    timeout = _integer(profile, 'timeout_seconds', 1)
+    contract = load_contract(contract_path)
+    reject_denied_environment(contract)
+    if timeout > contract.document['absolute_max_child_timeout_seconds']:
+        raise ValidationError('profile timeout exceeds checked contract maximum')
+    cwd = require_directory(working_directory, 'working directory')
+    executable = vera20k_executable(executable, build_label, build_profile)
     snapshots = {'profile': profile_snapshot, 'contract': contract.snapshot,
                  'config': require_regular_file(cwd / 'config.toml', 'config'),
                  'executable': require_regular_file(executable, 'executable')}

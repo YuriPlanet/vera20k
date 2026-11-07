@@ -302,7 +302,8 @@ fn resolved_clear_grid_with_override(
     mut override_cell: impl FnMut(&mut ResolvedTerrainCell),
 ) -> ResolvedTerrainGrid {
     let clear_speed_costs = SpeedCostProfile {
-        float: Some(0),
+        float: Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
         ..crate::map::resolved_terrain::TEST_OPEN_SPEED_COSTS
     };
     crate::map::resolved_terrain::test_grid(width, height, |rx, ry| {
@@ -430,6 +431,10 @@ fn build_off_ally_rules() -> RuleSet {
 }
 
 fn ground_occupant_placement_rules() -> RuleSet {
+    ground_occupant_placement_rules_with_art(&IniFile::empty())
+}
+
+fn ground_occupant_placement_rules_with_art(extra_art: &IniFile) -> RuleSet {
     let ini = IniFile::from_str(
         "[Countries]\n0=Americans\n1=Alliance\n2=Russians\n3=Soviet\n[InfantryTypes]\n\
          0=E1\n\
@@ -467,13 +472,12 @@ fn ground_occupant_placement_rules() -> RuleSet {
          Adjacent=0\n\
          Wall=yes\n[Clear]\nBuildable=yes\n",
     );
-    RuleSet::from_ini_with_fixed_art_for_test(
-        &ini,
-        &IniFile::from_str(
-            "[GACNST]\nFoundation=2x2\n[GAPOWR]\nFoundation=2x2\n[GAWALL]\nFoundation=1x1\n",
-        ),
-    )
-    .expect("ground-occupant placement rules and ART should parse")
+    let mut art = IniFile::from_str(
+        "[GACNST]\nFoundation=2x2\n[GAPOWR]\nFoundation=2x2\n[GAWALL]\nFoundation=1x1\n",
+    );
+    art.merge(extra_art);
+    RuleSet::from_ini_with_fixed_art_for_test(&ini, &art)
+        .expect("ground-occupant placement rules and ART should parse")
 }
 
 fn gsi_04_07_wall_placement_contract() -> (RuleSet, OverlayTypeRegistry) {
@@ -1527,8 +1531,10 @@ fn free_unit_search_asks_wheel_ground_whatever_the_free_units_speed_type() {
     for frame in 0..(STOCK_4X3_FALLBACK_POOL.len() as u32 * 2) {
         let (sim, _, spawned) = complete_stock_allied_refinery_on(frame, &[], |cell| {
             if (cell.rx, cell.ry) == WHEEL_ONLY {
-                cell.speed_costs.track = Some(0);
-                cell.base_speed_costs.track = Some(0);
+                cell.speed_costs.track =
+                    Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+                cell.base_speed_costs.track =
+                    Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
             }
         });
         let pick = STOCK_4X3_FALLBACK_POOL[(frame as usize) % STOCK_4X3_FALLBACK_POOL.len()];
@@ -1800,14 +1806,11 @@ fn place_ready_building_rejects_blocked_or_overlapping_cells() {
 
 #[test]
 fn placement_command_rejects_marked_ground_mobiles_until_they_are_unmarked() {
-    let mut rules = ground_occupant_placement_rules();
     // A retained death has real ART and a native sequence clock. An absent
     // death record retires on the first class visit, before this command.
     let death_art = IniFile::from_str("[E1]\nSequence=E1Sequence\n[E1Sequence]\nDie1=56,15,0\n");
+    let mut rules = ground_occupant_placement_rules_with_art(&death_art);
     rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&death_art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&death_art),
-    );
     let grid = PathGrid::new(64, 64);
 
     for blocker_type in ["MTNK", "E1"] {
@@ -4037,9 +4040,6 @@ fn stock_yuri_cloning_world_with_scenario(
     let registry = OverlayTypeRegistry::from_ini(processed.ini(), Some(&fixed_art));
     let mut rules = RuleSet::from_processed_rules(&processed).expect("stock Yuri Battle rules");
     rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&fixed_art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&fixed_art),
-    );
     let mut sim = Simulation::with_seed(2);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);

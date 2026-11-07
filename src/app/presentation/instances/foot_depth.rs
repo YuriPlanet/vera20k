@@ -201,13 +201,22 @@ fn unit_bridge_condition_in_runtime(
 
 /// SHP's 0x705E00 gate is GetHeight()==0, not a display-layer test. Aircraft
 /// always bypass Foot. Raw VXL and OREGATH callers use Foot directly instead.
+/// Original gamemd.exe InfantryClass::DrawIt @00518F90 supplies -10 from
+/// 00825500 at005195AF. TechnoClass::DrawSHP @00705E00 includes that caller
+/// input in both Foot (00706024) and height-only (0070603D) body depth before
+/// the common -2 (00706430); its separate shadow depth does not use it.
 pub(super) fn shp_z_adjust_in_runtime(
     runtime: Option<&crate::sim::runtime::SimRuntime>,
     entity: &GameEntity,
 ) -> f32 {
+    let caller_z_adjust: i32 = if entity.category() == EntityCategory::Infantry {
+        -10
+    } else {
+        0
+    };
     let world_z = crate::sim::movement::ground_pose::object_world_z_leptons(entity, None);
-    let height_only = adjust_for_z_standard(world_z)
-        .wrapping_neg()
+    let height_only = caller_z_adjust
+        .wrapping_sub(adjust_for_z_standard(world_z))
         .wrapping_sub(2);
     if !matches!(
         entity.category(),
@@ -247,7 +256,9 @@ pub(super) fn shp_z_adjust_in_runtime(
         )
     };
     if height_above_ground == 0 {
-        unit_z_adjust_in_runtime(runtime, entity, true, None).wrapping_sub(2) as f32
+        unit_z_adjust_in_runtime(runtime, entity, true, None)
+            .wrapping_add(caller_z_adjust)
+            .wrapping_sub(2) as f32
     } else {
         height_only as f32
     }

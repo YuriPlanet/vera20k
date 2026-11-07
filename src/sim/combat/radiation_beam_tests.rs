@@ -556,3 +556,155 @@ fn assert_native_births(
         );
     }
 }
+
+fn eruption_rules() -> Option<RetailBattleRules> {
+    crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&IniFile::from_str(
+        "[DESO]\nPrimary=RadEruptionWeapon\n\n[RadEruptionWeapon]\nIsRadEruption=yes\nAreaFire=no\n",
+    ))
+}
+
+/// SpawnRadEruption @ 0x006FD800 through FireAt (`0x006FF5EE`). Retail
+/// sets `IsRadEruption=no`; this map layer turns it on and makes the weapon
+/// an ordinary attack, not AreaFire's own-cell shot.
+#[test]
+fn an_eruption_shot_creates_eight_kind2_beams_around_the_firer() {
+    let Some(patched) = eruption_rules() else {
+        return;
+    };
+    let rules = &patched.rules;
+    let weapon = rules.weapon("RadEruptionWeapon").unwrap();
+    assert!(weapon.is_rad_eruption && !weapon.is_rad_beam);
+    let warhead = rules.warhead(weapon.warhead.as_deref().unwrap()).unwrap();
+    assert_eq!(warhead.cell_spread_f64, 10.0);
+
+    let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0xC29D_E500);
+    sim.fog = FogState::new(32, 32);
+    let owner = sim.interner.intern("Americans");
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    let source = sim
+        .spawn_object("DESO", "Americans", 16, 16, 64, rules)
+        .unwrap();
+    let target = sim
+        .spawn_object("MTNK", "Russians", 18, 16, 192, rules)
+        .unwrap();
+    sim.fog.mark_visible_for_owner(owner, 18, 16);
+    assert!(sim.apply_command(
+        "Americans",
+        &Command::Attack {
+            attacker_id: source,
+            target_id: target
+        },
+        Some(rules),
+    ));
+    sim.lifecycle_outputs.clear_for_test();
+    let grid = sim.path_grid_snapshot().unwrap();
+    for _ in 0..32 {
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+        if !sim
+            .fire_events
+            .iter()
+            .any(|shot| shot.attacker_id == source)
+        {
+            continue;
+        }
+        let from = super::world_fire::object_get_coords(&sim, source).unwrap();
+        let births: Vec<_> = sim
+            .lifecycle_outputs
+            .iter()
+            .filter_map(|output| match output {
+                LifecycleOutput::RadiationBeamCreated(birth) => Some(*birth),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(births.len(), 8);
+        for birth in &births {
+            assert!(birth.eruption);
+            assert_eq!(
+                (birth.from, birth.z_adjust, birth.color),
+                (from, 0, [0, 255, 0])
+            );
+        }
+        return;
+    }
+    panic!("the eruption DESO did not fire within 32 ticks");
+}
+
+/// Original SpawnRadEruption @ 0x006FD800 (procedural_drawing_oracle/
+/// rad_eruption): target cell order, Map/Cell centre heights including the
+/// stamped dummy, Main draw order and count, and the inert 0.0 travel scale.
+#[test]
+fn native_eruption_births_and_main_draws_match_the_original() {
+    let Some(patched) = eruption_rules() else {
+        return;
+    };
+    let rules = &patched.rules;
+    let weapon = rules.weapon("RadEruptionWeapon").unwrap();
+    let rows =
+        crate::test_fixture::json("tools/procedural_drawing_oracle/rad_eruption.json")["rows"]
+            .as_array()
+            .unwrap();
+    assert_eq!(rows.len(), 2);
+    for row in rows {
+        let input = &row["input"];
+        let name = input["name"].as_str().unwrap();
+        let warhead = rules.warhead(weapon.warhead.as_deref().unwrap()).unwrap();
+        assert_eq!(
+            warhead.cell_spread_f64 as i64,
+            input["spread"].as_i64().unwrap()
+        );
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0xC29D_E500);
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        for cell in input["cells"].as_array().unwrap() {
+            let [x, y] = [0, 1].map(|axis| cell["xy"][axis].as_u64().unwrap() as u16);
+            let cell_mut = terrain.cell_mut_for_test(x, y).unwrap();
+            cell_mut.level = cell["level"].as_u64().unwrap() as u8;
+            cell_mut.slope_type = cell["slope"].as_u64().unwrap() as u8;
+        }
+        let source = place_native_actor(&mut sim, rules, "DESO", "Americans", &input["source"]);
+        sim.main_rng =
+            SimRng::from_native_state_hex_for_test(row["main_rng_before"].as_str().unwrap()).into();
+        sim.lifecycle_outputs.clear_for_test();
+        super::radiation_beam::erupted(&mut sim, rules, source, weapon);
+        let births: Vec<_> = sim
+            .lifecycle_outputs
+            .iter()
+            .map(|output| match output {
+                LifecycleOutput::RadiationBeamCreated(birth) => *birth,
+                other => panic!("{name}: {other:?}"),
+            })
+            .collect();
+        let expected = row["births"].as_array().unwrap();
+        assert_eq!(births.len(), expected.len(), "{name}");
+        for (birth, native) in births.iter().zip(expected) {
+            assert_eq!(integer(&native["kind"]), 2);
+            assert_eq!(native["travel_scale_f64_le_hex"], "0000000000000000");
+            let amplitude =
+                u64::from_str_radix(native["amplitude_f64_le_hex"].as_str().unwrap(), 16)
+                    .unwrap()
+                    .swap_bytes();
+            assert_eq!(
+                (birth.from, birth.to, birth.z_adjust, birth.color),
+                (
+                    coordinate(&native["source"]),
+                    coordinate(&native["target"]),
+                    integer(&native["z_adjust"]),
+                    rgb(&native["rgb"]),
+                ),
+                "{name}"
+            );
+            assert_eq!(
+                (birth.duration, birth.amplitude.bits(), birth.eruption),
+                (integer(&native["duration"]), amplitude, true),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            sim.main_rng.logical_state(),
+            SimRng::from_native_state_hex_for_test(row["main_rng_after"].as_str().unwrap())
+                .logical_state(),
+            "{name}: Main draw count and order"
+        );
+    }
+}

@@ -182,9 +182,9 @@ fn startup_asset_or_error<T>(result: Result<T>, error: &mut Option<String>) -> O
     match result {
         Ok(asset) => Some(asset),
         Err(err) => {
-            // The log keeps the raw chain, which carries the host's localized
-            // OS text; the card gets an English description instead, because
-            // its in-repo face cannot draw a localised sentence.
+            // The log keeps the raw chain, with the host's own OS text; the
+            // card describes the failure in the language in use, which need
+            // not be the host's.
             log::warn!("{err:#}");
             error.get_or_insert_with(|| describe_startup_error(&err));
             None
@@ -192,12 +192,11 @@ fn startup_asset_or_error<T>(result: Result<T>, error: &mut Option<String>) -> O
     }
 }
 
-/// English description of a startup failure, for the error card.
+/// A startup failure in the language in use, for the error card.
 ///
-/// `std::io::Error`'s own message is localized by the host, so on a Chinese
-/// Windows the raw chain reads a localized sentence and the card could only
-/// draw boxes. This walks the `anyhow` chain and states each link in English:
-/// our own context strings already are, and I/O kinds are mapped here.
+/// `std::io::Error`'s own message is in the host's language, which need not
+/// be the player's. This walks the `anyhow` chain and states each I/O link
+/// from the language files, as our own context strings already are.
 fn describe_startup_error(err: &anyhow::Error) -> String {
     use crate::assets::error::AssetError;
 
@@ -222,23 +221,24 @@ fn describe_startup_error(err: &anyhow::Error) -> String {
     parts.join(": ")
 }
 
-/// One I/O failure in English, with the numeric code kept for the log search.
+/// One I/O failure in the language in use, with the numeric code kept for
+/// the log search.
 fn describe_io_error(err: &std::io::Error) -> String {
     use std::io::ErrorKind;
 
-    let text = match err.kind() {
-        ErrorKind::NotFound => "the file or path does not exist",
-        ErrorKind::PermissionDenied => "access was denied",
-        ErrorKind::AlreadyExists => "the target already exists",
-        ErrorKind::InvalidData => "the file is not a valid game archive",
-        ErrorKind::InvalidInput => "the file name or data is invalid",
-        ErrorKind::UnexpectedEof => "the file is truncated",
-        ErrorKind::WouldBlock => "the file is in use by another program",
-        _ => "the file could not be read",
-    };
+    let text = crate::i18n::tr(match err.kind() {
+        ErrorKind::NotFound => "VERA:IoNotFound",
+        ErrorKind::PermissionDenied => "VERA:IoPermissionDenied",
+        ErrorKind::AlreadyExists => "VERA:IoAlreadyExists",
+        ErrorKind::InvalidData => "VERA:IoInvalidData",
+        ErrorKind::InvalidInput => "VERA:IoInvalidInput",
+        ErrorKind::UnexpectedEof => "VERA:IoTruncated",
+        ErrorKind::WouldBlock => "VERA:IoInUse",
+        _ => "VERA:IoUnreadable",
+    });
     match err.raw_os_error() {
-        Some(code) => format!("{text} (os error {code})"),
-        None => text.to_owned(),
+        Some(code) => crate::i18n::tr_fill("VERA:IoOsError", &[("text", &text), ("code", &code)]),
+        None => text,
     }
 }
 
@@ -331,14 +331,27 @@ impl App {
                     let prepared = (|| -> Result<crate::rules::personal_rules::PersonalRules> {
                         crate::app::persistence::profile_file::import_legacy(&config.paths)
                             .map_err(|error| {
-                                anyhow::Error::new(error).context("Could not prepare VERA.INI")
+                                anyhow::Error::new(error).context(crate::i18n::tr_fill(
+                                    "VERA:CannotPrepareFile",
+                                    &[("file", &"VERA.INI")],
+                                ))
                             })?;
                         let bytes = crate::app::persistence::rules_profile::load_or_create(
                             config.paths.settings_dir(),
                         )
-                        .context("Could not prepare VERARULES.INI")?;
+                        .with_context(|| {
+                            crate::i18n::tr_fill(
+                                "VERA:CannotPrepareFile",
+                                &[("file", &"VERARULES.INI")],
+                            )
+                        })?;
                         crate::rules::personal_rules::PersonalRules::from_bytes(&bytes)
-                            .context("Could not read VERARULES.INI")
+                            .with_context(|| {
+                                crate::i18n::tr_fill(
+                                    "VERA:CannotReadFile",
+                                    &[("file", &"VERARULES.INI")],
+                                )
+                            })
                     })();
                     match prepared {
                         Ok(rules) => personal_rules = rules,
@@ -353,6 +366,9 @@ impl App {
                 Ok(config)
             });
         let game_config = startup_asset_or_error(game_config, &mut main_menu_shell_error);
+        if let Some(config) = &game_config {
+            crate::map::source::set_downloaded_maps_dir(config.paths.downloaded_maps_dir());
+        }
         let startup_files = StartupFiles {
             config_file: GameConfig::path(),
             problem: startup_problem,
@@ -367,6 +383,13 @@ impl App {
         );
         let profile_screen = options_load.startup_shell_screen;
         let mut options_profile = options_load.retained_profile;
+        // Before the first CSF load below, which layers this language over it.
+        crate::i18n::init(
+            game_config
+                .as_ref()
+                .map(|config| config.paths.settings_dir()),
+            options_profile.language.as_deref(),
+        );
         options_profile.render_interpolation =
             crate::app::presentation::interpolation::startup_enabled(
                 options_profile.render_interpolation,
@@ -385,8 +408,12 @@ impl App {
         // and the match zoom follows it. A sealed capture keeps its exact,
         // fixed, hidden physical surface.
         let capture = capture_dimensions.is_some();
+        // A player window reopens at the size it was last left at.
+        let placement = options_profile.window_placement.filter(|_| !capture);
         let inner_size: winit::dpi::Size = if capture {
             PhysicalSize::new(window_width, window_height).into()
+        } else if let Some(placement) = placement {
+            winit::dpi::LogicalSize::new(placement.width, placement.height).into()
         } else {
             winit::dpi::LogicalSize::new(window_width, window_height).into()
         };
@@ -404,13 +431,29 @@ impl App {
         let wanted_display = super::display_target::screen_for(&displays, &options_profile.display);
         let fullscreen = (!capture && !hidden_spawn_window && options_profile.full_screen)
             .then(|| super::display_target::fullscreen_for(&displays, &options_profile.display));
+        // A hidden run's window has a title of its own, so a second launch's
+        // single-instance search (`util::single_instance`) finds the player's.
+        let title = if capture {
+            concat!("VERA20K hidden run ", env!("CARGO_PKG_VERSION"))
+        } else {
+            super::WINDOW_TITLE
+        };
         let mut window_attrs: WindowAttributes = WindowAttributes::default()
-            .with_title(super::WINDOW_TITLE)
+            .with_title(title)
             .with_inner_size(inner_size)
             .with_resizable(!capture)
             .with_fullscreen(fullscreen)
+            // A player window reopens maximised when it was left so.
+            .with_maximized(
+                window_visible && !options_profile.full_screen && options_profile.window_maximized,
+            )
             .with_visible(window_visible)
             .with_active(window_visible);
+        // A player window shrinks no further than gamemd's smallest mode,
+        // 640x480, the view every zoom step keeps.
+        if !capture {
+            window_attrs = window_attrs.with_min_inner_size(winit::dpi::LogicalSize::new(640, 480));
+        }
         // The Wayland app ID and X11 class, which the AppImage's desktop entry
         // names (StartupWMClass), so docks show its icon for the window.
         // Unset, Wayland has none and X11 takes the name the program was
@@ -430,11 +473,17 @@ impl App {
             window_attrs = window_attrs.with_borderless_game(true);
         }
         // Capture windows stay hidden, so only a visible session shows the icon.
-        let retail_icon = game_config
-            .as_ref()
-            .filter(|_| window_visible)
-            .and_then(|config| super::window_icon::RetailIcon::load(&config.paths.ra2_dir));
-        if let Some(icon) = &retail_icon {
+        let window_icon = window_visible
+            .then(|| {
+                super::window_icon::WindowIcon::chosen(
+                    options_profile.vera_icon,
+                    game_config
+                        .as_ref()
+                        .map(|config| config.paths.ra2_dir.as_path()),
+                )
+            })
+            .flatten();
+        if let Some(icon) = &window_icon {
             window_attrs = icon.apply(window_attrs);
         }
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -443,22 +492,38 @@ impl App {
             window_attrs = window_attrs.with_canvas(Some(crate::web::canvas()));
         }
         let window: Arc<Window> = Arc::new(event_loop.create_window(window_attrs)?);
-        // A windowed launch on a saved screen: the window opens centred there.
-        // Full screen already covers it from the attributes above.
-        if let Some(monitor) = wanted_display
-            .as_ref()
-            .filter(|_| !options_profile.full_screen)
-        {
-            window.set_outer_position(super::display_target::centered_outer_position(
-                &window, monitor,
-            ));
+        // A windowed launch opens where the player last left the window, while
+        // that spot still shows its title bar on the chosen screen (any screen
+        // when none is chosen); otherwise it opens centred on the chosen
+        // screen. Full screen already covers it from the attributes above.
+        if !options_profile.full_screen {
+            let saved_corner = placement
+                .map(|placement| winit::dpi::PhysicalPosition::new(placement.x, placement.y))
+                .filter(|corner| {
+                    let screens = displays
+                        .iter()
+                        .map(|display| &display.handle)
+                        .filter(|screen| match &wanted_display {
+                            Some(wanted) => wanted == *screen,
+                            None => true,
+                        })
+                        .map(|screen| (screen.position(), screen.size()));
+                    super::display_target::title_bar_on_a_screen(*corner, screens)
+                });
+            if let Some(corner) = saved_corner {
+                window.set_outer_position(corner);
+            } else if let Some(monitor) = wanted_display.as_ref() {
+                window.set_outer_position(super::display_target::centered_outer_position(
+                    &window, monitor,
+                ));
+            }
         }
         // gamemd's WinMain builds WWMouse (`0x006BDF1C`), whose constructor hides
         // the cursor, before the startup splash; from the first frame after it,
         // `show_os_cursor_only_without_game_cursor` owns the cursor.
         window.set_cursor_visible(false);
         #[cfg(target_os = "macos")]
-        if let Some(icon) = &retail_icon {
+        if let Some(icon) = &window_icon {
             icon.set_dock_icon();
         }
         #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
@@ -527,9 +592,11 @@ impl App {
         );
         terrain_draw_renderer.generate_ion_blast_frames(&gpu.device, &gpu.queue);
         let combat_light_renderer = crate::render::combat_light::CombatLightRenderer::new(&gpu);
-        let mut bit_font = BitFont::fallback_5x7(&gpu.device, &gpu.queue, &batch_renderer);
+        let mut bit_font = BitFont::vector_only(&gpu.device, &gpu.queue, &batch_renderer);
         let fps_overlay =
             crate::app::diagnostics::fps_overlay::FpsOverlay::new(&gpu, &batch_renderer);
+        let window_ui =
+            crate::app::presentation::window_ui::WindowUi::new(&gpu.device, &batch_renderer);
         let depth_view: wgpu::TextureView = gpu.create_depth_texture();
         let shell_surface_presenter =
             crate::render::shell_surface_present::ShellSurfacePresenter::new(&gpu)?;
@@ -542,7 +609,7 @@ impl App {
             startup_asset_or_error(
                 AssetManager::new(&config.paths.ra2_dir, startup_options.media_archive_mode)
                     .and_then(|assets| assets.with_ini_roots(&config.ini))
-                    .context("Could not load the game archives"),
+                    .with_context(|| crate::i18n::tr("VERA:CannotLoadArchives")),
                 &mut main_menu_shell_error,
             )
         });
@@ -582,6 +649,8 @@ impl App {
         if let Some(fnt) = startup_fnt.as_ref() {
             bit_font = BitFont::from_fnt(&gpu.device, &gpu.queue, &batch_renderer, fnt);
         }
+        bit_font.set_mode(options_profile.font_mode());
+        bit_font.set_locale(&crate::i18n::selected_language());
         let outcome_banner_art = startup_asset_manager.as_ref().and_then(|assets| {
             crate::app::presentation::outcome_banner::OutcomeBannerArt::build(
                 &gpu,
@@ -595,27 +664,25 @@ impl App {
         // enters scenario loading directly, with no splash either.
         let process_movies =
             !external_launch && capture_dimensions.is_none() && main_menu_shell_error.is_none();
-        // `[VERA] SkipStartupLogo=` drops only the logo: the splash and the
-        // first-run intro still play.
-        let play_logo = process_movies && !options_profile.skip_startup_logo;
-        let mut startup_splash = if process_movies {
-            startup_asset_manager
-                .as_ref()
-                .zip(startup_fnt.as_ref())
-                .and_then(|(assets, fnt)| {
-                    startup_splash::StartupSplashPresentation::build(
-                        &gpu,
-                        &batch_renderer,
-                        assets,
-                        startup_csf.as_ref(),
-                        fnt,
-                        gpu.config.width,
-                        gpu.config.height,
-                        options_profile.yr_original_style,
-                    )
-                    .map_err(|err| log::warn!("Could not build retail startup splash: {err:#}"))
-                    .ok()
-                })
+        // `[VERA] SkipIntro=` starts straight at the main menu: no logo, no
+        // splash and no first-run intro, which stays due for a later start.
+        // The load then runs behind the black frame presented below.
+        let play_startup = process_movies && !options_profile.skip_intro;
+        let mut startup_splash = if play_startup {
+            startup_asset_manager.as_ref().and_then(|assets| {
+                startup_splash::StartupSplashPresentation::build(
+                    &gpu,
+                    &batch_renderer,
+                    assets,
+                    startup_csf.as_ref(),
+                    &bit_font,
+                    gpu.config.width,
+                    gpu.config.height,
+                    options_profile.yr_original_style,
+                )
+                .map_err(|err| log::warn!("Could not build retail startup splash: {err:#}"))
+                .ok()
+            })
         } else {
             None
         };
@@ -627,13 +694,14 @@ impl App {
             // Without it the splash goes up now and the load is spent inside
             // its hold. A present that did not reach the screen stays unarmed
             // for the frame loop to retry.
-            let splash = startup_splash.as_mut().filter(|_| !play_logo);
+            let splash = startup_splash.as_mut().filter(|_| !play_startup);
             match startup_splash::render_and_present(
                 &gpu,
                 &batch_renderer,
                 &shell_surface_presenter,
                 &depth_view,
                 &fps_overlay,
+                &bit_font,
                 splash.as_deref(),
             ) {
                 Ok(true) => {
@@ -906,7 +974,7 @@ impl App {
                 // `0x0052CA65`. Sealed captures and client-selected launches
                 // keep the profile untouched, like the retail options snapshot,
                 // and play nothing.
-                let play_intro = process_movies
+                let play_intro = play_startup
                     && game_config.as_ref().is_some_and(|config| {
                         crate::app::persistence::intro_play::consume(config.paths.settings_dir())
                     });
@@ -933,7 +1001,7 @@ impl App {
                             options_profile.render_interpolation,
                         ),
                     sinking_waterlines: Default::default(),
-                    barrel_image_pitches: Default::default(),
+                    voxel_images: Default::default(),
                     building_zshape: None,
                     power_bar_anim: crate::ui::sidebar::PowerBarAnimState::new(),
                     sidebar_gadget_state: crate::ui::sidebar::gadget_flash::SidebarGadgetState::new(
@@ -944,12 +1012,10 @@ impl App {
                     sidebar_layout_spec,
                     tooltips: startup_tooltips,
                     tooltip_epoch: Instant::now(),
-                    message_list: crate::ui::messages::MessageList::new(
-                        3,
-                        0,
-                        crate::ui::messages::MESSAGE_MAX_VISIBLE_RETAIL,
-                        0,
-                    ),
+                    // The Constructor `0x005D39D0` (from Session's static
+                    // constructor `0x00697256`) leaves an empty list that
+                    // nothing posts to before Read_Scenario's Init.
+                    message_list: crate::ui::messages::MessageList::scenario(),
                     chat: Default::default(),
                     beacons: Default::default(),
                     in_game_menu: crate::ui::pause_menu::InGameMenuState::default(),
@@ -958,6 +1024,7 @@ impl App {
                     pause_menu_interaction: Default::default(),
                     pause_menu_template: Default::default(),
                     internet_pause: Default::default(),
+                    display_pause: Default::default(),
                     abort_secondary: Default::default(),
                     sound_dialog: None,
                     abort_buttons: Default::default(),
@@ -977,10 +1044,14 @@ impl App {
                     talk_bubble: Default::default(),
                     electric_bolts: Default::default(),
                     radiation_beams: Default::default(),
+                    tactical_composite: Default::default(),
+                    airstrike_shades: Default::default(),
+                    placement_range_pulse: Default::default(),
                     superweapon_range_pulse: Default::default(),
                     detail: Default::default(),
                     hidden_super_anims: Default::default(),
                     super_timer_blinks: Default::default(),
+                    super_timer_next_flip_ms: None,
                     super_timer_dock: Default::default(),
                     minimap: None,
                     radar_anim: None,
@@ -1031,15 +1102,18 @@ impl App {
                     unit_atlas: None,
                     palette_set: None,
                     sprite_atlas: None,
+                    atlas_growth: Default::default(),
                     overlay_atlas: None,
                     bridge_atlas: None,
                     sidebar_cameo_atlas: None,
                     sidebar_chrome: None,
                     outcome_banner_side_art: None,
+                    end_game_banner: None,
                     software_cursor: startup_software_cursor,
                 },
                 match_audio: Default::default(),
                 match_diagnostics: Default::default(),
+                network_quality: Default::default(),
                 #[cfg(feature = "telemetry-dashboard")]
                 telemetry_timing: Default::default(),
                 #[cfg(feature = "telemetry-dashboard")]
@@ -1071,10 +1145,13 @@ impl App {
             },
             frontend: crate::app::frontend::state::FrontendState {
                 shell_dialog_background: None,
+                asset_import: Default::default(),
                 campaign_speed_control: startup_options.campaign_speed_control,
                 external_launch: false,
                 external_launch_error: None,
-                external_match_result: None,
+                match_result: None,
+                match_result_at: None,
+                match_winners: None,
                 external_progress: Default::default(),
                 network_goodbye_deadline: None,
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -1090,11 +1167,15 @@ impl App {
                 random_map_generation: None,
                 random_map_retention: RandomMapGenerationRetention::default(),
                 skirmish_preview_texture: None,
+                preview_zoom: None,
                 loading_screen_atlas: None,
                 loading_progress:
                     crate::app::loading::pump::LoadingProgressState::standard_skirmish(),
                 frontend_rules: startup_rules,
                 shell_preview_overlay_registry: None,
+                map_library: Default::default(),
+                login_info: Default::default(),
+                map_pictures: Default::default(),
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
                 updater: Default::default(),
                 skirmish_shell_state,
@@ -1128,6 +1209,7 @@ impl App {
                 startup_intro_pending: false,
                 shell_message_box: None,
                 options_dialog: None,
+                options_reopen_at: None,
                 keyboard_dialog: None,
                 movie_list: None,
                 movie_list_selection: -1,
@@ -1141,10 +1223,12 @@ impl App {
                 wol_account: Default::default(),
                 wol_test_credentials: Vec::new(),
                 native_shell_ui: false,
-                network_options: None,
                 lan: None,
                 multiplayer_setup: None,
                 room_limits: Default::default(),
+                wol_room_name: None,
+                wol_room_unranked: false,
+                lan_rematch: None,
                 network_setup_protocol: None,
                 wol_welcome_art: None,
                 wol_login_art: None,
@@ -1186,7 +1270,7 @@ impl App {
                 status_screen_fill,
                 status_card_glow,
                 bit_font,
-                status_font: crate::render::status_font::StatusFaceCache::new(),
+                window_ui,
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
@@ -1210,6 +1294,8 @@ impl App {
             ),
         };
 
+                // The saved cursor-lock choice; the first focus applies it.
+                state.platform.cursor_confined = state.persistence.options_profile.lock_cursor;
                 // Project all three retained profile gains before any player can start
                 // an audible source. Score also initializes Theme's native +0xC gate,
                 // even without a music device. The profile keeps native negative values
@@ -1220,7 +1306,7 @@ impl App {
                 // starts the first-run intro once the splash hold ends.
                 if process_movies && state.frontend.screen == GameScreen::MainMenu {
                     state.frontend.startup_intro_pending = play_intro;
-                    if play_logo {
+                    if play_startup {
                         Self::start_fullscreen_movie(
                             &mut state,
                             crate::app::frontend::fullscreen_movie::STARTUP_LOGO_MOVIE,
@@ -1263,8 +1349,9 @@ impl App {
 /// `RA2_QUICKPLAY=<map>`: VERA-internal authored-map sandbox using the legacy
 /// Battle loader, with one local house and no generated opponents or forces.
 /// The mode is the roster's Battle row, as the skirmish shell would select it;
-/// without one the shortcut does not launch.
-fn quickplay_launch_session(
+/// without one the shortcut does not launch. Map pictures load their map with
+/// it too (`map_picture::session`).
+pub(crate) fn quickplay_launch_session(
     selected_map: String,
     modes: &[crate::skirmish_modes::SkirmishGameMode],
 ) -> Option<crate::skirmish_launch::SkirmishLaunchSession> {
@@ -1318,13 +1405,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn startup_errors_are_described_in_english_not_host_locale() {
+    fn startup_errors_are_described_in_the_language_in_use_not_the_hosts() {
         // A missing install surfaces as io::ErrorKind::NotFound inside the
-        // asset error. The card cannot draw the host's localized sentence, so
-        // the description must state the cause in English and keep the code.
+        // asset error. The host's sentence for it is in the host's language,
+        // so the description states the cause from the language files (here
+        // English) and keeps the code.
         let io = std::io::Error::from_raw_os_error(3);
         let asset = crate::assets::error::AssetError::Io(io);
-        let err = anyhow::Error::new(asset).context("Could not load the game archives");
+        let err = anyhow::Error::new(asset).context(crate::i18n::tr("VERA:CannotLoadArchives"));
         let text = describe_startup_error(&err);
         assert!(text.is_ascii(), "{text}");
         assert!(text.contains("Could not load the game archives"), "{text}");

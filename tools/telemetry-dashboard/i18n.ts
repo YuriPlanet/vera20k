@@ -67,6 +67,10 @@ const en: Record<string, string> = {
   "cost.unbounded": "Uncapped speed: no finite tick budget",
   "cost.fps": "fps",
   "cost.tickhz": "tick hz",
+  "cost.backlog": "backlog",
+  "cost.skipped": "skipped draws",
+  "cost.catchingUp": "Catching up: running buffered relay frames",
+  "cost.relaySlowed": "The relay is slowing the match for a player who cannot keep up",
   "chart.budget": "budget {ms}ms",
 
   "sec.map": "battlefield",
@@ -407,6 +411,10 @@ const zh: Record<string, string> = {
   "cost.unbounded": "不限速：无有限 tick 预算",
   "cost.fps": "帧率",
   "cost.tickhz": "tick 频率",
+  "cost.backlog": "积压帧",
+  "cost.skipped": "跳过渲染",
+  "cost.catchingUp": "追帧中：正在执行缓存的中继帧",
+  "cost.relaySlowed": "中继正在为跟不上的玩家降速",
   "chart.budget": "预算 {ms}ms",
 
   "sec.map": "战场总览",
@@ -747,6 +755,10 @@ const de: Record<string, string> = {
   "cost.unbounded": "Unbegrenzte Geschwindigkeit: kein endliches Tick-Budget",
   "cost.fps": "FPS",
   "cost.tickhz": "Tick-Rate",
+  "cost.backlog": "Rückstand",
+  "cost.skipped": "übersprungene Bilder",
+  "cost.catchingUp": "Aufholen: gepufferte Relay-Frames laufen",
+  "cost.relaySlowed": "Das Relay verlangsamt das Spiel für einen Spieler, der nicht mithält",
   "chart.budget": "Budget {ms}ms",
 
   "sec.map": "Schlachtfeld",
@@ -1087,6 +1099,10 @@ const fr: Record<string, string> = {
   "cost.unbounded": "Vitesse illimitée : aucun budget de tick fini",
   "cost.fps": "ips",
   "cost.tickhz": "tick/s",
+  "cost.backlog": "retard",
+  "cost.skipped": "images sautées",
+  "cost.catchingUp": "Rattrapage : exécution des trames relais en attente",
+  "cost.relaySlowed": "Le relais ralentit la partie pour un joueur qui ne suit pas",
   "chart.budget": "budget {ms}ms",
 
   "sec.map": "champ de bataille",

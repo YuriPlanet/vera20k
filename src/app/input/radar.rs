@@ -36,6 +36,7 @@ use crate::app::input::dispatch::LeftUp;
 use crate::app::input::entity_pick::HoverObject;
 use crate::app::types::{CursorFeedbackKind, CursorId};
 use crate::render::radar::NativeRadarInputTarget;
+use winit::event::MouseButton;
 
 /// An action `RadarClass::Action` keeps. Its keep table (`0x00653F04`,
 /// indexed by action - 1, `0x00653CA3..0x00653CBC`) keeps Move, NoMove,
@@ -264,8 +265,8 @@ pub(crate) fn action(
     action
 }
 
-/// The radar action for the pixel under the cursor, as [`left_press`],
-/// [`left_release`] and [`cursor`] ask it.
+/// The radar action for the pixel under the cursor, as [`begin_context_press`],
+/// [`finish_order_press`] and [`cursor`] ask it.
 struct Hover {
     target: NativeRadarInputTarget,
     action: Option<RadarAction>,
@@ -338,18 +339,29 @@ pub(crate) fn cursor(state: &AppState) -> CursorId {
         .unwrap_or(CursorId::DefaultMini)
 }
 
-/// A left press on the radar. It holds the gesture for its release and,
-/// without an action, recentres the view.
-pub(crate) fn left_press(state: &mut AppState) {
-    if crate::app::presentation::sidebar_render::try_begin_minimap_drag(state)
+/// Retain an order press on the online radar image until the same button
+/// releases. Hit admission is Radar6539E6..653A83; MatchInputState owns the
+/// pending button and selection-drag cancellation.
+pub(crate) fn begin_order_press(state: &mut AppState, button: MouseButton) -> bool {
+    if !crate::app::presentation::sidebar_render::is_cursor_over_minimap(state) {
+        return false;
+    }
+    state.match_state.input.begin_minimap_press(button)
+}
+
+/// Begin the retail left-button context action, centring the camera on press
+/// when there is no action. An admitted action waits for release.
+pub(crate) fn begin_context_press(state: &mut AppState) {
+    if begin_order_press(state, MouseButton::Left)
         && hover(state).is_none_or(|hover| hover.action.is_none())
     {
-        recentre(state);
+        centre_view_on_pick(state);
     }
 }
 
-/// The left release of a radar press: with an action,
+/// Release the button owning a radar order: with an action,
 /// `DisplayClass::BandBox_LeftUp` for the pick (`0x00653D1A..0x00653D58`).
+/// Retail uses Left; VERA's alternative scheme also enters here with Right.
 ///
 /// For a superweapon action its SPECIAL_PLACE names the first type whose
 /// `Action=` is that action (`SuperWeaponTypeClass::FindFirstOfAction @
@@ -358,8 +370,8 @@ pub(crate) fn left_press(state: &mut AppState) {
 /// type of another action launches that type here, where gamemd launches the
 /// first type of the listed action, or nothing. Frequency: mods only.
 /// Downstream risk: none in retail.
-pub(crate) fn left_release(state: &mut AppState) {
-    if !std::mem::take(&mut state.match_state.input.minimap_dragging) {
+pub(crate) fn finish_order_press(state: &mut AppState, button: MouseButton) {
+    if !state.match_state.input.finish_minimap_press(button) {
         return;
     }
     let Some(Hover {
@@ -379,16 +391,17 @@ pub(crate) fn left_release(state: &mut AppState) {
     );
 }
 
-/// A right press on the radar recentres the view, whatever the action.
-pub(crate) fn right_press(state: &mut AppState) {
+/// Centre the camera immediately on the radar pixel under the cursor,
+/// independent of the selection's action. Retail binds this to right press.
+pub(crate) fn centre_view_at_cursor(state: &mut AppState) {
     if crate::app::presentation::sidebar_render::is_cursor_over_minimap(state) {
-        recentre(state);
+        centre_view_on_pick(state);
     }
 }
 
 /// The view centres on the pick's clamped Cell (`0x00653D7A..0x00653EA0`),
 /// except on the empty Cell (0,0) (`0x00653D84..0x00653D8C`).
-fn recentre(state: &mut AppState) {
+fn centre_view_on_pick(state: &mut AppState) {
     if crate::app::presentation::sidebar_render::minimap_input_target(state)
         .is_some_and(|target| target.cell == (0, 0))
     {

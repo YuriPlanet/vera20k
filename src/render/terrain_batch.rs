@@ -3,10 +3,16 @@
 //! VERA scheduling only: original 4990E0/497390 pixel semantics stay in the
 //! existing shaders. Overlapping conservative clips keep strict source order;
 //! disjoint clips commute and may share one immutable destination snapshot.
+//!
+//! Every wave costs a snapshot and an edit pass (#3605), so dependencies are
+//! exact rectangle intersections. Tiles only narrow the candidates: a tile
+//! lists up to [`TILE_LIST`] commands, and a busier tile falls back to its
+//! conservative latest wave.
 
 use super::DestinationEditCommand;
 
 const TILE: u32 = 32;
+const TILE_LIST: u16 = 16;
 const END: usize = usize::MAX;
 
 #[derive(Clone, Copy, Debug)]
@@ -14,6 +20,7 @@ pub(super) struct TerrainCommand<T = DestinationEditCommand> {
     pub draw: T,
     pub rect: [u32; 4],
     next: usize,
+    wave: usize,
 }
 
 impl<T> TerrainCommand<T> {
@@ -22,8 +29,37 @@ impl<T> TerrainCommand<T> {
             draw,
             rect,
             next: END,
+            wave: 0,
         }
     }
+}
+
+/// One tile's dependency history within a span.
+#[derive(Clone, Copy, Debug)]
+struct Tile {
+    /// One past the latest wave of any command touching this tile; 0 when
+    /// untouched.
+    wave_end: usize,
+    /// Head of this tile's command list in `TerrainBatches::entries`.
+    head: usize,
+    listed: u16,
+    /// More than `TILE_LIST` commands: only `wave_end` is authoritative.
+    overflow: bool,
+}
+
+impl Default for Tile {
+    fn default() -> Self {
+        Self {
+            wave_end: 0,
+            head: END,
+            listed: 0,
+            overflow: false,
+        }
+    }
+}
+
+fn intersects(a: [u32; 4], b: [u32; 4]) -> bool {
+    a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -50,8 +86,10 @@ impl TerrainBatchStats {
 pub(super) struct TerrainBatches<T = DestinationEditCommand> {
     size: [u32; 2],
     columns: u32,
-    grid: Vec<usize>,
+    grid: Vec<Tile>,
     touched: Vec<usize>,
+    /// Per-tile command lists: (command index, next entry).
+    entries: Vec<(usize, usize)>,
     commands: Vec<TerrainCommand<T>>,
     heads: Vec<usize>,
     tails: Vec<usize>,
@@ -65,6 +103,7 @@ impl<T> Default for TerrainBatches<T> {
             columns: 0,
             grid: Vec::new(),
             touched: Vec::new(),
+            entries: Vec::new(),
             commands: Vec::new(),
             heads: Vec::new(),
             tails: Vec::new(),
@@ -78,8 +117,9 @@ impl<T> TerrainBatches<T> {
         // Clear only cells touched by the preceding TREE span. Ordinary draw
         // fences must not turn this into a whole-screen clear per object.
         for index in self.touched.drain(..) {
-            self.grid[index] = 0;
+            self.grid[index] = Tile::default();
         }
+        self.entries.clear();
         if self.size != size {
             self.size = size;
             self.columns = size[0].div_ceil(TILE);
@@ -87,7 +127,7 @@ impl<T> TerrainBatches<T> {
                 .checked_mul(size[1].div_ceil(TILE) as usize)
                 .expect("terrain tile extent fits address space");
             self.grid.clear();
-            self.grid.resize(cells, 0);
+            self.grid.resize(cells, Tile::default());
         }
         self.commands.clear();
         self.heads.clear();
@@ -110,26 +150,51 @@ impl<T> TerrainBatches<T> {
         let x1 = (right - 1) / TILE;
         let y0 = y / TILE;
         let y1 = (bottom - 1) / TILE;
+        // A command follows every earlier command it intersects. Two
+        // intersecting rectangles share a tile, where the earlier one is
+        // either listed or covered by the tile's conservative `wave_end`, so
+        // intersecting rectangles never share a wave.
         let mut wave = 0;
         for ty in y0..=y1 {
             for tx in x0..=x1 {
-                let cell = (ty * self.columns + tx) as usize;
-                wave = wave.max(self.grid[cell]);
+                let tile = self.grid[(ty * self.columns + tx) as usize];
                 self.tile_dependencies += 1;
-            }
-        }
-        // Each shared tile advances strictly. False positives serialize extra
-        // work but can never put intersecting rectangles into the same wave.
-        for ty in y0..=y1 {
-            for tx in x0..=x1 {
-                let cell = (ty * self.columns + tx) as usize;
-                if self.grid[cell] == 0 {
-                    self.touched.push(cell);
+                if tile.overflow {
+                    wave = wave.max(tile.wave_end);
+                    continue;
                 }
-                self.grid[cell] = wave + 1;
+                let mut entry = tile.head;
+                while entry != END {
+                    let (other, next) = self.entries[entry];
+                    let other = &self.commands[other];
+                    if intersects(other.rect, command.rect) {
+                        wave = wave.max(other.wave + 1);
+                    }
+                    entry = next;
+                }
             }
         }
         let index = self.commands.len();
+        for ty in y0..=y1 {
+            for tx in x0..=x1 {
+                let cell = (ty * self.columns + tx) as usize;
+                let tile = &mut self.grid[cell];
+                if tile.wave_end == 0 {
+                    self.touched.push(cell);
+                }
+                tile.wave_end = tile.wave_end.max(wave + 1);
+                if tile.overflow {
+                    continue;
+                }
+                if tile.listed == TILE_LIST {
+                    tile.overflow = true;
+                    continue;
+                }
+                self.entries.push((index, tile.head));
+                tile.head = self.entries.len() - 1;
+                tile.listed += 1;
+            }
+        }
         self.heads.resize(self.heads.len().max(wave + 1), END);
         self.tails.resize(self.tails.len().max(wave + 1), END);
         if self.heads[wave] == END {
@@ -138,7 +203,7 @@ impl<T> TerrainBatches<T> {
             self.commands[self.tails[wave]].next = index;
         }
         self.tails[wave] = index;
-        self.commands.push(command);
+        self.commands.push(TerrainCommand { wave, ..command });
         true
     }
 
@@ -200,6 +265,27 @@ mod tests {
 
     fn overlaps(a: [u32; 4], b: [u32; 4]) -> bool {
         a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]
+    }
+
+    /// Rectangles that only share a 32-px tile commute: one wave, so one
+    /// snapshot and one edit pass instead of two of each.
+    #[test]
+    fn terrain_batches_keep_disjoint_rectangles_in_one_tile_together() {
+        let mut batches = TerrainBatches::default();
+        batches.begin_span([64, 64]);
+        for (i, rect) in [[0, 0, 8, 8], [16, 16, 8, 8], [4, 4, 16, 16]]
+            .into_iter()
+            .enumerate()
+        {
+            assert!(batches.push(command(i as u32, rect)));
+        }
+        assert_eq!(
+            batches
+                .waves()
+                .map(|w| w.map(|c| c.draw.index).collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+            vec![vec![0, 1], vec![2]]
+        );
     }
 
     #[test]

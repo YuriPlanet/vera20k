@@ -215,7 +215,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
         Some(&registry),
         crate::sim::world::FrameEffects::empty(),
     );
-    let graph = sim.planning_draw_graph(owner, &actors, None, None);
+    let graph = sim.planning_draw_graph(owner, None, None);
     assert_eq!(graph.nodes.len(), 1, "one click is one shared waypoint");
     assert_eq!(graph.nodes[0].members, actors);
     assert_eq!(
@@ -243,7 +243,7 @@ fn planning_flags_use_the_production_group_destination_distributor() {
             .collect();
         sim.apply_due_commands(&batch, &rules, 0, Some(&registry), Default::default());
     }
-    let graph = sim.planning_draw_graph(owner, &actors, None, None);
+    let graph = sim.planning_draw_graph(owner, None, None);
     assert_eq!(graph.nodes.len(), 3);
     assert_eq!(graph.nodes[1].incoming.len(), 1);
     assert_eq!(graph.nodes[2].incoming.len(), 1);
@@ -254,11 +254,15 @@ fn planning_flags_use_the_production_group_destination_distributor() {
             .all(|actor| actor.connection.as_ref().unwrap().target == graph.nodes[0].coord)
     );
 
+    // Default rate 5 makes frame 5 the plan events' send boundary.
+    sim.session.set_binary_frame_for_test(4);
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     let command = sim.decode_native_command_record(&commit, 0).unwrap();
     assert!(sim.apply_command("Americans", &command.payload, Some(&rules)));
+    // This component fixture closes the post-DoList publication rung.
+    sim.publish_planning_commands();
     let due = sim.take_frame_commands_for_test();
-    sim.session.set_binary_frame_for_test(1);
+    sim.session.set_binary_frame_for_test(5);
     sim.apply_due_commands(&due, &rules, 2, Some(&registry), Default::default());
     for actor in actors {
         let entity = sim.entities().get(actor).unwrap();

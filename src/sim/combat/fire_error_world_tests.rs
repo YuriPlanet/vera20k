@@ -145,3 +145,59 @@ fn a_mapless_fire_gate_takes_the_shared_range_answer() {
     assert_ne!(error(2, "ART", 4), FireError::Range, "5 cells away");
     assert_eq!(error(2, "ART", 5), FireError::Range, "beyond Range");
 }
+
+/// T18 (`0x006FC2A3`): a BalloonHover target still tethered to its war
+/// factory (`+0x418`, set by the factory's TETHER) and not yet high-flying
+/// is illegal to fire at; once untethered it is a normal target.
+#[test]
+fn a_tethered_low_balloon_is_illegal_to_fire_at() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=TANK\n1=ZEP\n\
+         [InfantryTypes]\n[BuildingTypes]\n[AircraftTypes]\n\
+         [TANK]\nStrength=300\nArmor=heavy\nPrimary=Gun\n\
+         [ZEP]\nStrength=300\nArmor=heavy\nBalloonHover=yes\n\
+         [Gun]\nDamage=50\nROF=30\nRange=6\nWarhead=AP\nOmniFire=yes\n\
+         [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .expect("balloon fixture rules");
+    let mut sim = crate::sim::world::Simulation::new();
+    spawn(
+        &mut sim.substrate.entities,
+        1,
+        "TANK",
+        EntityCategory::Unit,
+        "Americans",
+        (5, 5),
+    );
+    spawn(
+        &mut sim.substrate.entities,
+        2,
+        "ZEP",
+        EntityCategory::Unit,
+        "Soviet",
+        (7, 5),
+    );
+    sim.interner = test_interner();
+    let error = |sim: &crate::sim::world::Simulation| {
+        crate::sim::combat::fire_error_world::FireSubject {
+            world: sim,
+            rules: &rules,
+            overlay_registry: None,
+            fog: None,
+            firer: sim.substrate.entities.get(1).unwrap(),
+            obj: rules.object("TANK").unwrap(),
+            target: Some(crate::sim::combat::TargetKind::Entity(2)),
+            weapon_index: 0,
+        }
+        .fire_error(true)
+    };
+    use crate::sim::combat::fire_error::FireError;
+    assert_ne!(error(&sim), FireError::Illegal, "untethered");
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .tether
+        .set_for_test(Some(99));
+    assert_eq!(error(&sim), FireError::Illegal, "tethered to its factory");
+}

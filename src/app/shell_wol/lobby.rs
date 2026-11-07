@@ -89,6 +89,25 @@ pub(crate) struct WolLobbyGlobals {
     /// WOL reset clears, shares this table.
     pub(crate) ladder: std::collections::HashMap<String, service::WolLadderRecord>,
     pub(crate) high_scores: std::collections::HashMap<String, service::WolHighScoreRecord>,
+    /// VERA: the VERA20K Online season the tables were filled in, `None`
+    /// before its first `ladder` event ([`Self::ladder_season`]).
+    pub(crate) ladder_season: Option<Option<u32>>,
+}
+
+impl WolLobbyGlobals {
+    /// VERA: a `ladder` event from VERA20K Online's `season` (`None` when
+    /// none runs). A season other than the one the tables were filled in
+    /// empties both, so the season before's ranks and badges go; true then,
+    /// for the listed players to be asked again (docs/lobby-protocol.md).
+    pub(crate) fn ladder_season(&mut self, season: Option<u32>) -> bool {
+        let changed = self.ladder_season.is_some_and(|held| held != season);
+        self.ladder_season = Some(season);
+        if changed {
+            self.ladder.clear();
+            self.high_scores.clear();
+        }
+        changed
+    }
 }
 
 /// The user-list sink sends its ladder batch once it holds more than 20
@@ -134,6 +153,9 @@ enum Step {
         name: String,
         deadline: Instant,
     },
+    /// VERA: after a match from VERA's own room, behind a wait box until the
+    /// lobby gives the room back or closes it.
+    ReturningToRoom,
 }
 
 /// Correlation for the online provider only. The lobby step continues to own
@@ -230,6 +252,7 @@ enum AfterLeave {
         channel: WolChannel,
         key: String,
         observe: bool,
+        ranked: bool,
     },
     /// The Quick Match runner's exit (`0x007A03A0..0x007A0410`): it
     /// returns 0 whether or not the leave finished.
@@ -305,8 +328,10 @@ pub(crate) struct WolLobby {
 }
 
 impl WolLobby {
+    /// The modern lobby lists only VERA20K Online; the Quick Match runner,
+    /// which shows no list, looks for its `Lob_40_` lobby in all of them.
     fn set_lobbies(&mut self, mut channels: Vec<WolChannel>) {
-        if self.ui.is_modern() {
+        if self.ui.is_modern() && self.runner != Runner::QuickMatch {
             channels.retain(|channel| channel.name == PUBLIC_LOBBY_NAME);
         }
         self.lobbies = channels;
@@ -443,6 +468,13 @@ pub(crate) fn current_channel(state: &AppState) -> Option<WolChannel> {
     lobby(state)?.current.clone()
 }
 
+/// A leave is out (`WOL:LeavingChannel`): VERA keeps its channel current
+/// until the leave lands, where native's wait (`0x00792BE0`) runs nothing
+/// else first.
+pub(crate) fn leaving(state: &AppState) -> bool {
+    lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::Leaving { .. }))
+}
+
 fn lobby_mut(state: &mut AppState) -> Option<&mut WolLobby> {
     state.frontend.wol.as_mut()?.lobby.as_deref_mut()
 }
@@ -484,6 +516,7 @@ fn admission_context(state: &AppState) -> AdmissionContext {
         quick_match: super::quick_match::mode_active(state),
         clan_id: squad_id(state),
         local_hash: local_ini_hash(state),
+        vera_rooms: modern_lobby(state),
     }
 }
 
@@ -687,9 +720,13 @@ fn listed_requests(listed: &[WolMember], ranked: impl Fn(&str) -> bool) -> Vec<L
     requests
 }
 
+/// VERA: the modern lobby asks for every listed user, not only those its
+/// table lacks, since VERA20K Online's records change with each rated game
+/// while the table lasts the process; the native lobby keeps its records.
 fn request_listed(state: &mut AppState, listed: &[WolMember]) {
+    let modern = modern_lobby(state);
     let ladder = &state.frontend.wol_lobby_globals.ladder;
-    let requests = listed_requests(listed, |key| ladder.contains_key(key));
+    let requests = listed_requests(listed, |key| !modern && ladder.contains_key(key));
     for listed in requests {
         match listed {
             ListedRequest::Squad(squad) => request_squad(state, squad),
@@ -741,6 +778,27 @@ fn insert_members(state: &mut AppState, members: impl IntoIterator<Item = WolMem
             insert_member(&mut lobby.members, member, sort, rank);
         }
     });
+}
+
+/// VERA: a `ladder` event's season ([`WolLobbyGlobals::ladder_season`]).
+/// When it changed, the player list drops the ranks and badges it showed
+/// and, outside a match, asks again for its users' records; after a match
+/// the lobby's list asks anyway.
+pub(super) fn ladder_season(state: &mut AppState, season: Option<u32>) {
+    if !state.frontend.wol_lobby_globals.ladder_season(season) {
+        return;
+    }
+    refill_players(state);
+    if state
+        .frontend
+        .wol
+        .as_ref()
+        .is_none_or(|visit| visit.in_game)
+    {
+        return;
+    }
+    let listed = lobby(state).map_or_else(Vec::new, |lobby| lobby.members.clone());
+    request_listed(state, &listed);
 }
 
 /// The ladder sink's re-sort (`0x007A3966..0x007A39C4`): under a rank
@@ -899,6 +957,9 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         // 0x007879B6: after a lost connection the runner logs in again
         // first, and a failed login ends it (the welcome).
         visit.relogin = Some(postmatch);
+        // The lost connection took the kept game room with it.
+        visit.back_to_room = false;
+        visit.cooperative_resume = None;
         visit.lobby = None;
         visit.page = WolPage::Backdrop { wait: None };
         state.frontend.wol_lobby_art = None;
@@ -921,6 +982,10 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         .shell_controller
         .reset_to(super::WOL_LOBBY_DIALOG, false);
     let now = Instant::now();
+    let returning = postmatch && visit.back_to_room;
+    if !returning {
+        visit.cooperative_resume = None;
+    }
     let resume = !postmatch && visit.lobby.is_some();
     if resume {
         let lobby = visit.lobby.as_deref_mut().expect("checked");
@@ -960,6 +1025,9 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
         for line in crate::rules::ini_value::strtok(&motd, &['\n']) {
             message_line(state, line.to_owned());
         }
+        if modern_lobby(state) {
+            message_line(state, crate::i18n::tr(JOINED_LOBBY_LINE));
+        }
         message_line(state, "\n".to_owned());
     }
     show_wait(state, "GUI:LoginComplete");
@@ -968,9 +1036,130 @@ pub(crate) fn open(state: &mut AppState, postmatch: bool) {
     // 0x00787B33..0x00787B53: the user's own squad.
     request_squad(state, 0);
     super::buddies::restart(state);
+    if returning {
+        await_room(state);
+    } else {
+        list_lobbies(state);
+    }
+    state.platform.window.request_redraw();
+}
+
+/// The runner's first list (`ListChannels(0, 0)`) behind `TXT_REQ_CHANLIST`.
+fn list_lobbies(state: &mut AppState) {
     show_wait(state, "TXT_REQ_CHANLIST");
     request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
-    state.platform.window.request_redraw();
+}
+
+/// VERA: the match came from VERA's own room, which stayed joined. The
+/// lobby gives it back once every player has finished; until then a wait
+/// box shows, whose button gives up the room for the chat lobby.
+fn await_room(state: &mut AppState) {
+    if let Some(lobby) = lobby_mut(state) {
+        lobby.step = Step::ReturningToRoom;
+    }
+    // The chat lobbies still come, so leaving the room later finds one.
+    request(state, WolServiceRequest::ListChannels { kind: 0, flags: 0 });
+    show_wait(state, "TXT_REQ_CHANLIST");
+    let cancel = service::resolve(state, "GUI:Cancel");
+    if let Some(wait) = lobby_mut(state).and_then(|lobby| lobby.wait.as_mut()) {
+        wait.text = crate::i18n::tr("VERA:ReturningToRoom");
+        wait.disconnect = cancel;
+    }
+}
+
+/// VERA: the lobby refused to keep the room (one from before rooms came
+/// back), so a runner waiting for it goes on to the chat lobby.
+pub(super) fn room_refused(state: &mut AppState) {
+    if awaiting_room(state) {
+        room_not_returned(state, false);
+    }
+}
+
+fn awaiting_room(state: &AppState) -> bool {
+    lobby(state).is_some_and(|lobby| matches!(lobby.step, Step::ReturningToRoom))
+}
+
+/// VERA: the kept room is gone (it closed, or the player gave up waiting).
+/// The runner goes on as after any match: the chat-lobby list, then a join.
+/// The join itself leaves the room on the lobby if it is still there.
+fn room_not_returned(state: &mut AppState, closed: bool) {
+    if let Some(visit) = state.frontend.wol.as_mut() {
+        visit.back_to_room = false;
+        visit.cooperative_resume = None;
+    }
+    let Some(lobby) = lobby_mut(state) else {
+        return;
+    };
+    lobby.current = None;
+    lobby.members.clear();
+    // The next waits take their own box, with its Disconnect again.
+    lobby.wait = None;
+    lobby.step = Step::ListingLobbies {
+        deadline: Instant::now() + LIST_WAIT,
+    };
+    if closed {
+        message_line(state, crate::i18n::tr("VERA:GameRoomClosed"));
+    }
+    list_lobbies(state);
+}
+
+/// VERA: the lobby gave back the room this player stayed in, owner first.
+/// Its owner opens the host's setup again from the settings it started
+/// with, or on the campaign's next stage after BC6's Continue; the others
+/// enter it as after a join.
+fn room_reopened(state: &mut AppState, joined: WolJoined) {
+    if !awaiting_room(state) {
+        // The player gave up waiting; the chat-lobby join leaves the room.
+        log::debug!("WOL room reopened after the wait ended");
+        return;
+    }
+    let mut resume = None;
+    if let Some(visit) = state.frontend.wol.as_mut() {
+        visit.back_to_room = false;
+        resume = visit.cooperative_resume.take();
+    }
+    let me = nickname(state);
+    let host = joined
+        .members
+        .iter()
+        .any(|member| member.flags & MEMBER_OPERATOR != 0 && member.name.eq_ignore_ascii_case(&me));
+    let listed = joined.members.clone();
+    let channel = joined.channel.clone();
+    if let Some(lobby) = lobby_mut(state) {
+        lobby.step = Step::Ready;
+    }
+    sort_lobby(state, |lobby, sort, rank| {
+        lobby.users_listed(channel, joined.members, sort, rank);
+    });
+    request_listed(state, &listed);
+    close_wait(state);
+    if host {
+        let observe = state
+            .frontend
+            .multiplayer_shell_runtime
+            .lan_create_observer();
+        commit_create(state, observe);
+        // Before anyone is seated again: the Cooperative mode admits only
+        // its two players.
+        if let Some(resume) = resume.filter(|_| !observe)
+            && let Err(error) = crate::app::shell_network_setup::resume_cooperative(state, resume)
+        {
+            log::warn!("WOL reopened room keeps its mode: {error:#}");
+        }
+        // The players who came back take rows as joiners would, in the
+        // lobby's order, so the host's options name them all.
+        for name in listed
+            .iter()
+            .map(|member| member.name.clone())
+            .filter(|name| !name.eq_ignore_ascii_case(&me))
+        {
+            if let Err(error) = setup::user_joined(state, name) {
+                log::warn!("WOL reopened room: {error:#}");
+            }
+        }
+    } else {
+        enter_game_as_guest(state);
+    }
 }
 
 fn new_runner(
@@ -1083,27 +1272,38 @@ pub(super) fn quick_match_join_game(state: &mut AppState, channel: WolChannel) {
 }
 
 /// `0x00789B60`'s Quick Match branch (`0x00789BA8..0x00789D60`,
-/// `0x00789EC4..0x00789EEE`): no `0xC3`, two users, no key,
-/// `"%s's_game"`, tournament 1 (Quick Co-op 0, `0x00789EC9`), game flags
-/// `0x800` plus `[0xB77DD4]` and no resolution bits; the leave and the
+/// `0x00789EC4..0x00789EEE`): no `0xC3` and no key; the leave and the
 /// create then run as for Create.
 pub(super) fn quick_match_create(state: &mut AppState) {
     let nickname = nickname(state);
     let tournament = i32::from(!super::quick_match::quick_coop(state));
     let (width, _) = options_screen(state);
+    let ex_info = ex_info(state);
     let globals = &mut state.frontend.wol_lobby_globals;
     if width >= 1024 {
         globals.limit_resolution = false;
     }
-    let channel = WolChannel {
-        kind: GAME_CHANNEL,
+    let channel = quick_match_channel(&nickname, tournament, globals.lobby_number, ex_info);
+    leave_then_create(state, channel, String::new(), false, true);
+}
+
+/// `0x00789B60`'s record in Quick Match: Create's record and exInfo
+/// (`0x0077E7A0` at `0x00789D05` runs before the mode branch) with two users
+/// (`[0xB77DC4] = 2`, `0x00789BE0`), tournament 1 (Quick Co-op 0,
+/// `0x00789EC9`) and game flags `0x800` plus `[0xB77DD4]`: no clan or
+/// resolution bits.
+fn quick_match_channel(
+    nickname: &str,
+    tournament: i32,
+    lobby_number: i32,
+    ex_info: String,
+) -> WolChannel {
+    WolChannel {
         max_users: 2,
         tournament,
-        name: format!("{nickname}'s_game"),
-        game_flags: GAME_QUICK_MATCH.wrapping_add(globals.lobby_number as u32),
-        ..Default::default()
-    };
-    leave_then_create(state, channel, String::new(), false);
+        game_flags: GAME_QUICK_MATCH.wrapping_add(lobby_number as u32),
+        ..created_channel(nickname, false, false, 0, lobby_number, ex_info)
+    }
 }
 
 /// A box of the Quick Match runner over `0x117` or the backdrop.
@@ -1231,11 +1431,34 @@ pub(crate) fn open_art(state: &mut AppState) -> bool {
 
 fn refill_games(state: &mut AppState) {
     let sort = state.frontend.wol_lobby_globals.game_sort;
-    let Some(lobby) = lobby_mut(state) else {
+    let Some(lobby) = lobby(state) else {
         return;
     };
-    let rows = game_rows(&lobby.games, sort, lobby.ui.observer);
-    lobby.ui.replace_games(rows);
+    let mut rows = game_rows(&lobby.games, sort, lobby.ui.observer, lobby.ui.is_modern());
+    // VERA: the modern list tags a room whose exInfo names a co-op
+    // campaign's map with the Cooperative mode's name (MPModesMD.ini).
+    let tag = state
+        .frontend
+        .skirmish_modes
+        .iter()
+        .find(|mode| mode.class == crate::skirmish_modes::MpModeClass::Cooperative)
+        .map(|mode| csf(state, &mode.ui_name_key));
+    for row in &mut rows {
+        if cooperative_campaign(state, &lobby.games[row.record]).is_some() {
+            row.tag = tag.clone();
+        }
+    }
+    if let Some(lobby) = lobby_mut(state) {
+        lobby.ui.replace_games(rows);
+    }
+}
+
+/// The co-op campaign whose map a game's exInfo names.
+fn cooperative_campaign(state: &AppState, channel: &WolChannel) -> Option<usize> {
+    state
+        .frontend
+        .multiplayer_shell_runtime
+        .cooperative_campaign_for_scenario(&channel.ex_info().scenario)
 }
 
 fn refill_lobbies(state: &mut AppState) {
@@ -1461,6 +1684,37 @@ fn left_channel(state: &mut AppState) {
     message_line(state, text);
 }
 
+/// The label of VERA's line after the MOTD, once per sign-in, in its chat
+/// lobby, which has no `TXT_JOINED_S` line (VERA's own addition; gamemd's
+/// reads "You joined channel %s").
+const JOINED_LOBBY_LINE: &str = "VERA:JoinedLobby";
+
+/// The Room name VERA's online Create Game starts with; OK with it unchanged
+/// creates gamemd's own name.
+fn default_room_name(nickname: &str) -> String {
+    crate::i18n::tr_fill("VERA:DefaultRoomName", &[("nickname", &nickname)])
+}
+
+/// VERA's line for a guest entering a modern-lobby game room (gamemd's C9
+/// prints none): it names the room's operator, its host, and the room's own
+/// name when the host gave it one, and says who starts the game, since the
+/// room accepts for its guests. `users` is the room's user list without the
+/// local player, as `(name, operator)`.
+fn joined_game_line(users: &[(String, bool)], room: &str) -> Option<String> {
+    let (host, _) = users.iter().find(|(_, operator)| *operator)?;
+    // gamemd's own name is "%s's_game" (`0x00789B60`).
+    Some(if room.eq_ignore_ascii_case(&format!("{host}'s_game")) {
+        crate::i18n::tr_fill("VERA:JoinedGame", &[("host", host)])
+    } else {
+        crate::i18n::tr_fill("VERA:JoinedNamedGame", &[("host", host), ("room", &room)])
+    })
+}
+
+/// The label of VERA's line for the host of a modern-lobby game room
+/// (gamemd's C2 prints none): its guests accept on their own
+/// (`setup::service::auto_accept`).
+const HOST_ROOM_LINE: &str = "VERA:HostRoomHint";
+
 fn modern_lobby(state: &AppState) -> bool {
     lobby(state).is_some_and(|lobby| lobby.ui.is_modern())
 }
@@ -1515,9 +1769,10 @@ fn leave_finished(state: &mut AppState, left: bool) {
             channel,
             key,
             observe,
+            ranked,
         } => {
             close_wait(state);
-            send_create(state, channel, key, observe);
+            send_create(state, channel, key, observe, ranked);
         }
         AfterLeave::Return => {
             close_wait(state);
@@ -1557,9 +1812,11 @@ fn join_failed_locally(state: &mut AppState, game: bool) {
 }
 
 /// The runner returns 0 (`LAB_00787F98`): the dialog closes without a
-/// slide and `WOL_Main` shows the welcome (mode 0).
+/// slide and `WOL_Main` shows the welcome (mode 0), or the online lobby
+/// again for a Quick Match runner that lobby started.
 fn close_runner(state: &mut AppState) {
-    if quick_match_runner(state) {
+    let quick_match = quick_match_runner(state);
+    if quick_match {
         super::quick_match::runner_closed(state);
     }
     if let Some(visit) = state.frontend.wol.as_mut() {
@@ -1567,6 +1824,9 @@ fn close_runner(state: &mut AppState) {
     }
     state.frontend.wol_lobby_art = None;
     state.match_state.session.leave_network();
+    if quick_match && super::quick_match::return_to_lobby(state) {
+        return;
+    }
     App::reopen_wol_welcome(state);
 }
 
@@ -1590,15 +1850,22 @@ pub(crate) fn commit_back(state: &mut AppState) {
     close_runner(state);
 }
 
-/// Buddy List's teardown has run: the runner ends as for Back, but
-/// `WOL_Main` sees mode 5 (`0x0077B482`) and runs the Buddy List runner.
-pub(crate) fn commit_buddy(state: &mut AppState) {
+/// Buddy List's teardown has run (`0x0078BF7D`): the runner ends as for
+/// Back with mode 5 and return mode 4. The mode-loop pass applies and the
+/// login category is unchanged, so `WOL_Main` runs the Buddy List runner at
+/// once (`0x0077B482`).
+/// VERA: the online page's Quick Match ends the runner the same way with
+/// mode 1, so the Quick Match runner `0x0079FC40` follows with the login kept.
+pub(crate) fn commit_runner_switch(state: &mut AppState, mode: crate::ui::wol_shell::WolMode) {
     request(state, WolServiceRequest::LeaveChannel);
     if let Some(visit) = state.frontend.wol.as_mut() {
         visit.lobby = None;
+        visit.mode = Some(mode);
+        visit.return_mode = Some(crate::ui::wol_shell::WolMode::CustomMatch);
     }
     state.frontend.wol_lobby_art = None;
-    super::buddy::enter_from(state, crate::ui::wol_shell::WolMode::CustomMatch);
+    super::apply_wol_preferences(state);
+    super::open_lobby(state, false);
 }
 
 /// The runner's records end with it (the Buddy List runner returned).
@@ -1626,14 +1893,22 @@ pub(crate) fn commit_hide(state: &mut AppState) {
 /// Create's slide has run: `UI__BeginDialog(0xC2)` over a hidden `0x113`.
 pub(crate) fn commit_create(state: &mut AppState, observe: bool) {
     commit_hide(state);
-    App::open_host_setup(state, observe);
+    if App::open_host_setup(state, observe) && modern_lobby(state) {
+        message_line(state, crate::i18n::tr(HOST_ROOM_LINE));
+    }
 }
 
 /// API+0x1C, then `GUI:CreatingChannel` in a box created with flag 1 whose
 /// modal loop waits for the result. The session preparation `0x00789B60`
 /// runs before it (GameMode options, the host node, `[0x8316A4]`) belongs
 /// to the setup owner that creates C2 ([`App::open_host_setup`]).
-fn send_create(state: &mut AppState, channel: WolChannel, key: String, observe: bool) {
+fn send_create(
+    state: &mut AppState,
+    channel: WolChannel,
+    key: String,
+    observe: bool,
+    ranked: bool,
+) {
     // 0x00789F55..0x00789FB4: with registry Options bit 1 clear (VERA reads
     // no registry), the nickname's persona Country and Color become the
     // MultiPlayer picks the host node then takes (0x0069B700/0x0069B720).
@@ -1646,7 +1921,14 @@ fn send_create(state: &mut AppState, channel: WolChannel, key: String, observe: 
             request: None,
         };
     }
-    request(state, WolServiceRequest::CreateChannel { channel, key });
+    request(
+        state,
+        WolServiceRequest::CreateChannel {
+            channel,
+            key,
+            ranked,
+        },
+    );
     show_wait(state, "GUI:CreatingChannel");
 }
 
@@ -1772,15 +2054,21 @@ fn republished_limit(
 }
 
 /// `0x0078F000`, the host's republish after its setup changed: the channel
-/// limit and a fresh exInfo (API+0xA8) replace the Create record's.
-/// RESIDUAL: API+0xFC's count (the limit plus the AI rows) has no field in
-/// VERA's channel record.
+/// limit and a fresh exInfo (API+0xA8) replace the Create record's. VERA's
+/// room gives the most people it takes instead
+/// (`MatchSession::network_people_capacity`), which VERA's lobby lists.
+/// RESIDUAL: API+0xFC's count (the limit plus the AI rows,
+/// `0x0078F1D9..0x0078F1E5`) has no field in VERA's channel record, so a
+/// native room's list adds its AI to the count but not to the capacity.
 pub(crate) fn republish_channel(state: &mut AppState) -> Option<WolChannel> {
     let observer = state
         .frontend
         .multiplayer_shell_runtime
         .lan_create_observer();
-    let max_users = republished_limit(&state.match_state.session, observer)?;
+    let session = &state.match_state.session;
+    let max_users = session
+        .network_people_capacity()
+        .or_else(|| republished_limit(session, observer))?;
     let ex_info = ex_info(state);
     let current = lobby_mut(state)?.current.as_mut()?;
     current.max_users = max_users;
@@ -1792,9 +2080,11 @@ pub(crate) fn republish_channel(state: &mut AppState) -> Option<WolChannel> {
 fn create_confirmed(
     state: &mut AppState,
     password: String,
+    name: Option<String>,
     clan: bool,
     limit: bool,
     observe: bool,
+    ranked: bool,
 ) {
     let nickname = nickname(state);
     let (width, _) = options_screen(state);
@@ -1802,7 +2092,11 @@ fn create_confirmed(
     globals.limit_resolution = limit;
     let lobby_number = globals.lobby_number;
     let ex_info = ex_info(state);
-    let channel = created_channel(&nickname, clan, limit, width, lobby_number, ex_info);
+    let mut channel = created_channel(&nickname, clan, limit, width, lobby_number, ex_info);
+    // VERA's online lobby names the room as its host typed.
+    if let Some(name) = name {
+        channel.name = name;
+    }
     // The key goes to +0xD7 with spaces made '_'; the popup's observe byte
     // becomes the observer preference [0xAC10C8].
     let key = password.replace(' ', "_");
@@ -1815,13 +2109,20 @@ fn create_confirmed(
     };
     lobby.ui.popup = None;
     lobby.ui.observer = observe;
-    leave_then_create(state, channel, key, observe);
+    leave_then_create(state, channel, key, observe, ranked);
 }
 
 /// `0x00789B60`'s leave and create: API+0x24 runs unconditionally, and
 /// once more with the wait (a `0x792BE0(0)` retext: no box is created)
 /// while still joined.
-fn leave_then_create(state: &mut AppState, channel: WolChannel, key: String, observe: bool) {
+/// `ranked` false asks VERA's lobby to keep the room's games unranked.
+fn leave_then_create(
+    state: &mut AppState,
+    channel: WolChannel,
+    key: String,
+    observe: bool,
+    ranked: bool,
+) {
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
@@ -1833,6 +2134,7 @@ fn leave_then_create(state: &mut AppState, channel: WolChannel, key: String, obs
                 channel: channel.clone(),
                 key: key.clone(),
                 observe,
+                ranked,
             },
         };
     }
@@ -1841,7 +2143,7 @@ fn leave_then_create(state: &mut AppState, channel: WolChannel, key: String, obs
         request(state, WolServiceRequest::LeaveChannel);
         retext_wait(state, "WOL:LeavingChannel");
     } else {
-        send_create(state, channel, key, observe);
+        send_create(state, channel, key, observe, ranked);
     }
 }
 
@@ -1945,11 +2247,21 @@ fn popup_action(state: &mut AppState, action: WolPopupAction) {
             limit,
             observe,
             room,
+            name,
+            ranked,
         } => {
             if let Some(room) = room {
                 state.frontend.room_limits = room;
             }
-            create_confirmed(state, password, clan, limit, observe)
+            if let Some(ranked) = ranked {
+                state.frontend.wol_room_unranked = !ranked;
+            }
+            // An untouched Room name keeps gamemd's "%s's_game".
+            let default = default_room_name(&nickname(state));
+            let name = name.filter(|name| *name != default);
+            state.frontend.wol_room_name = name.clone();
+            let ranked = ranked.unwrap_or(true);
+            create_confirmed(state, password, name, clan, limit, observe, ranked)
         }
         WolPopupAction::CreateCancelled => {
             if let Some(lobby) = lobby_mut(state) {
@@ -2117,6 +2429,12 @@ pub(super) fn begin_create(state: &mut AppState) {
     let limit = globals.limit_resolution;
     let squad = squad_id(state);
     let room = state.frontend.room_limits;
+    let ranked = !state.frontend.wol_room_unranked;
+    let name = state
+        .frontend
+        .wol_room_name
+        .clone()
+        .unwrap_or_else(|| default_room_name(&nickname(state)));
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
@@ -2124,8 +2442,11 @@ pub(super) fn begin_create(state: &mut AppState) {
     lobby.ui.game_list.selected = None;
     lobby.covered = true;
     // +0x13 starts as [0xAC10C8] == 1. VERA's lobby also offers its room's
-    // limits, from the host's last choice.
-    let room = lobby.ui.is_modern().then_some(room);
+    // limits, name and Ranked game, from the host's last choice.
+    let room = lobby
+        .ui
+        .is_modern()
+        .then_some((room, name.as_str(), ranked));
     lobby.ui.popup = Some(WolLobbyPopup::create(width, limit, squad, observer, room));
     state
         .frontend
@@ -2236,9 +2557,20 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
         WolLobbyAction::Page => super::page::open_page_dialog(state),
         // 0x0078BF7D: mode 5 with return mode 4; event 6 then ends the
         // runner as Back does, and WOL_Main runs the Buddy List runner.
-        WolLobbyAction::Unported(BUDDY) => {
-            App::leave_shell_dialog(state, shell_transition::ShellExitThen::WolLobbyBuddy);
-        }
+        WolLobbyAction::Unported(BUDDY) => App::leave_shell_dialog(
+            state,
+            shell_transition::ShellExitThen::WolLobbyRunner(
+                crate::ui::wol_shell::WolMode::PlayBuddy,
+            ),
+        ),
+        // VERA: the online page's Quick Match ends the runner as Buddy List
+        // does, with return mode 4, and the Quick Match runner follows.
+        WolLobbyAction::QuickMatch => App::leave_shell_dialog(
+            state,
+            shell_transition::ShellExitThen::WolLobbyRunner(
+                crate::ui::wol_shell::WolMode::QuickMatch,
+            ),
+        ),
         WolLobbyAction::Unported(control) => {
             // Clan/Tournament/News (0x00773E90 web pages) need the
             // embedded browser.
@@ -2292,6 +2624,12 @@ pub(super) fn box_command(state: &mut AppState, control: u16) {
         {
             request(state, WolServiceRequest::CancelWait);
             super::buddy::stopped(state);
+        }
+        WAIT_DISCONNECT
+            if lobby.wait.as_ref().is_some_and(|wait| wait.shown)
+                && matches!(lobby.step, Step::ReturningToRoom) =>
+        {
+            room_not_returned(state, false);
         }
         WAIT_DISCONNECT
             if lobby.wait.as_ref().is_some_and(|wait| wait.shown)
@@ -2431,46 +2769,14 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
     });
     request_listed(state, &listed);
     if joined.channel.kind == GAME_CHANNEL {
-        // The guest dialog C9 over a hidden 0x113; the observer preference
-        // [0xAC10C8] makes the local node an observer.
         close_wait(state);
-        let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
-        let mut local = state.frontend.multiplayer_shell_runtime.local_participant();
-        if observer {
-            local.role = crate::skirmish_launch::LaunchHumanRole::Observer;
-        }
-        // [0x8316A4] = 7 until the host's "O<n>" arrives.
-        App::open_wol_joined_setup(state, local, Some(7));
-        // The user-list sink 0x7A7110: the others as nodes, then the
-        // persona's Country and Color as the MultiPlayer picks
-        // (0x69B760/0x69B7E0) and the first R.
-        let me = nickname(state);
-        let users: Vec<(String, bool)> = lobby(state)
-            .map(|lobby| {
-                lobby
-                    .members
-                    .iter()
-                    .filter(|member| !member.name.eq_ignore_ascii_case(&me))
-                    .map(|member| (member.name.clone(), member.flags & MEMBER_OPERATOR != 0))
-                    .collect()
-            })
-            .unwrap_or_default();
-        if setup::guest_users_listed(state, &users) {
-            super::persona::take_side_and_color(state, &me);
-            setup::send_first_choices(state);
-            if quick_match_runner(state) {
-                super::quick_match::game_joined(state, true);
-            }
-        } else {
-            // 0x7A782A..0x7A788D: no operator, the local tail 0x785740.
-            setup_channel_left(state);
-        }
+        enter_game_as_guest(state);
         return;
     }
     // A chat lobby: its number (0x7A5EFD, any type-0 name), the
-    // TXT_JOINED_S line (not in the modern lobby, which never names its one
-    // chat lobby), the controls back with Join as the selected game admits
-    // for either role.
+    // TXT_JOINED_S line (not in the modern lobby, which prints its own
+    // line once with the MOTD), the controls back with Join as the selected
+    // game admits for either role.
     state.frontend.wol_lobby_globals.lobby_number = joined.channel.joined_lobby_number();
     if quick_match_runner(state) {
         // 0x7A5E86..0x7A5EC8: no TXT_JOINED_S in modes 1-3; the wait closes
@@ -2506,6 +2812,50 @@ fn joined(state: &mut AppState, result: Result<WolJoined, u32>) {
     }
 }
 
+/// A joined game channel: the guest dialog C9 over a hidden 0x113; the
+/// observer preference [0xAC10C8] makes the local node an observer.
+fn enter_game_as_guest(state: &mut AppState) {
+    let observer = state.frontend.multiplayer_shell_runtime.lan_observer();
+    let mut local = state.frontend.multiplayer_shell_runtime.local_participant();
+    if observer {
+        local.role = crate::skirmish_launch::LaunchHumanRole::Observer;
+    }
+    // [0x8316A4] = 7 until the host's "O<n>" arrives.
+    App::open_wol_joined_setup(state, local, Some(7));
+    // The user-list sink 0x7A7110: the others as nodes, then the
+    // persona's Country and Color as the MultiPlayer picks
+    // (0x69B760/0x69B7E0) and the first R.
+    let me = nickname(state);
+    let users: Vec<(String, bool)> = lobby(state)
+        .map(|lobby| {
+            lobby
+                .members
+                .iter()
+                .filter(|member| !member.name.eq_ignore_ascii_case(&me))
+                .map(|member| (member.name.clone(), member.flags & MEMBER_OPERATOR != 0))
+                .collect()
+        })
+        .unwrap_or_default();
+    let modern = modern_lobby(state) && !quick_match_runner(state);
+    if setup::guest_users_listed(state, &users) {
+        super::persona::take_side_and_color(state, &me);
+        setup::send_first_choices(state);
+        if quick_match_runner(state) {
+            super::quick_match::game_joined(state, true);
+        }
+        let room = lobby(state)
+            .and_then(|lobby| lobby.current.as_ref())
+            .map(|channel| channel.name.clone())
+            .unwrap_or_default();
+        if modern && let Some(line) = joined_game_line(&users, &room) {
+            message_line(state, line);
+        }
+    } else {
+        // 0x7A782A..0x7A788D: no operator, the local tail 0x785740.
+        setup_channel_left(state);
+    }
+}
+
 /// `0x007A5890`'s HRESULT branches in Custom Match.
 /// How `0x007A5890` answers a failed join.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2530,6 +2880,10 @@ enum JoinErrorReply {
 /// five minutes: 0x80040072 with the HRESULT customer bit, so it shows the
 /// join ban's text without the channel ban's exit from the lobby.
 pub(crate) const KEPT_OUT_JOIN_ERROR: u32 = 0xA004_0072;
+
+/// VERA's lobby refused a Create because another open room has that name.
+pub(crate) const ROOM_NAME_TAKEN: u32 = 0xA004_0073;
+const ROOM_NAME_TAKEN_TEXT: &str = "VERA:RoomNameTaken";
 
 fn join_error_reply(code: u32, pending: bool) -> JoinErrorReply {
     let reply = |key, close, forget, next_lobby| JoinErrorReply::Box {
@@ -2633,6 +2987,9 @@ fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>) {
                 BoxThen::CreateFailed
             };
             show_box(state, key, false, then);
+            if code == ROOM_NAME_TAKEN {
+                replace_box_body(state, &crate::i18n::tr(ROOM_NAME_TAKEN_TEXT));
+            }
         }
         Ok(members) => {
             close_wait(state);
@@ -2664,8 +3021,8 @@ fn created(state: &mut AppState, result: Result<Vec<WolMember>, u32>) {
             if quick_match {
                 // 0x0078A36C..0x0078A386: modes 1-3 skip C2; the game
                 // channel's nodes run without a dialog.
-                App::open_host_setup(state, false);
-                super::quick_match::created(state, true);
+                let opened = App::open_host_setup(state, false);
+                super::quick_match::created(state, opened);
             } else if buddy {
                 // 0x116 has ended: C2 opens over the empty backdrop.
                 commit_create(state, observe);
@@ -2751,14 +3108,16 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                 }
                 // 0x7A6542..0x7A662D: the lowered name's ladder record and
                 // high score, each unless its table holds it, before the
-                // insert.
+                // insert. VERA: the modern lobby asks for both always, as
+                // for its listed users (request_listed).
                 // RESIDUAL: native kicks a game-channel joiner while a start
                 // is pending ([0xB77DEC]/[0xB77E28]/[0xB77E27]) before these
                 // requests and the insert; VERA kicks in setup::user_joined.
                 let key = name.to_ascii_lowercase();
+                let modern = modern_lobby(state);
                 let globals = &state.frontend.wol_lobby_globals;
-                let ladder = !globals.ladder.contains_key(&key);
-                let high_score = !globals.high_scores.contains_key(&key);
+                let ladder = modern || !globals.ladder.contains_key(&key);
+                let high_score = modern || !globals.high_scores.contains_key(&key);
                 if ladder {
                     request(state, WolServiceRequest::LadderRecords(vec![key.clone()]));
                 }
@@ -2790,6 +3149,8 @@ pub(super) fn service_event(state: &mut AppState, event: WolServiceEvent) {
                 log::warn!("WOL game-channel leave: {error:#}");
             }
         }
+        WolServiceEvent::RoomReopened(joined) => room_reopened(state, joined),
+        WolServiceEvent::ChannelLeft if awaiting_room(state) => room_not_returned(state, true),
         WolServiceEvent::ChannelLeft if in_setup_channel(state) => setup_channel_left(state),
         WolServiceEvent::ChannelLeft => leave_finished(state, true),
         WolServiceEvent::PlayerChoices {
@@ -3306,6 +3667,8 @@ pub(super) fn page_received(state: &mut AppState, from: WolMember, text: Vec<u16
 
 pub(crate) fn update_geometry(state: &mut AppState) {
     let layout = layout(state);
+    let create_rects = create_layout(state);
+    let password_rect = password_layout(state).password;
     let font = &state.renderer.bit_font;
     let Some(lobby) = state
         .frontend
@@ -3330,27 +3693,23 @@ pub(crate) fn update_geometry(state: &mut AppState) {
         .scroll_to_caret((scale.base_rect(layout.chat).w - 3).max(0) as u32, |text| {
             font.text_width(text)
         });
-    let modern = ui.is_modern();
     if let Some(popup) = ui.popup.as_mut() {
-        let (width, height) = (
-            state.renderer.gpu.config.width as i32,
-            state.renderer.gpu.config.height as i32,
-        );
-        let rect = match popup.kind {
-            WolPopupKind::Create(_) => {
-                crate::ui::shell::modal::wol_create_game_layout(width, height, modern).password
-            }
-            WolPopupKind::Password(_) => {
-                crate::ui::shell::modal::wol_channel_password_layout(width, height).password
-            }
-        };
-        let available = (rect.w - 3).max(0) as u32;
+        // Text widths are in the box's authored pixels.
+        let available =
+            |rect: crate::ui::shell::geom::RectPx| (scale.base_rect(rect).w - 3).max(0) as u32;
         match &mut popup.kind {
-            WolPopupKind::Create(create) => create
-                .password
-                .scroll_to_caret(available, |text| font.text_width(text)),
+            WolPopupKind::Create(create) => {
+                create
+                    .password
+                    .scroll_to_caret(available(create_rects.password), |text| {
+                        font.text_width(text)
+                    });
+                if let (Some(name), Some((_, rect))) = (create.name.as_mut(), create_rects.name) {
+                    name.scroll_to_caret(available(rect), |text| font.text_width(text));
+                }
+            }
             WolPopupKind::Password(edit) => {
-                edit.scroll_to_caret(available, |text| font.text_width(text))
+                edit.scroll_to_caret(available(password_rect), |text| font.text_width(text))
             }
         }
     }
@@ -3366,13 +3725,16 @@ pub(crate) fn ime_chat_rect(state: &AppState) -> Option<crate::ui::shell::geom::
         && !super::page::open(state)
         && App::wol_page_is_lobby(state);
     lobby(state)
-        .filter(|lobby| routed && lobby.interactive() && lobby.ui.popup.is_none())
+        .filter(|lobby| {
+            routed && lobby.interactive() && lobby.ui.popup.is_none() && lobby.ui.card.is_none()
+        })
         .map(|_| layout(state).chat)
 }
 
 pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Option<&str>) {
     if shell_transition::blocks_shell_input(state)
         || !lobby(state).is_some_and(WolLobby::interactive)
+        || super::player_card::key_press(state, code)
     {
         return;
     }
@@ -3407,14 +3769,9 @@ pub(crate) fn key_press(state: &mut AppState, code: Option<KeyCode>, text: Optio
 /// The popup control under the pointer.
 fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
     let (x, y) = state.match_state.input.cursor_px();
-    let (width, height) = (
-        state.renderer.gpu.config.width as i32,
-        state.renderer.gpu.config.height as i32,
-    );
     let controls = match popup.kind {
         WolPopupKind::Create(_) => {
-            let layout =
-                crate::ui::shell::modal::wol_create_game_layout(width, height, modern_lobby(state));
+            let layout = create_layout(state);
             [
                 Some((POPUP_OK, layout.ok)),
                 Some((POPUP_CANCEL, layout.cancel)),
@@ -3422,13 +3779,15 @@ fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
                 Some((CREATE_LIMIT, layout.limit)),
                 layout.observe.map(|rect| (CREATE_OBSERVE, rect)),
                 Some((POPUP_PASSWORD, layout.password)),
+                layout.name.map(|(_, rect)| (CREATE_NAME, rect)),
+                layout.ranked.map(|rect| (CREATE_RANKED, rect)),
             ]
             .into_iter()
             .flatten()
             .collect()
         }
         WolPopupKind::Password(_) => {
-            let layout = crate::ui::shell::modal::wol_channel_password_layout(width, height);
+            let layout = password_layout(state);
             vec![
                 (POPUP_OK, layout.ok),
                 (POPUP_CANCEL, layout.cancel),
@@ -3442,13 +3801,36 @@ fn popup_control(state: &AppState, popup: &WolLobbyPopup) -> Option<u16> {
         .map(|(id, _)| id)
 }
 
-/// Where VERA's online Create Game has its room's limits.
-fn popup_room_layout(state: &AppState) -> Option<crate::ui::room_limits::RoomLimitsLayout> {
-    let (width, height) = (
+/// The popups follow the lobby page's shell mapping, so they grow with it.
+pub(crate) fn popup_scale(state: &AppState) -> ShellScale {
+    layout(state).page.scale
+}
+
+fn popup_screen(state: &AppState) -> (i32, i32) {
+    (
         state.renderer.gpu.config.width as i32,
         state.renderer.gpu.config.height as i32,
-    );
-    crate::ui::shell::modal::wol_create_game_layout(width, height, modern_lobby(state)).room
+    )
+}
+
+fn create_layout(state: &AppState) -> crate::ui::shell::modal::WolCreateGameLayout {
+    let (width, height) = popup_screen(state);
+    crate::ui::shell::modal::wol_create_game_layout_on(
+        width,
+        height,
+        modern_lobby(state),
+        popup_scale(state),
+    )
+}
+
+fn password_layout(state: &AppState) -> crate::ui::shell::modal::WolChannelPasswordLayout {
+    let (width, height) = popup_screen(state);
+    crate::ui::shell::modal::wol_channel_password_layout_on(width, height, popup_scale(state))
+}
+
+/// Where VERA's online Create Game has its room's limits.
+fn popup_room_layout(state: &AppState) -> Option<crate::ui::room_limits::RoomLimitsLayout> {
+    create_layout(state).room
 }
 
 pub(super) fn cursor_moved(state: &mut AppState) {
@@ -3458,17 +3840,24 @@ pub(super) fn cursor_moved(state: &mut AppState) {
         .and_then(|lobby| lobby.ui.popup.as_ref())
         .map(|popup| popup_control(state, popup));
     let room = popup_room_layout(state);
+    let popup_scale = popup_scale(state);
     let Some(lobby) = lobby_mut(state) else {
         return;
     };
     if let (Some(over), Some(popup)) = (popup_over, lobby.ui.popup.as_mut()) {
         popup.buttons.hovered = over;
         if let (Some(picker), Some(room)) = (popup.room_mut(), room) {
-            picker.drag(&room, ShellScale::RETAIL, x);
+            picker.drag(&room, popup_scale, x);
         }
         state.platform.window.request_redraw();
         return;
     }
+    if super::player_card::cursor_moved(state) {
+        return;
+    }
+    let Some(lobby) = lobby_mut(state) else {
+        return;
+    };
     let ui = &mut lobby.ui;
     ui.buttons.hovered = layout.control_at(x, y);
     let scale = layout.page.scale;
@@ -3505,13 +3894,8 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     let scale = layout.page.scale;
     if let Some(popup) = lobby(state).and_then(|lobby| lobby.ui.popup.clone()) {
         let over = popup_control(state, &popup);
-        let (width, height) = (
-            state.renderer.gpu.config.width as i32,
-            state.renderer.gpu.config.height as i32,
-        );
-        let room = popup_room_layout(state);
+        let rects = create_layout(state);
         let lobby = lobby_mut(state).expect("checked");
-        let modern = lobby.ui.is_modern();
         let popup = lobby.ui.popup.as_mut().expect("checked");
         if !pressed {
             if let Some(picker) = popup.room_mut() {
@@ -3529,24 +3913,20 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         }
         let picked = popup
             .room_mut()
-            .zip(room)
-            .map(|(picker, room)| picker.press(&room, ShellScale::RETAIL, x, y));
+            .zip(rects.room)
+            .map(|(picker, room)| picker.press(&room, scale, x, y));
         let press = match (picked, over) {
             (Some(RoomLimitsPress::Players), _) => Press::Nothing,
             (Some(RoomLimitsPress::Spectators), _) => Press::Cue(LauncherCue::Checkbox),
-            (_, Some(control @ (CREATE_CLAN | CREATE_LIMIT | CREATE_OBSERVE))) => {
-                let rect = crate::ui::shell::modal::wol_create_game_layout(width, height, modern);
+            (_, Some(control @ (CREATE_CLAN | CREATE_LIMIT | CREATE_OBSERVE | CREATE_RANKED))) => {
                 let window = match control {
-                    CREATE_CLAN => rect.clan,
-                    CREATE_LIMIT => Some(rect.limit),
-                    _ => rect.observe,
+                    CREATE_CLAN => rects.clan,
+                    CREATE_LIMIT => Some(rects.limit),
+                    CREATE_RANKED => rects.ranked,
+                    _ => rects.observe,
                 };
                 if window.is_some_and(|window| {
-                    crate::ui::skirmish_shell::checkbox_icon_rect(
-                        window,
-                        crate::ui::shell::geom::ShellScale::RETAIL,
-                    )
-                    .contains(x, y)
+                    crate::ui::skirmish_shell::checkbox_icon_rect(window, scale).contains(x, y)
                 }) && popup.toggle(control)
                 {
                     Press::Cue(LauncherCue::Checkbox)
@@ -3558,6 +3938,11 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                 popup.buttons.press(Some(control));
                 Press::Button
             }
+            (_, Some(control @ (POPUP_PASSWORD | CREATE_NAME))) => {
+                popup.focus(control);
+                popup.buttons.press(None);
+                Press::Nothing
+            }
             _ => {
                 popup.buttons.press(None);
                 Press::Nothing
@@ -3565,6 +3950,9 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         };
         play(state, press);
         state.platform.window.request_redraw();
+        return;
+    }
+    if super::player_card::mouse(state, pressed) {
         return;
     }
     let over = layout.control_at(x, y);
@@ -3591,6 +3979,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
     }
     let now = Instant::now();
     let mut action = None;
+    let mut card = None;
     let mut press = Press::Nothing;
     let mut scrolled = false;
     let enabled = [LOBBIES, GAMES, PLAYERS, CHAT_LOG].map(|id| ui.enabled(id));
@@ -3662,7 +4051,7 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
                             ui.select_game(row, double)
                         }
                         _ => {
-                            ui.toggle_player(row);
+                            card = ui.press_player(row);
                             None
                         }
                     };
@@ -3686,6 +4075,9 @@ pub(super) fn mouse(state: &mut AppState, pressed: bool) {
         }
     }
     play(state, press);
+    if let Some(name) = card {
+        super::player_card::opened(state, &name);
+    }
     if let Some(action) = action {
         dispatch(state, action);
     }
@@ -3832,11 +4224,14 @@ pub(crate) fn status_help(state: &AppState) -> String {
         .map(|key| csf(state, key))
         .unwrap_or_default();
     }
+    if let Some(help) = super::player_card::status_help(state) {
+        return help;
+    }
     let ui = &lobby.ui;
     match ui.buttons.hovered {
         Some(GAMES) => match ui.game_list.hot_row.and_then(|row| ui.game_rows.get(row)) {
             None => csf(state, "STT:LobbyListGames"),
-            Some(row) => game_help(state, row),
+            Some(row) => game_help(state, row, ui.is_modern()),
         },
         Some(PLAYERS) => match ui
             .player_list
@@ -3844,7 +4239,7 @@ pub(crate) fn status_help(state: &AppState) -> String {
             .and_then(|row| ui.player_rows.get(row))
         {
             None => csf(state, "STT:LobbyListUsers"),
-            Some(row) if ui.is_modern() => row.name.clone(),
+            Some(row) if ui.is_modern() => modern_user_help(state, row),
             Some(row) => {
                 let member = lobby.members.iter().find(|member| member.name == row.name);
                 user_help(state, &row.name, member)
@@ -3857,6 +4252,37 @@ pub(crate) fn status_help(state: &AppState) -> String {
     }
 }
 
+/// VERA's help for a modern player row: the name, then its badge's name and
+/// the season's rank and OS as the player card shows them, or Unranked; the
+/// name alone without a badge.
+fn modern_user_help(state: &AppState, row: &WolPlayerRow) -> String {
+    let Some(badge) = row
+        .score_icons
+        .iter()
+        .find(|(_, x)| *x == PLAYER_BADGE_X)
+        .and_then(|(file, _)| badge_name_key(file))
+        .map(|key| csf(state, key))
+    else {
+        return row.name.clone();
+    };
+    let ladder = &state.frontend.wol_lobby_globals.ladder;
+    match ladder.get(&row.name.to_ascii_lowercase()) {
+        Some(record) => crate::i18n::fill(
+            &csf(state, "VERA:PlayerHelp"),
+            &[
+                ("name", &row.name),
+                ("badge", &badge),
+                ("rank", &record.rank),
+                ("os", &record.os_text()),
+            ],
+        ),
+        None => crate::i18n::fill(
+            &csf(state, "VERA:PlayerHelpUnranked"),
+            &[("name", &row.name), ("badge", &badge)],
+        ),
+    }
+}
+
 /// `0x00780A90`: `"<nick> : "`, then `TXT_RANK` and the ladder rank or
 /// `TXT_UNRANKED`, then `": "` and the clan name (`+0x2E`, else the tag
 /// `+0x57`) when there is one, then `" : "` and `WOL:Locale%02d` for a
@@ -3864,12 +4290,12 @@ pub(crate) fn status_help(state: &AppState) -> String {
 /// name (`0x007B5B30`). A player row passes its user record; a game row's
 /// record (`0x00780E30`) holds only the host's name, so no clan.
 /// RESIDUAL: the lobby's locale queue `0xB765F8` (filled at `0x007A73C8`
-/// and `0x007A6495`) is not ported; only the user's own locale request
-/// fills the locale table.
+/// and `0x007A6495`) is not ported; only the user's own locale request and
+/// VERA's player card fill the locale table.
 fn user_help(state: &AppState, name: &str, member: Option<&WolMember>) -> String {
-    let Some(visit) = state.frontend.wol.as_ref() else {
+    if state.frontend.wol.is_none() {
         return String::new();
-    };
+    }
     let key = name.to_ascii_lowercase();
     let mut help = format!("{name} : ");
     match state.frontend.wol_lobby_globals.ladder.get(&key) {
@@ -3891,13 +4317,22 @@ fn user_help(state: &AppState, name: &str, member: Option<&WolMember>) -> String
             help.push_str(clan);
         }
     }
-    if visit.api
-        && let Some(locale) = visit.locales.get(&key).filter(|locale| **locale != 0)
-    {
+    if let Some(locale) = locale_name(state, name) {
         help.push_str(" : ");
-        help.push_str(&csf(state, &format!("WOL:Locale{locale:02}")));
+        help.push_str(&locale);
     }
     help
+}
+
+/// `WOL:Locale%02d` of the user's known nonzero locale, by the ASCII-lowered
+/// name, while the WOLAPI object exists (`0x00780A90`'s locale part).
+pub(super) fn locale_name(state: &AppState, name: &str) -> Option<String> {
+    let visit = state.frontend.wol.as_ref().filter(|visit| visit.api)?;
+    let locale = *visit
+        .locales
+        .get(&name.to_ascii_lowercase())
+        .filter(|locale| **locale != 0)?;
+    Some(csf(state, &format!("WOL:Locale{locale:02}")))
 }
 
 /// `0x00780D90`: `TXT_RANDOM_MAP_DESCRIPTION` for `RandMap.Sed`, else the
@@ -3925,8 +4360,8 @@ fn scenario_description(state: &AppState, scenario: &str) -> String {
 
 /// `0x00780E30`: the host (the name up to `'`, at most 10 characters), the
 /// ping, then `", "` and the map when exInfo names a scenario `0x00780D90`
-/// knows.
-fn game_help(state: &AppState, row: &WolGameRow) -> String {
+/// knows. VERA: the modern list's help then names a co-op room's campaign.
+fn game_help(state: &AppState, row: &WolGameRow, modern: bool) -> String {
     let host: String = row
         .name
         .split('\'')
@@ -3944,8 +4379,8 @@ fn game_help(state: &AppState, row: &WolGameRow) -> String {
         )
     };
     let mut help = format!("{}, {ping}", user_help(state, &host, None));
-    let scenario = lobby(state)
-        .and_then(|lobby| lobby.games.get(row.record))
+    let channel = lobby(state).and_then(|lobby| lobby.games.get(row.record));
+    let scenario = channel
         .map(|channel| channel.ex_info().scenario)
         .unwrap_or_default();
     if !scenario.is_empty() {
@@ -3954,6 +4389,19 @@ fn game_help(state: &AppState, row: &WolGameRow) -> String {
             help.push_str(", ");
             help.push_str(&name);
         }
+    }
+    if let Some(key) = channel
+        .filter(|_| modern)
+        .and_then(|channel| cooperative_campaign(state, channel))
+        .and_then(|campaign| {
+            state
+                .frontend
+                .multiplayer_shell_runtime
+                .cooperative_campaign_name(campaign)
+        })
+    {
+        help.push_str(", ");
+        help.push_str(&csf(state, key));
     }
     help
 }
@@ -4004,6 +4452,20 @@ mod tests {
     }
 
     #[test]
+    fn a_joined_game_line_names_the_operator_not_the_first_user() {
+        let users = [("Guest".to_owned(), false), ("Host".to_owned(), true)];
+        assert_eq!(
+            joined_game_line(&users, "Host's_game").as_deref(),
+            Some("You have joined Host's game. Host starts it when everyone is here.")
+        );
+        assert_eq!(
+            joined_game_line(&users, "No rush").as_deref(),
+            Some("You have joined Host's game (No rush). Host starts it when everyone is here.")
+        );
+        assert_eq!(joined_game_line(&users[..1], "No rush"), None);
+    }
+
+    #[test]
     fn saved_test_preference_cannot_load_demo_games_in_ordinary_play() {
         let saved_test_service = true;
         assert_eq!(
@@ -4041,7 +4503,7 @@ mod tests {
         lobby.set_lobbies(channels.clone());
         assert_eq!(lobby.lobbies.len(), 1);
         assert_eq!(lobby.lobbies[0].name, "Lob_41_2");
-        assert_eq!(lobby.ui.page_spec().stacked.len(), 3);
+        assert_eq!(lobby.ui.page_spec().stacked.len(), 4);
         let names = lobby_base_names(visit.modern_ui(), str::to_owned);
         assert_eq!(WolLobbyRow::joined_name(2, &names), "VERA20K Online");
         visit.set_legacy_ui(true);
@@ -4057,6 +4519,33 @@ mod tests {
         let names = lobby_base_names(visit.modern_ui(), str::to_owned);
         assert_eq!(WolLobbyRow::joined_name(2, &names), "TXT_LOB_3");
         assert_eq!(legacy.ui.page_spec().stacked.len(), 8);
+    }
+
+    /// The online Quick Match lobby `Lob_40_0`: the modern lobby leaves it
+    /// out, and the native list (`0x007806C0`) takes only `Lob_41_` rows,
+    /// but the modern Quick Match runner must find it.
+    #[test]
+    fn only_the_quick_match_runner_lists_the_quick_match_lobby() {
+        let channels: Vec<_> = ["Lob_41_2", "Lob_40_0"]
+            .into_iter()
+            .map(|name| WolChannel {
+                name: name.into(),
+                ..Default::default()
+            })
+            .collect();
+        let listed = |runner| {
+            let mut lobby = new_runner(runner, false, false, Instant::now(), true);
+            lobby.set_lobbies(channels.clone());
+            lobby
+                .lobbies
+                .iter()
+                .any(|channel| channel.name == "Lob_40_0")
+        };
+        assert!(!listed(Runner::Lobby));
+        assert!(listed(Runner::QuickMatch));
+        let rows = crate::ui::wol_lobby::lobby_rows(&channels);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "Lob_41_2");
     }
 
     fn user(name: &str, flags: u32) -> WolMember {
@@ -4279,6 +4768,30 @@ mod tests {
     }
 
     #[test]
+    fn a_ladder_event_from_another_season_empties_the_tables() {
+        let mut globals = WolLobbyGlobals::default();
+        let fill = |globals: &mut WolLobbyGlobals| {
+            globals
+                .ladder
+                .insert("tanya".into(), service::WolLadderRecord::default());
+            globals
+                .high_scores
+                .insert("tanya".into(), service::WolHighScoreRecord::default());
+        };
+        // The first event only notes its season; the same season keeps the records.
+        assert!(!globals.ladder_season(Some(1)));
+        fill(&mut globals);
+        assert!(!globals.ladder_season(Some(1)));
+        assert_eq!((globals.ladder.len(), globals.high_scores.len()), (1, 1));
+        // A new season, and ranked play stopping, each drop the season before's.
+        assert!(globals.ladder_season(Some(2)));
+        assert!(globals.ladder.is_empty() && globals.high_scores.is_empty());
+        fill(&mut globals);
+        assert!(globals.ladder_season(None));
+        assert!(globals.ladder.is_empty() && globals.high_scores.is_empty());
+    }
+
+    #[test]
     fn the_created_record_carries_name_users_and_flags() {
         let channel = created_channel("Tester", false, false, 1024, 3, "25,7,0,0,1,x".into());
         assert_eq!(channel.name, "Tester's_game");
@@ -4298,5 +4811,32 @@ mod tests {
             created_channel("a", false, true, 640, 0, String::new()).screen_limit(),
             640
         );
+    }
+
+    /// The Quick Match game carries Create's exInfo, which the guest's
+    /// `0x0079BA60` checks before it joins.
+    #[test]
+    fn a_quick_match_guest_admits_the_hosts_game() {
+        let ex_info = ExInfo {
+            version: EX_INFO_VERSION,
+            hash: 7,
+            ai_players: 0,
+            observer_taken: 0,
+            observer_open: 0,
+            scenario: "x".into(),
+        };
+        let channel = quick_match_channel("Host", 1, 2, ex_info.write());
+        assert_eq!(channel.name, "Host's_game");
+        assert_eq!(
+            (channel.max_users, channel.tournament, channel.game_flags),
+            (2, 1, GAME_QUICK_MATCH + 2)
+        );
+        let context = AdmissionContext {
+            quick_match: true,
+            clan_id: 0,
+            local_hash: Some(7),
+            vera_rooms: false,
+        };
+        assert_eq!(admit(&channel, false, context), Ok(()));
     }
 }
