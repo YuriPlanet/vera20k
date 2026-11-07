@@ -1263,6 +1263,23 @@ impl Simulation {
         self.transition_house_map(owner, vision::MapTransition::ResetShroud, rules);
     }
 
+    /// Whole-map fixture setup for a loaded world. Unlike FogState's
+    /// footprint-only adapters, this keeps live Techno release/admission and
+    /// the House map-clear state with their production owners.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_map_explored_for_test(
+        &mut self,
+        owner: crate::sim::intern::InternedId,
+        explored: bool,
+        rules: &RuleSet,
+    ) {
+        if explored {
+            self.reveal_map_for_owner(owner, rules);
+        } else {
+            self.reset_shroud_for_owner(owner, rules);
+        }
+    }
+
     /// Execute51 -> Map577C90. Its nonnull House loses241 even when it is
     /// not PlayerPtr; only null/current Player changes the local map. The
     /// allocated-cell receiver leaves487690 counters rather than overwriting
