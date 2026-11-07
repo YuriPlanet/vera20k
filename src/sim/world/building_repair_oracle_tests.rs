@@ -960,3 +960,53 @@ fn a_sale_s_first_visit_stops_the_repair() {
         );
     }
 }
+
+/// Ares 3.0 10014630 (hook 0x4509B4): with `[General]
+/// RepairStopOnInsufficientFunds=no` a human player's broke repair stays on
+/// and heals nothing; a computer house's stops as in stock.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_broke_human_repair_stays_on_without_repair_stop() {
+    for (human, repairing) in [(true, true), (false, false)] {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nRepairStep=4\nRepairStopOnInsufficientFunds=no\n[InfantryTypes]\n\
+             [VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n0=GAPOWR\n\
+             [GAPOWR]\nStrength=1000\nCost=800\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        sim.houses
+            .register(HouseState::new(owner, 0, None, human, 0, 10));
+        let kind = sim.interner.intern("GAPOWR");
+        let mut building = GameEntity::new_at_frame_zero_for_test(
+            1,
+            10,
+            10,
+            0,
+            0,
+            owner,
+            Health::new(500),
+            kind,
+            EntityCategory::Structure,
+            0,
+            5,
+            false,
+        );
+        building.repairing.set_for_test(true);
+        sim.substrate.entities.insert(building);
+        production::update_repair_and_power(
+            &mut sim,
+            &rules,
+            1,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let building = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(
+            (building.health.current(), building.repairing.is_on()),
+            (500, repairing),
+            "human={human}"
+        );
+    }
+}

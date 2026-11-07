@@ -419,7 +419,11 @@ impl Simulation {
         rules: &RuleSet,
         unit_id: u64,
         anims: &mut Vec<ExplosionEffect>,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
     ) {
+        #[cfg(not(feature = "ares"))]
+        let _ = (registry, effects);
         let Some(entity) = self.substrate.entities.get(unit_id) else {
             return;
         };
@@ -455,7 +459,10 @@ impl Simulation {
         }
         // `0x00738749..0x007387FC` sums the stored ore's value into a local
         // nothing reads and calls the ShakeScreen stub (`0x0048DED0`, a bare
-        // `RET`): no effect.
+        // `RET`): no effect. Ares 3.0 1004BD90 (hook 0x738749) puts the
+        // TiberiumExplosive blast there (`sim::ares_tiberium`).
+        #[cfg(feature = "ares")]
+        self.ares_unit_tiberium_explosive(unit_id, rules, registry, effects);
         if !object.destroy_anims.is_empty() {
             let anim = pick_death_anim(&mut self.scenario_rng, &object.destroy_anims);
             self.emit_death_anim(rules, anims, anim, DeathAnimSpawn::at(coord, 0));

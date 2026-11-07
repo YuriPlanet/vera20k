@@ -3508,7 +3508,14 @@ impl Simulation {
         let debris = mineral.debris();
         // 424DDF..424DF3 uses one signed raw draw. Only zero is consumed:
         // abs(raw % 3)==0 also matches wrapped abs(raw)%3==0 at INT_MIN.
-        if !debris.is_empty() && self.scenario_rng.next_raw_abs_modulo(3) == 0 {
+        #[cfg(not(feature = "ares"))]
+        let throw_debris = !debris.is_empty() && self.scenario_rng.next_raw_abs_modulo(3) == 0;
+        // Ares 3.0 10050D50 (hook 0x424DD3), after the Debris count test:
+        // RandomRanged(0, 99) < Debris.Chance replaces the one-in-three draw.
+        #[cfg(feature = "ares")]
+        let throw_debris = !debris.is_empty()
+            && self.scenario_rng.next_range_i32_inclusive(0, 99) < mineral.ares().debris_chance();
+        if throw_debris {
             if let Some(mut child_coord) = self.anim_absolute_coord(id) {
                 child_coord.z = child_coord.z.wrapping_add(10);
                 let selected = self
@@ -3552,16 +3559,33 @@ impl Simulation {
         // RESIDUAL: Start returns nothing, so the bridge-change flag is dropped
         // and a bridge hit here skips that frame's bridge art refresh; only a
         // TiberiumExplosionDamage above retail's 0 reaches it.
+        // Ares 3.0 10050DA0 (hook 0x424EC5): the mineral's ExplosionWarhead
+        // and ExplosionDamage, else C4Warhead and TiberiumExplosionDamage.
+        #[cfg(feature = "ares")]
+        let (warhead_name, damage) = (
+            mineral
+                .ares()
+                .explosion_warhead(Some(rules.bridge_warheads.c4_name.as_str())),
+            mineral
+                .ares()
+                .explosion_damage(rules.combat_damage.tiberium_explosion_damage),
+        );
+        #[cfg(not(feature = "ares"))]
+        let (warhead_name, damage) = (
+            Some(rules.bridge_warheads.c4_name.as_str()),
+            rules.combat_damage.tiberium_explosion_damage,
+        );
         if let Some(raw) = self.anim(id).map(|anim| anim.world_coord)
-            && let Some(warhead) = rules.warhead(&rules.bridge_warheads.c4_name)
+            && let Some(warhead_name) = warhead_name
+            && let Some(warhead) = rules.warhead(warhead_name)
         {
-            let warhead_ref = self.interner.intern(&rules.bridge_warheads.c4_name);
+            let warhead_ref = self.interner.intern(warhead_name);
             crate::sim::combat::world_receiver::apply_area_damage(
                 self,
                 rules,
                 Some(registry),
                 crate::sim::projectile::ProjectileCoord::new(raw.x, raw.y, raw.z),
-                rules.combat_damage.tiberium_explosion_damage,
+                damage,
                 warhead,
                 false,
                 (crate::sim::combat::RAD_NO_ATTACKER, None, warhead_ref),

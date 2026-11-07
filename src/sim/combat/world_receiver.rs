@@ -2356,6 +2356,12 @@ pub(crate) fn handle_death(
                 {
                     death_sounds.push((sound.to_owned(), location.into()));
                 }
+                // Ares 3.0 1004AEC0 (hook 0x702200), between the death sounds
+                // and the Stun: TiberiumSpill.
+                #[cfg(feature = "ares")]
+                if callbacks_enabled(world) {
+                    world.ares_spill_tiberium(dead_id, rules);
+                }
                 // 0x00702206..0x00702210: RADIO OVER_OUT to every contact and
                 // the Stun, between the death sounds and the debris.
                 if callbacks_enabled(world) {
@@ -2364,6 +2370,11 @@ pub(crate) fn handle_death(
                         crate::sim::world::UninitContext::new(rules, overlay_registry)
                             .with_effects(run.effects()),
                     );
+                }
+                // Ares 3.0 1004B050 (hook 0x702216): TiberiumRemains.
+                #[cfg(feature = "ares")]
+                if callbacks_enabled(world) {
+                    world.ares_tiberium_remains(dead_id, rules);
                 }
                 // 0x00702216..0x00702228: then the Fire system link is released.
                 if let Some(dead) = world.substrate.entities.get_mut(dead_id) {
@@ -2673,7 +2684,13 @@ fn finish_concrete_death(
                 dead_id,
                 &mut effects.explosion_effects,
             ) {
-                world.unit_death_explosion(rules, dead_id, &mut effects.explosion_effects);
+                world.unit_death_explosion(
+                    rules,
+                    dead_id,
+                    &mut effects.explosion_effects,
+                    overlay_registry,
+                    frame_effects,
+                );
             }
         }
         EntityCategory::Aircraft => {

@@ -363,7 +363,7 @@ impl Simulation {
                 .is_some_and(|entity| entity.category() == EntityCategory::Unit)
             {
                 crushed_unit = true;
-                self.unit_death_explosion(rules, victim, &mut Vec::new());
+                self.unit_death_explosion(rules, victim, &mut Vec::new(), registry, effects);
             }
             self.free_all_captures(victim, rules, registry, effects);
             // `UnitClass::Crush_Or_Prescatter_Cell @ 0x007416A0`: the
@@ -1503,6 +1503,12 @@ impl Simulation {
         effects: FrameEffects<'_>,
     ) {
         if reason != PerCellReason::Arrival {
+            return;
+        }
+        // Ares 3.0 10049280 (hook 0x4D85E4): tiberium damage first; a Foot it
+        // kills leaves the whole call (0x4D8F29), Techno tail included.
+        #[cfg(feature = "ares")]
+        if self.ares_foot_tiberium_damage(id, rules, registry, effects) {
             return;
         }
         self.refresh_unit_sensor_at_per_cell(id, rules, registry);

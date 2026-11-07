@@ -852,6 +852,19 @@ impl Simulation {
             return Ok(outcome);
         }
 
+        // Ares 3.0 10014BA0 (hook 0x4DA53E) heals a live Foot in tiberium
+        // right after FootAI's TechnoAI call, ahead of 4DA54E.
+        #[cfg(feature = "ares")]
+        if !tube_active_at_entry
+            && sim.substrate.entities.get(stable_id).is_some_and(|entity| {
+                matches!(
+                    entity.category(),
+                    EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+                )
+            })
+        {
+            sim.ares_foot_tiberium_heal(stable_id, rules);
+        }
         // Foot4DA54E follows the post-TechnoAI Object+90 gate above.
         // An entry-active Tube bypasses FootAI; it must retain the byte.
         if !tube_active_at_entry

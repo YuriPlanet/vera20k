@@ -544,9 +544,19 @@ impl Simulation {
             SlaveState::Ready => {}
             SlaveState::Scanning => {
                 let Some(slave) = node.slave else { return };
-                // 0x006AF73B: the Foot Scan_For_Tiberium over SlaveMinerSlaveScan.
-                let range =
-                    crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_slave_scan);
+                // 0x006AF73B: the Foot Scan_For_Tiberium over SlaveMinerSlaveScan;
+                // Ares 3.0 1004D560 (hook 0x6AF748): the slave's
+                // Harvester.ShortScan.
+                let range = crate::sim::miner::ore_scan::scan_cells(
+                    crate::sim::miner::ore_scan::harvester_value(
+                        self.substrate
+                            .entities
+                            .get(slave)
+                            .and_then(|entity| self.entity_object_type(entity, rules)),
+                        crate::sim::miner::ore_scan::HarvesterKey::ShortScan,
+                        rules.general.slave_miner_slave_scan,
+                    ),
+                );
                 match crate::sim::miner::ore_scan::scan_for_tiberium(
                     self, rules, registry, slave, range,
                 ) {
@@ -731,9 +741,18 @@ impl Simulation {
                 }
                 // 0x006AFDF2..0x006AFEBF: the nearest field within
                 // SlaveMinerLongScan (the owner's Scan_For_Tiberium), a cell
-                // there to deploy on, and the drive to it.
-                let range =
-                    crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_long_scan);
+                // there to deploy on, and the drive to it. Ares 3.0 1004D470
+                // (hook 0x6AFDFC): the owner's Harvester.LongScan.
+                let range = crate::sim::miner::ore_scan::scan_cells(
+                    crate::sim::miner::ore_scan::harvester_value(
+                        self.substrate
+                            .entities
+                            .get(master)
+                            .and_then(|entity| self.entity_object_type(entity, rules)),
+                        crate::sim::miner::ore_scan::HarvesterKey::LongScan,
+                        rules.general.slave_miner_long_scan,
+                    ),
+                );
                 let target = crate::sim::miner::ore_scan::scan_for_tiberium(
                     self, rules, registry, master, range,
                 )
@@ -801,9 +820,18 @@ impl Simulation {
                     return;
                 }
                 // 0x006B0062..0x006B009A: no ore within SlaveMinerShortScan
-                // of the refinery puts its relocation to the test.
-                let short =
-                    crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_short_scan);
+                // of the refinery puts its relocation to the test. Ares 3.0
+                // 1004D510 (hooks 0x6B006D/0x6B026C): Harvester.ShortScan.
+                let short = crate::sim::miner::ore_scan::scan_cells(
+                    crate::sim::miner::ore_scan::harvester_value(
+                        self.substrate
+                            .entities
+                            .get(master)
+                            .and_then(|entity| self.entity_object_type(entity, rules)),
+                        crate::sim::miner::ore_scan::HarvesterKey::ShortScan,
+                        rules.general.slave_miner_short_scan,
+                    ),
+                );
                 if crate::sim::miner::ore_scan::scan_for_tiberium(
                     self, rules, registry, master, short,
                 )
@@ -864,7 +892,16 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
     ) -> bool {
-        let long = crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_long_scan);
+        // Ares 3.0 1004D470 (hooks 0x6B00BD/0x6B02CC): Harvester.LongScan.
+        let long =
+            crate::sim::miner::ore_scan::scan_cells(crate::sim::miner::ore_scan::harvester_value(
+                self.substrate
+                    .entities
+                    .get(master)
+                    .and_then(|entity| self.entity_object_type(entity, rules)),
+                crate::sim::miner::ore_scan::HarvesterKey::LongScan,
+                rules.general.slave_miner_long_scan,
+            ));
         let field =
             crate::sim::miner::ore_scan::scan_for_tiberium(self, rules, registry, master, long)
                 .unwrap_or((0, 0));
@@ -882,8 +919,16 @@ impl Simulation {
             (spot.1 as i16).wrapping_sub(fy),
         );
         let to_own = cell_distance(own.0.wrapping_sub(fx), own.1.wrapping_sub(fy));
+        // Ares 3.0 1004D4C0 (hook 0x6B01A3): Harvester.ScanCorrection.
         let correction =
-            crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_scan_correction);
+            crate::sim::miner::ore_scan::scan_cells(crate::sim::miner::ore_scan::harvester_value(
+                self.substrate
+                    .entities
+                    .get(master)
+                    .and_then(|entity| self.entity_object_type(entity, rules)),
+                crate::sim::miner::ore_scan::HarvesterKey::ScanCorrection,
+                rules.general.slave_miner_scan_correction,
+            ));
         correction.wrapping_add(to_spot) < to_own
     }
 
@@ -995,14 +1040,28 @@ impl Simulation {
         if crate::sim::miner::ore_scan::cell_is_tiberium_land(self, registry, cell) {
             return true;
         }
-        if rules
-            .general
-            .slave_miner_kick_frame_delay
-            .wrapping_add(stamp)
-            < Self::now_frame(&self.session)
+        // Ares 3.0 1004D3F0 (hook 0x6B1065): the owner's Harvester.KickDelay,
+        // where a negative delay never wakes, then its Harvester.ShortScan.
+        let object = self
+            .substrate
+            .entities
+            .get(master)
+            .and_then(|entity| self.entity_object_type(entity, rules));
+        let delay = crate::sim::miner::ore_scan::harvester_value(
+            object,
+            crate::sim::miner::ore_scan::HarvesterKey::KickDelay,
+            rules.general.slave_miner_kick_frame_delay,
+        );
+        if !(crate::rules::ARES_ENABLED && delay < 0)
+            && delay.wrapping_add(stamp) < Self::now_frame(&self.session)
         {
-            let range =
-                crate::sim::miner::ore_scan::scan_cells(rules.general.slave_miner_short_scan);
+            let range = crate::sim::miner::ore_scan::scan_cells(
+                crate::sim::miner::ore_scan::harvester_value(
+                    object,
+                    crate::sim::miner::ore_scan::HarvesterKey::ShortScan,
+                    rules.general.slave_miner_short_scan,
+                ),
+            );
             return crate::sim::miner::ore_scan::scan_for_tiberium(
                 self, rules, registry, master, range,
             )
@@ -1205,11 +1264,18 @@ impl Simulation {
         let entity = self.substrate.entities.get(id)?;
         entity.slave_manager.as_ref()?;
         let started = entity.mission.mission_start_frame() as i32;
-        if rules
-            .general
-            .slave_miner_kick_frame_delay
-            .wrapping_add(started)
-            >= Self::now_frame(&self.session)
+        // Ares 3.0 1004D5F0/1004D5A0 (hooks 0x74081F/0x74410D): the Unit's
+        // Harvester.KickDelay; a negative delay never kicks.
+        let delay = crate::sim::miner::ore_scan::harvester_value(
+            self.substrate
+                .entities
+                .get(id)
+                .and_then(|entity| self.entity_object_type(entity, rules)),
+            crate::sim::miner::ore_scan::HarvesterKey::KickDelay,
+            rules.general.slave_miner_kick_frame_delay,
+        );
+        if crate::rules::ARES_ENABLED && delay < 0
+            || delay.wrapping_add(started) >= Self::now_frame(&self.session)
         {
             return None;
         }

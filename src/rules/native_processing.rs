@@ -2079,6 +2079,18 @@ impl ProcessedRulesLayers {
             })
     }
 
+    /// The retained TiberiumExt of each `[Tiberiums]` type, in order.
+    #[cfg(feature = "ares")]
+    pub(crate) fn tiberium_ext_states(
+        &self,
+    ) -> impl Iterator<Item = &crate::rules::ares_tiberium::TiberiumExtRules> {
+        self.native_type_construction_trace
+            .registry_state()
+            .tiberiums
+            .iter()
+            .map(|member| &member.tiberium_ext)
+    }
+
     pub(crate) fn combat_damage_death_weapon(&self) -> Option<&str> {
         self.native_type_construction_trace
             .registry_state()
@@ -3716,6 +3728,16 @@ pub(crate) struct AresGlobalControls {
     /// 1004B980) reads it.
     #[serde(default = "AresGlobalControls::default_chrono_infantry_crush")]
     chrono_infantry_crush: bool,
+    /// RulesExt+144 `[CrateRules] RandomCrateMoney` (Valueable<int>,
+    /// constructor 900): the Money crate's random top-up
+    /// (CellClass_CrateBeingCollected_MoneyRandom 1002C8A0, hook 0x48248D).
+    #[serde(default = "AresGlobalControls::default_random_crate_money")]
+    random_crate_money: i32,
+    /// RulesExt+14E `[General] RepairStopOnInsufficientFunds` (Valueable<bool>,
+    /// constructor true, the dword 0x01010100 at +14C): BuildingClass_
+    /// UpdateRepair_Funds 10014630 (hook 0x4509B4).
+    #[serde(default = "AresGlobalControls::default_repair_stop_on_insufficient_funds")]
+    repair_stop_on_insufficient_funds: bool,
     #[serde(default)]
     bounty: crate::rules::ares_bounty::BountyGlobalRules,
     #[serde(default)]
@@ -3728,6 +3750,8 @@ pub(crate) struct AresGlobalControls {
     techno_combat: crate::rules::ares_techno_type::TechnoCombatGlobalRules,
     #[serde(default)]
     building: crate::rules::ares_building_type::BuildingGlobalRules,
+    #[serde(default)]
+    tiberium: crate::rules::ares_tiberium::TiberiumGlobalRules,
 }
 
 #[cfg(feature = "ares")]
@@ -3740,12 +3764,15 @@ impl Default for AresGlobalControls {
             emp_ai_recover_mission: None,
             type_select_use_deploy: Self::default_type_select_use_deploy(),
             chrono_infantry_crush: Self::default_chrono_infantry_crush(),
+            random_crate_money: Self::default_random_crate_money(),
+            repair_stop_on_insufficient_funds: Self::default_repair_stop_on_insufficient_funds(),
             bounty: Default::default(),
             cloak_power: Default::default(),
             warhead: Default::default(),
             veterancy: Default::default(),
             techno_combat: Default::default(),
             building: Default::default(),
+            tiberium: Default::default(),
         }
     }
 }
@@ -3758,6 +3785,10 @@ impl AresGlobalControls {
 
     pub(crate) fn building(&self) -> &crate::rules::ares_building_type::BuildingGlobalRules {
         &self.building
+    }
+
+    pub(crate) fn tiberium(&self) -> &crate::rules::ares_tiberium::TiberiumGlobalRules {
+        &self.tiberium
     }
 
     const fn default_type_select_use_deploy() -> bool {
@@ -3774,6 +3805,22 @@ impl AresGlobalControls {
 
     pub(crate) fn chrono_infantry_crush(&self) -> bool {
         self.chrono_infantry_crush
+    }
+
+    const fn default_random_crate_money() -> i32 {
+        900
+    }
+
+    pub(crate) fn random_crate_money(&self) -> i32 {
+        self.random_crate_money
+    }
+
+    const fn default_repair_stop_on_insufficient_funds() -> bool {
+        true
+    }
+
+    pub(crate) fn repair_stop_on_insufficient_funds(&self) -> bool {
+        self.repair_stop_on_insufficient_funds
     }
 
     pub(crate) fn bounty(&self) -> &crate::rules::ares_bounty::BountyGlobalRules {
@@ -3817,6 +3864,17 @@ impl AresGlobalControls {
                 section.read_ares_bool("TypeSelectUseDeploy", self.type_select_use_deploy);
             self.chrono_infantry_crush =
                 section.read_ares_bool("ChronoInfantryCrush", self.chrono_infantry_crush);
+            // 1002AB60 reads it between IronCurtainFlash and
+            // ChronoInfantryCrush; neither neighbour is a pointer.
+            self.repair_stop_on_insufficient_funds = section.read_ares_bool(
+                "RepairStopOnInsufficientFunds",
+                self.repair_stop_on_insufficient_funds,
+            );
+        }
+        // 1002AB60, after VeteranFlashTimer.
+        if let Some(section) = pass.section("CrateRules") {
+            self.random_crate_money =
+                section.read_ares_int("RandomCrateMoney", self.random_crate_money);
         }
         self.bounty.read_before_type_data(pass);
         //1002AB60 reads DeactivateDim* and the speak delays in AudioVisual.
@@ -4787,6 +4845,11 @@ struct ProcessedType {
     /// ReadINI721B20..721C1E retains these on the same live Tiberium object.
     tiberium_color_scheme: i32,
     tiberium_debris: Vec<String>,
+    /// TiberiumExt (`rules::ares_tiberium`): every reached ReadINI exit
+    /// (hooks 721C7B/721CDC/721CE9) runs LoadFromINI100508D0 on this type.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    tiberium_ext: crate::rules::ares_tiberium::TiberiumExtRules,
     /// HouseType ctor511416 writes-1. Side67259A and the late Side reader
     /// 51209E/4756F0 update this binding on the same retained Country.
     country_side_index: i32,
@@ -5491,6 +5554,8 @@ impl ProcessedType {
             country_color_scheme: 0,
             tiberium_color_scheme: 0,
             tiberium_debris: Vec::new(),
+            #[cfg(feature = "ares")]
+            tiberium_ext: Default::default(),
             country_side_index: -1,
             country_parent: String::new(),
             country_veterancy: CountryVeterancyState::default(),
@@ -5924,6 +5989,22 @@ impl RulesPassProcessor {
         self.allocate_general_references(pass);
         #[cfg(feature = "ares")]
         self.ares_global_controls.read_before_type_data(pass);
+        // The same 1002AB60 reads the tiberium globals after CanMakeStuffUp;
+        // its warhead and anim are Find-only reads against this pass's
+        // registries so far.
+        #[cfg(feature = "ares")]
+        {
+            let mut tiberium = std::mem::take(&mut self.ares_global_controls.tiberium);
+            tiberium.read_before_type_data(pass, |section, key, warhead| {
+                let family = if warhead {
+                    RulesTypeFamily::Warhead
+                } else {
+                    RulesTypeFamily::Animation
+                };
+                self.resolve_existing_type_from(section, key, family)
+            });
+            self.ares_global_controls.tiberium = tiberium;
+        }
         // Phobos `AttachEffectTypeClass::LoadFromINI`'s `Read<true>` type
         // factories run before this pass's type bodies, so a WeaponType or
         // WarheadType only an AttachEffect key names is read in this pass.
@@ -6959,7 +7040,7 @@ impl RulesPassProcessor {
             );
         }
         self.process_house_family(pass, primary_rules);
-        self.process_super_weapon_family(pass, _fixed_eva);
+        self.process_super_weapon_family(pass, _fixed_eva, fixed_sounds);
         self.process_anim_family(fixed_art, fixed_sounds);
         self.process_techno_family(RulesTypeFamily::Building, pass, fixed_art, fixed_sounds);
         self.process_techno_family(RulesTypeFamily::Aircraft, pass, fixed_art, fixed_sounds);
@@ -7268,7 +7349,12 @@ impl RulesPassProcessor {
             .push(i32::try_from(country_index).expect("native Country index exceeds i32"));
     }
 
-    fn process_super_weapon_family(&mut self, pass: &IniFile, _fixed_eva: &EvaRegistry) {
+    fn process_super_weapon_family(
+        &mut self,
+        pass: &IniFile,
+        _fixed_eva: &EvaRegistry,
+        _fixed_sounds: &SoundRegistry,
+    ) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::SuperWeapon) {
             if let Some((_id, raw, effective)) =
@@ -7524,18 +7610,51 @@ impl RulesPassProcessor {
                         // 10075880: AircraftTypeClass::FindIndex, never an
                         // allocation.
                         if initialized {
-                            reads.spy_plane_default = Some(
-                                self.find_existing(RulesTypeFamily::Aircraft, "SPYP")
-                                    .map(|index| {
+                            reads.spy_plane_default =
+                                Some(self.find_existing(RulesTypeFamily::Aircraft, "SPYP").map(
+                                    |index| {
                                         self.resolved_type_key(RulesTypeFamily::Aircraft, index)
-                                    }),
-                            );
+                                    },
+                                ));
                         }
                         reads.spy_plane_type = self.resolve_existing_type_from(
                             &raw,
                             "SpyPlane.Type",
                             RulesTypeFamily::Aircraft,
                         );
+                    } else if is("LightningStorm") {
+                        // SW_LightningStorm::LoadFromINI10072CF0: Nullable
+                        // and NullableVector<AnimTypeClass*> reads use Find
+                        // (1002B4D0, 10072F30), the sounds VocClass::FindIndex
+                        // (10072E70); none allocates.
+                        reads.lightning.bolt_explosion = self.resolve_existing_type_from(
+                            &raw,
+                            "Lightning.BoltExplosion",
+                            RulesTypeFamily::Animation,
+                        );
+                        let current = self.families[&RulesTypeFamily::SuperWeapon][index]
+                            .super_weapon_launch
+                            .lightning()
+                            .clone();
+                        let anims = |key, current: &Option<Vec<String>>| {
+                            read_nullable_type_vector(&raw, key, current.as_ref(), |name| {
+                                self.find_existing(RulesTypeFamily::Animation, name)
+                                    .map(|index| {
+                                        self.resolved_type_key(RulesTypeFamily::Animation, index)
+                                    })
+                            })
+                        };
+                        reads.lightning.lists = Some([
+                            anims("Lightning.Clouds", &current.clouds),
+                            anims("Lightning.Bolts", &current.bolts),
+                            anims("Lightning.Debris", &current.debris),
+                            read_nullable_type_vector(
+                                &raw,
+                                "Lightning.Sounds",
+                                current.sounds.as_ref(),
+                                |name| _fixed_sounds.get(name).map(|entry| entry.id.clone()),
+                            ),
+                        ]);
                     }
                     // 10033670: Nullable<WarheadTypeClass*> through the
                     // Warhead factory, for every type.
@@ -9644,6 +9763,16 @@ impl RulesPassProcessor {
                     self.resolve_list_from(&section, "Debris", RulesTypeFamily::Animation, 0x80)
                 {
                     self.tiberiums[index].tiberium_debris = debris;
+                }
+                // Ares 3.0 100508D0 (hooks 0x721C7B/0x721CDC): the TiberiumExt
+                // keys after Image; its two warheads are Find-only reads.
+                #[cfg(feature = "ares")]
+                {
+                    let mut ext = std::mem::take(&mut self.tiberiums[index].tiberium_ext);
+                    ext.read_pass(&section, |key| {
+                        self.resolve_existing_type_from(&section, key, RulesTypeFamily::Warhead)
+                    });
+                    self.tiberiums[index].tiberium_ext = ext;
                 }
             }
         }

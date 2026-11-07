@@ -1624,6 +1624,12 @@ pub struct ObjectType {
     /// Constructor defaults and executed reads: anytown_damage/unit_unlimbo.
     pub(crate) small_visceroid: bool,
     pub(crate) large_visceroid: bool,
+    /// `TiberiumHeal=` (`TechnoTypeClass+0xC92`): constructor false
+    /// (`0x00710AF0`), ReadBool over the current value at `0x00714C09`. Only
+    /// Ares reads it in play: the Foot heal (`10014BA0`) and the
+    /// TiberiumRemains default (`1004B050`).
+    #[cfg(feature = "ares")]
+    pub(crate) tiberium_heal: bool,
     /// `DeployToLand=` (`TechnoTypeClass+0x6AD`, `TechnoTypeClass::ReadINI`
     /// `0x00714809..0x00714816`, key string `0x00843A90`). Stock sets it on the
     /// Siege Chopper (`[SCHP]`, `[SCHD]`). A Jumpjet Unit with it keeps full
@@ -4957,6 +4963,8 @@ impl ObjectType {
                 && section.read_bool("SmallVisceroid", false),
             large_visceroid: category == ObjectCategory::Vehicle
                 && section.read_bool("LargeVisceroid", false),
+            #[cfg(feature = "ares")]
+            tiberium_heal: section.read_bool("TiberiumHeal", false),
             deploy_to_land: section.read_bool("DeployToLand", false),
             airport_bound: section.read_bool("AirportBound", false),
             fighter: section.read_bool("Fighter", false),

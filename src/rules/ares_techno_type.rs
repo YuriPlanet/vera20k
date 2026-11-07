@@ -42,6 +42,9 @@ pub(crate) struct AresTechnoTypeRules {
     self_healing: SelfHealingTypeRules,
     fall_rate: FallRateTypeRules,
     roles: TypeRoleRules,
+    /// The tiberium and harvester keys (`rules::ares_tiberium`).
+    #[serde(default)]
+    tiberium: crate::rules::ares_tiberium::TiberiumTechnoRules,
 }
 
 /// TechnoTypeExt+0x27C `PassengerTurret` (false), +0x325 `CrashSpin`
@@ -573,6 +576,8 @@ impl AresTechnoTypeRules {
         // After Missile.* and Crashable; AirRate after the cloak sounds.
         self.movement.crash_spin = section.read_ares_bool("CrashSpin", self.movement.crash_spin);
         self.movement.air_rate = section.read_ares_int("AirRate", self.movement.air_rate);
+        // Right after AirRate the tiberium block, later the Harvester.* one.
+        self.tiberium.read_pass(section);
         let roles = &mut self.roles;
         roles.drain_local = section.read_ares_bool("Drain.Local", roles.drain_local);
         roles.drain_amount = section.read_ares_int("Drain.Amount", roles.drain_amount);
@@ -678,6 +683,10 @@ impl AresTechnoTypeRules {
 
     pub(crate) fn roles(&self) -> &TypeRoleRules {
         &self.roles
+    }
+
+    pub(crate) fn tiberium(&self) -> &crate::rules::ares_tiberium::TiberiumTechnoRules {
+        &self.tiberium
     }
 
     /// `Gattling.Cycle`: a charge at the cap restarts the stages

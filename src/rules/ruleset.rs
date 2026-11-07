@@ -5037,6 +5037,18 @@ impl RuleSet {
         self.ares_global_controls.chrono_infantry_crush()
     }
 
+    /// RulesExt `[CrateRules] RandomCrateMoney` (constructor 900).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_random_crate_money(&self) -> i32 {
+        self.ares_global_controls.random_crate_money()
+    }
+
+    /// RulesExt `[General] RepairStopOnInsufficientFunds` (constructor true).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_repair_stop_on_insufficient_funds(&self) -> bool {
+        self.ares_global_controls.repair_stop_on_insufficient_funds()
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn bounty_rules(&self) -> &crate::rules::ares_bounty::BountyGlobalRules {
         self.ares_global_controls.bounty()

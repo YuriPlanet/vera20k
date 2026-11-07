@@ -445,7 +445,13 @@ impl Simulation {
             let bridge_state_changed = if balloon_hover {
                 self.fire_death_weapon(id, rules, overlay_registry, frame_effects)
             } else {
-                self.unit_death_explosion(rules, id, &mut Vec::new());
+                self.unit_death_explosion(
+                    rules,
+                    id,
+                    &mut Vec::new(),
+                    overlay_registry,
+                    frame_effects,
+                );
                 false
             };
             self.uninit_with_context(

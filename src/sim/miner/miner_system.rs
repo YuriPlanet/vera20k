@@ -322,7 +322,22 @@ pub(super) fn process_miner(
     // `+0x3F8 == 0` case takes the same Guard queue early or reaches it
     // through the empty loop; both houses end on Guard, so the human test is
     // inert and not modelled.
-    if !house_owns_dock_instance(sim, rules, snap) {
+    // Ares 3.0 1004D6C0 (hook 0x73E66D) jumps over the Dock= loop to
+    // 0x73E6CF: only a computer house's harvester with no Dock= at all
+    // (0x73E638..0x73E660) still queues Guard.
+    #[cfg(feature = "ares")]
+    let sleeps = sim
+        .interner
+        .object_type(snap.type_id, rules)
+        .is_some_and(|object| {
+            object.dock.is_empty()
+                && !sim.houses.get(&snap.owner).is_some_and(|house| {
+                    house.is_controlled_by_human(sim.session.game_mode_nonzero())
+                })
+        });
+    #[cfg(not(feature = "ares"))]
+    let sleeps = !house_owns_dock_instance(sim, rules, snap);
+    if sleeps {
         queue_guard_from_harvest(sim, snap, rules);
         snap.dispatch_delay = DISPATCH_NEXT_FRAME;
         return;
@@ -424,7 +439,12 @@ fn harvest_looking(
     if teleport_with_nav {
         sim.set_unit_null_destination(id, rules, None, frame_effects);
     }
-    let range = super::ore_scan::scan_cells(rules.general.tiberium_long_scan);
+    // Ares 3.0 1004D640 (hooks 0x73E772/0x73E851): Harvester.LongScan.
+    let range = super::ore_scan::scan_cells(super::ore_scan::harvester_value(
+        sim.interner.object_type(snap.type_id, rules),
+        super::ore_scan::HarvesterKey::LongScan,
+        rules.general.tiberium_long_scan,
+    ));
     if super::ore_scan::search_for_tiberium_and_move(
         sim,
         rules,
@@ -567,7 +587,13 @@ fn harvest_cutting(
     }
     snap.miner.harvesting = false;
     let id = snap.entity_id;
-    let range = super::ore_scan::scan_cells(rules.general.tiberium_short_scan);
+    // Ares 3.0 1004D680 (hooks 0x73E9F1/0x73EA17/0x73EAA6/0x73EAC6):
+    // Harvester.ShortScan.
+    let range = super::ore_scan::scan_cells(super::ore_scan::harvester_value(
+        sim.interner.object_type(snap.type_id, rules),
+        super::ore_scan::HarvesterKey::ShortScan,
+        rules.general.tiberium_short_scan,
+    ));
     if snap.miner.cargo.len() == usize::from(snap.miner.capacity_bales) {
         snap.state = MinerState::ReturnToRefinery;
         let archive = super::ore_scan::scan_for_tiberium(sim, rules, overlay_registry, id, range)
@@ -750,11 +776,17 @@ fn handle_return(
             entity.navigation.stop_moving();
         }
     }
-    let too_far = if teleporter {
-        rules.general.chrono_harv_too_far_distance
-    } else {
-        rules.general.harvester_too_far_distance
-    };
+    // Ares 3.0 1004D710/1004D6D0 (hooks 0x73EE40/0x73EC0E):
+    // Harvester.TooFarDistance over either Rules distance.
+    let too_far = super::ore_scan::harvester_value(
+        Some(requester_type),
+        super::ore_scan::HarvesterKey::TooFarDistance,
+        if teleporter {
+            rules.general.chrono_harv_too_far_distance
+        } else {
+            rules.general.harvester_too_far_distance
+        },
+    );
     if let Some(bay) = narrow
         && return_exceeds_too_far_threshold(sim, id, bay, too_far) == Some(false)
         && radio::transmit(
@@ -975,6 +1007,7 @@ fn queue_guard_from_harvest(sim: &mut Simulation, snap: &MinerSnapshot, rules: &
 /// rules entry).
 ///
 /// [`HouseTracking::owns_any_building`]: crate::sim::house_tracking::HouseTracking::owns_any_building
+#[cfg(not(feature = "ares"))]
 fn house_owns_dock_instance(sim: &Simulation, rules: &RuleSet, snap: &MinerSnapshot) -> bool {
     let Some(harvester) = sim.interner.object_type(snap.type_id, rules) else {
         return true;
