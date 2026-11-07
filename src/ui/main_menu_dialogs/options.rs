@@ -121,8 +121,8 @@ pub(crate) const HOUSE_COLOR_STRENGTH_LABEL: &str = "VERA:HouseColorStrength";
 pub(crate) const HOUSE_COLOR_STRENGTH_HELP: &str = "VERA:HouseColorStrengthHelp";
 /// The Display list's first row: the window system's own choice.
 pub(crate) const DISPLAY_AUTO_LABEL: &str = "VERA:DisplayAuto";
-/// VERA's Language list, and the main menu's button that opens it. Its rows
-/// are each language's own name for itself, so they need no translation.
+/// VERA's Language list on the Interface page. Its rows are each language's
+/// own name for itself, so they need no translation.
 pub(crate) const LANGUAGE_LABEL: &str = "VERA:Language";
 pub(crate) const LANGUAGE_HELP: &str = "VERA:LanguageHelp";
 /// The Developer page's Check for Updates: the desktop updater
@@ -1340,13 +1340,6 @@ impl OptionsDialogState {
         self.language = tag.to_owned();
         self.pending_events
             .push(LauncherOptionsEvent::LanguageSelected(tag.to_owned()));
-    }
-
-    /// The main menu's Language button: the Interface page, its Language list
-    /// open.
-    pub(crate) fn open_language_list(&mut self) {
-        self.select_category(Category::Interface);
-        self.open_combo = Some(LauncherComboId::Language);
     }
 
     /// gamemd-derived: `OptionsClass__ShowLauncherDialog @ 0x0055FC80` gives

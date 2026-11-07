@@ -1275,8 +1275,8 @@ mod tests {
         assert!(state.shell_popup(&page(Category::Audio)).is_none());
     }
 
-    /// The Language list offers each language by its own name and publishes
-    /// a new pick at once; the main menu's button opens it on its page.
+    /// The Language list on the Interface page offers each language by its
+    /// own name and publishes a new pick at once.
     #[test]
     fn the_language_list_publishes_a_new_pick_by_tag() {
         use crate::i18n::LanguageChoice;
@@ -1289,9 +1289,10 @@ mod tests {
             vec![choice("en", "English"), choice("zh-CN", "简体中文")],
             "en".to_owned(),
         );
-        state.open_language_list();
-        assert_eq!(state.category(), Category::Interface);
+        state.select_category(Category::Interface);
         let layout = page(Category::Interface);
+        let face = layout.combo_rect(LauncherComboId::Language).unwrap();
+        state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
         let popup = state.shell_popup(&layout).unwrap();
         assert_eq!(
             (popup.combo, popup.rows, popup.selected),
@@ -1301,18 +1302,20 @@ mod tests {
         // The language in use changes nothing; another publishes its tag.
         let first = popup.row_rect(0);
         state.shell_mouse_down(first.x + 10, first.y + 5, &layout);
-        assert_eq!(
-            state.drain_output().events,
-            [LauncherOptionsEvent::Cue(LauncherCue::ComboClose)]
+        let (open, close) = (
+            LauncherOptionsEvent::Cue(LauncherCue::ComboOpen),
+            LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
         );
-        state.open_language_list();
+        assert_eq!(state.drain_output().events, [open.clone(), close.clone()]);
+        state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
         let second = popup.row_rect(1);
         state.shell_mouse_down(second.x + 10, second.y + 5, &layout);
         assert_eq!(state.shell_language_label(), "简体中文");
         assert_eq!(
             state.drain_output().events,
             [
-                LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
+                open,
+                close,
                 LauncherOptionsEvent::LanguageSelected("zh-CN".to_owned()),
             ]
         );

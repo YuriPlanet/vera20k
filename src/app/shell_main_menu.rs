@@ -1423,7 +1423,6 @@ impl App {
                 MainMenuShellAction::SinglePlayer
                 | MainMenuShellAction::MoviesAndCredits
                 | MainMenuShellAction::Options
-                | MainMenuShellAction::Language
                 | MainMenuShellAction::Network
                 | MainMenuShellAction::WwOnline
                 | MainMenuShellAction::ExitGame => {
@@ -2033,13 +2032,6 @@ impl App {
             }
             MainMenuShellAction::Options => {
                 Self::open_launcher_options_dialog(state);
-            }
-            // VERA's Language button: Options, at its Language list.
-            MainMenuShellAction::Language => {
-                Self::open_launcher_options_dialog(state);
-                if let Some(dialog) = state.frontend.options_dialog.as_mut() {
-                    dialog.open_language_list();
-                }
             }
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);
