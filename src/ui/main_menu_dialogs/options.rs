@@ -86,8 +86,6 @@ pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
     !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 pub(crate) const HD_MAP_PREVIEWS_LABEL: &str = "VERA:HdMapPreviews";
 pub(crate) const HD_MAP_PREVIEWS_HELP: &str = "VERA:HdMapPreviewsHelp";
-pub(crate) const ORIGINAL_FONT_LABEL: &str = "VERA:OriginalFont";
-pub(crate) const ORIGINAL_FONT_HELP: &str = "VERA:OriginalFontHelp";
 pub(crate) const SHIFT_QUEUE_LABEL: &str = "VERA:ShiftQueue";
 /// The two category pages retail's string table has no band name for.
 pub(crate) const CONTROLS_LABEL: &str = "VERA:Controls";
@@ -600,11 +598,6 @@ pub(crate) enum LauncherCheckboxId {
     /// map's `[PreviewPack]` picture. On by default; saved, and the next
     /// preview follows it.
     HdMapPreviews,
-    /// VERA's own box: interface text draws in the game's own GAME.FNT,
-    /// scaled evenly, instead of VERA's vector fonts
-    /// (`render::text_engine`). Characters GAME.FNT lacks still draw from the
-    /// vector fonts. It applies at once and is saved.
-    OriginalFont,
     /// VERA's developer box: the window's FPS readout. Like Full Screen it
     /// shows and changes live state at once, and is never saved: the readout
     /// starts hidden at every launch.
@@ -673,7 +666,6 @@ pub(crate) enum LauncherOptionsEvent {
     HdRadarChanged(bool),
     SmoothSidebarChanged(bool),
     HdMapPreviewsChanged(bool),
-    OriginalFontChanged(bool),
     FpsCounterChanged(bool),
     SkipIntroChanged(bool),
     CustomEndGameBannerChanged(bool),
@@ -724,7 +716,6 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) hd_radar: bool,
     pub(crate) smooth_sidebar: bool,
     pub(crate) hd_map_previews: bool,
-    pub(crate) original_font: bool,
     pub(crate) shift_queue: bool,
     pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
@@ -772,7 +763,6 @@ impl Default for LauncherOptionsValues {
             hd_radar: false,
             smooth_sidebar: false,
             hd_map_previews: true,
-            original_font: true,
             shift_queue: false,
             wol_test_service: false,
             fps_counter: false,
@@ -1174,7 +1164,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::HdRadar => &mut self.values.hd_radar,
             LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
             LauncherCheckboxId::HdMapPreviews => &mut self.values.hd_map_previews,
-            LauncherCheckboxId::OriginalFont => &mut self.values.original_font,
             LauncherCheckboxId::FpsCounter => &mut self.values.fps_counter,
             LauncherCheckboxId::SkipIntro => &mut self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
@@ -1225,9 +1214,6 @@ impl OptionsDialogState {
             LauncherCheckboxId::HdMapPreviews => self
                 .pending_events
                 .push(LauncherOptionsEvent::HdMapPreviewsChanged(checked)),
-            LauncherCheckboxId::OriginalFont => self
-                .pending_events
-                .push(LauncherOptionsEvent::OriginalFontChanged(checked)),
             LauncherCheckboxId::FpsCounter => self
                 .pending_events
                 .push(LauncherOptionsEvent::FpsCounterChanged(checked)),
@@ -1459,7 +1445,6 @@ impl Category {
                 Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
-                Setting::Checkbox(Check::OriginalFont),
             ],
             Self::Interface => &[
                 Setting::List(List::Language),
@@ -1470,7 +1455,6 @@ impl Category {
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
                 Setting::Checkbox(Check::HdMapPreviews),
-                Setting::Checkbox(Check::OriginalFont),
             ],
             Self::Audio => &[
                 Setting::Slider(Slider::Score),
@@ -2157,7 +2141,6 @@ mod tests {
                 Check::HdRadar,
                 Check::SmoothSidebar,
                 Check::HdMapPreviews,
-                Check::OriginalFont,
                 Check::ShiftQueue,
                 Check::FpsCounter,
                 Check::SkipIntro,

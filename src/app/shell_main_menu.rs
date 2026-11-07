@@ -168,13 +168,6 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The next setup screen picks its preview from it.
         self.persistence.options_profile.hd_map_previews = enabled;
     }
-    fn store_original_font(&mut self, enabled: bool) {
-        // Every text path measures and draws in it from the next frame.
-        self.persistence.options_profile.original_font = enabled;
-        self.renderer
-            .bit_font
-            .set_mode(crate::app::persistence::options_profile::font_mode(enabled));
-    }
     fn store_language(&mut self, tag: String) {
         // The open Options page reads its captions again once the events
         // have run; Options' accept writes the choice out.
