@@ -44,7 +44,7 @@ pub(crate) fn launcher_values_from_profile(
         hd_map_previews: profile.hd_map_previews,
         shift_queue: profile.shift_queue,
         wol_test_service: profile.wol_test_service,
-        fps_counter: false,
+        performance_stats: false,
         skip_intro: profile.skip_intro,
         custom_end_game_banner: profile.custom_end_game_banner,
         custom_end_game_score: profile.custom_end_game_score,
@@ -66,19 +66,19 @@ pub(crate) fn launcher_values_from_profile(
 /// Child return and initial open both use this same constructor path.
 /// The Full Screen box shows `full_screen`, the window's own state: the
 /// player can also change it with the window's title-bar button. The FPS
-/// Counter box shows `fps_counter`, the readout's live state, which no profile
+/// Counter box shows `performance_stats`, the readout's live state, which no profile
 /// stores.
 pub(crate) fn launcher_dialog_from_profile(
     profile: &RetailOptionsProfile,
     labels: LauncherOptionsLabels,
     full_screen: bool,
-    fps_counter: bool,
+    performance_stats: bool,
     launcher_audio_available: bool,
     displays: Vec<crate::ui::main_menu_dialogs::options::DisplayChoice>,
 ) -> OptionsDialogState {
     let values = LauncherOptionsValues {
         full_screen,
-        fps_counter,
+        performance_stats,
         ..launcher_values_from_profile(profile)
     };
     OptionsDialogState::new(
@@ -122,7 +122,7 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_language(&mut self, tag: String);
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
-    fn set_fps_counter(&mut self, shown: bool);
+    fn set_performance_stats(&mut self, shown: bool);
     fn store_skip_intro(&mut self, skip: bool);
     /// Whether a finished match draws the country's own end-game picture.
     fn store_custom_end_game_banner(&mut self, enabled: bool);
@@ -181,7 +181,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::WolTestServiceChanged(wol_test_service) => {
             operations.store_wol_test_service(wol_test_service);
         }
-        LauncherOptionsEvent::FpsCounterChanged(shown) => operations.set_fps_counter(shown),
+        LauncherOptionsEvent::PerformanceStatsChanged(shown) => {
+            operations.set_performance_stats(shown)
+        }
         LauncherOptionsEvent::SkipIntroChanged(skip) => {
             operations.store_skip_intro(skip);
         }

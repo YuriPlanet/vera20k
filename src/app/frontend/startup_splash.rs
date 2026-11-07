@@ -244,7 +244,7 @@ pub(crate) fn render_and_present(
     batch: &BatchRenderer,
     presenter: &ShellSurfacePresenter,
     depth: &wgpu::TextureView,
-    fps_overlay: &crate::app::diagnostics::fps_overlay::FpsOverlay,
+    performance_overlay: &crate::app::diagnostics::performance_overlay::PerformanceOverlay,
     font: &BitFont,
     splash: Option<&StartupSplashPresentation>,
 ) -> Result<bool> {
@@ -311,7 +311,7 @@ pub(crate) fn render_and_present(
         }
     }
     presenter.encode_present(&mut encoder, &output.texture);
-    fps_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
+    performance_overlay.encode(gpu, batch, &mut encoder, &output.texture, font, None);
     gpu.queue.submit(std::iter::once(encoder.finish()));
     output.present(&gpu.queue);
     Ok(true)

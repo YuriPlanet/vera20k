@@ -11,7 +11,7 @@ use std::collections::VecDeque;
 const FRAME_TIMER_WINDOW: usize = 60;
 
 /// In-game render phase spans during one observation window: their means for
-/// the dashboard's report, their totals for the FPS panel's Most CPU row.
+/// the dashboard's report, their totals for the performance panel's Most CPU row.
 ///
 /// The spans are wall time from `presentation::render::render_game`; this meter
 /// only sums them, so a single slow frame cannot mislead the report.

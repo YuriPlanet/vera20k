@@ -1158,7 +1158,7 @@ impl ApplicationHandler for App {
                 }
                 // VERA's every-screen keys, as the Keyboard page's VERA section
                 // binds them: Lock Cursor to Window (Ctrl+Alt+L), Full Screen
-                // (Alt+Enter) and FPS Counter (Ctrl+Alt+F) by default. Scroll
+                // (Alt+Enter) and Performance Stats (Ctrl+Alt+F) by default. Scroll
                 // Lock and, on macOS, the system's Ctrl+Cmd+F stay fixed
                 // extras ahead of the bindings. All are consumed before retail
                 // key dispatch, but a key the Keyboard page is capturing goes

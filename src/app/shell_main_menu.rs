@@ -83,9 +83,9 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
     fn set_full_screen(&mut self, full_screen: bool) {
         App::set_full_screen(self, full_screen);
     }
-    fn set_fps_counter(&mut self, shown: bool) {
+    fn set_performance_stats(&mut self, shown: bool) {
         // Live state only; no profile stores it, so each launch starts hidden.
-        self.renderer.fps_overlay.set_visible(shown);
+        self.renderer.performance_overlay.set_visible(shown);
     }
     fn store_original_shape(&mut self, original_shape: bool) {
         self.persistence.options_profile.original_shape = original_shape;
@@ -1168,7 +1168,7 @@ impl App {
             &state.persistence.options_profile,
             labels,
             state.platform.window.fullscreen().is_some(),
-            state.renderer.fps_overlay.is_visible(),
+            state.renderer.performance_overlay.is_visible(),
             state.audio.launcher_audio_available,
             displays,
         );

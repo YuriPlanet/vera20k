@@ -1,4 +1,4 @@
-//! Load on each logical core, for the in-game FPS panel's Cores row.
+//! Load on each logical core, for the in-game performance panel's Cores row.
 //!
 //! This is the whole machine's load, so other programs count too: the
 //! platforms keep busy time per core, not per process and core.

@@ -59,7 +59,7 @@ impl PictureClock {
 /// owners runs (module docs).
 /// `None` keeps every refresh drawn: captures, modals, other screens, replay
 /// matches, a network match's moving composite, recovery line or in-game
-/// menu, exits and loads, the FPS overlay, a held mouse button (gadgets
+/// menu, exits and loads, the performance overlay, a held mouse button (gadgets
 /// repeat on it) and a shake still decaying.
 pub(crate) fn still_frame(
     state: &AppState,
@@ -89,7 +89,7 @@ pub(crate) fn still_frame(
         && state.match_state.scenario_exit.is_none()
         && state.match_state.scenario_outcome.is_none()
         && !crate::app::App::house_outcome_wait_pending(state)
-        && !state.renderer.fps_overlay.is_visible()
+        && !state.renderer.performance_overlay.is_visible()
         && !input.tactical_mouse.left_held()
         && !input.tactical_mouse.right_held()
         && !simulation.is_some_and(|sim| {

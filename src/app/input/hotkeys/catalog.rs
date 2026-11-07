@@ -103,11 +103,11 @@ const CAMERA_COMMANDS: [CommandMetadata; 4] = [
 /// the same setting; each category literal is [`VERA_CATEGORY_KEY`].
 const SHORTCUT_COMMANDS: [CommandMetadata; 4] = [
     command!(
-        HotkeyCommand::FpsCounter,
-        "FpsCounter",
-        "VERA:FpsCounter",
+        HotkeyCommand::PerformanceStats,
+        "PerformanceStats",
+        "VERA:PerformanceStats",
         "VERA:HotkeyCategory",
-        "VERA:FpsCounterDesc",
+        "VERA:PerformanceStatsDesc",
         None
     ),
     command!(

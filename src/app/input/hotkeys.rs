@@ -19,11 +19,11 @@ const VK_ESCAPE: u16 = 0x1b;
 const VK_SPACE: u16 = 0x20;
 const VK_DELETE: u16 = 0x2e;
 
-/// VERA's own commands that come with a key: FPS Counter Ctrl+Alt+F, Lock
+/// VERA's own commands that come with a key: Performance Stats Ctrl+Alt+F, Lock
 /// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter and Render
 /// Interpolation Ctrl+Alt+I. Retail `KEYBOARDMD.INI` binds none of these keys.
 const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 4] = [
-    (HotkeyCommand::FpsCounter, CTRL_BIT | ALT_BIT | 0x46),
+    (HotkeyCommand::PerformanceStats, CTRL_BIT | ALT_BIT | 0x46),
     (HotkeyCommand::LockCursor, CTRL_BIT | ALT_BIT | 0x4c),
     (HotkeyCommand::FullScreen, ALT_BIT | 0x0d),
     (
@@ -93,7 +93,7 @@ pub(crate) enum HotkeyCommand {
     /// VERA's built-in keys in the `vera20k` keyboard category, each with a
     /// default in [`VERA_DEFAULT_KEYS`]. The first three work on every screen
     /// ([`HotkeyBindings::window_command`]); Render Interpolation in a battle.
-    FpsCounter,
+    PerformanceStats,
     LockCursor,
     FullScreen,
     RenderInterpolation,
@@ -451,7 +451,7 @@ impl HotkeyBindings {
             .unwrap_or(HotkeyResolution::Unhandled)
     }
 
-    /// VERA's every-screen commands (FPS Counter, Lock Cursor to Window, Full
+    /// VERA's every-screen commands (Performance Stats, Lock Cursor to Window, Full
     /// Screen), which the window owner runs before any screen's own keys. A
     /// binding on a key that types text, held without Ctrl or Alt, is left
     /// to the battle's hotkey dispatch, which serves the chat edit first, so
@@ -463,7 +463,7 @@ impl HotkeyBindings {
         modifiers: ModifiersState,
     ) -> Option<HotkeyCommand> {
         let HotkeyResolution::Command(
-            command @ (HotkeyCommand::FpsCounter
+            command @ (HotkeyCommand::PerformanceStats
             | HotkeyCommand::LockCursor
             | HotkeyCommand::FullScreen),
         ) = self.resolve_event(logical_key, location, modifiers)
@@ -912,7 +912,7 @@ mod tests {
         }
         let saved = loaded.to_ini_string();
         ini.push_str(
-            "FullScreen=1037\nFpsCounter=1606\nRenderInterpolation=1609\nLockCursor=1612\n",
+            "FullScreen=1037\nPerformanceStats=1606\nRenderInterpolation=1609\nLockCursor=1612\n",
         );
         assert_eq!(saved, ini);
         let reloaded = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
@@ -1021,9 +1021,9 @@ mod tests {
         assert_eq!(startup.first_key(HotkeyCommand::Delete), Some(46));
         let serialized = startup.to_ini_string();
         #[cfg(feature = "verax")]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nFpsCounter=1606\nRenderInterpolation=1609\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nPerformanceStats=1606\nRenderInterpolation=1609\nLockCursor=1612\n";
         #[cfg(not(feature = "verax"))]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nFullScreen=1037\nFpsCounter=1606\nRenderInterpolation=1609\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nFullScreen=1037\nPerformanceStats=1606\nRenderInterpolation=1609\nLockCursor=1612\n";
         assert_eq!(serialized, expected);
         let mut reloaded = HotkeyBindings::reload_from_ini_bytes(Some(serialized.as_bytes()));
         assert_eq!(reloaded.command_at(46), None);
@@ -1208,7 +1208,7 @@ mod tests {
         assert!(archive.is_some(), "retail KEYBOARDMD.INI");
         let mut bindings = HotkeyBindings::from_ini_bytes(archive);
         for (command, key) in [
-            (HotkeyCommand::FpsCounter, 0x646),
+            (HotkeyCommand::PerformanceStats, 0x646),
             (HotkeyCommand::LockCursor, 0x64c),
             (HotkeyCommand::FullScreen, 0x40d),
             (HotkeyCommand::RenderInterpolation, 0x649),
@@ -1221,16 +1221,16 @@ mod tests {
                 KeyLocation::Standard,
                 modifiers(false, true, true)
             ),
-            Some(HotkeyCommand::FpsCounter)
+            Some(HotkeyCommand::PerformanceStats)
         );
         #[cfg(not(windows))]
         assert_eq!(crate::app::input::keyboard::key_name(0x40d), "Alt+Enter");
 
-        bindings.assign(HotkeyCommand::FpsCounter, 0).unwrap();
+        bindings.assign(HotkeyCommand::PerformanceStats, 0).unwrap();
         let saved = bindings.to_ini_string();
-        assert!(saved.contains("\nFpsCounter=0\n"), "{saved}");
+        assert!(saved.contains("\nPerformanceStats=0\n"), "{saved}");
         let reloaded = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
-        assert_eq!(reloaded.first_key(HotkeyCommand::FpsCounter), None);
+        assert_eq!(reloaded.first_key(HotkeyCommand::PerformanceStats), None);
         assert_eq!(reloaded.first_key(HotkeyCommand::LockCursor), Some(0x64c));
     }
 
@@ -1240,7 +1240,9 @@ mod tests {
     fn vera_window_keys_leave_typing_keys_to_the_battle() {
         let mut bindings = HotkeyBindings::from_ini_bytes(None);
         bindings.assign(HotkeyCommand::FullScreen, 0x7a).unwrap(); // F11
-        bindings.assign(HotkeyCommand::FpsCounter, 0x47).unwrap(); // G
+        bindings
+            .assign(HotkeyCommand::PerformanceStats, 0x47)
+            .unwrap(); // G
         bindings
             .assign(HotkeyCommand::LockCursor, ALT_BIT | 0x47)
             .unwrap();
@@ -1256,7 +1258,7 @@ mod tests {
         );
         assert_eq!(
             bindings.resolve(&character("g"), standard, none),
-            Some(HotkeyCommand::FpsCounter)
+            Some(HotkeyCommand::PerformanceStats)
         );
         assert_eq!(
             bindings.window_command(&character("g"), standard, modifiers(false, false, true)),

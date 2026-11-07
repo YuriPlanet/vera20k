@@ -529,6 +529,12 @@ impl TerrainDrawRenderer {
         self.submission.submit_time()
     }
 
+    /// Mark the GPU's spans in the command buffers the bounded submissions
+    /// split off, so a split frame's GPU time adds up all of them.
+    pub(crate) fn set_gpu_timer(&mut self, timer: crate::render::gpu_timer::GpuTimer) {
+        self.submission.timer = timer;
+    }
+
     #[cfg(test)]
     pub(crate) fn submissions(&self) -> usize {
         self.submission.submissions()
