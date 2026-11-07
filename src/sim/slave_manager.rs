@@ -1030,8 +1030,8 @@ impl Simulation {
 
     /// `0x006B0C80`: back to state 0 at now, with the live slaves reset. The
     /// order that takes a Slave Miner off its hunt runs it: a MEGAMISSION
-    /// other than Attack (`0x004C73E1..0x004C73EA`), the IDLE event
-    /// (`0x004C769C..0x004C76AC`) and FootClass::Mission_Hunt's new
+    /// other than Attack (`0x004C73E1..0x004C73EA`), the IDLE event for a
+    /// Unit (`0x004C769C..0x004C76AC`) and FootClass::Mission_Hunt's new
     /// destination (`0x004D553D..0x004D5547`, `hunt_march_on_player`).
     pub(crate) fn reset_slave_manager(
         &mut self,
