@@ -39,14 +39,21 @@ pub(crate) struct AresTechnoTypeRules {
     combat: CombatTypeRules,
     damage: DamagePresentationRules,
     movement: MovementTypeRules,
+    self_healing: SelfHealingTypeRules,
+    fall_rate: FallRateTypeRules,
+    roles: TypeRoleRules,
 }
 
-/// TechnoTypeExt+0x27C `PassengerTurret` (false) and +0x325 `CrashSpin`
-/// (true).
+/// TechnoTypeExt+0x27C `PassengerTurret` (false), +0x325 `CrashSpin`
+/// (true), +0x328 `AirRate` (0), +0x4C5 `NoManualUnload` and +0x4C7
+/// `NoManualEnter` (false).
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MovementTypeRules {
     passenger_turret: bool,
     crash_spin: bool,
+    air_rate: i32,
+    no_manual_unload: bool,
+    no_manual_enter: bool,
 }
 
 impl Default for MovementTypeRules {
@@ -54,6 +61,9 @@ impl Default for MovementTypeRules {
         Self {
             passenger_turret: false,
             crash_spin: true,
+            air_rate: 0,
+            no_manual_unload: false,
+            no_manual_enter: false,
         }
     }
 }
@@ -69,6 +79,71 @@ impl MovementTypeRules {
     /// (FootClass_Crash_Spin, Ares.dll 10049050, hook 0x4DECAE).
     pub(crate) fn crash_spin(&self) -> bool {
         self.crash_spin
+    }
+
+    /// `AirRate`: an airborne Foot steps its body counter every `AirRate`
+    /// frames (FootClass_Update_AnimRate, Ares.dll 100493D0, hook 0x4DA8B2);
+    /// 0 keeps the stock cadence.
+    pub(crate) fn air_rate(&self) -> i32 {
+        self.air_rate
+    }
+
+    /// `NoManualUnload`: a player cannot unload this transport
+    /// (UnitClass_GetActionOnObject 1004BEF0, hook 0x740031; Aircraft
+    /// 10048A90, 0x417DD2; CanDeploySlashUnload 10049E70, 0x700EEC).
+    pub(crate) fn no_manual_unload(&self) -> bool {
+        self.no_manual_unload
+    }
+
+    /// `NoManualEnter`: a player cannot order passengers into this
+    /// transport (Unit 1004BEA0, hook 0x74031A; Infantry 100176E0, 0x51ED8E).
+    pub(crate) fn no_manual_enter(&self) -> bool {
+        self.no_manual_enter
+    }
+}
+
+/// TechnoTypeExt+0x74..+0x76 and +0x398/+0x39C: the type roles Ares names by
+/// key where gamemd tests a literal ID or another flag.
+#[derive(Debug, Clone, Default, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TypeRoleRules {
+    /// `IsDesolator` (+0x74) and `IsDesolator.RadDependant` (+0x75):
+    /// Initialize seeds both `ID == "DESO"`. RadDependant has no 3.0 reader.
+    is_desolator: bool,
+    is_desolator_rad_dependant: bool,
+    /// `IsCow` (+0x76): Initialize seeds `ID == "COW"`.
+    is_cow: bool,
+    /// `IsBomb` (+0x88, false).
+    is_bomb: bool,
+    /// `Drain.Local` (+0x398, false) and `Drain.Amount` (+0x39C, 0).
+    drain_local: bool,
+    drain_amount: i32,
+}
+
+impl TypeRoleRules {
+    /// `IsDesolator`, in place of `ImmuneToRadiation=` in the deployed
+    /// Guard shim (Ares.dll 100497C0/100497F0, hooks 0x5215F9/0x52138C) and
+    /// of the `"DESO"` ID in Mission_Unload (10049790, hook 0x51F76D).
+    pub(crate) fn is_desolator(&self) -> bool {
+        self.is_desolator
+    }
+
+    /// `IsCow`, in place of the `"COW"` ID in the idle roll
+    /// (InfantryClass_Idle, Ares.dll 10049740, hook 0x51CE9A).
+    pub(crate) fn is_cow(&self) -> bool {
+        self.is_cow
+    }
+
+    /// `IsBomb`: a paradropped Foot of this type lands as a bomb
+    /// (ObjectClass_SpawnParachuted_Animation, Ares.dll 10047C60, hook
+    /// 0x5F5ADD).
+    pub(crate) fn is_bomb(&self) -> bool {
+        self.is_bomb
+    }
+
+    /// `Drain.Local` and `Drain.Amount` (HouseClass_UpdatePower_LocalDrain1,
+    /// Ares.dll 10024690, hook 0x508D32).
+    pub(crate) fn drain(&self) -> (bool, i32) {
+        (self.drain_local, self.drain_amount)
     }
 }
 
@@ -282,6 +357,86 @@ impl AmmoTypeRules {
     }
 }
 
+/// TechnoTypeExt+0x470..+0x4A8, the self-heal pulse that
+/// `TechnoExt::ExtData::GetSelfHealAmount` (Ares.dll 10044E80) reads.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SelfHealingTypeRules {
+    /// `SelfHealing.Rate` (Nullable<double> +0x470), unset: Rules
+    /// `RepairRate`.
+    rate: Option<NativeF64Bits>,
+    /// `SelfHealing.%sAmount` (Promotable<int> +0x480, 1).
+    amount: [i32; 3],
+    /// `SelfHealing.%sMax` (Promotable<double> +0x490, 1.0).
+    max: [NativeF64Bits; 3],
+    /// `SelfHealing.CombatDelay` (+0x4A8, 0).
+    combat_delay: i32,
+}
+
+impl Default for SelfHealingTypeRules {
+    fn default() -> Self {
+        Self {
+            rate: None,
+            amount: [1; 3],
+            max: [NativeF64Bits::ONE; 3],
+            combat_delay: 0,
+        }
+    }
+}
+
+impl SelfHealingTypeRules {
+    /// The pulse period in minutes: `SelfHealing.Rate`, else the Rules
+    /// `RepairRate`.
+    pub(crate) fn rate(&self, repair_rate: f64) -> NativeF64Bits {
+        self.rate
+            .unwrap_or(NativeF64Bits::from_bits(repair_rate.to_bits()))
+    }
+
+    /// `SelfHealing.%sAmount` and `SelfHealing.%sMax` for `rank` (0 rookie,
+    /// 1 veteran, 2 elite; Promotable::Get).
+    pub(crate) fn amount_and_max(&self, rank: usize) -> (i32, NativeF64Bits) {
+        let rank = rank.min(2);
+        (self.amount[rank], self.max[rank])
+    }
+
+    /// `SelfHealing.CombatDelay`: the frames a damaging hit holds the
+    /// pulse off (TechnoClass_ReceiveDamage_Aftermath, Ares.dll 1004AB50,
+    /// hook 0x702819).
+    pub(crate) fn combat_delay(&self) -> i32 {
+        self.combat_delay
+    }
+}
+
+/// TechnoTypeExt+0x570..+0x584, the fall step ObjectClass_Update_MaxFallRate
+/// (Ares.dll 10049BA0, hook 0x5F3FB2) takes.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct FallRateTypeRules {
+    /// `FallRate.Parachute` (+0x570) and `FallRate.NoParachute` (+0x574),
+    /// both 1.
+    steps: [i32; 2],
+    /// `FallRate.ParachuteMax` (Nullable<int> +0x578) and
+    /// `FallRate.NoParachuteMax` (+0x580), unset: the Rules caps.
+    caps: [Option<i32>; 2],
+}
+
+impl Default for FallRateTypeRules {
+    fn default() -> Self {
+        Self {
+            steps: [1; 2],
+            caps: [None; 2],
+        }
+    }
+}
+
+impl FallRateTypeRules {
+    /// The step and the cap of one frame's fall, with or without a
+    /// parachute; `rules_caps` are `ParachuteMaxFallRate` and
+    /// `NoParachuteMaxFallRate`.
+    pub(crate) fn step(&self, parachute: bool, rules_caps: [i32; 2]) -> (i32, i32) {
+        let arm = usize::from(!parachute);
+        (self.steps[arm], self.caps[arm].unwrap_or(rules_caps[arm]))
+    }
+}
+
 /// TechnoTypeExt+0x32D..+0x37C, read for an AircraftType only (`#245`).
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct CustomMissileRules {
@@ -358,7 +513,12 @@ impl AresTechnoTypeRules {
     ) {
         if !self.initialized {
             self.initialized = true;
-            // 1003DEC0 also seeds the EVA cues, DESO and COW (other chains).
+            // 1003DEC0 strcmps the stored ID; it also seeds the EVA cues
+            // (other chains).
+            let roles = &mut self.roles;
+            roles.is_desolator = type_name == "DESO";
+            roles.is_desolator_rad_dependant = roles.is_desolator;
+            roles.is_cow = type_name == "COW";
             if aircraft {
                 let mut missile = CustomMissileRules::new(type_name);
                 missile.trailer_anim = find("V3TRAIL");
@@ -367,6 +527,14 @@ impl AresTechnoTypeRules {
                 self.damage.smoke_anim = find("SGRYSMK1");
             }
         }
+        // After SecretLab.*.
+        let roles = &mut self.roles;
+        roles.is_desolator = section.read_ares_bool("IsDesolator", roles.is_desolator);
+        roles.is_desolator_rad_dependant =
+            section.read_ares_bool("IsDesolator.RadDependant", roles.is_desolator_rad_dependant);
+        roles.is_cow = section.read_ares_bool("IsCow", roles.is_cow);
+        // After the Spotlight.* keys.
+        roles.is_bomb = section.read_ares_bool("IsBomb", roles.is_bomb);
         // #1208, read after RadarJamRadius.
         self.movement.passenger_turret =
             section.read_ares_bool("PassengerTurret", self.movement.passenger_turret);
@@ -402,8 +570,12 @@ impl AresTechnoTypeRules {
             pointer("Missile.Weapon", TypeRef::Weapon, weapon);
             pointer("Missile.EliteWeapon", TypeRef::Weapon, elite_weapon);
         }
-        // After Missile.* and Crashable.
+        // After Missile.* and Crashable; AirRate after the cloak sounds.
         self.movement.crash_spin = section.read_ares_bool("CrashSpin", self.movement.crash_spin);
+        self.movement.air_rate = section.read_ares_int("AirRate", self.movement.air_rate);
+        let roles = &mut self.roles;
+        roles.drain_local = section.read_ares_bool("Drain.Local", roles.drain_local);
+        roles.drain_amount = section.read_ares_int("Drain.Amount", roles.drain_amount);
         // After the Drain.* keys: the smoke.
         let damage = &mut self.damage;
         if let Some(anim) = resolve("Smoke.Anim", TypeRef::Animation) {
@@ -423,21 +595,10 @@ impl AresTechnoTypeRules {
             .read_ares_nullable_double_bits("Berserk.ROFMultiplier", combat.berserk_rof_multiplier);
         combat.omni_crusher_aggressive =
             section.read_ares_bool("OmniCrusher.Aggressive", combat.omni_crusher_aggressive);
-        // Promotable<int>::Read: the common `CrushDamage` to every rank,
-        // then `CrushDamage.Rookie/.Veteran/.Elite`.
-        if let Some(all) = section.read_ares_nullable_int("CrushDamage", None) {
-            combat.crush_damage = [all; 3];
-        }
-        for (rank, key) in [
-            "CrushDamage.Rookie",
-            "CrushDamage.Veteran",
-            "CrushDamage.Elite",
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            combat.crush_damage[rank] = section.read_ares_int(key, combat.crush_damage[rank]);
-        }
+        combat.crush_damage =
+            read_promotable("CrushDamage.%s", combat.crush_damage, |key, value| {
+                section.read_ares_nullable_int(key, value)
+            });
         if let Some(warhead) = resolve("CrushDamage.Warhead", TypeRef::Warhead) {
             combat.crush_damage_warhead = Some(warhead);
         }
@@ -454,6 +615,36 @@ impl AresTechnoTypeRules {
             section.read_ares_bool("CanPassiveAquire.Guard", combat.can_passive_acquire_guard);
         combat.can_passive_acquire_cloak =
             section.read_ares_bool("CanPassiveAquire.Cloak", combat.can_passive_acquire_cloak);
+        // Then the self heal.
+        let heal = &mut self.self_healing;
+        heal.rate = section.read_ares_nullable_double_bits("SelfHealing.Rate", heal.rate);
+        heal.amount = read_promotable("SelfHealing.%sAmount", heal.amount, |key, value| {
+            section.read_ares_nullable_int(key, value)
+        });
+        heal.max = read_promotable("SelfHealing.%sMax", heal.max, |key, value| {
+            section.read_ares_nullable_double_bits(key, value)
+        });
+        heal.combat_delay = section.read_ares_int("SelfHealing.CombatDelay", heal.combat_delay);
+        // After the Passengers.* filters.
+        let movement = &mut self.movement;
+        movement.no_manual_unload =
+            section.read_ares_bool("NoManualUnload", movement.no_manual_unload);
+        movement.no_manual_enter =
+            section.read_ares_bool("NoManualEnter", movement.no_manual_enter);
+        // After DigOut.
+        let fall = &mut self.fall_rate;
+        for (arm, prefix) in ["FallRate.Parachute", "FallRate.NoParachute"]
+            .into_iter()
+            .enumerate()
+        {
+            fall.steps[arm] = section.read_ares_int(prefix, fall.steps[arm]);
+        }
+        for (arm, key) in ["FallRate.ParachuteMax", "FallRate.NoParachuteMax"]
+            .into_iter()
+            .enumerate()
+        {
+            fall.caps[arm] = section.read_ares_nullable_int(key, fall.caps[arm]);
+        }
     }
 
     /// The AircraftType's missile fields; `None` for other types.
@@ -477,6 +668,18 @@ impl AresTechnoTypeRules {
         &self.movement
     }
 
+    pub(crate) fn self_healing(&self) -> &SelfHealingTypeRules {
+        &self.self_healing
+    }
+
+    pub(crate) fn fall_rate(&self) -> &FallRateTypeRules {
+        &self.fall_rate
+    }
+
+    pub(crate) fn roles(&self) -> &TypeRoleRules {
+        &self.roles
+    }
+
     /// `Gattling.Cycle`: a charge at the cap restarts the stages
     /// (TechnoClass_UpdateGattling_Cycle, Ares.dll 1004B6C0, hook 0x70DEBA).
     pub(crate) fn gattling_cyclic(&self) -> bool {
@@ -486,6 +689,28 @@ impl AresTechnoTypeRules {
 
 fn non_empty(name: &str) -> Option<String> {
     (!name.is_empty()).then(|| name.to_owned())
+}
+
+/// Ares `Promotable<T>::Read` (TemplateDef.h): `format` with "" and a
+/// trailing dot stripped is the common key, which sets all three ranks when
+/// it parses; then the `Rookie`, `Veteran` and `Elite` keys each override
+/// one. `read` is the field's Valueable read (`None` in: no current value);
+/// failures retain.
+fn read_promotable<T: Copy>(
+    format: &str,
+    current: [T; 3],
+    read: impl Fn(&str, Option<T>) -> Option<T>,
+) -> [T; 3] {
+    let common = format.replace("%s", "");
+    let common = common.strip_suffix('.').unwrap_or(&common);
+    let mut value = read(common, None).map_or(current, |all| [all; 3]);
+    for (slot, rank) in ["Rookie", "Veteran", "Elite"].into_iter().enumerate() {
+        let key = format.replace("%s", rank);
+        if let Some(read) = read(&key, Some(value[slot])) {
+            value[slot] = read;
+        }
+    }
+    value
 }
 
 #[cfg(test)]
@@ -554,5 +779,34 @@ mod tests {
         assert_eq!(ext.trailer_separation, 7);
         assert_eq!(ext.weapons, [None, Some("MYGUN")]);
         assert_eq!(rules.spawn_missile_wait_frames("MYMISL"), Some(45));
+    }
+
+    /// Initialize (1003DEC0) seeds IsDesolator and its RadDependant from the
+    /// stored ID `DESO` and IsCow from `COW`; the keys then
+    /// override, and the 1003C710 defaults hold the rest.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn initialize_seeds_the_desolator_and_cow_roles_by_id() {
+        use crate::util::native_x87::NativeF64Bits;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n0=DESO\n1=COW\n2=E1\n[DESO]\nStrength=1\n\
+             [E1]\nIsDesolator=yes\nIsBomb=yes\nDrain.Local=yes\nDrain.Amount=-5\n\
+             [COW]\nIsCow=no\n",
+        ))
+        .unwrap();
+        let roles = |name: &str| rules.object(name).unwrap().techno_combat().roles().clone();
+        let deso = roles("DESO");
+        assert!(deso.is_desolator() && deso.is_desolator_rad_dependant && !deso.is_cow());
+        assert!(!roles("COW").is_cow());
+        let e1 = roles("E1");
+        assert!(e1.is_desolator() && !e1.is_desolator_rad_dependant && e1.is_bomb());
+        assert_eq!(e1.drain(), (true, -5));
+        let heal = rules
+            .object("E1")
+            .unwrap()
+            .techno_combat()
+            .self_healing()
+            .clone();
+        assert_eq!(heal.amount_and_max(2), (1, NativeF64Bits::ONE));
     }
 }

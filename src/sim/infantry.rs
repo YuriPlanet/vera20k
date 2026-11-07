@@ -473,6 +473,7 @@ const IDLE_FACING_STEP: u8 = crate::util::direction::FACING_UNITS_PER_DIRECTION;
 const IDLE_PANIC_FEAR: u16 = 50;
 /// The one type whose idle roll is biased, by name. gamemd tests the object's
 /// type against this string and, on a second sub-roll, forces the wandering arm.
+#[cfg(not(feature = "ares"))]
 const IDLE_BIASED_TYPE: &str = "COW";
 /// The biased type takes the wander arm when its sub-roll lands under this.
 const IDLE_BIAS_THRESHOLD: u32 = 5;
@@ -576,8 +577,19 @@ fn select_idle_action(
     if object.fraidycat && !controlled_by_human && infantry.fear_level > IDLE_PANIC_FEAR {
         return Ok(IdleTurn::NullSourceScatter);
     }
-    let biased_type = object.id.eq_ignore_ascii_case(IDLE_BIASED_TYPE);
     let mut roll = rng.next_range_u32_inclusive(0, IDLE_ROLL_MAX);
+    // Ares 3.0 InfantryClass_Idle (10049740, hook 0x51CE9A) tests `IsCow`
+    // in place of the ID, and under EMP takes no bias and leaves the roll
+    // register (EDI) holding the frame it loaded at 0x0051CE10.
+    #[cfg(feature = "ares")]
+    let biased_type = if entity.emp_remaining() > 0 {
+        roll = frame;
+        false
+    } else {
+        object.techno_combat().roles().is_cow()
+    };
+    #[cfg(not(feature = "ares"))]
+    let biased_type = object.id.eq_ignore_ascii_case(IDLE_BIASED_TYPE);
     if biased_type && rng.next_range_u32_inclusive(0, IDLE_ROLL_MAX) < IDLE_BIAS_THRESHOLD {
         roll = 8;
     }

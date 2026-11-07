@@ -1164,6 +1164,14 @@ pub(super) fn gattling_idle(
     // Building Update43FE8E..43FEB8: after TechnoAI/mission and the first
     // Gattling step, exactly zero refills from the live type. No timer or
     // rearm mutation; Hospital/Armory retain their depleted count.
+    // Ares 3.0 BuildingClass_Update_Reload (100478E0, hook 0x43FE8E) calls
+    // TechnoClass::Reload (vt+0x424) there instead, with its clock and
+    // `ReloadAmount`.
+    #[cfg(feature = "ares")]
+    if !obj.hospital && !obj.armory() {
+        entity.reload_techno_ammo(obj, now);
+    }
+    #[cfg(not(feature = "ares"))]
     if !obj.hospital
         && !obj.armory()
         && let Some(ammo) = entity.ammo_mut()

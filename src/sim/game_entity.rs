@@ -818,6 +818,13 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) ares_disable_weapons: crate::sim::timer::CdTimer,
+    /// Ares TechnoExt+0x5C SelfHealingCombatTimer (StartTime -1, TimeLeft
+    /// 0). The ReceiveDamage aftermath starts it with the type's
+    /// `SelfHealing.CombatDelay` (`vehicle_theft::driver_kill`); while it
+    /// runs, GetSelfHealAmount (10044E80, `combat::veterancy`) heals nothing.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_self_heal_combat: crate::sim::timer::CdTimer,
     /// Shared Building C4/PostMortem detonation latch: the marker `+0x6DF`
     /// with its C4Timer (`+0x528`) and C4AppliedBy (`+0x540`). The C4 plant
     /// (`sim::c4_plant`) owns one producer; qualifying delayed-death receiver
@@ -2192,6 +2199,8 @@ impl GameEntity {
             bounty_display: Default::default(),
             #[cfg(feature = "ares")]
             ares_disable_weapons: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_self_heal_combat: Default::default(),
             pending_c4_detonation: Default::default(),
             #[cfg(feature = "ares")]
             display_production_to: Default::default(),
@@ -2394,6 +2403,13 @@ impl GameEntity {
         self.fall.begin_bomb();
     }
 
+    /// An `IsBomb` Foot's paradrop lands as a bomb (Ares 3.0 10047C60, hook
+    /// 0x5F5ADD).
+    #[cfg(feature = "ares")]
+    pub(crate) fn mark_parachuted_bomb(&mut self) {
+        self.fall.mark_bomb();
+    }
+
     pub(crate) fn finish_fall(&mut self) {
         self.fall.finish();
     }
@@ -2403,8 +2419,23 @@ impl GameEntity {
         self.fall.observe_falling_edge()
     }
 
-    /// ObjectAI5F3FBC..3FFA updates even the grounding frame's rate.
-    pub(crate) fn advance_fall_rate(&mut self, parachute_cap: i32, free_fall_cap: i32) {
+    /// ObjectAI5F3FBC..3FFA updates even the grounding frame's rate. Ares
+    /// steps a Techno by its type's `FallRate.*` (10049BA0, hook 0x5F3FB2).
+    pub(crate) fn advance_fall_rate(
+        &mut self,
+        parachute_cap: i32,
+        free_fall_cap: i32,
+        object: Option<&crate::rules::object_type::ObjectType>,
+    ) {
+        #[cfg(feature = "ares")]
+        if let Some(object) = object {
+            self.fall.advance_techno_rate(
+                object.techno_combat().fall_rate(),
+                [parachute_cap, free_fall_cap],
+            );
+            return;
+        }
+        let _ = object;
         self.fall.advance_rate(parachute_cap, free_fall_cap);
     }
 
@@ -2682,15 +2713,6 @@ impl GameEntity {
 mod tests {
     use super::*;
 
-    fn native_cloak_fixture() -> &'static serde_json::Value {
-        crate::test_fixture::json("tools/procedural_drawing_oracle/translucent_blitter_a.json")
-    }
-
-    #[test]
-    fn visual_character_matches_original_executed_transition_controls() {
-        let native = native_cloak_fixture();
-        let rows = native["cloak_transition"].as_array().unwrap();
-        assert_eq!(rows.len(), 256);
     /// Ares ReloadAmount/EmptyReloadAmount (Ares.dll 10047A70, hook
     /// 0x6FB05B): Reload adds `EmptyReloadAmount` to an empty count, else
     /// `ReloadAmount`, capped by `Ammo=`; a negative amount stops at zero.
@@ -2719,6 +2741,15 @@ mod tests {
         assert_eq!((reload("DRAIN", 4), reload("DRAIN", 2)), (1, 0));
     }
 
+    fn native_cloak_fixture() -> &'static serde_json::Value {
+        crate::test_fixture::json("tools/procedural_drawing_oracle/translucent_blitter_a.json")
+    }
+
+    #[test]
+    fn visual_character_matches_original_executed_transition_controls() {
+        let native = native_cloak_fixture();
+        let rows = native["cloak_transition"].as_array().unwrap();
+        assert_eq!(rows.len(), 256);
         let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 20);
         for row in rows {
             let mut cloak = CloakRuntime::new(0);

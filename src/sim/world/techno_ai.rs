@@ -1393,7 +1393,8 @@ fn house_heal_arm(
 
 /// The self-heal pulse of `TechnoClass::AI_Update @ 0x006FA743..0x006FA757`:
 /// when the eligibility virtual (`vtable+0x294` → `FUN_0070BE80`) holds,
-/// `Health += 1` — a raw `INC` on `+0x6C`, no amount key.
+/// `Health += 1` — a raw `INC` on `+0x6C`, no amount key. Ares adds its
+/// `SelfHealing.*` amount instead.
 ///
 /// The reached tail marks attached smoke done above ConditionYellow, retaining
 /// the pointer until expiry. Building+6E6 and animation slots remain unchanged.
@@ -1419,18 +1420,32 @@ fn self_heal_step(
     else {
         return;
     };
-    let interval =
-        crate::sim::combat::veterancy::self_heal_interval_frames(rules.general.repair_rate_minutes);
-    if !crate::sim::combat::veterancy::self_heal_eligible(
+    // Ares 3.0 1004B820 (hook 0x6FA743) adds GetSelfHealAmount (10044E80)
+    // in place of the eligibility virtual and its `+1`.
+    #[cfg(feature = "ares")]
+    let amount = crate::sim::combat::veterancy::ares_self_heal_amount(
         entity,
         object,
-        session.binary_frame(),
-        interval,
-    ) {
+        session.binary_frame() as i32,
+        rules.general.repair_rate_minutes,
+    );
+    #[cfg(not(feature = "ares"))]
+    let amount = {
+        let interval = crate::sim::combat::veterancy::self_heal_interval_frames(
+            rules.general.repair_rate_minutes,
+        );
+        i32::from(crate::sim::combat::veterancy::self_heal_eligible(
+            entity,
+            object,
+            session.binary_frame(),
+            interval,
+        ))
+    };
+    if amount == 0 {
         return;
     }
     if let Some(entity) = substrate.entities.get_mut(id) {
-        entity.health.heal(1);
+        entity.health.heal(amount);
     }
     Simulation::retire_damage_smoke_after_self_heal(
         interner,
@@ -2121,23 +2136,35 @@ fn techno_after_acquisition(
     if !ai_alive(&sim.substrate, id) {
         return false;
     }
-    self_heal_step(
-        &sim.interner,
-        &sim.session,
-        &mut sim.substrate,
-        &sim.resolved_terrain,
-        id,
-        rules,
-    );
-    house_self_heal_step(
-        &sim.interner,
-        &sim.session,
-        &mut sim.substrate,
-        &sim.houses,
-        &sim.resolved_terrain,
-        id,
-        rules,
-    );
+    // Ares 3.0 1004B820 (hook 0x6FA743): a crashing or sinking techno skips
+    // both pulses, resuming at the cloak tick (0x6FA941).
+    #[cfg(feature = "ares")]
+    let heals = sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| !entity.crash.is_crashing() && !entity.sinking.is_active());
+    #[cfg(not(feature = "ares"))]
+    let heals = true;
+    if heals {
+        self_heal_step(
+            &sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &sim.resolved_terrain,
+            id,
+            rules,
+        );
+        house_self_heal_step(
+            &sim.interner,
+            &sim.session,
+            &mut sim.substrate,
+            &sim.houses,
+            &sim.resolved_terrain,
+            id,
+            rules,
+        );
+    }
     super::techno_ai_cloak::tick_stock_cloak_producer(
         sim,
         id,
@@ -6031,6 +6058,10 @@ mod selfheal_oracle_tests;
 #[cfg(test)]
 #[path = "techno_ai/signed_health_tests.rs"]
 mod signed_health_tests;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "techno_ai/ares_self_heal_tests.rs"]
+mod ares_self_heal_tests;
 
 #[cfg(test)]
 #[path = "techno_ai/bridge_target_layer_tests.rs"]

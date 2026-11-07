@@ -46,9 +46,10 @@ impl Simulation {
 
     /// ReceiveDamage_Aftermath1004AB50, after protected-Techno responses and
     /// before the native Uncloak70281D. Unlike EMP this is not a Bullet AoE.
-    /// Behind the EffectsRequireDamage/EffectsRequireVerses gates it applies
-    /// KillDriver (10052B40), then `Sonar.Duration`, `DisableWeapons.Duration`
-    /// and `Flash.Duration`.
+    /// A damaging hit first restarts the victim's self-heal combat timer with
+    /// its type's `SelfHealing.CombatDelay`. Behind the EffectsRequireDamage/
+    /// EffectsRequireVerses gates it applies KillDriver (10052B40), then
+    /// `Sonar.Duration`, `DisableWeapons.Duration` and `Flash.Duration`.
     pub(crate) fn ares_driver_kill_aftermath(
         &mut self,
         event: &EntityDamageEvent,
@@ -59,6 +60,23 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
+        //1004AB9C..1004ABC4: a nonzero result of an initially positive hit
+        // starts SelfHealingCombatTimer (TechnoExt+5C) for a positive delay,
+        // before the warhead is read.
+        if state != DamageState::Unaffected && initially_positive {
+            let frame = self.session.binary_frame() as i32;
+            let delay = self
+                .substrate
+                .entities
+                .get(event.target_id)
+                .and_then(|target| self.entity_object_type(target, rules))
+                .map_or(0, |kind| kind.techno_combat().self_healing().combat_delay());
+            if delay > 0
+                && let Some(target) = self.substrate.entities.get_mut(event.target_id)
+            {
+                target.ares_self_heal_combat.start(frame, delay);
+            }
+        }
         let Some(warhead) = rules.warhead(self.interner.resolve(event.warhead_ref)) else {
             return;
         };

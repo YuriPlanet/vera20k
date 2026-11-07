@@ -843,7 +843,44 @@ fn recalculate_power_for_owner(
             produced = produced.wrapping_add(output);
             //508D1E calls70FEC0 (DrainingMe != null), then repeats the
             // live GetPowerOutput getter and tests its signed result >0.
-            has_drained_power_source |= entity.drain.draining_me().is_some() && output > 0;
+            if let Some(drainer) = entity.drain.draining_me()
+                && output > 0
+            {
+                // Ares 3.0 10024690 (hook 0x508D32): when the plant or its
+                // drainer is `Drain.Local`, the plant gives up `output`
+                // limited by the drainer's and then the plant's
+                // `Drain.Amount` (a non-positive amount n: at least -n), in
+                // place of zeroing the whole House output.
+                #[cfg(feature = "ares")]
+                let local = {
+                    let drainer = entities
+                        .get(drainer)
+                        .filter(|drainer| interner.try_resolve(drainer.type_ref()).is_some())
+                        .and_then(|drainer| interner.object_type(drainer.type_ref(), rules))
+                        .map_or((false, 0), |kind| kind.techno_combat().roles().drain());
+                    let plant = obj.techno_combat().roles().drain();
+                    (plant.0 || drainer.0).then(|| {
+                        let limit = |value: i32, limit: i32| {
+                            if limit <= 0 {
+                                value.max(limit.wrapping_neg())
+                            } else {
+                                value.min(limit)
+                            }
+                        };
+                        limit(limit(output, drainer.1), plant.1)
+                    })
+                };
+                #[cfg(not(feature = "ares"))]
+                let local: Option<i32> = {
+                    let _ = drainer;
+                    None
+                };
+                match local {
+                    Some(drain) if drain > 0 => produced = produced.wrapping_sub(drain),
+                    Some(_) => {}
+                    None => has_drained_power_source = true,
+                }
+            }
         }
 
         // Drain branch: always full rated value regardless of health.
@@ -853,6 +890,12 @@ fn recalculate_power_for_owner(
 
     //508D4A stores the assessment byte;508D79 forces output to zero for
     // either the outage timer or a drained positive-output contributor.
+    // Ares 3.0 10024760 (hook 0x508D4A) first raises a negative total, which
+    // only a local drain leaves, to zero.
+    #[cfg(feature = "ares")]
+    {
+        produced = produced.max(0);
+    }
     state.has_drained_power_source = has_drained_power_source;
     if state.blackout_remaining(binary_frame) > 0 || has_drained_power_source {
         produced = 0;
@@ -1160,7 +1203,7 @@ mod tests {
             tick_power_states(&mut states, &mut entities, &rules, &interner, 0);
             assert_eq!(
                 states[&owner].total_output,
-                row["output"].as_i64().unwrap() as i32,
+                ares_power_output(row["output"].as_i64().unwrap() as i32),
                 "{row}"
             );
             assert_eq!(
@@ -1175,6 +1218,32 @@ mod tests {
                 .drain
                 .set_draining_me_for_test(None);
             tick_power_states(&mut states, &mut entities, &rules, &interner, 0);
+            assert!(!states[&owner].has_drained_power_source);
+        }
+    }
+
+    /// Ares 3.0 HouseClass_UpdatePower_LocalDrain1/2 (10024690/10024760,
+    /// hooks 0x508D32/0x508D4A): a `Drain.Local` plant gives up its output
+    /// limited by `Drain.Amount` (a positive cap, a non-positive floor)
+    /// instead of zeroing the House, and the total never stays negative.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_local_drain_takes_the_drained_amount() {
+        for (amount, output) in [(50, 150), (0, 0), (-300, 0)] {
+            let rules = rules_from_ini(&format!(
+                "[BuildingTypes]\n0=B\n[B]\nPower=200\nStrength=100\n\
+                 Drain.Local=yes\nDrain.Amount={amount}\n"
+            ));
+            let mut plant = make_building(1, "B", "A", 100);
+            plant.drain.set_draining_me_for_test(Some(99));
+            let owner = plant.owner();
+            let interner = test_interner();
+            let mut entities = EntityStore::default();
+            entities.insert(plant);
+            let mut states =
+                PowerStates::from_map_for_test(BTreeMap::from([(owner, PowerState::default())]));
+            tick_power_states(&mut states, &mut entities, &rules, &interner, 0);
+            assert_eq!(states[&owner].total_output, output, "Drain.Amount={amount}");
             assert!(!states[&owner].has_drained_power_source);
         }
     }
@@ -1236,6 +1305,16 @@ mod tests {
 
     fn test_interner() -> intern::StringInterner {
         intern::test_interner()
+    }
+
+    /// A stock total as an Ares build stores it: HouseClass_UpdatePower_
+    /// LocalDrain2 (10024760, hook 0x508D4A) raises a negative one to zero.
+    fn ares_power_output(native: i32) -> i32 {
+        if cfg!(feature = "ares") {
+            native.max(0)
+        } else {
+            native
+        }
     }
 
     /// Build a minimal RuleSet with the given INI text.
@@ -1358,7 +1437,7 @@ BuildSpeed=0.02
             let state = &states[&owner];
             assert_eq!(
                 state.total_output,
-                row["output"]["total_output"].as_i64().unwrap() as i32,
+                ares_power_output(row["output"]["total_output"].as_i64().unwrap() as i32),
                 "{row}"
             );
             assert_eq!(

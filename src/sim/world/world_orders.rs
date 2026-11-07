@@ -629,6 +629,9 @@ impl Simulation {
     ///   [`can_load_query`]): ROGER is Enter, NEGATORY NoEnter, any other
     ///   answer leaves the base action (`None`).
     ///
+    /// Ares refuses a `NoManualEnter` target with the Passengers test; its
+    /// Infantry hook also admits Ares tunnels, which VERA does not port.
+    ///
     /// [`can_load_query`]: crate::sim::radio::receive::can_load_query
     fn passenger_click_action(
         &self,
@@ -653,6 +656,18 @@ impl Simulation {
             || target.is_warping_in()
             || (!infantry && actor_id == target_id)
             || self.object_type(target.type_ref(), rules)?.passengers <= 0
+        {
+            return None;
+        }
+        // Ares 3.0 Unit 1004BEA0 (hook 0x74031A) and Infantry 100176E0
+        // (hook 0x51ED8E) refuse a `NoManualEnter` transport at the same
+        // Passengers test (0x74037A, 0x51EE3B).
+        #[cfg(feature = "ares")]
+        if self
+            .object_type(target.type_ref(), rules)?
+            .techno_combat()
+            .movement()
+            .no_manual_enter()
         {
             return None;
         }

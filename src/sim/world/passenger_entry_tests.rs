@@ -102,3 +102,24 @@ fn a_moving_carrier_turns_passengers_away() {
         Some(EntryClickAction::Enter)
     );
 }
+
+/// Ares 3.0 Infantry 100176E0 (hook 0x51ED8E) and Unit 1004BEA0 (hook
+/// 0x74031A): a `NoManualEnter` carrier offers no passenger row, so the
+/// base action stands.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_no_manual_enter_carrier_offers_no_entry() {
+    let patch = crate::rules::ini_parser::IniFile::from_str("[FV]\nNoManualEnter=yes\n");
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(&patch)
+    else {
+        return;
+    };
+    let rules = retail.rules;
+    let (sim, ifv, gi, tank) = scene(&rules);
+    for actor in [gi, tank] {
+        assert_eq!(
+            sim.entry_click_action(actor, ifv, EntryBaseAction::Select, &rules),
+            None
+        );
+    }
+}

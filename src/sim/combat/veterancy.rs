@@ -685,6 +685,58 @@ pub fn self_heal_eligible(
     health != object.strength && health != 0
 }
 
+/// Ares 3.0 `TechnoExt::ExtData::GetSelfHealAmount` (Ares.dll 10044E80):
+/// the points one pulse heals, which replaces [`self_heal_eligible`]
+/// (hook 0x70BE80, 1004B2F0: `amount > 0`) and the `+1` of
+/// `TechnoClass::AI_Update` (hook 0x6FA743, 1004B820), in this order:
+/// 1. nothing while the `SelfHealing.CombatDelay` timer (TechnoExt+0x5C)
+///    runs;
+/// 2. the same `SelfHealing=`/`SELF_HEAL` gate;
+/// 3. `Frame % max(ftol(rate * 900), 1) == 0`, the rate `SelfHealing.Rate`
+///    or `RepairRate`;
+/// 4. a nonzero Health below `clamp(ftol(Strength * SelfHealing.%sMax) + 1,
+///    1, Strength)`, which takes `SelfHealing.%sAmount` (a negative amount
+///    heals nothing), at most up to that cap.
+///
+/// Both conversions are the CRT `_ftol2` (100772B0), INT_MIN out of range.
+#[cfg(feature = "ares")]
+pub fn ares_self_heal_amount(
+    entity: &GameEntity,
+    object: &ObjectType,
+    frame: i32,
+    repair_rate_minutes: f64,
+) -> i32 {
+    use crate::util::native_x87::MaskedX87Chop53 as X;
+    let combat = entity.ares_self_heal_combat;
+    if combat.start_frame() != crate::sim::timer::PAUSED_START_FRAME && combat.remaining(frame) > 0
+    {
+        return 0;
+    }
+    let rank = entity.veterancy.rank_kind();
+    if !object.self_healing && !has_weapon_ability(rank, object, Ability::SelfHeal) {
+        return 0;
+    }
+    let ext = object.techno_combat().self_healing();
+    let rate = ext.rate(repair_rate_minutes);
+    let period = X::fistp_i32_masked(X::mul(X::load_f64(rate), X::load_i32(900))).max(1);
+    if frame % period != 0 {
+        return 0;
+    }
+    let (amount, max) = ext.amount_and_max(match rank {
+        VeterancyRank::Rookie => 0,
+        VeterancyRank::Veteran => 1,
+        VeterancyRank::Elite => 2,
+    });
+    let strength = object.strength;
+    let cap = X::fistp_i32_masked(X::mul(X::load_i32(strength), X::load_f64(max))).wrapping_add(1);
+    let cap = if cap < 1 { 1 } else { cap.min(strength) };
+    let health = entity.health.current();
+    if health == 0 || health >= cap || amount < 0 {
+        return 0;
+    }
+    amount.min(cap.wrapping_sub(health))
+}
+
 /// The award a kill is worth, before the recipient's own cost divides it.
 ///
 /// gamemd-derived: `TechnoClass::Record_The_Kill @ 0x00702D40` takes the

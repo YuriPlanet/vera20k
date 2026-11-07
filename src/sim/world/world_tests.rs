@@ -1352,6 +1352,7 @@ fn idle_squid_body_counter_starts_move_sound() {
         },
         object.hover_attack,
         object.deploy_to_land,
+        0,
         None,
         4,
     );

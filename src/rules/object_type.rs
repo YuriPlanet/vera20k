@@ -3193,6 +3193,19 @@ impl ObjectType {
         }
     }
 
+    /// Ares TechnoTypeExt+4C5 `NoManualUnload` (`rules::ares_techno_type`);
+    /// false in stock builds.
+    pub fn no_manual_unload(&self) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.techno_combat.movement().no_manual_unload()
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            false
+        }
+    }
+
     /// Optional Ares tracking override (reader1003F47C, constructor1003CF8E).
     pub const fn keep_alive(&self) -> Option<bool> {
         #[cfg(feature = "ares")]

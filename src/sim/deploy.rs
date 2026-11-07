@@ -344,6 +344,12 @@ impl Simulation {
                 if object.passengers <= 0 {
                     return true;
                 }
+                // Ares 3.0 10049E70 (hook 0x700EEC): a `NoManualUnload`
+                // transport outside a tank bunker refuses (0x700DCE).
+                #[cfg(feature = "ares")]
+                if object.techno_combat().movement().no_manual_unload() && !bunkered {
+                    return false;
+                }
                 if entity.on_bridge() {
                     return false;
                 }
@@ -568,8 +574,13 @@ impl Simulation {
                 .and_then(|(weapon, _)| rules.weapon(weapon))
                 .is_some_and(|weapon| weapon.area_fire);
             if area_fire {
-                //5F3E50→410A40 compares native literal82557C "DESO".
-                if object.id.eq_ignore_ascii_case("DESO") {
+                //5F3E50→410A40 compares native literal82557C "DESO";
+                // Ares 3.0 10049790 (hook 0x51F76D) tests `IsDesolator`.
+                #[cfg(feature = "ares")]
+                let desolator = object.techno_combat().roles().is_desolator();
+                #[cfg(not(feature = "ares"))]
+                let desolator = object.id.eq_ignore_ascii_case("DESO");
+                if desolator {
                     delay = rules
                         .animation_sequence_in_category(
                             crate::rules::object_type::ObjectCategory::Infantry,

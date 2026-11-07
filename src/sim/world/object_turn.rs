@@ -951,6 +951,10 @@ impl Simulation {
                     return None;
                 }
                 let object = sim.interner.object_type(entity.type_ref(), rules)?;
+                #[cfg(feature = "ares")]
+                let air_rate = object.techno_combat().movement().air_rate();
+                #[cfg(not(feature = "ares"))]
+                let air_rate = 0;
                 Some((
                     crate::sim::animation::FootBodyCadence {
                         walk_rate: object.walk_rate,
@@ -958,9 +962,10 @@ impl Simulation {
                     },
                     object.hover_attack,
                     object.deploy_to_land,
+                    air_rate,
                 ))
             });
-            if let (Some((cadence, hover_attack, deploy_to_land)), Some(entity)) =
+            if let (Some((cadence, hover_attack, deploy_to_land, air_rate)), Some(entity)) =
                 (foot_body_cadence, sim.substrate.entities.get_mut(stable_id))
             {
                 crate::sim::animation::tick_foot_body_frame_counter(
@@ -969,6 +974,7 @@ impl Simulation {
                     cadence,
                     hover_attack,
                     deploy_to_land,
+                    air_rate,
                     sim.resolved_terrain.as_ref(),
                     sim.session.binary_frame(),
                 );

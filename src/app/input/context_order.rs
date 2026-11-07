@@ -3344,6 +3344,7 @@ fn self_deploy_is_blocked(
             && object.passengers > 0
             && !object.is_simple_deployer
             && entity.bunker.link().installed_in().is_none()
+            && !object.no_manual_unload()
             && entity
                 .passenger_role
                 .cargo()
@@ -3576,6 +3577,20 @@ fn self_action(
         return Some(Command::DeployMcv {
             entity_id: target.stable_id,
         });
+    }
+    // Ares 3.0 `NoManualUnload`: Unit What_Action leaves an unbunkered
+    // transport's self arm with action 0 (1004BEF0, hook 0x740031 ->
+    // 0x740115) ahead of its empty-hold NoDeploy (`self_deploy_is_blocked`),
+    // and Aircraft What_Action its Self (10048A90, hook 0x417DD2 -> 0x417DF4).
+    if obj.is_some_and(|object| {
+        object.no_manual_unload()
+            && match entity.category() {
+                EntityCategory::Unit => object.passengers > 0 && !object.is_simple_deployer,
+                EntityCategory::Aircraft => true,
+                _ => false,
+            }
+    }) {
+        return None;
     }
     // Building447286..4472E7's gap rung precedes its cargo rungs; its Self
     // click queues Unload443514, which toggles the super-charge. Residual:

@@ -1916,6 +1916,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         entity.ares_disable_weapons.hash(hasher);
     }
     #[cfg(feature = "ares")]
+    if entity.ares_self_heal_combat != crate::sim::timer::CdTimer::default() {
+        b"ares-self-heal-combat-timer-v1".hash(hasher);
+        entity.ares_self_heal_combat.hash(hasher);
+    }
+    #[cfg(feature = "ares")]
     entity.hash_attach_effects(hasher);
     #[cfg(feature = "phobos")]
     entity.hash_phobos_attach_effects(hasher);
