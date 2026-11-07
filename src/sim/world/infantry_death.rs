@@ -134,6 +134,8 @@ impl InfantryDeathPostlude {
         effects: &mut crate::sim::combat::DeathEffects,
         uninit: Option<super::UninitContext<'_>>,
     ) {
+        #[cfg(feature = "ares")]
+        use crate::sim::combat::destruction_effects::AresMakeInfTail;
         use crate::sim::combat::destruction_effects::{DeathAnimFollowUp, DeathAnimSpawn};
         if matches!(self.recipe, ReceiverDeathRecipe::WaterSplash) {
             world.emit_death_anim(
@@ -191,6 +193,30 @@ impl InfantryDeathPostlude {
             #[cfg(feature = "ares")]
             ReceiverDeathRecipe::AresInfDeathAnim(_) => None,
         };
+        // Ares replaces each anim arm's owner write with SetMakeInfOwner
+        // (1000A5F0): InfantryClass_ReceiveDamage_InfantryVirus2 (10025F50,
+        // hook 0x51887B) and _InfantryMutate (10025EB0, hook 0x518A96) with
+        // the killing house as invoker; _Anims (10025D20, hooks 0x518698
+        // InfantryExplode, 0x5186F2 FlamingInfantry, 0x518755 the
+        // electrocution anim, 0x5187BB InfantryHeadPop, 0x518821
+        // InfantryNuked, 0x518B93 InfantryBrute) with none.
+        #[cfg(feature = "ares")]
+        let anim = anim.map(|(inf_death, _)| {
+            let (invoker, tail) = match inf_death {
+                VIRUS_INF_DEATH => (self.house, AresMakeInfTail::ClearInvokerRemap),
+                INFANTRY_MUTATE_INF_DEATH => (self.house, AresMakeInfTail::MarkCellOccupancy),
+                _ => (None, AresMakeInfTail::None),
+            };
+            (
+                inf_death,
+                Some(DeathAnimFollowUp::AresMakeInfOwner {
+                    invoker,
+                    victim: self.victim_house,
+                    killer: self.house,
+                    tail,
+                }),
+            )
+        });
         #[cfg(feature = "ares")]
         if let ReceiverDeathRecipe::AresInfDeathAnim(name) = &self.recipe {
             world.emit_death_anim(
@@ -201,6 +227,8 @@ impl InfantryDeathPostlude {
                     follow_up: Some(DeathAnimFollowUp::AresMakeInfOwner {
                         invoker: self.house,
                         victim: self.victim_house,
+                        killer: self.house,
+                        tail: AresMakeInfTail::None,
                     }),
                     ..DeathAnimSpawn::at(self.location, 0)
                 },
@@ -281,11 +309,21 @@ impl Simulation {
     /// Infantry51851E..5185C6 (also Paradrop51837E): construct InfantryVirus,
     /// spawn its explicit SpawnsParticle once, then scalar-delete the temporary
     /// animation. This is distinct from the human death animation's Middle.
+    ///
+    /// Ares 3.0 InfantryClass_ReceiveDamage_InfantryVirus1 10025EF0 (hooks
+    /// 0x5183DE paradrop, 0x518575 NotHuman) first owns the anim through
+    /// SetMakeInfOwner (`house` as invoker and killer, `victim`), and a type
+    /// without `SpawnsParticle` keeps its anim: the hook resumes past the
+    /// particle and the delete (0x518422, 0x5185B9).
     fn emit_inline_virus_particle(
         &mut self,
         rules: &RuleSet,
         location: crate::sim::anim_class::AnimWorldCoord,
+        house: Option<crate::sim::intern::InternedId>,
+        victim: crate::sim::intern::InternedId,
     ) {
+        #[cfg(not(feature = "ares"))]
+        let _ = (house, victim);
         let Some(name) = rules.general.infantry_death_anim(VIRUS_INF_DEATH) else {
             return;
         };
@@ -297,6 +335,23 @@ impl Simulation {
         ) else {
             return;
         };
+        #[cfg(feature = "ares")]
+        self.ares_set_make_inf_owner(anim, type_id, house, Some(victim), house, rules);
+        #[cfg(feature = "ares")]
+        let spawns_particle = self
+            .anim(anim)
+            .and_then(|anim| {
+                rules
+                    .art()
+                    .anim_runtime_config(self.interner.resolve(anim.type_id()))
+            })
+            .and_then(|config| config.spawns_particle.as_deref())
+            .and_then(|name| rules.p_type_id_by_name(name))
+            .is_some();
+        #[cfg(feature = "ares")]
+        if !spawns_particle {
+            return;
+        }
         if let Some(kind) = self
             .anim(anim)
             .and_then(|anim| {
@@ -533,8 +588,9 @@ impl Simulation {
             ),
         };
         let arm = self.infantry_death_arm(entity, inf_death, rules);
+        let entity_owner = entity.owner();
         #[cfg(feature = "ares")]
-        let victim_house = entity.owner();
+        let victim_house = entity_owner;
         #[cfg(feature = "ares")]
         let ares_anim = inf_death_anim.filter(|_| {
             matches!(arm, InfantryDeathArm::Table(_))
@@ -548,7 +604,7 @@ impl Simulation {
         if inf_death == VIRUS_INF_DEATH
             && matches!(arm, InfantryDeathArm::Table(PARADROP_INF_DEATH))
         {
-            self.emit_inline_virus_particle(rules, location);
+            self.emit_inline_virus_particle(rules, location, house, entity_owner);
         }
         let recipe = match arm {
             InfantryDeathArm::WaterSplash(raw_location) => {
@@ -565,7 +621,7 @@ impl Simulation {
             InfantryDeathArm::NotHuman => {
                 self.begin_infantry_death_sequence(id, InfantryDeathSequence::Die1, rules, effects);
                 if inf_death == VIRUS_INF_DEATH {
-                    self.emit_inline_virus_particle(rules, location);
+                    self.emit_inline_virus_particle(rules, location, house, entity_owner);
                 }
                 ReceiverDeathRecipe::Sequence
             }

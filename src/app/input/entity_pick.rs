@@ -1174,11 +1174,13 @@ pub(crate) fn selection_dynamic_prefix(
     // BuildingClass::CanBeSelectedNow459C00 calls the existing type query
     // Is1x1WithUndeploy465D40 before the shared Techno6FC030 prefix below.
     let building = entity.category() == EntityCategory::Structure;
+    // Ares 3.0 10013CF0 (hook 0x00459C03): `MassSelectable=` overrides
+    // that answer ([`ObjectType::band_selectable`]).
     if building
         && !rules
             .zip(interner)
             .and_then(|(rules, interner)| rules.object(interner.resolve(entity.type_ref())))
-            .is_some_and(|object| object.is_1x1_with_undeploy())
+            .is_some_and(|object| object.band_selectable())
     {
         return false;
     }

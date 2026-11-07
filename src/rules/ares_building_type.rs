@@ -21,6 +21,8 @@
 //! - `SolidHeight` and `SolidLevel` (`+0x8`, `+0xC`) and RulesExt
 //!   `AlliedSolidTransparency`: the building on a `SubjectToBuildings=`
 //!   shot's line of fire (`sim::combat::line_of_fire`).
+//! - `Firestorm.Wall` (`+0x5D`): a firestorm wall section
+//!   (`sim::ares_firestorm`).
 
 use crate::rules::ares_warhead::HouseSelector;
 use crate::rules::foundation::Foundation;
@@ -82,6 +84,9 @@ pub(crate) struct BuildingTypeExtRules {
     pub(crate) rubble_intact: RubbleSwitch,
     /// `EngineerRepairable` (`+0x231`, Nullable<bool> `1000E9B0`).
     pub(crate) engineer_repairable: Option<bool>,
+    /// `MassSelectable` (`+0x22C`, Nullable<bool>): whether a band box may
+    /// select the building, else the stock IsUndeployable answer.
+    mass_selectable: Option<bool>,
     /// `UC.PassThrough` (`+0x68`): how often a shot passes through the
     /// building to one of its occupants (Valueable<double> `1000EB00`).
     pub(crate) uc_pass_through: NativeF64Bits,
@@ -159,6 +164,12 @@ pub(crate) struct BuildingTypeExtRules {
     /// Ares storm's damage factor on a struck lightning rod.
     #[serde(default = "default_lightning_rod_modifier")]
     pub(crate) lightning_rod_modifier: NativeF64Bits,
+    /// `Firestorm.Wall` (`+0x5D`, Valueable<bool>, ctor false): a section of
+    /// its owner's firestorm wall, in place of the stock `FirestormWall=`
+    /// at every hook of `Ext/Building/Hooks.Firewall.cpp`; also the
+    /// `IsLinkable` test of placement line building (`1000D770`).
+    #[serde(default)]
+    pub(crate) firestorm_wall: bool,
 }
 
 fn default_lightning_rod_modifier() -> NativeF64Bits {
@@ -175,6 +186,7 @@ impl Default for BuildingTypeExtRules {
             rubble_destroyed: RubbleSwitch::new(0),
             rubble_intact: RubbleSwitch::new(-1),
             engineer_repairable: None,
+            mass_selectable: None,
             uc_pass_through: NativeF64Bits::POSITIVE_ZERO,
             uc_fatal_rate: NativeF64Bits::POSITIVE_ZERO,
             uc_damage_multiplier: NativeF64Bits::ONE,
@@ -198,6 +210,7 @@ impl Default for BuildingTypeExtRules {
             solid_level: default_solid_level(),
             lightning_rod: false,
             lightning_rod_modifier: NativeF64Bits::ONE,
+            firestorm_wall: false,
         }
     }
 }
@@ -297,6 +310,7 @@ impl BuildingTypeExtRules {
         self.degrade_percentage =
             section.read_ares_nullable_double_bits("Degrade.Percentage", self.degrade_percentage);
         self.is_passable = section.read_ares_bool("IsPassable", self.is_passable);
+        self.firestorm_wall = section.read_ares_bool("Firestorm.Wall", self.firestorm_wall);
         if let Some(counts) = section.read_ares_int_list("AIBuildCounts") {
             self.ai_build_counts = counts;
         }
@@ -306,6 +320,8 @@ impl BuildingTypeExtRules {
         self.buildup_time =
             section.read_ares_nullable_double_bits("BuildupTime", self.buildup_time);
         self.sell_time = section.read_ares_nullable_double_bits("SellTime", self.sell_time);
+        self.mass_selectable =
+            section.read_ares_nullable_bool("MassSelectable", self.mass_selectable);
         self.engineer_repairable =
             section.read_ares_nullable_bool("EngineerRepairable", self.engineer_repairable);
         self.ai_base_normal = section.read_ares_nullable_bool("AIBaseNormal", self.ai_base_normal);
@@ -398,6 +414,13 @@ impl BuildingTypeExtRules {
     /// `EngineerRepairable.Get(Repairable)`.
     pub(crate) fn engineer_repairable(&self, repairable: bool) -> bool {
         self.engineer_repairable.unwrap_or(repairable)
+    }
+
+    /// `MassSelectable.Get(vanilla)`: Ares BuildingClass_CanBeSelectedNow_
+    /// MassSelectable 10013CF0 (hook 0x459C03) over the IsUndeployable
+    /// (`0x00465D40`) answer.
+    pub(crate) fn mass_selectable(&self, vanilla: bool) -> bool {
+        self.mass_selectable.unwrap_or(vanilla)
     }
 
     /// `BuildingTypeExt::ExtData::CanBeOccupiedBy`: any InfantryType while
@@ -676,6 +699,23 @@ mod tests {
             None,
             "a 1x1 UndeploysInto type is strange"
         );
+    }
+
+    /// `MassSelectable` (10013CF0, hook 0x459C03) overrides the stock band
+    /// test both ways; unset keeps it (a 1x1 `UndeploysInto=` type).
+    #[test]
+    fn mass_selectable_overrides_the_band_selection_test() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=MCV\n[BuildingTypes]\n0=POD\n1=PLAIN\n2=SHY\n3=BOX\n\
+             [POD]\nUndeploysInto=MCV\n[PLAIN]\n\
+             [SHY]\nUndeploysInto=MCV\nMassSelectable=no\n[BOX]\nMassSelectable=yes\n",
+        ))
+        .unwrap();
+        let band = |id: &str| rules.object(id).unwrap().band_selectable();
+        assert!(band("POD"));
+        assert!(!band("PLAIN"));
+        assert!(!band("SHY"));
+        assert!(band("BOX"));
     }
 
     /// The art `DockUnloadCell` (`1000FAE0`) takes two values, and

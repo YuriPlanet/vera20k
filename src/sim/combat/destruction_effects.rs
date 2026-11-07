@@ -123,14 +123,19 @@ pub enum DeathAnimFollowUp {
     /// scheme's `+0x30C` from the array `0x00B054D4`); then, house or not,
     /// the anim's MarkCellOccupancy (vt+0xF0 = `0x00426270`).
     Mutate(Option<InternedId>),
-    /// Ares InfantryClass_ReceiveDamage_InfDeath (hook 0x5185C8, installed
-    /// 10025DE0): AnimTypeExt::SetMakeInfOwner (1000A5F0) with the killing
-    /// source's owner (else the house argument) as invoker and killer and
-    /// the infantryman's owner as victim ([`Simulation::ares_set_make_inf_owner`]).
+    /// AnimTypeExt::SetMakeInfOwner (installed 1000A5F0) with these houses
+    /// ([`Simulation::ares_set_make_inf_owner`]), then `tail`. The Ares
+    /// InfantryClass::ReceiveDamage hooks pass the killing source's owner
+    /// (else the house argument) as killer and the infantryman's owner as
+    /// victim: InfDeath (10025DE0, hook 0x5185C8) and the InfantryVirus and
+    /// InfantryMutate arms (10025F50, 10025EB0) also as invoker, the other
+    /// anim arms (10025D20) none.
     #[cfg(feature = "ares")]
     AresMakeInfOwner {
         invoker: Option<InternedId>,
         victim: InternedId,
+        killer: Option<InternedId>,
+        tail: AresMakeInfTail,
     },
     /// BuildingClass::DestructionEffects' frozen GetRemapColour result
     /// (`0x00441D37..0x00441D41`). Original441D2F requires a custom group;
@@ -141,6 +146,20 @@ pub enum DeathAnimFollowUp {
     /// takes its scheme 0; a restored VERA anim keeps the owner's. Retail's
     /// only such anim, CANY04DM, has no 16..31 pixels and draws at full light.
     Remap(crate::sim::anim_class::AnimRemap),
+}
+
+/// What an Ares death-anim producer does after SetMakeInfOwner.
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AresMakeInfTail {
+    None,
+    /// InfantryClass_ReceiveDamage_InfantryVirus2 (10025F50, hook
+    /// 0x51887B): an `invoker` MakeInfantryOwner clears the anim's
+    /// LightConvert (`+0xD4 = 0`).
+    ClearInvokerRemap,
+    /// InfantryClass_ReceiveDamage_InfantryMutate (10025EB0, hook 0x518A96)
+    /// resumes at 0x518AFF: the anim's MarkCellOccupancy (vt+0xF0).
+    MarkCellOccupancy,
 }
 
 impl Simulation {
@@ -263,8 +282,35 @@ impl Simulation {
                 self.substrate.anims.set_anim_remap(anim, remap);
             }
             #[cfg(feature = "ares")]
-            Some(DeathAnimFollowUp::AresMakeInfOwner { invoker, victim }) => {
-                self.ares_set_make_inf_owner(anim, type_id, invoker, Some(victim), invoker, rules);
+            Some(DeathAnimFollowUp::AresMakeInfOwner {
+                invoker,
+                victim,
+                killer,
+                tail,
+            }) => {
+                let kind = self.ares_set_make_inf_owner(
+                    anim,
+                    type_id,
+                    invoker,
+                    Some(victim),
+                    killer,
+                    rules,
+                );
+                match tail {
+                    AresMakeInfTail::None => {}
+                    AresMakeInfTail::ClearInvokerRemap => {
+                        if kind == crate::rules::ares_warhead::HouseSelector::Invoker {
+                            self.substrate.anims.clear_anim_remap(anim);
+                        }
+                    }
+                    AresMakeInfTail::MarkCellOccupancy => {
+                        Self::anim_mark_cell_occupancy(
+                            &mut self.substrate,
+                            &self.resolved_terrain,
+                            anim,
+                        );
+                    }
+                }
             }
         }
         Some(anim)
@@ -275,7 +321,8 @@ impl Simulation {
     /// `MakeInfantryOwner` with random allowed (one Scenario
     /// `RandomRanged(0, houses - 1)` for `random`) and no default. A House it
     /// finds becomes the anim's owner (`+0x180`), and for a `MakeInfantry=`
-    /// type its colour scheme's Convert the anim's remap (`+0xD4`).
+    /// type its colour scheme's Convert the anim's remap (`+0xD4`). Answers
+    /// the type's `MakeInfantryOwner`.
     #[cfg(feature = "ares")]
     pub(crate) fn ares_set_make_inf_owner(
         &mut self,
@@ -285,7 +332,7 @@ impl Simulation {
         victim: Option<InternedId>,
         killer: Option<InternedId>,
         rules: &RuleSet,
-    ) {
+    ) -> crate::rules::ares_warhead::HouseSelector {
         use crate::rules::ares_warhead::HouseSelector;
         let (selector, make_infantry) = rules
             .art()
@@ -308,12 +355,13 @@ impl Simulation {
             rules,
             random_house.flatten(),
         ) else {
-            return;
+            return selector;
         };
         self.substrate.set_anim_owner_house(anim, house);
         if make_infantry > -1 {
             self.substrate.anims.set_anim_house_remap(anim, house);
         }
+        selector
     }
 
     /// The shared low dropped-bomb water gate in Techno ReceiveDamage

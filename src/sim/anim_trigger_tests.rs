@@ -265,6 +265,7 @@ fn retail_trigger_anim_and_retained_no_effects_next_match_original_until_cleanup
             &rules,
             row["read"]["value"].as_i64().unwrap() as i32,
             row["read"]["waypoint"].as_i64().unwrap() as i32,
+            None,
             FrameEffects::default(),
         ));
         let id = *sim.anims().next().unwrap().0;

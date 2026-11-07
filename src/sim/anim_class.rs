@@ -692,6 +692,15 @@ impl AnimObject {
         self.display.y_sort_adjust = y_sort;
     }
 
+    /// Ares `BuildingExt::ExtData::UpdateFirewall @ 10013280` stores its
+    /// own anims in `building`'s `slot` and sets only Anim+0x118: the
+    /// constructor's ZAdjust and YSortAdjust stay.
+    #[cfg(feature = "ares")]
+    pub(crate) fn enter_ares_firewall_slot(&mut self, building: u64, slot: u8) {
+        self.building_anim = true;
+        self.building_slot = Some((building, slot));
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn install_building_expiry_fixture(&mut self, marker: bool, completed: bool) {
         self.building_anim = marker;
@@ -938,6 +947,17 @@ impl AnimStore {
             return false;
         };
         anim.remap = Some(remap);
+        true
+    }
+
+    /// Drop the anim's Convert (`Anim+0xD4 = 0`): Ares
+    /// InfantryClass_ReceiveDamage_InfantryVirus2 (10025F50, hook 0x51887B).
+    #[cfg(feature = "ares")]
+    pub(crate) fn clear_anim_remap(&mut self, id: AnimId) -> bool {
+        let Some(anim) = self.get_mut(id) else {
+            return false;
+        };
+        anim.remap = None;
         true
     }
 
@@ -1463,11 +1483,16 @@ impl Simulation {
     /// sets+198 after the constructor returns, so its first Start effects
     /// remain admitted. Invalid Rust input safely fails instead of taking
     /// the original unchecked pointer access; stock operands are valid.
+    ///
+    /// Ares 3.0 ActionClass_PlayAnimAt 10025C20 (hook 0x6E232E) gives a
+    /// `MakeInfantry=` type SetMakeInfOwner with the action's House as
+    /// invoker, victim and killer.
     pub(crate) fn trigger_play_anim_at_waypoint(
         &mut self,
         rules: &RuleSet,
         anim_type_index: i32,
         waypoint: i32,
+        house: Option<InternedId>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         let Some(type_name) = rules.anim_type_runtime_key_by_index(anim_type_index) else {
@@ -1492,6 +1517,16 @@ impl Simulation {
         ) else {
             return false;
         };
+        #[cfg(feature = "ares")]
+        if rules
+            .art()
+            .anim_runtime_config(&type_name)
+            .is_some_and(|config| config.make_infantry > -1)
+        {
+            self.ares_set_make_inf_owner(id, type_id, house, house, house, rules);
+        }
+        #[cfg(not(feature = "ares"))]
+        let _ = house;
         self.substrate.set_anim_no_effects(id, true);
         true
     }

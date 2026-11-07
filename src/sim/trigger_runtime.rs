@@ -5117,6 +5117,7 @@ impl Simulation {
                     rules,
                     index,
                     waypoint as i32,
+                    context.incoming_house,
                     frame_effects,
                 );
             }
