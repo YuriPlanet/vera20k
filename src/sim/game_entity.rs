@@ -611,8 +611,8 @@ pub struct GameEntity {
     pub(crate) sensor_array_counter: i32,
     /// Ares TechnoExt+0x44 SonarTimer (constructor stopped): while it runs,
     /// CloakDisallowed (10043A40) keeps the object from cloaking.
-    /// SW_SonarPulse::Activate100753A0 extends it; the warhead
-    /// `Sonar.Duration` producer is not ported.
+    /// SW_SonarPulse::Activate100753A0 and the warhead `Sonar.Duration`
+    /// aftermath (1004AB50, `vehicle_theft::driver_kill`) extend it.
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) sonar_timer: crate::sim::timer::CdTimer,
