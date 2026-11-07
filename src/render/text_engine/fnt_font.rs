@@ -1,12 +1,12 @@
-//! GAME.FNT as an in-memory TrueType font, so the Original font option shapes,
+//! GAME.FNT as an in-memory TrueType font, so interface text shapes,
 //! falls back and rasterises through the same path as the bundled fonts.
 //!
-//! Every lit pixel becomes part of a square outline. Rasterising those
-//! squares with exact-area coverage is GAME.FNT scaled evenly: at 1:1 on whole
-//! pixels each square covers its pixel fully and the result is the retail
-//! bitmap, and at a fractional scale every font pixel spans the same width
-//! with only its edges blended. Each glyph advances by its width plus
-//! GAME.FNT's 1-pixel character spacing.
+//! Every lit pixel becomes part of a square outline. Drawn as the native
+//! pixels whose centres those squares cover ([`super::pixels`]), on whole
+//! pixels that is the retail bitmap, which then scales evenly: every font
+//! pixel the same block of window pixels, only its edges blended at a
+//! fractional scale. Each glyph advances by its width plus GAME.FNT's
+//! 1-pixel character spacing.
 //!
 //! Units: `UNITS_PER_EM` makes a font pixel a whole number of units at both
 //! sizes the engine asks for, 400 at the Latin size and 336 at the CJK size
@@ -18,8 +18,8 @@
 //!
 //! GAME.FNT has no width axis, so it is also built narrowed to each width a
 //! squeeze asks for ([`super::Fit`]), one family per width: text too long for
-//! its box narrows in the Original font option as it does in the bundled
-//! fonts, instead of only shrinking.
+//! its box narrows in GAME.FNT as it does in the bundled fonts, instead of
+//! only shrinking.
 
 use crate::assets::fnt_file::{FntFile, FntGlyph};
 

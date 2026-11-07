@@ -1,8 +1,9 @@
-//! Glyphs in GAME.FNT's style for the characters it lacks, so the Original
-//! font option draws Cyrillic, Greek, Vietnamese, the rest of Latin and the
-//! hanzi GAME.FNT has no drawing of as pixel letters beside its own, instead
-//! of with the smooth bundled fonts. [`super::fnt_font`] maps them into
-//! GAME.FNT's outline font, so they draw crisp at 1:1 and scale evenly.
+//! Glyphs in GAME.FNT's style for the characters it lacks, so the interface
+//! draws Cyrillic, Greek, Vietnamese, the rest of Latin and the hanzi
+//! GAME.FNT has no drawing of as letters in its style beside its own, and
+//! all of them without the game's files ([`FntFile::blank`]).
+//! [`super::fnt_font`] maps them into GAME.FNT's outline font, so they draw
+//! crisp at 1:1 and scale evenly.
 //!
 //! GAME.FNT's Latin letters are Arial Narrow Bold drawn at 13 px without
 //! smoothing (49 of its 62 letters and digits pixel for pixel), with 2-pixel
@@ -28,13 +29,12 @@
 use std::collections::HashSet;
 
 use swash::scale::ScaleContext;
-use swash::scale::outline::Outline;
 use swash::text::{Category, Codepoint as _};
-use swash::zeno::{Command, PathData as _};
 
 use crate::assets::fnt_file::{FntFile, FntGlyph};
 
 use super::fonts::{NOTO_SANS, TextClass};
+use super::pixels;
 
 /// Cyrillic and Greek letters, each with the Latin letter of the same shape
 /// whose GAME.FNT glyph draws it.
@@ -92,8 +92,6 @@ const LOOKALIKES: [(u16, u16); 43] = [
 const NOTO_SIZE: f32 = 13.0;
 const NOTO_WEIGHT: f32 = 300.0;
 const NOTO_WIDTH_PERCENT: f32 = 80.0;
-/// Straight segments each curve of an outline is split into.
-const CURVE_STEPS: u8 = 8;
 
 /// `tools/unifont_cjk.py`'s output: per glyph a little-endian code point,
 /// then [`CJK_SIDE`] big-endian rows whose top bit is the left column.
@@ -185,7 +183,7 @@ fn noto_glyphs(
         .map(|(codepoint, id)| {
             let mut lit = scaler
                 .scale_outline(id)
-                .map(|outline| pixels(&segments(&outline), rows, baseline))
+                .map(|outline| pixels::lit(&pixels::segments(&outline), 0..rows as i32, baseline))
                 .unwrap_or_default();
             let thickened: Vec<(i32, i32)> = lit.iter().map(|&(x, row)| (x + 1, row)).collect();
             lit.extend(thickened);
@@ -214,128 +212,6 @@ fn stands_alone(c: char) -> bool {
             | Category::LineSeparator
             | Category::ParagraphSeparator
     )
-}
-
-/// A scaled outline (pixels, y up, the pen at the origin) as straight
-/// segments `[x0, y0, x1, y1]`, each curve split into [`CURVE_STEPS`].
-fn segments(outline: &Outline) -> Vec<[f32; 4]> {
-    let steps = || (1..=CURVE_STEPS).map(|step| f32::from(step) / f32::from(CURVE_STEPS));
-    let mut segments = Vec::new();
-    let (mut start, mut pen) = ([0.0; 2], [0.0; 2]);
-    for command in outline.path().commands() {
-        let ends: Vec<[f32; 2]> = match command {
-            Command::MoveTo(p) => {
-                close_contour(&mut segments, pen, start);
-                (start, pen) = ([p.x, p.y], [p.x, p.y]);
-                continue;
-            }
-            Command::Close => {
-                close_contour(&mut segments, pen, start);
-                pen = start;
-                continue;
-            }
-            Command::LineTo(p) => vec![[p.x, p.y]],
-            Command::QuadTo(c, p) => steps()
-                .map(|t| {
-                    let u = 1.0 - t;
-                    let at = |a: f32, b: f32, d: f32| u * u * a + 2.0 * u * t * b + t * t * d;
-                    [at(pen[0], c.x, p.x), at(pen[1], c.y, p.y)]
-                })
-                .collect(),
-            Command::CurveTo(c1, c2, p) => steps()
-                .map(|t| {
-                    let u = 1.0 - t;
-                    let at = |a: f32, b: f32, c: f32, d: f32| {
-                        u * u * u * a + 3.0 * u * u * t * b + 3.0 * u * t * t * c + t * t * t * d
-                    };
-                    [at(pen[0], c1.x, c2.x, p.x), at(pen[1], c1.y, c2.y, p.y)]
-                })
-                .collect(),
-        };
-        for end in ends {
-            segments.push([pen[0], pen[1], end[0], end[1]]);
-            pen = end;
-        }
-    }
-    close_contour(&mut segments, pen, start);
-    segments
-}
-
-/// The segment from `pen` back to its contour's `start`, unless it is there.
-fn close_contour(segments: &mut Vec<[f32; 4]>, pen: [f32; 2], start: [f32; 2]) {
-    if pen != start {
-        segments.push([pen[0], pen[1], start[0], start[1]]);
-    }
-}
-
-/// Where the line `y = at` (`row`) or `x = at` runs inside `segments`, by the
-/// nonzero winding rule: `[start, end]` along the line, in order.
-fn inside(segments: &[[f32; 4]], at: f32, row: bool) -> Vec<[f32; 2]> {
-    let mut crossings: Vec<(f32, i32)> = segments
-        .iter()
-        .filter_map(|&[x0, y0, x1, y1]| {
-            // `a` runs across the line, `b` along it.
-            let ([a0, b0], [a1, b1]) = if row {
-                ([y0, x0], [y1, x1])
-            } else {
-                ([x0, y0], [x1, y1])
-            };
-            let crosses = (a0 <= at && at < a1) || (a1 <= at && at < a0);
-            crosses.then(|| {
-                let b = b0 + (at - a0) * (b1 - b0) / (a1 - a0);
-                (b, if a1 > a0 { 1 } else { -1 })
-            })
-        })
-        .collect();
-    crossings.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut stretches = Vec::new();
-    let (mut winding, mut start) = (0, 0.0);
-    for (b, direction) in crossings {
-        if winding == 0 {
-            start = b;
-        }
-        winding += direction;
-        if winding == 0 {
-            stretches.push([start, b]);
-        }
-    }
-    stretches
-}
-
-/// The `(column, row)` pixels an outline's `segments` light in a cell `rows`
-/// tall whose baseline lies `baseline` rows down, columns counted from the
-/// pen: each pixel whose centre the outline covers, as an unsmoothed
-/// rasterizer draws, and, where a stroke crosses a row's or column's centre
-/// line between two pixel centres, the pixel at its middle (dropout
-/// control), so strokes thinner than a pixel stay unbroken.
-fn pixels(segments: &[[f32; 4]], rows: usize, baseline: f32) -> HashSet<(i32, i32)> {
-    let mut lit = HashSet::new();
-    for row in 0..rows as i32 {
-        let centre = baseline - row as f32 - 0.5;
-        for [start, end] in inside(segments, centre, true) {
-            let (first, last) = ((start - 0.5).ceil() as i32, (end - 0.5).floor() as i32);
-            if first <= last {
-                lit.extend((first..=last).map(|column| (column, row)));
-            } else {
-                lit.insert((((start + end) / 2.0).floor() as i32, row));
-            }
-        }
-    }
-    let xs = segments.iter().flat_map(|s| [s[0], s[2]]);
-    let (left, right) = xs.fold((f32::MAX, f32::MIN), |(l, r), x| (l.min(x), r.max(x)));
-    for column in left.floor() as i32..right.ceil() as i32 {
-        for [start, end] in inside(segments, column as f32 + 0.5, false) {
-            let (first, last) = (
-                (baseline - 0.5 - end).ceil() as i32,
-                (baseline - 0.5 - start).floor() as i32,
-            );
-            let row = (baseline - (start + end) / 2.0).floor() as i32;
-            if first > last && (0..rows as i32).contains(&row) {
-                lit.insert((column, row));
-            }
-        }
-    }
-    lit
 }
 
 /// A GAME.FNT glyph `rows` tall, white at the `(column, row)` pixels `lit`,
