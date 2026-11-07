@@ -33,15 +33,14 @@
 //! - Storage preserves native type identity and slot order, using whole
 //!   bales rather than native fractional float amounts. Payment reads each
 //!   slot's current signed32 type value and the native income/bonus floats.
-//! - The Per_Cell DOCK_NOW refusal's Unit Scatter (`0x0073A5CE..0x0073A5E4`,
-//!   answered by a refinery in its Selling mission) is not wired. Frequency:
-//!   zero today — VERA's sale is synchronous, so no refinery is ever seen
-//!   mid-sell-down; the sale's RUN_AWAY broadcast carries the miner instead.
 //!
 //! A refinery sold (`BuildingClass::Mission_Selling`) or destroyed (the
 //! NowDead contact loop, `Simulation::building_now_dead_contacts`) under an
 //! unloading miner sends it RUN_AWAY (0x17): the latch drops and Harvest takes
-//! over (`radio::receive`, Unit `0x00737A98`).
+//! over (`radio::receive`, Unit `0x00737A98`). A tethered miner on Enter that
+//! reaches the pad of a refinery in its Selling mission sends DOCK_NOW, gets
+//! NEGATORY and calls Scatter (Per_Cell `0x0073A5CE..0x0073A5E4`,
+//! `Simulation::unit_dock_now`), which moves it only when it has no NavCom.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — sim/radio, sim/mission, sim/movement, sim/world.

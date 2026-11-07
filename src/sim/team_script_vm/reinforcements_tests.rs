@@ -2195,24 +2195,16 @@ fn action4_recruits_real_released_members_then_script50_and_cleanup_share_owners
     );
 }
 
-#[test]
-fn full_harvester_reinforcement_fills_its_hold_with_slot_zero_before_placement() {
-    // Native CreateMembers65DD30 fills slot0 at 65DE53..65DE80 (StorageClass
-    // AddAmount 6C9690) before veterancy and AddMember.
-    use crate::rules::tiberium_type::TiberiumTypeId;
+/// Fires one `Full=yes` TeamType whose TaskForce lists `members` (TaskForce
+/// lines such as `0=1,HARV`) through its retail map trigger, returning the
+/// Simulation, the owner and the placed members.
+fn place_full_team(
+    rules: &RuleSet,
+    seed: u64,
+    members: &str,
+) -> (Simulation, crate::sim::intern::InternedId, Vec<u64>) {
     use crate::sim::world::TickLane;
-    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
-    };
-    let rules = &retail.rules;
-    let object = rules.object("HARV").unwrap();
-    assert_eq!(object.storage, 40, "selected retail HARV capacity");
-    assert_eq!(
-        rules.tiberium_types.get(TiberiumTypeId(0)).unwrap().section,
-        "Riparius"
-    );
-
-    let mut sim = Simulation::with_seed(0x65DD_0030);
+    let mut sim = Simulation::with_seed(seed);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
@@ -2221,17 +2213,16 @@ fn full_harvester_reinforcement_fills_its_hold_with_slot_zero_before_placement()
     sim.houses
         .register(HouseState::new(owner, 0, Some(owner), true, 0, 10));
     sim.session.set_current_house_for_test(Some(owner));
-    let credits_before = sim.houses[&owner].economy().credits();
 
-    let map = crate::map::map_file::MapFile::from_bytes(b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+    let map = crate::map::map_file::MapFile::from_bytes(format!("[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
         [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Basic]\nNewINIFormat=4\n\
         [Waypoints]\n4=16016\n[TeamTypes]\n0=FULL_MINER\n\
         [FULL_MINER]\nHouse=Americans\nScript=FULL_SCRIPT\nTaskForce=FULL_FORCE\nWaypoint=E\nFull=yes\n\
         [ScriptTypes]\n0=FULL_SCRIPT\n[FULL_SCRIPT]\n0=50,60\n\
-        [TaskForces]\n0=FULL_FORCE\n[FULL_FORCE]\n0=1,HARV\n\
+        [TaskForces]\n0=FULL_FORCE\n[FULL_FORCE]\n{members}\n\
         [Triggers]\nARRIVAL=Americans,<none>,Full miner arrives,0,1,1,1,0\n\
         [Events]\nARRIVAL=1,13,0,0\n[Actions]\nARRIVAL=1,80,1,FULL_MINER,0,0,0,0,E\n\
-        [Tags]\nARRIVAL_TAG=0,Full arrival,ARRIVAL\n").unwrap();
+        [Tags]\nARRIVAL_TAG=0,Full arrival,ARRIVAL\n").as_bytes()).unwrap();
     let (_, assets) = crate::rules::retail_ini_fixture::retail_assets().unwrap();
     let teams = TeamAiIniRegistry::load_retail(&assets, &map.ini, true).unwrap();
     sim.initialize_trigger_definitions(&map, &teams, None, None, None);
@@ -2239,7 +2230,6 @@ fn full_harvester_reinforcement_fills_its_hold_with_slot_zero_before_placement()
     sim.session.install_waypoints(&map.waypoints);
     sim.classify_map_triggers(rules);
     let team_type = sim.interner.get("FULL_MINER").unwrap();
-    let mut reinforced = None;
     for _ in 0..32 {
         let result = sim
             .advance_app_frame(
@@ -2253,14 +2243,32 @@ fn full_harvester_reinforcement_fills_its_hold_with_slot_zero_before_placement()
             .expect("ordinary frame");
         assert!(result.tick.frame_committed);
         if let Some(team) = sim.team_script_vm.first_team_of_type(team_type) {
-            let members: Vec<_> = team.members().collect();
-            assert_eq!(members.len(), 1);
-            reinforced = Some(members[0]);
-            break;
+            let members = team.members().collect();
+            return (sim, owner, members);
         }
     }
-    let reinforced = reinforced.expect("Full=yes must place its positive-Storage member");
-    let entity = sim.entities().get(reinforced).unwrap();
+    panic!("Full=yes must place its positive-Storage members");
+}
+
+#[test]
+fn full_harvester_reinforcement_fills_its_hold_with_slot_zero_before_placement() {
+    // Native CreateMembers65DD30 fills slot0 at 65DE53..65DE80 (StorageClass
+    // AddAmount 6C9690) before veterancy and AddMember.
+    use crate::rules::tiberium_type::TiberiumTypeId;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let object = rules.object("HARV").unwrap();
+    assert_eq!(object.storage, 40, "selected retail HARV capacity");
+    assert_eq!(
+        rules.tiberium_types.get(TiberiumTypeId(0)).unwrap().section,
+        "Riparius"
+    );
+
+    let (sim, owner, members) = place_full_team(rules, 0x65DD_0030, "0=1,HARV");
+    assert_eq!(members.len(), 1);
+    let entity = sim.entities().get(members[0]).unwrap();
     assert!(!entity.lifecycle.in_limbo() && entity.lifecycle.cell_marked());
     assert_eq!(sim.interner.resolve(entity.type_ref()), "HARV");
     let cargo = entity.miner.as_ref().unwrap().cargo();
@@ -2276,7 +2284,39 @@ fn full_harvester_reinforcement_fills_its_hold_with_slot_zero_before_placement()
     );
     assert_eq!(
         sim.houses[&owner].economy().credits(),
-        credits_before,
+        0,
         "fill is not payment"
     );
+}
+
+#[test]
+fn full_slave_miner_reinforcement_fills_the_miner_and_slave_holds() {
+    // 65DE53..65DE80 fills every member with Type.Storage > 0, not only
+    // Harvester= vehicles: retail SMIN (Storage=20) and SLAV (Storage=4).
+    use crate::rules::tiberium_type::TiberiumTypeId;
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (sim, _, members) = place_full_team(rules, 0x65DD_0031, "0=1,SMIN\n1=2,SLAV");
+    assert_eq!(members.len(), 3);
+    for member in members {
+        let entity = sim.entities().get(member).unwrap();
+        let object = sim.object_type(entity.type_ref(), rules).unwrap();
+        let bales = entity.storage_bales();
+        assert_eq!(bales.len() as i32, object.storage, "{} hold", object.id);
+        assert!(
+            bales
+                .iter()
+                .all(|bale| bale.tiberium_type == TiberiumTypeId(0))
+        );
+        if object.id == "SLAV" {
+            assert!(entity.miner.is_none());
+            assert_eq!(
+                entity.techno_pip_fill_level(object, rules, None),
+                object.pip_max(rules),
+                "SLAV PipScale=Tiberium shows the full hold"
+            );
+        }
+    }
 }

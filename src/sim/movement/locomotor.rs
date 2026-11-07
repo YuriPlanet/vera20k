@@ -436,6 +436,18 @@ impl LocomotorState {
         self.piggyback.as_mut()?.warp_teleport_mut()
     }
 
+    /// Teleport Process's own Stop_Moving after a relocation (`0x00719725`,
+    /// body `0x00718230`). Process calls it on itself, so it reaches the
+    /// Teleport even when the arrival's Per_Cell_Process had the Unit
+    /// setter's Drive suspend it (`0x0074276F`).
+    pub(crate) fn teleport_process_stop(&mut self) {
+        if let Some(runtime) = self.teleport_runtime_mut() {
+            runtime.stop();
+        } else if let Some(stash) = self.piggyback.as_mut() {
+            stash.teleport_process_stop();
+        }
+    }
+
     /// Foot warp-effect readers see an effect held by the complete suspended
     /// instance too. This view stores nothing and does not dispatch Process.
     pub(crate) fn teleport_effect_state(&self) -> Option<&super::teleport_movement::TeleportState> {

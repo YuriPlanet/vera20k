@@ -213,11 +213,11 @@ impl Simulation {
     ///
     /// The flag is the type's `Harvester=` (`+0xE0E`, `0x004C766B`): every
     /// VERA miner but the Slave Miner, whose Miner component is only an
-    /// order marker (`sim::slave_manager`).
+    /// order marker (`sim::slave_manager`). The Stop arm calls this only for
+    /// a Unit (`0x004C7655..0x004C765F`).
     pub fn commit_stop_miner_guard(&mut self, id: u64, rules: &crate::rules::ruleset::RuleSet) {
         let is_stoppable_miner = self.substrate.entities.get(id).is_some_and(|entity| {
-            entity.category() == crate::map::entities::EntityCategory::Unit
-                && entity.is_harvester()
+            entity.is_harvester()
                 && matches!(
                     entity.mission.current().known(),
                     Some(MissionType::Harvest) | Some(MissionType::Return)

@@ -625,8 +625,8 @@ pub struct GameEntity {
     #[serde(default)]
     pub slave_manager: Option<crate::sim::slave_manager::SlaveManager>,
     /// The slave side of `SlaveManagerClass`: the master whose manager holds
-    /// this slave (`TechnoClass+0x2DC`) and its Storage (`+0x33C`), written
-    /// only by `sim::slave_manager`.
+    /// this slave (`TechnoClass+0x2DC`), and the Storage (`+0x33C`) of any
+    /// object without a `miner`, written only by `sim::slave_manager`.
     #[serde(default)]
     pub slave: crate::sim::slave_manager::SlaveLink,
     /// The Foot's MegaMission order, the attack-move (`FootClass +0x5C4..+0x5D1`),

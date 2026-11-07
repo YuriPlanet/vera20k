@@ -1429,7 +1429,7 @@ impl Simulation {
         // Native holds one local viewer. VERA retains each human's plane
         // in stable House order, so selecting a different local player cannot
         // alter shared fog hashes, snapshot IDs or the timer's effects.
-        for viewer in self.fog_viewers() {
+        for &viewer in self.fog_viewers().iter() {
             self.for_each_allocated_map_cell(context, |sim, cell| {
                 let cells = context
                     .terrain()
@@ -1453,7 +1453,24 @@ impl Simulation {
         }
     }
 
-    pub(crate) fn fog_viewers(&self) -> Vec<crate::sim::intern::InternedId> {
+    /// The logical clients, in House order: the represented human maps in a
+    /// network game, else the current House and every human one. The object
+    /// pass asks them for every sight event, so it remembers them
+    /// ([`vision::RevealViewers::begin`]); debug builds check each answer
+    /// against a fresh read.
+    pub(crate) fn fog_viewers(&self) -> std::sync::Arc<[crate::sim::intern::InternedId]> {
+        let Some(clients) = self.reveal_viewers.pass_clients() else {
+            return self.read_fog_viewers().into();
+        };
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || *clients == *self.read_fog_viewers(),
+            "the client maps changed during the object pass"
+        );
+        clients
+    }
+
+    fn read_fog_viewers(&self) -> Vec<crate::sim::intern::InternedId> {
         if self.session.game_mode().is_network() {
             return self.represented_player_maps();
         }
@@ -1491,7 +1508,7 @@ impl Simulation {
                 Vec::new()
             }
         } else {
-            self.fog_viewers()
+            self.fog_viewers().to_vec()
         };
         candidates
             .into_iter()
@@ -1505,7 +1522,7 @@ impl Simulation {
         if self.session.game_mode().is_network() {
             return self.represented_player_maps();
         }
-        let mut clients = self.fog_viewers();
+        let mut clients = self.fog_viewers().to_vec();
         if let Some(current) = self.session.current_house() {
             clients.retain(|&viewer| viewer != current);
             clients.insert(0, current);
@@ -1593,7 +1610,7 @@ impl Simulation {
         if !self.session.game_options().fog_of_war {
             return;
         }
-        for viewer in self.fog_viewers() {
+        for &viewer in self.fog_viewers().iter() {
             self.for_each_allocated_map_cell(context, |sim, cell| {
                 let initialized = {
                     let cells = context
@@ -1822,51 +1839,36 @@ impl Simulation {
         heights: Option<&SightHeights>,
         context: UninitContext<'_>,
     ) {
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return;
+        // Every logical client executes the event; the owner's direct maps
+        // ([`vision::direct_reveal_viewers`]) are among them.
+        let clients;
+        let requested = match &only_viewer {
+            Some(viewer) => std::slice::from_ref(viewer),
+            None => {
+                clients = self.fog_viewers();
+                &clients[..]
+            }
         };
-        let clients = self.fog_viewers();
-        let map_viewers = match only_viewer {
-            Some(viewer) => vec![viewer],
-            None => self
-                .reveal_viewers
-                .direct(
-                    self.house_alliances.as_map(),
-                    entity.owner(),
-                    config,
-                    &self.interner,
-                    &clients,
-                )
-                .to_vec(),
-        };
-        let requested = match only_viewer {
-            Some(viewer) => vec![viewer],
-            None => self.sight_event_viewers(id, &map_viewers, true, false),
-        };
-        self.update_object_sight_for_viewers(id, radius, &requested, config, heights, context);
+        self.update_object_sight_for_viewers(id, radius, requested, config, heights, context);
     }
 
-    /// The logical clients that execute this source event: the active human
-    /// and current-house planes, any direct map projections, and (for a
-    /// release) clients that previously retained this source. The owner has
-    /// a plane only as one of those clients ([`vision::direct_reveal_viewers`]).
-    /// Registration order is shared with the House owner, not reconstructed
-    /// from interned-name or contribution-map ordering.
-    fn sight_event_viewers(
-        &self,
-        id: u64,
-        map_viewers: &[crate::sim::intern::InternedId],
-        include_active: bool,
-        include_cached: bool,
-    ) -> Vec<crate::sim::intern::InternedId> {
-        let mut selected = std::collections::BTreeSet::new();
-        if include_active {
-            selected.extend(self.fog_viewers());
+    /// The logical clients that execute a release: every client
+    /// ([`Self::fog_viewers`]) and any other map that retained the source,
+    /// in House order, then any unregistered one, ascending. The owner's
+    /// direct maps ([`vision::direct_reveal_viewers`]) are among the
+    /// clients. Registration order is shared with the House owner, not
+    /// reconstructed from interned-name or contribution-map ordering.
+    fn release_viewers(&self, id: u64) -> std::sync::Arc<[crate::sim::intern::InternedId]> {
+        let clients = self.fog_viewers();
+        let mut others = self.fog.source_sight_viewers(id);
+        others.retain(|viewer| !clients.contains(viewer));
+        if others.is_empty() {
+            // The clients already stand in that order: they follow the House
+            // order, and an unregistered current House comes last.
+            return clients;
         }
-        selected.extend(map_viewers.iter().copied());
-        if include_cached {
-            selected.extend(self.fog.source_sight_viewers(id));
-        }
+        let mut selected: std::collections::BTreeSet<_> =
+            clients.iter().copied().chain(others).collect();
         let mut ordered = Vec::with_capacity(selected.len());
         for &house in self.houses.order() {
             if selected.remove(&house) {
@@ -1874,7 +1876,7 @@ impl Simulation {
             }
         }
         ordered.extend(selected);
-        ordered
+        ordered.into()
     }
 
     /// Each active logical client executes its native UpdateReveal state
@@ -1917,19 +1919,13 @@ impl Simulation {
         ) else {
             return;
         };
-        let fresh: Vec<_> = requested_viewers
-            .iter()
-            .copied()
-            .filter(|&viewer| !self.fog.source_sight_is_latched(id, viewer))
-            .collect();
         // Each logical PlayerPtr has its own native Techno +250/+254/+260.
-        // Publish all source state before any RevealArea receiver can reenter.
-        for &viewer in &fresh {
-            self.fog.retain_source_sight(id, viewer, owner, &admission);
-        }
-        let admitted: Vec<_> = fresh
+        // Publish all source state before any RevealArea receiver can reenter;
+        // a client whose +250 is already set takes no part.
+        let admitted: Vec<_> = requested_viewers
             .iter()
             .copied()
+            .filter(|&viewer| self.fog.retain_source_sight(id, viewer, owner, &admission))
             .filter(|&viewer| {
                 vision::reveal_admits(&self.house_alliances, owner, viewer, config, &self.interner)
             })
@@ -1967,22 +1963,14 @@ impl Simulation {
         context: UninitContext<'_>,
     ) {
         let config = self.sight_reveal_config(context.rules());
-        let viewers = if let Some(entity) = self.substrate.entities.get(id) {
-            let clients = self.fog_viewers();
-            let projected = self.reveal_viewers.direct(
-                self.house_alliances.as_map(),
-                entity.owner(),
-                &config,
-                &self.interner,
-                &clients,
-            );
-            self.sight_event_viewers(id, &projected, true, true)
+        let viewers = if self.substrate.entities.contains(id) {
+            self.release_viewers(id)
         } else {
             // Some existing release callers drop their entity-index entry
             // before clearing retained sight. In that case only visit the
             // clients already cached for this source; each release reads its
             // own canonical owner and geometry below.
-            self.fog.source_sight_viewers(id)
+            self.fog.source_sight_viewers(id).into()
         };
         if viewers.is_empty() {
             return;
@@ -2128,7 +2116,6 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        let config = self.sight_reveal_config(context.rules());
         let origin = (
             entity.position.rx(),
             entity.position.ry(),
@@ -2137,23 +2124,17 @@ impl Simulation {
                 context.terrain().or(self.resolved_terrain.as_ref()),
             ),
         );
-        let viewers = match only_viewer {
-            Some(viewer) => vec![viewer],
+        //567DA0 has no RevealArea house gate: an enemy's source still
+        //refreshes the active client's existing ground edges.
+        let clients;
+        let viewers = match &only_viewer {
+            Some(viewer) => std::slice::from_ref(viewer),
             None => {
-                let clients = self.fog_viewers();
-                let projected = self.reveal_viewers.direct(
-                    self.house_alliances.as_map(),
-                    entity.owner(),
-                    &config,
-                    &self.interner,
-                    &clients,
-                );
-                //567DA0 has no RevealArea house gate: an enemy's source
-                //still refreshes the active client's existing ground edges.
-                self.sight_event_viewers(id, &projected, true, false)
+                clients = self.fog_viewers();
+                &clients[..]
             }
         };
-        for &viewer in viewers.iter() {
+        for &viewer in viewers {
             //The border reads this client's native +0x260, not a
             //viewer-local contribution. An alternate RevealToAll walk leaves
             //that ordinary cache intact; constructor `0x006F2D96` starts it
@@ -2441,7 +2422,8 @@ impl Simulation {
         context: UninitContext<'_>,
     ) {
         // Each owner's viewers are asked once (`vision::RevealViewers`).
-        self.reveal_viewers.begin();
+        let clients = self.fog_viewers();
+        self.reveal_viewers.begin(clients);
         //IDs alone cross callbacks. Requery the live object at every turn.
         for id in self.substrate.entities.keys_sorted() {
             if self
@@ -3014,10 +2996,8 @@ impl Simulation {
         // cache BEFORE choosing explicit alternate House at70B0EC..70B12C.
         // MakeEnemy's allied pre-release can produce this state for a live
         // RevealToAll building. Metadata does not reveal the owner's map.
-        if !self.fog.source_sight_is_latched(stable_id, current) {
-            self.fog
-                .retain_source_sight(stable_id, current, source_owner, &footprint);
-        }
+        self.fog
+            .retain_source_sight(stable_id, current, source_owner, &footprint);
         if footprint.radius == 0 {
             return;
         }

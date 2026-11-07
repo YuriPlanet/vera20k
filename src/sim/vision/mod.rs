@@ -53,7 +53,7 @@ pub use cell_reveal::SHROUD_EDGE_LUT;
 pub(crate) use cell_reveal::tests::{
     assert_native_cell_history, discovery_corpus, native_map_cell_fixture,
 };
-use cell_reveal::{DummyVisibility, EdgeCells, MapCellEdgeCache};
+use cell_reveal::{CellBounds, DummyVisibility, EdgeCells, MapCellEdgeCache, StaleFrames};
 pub(crate) use cell_reveal::{ListedEdgeCells, MapCellNotification, MapRevealProjection};
 use shroud_knowledge::ShroudKnowledge;
 pub(crate) use shroud_knowledge::SightAdmission;
@@ -221,6 +221,10 @@ pub struct OwnerVisibility {
     /// hashed.
     #[serde(skip)]
     edge_cells: EdgeCells,
+    /// The cells whose ground frame a sight border must recompute; never
+    /// saved or hashed.
+    #[serde(skip)]
+    stale_frames: StaleFrames,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -281,6 +285,7 @@ impl OwnerVisibility {
                 ..TrackedCells::default()
             },
             edge_cells: EdgeCells::complete(),
+            stale_frames: StaleFrames::current(len),
         }
     }
 
@@ -577,6 +582,7 @@ impl OwnerVisibility {
         // The copied transient cells are not listed.
         expanded.tracked.complete = false;
         expanded.edge_cells = EdgeCells::default();
+        expanded.stale_frames = StaleFrames::default();
         expanded
     }
 
@@ -935,17 +941,17 @@ impl FogState {
         // counts are active. Its native +250 lives in `sight_sources`.
         self.note_sight(id, viewer);
         admission.latched = true;
+        self.adjust_sight_sources(viewer, &admission, true);
         let map = if alternate {
             &mut self.alternate_sight_admissions
         } else {
             &mut self.sight_admissions
         };
-        let old = map.insert((id, viewer), admission.clone());
+        let old = map.insert((id, viewer), admission);
         assert!(
             old.is_none_or(|old| !old.latched),
             "source already retained"
         );
-        self.adjust_sight_sources(viewer, &admission, true);
     }
 
     /// One logical client's native +0x250/+0x254/+0x260 cache.
@@ -963,18 +969,19 @@ impl FogState {
     }
 
     /// Publish one logical client's native cache before its RevealArea
-    /// callback, including when that viewer's house gate rejects the map write.
+    /// callback, including when that viewer's house gate rejects the map
+    /// write, unless its +0x250 is already set
+    /// ([`Self::source_sight_is_latched`]). Whether it published.
     pub(crate) fn retain_source_sight(
         &mut self,
         id: u64,
         viewer: InternedId,
         source_owner: InternedId,
         admission: &SightAdmission,
-    ) {
-        assert!(
-            !self.source_sight_is_latched(id, viewer),
-            "source sight is already latched"
-        );
+    ) -> bool {
+        if self.source_sight_is_latched(id, viewer) {
+            return false;
+        }
         // The native cache has source geometry; ordinary ReReveal takes its
         // House gate from the source owner, even when UpdateReveal's explicit
         // alternate House received the actual map contribution (70B0CB..B12C).
@@ -982,6 +989,7 @@ impl FogState {
         source.owner = source_owner;
         self.note_sight(id, viewer);
         self.sight_sources.insert((id, viewer), source);
+        true
     }
 
     /// Native ReReveal clears this logical client's +0x250 before its final
@@ -2535,7 +2543,10 @@ pub(crate) fn collect_reveal_cells(
         return Vec::new();
     };
 
-    let mut cells = Vec::new();
+    // Clamp range to MAX_SIGHT_RANGE (the original also clamps to 10).
+    let clamped = (range as usize).min(MAX_SIGHT_RANGE as usize);
+    let spiral_end = REVEAL_RING_SIZES[clamped];
+    let mut cells = Vec::with_capacity(spiral_end);
     let viewer_level = viewer_height_leptons / LEPTONS_PER_HEIGHT_LEVEL;
     let z_shift = iso_height_shift_cells(viewer_height_leptons);
     let w = i32::from(width);
@@ -2545,9 +2556,6 @@ pub(crate) fn collect_reveal_cells(
             crate::map::playfield::size_diamond_contains(size_w, size_h, (x as i16, y as i16))
         })
     };
-    // Clamp range to MAX_SIGHT_RANGE (the original also clamps to 10).
-    let clamped = (range as usize).min(MAX_SIGHT_RANGE as usize);
-    let spiral_end = REVEAL_RING_SIZES[clamped];
 
     for i in 0..spiral_end {
         let (dx, dy) = REVEAL_SPIRAL[i];
@@ -2616,6 +2624,8 @@ pub(crate) fn sight_border_cells(
 struct BorderGeometry {
     inputs: Option<((u16, u16, i32), i32, i32)>,
     cells: Vec<(u16, u16)>,
+    /// The bounds of `cells`; `None` when there are none.
+    bounds: Option<CellBounds>,
 }
 
 /// Reveal spiral table extracted from the original engine.

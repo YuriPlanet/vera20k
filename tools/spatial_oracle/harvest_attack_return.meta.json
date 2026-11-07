@@ -77,5 +77,6 @@
     "scan_ranges_read": "0x0067028C",
     "load_rate_read": "0x00670CE7"
   },
-  "payload_sha256": "64c0a914fa0e3f9b3aaf7cae33713e1111231450f0950c31e71c8a67b0e32ba5"
+  "replay_command": "python -m tools.spatial_oracle.harvest_attack_return",
+  "payload_sha256": "07e2046a8c146e511fc21ab57e9318f4d037c60dd0fc6db2d12b0872271bdca0"
 }

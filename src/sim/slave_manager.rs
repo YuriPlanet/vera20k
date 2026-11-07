@@ -66,22 +66,11 @@
 //!   idle slaves and hunts.
 //!
 //! ## Residuals
-//! - FootClass::Mission_Hunt's reset when it picks a destination
-//!   (`0x004D553D..0x004D5547`) has no VERA anchor: VERA's Hunt port has no
-//!   destination step. Trigger: a Slave Miner on Hunt (an AI's failed Unload
-//!   deploy). Effect: retail resets the hunt, VERA does not. Frequency: rare.
-//!   Downstream: none.
 //! - The Slave Miner carries a Miner component (`MinerKind::Slave`) as
 //!   VERA's order marker: input issues the Harvest order for it where native
 //!   `UnitClass::What_Action` gives the Harvest action to a
 //!   ResourceGatherer/ResourceDestination type. The dispatch treats it as
 //!   the plain Unit it is natively (`techno_ai/mission_handlers.rs`).
-//! - FreeSlaves callers other than the death arm (`0x00702065`), the Temporal
-//!   erase (`0x0071AAA7`) and the destructor (`0x006F4571`): the Teleport
-//!   post-warp (`0x00718998`, `0x00718AEF`) and the Jumpjet crash
-//!   (`0x0054CEDF`) pass their own killer; VERA's destructor fallback hands
-//!   those slaves to the Civilian house instead. No stock Slave Miner warps or
-//!   flies.
 //!
 //! ## Dependency rules
 //! - Part of sim/; sim/ never depends on render/, ui/, audio/, net/.
@@ -298,7 +287,10 @@ impl SlaveManager {
 
 /// The slave side, on the slave itself: SlaveOwner (`TechnoClass+0x2DC`),
 /// the master whose manager holds it, and its Storage (`+0x33C`), one bale
-/// per level of ore or gems. Only this module writes it.
+/// per level of ore or gems. The cargo is the Storage of every object
+/// without a [`crate::sim::miner::Miner`], which covers all infantry, a
+/// freed slave and a Full team's masterless SLAV or WEEDGUY. Only this
+/// module writes it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SlaveLink {
     owner: Option<u64>,
@@ -314,6 +306,12 @@ impl SlaveLink {
     /// The Storage levels the slave carries, in the order it cut them.
     pub fn cargo(&self) -> &[CargoBale] {
         &self.cargo
+    }
+
+    /// [`crate::sim::miner::add_amount`] on this hold: the slave's harvest
+    /// and [`GameEntity::add_storage_bales`].
+    pub(crate) fn add_bales(&mut self, bale: CargoBale, amount: u16) {
+        crate::sim::miner::add_amount(&mut self.cargo, bale, amount);
     }
 
     /// A slave of `master` carrying `cargo`, for fixtures.
@@ -1032,9 +1030,9 @@ impl Simulation {
 
     /// `0x006B0C80`: back to state 0 at now, with the live slaves reset. The
     /// order that takes a Slave Miner off its hunt runs it: a MEGAMISSION
-    /// other than Attack (`0x004C73E1..0x004C73EA`), the IDLE event
-    /// (`0x004C769C..0x004C76AC`) and FootClass::Mission_Hunt's new
-    /// destination (`0x004D553D..0x004D5547`).
+    /// other than Attack (`0x004C73E1..0x004C73EA`), the IDLE event for a
+    /// Unit (`0x004C769C..0x004C76AC`) and FootClass::Mission_Hunt's new
+    /// destination (`0x004D553D..0x004D5547`, `hunt_march_on_player`).
     pub(crate) fn reset_slave_manager(
         &mut self,
         master: u64,
@@ -1513,7 +1511,7 @@ impl Simulation {
                 cell,
             ) && let Some(entity) = self.substrate.entities.get_mut(slave)
             {
-                entity.slave.cargo.push(bale);
+                entity.slave.add_bales(bale, 1);
             }
             return (harvest_rate, false);
         }
