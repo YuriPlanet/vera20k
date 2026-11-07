@@ -7,6 +7,10 @@ and must travel with them. The Noto fonts are taken unmodified: `OFL.txt`
 Noto Sans families and `OFL-CJK.txt` Noto Sans CJK. `Unifont-CJK-15.bin` comes
 from GNU Unifont, under `OFL-Unifont.txt` ([below](#unifont-cjk-15bin)).
 
+VERA draws every glyph of them in whole pixels on the interface's native grid,
+as GAME.FNT draws its own (`text_engine/pixels.rs`), so text in every script
+keeps GAME.FNT's look.
+
 | File | Source |
 | --- | --- |
 | `NotoSans-VF.ttf` | notofonts.github.io `fonts/NotoSans/googlefonts/variable-ttf/NotoSans[wdth,wght].ttf` |
@@ -50,8 +54,8 @@ How each script is sized against GAME.FNT is in `text_engine/fonts.rs`.
 
 ## Unifont-CJK-15.bin
 
-Pixel Chinese, Japanese and Korean characters for the Original font option,
-which draws them where retail GAME.FNT has none (`text_engine/fnt_fill.rs`):
+Pixel Chinese, Japanese and Korean characters for the interface, which draws
+them where retail GAME.FNT has none (`text_engine/fnt_fill.rs`):
 GNU Unifont 18.0.01's 16x16 glyphs for the 4,766 characters of those scripts
 that retail GAME.FNT lacks, each trimmed to GAME.FNT's 15x15 hanzi box.
 Unifont, its Wen Quan Yi CJK glyphs included, is dual-licensed under the GNU

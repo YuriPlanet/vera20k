@@ -592,7 +592,6 @@ impl App {
         );
         terrain_draw_renderer.generate_ion_blast_frames(&gpu.device, &gpu.queue);
         let combat_light_renderer = crate::render::combat_light::CombatLightRenderer::new(&gpu);
-        let mut bit_font = BitFont::vector_only(&gpu.device, &gpu.queue, &batch_renderer);
         let fps_overlay =
             crate::app::diagnostics::fps_overlay::FpsOverlay::new(&gpu, &batch_renderer);
         let window_ui =
@@ -646,10 +645,10 @@ impl App {
                     .ok()
             })
         });
-        if let Some(fnt) = startup_fnt.as_ref() {
-            bit_font = BitFont::from_fnt(&gpu.device, &gpu.queue, &batch_renderer, fnt);
-        }
-        bit_font.set_mode(options_profile.font_mode());
+        let mut bit_font = match startup_fnt.as_ref() {
+            Some(fnt) => BitFont::from_fnt(&gpu.device, &gpu.queue, &batch_renderer, fnt),
+            None => BitFont::without_fnt(&gpu.device, &gpu.queue, &batch_renderer),
+        };
         bit_font.set_locale(&crate::i18n::selected_language());
         let outcome_banner_art = startup_asset_manager.as_ref().and_then(|assets| {
             crate::app::presentation::outcome_banner::OutcomeBannerArt::build(
