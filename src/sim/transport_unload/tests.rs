@@ -19,6 +19,9 @@ const MAP: u16 = 40;
 
 /// `[SHAD]` is an `[AircraftTypes]` entry here so tests reach the aircraft
 /// Unload slot; retail lists it under `[VehicleTypes]`, as `[HIND]` is here.
+/// `[FV]` carries retail's `WeaponCount=17`: installed Ares SwitchGunner
+/// (`10042480`, hook `0x70DC70`) bounds the mode by WeaponCount (Type+0x80C),
+/// where the stock body keeps eighteen slots; without it every mode is 0.
 fn rules() -> RuleSet {
     rules_with_patch("")
 }
@@ -36,7 +39,7 @@ fn rules_with_patch(patch: &str) -> RuleSet {
          OpenTopped=yes\nLeaveTransportSound=ExitTransport\n\
          Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\n\
          [FV]\nStrength=200\nArmor=light\nSpeed=4\nROT=5\nPassengers=3\nSizeLimit=1\nTurret=yes\n\
-         TurretCount=4\nGunner=yes\nNormalTurretWeapon=0\nMachineGunTurretWeapon=1\nMachineGunTurretIndex=2\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\n\
+         TurretCount=4\nWeaponCount=17\nGunner=yes\nNormalTurretWeapon=0\nMachineGunTurretWeapon=1\nMachineGunTurretIndex=2\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\n\
          [BGGY]\nStrength=100\nArmor=light\nSpeed=6\nROT=5\nSize=1\n\
          Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\n\
          [LCRF]\nStrength=300\nArmor=light\nSpeed=6\nROT=5\nPassengers=12\nSizeLimit=12\nSpeedType=Hover\n\
