@@ -596,6 +596,31 @@ mod tests {
         assert!(some.is_enabled(RandomMapSetupControl::Delete0x6c4));
     }
 
+    /// VERA extension: only an offline Skirmish dialog offers more than eight
+    /// players and the sizes past Very Large.
+    #[test]
+    fn only_a_skirmish_dialog_offers_thirty_players_and_large_sizes() {
+        let options = RmgOptions {
+            seed: 1,
+            num_players: 30,
+            width: 7,
+            height: 7,
+            ..Default::default()
+        };
+        let mut network = RandomMapSetupModalState::open(options.clone(), None, false, false);
+        assert_eq!((network.options.num_players, network.options.width), (8, 3));
+        assert_eq!(network.combo_items(SetupCombo::Size).len(), 4);
+        network.set_num_players(12);
+        assert_eq!(network.options.num_players, 8);
+
+        let skirmish = RandomMapSetupModalState::open(options, None, false, true);
+        assert_eq!(
+            (skirmish.options.num_players, skirmish.options.width),
+            (30, 7)
+        );
+        assert_eq!(skirmish.combo_items(SetupCombo::Size).len(), 8);
+    }
+
     #[test]
     fn changing_an_option_disables_accept_again() {
         let mut state = opened();
