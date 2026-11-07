@@ -28,7 +28,9 @@ mod surface_lines;
 pub(crate) use batching::TerrainBatchStats;
 use batching::{TerrainBatches, TerrainCommand};
 pub(crate) use ion_blasts::IonBlastDraw;
-pub(crate) use packed::{PackedComposite, PackedCompositePiece, PackedSpriteKind, packed_wave_key};
+pub(crate) use packed::{
+    PackedComposite, PackedCompositePiece, PackedSpriteKind, packed_joins_waves,
+};
 use submission::PassSubmission;
 pub(crate) use surface_lines::SurfaceLineBatch;
 
@@ -80,6 +82,10 @@ pub(crate) struct PackedSurface {
 
 pub(crate) struct TerrainDrawRenderer {
     snapshot_pipeline: wgpu::RenderPipeline,
+    /// The same snapshot into attachments 2 and 3 of the packed source pass,
+    /// beside its stencil (`packed::PackedSpriteGpu`). `None` on WebGL2,
+    /// which snapshots in a pass of its own.
+    packed_snapshot_pipeline: Option<wgpu::RenderPipeline>,
     body_pipeline: wgpu::RenderPipeline,
     shadow_pipeline: wgpu::RenderPipeline,
     read_only_snapshot_pipeline: wgpu::RenderPipeline,
@@ -220,6 +226,20 @@ impl TerrainDrawRenderer {
             target(wgpu::TextureFormat::R32Float),
             target(wgpu::TextureFormat::R32Uint),
             target(wgpu::TextureFormat::R8Unorm),
+        ];
+        let kept = |format| {
+            Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::empty(),
+            })
+        };
+        // The packed stencil words and candidates stay as its draws left them.
+        let packed_snapshot_targets = [
+            kept(wgpu::TextureFormat::R32Uint),
+            kept(wgpu::TextureFormat::R32Float),
+            target(wgpu::TextureFormat::R32Uint),
+            target(wgpu::TextureFormat::R32Float),
         ];
         let snapshot_pipeline = |fragment, layout: &wgpu::PipelineLayout, targets| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -414,6 +434,13 @@ impl TerrainDrawRenderer {
                 &snapshot_pipeline_layout,
                 &snapshot_targets[..2],
             ),
+            packed_snapshot_pipeline: (!webgl).then(|| {
+                snapshot_pipeline(
+                    "fs_packed_snapshot",
+                    &snapshot_pipeline_layout,
+                    &packed_snapshot_targets,
+                )
+            }),
             read_only_snapshot_pipeline: snapshot_pipeline(
                 "fs_read_only",
                 &read_only_snapshot_layout,

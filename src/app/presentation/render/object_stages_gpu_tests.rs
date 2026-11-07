@@ -49,9 +49,10 @@ fn piece(
     }
 }
 
-/// Each group: a Z-writing building, then an Anim parent with a 50%
-/// translucent body and its shadow (Z-tested on even groups, no-Z on odd).
-/// A last sprite lands on the first Anim and must stay above it.
+/// Each group: a Z-writing building, then an Anim parent with a translucent
+/// body (25, 50 or 75% by group) and its shadow, both Z-tested on even
+/// groups and no-Z on odd. A last sprite lands on the first Anim and must
+/// stay above it.
 fn base_scene() -> Vec<PlannedObjectInstance> {
     let mut parents = Vec::new();
     for group in 0..GROUPS {
@@ -66,8 +67,8 @@ fn base_scene() -> Vec<PlannedObjectInstance> {
             )],
         ));
         let mut body = sprite([x + 12.0, y - 20.0], [40.0, 48.0], -2.0);
-        body.draw_state = DrawState::from_native_selector(0, 2);
-        let shadow_z = if group % 2 == 0 {
+        body.draw_state = DrawState::from_native_selector(0, [2, 4, 6][group % 3]);
+        let render_z = if group % 2 == 0 {
             RenderZPolicy::ReadOnly
         } else {
             RenderZPolicy::None
@@ -77,10 +78,10 @@ fn base_scene() -> Vec<PlannedObjectInstance> {
         parents.push(parent(
             2 * group as u64 + 1,
             vec![
-                piece(ObjectTexture::ShpPage(1), RenderZPolicy::ReadOnly, body),
+                piece(ObjectTexture::ShpPage(1), render_z, body),
                 piece(
                     ObjectTexture::SpriteAtlasEdit(2, TerrainPiece::Shadow),
-                    shadow_z,
+                    render_z,
                     shadow,
                 ),
             ],
@@ -180,11 +181,17 @@ fn animated_base_replays_in_fixed_passes_with_strict_order_pixels() {
         "colour equals strict parent order"
     );
     assert!(output[1] == expected[1], "Z equals strict parent order");
-    // Ordinary buildings, packed bodies (3 passes), Z-tested shadows (a
+    // Ordinary buildings, packed bodies of every selector and Z policy (one
+    // wave: 2 passes, 3 where WebGL2 snapshots apart), Z-tested shadows (a
     // 4-pass read-only interval), no-Z shadows (packed), the last sprite: one
     // transaction each, independent of the Anim count.
-    assert!(serial > GROUPS * 7, "strict order: {serial}");
-    assert_eq!(staged, 1 + 3 + 4 + 3 + 1);
+    let packed = if crate::render::gpu::webgl_fallback(&gpu.device) {
+        3
+    } else {
+        2
+    };
+    assert!(serial > GROUPS * 5, "strict order: {serial}");
+    assert_eq!(staged, 1 + packed + 4 + packed + 1);
 }
 
 /// One light record whose quad centre projects to `center` under a zero
