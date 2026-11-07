@@ -4,7 +4,7 @@
 use super::lifecycle_tests::{insert_entity, install_common_raw_terrain};
 use super::{PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, Simulation};
 use crate::map::entities::EntityCategory;
-use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+use crate::rules::{armor::armor_index, ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::components::DriveCoord;
 use crate::sim::movement::FacingClass;
 use crate::sim::movement::locomotor::LocomotorState;
@@ -157,8 +157,11 @@ fn lifted_impact_scene(kind: &str, overrides: &str) -> (Simulation, RuleSet, u64
         let warhead = rules.warhead(name).unwrap();
         assert_eq!(warhead.cell_spread_f64, 1.0);
         assert_eq!(warhead.percent_at_max_f64, 1.0);
-        assert_eq!(warhead.verses_f64[0], verses);
-        assert_eq!(warhead.verses_f64[3], 0.0);
+        // Under Ares the native raw11 read is skipped and the extension owns
+        // Verses, so check the interaction both builds consult.
+        let multiplier = |armor| f64::from_bits(warhead.interaction(armor).multiplier().bits());
+        assert_eq!(multiplier(armor_index("none")), verses);
+        assert_eq!(multiplier(armor_index("light")), 0.0);
     }
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 31);
     sim.intern_rule_type_ids(&rules);
