@@ -18,12 +18,13 @@ DeformLowestLevel=-4     ; the lowest Level a crater digs to, default -4
 gamemd still reads each warhead's `Deform=` and `DeformThreshhold=` but never uses them. Once this
 is on, the retail warheads that set them (HE, V3WH, DMISLWH, CMISLWH, ARTYHE, SCHOPWH, ORCAHE and
 IonCannonWH) dent the ground. The nuclear missile's `NUKE` warhead sets neither, so the box also
-gives it `Deform=100%` unless the rules already set one. With the rules key alone, give it one
-yourself:
+gives it `Deform=100%` and VERA's `DeformDepth=3`, each unless the rules already set it. With the
+rules key alone, give them yourself:
 
 ```ini
 [NUKE]
 Deform=100%
+DeformDepth=3   ; levels one dent sinks, default 1
 ```
 
 Switched off, no extra random draw is spent, no extra tiles load and zones read cell Levels as
@@ -37,17 +38,19 @@ explosive-overlay branch and dents its cell when the draw is below `damage * Def
 as a fraction (an ion cannon blast with `Deform=100%` always does).
 
 gamemd has no deformation body, so the dent uses its own terrain code. The cell's corners sink one
-level through the random map generator's corner-height engine (`RandomMapGenerator::CreateHills`
+level at a time, `DeformDepth=` times (default 1, as in Tiberian Sun; at most 16), through the
+random map generator's corner-height engine (`RandomMapGenerator::CreateHills`
 @ `0x005A35F0`), which pulls neighbouring corners along so no slope is steeper than one level per
-cell and rolls the whole dent back when a corner it needs cannot move. It runs over a window of 16
+cell and rolls a level back when a corner it needs cannot move; that ends the crater at the depth
+the open ground allows, keeping the levels already dug. It runs over a window of 16
 cells around the hit, and its rule for which cells may change is gamemd's (`0x006B2520`): no
 overlay (walls, ore, bridges), no object (units, infantry, buildings, trees) and a `Morphable=`
 tile. So units never sink or float; a crater only forms on open ground and bends around anything
 standing next to it. The reshaped cells take the theater's clear tile or its ramps, and the LAT and
 ramp smoothing of the cells around them is redone as cliff collapse does it
-(`MapClass::CollapseDestroyableCliff` @ `0x00581140`). Repeated hits dig deeper and wider, one level
-per hit, down to `DeformLowestLevel=`; each extra level of depth widens the slope by a cell on every
-side, since art exists only for whole-level ramps.
+(`MapClass::CollapseDestroyableCliff` @ `0x00581140`). Each level of depth widens the slope by a
+cell on every side, since art exists only for whole-level ramps: a three-level nuke crater on
+open ground is 7 cells across. Repeated hits dig deeper and wider, down to `DeformLowestLevel=`.
 
 Craters are part of the saved terrain and the simulation hash. A flat cell that tilts loses its
 smudge. With the switch on, the atlas preloads the clear, ramp, smoothed-ramp and LAT tiles a dent

@@ -69,20 +69,26 @@ impl PersonalRules {
 
     /// The selected root as each scenario reads it, unchanged while the
     /// Options switches are off. Terrain Deformation turns on
-    /// `[CombatDamage] TerrainDeformation=` and, unless the root already sets
-    /// one, gives the nuke's warhead a `Deform=` so a nuke leaves a crater:
-    /// gamemd names that warhead `NUKE` (0x0081AF98), and retail sets none.
-    /// Map and mode rules still read after it and can turn it off.
+    /// `[CombatDamage] TerrainDeformation=` and gives the nuke's warhead each
+    /// of `Deform=100%` and `DeformDepth=3` the root does not set, so a nuke
+    /// digs a crater three levels deep: gamemd names that warhead `NUKE`
+    /// (0x0081AF98), and retail sets neither. Map and mode rules still read
+    /// after it and can turn it off.
     pub(crate) fn scenario_root<'a>(&self, root: &'a IniFile) -> Cow<'a, IniFile> {
         if !self.terrain_deformation {
             return Cow::Borrowed(root);
         }
         let mut options = String::from("[CombatDamage]\nTerrainDeformation=yes\n");
-        if root
-            .section("NUKE")
-            .is_some_and(|nuke| !nuke.is_present("Deform"))
-        {
-            options.push_str("[NUKE]\nDeform=100%\n");
+        if let Some(nuke) = root.section("NUKE") {
+            let crater: String = [("Deform", "100%"), ("DeformDepth", "3")]
+                .into_iter()
+                .filter(|(key, _)| !nuke.is_present(key))
+                .map(|(key, value)| format!("{key}={value}\n"))
+                .collect();
+            if !crater.is_empty() {
+                options.push_str("[NUKE]\n");
+                options.push_str(&crater);
+            }
         }
         let mut root = root.clone();
         root.merge_source_sections(&IniFile::from_str(&options), true);
@@ -284,18 +290,21 @@ mod tests {
                 )
                 .unwrap()
                 .into_parts();
+            let nuke = rules.warhead("NUKE").unwrap();
             (
                 rules.combat_damage.terrain_deformation,
-                rules.warhead("NUKE").unwrap().deform_f64,
+                (nuke.deform_f64, nuke.deform_depth),
                 digests != owner.multiplayer_source_digests(),
                 owner.personal_rules_compatibility_crc().is_some(),
             )
         };
         let root = b"[Warheads]\n0=NUKE\n[NUKE]\nVerses=100%\n";
-        assert_eq!(scenario(root, false), (false, 0.0, false, false));
-        assert_eq!(scenario(root, true), (true, 1.0, true, true));
-        // A Deform= the root already sets, from a mod or VERARULES.INI, stays.
+        assert_eq!(scenario(root, false), (false, (0.0, 1), false, false));
+        assert_eq!(scenario(root, true), (true, (1.0, 3), true, true));
+        // Keys the root already sets, from a mod or VERARULES.INI, stay.
         let modded = b"[Warheads]\n0=NUKE\n[NUKE]\nDeform=25%\n";
-        assert_eq!(scenario(modded, true).1, 0.25);
+        assert_eq!(scenario(modded, true).1, (0.25, 3));
+        let modded = b"[Warheads]\n0=NUKE\n[NUKE]\nDeformDepth=2\n";
+        assert_eq!(scenario(modded, true).1, (1.0, 2));
     }
 }

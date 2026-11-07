@@ -114,16 +114,17 @@ impl Simulation {
         // IEEE double arithmetic, as TS's percent; `as` truncates like ftol.
         let chance = (f64::from(damage) * 0.01 * warhead.deform_f64 * 100.0) as i32;
         if (self.scenario_rng.next_range_u32_inclusive(0, 99) as i32) < chance {
-            self.deform_terrain(cell, rules);
+            self.deform_terrain(cell, rules, warhead.deform_depth);
         }
     }
 
-    /// Lower `cell` one level with the hills corner engine (mask `0x006B4240`,
-    /// adjust `0x006B3E60` downward, finalize `0x006B3850`) over a window of
-    /// the live map, no corner below `DeformLowestLevel=`, then stamp and
-    /// publish the cells whose ground moved. Returns whether any did.
-    pub(crate) fn deform_terrain(&mut self, cell: (u16, u16), rules: &RuleSet) -> bool {
-        let Some(finals) = self.deformation_finals(cell, rules) else {
+    /// Lower `cell` up to `depth` levels (VERA's `DeformDepth=`, read as
+    /// `1..=16`) with the hills corner engine (mask `0x006B4240`, adjust
+    /// `0x006B3E60` downward, finalize `0x006B3850`) over a window of the live
+    /// map, no corner below `DeformLowestLevel=`, then stamp and publish the
+    /// cells whose ground moved. Returns whether any did.
+    pub(crate) fn deform_terrain(&mut self, cell: (u16, u16), rules: &RuleSet, depth: i32) -> bool {
+        let Some(finals) = self.deformation_finals(cell, rules, depth) else {
             return false;
         };
         let Some(terrain) = self.resolved_terrain.as_mut() else {
@@ -160,8 +161,13 @@ impl Simulation {
 
     /// The corner engine's run for [`Self::deform_terrain`]: the finalized
     /// cells whose Level or slope differ from the map's, or None when the
-    /// adjustment rolled back or moved nothing.
-    fn deformation_finals(&self, cell: (u16, u16), rules: &RuleSet) -> Option<Vec<FinalCell>> {
+    /// first adjustment rolled back or nothing moved.
+    fn deformation_finals(
+        &self,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        depth: i32,
+    ) -> Option<Vec<FinalCell>> {
         let terrain = self.resolved_terrain.as_ref()?;
         let tiles = terrain.deformation_tiles()?;
         let cells = LiveCornerCells {
@@ -183,8 +189,18 @@ impl Simulation {
             i32::from(i8::MAX) * corner_heights::LEVEL,
         );
         let mut corners = CornerGrid::build(&cells, origin, stride, heights);
-        let mask = corners.pick_mask(cx, cy, -1);
-        if mask == 0 || !corners.apply(-1, cx, cy, mask) {
+        // One adjustment per level. The first that would move a corner it
+        // cannot ends the crater at the depth the open ground allows. On flat
+        // ground, WINDOW_RADIUS levels still fit the window.
+        let mut sunk = 0;
+        for _ in 0..depth.clamp(1, WINDOW_RADIUS) {
+            let mask = corners.pick_mask(cx, cy, -1);
+            if mask == 0 || !corners.apply(-1, cx, cy, mask) {
+                break;
+            }
+            sunk += 1;
+        }
+        if sunk == 0 {
             return None;
         }
         let domain = (origin.1..origin.1 + stride - 1)
@@ -211,12 +227,13 @@ mod tests {
 
     const RAMP_BASE: u16 = 600;
 
-    fn rules(enabled: bool) -> RuleSet {
+    /// `crater` adds keys to the test warhead's section.
+    fn rules(enabled: bool, crater: &str) -> RuleSet {
         RuleSet::from_ini(&IniFile::from_str(&format!(
             "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
              [CombatDamage]\nTerrainDeformation={}\n\
              [Warheads]\n0=CRATERWH\n\
-             [CRATERWH]\nDeform=100%\nDeformThreshhold=100\n\
+             [CRATERWH]\nDeform=100%\nDeformThreshhold=100\n{crater}\
              Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
             if enabled { "yes" } else { "no" },
         )))
@@ -244,7 +261,7 @@ mod tests {
     fn a_crater_sinks_below_level_zero_around_an_overlay_cell_it_cannot_move() {
         // The overlay north-east of the hit locks the hit cell's NE corner.
         let mut sim = flat_sim((6, 4));
-        assert!(sim.deform_terrain((5, 5), &rules(true)));
+        assert!(sim.deform_terrain((5, 5), &rules(true, ""), 1));
 
         // Three corners sank: [0, 15, 0, 0] above the lowest is slope 8.
         assert_eq!(level_slope(&sim, 5, 5), (-1, 8));
@@ -272,7 +289,7 @@ mod tests {
             (true, 0, 100, 0),
             (true, LEVEL_LEPTONS - 1, 101, 1),
         ] {
-            let rules = rules(enabled);
+            let rules = rules(enabled, "");
             let warhead = rules.warhead("CRATERWH").expect("crater warhead");
             let mut sim = flat_sim((0, 0));
             let mut expected = sim.scenario_rng.clone();
@@ -288,5 +305,25 @@ mod tests {
             // Deform=100% of 101 damage is a 101% chance.
             assert_eq!(level_slope(&sim, 5, 5).0, -(draws as i8));
         }
+    }
+
+    #[test]
+    fn a_deeper_crater_widens_a_cell_per_level_until_ground_it_cannot_move() {
+        let rules = rules(true, "DeformDepth=3\n");
+        let warhead = rules.warhead("CRATERWH").expect("crater warhead");
+        let centre = ProjectileCoord::new(5 * 256 + 128, 5 * 256 + 128, 0);
+        // Open ground: the hit cell sinks three levels and each ring around
+        // it ramps up a level, so the fourth ring keeps its ground.
+        let mut sim = flat_sim((0, 0));
+        sim.roll_terrain_deformation(&rules, warhead, centre, (5, 5), 500);
+        assert_eq!(level_slope(&sim, 5, 5), (-3, 0));
+        assert_eq!(level_slope(&sim, 5, 4), (-3, 4));
+        assert_eq!(level_slope(&sim, 5, 2), (-1, 4));
+        assert_eq!(level_slope(&sim, 5, 1), (0, 0));
+        // The third level would pull down the corners of the overlay cell
+        // three cells east, so the crater stops two levels deep.
+        let mut sim = flat_sim((8, 5));
+        sim.roll_terrain_deformation(&rules, warhead, centre, (5, 5), 500);
+        assert_eq!(level_slope(&sim, 5, 5), (-2, 0));
     }
 }
