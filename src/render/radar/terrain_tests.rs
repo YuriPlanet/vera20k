@@ -204,3 +204,28 @@ fn hd_terrain_resamples_changed_cells_like_full_generation() {
     let full = HdTerrain::new(surface.raw_rgb(), geometry, 3);
     assert_eq!(resampled, full.rgb565.as_slice());
 }
+
+/// The surface's cell table answers as RenderCellPixel's inverse
+/// (`0x00655CB8..0x00655D03`) at its corners; a pixel off the surface, such as
+/// an edge building's brush, is inverted directly.
+#[test]
+fn visibility_cells_answer_as_the_native_inverse_on_and_off_the_surface() {
+    let geometry = NativeRadarSurfaceGeometry::from_raw_rect(3, 40, 137, 149).unwrap();
+    let surface = NativeRadarTerrainSurface::new(geometry, Vec::new(), BTreeMap::new(), 1.0);
+    let (width, height) = geometry.generated_size();
+    for pixel in [
+        (0, 0),
+        (width - 1, 0),
+        (0, height - 1),
+        (width - 1, height - 1),
+        (-2, 5),
+        (width, height - 1),
+        (4, height),
+    ] {
+        assert_eq!(
+            surface.visibility_cell(pixel),
+            geometry.surface_pixel_to_visibility_cell(pixel),
+            "{pixel:?}"
+        );
+    }
+}

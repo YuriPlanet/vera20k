@@ -15,13 +15,12 @@
 //! RenderCellPixel pass; this owner recomputes every dot on each minimap
 //! update instead, so its callers' requests are subsumed.
 
-use std::collections::{BTreeMap, BTreeSet};
-
 use crate::map::houses::HouseColorMap;
 use crate::rules::house_colors::HouseColorRamps;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::vision::FogState;
+use crate::util::lookup_hash::{LookupMap, LookupSet};
 
 use super::geometry::NativeRadarSurfaceGeometry;
 use super::helpers::owner_dot_color;
@@ -64,10 +63,11 @@ impl RadarProjectionFacts {
         x_scale.abs().min(y_scale.abs()).max(f32::EPSILON)
     }
 
-    fn pixel_to_cell(self, x: i32, y: i32) -> Option<(u16, u16)> {
-        if let Some(surface) = self.native_surface {
-            return surface.surface_pixel_to_cell((x, y));
-        }
+    /// The mapless fallback's cell under pixel `(x, y)`. A generated surface
+    /// answers from its own table
+    /// ([`super::terrain::NativeRadarTerrainSurface::visibility_cell`]).
+    pub fn mapless_pixel_to_cell(self, x: i32, y: i32) -> Option<(u16, u16)> {
+        debug_assert!(self.native_surface.is_none());
         let normalized_x = (x as f32 - self.map_offset_x) / self.map_pixel_w.max(1.0);
         let normalized_y = (y as f32 - self.map_offset_y) / self.map_pixel_h.max(1.0);
         let screen_x = self.world_origin_x + normalized_x * self.world_width;
@@ -139,6 +139,8 @@ pub(super) fn radar_combat_flash_inverts(
     remaining > 0 && (remaining - 1) / period % 2 == 1 && current_player == Some(entity.owner())
 }
 
+/// RenderCellPixel's test of one tracker entry. `pixel_cell` is the cell its
+/// inverse (`0x00655CB8..0x00655D03`) names for the entry's pixel.
 pub(super) fn radar_pixel_candidate_eligible(
     entry: RadarTrackerEntry,
     entities: &crate::sim::entity_store::EntityStore,
@@ -150,14 +152,15 @@ pub(super) fn radar_pixel_candidate_eligible(
     game_mode_nonzero: bool,
     rules: Option<&RuleSet>,
     interner: Option<&crate::sim::intern::StringInterner>,
-    projection: RadarProjectionFacts,
+    pixel_cell: Option<(u16, u16)>,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> bool {
     let Some(entity) = entities.get(entry.stable_id) else {
         return false;
     };
-    let type_str = interner.map_or("", |i| i.resolve(entity.type_ref()));
-    let object = rules.and_then(|rules| rules.object(type_str));
+    let object = rules
+        .zip(interner)
+        .and_then(|(rules, interner)| interner.object_type(entity.type_ref(), rules));
 
     if let Some(local_owner) = local_owner {
         // RenderCellPixel: `PlayerPtr->Is_Ally_ByObject(object)` (`0x00655E09`).
@@ -170,9 +173,7 @@ pub(super) fn radar_pixel_candidate_eligible(
                 )
             });
         if !full_visibility {
-            let (rx, ry) = projection
-                .pixel_to_cell(entry.x, entry.y)
-                .unwrap_or((entity.position.rx(), entity.position.ry()));
+            let (rx, ry) = pixel_cell.unwrap_or((entity.position.rx(), entity.position.ry()));
             let owner_is_human =
                 radar_owner_is_human_player(entity.owner(), local_owner, houses, game_mode_nonzero);
             if radar_cell_shrouded(fog, cells, local_owner, (rx, ry)) && !owner_is_human {
@@ -260,7 +261,9 @@ pub(super) struct RadarSensedPresentationEvent {
 #[derive(Debug, Clone)]
 pub(super) struct RetainedRadarTracker {
     buckets: Vec<Vec<RadarTrackerEntry>>,
-    objects: BTreeMap<u64, RadarObjectCache>,
+    /// By stable id. Its order reaches nothing: stale objects' entries leave
+    /// the same buckets in whatever order they are removed.
+    objects: LookupMap<u64, RadarObjectCache>,
     action40_building_tail_pending: bool,
 }
 
@@ -272,7 +275,7 @@ impl Default for RetainedRadarTracker {
     fn default() -> Self {
         Self {
             buckets: vec![Vec::new(); TRACKER_BUCKET_COUNT],
-            objects: BTreeMap::new(),
+            objects: LookupMap::default(),
             action40_building_tail_pending: false,
         }
     }
@@ -368,16 +371,13 @@ impl RetainedRadarTracker {
             cache.owner != update.owner || cache.local_front != update.local_front
         });
 
-        if was_registered
-            && (old_origin != Some(origin) || !visible || registration_identity_changed)
-        {
+        let remove = was_registered
+            && (old_origin != Some(origin) || !visible || registration_identity_changed);
+        if remove {
             self.unregister(update.stable_id);
         }
 
-        let registered_after_remove = self
-            .objects
-            .get(&update.stable_id)
-            .is_some_and(|cache| cache.registered);
+        let registered_after_remove = was_registered && !remove;
         self.objects
             .entry(update.stable_id)
             .and_modify(|cache| {
@@ -457,12 +457,10 @@ impl RetainedRadarTracker {
     /// RemoveObjectFromTracker @ 0x00655740 shifts the remaining vector over
     /// the removed entry. `Vec::remove` preserves that exact relative order.
     fn unregister(&mut self, stable_id: u64) {
-        let pixels = self
-            .objects
-            .get(&stable_id)
-            .map(|cache| cache.pixels.clone())
-            .unwrap_or_default();
-        for (x, y) in pixels {
+        let Some(cache) = self.objects.get_mut(&stable_id) else {
+            return;
+        };
+        for &(x, y) in &cache.pixels {
             let bucket = &mut self.buckets[tracker_bucket(x, y)];
             if let Some(index) = bucket
                 .iter()
@@ -471,10 +469,8 @@ impl RetainedRadarTracker {
                 bucket.remove(index);
             }
         }
-        if let Some(cache) = self.objects.get_mut(&stable_id) {
-            cache.registered = false;
-            cache.pixels.clear();
-        }
+        cache.registered = false;
+        cache.pixels.clear();
     }
 
     /// RenderCellPixel's forward bucket scan, once for each occupied exact
@@ -483,11 +479,11 @@ impl RetainedRadarTracker {
         &self,
         mut eligible: impl FnMut(RadarTrackerEntry) -> bool,
     ) -> Vec<RadarTrackerEntry> {
-        let mut chosen = BTreeSet::new();
+        let mut chosen = LookupSet::default();
         let mut winners = Vec::new();
         for bucket in &self.buckets {
             for &entry in bucket {
-                let coordinate = (entry.x, entry.y);
+                let coordinate = u64::from(entry.x as u32) | u64::from(entry.y as u32) << 32;
                 if chosen.contains(&coordinate) || !eligible(entry) {
                     continue;
                 }
