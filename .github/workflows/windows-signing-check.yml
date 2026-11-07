@@ -133,7 +133,7 @@ jobs:
           name="vera20k-${version}-windows-x64-${stamp}-${GITHUB_SHA:0:7}"
           mkdir -p dist/package
           cp target/shipping/vera20k.exe config.toml.example LICENSE-GPL \
-            LICENSES/LGPL-2.1-or-later.txt dist/THIRD_PARTY_LICENSES.html dist/package/
+            dist/THIRD_PARTY_LICENSES.html dist/package/
           sed -e "s/@VERSION@/${version}/" -e "s/@BUILD@/${stamp}/" -e "s/@COMMIT@/${GITHUB_SHA}/" \
             .github/release/README.txt.in > dist/package/README.txt
           python .github/release/windows/signing.py prepare --package dist/package \

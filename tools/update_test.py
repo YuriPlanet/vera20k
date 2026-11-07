@@ -282,7 +282,7 @@ def install(work: Path, release: Path, program: Path, game_folder: Path, quarant
     package.mkdir()
     # copy, not copyfile: appimage.sh keeps the program's executable bit.
     shutil.copy(program, package / "vera20k")
-    for name in ("README.txt", "LICENSE-GPL", "LGPL-2.1-or-later.txt", "THIRD_PARTY_LICENSES.html"):
+    for name in ("README.txt", "LICENSE-GPL", "THIRD_PARTY_LICENSES.html"):
         shutil.copyfile(extracted / "squashfs-root/usr/share/doc/vera20k" / name, package / name)
     LINUX_IMAGE.parent.mkdir(parents=True, exist_ok=True)
     run("bash", ROOT / ".github/release/linux/appimage.sh", package, LINUX_IMAGE)
