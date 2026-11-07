@@ -591,9 +591,13 @@ impl App {
             &batch_renderer,
         );
         terrain_draw_renderer.generate_ion_blast_frames(&gpu.device, &gpu.queue);
+        terrain_draw_renderer.set_gpu_timer(gpu.timer.clone());
         let combat_light_renderer = crate::render::combat_light::CombatLightRenderer::new(&gpu);
-        let fps_overlay =
-            crate::app::diagnostics::fps_overlay::FpsOverlay::new(&gpu, &batch_renderer);
+        let performance_overlay =
+            crate::app::diagnostics::performance_overlay::PerformanceOverlay::new(
+                &gpu,
+                &batch_renderer,
+            );
         let window_ui =
             crate::app::presentation::window_ui::WindowUi::new(&gpu.device, &batch_renderer);
         let depth_view: wgpu::TextureView = gpu.create_depth_texture();
@@ -699,7 +703,7 @@ impl App {
                 &batch_renderer,
                 &shell_surface_presenter,
                 &depth_view,
-                &fps_overlay,
+                &performance_overlay,
                 &bit_font,
                 splash.as_deref(),
             ) {
@@ -1254,7 +1258,7 @@ impl App {
             renderer: crate::app::renderer_state::RendererState {
                 gpu,
                 batch_renderer,
-                fps_overlay,
+                performance_overlay,
                 combat_light_renderer,
                 screen_presentation:
                     crate::render::screen_presentation::ScreenPresentationPass::new(),

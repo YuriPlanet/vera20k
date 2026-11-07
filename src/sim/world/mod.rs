@@ -7832,7 +7832,7 @@ impl Simulation {
     /// Start or stop diagnostic wall-clock measurement. A transition starts a
     /// fresh sample window; repeated requests preserve the accumulated profile.
     /// New and deserialized simulations start disabled with an empty profile.
-    /// The telemetry build and the in-game FPS panel turn it on.
+    /// The telemetry build and the in-game performance panel turn it on.
     pub fn set_frame_profiling(&mut self, enabled: bool) {
         if self.frame_profiling != enabled {
             self.frame_profile.reset();

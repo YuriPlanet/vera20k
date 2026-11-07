@@ -1,14 +1,15 @@
-//! Final-window FPS panel, hidden at every launch until Ctrl+Alt+F or the
-//! Options page's FPS Counter box shows it, and the replay/recovery status
-//! line below it.
+//! Final-window Performance Stats panel, hidden at every launch until
+//! Ctrl+Alt+F or the Options page's Performance Stats box shows it, and the
+//! replay/recovery status line below it.
 //!
 //! The panel reads like the game's message line: rows of text on black
 //! boxes, at the top left of the battlefield at the match zoom, or of the
 //! window elsewhere. While it shows, the status line and the match's message
-//! list start below it. Its rows are in [`panel`]:
-//! rates and units, the engine areas that took the most of the last second
-//! and the load on each core. The rows and the status line are localized
-//! text ([`crate::i18n`]), so both draw with the process font, which draws
+//! list start below it. Its rows are in [`panel`]: rates and units, the
+//! engine areas that took the most of the last second, the load on each core
+//! and the GPU's share of each frame ([`crate::render::gpu_timer`], which
+//! times the GPU only while the panel shows). The rows and the status line
+//! are localized text ([`crate::i18n`]), so both draw with the process font, which draws
 //! GAME.FNT's style without GAME.FNT until it loads ([`BitFont::without_fnt`]).
 //! Both are independent of tactical cameras,
 //! optional dev overlays, and shell/offscreen composition.
@@ -40,7 +41,7 @@ const BAR_HEIGHT: f32 = 12.0;
 const BAR_DROP: f32 = 2.0;
 const ELLIPSIS: &str = "...";
 
-pub(crate) struct FpsOverlay {
+pub(crate) struct PerformanceOverlay {
     visible: bool,
     /// One white texel, tinted into the row boxes and the core bars.
     white: BatchTexture,
@@ -60,7 +61,7 @@ struct OverlayFrame {
     /// Where the status line starts: below the panel while it shows.
     status_top: f32,
     /// In a match, how far down the battlefield the panel reaches: see
-    /// [`FpsOverlay::message_top`]. 0 elsewhere.
+    /// [`PerformanceOverlay::message_top`]. 0 elsewhere.
     message_top: i32,
 }
 
@@ -124,7 +125,7 @@ pub(crate) fn match_panel(state: &crate::app::AppState) -> Option<MatchPanel<'_>
     })
 }
 
-impl FpsOverlay {
+impl PerformanceOverlay {
     pub(crate) fn new(gpu: &GpuContext, batch: &BatchRenderer) -> Self {
         let (camera_buffer, camera_group) = batch.create_ui_camera(&gpu.device);
         Self {
@@ -152,7 +153,7 @@ impl FpsOverlay {
     ) {
         self.frame
             .lock()
-            .expect("FPS overlay frame lock")
+            .expect("performance overlay frame lock")
             .simulation = simulation;
     }
 
@@ -164,7 +165,7 @@ impl FpsOverlay {
         if self.visible {
             self.frame
                 .lock()
-                .expect("FPS overlay frame lock")
+                .expect("performance overlay frame lock")
                 .stats
                 .record_render(phases);
         }
@@ -174,7 +175,7 @@ impl FpsOverlay {
         self.visible
     }
 
-    /// The Options page's FPS Counter box.
+    /// The Options page's Performance Stats box.
     pub(crate) fn set_visible(&mut self, visible: bool) {
         self.visible = visible;
     }
@@ -194,7 +195,7 @@ impl FpsOverlay {
         }
         self.frame
             .lock()
-            .expect("FPS overlay frame lock")
+            .expect("performance overlay frame lock")
             .message_top
     }
 
@@ -212,10 +213,11 @@ impl FpsOverlay {
         font: &BitFont,
         in_match: Option<MatchPanel<'_>>,
     ) {
-        let mut frame = self.frame.lock().expect("FPS overlay frame lock");
+        let mut frame = self.frame.lock().expect("performance overlay frame lock");
         let now = Instant::now();
         // Keep measuring while hidden, so the first shown frame has a rate.
         frame.timer.sample(now);
+        gpu.timer.set_active(self.visible);
         if !self.visible {
             frame.stats = PanelStats::default();
             frame.status_top = STATUS_TOP;
@@ -235,9 +237,10 @@ impl FpsOverlay {
         if frame.stats.due(now) {
             let frame_ms = frame.timer.frame_ms_mean();
             let readout = frame.simulation;
+            let gpu_ms = gpu.timer.take_frame_ms();
             frame
                 .stats
-                .close_window(now, frame_ms, readout, simulation.map(match_sample));
+                .close_window(now, frame_ms, readout, simulation.map(match_sample), gpu_ms);
         }
         let mut rows = panel::rows(&frame.stats.shown);
         let mut instances = Vec::new();
@@ -253,7 +256,7 @@ impl FpsOverlay {
         instances.append(&mut glyphs);
         if !frame.logged_first_frame {
             log::info!(
-                "FPS panel: final window surface {}x{}, {} quads",
+                "Performance panel: final window surface {}x{}, {} quads",
                 size[0],
                 size[1],
                 instances.len()
@@ -278,7 +281,7 @@ impl FpsOverlay {
 
     /// Persistent replay/recovery facts share the final-window camera. `font`
     /// is the process font, which covers localized text.
-    /// This call neither samples nor changes the FPS panel's visibility.
+    /// This call neither samples nor changes the performance panel's visibility.
     pub(crate) fn encode_status(
         &self,
         gpu: &GpuContext,

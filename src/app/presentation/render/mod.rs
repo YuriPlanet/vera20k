@@ -99,7 +99,7 @@ impl GameRenderInstanceCounts {
 /// Wall-clock spans of one in-game render, in `render_game`'s phase order,
 /// and of handing that frame to the driver.
 ///
-/// Sampled by the frame owner into the dashboard's meter and the FPS panel's;
+/// Sampled by the frame owner into the dashboard's meter and the performance panel's;
 /// readers only ever see a window's totals or means, never one frame's spans.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct RenderPhases {
@@ -162,7 +162,7 @@ pub(crate) struct GameRenderOutput {
     pub instance_counts: GameRenderInstanceCounts,
     pub times: GameRenderTimes,
     pub particle_draws: Option<Vec<crate::app::presentation::instances::ParticleDrawObservation>>,
-    /// Phase spans of this render, for the dashboard's meter and the FPS panel.
+    /// Phase spans of this render, for the dashboard's meter and the performance panel.
     pub phases: Option<RenderPhases>,
     /// The frame of this render's software cursor sprite, for a zoomed
     /// match's window pass (`window_ui::draw_battlefield`).
@@ -179,13 +179,13 @@ pub(crate) struct GameRenderTimes {
 }
 
 /// Whether this render measures its phases: for an attached dashboard, or
-/// while the FPS panel shows its Most CPU row.
+/// while the performance panel shows its Most CPU row.
 fn render_phases_wanted(state: &AppState) -> bool {
     #[cfg(feature = "telemetry-dashboard")]
     if state.diag.telemetry_observer.active() {
         return true;
     }
-    state.renderer.fps_overlay.is_visible()
+    state.renderer.performance_overlay.is_visible()
 }
 
 /// Render one in-game frame: terrain, units, overlays, UI, sidebar.
@@ -198,7 +198,7 @@ pub(crate) fn render_game(
     times: GameRenderTimes,
     cadence: crate::app::presentation::tactical_composite::CompositeCadence,
 ) -> Result<GameRenderOutput> {
-    // Phase accounting for the dashboard's render breakdown and the FPS panel's
+    // Phase accounting for the dashboard's render breakdown and the performance panel's
     // Most CPU row. One clock read per phase boundary; the spans are handed
     // back on `GameRenderOutput` and never written into the world here.
     let render_started = render_phases_wanted(state).then(Instant::now);

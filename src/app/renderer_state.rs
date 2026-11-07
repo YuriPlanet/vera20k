@@ -12,7 +12,8 @@ use crate::render::gpu::GpuContext;
 pub(crate) struct RendererState {
     pub(crate) gpu: GpuContext,
     pub(crate) batch_renderer: BatchRenderer,
-    pub(crate) fps_overlay: crate::app::diagnostics::fps_overlay::FpsOverlay,
+    pub(crate) performance_overlay:
+        crate::app::diagnostics::performance_overlay::PerformanceOverlay,
     pub(crate) terrain_draw_renderer: crate::render::terrain_draw::TerrainDrawRenderer,
     pub(crate) combat_light_renderer: crate::render::combat_light::CombatLightRenderer,
     /// Process GPU resources for the native final client-pixel shake copy.

@@ -771,7 +771,7 @@ impl App {
                 &state.renderer.batch_renderer,
                 &state.renderer.shell_surface_presenter,
                 &state.renderer.depth_view,
-                &state.renderer.fps_overlay,
+                &state.renderer.performance_overlay,
                 &state.renderer.bit_font,
                 Some(splash),
             )?;
@@ -955,6 +955,7 @@ impl App {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Frame"),
                 });
+        state.renderer.gpu.timer.begin_frame(&mut encoder);
         state.renderer.window_ui.begin_frame();
         let mut pending_main_menu_entry_token = None;
         let mut pending_main_menu_title_receipt = None;
@@ -1354,13 +1355,13 @@ impl App {
                 }
             }
         }
-        state.renderer.fps_overlay.encode(
+        state.renderer.performance_overlay.encode(
             &state.renderer.gpu,
             &state.renderer.batch_renderer,
             &mut encoder,
             &output.texture,
             &state.renderer.bit_font,
-            crate::app::diagnostics::fps_overlay::match_panel(state),
+            crate::app::diagnostics::performance_overlay::match_panel(state),
         );
         if state.frontend.screen == GameScreen::InGame {
             let status = state
@@ -1410,7 +1411,7 @@ impl App {
                         .map(crate::i18n::tr)
                 });
             if let Some(status) = status {
-                state.renderer.fps_overlay.encode_status(
+                state.renderer.performance_overlay.encode_status(
                     &state.renderer.gpu,
                     &state.renderer.batch_renderer,
                     &mut encoder,
@@ -1557,6 +1558,7 @@ impl App {
             .as_ref()
             .and_then(|output| output.phases)
             .map(|phases| (phases, Instant::now()));
+        state.renderer.gpu.timer.end_frame(&mut encoder);
         let submission = state
             .renderer
             .gpu
@@ -1572,7 +1574,10 @@ impl App {
                 + presented_at.duration_since(handoff_started);
             #[cfg(feature = "telemetry-dashboard")]
             state.diag.render_timing.record(phases);
-            state.renderer.fps_overlay.record_render_phases(phases);
+            state
+                .renderer
+                .performance_overlay
+                .record_render_phases(phases);
         }
         let battlefield = state.frontend.screen == GameScreen::InGame;
         state
