@@ -10,7 +10,7 @@ use crate::render::palette_textures::PaletteSet;
 use crate::render::sprite_atlas::SpriteAtlas;
 use crate::render::terrain_draw::{
     DestinationEditCommand, PackedComposite, PackedCompositePiece, PackedSpriteKind,
-    SurfaceLineBatch, TerrainBatchStats, TerrainDrawRenderer, packed_wave_key,
+    SurfaceLineBatch, TerrainBatchStats, TerrainDrawRenderer, packed_joins_waves,
 };
 use crate::render::unit_atlas::UnitAtlas;
 use crate::render::unit_pose_cache::VxlPoseFrameCache;
@@ -313,9 +313,11 @@ fn plan_packed<'a>(
     let Some(rect) = terrain.packed_footprint(&composite, tactical) else {
         return;
     };
-    let kind = packed_wave_key(&composite).map_or(StageKind::PackedAlone, |(selector, z)| {
-        StageKind::Packed(selector, z)
-    });
+    let kind = if packed_joins_waves(&composite) {
+        StageKind::Packed
+    } else {
+        StageKind::PackedAlone
+    };
     stages.push(kind, rect, StageItem::Packed(composite));
 }
 
@@ -401,7 +403,7 @@ impl StageReplay<'_> {
                     drop(pass);
                     terrain.note_external_passes(encoder, 1);
                 }
-                StageKind::Packed(..) | StageKind::PackedAlone => {
+                StageKind::Packed | StageKind::PackedAlone => {
                     let composites: Vec<_> = items
                         .into_iter()
                         .map(|item| match item {

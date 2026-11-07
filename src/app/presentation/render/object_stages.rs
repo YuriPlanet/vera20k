@@ -17,8 +17,6 @@
 //! inside the stage stays parent order. Stages replay in index order.
 //! Footprints are tested on a tile grid: a false overlap only costs a stage.
 
-use crate::render::tactical_draw_plan::RenderZPolicy;
-
 const TILE: u32 = 16;
 
 /// Which transaction family replays a stage.
@@ -26,8 +24,8 @@ const TILE: u32 = 16;
 pub(super) enum StageKind {
     /// One ordinary render pass; draws compose in submission order.
     Ordinary,
-    /// One packed wave: equal selector and Z policy, pairwise disjoint.
-    Packed(u32, RenderZPolicy),
+    /// One packed wave: pairwise disjoint, of any selectors and Z policies.
+    Packed,
     /// A packed composite with displaced reads, replayed alone.
     PackedAlone,
     /// One read-only reduction interval; overlapping edits reduce in order.
@@ -157,7 +155,7 @@ mod tests {
 
     #[test]
     fn disjoint_anims_share_stages_and_overlaps_keep_parent_order() {
-        let packed = StageKind::Packed(2, RenderZPolicy::ReadOnly);
+        let packed = StageKind::Packed;
         let mut plan = ObjectStages::new([256, 64]);
         // Building, its translucent Anim on top, its shadow; then a second
         // building group far to the right; then a sprite clear of both groups
@@ -184,7 +182,7 @@ mod tests {
     #[test]
     fn exclusive_waves_never_take_an_overlapping_member() {
         let mut plan = ObjectStages::new([64, 64]);
-        let packed = StageKind::Packed(2, RenderZPolicy::None);
+        let packed = StageKind::Packed;
         plan.push(packed, [0, 0, 20, 20], 0);
         plan.push(packed, [10, 10, 20, 20], 1);
         plan.push(StageKind::EditReadWrite, [0, 0, 8, 8], 2);
