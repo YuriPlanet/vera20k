@@ -279,6 +279,10 @@ fn pending_first_e2_right_holds_one_real_head_then_resumes_its_paid_exit() {
     }
 }
 
+// The Infantry request mark falls through to the Vehicle one only without
+// Ares (FactoryClass flag fixes 1005CBD0/1005CB30/1005CBF0, hooks
+// 0x5005CC/0x50067C/0x5007BE).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn held_e2_resume_suppresses_a_vehicle_pending_request_before_dispatch() {
     let Some(mut fixture) = stock_base_fixture(

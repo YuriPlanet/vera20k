@@ -1700,6 +1700,10 @@ mod tests {
         assert!(restored.production_factory_visits(&sim).is_empty());
     }
 
+    // The Infantry request mark falls through to the Vehicle one only without
+    // Ares (FactoryClass flag fixes 1005CBD0/1005CB30/1005CBF0, hooks
+    // 0x5005CC/0x50067C/0x5007BE).
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn begin_attempt_clears_the_first_request_gate_without_discarding_failed_request() {
         use crate::app::input::sidebar_eva::{CameoClick, CameoOrder};
