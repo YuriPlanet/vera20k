@@ -86,20 +86,13 @@ const BRAND_KEY: &str = "GUI:WWBrand";
 const BRAND_FALLBACK: &str = "WESTWOOD STUDIOS\u{99} IS AN ELECTRONIC ARTS\u{99} BRAND";
 const LOADING_KEY: &str = "GUI:LoadingEx";
 const LOADING_FALLBACK: &str = "Loading...";
-const TRADEMARK_TOP_KEY: &str = "GUI:TradeMarkTop";
-const TRADEMARK_TOP_FALLBACK: &str =
-    "Command & Conquer and Yuri's Revenge are trademarks or registered";
-const TRADEMARK_BOTTOM_KEY: &str = "GUI:TradeMarkBottom";
-const TRADEMARK_BOTTOM_FALLBACK: &str =
-    "trademarks of Electronic Arts Inc. in the U.S. and/or other countries.";
 
 /// VERA20K's GPLv3 "Appropriate Legal Notices" (sections 0 and 5(d)): the
 /// copyright, the right to share under the license, no warranty, and where to
 /// read the license and get the source (a release build names its commit;
-/// build.rs), in the language in use. Drawn top right, opposite "Loading...". In
-/// GAME.FNT each English row stays right of Yuri's Revenge's logo at 800x600,
-/// and the three end above the art the retail test compares. Because the
-/// program shows them, modified versions must keep showing such a notice.
+/// build.rs), in the language in use. Drawn bottom left, under FFmpeg's notice.
+/// Because the program shows them, modified versions must keep showing such a
+/// notice.
 fn legal_notice() -> [String; 3] {
     [
         crate::i18n::tr("VERA:LegalCopyright"),
@@ -111,7 +104,7 @@ fn legal_notice() -> [String; 3] {
 /// The LGPL 2.1 (section 6) of the code ported from FFmpeg, the Bink decoder and
 /// the sidebar's xBR scaler, puts FFmpeg's copyright, as FFmpeg shows it, and a
 /// reference to that license's text among the copyright notices a program
-/// shows. Drawn bottom left, above the trademark lines.
+/// shows. Drawn bottom left, over VERA20K's notice.
 fn ffmpeg_notice() -> String {
     crate::i18n::tr("VERA:LegalFfmpeg")
 }
@@ -409,10 +402,14 @@ fn compose_startup_splash(
     Ok(canvas)
 }
 
-/// gamemd's splash text for a `client_width` x `client_height` composition,
-/// anchored to its corners: the copyright and brand bottom right, "Loading..."
-/// top left with VERA20K's notice opposite, and the trademark lines and the
-/// FFmpeg notice bottom left.
+/// gamemd's splash text (0x005312a0) for a `client_width` x `client_height`
+/// composition, anchored to its corners: the copyright and brand bottom right
+/// and "Loading..." top left. gamemd also draws its trademark lines
+/// (`GUI:TradeMarkTop`, `GUI:TradeMarkBottom`) bottom left; VERA leaves them
+/// out, the maintainer's choice, and stacks FFmpeg's notice and VERA20K's there
+/// instead. The stack ends on the brand's row and moves up a row at a time while
+/// one of its lines would come within 10 px of EA's line on its row, as long
+/// translations and the 640x480 composition do.
 fn splash_lines(
     csf: Option<&CsfFile>,
     font: &BitFont,
@@ -422,30 +419,44 @@ fn splash_lines(
     let copyright = csf_text(csf, COPYRIGHT_KEY, COPYRIGHT_FALLBACK);
     let brand = csf_text(csf, BRAND_KEY, BRAND_FALLBACK);
     let loading = csf_text(csf, LOADING_KEY, LOADING_FALLBACK);
-    let trademark_top = csf_text(csf, TRADEMARK_TOP_KEY, TRADEMARK_TOP_FALLBACK);
-    let trademark_bottom = csf_text(csf, TRADEMARK_BOTTOM_KEY, TRADEMARK_BOTTOM_FALLBACK);
 
     let row = 3 + font.cell_height as i32;
     let first_bottom_y = client_height - 40;
     let second_bottom_y = first_bottom_y + row;
-    let right = |text: &str| client_width - font.text_width(text) as i32 - 10;
+    let width = |text: &str| font.text_width(text) as i32;
+    let right = |text: &str| client_width - width(text) - 10;
     let line = |text: &str, x: i32, y: i32| SplashLine {
         text: text.to_owned(),
         x,
         y,
     };
 
-    let mut lines = vec![
+    let ea_lines = [
         line(&copyright, right(&copyright), first_bottom_y),
         line(&brand, right(&brand), second_bottom_y),
-        line(&loading, 10, 10),
     ];
-    for (index, notice) in legal_notice().iter().enumerate() {
-        lines.push(line(notice, right(notice), 10 + index as i32 * row));
+    let notices: Vec<String> = [ffmpeg_notice()]
+        .into_iter()
+        .chain(legal_notice())
+        .collect();
+    let clear_of_ea_lines = |top: i32| {
+        notices.iter().enumerate().all(|(index, notice)| {
+            let y = top + index as i32 * row;
+            ea_lines
+                .iter()
+                .all(|ea| ea.y != y || 10 + width(notice) + 10 <= ea.x)
+        })
+    };
+    let mut top = second_bottom_y - (notices.len() as i32 - 1) * row;
+    while !clear_of_ea_lines(top) {
+        top -= row;
     }
-    lines.push(line(&trademark_top, 10, first_bottom_y));
-    lines.push(line(&trademark_bottom, 10, second_bottom_y));
-    lines.push(line(&ffmpeg_notice(), 10, first_bottom_y - row));
+
+    let mut lines = Vec::from(ea_lines);
+    lines.push(line(&loading, 10, 10));
+    for (index, notice) in notices.iter().enumerate() {
+        lines.push(line(notice, 10, top + index as i32 * row));
+    }
     lines
 }
 
@@ -498,36 +509,50 @@ mod tests {
     use super::*;
     use crate::assets::asset_manager::MediaArchiveMode;
 
+    /// FFmpeg's notice, then VERA20K's, fill the bottom left down to the brand's
+    /// row in place of gamemd's trademark lines; "Loading..." stays top left.
     #[test]
-    fn legal_notice_is_placed_right_aligned_opposite_loading() {
+    fn legal_notices_stack_bottom_left_down_to_the_brands_row() {
         let font = crate::render::bit_font::tests::make_test_font(&[], 4);
         let lines = splash_lines(None, &font, 800, 600);
-        let find = |text: &str| lines.iter().find(|line| line.text == text).expect(text);
+        let mut left: Vec<_> = lines
+            .iter()
+            .filter(|line| line.x == 10)
+            .map(|line| (line.text.as_str(), line.y))
+            .collect();
+        left.sort_by_key(|&(_, y)| y);
 
-        let loading = find(LOADING_FALLBACK);
-        assert_eq!((loading.x, loading.y), (10, 10));
-        for (row, notice) in legal_notice().iter().enumerate() {
-            let line = find(notice);
-            assert_eq!(
-                line.x + font.text_width(notice) as i32,
-                800 - 10,
-                "{notice}"
-            );
-            assert_eq!(line.y, 10 + row as i32 * (3 + font.cell_height as i32));
-        }
+        let ffmpeg = ffmpeg_notice();
+        let [copyright, share, source] = legal_notice();
+        assert_eq!(
+            left,
+            [
+                (LOADING_FALLBACK, 10),
+                (ffmpeg.as_str(), 520),
+                (copyright.as_str(), 540),
+                (share.as_str(), 560),
+                (source.as_str(), 580),
+            ]
+        );
     }
 
+    /// At 640x480 the share line would run into EA's copyright on its row, so
+    /// the stack moves up until each notice keeps 10 px clear of EA's line.
     #[test]
-    fn ffmpeg_notice_is_placed_left_aligned_above_the_trademark_lines() {
+    fn legal_notices_move_up_rather_than_run_into_eas_lines() {
         let font = crate::render::bit_font::tests::make_test_font(&[], 4);
-        let lines = splash_lines(None, &font, 800, 600);
+        let lines = splash_lines(None, &font, 640, 480);
         let find = |text: &str| lines.iter().find(|line| line.text == text).expect(text);
 
-        let trademark = find(TRADEMARK_TOP_FALLBACK);
-        let ffmpeg = find(&ffmpeg_notice());
-        assert_eq!((trademark.x, trademark.y), (10, 600 - 40));
-        assert_eq!(ffmpeg.x, 10);
-        assert_eq!(ffmpeg.y, trademark.y - 3 - font.cell_height as i32);
+        let ea_copyright = find(COPYRIGHT_FALLBACK);
+        let [_, share, _] = legal_notice();
+        assert!(find(&share).y < ea_copyright.y);
+        for ea in [ea_copyright, find(BRAND_FALLBACK)] {
+            for notice in lines.iter().filter(|line| line.x == 10 && line.y == ea.y) {
+                let end = notice.x + font.text_width(&notice.text) as i32;
+                assert!(end + 10 <= ea.x, "{} runs into {}", notice.text, ea.text);
+            }
+        }
     }
 
     fn compare_composed_splash_to_retail_shape(
