@@ -3754,13 +3754,20 @@ fn queue_stop_for_selected(state: &mut AppState) {
 
 /// Whether the Stop walk issues to this object: one it may control (vt+0xA0)
 /// or that is active (vt+0x9C, `0x00730ECD..0x00730EE3`), so an offline
-/// Robot Tank a click selected stays put.
+/// Robot Tank a click selected stays put. Ares 3.0
+/// StopCommandClass_Execute_Berzerk (1005D110, hook 0x730EE5) passes over a
+/// berserk one.
 fn stop_qualifies(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     id: u64,
 ) -> bool {
-    sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules)
+    (sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules))
+        && !(crate::rules::ARES_ENABLED
+            && sim
+                .entities()
+                .get(id)
+                .is_some_and(|entity| entity.berserk.is_active()))
 }
 
 /// The Stop walk, then its cue `PlayGlobal(Rules+720, 0x2000, 1.0)`

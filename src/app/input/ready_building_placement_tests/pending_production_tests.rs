@@ -50,12 +50,15 @@ fn native_e2_category_gates(phase_name: &str) -> Vec<ProductionCategory> {
         .unwrap();
     // Original House5005B0 stores Infantry at53D1 and falls through to
     // nonnaval Vehicle53D2. These are observed bytes, not derived gates.
+    // Ares HouseClass_SetFactoryCreatedManually (1005CBD0, hook 0x5005CC)
+    // stops at Infantry; this E2-only history sets Vehicle by nothing else.
     let bytes = phase["after"]["category_request_bytes"].as_array().unwrap();
     [
         (1, ProductionCategory::Infantry),
         (2, ProductionCategory::Vehicle),
     ]
     .into_iter()
+    .filter(|&(offset, _)| !(cfg!(feature = "ares") && offset == 2))
     .filter_map(|(offset, category)| (bytes[offset].as_u64().unwrap() != 0).then_some(category))
     .collect()
 }

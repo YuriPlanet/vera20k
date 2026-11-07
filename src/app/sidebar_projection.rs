@@ -1061,6 +1061,10 @@ impl SidebarProjectionState {
 
     /// The original Infantry set/clear arm5005CC/5007BE falls through to
     /// the Naval-selected Vehicle slot; its getter reads only Infantry.
+    /// Ares 3.0 sets only the Infantry flag: HouseClass_SetFactoryCreatedManually
+    /// (1005CBD0, hook 0x5005CC), HouseClass_ClearFactoryCreatedManually
+    /// (1005CB30, hook 0x50067C) and HouseClass_SetFactoryCreatedManually2
+    /// (1005CBF0, hook 0x5007BE).
     fn set_prediction_category(&mut self, category: ProductionCategory, naval: bool, set: bool) {
         let mut update = |category| {
             if set {
@@ -1070,7 +1074,7 @@ impl SidebarProjectionState {
             }
         };
         update(category);
-        if category == ProductionCategory::Infantry {
+        if category == ProductionCategory::Infantry && !crate::rules::ARES_ENABLED {
             update(if naval {
                 ProductionCategory::Ship
             } else {
