@@ -324,6 +324,30 @@ fn ally_matrix_answers_as_the_graph_through_ally_writes() {
     assert!(allied(&sim, first, late));
 }
 
+/// A house the headless scenario adds after the load gets a matrix row, as
+/// a launch's houses do, instead of every question about it going to the
+/// graph by name: the load has already built the matrix.
+#[test]
+fn a_house_added_after_the_load_gets_a_matrix_row() {
+    let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let mut scene = crate::headless_scenario::load(&retail, "XMP03T4.MAP", 0x1269)
+        .expect("physical AnyTown Battle scenario");
+    let has_row = |sim: &Simulation, id| {
+        let matrix = sim.house_alliances.matrix(&sim.interner);
+        matrix.is_some_and(|matrix| matrix.row(id).is_some())
+    };
+    let local = scene.sim().session.current_house().expect("local house");
+    assert!(has_row(scene.sim(), local));
+    assert!(
+        scene.sim().interner.get("Late").is_none(),
+        "a name the load never interned"
+    );
+    let late = scene.add_human_house("Late", crate::skirmish_launch::LaunchCountry::Yuri);
+    assert!(has_row(scene.sim(), late));
+}
+
 /// MakeEnemy adds the anger first (`0x004F9FDD`), while the house is still
 /// an ally the rescan skips, then breaks both sides (`0x004FA020`,
 /// `0x004FA094`). The next call finds no alliance and names the enemy.
