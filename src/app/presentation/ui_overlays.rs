@@ -2118,13 +2118,25 @@ pub(crate) fn build_software_cursor_instances(
     let Some(animated) = software_cursor_frame_index(id, sequence) else {
         return (Vec::new(), None);
     };
-    let index = if id == CursorId::Default
+    let (id, sequence, index) = if id == CursorId::Default
         && crate::app::input::planning_mode::node_at_cursor(state).is_some()
     {
         //63AC41..4E selects row0's static small frame when only hovering.
-        1
+        let Some(cursor) = state
+            .match_state
+            .match_presentation
+            .software_cursor
+            .as_ref()
+        else {
+            return (Vec::new(), None);
+        };
+        let (small, frame) = cursor.planning_arrow();
+        let Some(small_sequence) = cursor.get(small) else {
+            return (Vec::new(), None);
+        };
+        (small, small_sequence, frame)
     } else {
-        animated
+        (id, sequence, animated)
     };
     let Some(frame) = sequence.frames.get(index) else {
         return (Vec::new(), None);

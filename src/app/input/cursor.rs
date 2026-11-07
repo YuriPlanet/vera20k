@@ -182,11 +182,21 @@ pub(crate) fn current_cursor_feedback_kind(
                 state.match_state.input.cursor_x,
                 state.match_state.input.cursor_y,
             );
-            if runtime
+            let allowed = runtime
                 .simulation
                 .super_weapon_target_check(&runtime.resources.rules, owner, sw_type, cell, false)
-                .is_err()
+                .is_ok();
+            // Ares SWTypeExt::ExtData::WhatAction 10033EB0 (hook 0x6CEF84):
+            // a handled type shows its Cursor or NoCursor.
+            #[cfg(feature = "ares")]
+            if let Some(cursor) =
+                super::ares_cursor::super_weapon_cursor(&runtime.resources.rules, section, allowed)
             {
+                return Some(CursorFeedbackKind::SuperWeaponTarget(
+                    super::ares_cursor::cursor_id(cursor, false),
+                ));
+            }
+            if !allowed {
                 return Some(CursorFeedbackKind::SuperWeaponTarget(CursorId::Default));
             }
         }
@@ -285,8 +295,15 @@ pub(crate) fn current_cursor_feedback_kind(
     // The cursor update asks the Cell's What_Action with mouse-over set
     // (`0x0069300B`).
     let query = ActionQuery::new(state, sim, selected, true);
+    // Ares DisplayClass_SetAction_CustomCursor 10057F10 (hook 0x4AB35A)
+    // draws the What_Action answer with the cursor its hooks chose.
+    #[cfg(feature = "ares")]
+    let ares =
+        |kind: CursorFeedbackKind| super::ares_cursor::tactical(kind, selected.len(), query.rules);
+    #[cfg(not(feature = "ares"))]
+    let ares = |kind: CursorFeedbackKind| kind;
     if !query.cell_visible(cell) {
-        return Some(query.hidden_cell(cell));
+        return Some(ares(query.hidden_cell(cell)));
     }
     let owner = preferred_local_owner_name(state)?;
     let hover_object = targets.hover;
@@ -300,7 +317,7 @@ pub(crate) fn current_cursor_feedback_kind(
         });
         return no_selection_cursor(hover.as_ref());
     }
-    query.selection_action(cell, hover_object)
+    query.selection_action(cell, hover_object).map(ares)
 }
 
 /// What the selection's best object is asked with besides the Cell and the
@@ -386,6 +403,9 @@ impl<'a> ActionQuery<'a> {
             ActionDistanceTarget::CellCentre(cell.0, cell.1),
             self.rules,
         );
+        // Ares 1004C920 (hook 0x700600): the Cell What_Action's entry.
+        #[cfg(feature = "ares")]
+        super::ares_cursor::what_action_entry(self, best_id, None);
         self.empty_cell(best_id, cell)
     }
 
@@ -396,6 +416,40 @@ impl<'a> ActionQuery<'a> {
     /// the tactical map and the radar alike). `None` is Action0, the arrow.
     /// The selection is not empty.
     pub(crate) fn selection_action(
+        &self,
+        cell: (u16, u16),
+        hover_object: Option<HoverObject>,
+    ) -> Option<CursorFeedbackKind> {
+        // Ares writes its cursor overrides while the best object answers
+        // ([`super::ares_cursor`]): the Techno entry's (hooks 0x6FFEC0,
+        // 0x700600, 0x7000CD, 0x7400F0) before, the Attack ones (0x70055D,
+        // 0x700AA8, 10057F10's range test) after.
+        #[cfg(feature = "ares")]
+        {
+            let best_id = select_best_for_action(
+                self.sim,
+                self.selected,
+                hover_object.map_or(ActionDistanceTarget::CellCentre(cell.0, cell.1), |object| {
+                    ActionDistanceTarget::Object(object.id())
+                }),
+                self.rules,
+            );
+            super::ares_cursor::what_action_entry(self, best_id, hover_object);
+            let kind = self.best_object_action(cell, hover_object);
+            if let Some(kind) = kind {
+                let target = hover_object
+                    .map_or(combat::TargetKind::Cell(cell.0, cell.1), |object| {
+                        combat::TargetKind::Entity(object.id())
+                    });
+                super::ares_cursor::what_action_attack(self, best_id, target, kind);
+            }
+            kind
+        }
+        #[cfg(not(feature = "ares"))]
+        self.best_object_action(cell, hover_object)
+    }
+
+    fn best_object_action(
         &self,
         (cell_rx, cell_ry): (u16, u16),
         hover_object: Option<HoverObject>,
@@ -902,13 +956,40 @@ pub(super) fn capability_cursor_for_hover(
         }) {
             return match action {
                 crate::sim::world::EngineerBuildingAction::Repair(valid) => {
+                    // Ares 10025420 (hook 0x51E635): a rubble's GRepair
+                    // shows RepairTrench (0x5E).
+                    #[cfg(feature = "ares")]
+                    if valid
+                        && rules.is_some_and(|rules| {
+                            sim.ares_engineer_repairs_rubble(
+                                sel_entity.stable_id(),
+                                hover.stable_id,
+                                rules,
+                            )
+                        })
+                    {
+                        super::ares_cursor::set_cursor(
+                            crate::rules::ares_mouse_cursor::index::REPAIR_TRENCH,
+                            super::ares_cursor::action::GREPAIR,
+                        );
+                    }
                     CursorFeedbackKind::RepairAction(valid)
                 }
                 crate::sim::world::EngineerBuildingAction::Damage => {
+                    // Ares 10025550 (hook 0x51E5E1): EngineerDamage (0x57).
+                    #[cfg(feature = "ares")]
+                    super::ares_cursor::set_cursor(
+                        crate::rules::ares_mouse_cursor::index::ENGINEER_DAMAGE,
+                        super::ares_cursor::action::DAMAGE,
+                    );
                     CursorFeedbackKind::EngineerDamage
                 }
-                crate::sim::world::EngineerBuildingAction::Capture
-                | crate::sim::world::EngineerBuildingAction::EnterHospital => {
+                crate::sim::world::EngineerBuildingAction::Capture => {
+                    #[cfg(feature = "ares")]
+                    super::ares_cursor::note_capture();
+                    CursorFeedbackKind::Enter
+                }
+                crate::sim::world::EngineerBuildingAction::EnterHospital => {
                     CursorFeedbackKind::Enter
                 }
                 crate::sim::world::EngineerBuildingAction::EnterGrinder => {
@@ -929,9 +1010,13 @@ pub(super) fn capability_cursor_for_hover(
                 force_move_key,
             )
         }) {
-            // Ares100496EF selects TakeVehicle92. Its default constructor
-            //1000735C..10007370 copies native Enter25's complete descriptor.
-            // RESIDUAL: custom [MouseCursors] overrides are not bound yet.
+            // Ares 10049690 (hook 0x51E7BF): Capture with TakeVehicle
+            // (0x5C), whose default copies Enter's descriptor.
+            super::ares_cursor::set_cursor(
+                crate::rules::ares_mouse_cursor::index::TAKE_VEHICLE,
+                super::ares_cursor::action::CAPTURE,
+            );
+            super::ares_cursor::note_capture();
             return CursorFeedbackKind::Enter;
         }
 
@@ -981,6 +1066,9 @@ pub(super) fn capability_cursor_for_hover(
                 )
             })
         {
+            // Infantry51E3B0's occupy arm answers Capture (9).
+            #[cfg(feature = "ares")]
+            super::ares_cursor::note_capture();
             return CursorFeedbackKind::Enter;
         }
 
@@ -1050,6 +1138,11 @@ pub(super) fn capability_cursor_for_hover(
                 sim.infiltrator_building_action(best_id, hover.stable_id, rules)
             })
         {
+            // Ares 10025FC0 (hook 0x51EE6B): Cursor.Spy or Sabotage.
+            #[cfg(feature = "ares")]
+            if let Some(rules) = rules {
+                super::ares_cursor::infiltration(sim, rules, best_id, hover.stable_id);
+            }
             return CursorFeedbackKind::Enter;
         }
 
@@ -1617,6 +1710,8 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         CursorFeedbackKind::SuperWeaponTarget(id) => Some(id),
         // Row 0x4E: mouse.sha frames 435..449 at rate 4.
         CursorFeedbackKind::PlaceBeacon => Some(CursorId::Beacon),
+        #[cfg(feature = "ares")]
+        CursorFeedbackKind::AresAction(index) => Some(CursorId::Ares { index, mini: false }),
     }
 }
 

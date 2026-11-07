@@ -148,6 +148,14 @@ pub(crate) enum CursorId {
     PsychicReveal,
     SpyPlane,
     Beacon,
+    /// Ares 3.0: an entry of the `[MouseCursors]` list by index, its main set
+    /// or its radar (`mini`) set ([`crate::rules::ares_mouse_cursor`]). An
+    /// Ares cursor draws every id through the list ([`SoftwareCursor::get`]).
+    #[cfg(feature = "ares")]
+    Ares {
+        index: u16,
+        mini: bool,
+    },
 }
 
 /// All loaded cursor animation sequences from mouse.sha, keyed by CursorId.
@@ -157,6 +165,10 @@ pub(crate) struct SoftwareCursor {
     /// same mouse palette. CPU logical pixels preserve its interleaving with
     /// line/rectangle stores without adding a second asset loader or atlas.
     planning_badges: [Option<PlanningBadge>; 2],
+    /// Built from the Ares cursor list ([`build_ares_software_cursor`]):
+    /// `sequences` holds only [`CursorId::Ares`] keys.
+    #[cfg(feature = "ares")]
+    ares: bool,
 }
 
 pub(crate) struct PlanningBadge {
@@ -172,14 +184,31 @@ impl SoftwareCursor {
     pub(crate) fn planning_badge(&self, frame: usize) -> Option<&PlanningBadge> {
         self.planning_badges.get(frame.checked_sub(433)?)?.as_ref()
     }
+    /// The cursor and frame a planning node shows while hovered:
+    /// PlanMgr63AC41..4E asks row 0 with the small flag, so the static small
+    /// arrow, `Default`'s second packed frame. Through the Ares list it is
+    /// row 0's radar set (`MouseClass_UpdateCursor @ 10007AC0`).
+    pub(crate) fn planning_arrow(&self) -> (CursorId, usize) {
+        #[cfg(feature = "ares")]
+        if self.ares {
+            return (CursorId::DefaultMini, 0);
+        }
+        (CursorId::Default, 1)
+    }
+
     /// Look up a cursor sequence by id, falling back to Default if not found.
     pub(crate) fn get(&self, id: CursorId) -> Option<&SoftwareCursorSequence> {
+        #[cfg(feature = "ares")]
+        if self.ares {
+            return ares::lookup(&self.sequences, id);
+        }
         self.sequences
             .get(&id)
             .or_else(|| self.sequences.get(&CursorId::Default))
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct SoftwareCursorFrame {
     pub(crate) texture: BatchTexture,
     pub(crate) width: f32,
@@ -634,11 +663,9 @@ const CURSOR_DEFS: &[(CursorId, usize, usize, u64, CursorHotspot)] = &[
     ),
 ];
 
-pub(crate) fn build_software_cursor(
-    gpu: &GpuContext,
-    batch: &BatchRenderer,
-    asset_manager: &AssetManager,
-) -> Option<SoftwareCursor> {
+/// MOUSE.SHA and MOUSEPAL.PAL, the one shape and palette every software
+/// cursor draws from.
+fn load_mouse_shape(asset_manager: &AssetManager) -> Option<(ShpFile, Palette)> {
     // Init_Game 0x0052BA60 converts MOUSEPAL.PAL like every palette load.
     let palette = asset_manager
         .get_ref("mousepal.pal")
@@ -654,8 +681,16 @@ pub(crate) fn build_software_cursor(
     if shp.frames.is_empty() {
         return None;
     }
-
     maybe_export_mouse_sheet(&shp, &palette);
+    Some((shp, palette))
+}
+
+pub(crate) fn build_software_cursor(
+    gpu: &GpuContext,
+    batch: &BatchRenderer,
+    asset_manager: &AssetManager,
+) -> Option<SoftwareCursor> {
+    let (shp, palette) = load_mouse_shape(asset_manager)?;
 
     let mut sequences: HashMap<CursorId, SoftwareCursorSequence> = HashMap::new();
     for &(id, start, count, interval_ms, hotspot) in CURSOR_DEFS {
@@ -686,8 +721,17 @@ pub(crate) fn build_software_cursor(
     Some(SoftwareCursor {
         sequences,
         planning_badges,
+        #[cfg(feature = "ares")]
+        ares: false,
     })
 }
+
+#[cfg(feature = "ares")]
+pub(crate) use ares::{build_ares_software_cursor, vanilla_row};
+
+#[cfg(feature = "ares")]
+#[path = "cursor_atlas_ares.rs"]
+mod ares;
 
 fn build_cursor_sequence(
     gpu: &GpuContext,

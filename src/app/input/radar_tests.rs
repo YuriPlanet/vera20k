@@ -272,6 +272,12 @@ fn the_armed_superweapon_index_answers_first() {
     );
     assert_eq!(action(&some, Some(1), GROUND, None), None);
     assert_eq!(action(&none, Some(3), GROUND, None), None);
+    // Installed Ares asks the redirected Chronosphere first (hook 0x653B3A):
+    // its Chronosphere cursor has no radar frames, so `0x653CA6` leaves no
+    // action, selection or not.
+    #[cfg(feature = "ares")]
+    assert_eq!(action(&some, Some(3), GROUND, None), None);
+    #[cfg(not(feature = "ares"))]
     assert_eq!(
         action(&some, Some(3), GROUND, None),
         Some(RadarAction::Move)
