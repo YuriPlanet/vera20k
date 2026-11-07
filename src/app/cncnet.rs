@@ -794,10 +794,17 @@ impl App {
         state.frontend.match_winners.as_deref()
     }
 
+    /// When the match's local result was decided, for the online lobby's
+    /// `finish`.
+    pub(crate) fn match_result_at(state: &AppState) -> Option<Instant> {
+        state.frontend.match_result_at
+    }
+
     /// An online match starts: no earlier match's result may stand for it.
     pub(crate) fn clear_match_result(state: &mut AppState) {
         state.frontend.match_result = None;
         state.frontend.match_winners = None;
+        state.frontend.match_result_at = None;
     }
 
     /// Record the end-of-match owner's decision for an external launch or an
@@ -840,6 +847,7 @@ impl App {
         let winners = sim.and_then(|sim| match_winners(&state.match_state.session, sim));
         state.frontend.match_result = Some(result);
         state.frontend.match_winners = winners;
+        state.frontend.match_result_at = Some(Instant::now());
     }
 
     /// An external launch that cannot reach or finish its match ends the

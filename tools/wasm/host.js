@@ -45,6 +45,7 @@ const TEXT = {
         notYr: 'ra2md.mix was not found; this may not be a Yuri’s Revenge folder.',
         startReady: 'Ready. Click Start game.',
         importing: (n, total, name) => `Importing ${n}/${total}: ${name}`,
+        audioUnavailable: error => `Audio unavailable: ${error}`,
         startFailed: error => `Could not start: ${error}. Reload the page to try again.`,
         helpTitle: 'Help', helpHeading: 'Where is my game folder?', close: 'Close',
         help1: 'Pick the Yuri’s Revenge install folder: the one that contains <code>ra2md.mix</code> and <code>ra2.mix</code>.',
@@ -83,6 +84,7 @@ const TEXT = {
         notYr: '未找到 ra2md.mix，这可能不是《尤里的复仇》目录。',
         startReady: '准备就绪，点击“开始游戏”',
         importing: (n, total, name) => `正在导入 ${n}/${total}：${name}`,
+        audioUnavailable: error => `音频不可用：${error}`,
         startFailed: error => `无法启动：${error}。请刷新页面重试。`,
         helpTitle: '帮助', helpHeading: '游戏文件夹在哪里？', close: '关闭',
         help1: '选择《尤里的复仇》安装目录，即包含 <code>ra2md.mix</code> 和 <code>ra2.mix</code> 的文件夹。',
@@ -392,7 +394,7 @@ async function launch() {
     picker.disabled = true;
     drop.setAttribute('aria-disabled', 'true');
     try {
-        try { prepare_audio(); } catch (error) { show(`Audio unavailable: ${error}`); }
+        try { prepare_audio(); } catch (error) { show(TEXT[lang].audioUnavailable(error)); }
         progress.hidden = false;
         const bar = progress.firstElementChild;
         const total = selection.reduce((sum, [, file]) => sum + file.size, 0) || 1;

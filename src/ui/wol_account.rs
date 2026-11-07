@@ -5,6 +5,7 @@
 //! username and password. gamemd has no such dialog; they use the online
 //! Create Game box's art, field column, checkbox rows and buttons.
 
+use crate::i18n::{tr, tr_fill};
 use crate::ui::shell::button::ShellButtonInteraction;
 use crate::ui::shell::modal::WolAccountFormLayout;
 use crate::ui::skirmish_shell::SavedSeedDescriptionEdit;
@@ -328,11 +329,11 @@ impl WolAccountForm {
     }
 
     fn sign_in_status(&self) -> String {
-        if self.remembered {
-            "This computer remembers this account's sign-in, so Login needs no password.".into()
+        tr(if self.remembered {
+            "VERA:SignInRemembered"
         } else {
-            "Enter your account's username and password.".into()
-        }
+            "VERA:SignInPrompt"
+        })
     }
 
     /// Play as Guest, its username prefilled.
@@ -340,9 +341,7 @@ impl WolAccountForm {
         let mut form = Self::with_fields(
             FormKind::Guest,
             vec![AccountField::new(FieldKind::Name, "VERA:Username")],
-            "Play unranked without an account, under a username of 1 to 24 letters, \
-             digits, _ or -."
-                .into(),
+            tr("VERA:GuestPrompt"),
         );
         form.prefill_name(name);
         form
@@ -358,7 +357,7 @@ impl WolAccountForm {
                 AccountField::new(FieldKind::Password, "VERA:Password"),
                 AccountField::new(FieldKind::Confirm, "VERA:ConfirmPassword"),
             ],
-            "Choose a username and a password of 8 to 64 characters.".into(),
+            tr("VERA:RegisterPrompt"),
         );
         form.prefill_name(name);
         form
@@ -369,7 +368,7 @@ impl WolAccountForm {
         let mut form = Self::with_fields(
             FormKind::Verify,
             vec![AccountField::new(FieldKind::Code, "VERA:Code")],
-            format!("Enter the code we sent to {email}."),
+            tr_fill("VERA:VerifyPrompt", &[("email", &email)]),
         );
         form.name = name;
         form.email = email;
@@ -382,7 +381,7 @@ impl WolAccountForm {
         let mut form = Self::with_fields(
             FormKind::Forgot,
             vec![AccountField::new(FieldKind::Name, "VERA:Username")],
-            "Enter your account's username, and we mail a code to its email.".into(),
+            tr("VERA:ForgotPrompt"),
         );
         form.prefill_name(name);
         form
@@ -397,7 +396,7 @@ impl WolAccountForm {
                 AccountField::new(FieldKind::Password, "VERA:NewPassword"),
                 AccountField::new(FieldKind::Confirm, "VERA:ConfirmPassword"),
             ],
-            format!("If {name} has an account, its email has a code. Choose a new password."),
+            tr_fill("VERA:ResetPrompt", &[("name", &name)]),
         );
         form.name = name;
         form
@@ -411,9 +410,7 @@ impl WolAccountForm {
                 AccountField::new(FieldKind::Name, "VERA:Username"),
                 AccountField::new(FieldKind::Password, "VERA:Password"),
             ],
-            "Delete the account for good, with its email, password and ranked games? \
-             Enter its username and password to confirm."
-                .into(),
+            tr("VERA:DeletePrompt"),
         );
         form.prefill_name(name);
         form
@@ -582,7 +579,7 @@ impl WolAccountForm {
         }
         self.drop_placeholder();
         self.focus(1);
-        self.status = "This computer forgot the sign-in. Enter the account's password.".into();
+        self.status = tr("VERA:SignInForgotten");
         Some(AccountFormAction::ForgetSignIn)
     }
 
@@ -613,7 +610,7 @@ impl WolAccountForm {
                     AccountRequest::Verify { .. } => {}
                 }
                 self.busy = true;
-                self.status = "Contacting VERA20k Online...".into();
+                self.status = tr("VERA:ContactingOnline");
                 Some(AccountFormAction::Send(request))
             }
             FORM_CANCEL => Some(AccountFormAction::Close),
@@ -710,10 +707,7 @@ impl WolAccountForm {
             FormKind::Delete => {
                 self.kind = FormKind::Deleted;
                 self.fields.clear();
-                self.status = format!(
-                    "{} is deleted, with its email, password and ranked games.",
-                    self.name
-                );
+                self.status = tr_fill("VERA:AccountDeleted", &[("name", &self.name)]);
                 Some(AccountDone::Deleted {
                     name: self.name.clone(),
                 })

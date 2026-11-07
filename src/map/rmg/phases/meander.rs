@@ -23,16 +23,16 @@
 //! records linearly, so it yields cells in row-major order — ascending `y`, then
 //! ascending `x`. That difference is invisible everywhere else it is used,
 //! because those callers draw no randomness. Here it decides which border cell
-//! gets which random draw, so [`region_border_row_major`] exists to reproduce it
-//! rather than reusing the lake's collector.
+//! gets which random draw, and [`border_cells_of`] keeps that order.
 
 use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
-use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::x87::{self, TruncF64};
+use crate::util::direction_tables::native_atan_from_table;
 use crate::util::native_heap::NativeHeap;
 use crate::util::native_x87::X87Chop53;
 
+use super::adjacency::border_cells_of;
 use super::blob::BlobCtx;
 
 /// The rect edge length that counts as "unclipped" when the heading is derived.
@@ -92,31 +92,6 @@ fn by_cost(nodes: &[Node]) -> impl Fn(&usize, &usize) -> bool + '_ {
     move |&a, &b| nodes[a].cost < nodes[b].cost
 }
 
-/// Cells of `region` that touch a differently-owned cell, in row-major order.
-///
-/// The original sweeps working-grid records by raw offset, and a record's index
-/// is `y * width + x`, so this is ascending `y` then ascending `x` — *not* the
-/// isometric order the rest of the generator draws in. See the module header.
-fn region_border_row_major(scratch: &RmgScratch, region: i32) -> Vec<(i32, i32)> {
-    let width = scratch.width() as i32;
-    let mut border = Vec::new();
-    for y in 0..width {
-        for x in 0..width {
-            if !scratch.in_diamond(x, y) || scratch.get(x, y).region != region {
-                continue;
-            }
-            for dir in 0..8usize {
-                let (nx, ny) = RmgGrid::step(x, y, dir);
-                if scratch.in_diamond(nx, ny) && scratch.get(nx, ny).region != region {
-                    border.push((x, y));
-                    break;
-                }
-            }
-        }
-    }
-    border
-}
-
 /// Where the growth points before the first Gaussian nudges it.
 ///
 /// Whichever rect edge is clipped decides the direction. The `y` test runs
@@ -143,27 +118,34 @@ fn heading_from_rect(rect: [i32; 4]) -> f64 {
 }
 
 /// How far `cell` sits off `heading`, seen from `reference`, folded to `[0, π]`.
+///
+/// `GrowMeanderArm` computes this inline twice, for the seeds
+/// (0x005A0ACA..0x005A0B4F) and the frontier (0x005A0E81..0x005A0F0B), in
+/// x87 under chop: `FILD dy; FIDIV dx; FCHS` into `Math::AtanFromTable @
+/// 0x004CADE0`, the table lookup every RMG angle shares, then `+π` for a
+/// negative `dx` (`π/2` when `dx` is zero), `|· − heading|`, folded by `2π`
+/// while not below it and mirrored above `π`. The same angle and cost also
+/// sit out of line, unreferenced, at 0x005A1190.
 fn angle_off_heading(cell: (i32, i32), reference: (i32, i32), heading: f64) -> f64 {
+    let tf = TruncF64::from_f64;
     let dx = cell.0 - reference.0;
-    let mut angle = if dx == 0 {
-        HALF_PI
+    let angle = if dx == 0 {
+        tf(HALF_PI)
     } else {
-        let ratio = -(f64::from(cell.1 - reference.1) / f64::from(dx));
-        // Every client must generate the same map, and host `atan`s disagree
-        // in the last bit (`atan(2)` among them), so this is libm's on every
-        // target. The original's FPATAN may differ from it in that bit, which
-        // reorders the frontier only on a near-tie of the f32 cost.
-        let angle = libm::atan(ratio);
-        if dx < 0 { angle + PI } else { angle }
+        let ratio = tf(f64::from(cell.1 - reference.1))
+            .div(tf(f64::from(dx)))
+            .neg();
+        let angle = TruncF64::from(native_atan_from_table(ratio.into()));
+        if dx < 0 { angle.add(tf(PI)) } else { angle }
     };
-    angle = (angle - heading).abs();
-    while angle >= TAU {
-        angle -= TAU;
+    let mut off = angle.sub(tf(heading)).abs();
+    while !off.lt(tf(TAU)) {
+        off = off.sub(tf(TAU));
     }
-    if angle > PI {
-        angle = TAU - angle;
+    if tf(PI).lt(off) {
+        off = tf(TAU).sub(off);
     }
-    angle
+    off.to_f64()
 }
 
 /// The frontier priority: a random term plus the off-heading penalty, stored
@@ -182,6 +164,11 @@ fn frontier_cost(angle: f64, draw: u32) -> f32 {
 /// Transcribed in the original's operation order, which is not the tidy
 /// division it is algebraically equal to: the reciprocal is taken, scaled, and
 /// then inverted again. Reordering it changes the last bits and so the budget.
+///
+/// Residual: the native log is `FLDLN2; FILD; FYL2X` under chop (0x005A0C40);
+/// [`x87::ln`] is libm's, rounded to nearest. Nothing narrows it here, so a
+/// last-bit difference changes the budget only when the result lands within
+/// an ulp of an integer.
 fn step_budget(border_total: usize, step_density: f32, rng: &mut RmgRng) -> i32 {
     let log = x87::ln(TruncF64::from_f64(border_total as f64)).to_f64();
     let floored = if STEP_LOG_FLOOR > log {
@@ -213,7 +200,9 @@ fn step_budget(border_total: usize, step_density: f32, rng: &mut RmgRng) -> i32 
     base + extra
 }
 
-/// Grow `args.tag`'s region along a wandering heading.
+/// `RandomMapGenerator::GrowMeanderArm @ 0x005A08D0`: grow `args.tag`'s
+/// region along a wandering heading. Callers: the canyon in `CarveRiver`
+/// (0x0059E3C2) and the bridge plateau in `BuildRiverBridge` (0x0059EC65).
 ///
 /// Returns false when the growth ran into a cell owned by a *different* region —
 /// that is the original's only failure, and its callers treat it as fatal.
@@ -233,7 +222,7 @@ pub(crate) fn grow_meander_arm(ctx: &mut BlobCtx<'_>, args: &MeanderArgs) -> boo
         ctx.scratch.get_mut(x, y).stamp = 0;
     }
 
-    let border = region_border_row_major(ctx.scratch, args.tag);
+    let border = border_cells_of(ctx.scratch, args.tag);
     for &(x, y) in &border {
         if !in_rect(args.rect, x, y) {
             // Cells outside the rect consume nothing at all.
@@ -301,7 +290,11 @@ pub(crate) fn grow_meander_arm(ctx: &mut BlobCtx<'_>, args: &MeanderArgs) -> boo
             executed += 1;
             // Drawn every step, including the step that failed and the step
             // that emptied the queue — both are only noticed at the loop head.
-            heading += ctx.gauss.next(ctx.rng) * HEADING_DRIFT;
+            // 0x005A1051..0x005A105F: `FMUL π/4; FADD heading` under chop.
+            heading = TruncF64::from_f64(ctx.gauss.next(ctx.rng))
+                .mul(TruncF64::from_f64(HEADING_DRIFT))
+                .add(TruncF64::from_f64(heading))
+                .to_f64();
             current = heap.pop(by_cost(&nodes));
             if executed >= steps {
                 break;
@@ -369,7 +362,7 @@ pub(crate) fn dilate_chained(
     level: Option<u8>,
     rect: [i32; 4],
 ) -> bool {
-    let mut frontier = region_border_row_major(ctx.scratch, region);
+    let mut frontier = border_cells_of(ctx.scratch, region);
     for _ in 0..rings {
         let mut claimed = Vec::new();
         for &(x, y) in &frontier {
@@ -410,6 +403,112 @@ pub(crate) fn dilate_chained(
 mod tests {
     use super::*;
 
+    /// Whole original `RandomMapGenerator::GrowMeanderArm @ 0x005A08D0`
+    /// calls from `tools/rmg_oracle/meander_arm.py`: a declared flat scene
+    /// around a river row (not a full Generate prefix), seeded streams, and
+    /// every claimed cell, +4B flag, result and draw the original produced.
+    #[test]
+    fn native_meander_arm_controls() {
+        use crate::map::rmg::scratch::RmgScratch;
+        use crate::map::rmg::x87::Gaussian;
+        let doc = crate::test_fixture::json("tools/rmg_oracle/meander_arm.json");
+        let (identity, blocks) = super::super::cliff_native_tests::physical_tiles();
+        let cliff = doc["scene"]["cliff_base"].as_i64().unwrap() as i32;
+        let pair =
+            |c: &serde_json::Value| (c[0].as_i64().unwrap() as i32, c[1].as_i64().unwrap() as i32);
+        let pairs = |value: &serde_json::Value| -> Vec<(i32, i32)> {
+            value.as_array().unwrap().iter().map(pair).collect()
+        };
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 7);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let tag = input["tag"].as_i64().unwrap() as i32;
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let mut scratch = RmgScratch::new(33, 16, 48);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                let cell = grid.get_mut(x, y).unwrap();
+                (cell.tile, cell.sub_tile, cell.level) = (0, 0, 0);
+            }
+            for (x, y) in pairs(&input["river"]) {
+                scratch.get_mut(x, y).region = tag;
+            }
+            for (x, y) in pairs(&input["foreign"]) {
+                scratch.get_mut(x, y).region = 3;
+            }
+            for (x, y) in pairs(&input["rough"]) {
+                if scratch.in_diamond(x, y) {
+                    grid.get_mut(x, y).unwrap().tile = cliff;
+                }
+            }
+            let fields = |scratch: &RmgScratch| {
+                let mut out = Vec::new();
+                for y in 0..33 {
+                    for x in 0..33 {
+                        if scratch.in_diamond(x, y) {
+                            let cell = scratch.get(x, y);
+                            out.push([x, y, cell.region, i32::from(cell.water_region)]);
+                        }
+                    }
+                }
+                out
+            };
+            let prior = fields(&scratch);
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut gauss = Gaussian::default();
+            let rect = &input["rect"];
+            let size = pair(&input["gen"]);
+            let args = MeanderArgs {
+                tag,
+                step_density: f32::from_bits(input["density"].as_u64().unwrap() as u32),
+                rect: std::array::from_fn(|i| rect[i].as_i64().unwrap() as i32),
+                reference: pair(&input["ref"]),
+                claim_frontier: input["claim"].as_i64().unwrap() != 0,
+                pool_dims: size,
+            };
+            let ok = {
+                let mut ctx = BlobCtx {
+                    grid: &mut grid,
+                    scratch: &mut scratch,
+                    ids: &identity,
+                    blocks: &blocks,
+                    rng: &mut rng,
+                    gauss: &mut gauss,
+                    trig: None,
+                    map_w: size.0,
+                    map_h: size.1,
+                    rollback_level: 0,
+                };
+                grow_meander_arm(&mut ctx, &args)
+            };
+            assert_eq!(
+                ok,
+                row["result"].as_u64().unwrap() != 0,
+                "{context}: result"
+            );
+            assert_eq!(
+                rng.into_continuation().into_native_parts(),
+                super::super::cliff_native_tests::native_state(doc, &row["rng_after"])
+                    .into_native_parts(),
+                "{context}: exit RNG"
+            );
+            let cells: Vec<[i32; 4]> = fields(&scratch)
+                .into_iter()
+                .zip(prior)
+                .filter(|(now, before)| now != before)
+                .map(|(now, _)| now)
+                .collect();
+            let native: Vec<[i32; 4]> = row["cells"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| std::array::from_fn(|i| c[i].as_i64().unwrap() as i32))
+                .collect();
+            assert_eq!(cells, native, "{context}: cells");
+        }
+    }
+
     /// `GrowMeanderArm` stores the cost with `FSTP m32` under chop
     /// (0x005A0F4F): `u32::MAX * K * 2` stays just below 2.0.
     #[test]
@@ -446,16 +545,6 @@ mod tests {
                 assert!((0.0..=PI).contains(&angle), "dx={dx} dy={dy} -> {angle}");
             }
         }
-    }
-
-    #[test]
-    fn the_off_heading_angle_is_the_same_on_every_target() {
-        // atan(2): host C libraries disagree in its last bit (Apple's gives
-        // 1.1071487177940906); every client takes libm's.
-        assert_eq!(
-            angle_off_heading((11, 8), (10, 10), 0.0).to_bits(),
-            1.107_148_717_794_090_4_f64.to_bits()
-        );
     }
 
     #[test]

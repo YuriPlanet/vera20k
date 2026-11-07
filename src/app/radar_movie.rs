@@ -282,7 +282,8 @@ pub(crate) fn service(state: &mut AppState, wall_ms: u64) {
         _ => true,
     };
     let streams_ready = state.audio.movie_streams_ready();
-    // Admission and the prelude run from RadarClass vt+0x28 (`0x006539A2`)
+    // Admission and the prelude run from `RadarClass::AI @ 0x00653850`
+    // (vt+0x28, `0x006539A2`)
     // on the main loop's input path, which an in-game modal does not pump.
     let menu_open = state.match_state.match_presentation.in_game_menu.is_open();
     let Some(radar) = state.match_state.match_presentation.radar_anim.as_mut() else {

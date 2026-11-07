@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "7 original runs of the temperate rock tail 5A40C3..5A4277: clear, sand-LAT, green, green-LAT and rough tiles, prior overlays that spend the attempt budget, prior densities and a zero target; every target, slot and variant draw, overlay, density clear and RecalcAttributes call",
+  "assumptions": [
+    "Existing CliffFixture, TiberiumFieldFixture and StartPointsFixture own original-constructed Cell backing, admission, the stride-33 scratch with in-diamond coordinates and (0, 0) elsewhere, the physical temperate clear/cliff TMP registration, the native theater tile-set globals and the guarded arena; bounds 16..48. Cells start tile 0, overlay -1, density 0.",
+    "Declared scene: MapClass +F4/+F8 rect, which only SurfaceDataCount reads here; CliffSet-base, ClearToSandLAT, GreenTile and ClearToGreenLAT tiles; overlay 0 in +44; densities in +11E. The slice starts at 5A40C3 with EBX 0, the zero register 5A3AE0 holds there, on a fresh frame, and stops before the epilogue. FPCW 0E7F. All streams seeded by original 65C6D0. Not a complete Generate prefix."
+  ],
+  "substitutions": [
+    "Existing PaletteReader CRT allocation/free/TLS; native code bytes unchanged. No draw, overlay or density is supplied.",
+    "CellClass::RecalcAttributes 47D2B0 records its Cell and argument and returns (RET 4) without running: its attribute, LAT and land-type writes are outside this comparison."
+  ],
+  "entry_points": {
+    "rock_tail": "0x005A40C3",
+    "epilogue": "0x005A4277",
+    "surface_data_count": "0x0042B1F0",
+    "clear_to_sand_lat": "0x00486790",
+    "recalc": "0x0047D2B0",
+    "next": "0x0065C780"
+  },
+  "replay_command": "python -m tools.rmg_oracle.rock_pass",
+  "payload_sha256": "ae7b7b1cd350afcd679114687ef7a900853f7150871e5ee54606ec66ec56511f"
+}

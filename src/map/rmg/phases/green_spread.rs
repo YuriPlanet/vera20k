@@ -154,4 +154,80 @@ mod tests {
         };
         assert_eq!(tiles(&first), tiles(&second));
     }
+
+    /// Whole original `SpreadGreenTerrain @ 0x0059B740` calls from
+    /// `tools/rmg_oracle/terrain_paint.py`: a declared scene (not a Generate
+    /// prefix), every converted tile, the shared Dummy's tile and the exit
+    /// RNG state.
+    #[test]
+    fn native_spread_green_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/terrain_paint.json");
+        let int = |v: &serde_json::Value| v.as_i64().unwrap() as i32;
+        let tiles = &doc["scene"]["tiles"];
+        let identity = TileIds {
+            green: int(&tiles["green"]),
+            green_lat: int(&tiles["green_lat"]),
+            sand: -1,
+            sand_lat: -1,
+            water_base: -1,
+            ..test_ids()
+        };
+        let rows = doc["spread"].as_array().unwrap();
+        assert_eq!(rows.len(), 7);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let cells: Vec<(i32, i32)> = grid.native_cells().collect();
+            for &(x, y) in &cells {
+                grid.get_mut(x, y).unwrap().tile = int(&tiles["rough"]);
+            }
+            for c in input["clear"].as_array().unwrap() {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile = 0;
+            }
+            for t in input["tiles"].as_array().unwrap() {
+                let family = int(&tiles[t[2].as_str().unwrap()]);
+                grid.get_mut(int(&t[0]), int(&t[1])).unwrap().tile = family + int(&t[3]);
+            }
+            assert_eq!(
+                grid.ref_cell(CellRef::Border).tile,
+                int(&row["dummy_tile_before"]),
+                "{context}: Dummy prior"
+            );
+            let before: Vec<i32> = cells
+                .iter()
+                .map(|&(x, y)| grid.get(x, y).unwrap().tile)
+                .collect();
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            run(&mut grid, &identity, &mut rng);
+            let mut changed: Vec<[i32; 3]> = cells
+                .iter()
+                .zip(before)
+                .filter_map(|(&(x, y), was)| {
+                    let tile = grid.get(x, y).unwrap().tile;
+                    (tile != was).then_some([x, y, tile])
+                })
+                .collect();
+            // The corpus lists changes row-major.
+            changed.sort_by_key(|&[x, y, _]| (y, x));
+            let native: Vec<[i32; 3]> = row["changed"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| std::array::from_fn(|i| int(&c[i])))
+                .collect();
+            assert_eq!(changed, native, "{context}: converted tiles");
+            assert_eq!(
+                grid.ref_cell(CellRef::Border).tile,
+                int(&row["dummy_tile"]),
+                "{context}: Dummy tile"
+            );
+            assert_eq!(
+                rng.into_continuation().into_native_parts(),
+                super::super::cliff_native_tests::native_state(&doc, &row["rng_after"])
+                    .into_native_parts(),
+                "{context}: exit RNG"
+            );
+        }
+    }
 }

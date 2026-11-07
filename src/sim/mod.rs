@@ -59,7 +59,6 @@ pub(crate) mod vehicle_theft;
 pub mod economy; // per-house wallet/storage/statistics value-type (production+economy substrate)
 #[cfg(feature = "ares")]
 pub(crate) mod factory_owners;
-#[cfg(feature = "telemetry")]
 pub mod frame_profile;
 #[cfg(feature = "telemetry")]
 pub mod telemetry;

@@ -146,6 +146,9 @@ pub fn run_with_loop(
     // from other programs and scripts, which must never wait on a click.
     if matches!(launch_mode, AppLaunchMode::Interactive(_)) {
         crate::app::system_dialog::enable_fatal_messages();
+        // Those messages read in the system's language until the settings
+        // folder's choice loads (`initialize`).
+        crate::i18n::init(None, None);
     }
 
     // Callers supplying their own loop share the same help output. Desktop

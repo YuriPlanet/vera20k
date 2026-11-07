@@ -229,7 +229,7 @@ fn main_menu_paint_labels<'a>(
 ) -> Vec<PaintLabel<'a>> {
     use crate::render::shell_text::ShellAlign;
     let mut out = Vec::new();
-    let button_align = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
+    let button_align = ShellAlign::BUTTON_CAPTION;
     // The slide engine draws the button frames only (`0x006071E0`).
     for button in layout.buttons.iter().filter(|_| captions) {
         let pressed = pressed_button == Some(button.id);
@@ -246,7 +246,7 @@ fn main_menu_paint_labels<'a>(
         out.push(PaintLabel {
             text: main_menu_title_text(state),
             rect: layout.title,
-            align: ShellAlign::H_CENTER,
+            align: ShellAlign::PANEL_TITLE,
             rgb: SHELL_TEXT_RGB_ENABLED,
             path_a_reveal: Some(shell_reveal_path_a(window)),
         });
@@ -355,14 +355,17 @@ pub(crate) fn ensure_movie_for_current_layout(
         state
             .frontend
             .main_menu_shell_error
-            .get_or_insert_with(|| "Game archives are unavailable.".to_owned());
+            .get_or_insert_with(|| crate::i18n::tr("VERA:GameArchivesUnavailable"));
         return Ok(());
     };
     let asset_name = layout.movie_base.asset_name();
 
     let Some((bytes, source)) = menu_movie_bytes(assets, asset_name, yr_original_style) else {
         log::warn!("Missing main-menu movie asset {asset_name}");
-        state.frontend.main_menu_shell_error = Some(format!("Missing menu movie: {asset_name}"));
+        state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+            "VERA:MenuMovieMissing",
+            &[("movie", &asset_name)],
+        ));
         return Ok(());
     };
 
@@ -377,8 +380,13 @@ pub(crate) fn ensure_movie_for_current_layout(
         Ok(movie) => movie,
         Err(err) => {
             log::warn!("Failed to load main-menu movie {asset_name} from {source}: {err:#}");
-            state.frontend.main_menu_shell_error = Some(format!(
-                "Could not load {asset_name} from {source}: {err:#}"
+            state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+                "VERA:MenuMovieUnreadable",
+                &[
+                    ("movie", &asset_name),
+                    ("source", &source),
+                    ("error", &format!("{err:#}")),
+                ],
             ));
             return Ok(());
         }
@@ -536,7 +544,7 @@ fn render_main_menu_shell_to_target_inner(
         state
             .frontend
             .main_menu_shell_error
-            .get_or_insert_with(|| "Required game-menu artwork is unavailable.".to_owned());
+            .get_or_insert_with(|| crate::i18n::tr("VERA:MenuArtworkUnavailable"));
         return Ok(MainMenuShellRenderResult::Fallback);
     }
 
@@ -556,8 +564,10 @@ fn render_main_menu_shell_to_target_inner(
         state.frontend.main_menu_movie_last_step = now;
         if let Err(err) = movie.step(&state.renderer.gpu, elapsed) {
             log::warn!("Failed to step main-menu RA2TS movie: {err:#}");
-            state.frontend.main_menu_shell_error =
-                Some(format!("Could not play the menu movie: {err:#}"));
+            state.frontend.main_menu_shell_error = Some(crate::i18n::tr_fill(
+                "VERA:MenuMovieFailed",
+                &[("error", &format!("{err:#}"))],
+            ));
             return Ok(MainMenuShellRenderResult::Fallback);
         }
     }

@@ -6,6 +6,12 @@
 //! patch is a min-heap blob of a Gaussian-sized cell count. The base tile is
 //! stamped here; the LAT auto-tiling fixup (a separate, RNG-free pass) resolves
 //! the transition variants afterwards.
+//!
+//! Native: the patch loops of `RandomMapGenerator::PaintLatPatchesTreesRocks_Temperate
+//! @ 0x005A3AE0` and `PaintLatPatchesTrees_NonTemperate @ 0x005A4280`, each
+//! patch grown by `RandomMapGenerator::PlaceLatPatch @ 0x005A4B60`. The
+//! temperate size draw's `[4, 80]` fallback (mean 42, scale 38) is dormant:
+//! the mean is always in `[20, 40]`.
 
 use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::RmgRng;
@@ -35,8 +41,8 @@ const SIZE_BASE_OTHER: f64 = 20.0;
 const SIZE_MIN: f64 = 4.0;
 const SIZE_MAX_TEMPERATE: f64 = 80.0;
 const SIZE_MAX_OTHER: f64 = 60.0;
-/// Heap headroom over the target size (the frontier never approaches this).
-const HEAP_HEADROOM: usize = 512;
+/// Pool and heap size per patch cell (`0x005A4B60`: `size * 10`).
+const HEAP_PER_CELL: usize = 10;
 
 /// Everything the phase borrows.
 pub struct PatchCtx<'a> {
@@ -54,9 +60,8 @@ fn t(value: f64) -> TruncF64 {
 /// Seed per-cell patch probabilities and paint patches. `theater == 0` is
 /// temperate (rough/sand/green); any other theater paints rough only.
 pub fn run(ctx: &mut PatchCtx<'_>, theater: i32, vegetation: i32) {
-    let veg = t(f64::from(vegetation)).mul(t(VEG_SCALE));
     if theater == 0 {
-        prob_setup_temperate(ctx, veg);
+        prob_setup_temperate(ctx, vegetation);
         paint_temperate(ctx);
     } else {
         prob_setup_other(ctx);
@@ -67,7 +72,12 @@ pub fn run(ctx: &mut PatchCtx<'_>, theater: i32, vegetation: i32) {
 /// Temperate probabilities: shore-piece cells (with any in-diamond 5x5
 /// neighbour) get a heavy rough bias and no green; other cells get the base
 /// mix.
-fn prob_setup_temperate(ctx: &mut PatchCtx<'_>, veg: TruncF64) {
+///
+/// Native: `RandomMapGenerator::SeedLatPatchProbabilities_Temperate @
+/// 0x005A38C0`.
+fn prob_setup_temperate(ctx: &mut PatchCtx<'_>, vegetation: i32) {
+    // MapSeed +5C read as an int and scaled by 0.01 once (5A38C0).
+    let veg = t(f64::from(vegetation)).mul(t(VEG_SCALE));
     let rough = veg.mul(t(ROUGH_FACTOR)).to_f64();
     let shore_rough = veg.mul(t(ROUGH_FACTOR)).mul(t(SHORE_ROUGH_MULT)).to_f64();
     for (x, y) in ctx.grid.native_cells().collect::<Vec<_>>() {
@@ -219,7 +229,7 @@ fn place_patch(ctx: &mut PatchCtx<'_>, origin: (i32, i32), tile: i32, size: i32,
     if size <= 0 {
         return;
     }
-    let cap = size as usize + HEAP_HEADROOM;
+    let cap = size as usize * HEAP_PER_CELL;
     let mut heap = CellHeap::new(cap);
     ctx.scratch.get_mut(origin.0, origin.1).stamp = patch_id;
     heap.push((0.0, origin), by_key);
@@ -430,5 +440,153 @@ mod tests {
             })
             .count();
         assert!(painted > 0, "sand/green patches appear even at veg 0");
+    }
+
+    /// Whole original `RandomMapGenerator::PlaceLatPatch @ 0x005A4B60`
+    /// calls from `tools/rmg_oracle/lat_patch.py`: every stamped tile and
+    /// patch-id stamp and the exit RNG.
+    #[test]
+    fn native_place_lat_patch_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/lat_patch.json");
+        let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
+        let cells = |value: &serde_json::Value| -> Vec<(i32, i32)> {
+            value
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| (int(&c[0]), int(&c[1])))
+                .collect()
+        };
+        let scene = &doc["scene"];
+        let identity = ids();
+        let rows = doc["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 6);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let mut scratch = RmgScratch::new(33, 16, 48);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                grid.get_mut(x, y).unwrap().tile = 0;
+            }
+            for (key, tile) in [("rough", "rough"), ("pave", "misc_pave")] {
+                for (x, y) in cells(&input[key]) {
+                    grid.get_mut(x, y).unwrap().tile = int(&scene[tile]);
+                }
+            }
+            for (x, y) in cells(&input["occupied"]) {
+                grid.get_mut(x, y).unwrap().occupied = true;
+            }
+            for (x, y) in cells(&input["overlay"]) {
+                grid.get_mut(x, y).unwrap().overlay = 0;
+            }
+            for (x, y) in cells(&input["sloped"]) {
+                grid.get_mut(x, y).unwrap().slope = 1;
+            }
+            let stamp = int(&input["stamp"]);
+            for (x, y) in cells(&input["claimed"]) {
+                scratch.get_mut(x, y).stamp = stamp;
+            }
+            let diamond: Vec<(i32, i32)> = (0..33)
+                .flat_map(|y| (0..33).map(move |x| (x, y)))
+                .filter(|&(x, y)| scratch.in_diamond(x, y))
+                .collect();
+            let state = |grid: &RmgGrid, scratch: &RmgScratch| -> Vec<[i32; 2]> {
+                diamond
+                    .iter()
+                    .map(|&(x, y)| [grid.get(x, y).unwrap().tile, scratch.get(x, y).stamp])
+                    .collect()
+            };
+            let before = state(&grid, &scratch);
+            let mut rng = RmgRng::new(input["seed"].as_u64().unwrap() as u16);
+            let mut gauss = Gaussian::default();
+            let mut ctx = PatchCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                rng: &mut rng,
+                gauss: &mut gauss,
+            };
+            let origin = (int(&input["origin"][0]), int(&input["origin"][1]));
+            place_patch(
+                &mut ctx,
+                origin,
+                int(&scene["patch_tile"]),
+                int(&input["size"]),
+                stamp,
+            );
+            let changed: Vec<[i32; 4]> = diamond
+                .iter()
+                .zip(before.iter().zip(state(&grid, &scratch)))
+                .filter(|(_, (before, after))| *before != after)
+                .map(|(&(x, y), (_, after))| [x, y, after[0], after[1]])
+                .collect();
+            let native: Vec<[i32; 4]> = row["changed"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| std::array::from_fn(|i| int(&c[i])))
+                .collect();
+            assert_eq!(changed, native, "{context}: tiles and stamps");
+            assert_eq!(
+                rng.into_continuation().into_native_parts(),
+                super::super::cliff_native_tests::native_state(doc, &row["rng_after"])
+                    .into_native_parts(),
+                "{context}: exit RNG"
+            );
+        }
+    }
+
+    /// Whole original `SeedLatPatchProbabilities_Temperate @ 0x005A38C0`
+    /// calls from `tools/rmg_oracle/terrain_paint.py`: a declared scene (not
+    /// a Generate prefix), every record's rough/green/sand probability bits.
+    #[test]
+    fn native_temperate_probability_controls() {
+        let doc = crate::test_fixture::json("tools/rmg_oracle/terrain_paint.json");
+        let int = |v: &serde_json::Value| v.as_i64().unwrap() as i32;
+        let shore = int(&doc["scene"]["tiles"]["shore"]);
+        let identity = TileIds { shore, ..ids() };
+        let rows = doc["probabilities"].as_array().unwrap();
+        assert_eq!(rows.len(), 4);
+        for row in rows {
+            let input = &row["input"];
+            let context = input["id"].as_str().unwrap();
+            let mut grid = RmgGrid::new(33, 16, 48);
+            let mut scratch = RmgScratch::new(33, 16, 48);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                grid.get_mut(x, y).unwrap().tile = 0;
+            }
+            for c in input["shore"].as_array().unwrap() {
+                grid.get_mut(int(&c[0]), int(&c[1])).unwrap().tile = shore + int(&c[2]);
+            }
+            for c in input["prior"].as_array().unwrap() {
+                let record = scratch.get_mut(int(&c[0]), int(&c[1]));
+                (record.p_rough, record.p_green, record.p_sand) = (0.25, 0.5, 0.75);
+            }
+            let mut rng = RmgRng::new(1);
+            let mut gauss = Gaussian::default();
+            let mut ctx = PatchCtx {
+                grid: &mut grid,
+                scratch: &mut scratch,
+                ids: &identity,
+                rng: &mut rng,
+                gauss: &mut gauss,
+            };
+            prob_setup_temperate(&mut ctx, int(&input["vegetation"]));
+            let triple = |v: &serde_json::Value, from: usize| -> [u64; 3] {
+                std::array::from_fn(|i| v[from + i].as_u64().unwrap())
+            };
+            let common = triple(&row["common"], 0);
+            let mut others = std::collections::BTreeMap::new();
+            for c in row["others"].as_array().unwrap() {
+                others.insert((int(&c[0]), int(&c[1])), triple(c, 2));
+            }
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                let r = scratch.get(x, y);
+                let actual = [r.p_rough.to_bits(), r.p_green.to_bits(), r.p_sand.to_bits()];
+                let expected = others.get(&(x, y)).copied().unwrap_or(common);
+                assert_eq!(actual, expected, "{context}: record ({x}, {y})");
+            }
+        }
     }
 }

@@ -3,7 +3,7 @@
 //! This is the one dialog that has to draw without retail art — the situation
 //! it exists for — so it owns no shell artwork at all. It carries the words, the
 //! step it is on and the button labels; `app::frontend::status_screen` renders
-//! it from the in-repo face, the same card that already reports a missing
+//! it in VERA's bundled fonts, the same card that already reports a missing
 //! installation.
 //!
 //! The folder picker itself is the platform's business: Android has to reach
@@ -11,8 +11,8 @@
 //! native chooser. [`choose_folder`] is the seam; until a platform fills it in,
 //! the dialog explains and the button reports that picking is unavailable.
 //!
-//! Every string here is ASCII: the card's in-repo face carries ASCII only, and
-//! the exact paths live in the log.
+//! Its words come from VERA's language files (`crate::i18n`): the dialog shows
+//! before the game's string table can load.
 
 /// Whether this build offers the import wizard.
 ///
@@ -112,40 +112,44 @@ impl AssetImport {
         }
     }
 
-    pub(crate) fn title(&self) -> &'static str {
-        "Import Game Files"
+    pub(crate) fn title(&self) -> String {
+        crate::i18n::tr("VERA:ImportGameFiles")
     }
 
     /// The card's body: what is missing, what to pick, and the current step.
     pub(crate) fn body(&self, game_files: &str, config: &str) -> String {
-        let mut text = String::from(
-            "VERA20K needs Red Alert 2: Yuri's Revenge to run.\n\n\
-Choose the folder that holds ra2md.mix and ra2.mix.\n\
-VERA20K copies it once into its own folder and plays from that copy, so the \
-original installation is never modified.\n\n\
-About 1.5 GB is needed.\n\n",
-        );
-        text.push_str(&match &self.step {
-            ImportStep::Closed | ImportStep::ChooseFolder => String::new(),
-            ImportStep::Copying { done, total } => match total {
-                Some(total) => format!(
-                    "Copying: {} of {} MB.\n\n",
-                    done / (1024 * 1024),
-                    total / (1024 * 1024)
-                ),
-                None => format!("Copying: {} MB.\n\n", done / (1024 * 1024)),
-            },
-            ImportStep::Done => "Copied. Restart VERA20K to play.\n\n".to_owned(),
-            ImportStep::Cancelling => "Cancelling. Please wait.\n\n".to_owned(),
-            ImportStep::Failed(why) => format!("Failed: {why}\n\n"),
-        });
+        use crate::i18n::{tr, tr_fill};
+        const MB: u64 = 1024 * 1024;
+        let mut text = tr("VERA:ImportExplain");
+        text.push_str("\n\n");
+        let step = match &self.step {
+            ImportStep::Closed | ImportStep::ChooseFolder => None,
+            ImportStep::Copying {
+                done,
+                total: Some(total),
+            } => Some(tr_fill(
+                "VERA:ImportCopyingOf",
+                &[("done", &(done / MB)), ("total", &(total / MB))],
+            )),
+            ImportStep::Copying { done, total: None } => {
+                Some(tr_fill("VERA:ImportCopying", &[("done", &(done / MB))]))
+            }
+            ImportStep::Done => Some(tr("VERA:ImportCopied")),
+            ImportStep::Cancelling => Some(tr("VERA:ImportCancelling")),
+            ImportStep::Failed(why) => Some(tr_fill("VERA:ImportFailed", &[("reason", why)])),
+        };
+        if let Some(step) = step {
+            text.push_str(&step);
+            text.push_str("\n\n");
+        }
         // Once the copy exists, name it: the caller's `game_files` still holds
         // the folder this process started with, which is exactly the stale value
         // the copy just replaced.
         let shown = self.imported.as_deref().unwrap_or(game_files);
-        text.push_str(&format!("Game files: {shown}"));
+        text.push_str(&tr_fill("VERA:ImportGameFilesAt", &[("path", &shown)]));
         if !config.is_empty() {
-            text.push_str(&format!("\nConfig: {config}"));
+            text.push('\n');
+            text.push_str(&tr_fill("VERA:ImportConfigAt", &[("path", &config)]));
         }
         text
     }

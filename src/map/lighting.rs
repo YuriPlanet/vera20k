@@ -16,6 +16,7 @@ use std::collections::HashMap;
 
 use crate::rules::art_data::AnimTypeRuntimeConfig;
 use crate::rules::ini_parser::IniFile;
+use crate::util::lookup_hash::LookupMap;
 
 /// Internal light unit scale. `1000 == 1.0`.
 pub const LIGHT_UNIT: i32 = 1000;
@@ -374,7 +375,10 @@ pub fn native_lighting_cells(
 /// Map-level cell lighting container with compatibility tint accessors.
 #[derive(Debug, Clone)]
 pub struct CellLightGrid {
-    cells: HashMap<(u16, u16), CellLight>,
+    /// Every visible tile and object looks its cell up here each draw, so it
+    /// takes the lookup hasher. The walks over it treat each cell on its own
+    /// or sort first, so its order reaches no result.
+    cells: LookupMap<(u16, u16), CellLight>,
     profiles: LightProfileCache,
     detail_level: u32,
     /// ColorScheme Converts survive545000's separate Cell-Convert cache
@@ -397,7 +401,7 @@ pub struct SavedCellLighting {
 impl CellLightGrid {
     pub fn new() -> Self {
         Self {
-            cells: HashMap::new(),
+            cells: LookupMap::default(),
             profiles: LightProfileCache::new(),
             detail_level: 2,
             scheme_profile: LightProfile::neutral_scheme(),
@@ -408,7 +412,7 @@ impl CellLightGrid {
     #[cfg(test)]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            cells: HashMap::with_capacity(capacity),
+            cells: LookupMap::with_capacity_and_hasher(capacity, Default::default()),
             profiles: LightProfileCache::new(),
             detail_level: 2,
             scheme_profile: LightProfile::neutral_scheme(),
@@ -418,7 +422,7 @@ impl CellLightGrid {
 
     fn with_detail_level(detail_level: u32) -> Self {
         Self {
-            cells: HashMap::new(),
+            cells: LookupMap::default(),
             profiles: LightProfileCache::new(),
             detail_level: detail_level.min(2),
             scheme_profile: LightProfile::neutral_scheme(),

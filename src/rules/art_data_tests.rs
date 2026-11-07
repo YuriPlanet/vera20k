@@ -1472,3 +1472,56 @@ fn imageless_retail_animation_reaches_existing_gas_particle_owner() {
         "zero-End animation retires through existing AI and deferred drain"
     );
 }
+
+/// The draws' metadata lookup takes no owned ids; it must pick the entry the
+/// full resolution picks for every retail type, whichever case or padding
+/// the names arrive in.
+#[test]
+fn retail_metadata_entries_match_the_full_resolution() {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
+        return;
+    };
+    let art = rules.art();
+    let (mut by_image, mut by_type) = (0, 0);
+    let ids = [
+        &rules.infantry_ids,
+        &rules.vehicle_ids,
+        &rules.aircraft_ids,
+        &rules.building_ids,
+    ];
+    for id in ids.into_iter().flatten() {
+        let image = &rules.object(id).expect("listed type").image;
+        let padded = format!(" {} ", image.to_lowercase());
+        for (type_id, rules_image) in [
+            (id.as_str(), image.as_str()),
+            (&id.to_lowercase(), padded.as_str()),
+            (id, ""),
+            (id, "NOSUCHART"),
+        ] {
+            let full = art.resolve_object_art(type_id, rules_image).entry;
+            let fast = art.resolve_metadata_entry(type_id, rules_image);
+            assert!(
+                std::ptr::eq(
+                    full.map_or(std::ptr::null(), |entry| entry),
+                    fast.map_or(std::ptr::null(), |entry| entry)
+                ),
+                "{type_id} / {rules_image:?}"
+            );
+            match fast {
+                Some(entry)
+                    if art
+                        .get(rules_image.trim())
+                        .is_some_and(|e| std::ptr::eq(e, entry)) =>
+                {
+                    by_image += 1
+                }
+                Some(_) => by_type += 1,
+                None => {}
+            }
+        }
+    }
+    assert!(
+        by_image > 0 && by_type > 0,
+        "{by_image} by image, {by_type} by type"
+    );
+}

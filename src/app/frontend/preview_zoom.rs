@@ -18,8 +18,6 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use crate::app::AppState;
 use crate::ui::skirmish_shell::RectPx;
 
-/// The hint the preview box's help ends with while a press would enlarge it.
-const HINT: &str = "Click to enlarge.";
 /// How far, in window pixels, the pointer may drift from the press that
 /// enlarged the preview and still count as where it was.
 const STILL: u32 = 3;
@@ -55,15 +53,15 @@ pub(crate) fn press_on_box(state: &mut AppState, preview_box: RectPx) -> bool {
     true
 }
 
-/// The preview box's `help` with the hint that a press enlarges it.
+/// The preview box's `help`, ending with the hint that a press enlarges it.
 pub(crate) fn box_help(state: &AppState, help: String) -> String {
     if !available(state) {
         return help;
     }
     if help.is_empty() {
-        HINT.to_owned()
+        crate::i18n::tr("VERA:ClickToEnlarge")
     } else {
-        format!("{help} {HINT}")
+        crate::i18n::tr_fill("VERA:HelpClickToEnlarge", &[("help", &help)])
     }
 }
 

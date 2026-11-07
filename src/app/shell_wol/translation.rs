@@ -29,7 +29,7 @@ pub(crate) fn command(state: &mut AppState, line: &[u16]) -> bool {
         TranslateCommand::Show => {
             chat_translation::notice(state.persistence.options_profile.translate_chat)
         }
-        TranslateCommand::Usage => chat_translation::USAGE.to_owned(),
+        TranslateCommand::Usage => chat_translation::usage(),
         TranslateCommand::Set(language) => {
             let profile = &mut state.persistence.options_profile;
             profile.translate_chat = language;

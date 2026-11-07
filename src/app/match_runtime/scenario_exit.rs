@@ -25,20 +25,18 @@ fn wall_bucket(wall_ms: u64) -> u64 {
     wall_ms >> 4
 }
 
-pub(crate) fn outcome_title(kind: crate::sim::house_state::HouseOutcomeKind) -> &'static str {
-    match kind {
-        crate::sim::house_state::HouseOutcomeKind::Victory => "You are Victorious!",
-        crate::sim::house_state::HouseOutcomeKind::Defeat => "You have Lost",
-    }
+pub(crate) fn outcome_title(kind: crate::sim::house_state::HouseOutcomeKind) -> String {
+    crate::i18n::tr(match kind {
+        crate::sim::house_state::HouseOutcomeKind::Victory => "VERA:YouAreVictorious",
+        crate::sim::house_state::HouseOutcomeKind::Defeat => "VERA:YouHaveLost",
+    })
 }
 
-pub(crate) fn outcome_detail(kind: crate::sim::house_state::HouseOutcomeKind) -> &'static str {
-    match kind {
-        crate::sim::house_state::HouseOutcomeKind::Victory => {
-            "All enemy forces have been defeated."
-        }
-        crate::sim::house_state::HouseOutcomeKind::Defeat => "Your forces have been eliminated.",
-    }
+pub(crate) fn outcome_detail(kind: crate::sim::house_state::HouseOutcomeKind) -> String {
+    crate::i18n::tr(match kind {
+        crate::sim::house_state::HouseOutcomeKind::Victory => "VERA:EnemyForcesDefeated",
+        crate::sim::house_state::HouseOutcomeKind::Defeat => "VERA:YourForcesEliminated",
+    })
 }
 
 /// The termination bytes Main_Game samples once per loop: the local House's
@@ -779,8 +777,9 @@ mod tests {
     #[test]
     fn a_card_with_no_clip_keeps_its_beat_from_the_flag() {
         let card_at = 10_000;
-        let mut exit = ScenarioExitCascade::start_holding_banner(card_at, score_destination(), true)
-            .with_banner_hold_until(card_at + BANNER_HOLD_MS);
+        let mut exit =
+            ScenarioExitCascade::start_holding_banner(card_at, score_destination(), true)
+                .with_banner_hold_until(card_at + BANNER_HOLD_MS);
         assert!(exit.holding_banner());
         assert!(
             !exit

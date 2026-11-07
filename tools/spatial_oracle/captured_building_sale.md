@@ -1,8 +1,9 @@
 # AI sale after Engineer capture
 
 `captured_building_sale.py` executes the original capture-to-sale handoff using
-the existing `EngineerJoinedFixture`. The reference ends when capture returns
-with the original sale order admitted or refused. The existing
+the existing `EngineerJoinedFixture`. The joined reference ends when capture
+returns with the original sale order admitted or refused; one provided
+top-Turret control continues through two original Selling visits. The existing
 [`building_sale.py`](building_sale.py) corpus owns later Selling timing,
 refund and destruction; this fixture does not claim a complete native match.
 
@@ -48,7 +49,7 @@ Recapture distinguishes the constructor-owner gate from a last-owner gate;
 the third-owner control retains another distinct ownership history. Every row
 observes that the original constructor field remains unchanged during this chain.
 
-The seven tail controls enter `4492D7` and stop at `44936E`, with ESI naming
+The eight tail controls enter `4492D7` and stop at `44936E`, with ESI naming
 the building, EBP naming its new owner, and the current-owner field already
 transferred. This explicit boundary isolates C4, missing Buildup, existing
 Selling, local-player versus human control, and upgrade refunds. It does not
@@ -75,6 +76,28 @@ documented file, allocator, platform and presentation transport. All selected
 capture, refund, removal and mission bodies and class virtual dispatch remain
 original. Complete executable sections and the selected Building/Infantry
 vtables must remain unchanged.
+
+The additional top-Turret controls explicitly supply `GAPILE+CA1=1`; stock
+GAPOWR/GAPILE both read Turret=no. They do not claim native installation or
+stock power-plant upgrades. The capture tail refunds only the top type for
+500 credits, stops its signed-count loop at zero and retains the lower type
+pointer. It constructs no temporary object and changes no RNG stream.
+
+One Selling row executes whole `449C30` twice. Beforehand it executes four
+actual CRT global-array initializers (`4E6B60`, `4E7BE0`, `7254D0`, `725550`),
+whose pointers are checked against their original startup table words. They
+establish the Building scalar destructor's class-array prerequisites; no
+destructor call or cleanup is bypassed. The first visit constructs the top
+upgrade, refunds 250, directly scalar-deletes it, and calls `451690` before
+marking House power/radar dirty and refusing Queue Guard. The original
+constructor requests one Scenario RNG draw at `6F3254`; the second visit
+reaches host sale status 1 without another upgrade refund, constructor or draw.
+The Rust consumer compares states, ID allocation, actual draw result and all
+three RNG continuations. Reverse buildup and final host destruction remain
+with the existing Selling owner. Separate Rust retail-map coverage performs
+two actual legal installations with authored GAPILL Turret=yes and
+PowersUpBuilding=GAPOWR before issuing SellBuilding; it is not a native joined
+map/install proof.
 
 ## Initial-owner lifecycle evidence
 
