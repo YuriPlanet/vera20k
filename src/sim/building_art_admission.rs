@@ -350,8 +350,11 @@ mod tests {
             .set_for_test(25);
         sim.refresh_building_damage_state(id, &rules);
         let replaced = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
-        assert!(
-            !sim.anim(replaced).unwrap().runtime().paused,
+        // Ares 3.0 10014400 (hook 0x451A54) counts the unengineered
+        // NeedsEngineer type as Powered, so its replacement starts paused.
+        assert_eq!(
+            sim.anim(replaced).unwrap().runtime().paused,
+            cfg!(feature = "ares"),
             "replacement does not copy pause; TypePowered is false"
         );
         assert!(!sim.entities().get(id).unwrap().building_art.stuff_enabled);

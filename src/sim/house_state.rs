@@ -3130,18 +3130,11 @@ pub fn resolve_house_side_index(
     side: Option<&str>,
     fallback: i32,
 ) -> i32 {
-    // Ares 3.0 HouseClass_CTOR_FixSideIndices 10024030 (hook 0x004F645F)
-    // takes the Country's Side for any index, but leaves the -1 the
-    // constructor stores just before it on the Countries whose ID is exactly
-    // `Neutral` or `Special` (CRT strcmp).
-    #[cfg(feature = "ares")]
-    if country
-        .and_then(|country| rules.country_index(country))
-        .and_then(|index| rules.country_name(index))
-        .is_some_and(|id| id == "Neutral" || id == "Special")
-    {
-        return -1;
-    }
+    // The Country's Side for any index, as Ares 3.0
+    // HouseClass_CTOR_FixSideIndices 10024030 (hook 0x004F645F) gives a
+    // constructor-only House; the stock constructor keeps -1 past side 2.
+    // Map Houses then take their type's Side in ReadINI (`0x00500B40`), so
+    // Ares' Neutral/Special exception there changes nothing for them.
     // A registered constructor-only Country has Side=-1. It is an actual
     // native value, not a missing-country invitation to use the fallback.
     country
@@ -3752,27 +3745,5 @@ mod signed_country_side_tests {
         let bytes = crate::util::save_codec::serialize(&house).unwrap();
         let restored: HouseState = crate::util::save_codec::deserialize(&bytes).unwrap();
         assert_eq!(restored.side_index, -1);
-    }
-
-    /// Ares 10024030 (hook 0x4F645F): `Neutral` and `Special` keep -1 even
-    /// with a Side; other Countries take theirs, a fourth side included.
-    #[cfg(feature = "ares")]
-    #[test]
-    fn ares_neutral_and_special_houses_keep_no_side() {
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[Countries]\n0=Bound\n1=Neutral\n2=Special\n3=Fourth\n\
-             [Sides]\nAllied=Bound\nCivilian=Neutral,Fourth\nMutant=Special\n",
-        ))
-        .unwrap();
-        assert_eq!(resolve_house_side_index(&rules, Some("Bound"), None, 9), 0);
-        assert_eq!(
-            resolve_house_side_index(&rules, Some("Neutral"), None, 9),
-            -1
-        );
-        assert_eq!(
-            resolve_house_side_index(&rules, Some("Special"), None, 9),
-            -1
-        );
-        assert_eq!(resolve_house_side_index(&rules, Some("Fourth"), None, 9), 1);
     }
 }
