@@ -19,13 +19,14 @@ use crate::sim::world::Simulation;
 
 fn gsi_04_12_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
     let speed_costs = SpeedCostProfile {
-        foot: Some(100),
-        track: Some(100),
-        wheel: Some(100),
-        float: Some(100),
-        amphibious: Some(100),
-        float_beach: Some(100),
-        hover: Some(100),
+        foot: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        track: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        wheel: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        float_beach: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+        winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
     };
     let cells = (0..height)
         .flat_map(|ry| {

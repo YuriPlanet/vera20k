@@ -354,9 +354,9 @@ impl Simulation {
         self.substrate
             .occupancy
             .add(cell.0, cell.1, id, layer, sub_cell, insertion);
-        self.discover_cell_put_object(
+        self.discover_by_player(
             id,
-            cell,
+            Some(cell),
             crate::sim::world::UninitContext::new(rules, registry).with_effects(frame_effects),
         );
         #[cfg(any(test, feature = "test-support"))]

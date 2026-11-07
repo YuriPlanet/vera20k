@@ -10,7 +10,7 @@ use crate::app::AppState;
 use crate::app::presentation::instances::{CellBodyAtlas, CellBodyDraw};
 use crate::app::presentation::sidebar_render::{begin_main_load_pass, begin_main_pass};
 use crate::app::presentation::sidebar_surface::SidebarPart;
-use crate::app::presentation::ui_overlays::current_software_cursor_texture;
+use crate::app::presentation::ui_overlays::software_cursor_texture;
 use crate::render::batch::{BatchRenderer, BatchTexture, InstanceBufferPool, SpriteInstance};
 use crate::render::bridge_atlas::BridgeAtlas;
 use crate::render::overlay_atlas::OverlayAtlas;
@@ -56,6 +56,11 @@ pub(super) struct DrawPassData<'a> {
     pub sidebar_unavailable: &'a [SpriteInstance],
     pub sidebar_flash: &'a [SpriteInstance],
     pub sidebar_gclock: &'a [SpriteInstance],
+    /// `SidebarInstances::smooth_chrome` and `smooth_command_bar`.
+    pub smooth_chrome: bool,
+    pub smooth_command_bar: bool,
+    /// The frame the software cursor sprite was built from.
+    pub software_cursor: Option<crate::app::presentation::ui_overlays::SoftwareCursorDraw>,
 }
 
 /// Draw the sidebar into its own surface, as gamemd draws `g_SidebarSurface`
@@ -73,6 +78,12 @@ fn draw_sidebar_surface(
     encoder: &mut wgpu::CommandEncoder,
     data: &DrawPassData<'_>,
 ) {
+    encode_radar_pictures(state, encoder);
+    // The column's text draws here only where its pixels are the window's.
+    let text_in_surface = matches!(
+        crate::app::presentation::sidebar_surface::column_text(state),
+        crate::app::presentation::sidebar_surface::ColumnText::Surface(_)
+    );
     let side_index = crate::app::presentation::sidebar_render::current_sidebar_side(state);
     let presentation = &state.match_state.match_presentation;
     let chrome = presentation
@@ -80,6 +91,16 @@ fn draw_sidebar_surface(
         .as_ref()
         .and_then(|set| set.resolve_side(side_index))
         .map(|resolved| resolved.atlas);
+    // Instances moved to the smooth sidebar's chrome copy draw from it.
+    let chrome_texture = |smooth: bool| {
+        chrome.and_then(|atlas| {
+            if smooth {
+                atlas.smooth_texture()
+            } else {
+                Some(&atlas.texture)
+            }
+        })
+    };
     let renderer = &mut state.renderer;
     let Some(surface) = renderer.sidebar_surface.as_ref() else {
         return;
@@ -87,17 +108,26 @@ fn draw_sidebar_surface(
     let batch = &renderer.batch_renderer;
     let pool = &renderer.instance_pool;
     let camera = surface.camera(SidebarPart::Column);
+    let text_camera = surface.text_camera();
     let mut pass = surface.begin_pass(SidebarPart::Column, encoder, super::CLEAR_COLOR);
     let mut draw = |tex: Option<&BatchTexture>, key: &'static str| {
         draw_pooled_with_camera(&mut pass, batch, camera, pool, tex, key);
     };
-    draw(chrome.map(|atlas| &atlas.texture), "sidebar_chrome");
+    draw(chrome_texture(data.smooth_chrome), "sidebar_chrome");
     draw(
         presentation
             .sidebar_cameo_atlas
             .as_ref()
-            .map(|atlas| &atlas.texture),
+            .map(|atlas| atlas.sidebar_texture()),
         "sidebar_cameo",
+    );
+    // StripDraw6A9AF8 outlines the hovered slot before its masks.
+    draw(
+        presentation
+            .selection_overlay
+            .as_ref()
+            .map(|overlay| overlay.white_texture()),
+        "sidebar_cameo_hover",
     );
     drop(pass);
 
@@ -147,6 +177,12 @@ fn draw_sidebar_surface(
         // Count badge rect/fill6A9D0C/6A9D4C and glyph6A9D7B precede
         // the clock. Its404 packed destination read includes these pixels.
         let mut pass = surface.begin_load_pass(SidebarPart::Column, encoder);
+        let text = |pass: &mut wgpu::RenderPass<'_>, key| {
+            if text_in_surface {
+                let atlas = Some(renderer.bit_font.atlas());
+                draw_pooled_with_camera(pass, batch, text_camera, pool, atlas, key);
+            }
+        };
         draw_pooled_with_camera(
             &mut pass,
             batch,
@@ -155,14 +191,17 @@ fn draw_sidebar_surface(
             cameo_overlay_tex,
             "sidebar_queue_overlay",
         );
+        text(&mut pass, "sidebar_queue_text");
+        // Ready and Super labels6A9D94 also precede the clock6A9E97.
         draw_pooled_with_camera(
             &mut pass,
             batch,
             camera,
             pool,
-            Some(renderer.bit_font.atlas()),
-            "sidebar_queue_text",
+            cameo_overlay_tex,
+            "sidebar_label_overlay",
         );
+        text(&mut pass, "sidebar_label_text");
     }
     if let (Some((buffer, count)), Some(texture)) = (
         pool.get("sidebar_gclock"),
@@ -180,22 +219,28 @@ fn draw_sidebar_surface(
             crate::render::terrain_draw::PackedSpriteKind::UiPalette,
         );
     }
-    // READY skips clock6A9E44; HOLD is after it6AA014. Separate status
-    // layers preserve both without moving the earlier queue badge.
+    // The production HOLD label6AA014 is the only text after the clock.
     let mut pass = surface.begin_load_pass(SidebarPart::Column, encoder);
-    let mut draw = |tex: Option<&BatchTexture>, key: &'static str| {
+    let mut draw = |camera, tex: Option<&BatchTexture>, key: &'static str| {
         draw_pooled_with_camera(&mut pass, batch, camera, pool, tex, key);
     };
-    draw(cameo_overlay_tex, "sidebar_cameo_overlay");
-    draw(Some(renderer.bit_font.atlas()), "sidebar_text");
+    draw(camera, cameo_overlay_tex, "sidebar_cameo_overlay");
+    if text_in_surface {
+        draw(text_camera, Some(renderer.bit_font.atlas()), "sidebar_text");
+    }
     draw(
+        camera,
         presentation.radar_anim.as_ref().map(|ra| ra.texture()),
         "radar_anim",
     );
     let minimap = presentation.minimap.as_ref();
-    draw(minimap.map(|m| m.map_texture()), "minimap");
-    draw(minimap.map(|m| m.white_texture()), "viewport_rect");
-    draw(minimap.map(|m| m.white_texture()), "radar_content_boundary");
+    draw(camera, minimap.map(|m| m.map_texture()), "minimap");
+    draw(camera, minimap.map(|m| m.white_texture()), "viewport_rect");
+    draw(
+        camera,
+        minimap.map(|m| m.white_texture()),
+        "radar_content_boundary",
+    );
     drop(pass);
 
     // The bottom command bar (6D0A20) shares the chrome art.
@@ -205,9 +250,29 @@ fn draw_sidebar_surface(
         batch,
         surface.camera(SidebarPart::Bar),
         pool,
-        chrome.map(|atlas| &atlas.texture),
+        chrome_texture(data.smooth_command_bar),
         "command_bar",
     );
+}
+
+/// The radar's pictures for this frame: the minimap's composition
+/// (`RadarClass::Update @ 0x00656EC0`), then the housing's paints
+/// (`RadarClass::Draw @ 0x00653100`), whose retained online draw samples it.
+/// Every frame encodes them, sidebar drawn or not, so neither waits a frame.
+fn encode_radar_pictures(state: &mut AppState, encoder: &mut wgpu::CommandEncoder) {
+    let renderer = &state.renderer;
+    let presentation = &mut state.match_state.match_presentation;
+    if let Some(minimap) = presentation.minimap.as_mut() {
+        minimap.encode_composition(&renderer.gpu.device, encoder);
+    }
+    if let Some(radar) = presentation.radar_anim.as_mut() {
+        radar.encode_paints(
+            &renderer.gpu.device,
+            &renderer.gpu.queue,
+            &renderer.batch_renderer,
+            encoder,
+        );
+    }
 }
 
 /// Create the main render pass and dispatch all draw calls in the correct order.
@@ -227,6 +292,13 @@ pub(super) fn dispatch_draw_passes(
     view: &wgpu::TextureView,
     data: &DrawPassData<'_>,
 ) {
+    // The posed voxel images the world draws sample.
+    state.renderer.vxl_pose_frame_cache.borrow_mut().encode(
+        &state.renderer.gpu.device,
+        &state.renderer.gpu.queue,
+        &state.renderer.batch_renderer,
+        encoder,
+    );
     // The sidebar's surface is complete before the frame begins; the
     // screen-fixed block copies it in.
     draw_sidebar_surface(state, encoder, data);
@@ -942,51 +1014,59 @@ pub(super) fn dispatch_draw_passes(
             );
         }
     }
+    // A zoomed match draws the battlefield's screen-fixed text, with its
+    // boxes, at the window's pixels after the zoom (`window_ui`), and the
+    // software cursor after it; their layers are left out of the frame.
+    let text_in_frame = crate::app::presentation::window_ui::battlefield_raster(state).is_none();
+    let cursor_in_frame = crate::app::presentation::window_ui::zoom_raster(state).is_none();
     // --- Step 10.6: timer lines ---
     // TacticalClass::Draw's Scenario, Super and blackout timers
     // (`0x006D4941..0x006D4B25`) follow the sparkles: black boxes, then text,
     // screen-fixed but clipped to the tactical view.
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        state
-            .match_state
-            .match_presentation
-            .selection_overlay
-            .as_ref()
-            .map(|o| o.white_texture()),
-        "super_timer_fill",
-    );
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
-        "super_timer_text",
-    );
+    if text_in_frame {
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            state
+                .match_state
+                .match_presentation
+                .selection_overlay
+                .as_ref()
+                .map(|o| o.white_texture()),
+            "super_timer_fill",
+        );
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            Some(state.renderer.bit_font.atlas()),
+            "super_timer_text",
+        );
+    }
 
     // TacticalDraw6D4B25->6D4E20 is its last battlefield draw: centred
     // GRFXTXT frame, or white text if the shape/converter is unavailable.
     // Keep the tactical clip and draw before sidebar copy/Chrono capture.
+    // The atlas comes from the same selector the instances did: a country
+    // card drawn through the retail `GRFXTXT` texture samples the wrong
+    // picture at the right coordinates.
     draw_pooled_ui(
         &mut pass,
         &state.renderer.batch_renderer,
         pool,
-        state
-            .renderer
-            .outcome_banner_art
-            .as_ref()
-            .map(|art| art.texture()),
+        crate::app::presentation::outcome_banner::texture(state),
         "outcome_shape",
     );
-    draw_pooled_ui(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
-        "outcome_text",
-    );
+    if text_in_frame {
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            Some(state.renderer.bit_font.atlas()),
+            "outcome_text",
+        );
+    }
 
     // Original4F4480's53BAE0 gate skips tactical redraw during ChronoScreen,
     // but sidebar/UI still follow. Surface stores therefore precede chrome.
@@ -1016,6 +1096,23 @@ pub(super) fn dispatch_draw_passes(
     // size. The copies scissor themselves.
     if let Some(surface) = state.renderer.sidebar_surface.as_ref() {
         surface.composite(&mut pass);
+    }
+    // The column's text, where its copy would resample it, over the copy
+    // within the column (`sidebar_surface::column_text`).
+    if let crate::app::presentation::sidebar_surface::ColumnText::Frame(_) =
+        crate::app::presentation::sidebar_surface::column_text(state)
+    {
+        let (x, y, width, height) = state.sidebar_frame().column();
+        pass.set_scissor_rect(x, y, width, height);
+        for key in crate::app::presentation::sidebar_surface::TEXT_LAYERS {
+            draw_pooled_ui_passthrough(
+                &mut pass,
+                &state.renderer.batch_renderer,
+                pool,
+                Some(state.renderer.bit_font.atlas()),
+                key,
+            );
+        }
     }
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
     // Phobos SuperWeaponSidebar: left-edge screen-fixed layers. Drawn after
@@ -1077,57 +1174,36 @@ pub(super) fn dispatch_draw_passes(
     // text engine with the row's opaque-background style, which fills a black
     // box one pixel out on every side (0x4A5EB0 @ 0x4A5F61) behind each line
     // before its glyphs. Fill first, then the text, in the same screen-fixed
-    // pass group.
-    draw_pooled_ui(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        state
-            .match_state
-            .match_presentation
-            .selection_overlay
-            .as_ref()
-            .map(|o| o.white_texture()),
-        "message_fill",
-    );
-    draw_pooled_ui(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
-        "message_text",
-    );
-    // Both solid tooltip quads come from one tintable texel — the fill is tinted
-    // pure black and the 1 px frame takes the tip's text colour, which is what
-    // the retail pop-up shows. The darken strip would have blended the tip into
-    // whatever it covers, so it is not used here.
-    let tooltip_solid = state
+    // pass group; then the tooltip.
+    //
+    // The boxes and both solid tooltip quads come from one tintable texel —
+    // the tooltip's fill is tinted pure black and its 1 px frame takes the
+    // tip's text colour, which is what the retail pop-up shows. The darken
+    // strip would have blended the tip into whatever it covers, so it is not
+    // used here.
+    let solid = state
         .match_state
         .match_presentation
         .selection_overlay
         .as_ref()
         .map(|o| o.white_texture());
-    draw_pooled_ui(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        tooltip_solid,
-        "tooltip_fill",
-    );
-    draw_pooled_ui(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        tooltip_solid,
-        "tooltip_border",
-    );
-    draw_pooled_ui(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
-        "tooltip_text",
-    );
+    if text_in_frame {
+        for (texture, key) in [
+            (solid, "message_fill"),
+            (Some(state.renderer.bit_font.atlas()), "message_text"),
+            (solid, "tooltip_fill"),
+            (solid, "tooltip_border"),
+            (Some(state.renderer.bit_font.atlas()), "tooltip_text"),
+        ] {
+            draw_pooled_ui(
+                &mut pass,
+                &state.renderer.batch_renderer,
+                pool,
+                texture,
+                key,
+            );
+        }
+    }
     // State 7's 0xCF window over the live battlefield (0x0077D840).
     if let Some(page) = page_draw.as_ref() {
         page.draw(&mut pass, state);
@@ -1147,25 +1223,22 @@ pub(super) fn dispatch_draw_passes(
     // `stage_pre_cursor_composition`, so the text is inside the
     // ScreenCapture-retained pre-cursor composition (0x537BC0 hides the mouse
     // while copying).
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        state
-            .match_state
-            .match_presentation
-            .selection_overlay
-            .as_ref()
-            .map(|o| o.white_texture()),
-        "build_text_fill",
-    );
-    draw_pooled_ui_passthrough(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        Some(state.renderer.bit_font.atlas()),
-        "build_text_text",
-    );
+    if text_in_frame {
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            solid,
+            "build_text_fill",
+        );
+        draw_pooled_ui_passthrough(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            Some(state.renderer.bit_font.atlas()),
+            "build_text_text",
+        );
+    }
 
     // Active YR ScreenCaptureCommandClass::Execute (0x00537BC0) hides
     // WWMouse while copying the already-presented client. Preserve the same
@@ -1187,15 +1260,18 @@ pub(super) fn dispatch_draw_passes(
             state.renderer.gpu.config.width,
             state.renderer.gpu.config.height,
         );
-    let mut pass = begin_main_load_pass(encoder, view, frame_depth);
-    pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
-    draw_pooled_ui(
-        &mut pass,
-        &state.renderer.batch_renderer,
-        pool,
-        current_software_cursor_texture(state),
-        "software_cursor",
-    );
+    if cursor_in_frame {
+        let mut pass = begin_main_load_pass(encoder, view, frame_depth);
+        pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
+        draw_pooled_ui(
+            &mut pass,
+            &state.renderer.batch_renderer,
+            pool,
+            data.software_cursor
+                .and_then(|draw| software_cursor_texture(state, draw)),
+            "software_cursor",
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1301,6 +1377,7 @@ fn composite_world_with_drag_rect(
 }
 
 /// Native path/rally pixels belong to the world surface, before wheel zoom.
+/// Their dashed stores keep or skip each pixel by the live A on the GPU.
 pub(super) fn draw_pooled_surface_lines<'a>(
     pass: &mut wgpu::RenderPass<'a>,
     batch: &'a BatchRenderer,
@@ -1309,7 +1386,7 @@ pub(super) fn draw_pooled_surface_lines<'a>(
     key: &'static str,
 ) {
     if let (Some(t), Some((buf, count))) = (tex, pool.get(key)) {
-        batch.draw_with_buffer_passthrough(pass, t, buf, count);
+        batch.draw_surface_stores(pass, t, buf, count);
     }
 }
 
@@ -1559,11 +1636,14 @@ mod tests {
     fn gsi_04_01_retained_sidebar_radar_subpass_ends_with_content_boundary() {
         let chrome = source_offset("\"sidebar_chrome\"");
         let cameo = source_offset("\"sidebar_cameo\"");
+        let cameo_hover = source_offset("\"sidebar_cameo_hover\"");
         let gclock = source_offset("\"sidebar_gclock\"");
         let unavailable = source_offset("\"sidebar_unavailable\"");
         let flash = source_offset("\"sidebar_flash\"");
         let queue_fill = source_offset("\"sidebar_queue_overlay\"");
         let queue_text = source_offset("\"sidebar_queue_text\"");
+        let label_overlay = source_offset("\"sidebar_label_overlay\"");
+        let label_text = source_offset("\"sidebar_label_text\"");
         let cameo_overlay = source_offset("\"sidebar_cameo_overlay\"");
         let sidebar_text = source_offset("\"sidebar_text\"");
         let radar_anim = source_offset("\"radar_anim\"");
@@ -1573,11 +1653,14 @@ mod tests {
         let message = source_offset("\"message_text\"");
 
         assert!(chrome < cameo);
-        assert!(cameo < unavailable);
+        assert!(cameo < cameo_hover);
+        assert!(cameo_hover < unavailable);
         assert!(unavailable < flash);
         assert!(flash < queue_fill);
         assert!(queue_fill < queue_text);
-        assert!(queue_text < gclock);
+        assert!(queue_text < label_overlay);
+        assert!(label_overlay < label_text);
+        assert!(label_text < gclock);
         assert!(gclock < cameo_overlay);
         assert!(cameo_overlay < sidebar_text);
         assert!(sidebar_text < radar_anim);
@@ -1599,6 +1682,8 @@ mod tests {
             "\"sidebar_flash\"",
             "\"sidebar_queue_overlay\"",
             "\"sidebar_queue_text\"",
+            "\"sidebar_label_overlay\"",
+            "\"sidebar_label_text\"",
             "\"sidebar_cameo_overlay\"",
             "\"sidebar_text\"",
             "\"radar_anim\"",
@@ -1629,6 +1714,8 @@ mod tests {
 
         // No sidebar or bar layer draws in the frame pass, so the frame keeps
         // no sidebar depth: the tooltips and the cursor show over the radar.
+        // The column's text may go over the copy there, without depth
+        // (`sidebar_surface::column_text`).
         let production = SOURCE.split("#[cfg(test)]").next().unwrap();
         for layer in [
             "\"sidebar_chrome\"",
@@ -1652,7 +1739,7 @@ mod tests {
     /// reads as a translucent box, which is what this pins out.
     #[test]
     fn tooltip_fill_binds_the_solid_texel_not_the_darken_strip() {
-        let binding = source_offset("let tooltip_solid");
+        let binding = source_offset("let solid = state");
         let fill = source_offset("\"tooltip_fill\"");
         let border = source_offset("\"tooltip_border\"");
         assert!(binding < fill);

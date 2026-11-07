@@ -1339,6 +1339,42 @@ impl MatchSession {
         Ok(())
     }
 
+    /// VERA's room bans on the host: each player, AI and inactive row whose
+    /// chosen country is `banned` goes back to Random.
+    pub(crate) fn random_for_network_countries(
+        &mut self,
+        banned: impl Fn(crate::skirmish_launch::LaunchCountry) -> bool,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(self.host, "only the host enforces the room's bans");
+        let Some(NetworkSession {
+            phase:
+                NetworkPhase::Setup {
+                    launch,
+                    inactive_choices,
+                    ..
+                },
+            ..
+        }) = self.network.as_mut()
+        else {
+            anyhow::bail!("network setup is not editable");
+        };
+        for human in launch
+            .humans
+            .iter_mut()
+            .filter(|human| !human.is_observer())
+        {
+            human.slot.country_random |= banned(human.slot.country);
+        }
+        for ai in &mut launch.opponents {
+            ai.country_random |= banned(ai.country);
+        }
+        for choices in inactive_choices.iter_mut() {
+            choices.country_random |= banned(choices.country);
+        }
+        launch.rebuild_house_roster();
+        Ok(())
+    }
+
     pub(crate) fn set_network_row_choices(
         &mut self,
         row: u8,
@@ -1831,6 +1867,72 @@ impl MatchSession {
         }
     }
 
+    /// Whether later arrivals may watch in a VERA room: its host allowed
+    /// spectators at Create Game and its mode keeps an observer row.
+    fn network_spectators_welcome(&self) -> bool {
+        matches!(
+            self.network.as_ref().map(|network| &network.phase),
+            Some(NetworkPhase::Setup {
+                observer_row: Some(_),
+                open_spectators: true,
+                several_observers: true,
+                ..
+            })
+        )
+    }
+
+    /// The most people a VERA room takes, the join limit its host gives the
+    /// online lobby: its Max players, and when no one else may watch, no
+    /// more than the people in it and the seats a newcomer can take, an
+    /// AI's among them ([`Self::free_network_seat_for_newcomer`]).
+    pub(crate) fn network_people_capacity(&self) -> Option<i32> {
+        let Some(NetworkPhase::Setup {
+            launch,
+            people_limit,
+            several_observers: true,
+            ..
+        }) = self.network.as_ref().map(|network| &network.phase)
+        else {
+            return None;
+        };
+        let limit = i32::from(*people_limit);
+        if self.network_spectators_welcome() {
+            return Some(limit);
+        }
+        let seats = (0..self.network_player_row_limit())
+            .filter(|row| {
+                self.network_vacancy(*row) == Some(NetworkVacancy::Open)
+                    || self.network_display_ai(*row).is_some()
+            })
+            .count();
+        Some(limit.min((launch.humans.len() + seats) as i32))
+    }
+
+    /// The seat a newcomer to a VERA room under its host's Max players gets
+    /// when every seat is taken: the AI's on the last row. AI never fill a
+    /// VERA room.
+    pub(crate) fn network_newcomer_ai_seat(&self) -> Option<u8> {
+        if !self.host
+            || !self.network_several_observers()
+            || self.network_room_full()
+            || !self.network_no_open_player_row()
+        {
+            return None;
+        }
+        let launch = self.network_setup()?;
+        launch.opponents.iter().map(|ai| ai.raw_slot_index).max()
+    }
+
+    /// Frees [`Self::network_newcomer_ai_seat`] for the newcomer as the
+    /// host's Remove does ([`Self::choose_network_row_kind`]), and returns it.
+    pub(crate) fn free_network_seat_for_newcomer(&mut self) -> anyhow::Result<Option<u8>> {
+        let Some(row) = self.network_newcomer_ai_seat() else {
+            return Ok(None);
+        };
+        self.choose_network_row_kind(row, NetworkRowKind::Open)?;
+        Ok(Some(row))
+    }
+
     /// The host's own Player choice for a row (`0x005EC9F0`), after which a
     /// VERA room places its open spectator row again.
     pub(crate) fn choose_network_row_kind(
@@ -1852,9 +1954,7 @@ impl MatchSession {
             phase:
                 NetworkPhase::Setup {
                     launch,
-                    observer_row,
                     several_observers: true,
-                    open_spectators,
                     ..
                 },
             ..
@@ -1865,7 +1965,7 @@ impl MatchSession {
         if !self.host {
             return Ok(());
         }
-        let open = *open_spectators && observer_row.is_some() && launch.opponents.is_empty();
+        let open = self.network_spectators_welcome() && launch.opponents.is_empty();
         let seated = |row: u8| {
             launch
                 .humans
@@ -2722,22 +2822,70 @@ impl MatchSession {
         }
     }
 
-    /// The frozen launch's owner key of network participant `source_index`.
+    /// The frozen launch's owner key of the House network participant
+    /// `source_index` controls, its own or one it shares.
     pub(crate) fn network_source_owner(&self, source_index: usize) -> Option<String> {
         let launch = self.network_setup()?;
         crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
             .into_iter()
-            .find(|slot| slot.source_human_index == Some(source_index))
+            .find(|slot| slot.is_controlled_by(source_index))
             .map(|slot| slot.owner_name)
     }
 
-    /// The network participant whose House has owner key `owner`.
-    pub(crate) fn network_owner_source(&self, owner: &str) -> Option<usize> {
-        let launch = self.network_setup()?;
+    /// The network participants controlling the House with owner key `owner`.
+    pub(crate) fn network_owner_sources(&self, owner: &str) -> Vec<usize> {
+        let Some(launch) = self.network_setup() else {
+            return Vec::new();
+        };
         crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
             .into_iter()
             .find(|slot| slot.owner_name == owner)
-            .and_then(|slot| slot.source_human_index)
+            .map_or_else(Vec::new, |slot| {
+                slot.controllers
+                    .iter()
+                    .map(|controller| controller.human_index)
+                    .collect()
+            })
+    }
+
+    /// Network participant `source_index`'s command sender: the header byte
+    /// of its records and its timing row. That is its House's index unless
+    /// players share Houses.
+    pub(crate) fn network_source_sender(&self, source_index: usize) -> Option<i8> {
+        let launch = self.network_setup()?;
+        crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
+            .iter()
+            .flat_map(|slot| &slot.controllers)
+            .find(|controller| controller.human_index == source_index)
+            .map(|controller| controller.source)
+    }
+
+    /// The network participant sending as `sender`.
+    pub(crate) fn network_sender_source(&self, sender: i8) -> Option<usize> {
+        let launch = self.network_setup()?;
+        crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
+            .iter()
+            .flat_map(|slot| &slot.controllers)
+            .find(|controller| controller.source == sender)
+            .map(|controller| controller.human_index)
+    }
+
+    /// VERA shared control: whether another connected participant controls
+    /// the House participant `source_index` controls.
+    pub(crate) fn network_teammate_connected(&self, source_index: usize) -> bool {
+        let Some(launch) = self.network_setup() else {
+            return false;
+        };
+        let connected = self.network_connected_source_indices();
+        crate::sim::scenario_bootstrap::normalized_launch_slots(launch)
+            .iter()
+            .find(|slot| slot.is_controlled_by(source_index))
+            .is_some_and(|slot| {
+                slot.controllers.iter().any(|controller| {
+                    controller.human_index != source_index
+                        && connected.contains(&controller.human_index)
+                })
+            })
     }
 
     /// `IPXManager::Delete_Connection 0x00540F00` and the node removal of
@@ -2948,7 +3096,7 @@ fn host_extra_row(
 }
 
 #[derive(Clone, Copy)]
-enum PeerChoicePolicy<'a> {
+pub(crate) enum PeerChoicePolicy<'a> {
     Lan,
     Wol {
         countries: Option<&'a [crate::skirmish_launch::LaunchCountry]>,
@@ -2956,7 +3104,8 @@ enum PeerChoicePolicy<'a> {
 }
 
 /// Shared69B600/5E9720 collision checks; caller selects the native country/team policy.
-fn apply_peer_choices(
+/// A Quick Match host seats the matchbot's guest through it too.
+pub(crate) fn apply_peer_choices(
     launch: &mut SkirmishLaunchSession,
     inactive_ai_options: &[NetworkAiOptions; NETWORK_PLAYER_SLOT_COUNT],
     index: usize,
@@ -3060,10 +3209,14 @@ fn network_start_in_use(
     let crate::skirmish_launch::LaunchStartPosition::Position(position) = start else {
         return false;
     };
-    launch
-        .humans
-        .iter()
-        .any(|human| human.raw_slot_index.is_some() && human.slot.start_position == start)
+    // VERA shared control: outside Cooperative a player may take a start
+    // other players hold, to share their House.
+    let shared = launch.mode.class != crate::skirmish_modes::MpModeClass::Cooperative;
+    !shared
+        && launch
+            .humans
+            .iter()
+            .any(|human| human.raw_slot_index.is_some() && human.slot.start_position == start)
         || launch.opponents.iter().any(|ai| ai.start_position == start)
         || inactive.iter().enumerate().any(|(row, raw)| {
             raw.start == i32::from(position)
@@ -3466,6 +3619,40 @@ mod tests {
             .select_network_map(mode, "EIGHT.MAP".into(), 8)
             .unwrap();
         assert!((2..8).all(|row| session.network_vacancy(row) == Some(NetworkVacancy::Open)));
+    }
+
+    /// A VERA room stays open until its host's Max players: with every seat
+    /// taken, a newcomer gets the last AI's seat. With spectators off its
+    /// limit is the people in it and the seats AI hold or leave open.
+    #[test]
+    fn a_vera_room_gives_a_newcomer_the_last_ai_seat_until_its_limit() {
+        use super::NetworkRowKind;
+        let easy = NetworkRowKind::Ai(crate::skirmish_launch::AiDifficulty::Easy);
+        let mut session = vera_room();
+        for row in [2, 3] {
+            session.choose_network_row_kind(row, easy).unwrap();
+        }
+        assert!(session.network_no_open_player_row());
+        assert_eq!(session.network_people_capacity(), Some(30));
+        session.set_network_spectators(false).unwrap();
+        assert_eq!(session.network_people_capacity(), Some(4));
+        // At its Max players the AI keep their seats.
+        session.set_network_people_limit(2).unwrap();
+        assert_eq!(session.network_people_capacity(), Some(2));
+        assert_eq!(session.network_newcomer_ai_seat(), None);
+        assert_eq!(session.free_network_seat_for_newcomer().unwrap(), None);
+        session.set_network_people_limit(30).unwrap();
+        assert_eq!(session.network_newcomer_ai_seat(), Some(3));
+        assert_eq!(session.free_network_seat_for_newcomer().unwrap(), Some(3));
+        assert_eq!(session.network_free_row(false), Some(3));
+        let ai_rows: Vec<u8> = session
+            .network_setup()
+            .unwrap()
+            .opponents
+            .iter()
+            .map(|ai| ai.raw_slot_index)
+            .collect();
+        assert_eq!(ai_rows, [2]);
     }
 
     /// A larger map's players take the spectators' rows: they move on past
@@ -4036,6 +4223,42 @@ mod tests {
         third.raw_slot_index = Some(2);
         session.add_network_participant(third).unwrap();
         assert!(session.network_over_capacity());
+    }
+
+    /// VERA shared control: outside Cooperative a player may take a start
+    /// another player holds, never an AI's (`0x5E9720`).
+    #[test]
+    fn a_player_may_share_a_players_start_but_not_an_ais() {
+        use crate::skirmish_launch::LaunchStartPosition::Position;
+        let mut launch = network_fixture();
+        launch.humans[0].slot.start_position = Position(0);
+        launch
+            .opponents
+            .push(crate::skirmish_launch::SkirmishAiSlot {
+                raw_slot_index: 2,
+                country: crate::skirmish_launch::LaunchCountry::America,
+                country_random: false,
+                color_index: 3,
+                color_random: false,
+                start_position: Position(1),
+                team: crate::skirmish_launch::LaunchTeam::None,
+                difficulty: crate::skirmish_launch::AiDifficulty::Hard,
+            });
+        let inactive = [super::NetworkAiOptions {
+            difficulty: -1,
+            country: -2,
+            color: -2,
+            start: -2,
+            team: -2,
+        }; crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT];
+        assert!(!super::network_start_in_use(
+            &launch,
+            &inactive,
+            Position(0)
+        ));
+        assert!(super::network_start_in_use(&launch, &inactive, Position(1)));
+        launch.mode.class = crate::skirmish_modes::MpModeClass::Cooperative;
+        assert!(super::network_start_in_use(&launch, &inactive, Position(0)));
     }
 
     #[test]

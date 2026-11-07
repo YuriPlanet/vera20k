@@ -312,6 +312,20 @@ fn network_completion_keeps_shared_house_results_and_only_local_exit_and_vox() {
 }
 
 #[test]
+fn network_match_winners_are_the_humans_the_completion_flags_to_win() {
+    let rules = rules(3);
+    let (mut sim, owners) = network_result_world(1);
+    assert_eq!(sim.network_match_winners(), None);
+    sim.houses
+        .get_mut(&owners[1])
+        .unwrap()
+        .tracking_mut()
+        .set_for_test(0, &[], (0, 0, 0), &[]);
+    sim.check_defeat(Some(&rules), None);
+    assert_eq!(sim.network_match_winners(), Some(vec![owners[0]]));
+}
+
+#[test]
 fn network_country_result_actions_keep_each_human_decision_in_both_views() {
     use crate::sim::house_state::HouseOutcomeKind;
     let rules = rules(3);
@@ -1133,6 +1147,7 @@ fn a_computer_defeat_turns_the_computers_left_paranoid() {
     assert!(sim.houses[&houses[3]].is_defeated());
     let allies = |n: usize| {
         sim.house_alliances()
+            .as_map()
             .get(&format!("HOUSE{n}"))
             .cloned()
             .unwrap_or_default()

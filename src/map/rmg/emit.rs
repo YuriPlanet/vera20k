@@ -114,6 +114,7 @@ pub fn populate(
             cell.tile
         };
         map_file.cells.push(MapCell {
+            legacy_ice_byte: 0,
             rx,
             ry,
             tile_index,
@@ -163,7 +164,7 @@ pub fn populate(
             recruitable_b: true,
             group: -1,
             follows: None,
-            structure_upgrades: [None, None, None],
+            structure_columns: Default::default(),
             structure_ai_sellable: false,
             structure_ai_repairable: false,
             structure_online: true,

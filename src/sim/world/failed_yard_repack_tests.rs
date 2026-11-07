@@ -47,6 +47,7 @@ fn scene() -> Option<(SimRuntime, u64)> {
         .recalc_cells()
         .into_iter()
         .map(|(x, y)| MapCell {
+            legacy_ice_byte: 0,
             rx: x as u16,
             ry: y as u16,
             tile_index: if (14..=22).contains(&x) && (14..=22).contains(&y) {
@@ -71,7 +72,10 @@ fn scene() -> Option<(SimRuntime, u64)> {
     );
     let failed_cell = terrain.cell(17, 17).unwrap();
     assert_eq!(failed_cell.land_type, LandType::Water.as_index());
-    assert_eq!(failed_cell.speed_costs.track, Some(0));
+    assert_eq!(
+        failed_cell.speed_costs.track,
+        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
+    );
     assert_eq!(failed_cell.slope_type, 0);
     assert!(!failed_cell.bridge_facts.has_structural_bridge());
     assert_eq!(

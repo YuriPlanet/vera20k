@@ -140,10 +140,11 @@ impl Simulation {
             owner: entity.owner(),
             location,
             level: i32::from(cells.ground_fields(origin).0 as i8),
-            // FogCell486B5A calls virtual80 (Is1x1WithUndeploy). The other
-            // native exclusion is Building+6ED ==15; that translucency state
-            // has no producer in the current ordinary-building path.
-            visible: visible && !object.is_1x1_with_undeploy(),
+            // FogCell486B5A calls virtual80 (Is1x1WithUndeploy), then
+            // 486B68 hides a building faded out (+6ED == 15).
+            visible: visible
+                && !object.is_1x1_with_undeploy()
+                && entity.building_cloak_stage() != 15,
             records,
         };
         self.deselect_fogged_object(viewer, id);
@@ -168,6 +169,7 @@ impl Simulation {
         if !self.session.game_options().fog_of_war {
             return;
         }
+        self.fog.note_shared_write();
         for rung in 0..7i16 {
             let candidate = {
                 let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {

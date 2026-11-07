@@ -36,13 +36,16 @@ const MOVER: u64 = 1;
 const CANDIDATE: (u16, u16) = (11, 9);
 
 fn chain_fixture(passive: bool) -> (Simulation, RuleSet, TrackInvocation) {
-    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[VehicleTypes]\n0=MTNK\n[InfantryTypes]\n0=E1\n[BuildingTypes]\n0=GAGATE_A\n\
+    let rules = RuleSet::from_ini_with_sounds_for_test(
+        &IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=MTNK\n[InfantryTypes]\n0=E1\n[BuildingTypes]\n0=GAGATE_A\n\
          [MTNK]\nSpeed=4\nCrusher=yes\nPassive={}\n\
          [E1]\nCrushable=yes\nStrength=100\nCrushSound=Squish\n\
          [GAGATE_A]\nFoundation=3x1\nGate=yes\nDeployTime=.044\nGateCloseDelay=.2\n",
-        if passive { "yes" } else { "no" },
-    )))
+            if passive { "yes" } else { "no" },
+        )),
+        &["Squish"],
+    )
     .unwrap();
     let mut sim = Simulation::with_seed(17);
     // The chain query (0x4B1C3E) asks the native Unit+1AC over map cells.

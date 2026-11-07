@@ -596,9 +596,9 @@ impl Simulation {
         let mut retry = false;
         let mut process_tail = true;
         loop {
-            if let Some(request) = pending_movement.take_foot_path_request() {
+            if let Some(mut request) = pending_movement.take_foot_path_request() {
                 let outcome = sim
-                    .run_foot_path_request(&request, rules, overlay_registry, effects)
+                    .run_foot_path_request(&mut request, rules, overlay_registry, effects)
                     .map_err(|cause| frame_error(sim, cause))?;
                 if outcome == movement::FootPathOutcome::Resume {
                     pending_movement.reenter_mover(
@@ -727,6 +727,7 @@ impl Simulation {
         effects: super::FrameEffects<'_>,
     ) -> Result<LiveObjectPassOutcome, super::FrameAdvanceError> {
         self.answer_batched_path_searches(rules, overlay_registry);
+        self.answer_batched_scans(rules, overlay_registry);
         let object_ctx = techno_ai::ObjectAiCtx {
             effects,
             overlay_registry,
@@ -772,6 +773,7 @@ impl Simulation {
         self.fog.settle_plane_writes();
         self.reveal_viewers.end();
         self.finish_batched_path_searches();
+        self.finish_batched_scans();
         walked?;
         Ok(outcome)
     }

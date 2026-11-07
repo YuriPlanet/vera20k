@@ -1,17 +1,17 @@
 # Multiplayer behavior and ownership
 
-Current macOS and Linux source builds provide LAN and online multiplayer through
+Windows, macOS and Linux builds provide LAN and online multiplayer through
 the normal game menus. Both paths use the existing
 owners for session setup, synchronized commands, reliable UDP delivery, frame
-pacing, checksums, disconnects, results and rematches. The function-level
-active-retail `gamemd.exe` parity audit remains separate from runtime validation.
+pacing, checksums, disconnects, results and rematches.
 
 Legacy IPX sockets and the IPX protocol are excluded. Shared behavior in
 IPX-named classes remains relevant. Retail's Network menu constructs the IPX
 interface (`52E3D2`); VERA uses IPv4 UDP for this LAN entry point. That replacement,
 including limited broadcast on port 1234, is an explicit transport adaptation.
-Online play uses the Cloudflare HTTPS lobby and an authenticated UDP gameplay
-relay on DigitalOcean. Relay admission handles client source-address changes;
+Online play uses the Cloudflare HTTPS lobby and authenticated UDP gameplay relays;
+the lobby gives each match a relay near its players, or spreads it over several
+relays when they are far apart. Relay admission handles client source-address changes;
 the relay orders modern online commands while clients retain simulation authority. Matches are between
 VERA20k clients; legacy IPX and gamemd wire compatibility are not supported.
 
@@ -46,30 +46,39 @@ timing continue through the same timing owner. Games originally admitted with
 multiple human sources, including observers, retain synchronized scheduling even
 after other players leave. AI players never acquire network identities.
 
-Online matches with two or more human sources use a lobby-certified fixed clock
+Online matches with two or more human sources use a lobby-certified relay clock
 and one immutable relay command stream. Every originally admitted client that
 finishes loading must agree to the initial world before it starts. A player who
 never finishes loading leaves in the first frame once silent for 60 seconds, or 3
 minutes after the first client was ready; the native loading timeout leaves that
 departure to the relay. A match spread over several relays is cancelled instead.
 At each deadline, missing input is empty; a command joins the next unsealed
-frame. The sender also waits for that commit. Each new command batch goes out
-twice, so one lost uplink datagram does not hold it and every later batch for
-the 100 ms retry.
+frame. The sender also waits for that commit.
 Frames use the existing Event codec and simulation queues, with a fresh compression
-cache per self-contained encrypted batch. The relay never receives payload keys.
-A batch that fails the payload key's authentication or does not decode makes its
-sender leave at that frame on every client, as if by Leave; the rest of its
-stream is ignored.
+cache per self-contained batch. Batches travel in plain text: the relay can read
+them, and only the per-hop MAC authenticates them. A batch's Event packet header
+is not sent; each client rebuilds it from the batch's source and frame. A batch
+that does not decode, or whose House is not its source's, makes its sender leave
+at that frame on every client, as if by Leave; the rest of its stream is ignored.
 
-Clients negotiate server-pushed updates from that same retained history. Healthy
-clients send cumulative receive watermarks instead of continually requesting new
-frames; gaps use the existing replay reader. The relay pushes each
-unacknowledged entry once more about 8 ms after the first copy, so one lost
-datagram costs about that delay rather than a repair round trip. Repeats use
-only capacity fresh entries leave, under their own relay budget, so heavy load
-drops repeats before it delays a fresh entry. Older relays fall back to
-polling, and older clients can still pull from an upgraded relay.
+Redundancy follows each player's measured link
+(`services/relay/adaptive-transport/spec.md`). One merged UPLINK request carries
+unacknowledged batches, the receive watermark, the per-hop receipt feedback,
+checksums and pace. The relay pushes each turn packed, with the reader's
+unacknowledged records piggybacked into the space the turn leaves. A good link
+sends each batch and turn once. A lossy or jittery link also gets 16 ms uplink
+copies and 8 ms downlink repeats. A congested link gets neither, and a silent
+one only probes. Losses that the receipt feedback shows are retransmitted by the
+relay; a lasting gap falls back to the existing replay reader. Clients and relay
+ship together: older clients are not supported.
+
+Every datagram uses the compact envelope
+(`services/relay/bandwidth-compaction/spec.md`): a 32-bit session the relay
+assigns at admission, a 32-bit hop sequence and a 4-byte truncated HMAC, 13 bytes
+in all. History packs encode each record relative to the previous one and decode
+alone. The receiving client rebuilds the same canonical records, so journal,
+replay and federation are unchanged. Measured traffic is in
+`services/relay/adaptive-transport/results.md`.
 
 When every active player and the relay support synchronized pause, any player
 can use the Pause key or Options' **Pause All Players** / **Resume All Players**
@@ -88,15 +97,39 @@ Pushed clients use a local adaptive playout schedule based on socket receipt
 timestamps. It starts with no added buffer and can reserve at most 20 ms or one
 frame, whichever is smaller, to absorb jitter. An early receipt moves the
 schedule earlier, so no hold exceeds that reserve. Stable delivery gradually
-reduces the reserve. The relay still owns the fixed clock; local pacing never changes
+reduces the reserve. The relay still owns the clock; local pacing never changes
 commands, simulation order or another player's progress. A stalled or slow client
 catches up through at most eight ordinary simulation transactions or eight
-milliseconds per service wake, then yields to input/rendering. It never skips
-simulation ticks, and pacing never interrupts an already-started frame transaction.
+milliseconds per service wake, then yields to input. It draws once no frame is
+due, so a client that draws slower than the match rate shows a steady number of
+frames per picture instead of falling behind and catching up in bursts. A
+picture stands at most four recent draw times (at least 50 ms): the simulation
+may take the four fifths of the time the relay expects a player's tick cost to
+hold. It never skips simulation ticks, and pacing never interrupts an
+already-started frame transaction.
 An agreed resume resets the local playout clock so paused time creates no catch-up debt.
-Peer lag, acknowledgements and CPU reports cannot slow the shared clock. The
-initial speed stays fixed for the match. The relay keeps a bounded RAM cache and the full encrypted match journal on
-disk. Temporary connection loss keeps the player's identity, units, input cursor
+
+A player whose PC cannot keep up slows the match, within limits. Each client
+reports about once a second whether it is catching up (frames have waited on it
+for two seconds) or behind (also, two seconds in a row, it ran some but fewer
+than the relay sealed). A hidden window, a paused or rejoining match and a world
+that ran no frames never count as behind. The relay then seals at the fastest
+Game Speed rate at most nine tenths of what that player ran, so it also drains
+the frames waiting on it: at least one row slower but never more than two rows
+below the match's own speed (60 frames a second goes no lower than 30), with at
+least five seconds between changes. After 30 seconds with nobody behind or
+catching up, not counting paused time, it tries one row faster; a slowdown
+within 30 seconds of that doubles the wait, up to five minutes. Every client
+shows "<player> is slowing the game down." and, once the match is back at its
+own speed, "Game speed is back to normal." A rate change is a marker in the
+stream, so only playout pacing changes: the simulation, its saves and replays
+keep the match's own frame rate, and a replay plays at that speed. It needs
+every active client to report; a room with an older client or one spread over
+several relays keeps its speed. Native lockstep instead slows every match to its
+slowest player (ProcessNetwork `0x00647BF4..0x00647E6D`).
+
+The relay keeps a bounded RAM cache and the full match journal on disk. The
+journal is not encrypted: it holds plain commands and relies on file permissions. Temporary connection loss keeps the player's identity, units, input cursor
 and world in the match; the client renews its ticket and reads missed frames when
 connectivity returns. The UI shows Reconnecting or Catching up while healthy
 clients continue. After ten minutes of silence the relay removes the player
@@ -120,7 +153,9 @@ caught up; local orders given until then are dropped, and effects and voices sta
 silent. The relay refuses a different world as an agreement mismatch. Abort Mission
 during this replay leaves as it does while Reconnecting.
 
-Authored Battle matches record reconstructible JSON replays in `replays/`.
+Authored matches, Cooperative aside, record reconstructible JSON replays in `replays/`.
+A replay is written when its match ends or the game closes, and also when an
+internal error (a panic) closes the game; the folder keeps the newest 20.
 `vera20k --replay <replay.json> --ra2-dir <retail-directory>` opens read-only
 playback with camera controls and Escape to close.
 `vera20k --replay-verify <replay.json> --ra2-dir <retail-directory>` reconstructs the
@@ -201,33 +236,6 @@ modern online ordering above is an intentional adaptation.
   visit resets queues, sequence history, observations and lobby timing while
   retaining the portable socket bindings.
 
-## Validation and native audit
-
-Two consecutive online matches passed functional validation with 30 independent
-client processes and more than 20,000 active mobile units per match. The clients
-ran across seven machines: two local macOS clients on one Mac and 28 Linux clients
-cohosted on six VMs. The run covered real Move/Stop input, matching shared
-simulation checksums and hashes, both results screens and lobby returns, a rematch
-in the same client processes, and final Main Menu return.
-
-The Linux clients used software rendering. Sampled host traces showed approximately
-0.74 simulation frames per wall-clock second in each match. These samples
-measure observed simulation progress, not display FPS or the selected TIMING rate.
-This establishes functional scale behavior; smooth, real-time performance remains
-unproven. Exhaustive fault coverage and Windows multiplayer validation are not
-claimed here.
-
-The native-function audit continues through the existing owners, including wider
-gameplay command producers and cooperative handoffs. Native extra-channel/router
-behavior, interface selection and local MoveFlash drawing retain their separate
-audit scope. VERA's IPv4/relay transport and bounded command admission do not claim
-legacy wire compatibility or exhaustive gamemd behavior.
-
-Solo AI validation also completed two 600-frame online rounds with Move and Stop
-applied in their issue frame, real AI activity, lobby return, rematch and acknowledged
-logout. This covers local input scheduling; it does not measure human-to-human
-Internet latency or establish complete AI or cooperative-campaign behavior.
-
 ## Reproducible validation tools
 
 The `tools/storage_oracle/lan_*` harnesses execute original instruction slices
@@ -248,8 +256,12 @@ After building the normal app with `--profile fast`, run the host with
 --lan-peer 127.0.0.1:32110`. Run the guest with `lan-live-guest`, a separate output
 directory, and the bind/peer endpoints exchanged. The output manifest's
 `lan.rounds[n].runtime.native_checksums` records per-frame checksums for each
-round. The live targets drive real Move/Stop input, results, lobby rematch and
-Main Menu return across two games.
+round. The live targets drive real Move/Stop input, results, a rematch in the
+host's reopened room and Main Menu return across two games.
+The `lan-live-timeout-host` and `lan-live-quit-host` targets pair with
+`lan-live-failure-guest` on the same endpoints. That guest plays the shared 300-frame
+prefix and then exits without leaving, so the host meets a real peer disappearance
+and either lets the connection time out or Quits from the wait dialog.
 This loopback example alone does not establish separate-machine or scale coverage.
 Normal players do not need these diagnostic flags. Validation results belong in
 the task's validation records, not the tree.
@@ -275,3 +287,11 @@ Campaign; seed its settings folder with a `coopsave.ini` section for the pair
 `CurrentMap` is the campaign's last stage: at native frame 150 both processes flag every
 human House to win, BC6 offers only Quit, both press it and the campaign-end dialog
 `0xBC7` opens. The host stays on it; the guest presses Continue back to the lobby.
+The `online-live-coop-host` and `online-live-coop-guest` targets play the same campaign
+in a VERA room on the deployed lobby and relay, with the offline test service off. Each
+takes `--online-account <name>`; the guest also takes `--online-host <host name>`. The
+host uses the Soviet row through Choose Map and the guest joins. At native frame 150
+both flag every human House to win, both press BC6's Continue, and the kept room comes
+back on the next stage with no `TXT_SAVE_CAMP_AVAILABLE` line in either setup's chat;
+the host starts it and it must run 90 frames. The manifest's
+`lan.cooperative` records the BC6 result, the room's next map and its startup.

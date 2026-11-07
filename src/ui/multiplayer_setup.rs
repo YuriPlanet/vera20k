@@ -10,7 +10,7 @@ use crate::ui::lan_shell::LanChatState;
 use crate::ui::shell::button::ShellButtonInteraction;
 use crate::ui::shell::combobox::{ComboPopup, ComboPopupInteraction};
 use crate::ui::shell::descriptor::{DialogId, LOW_HEADING_ANCHOR, MAP_TEXT_ANCHOR};
-use crate::ui::shell::geom::{RectPx, ShellScale, child_window};
+use crate::ui::shell::geom::{RectPx, SHELL_BASE_H, SHELL_BASE_W, ShellScale, child_window};
 use crate::ui::shell::layout::anchor_rect;
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageLayout, MenuPageSpec};
 use crate::ui::shell::trackbar::{TrackbarHold, TrackbarRange};
@@ -26,6 +26,9 @@ pub(crate) const NEXT_ROWS: u16 = 0x7F01;
 /// VERA-only: the room's Game Options button and its popup's OK.
 pub(crate) const GAME_OPTIONS: u16 = 0x7F02;
 pub(crate) const GAME_OPTIONS_OK: u16 = 0x7F03;
+/// VERA-only: the missing-map offer's Download and Leave.
+pub(crate) const MAP_OFFER_DOWNLOAD: u16 = 0x7F04;
+pub(crate) const MAP_OFFER_LEAVE: u16 = 0x7F05;
 /// VERA-only combos of the rows past the resource's eight, one block of
 /// 0x20 ids per column.
 const ROOM_ROW_COMBOS: u16 = 0x7F20;
@@ -40,6 +43,25 @@ pub(crate) const CREDITS: u16 = 0x402;
 pub(crate) const UNITS: u16 = 0x54F;
 pub(crate) const DIFFICULTY: u16 = 0x732;
 pub(crate) const CHECKBOXES: [u16; 5] = [0x54E, 0x3E8, 0x54D, 0x69A, 0x69D];
+/// VERA-only checkboxes its Game Options adds under the native five.
+pub(crate) const BRIDGES: u16 = 0x7F06;
+pub(crate) const ALLYING: u16 = 0x7F07;
+pub(crate) const NO_YURI: u16 = 0x7F08;
+pub(crate) const NO_FRANCE: u16 = 0x7F09;
+pub(crate) const NO_SPY: u16 = 0x7F0A;
+pub(crate) const NO_STOLEN_TECH: u16 = 0x7F0B;
+pub(crate) const ROOM_CHECKBOXES: [u16; 6] =
+    [BRIDGES, ALLYING, NO_YURI, NO_FRANCE, NO_SPY, NO_STOLEN_TECH];
+/// Their labels in VERA's language files; the retail string table has none
+/// for them.
+pub(crate) const ROOM_CHECKBOX_LABELS: [&str; 6] = [
+    "VERA:DestroyableBridges",
+    "VERA:InGameAllying",
+    "VERA:NoYuri",
+    "VERA:NoFrance",
+    "VERA:NoSpy",
+    "VERA:NoStolenTech",
+];
 /// The trackbars VERA's room moves into Game Options; Difficulty stays.
 pub(crate) const OPTION_TRACKBARS: [u16; 3] = [SPEED, CREDITS, UNITS];
 pub(crate) const COUNTRIES: [u16; 8] = [0x6A1, 0x510, 0x513, 0x51E, 0x514, 0x51F, 0x520, 0x521];
@@ -50,6 +72,8 @@ pub(crate) const STARTS: [u16; 8] = [0x6A3, 0x6A4, 0x6A5, 0x6A6, 0x6A7, 0x6A8, 0
 pub(crate) const PAGE: u16 = 0x5C2;
 pub(crate) const EMOTE: u16 = 0x3ED;
 pub(crate) const PING_ICONS: u16 = 0x754;
+/// The map thumbnail.
+pub(crate) const MAP_PREVIEW: u16 = 0x468;
 /// C9's "Preview unavailable" static over the map thumbnail `0x468`.
 pub(crate) const NO_PREVIEW: u16 = 0x71F;
 
@@ -89,6 +113,13 @@ impl SetupDialog {
     }
     pub(crate) const fn wol(self) -> bool {
         matches!(self.flavor, SetupFlavor::Wol)
+    }
+    /// VERA's room captions BC's map button "Choose Map": retail's
+    /// `GUI:ChooseMap` text, "Customize Battle", reads as the game settings
+    /// the room keeps under Game Options. The caption's label in VERA's
+    /// language files; `None` keeps the CSF caption.
+    pub(crate) fn button_label(self, id: u16) -> Option<&'static str> {
+        (self.modern && id == CHOOSE_MAP).then_some("VERA:ChooseMap")
     }
     /// Rows one roster page shows.
     pub(crate) const fn rows_per_page(self) -> usize {
@@ -412,12 +443,16 @@ pub(crate) struct SetupView {
     pub(crate) combos: Vec<SetupCombo>,
     pub(crate) trackbars: Vec<SetupTrackbar>,
     pub(crate) checks: [bool; 5],
+    /// [`ROOM_CHECKBOXES`]' states.
+    pub(crate) room_checks: [bool; 6],
     /// Indexed by the row on the page, up to [`SetupDialog::rows_per_page`].
     pub(crate) row_icons: [Option<SetupRowIcon>; MODERN_SETUP_ROWS],
     /// C2/C9 ping statics; always empty on BC/BD.
     pub(crate) ping_icons: [Option<u8>; MODERN_SETUP_ROWS],
     /// VERA's Game Options popup is open over the room.
     pub(crate) options_open: bool,
+    /// VERA's missing-map offer is open over the room.
+    pub(crate) map_offer_open: bool,
     pub(crate) mode_label: String,
     pub(crate) map_label: String,
     pub(crate) selected_map_index: Option<usize>,
@@ -435,7 +470,11 @@ impl SetupView {
         self.combos.iter().find(|combo| combo.id == id)
     }
     pub(crate) fn enabled(&self, id: u16) -> bool {
-        if matches!(id, CHAT | CHAT_LOG | GAME_OPTIONS_OK) || (id == EMOTE && self.dialog.wol()) {
+        if matches!(
+            id,
+            CHAT | CHAT_LOG | GAME_OPTIONS_OK | MAP_OFFER_DOWNLOAD | MAP_OFFER_LEAVE
+        ) || (id == EMOTE && self.dialog.wol())
+        {
             return true;
         }
         if self.locked {
@@ -449,7 +488,7 @@ impl SetupView {
             NEXT_ROWS => self.first_row + self.dialog.rows_per_page() < self.row_count,
             ACCEPT => !self.host && self.accept_enabled,
             0x54E if self.short_game_locked => false,
-            id if CHECKBOXES.contains(&id) => self.host,
+            id if CHECKBOXES.contains(&id) || ROOM_CHECKBOXES.contains(&id) => self.host,
             id => {
                 self.combo(id)
                     .is_some_and(|combo| combo.visible && combo.enabled)
@@ -490,6 +529,33 @@ pub(crate) enum SetupAction {
     GameOptions {
         open: bool,
     },
+    /// The missing-map offer's answer: download the room's map, or leave.
+    MapOffer {
+        download: bool,
+    },
+}
+
+/// VERA asks a guest before downloading a room map it does not have, then
+/// shows the download's progress until the map arrives.
+#[derive(Debug, Clone)]
+pub(crate) struct MapOffer {
+    pub(crate) name: String,
+    pub(crate) message: String,
+    /// Download was pressed; the map transfer takes it from here.
+    pub(crate) downloading: bool,
+    /// When it opened: keys typed for the chat just before do not answer it.
+    pub(crate) opened: Instant,
+}
+
+impl MapOffer {
+    /// How long after opening the offer ignores Enter and Escape.
+    pub(crate) const KEY_DELAY: crate::util::time::Duration =
+        crate::util::time::Duration::from_millis(750);
+
+    /// Whether a key now answers it.
+    pub(crate) fn takes_keys(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.opened) >= Self::KEY_DELAY
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -507,6 +573,12 @@ pub(crate) struct MultiplayerSetupState {
     accept_flash_started: Option<Instant>,
     /// VERA's Game Options popup is open; it takes the room's input.
     pub(crate) options_open: bool,
+    /// VERA's missing-map offer; open until its map arrives, it takes the
+    /// room's input.
+    pub(crate) map_offer: Option<MapOffer>,
+    /// The maps whose briefing VERA's room has looked for, by file name, so
+    /// it points each one out once while the room stays open.
+    briefings_checked: Vec<String>,
 }
 impl Default for MultiplayerSetupState {
     fn default() -> Self {
@@ -527,6 +599,8 @@ impl Default for MultiplayerSetupState {
             focus_started: Instant::now(),
             accept_flash_started: None,
             options_open: false,
+            map_offer: None,
+            briefings_checked: Vec::new(),
         }
     }
 }
@@ -549,6 +623,19 @@ impl MultiplayerSetupState {
         self.first_visible_row = self.first_row(row_count, rows);
         self.popup.close();
         self.cancel_pointer();
+    }
+    /// Whether the room looks for `file`'s briefing now: only the first time
+    /// it shows that map.
+    pub(crate) fn first_briefing_check(&mut self, file: &str) -> bool {
+        if self
+            .briefings_checked
+            .iter()
+            .any(|checked| checked.eq_ignore_ascii_case(file))
+        {
+            return false;
+        }
+        self.briefings_checked.push(file.to_owned());
+        true
     }
     pub(crate) fn show_options(&mut self, open: bool) {
         self.options_open = open;
@@ -621,10 +708,6 @@ pub(crate) struct GameOptionsLayout {
 const ROSTER_BUTTON_W: i32 = 124;
 const ROSTER_BUTTON_H: i32 = 24;
 
-/// Where VERA's room puts Game Options: the 800x600 shell's centred box, at
-/// resource coordinates like the room's other body controls.
-const GAME_OPTIONS_BOX: RectPx = RectPx::new(175, 137, 451, 326);
-
 #[derive(Debug, Clone)]
 pub(crate) struct MultiplayerSetupLayout {
     pub(crate) page: MenuPageLayout,
@@ -642,10 +725,14 @@ pub(crate) struct MultiplayerSetupLayout {
     /// In the room, or in [`Self::game_options`] when it is `Some`, with
     /// the trackbars of [`OPTION_TRACKBARS`] and [`Self::option_labels`].
     pub(crate) checkboxes: [RectPx; 5],
+    /// [`ROOM_CHECKBOXES`], placed only in [`Self::game_options`].
+    pub(crate) room_checkboxes: [RectPx; 6],
     pub(crate) trackbars: [(u16, RectPx); 4],
     pub(crate) labels: Vec<(&'static str, RectPx)>,
     pub(crate) option_labels: [(&'static str, RectPx); 3],
     pub(crate) game_options: Option<GameOptionsLayout>,
+    /// VERA's missing-map offer, a screen-centred two-button box.
+    pub(crate) map_offer: crate::ui::shell::modal::QuitConfirmLayout,
     pub(crate) map_preview: RectPx,
     /// C9's hidden `0x71F` static ("Preview unavailable"): placed by
     /// `0x0060B950` alone, so it keeps its template place while `0x468`
@@ -775,6 +862,7 @@ impl MultiplayerSetupLayout {
                 rect(checkbox_x, option_y[3], 151, 17),
                 rect(302, option_y[3], build_off_ally_width, 17),
             ],
+            room_checkboxes: [RectPx::new(0, 0, 0, 0); 6],
             trackbars: [
                 (SPEED, rect(404, option_y[0], 129, 21)),
                 (CREDITS, rect(404, credit_y, 129, 21)),
@@ -787,6 +875,7 @@ impl MultiplayerSetupLayout {
             labels,
             option_labels,
             game_options: None,
+            map_offer: crate::ui::shell::modal::quit_confirm_layout(width, height),
             cooperative_description: rect(60, 98, 540, 143),
             no_preview: (dialog.wol() && !host).then(|| rect(650, 37, 145, 113)),
             map_preview: scale.scale_rect(anchor_rect(
@@ -818,23 +907,34 @@ impl MultiplayerSetupLayout {
     fn move_options_into_popup(&mut self) {
         let scale = self.page.scale;
         let base = |x, y, w, h| scale.scale_rect(RectPx::new(x, y, w, h));
-        let popup = |x, y, w, h| base(GAME_OPTIONS_BOX.x + x, GAME_OPTIONS_BOX.y + y, w, h);
-        // Each trackbar right of its label, then the checkboxes, all past
-        // x 215 of the box, where the art's Desolator ends.
+        // Where the shell's menu boxes sit on the 800x600 page, at resource
+        // coordinates like the room's other body controls.
+        let options = crate::ui::shell::modal::menu_box(SHELL_BASE_W, SHELL_BASE_H);
+        let popup = |x, y, w, h| base(options.x + x, options.y + y, w, h);
+        // The same two columns as the checkboxes below: each trackbar's
+        // label in the left one, the trackbar (its art's own width) starting
+        // the right one.
         for (index, (_, label)) in self.option_labels.iter_mut().enumerate() {
-            *label = popup(215, 32 + 30 * index as i32, 85, 17);
+            *label = popup(24, 32 + 30 * index as i32, 185, 17);
         }
         for (id, bar) in &mut self.trackbars {
             if let Some(index) = OPTION_TRACKBARS.iter().position(|option| option == id) {
-                *bar = popup(304, 30 + 30 * index as i32, 129, 21);
+                *bar = popup(215, 30 + 30 * index as i32, 129, 21);
             }
         }
+        // Two columns of six under the trackbars, the left one over the art:
+        // the native five and Destroyable Bridges, then In-game Allying and
+        // the four bans.
+        let row = |index: i32| 124 + 22 * index;
+        let left = |index| popup(24, row(index), 185, 17);
+        let right = |index| popup(215, row(index), 226, 17);
         for (index, checkbox) in self.checkboxes.iter_mut().enumerate() {
-            *checkbox = popup(215, 126 + 24 * index as i32, 226, 17);
+            *checkbox = left(index as i32);
         }
+        self.room_checkboxes = [left(5), right(0), right(1), right(2), right(3), right(4)];
         self.game_options = Some(GameOptionsLayout {
-            dialog: popup(0, 0, GAME_OPTIONS_BOX.w, GAME_OPTIONS_BOX.h),
-            ok: popup(276, 262, 124, 24),
+            dialog: popup(0, 0, options.w, options.h),
+            ok: popup(276, 292, 124, 24),
         });
         // Under the last row once [`Self::arrange_extended_rows`] packs them.
         let y = 36 + MODERN_SETUP_ROWS as i32 * 24 + 2;
@@ -873,6 +973,12 @@ impl MultiplayerSetupLayout {
         if let Some(index) = CHECKBOXES.iter().position(|candidate| *candidate == id) {
             return Some(self.checkboxes[index]);
         }
+        if let Some(index) = ROOM_CHECKBOXES
+            .iter()
+            .position(|candidate| *candidate == id)
+        {
+            return Some(self.room_checkboxes[index]);
+        }
         if let Some((_, rect)) = self
             .trackbars
             .iter()
@@ -893,6 +999,8 @@ impl MultiplayerSetupLayout {
             EMOTE => self.emote,
             NO_PREVIEW => self.no_preview,
             GAME_OPTIONS_OK => self.game_options.map(|popup| popup.ok),
+            MAP_OFFER_DOWNLOAD => Some(self.map_offer.ok),
+            MAP_OFFER_LEAVE => Some(self.map_offer.cancel),
             _ => self.page.button_rect(id),
         }
     }
@@ -903,9 +1011,13 @@ impl MultiplayerSetupLayout {
             self.control_rect(*id)
                 .is_some_and(|rect| rect.contains(x, y))
         };
+        if view.map_offer_open {
+            return [MAP_OFFER_DOWNLOAD, MAP_OFFER_LEAVE].into_iter().find(hit);
+        }
         if view.options_open {
             return CHECKBOXES
                 .into_iter()
+                .chain(ROOM_CHECKBOXES)
                 .chain(OPTION_TRACKBARS)
                 .chain([GAME_OPTIONS_OK])
                 .find(hit);
@@ -976,7 +1088,7 @@ pub(crate) fn tooltip_key(dialog: SetupDialog, control: u16) -> Option<String> {
             ACCEPT => "ButtonAccept",
             CHOOSE_MAP => "ButtonChooseMap",
             BACK => "ButtonBack",
-            0x468 => "MapThumbnail",
+            MAP_PREVIEW => "MapThumbnail",
             0x5A8 => "LabelScenario",
             0x6D2..=0x6D9 => "PictureAcceptance",
             0x6DA..=0x6E1 => "PictureFlag",
@@ -1000,6 +1112,18 @@ mod tests {
             flavor,
             modern,
         }
+    }
+
+    #[test]
+    fn the_room_looks_for_each_maps_briefing_once() {
+        let mut room = MultiplayerSetupState::default();
+        assert!(room.first_briefing_check("normandy.yrm"));
+        assert!(!room.first_briefing_check("NORMANDY.YRM"), "the same map");
+        assert!(room.first_briefing_check("tour.yrm"));
+        assert!(
+            !room.first_briefing_check("normandy.yrm"),
+            "back to the first"
+        );
     }
 
     /// Native pages hold eight rows and VERA's room twelve, whose last row
@@ -1091,6 +1215,21 @@ mod tests {
         assert_eq!(options.y - choose_map.y, choose_map.y - lan_host[&START].y);
     }
 
+    #[test]
+    fn only_the_vera_room_relabels_customize_battle() {
+        for flavor in [SetupFlavor::Lan, SetupFlavor::Wol] {
+            assert_eq!(
+                dialog(true, flavor, true).button_label(CHOOSE_MAP),
+                Some("VERA:ChooseMap")
+            );
+            assert_eq!(dialog(true, flavor, false).button_label(CHOOSE_MAP), None);
+        }
+        assert_eq!(
+            dialog(true, SetupFlavor::Wol, true).button_label(START),
+            None
+        );
+    }
+
     /// The open popup takes every press, over the room's rows too; closed,
     /// VERA's room has no options of its own, while the native room keeps
     /// them in place.
@@ -1099,14 +1238,21 @@ mod tests {
         let popup_layout =
             MultiplayerSetupLayout::new(dialog(true, SetupFlavor::Wol, true), 800, 600, false);
         let popup = popup_layout.game_options.unwrap();
+        // The checkboxes may cover the art; the trackbars and OK stay right of it.
         for id in CHECKBOXES
             .into_iter()
+            .chain(ROOM_CHECKBOXES)
             .chain(OPTION_TRACKBARS)
             .chain([GAME_OPTIONS_OK])
         {
             let rect = popup_layout.control_rect(id).unwrap();
+            let left = if OPTION_TRACKBARS.contains(&id) || id == GAME_OPTIONS_OK {
+                215
+            } else {
+                0
+            };
             assert!(
-                rect.x >= popup.dialog.x + 215
+                rect.x >= popup.dialog.x + left
                     && rect.x + rect.w <= popup.dialog.x + popup.dialog.w
                     && rect.y + rect.h <= popup.dialog.y + popup.dialog.h,
                 "{id:#x} at {rect:?}"
@@ -1125,9 +1271,11 @@ mod tests {
             combos: Vec::new(),
             trackbars: Vec::new(),
             checks: [false; 5],
+            room_checks: [false; 6],
             row_icons: std::array::from_fn(|_| None),
             ping_icons: [None; MODERN_SETUP_ROWS],
             options_open: true,
+            map_offer_open: false,
             mode_label: String::new(),
             map_label: String::new(),
             selected_map_index: None,
@@ -1142,6 +1290,16 @@ mod tests {
         let (x, y) = center(popup_layout.chat);
         assert_eq!(popup_layout.control_at(&view, x, y), None);
         view.options_open = false;
+        // VERA's missing-map offer takes every press until it is answered.
+        view.map_offer_open = true;
+        let (x, y) = center(popup_layout.chat);
+        assert_eq!(popup_layout.control_at(&view, x, y), None);
+        let (x, y) = center(popup_layout.map_offer.ok);
+        assert_eq!(
+            popup_layout.control_at(&view, x, y),
+            Some(MAP_OFFER_DOWNLOAD)
+        );
+        view.map_offer_open = false;
         let (x, y) = center(popup_layout.checkboxes[0]);
         assert_ne!(popup_layout.control_at(&view, x, y), Some(CHECKBOXES[0]));
         view.dialog = dialog(true, SetupFlavor::Wol, false);

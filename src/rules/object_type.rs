@@ -177,6 +177,36 @@ impl InfantryPips {
     }
 }
 
+/// InfantryType's fixed-ART reads, retained by the process-resident type.
+/// The constructor sets Crawls (`+0xEBD`) to true (`0x00523788`) and clears
+/// the four discharge frames (`+0xE40..+0xE4C`, `0x005236D7..0x005236F9`).
+/// Every reached ReadINI pass reads all five from the ART section its Image
+/// names, each with its current value as the default
+/// (`InfantryTypeClass::ReadINI`, `0x005246A1..0x0052472D`), so a pass whose
+/// section lacks a key keeps the value an earlier pass read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct InfantryArt {
+    crawls: bool,
+    discharge_frames: [i32; 4],
+}
+
+impl Default for InfantryArt {
+    fn default() -> Self {
+        Self {
+            crawls: true,
+            discharge_frames: [0; 4],
+        }
+    }
+}
+
+impl InfantryArt {
+    /// One pass's reads from its Image's ART section.
+    pub(crate) fn read_pass(&mut self, section: &IniSection) {
+        self.crawls = section.read_bool("Crawls", self.crawls);
+        crate::rules::art_data::read_infantry_discharge_frames(section, &mut self.discharge_frames);
+    }
+}
+
 /// InfantryType constructor clears EBE/EC2..EC6. ReadINI reads these
 /// current-default flags, then 52466E..52469A forces Infiltrate for C4,
 /// Engineer or Agent, independently of either theft byte.
@@ -355,6 +385,61 @@ pub struct PhobosOreGathering {
     pub frames_per_dir: Vec<i32>,
 }
 
+/// `Owner=`, `RequiredHouses=` and `ForbiddenHouses=` as House-type masks
+/// ([`crate::rules::ruleset::RuleSet::house_type_mask`]). The masks depend
+/// on the Country registry, so the Rules build and each registry refresh
+/// derive them again (`RuleSet::project_house_masks`); the token lists are
+/// written only when a type is read.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct HouseMasks {
+    owner: u32,
+    required: u32,
+    forbidden: u32,
+}
+
+impl HouseMasks {
+    pub(crate) fn derive(object: &ObjectType, rules: &crate::rules::ruleset::RuleSet) -> Self {
+        Self {
+            owner: rules.house_type_mask(&object.owner),
+            required: if object.required_houses.is_empty()
+                && !object.required_houses_explicitly_empty
+            {
+                u32::MAX
+            } else {
+                rules.house_type_mask(&object.required_houses)
+            },
+            forbidden: rules.house_type_mask(&object.forbidden_houses),
+        }
+    }
+}
+
+/// The `VoxelBarrelOffsetTo*` pivot triples of a `BarrelAnimIsVoxel=`
+/// (`+0x16C6`) building type. `BuildingTypeClass::ReadINI @ 0x0045FE50` reads
+/// them in native field order right after `BarrelAnimIsVoxel=` (and the
+/// unread `VoxelBarrelFile=` name) through `Get_TripleInt @ 0x00529CA0`
+/// (`0x00464697`, `0x004646C0`, `0x004646E9`), each pass using the current
+/// triple as its self-default. The constructor `0x0045DD90` never writes
+/// them, so native's first default is uninitialized heap memory; VERA's is
+/// `(0,0,0)` (a `fire_coordinate` residual). The barrel matrix chain
+/// `0x00458810` composes them for `BuildingClass::GetTurretDrawPosition`
+/// (`0x00453BF0`) and for the unported barrel draw (`0x0043E63E`);
+/// `BuildingTypeClass::ComputeCRC` (`0x00464B30`) also hashes them. The
+/// fourth triple, `VoxelBarrelOffsetToBarrelEnd=` (`+0x1754`, read at
+/// `0x00464712`), is the point VERA's zero chain scale (`+0x1728`)
+/// multiplies away, so VERA does not read it.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct BarrelVoxelOffsets {
+    /// `VoxelBarrelOffsetToPitchPivotPoint=` (`+0x1730/34/38`), the pitch
+    /// pivot the chain translates by after the barrel-elevation turn.
+    pub pitch_pivot: [i32; 3],
+    /// `VoxelBarrelOffsetToRotatePivotPoint=` (`+0x173C/40/44`), translated
+    /// between the body-facing turn and the elevation turn.
+    pub rotate_pivot: [i32; 3],
+    /// `VoxelBarrelOffsetToBuildingPivotPoint=` (`+0x1748/4C/50`), the first
+    /// translation off the identity.
+    pub building_pivot: [i32; 3],
+}
+
 /// A game object definition parsed from a rules.ini section.
 ///
 /// Fields use sensible defaults when the INI key is absent, matching
@@ -478,19 +563,9 @@ pub struct ObjectType {
     /// qualifying member of the highest rating (`TeamClass::Fetch_A_Leader @
     /// 0x006EC3D0`).
     pub leadership_rating: i32,
-    /// `MyEffectivenessCoefficient=` (`TechnoTypeClass+0x2C8`, read at
-    /// `0x0071556B`). `None` means the key is absent, in which case native
-    /// passes `[General] MyEffectivenessCoefficientDefault` (`RulesClass+0x1040`)
-    /// as the read default — so the resolution happens where the value is used.
-    pub my_effectiveness_coefficient: Option<f64>,
-    /// `TargetEffectivenessCoefficient=` (`TechnoTypeClass+0x2D0`, `0x007155D8`).
-    pub target_effectiveness_coefficient: Option<f64>,
-    /// `TargetSpecialThreatCoefficient=` (`TechnoTypeClass+0x2D8`, `0x0071563F`).
-    pub target_special_threat_coefficient: Option<f64>,
-    /// `TargetStrengthCoefficient=` (`TechnoTypeClass+0x2E0`, `0x007156A6`).
-    pub target_strength_coefficient: Option<f64>,
-    /// `TargetDistanceCoefficient=` (`TechnoTypeClass+0x2E8`, `0x0071570C`).
-    pub target_distance_coefficient: Option<f64>,
+    /// Final retained TechnoType+2C8..2E8, published by the ordered reader
+    /// (original ReadINI71551E..715720), never resolved at score time.
+    threat_coefficients: super::threat_coefficients::ThreatCoefficients,
     /// TechnoType+2F0: exact-case `ThreatAvoidanceCoefficient`, ReadDouble
     /// 712452..712473 (5283D0), constructor positive-zero. FootUnlimbo copies
     /// this to its own retained+530 after placement succeeds (4D72EA..4D72F4).
@@ -678,6 +753,8 @@ pub struct ObjectType {
     /// Countries explicitly forbidden from building this (ForbiddenHouses= in rules.ini).
     /// Inverse of Owner — if the player's country is in this list, they cannot build.
     pub forbidden_houses: Vec<String>,
+    /// The three lists above as House-type masks ([`HouseMasks`]).
+    house_masks: HouseMasks,
     /// Signed `TechnoTypeClass+0x6D0` side filter used only by native AI base
     /// planning selectors ([`Self::planned_for_side`]). The constructor seed
     /// is `-1` (all sides).
@@ -1058,6 +1135,18 @@ pub struct ObjectType {
     /// = nearer the camera). Building vtable `0x7E3EBC+0x2EC` folds it into the
     /// draw Z only when `TurretAnimIsVoxel`; it is not a ground-layer sort key.
     pub turret_anim_z_adjust: i32,
+    /// `BarrelAnimIsVoxel=` (`BuildingType +0x16C6`): arms the
+    /// `BuildingClass::GetFLH @ 0x00453840` arm (`0x004539A1..0x004539DE`)
+    /// that replaces the whole coordinate with `GetTurretDrawPosition`
+    /// (`0x00453BF0`). ReadINI reads it at `0x00464661` through
+    /// `INIClass::ReadBool @ 0x005295F0` with the current byte as default; the
+    /// constructor zeroes it (`0x0045E16F`), so it defaults false.
+    /// `VoxelBarrelFile=` (`+0x1714`, read at `0x0046467E`) names the barrel
+    /// model but nothing on this fire path consumes it.
+    pub barrel_anim_is_voxel: bool,
+    /// The `VoxelBarrelOffsetTo*` pivot triples ([`BarrelVoxelOffsets`]) the
+    /// barrel arm's matrix chain composes.
+    pub barrel_voxel: BarrelVoxelOffsets,
     /// Scan radius in cells for auto-targeting idle enemies. If None, defaults
     /// to the primary weapon's range at runtime.
     pub guard_range: Option<SimFixed>,
@@ -1372,7 +1461,8 @@ pub struct ObjectType {
     pub fearless: bool,
     /// `Fraidycat=yes` on InfantryType. First fear hit immediately maxes fear.
     pub fraidycat: bool,
-    /// `Crawls=yes` from art.ini. Controls the prone movement speed branch.
+    /// `Crawls=` from ARTMD (InfantryTypeClass `+0xEBD`), the last reached
+    /// pass's read ([`InfantryArt`]). Gates Down and the prone speed.
     pub crawls: bool,
     /// Phobos `InfantryTypeExt::ProneSpeed`: the prone movement multiplier for
     /// this type. Unset defers to the `[General]` value `Crawls=` selects.
@@ -1914,10 +2004,8 @@ pub struct ObjectType {
     /// Immutable projection of the retained InfantryType Pip/OccupyPip state.
     infantry_pips: InfantryPips,
 
-    /// ReadSequenceData's sound pairs from every reached rules pass,
-    /// projected from the native type registry; bound by
-    /// [`Self::bind_sequence_sounds`].
-    sequence_sound_reads: Vec<crate::rules::infantry_sequence::SequenceSoundRead>,
+    /// Immutable projection of the type's retained ReadSequenceData523D00 bank.
+    infantry_sequence_bank: Option<crate::rules::infantry_sequence::InfantrySequenceBank>,
 
     /// The bound record sounds: at most two per DoType (record `+0x10`).
     sequence_sounds: Vec<crate::rules::infantry_sequence::SequenceSound>,
@@ -1973,6 +2061,10 @@ pub struct ObjectType {
     /// Same shape and same storage relationship: slot 0 is
     /// [`Self::elite_primary`], slot 1 is [`Self::elite_secondary`].
     pub elite_weapon_list: Vec<Option<String>>,
+    /// Derived: the weapons `weapon_list`, `elite_weapon_list`,
+    /// `occupy_weapon` and `elite_occupy_weapon` name, as the RuleSet that
+    /// built the type resolved them (`RuleSet::resolve_type_weapons`).
+    resolved_weapons: crate::rules::ruleset::TypeWeapons,
     /// Retained WeaponStruct and transport-port coordinates, projected from
     /// the ordered type reader rather than reconstructed from the final Image.
     weapon_offsets: crate::rules::weapon_offsets::WeaponOffsets,
@@ -2263,6 +2355,13 @@ pub struct ObjectType {
     /// Gates the Behind indicator (`TechnoClass::AI_Update @ 0x006FA2A2`).
     pub can_be_hidden: bool,
 
+    /// ART `SiloDamage=` of the type's metadata section
+    /// ([`ArtRegistry::resolve_metadata_entry`](crate::rules::art_data::ArtRegistry::resolve_metadata_entry)
+    /// for its ID and Image), which a Building's storage update reads every
+    /// frame (`UpdateAnimation @ 0x00450CBD`). Derived from the installed ART:
+    /// `RuleSet` projects it whenever it installs one; no ART answers false.
+    silo_damage: bool,
+
     /// Last nonempty Palette request from the reached TechnoType ReadINI
     /// passes. This is binding metadata, not proof that its asset loaded:
     /// native717820 stores null if6263D0 cannot load the named group.
@@ -2499,6 +2598,17 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    pub(crate) fn threat_coefficients(&self) -> super::threat_coefficients::ThreatCoefficients {
+        self.threat_coefficients
+    }
+
+    pub(crate) fn project_threat_coefficients(
+        &mut self,
+        coefficients: super::threat_coefficients::ThreatCoefficients,
+    ) {
+        self.threat_coefficients = coefficients;
+    }
+
     /// Phobos `AllowAirstrike` as the cursor and `CanFire` tests read it: an
     /// explicit value wins, a building otherwise follows `CanC4`, and every
     /// other kind is targetable by default.
@@ -2576,7 +2686,9 @@ impl ObjectType {
         &self.shp_image_loads
     }
 
-    pub(crate) fn voxel_image_load(&self) -> Option<&str> {
+    /// The voxel this scenario's `TechnoTypeClass::ReadINI` loaded
+    /// (`0x0071609C`), if a pass reached the load.
+    pub fn voxel_image_load(&self) -> Option<&str> {
         self.voxel_image_load.as_deref()
     }
 
@@ -3271,17 +3383,36 @@ impl ObjectType {
         self.infantry_pips = pips;
     }
 
-    pub(crate) fn project_sequence_sound_reads(
-        &mut self,
-        reads: &[crate::rules::infantry_sequence::SequenceSoundRead],
-    ) {
-        self.sequence_sound_reads = reads.to_vec();
+    pub(crate) fn project_infantry_art(&mut self, art: InfantryArt) {
+        self.crawls = art.crawls;
+        [
+            self.fire_up_frame,
+            self.fire_prone_frame,
+            self.secondary_fire_frame,
+            self.secondary_prone_frame,
+        ] = art.discharge_frames;
     }
 
-    /// Resolve the projected pairs through `find` (VocClass::FindByName).
-    pub(crate) fn bind_sequence_sounds(&mut self, find: impl FnMut(&str) -> Option<String>) {
-        self.sequence_sounds =
-            crate::rules::infantry_sequence::bind_sequence_sounds(&self.sequence_sound_reads, find);
+    pub(crate) fn project_infantry_sequence_bank(
+        &mut self,
+        bank: &crate::rules::infantry_sequence::InfantrySequenceBank,
+    ) {
+        self.infantry_sequence_bank = Some(bank.clone());
+    }
+
+    pub(crate) fn infantry_sequence_bank(
+        &self,
+    ) -> Option<&crate::rules::infantry_sequence::InfantrySequenceBank> {
+        self.infantry_sequence_bank.as_ref()
+    }
+
+    /// Derive presentation names from saved Voc ordinals, without rereading ART.
+    pub(crate) fn bind_sequence_sounds(&mut self, sounds: &crate::rules::sound_ini::SoundRegistry) {
+        self.sequence_sounds = self
+            .infantry_sequence_bank
+            .as_ref()
+            .map(|bank| bank.bound_sounds(sounds))
+            .unwrap_or_default();
     }
 
     /// The sounds of DoType `action`'s record, in slot order.
@@ -3410,16 +3541,16 @@ impl ObjectType {
             sounds.read_rules_sound_list(section, "VoiceAttack")
         });
         self.voice_enter =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceEnter"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceEnter", None));
         self.voice_capture =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceCapture"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceCapture", None));
         self.voice_attack_overrides = [
             "VoicePrimaryWeaponAttack",
             "VoicePrimaryEliteWeaponAttack",
             "VoiceSecondaryWeaponAttack",
             "VoiceSecondaryEliteWeaponAttack",
         ]
-        .map(|key| section.and_then(|section| sounds.read_rules_reference(section, key)));
+        .map(|key| section.and_then(|section| sounds.read_rules_reference(section, key, None)));
     }
 
     pub fn voice_deploy(&self) -> Option<&str> {
@@ -3438,11 +3569,11 @@ impl ObjectType {
         sounds: &SoundRegistry,
     ) {
         self.voice_harvest =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceHarvest"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceHarvest", None));
         self.voice_deploy =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceDeploy"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceDeploy", None));
         self.voice_undeploy =
-            section.and_then(|section| sounds.read_rules_reference(section, "VoiceUndeploy"));
+            section.and_then(|section| sounds.read_rules_reference(section, "VoiceUndeploy", None));
     }
 
     pub fn damage_sound(&self) -> Option<&str> {
@@ -3469,9 +3600,13 @@ impl ObjectType {
         sounds: &SoundRegistry,
     ) {
         self.create_sound =
-            section.and_then(|section| sounds.read_rules_reference(section, "CreateSound"));
+            section.and_then(|section| sounds.read_rules_reference(section, "CreateSound", None));
         self.damage_sound =
-            section.and_then(|section| sounds.read_rules_reference(section, "DamageSound"));
+            section.and_then(|section| sounds.read_rules_reference(section, "DamageSound", None));
+        // TechnoType ReadINI713949..713985: current fixed Voc ID, with
+        // ctor710FA5=-1. Unknown/empty later reads retain a valid override.
+        self.mind_cleared_sound = section
+            .and_then(|section| sounds.read_rules_reference(section, "MindClearedSound", None));
         #[cfg(feature = "ares")]
         for (slot, key) in ["Promote.VeteranSound", "Promote.EliteSound"]
             .into_iter()
@@ -3628,15 +3763,73 @@ impl ObjectType {
         }
     }
 
+    /// `Owner=` (`+0x6CC`) as a House-type mask: `Get_Ownable @ 0x00711EC0`
+    /// answers it outside `DoubleOwned=`.
+    pub(crate) fn owner_mask(&self, rules: &crate::rules::ruleset::RuleSet) -> u32 {
+        self.house_masks(rules).owner
+    }
+
     /// ReadOwners4750D0 / Type reader714531: absent/empty ReadString keeps
     /// the constructor's -1 (711633), but nonempty comma-only input writes0.
     /// CanBuild4F79E4 and FirstBuildable505230 both test this raw mask.
     pub(crate) fn required_houses_mask(&self, rules: &crate::rules::ruleset::RuleSet) -> u32 {
-        if self.required_houses.is_empty() && !self.required_houses_explicitly_empty {
-            u32::MAX
-        } else {
-            rules.house_type_mask(&self.required_houses)
-        }
+        self.house_masks(rules).required
+    }
+
+    /// `ForbiddenHouses=` as a House-type mask (CanBuild4F7A7D).
+    pub(crate) fn forbidden_houses_mask(&self, rules: &crate::rules::ruleset::RuleSet) -> u32 {
+        self.house_masks(rules).forbidden
+    }
+
+    /// The masks [`crate::rules::ruleset::RuleSet`] projected; debug builds
+    /// compare them with a fresh read of the lists against `rules`.
+    fn house_masks(&self, rules: &crate::rules::ruleset::RuleSet) -> HouseMasks {
+        debug_assert!(
+            !crate::util::debug_checks::live_read_check_enabled()
+                || self.house_masks == HouseMasks::derive(self, rules),
+            "{}: house masks projected against another Country registry",
+            self.id
+        );
+        self.house_masks
+    }
+
+    /// Store masks derived against the current Country registry.
+    pub(crate) fn project_house_masks(&mut self, masks: HouseMasks) {
+        self.house_masks = masks;
+    }
+
+    /// The type's weapon records as its RuleSet resolved them; reads go
+    /// through `RuleSet::resolved_weapon`, which checks the resolving set.
+    #[inline]
+    pub(crate) fn resolved_weapons(&self) -> &crate::rules::ruleset::TypeWeapons {
+        &self.resolved_weapons
+    }
+
+    /// Store the weapon records resolved against the current weapons.
+    pub(crate) fn project_resolved_weapons(&mut self, weapons: crate::rules::ruleset::TypeWeapons) {
+        self.resolved_weapons = weapons;
+    }
+
+    /// The ART `SiloDamage=` [`crate::rules::ruleset::RuleSet`] projected;
+    /// debug builds compare it with a fresh resolution against `rules`' ART.
+    pub(crate) fn silo_damage(&self, rules: &crate::rules::ruleset::RuleSet) -> bool {
+        debug_assert!(
+            !crate::util::debug_checks::live_read_check_enabled()
+                || self.silo_damage == self.art_silo_damage(rules.art()),
+            "{}: SiloDamage projected from another ART",
+            self.id
+        );
+        self.silo_damage
+    }
+
+    /// Store the type's `SiloDamage=` resolved in `art`.
+    pub(crate) fn project_silo_damage(&mut self, art: &crate::rules::art_data::ArtRegistry) {
+        self.silo_damage = self.art_silo_damage(art);
+    }
+
+    fn art_silo_damage(&self, art: &crate::rules::art_data::ArtRegistry) -> bool {
+        art.resolve_metadata_entry(&self.id, &self.image)
+            .is_some_and(|entry| entry.silo_damage)
     }
 
     /// The AI base planning side filter: `AIBasePlanningSide=` (`+0x6D0`) is
@@ -3729,16 +3922,6 @@ impl ObjectType {
             } else {
                 (false, false, false, false, false)
             };
-        // `IsGattling=` gates the Stage loop read beside it (`0x0071407E`).
-        let is_gattling = section.read_bool("IsGattling", false);
-        // The targeting coefficients (`0x0071556B..0x0071570C`) read with a
-        // `[General]` default resolved where the value is used; `None` marks
-        // an absent key.
-        let present_double = |key: &str| {
-            section
-                .is_present(key)
-                .then(|| section.read_double(key, 0.0))
-        };
         // `GuardRange=` and `AirRangeBonus=` are ReadRange whole leptons
         // (`0x007122B3`, `0x007147A9`), kept here as cells; `None` marks an
         // absent key.
@@ -3855,11 +4038,7 @@ impl ObjectType {
             special_threat_value: section.read_double("SpecialThreatValue", 0.0),
             threat_posed: section.read_int("ThreatPosed", 0),
             leadership_rating: section.read_int("LeadershipRating", 5),
-            my_effectiveness_coefficient: present_double("MyEffectivenessCoefficient"),
-            target_effectiveness_coefficient: present_double("TargetEffectivenessCoefficient"),
-            target_special_threat_coefficient: present_double("TargetSpecialThreatCoefficient"),
-            target_strength_coefficient: present_double("TargetStrengthCoefficient"),
-            target_distance_coefficient: present_double("TargetDistanceCoefficient"),
+            threat_coefficients: Default::default(),
             threat_avoidance_coefficient: section.read_double_bits(
                 "ThreatAvoidanceCoefficient",
                 crate::util::native_x87::NativeF64Bits::POSITIVE_ZERO,
@@ -4061,6 +4240,7 @@ impl ObjectType {
             double_owned: section.read_bool("DoubleOwned", false),
             required_houses,
             required_houses_explicitly_empty,
+            house_masks: HouseMasks::default(),
             forbidden_houses,
             // gamemd-derived: `TechnoTypeClass__Constructor @ 0x00710FF0`
             // seeds +0x6D0 to -1; `TechnoTypeClass::ReadINI` around 0x007149FB
@@ -4180,7 +4360,9 @@ impl ObjectType {
                 .map(str::to_owned),
             voice_feedback: Vec::new(),
             voice_special_attack: Vec::new(),
-            crush_sound: section.read_name("CrushSound", 0x80).map(str::to_owned),
+            // ObjectTypeCtor5F713A; ProcessedType projects the retained
+            // fixed-Voc binding from inherited ReadINI5F938B..5F93D5.
+            crush_sound: None,
             deploy_sound: section.read_name("DeploySound", 0x80).map(str::to_owned),
             buildup_sound: None,
             working_sound: None,
@@ -4218,6 +4400,20 @@ impl ObjectType {
             turret_anim_x: section.read_int("TurretAnimX", 0),
             turret_anim_y: section.read_int("TurretAnimY", 0),
             turret_anim_z_adjust: section.read_int("TurretAnimZAdjust", 0),
+            // Native order after TurretAnimIsVoxel (0x00464647): the
+            // `BarrelAnimIsVoxel` bool (0x00464661), the VoxelBarrelFile name
+            // this port does not read (0x0046467E, retained above), then the
+            // `Read3Int` pivot triples (0x00464697..0x004646E9) whose
+            // self-default keeps an earlier layer's triple. VERA does not
+            // read the barrel-end triple (0x00464712); see `BarrelVoxelOffsets`.
+            barrel_anim_is_voxel: section.read_bool("BarrelAnimIsVoxel", false),
+            barrel_voxel: BarrelVoxelOffsets {
+                pitch_pivot: section.read_coord3_fold("VoxelBarrelOffsetToPitchPivotPoint", [0; 3]),
+                rotate_pivot: section
+                    .read_coord3_fold("VoxelBarrelOffsetToRotatePivotPoint", [0; 3]),
+                building_pivot: section
+                    .read_coord3_fold("VoxelBarrelOffsetToBuildingPivotPoint", [0; 3]),
+            },
             guard_range: present_range("GuardRange"),
             air_range_bonus: present_range("AirRangeBonus"),
             // Default no (passive acquisition off unless the type opts in).
@@ -4346,7 +4542,10 @@ impl ObjectType {
             slaved: section.read_bool("Slaved", false),
             fearless: section.read_bool("Fearless", false),
             fraidycat: section.read_bool("Fraidycat", false),
-            crawls: false,
+            // InfantryTypeClass's constructor sets Crawls (`+0xEBD`) to true
+            // (`0x00523788`); the per-pass ART read projects over it
+            // ([`InfantryArt`]). Other types have no such field.
+            crawls: category == ObjectCategory::Infantry,
             fire_up_frame: 0,
             fire_prone_frame: 0,
             secondary_fire_frame: 0,
@@ -4478,11 +4677,9 @@ impl ObjectType {
             bombable: section.read_bool("Bombable", true),
             bomb_sight: section.read_int("BombSight", 0),
             mind_control_ring_offset: section.read_int("MindControlRingOffset", 0x8C),
-            // "none" finds no sound (-1), which FreeUnit reads as unset.
-            mind_cleared_sound: section
-                .read_name("MindClearedSound", 0x80)
-                .map(str::to_owned)
-                .filter(|sound| !sound.is_empty() && !sound.eq_ignore_ascii_case("none")),
+            // Ctor710FA5=-1; bind_scalar_sound_references owns the fixed
+            // Voc lookup, including registered none spellings.
+            mind_cleared_sound: None,
             #[cfg(feature = "phobos")]
             mind_control_range_limit: section.read_phobos_leptons("MindControlRangeLimit", 0),
             #[cfg(feature = "phobos")]
@@ -4609,7 +4806,7 @@ impl ObjectType {
             elite_occupy_weapon: None,
             // Constructor values; only the ordered Process owner reads them.
             infantry_pips: InfantryPips::default(),
-            sequence_sound_reads: Vec::new(),
+            infantry_sequence_bank: (category == ObjectCategory::Infantry).then(Default::default),
             sequence_sounds: Vec::new(),
             pip_scale: section
                 .read_name("PipScale", 0x20)
@@ -4626,6 +4823,7 @@ impl ObjectType {
             // per-pass weapon block and RuleSet publishes its arrays.
             weapon_list: vec![None; WEAPON_SLOT_COUNT],
             elite_weapon_list: vec![None; WEAPON_SLOT_COUNT],
+            resolved_weapons: Default::default(),
             weapon_offsets: Default::default(),
             weapon_count: 0,
             naval_targeting: section.read_int("NavalTargeting", 0),
@@ -4665,11 +4863,9 @@ impl ObjectType {
             tick_tank: category == ObjectCategory::Building && section.read_bool("TickTank", false),
             artillary: category == ObjectCategory::Building
                 && section.read_bool("Artillary", false),
-            is_gattling,
-            gattling_stages: crate::rules::gattling_type::GattlingStages::read(
-                section,
-                is_gattling,
-            ),
+            // Retained per-pass flag/table from the ordered Rules owner.
+            is_gattling: false,
+            gattling_stages: Default::default(),
             turret_count: 0,
             has_turret_tooltips: section.read_bool("HasTurretTooltips", false),
             drainable: section.read_bool("Drainable", false),
@@ -4726,6 +4922,7 @@ impl ObjectType {
             is_selectable_combatant: section.read_bool("IsSelectableCombatant", false),
             // The constructor's value; ART supplies the key (`project_art_data`).
             can_be_hidden: true,
+            silo_damage: false,
             custom_palette: None,
             reveal_to_all: section.read_bool("RevealToAll", false),
 

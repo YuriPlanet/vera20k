@@ -313,7 +313,7 @@ fn psycho_stops_the_cell_on_an_ally_while_hunt_still_sees_the_enemy_behind_it() 
             None,
             None,
         )
-        .target()
+        .object()
     };
     assert_eq!(scan(&sim, ScanMission::Guard), Some(enemy));
     sim.attach_object_trigger_tag(actor, Some("CONTROLTAG"));
@@ -365,7 +365,7 @@ fn attack_friendlies_is_consumed_by_the_shared_ground_and_flat_scans() {
                 None,
                 None,
             )
-            .target();
+            .object();
             assert_eq!(result, enabled.then_some(ally), "enabled{enabled} {mask:?}");
         }
     }

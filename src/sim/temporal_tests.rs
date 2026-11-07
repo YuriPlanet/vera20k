@@ -1940,9 +1940,6 @@ fn a_warped_object_runs_none_of_its_ai_phases() {
     registry.bind_anim_frame_count_for_test("WARPAWAY", 20);
     registry.bind_anim_frame_count_for_test("CHRONOSK", 3);
     rules.install_art_data(registry);
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let mut sim = sim(21);
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
     let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 16, 16);
@@ -2049,6 +2046,8 @@ fn only_a_temporal_scanner_acquires_a_warped_enemy() {
     // helper's Size64 diamond (which excludes their x+y<64 coordinates).
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let tank = spawn(&mut sim, &rules, "HTNK", "Russians", 12, 10);
+    // The player has seen the enemy: the campaign scan gate needs +0x41B.
+    crate::sim::arena_fixture::discover(&mut sim, tank);
     let cleg = spawn(&mut sim, &rules, "CLEG", "Americans", 12, 13);
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 10, 10);
     let second = spawn(&mut sim, &rules, "CLEG", "Americans", 10, 11);
@@ -2068,7 +2067,7 @@ fn only_a_temporal_scanner_acquires_a_warped_enemy() {
             Some(sim),
             None,
         )
-        .target()
+        .object()
     };
     assert_eq!(acquire(&sim, gi), Some(tank), "the control");
     sim.temporal_initiate_warp(

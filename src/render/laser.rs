@@ -36,6 +36,7 @@ pub(crate) struct LaserDraw {
     pub color: LaserDrawColor,
     pub age: i32,
     pub duration: i32,
+    pub fade_start: NativeF32Bits,
     pub fade_end: NativeF32Bits,
 }
 
@@ -43,10 +44,12 @@ impl LaserDraw {
     /// The native f32 store precedes both downstream consumers. Reuse the
     /// existing finite numeric owner rather than an independent approximation.
     pub(crate) fn intensity(self) -> NativeF32Bits {
+        // Draw5505EF: (start - end) * (duration - age) / duration + end.
+        let start = X::load_f32(self.fade_start).expect("finite laser fade start");
         let end = X::load_f32(self.fade_end).expect("finite laser fade endpoint");
         X::div(
             X::mul(
-                X::sub(X::load_i32(1), end),
+                X::sub(start, end),
                 X::load_i32(self.duration.wrapping_sub(self.age)),
             ),
             X::load_i32(self.duration),

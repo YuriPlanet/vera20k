@@ -210,6 +210,10 @@ pub struct SkirmishShellLayout {
     pub right_panel_text: SkirmishRightPanelTextRects,
     pub start_button: RectPx,
     pub choose_map_button: RectPx,
+    /// VERA's Save Setup and Load Setup, on the two empty tiles under Choose
+    /// Map; gamemd's `0x102` has no such buttons.
+    pub save_setup_button: RectPx,
+    pub load_setup_button: RectPx,
     pub back_button: RectPx,
     pub map_preview: RectPx,
     pub column_labels: SkirmishColumnLabelRects,
@@ -217,6 +221,9 @@ pub struct SkirmishShellLayout {
     pub rows: SkirmishRowRects,
     pub color_combos: [RectPx; 8],
     pub flags: [RectPx; 8],
+    /// VERA's scrollbar for a map with more than eight starts: the list frame
+    /// round it, beside the computer rows ([`opponent_scrollbar_rect`]).
+    pub opponent_scrollbar: RectPx,
     pub trackbars: SkirmishTrackbarRects,
     pub trackbar_labels: SkirmishTrackbarLabelRects,
     pub checkboxes: [SkirmishCheckboxRect; SKIRMISH_CHECKBOX_COUNT],
@@ -305,6 +312,10 @@ pub struct ChooseMapModalLayout {
     pub game_map_heading: RectPx,
     pub status_help: RectPx,
     pub preview: RectPx,
+    /// VERA: the selected map's author under the preview, two pixels above
+    /// where `0x102` shows its game type ([`game_type_rect`]), to sit closer
+    /// to the preview. `0x6B` has no such line.
+    pub author: RectPx,
 }
 
 impl ChooseMapModalLayout {
@@ -376,6 +387,8 @@ pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> Sk
     layout.right_panel_text.map_label = layout.right_panel_text.map_label.translate(dx, dy);
     layout.start_button = layout.start_button.translate(dx, dy);
     layout.choose_map_button = layout.choose_map_button.translate(dx, dy);
+    layout.save_setup_button = layout.save_setup_button.translate(dx, dy);
+    layout.load_setup_button = layout.load_setup_button.translate(dx, dy);
     layout.back_button = layout.back_button.translate(dx, dy);
     layout.map_preview = layout.map_preview.translate(dx, dy);
     layout.column_labels.players = layout.column_labels.players.translate(dx, dy);
@@ -402,6 +415,7 @@ pub fn translate_layout(mut layout: SkirmishShellLayout, dx: i32, dy: i32) -> Sk
     for rect in &mut layout.flags {
         *rect = rect.translate(dx, dy);
     }
+    layout.opponent_scrollbar = layout.opponent_scrollbar.translate(dx, dy);
     layout.trackbars.game_speed = layout.trackbars.game_speed.translate(dx, dy);
     layout.trackbars.credits = layout.trackbars.credits.translate(dx, dy);
     layout.trackbars.unit_count = layout.trackbars.unit_count.translate(dx, dy);
@@ -531,6 +545,16 @@ fn right_static(rule: AnchorRule, template: RectPx, screen_w: i32, screen_h: i32
     crate::ui::shell::layout::anchor_rect(rule, template, screen_w, screen_h)
 }
 
+/// Game type `0x6EC` of `0x102`, under the right panel's map preview.
+fn game_type_rect(screen_w: i32, screen_h: i32) -> RectPx {
+    right_static(
+        MAP_TEXT_ANCHOR,
+        RectPx::new(432, 103, 90, 10),
+        screen_w,
+        screen_h,
+    )
+}
+
 /// Status line `0x695` of `0x102`: the family static (template 410x12 DLU).
 fn status_help_rect(screen_w: i32, screen_h: i32) -> RectPx {
     crate::ui::shell::layout::status_line_rect(RectPx::new(2, 355, 410, 12), screen_w, screen_h)
@@ -558,6 +582,8 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
     let start_base = dlu_rect(425, 149, 108, 23);
     let choose_base = dlu_rect(425, 176, 108, 23);
     let panel = right_panel_rects(screen_w, screen_h);
+    let choose_map_button =
+        snap_button_biased_truncate(screen_w, screen_h, choose_base, panel, SDBTNANM_W);
     // The executed relayout places them at (635, 3, 163, 17), (650, 167, 136,
     // 17) and (650, 189, 136, 34) at 800x600.
     let right_panel_text = SkirmishRightPanelTextRects {
@@ -567,12 +593,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
             screen_w,
             screen_h,
         ),
-        game_type: right_static(
-            MAP_TEXT_ANCHOR,
-            RectPx::new(432, 103, 90, 10),
-            screen_w,
-            screen_h,
-        ),
+        game_type: game_type_rect(screen_w, screen_h),
         map_label: right_static(
             MAP_TEXT_ANCHOR,
             RectPx::new(432, 116, 90, 20),
@@ -648,6 +669,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
             dlu_rect(364, 148, 25, 73),
         ],
     };
+    let opponent_scrollbar = opponent_scrollbar_rect(&rows);
 
     SkirmishShellLayout {
         scale: ShellScale::RETAIL,
@@ -657,13 +679,10 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
         start_button: snap_button_biased_truncate(
             screen_w, screen_h, start_base, panel, SDBTNANM_W,
         ),
-        choose_map_button: snap_button_biased_truncate(
-            screen_w,
-            screen_h,
-            choose_base,
-            panel,
-            SDBTNANM_W,
-        ),
+        choose_map_button,
+        // Every panel keeps them above Back: it has six tiles at 640x480.
+        save_setup_button: choose_map_button.translate(0, SDBTNBKGD_H),
+        load_setup_button: choose_map_button.translate(0, 2 * SDBTNBKGD_H),
         back_button: back_rect(screen_w, panel),
         map_preview: right_static(
             AnchorRule::RightAnchor,
@@ -682,6 +701,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
         rows,
         color_combos,
         flags,
+        opponent_scrollbar,
         trackbars: SkirmishTrackbarRects {
             game_speed: child_window(269, 176, 85, 13),
             credits: child_window(269, 193, 85, 13),
@@ -716,6 +736,26 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> SkirmishShellLayout {
         ],
         status_help: status_help_rect(screen_w, screen_h),
     }
+}
+
+/// How far right of the Team column VERA's scrollbar frame starts.
+const OPPONENT_SCROLLBAR_GAP: i32 = 12;
+
+/// VERA's scrollbar beside the computer rows (rows 2 to 8), right of Team:
+/// the shared list's frame window round the native scrollbar child
+/// (`0x0061C690`), its outer ring level with the rows' faces. The width is
+/// the retail scrollbar's; a scaled page takes the scaled scrollbar's.
+fn opponent_scrollbar_rect(rows: &SkirmishRowRects) -> RectPx {
+    let first = rows.team_combos[1];
+    let last = rows.team_combos[SKIRMISH_ROW_COUNT - 1];
+    let top = first.y + 1;
+    let bottom = last.y + COMBO_FACE_H - 1;
+    RectPx::new(
+        first.x + first.w + OPPONENT_SCROLLBAR_GAP,
+        top,
+        crate::ui::shell::list::ListMetrics::RETAIL.scrollbar_w + 2,
+        bottom - top,
+    )
 }
 
 pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMapModalLayout {
@@ -762,6 +802,7 @@ pub fn compute_choose_map_modal_layout(screen_w: u32, screen_h: u32) -> ChooseMa
             screen_w,
             screen_h,
         ),
+        author: game_type_rect(screen_w, screen_h).translate(0, -2),
     }
 }
 
@@ -1154,6 +1195,8 @@ impl ScaledRects for SkirmishShellLayout {
             right_panel_text: self.right_panel_text.scaled_rects(scale),
             start_button: self.start_button.scaled_rects(scale),
             choose_map_button: self.choose_map_button.scaled_rects(scale),
+            save_setup_button: self.save_setup_button.scaled_rects(scale),
+            load_setup_button: self.load_setup_button.scaled_rects(scale),
             back_button: self.back_button.scaled_rects(scale),
             map_preview: self.map_preview.scaled_rects(scale),
             column_labels: self.column_labels.scaled_rects(scale),
@@ -1161,6 +1204,7 @@ impl ScaledRects for SkirmishShellLayout {
             rows: self.rows.scaled_rects(scale),
             color_combos: self.color_combos.scaled_rects(scale),
             flags: self.flags.scaled_rects(scale),
+            opponent_scrollbar: self.opponent_scrollbar.scaled_rects(scale),
             trackbars: self.trackbars.scaled_rects(scale),
             trackbar_labels: self.trackbar_labels.scaled_rects(scale),
             checkboxes: self.checkboxes.scaled_rects(scale),
@@ -1186,6 +1230,7 @@ impl ScaledRects for ChooseMapModalLayout {
             game_map_heading: self.game_map_heading.scaled_rects(scale),
             status_help: self.status_help.scaled_rects(scale),
             preview: self.preview.scaled_rects(scale),
+            author: self.author.scaled_rects(scale),
         }
     }
 }
@@ -1377,6 +1422,9 @@ mod tests {
         let layout = compute_layout(640, 480);
         assert_eq!(layout.start_button, RectPx::new(484, 241, 156, 42));
         assert_eq!(layout.choose_map_button, RectPx::new(484, 283, 156, 42));
+        // VERA's Save Setup and Load Setup fill the two tiles above Back.
+        assert_eq!(layout.save_setup_button, RectPx::new(484, 325, 156, 42));
+        assert_eq!(layout.load_setup_button, RectPx::new(484, 367, 156, 42));
         assert_eq!(layout.map_preview, RectPx::new(484, 37, 144, 112));
         assert_eq!(layout.back_button, RectPx::new(484, 409, 156, 42));
     }
@@ -1688,6 +1736,20 @@ mod tests {
         assert_eq!(layout.game_map_heading, RectPx::new(338, 98, 195, 16));
         assert_eq!(layout.status_help, RectPx::new(122, 662, 456, 21));
         assert_eq!(layout.preview, RectPx::new(756, 121, 144, 112));
+    }
+
+    /// VERA: the author line sits in the top panel art between the preview
+    /// and Use Map, wherever the right panel goes.
+    #[test]
+    fn choose_map_author_line_fits_between_the_preview_and_use_map() {
+        for (w, h) in [(800, 600), (1024, 768)] {
+            let chooser = compute_choose_map_modal_layout(w, h);
+            let top = compute_layout(w, h).right_panel.top;
+            let author = chooser.author;
+            assert!(author.y >= chooser.preview.y + chooser.preview.h);
+            assert!(author.y + author.h <= chooser.use_map_button.y);
+            assert!(author.x >= top.x && author.x + author.w <= top.x + top.w);
+        }
     }
 
     #[test]

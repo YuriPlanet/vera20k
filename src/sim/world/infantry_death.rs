@@ -392,7 +392,7 @@ impl Simulation {
                 // unbound row admits.
                 cell.speed_costs
                     .cost_for_speed_type(crate::rules::locomotor_type::SpeedType::Foot)
-                    == Some(0)
+                    .is_some_and(|cost| cost.is_zero())
             });
         if footless && !on_bridge {
             return false;
@@ -658,9 +658,6 @@ mod corpse_tests {
         let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
         registry.bind_anim_frame_count_for_test("NUKEDIE", 20);
         rules.install_art_data(registry);
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         let mut sim = Simulation::new();
         crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
         let id = sim

@@ -6,6 +6,7 @@ use crate::rules::ini_parser::IniFile;
 use super::super::layout::{
     RectPx, SkirmishCheckboxId, SkirmishShellLayout, SkirmishTrackbarId, checkbox_icon_rect,
 };
+use super::opponent_scroll::{move_opponent_scrollbar, press_opponent_scrollbar, wheel_opponents};
 use super::{
     SkirmishShellAction, SkirmishShellState, SkirmishShellUiSound, handle_combo_mouse_down,
     handle_combo_mouse_move, set_open_combo_top_index, top_index_from_thumb_y,
@@ -185,7 +186,9 @@ pub fn handle_option_mouse_down(
 ) -> SkirmishShellAction {
     state.trackbar_hold = None;
 
-    if handle_combo_mouse_down(state, layout, maps, x, y) {
+    if handle_combo_mouse_down(state, layout, maps, x, y)
+        || press_opponent_scrollbar(state, layout, maps, x, y, crate::util::time::Instant::now())
+    {
         return SkirmishShellAction::None;
     }
 
@@ -233,6 +236,10 @@ pub fn handle_option_mouse_move(
         }
         return SkirmishShellAction::None;
     }
+    if state.opponent_scroll.captured() {
+        move_opponent_scrollbar(state, layout, maps, x, y);
+        return SkirmishShellAction::None;
+    }
 
     handle_combo_mouse_move(state, layout, maps, x, y);
 
@@ -253,6 +260,7 @@ pub fn handle_option_mouse_move(
 
 pub fn handle_option_mouse_up(state: &mut SkirmishShellState) -> SkirmishShellAction {
     state.trackbar_hold = None;
+    state.opponent_scroll.cancel();
     state.dropdown_scroll_drag = None;
     state.dropdown_scroll_press = None;
     SkirmishShellAction::None
@@ -262,15 +270,16 @@ pub fn handle_option_mouse_up(state: &mut SkirmishShellState) -> SkirmishShellAc
 ///
 /// There is no verified evidence that retail scrolls an open dropdown via the
 /// mouse wheel: no wheel handler exists in the owner-draw combo, popup, or
-/// scrollbar callbacks. Until a runtime capture proves otherwise, the wheel is
-/// inert in the shell and does not consume the event. Do NOT reintroduce a
-/// wheel-driven dropdown scroll without that evidence.
+/// scrollbar callbacks. Until a runtime capture proves otherwise, the wheel
+/// leaves the dropdowns alone. Do NOT reintroduce a wheel-driven dropdown
+/// scroll without that evidence. VERA's scrollbar beside the computer rows
+/// takes it instead; returns whether the rows moved.
 pub fn handle_option_mouse_wheel(
-    _state: &mut SkirmishShellState,
-    _maps: &[MapMenuEntry],
-    _lines: f32,
+    state: &mut SkirmishShellState,
+    maps: &[MapMenuEntry],
+    lines: f32,
 ) -> bool {
-    false
+    wheel_opponents(state, maps, lines)
 }
 
 #[cfg(test)]

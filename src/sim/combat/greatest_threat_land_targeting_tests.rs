@@ -40,6 +40,7 @@ fn a_guarding_boomer_takes_ships_but_not_land_targets() {
     let (mut sim, boomer, _) = coast_scene(rules);
     let pick = |sim: &mut Simulation| {
         sim.greatest_threat_represented(rules, None, boomer, ScanMission::Guard, None)
+            .and_then(crate::sim::combat::TargetKind::object_id)
     };
     assert_eq!(pick(&mut sim), None, "the Grizzly stands on land");
     let destroyer = sim

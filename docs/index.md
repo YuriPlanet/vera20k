@@ -25,8 +25,8 @@ Source paths below are under `src/`. The workspace has two crates:
 - `app/` — window, input, loading and saving; wires sim, render, ui, audio and net together.
 - `ui/` — menus, dialogs, in-game screens and the sidebar.
 - `audio/` — sound effects and music.
-- `net/` — LAN UDP transport, reliable delivery and synchronized command exchange.
-  [Networking.md](Networking.md) describes the current behavior and remaining work.
+- `net/` — LAN and online UDP transport, reliable delivery and synchronized command exchange.
+  [Networking.md](Networking.md) describes how LAN and online play work.
 - `rules/` — the retail INI files and their layers.
 - `map/` — maps, theaters, terrain, triggers and the random map generator.
 - `assets/` — parsers for the original file formats (`.mix`, `.shp`, `.vxl`, `.pal`, Bink video and more).
@@ -40,6 +40,8 @@ the deterministic frame phases.
 
 The app turns player input into commands for the simulation. After each frame it hands the new state to the renderer and plays the sounds the frame produced. Rendering only reads simulation state, and `sim/` never depends on `render/`, `ui/`, `audio/` or `net/`.
 
+![Application sends commands to simulation, which returns world state; application sends draw data to rendering.](images/architecture.png)
+
 ## Determinism
 
 The same state, inputs and random seed must give the same result on every platform and CPU.
@@ -52,3 +54,9 @@ Normal play hashes the whole state once every 15 frames for its diagnostic repla
 log; tests and benchmarks can hash every frame. Multiplayer has a separate
 per-frame sync checksum, with calculation, exchange and comparison handled by the
 simulation, session and network command owners.
+
+## Feature docs
+
+- [End-game screens](ini-end-game-screens.md): the verdict card, its theme and the score page's own art.
+- [Health-strip modes](health-bars.md): the `[VERA] HealthBars=` client option.
+- [Render interpolation](render-interpolation.md): the `[VERA] RenderInterpolation=` option, smoother motion between simulation frames.

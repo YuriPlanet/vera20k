@@ -3,6 +3,7 @@
 //
 //   node tools/spawn/spawn-e2e.mjs relay  --out DIR --ra2 RETAIL [--players 2] [--port 8787]
 //                                         [--relay 127.0.0.1:5000] [--key HEX] [--cors ORIGIN]
+//                                         [--pacing on|off] (a VO2C certificate; default VO1C)
 //   node tools/spawn/spawn-e2e.mjs direct --out DIR --ra2 RETAIL [--players 2] [--base-port 1300]
 //                                         [--ips A,B,...]
 // Both accept --spectators S,T (SourceIndex list, [IsSpectator]).
@@ -92,7 +93,7 @@ async function relay(opts) {
   if (!/^[0-9a-f]{64}$/i.test(key ?? '')) throw new Error('--key or VERA_RELAY_TICKET_KEY must be 64 hex digits');
   const matchId = randomUUID();
   const payloadKey = base64url(randomBytes(32));
-  const ordering = { sources_mask: 2 ** opts.players - 1, tick_hz: LAUNCH_HZ[opts.speed] };
+  const ordering = { sources_mask: 2 ** opts.players - 1, tick_hz: LAUNCH_HZ[opts.speed], pacing: opts.pacing };
   const now = () => Math.floor(Date.now() / 1000);
   const users = Array.from({ length: opts.players }, (_, source) => ({
     source, player_id: randomUUID(), token: base64url(randomBytes(32)),

@@ -13,40 +13,36 @@ fn loading_job_publishes_the_same_index_pages_after_gpu_retirement() {
         &gpu.queue,
         wgpu::TextureFormat::Bgra8UnormSrgb,
     );
-    let bytes = raw_shp(&[([3, 2], 7), ([2, 5], 11)]);
-    let source = ShpSource::decode(
-        std::sync::Arc::<[u8]>::from(bytes).into(),
-        "PENDING.SHP".into(),
-        (0, 0),
-    )
-    .unwrap();
+    let bytes: SharedBytes =
+        std::sync::Arc::<[u8]>::from(raw_shp(&[([3, 2], 7), ([2, 5], 11)])).into();
     let palette = Palette::from_rgb(|i| [i, i, i]);
     let prepare = || {
-        let mut palettes = ShpPalettes::default();
-        let rendered = (0..2)
+        let keys = (0..2)
             .map(|frame| {
                 let mut key = make_shp_key("PENDING", 0);
                 key.frame = frame;
-                render_shp_frame(&source, &palette, false, &key, None, &mut palettes).unwrap()
+                ShpRasterKey {
+                    key,
+                    source: 0,
+                    palette: 0,
+                    infantry: false,
+                    required: false,
+                }
             })
             .collect();
-        PreparedSpriteAtlas::Upload(ShpAtlasUpload {
-            started: Instant::now(),
-            previous_atlas: None,
-            rendered,
-            palettes,
-            registered_effects: EffectRegistry::default(),
-            unrenderable: Vec::new(),
-            make_frame_counts: HashMap::new(),
-            active_anim_frame_counts: HashMap::new(),
-            object_shp_frame_counts: HashMap::new(),
-            building_type_bounds: HashMap::new(),
-            shp_files: HashMap::new(),
-            projectile_files: HashMap::new(),
-            new_objects: HashSet::new(),
-            new_remaps: HashSet::new(),
-            load_harvest_overlay: false,
-        })
+        let work = ShpRasterWork {
+            keys,
+            sources: vec![Some(ShpRasterSource::Found(FoundShp {
+                data: bytes.clone(),
+                name: "PENDING.SHP".into(),
+                draw_offsets: (0, 0),
+            }))],
+            render_palettes: vec![palette.clone()],
+            rows: ShpPalettes::default(),
+            harvest_overlay: None,
+            max_rows: gpu.device.limits().max_texture_dimension_2d,
+        };
+        PreparedSpriteAtlas::Raster(work, empty_upload(true))
     };
     let expected = prepare().finish(&gpu.device, &gpu.queue, &batch).unwrap();
     let mut pending = prepare()
@@ -70,6 +66,57 @@ fn loading_job_publishes_the_same_index_pages_after_gpu_retirement() {
             gpu.read_uint_texels(&expected.texture.view, [0, 0], size)
         );
     }
+}
+
+/// An upload with no bookkeeping of its own; `initial` for a map-load build.
+fn empty_upload(initial: bool) -> ShpAtlasUpload {
+    ShpAtlasUpload {
+        started: Instant::now(),
+        initial,
+        registered_effects: EffectRegistry::default(),
+        make_frame_counts: HashMap::new(),
+        active_anim_frame_counts: HashMap::new(),
+        object_shp_frame_counts: HashMap::new(),
+        building_type_bounds: HashMap::new(),
+        shp_files: HashMap::new(),
+        projectile_files: HashMap::new(),
+        new_objects: HashSet::new(),
+        new_remaps: HashSet::new(),
+        load_harvest_overlay: false,
+    }
+}
+
+#[test]
+#[ignore = "requires a wgpu adapter; atlas growth publishing"]
+fn a_growth_that_changes_no_atlas_is_not_published() {
+    let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
+    let batch = BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+    );
+    // A live refresh whose required frame has no source is abandoned.
+    let work = ShpRasterWork {
+        keys: vec![ShpRasterKey {
+            key: make_shp_key("MISSING", 0),
+            source: 0,
+            palette: 0,
+            infantry: false,
+            required: true,
+        }],
+        sources: vec![None],
+        render_palettes: vec![Palette::from_rgb(|i| [i, i, i])],
+        rows: ShpPalettes::default(),
+        harvest_overlay: None,
+        max_rows: gpu.device.limits().max_texture_dimension_2d,
+    };
+    let mut growth = crate::render::entity_atlas_growth::EntityAtlasGrowth::default();
+    growth.grow_sprites_for_test(work, empty_upload(false));
+    // Captures publish waiting and restart growths after each publish, so a
+    // growth that changed nothing must not count or it restarts for ever.
+    assert!(!growth.publish(&gpu.device, &gpu.queue, &batch, &mut None, &mut None, true));
+    assert_eq!(growth.published(), 0);
+    assert!(!growth.running());
 }
 
 struct StoredFrameTestDirectory(std::path::PathBuf);
@@ -291,55 +338,10 @@ fn make_shp_key(type_id: &str, facing: u8) -> ShpSpriteKey {
     }
 }
 
-fn test_entry(page: u8) -> ShpSpriteEntry {
-    ShpSpriteEntry {
-        uv_origin: [0.0, 0.0],
-        uv_size: [1.0, 1.0],
-        pixel_size: [1.0, 1.0],
-        offset_x: -1.0,
-        offset_y: -2.0,
-        canvas_rect: [-1.0, -2.0, 1.0, 1.0],
-        extended: false,
-        source_palette: 1,
-        page,
-    }
-}
-
-#[test]
-fn refresh_failure_returns_the_prior_atlas_unchanged() {
-    let prior_key = make_shp_key("PRIOR", 0);
-    let mut prior = SpriteAtlas::new(
-        Vec::new(),
-        HashMap::from([(prior_key.clone(), test_entry(0))]),
-        ShpPalettes::default(),
-    );
-    prior.make_frame_counts.insert("PRIOR".to_string(), 3);
-    prior
-        .active_anim_frame_counts
-        .insert("PRIOR".to_string(), 4);
-    prior.unrenderable.insert(make_shp_key("EMPTY", 0));
-    prior
-        .covered_objects
-        .entry("PRIOR".to_string())
-        .or_default()
-        .insert(HouseColorIndex(1));
-
-    let restored =
-        abort_sprite_atlas_refresh(Some(prior), "required refresh sprite failed".to_string())
-            .expect("a refresh failure must retain the prior atlas");
-
-    assert_eq!(restored.sprite_count(), 1);
-    assert!(restored.get(&prior_key).is_some());
-    assert_eq!(restored.make_frame_counts["PRIOR"], 3);
-    assert_eq!(restored.active_anim_frame_counts["PRIOR"], 4);
-    assert!(restored.unrenderable.contains(&make_shp_key("EMPTY", 0)));
-    assert!(restored.covers_object("PRIOR", HouseColorIndex(1)));
-}
-
 #[test]
 #[should_panic(expected = "required initial sprite failed")]
 fn required_initial_build_failure_remains_fail_fast() {
-    let _ = abort_sprite_atlas_refresh(None, "required initial sprite failed".to_string());
+    abandon_sprite_atlas_refresh(true, "required initial sprite failed");
 }
 
 /// One placed object of `type_id` owned by "Americans", and the interner
@@ -471,9 +473,6 @@ fn deploy_targets_get_the_same_keys_as_placed_structures() {
     // Fixed ART supplies native processed reader inputs; the runtime metadata
     // registry is installed separately, as in production map loading.
     rules.install_art_data(art.clone());
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini),
-    );
     assert_eq!(
         rules
             .animation_sequence("E1")
@@ -793,6 +792,80 @@ fn registered_underscore_building_requests_make_frames_from_buildup_asset() {
     assert!(!make_frame_counts.contains_key("YAMOBILE_MAKE"));
 }
 
+/// A completed `Gate=yes` body is frame 0 above ConditionYellow and
+/// `GateStages + 1` at or below it (`GetCurrentFrame @ 0x0043EF90`,
+/// `0x0043F0BD..0x0043F0F5`); DrawBody's Mission Open arm
+/// (`0x0043D546..0x0043D68F`) draws stages `0..GateStages - 1`, plus
+/// `GateStages + 1` when damaged. Every one of those frames, and its embedded
+/// shadow, must be admitted with the type: a key the atlas lacks draws
+/// nothing, which hid the whole retail GAGATE_A once its health dropped
+/// (#3592). Before this coverage only frames 0/1 and their shadows were.
+#[test]
+fn gate_structure_keys_cover_every_stage_and_damaged_stage_frame() {
+    use crate::rules::ini_parser::IniFile;
+
+    let art_ini = IniFile::from_str("[GAGATE_A]\nImage=GAGATE_A\nGateStages=9\n");
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str("[BuildingTypes]\n0=GAGATE_A\n[GAGATE_A]\nStrength=100\nGate=yes\n"),
+        &art_ini,
+    )
+    .expect("gate atlas rules");
+    rules.install_art_data(ArtRegistry::from_ini(&art_ini));
+    assert!(rules.object("GAGATE_A").unwrap().gate);
+    assert_eq!(
+        rules
+            .art()
+            .resolve_metadata_entry("GAGATE_A", "GAGATE_A")
+            .unwrap()
+            .building_gate_stages,
+        9
+    );
+
+    // Retail G?GATE_A: 42 physical frames, 21 bodies then their 21 shadows.
+    let directory = StoredFrameTestDirectory::new();
+    let frames: Vec<_> = (0..42).map(|frame| ([2, 2], (frame + 1) as u8)).collect();
+    std::fs::write(directory.0.join("GTGATE_A.SHP"), raw_shp(&frames))
+        .expect("write gate body SHP fixture");
+    let assets = AssetManager::from_loose_root_for_test(&directory.0);
+    let (world, interner) = one_object_world("GAGATE_A", EntityCategory::Structure);
+    let color = HouseColorIndex(2);
+    let pairs = HashSet::from([("GAGATE_A".to_string(), color)]);
+    let mut needed = HashSet::new();
+    let sources = insert_new_object_keys(
+        &mut needed,
+        &pairs,
+        &world,
+        Some(&interner),
+        &assets,
+        "tem",
+        "TEMPERATE",
+        Some(&rules),
+        Some(rules.art()),
+    );
+    assert_eq!(
+        sources[&(ShpImageKind::Object, "GAGATE_A".to_owned())]
+            .as_ref()
+            .expect("gate body SHP is the shadow half's owner")
+            .shp
+            .frames
+            .len(),
+        42
+    );
+
+    let frames: HashSet<u16> = needed
+        .iter()
+        .filter(|key| key.type_id == "GAGATE_A" && key.house_color == color)
+        .map(|key| key.frame)
+        .collect();
+    // Bodies: stages 0..=8 and their damaged counterparts 10..=18; frame 9
+    // is never selected. Shadows: each body plus half the physical count.
+    let expected: HashSet<u16> = (0..=8)
+        .chain(10..=18)
+        .flat_map(|frame| [frame, frame + 21])
+        .collect();
+    assert_eq!(frames, expected);
+}
+
 /// BuildingType45F230's final image pass, after the base ObjectType load.
 /// Stock YAYARD omits NewTheater: the original requests YTYARD.SHP, then
 /// YGYARD.SHP. A plain-name file or a different extension is not a third try.
@@ -981,9 +1054,6 @@ fn raw_infantry_atlas_rules(sequence_rows: &str) -> (RuleSet, ArtRegistry) {
     // Processing with fixed ART does not install RuleSet's metadata registry.
     // Bind the same image/Sequence owner used by the source loader first.
     rules.install_art_data(art.clone());
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini),
-    );
     assert_eq!(
         rules
             .art()
@@ -1290,7 +1360,7 @@ fn raw_infantry_render_does_not_substitute_an_out_of_asset_key() {
     let mut key = make_shp_key("RAWGI", 0);
     key.frame = 2;
     assert!(
-        render_shp_frame(
+        render_shp_key(
             &source,
             &palette,
             false,
@@ -1304,7 +1374,7 @@ fn raw_infantry_render_does_not_substitute_an_out_of_asset_key() {
     // original invalid-frame shape access or full Infantry drawing parity.
     key.type_id = "LEGACY".to_string();
     assert!(
-        render_shp_frame(
+        render_shp_key(
             &source,
             &palette,
             false,
@@ -1364,7 +1434,7 @@ fn building_animation_frames_render_from_the_file_they_were_counted_in() {
     let mut key = make_shp_key("YAGRND_B", 0);
     key.palette_context = ShpPaletteContext::SelectedScheme;
     let palette = Palette::from_bytes(&[0; 768]).expect("fixture palette");
-    let sprite = render_shp_frame(
+    let sprite = render_shp_key(
         &source,
         &palette,
         true,
@@ -1548,7 +1618,7 @@ fn retail_refinery_anim_loads_its_physical_shadow_companions() {
             house_color: HouseColorIndex(1),
         };
         assert!(needed.contains(&key), "missing refinery frame {frame}");
-        let sprite = render_shp_frame(
+        let sprite = render_shp_key(
             &source,
             &palette,
             true,
@@ -1836,7 +1906,7 @@ pub(crate) fn palette_probe_page(palette: &Palette) -> NativePaletteProbe {
     )
     .expect("probe SHP decodes");
     let mut palettes = ShpPalettes::default();
-    let sprite = render_shp_frame(&source, palette, true, &key, None, &mut palettes).unwrap();
+    let sprite = render_shp_key(&source, palette, true, &key, None, &mut palettes).unwrap();
     assert_eq!(sprite.indices(), (0..=255u8).collect::<Vec<_>>());
     let size = [262, 3];
     let mut indices = vec![0; size[0] * size[1]];
@@ -2007,7 +2077,7 @@ fn retail_statue_bakes_against_the_theater_lib_palette() {
     )
     .expect("CGNEWY04.SHP");
     let mut palettes = ShpPalettes::default();
-    let sprite = render_shp_frame(&source, &lib, true, &key, Some(rules), &mut palettes)
+    let sprite = render_shp_key(&source, &lib, true, &key, Some(rules), &mut palettes)
         .expect("statue frame 0");
     let row = &palettes.colors[sprite.palette as usize];
     let ramp = rules.house_color_ramps.ramp(HouseColorIndex(3));
@@ -3049,7 +3119,7 @@ fn physical_frames_share_initial_indices_without_merging_logical_palettes_or_off
     .into_iter()
     .zip(&keys)
     .map(|((source, palette), key)| {
-        render_shp_frame(source, palette, false, key, None, &mut palettes).unwrap()
+        render_shp_key(source, palette, false, key, None, &mut palettes).unwrap()
     })
     .collect();
     let expected: Vec<_> = sprites
@@ -3130,7 +3200,7 @@ fn physical_frames_reuse_initial_and_growth_rectangles_but_not_different_sources
     let green = Palette::from_rgb(|i| [0, i, 0]);
     let mut palettes = ShpPalettes::default();
     let first = make_shp_key("FIRST", 0);
-    let sprite = render_shp_frame(&source, &red, false, &first, None, &mut palettes).unwrap();
+    let sprite = render_shp_key(&source, &red, false, &first, None, &mut palettes).unwrap();
     let mut atlas = pack_sprites(&gpu.device, &gpu.queue, &batch, vec![sprite], palettes);
     let resident = *atlas.get(&first).unwrap();
     let rectangle = |entry: &ShpSpriteEntry| (entry.page, entry.uv_origin, entry.uv_size);
@@ -3138,7 +3208,7 @@ fn physical_frames_reuse_initial_and_growth_rectangles_but_not_different_sources
     recolored.palette_context = ShpPaletteContext::Cell;
     recolored.house_color = HouseColorIndex(3);
     let mut palettes = atlas.palettes.clone();
-    let sprite = render_shp_frame(&source, &green, false, &recolored, None, &mut palettes).unwrap();
+    let sprite = render_shp_key(&source, &green, false, &recolored, None, &mut palettes).unwrap();
     atlas.append_sprites(&gpu.device, &gpu.queue, &batch, vec![sprite], palettes);
     assert_eq!(
         atlas.page_count(),
@@ -3168,7 +3238,7 @@ fn physical_frames_reuse_initial_and_growth_rectangles_but_not_different_sources
         (&other, &red, &different),
     ]
     .into_iter()
-    .map(|(s, p, k)| render_shp_frame(s, p, false, k, None, &mut palettes).unwrap())
+    .map(|(s, p, k)| render_shp_key(s, p, false, k, None, &mut palettes).unwrap())
     .collect();
     atlas.append_sprites(&gpu.device, &gpu.queue, &batch, sprites, palettes);
     assert_eq!(atlas.page_count(), 2);
@@ -3188,7 +3258,7 @@ fn physical_frames_reuse_initial_and_growth_rectangles_but_not_different_sources
     let mut late = fresh.clone();
     late.type_id = "LATE".into();
     let mut palettes = atlas.palettes.clone();
-    let sprite = render_shp_frame(&source, &green, false, &late, None, &mut palettes).unwrap();
+    let sprite = render_shp_key(&source, &green, false, &late, None, &mut palettes).unwrap();
     atlas.append_sprites(&gpu.device, &gpu.queue, &batch, vec![sprite], palettes);
     assert_eq!(atlas.sprite_count(), 6);
     assert_eq!(
@@ -3285,7 +3355,7 @@ fn custom_harvest_uses_bound_theater_shape_all_frames_and_own_placement() {
         "AltPalette belongs to AnimClass drawing, not the gather hook",
     );
     let palette = Palette::from_bytes(&[0; 768]).unwrap();
-    let sprite = render_shp_frame(
+    let sprite = render_shp_key(
         &source,
         &palette,
         false,
@@ -3301,7 +3371,7 @@ fn custom_harvest_uses_bound_theater_shape_all_frames_and_own_placement() {
         palette_context: ShpPaletteContext::GlobalAnim,
         ..key
     };
-    let ordinary = render_shp_frame(
+    let ordinary = render_shp_key(
         &source,
         &palette,
         false,
@@ -3361,7 +3431,7 @@ fn building_type_bounds_match_native_header_recipe() {
                 )
                 .unwrap();
                 assert!(
-                    render_shp_frame(
+                    render_shp_key(
                         &source,
                         &Palette::from_rgb(|i| [i, i, i]),
                         false,
@@ -3401,7 +3471,7 @@ fn building_type_bounds_publish_with_color_growth_type_growth_and_abort() {
     };
     let theater = crate::map::theater::load_theater(&mut assets, "NEWURBAN").unwrap();
     let entities = crate::sim::entity_store::EntityStore::new();
-    let prepare = |colors: &HouseColorMap, types: &[&str], old: Option<SpriteAtlas>, limit| {
+    let prepare = |colors: &HouseColorMap, types: &[&str], old: Option<&SpriteAtlas>, limit| {
         prepare_sprite_atlas(
             limit,
             &entities,
@@ -3423,21 +3493,18 @@ fn building_type_bounds_publish_with_color_growth_type_growth_and_abort() {
     };
     // No GPU pages are needed to exercise the metadata publication owner.
     // The physical source decoder and complete prepare transaction run above.
-    let publish = |prepared| match prepared {
-        PreparedSpriteAtlas::Upload(mut upload) => {
-            let initial = upload.previous_atlas.is_none();
-            let old = upload
-                .previous_atlas
-                .take()
-                .unwrap_or_else(|| SpriteAtlas::from_test_entries(Default::default()));
-            upload.publish(old, 0, initial)
-        }
-        PreparedSpriteAtlas::Ready(Some(atlas)) => atlas,
-        PreparedSpriteAtlas::Ready(None) => panic!("physical sprite metadata required"),
+    let publish = |prepared, old: Option<SpriteAtlas>| {
+        let PreparedSpriteAtlas::Raster(work, upload) = prepared else {
+            panic!("physical sprite metadata required");
+        };
+        let (_, unrenderable, _) = upload.drawn(work.render()).expect("a drawn refresh");
+        let mut atlas = old.unwrap_or_else(|| SpriteAtlas::from_test_entries(Default::default()));
+        upload.publish(&mut atlas, 0, unrenderable);
+        atlas
     };
     let mut colors =
         HouseColorMap::from([("Neutral".to_owned(), crate::rules::house_colors::NO_REMAP)]);
-    let first = publish(prepare(&colors, &["CANEWY06"], None, 8192));
+    let first = publish(prepare(&colors, &["CANEWY06"], None, 8192), None);
     let native = crate::test_fixture::json("tools/spatial_oracle/building_render_bounds.json");
     let control = native["cases"]
         .as_array()
@@ -3448,24 +3515,36 @@ fn building_type_bounds_publish_with_color_growth_type_growth_and_abort() {
     let bounds = first.building_type_bounds("CANEWY06").unwrap();
     assert_eq!(serde_json::json!(bounds), control["bounds"]);
     colors.insert("Americans".into(), HouseColorIndex(0));
-    let colored = publish(prepare(&colors, &["CANEWY06"], Some(first), 8192));
+    let colored = publish(
+        prepare(&colors, &["CANEWY06"], Some(&first), 8192),
+        Some(first),
+    );
     assert_eq!(colored.building_type_bounds("CANEWY06"), Some(bounds));
     assert_eq!(
         colored.building_type_bounds.len(),
         1,
         "house color does not own geometry"
     );
-    let aborted = prepare(&colors, &["CANEWY06", "CANEWY01"], Some(colored), 0);
-    let PreparedSpriteAtlas::Ready(Some(old)) = aborted else {
-        panic!("palette overflow must retain the previous atlas");
+    let PreparedSpriteAtlas::Raster(work, upload) =
+        prepare(&colors, &["CANEWY06", "CANEWY01"], Some(&colored), 0)
+    else {
+        panic!("a palette overflow is found while drawing");
     };
+    assert!(
+        upload.drawn(work.render()).is_none(),
+        "palette overflow abandons the refresh"
+    );
+    let old = colored;
     assert_eq!(old.building_type_bounds("CANEWY06"), Some(bounds));
     assert_eq!(
         old.building_type_bounds("CANEWY01"),
         None,
         "failed refresh cannot publish new geometry"
     );
-    let extended = publish(prepare(&colors, &["CANEWY06", "CANEWY01"], Some(old), 8192));
+    let extended = publish(
+        prepare(&colors, &["CANEWY06", "CANEWY01"], Some(&old), 8192),
+        Some(old),
+    );
     assert_eq!(extended.building_type_bounds("CANEWY06"), Some(bounds));
     assert!(extended.building_type_bounds("CANEWY01").is_some());
     assert_eq!(extended.building_type_bounds.len(), 2);

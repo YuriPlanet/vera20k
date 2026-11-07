@@ -356,7 +356,7 @@ pub struct GameEntity {
     /// [`RemovalFacts`]: crate::sim::world::RemovalFacts
     #[serde(default)]
     pub(crate) removal_facts: crate::sim::world::RemovalFacts,
-    /// The kill credit and the UnInit loss guard, a [`KillRecord`] that
+    /// The kill credit and the closed-record guard, a [`KillRecord`] that
     /// `combat::record_kill` owns.
     ///
     /// [`KillRecord`]: crate::sim::combat::KillRecord
@@ -886,7 +886,16 @@ pub struct GameEntity {
     /// The actual Spark system link (`TechnoClass+0x308`), shared by
     /// FireAt and Cyborg AI; particles::spawn owns its mutations.
     #[serde(default)]
-    pub(crate) spark_particle_system: crate::sim::particles::spawn::AttachedSpark,
+    pub(crate) spark_particle_system: crate::sim::particles::spawn::AttachedParticleSystem,
+    /// The Fire system link (`TechnoClass+0x304`) FireAt's
+    /// `UseFireParticles` arm creates (`0x006FF1A7`). It is released by
+    /// [`Self::release_fire_particle_system`].
+    #[serde(default)]
+    pub(crate) fire_particle_system: crate::sim::particles::spawn::AttachedParticleSystem,
+    /// The Railgun system link (`TechnoClass+0x314`) FireAt's `IsRailgun`
+    /// arm creates; it gates the next railgun shot until the system expires.
+    #[serde(default)]
+    pub(crate) railgun_particle_system: crate::sim::particles::spawn::AttachedParticleSystem,
     /// The damage-Smoke system handle (`TechnoClass+0x310`), a
     /// [`DamageSmoke`] that `particles::spawn` owns.
     ///
@@ -1179,8 +1188,8 @@ impl GameEntity {
     /// `owned_by_current_house` is that +41A as the caller reads it: drawing
     /// the actual byte, shared decisions
     /// [`Simulation::shared_owned_by_current_house`](crate::sim::world::Simulation::shared_owned_by_current_house).
-    /// Building4544A0 delegates here only with its +6ED override stage zero.
-    /// The nonzero building override has no Rust producer and remains separate.
+    /// A Building with a nonzero fade stage (`+0x6ED`) answers through its
+    /// own override (`BuildingClass::GetVisualState @ 0x004544A0`).
     pub fn visual_character(
         &self,
         cloaking_stages: i32,
@@ -1188,6 +1197,15 @@ impl GameEntity {
         owned_by_current_house: bool,
         query: crate::sim::cloak_disguise::VisualCharacterQuery,
     ) -> u8 {
+        let stage = self.building_cloak_stage();
+        if stage != 0 {
+            return crate::sim::cloak_disguise::building_stage_visual_character(
+                stage,
+                owned_by_current_house,
+                true,
+                query,
+            );
+        }
         let (state, progress) = self
             .cloak
             .as_ref()
@@ -1202,6 +1220,14 @@ impl GameEntity {
             true,
             query,
         )
+    }
+
+    /// A Building's fade stage, `BuildingClass+0x6ED` (0 opaque, 15 faded
+    /// out); 0 for every other object.
+    pub fn building_cloak_stage(&self) -> u8 {
+        self.cloak
+            .as_ref()
+            .map_or(0, crate::sim::cloak_disguise::CloakRuntime::building_stage)
     }
 
     /// `Techno70BE50`: actual COM410220 reads Abstract+10, then native7C5F00
@@ -1761,6 +1787,12 @@ impl GameEntity {
         &self.barrel_elevation
     }
 
+    /// Install a fixture's barrel elevation.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_barrel_elevation_for_test(&mut self, facing: crate::sim::movement::FacingClass) {
+        self.barrel_elevation = facing;
+    }
+
     /// Whether the barrel elevation still holds its constructor value, which
     /// an object that never unlimboed keeps.
     pub(crate) fn barrel_elevation_is_constructed(&self) -> bool {
@@ -2100,6 +2132,8 @@ impl GameEntity {
             suspended_attack_target: Default::default(),
             base_defense_response: BaseDefenseResponseState::default(),
             spark_particle_system: Default::default(),
+            fire_particle_system: Default::default(),
+            railgun_particle_system: Default::default(),
             damage_smoke_system_id: Default::default(),
             transport_unload_keep_count: Default::default(),
             produce_cash: crate::sim::credit_income::ProduceCash::new(construction_frame),
@@ -2196,26 +2230,75 @@ impl GameEntity {
         self.fall.rate()
     }
 
+    /// Object+84: the retained attached-Anim flag consumed by ObjectAI5F3FB2.
     pub(crate) fn is_parachuted(&self) -> bool {
         self.fall.parachuted()
+    }
+
+    pub(crate) fn set_attached_anim_flag(&mut self, attached: bool) {
+        self.fall.set_attached_anim_flag(attached);
     }
 
     pub(crate) fn parachute_animation(&self) -> Option<u64> {
         self.fall.parachute_animation()
     }
 
-    pub(crate) fn set_parachute_animation(&mut self, animation: Option<u64>) {
-        self.fall.set_parachute_animation(animation);
+    /// Paradrop5F5AF1 publishes the new canopy at Object+88, through
+    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim).
+    pub(crate) fn hold_parachute_animation(
+        &mut self,
+        animation: u64,
+        _: crate::sim::entity_store::AnimHolderAuthority,
+    ) {
+        self.fall.set_parachute_animation(Some(animation));
+    }
+
+    /// Paradrop without a constructed canopy leaves Object+88 empty.
+    pub(crate) fn clear_parachute_animation(&mut self) {
+        self.fall.set_parachute_animation(None);
     }
 
     pub(crate) fn parachute_animation_expired(&mut self, animation: u64) {
         self.fall.parachute_animation_expired(animation);
     }
 
-    /// Paradrop5F5940 raises +84/+8D and resets +2C before placement.
+    /// The Anims held in the fields `Simulation::notify_anim_pointer_expired`
+    /// clears when an Anim expires: Object+88's parachute (the owner's
+    /// Detach710410 reaching5F6DA0), the Ares EMP sparkle, the Ares
+    /// attached-effect Anims (10058770) and its ParasiteClass's grapple Anim
+    /// (Anim4's holder announcement725A16..725A4C, PointerExpired
+    /// 62A484..62A490). A field one of those callbacks compares must be
+    /// named here, and stored only through
+    /// [`EntityStore::write_held_anim`](crate::sim::entity_store::EntityStore::write_held_anim).
+    pub(crate) fn held_anims(&self) -> impl Iterator<Item = u64> + '_ {
+        let held = [
+            self.parachute_animation(),
+            self.emp_sparkle(),
+            self.parasite.class().and_then(|class| class.grapple_anim()),
+        ]
+        .into_iter()
+        .flatten();
+        #[cfg(feature = "ares")]
+        let held = held.chain(self.attached_effect_anims());
+        held
+    }
+
+    /// Retail gamemd.exe TechnoClass::Detach710410, then
+    /// ObjectClass::DetachParachute5F6DA0: owner+60 clears only matching
+    /// retained Anim identities, before the child's owner reference clears.
+    pub(crate) fn attached_anim_expired(&mut self, animation: u64) {
+        self.expire_behind_anim(animation);
+        self.drain.expire_anim(animation);
+        self.mind_control.anim_pointer_expired(animation);
+        self.expire_deploy_anim(animation);
+        self.parachute_animation_expired(animation);
+    }
+
+    /// Paradrop5F5965 raises +8D. SetOwnerObject424C30 owns +84; Paradrop
+    /// preserves the rate retained from any preceding fall.
     pub(crate) fn begin_parachute_fall(&mut self, z: i32) {
         self.position.put_z(z);
-        self.fall.begin_parachute();
+        self.fall.begin_fall();
     }
 
     /// DropAsBomb5F416A/71 writes neither Location nor FallRate nor +84.
@@ -2323,6 +2406,37 @@ impl GameEntity {
     /// `Object+0x6C`, Health, above 0.
     pub fn is_alive(&self) -> bool {
         self.health.current() > 0
+    }
+
+    /// The particle systems GetROF and FireAt test (`+0x304`, `+0x308`,
+    /// `+0x314`) as they are linked now.
+    pub(crate) fn live_particles(&self) -> crate::sim::combat::rof::LiveParticles {
+        crate::sim::combat::rof::LiveParticles {
+            spark: self.spark_particle_system.system().is_some(),
+            fire: self.fire_particle_system.system().is_some(),
+            railgun: self.railgun_particle_system.system().is_some(),
+        }
+    }
+
+    /// Release the Fire system link: Foot `Set_Destination_Internal` with a
+    /// destination (`0x004D954B`, `navcom::publish_nav_com`), `Assign_Target` to a target the object
+    /// cannot fire at (`0x006FCF61`) and the death arm of ReceiveDamage
+    /// (`0x00702216`) each call the system's vt+0xF8, which only sets its
+    /// done byte (`0x006301E0`), and clear `+0x304`. Only the system's own AI
+    /// reads that byte, so the system applies the release there
+    /// ([`crate::sim::particles::ParticleSystem::apply_fire_link_release`]).
+    pub(crate) fn release_fire_particle_system(&mut self) {
+        self.fire_particle_system.forget();
+    }
+
+    /// Whether a cell object-list walk that damages what it finds (Wave
+    /// `DamageArea`, the railgun line) still reaches this object: alive, not
+    /// in its death sequence, not in limbo.
+    pub(crate) fn reachable_in_cell_list(&self) -> bool {
+        self.is_alive()
+            && !self.death.is_dying()
+            && !self.lifecycle.in_limbo()
+            && self.lifecycle.object_alive()
     }
 
     /// Whether ObjectClass native-alive state is set. This is intentionally

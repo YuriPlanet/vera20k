@@ -135,14 +135,9 @@ impl Simulation {
             .entities
             .get(id)
             .ok_or("retired failed-path receiver")?;
-        let object = self
-            .object_type(actor.type_ref(), rules)
-            .ok_or("failed-path receiver requires the Infantry type")?;
-        let facts = super::infantry_action::DoActionType {
-            type_id: &object.id,
-            movement_zone: object.movement_zone,
-            crawls: object.crawls,
-        };
+        let facts =
+            super::infantry_action::DoActionType::of(&self.interner, actor.type_ref(), rules)
+                .ok_or("failed-path receiver requires the Infantry type")?;
         let doing = actor
             .mission_leaf
             .as_infantry()

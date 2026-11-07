@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- The lobby and LAN discovery are HTTPS/UDP; ACCESS_WIFI_STATE is for the
+         WifiManager locks multicast discovery needs (P8). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <!-- Vulkan is the shipping renderer baseline, so a device without it cannot
+         run the game. GLES-only devices are not supported yet (P4 decision). -->
+    <uses-feature
+        android:name="android.hardware.vulkan.level"
+        android:version="0"
+        android:required="true" />
+    <uses-feature
+        android:glEsVersion="0x00030000"
+        android:required="false" />
+
+    <application
+        android:label="VERA20K"
+        android:hasCode="true"
+        android:largeHeap="true"
+        android:extractNativeLibs="false"
+        android:allowBackup="false"
+        android:theme="@style/Theme.Vera20k">
+
+        <!-- NativeActivity loads android.app.lib_name and calls android_main in
+             libvera20k_android.so (android/src/lib.rs). configChanges lists
+             everything winit handles, so a rotation or split-screen resize
+             reaches Rust as a resize instead of destroying the activity. -->
+        <activity
+            android:name="org.vera20k.VeraActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="sensorLandscape"
+            android:resizeableActivity="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode|fontScale|locale|layoutDirection">
+
+            <!-- The .so base name, without lib/ and .so: the crate's output is
+                 libvera20k_android.so. -->
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="vera20k_android" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

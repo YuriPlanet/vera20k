@@ -281,3 +281,67 @@ fn home_primary_and_base_geometry_survive_real_snapshot_restore() {
     restored.session.set_current_house_for_test(None);
     assert_eq!(query(&restored, &rules), None, "headless boundary");
 }
+
+/// CenterCameraOnPlayerTechnos (`0x004AC4F0`) averages the Location of the
+/// current player's Technos out of Limbo, whatever their class or ID, at Z 0.
+/// Another house's earlier building does not count. With none, the opening
+/// view is the base coordinate; an observer with no base gets no native view.
+#[test]
+fn opening_view_averages_player_technos_else_takes_the_base() {
+    let (mut sim, rules, registry, houses) = fixture();
+    spawn(&mut sim, &rules, "YARD", "Other", 15, 15);
+    let unit = spawn(&mut sim, &rules, "BASEUNIT", "Local", 16, 17);
+    let building = spawn(&mut sim, &rules, "OTHER", "Local", 20, 19);
+    let limbo = spawn(&mut sim, &rules, "BASEUNIT", "Local", 18, 17);
+    sim.substrate
+        .entities
+        .get_mut(limbo)
+        .unwrap()
+        .lifecycle
+        .set_in_limbo_for_test(true);
+    let location = |sim: &Simulation, id: u64| {
+        crate::sim::movement::ground_pose::position_world_xy(
+            &sim.substrate.entities.get(id).unwrap().position,
+        )
+    };
+    let ([ux, uy], [bx, by]) = (location(&sim, unit), location(&sim, building));
+    let (x, y) = ((ux + bx) / 2, (uy + by) / 2);
+    assert_eq!(
+        sim.opening_view_on_player_technos(None),
+        Some(([x, y, 0], ((x / 256) as u16, (y / 256) as u16)))
+    );
+    // The non-campaign post-map pass publishes it for the loader.
+    let roster = crate::map::houses::HouseRoster::default();
+    let output =
+        sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
+            map_width: 33,
+            map_height: 33,
+            fill_silos: false,
+            rules: &rules,
+            overlay_registry: &registry,
+            house_roster: &roster,
+            skirmish_session: None,
+            campaign_map: None,
+        });
+    assert_eq!(output.opening_view_coord, Some([x, y, 0]));
+    assert_eq!(
+        output.opening_view_cell,
+        Some(((x / 256) as u16, (y / 256) as u16))
+    );
+
+    for id in [unit, building] {
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        entity.lifecycle.set_in_limbo_for_test(true);
+    }
+    sim.houses
+        .get_mut(&houses[0])
+        .unwrap()
+        .set_base_center((18, 19));
+    let [x, y, _] = sim.house_base_coordinate(houses[0], None);
+    assert_eq!(
+        sim.opening_view_on_player_technos(None),
+        Some(([x, y, 0], (18, 19)))
+    );
+    clear_base(&mut sim, houses[0]);
+    assert_eq!(sim.opening_view_on_player_technos(None), None);
+}

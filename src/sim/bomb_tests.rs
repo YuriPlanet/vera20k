@@ -113,7 +113,11 @@ fn rules() -> RuleSet {
 }
 
 fn rules_from(text: &str) -> RuleSet {
-    RuleSet::from_ini(&IniFile::from_str(text)).expect("bomb rules")
+    RuleSet::from_ini_with_sounds_for_test(
+        &IniFile::from_str(text),
+        &["CrazyIvanAttack", "CrazyIvanBombTick"],
+    )
+    .expect("bomb rules")
 }
 
 /// Americans (human) and Russians (computer), in that house order.
@@ -204,11 +208,11 @@ fn kill(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     assert_eq!(entity(sim, id).health.current(), 0);
 }
 
-fn bomb(sim: &Simulation, id: u64) -> Option<Bomb> {
+fn bomb(sim: &Simulation, id: u64) -> Option<&Bomb> {
     sim.substrate
         .entities
         .get(id)
-        .and_then(|entity| entity.bomb)
+        .and_then(|entity| entity.bomb.as_ref())
 }
 
 /// The human Americans send every order, a computer House's unit's too:
@@ -282,6 +286,7 @@ fn native_bomb(fields: &serde_json::Value) -> Bomb {
         planter_house: InternedId::default(),
         start_frame: int("start"),
         end_frame: int("end"),
+        ticking_sound: None,
         seen_by: 0,
     }
 }
@@ -482,6 +487,8 @@ fn native_world(input: &serde_json::Value, rules: &RuleSet) -> NativeWorld {
         let mut bomb = native_bomb(fields);
         bomb.planter = fields["planter"].as_u64().map(|n| ids[n as usize]);
         bomb.planter_house = houses[fields["house"].as_u64().unwrap_or(0) as usize];
+        bomb.ticking_sound =
+            (fields["ticking_sound"].as_i64() != Some(-1)).then(|| "CrazyIvanBombTick".to_owned());
         if technos[slot]["visible"].as_u64() == Some(1) {
             bomb.seen_by = house_bit(&sim.houses.order(), local);
         }
@@ -499,6 +506,9 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
     if input["rules"]["attach_sound"].as_i64() == Some(-1) {
         text = text.replace("BombAttachSound=CrazyIvanAttack\n", "");
     }
+    if input["rules"]["ticking_sound"].as_i64() == Some(-1) {
+        text = text.replace("BombTickingSound=CrazyIvanBombTick\n", "");
+    }
     let rules = rules_from(&text);
     let NativeWorld {
         mut sim,
@@ -510,7 +520,7 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
         "attach" => {
             let planter = index(&input["planter"]).unwrap_or(u64::MAX);
             let target = index(&input["target"]);
-            let carrier_before = target.and_then(|id| bomb(&sim, id));
+            let carrier_before = target.and_then(|id| bomb(&sim, id)).cloned();
             sim.bomb_attach_for_test(planter, target, &rules);
             let native = case.bombs.first();
             match native {
@@ -529,6 +539,12 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
                         "{name}: the fuse"
                     );
                     assert!(sim.bombs.carriers.contains(&carrier), "{name}");
+                    assert_eq!(
+                        sim.bomb_ticking_sound(carrier),
+                        (native["ticking_sound"].as_i64() != Some(-1))
+                            .then_some("CrazyIvanBombTick"),
+                        "{name}: the ticking cue is captured"
+                    );
                     let countdown = case.list.as_ref().unwrap()["countdown"].as_i64();
                     assert_eq!(
                         Some(i64::from(sim.bombs.visibility_countdown)),
@@ -548,7 +564,7 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
                 None => {
                     assert_eq!(
                         target.and_then(|id| bomb(&sim, id)),
-                        carrier_before,
+                        carrier_before.as_ref(),
                         "{name}: nothing planted"
                     );
                     assert!(sim.sound_events.is_empty(), "{name}");
@@ -570,6 +586,7 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
                 &mut sim.substrate,
                 &sim.resolved_terrain,
                 &mut sim.bombs,
+                &mut sim.sound_events,
                 carrier,
                 &rules,
             );
@@ -604,7 +621,7 @@ fn check_world_case(case: &NativeBombCase, name: &str, section: &str, delay: i32
         }
         "defuse" => {
             let carrier = ids[1];
-            crate::sim::world::Simulation::bomb_defuse(&mut sim.substrate, &mut sim.bombs, carrier);
+            sim.bomb_defuse_for_test(carrier);
             assert!(bomb(&sim, carrier).is_none(), "{name}");
             assert!(!sim.bombs.carriers.contains(&carrier), "{name}");
         }
@@ -664,6 +681,7 @@ fn native_update_all_corpus() {
             &sim.houses,
             &sim.resolved_terrain,
             &mut sim.bombs,
+            &mut sim.sound_events,
             &rules,
         );
         let list = case.list.as_ref().unwrap();
@@ -702,6 +720,11 @@ fn native_update_all_corpus() {
                     let at = sim
                         .bomb_ticking_coord(carrier_of(owner))
                         .unwrap_or_else(|| panic!("{name}: the loop plays"));
+                    assert_eq!(
+                        sim.bomb_ticking_sound(carrier_of(owner)),
+                        Some("CrazyIvanBombTick"),
+                        "{name}: the retained cue plays"
+                    );
                     let native: Vec<i32> = coords
                         .as_array()
                         .unwrap()
@@ -711,20 +734,30 @@ fn native_update_all_corpus() {
                     assert_eq!(vec![at.x, at.y, at.z], native, "{name}: at the Location");
                 }
                 "voc_release" => {
+                    let carrier = carrier_of(&event[1]);
+                    assert!(sim.bomb_ticking_coord(carrier).is_none(), "{name}");
                     assert!(
-                        sim.bomb_ticking_coord(carrier_of(&event[1])).is_none(),
-                        "{name}"
+                        sim.sound_events.iter().any(|event| matches!(
+                            event,
+                            SimSoundEvent::AnimationStopped { anim_id, stop_sound_id: None, .. }
+                                if *anim_id == ticking_sound_owner(carrier)
+                        )),
+                        "{name}: limbo hard-stops the handle before the countdown"
                     );
                 }
                 other => panic!("{name}: unexpected {other}"),
             }
         }
-        // A bomb attached without BombTickingSound= keeps silent: VERA reads the
-        // rules key where native copied it (`Rules+0x20C` at 0x00438EFD).
+        // The ticking pass reads the bomb's retained cue, copied from
+        // Rules+0x20C at 0x00438EFD. A saved -1 stays silent.
         if input["bombs"][0]["ticking_sound"].as_i64() == Some(-1) {
             assert!(case.events.is_empty(), "{name}");
-            let silent = rules_from(&RULES.replace("BombTickingSound=CrazyIvanBombTick\n", ""));
-            assert_eq!(silent.general.bomb_ticking_sound, None, "{name}");
+            assert!(
+                sim.bomb_carriers()
+                    .iter()
+                    .all(|&carrier| sim.bomb_ticking_sound(carrier).is_none()),
+                "{name}"
+            );
         }
         compared += 1;
     }
@@ -747,6 +780,7 @@ fn a_crazy_ivan_bombs_a_tank() {
     })
     .expect("planted");
     let planted = bomb(&sim, tank).unwrap();
+    let start_frame = planted.start_frame;
     assert_eq!(planted.planter, Some(ivan));
     assert_eq!(sim.interner.resolve(planted.planter_house), "Russians");
     assert_eq!(
@@ -762,14 +796,14 @@ fn a_crazy_ivan_bombs_a_tank() {
         if !off {
             assert_eq!(
                 bomb(sim, tank).map(|bomb| bomb.start_frame),
-                Some(planted.start_frame),
+                Some(start_frame),
                 "an Ivan cannot bomb a bombed target"
             );
         }
         off
     })
     .expect("the bomb goes off");
-    assert_eq!(went_off, planted.start_frame + 451, "IvanTimedDelay + 1");
+    assert_eq!(went_off, start_frame + 451, "IvanTimedDelay + 1");
     assert_eq!(entity(&sim, tank).health.current(), 1000 - 450);
     assert!(
         sim.substrate
@@ -1128,6 +1162,7 @@ fn a_bomb_survives_a_snapshot() {
         &sim.houses,
         &sim.resolved_terrain,
         &mut sim.bombs,
+        &mut sim.sound_events,
         &rules,
     );
     crate::sim::world::Simulation::bomb_list_update(
@@ -1136,6 +1171,7 @@ fn a_bomb_survives_a_snapshot() {
         &sim.houses,
         &sim.resolved_terrain,
         &mut sim.bombs,
+        &mut sim.sound_events,
         &rules,
     );
     let russians = sim.interner.get("Russians").unwrap();
@@ -1156,6 +1192,71 @@ fn a_bomb_survives_a_snapshot() {
     assert_eq!(restored.state_hash(), sim.state_hash());
     // `BombListClass::Clear` runs before a load and Save skips the countdown.
     assert_eq!(restored.bombs.visibility_countdown, 45);
+}
+
+/// Attach captures the cue; changing rules and saving do not replace it or
+/// allocate gameplay identities. BombClass::CRC (0x00438A90) omits the cue.
+#[test]
+fn ticking_cues_survive_rule_changes_and_load_without_changing_gameplay_ids() {
+    let rules = rules();
+    let later = rules_from(&RULES.replace(
+        "BombTickingSound=CrazyIvanBombTick",
+        "BombTickingSound=CrazyIvanAttack",
+    ));
+    let silent = rules_from(&RULES.replace("BombTickingSound=CrazyIvanBombTick\n", ""));
+    let scene = || {
+        let mut world = sim(31);
+        let old = spawn(&mut world, &rules, "HTNK", "Americans", 12, 10);
+        let new = spawn(&mut world, &rules, "HTNK", "Americans", 14, 10);
+        let ivan = spawn(&mut world, &rules, "IVAN", "Russians", 11, 10);
+        (world, old, new, ivan)
+    };
+    let (mut world, old, new, ivan) = scene();
+    let (mut quiet_world, quiet_old, quiet_new, quiet_ivan) = scene();
+    world.bomb_attach_for_test(ivan, Some(old), &rules);
+    quiet_world.bomb_attach_for_test(quiet_ivan, Some(quiet_old), &silent);
+    assert_eq!(
+        world.interner.intern("LaterGameplayType"),
+        quiet_world.interner.intern("LaterGameplayType"),
+        "sound choice cannot shift a later gameplay ID"
+    );
+    world.bomb_attach_for_test(ivan, Some(new), &later);
+    quiet_world.bomb_attach_for_test(quiet_ivan, Some(quiet_new), &silent);
+    world.bomb_attach_for_test(ivan, Some(old), &later);
+    assert_eq!(world.bomb_ticking_sound(old), Some("CrazyIvanBombTick"));
+    assert_eq!(world.bomb_ticking_sound(new), Some("CrazyIvanAttack"));
+    assert_eq!(quiet_world.bomb_ticking_sound(quiet_old), None);
+    assert_eq!(
+        world.state_hash(),
+        quiet_world.state_hash(),
+        "cue choice leaves gameplay unchanged"
+    );
+
+    let bytes = crate::sim::snapshot::GameSnapshot::save(&world, 0, 0, "cues", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    restored.restore_after_snapshot_load().unwrap();
+    assert_eq!(restored.bomb_ticking_sound(old), Some("CrazyIvanBombTick"));
+    assert_eq!(restored.bomb_ticking_sound(new), Some("CrazyIvanAttack"));
+    assert!(restored.bomb_ticking_coord(old).is_some());
+    assert!(restored.bomb_ticking_coord(new).is_some());
+    // Both silent and audible replacements get a fresh handle in order,
+    // even if the app has not drained the previous bomb's detach yet.
+    for (replacement, expected) in [(&silent, None), (&later, Some("CrazyIvanAttack"))] {
+        restored.sound_events.clear_for_test();
+        restored.bomb_defuse_for_test(old);
+        assert!(restored.bomb_ticking_coord(old).is_none());
+        restored.bomb_attach_for_test(ivan, Some(old), replacement);
+        assert_eq!(restored.bomb_ticking_sound(old), expected);
+        assert!(matches!(restored.sound_events.as_slice(), [
+            SimSoundEvent::ObjectSoundDetached { owner: retired },
+            SimSoundEvent::ObjectSoundDetached { owner: fresh },
+            SimSoundEvent::VocAt { sound_id, .. },
+        ] if *retired == ticking_sound_owner(old)
+            && *fresh == ticking_sound_owner(old)
+            && sound_id == "CrazyIvanAttack"));
+    }
 }
 
 /// The clock shows for the planter's player from the second UpdateAll after
@@ -1231,22 +1332,25 @@ fn who_sees_a_bomb_follows_the_native_refresh() {
         &sim.houses,
         &sim.resolved_terrain,
         &mut sim.bombs,
+        &mut sim.sound_events,
         &rules,
     );
     assert!(sim.bomb_seen_by(tank, americans));
     assert_eq!(sim.state_hash(), before, "BombVisible is presentation");
 }
 
-/// Retail `rulesmd.ini` through the production reader (skipped without it):
+/// Retail startup, Battle mode and map through the production reader (skipped
+/// without assets), including the fixed SOUNDMD catalog:
 /// the `[CombatDamage]` and `[AudioVisual]` keys the bomb reads, the two
 /// Crazy Ivans and three Engineers that use it, and the stock data the
 /// cursor and click rules lean on: no object opts out of `Bombable=`, and
 /// only the Ivans have `AttackCursorOnFriendlies=`.
 #[test]
 fn retail_rules_arm_the_stock_bomb() {
-    let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
         return;
     };
+    let rules = retail.rules;
     let damage = &rules.combat_damage;
     assert_eq!(damage.ivan_warhead.as_deref(), Some("IvanWH"));
     assert_eq!(

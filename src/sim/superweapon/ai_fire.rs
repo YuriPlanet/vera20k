@@ -26,9 +26,6 @@
 //!   current constructor-zero restriction remains part of this residual.
 //!   Ares's IsTargetConstraintsEligible10032110 reads it as well, so its
 //!   defensive-cell constraints see an unset cell.
-//! - A building's cloak stage (`BuildingClass+0x6ED`): a stage of 15 also
-//!   draws in AI_FindBestRallyTarget (`0x0050CF99..0x0050CFA8`); VERA has no
-//!   writer of the stage, so only CloakState 2 draws.
 //! - A difficulty past a short `AIIonCannon*Value=` list reads 0
 //!   ([`HouseState::difficulty_value`]); native reads past the vector (a null
 //!   one for the three keys retail comments out, which no retail building
@@ -39,7 +36,6 @@
 mod tests;
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::is_allied_with;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::object_type::{FactoryType, ObjectType};
@@ -536,6 +532,11 @@ fn find_team_target(
     ) else {
         return NO_CELL;
     };
+    // A wall Cell from the ring walk's fallback is its own cell.
+    let target = match target {
+        crate::sim::combat::TargetKind::Entity(target) => target,
+        crate::sim::combat::TargetKind::Cell(x, y) => return (x as i16, y as i16),
+    };
     let Some(entity) = sim.substrate.entities.get(target) else {
         return NO_CELL;
     };
@@ -698,7 +699,8 @@ struct RallyEntry {
     /// `MapClass::IsCellInPlayfield(cell, 1) @ 0x00578460`; off it the value
     /// is 0.
     in_playfield: bool,
-    /// CloakState (`+0x220`) 2: the value becomes a Scenario draw.
+    /// CloakState (`+0x220`) 2, or a Building faded out (`+0x6ED` 15,
+    /// `0x0050CF99..0x0050CFA8`): the value becomes a Scenario draw.
     cloaked: bool,
 }
 
@@ -745,7 +747,8 @@ fn rally_entry(
         cloaked: entity
             .cloak
             .as_ref()
-            .is_some_and(|cloak| cloak.is_fully_cloaked()),
+            .is_some_and(|cloak| cloak.is_fully_cloaked())
+            || entity.building_cloak_stage() == 15,
     }
 }
 
@@ -1122,11 +1125,9 @@ fn hostile_and_low(
     object: &GameEntity,
 ) -> bool {
     object.owner() != owner
-        && !is_allied_with(
-            sim.house_alliances.as_map(),
-            sim.interner.resolve(owner),
-            sim.interner.resolve(object.owner()),
-        )
+        && !sim
+            .house_alliances
+            .is_allied(&sim.interner, owner, object.owner())
         && !crate::sim::movement::air_movement::is_high_flying(
             object,
             Some(terrain),

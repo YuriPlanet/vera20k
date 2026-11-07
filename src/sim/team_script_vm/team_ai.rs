@@ -367,9 +367,9 @@ impl Simulation {
     /// `Calc_Center @ 0x006EAEE0` into the team's centre (`+0x34`) and
     /// closest member (`+0x38`): the mean XY (signed truncating division) of
     /// its live joined members in the playfield (`+0x3D5`), a
-    /// `GuardSlower=` team counting twice each member its weapon test
-    /// admits (`vt+0x4E0`); the cell there, unless the closest member
-    /// (nearest the team's move target by squared XY distance, the last in
+    /// `GuardSlower=` team counting twice each member of a slow kind
+    /// (`vt+0x4E0`, `guard_slower_weight`); the cell there, unless the
+    /// closest member (nearest the team's move target by squared XY distance, the last in
     /// list order while there is none; a naval transport never counts; the
     /// head when none does) cannot enter it (`vt+0x1AC`), when the centre is
     /// that member. Without such members both are cleared.
@@ -453,20 +453,17 @@ impl Simulation {
     }
 
     /// `FootClass vt+0x4E0` (`0x004DBFD0`), which a `GuardSlower=` team's
-    /// centre weights twice: unarmed (`GetWeapon(0)`), or of `TechLevel=-1`,
-    /// or `DeploysInto=` a building, or converted speed of 13 leptons/frame
-    /// or less (`TechnoTypeClass::Read_INI @ 0x0071465F`).
+    /// centre weights twice: a type of `TechLevel=-1`, or `DeploysInto=` a
+    /// building, or of converted speed 13 leptons/frame or less
+    /// (`TechnoTypeClass::Read_INI @ 0x0071465F`). Its first test, a NULL
+    /// `GetWeapon(0)` (`0x004DBFD7..0x004DBFE1`), never passes: GetWeapon
+    /// `0x0070E140` returns NULL only for index -1 and otherwise the address
+    /// of a weapon slot (`0x007177C0`/`0x007177E0`), so an unarmed member is
+    /// weighted by those three tests alone.
     fn guard_slower_weight(&self, entity: &GameEntity, rules: &RuleSet) -> bool {
         self.object_type(entity.type_ref(), rules)
             .is_some_and(|object| {
-                crate::sim::combat::combat_weapon::weapon_for_index(
-                    object,
-                    entity.veterancy.rank(),
-                    0,
-                )
-                .and_then(|record| record.weapon_id)
-                .is_none()
-                    || self.object_tech_level(object) == -1
+                self.object_tech_level(object) == -1
                     || object.deploys_into.is_some()
                     || crate::util::fixed_math::ra2_speed_to_leptons_per_frame(object.speed) <= 13
             })

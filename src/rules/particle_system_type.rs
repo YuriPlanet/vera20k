@@ -13,16 +13,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::rules::ini_parser::IniSection;
 use crate::rules::particle_type::ParticleTypeId;
-use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
-/// Default `ParticlesPerCoord` from the constructor (Railgun field, parsed
-/// for every system).
-const DEFAULT_PARTICLES_PER_COORD: SimFixed = SimFixed::lit("0.1");
-/// Default `SpiralDeltaPerCoord` from the constructor.
-const DEFAULT_SPIRAL_DELTA_PER_COORD: SimFixed = SimFixed::lit("0.025");
-/// Default `SpiralRadius` from the constructor.
-const DEFAULT_SPIRAL_RADIUS: SimFixed = SimFixed::lit("25");
+/// Railgun doubles written by `ParticleSystemTypeClass::Constructor @
+/// 0x006440A0` (`0x0064410E..0x0064414F`): `ParticlesPerCoord` 0.1,
+/// `SpiralDeltaPerCoord` 0.025 and `SpiralRadius` 25.0. The three
+/// perturbation coefficients start at 0.0.
+const DEFAULT_PARTICLES_PER_COORD: NativeF64Bits = NativeF64Bits::from_bits(0x3fb9_9999_9999_999a);
+const DEFAULT_SPIRAL_DELTA_PER_COORD: NativeF64Bits =
+    NativeF64Bits::from_bits(0x3f99_9999_9999_999a);
+const DEFAULT_SPIRAL_RADIUS: NativeF64Bits = NativeF64Bits::from_bits(0x4039_0000_0000_0000);
 
 /// Interned identifier for a `ParticleSystemType`. Resolved at INI parse time;
 /// consumers (TechnoType, WeaponType, RulesClass) store the ID, not the name.
@@ -34,35 +34,39 @@ pub struct ParticleSystemTypeId(pub u32);
 /// Variant ordering matches the binary's string table:
 /// `Smoke=0, Gas=1, Fire=2, Spark=3, Railgun=4`. This is **different** from
 /// `ParticleBehavesLike` — Smoke and Gas are swapped at the particle level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[repr(i32)]
 pub enum ParticleSystemBehavesLike {
     Smoke = 0,
     Gas = 1,
     Fire = 2,
     Spark = 3,
     Railgun = 4,
+    /// Constructor and unrecognized/empty ReadINI result.
+    #[default]
+    Unknown = -1,
 }
 
 impl ParticleSystemBehavesLike {
     /// Parse a `BehavesLike=` value from INI. Returns `None` for unknown strings.
     pub fn parse(s: &str) -> Option<Self> {
-        match s.trim() {
-            "Smoke" => Some(Self::Smoke),
-            "Gas" => Some(Self::Gas),
-            "Fire" => Some(Self::Fire),
-            "Spark" => Some(Self::Spark),
-            "Railgun" => Some(Self::Railgun),
-            _ => None,
-        }
+        [
+            Self::Smoke,
+            Self::Gas,
+            Self::Fire,
+            Self::Spark,
+            Self::Railgun,
+        ]
+        .into_iter()
+        .zip(["Smoke", "Gas", "Fire", "Spark", "Railgun"])
+        .find_map(|(behavior, name)| s.eq_ignore_ascii_case(name).then_some(behavior))
     }
 }
 
 /// A particle system definition parsed from a `[ParticleSystemName]` section.
 ///
-/// Tier 3 fields (Railgun spiral params, Spark percentages, laser color) are
-/// parsed but unused at Tier 2 — the binary parses them unconditionally and
-/// we mirror that so Tier 3 lights up cleanly later.
+/// The binary reads every behavior's keys for every system, so the Railgun
+/// and Spark fields are parsed whatever `BehavesLike=` says.
 #[derive(Debug, Clone)]
 pub struct ParticleSystemType {
     // ── Identity ─────────────────────────────────────────────────────
@@ -104,19 +108,20 @@ pub struct ParticleSystemType {
     /// Direction vector for spawning (CoordStruct).
     pub spawn_direction: IVec3,
 
-    // ── Railgun-only (Tier 3 — parsed but unused) ────────────────────
-    /// Particles spawned per coordinate unit along a railgun beam.
-    pub particles_per_coord: SimFixed,
-    /// Railgun spiral angle increment per coord.
-    pub spiral_delta_per_coord: SimFixed,
-    /// Radius of the railgun spiral pattern.
-    pub spiral_radius: SimFixed,
-    /// Random position offset scale.
-    pub position_perturbation_coefficient: SimFixed,
-    /// Random movement offset scale.
-    pub movement_perturbation_coefficient: SimFixed,
-    /// Random velocity perturbation scale.
-    pub velocity_perturbation_coefficient: SimFixed,
+    // ── Railgun-only: the exact `ReadDouble` doubles that
+    // `ParticleSystemClass::AI_Railgun @ 0x0062F230` reads ─────────────
+    /// Particles per lepton of beam length (`+0x2C8`).
+    pub particles_per_coord: NativeF64Bits,
+    /// Spiral angle per lepton of beam length (`+0x2D0`).
+    pub spiral_delta_per_coord: NativeF64Bits,
+    /// Spiral radius in leptons (`+0x2D8`).
+    pub spiral_radius: NativeF64Bits,
+    /// Random position offset scale (`+0x2E0`).
+    pub position_perturbation_coefficient: NativeF64Bits,
+    /// Random movement offset scale (`+0x2E8`).
+    pub movement_perturbation_coefficient: NativeF64Bits,
+    /// Random speed offset scale (`+0x2F0`).
+    pub velocity_perturbation_coefficient: NativeF64Bits,
 
     // ── Spark-only ───────────────────────────────────────────────────
     /// Probability of taking a spark burst this tick.
@@ -145,20 +150,32 @@ impl ParticleSystemType {
     ///
     /// `holds_what` keeps the constructor's unbound value (-1, `0x006440B3`):
     /// `RuleSet` resolves the ordered Rules processor's binding.
+    #[cfg(test)]
     pub fn from_ini_section(name: &str, section: &IniSection) -> Self {
-        let behaves_like = section
+        Self::from_read_state(name, section, Self::read_behavior(section), None)
+    }
+
+    pub(super) fn read_behavior(section: &IniSection) -> ParticleSystemBehavesLike {
+        // ParticleSystemTypeClass::ReadINI @ 0x006442D0,64441E..644461:
+        // ReadString64 then strcmpi; absent and unknown store -1.
+        section
             .read_name("BehavesLike", 0x40)
             .and_then(ParticleSystemBehavesLike::parse)
-            // Binary's string-table loop falls through to index 0 (Smoke) when
-            // the INI string doesn't match any entry.
-            .unwrap_or(ParticleSystemBehavesLike::Smoke);
+            .unwrap_or(ParticleSystemBehavesLike::Unknown)
+    }
 
+    pub(super) fn from_read_state(
+        name: &str,
+        section: &IniSection,
+        behaves_like: ParticleSystemBehavesLike,
+        holds_what: Option<ParticleTypeId>,
+    ) -> Self {
         Self {
             name: name.to_string(),
             image: section.read_name("Image", 0x19).unwrap_or(name).to_owned(),
             alpha_image: section.read_object_alpha_image(""),
             behaves_like,
-            holds_what: None,
+            holds_what,
             spawns: section.read_bool("Spawns", false),
             spawn_frames: section.read_int("SpawnFrames", 1),
             // Float fields (`FSTP dword` at `0x0064439F..0x006443DD`).
@@ -178,25 +195,22 @@ impl ParticleSystemType {
             ),
 
             // Double fields (`FSTP qword` at `0x006444B0..0x00644555`).
-            particles_per_coord: SimFixed::from_num(
-                section.read_double("ParticlesPerCoord", DEFAULT_PARTICLES_PER_COORD.to_num())
-                    as f32,
+            particles_per_coord: section
+                .read_double_bits("ParticlesPerCoord", DEFAULT_PARTICLES_PER_COORD),
+            spiral_delta_per_coord: section
+                .read_double_bits("SpiralDeltaPerCoord", DEFAULT_SPIRAL_DELTA_PER_COORD),
+            spiral_radius: section.read_double_bits("SpiralRadius", DEFAULT_SPIRAL_RADIUS),
+            position_perturbation_coefficient: section.read_double_bits(
+                "PositionPerturbationCoefficient",
+                NativeF64Bits::POSITIVE_ZERO,
             ),
-            spiral_delta_per_coord: SimFixed::from_num(section.read_double(
-                "SpiralDeltaPerCoord",
-                DEFAULT_SPIRAL_DELTA_PER_COORD.to_num(),
-            ) as f32),
-            spiral_radius: SimFixed::from_num(
-                section.read_double("SpiralRadius", DEFAULT_SPIRAL_RADIUS.to_num()) as f32,
+            movement_perturbation_coefficient: section.read_double_bits(
+                "MovementPerturbationCoefficient",
+                NativeF64Bits::POSITIVE_ZERO,
             ),
-            position_perturbation_coefficient: SimFixed::from_num(
-                section.read_double("PositionPerturbationCoefficient", 0.0) as f32,
-            ),
-            movement_perturbation_coefficient: SimFixed::from_num(
-                section.read_double("MovementPerturbationCoefficient", 0.0) as f32,
-            ),
-            velocity_perturbation_coefficient: SimFixed::from_num(
-                section.read_double("VelocityPerturbationCoefficient", 0.0) as f32,
+            velocity_perturbation_coefficient: section.read_double_bits(
+                "VelocityPerturbationCoefficient",
+                NativeF64Bits::POSITIVE_ZERO,
             ),
 
             spawn_spark_percentage: NativeF64Bits::from_bits(
@@ -235,9 +249,9 @@ mod tests {
         assert_eq!(pst.lifetime, -1);
         assert_eq!(pst.particle_cap, 50);
         assert_eq!(pst.spawn_frames, 1);
-        assert_eq!(pst.particles_per_coord, SimFixed::lit("0.1"));
-        assert_eq!(pst.spiral_delta_per_coord, SimFixed::lit("0.025"));
-        assert_eq!(pst.spiral_radius, SimFixed::lit("25"));
+        assert_eq!(pst.particles_per_coord.bits(), 0x3fb9_9999_9999_999a);
+        assert_eq!(pst.spiral_delta_per_coord.bits(), 0x3f99_9999_9999_999a);
+        assert_eq!(pst.spiral_radius.bits(), 0x4039_0000_0000_0000);
         assert_eq!(pst.slowdown, NativeF32Bits::POSITIVE_ZERO);
         assert_eq!(pst.spawn_radius, 0);
         assert_eq!(pst.spawn_direction, IVec3::ZERO);
@@ -245,8 +259,8 @@ mod tests {
         assert!(!pst.laser);
         assert!(!pst.one_frame_light);
         assert_eq!(pst.laser_color, [0, 0, 0]);
-        // Unknown / absent BehavesLike falls through to the index-0 entry (Smoke).
-        assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Smoke);
+        // The native constructor and unknown reader result are -1.
+        assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Unknown);
     }
 
     #[test]
@@ -278,10 +292,10 @@ mod tests {
     }
 
     #[test]
-    fn from_ini_unknown_behaves_like_falls_through_to_smoke() {
+    fn from_ini_unknown_behaves_like_is_minus_one() {
         let ini = IniFile::from_str("[Foo]\nBehavesLike=Bogus\n");
         let section = ini.section("Foo").unwrap();
         let pst = ParticleSystemType::from_ini_section("Foo", section);
-        assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Smoke);
+        assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Unknown);
     }
 }

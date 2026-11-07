@@ -179,24 +179,24 @@ pub(crate) fn render_connection_shell(
     }
     if page.page_count() > 1 {
         for (slot, button, label) in [
-            (0, ConnectionButton::PreviousPage, "Previous"),
-            (1, ConnectionButton::NextPage, "Next"),
+            (0, ConnectionButton::PreviousPage, "VERA:Previous"),
+            (1, ConnectionButton::NextPage, "VERA:Next"),
         ] {
             text(
-                label,
+                &crate::i18n::tr(label),
                 button_text_rect(layout.paging[slot], page.buttons.is_pressed(button)),
                 ShellAlign::H_CENTER | ShellAlign::V_CENTER,
             );
         }
         let first = layout.paging[0];
+        let shown = page.page.index(
+            page.rows.len(),
+            crate::ui::shell::connection::CONNECTION_ROWS,
+        ) + 1;
         text(
-            &format!(
-                "Page {}/{}",
-                page.page.index(
-                    page.rows.len(),
-                    crate::ui::shell::connection::CONNECTION_ROWS
-                ) + 1,
-                page.page_count()
+            &crate::i18n::tr_fill(
+                "VERA:PageOf",
+                &[("page", &shown), ("pages", &page.page_count())],
             ),
             RectPx::new(first.x, first.y - 24, first.w, 20),
             ShellAlign::H_CENTER,

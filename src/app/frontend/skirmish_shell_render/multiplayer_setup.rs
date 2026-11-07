@@ -11,7 +11,7 @@ use super::in_game_shell::{
 };
 use super::preview::{
     aspect_fit_rect, build_preview_surface_instance, ensure_map_preview_texture,
-    project_preview_start_positions, push_start_marker_sprites,
+    ensure_zoom_texture, project_preview_start_positions, push_start_marker_sprites, zoom_draws,
 };
 use super::text::{
     button_text_rect, localized_label, push_start_marker_labels, rect_to_text_rect, static_label,
@@ -43,6 +43,7 @@ pub(crate) fn render_multiplayer_setup(
         .filter(|protocol| protocol.blocking_map_transfer())
         .and_then(|protocol| protocol.transfer_progress())
     {
+        crate::app::frontend::preview_zoom::close(state);
         let (progress_meter, texts) =
             crate::app::loading::pump::transfer_progress_draws(state, completed, total)?;
         let layout = crate::app::input::multiplayer_setup::layout(state);
@@ -81,6 +82,7 @@ pub(crate) fn render_multiplayer_setup(
         );
     }
     let Some(view) = crate::app::shell_network_setup::view(state) else {
+        crate::app::frontend::preview_zoom::close(state);
         return Ok(());
     };
     crate::app::input::multiplayer_setup::update_geometry(state);
@@ -97,12 +99,13 @@ pub(crate) fn render_multiplayer_setup(
     let wave = exit.or_else(|| state.frontend.shell_first_paint_slide.clone());
     let sliding = wave.is_some();
     if let Some(index) = view.selected_map_index {
-        ensure_map_preview_texture(state, index);
+        ensure_map_preview_texture(state, index, layout.map_preview);
     } else if !view.host {
         super::preview::ensure_received_preview_texture(state);
     } else {
         state.frontend.skirmish_preview_texture = None;
     }
+    let zoom_layout = ensure_zoom_texture(state, scale, !sliding && !view.preview_hidden);
     let heading = localized_label(state, view.page().title_key, view.page().title_key);
     let accept_highlight = state
         .frontend
@@ -125,14 +128,12 @@ pub(crate) fn render_multiplayer_setup(
             .set_map_labels(&view.mode_label, &view.map_label, now);
         let shown = ui.statics.paint(now, sliding);
         [
-            (shown.heading, layout.page.title),
-            (shown.game_type, layout.mode_label),
-            (shown.map_label, layout.map_label),
+            (shown.heading, layout.page.title, ShellAlign::PANEL_TITLE),
+            (shown.game_type, layout.mode_label, ShellAlign::H_CENTER),
+            (shown.map_label, layout.map_label, ShellAlign::H_CENTER),
         ]
         .into_iter()
-        .filter_map(|(shown, rect)| {
-            shown.map(|shown| static_label(shown, rect, ShellAlign::H_CENTER))
-        })
+        .filter_map(|(shown, rect, align)| shown.map(|shown| static_label(shown, rect, align)))
         .chain(status_line_label(
             shown.status_line,
             layout.page.status_help,
@@ -216,28 +217,6 @@ pub(crate) fn render_multiplayer_setup(
         )
     };
     if !leaving && ui.notice.is_none() {
-        if let Some((completed, total)) = state
-            .frontend
-            .network_setup_protocol
-            .as_ref()
-            .and_then(|protocol| protocol.transfer_progress())
-        {
-            let caption = format!(
-                "Map transfer: {}%",
-                completed.saturating_mul(100) / total.max(1)
-            );
-            let rect = scale.derive_rect(layout.map_label, |mut rect| {
-                rect.y += 36;
-                rect
-            });
-            texts.push(text(
-                &caption,
-                rect,
-                ShellAlign::H_CENTER,
-                SHELL_LABEL_TEXT_RGB,
-                SHELL_CONTROL_TEXT_DEPTH,
-            ));
-        }
         for (key, rect) in layout
             .labels
             .iter()
@@ -256,7 +235,7 @@ pub(crate) fn render_multiplayer_setup(
             // Ordinary MNBTTN buttons, as Game Options' OK; one with no page
             // to go to is hidden.
             let mut buttons = Vec::new();
-            for (id, caption) in [(PREVIOUS_ROWS, "Previous"), (NEXT_ROWS, "Next")] {
+            for (id, caption) in [(PREVIOUS_ROWS, "VERA:Previous"), (NEXT_ROWS, "VERA:Next")] {
                 if !view.enabled(id) {
                     continue;
                 }
@@ -268,7 +247,7 @@ pub(crate) fn render_multiplayer_setup(
                     enabled: true,
                 });
                 texts.push(text(
-                    caption,
+                    &crate::i18n::tr(caption),
                     crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
                     ShellAlign::H_CENTER | ShellAlign::V_CENTER,
                     SHELL_LABEL_TEXT_RGB,
@@ -288,11 +267,13 @@ pub(crate) fn render_multiplayer_setup(
                 },
             ));
             texts.push(text(
-                &format!(
-                    "Players {}-{} of {}",
-                    view.first_row + 1,
-                    (view.first_row + page_rows).min(view.row_count),
-                    view.row_count
+                &crate::i18n::tr_fill(
+                    "VERA:RosterPage",
+                    &[
+                        ("first", &(view.first_row + 1)),
+                        ("last", &(view.first_row + page_rows).min(view.row_count)),
+                        ("total", &view.row_count),
+                    ],
                 ),
                 layout.roster_page_label,
                 ShellAlign::H_CENTER | ShellAlign::V_CENTER,
@@ -502,21 +483,28 @@ pub(crate) fn render_multiplayer_setup(
                             .preview_source_bounds()
                     })
                     .flatten();
-                if let Some(bounds) = state
+                // The host's RandMap sentinel numbers the last Generate's
+                // starts, copied back by 0x0058BB30 (0x005E67ED).
+                let entry = view
+                    .selected_map_index
+                    .and_then(|index| state.frontend.scenario_catalog.shell_maps().get(index));
+                let own_bounds = super::preview::start_marker_bounds(
+                    entry
+                        .is_some_and(super::preview::is_random_map_sentinel_entry)
+                        .then(|| state.frontend.random_map_retention.generated_header()),
+                    entry.and_then(|entry| entry.preview_source_bounds.as_ref()),
+                );
+                let bounds = state
                     .frontend
                     .network_setup_protocol
                     .as_ref()
                     .and_then(|protocol| protocol.received_preview_bounds())
                     .or(received_bounds.as_ref())
-                    .or_else(|| {
-                        view.selected_map_index
-                            .and_then(|index| {
-                                state.frontend.scenario_catalog.shell_maps().get(index)
-                            })
-                            .filter(|entry| !super::preview::is_random_map_sentinel_entry(entry))
-                            .and_then(|entry| entry.preview_source_bounds.as_ref())
-                    })
-                {
+                    .or(own_bounds.as_ref());
+                overlay.zoom = zoom_layout
+                    .as_ref()
+                    .map(|zoom_layout| zoom_draws(state, atlas, zoom_layout, bounds, scale));
+                if let Some(bounds) = bounds {
                     let fitted = aspect_fit_rect(layout.map_preview, preview.width, preview.height);
                     let positions = project_preview_start_positions(bounds, fitted);
                     push_start_marker_sprites(&mut controls, atlas, &positions, scale, 0.00056);
@@ -552,10 +540,13 @@ pub(crate) fn render_multiplayer_setup(
                 if let Some(spec) = view.page().button(button.id) {
                     texts.push(shell_text::draw_in_rect_scaled(
                         font,
-                        &localized_label(state, spec.csf_key, spec.csf_key),
+                        &view.dialog.button_label(button.id).map_or_else(
+                            || localized_label(state, spec.csf_key, spec.csf_key),
+                            crate::i18n::tr,
+                        ),
                         button_text_rect(button.rect, pressed, scale),
                         super::text::button_label_color_for_disabled(!view.enabled(button.id)),
-                        ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                        ShellAlign::BUTTON_CAPTION,
                         [0.0; 2],
                         SHELL_CONTROL_TEXT_DEPTH,
                         scale.factor(),
@@ -675,6 +666,105 @@ pub(crate) fn render_multiplayer_setup(
                 super::wol_lobby::POPUP_DEPTHS.text,
             );
         }
+        // VERA asks a guest before downloading a map it does not have, then
+        // shows the download, on the art of VERA's other online-service boxes.
+        if view.map_offer_open
+            && let Some(offer) = ui.map_offer.as_ref()
+        {
+            use crate::ui::shell::geom::ShellScale;
+            let boxed = layout.map_offer;
+            let pressed = |id| ui.buttons.is_pressed(id);
+            let progress = offer
+                .downloading
+                .then(|| {
+                    state
+                        .frontend
+                        .network_setup_protocol
+                        .as_ref()
+                        .and_then(|protocol| protocol.transfer_progress())
+                })
+                .flatten()
+                .map(|(completed, total)| (u64::from(completed), u64::from(total)));
+            let body = match progress {
+                Some((completed, total)) => crate::i18n::tr_fill(
+                    "VERA:DownloadingMapPercent",
+                    &[
+                        ("name", &offer.name),
+                        ("percent", &(completed.min(total) * 100 / total.max(1))),
+                    ],
+                ),
+                None if offer.downloading => {
+                    crate::i18n::tr_fill("VERA:DownloadingMap", &[("name", &offer.name)])
+                }
+                None => offer.message.clone(),
+            };
+            let button_label = |text: String, rect: RectPx, pressed: bool, rgb| PaintLabel {
+                text: text.into(),
+                rect: crate::app::frontend::shell_pass::owner_draw_button_label_rect(rect, pressed),
+                align: ShellAlign::H_CENTER | ShellAlign::V_CENTER,
+                rgb,
+                path_a_reveal: None,
+            };
+            let labels = [
+                PaintLabel {
+                    text: body.into(),
+                    rect: boxed.body,
+                    align: super::text::validation_modal_body_text_align(),
+                    rgb: SHELL_LABEL_TEXT_RGB,
+                    path_a_reveal: None,
+                },
+                button_label(
+                    crate::i18n::tr("VERA:Download"),
+                    boxed.ok,
+                    pressed(MAP_OFFER_DOWNLOAD),
+                    if offer.downloading {
+                        SHELL_DISABLED_TEXT_RGB_FROM_PACKED_0000009F
+                    } else {
+                        SHELL_LABEL_TEXT_RGB
+                    },
+                ),
+                button_label(
+                    localized_label(state, "GUI:Leave", "Leave"),
+                    boxed.cancel,
+                    pressed(MAP_OFFER_LEAVE),
+                    SHELL_LABEL_TEXT_RGB,
+                ),
+            ];
+            let draw = shell_paint::paint_modal_shp(
+                font,
+                atlas
+                    .ra2_dialog_background
+                    .or_else(|| atlas.mode_two_dialog_background(None)),
+                type3_button_frames(atlas),
+                boxed.dialog,
+                &[
+                    ModalButton {
+                        rect: boxed.ok,
+                        pressed: pressed(MAP_OFFER_DOWNLOAD),
+                        enabled: !offer.downloading,
+                    },
+                    ModalButton {
+                        rect: boxed.cancel,
+                        pressed: pressed(MAP_OFFER_LEAVE),
+                        enabled: true,
+                    },
+                ],
+                &labels,
+                ShellScale::RETAIL,
+                super::wol_lobby::POPUP_DEPTHS,
+            );
+            overlay.controls.extend(draw.sprites);
+            overlay.texts.extend(draw.text);
+            if let Some(progress) = progress {
+                super::modals::push_download_progress_bar(
+                    &mut overlay.controls,
+                    atlas,
+                    boxed.body,
+                    progress,
+                    super::wol_lobby::POPUP_DEPTHS.button,
+                );
+            }
+        }
     }
     if let Some(notice) = &ui.notice {
         // 5D3514 replaces the parent dialog with the shared empty shell backdrop.
@@ -704,7 +794,7 @@ pub(crate) fn render_multiplayer_setup(
         );
     }
     // The page dialog 0xCF over C2/C9 (0x0077D820 keeps the page painting).
-    if let Some(page) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(state) {
+    if let Some((_, page)) = crate::app::frontend::wol_welcome_render::page_dialogs_paint(state) {
         overlay.controls.extend(page.controls);
         overlay.texts.extend(page.texts);
     }
@@ -807,6 +897,29 @@ fn push_option_controls(
             crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
             ShellAlign::V_CENTER,
         ));
+    }
+    // VERA's own checkboxes, only in its Game Options.
+    if layout.game_options.is_some() {
+        for (index, label) in crate::ui::multiplayer_setup::ROOM_CHECKBOX_LABELS
+            .into_iter()
+            .enumerate()
+        {
+            let rect = layout.room_checkboxes[index];
+            paint_control(
+                controls,
+                &atlas.control_chrome(),
+                ControlPaint::Checkbox {
+                    rect,
+                    checked: view.room_checks[index],
+                },
+                scale,
+            );
+            texts.push(text(
+                &crate::i18n::tr(label),
+                crate::ui::skirmish_shell::checkbox_text_rect(rect, scale),
+                ShellAlign::V_CENTER,
+            ));
+        }
     }
     for bar in view
         .trackbars

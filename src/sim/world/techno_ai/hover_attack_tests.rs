@@ -121,7 +121,10 @@ fn boxed_landed_unit(
         .terrain_rules
         .semantics_for_land_type(LandType::Rock.as_index())
         .unwrap();
-    assert_eq!(rock.speed_costs.hover, Some(0));
+    assert_eq!(
+        rock.speed_costs.hover,
+        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
+    );
     let terrain = sim.resolved_terrain.as_mut().unwrap();
     for y in 0..96 {
         for x in 0..96 {

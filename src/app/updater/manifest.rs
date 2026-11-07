@@ -63,12 +63,15 @@ impl std::fmt::Display for Version {
 
 /// The manifest's name for this build's installer, when the Release workflow
 /// publishes one for it: `windows` (x64 setup), `macos` (Apple Silicon disk
-/// image) or `linux` (x64 AppImage).
+/// image), `macos-x64` (Intel Mac disk image) or `linux` (x64 AppImage).
+/// Releases before the Intel Mac image have no `macos-x64` installer.
 pub(crate) fn platform() -> Option<&'static str> {
     if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
         Some("windows")
     } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
         Some("macos")
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        Some("macos-x64")
     } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         Some("linux")
     } else {
@@ -81,6 +84,7 @@ fn installer_suffix(platform: &str) -> &'static str {
     match platform {
         "windows" => "-windows-x64-setup.exe",
         "macos" => "-macos-arm64.dmg",
+        "macos-x64" => "-macos-x64.dmg",
         _ => "-linux-x64.AppImage",
     }
 }
@@ -316,7 +320,12 @@ mod tests {
     fn the_publishers_signed_manifest_names_each_platforms_installer() {
         let version = Version::parse("1.2.3").unwrap();
         assert_eq!(pointer(manifest()).unwrap(), (version, "v1.2.3".into()));
-        for (platform, size) in [("windows", 45), ("macos", 39), ("linux", 42)] {
+        for (platform, size) in [
+            ("windows", 45),
+            ("macos", 39),
+            ("macos-x64", 37),
+            ("linux", 42),
+        ] {
             let Offer::Update(release) =
                 offer(manifest(), signature(), &public_key(), platform).unwrap()
             else {

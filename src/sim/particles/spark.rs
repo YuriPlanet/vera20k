@@ -6,7 +6,7 @@
 use glam::IVec3;
 use thiserror::Error;
 
-use super::{Particle, SparkRuntimeState};
+use super::Particle;
 use crate::sim::rng::SimRng;
 use crate::util::native_random::RANDOM_RANGED_UNIT_SCALE;
 use crate::util::native_x87::{
@@ -80,12 +80,8 @@ pub struct SparkTickResult {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum SparkKernelError {
-    #[error("behavior-3 tick requires SparkRuntimeState")]
-    MissingRuntimeState,
     #[error("Spark ColorList count {0} is outside the safe valid-state boundary")]
     InvalidColorCount(usize),
-    #[error("Spark color RNG sample {0:#x} is outside 0..=0x7ffffffe")]
-    InvalidColorRngSample(u32),
     #[error("Spark {0:?} collision requires a slope matrix")]
     MissingSlopeMatrixForCollision(SparkCollisionKind),
     #[error(transparent)]
@@ -109,7 +105,7 @@ fn persistent_velocity_z(
 
 fn integrate_motion_after_persistent_z(
     coords: IVec3,
-    spark: SparkRuntimeState,
+    direction: [NativeF32Bits; 3],
     gravity: NativeF32Bits,
     persistent_z: NativeF32Bits,
 ) -> Result<SparkMotionStep, SparkKernelError> {
@@ -129,7 +125,7 @@ fn integrate_motion_after_persistent_z(
     let old_y = ftol_f32_to_i32(old_y_f32)?;
     let old_x = ftol_f32_to_i32(old_x_f32)?;
 
-    let probe_velocity = [spark.velocity_x, spark.velocity_y, probe_z];
+    let probe_velocity = [direction[0], direction[1], probe_z];
     let candidate_x_f32 = add_stored_f32(old_x_f32, probe_velocity[0])?;
     let candidate_y_f32 = add_stored_f32(old_y_f32, probe_velocity[1])?;
     let candidate_z_f32 = add_stored_f32(old_z_f32, probe_velocity[2])?;
@@ -142,7 +138,7 @@ fn integrate_motion_after_persistent_z(
         old_coords: IVec3::new(old_x, old_y, old_z),
         candidate_coords: IVec3::new(candidate_x, candidate_y, candidate_z),
         candidate_f32: [candidate_x_f32, candidate_y_f32, candidate_z_f32],
-        persistent_velocity: [spark.velocity_x, spark.velocity_y, persistent_z],
+        persistent_velocity: [direction[0], direction[1], persistent_z],
         probe_velocity,
     })
 }
@@ -457,39 +453,36 @@ fn negate_f32(value: NativeF32Bits) -> Result<NativeF32Bits, SparkKernelError> {
         .map_err(SparkKernelError::from)
 }
 
-pub fn advance_color(
-    spark: &mut SparkRuntimeState,
+/// The colour step Spark and Railgun particles share (Railgun's copy is
+/// `ParticleClass::AI_Railgun @ 0x0062C494..0x0062C530`): the accumulator
+/// `+0xB8` gains `sample * scale * 0.05 + ColorSpeed`, and once it passes 1.0
+/// the index `+0xB4` steps toward `ColorList` count - 2 and the accumulator
+/// restarts at 0.0, or holds at 1.0 on the last pair. A list of fewer than two
+/// colours makes `count - 2` negative, so the accumulator just holds at 1.0.
+pub(super) fn advance_point_color(
+    color_index: &mut i32,
+    color_accumulator: &mut NativeF64Bits,
     color_speed: NativeF64Bits,
     color_rng_sample: u32,
-    color_count: usize,
-) -> Result<(), SparkKernelError> {
-    if color_rng_sample > MAX_COLOR_RNG_SAMPLE {
-        return Err(SparkKernelError::InvalidColorRngSample(color_rng_sample));
-    }
-    let Ok(color_count_i32) = i32::try_from(color_count) else {
-        return Err(SparkKernelError::InvalidColorCount(color_count));
-    };
-    if color_count_i32 < 2 {
-        return Err(SparkKernelError::InvalidColorCount(color_count));
-    }
-
+    color_count: i32,
+) -> Result<(), NativeX87Error> {
     let scaled_rng = X87Chop53::mul(
         X87Chop53::load_i32(color_rng_sample as i32),
         X87Chop53::load_f64(RANDOM_RANGED_UNIT_SCALE)?,
     );
     let jitter = X87Chop53::mul(scaled_rng, X87Chop53::load_f64(COLOR_JITTER_SCALE)?);
     let with_speed = X87Chop53::add(jitter, X87Chop53::load_f64(color_speed)?);
-    let accumulated = X87Chop53::add(with_speed, X87Chop53::load_f64(spark.color_accumulator)?);
-    spark.color_accumulator = X87Chop53::store_f64(accumulated)?;
+    let accumulated = X87Chop53::add(with_speed, X87Chop53::load_f64(*color_accumulator)?);
+    *color_accumulator = X87Chop53::store_f64(accumulated)?;
 
-    let stored = X87Chop53::load_f64(spark.color_accumulator)?;
+    let stored = X87Chop53::load_f64(*color_accumulator)?;
     let one = X87Chop53::load_f64(NativeF64Bits::ONE)?;
     if X87Chop53::compare(stored, one) == X87Ordering::Greater {
-        if spark.color_index < color_count_i32.wrapping_sub(2) {
-            spark.color_index = spark.color_index.wrapping_add(1);
-            spark.color_accumulator = NativeF64Bits::POSITIVE_ZERO;
+        if *color_index < color_count.wrapping_sub(2) {
+            *color_index = color_index.wrapping_add(1);
+            *color_accumulator = NativeF64Bits::POSITIVE_ZERO;
         } else {
-            spark.color_accumulator = NativeF64Bits::ONE;
+            *color_accumulator = NativeF64Bits::ONE;
         }
     }
     Ok(())
@@ -524,17 +517,10 @@ pub fn begin_particle_tick(
     particle: &mut Particle,
     gravity: NativeF32Bits,
 ) -> Result<SparkMotionStep, SparkKernelError> {
-    let spark = particle
-        .spark
-        .ok_or(SparkKernelError::MissingRuntimeState)?;
-    let persistent_z = persistent_velocity_z(spark.velocity_z, gravity)?;
-    particle
-        .spark
-        .as_mut()
-        .ok_or(SparkKernelError::MissingRuntimeState)?
-        .velocity_z = persistent_z;
-
-    integrate_motion_after_persistent_z(particle.coords, spark, gravity, persistent_z)
+    let direction = particle.direction;
+    let persistent_z = persistent_velocity_z(direction[2], gravity)?;
+    particle.direction[2] = persistent_z;
+    integrate_motion_after_persistent_z(particle.coords, direction, gravity, persistent_z)
 }
 
 /// Resolve and commit owned collision facts, then consume color RNG and lifetime
@@ -554,11 +540,11 @@ pub fn finish_particle_tick(
     let collision = commit_collision_decision(particle, decision)?;
 
     let color_rng_sample = rng.next_range_u32_inclusive(0, MAX_COLOR_RNG_SAMPLE);
-    advance_color(
-        particle
-            .spark
-            .as_mut()
-            .ok_or(SparkKernelError::MissingRuntimeState)?,
+    let color_count =
+        i32::try_from(color_count).map_err(|_| SparkKernelError::InvalidColorCount(color_count))?;
+    advance_point_color(
+        &mut particle.color_index,
+        &mut particle.color_accumulator,
         color_speed,
         color_rng_sample,
         color_count,
@@ -604,22 +590,12 @@ mod tests {
         }
     }
 
-    fn spark_state(vz: NativeF32Bits) -> SparkRuntimeState {
-        SparkRuntimeState {
-            velocity_x: F32_ZERO,
-            velocity_y: F32_ZERO,
-            velocity_z: vz,
-            start_rgb: [80, 255, 255],
-            color_index: 0,
-            color_accumulator: F64_ZERO,
-        }
-    }
-
     fn particle(coords: IVec3, vz: NativeF32Bits, lifetime: i16) -> Particle {
         let mut particle = Particle::test_fixture(ParticleTypeId(0), coords);
         particle.origin = coords;
         particle.lifetime_remaining = lifetime;
-        particle.spark = Some(spark_state(vz));
+        particle.direction = [F32_ZERO, F32_ZERO, vz];
+        particle.start_rgb = [80, 255, 255];
         particle
     }
 
@@ -675,8 +651,10 @@ mod tests {
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
     }
 
+    /// A one-colour list makes `count - 2` negative, so a full accumulator
+    /// holds at 1.0 on that colour (`0x0062C494..0x0062C530`), never an error.
     #[test]
-    fn color_error_keeps_native_prior_commits_and_rng_but_not_lifetime() {
+    fn a_one_color_list_holds_its_color() {
         let mut particle = particle(IVec3::new(2560, 2560, 10), F32_ZERO, 2);
         let mut rng = SimRng::new(1);
         let mut expected_rng = rng.clone();
@@ -686,26 +664,26 @@ mod tests {
             &mut particle,
             SparkTickInputs {
                 gravity: F32_SIX,
-                color_speed: F64_ZERO,
+                color_speed: NativeF64Bits::from_bits(0x4000_0000_0000_0000),
                 color_count: 1,
                 collision: facts(0),
             },
             &mut rng,
         );
 
-        assert_eq!(result, Err(SparkKernelError::InvalidColorCount(1)));
-        assert_eq!(particle.spark.unwrap().velocity_z.bits(), 0xc0c0_0000);
-        assert_eq!(particle.coords, IVec3::new(2560, 2560, 0));
-        assert!(particle.marked_for_deletion);
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(
+            (particle.color_index, particle.color_accumulator),
+            (0, NativeF64Bits::ONE)
+        );
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
-        assert_eq!(particle.lifetime_remaining, 2);
     }
 
     #[test]
     fn persistent_z_commit_survives_a_later_motion_error() {
         let original_coords = IVec3::new(2560, 2560, 10);
         let mut particle = particle(original_coords, F32_ZERO, 2);
-        particle.spark.as_mut().unwrap().velocity_x = F32_NAN;
+        particle.direction[0] = F32_NAN;
         let mut rng = SimRng::new(1);
         let rng_before = rng.logical_state();
 
@@ -726,7 +704,7 @@ mod tests {
                 NativeX87Error::NonFiniteInput { format: "f32" }
             ))
         );
-        assert_eq!(particle.spark.unwrap().velocity_z.bits(), 0xc0c0_0000);
+        assert_eq!(particle.direction[2].bits(), 0xc0c0_0000);
         assert_eq!(particle.coords, original_coords);
         assert!(!particle.marked_for_deletion);
         assert_eq!(rng.logical_state(), rng_before);
@@ -915,19 +893,40 @@ mod tests {
 
     #[test]
     fn color_progression_uses_strict_greater_than_and_count_minus_two() {
-        let mut state = spark_state(F32_ZERO);
+        let mut state = particle(IVec3::ZERO, F32_ZERO, 1);
         state.color_accumulator = NativeF64Bits::ONE;
-        advance_color(&mut state, F64_ZERO, 0, 5).unwrap();
+        advance_point_color(
+            &mut state.color_index,
+            &mut state.color_accumulator,
+            F64_ZERO,
+            0,
+            5,
+        )
+        .unwrap();
         assert_eq!(state.color_index, 0);
         assert_eq!(state.color_accumulator, NativeF64Bits::ONE);
 
-        advance_color(&mut state, F64_HALF, 0, 5).unwrap();
+        advance_point_color(
+            &mut state.color_index,
+            &mut state.color_accumulator,
+            F64_HALF,
+            0,
+            5,
+        )
+        .unwrap();
         assert_eq!(state.color_index, 1);
         assert_eq!(state.color_accumulator, NativeF64Bits::POSITIVE_ZERO);
 
         state.color_index = 3;
         state.color_accumulator = NativeF64Bits::ONE;
-        advance_color(&mut state, F64_HALF, 0, 5).unwrap();
+        advance_point_color(
+            &mut state.color_index,
+            &mut state.color_accumulator,
+            F64_HALF,
+            0,
+            5,
+        )
+        .unwrap();
         assert_eq!(state.color_index, 3);
         assert_eq!(state.color_accumulator, NativeF64Bits::ONE);
     }

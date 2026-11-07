@@ -150,6 +150,39 @@ fn a_recruiting_team_survives_save_load() {
     assert_eq!(trigger_weight(&original), trigger_weight(&restored));
 }
 
+/// `TeamClass::Recruit @ 0x006EAA90` takes only its team's house's objects
+/// (`Can_Add @ 0x006EA610` refuses another house's): an infantryman of
+/// another house nearer the team's origin is passed over, one handed to the
+/// team's house is recruited first, and a member handed away is not.
+#[test]
+fn recruitment_takes_the_house_s_objects_through_ownership_changes() {
+    let (mut sim, rules, team_id, members) = recruiting_team_fixture();
+    let owner = sim.interner.get("Computer").expect("Computer interned");
+    let rival = sim.interner.intern("Rival");
+    sim.houses
+        .register(HouseState::new(rival, 1, None, false, 0, 10));
+    // The team has no centre yet, so it recruits nearest the origin.
+    let [_, handed_over] = [(2, 2), (4, 4)].map(|(rx, ry)| {
+        sim.spawn_object_at_height("E1", "Rival", rx, ry, 0, 0, &rules)
+            .expect("E1 spawns")
+    });
+    sim.change_owner(handed_over, owner);
+    sim.change_owner(members[0], rival);
+
+    sim.advance_tick(&[], Some(&rules), None, None, 67);
+    let team = sim.team_script_vm.team(team_id).expect("the team recruits");
+    assert_eq!(team.members().collect::<Vec<_>>(), [handed_over]);
+    sim.advance_tick(&[], Some(&rules), None, None, 67);
+    let mut recruited: Vec<u64> = sim
+        .team_script_vm
+        .team(team_id)
+        .expect("the team is full")
+        .members()
+        .collect();
+    recruited.sort_unstable();
+    assert_eq!(recruited, [members[1], handed_over]);
+}
+
 #[test]
 fn team_member_order_is_hashed() {
     let mut forward = Simulation::with_seed(7);
@@ -236,7 +269,7 @@ fn team_lookup_ordinary_ai_recruits_and_moves_first_name() {
         [("FIRST", "SECOND", "FLAKT"), ("SECOND", "FIRST", "E2")]
     {
         let map = MapFile::from_ini(IniFile::from_str(&format!(
-            "[Basic]\nIgnoreGlobalAITriggers=yes\n\
+            "[Basic]\nNewINIFormat=4\nIgnoreGlobalAITriggers=yes\n\
              [Map]\nTheater=TEMPERATE\nSize=0,0,32,32\nLocalSize=0,0,32,32\n\
              [IsoMapPack5]\n1=CAAEABUAAAAAEQAA\n\
              [General]\nTeamDelays=30,30,30\n\
@@ -282,9 +315,6 @@ fn team_lookup_ordinary_ai_recruits_and_moves_first_name() {
             .bind_native_rules_receipt(receipt, &launch, &rules)
             .unwrap();
         rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
-        rules.bind_animation_sequences(
-            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-        );
         let registry = TeamAiIniRegistry::from_sources(&fixed, &map.ini, true);
         // Use the production prefix admission for both RNG and native IDs;
         // the controlled terrain and named House are installed below.
@@ -463,6 +493,38 @@ fn production_install_refuses_fixed_resolution_loss_but_keeps_scenario_omissions
         (2, 1, 1, 1),
         "scenario-origin omissions remain diagnosed, nonfatal overlays"
     );
+}
+
+#[test]
+fn fixed_trigger_naming_an_absent_team_type_installs_without_a_team() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",
+    ))
+    .expect("minimal rules");
+    let comparison = zero_ai_trigger_comparison();
+    let fixed = IniFile::from_str(&format!(
+        "[AITriggerTypes]\nA=Dangling,NO_SUCH_TT,<all>,2,4,<none>,{comparison},40,10,40,1,0,1,0,<none>,1,1,1\n"
+    ));
+    let registry = TeamAiIniRegistry::from_sources(&fixed, &IniFile::from_str(""), true);
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+
+    let diagnostics = sim
+        .install_team_ai_registry(&registry, &rules)
+        .expect("a fixed trigger's absent TeamType does not refuse the install");
+
+    assert_eq!(
+        diagnostics,
+        vec![TeamAiInstallDiagnostic::MissingAiTriggerTeamType {
+            trigger_id: "A".to_string(),
+            team_type_id: "NO_SUCH_TT".to_string(),
+            source: TeamAiDefinitionSource::FixedAimd,
+        }]
+    );
+    let vm = &sim.team_script_vm;
+    let trigger = vm.ai_trigger(vm.ai_trigger_order()[0]).unwrap();
+    assert_eq!(trigger.primary_team_type, None);
 }
 
 #[test]
@@ -681,8 +743,12 @@ fn only_a_human_scanner_passes_over_an_unarmed_building() {
     let computer = sim
         .spawn_object_at_height("E1", "Computer", 17, 7, 0, 0, &rules)
         .expect("E1 spawns");
-    sim.spawn_object_at_height("PLANTA", "Computer", 6, 16, 0, 0, &rules)
+    let computer_plant = sim
+        .spawn_object_at_height("PLANTA", "Computer", 6, 16, 0, 0, &rules)
         .expect("plant spawns");
+    // Seen, so the building gate refuses it, not the campaign discovery gate
+    // (`0x006F81BE`) that runs first.
+    crate::sim::arena_fixture::discover(&mut sim, computer_plant);
     let human = sim
         .spawn_object_at_height("E1", "Human", 5, 15, 0, 0, &rules)
         .expect("E1 spawns");
@@ -694,6 +760,7 @@ fn only_a_human_scanner_passes_over_an_unarmed_building() {
             id,
             crate::sim::combat::ScanMission::Guard,
         )
+        .and_then(crate::sim::combat::TargetKind::object_id)
     };
     assert_eq!(scan(computer), Some(plant));
     assert_eq!(scan(human), None);

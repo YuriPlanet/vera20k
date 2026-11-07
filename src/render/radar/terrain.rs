@@ -2,8 +2,10 @@
 //!
 //! This presentation-local cache mirrors `FillTerrainColors @ 0x00654EA0`
 //! and the full-surface path through `GenerateTerrainSurface @ 0x006547C0`.
+//! VERA's optional HD radar keeps a larger copy beside it ([`super::hd`]).
 
 use std::collections::BTreeMap;
+use std::ops::Range;
 
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53, X87Value};
 
@@ -34,6 +36,11 @@ pub(super) struct NativeRadarTerrainSurface {
     overrides: BTreeMap<(u16, u16), [u8; 3]>,
     raw_rgb: Vec<[u8; 3]>,
     generated_rgb565: Vec<u16>,
+    /// Bumped whenever `generated_rgb565` is regenerated.
+    revision: u64,
+    /// VERA's optional HD terrain, bumping `hd_revision` whenever it changes.
+    hd: Option<HdTerrain>,
+    hd_revision: u64,
 }
 
 impl NativeRadarTerrainSurface {
@@ -54,6 +61,9 @@ impl NativeRadarTerrainSurface {
             overrides,
             raw_rgb: vec![[0; 3]; area(raw_size)],
             generated_rgb565: vec![0; area(generated_size)],
+            revision: 0,
+            hd: None,
+            hd_revision: 0,
         };
         surface.rebuild();
         surface
@@ -71,9 +81,30 @@ impl NativeRadarTerrainSurface {
         &self.generated_rgb565
     }
 
+    /// Changes whenever [`Self::generated_rgb565`] does.
+    pub const fn revision(&self) -> u64 {
+        self.revision
+    }
+
     #[cfg(test)]
     pub(super) fn raw_rgb(&self) -> &[[u8; 3]] {
         &self.raw_rgb
+    }
+
+    /// Keep HD terrain at `scale` times the generated size, or drop it.
+    pub fn set_hd_scale(&mut self, scale: Option<u32>) {
+        if self.hd.as_ref().map(|hd| hd.scale) == scale {
+            return;
+        }
+        self.hd = scale.map(|scale| HdTerrain::new(&self.raw_rgb, self.geometry, scale));
+        self.hd_revision = self.hd_revision.wrapping_add(1);
+    }
+
+    /// The HD terrain, row-major, and a revision that changes with its pixels.
+    pub fn hd_rgb565(&self) -> Option<(&[u16], u64)> {
+        self.hd
+            .as_ref()
+            .map(|hd| (hd.rgb565.as_slice(), self.hd_revision))
     }
 
     // Original655250 regenerates the dirty union rectangle through6547C0.
@@ -84,9 +115,10 @@ impl NativeRadarTerrainSurface {
         &mut self,
         changes: impl IntoIterator<Item = NativeRadarCellUpdate>,
     ) -> bool {
-        let mut changed = false;
+        let mut changed_cells = Vec::new();
         for update in changes {
             let (rx, ry) = update.base.cell;
+            let mut changed = false;
             if let Some(slot) = self.base_index.slot(rx, ry) {
                 let base = &mut self.base_cells[slot];
                 changed |= *base != update.base;
@@ -100,11 +132,28 @@ impl NativeRadarTerrainSurface {
                     changed |= self.overrides.remove(&update.base.cell).is_some();
                 }
             }
+            if changed {
+                changed_cells.push(update.base.cell);
+            }
         }
-        if changed {
-            self.rebuild();
+        if changed_cells.is_empty() {
+            return false;
         }
-        changed
+        self.rebuild();
+        if let Some(hd) = &mut self.hd {
+            // A cell writes only its own two raw pixels (`fill_raw_cell`).
+            let width = self.geometry.raw_size().0;
+            for &cell in &changed_cells {
+                let (x, y) = self.geometry.cell_to_raw_pixel(cell);
+                hd.resample(
+                    &self.raw_rgb,
+                    x.max(0)..x.saturating_add(2).min(width),
+                    y..y.saturating_add(1),
+                );
+            }
+            self.hd_revision = self.hd_revision.wrapping_add(1);
+        }
+        true
     }
 
     fn rebuild(&mut self) {
@@ -125,6 +174,7 @@ impl NativeRadarTerrainSurface {
         }
         self.generated_rgb565 =
             generate_rgb565(&self.raw_rgb, raw_size, self.geometry.generated_size());
+        self.revision = self.revision.wrapping_add(1);
     }
 }
 
@@ -158,113 +208,199 @@ fn fill_raw_cell(
     }
 }
 
-/// Full-surface active-YR weighted-area sampler. Every f32 store below maps to
-/// the explicit `FST[P] float` sites at `0x006549D3..0x006549EC` and the
-/// advancing edge stores inside `0x00654AF5..0x00654DD7`.
+/// Full-surface active-YR weighted-area sampler.
 fn generate_rgb565(raw: &[[u8; 3]], raw_size: (i32, i32), generated_size: (i32, i32)) -> Vec<u16> {
-    let (raw_width, raw_height) = raw_size;
-    let (generated_width, generated_height) = generated_size;
-    let x_step = store_f32(
-        X87Chop53::div(
-            X87Chop53::load_i32(raw_width),
-            X87Chop53::load_i32(generated_width),
-        )
-        .expect("positive generated radar width"),
-    );
-    let y_step_extended = X87Chop53::div(
-        X87Chop53::load_i32(raw_height),
-        X87Chop53::load_i32(generated_height),
-    )
-    .expect("positive generated radar height");
-    let y_step = store_f32(y_step_extended);
-    let normalization = store_f32(
-        X87Chop53::div(
-            load_f64(NativeF64Bits::ONE),
-            // `0x006549D7..0x006549EC`: FST retains the extended y quotient,
-            // which is multiplied by the stored f32 x step before FDIVR.
-            X87Chop53::mul(y_step_extended, load_f32(x_step)),
-        )
-        .expect("positive native radar sample area"),
-    );
-    let one = load_f32(1.0);
-    let mut output = Vec::with_capacity(area(generated_size));
-    let mut y_start = 0.0f32;
+    RadarSampler::new(raw_size, generated_size).generate(raw)
+}
 
-    for _ in 0..generated_height {
-        let y_end_extended = X87Chop53::add(load_f32(y_start), load_f32(y_step));
-        let y_first = native_ftol(load_f32(y_start)).min(raw_height);
-        let y_last = native_ftol(y_end_extended).wrapping_add(1).min(raw_height);
-        let row_count = y_last.wrapping_sub(y_first);
+/// The weighted-area sampler of `GenerateTerrainSurface @ 0x006547C0`, its raw
+/// spans laid out once per column and row. Every f32 store below maps to the
+/// explicit `FST[P] float` sites at `0x006549D3..0x006549EC` and the advancing
+/// edge stores inside `0x00654AF5..0x00654DD7`. Native walks the same column
+/// chain on every row, so a pixel depends only on its own column and row; the
+/// HD radar resamples single pixels with it.
+#[derive(Debug, Clone)]
+struct RadarSampler {
+    raw_width: i32,
+    x_step: f32,
+    y_step: f32,
+    normalization: f32,
+    columns: Vec<SampleSpan>,
+    rows: Vec<SampleSpan>,
+}
+
+/// The raw pixels one generated column or row covers.
+#[derive(Debug, Clone, Copy)]
+struct SampleSpan {
+    start: f32,
+    /// What the last raw pixel's weight subtracts from: a column reloads its
+    /// stored f32 end, a row keeps the unstored x87 sum.
+    end: X87Value,
+    first: i32,
+    last: i32,
+}
+
+impl SampleSpan {
+    fn weight(self, source: i32, step: f32) -> X87Value {
+        if self.last.wrapping_sub(self.first) <= 1 {
+            load_f32(step)
+        } else if source == self.first {
+            X87Chop53::sub(
+                X87Chop53::load_i32(source.wrapping_add(1)),
+                load_f32(self.start),
+            )
+        } else if source == self.last.wrapping_sub(1) {
+            X87Chop53::sub(self.end, X87Chop53::load_i32(source))
+        } else {
+            load_f32(1.0)
+        }
+    }
+}
+
+impl RadarSampler {
+    fn new(raw_size: (i32, i32), generated_size: (i32, i32)) -> Self {
+        let (raw_width, raw_height) = raw_size;
+        let (generated_width, generated_height) = generated_size;
+        let x_step = store_f32(
+            X87Chop53::div(
+                X87Chop53::load_i32(raw_width),
+                X87Chop53::load_i32(generated_width),
+            )
+            .expect("positive generated radar width"),
+        );
+        let y_step_extended = X87Chop53::div(
+            X87Chop53::load_i32(raw_height),
+            X87Chop53::load_i32(generated_height),
+        )
+        .expect("positive generated radar height");
+        let y_step = store_f32(y_step_extended);
+        let normalization = store_f32(
+            X87Chop53::div(
+                load_f64(NativeF64Bits::ONE),
+                // `0x006549D7..0x006549EC`: FST retains the extended y quotient,
+                // which is multiplied by the stored f32 x step before FDIVR.
+                X87Chop53::mul(y_step_extended, load_f32(x_step)),
+            )
+            .expect("positive native radar sample area"),
+        );
+
+        let mut columns = Vec::with_capacity(usize::try_from(generated_width).unwrap_or(0));
         let mut x_start = 0.0f32;
-
         for _ in 0..generated_width {
             let x_end_extended = X87Chop53::add(load_f32(x_start), load_f32(x_step));
             let x_end = store_f32(x_end_extended);
-            let x_first = native_ftol(load_f32(x_start)).min(raw_width);
-            let x_last = native_ftol(x_end_extended).wrapping_add(1).min(raw_width);
-            let column_count = x_last.wrapping_sub(x_first);
-            let mut accum = [X87Chop53::load_i32(0); 3];
-
-            for source_y in y_first..y_last {
-                let y_weight = if row_count <= 1 {
-                    load_f32(y_step)
-                } else if source_y == y_first {
-                    X87Chop53::sub(
-                        X87Chop53::load_i32(source_y.wrapping_add(1)),
-                        load_f32(y_start),
-                    )
-                } else if source_y == y_last.wrapping_sub(1) {
-                    X87Chop53::sub(y_end_extended, X87Chop53::load_i32(source_y))
-                } else {
-                    one
-                };
-                for source_x in x_first..x_last {
-                    let x_weight = if column_count <= 1 {
-                        load_f32(x_step)
-                    } else if source_x == x_first {
-                        X87Chop53::sub(
-                            X87Chop53::load_i32(source_x.wrapping_add(1)),
-                            load_f32(x_start),
-                        )
-                    } else if source_x == x_last.wrapping_sub(1) {
-                        X87Chop53::sub(load_f32(x_end), X87Chop53::load_i32(source_x))
-                    } else {
-                        one
-                    };
-                    let weight =
-                        X87Chop53::mul(X87Chop53::mul(x_weight, y_weight), load_f32(normalization));
-                    let sample = raw[(source_y * raw_width + source_x) as usize];
-                    for channel in 0..3 {
-                        accum[channel] = X87Chop53::add(
-                            accum[channel],
-                            X87Chop53::mul(X87Chop53::load_i32(sample[channel] as i32), weight),
-                        );
-                    }
-                }
-            }
-            // The local active DDrawCompat R5G6B5 store (`0x004BABBE..0x004BABD9`).
-            output.push(RGB565.pack_rgb8([
-                channel_to_u8(accum[0]),
-                channel_to_u8(accum[1]),
-                channel_to_u8(accum[2]),
-            ]));
+            columns.push(SampleSpan {
+                start: x_start,
+                end: load_f32(x_end),
+                first: native_ftol(load_f32(x_start)).min(raw_width),
+                last: native_ftol(x_end_extended).wrapping_add(1).min(raw_width),
+            });
             x_start = x_end;
         }
-        y_start = store_f32(y_end_extended);
+        let mut rows = Vec::with_capacity(usize::try_from(generated_height).unwrap_or(0));
+        let mut y_start = 0.0f32;
+        for _ in 0..generated_height {
+            let y_end_extended = X87Chop53::add(load_f32(y_start), load_f32(y_step));
+            rows.push(SampleSpan {
+                start: y_start,
+                end: y_end_extended,
+                first: native_ftol(load_f32(y_start)).min(raw_height),
+                last: native_ftol(y_end_extended).wrapping_add(1).min(raw_height),
+            });
+            y_start = store_f32(y_end_extended);
+        }
+        Self {
+            raw_width,
+            x_step,
+            y_step,
+            normalization,
+            columns,
+            rows,
+        }
     }
-    output
+
+    fn generate(&self, raw: &[[u8; 3]]) -> Vec<u16> {
+        let mut output = Vec::with_capacity(self.columns.len() * self.rows.len());
+        for &row in &self.rows {
+            for &column in &self.columns {
+                output.push(self.sample(raw, column, row));
+            }
+        }
+        output
+    }
+
+    fn sample(&self, raw: &[[u8; 3]], column: SampleSpan, row: SampleSpan) -> u16 {
+        let normalization = load_f32(self.normalization);
+        let mut accum = [X87Chop53::load_i32(0); 3];
+        for source_y in row.first..row.last {
+            let y_weight = row.weight(source_y, self.y_step);
+            for source_x in column.first..column.last {
+                let x_weight = column.weight(source_x, self.x_step);
+                let weight = X87Chop53::mul(X87Chop53::mul(x_weight, y_weight), normalization);
+                let sample = raw[(source_y * self.raw_width + source_x) as usize];
+                for channel in 0..3 {
+                    accum[channel] = X87Chop53::add(
+                        accum[channel],
+                        X87Chop53::mul(X87Chop53::load_i32(sample[channel] as i32), weight),
+                    );
+                }
+            }
+        }
+        // The local active DDrawCompat R5G6B5 store (`0x004BABBE..0x004BABD9`).
+        RGB565.pack_rgb8([
+            channel_to_u8(accum[0]),
+            channel_to_u8(accum[1]),
+            channel_to_u8(accum[2]),
+        ])
+    }
+
+    /// The columns or rows whose raw span reaches `range`.
+    fn reaching(spans: &[SampleSpan], range: Range<i32>) -> Range<usize> {
+        spans.partition_point(|span| span.last <= range.start)
+            ..spans.partition_point(|span| span.first < range.end)
+    }
+}
+
+/// The HD radar's terrain: the same sampler at a whole multiple of the
+/// generated size ([`super::hd`]). A changed cell resamples only the pixels
+/// whose spans reach its raw pixels, which gives what full generation would.
+#[derive(Debug, Clone)]
+struct HdTerrain {
+    scale: u32,
+    sampler: RadarSampler,
+    rgb565: Vec<u16>,
+}
+
+impl HdTerrain {
+    fn new(raw: &[[u8; 3]], geometry: NativeRadarSurfaceGeometry, scale: u32) -> Self {
+        let sampler = RadarSampler::new(
+            geometry.raw_size(),
+            geometry.subdivided(scale).generated_size(),
+        );
+        let rgb565 = sampler.generate(raw);
+        Self {
+            scale,
+            sampler,
+            rgb565,
+        }
+    }
+
+    fn resample(&mut self, raw: &[[u8; 3]], columns: Range<i32>, rows: Range<i32>) {
+        let width = self.sampler.columns.len();
+        let columns = RadarSampler::reaching(&self.sampler.columns, columns);
+        for row in RadarSampler::reaching(&self.sampler.rows, rows) {
+            for column in columns.clone() {
+                self.rgb565[row * width + column] =
+                    self.sampler
+                        .sample(raw, self.sampler.columns[column], self.sampler.rows[row]);
+            }
+        }
+    }
 }
 
 fn channel_to_u8(accum: X87Value) -> u8 {
     let biased = X87Chop53::add(accum, load_f64(NativeF64Bits::HALF));
     native_ftol(biased).min(255) as u8
-}
-
-pub(super) fn half_bright_rgb565(pixel: u16) -> [u8; 4] {
-    let [red, green, blue] = RGB565.unpack_rgb8(pixel);
-    let [red, green, blue] =
-        RGB565.unpack_rgb8(RGB565.pack_rgb8([red >> 1, green >> 1, blue >> 1]));
-    [red, green, blue, 255]
 }
 
 fn load_f32(value: f32) -> X87Value {

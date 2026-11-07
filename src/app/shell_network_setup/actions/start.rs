@@ -4,7 +4,6 @@
 
 use super::*;
 use crate::assets::csf_file::CsfArg;
-use crate::skirmish_launch::{LaunchHumanRole, LaunchTeam};
 use crate::skirmish_modes::ModeStartEffect;
 
 use super::super::chat_notice as message;
@@ -92,7 +91,7 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         // C2 0x79071E..0x7908D5: allies, readiness, then capacity. VERA's
         // explicit AI rows share the map with human players, even though
         // only humans belong to the network/relay roster.
-        if all_allied(state, &mode) {
+        if all_allied(state) {
             message(state, "TXT_CANNOT_ALLY", &[]);
             return Ok(());
         }
@@ -150,7 +149,7 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         if !capacity_ok || !mode_ok {
             return Ok(());
         }
-        if all_allied(state, &mode) {
+        if all_allied(state) {
             message(state, "TXT_CANNOT_ALLY", &[]);
             return Ok(());
         }
@@ -209,10 +208,12 @@ pub(super) fn request_start(state: &mut AppState) -> anyhow::Result<()> {
         .network_setup()
         .expect("mode callback retains setup")
         .clone();
+    let banned =
+        crate::app::shell_network_setup::bans::banned_countries(state, launch.options.bans);
     let resolved = state
         .frontend
         .multiplayer_shell_runtime
-        .resolve_network_assignments(&launch)?;
+        .resolve_network_assignments(&launch, &banned)?;
     state
         .match_state
         .session
@@ -363,43 +364,22 @@ pub(crate) fn begin_external_lan_go(state: &mut AppState) -> anyhow::Result<()> 
 
 /// VERA's shared LAN/online admission allows a human to play the ordinary
 /// skirmish AI without creating another network participant. Observers and
-/// a stale declared AI count cannot stand in for an actual opponent slot.
+/// a stale declared AI count cannot stand in for an actual opponent slot,
+/// and players sharing a House count once.
 fn has_minimum_players(launch: &SkirmishLaunchSession) -> bool {
-    let humans = launch
-        .humans
-        .iter()
-        .filter(|human| !human.is_observer())
+    let houses = (0..launch.humans.len())
+        .filter(|&index| !launch.humans[index].is_observer() && launch.house_leader(index) == index)
         .count();
-    humans >= 1 && humans + launch.opponents.len() >= 2
+    houses >= 1 && houses + launch.opponents.len() >= 2
 }
 
-/// The all-allied scan (BC 5DD0EA, C2 0x79071E after team copy 5E9E00):
-/// only a nonobserver human in raw row 0 seeds the comparison. An observer
-/// there bypasses this native gate; do not invent all-pairs.
-fn all_allied(state: &AppState, mode: &crate::skirmish_modes::SkirmishGameMode) -> bool {
-    let launch = state
+fn all_allied(state: &AppState) -> bool {
+    state
         .match_state
         .session
         .network_setup()
-        .expect("validated setup");
-    let Some(LaunchTeam::Team(team)) = launch
-        .humans
-        .iter()
-        .find(|human| human.raw_slot_index == Some(0) && !human.is_observer())
-        .map(|human| human.slot.team)
-    else {
-        return false;
-    };
-    let same_humans = launch
-        .humans
-        .iter()
-        .filter(|human| human.raw_slot_index.is_some() && !human.is_observer())
-        .all(|human| human.slot.team == LaunchTeam::Team(team));
-    let same_ai = launch
-        .opponents
-        .iter()
-        .all(|ai| ai.team == LaunchTeam::Team(team));
-    same_humans && same_ai && !mode.class.permits_all_allied()
+        .expect("validated setup")
+        .all_allied()
 }
 
 /// Readiness (BC; C2 0x7907E0 from the WOL user records): an unready node
@@ -442,15 +422,11 @@ fn mode_start(
     {
         Ok(ModeStartEffect::None) => {}
         Ok(ModeStartEffect::FreeForAllSourceRoles) => {
-            for (index, human) in launch.humans.iter().enumerate() {
-                if !human.is_observer() {
-                    state.match_state.session.accept_network_human_role(
-                        index,
-                        LaunchHumanRole::Player {
-                            group: index as i32,
-                        },
-                    )?;
-                }
+            for (index, role) in launch.free_for_all_source_roles() {
+                state
+                    .match_state
+                    .session
+                    .accept_network_human_role(index, role)?;
             }
         }
         Ok(ModeStartEffect::CooperativePartners) => {
@@ -504,6 +480,10 @@ mod tests {
         player.raw_slot_index = Some(2);
         launch.humans.push(player);
         launch.opponents.clear();
+        assert!(!has_minimum_players(&launch));
+
+        // VERA shared control: two players on one start are one House.
+        launch.humans[0].set_observer(false);
         assert!(!has_minimum_players(&launch));
     }
 }

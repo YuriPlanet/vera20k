@@ -293,6 +293,89 @@ pub fn parse_special_flags_section(ini: &IniFile) -> SpecialFlagsSection {
     }
 }
 
+/// The most of a map's briefing [`briefing_text`] keeps, in characters.
+const MAX_BRIEFING_CHARS: usize = 2000;
+
+/// VERA: a map's `[Basic] Briefing`, the text lobby programs show over the
+/// map preview, each `@` starting a new line. gamemd never reads the key; its
+/// briefings come from `MISSIONMD.INI`. It is read from the file's own lines,
+/// as the INI reader keeps only 511 bytes of a line (`Straw::ReadLine`) and
+/// briefings run longer: section and key names match without case, the first
+/// copy with a value counts, and the value ends at `;`. Control characters
+/// other than spacing go, runs of space become one, blank lines collapse to
+/// one and the text is cut at [`MAX_BRIEFING_CHARS`], as vera20k.org's map
+/// list shows it. `None` without one, or when it is only a string-table name
+/// such as `Brief:TRN01`, which map editors leave in maps.
+pub fn briefing_text(map_bytes: &[u8]) -> Option<String> {
+    let value = basic_briefing_value(map_bytes)?;
+    let value = crate::util::native_string::widen_bytes(value);
+    if is_string_table_name(&value) {
+        return None;
+    }
+    let mut text = String::new();
+    let mut blank = false;
+    for line in value.split('@') {
+        let line: String = line
+            .chars()
+            .filter(|c| !c.is_control() || c.is_whitespace())
+            .collect();
+        let words: Vec<&str> = line.split_whitespace().collect();
+        if words.is_empty() {
+            blank = !text.is_empty();
+            continue;
+        }
+        if !text.is_empty() {
+            text.push_str(if blank { "\n\n" } else { "\n" });
+        }
+        blank = false;
+        text.push_str(&words.join(" "));
+    }
+    let text: String = text.chars().take(MAX_BRIEFING_CHARS).collect();
+    let text = text.trim_end();
+    (!text.is_empty()).then(|| text.to_owned())
+}
+
+/// The raw value of the first `Briefing=` with one in a `[Basic]` section.
+fn basic_briefing_value(map_bytes: &[u8]) -> Option<&[u8]> {
+    let mut in_basic = false;
+    for line in map_bytes.split(|&byte| byte == b'\n') {
+        let line = line.trim_ascii();
+        if let Some(rest) = line.strip_prefix(b"[") {
+            in_basic = rest
+                .iter()
+                .position(|&byte| byte == b']')
+                .is_some_and(|end| rest[..end].trim_ascii().eq_ignore_ascii_case(b"Basic"));
+            continue;
+        }
+        if !in_basic {
+            continue;
+        }
+        let line = line.split(|&byte| byte == b';').next().unwrap_or_default();
+        let Some(equals) = line.iter().position(|&byte| byte == b'=') else {
+            continue;
+        };
+        let value = line[equals + 1..].trim_ascii();
+        if line[..equals]
+            .trim_ascii()
+            .eq_ignore_ascii_case(b"Briefing")
+            && !value.is_empty()
+        {
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// A string-table name: two names of letters, digits and `_` around one `:`.
+fn is_string_table_name(value: &str) -> bool {
+    let name = |part: &str| {
+        !part.is_empty() && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    };
+    value
+        .split_once(':')
+        .is_some_and(|(category, label)| name(category) && name(label))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -528,6 +611,32 @@ mod tests {
                     bridge_destruction: true,
                 }
             )
+        );
+    }
+
+    #[test]
+    fn a_briefing_past_the_ini_readers_511_bytes_reads_whole_with_each_at_a_new_line() {
+        let orders = "-Hold the bridge ".repeat(40);
+        let map = format!(
+            "[Map]\r\nBriefing=Not this\r\n[Basic]\r\nName=Bridge\r\n\
+             Briefing=Welcome  to Bridge@@@ Orders:@{orders}@@Good luck ; aside\r\n"
+        );
+        assert!(map.lines().any(|line| line.len() > 511));
+        assert_eq!(
+            briefing_text(map.as_bytes()),
+            Some(format!(
+                "Welcome to Bridge\n\nOrders:\n{}\n\nGood luck",
+                orders.trim_end()
+            ))
+        );
+    }
+
+    #[test]
+    fn a_string_table_name_in_place_of_a_briefing_is_no_briefing() {
+        assert_eq!(briefing_text(b"[Basic]\nBriefing=Brief:TRN01\n"), None);
+        assert_eq!(
+            briefing_text(b"[BASIC]\nbriefing=MISSION BRIEFING:@Retake the coast.\n").as_deref(),
+            Some("MISSION BRIEFING:\nRetake the coast.")
         );
     }
 }

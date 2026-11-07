@@ -103,6 +103,23 @@ pub(crate) fn apply_action(state: &mut AppState, action: SetupAction) {
             }
             Ok(())
         }
+        SetupAction::MapOffer { download } => {
+            let Some(ui) = state.frontend.multiplayer_setup.as_mut() else {
+                return;
+            };
+            ui.cancel_pointer();
+            if download {
+                if let Some(offer) = ui.map_offer.as_mut() {
+                    offer.downloading = true;
+                }
+            } else {
+                // Without the map the player cannot play here.
+                ui.map_offer = None;
+                apply_action(state, SetupAction::Back);
+            }
+            state.platform.window.request_redraw();
+            Ok(())
+        }
         SetupAction::Page => {
             crate::app::shell_wol::page::open_page_dialog(state);
             Ok(())
@@ -160,9 +177,17 @@ fn toggle(state: &mut AppState, control: u16) -> anyhow::Result<()> {
         0x54D => options.crates = !options.crates,
         0x69A => options.super_weapons = !options.super_weapons,
         0x69D => options.build_off_ally = !options.build_off_ally,
+        // VERA's room adds these in its Game Options.
+        BRIDGES => options.bridges_destroyable = !options.bridges_destroyable,
+        ALLYING => options.ally_change_allowed = !options.ally_change_allowed,
+        NO_YURI => options.bans.yuri = !options.bans.yuri,
+        NO_FRANCE => options.bans.france = !options.bans.france,
+        NO_SPY => options.bans.spy = !options.bans.spy,
+        NO_STOLEN_TECH => options.bans.stolen_tech = !options.bans.stolen_tech,
         _ => anyhow::bail!("unknown setup checkbox"),
     }
     state.match_state.session.set_network_options(options)?;
+    super::bans::clear_banned_rows(state)?;
     host_option_edited(state)?;
     queue(state, NetworkSetupRequest::PublishOptions);
     Ok(())
@@ -437,6 +462,14 @@ pub(crate) fn commit_start(state: &mut AppState, agreed_seed: u32) {
             crate::app::shell_random_map::AcceptedRmgStartStaging::from_scenario_staging(&staging),
         );
     }
+    // VERA's LAN room comes back after the match; the original one does not.
+    let dialog = super::dialog(state);
+    state.frontend.lan_rematch = match (dialog.wol() || !dialog.modern, dialog.host) {
+        (true, _) => None,
+        (false, true) => Some(crate::app::shell_lan::LanRematch::Host),
+        (false, false) => crate::app::lan_service::admitted_host_name(state)
+            .map(|host| crate::app::shell_lan::LanRematch::Guest { host }),
+    };
     match state.match_state.session.freeze_network_start(agreed_seed) {
         Ok(startup) => {
             if state.match_state.session_mode()

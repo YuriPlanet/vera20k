@@ -53,6 +53,7 @@ fn draws(row: &Value) -> Vec<LaserDraw> {
             }
         },
         duration: integer(&laser["duration"]),
+        fade_start: NativeF32Bits::ONE,
         fade_end: NativeF32Bits::from_bits(laser["fade_end_bits"].as_u64().unwrap() as u32),
     };
     let mut lasers = Lasers::default();
@@ -220,6 +221,13 @@ fn production_laser_pixels_match_original_software_surface() {
                     },
                     color.size(),
                 );
+                terrain.bind_surface_line_a_fixture(&gpu.device, &gpu.queue, size, |[x, y]| {
+                    match input["alpha"].as_str() {
+                        Some("mixed") => [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize],
+                        Some("black") => 0,
+                        _ => 127,
+                    }
+                });
                 terrain.begin_surface_lines();
                 let prepared_lines = terrain.prepare_surface_lines(
                     &gpu.device,
@@ -231,11 +239,6 @@ fn production_laser_pixels_match_original_software_surface() {
                     &[],
                     viewport(input),
                     |color| high_detail(input, color),
-                    |[x, y]| match input["alpha"].as_str() {
-                        Some("mixed") => [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize],
-                        Some("black") => 0,
-                        _ => 127,
-                    },
                 );
                 let mut encoder = gpu.device.create_command_encoder(&Default::default());
                 let z = (0..size[1])

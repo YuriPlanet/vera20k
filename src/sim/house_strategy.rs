@@ -20,8 +20,9 @@
 //!    all distances are zero and the first house in HouseClass::Array that is
 //!    not the house, not passive and not defeated takes one anger point,
 //!    ally or not. The anger rescan ([`update_anger_nodes`]) picks the enemy.
-//!    Its own timer (`+0x5640`/`+0x5648`, [`ENEMY_SEARCH_TIMER`]) has no
-//!    writer after the constructor.
+//!    Its own per-house timer (`+0x5640`/`+0x5648`) starts from
+//!    `AIHateDelays[difficulty]` during non-campaign Post_Map_Init
+//!    (`0x00686A12..0x00686A2B`); Strategy never restarts it.
 //! 2. A defeated enemy's anger is cancelled and the enemy forgotten
 //!    (`0x004FD723..0x004FD772`).
 //! 3. AI_TryFireSW (`0x005098F0`, `superweapon::ai_fire`) in a nonzero game
@@ -55,7 +56,6 @@
 use crate::sim::world::FrameEffects;
 
 use crate::map::entities::EntityCategory;
-use crate::map::houses::HouseAllianceMap;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::house_state::HouseState;
@@ -65,17 +65,10 @@ use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::production::{SellOrder, sell_back};
 use crate::sim::scenario_session::ScenarioSession;
-use crate::sim::timer::CdTimer;
 use crate::sim::world::Simulation;
 
 /// `0x004FD918..0x004FD928`: `RandomRanged(1, 7) + 105`.
 const RESCHEDULE_BASE_FRAMES: i32 = 105;
-/// The enemy search's timer (`+0x5640`/`+0x5648`) as the constructor leaves
-/// it (`0x004F5BAE..0x004F5BBA`), started at the construction frame, 0, with
-/// no delay; nothing writes it later. It is expired until the signed frame
-/// wraps.
-const ENEMY_SEARCH_TIMER: CdTimer = CdTimer::started(0, 0);
-
 /// `HouseClass::Update @ 0x004F8FBE..0x004F9032`: a computer house whose
 /// Strategy timer has expired runs [`building_strategy`], and the timer
 /// restarts at this frame with the delay it returns.
@@ -261,13 +254,19 @@ fn pick_enemy(
     houses: &mut Houses,
     owner: InternedId,
 ) {
-    if !ENEMY_SEARCH_TIMER.expired(session.binary_frame() as i32) || !session.game_mode_nonzero() {
+    if !session.game_mode_nonzero() {
         return;
     }
     let Some(house) = houses.get(&owner) else {
         return;
     };
-    if house.enemy_house().is_some() || house.multiplay_passive() || house.base_origin() == (0, 0) {
+    if !house
+        .enemy_search_timer()
+        .expired(session.binary_frame() as i32)
+        || house.enemy_house().is_some()
+        || house.multiplay_passive()
+        || house.base_origin() == (0, 0)
+    {
         return;
     }
     let first = houses.order().iter().copied().find(|&peer| {
@@ -277,7 +276,7 @@ fn pick_enemy(
                 .is_some_and(|peer| !peer.multiplay_passive() && !peer.is_defeated())
     });
     if let Some(peer) = first {
-        update_anger_nodes(houses, house_alliances.as_map(), interner, owner, peer, 1);
+        update_anger_nodes(houses, house_alliances, interner, owner, peer, 1);
     }
 }
 
@@ -302,7 +301,7 @@ fn forget_defeated_enemy(
         .unwrap_or(0);
     update_anger_nodes(
         houses,
-        house_alliances.as_map(),
+        house_alliances,
         interner,
         owner,
         enemy,
@@ -462,7 +461,7 @@ pub(crate) fn all_to_hunt(
 /// With no winner the enemy is cleared (`0x0050484F`).
 pub(crate) fn update_anger_nodes(
     houses: &mut crate::sim::houses::Houses,
-    alliances: &HouseAllianceMap,
+    alliances: &HouseAlliances,
     interner: &StringInterner,
     owner: InternedId,
     peer: InternedId,
@@ -492,11 +491,7 @@ pub(crate) fn update_anger_nodes(
             .unwrap_or(0);
         if score > best_score
             && !candidate.is_defeated()
-            && !crate::map::houses::is_allied_with(
-                alliances,
-                interner.resolve(owner),
-                interner.resolve(candidate_id),
-            )
+            && !alliances.is_allied(interner, owner, candidate_id)
         {
             best_score = score;
             best_house = Some(candidate_id);

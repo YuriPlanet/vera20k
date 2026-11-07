@@ -143,20 +143,6 @@ impl DamageConsequences {
         } = self;
         let ordinary = matches!(&delivery, DamageDelivery::Ordinary { .. });
         for &dead_id in &effects.immediate_uninit_ids {
-            if world
-                .substrate
-                .entities
-                .get(dead_id)
-                .and_then(|building| building.bunker.occupant())
-                .is_some()
-            {
-                crate::sim::docking::bunker_link::release_sell_destroy(
-                    world,
-                    dead_id,
-                    rules,
-                    frame_effects,
-                );
-            }
             world.uninit_with_context(
                 dead_id,
                 UninitContext::new(rules, overlay_registry).with_effects(frame_effects),

@@ -680,7 +680,7 @@ mod tests {
     /// cells read the shared Dummy's Clear row.
     fn test_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
         let mut terrain = crate::map::resolved_terrain::test_grid(width, height, |rx, ry| {
-            test_terrain_cell(rx, ry, Some(100))
+            test_terrain_cell(rx, ry, Some(crate::util::native_x87::NativeF32Bits::ONE))
         });
         terrain.set_land_speed_rules_for_test(
             &crate::map::resolved_terrain::test_retail_clear_rules(),
@@ -688,15 +688,21 @@ mod tests {
         terrain
     }
 
-    fn test_terrain_cell(rx: u16, ry: u16, track_cost: Option<u8>) -> ResolvedTerrainCell {
+    fn test_terrain_cell(
+        rx: u16,
+        ry: u16,
+        track_cost: Option<crate::util::native_x87::NativeF32Bits>,
+    ) -> ResolvedTerrainCell {
         ResolvedTerrainCell {
             speed_costs: SpeedCostProfile {
                 track: track_cost,
+                winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
                 ..Default::default()
             },
             zone_type: zone_class::GROUND,
             base_speed_costs: SpeedCostProfile {
                 track: track_cost,
+                winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
                 ..Default::default()
             },
             ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
@@ -975,8 +981,9 @@ mod tests {
     fn native_gather_rejects_a_blocked_cell_inside_the_8x8_rect() {
         let mut terrain = test_terrain(32, 32);
         let blocked = terrain.cell_mut_for_test(11, 11).unwrap();
-        blocked.speed_costs.track = Some(0);
-        blocked.base_speed_costs.track = Some(0);
+        blocked.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+        blocked.base_speed_costs.track =
+            Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
         blocked.zone_type = zone_class::IMPASSABLE;
         let occupancy = crate::sim::occupancy::OccupancyGrid::new();
         let diamond = PlayfieldBounds {
@@ -1041,8 +1048,9 @@ mod tests {
         let map = test_map_with_starts(&[authored]);
         let mut terrain = test_terrain(64, 64);
         let blocked = terrain.cell_mut_for_test(61, 28).unwrap();
-        blocked.speed_costs.track = Some(0);
-        blocked.base_speed_costs.track = Some(0);
+        blocked.speed_costs.track = Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
+        blocked.base_speed_costs.track =
+            Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO);
         blocked.zone_type = zone_class::IMPASSABLE;
         let bounds = NativeStartBounds {
             min_rx: 0,
@@ -1334,7 +1342,7 @@ mod tests {
                 recruitable_a: true,
                 recruitable_b: true,
                 follows: None,
-                structure_upgrades: [None, None, None],
+                structure_columns: Default::default(),
                 structure_ai_sellable: false,
                 structure_ai_repairable: false,
                 structure_online: true,
@@ -1472,8 +1480,7 @@ mod tests {
             difficulty: Default::default(),
         });
         let slots = normalized_launch_slots(&session);
-        let alliances =
-            launch_alliance_map(&roster_with_neutral_and_playable(), &slots, &session.mode);
+        let alliances = launch_alliance_map(&slots, &session.mode);
 
         assert!(
             alliances
@@ -1508,8 +1515,7 @@ mod tests {
         });
         let slots = normalized_launch_slots(&session);
 
-        let alliances =
-            launch_alliance_map(&roster_with_neutral_and_playable(), &slots, &session.mode);
+        let alliances = launch_alliance_map(&slots, &session.mode);
 
         assert!(
             alliances
@@ -1869,10 +1875,12 @@ mod tests {
                 &terrain,
                 &launch_descriptor(&session),
             );
-            let owner = result
-                .local_owner
-                .as_deref()
-                .expect("explicit launch must return its pinned local owner");
+            let owner = sim
+                .session()
+                .current_house()
+                .map(|house| sim.interner().resolve(house).to_owned())
+                .expect("explicit launch must pin its local owner");
+            let owner = owner.as_str();
             assert_eq!(owner, "Commander");
 
             let side = crate::app::presentation::sidebar_render::project_sidebar_side(
@@ -2498,7 +2506,12 @@ mod tests {
             );
             assert_eq!(result.spawned_mcvs, 0);
             assert!(sim.entities().is_empty());
-            assert_eq!(result.local_owner.as_deref(), Some("Player"));
+            assert_eq!(
+                sim.session()
+                    .current_house()
+                    .map(|house| sim.interner().resolve(house)),
+                Some("Player")
+            );
             assert_eq!(
                 sim.scenario_rng().native_state_hex(),
                 row["force_tail_rng_hex"].as_str().unwrap()

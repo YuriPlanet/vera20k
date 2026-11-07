@@ -228,11 +228,9 @@ pub(crate) fn can_target_house(
     if warhead.affects_owner.unwrap_or(affects_allies) && target_owner == source {
         return true;
     }
-    let allied = crate::map::houses::is_allied_with(
-        sim.house_alliances(),
-        sim.interner.resolve(source),
-        sim.interner.resolve(target_owner),
-    );
+    let allied = sim
+        .house_alliances
+        .is_allied(&sim.interner, source, target_owner);
     if affects_allies && allied {
         return target_owner != source;
     }

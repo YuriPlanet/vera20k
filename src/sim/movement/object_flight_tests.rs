@@ -129,6 +129,7 @@ fn a_paratroopers_fall_moves_its_location_z_to_the_ground_or_deck() {
         paratrooper.lifecycle.set_in_limbo_for_test(false);
         paratrooper.lifecycle.set_cell_marked_for_test(true);
         paratrooper.set_on_bridge(on_bridge);
+        paratrooper.set_attached_anim_flag(true);
         sim.substrate.entities.insert(paratrooper);
         assert!(begin_parachute_descent(
             &mut sim.substrate.entities,

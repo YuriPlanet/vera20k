@@ -24,7 +24,8 @@ pub(crate) struct RendererState {
     /// Encoded-byte RGB565 presentation boundary for stock shell/loading surfaces.
     pub(crate) shell_surface_presenter: crate::render::shell_surface_present::ShellSurfacePresenter,
     /// The match zoom pass, present only while the Options zoom gives a factor
-    /// above 1 for this window (`App::sync_zoom_pass`). Captures never zoom.
+    /// above 1 for this window (`App::sync_zoom_pass`). Captures zoom only
+    /// when their profile asks (`CapturePresentation`).
     pub(crate) upscale_pass: Option<crate::render::upscale_pass::UpscalePass>,
     /// Wheel zoom resolves the native world before adding screen-fixed UI.
     pub(crate) world_zoom_pass: Option<crate::render::upscale_pass::WorldZoomPass>,
@@ -38,11 +39,11 @@ pub(crate) struct RendererState {
     pub(super) status_screen_fill: crate::render::batch::BatchTexture,
     /// The status cards' button glow: #CE0000 core fading to black.
     pub(crate) status_card_glow: crate::render::batch::BatchTexture,
-    /// GAME.FNT bitmap font (falls back to the built-in 5x7 face).
+    /// Every interface text's font: VERA's vector fonts, or GAME.FNT with the
+    /// Original Font option, which falls back to the vector fonts.
     pub(crate) bit_font: BitFont,
-    /// The status cards' own vector face, baked per size on demand. Independent
-    /// of the installation, so the error card renders without one.
-    pub(crate) status_font: crate::render::status_font::StatusFaceCache,
+    /// A zoomed match's text and cursor at the window's own pixels.
+    pub(crate) window_ui: crate::app::presentation::window_ui::WindowUi,
     /// InitGame52C1EF..52C302's immutable GRFXTXT.SHP/PAL result surface.
     pub(crate) outcome_banner_art:
         Option<crate::app::presentation::outcome_banner::OutcomeBannerArt>,

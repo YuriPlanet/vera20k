@@ -187,7 +187,7 @@ fn retail_electric_assault_enables_the_coils_overpowered_weapon() {
         &f.sim,
         &f.sim.interner,
         f.sim.resolved_terrain.as_ref(),
-        Some(f.sim.house_alliances.as_map()),
+        Some(&f.sim.house_alliances),
     )
     .unwrap();
     assert_eq!(
@@ -734,6 +734,8 @@ fn charging_attack_keeps_its_coil_until_a_direct_enemy_scan_succeeds() {
         .sim
         .spawn_object("MTNK", "Russians", 10, 11, 0, &f.rules)
         .unwrap();
+    // The player has seen the enemy: the campaign scan gate needs +0x41B.
+    crate::sim::arena_fixture::discover(&mut f.sim, enemy);
     let owner = f.sim.substrate.entities.get(source).unwrap().owner();
     f.sim.fog.reveal_all_for_owner(owner);
     f.dispatch(source, MissionType::Attack);

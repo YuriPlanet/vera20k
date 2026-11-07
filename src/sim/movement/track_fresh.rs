@@ -52,6 +52,7 @@ use super::foot_path::{FindPathResult, FootPathOutcome, coord_cell};
 use super::ground_pose;
 use super::infantry_entry::InfantryEntryArgs;
 use super::movement_tick::FootPathRequest;
+use super::path_batch::WaitingRequest;
 use super::track_fresh_dispatch::{
     FreshDispatch, FreshStage, coerce_entry_code, dispatch_entry, normalize_second_direction,
 };
@@ -94,6 +95,36 @@ impl ProcessMovementArgs {
         allow_retry: false,
         force_single: false,
     };
+
+    /// The request a batched no-queue arm with these arguments waits as: the
+    /// outer call's (1, 0), a retry recursion's (0, 0), or the second stage's
+    /// code-4/5 re-entry (argument 2, 1); see `path_batch`.
+    fn waiting_request(self) -> WaitingRequest {
+        match self {
+            Self {
+                allow_retry,
+                force_single: true,
+            } => WaitingRequest::StraightReentry { allow_retry },
+            Self {
+                allow_retry: false, ..
+            } => WaitingRequest::RetryRecursion,
+            Self {
+                allow_retry: true, ..
+            } => WaitingRequest::NoQueue,
+        }
+    }
+
+    /// The arguments of the recursion `request` waited for.
+    fn of_recursion(request: WaitingRequest) -> Option<Self> {
+        match request {
+            WaitingRequest::RetryRecursion => Some(Self::RETRY),
+            WaitingRequest::StraightReentry { allow_retry } => Some(Self {
+                allow_retry,
+                force_single: true,
+            }),
+            WaitingRequest::NoQueue | WaitingRequest::Code2Ladder { .. } => None,
+        }
+    }
 }
 
 /// Mark0/Mark1 and the per-call services the arm reaches.
@@ -228,21 +259,32 @@ impl Simulation {
         }
         let destination = track_destination(actor).ok_or("no-queue arm without destination")?;
         // A batched request waits for the next frame's batch as if the timer
-        // still ran (`path_batch`, a proposed deviation). So does a
-        // recursion's (the retries at 0x4B397F, 0x4B4480 and the 0x4B4541
-        // tail, the second stage's re-entries at 0x4B41B3 and 0x4B420B),
-        // unless it is the Foot's first request in a frame the batch answered.
-        // A request for the Foot's own cell never waits.
+        // still ran (`path_batch`, a sim-scale deviation). So does a
+        // recursion's, unless it is the Foot's first request in a frame the
+        // batch answered: a retry's (Drive 0x4B397F, 0x4B4480 and the 0x4B4541
+        // tail at 0x4B4552; Ship 0x6A2FCE, 0x6A3AAC, 0x6A3B7E) and the second
+        // stage's code-4/5 re-entry, which clears the path (Drive 0x4B41F7,
+        // Ship 0x6A3823). A recursion's request registers as that recursion,
+        // and the request that takes its answer resumes with the recursion's
+        // arguments, as the recursion runs. A request for the Foot's own cell
+        // never waits.
+        let resumed = self
+            .answered_recursion(id)
+            .and_then(ProcessMovementArgs::of_recursion);
         if Self::defer_path_search(
             &mut self.path_batch,
             &self.resolved_terrain,
             &self.overlay_grid,
             &self.substrate.entities,
             id,
-            super::path_batch::WaitingRequest::NoQueue,
+            call.args.waiting_request(),
         ) {
             return Ok(false);
         }
+        let call = &match resumed {
+            Some(args) => call.with_args(args),
+            None => *call,
+        };
         let request = self.track_path_request(call, destination, 0)?;
         match self.run_track_path_request(
             &request,
@@ -502,7 +544,7 @@ impl Simulation {
         let destination = super::path_batch::code2_ladder_destination(actor)
             .ok_or("Drive/Ship code-2 ladder without a track locomotor")?;
         // A batched re-path waits for the next frame's batch as if the timer
-        // still ran (`path_batch`, a proposed deviation), unless it heads for
+        // still ran (`path_batch`, a sim-scale deviation), unless it heads for
         // the Foot's own cell.
         if Self::defer_path_search(
             &mut self.path_batch,
@@ -1213,11 +1255,10 @@ impl Simulation {
                     return;
                 };
                 //4B3B52..4B3B62: the mover's House asks about the object.
-                if crate::map::houses::is_allied_with(
-                    self.house_alliances.as_map(),
-                    self.interner.resolve(actor.owner()),
-                    self.interner.resolve(target.owner()),
-                ) {
+                if self
+                    .house_alliances
+                    .is_allied(&self.interner, actor.owner(), target.owner())
+                {
                     return;
                 }
                 self.track_override(id, TargetKind::Entity(blocker), rules, frame_effects);

@@ -405,6 +405,10 @@ impl Simulation {
         if first_opening {
             self.open_super_weapon_anims(id, damaged, garrisoned, rules);
         }
+        // 0x004466D5..0x0044676C: the light block Unlimbo shares.
+        if first_opening {
+            self.light_building(id, rules);
+        }
         // 0x0044678B..0x004467C3: the sensor arm, last in the first-opening
         // block before the ready latch.
         if first_opening {
@@ -750,6 +754,10 @@ impl Simulation {
         if !enabled && object.powered && self.building_anim_power_flags(id, slot, rules).powered {
             self.substrate.anims.get_mut(new_id)?.pause();
         }
+        // RESIDUAL (dormant): `0x00451AFB..0x00451B10` hides a slot-9 anim
+        // (Anim `+0x19D`) of a `BarrelAnimIsVoxel=` type. VERA reads the key
+        // only for its fire coordinate (`fire_coord.rs`) and leaves this hide
+        // unported; no retail rules layer sets it.
         // 0x00451B17..0x00451B25: a building being erased (`vt+0x1D4`,
         // Techno `+0x270`) freezes the new anim.
         if self.substrate.entities.get(id)?.is_warped_out() {
@@ -1025,11 +1033,8 @@ pub fn body_frame(
 /// back from GateStages while closing, `GateStages - 1` once open, clamped
 /// to `0..GateStages`, plus `GateStages + 1` at ConditionYellow health or
 /// below (`0x005F5C60` against Rules `+0x1700`). The branch then returns, so
-/// no bib is drawn. None outside it.
-///
-/// RESIDUAL: the branch lights the body without the type's `ExtraLight=`
-/// (its vt+0x1D0 call adds no `+0x1548`); VERA keeps the ordinary body
-/// light. Retail's only gate, GAGATE_A, sets no ExtraLight.
+/// no bib is drawn, and the body is lit without the type's `ExtraLight=`.
+/// None outside it.
 pub fn gate_open_body_frame(
     entity: &GameEntity,
     gate_stages: i32,

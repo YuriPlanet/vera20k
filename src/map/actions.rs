@@ -270,28 +270,33 @@ pub fn trigger_anim_class_roots(rules: &RuleSet, actions: &ActionMap) -> Vec<Str
     actions
         .values()
         .flat_map(|action| &action.entries)
-        .flat_map(|action| match action.kind {
-            58 => [
-                rules
-                    .anim_type_names
-                    .contains("METSMALL")
-                    .then_some("METSMALL"),
-                rules
-                    .anim_type_names
-                    .contains("METLARGE")
-                    .then_some("METLARGE"),
-            ],
-            8 => [rules.general.drop_zone_anim.as_deref(), None],
-            41 => [
-                action
-                    .literal_value()
-                    .and_then(|index| rules.anim_type_name_by_index(index)),
-                None,
-            ],
-            _ => [None, None],
+        .flat_map(|action| {
+            if action.kind == 41 {
+                return [
+                    action
+                        .literal_value()
+                        .and_then(|index| rules.anim_type_runtime_key_by_index(index))
+                        .map(std::borrow::Cow::into_owned),
+                    None,
+                ];
+            }
+            match action.kind {
+                58 => [
+                    rules
+                        .anim_type_names
+                        .contains("METSMALL")
+                        .then_some("METSMALL"),
+                    rules
+                        .anim_type_names
+                        .contains("METLARGE")
+                        .then_some("METLARGE"),
+                ],
+                8 => [rules.general.drop_zone_anim.as_deref(), None],
+                _ => [None, None],
+            }
+            .map(|name| name.map(str::to_owned))
         })
         .flatten()
-        .map(str::to_owned)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()

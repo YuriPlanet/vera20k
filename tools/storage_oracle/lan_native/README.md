@@ -224,7 +224,9 @@ network loading boundary. The target list is in
 
 Set `[paths] settings_dir` to a separate private directory outside RA2_DIR.
 WOL persona fixtures require the same physical `.vera20k-lan-capture-root`
-marker described below in that settings directory before writing `wolinfoMD.ini`.
+marker described below in that settings directory before writing `wolinfoMD.ini`,
+and so does `lan-guest-random-map` before writing the received `RandMap.Sed` and
+`RandMap.img` into its `Maps` folder.
 Never point captures at the normal player profile.
 
 `lan-transfer-loading-first` writes the original `XMP29U2.MAP` bytes as

@@ -176,6 +176,40 @@ impl CooperativeRegistry {
     pub fn campaign(&self, campaign_type: usize) -> Option<&CooperativeCampaign> {
         self.campaigns.get(campaign_type)
     }
+
+    /// VERA: the first campaign with a stage whose map variant `scenario`
+    /// names (`<token>.MAP`, compared as `+0x4C` compares). Retail lists
+    /// these maps for Cooperative only (missionsmd.pkt
+    /// `GameMode=cooperative`), so the modern WOL list reads a room on one
+    /// as a Cooperative room.
+    pub fn campaign_for_scenario(&self, scenario: &str) -> Option<usize> {
+        self.campaigns.iter().position(|campaign| {
+            campaign
+                .stages
+                .iter()
+                .flat_map(|stage| &stage.map_variants)
+                .any(|token| scenario_is_map(scenario, token))
+        })
+    }
+
+    /// DrawLoading552D60 calls CoopCampaignDefs49E400: the first campaign
+    /// with any case-insensitive map-token prefix of the logical ScenarioName.
+    /// Its55334C..55336A gate requires both authored names; they are literal,
+    /// including LS800 names at640 pixels. An unmatched custom scenario uses
+    /// VERA's safe ordinary-art fallback rather than native's unchecked pointer.
+    pub(crate) fn loading_art(&self, scenario: &str) -> Option<(&str, &str)> {
+        let campaign = self.campaigns.iter().find(|campaign| {
+            campaign
+                .stages
+                .iter()
+                .flat_map(|stage| &stage.map_variants)
+                .any(|token| scenario_starts_with(scenario, token))
+        })?;
+        (!campaign.load_screen.is_empty() && !campaign.load_screen_pallet.is_empty()).then_some((
+            campaign.load_screen.as_str(),
+            campaign.load_screen_pallet.as_str(),
+        ))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -741,11 +775,13 @@ pub enum CoopSave {
 pub const COOP_SAVE_INI: &str = "coopsave.ini";
 
 /// `INIClass::Put_HouseType` (`0x00475610`): a HouseType's ID, the
-/// `<Player @ A>`..`<Player @ H>` pseudo-Houses `0x117B..0x1182`,
+/// player pseudo-Houses (VERA extends A..H to A..AD),
 /// `<random>` for -2 and -3, else `<none>`.
 pub(crate) fn house_type_text(index: i32, roster: &[CooperativeCountryRosterEntry]) -> String {
+    if let Some(token) = crate::rules::native_processing::house_type_player_at_text(index) {
+        return token;
+    }
     match index {
-        0x117B..=0x1182 => format!("<Player @ {}>", (b'A' + (index - 0x117B) as u8) as char),
         -3 | -2 => "<random>".to_owned(),
         _ => usize::try_from(index)
             .ok()
@@ -1927,6 +1963,38 @@ mod tests {
     }
 
     #[test]
+    fn cooperative_loading_art_uses_first_prefix_match_and_requires_both_names() {
+        let mut registry = registry();
+        assert_eq!(
+            registry.loading_art("a2b.map.suffix"),
+            Some(("LSA.shp", "LSA.pal"))
+        );
+        assert_eq!(registry.campaign_for_scenario("a2b.map.suffix"), None);
+        registry.campaigns[1].stages[0].map_variants[0] = "A2".into();
+        registry.campaigns[1].load_screen = "later.shp".into();
+        registry.campaigns[1].load_screen_pallet = "later.pal".into();
+        registry.campaigns[0].load_screen_pallet.clear();
+        assert_eq!(
+            registry.loading_art("A2.MAP"),
+            None,
+            "empty first match does not select a later campaign"
+        );
+        assert_eq!(registry.loading_art("unlisted.map"), None);
+    }
+
+    /// A room's exInfo scenario names a campaign by any stage's variant as
+    /// `<token>.MAP` in any case; other files name none.
+    #[test]
+    fn a_campaign_map_scenario_names_its_campaign() {
+        let registry = registry();
+        assert_eq!(registry.campaign_for_scenario("a2b.map"), Some(0));
+        assert_eq!(registry.campaign_for_scenario("W1C.MAP"), Some(1));
+        for other in ["A1", "A1.YRM", "A1B.MAPX", "XMP29U2.MAP", ""] {
+            assert_eq!(registry.campaign_for_scenario(other), None, "{other}");
+        }
+    }
+
+    #[test]
     fn rejects_stage_with_fewer_than_three_native_variants() {
         let ini = IniFile::from_str(
             "[Campaigns]\n1=Broken\n[Broken]\nNumberOfCampaignMaps=1\nMap1=One,Two\n",
@@ -2747,5 +2815,10 @@ mod tests {
         assert_eq!(house_type_text(9, &roster), "<none>");
         assert_eq!(house_type_text(0x117B, &roster), "<Player @ A>");
         assert_eq!(house_type_text(0x1182, &roster), "<Player @ H>");
+        assert_eq!(house_type_text(0x1183, &roster), "<Player @ I>");
+        assert_eq!(house_type_text(0x1194, &roster), "<Player @ Z>");
+        assert_eq!(house_type_text(0x1195, &roster), "<Player @ AA>");
+        assert_eq!(house_type_text(0x1198, &roster), "<Player @ AD>");
+        assert_eq!(house_type_text(0x1199, &roster), "<none>");
     }
 }

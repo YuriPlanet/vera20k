@@ -20,8 +20,8 @@ use crate::ui::skirmish_shell::{
     combo_dropdown_needs_scrollbar, combo_dropdown_rect, combo_dropdown_row_rect,
     combo_dropdown_scroll_thumb_rect, combo_dropdown_scrollbar_rect,
     combo_dropdown_visible_row_count, combo_enabled, combo_face_rect, combo_items,
-    combo_swatch_rect, player_name_edit_text_rect, player_row_visible, selected_combo_item_index,
-    trackbar_visual_value,
+    combo_swatch_rect, opponent_scroll_geometry, player_name_edit_text_rect, player_row_visible,
+    selected_combo_item_index, trackbar_visual_value,
 };
 
 use super::chrome::{
@@ -877,11 +877,7 @@ pub(super) fn push_combo_instances(
         layout.scale,
     );
 
-    for (idx, opponent) in shell.opponents.iter().enumerate() {
-        if idx >= layout.rows.ai_type_combos.len() {
-            break;
-        }
-        let row = idx + 1;
+    for (slot, row, opponent) in shell.paged_opponents() {
         if !player_row_visible(shell, maps, row) {
             continue;
         }
@@ -889,9 +885,9 @@ pub(super) fn push_combo_instances(
             out,
             &chrome,
             ControlPaint::Combo {
-                rect: layout.rows.ai_type_combos[idx],
+                rect: layout.rows.ai_type_combos[slot - 1],
                 swatch: None,
-                open: open == Some(SkirmishComboId::AiType(idx)),
+                open: open == Some(SkirmishComboId::AiType(row - 1)),
                 disabled: false,
             },
             layout.scale,
@@ -901,7 +897,7 @@ pub(super) fn push_combo_instances(
             out,
             &chrome,
             ControlPaint::Combo {
-                rect: layout.rows.side_combos[row],
+                rect: layout.rows.side_combos[slot],
                 swatch: None,
                 open: open == Some(SkirmishComboId::Side(row)),
                 disabled: sibling_disabled,
@@ -912,7 +908,7 @@ pub(super) fn push_combo_instances(
             out,
             &chrome,
             ControlPaint::Combo {
-                rect: layout.color_combos[row],
+                rect: layout.color_combos[slot],
                 swatch: swatch_for(
                     (!sibling_disabled && opponent.color_claimed).then_some(opponent.color_index),
                 ),
@@ -925,7 +921,7 @@ pub(super) fn push_combo_instances(
             out,
             &chrome,
             ControlPaint::Combo {
-                rect: layout.rows.start_combos[row],
+                rect: layout.rows.start_combos[slot],
                 swatch: None,
                 open: open == Some(SkirmishComboId::Start(row)),
                 disabled: sibling_disabled,
@@ -936,7 +932,7 @@ pub(super) fn push_combo_instances(
             out,
             &chrome,
             ControlPaint::Combo {
-                rect: layout.rows.team_combos[row],
+                rect: layout.rows.team_combos[slot],
                 swatch: None,
                 open: open == Some(SkirmishComboId::Team(row)),
                 // Team is the one sibling whose enable state is row-active AND
@@ -944,6 +940,29 @@ pub(super) fn push_combo_instances(
                 // `sibling_disabled`.
                 disabled: !combo_enabled(shell, maps, SkirmishComboId::Team(row)),
             },
+            layout.scale,
+        );
+    }
+}
+
+/// VERA's scrollbar beside the computer rows of a map with more than eight
+/// starts: the shared list's frame and scrollbar.
+pub(super) fn push_opponent_scrollbar_instances(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    layout: &SkirmishShellLayout,
+    shell: &SkirmishShellState,
+    maps: &[MapMenuEntry],
+) {
+    if let Some(geometry) = opponent_scroll_geometry(layout, shell, maps) {
+        super::list::paint_list(
+            out,
+            atlas,
+            geometry,
+            shell.first_opponent,
+            None,
+            shell.opponent_scroll.pressed_part(),
+            false,
             layout.scale,
         );
     }
@@ -1071,7 +1090,8 @@ mod tests {
                 shell.refresh_country_catalog(&rules);
                 let maps = [];
                 let selected = selected_combo_item(&shell, id);
-                let arrow = combo_arrow_hit_rect(combo_rect(&layout, id).unwrap(), layout.scale);
+                let arrow =
+                    combo_arrow_hit_rect(combo_rect(&layout, &shell, id).unwrap(), layout.scale);
                 handle_option_mouse_down(&mut shell, &layout, &maps, arrow.x, arrow.y);
                 assert_eq!(shell.open_combo_dropdown.unwrap().id, id);
                 let content = combo_dropdown_content_rect(&shell, &layout, &maps, id).unwrap();
@@ -1356,16 +1376,16 @@ mod tests {
                 (true, skirmish.unit_count),
                 (true, players),
             ];
-            windows.extend(
-                LauncherOptionsLayout::new(
-                    width as i32,
-                    height as i32,
-                    crate::ui::main_menu_dialogs::options::OptionsPage::Main,
-                )
-                .trackbars
-                .into_iter()
-                .map(|(id, rect)| (id.plaque_reserve() > 0, rect)),
-            );
+            // 640x480 fits Options to the window, so its rects map back first.
+            for category in crate::ui::main_menu_dialogs::options::Category::ALL {
+                let layout = LauncherOptionsLayout::new(width as i32, height as i32, category);
+                windows.extend(
+                    layout
+                        .trackbars
+                        .iter()
+                        .map(|&(id, rect)| (id.plaque_reserve() > 0, layout.scale.base_rect(rect))),
+                );
+            }
             windows.extend(
                 crate::ui::shell::sound::ShellSoundLayout::new(width as i32, height as i32)
                     .sliders

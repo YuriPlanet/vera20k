@@ -17,7 +17,6 @@ pub(crate) enum PresentedShell {
     Campaign,
     LoadSavedGame,
     Options,
-    NetworkOptions,
     LanLobby,
     NetworkSetup,
     WolWelcome,
@@ -138,7 +137,7 @@ pub(super) enum RandomMapTarget {
     /// asks to eject AI players while no dialog shows or slides. Cancel slides
     /// the chooser in and it settles; OK closes it without a slide and `0x102`
     /// settles with the random map.
-    Eject(crate::ui::skirmish_shell::EjectPromptButton),
+    Eject(crate::ui::skirmish_shell::ChooseMapPromptButton),
     /// The same route's eject box, presented over no dialog.
     EjectBox,
 }
@@ -277,7 +276,7 @@ fn guard(
             ) && shell
                 .choose_map_modal
                 .as_ref()
-                .is_some_and(|modal| modal.eject_prompt.is_some()))
+                .is_some_and(|modal| modal.message_box.is_some()))
             || shell.validation_modal.is_some()
             || (shell.saved_seed_browser.is_some()
                 && chooser != Some(ChooserTarget::RandomMap(RandomMapTarget::SeedBrowserReturn)))
@@ -478,7 +477,7 @@ impl SkirmishCapture {
                 .skirmish_shell_state
                 .choose_map_modal
                 .as_ref()
-                .is_some_and(|modal| modal.eject_prompt.is_some()),
+                .is_some_and(|modal| modal.message_box.is_some()),
             "Use Map on the first map did not ask to eject AI players"
         );
         self.route.push(json!({"dialog": 0x6b, "frame": frame,
@@ -757,8 +756,12 @@ impl SkirmishCapture {
         let id = SkirmishComboId::AiType(1);
         let layout =
             crate::ui::skirmish_shell::compute_layout(state.render_width(), state.render_height());
-        let face = crate::ui::skirmish_shell::combo_rect(&layout, id)
-            .context("AI row 2 has no type combo")?;
+        let face = crate::ui::skirmish_shell::combo_rect(
+            &layout,
+            &state.frontend.skirmish_shell_state,
+            id,
+        )
+        .context("AI row 2 has no type combo")?;
         Self::set_pointer(
             state,
             (
@@ -836,7 +839,7 @@ impl SkirmishCapture {
     fn eject_step(
         &mut self,
         state: &mut AppState,
-        answer: Option<crate::ui::skirmish_shell::EjectPromptButton>,
+        answer: Option<crate::ui::skirmish_shell::ChooseMapPromptButton>,
         frame: u32,
     ) -> Result<()> {
         let shell = &state.frontend.skirmish_shell_state;
@@ -859,7 +862,7 @@ impl SkirmishCapture {
             shell
                 .choose_map_modal
                 .as_ref()
-                .is_some_and(|modal| modal.eject_prompt.is_some()),
+                .is_some_and(|modal| modal.message_box.is_some()),
             "Use Map on the two-player random map did not ask to eject AI players"
         );
         ensure!(
@@ -882,20 +885,20 @@ impl SkirmishCapture {
             state.render_height() as i32,
         );
         let button = match answer {
-            crate::ui::skirmish_shell::EjectPromptButton::Ok => layout.ok,
-            crate::ui::skirmish_shell::EjectPromptButton::Cancel => layout.cancel,
+            crate::ui::skirmish_shell::ChooseMapPromptButton::Ok => layout.ok,
+            crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel => layout.cancel,
         };
         Self::set_pointer(state, (button.x + button.w / 2, button.y + button.h / 2));
-        App::handle_choose_map_eject_mouse_down(state);
-        App::handle_choose_map_eject_mouse_up(state);
+        App::handle_choose_map_prompt_mouse_down(state);
+        App::handle_choose_map_prompt_mouse_up(state);
         Self::set_pointer(state, self.rest_point());
         let shell = &state.frontend.skirmish_shell_state;
         match answer {
-            crate::ui::skirmish_shell::EjectPromptButton::Ok => ensure!(
+            crate::ui::skirmish_shell::ChooseMapPromptButton::Ok => ensure!(
                 shell.choose_map_modal.is_none() && state.frontend.shell_exit.is_none(),
                 "OK on the eject box slid the hidden chooser out"
             ),
-            crate::ui::skirmish_shell::EjectPromptButton::Cancel => ensure!(
+            crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel => ensure!(
                 shell.top_dialog()
                     == Some(crate::ui::skirmish_shell::SkirmishShellDialog::ChooseMap),
                 "Cancel on the eject box did not show the chooser"
@@ -1284,10 +1287,12 @@ impl SkirmishCapture {
                 // Cancel shows the chooser, whose first paint slides it in
                 // (`0x005E6B47`); OK shows `0x102` again.
                 let kind = match answer {
-                    crate::ui::skirmish_shell::EjectPromptButton::Cancel => {
+                    crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel => {
                         ShellSlideKind::ChooseMap
                     }
-                    crate::ui::skirmish_shell::EjectPromptButton::Ok => ShellSlideKind::Skirmish,
+                    crate::ui::skirmish_shell::ChooseMapPromptButton::Ok => {
+                        ShellSlideKind::Skirmish
+                    }
                 };
                 if entry_wave_tick(state, kind).is_some() {
                     self.entry_seen = true;
@@ -1469,7 +1474,7 @@ impl SkirmishCapture {
                         .skirmish_shell_state
                         .choose_map_modal
                         .as_ref()
-                        .is_some_and(|modal| modal.eject_prompt.is_some()));
+                        .is_some_and(|modal| modal.message_box.is_some()));
             }
             Some(ChooserTarget::Entry(target)) => {
                 return Ok(self.phase == Phase::Chooser
@@ -1528,14 +1533,16 @@ impl SkirmishCapture {
                             && Self::chooser_settled(state)
                     }
                     RandomMapTarget::Eject(
-                        crate::ui::skirmish_shell::EjectPromptButton::Cancel,
+                        crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel,
                     ) => {
                         self.phase == Phase::RandomMapEject
                             && self.answer_rested
                             && Self::chooser_settled(state)
                     }
                     RandomMapTarget::EjectBox => self.phase == Phase::RandomMap && self.eject_seen,
-                    RandomMapTarget::Eject(crate::ui::skirmish_shell::EjectPromptButton::Ok) => {
+                    RandomMapTarget::Eject(
+                        crate::ui::skirmish_shell::ChooseMapPromptButton::Ok,
+                    ) => {
                         self.phase == Phase::RandomMapEject
                             && self.answer_rested
                             && state
@@ -1649,7 +1656,7 @@ impl SkirmishCapture {
                             RandomMapTarget::CancelEntry(_)
                             | RandomMapTarget::CancelSteady
                             | RandomMapTarget::Eject(
-                                crate::ui::skirmish_shell::EjectPromptButton::Cancel,
+                                crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel,
                             )
                             | RandomMapTarget::EjectBox,
                         ),
@@ -1659,7 +1666,7 @@ impl SkirmishCapture {
                 (
                     Some(ChooserTarget::RandomMap(
                         RandomMapTarget::UseMap
-                        | RandomMapTarget::Eject(crate::ui::skirmish_shell::EjectPromptButton::Ok),
+                        | RandomMapTarget::Eject(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok),
                     )),
                     _,
                 ) => Some(0x102),

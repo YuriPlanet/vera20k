@@ -7,8 +7,9 @@
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="Senaste körningen av bibliotekstesterna för macOS (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="Bibliotekstester för macOS" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="Senaste körningen av bibliotekstesterna för Linux (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Bibliotekstester för Linux" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="Senaste körningen av bibliotekstesterna för Windows (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Bibliotekstester för Windows" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="Senaste körningen av WebAssembly-bygget (startas manuellt)"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="WebAssembly-bygge" height="23" align="middle"></a>
   <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="Gå med i Discord-servern" height="23" align="middle"></a>
-  <img src="https://img.shields.io/badge/QQ_grupp-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-grupp" height="23" align="middle">
+  <img src="https://img.shields.io/badge/QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ-grupp" height="23" align="middle">
 </p>
 
 # VERA20K
@@ -19,6 +20,12 @@ de ursprungliga spelfilerna, så du behöver en egen kopia av Red Alert 2: Yuri'
 VERA20K görs av spelare, för spelare, och det är spelarna som har sista ordet om vart projektet
 ska gå.
 
+**Vi behöver fler underhållare.** Om du vill hjälpa till att granska PR:er, stötta nya
+medverkande eller ta hand om en del av motorn, säg till på [Discord](https://discord.gg/kmjRUn5m5F) eller i
+QQ-gruppen (1097193563).
+
+**Var inte rädd för att skicka in en PR.** Den behöver inte vara perfekt; vi hjälper till med resten.
+
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K: inställningar för skirmish och bild från spelet" width="100%">
 
 ## Projektets mål
@@ -28,19 +35,7 @@ ska gå.
 3. Integrera kända RTS-funktioner och några som aldrig setts förut.
 4. Integrerad flerspelarklient
 
-## Aktuellt läge
-
-**Under aktiv utveckling.**
-
-- **Skirmish:** Går att spela på Windows, Linux och macOS, med kartor från originalspelet
-  och slumpgenererade kartor, basbygge, resursinsamling, strider samt möjlighet att spara och ladda spel.
-- **Kampanjer:** Uppdrag går att starta; stödet är fortfarande ofullständigt.
-- **AI:** Delar av originalets AI sköter basbygge och skriptstyrda anfall.
-- **Pågående arbete:** Spelmekanikens exakthet, grafik och prestanda.
-- **Flerspelarläge:** LAN- och onlinespel finns i aktuella källkodsbyggen för macOS och Linux.
-- **Skala:** Två onlinematcher i följd klarade funktionsvalideringen med
-  30 oberoende klientprocesser och fler än 20 000 aktiva rörliga enheter per match.
-  Linux-klienterna delade virtuella maskiner; jämn prestanda i realtid är inte fastställd.
+Se [färdplanen](https://github.com/orgs/YuriPlanet/projects/1) för aktuella prioriteringar och framtida planer.
 
 ## Ladda ner och spela
 
@@ -48,16 +43,21 @@ Ladda ner installationsprogrammet för Windows, macOS eller Linux från
 [releasesidan](https://github.com/YuriPlanet/vera20k/releases). Det hittar ditt Yuri's Revenge och
 installerar VERA20K i en ny mapp.
 
-Använd **Options** för ljud och kontroller och **Vera Options** för VERA-specifika funktioner.
-
 För att starta skirmish-matcher eller kampanjer i YR för en spelare från en CnCNet-klient, se
 [installationen av offlineklienten](integrations/cncnet/README.md).
 
 ## Bidra
 
-All hjälp är välkommen. Du kan skriva kod, refaktorera motorn, testa spelet, dela idéer eller
-spela det sida vid sida med originalet och berätta vad som känns fel. Öppna en PR så tar vi det
-därifrån.
+All hjälp är välkommen, och de här områdena behöver den mest. Varje område länkar till sin sida
+i färdplanen, med pågående arbete och nästa steg:
+
+- **[Spelmekanik och strid](https://github.com/YuriPlanet/vera20k/issues/3830):** enheternas beteende, skada och pålitliga skirmish-matcher.
+- **[Prestanda](https://github.com/YuriPlanet/vera20k/issues/3831):** bildfrekvens och respons i stora slag och på äldre hårdvara.
+- **[Flerspelarläge](https://github.com/YuriPlanet/vera20k/issues/3832):** att gå med i, starta och hålla igång onlinematcher, och pålitligt samarbetsspel.
+- **[Gränssnitt och ljud](https://github.com/YuriPlanet/vera20k/issues/3833):** menyer, text, översättningar och ljud.
+- **[Kampanjer](https://github.com/YuriPlanet/vera20k/issues/3834):** uppdragen startar, men att spela dem till slutet kräver mer arbete: mål, triggers, skriptade övergångar, spara/ladda och övergången till nästa uppdrag.
+- **[Moddkompatibilitet](https://github.com/YuriPlanet/vera20k/issues/3835):** funktioner från Ares och Phobos, utan att ändra originalspelets standardbeteende.
+- **[Testning](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** spela VERA20K sida vid sida med originalet och rapportera det som spelar annorlunda.
 
 Medverkande kan ta ansvar för delar av motorn, med stor frihet att göra ändringar som driver
 VERA20K framåt.
@@ -92,8 +92,6 @@ Du behöver:
   erbjuder sig att installera; på macOS `xcode-select --install`; på Debian och Ubuntu
   `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`.
 
-VERA20K har spelats på Windows, Linux och macOS.
-
 ```sh
 git clone https://github.com/YuriPlanet/vera20k.git
 cd vera20k
@@ -111,12 +109,12 @@ portar sedan dess beteende till Rust och kontrollerar det med
 
 ## Anpassning
 
-Kartkapaciteten väljs automatiskt utan byggflagga: summan av bredd och höjd i `Size` får vara högst 1024. Upp till 512 behålls den ursprungliga adresseringen; större kartor använder det utökade rutnätet. Generator, sparversioner och valideringsgränser: [stora kartor](README.md#large-maps).
+Kartkapaciteten väljs automatiskt utan byggflagga: summan av bredd och höjd i `Size` får vara högst 1024.
 
 VERA20K fungerar som standard precis som originalspelet. Varje annan ny funktion, även tillägg från
 moddar som Ares, måste vara avstängd tills den slås på med något av följande:
 
-- **En spelarinställning i VERA**, under **Options → Vera Options**, som sparas i avsnittet `[VERA]` i `VERA.INI`.
+- **En spelarinställning i VERA**, under **Options**, som sparas i avsnittet `[VERA]` i `VERA.INI`.
 - **Ett byggalternativ**, till exempel `--features ares` för de [Ares-tillägg](docs/ares.md) som stöds.
 - **En INI-nyckel**, som sätts av en mod eller en karta.
 
@@ -141,14 +139,17 @@ Command & Conquer och Red Alert, World-Altering Editor, Final Alert, YRpp, Ares,
 många andra.
 
 Copyright © 2026 Halvor Nikolai Rusten och VERA20K:s bidragsgivare.
-Licensierat under [GPLv3](LICENSE-GPL). Det här repot innehåller inga spelfiler. Command &
+Licensierat under [GPLv3](LICENSE-GPL) med [ytterligare villkor](LEGAL.md#additional-terms).
+Det här repot innehåller inga spelfiler. Command &
 Conquer och Red Alert är varumärken som tillhör Electronic Arts Inc., och skärmbilderna och
 appikonen, Red Alert 2:s röda stjärna, visar spelgrafik som ägs av Electronic Arts. VERA20K har
 ingen koppling till och stöds inte av Electronic Arts.
 
+**Läs [den juridiska informationen](LEGAL.md) innan du delar, säljer eller forkar VERA20K.**
+
 ## Dokumentation
 
-- [Bygg och kör](#bygg-och-kör): krav och hur du bygger från källkod.
+- [WebAssembly-förhandsversion](docs/wasm.md): ett valfritt enspelarbygge som körs i webbläsaren.
 - [INI-profiler](docs/ini-roots.md): välja regel-, grafik- och AI-filer.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) och [NPatch](docs/npatch.md): stöd för tilläggen och deras begränsningar.
 - [Motoröversikt](docs/index.md): kodens upplägg och hur motorns delar hänger ihop.

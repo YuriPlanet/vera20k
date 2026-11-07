@@ -1,0 +1,41 @@
+[package]
+name = "vera20k-android"
+version = "0.2.7"
+edition = "2024"
+description = "Android NativeActivity entry point for the VERA20k client"
+publish = false
+
+# A cdylib: Android loads libvera20k_android.so and calls `android_main`.
+# The desktop binaries in the root package never see this crate (it is not in
+# `default-members`) and its body is gated to Android, so a host `cargo check`
+# builds it as an empty library.
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+
+# The client's feature gates reach Android through this crate, so a shipped
+# build can turn the dev overlays off exactly as the desktop release workflow
+# does (`--no-default-features`). A second capability would be added the same
+# way.
+[features]
+default = ["dev-overlays"]
+dev-overlays = ["vera20k/dev-overlays"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+# The client, for entry::run_with_loop and the App it drives.
+vera20k = { path = "..", default-features = false }
+# The JNI-facing activity type winit takes from the loader.
+android-activity = { version = "0.6", features = ["native-activity"] }
+# Same version and default-feature set as the client's dependency; the Android
+# backend feature must agree with it or winit compiles without a backend.
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "android-native-activity"] }
+# The folder picker: a Storage Access Framework tree has no filesystem path, so
+# the activity and its ContentResolver are reached through JNI.
+jni = "0.21"
+ndk-context = "0.1"
+anyhow = { workspace = true }
+log = { workspace = true }
+
+[lints]
+workspace = true

@@ -129,8 +129,9 @@ the nullable setting; the same owner supplies the rules compatibility hash.
 `GameEntity::EmpState` privately owns Techno+504, the held Anim reference and
 LastMission (constructor -1). Existing Deactivation owns the shared offline latch,
 locomotor power and ResetOrdersToGuard; animation construction, ownership and
-retirement remain in AnimClass. The expiry-listener index derives from the held
-reference, and AnimPointerExpired clears only a matching reference. Limbo does
+retirement remain in AnimClass. The anim-holder index derives from the held
+reference, which only `EntityStore::write_held_anim` stores, and
+AnimPointerExpired clears only a matching reference. Limbo does
 not clear or advance the counter. Destruction uses the existing object/attached
 Anim lifecycle, without an invented EMP destructor action.
 

@@ -597,13 +597,20 @@ fn parse_personality_def(id: &str, section: &IniSection) -> PersonalityDef {
 ///   them. An unknown name warns and leaves the house with no commander rather
 ///   than silently giving it something it did not ask for.
 ///
-/// A name the house's country is not eligible for still takes effect, with a
-/// warning: an explicit choice (a map, a test, a future selector) outranks the
-/// `Country=` filter, which only limits what the draw may offer.
+/// A name the house's country is not eligible for does **not** take effect.
+///
+/// `Country=` is not a stylistic filter: it is what makes a commander speak its
+/// own side's lines. Assigning an ineligible name anyway gave a Soviet house an
+/// Allied commander, so the player's own allies greeted them with the enemy's
+/// voices — the assignment table is written per launch slot, and a slot's side
+/// is whatever the launch rolled. The requested name is therefore replaced by
+/// one that does serve the country, `seed` choosing among them so two houses of
+/// the same side do not end up as the same person.
 pub fn personality_for_house(
     catalog: &PersonalityCatalog,
     country: &str,
     requested: Option<&str>,
+    seed: usize,
 ) -> Option<u16> {
     let Some(requested) = requested else {
         return None;
@@ -616,15 +623,27 @@ pub fn personality_for_house(
     }
     match catalog.index_of_name(requested) {
         Some(index) => {
-            if let Some(definition) = catalog.get(index) {
-                if !definition.reserved && !definition.admits(country) {
-                    log::warn!(
-                        "Commander={requested} does not list {country} in Country=; \
-                         assigned anyway because the name was requested explicitly"
-                    );
-                }
+            if catalog.get(index).is_some_and(|definition| definition.admits(country)) {
+                return Some(index);
             }
-            Some(index)
+            // `STANDARD` has no `Country=`, so `admits` accepts it everywhere
+            // and an explicit `Commander=Standard` still means "no clips".
+            let candidates = catalog.candidates_for(country);
+            let Some(&substitute) = candidates.get(seed % candidates.len().max(1)) else {
+                log::warn!(
+                    "Commander={requested} does not serve {country}, and no \
+                     [AIPersonalities] entry does; the house gets none"
+                );
+                return None;
+            };
+            log::warn!(
+                "Commander={requested} does not list {country} in Country=; \
+                 {} takes the slot instead so the commander speaks its own side",
+                catalog
+                    .get(substitute)
+                    .map_or("another commander", |definition| definition.name.as_str())
+            );
+            Some(substitute)
         }
         None => {
             log::warn!(

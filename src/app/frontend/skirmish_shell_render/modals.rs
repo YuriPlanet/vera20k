@@ -58,7 +58,9 @@ pub(crate) fn render_saved_game_loading(
     use super::in_game_shell::{
         InGameShellFrame, ShellFrameArt, ShellFrameCursor, ShellFrameOverlay,
     };
-    use crate::ui::shell::modal::{body_ok_layout, build_saved_game_loading_descriptor, control};
+    use crate::ui::shell::modal::{
+        body_ok_layout, body_ok_layout_in, build_saved_game_loading_descriptor, control,
+    };
 
     // An in-match load paints over the match frame at its source size and
     // zooms with it; a menu load paints over the menu at the window's size.
@@ -88,9 +90,15 @@ pub(crate) fn render_saved_game_loading(
         .expect("loading shell chrome");
     // 559D60 shows F0 before 69BB40 clears Session+30D8. An active load thus
     // starts with its current side; a menu load starts with the neutral assets.
-    let side = (state.frontend.screen == crate::ui::game_screen::GameScreen::InGame)
-        .then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
-    let layout = body_ok_layout(frame.0 as i32, frame.1 as i32);
+    let in_match = state.frontend.screen == crate::ui::game_screen::GameScreen::InGame;
+    let side =
+        in_match.then(|| crate::app::presentation::sidebar_render::current_sidebar_theme(state));
+    let (width, height) = (frame.0 as i32, frame.1 as i32);
+    let layout = if in_match {
+        body_ok_layout_in(RectPx::new(0, 0, width, height))
+    } else {
+        body_ok_layout(width, height)
+    };
     let descriptor = build_saved_game_loading_descriptor();
     let body = descriptor
         .controls
@@ -109,6 +117,10 @@ pub(crate) fn render_saved_game_loading(
         align: super::text::validation_modal_body_text_align(),
         path_a_reveal: None,
     }];
+    // A zoomed match's text is drawn in the window (`window_ui`).
+    let raster = crate::app::presentation::window_ui::shell_raster(state, false)
+        .unwrap_or(crate::render::bit_font::TextRaster::NATIVE);
+    let frame_raster = state.renderer.bit_font.set_raster(raster);
     let modal = shell_paint::paint_modal_shp(
         &state.renderer.bit_font,
         atlas.mode_two_dialog_background(side),
@@ -119,7 +131,7 @@ pub(crate) fn render_saved_game_loading(
         ShellScale::RETAIL,
         VALIDATION_MODAL_SPRITE_DEPTHS,
     );
-    super::in_game_shell::render_shell_frame(
+    let painted = super::in_game_shell::render_shell_frame(
         state,
         encoder,
         destination,
@@ -132,7 +144,9 @@ pub(crate) fn render_saved_game_loading(
         art,
         ShellFrameOverlay::default(),
         ShellFrameCursor::Hidden,
-    )
+    );
+    state.renderer.bit_font.set_raster(frame_raster);
+    painted
 }
 
 /// Native owner-draw listboxes preserve a composed backing surface. On the
@@ -305,29 +319,73 @@ pub(super) fn push_message_box_backdrop_instances(
     push_lower_strip_instance(out, atlas, layout);
 }
 
-/// Use Map's two-button eject box.
-pub(super) fn push_eject_box_instances(
+/// VERA's download boxes show how much has arrived: an outlined bar under
+/// the box's text, filled in the label colour.
+pub(super) fn push_download_progress_bar(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    body: RectPx,
+    (completed, total): (u64, u64),
+    depth: f32,
+) {
+    let track = RectPx::new(body.x, body.y + body.h + 6, body.w, 10);
+    push_rect_outline(out, atlas, track, SHELL_LABEL_TEXT_RGB, depth);
+    let inner = track.w - 4;
+    let filled = (inner as u64 * completed.min(total) / total.max(1)) as i32;
+    if filled > 0 {
+        push_solid_rect(
+            out,
+            atlas,
+            RectPx::new(track.x + 2, track.y + 2, filled, track.h - 4),
+            SHELL_LABEL_TEXT_RGB,
+            depth,
+        );
+    }
+}
+
+/// Use Map's two-button box. gamemd's eject-AI question and VERA's random-map
+/// failure draw gamemd's art; VERA's map-library download boxes draw Red
+/// Alert 2's, like its other online-service boxes.
+pub(super) fn push_choose_map_prompt_instances(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
     screen: RectPx,
-    prompt: crate::ui::skirmish_shell::EjectPrompt,
+    prompt: crate::ui::skirmish_shell::ChooseMapPrompt,
+    progress: Option<(u64, u64)>,
 ) {
     let boxed = crate::ui::shell::modal::quit_confirm_layout(screen.w, screen.h);
+    if prompt.kind == crate::ui::skirmish_shell::ChooseMapPromptKind::Downloading
+        && let Some(progress) = progress
+    {
+        push_download_progress_bar(
+            out,
+            atlas,
+            boxed.body,
+            progress,
+            VALIDATION_MODAL_SPRITE_DEPTHS.button,
+        );
+    }
     let pressed = |button| prompt.pressed == Some(button);
     let buttons = [
         shell_paint::ModalButton {
             rect: boxed.ok,
-            pressed: pressed(crate::ui::skirmish_shell::EjectPromptButton::Ok),
-            enabled: true,
+            pressed: pressed(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok),
+            enabled: prompt.button_enabled(crate::ui::skirmish_shell::ChooseMapPromptButton::Ok),
         },
         shell_paint::ModalButton {
             rect: boxed.cancel,
-            pressed: pressed(crate::ui::skirmish_shell::EjectPromptButton::Cancel),
+            pressed: pressed(crate::ui::skirmish_shell::ChooseMapPromptButton::Cancel),
             enabled: true,
         },
     ];
+    let background = match prompt.kind {
+        crate::ui::skirmish_shell::ChooseMapPromptKind::EjectAi
+        | crate::ui::skirmish_shell::ChooseMapPromptKind::RandomMapFailed => None,
+        _ => atlas.ra2_dialog_background,
+    }
+    .or_else(|| atlas.mode_two_dialog_background(None));
     out.extend(shell_paint::paint_modal_sprites(
-        atlas.mode_two_dialog_background(None),
+        background,
         super::chrome::type3_button_frames(atlas),
         boxed.dialog,
         &buttons,
@@ -673,7 +731,7 @@ pub(super) fn push_saved_browser_modal_instances<I: Clone + PartialEq>(
                 background: Some(SHELL_MODAL_PANEL_RGB),
                 frame_depth: SHELL_DROPDOWN_DEPTH - 0.00011,
                 caret_depth: SHELL_DROPDOWN_DEPTH - 0.00012,
-                caret_visible: browser.opened_at.elapsed().as_millis() % 2000 < 1000,
+                caret_visible: browser.caret_blink_on(),
             },
             layout.scale,
         );

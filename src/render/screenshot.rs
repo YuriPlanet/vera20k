@@ -93,6 +93,50 @@ struct PresentedFrameCacheState {
     presented_screen_shake_offset: [i32; 2],
 }
 
+/// A requested screenshot's composition at the client's size
+/// ([`PresentedFrameCache::previous_composition`]).
+pub(crate) struct PreviousComposition {
+    texture: wgpu::Texture,
+    shake_offset_px: [i32; 2],
+    copied: bool,
+}
+
+impl PreviousComposition {
+    /// The client-sized copy this frame made of the composition, which later
+    /// passes may draw over before [`Self::read_back`]; `None` when the
+    /// retained composition is read as it is.
+    pub(crate) fn copy(&self) -> Option<&wgpu::Texture> {
+        self.copied.then_some(&self.texture)
+    }
+
+    /// Queue the readback, moved by its frame's committed shake snapshot.
+    pub(crate) fn read_back(
+        self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        client_format: wgpu::TextureFormat,
+        screen_presentation: &mut crate::render::screen_presentation::ScreenPresentationPass,
+        central_rect_px: [u32; 4],
+    ) -> Result<crate::render::frame_readback::PendingTextureReadback> {
+        screen_presentation.apply_offset_px(
+            device,
+            encoder,
+            &self.texture,
+            central_rect_px,
+            self.shake_offset_px,
+        );
+        crate::render::frame_readback::PendingTextureReadback::encode(
+            device,
+            encoder,
+            &self.texture,
+            client_format,
+            self.texture.width(),
+            self.texture.height(),
+        )
+        .map_err(anyhow::Error::new)
+    }
+}
+
 impl PresentedFrameCache {
     /// Copy the completed UI composition before the software cursor is drawn.
     /// The staged surface does not become screenshot-visible until the app
@@ -147,102 +191,56 @@ impl PresentedFrameCache {
         state.slots.mark_staged();
     }
 
-    /// Queue a readback from the previously presented cursor-free composition.
+    /// The previously presented cursor-free composition at the client's
+    /// size, for a requested screenshot ([`PreviousComposition::read_back`]).
     /// When the game renders below client resolution, the retained source is
-    /// passed through the same zoom pass into a temporary client-sized target
-    /// before readback.
-    pub(crate) fn capture_previous_if_requested(
+    /// passed through the same zoom pass into a temporary client-sized
+    /// target; a shaken one is copied there too, to be moved, and so is one
+    /// that is to be drawn over (`copy`). `None` without a request or a
+    /// presented composition.
+    pub(crate) fn previous_composition(
         &self,
         requested: bool,
+        copy: bool,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         client_format: wgpu::TextureFormat,
         client_width: u32,
         client_height: u32,
         upscale: Option<&crate::render::upscale_pass::UpscalePass>,
-        screen_presentation: &mut crate::render::screen_presentation::ScreenPresentationPass,
-        central_rect_px: [u32; 4],
-    ) -> Result<Option<crate::render::frame_readback::PendingBgra8Readback>> {
+    ) -> Result<Option<PreviousComposition>> {
         let mut state = self.state.borrow_mut();
-        if !requested || state.slots.presented().is_none() {
+        let Some(presented) = state.slots.presented().filter(|_| requested).cloned() else {
             return Ok(None);
+        };
+        let shake_offset_px = state.presented_screen_shake_offset;
+        if !copy
+            && shake_offset_px == [0, 0]
+            && (state.width, state.height) == (client_width, client_height)
+        {
+            return Ok(Some(PreviousComposition {
+                texture: presented,
+                shake_offset_px,
+                copied: false,
+            }));
         }
-
-        if state.presented_screen_shake_offset != [0, 0] {
-            state.ensure_client_readback_texture(
-                device,
-                client_format,
-                client_width,
-                client_height,
-            );
-            let target = state
-                .client_readback_texture
-                .as_ref()
-                .expect("client screenshot target was just ensured");
-            state.encode_previous_composition(
-                device,
-                encoder,
-                target,
-                (client_width, client_height),
-                upscale,
-            )?;
-            screen_presentation.apply_offset_px(
-                device,
-                encoder,
-                target,
-                central_rect_px,
-                state.presented_screen_shake_offset,
-            );
-            return crate::render::frame_readback::PendingBgra8Readback::encode(
-                device,
-                encoder,
-                target,
-                client_format,
-                client_width,
-                client_height,
-            )
-            .map(Some)
-            .map_err(anyhow::Error::new);
-        }
-
-        if state.width == client_width && state.height == client_height {
-            return crate::render::frame_readback::PendingBgra8Readback::encode(
-                device,
-                encoder,
-                state
-                    .slots
-                    .presented()
-                    .expect("presented source was checked above"),
-                client_format,
-                client_width,
-                client_height,
-            )
-            .map(Some)
-            .map_err(anyhow::Error::new);
-        }
-
         state.ensure_client_readback_texture(device, client_format, client_width, client_height);
         let target = state
             .client_readback_texture
-            .as_ref()
+            .clone()
             .expect("client screenshot target was just ensured");
         state.encode_previous_composition(
             device,
             encoder,
-            target,
+            &target,
             (client_width, client_height),
             upscale,
         )?;
-        crate::render::frame_readback::PendingBgra8Readback::encode(
-            device,
-            encoder,
-            target,
-            client_format,
-            client_width,
-            client_height,
-        )
-        .map(Some)
-        .map_err(anyhow::Error::new)
+        Ok(Some(PreviousComposition {
+            texture: target,
+            shake_offset_px,
+            copied: true,
+        }))
     }
 
     /// Commit the staged composition only after its cursor-bearing counterpart

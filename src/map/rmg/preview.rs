@@ -327,6 +327,7 @@ mod tests {
     fn overlay_color_miss_still_suppresses_terrain_callback() {
         let mut map = super::super::emit::empty_map_file(&Default::default(), 20, 20);
         map.cells.push(crate::map::map_file::MapCell {
+            legacy_ice_byte: 0,
             rx: 20,
             ry: 20,
             tile_index: 0,

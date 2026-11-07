@@ -323,7 +323,7 @@ fn constructor_side_admission_matches_original_foot_receiver() {
             cell.bridge_facts.raw_flags = flags;
             // Original674000 reads Foot=1.0 for the Clear0/Road1 cells in
             // this corpus; the fixture catalog only recalculates its body.
-            cell.speed_costs.foot = Some(100);
+            cell.speed_costs.foot = Some(crate::util::native_x87::NativeF32Bits::ONE);
             sim.substrate.raw_cell_occupation.mark_ground(
                 x,
                 y,
@@ -464,6 +464,11 @@ fn sparse_native_sight_indexes_real_cells_and_keeps_diagnostics_read_only() {
     sim.session.set_binary_frame_for_test(1);
     sim.fog = crate::sim::vision::FogState::new(33, 33);
     let owner = sim.interner.intern("Americans");
+    // A human player's house: its client map is the plane under test.
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     let type_ref = sim.interner.intern("E1");
     let mut object =
         crate::sim::game_entity::GameEntity::test_default(101, "E1", "Americans", 16, 16);

@@ -30,6 +30,7 @@
 //! | `read_int_fields` (`_complete`) | ReadString, then `sscanf("%d,%d,...")` over the current fields |
 //! | `read_int_list` | `DifficultyClass::ReadINI_IntVector` 0x00475D70 |
 //! | `read_coord3` | `CCINIClass::Read3Int` 0x00529CA0, `sscanf("%d,%d,%d")` |
+//! | `read_coord3_fold` | the same scan folded across rules passes (self-default) |
 //! | `read_coord_tokens` | `0x00476420`: three `strtok(",")` + `atoi` |
 //! | `read_float_tokens` | `0x00476340`: three `strtok(",")` + `atof` |
 //! | `read_color_list` | `0x00476B20`: `strtok(",")` in `(r,g,b)` groups |
@@ -1168,6 +1169,23 @@ impl IniSection {
     pub fn read_minmax(&self, key: &str, default: [i32; 2]) -> [i32; 2] {
         self.fold_rules_values(key, default, |current, raw| {
             let mut out = [0; 2];
+            let complete = scan_int_fields(strtrim_ascii(truncate_native_bytes(raw, 63)), &mut out)
+                == out.len();
+            if complete { out } else { current }
+        })
+    }
+
+    /// [`Self::read_coord3`]'s `Read3Int @ 0x00529CA0` scan folded across the
+    /// retained rules passes: `BuildingTypeClass::ReadINI @ 0x0045FE50` reads
+    /// the `VoxelBarrelOffsetTo*` keys (`0x00464697..0x00464734`) once per
+    /// layer with the destination's current content as the default, so a
+    /// missing or malformed later read keeps the earlier layer's triple. The
+    /// first pass's native default is uninitialized type memory (the
+    /// constructor `0x0045DD90` never writes the triples), which callers
+    /// replace with `(0,0,0)`. Each rules pass supplies its prior triple.
+    pub fn read_coord3_fold(&self, key: &str, default: [i32; 3]) -> [i32; 3] {
+        self.fold_rules_values(key, default, |current, raw| {
+            let mut out = [0; 3];
             let complete = scan_int_fields(strtrim_ascii(truncate_native_bytes(raw, 63)), &mut out)
                 == out.len();
             if complete { out } else { current }

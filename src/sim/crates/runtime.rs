@@ -362,7 +362,10 @@ mod tests {
             );
             assert_eq!(
                 (cell.speed_costs.track, cell.speed_costs.float),
-                (Some(0), Some(100))
+                (
+                    Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO),
+                    Some(crate::util::native_x87::NativeF32Bits::ONE)
+                )
             );
             assert!(!cell.overlay_blocks);
             assert!(loaded.path_grid().unwrap().is_walkable(15, 15));

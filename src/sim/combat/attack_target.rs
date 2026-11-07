@@ -38,6 +38,14 @@ impl From<TargetKind> for crate::sim::components::NavTargetRef {
 }
 
 impl TargetKind {
+    /// The object's id; `None` for a cell.
+    pub(crate) const fn object_id(self) -> Option<u64> {
+        match self {
+            Self::Entity(id) => Some(id),
+            Self::Cell(..) => None,
+        }
+    }
+
     /// Techno FireAt6FE55D passes the actual Object pointer to CreateBullet
     /// 46B050. Terrain reaches its existing Terrain receiver at impact.
     pub(crate) fn projectile_target(

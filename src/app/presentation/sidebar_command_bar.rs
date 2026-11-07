@@ -60,6 +60,9 @@ pub(crate) fn append_prepared(
     };
     // 6D0A20: native sidebar converter, frame0, clipped to the tactical-bottom
     // surface. Source pixels remain1:1; the wide spacer is cropped, not scaled.
+    // Its NeedsRedraw gate (set by RequestRedraw 6D0F00 for triggers and
+    // mission timers, RequestTimedRedraw 6D0EC0) only skips unchanged
+    // frames; VERA draws the bar every frame.
     draw(art.spacer, 0., layout.bounds.y);
     draw(art.left_cap[0], layout.left_cap.x, layout.left_cap.y);
     for slot in 0..layout.tile_count {

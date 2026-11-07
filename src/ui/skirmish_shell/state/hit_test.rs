@@ -5,8 +5,8 @@ use crate::skirmish_launch::{LaunchCountry, SKIRMISH_PLAYER_SLOT_COUNT};
 
 use super::super::layout::{
     ChooseMapModalButton, ChooseMapModalLayout, ColorComboId, DropdownMetrics,
-    RandomMapSetupControl, RectPx, SKIRMISH_AI_ROW_COUNT, SkirmishCheckboxId, SkirmishShellLayout,
-    SkirmishTrackbarId, combo_face_rect,
+    RandomMapSetupControl, RectPx, SkirmishCheckboxId, SkirmishShellLayout, SkirmishTrackbarId,
+    combo_face_rect,
 };
 use super::trackbars::{trackbar_ids, trackbar_rect};
 use super::{
@@ -76,7 +76,8 @@ pub fn hovered_shell_control(
             return Some(SkirmishHoverTarget::Trackbar(id));
         }
     }
-    for row in 0..SKIRMISH_PLAYER_SLOT_COUNT {
+    for slot in 0..SKIRMISH_PLAYER_SLOT_COUNT {
+        let row = state.slot_row(slot);
         if !player_row_visible(state, maps, row) {
             continue;
         }
@@ -86,19 +87,20 @@ pub fn hovered_shell_control(
             SkirmishComboId::Start(row),
             SkirmishComboId::Team(row),
         ] {
-            if combo_rect(layout, id)
+            if combo_rect(layout, state, id)
                 .is_some_and(|rect| combo_face_rect(rect, layout.scale).contains(x, y))
             {
                 return Some(SkirmishHoverTarget::ComboFace(id));
             }
         }
     }
-    for row in 0..SKIRMISH_AI_ROW_COUNT {
-        if !player_row_visible(state, maps, row + 1) {
+    for slot in 1..SKIRMISH_PLAYER_SLOT_COUNT {
+        let row = state.slot_row(slot);
+        if !player_row_visible(state, maps, row) {
             continue;
         }
-        let id = SkirmishComboId::AiType(row);
-        if combo_rect(layout, id)
+        let id = SkirmishComboId::AiType(row - 1);
+        if combo_rect(layout, state, id)
             .is_some_and(|rect| combo_face_rect(rect, layout.scale).contains(x, y))
         {
             return Some(SkirmishHoverTarget::ComboFace(id));
@@ -108,8 +110,8 @@ pub fn hovered_shell_control(
     // Static (non-interactive) controls are tested last: they do not overlap
     // the interactive widgets above, so order does not change any result, and
     // gamemd does not restrict 0x102 status help to interactive widgets.
-    for (row, flag) in layout.flags.iter().enumerate() {
-        if !player_row_visible(state, maps, row) {
+    for (slot, flag) in layout.flags.iter().enumerate() {
+        if !player_row_visible(state, maps, state.slot_row(slot)) {
             continue;
         }
         if flag.contains(x, y) {
@@ -154,6 +156,12 @@ pub fn status_help_key_for_hover(target: SkirmishHoverTarget) -> Option<&'static
         }
         SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::ChooseMap0x5aa) => {
             Some("STT:SkirmishButtonChooseMap")
+        }
+        SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::SaveSetup) => {
+            Some("VERA:SaveSetupHelp")
+        }
+        SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::LoadSetup) => {
+            Some("VERA:LoadSetupHelp")
         }
         SkirmishHoverTarget::OwnerDrawButton(OwnerDrawButton::Back0x5c0) => {
             Some("STT:SkirmishButtonBack")
@@ -341,6 +349,8 @@ pub fn action_for_owner_draw_button(button: OwnerDrawButton) -> SkirmishShellAct
     match button {
         OwnerDrawButton::StartGame0x617 => SkirmishShellAction::StartGame,
         OwnerDrawButton::ChooseMap0x5aa => SkirmishShellAction::ChooseMap,
+        OwnerDrawButton::SaveSetup => SkirmishShellAction::SaveSetup,
+        OwnerDrawButton::LoadSetup => SkirmishShellAction::LoadSetup,
         OwnerDrawButton::Back0x5c0 => SkirmishShellAction::BackOrExit,
     }
 }
@@ -355,6 +365,12 @@ pub fn hit_test_owner_draw_button(
     }
     if layout.choose_map_button.contains(x, y) {
         return Some(OwnerDrawButton::ChooseMap0x5aa);
+    }
+    if layout.save_setup_button.contains(x, y) {
+        return Some(OwnerDrawButton::SaveSetup);
+    }
+    if layout.load_setup_button.contains(x, y) {
+        return Some(OwnerDrawButton::LoadSetup);
     }
     if layout.back_button.contains(x, y) {
         return Some(OwnerDrawButton::Back0x5c0);
@@ -396,6 +412,9 @@ pub fn apply_action(
         SkirmishShellAction::StartGame => SkirmishShellAction::StartGame,
         SkirmishShellAction::BackOrExit => SkirmishShellAction::BackOrExit,
         SkirmishShellAction::ChooseMap => SkirmishShellAction::ChooseMap,
+        // The app owns the saved setups.
+        SkirmishShellAction::SaveSetup => SkirmishShellAction::SaveSetup,
+        SkirmishShellAction::LoadSetup => SkirmishShellAction::LoadSetup,
         SkirmishShellAction::SelectMap(idx) => {
             accept_selected_map(state, maps, idx);
             SkirmishShellAction::None

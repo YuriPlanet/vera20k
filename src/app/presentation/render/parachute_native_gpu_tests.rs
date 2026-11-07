@@ -29,7 +29,7 @@ use crate::render::sprite_atlas::{
 use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::terrain_draw::TerrainDrawRenderer;
 use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded, seed_depth_grid};
-use crate::render::unit_atlas::BarrelImagePitches;
+use crate::render::voxel_image_cache::VoxelImageCache;
 use crate::rules::effect_asset_catalog::tolerant_anim_class_roots;
 use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::ruleset::RuleSet;
@@ -219,7 +219,7 @@ impl Scene {
         let sim = &self.runtime.simulation;
         let order = NativeDisplayOrder::from_display(sim.display_layers());
         let interpolation = RenderInterpolation::new(false);
-        let pitches = RefCell::new(BarrelImagePitches::default());
+        let voxel_images = RefCell::new(VoxelImageCache::default());
         let mut parents = Vec::new();
         build_shp_instances_from_inputs(
             &ShpInputs {
@@ -227,7 +227,8 @@ impl Scene {
                 atlas: Some(atlas),
                 overlay_atlas: None,
                 unit_atlas: None,
-                barrel_image_pitches: &pitches,
+                voxel_images: &voxel_images,
+                depth_tested_images: None,
                 interpolation: &interpolation,
                 camera: vera_camera(),
                 render_size: SIZE,

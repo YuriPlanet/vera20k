@@ -7,8 +7,9 @@
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml?query=branch%3Amain" title="最近一次手动运行的 macOS 库测试"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/macos.yml/badge.svg?branch=main" alt="macOS 库测试" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml?query=branch%3Amain" title="最近一次手动运行的 Linux 库测试"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/linux.yml/badge.svg?branch=main" alt="Linux 库测试" height="23" align="middle"></a>
   <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml?query=branch%3Amain" title="最近一次手动运行的 Windows 库测试"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/windows.yml/badge.svg?branch=main" alt="Windows 库测试" height="23" align="middle"></a>
+  <a href="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml?query=branch%3Amain" title="最近一次手动运行的 WebAssembly 构建"><img src="https://github.com/YuriPlanet/vera20k/actions/workflows/wasm.yml/badge.svg?branch=main" alt="WebAssembly 构建" height="23" align="middle"></a>
   <a href="https://discord.gg/kmjRUn5m5F"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat&amp;logo=discord&amp;logoColor=white" alt="加入 Discord" height="23" align="middle"></a>
-  <img src="https://img.shields.io/badge/QQ%E7%BE%A4-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ 群" height="23" align="middle">
+  <img src="https://img.shields.io/badge/QQ-1097193563-1EBAFC?style=flat&amp;logo=qq&amp;logoColor=white" alt="QQ 群" height="23" align="middle">
 </p>
 
 # VERA20K
@@ -16,6 +17,10 @@
 VERA20K 是一个由社区主导、对原版引擎 `gamemd.exe` 进行重写的项目。它使用原版游戏文件，因此你需要自行准备一份《红色警戒2：尤里的复仇》。
 
 VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
+
+**我们需要更多维护者。** 如果你愿意帮忙审查 PR、指导新贡献者，或负责引擎的某个部分，请在 [Discord](https://discord.gg/kmjRUn5m5F) 或 QQ 群（1097193563）告诉我们。
+
+**别怕提交 PR。** 不必完美，剩下的我们会帮你。
 
 <img src="docs/images/vera20k-screenshots.png" alt="VERA20K 遭遇战设置界面和游戏画面" width="100%">
 
@@ -26,31 +31,25 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 3. 加入 RTS 游戏中已有的功能，以及一些前所未见的功能。
 4. 内置多人游戏客户端
 
-## 当前进度
-
-**积极开发中。**
-
-- **遭遇战：** Windows、Linux 和 macOS 上均可游玩，支持原版地图和随机地图、
-  基地建设、采矿、战斗以及存档和读档。
-- **战役：** 任务已可启动，支持尚不完整。
-- **AI：** 部分原版 AI 已能处理基地建设和脚本攻击。
-- **持续完善：** 游戏行为与原版的一致性、画面和性能。
-- **多人模式：** 当前源码构建已在 macOS 和 Linux 上支持局域网和在线对战。
-- **规模：** 连续两场在线对战通过了功能验证，每场均有 30 个独立客户端进程和超过 20,000 个活跃的可移动单位。
-  测试中的 Linux 客户端共用虚拟机；这不代表已实现流畅的实时性能。
+当前优先事项和未来计划请查看[路线图](https://github.com/orgs/YuriPlanet/projects/1)。
 
 ## 下载与游玩
 
 从[发布页面](https://github.com/YuriPlanet/vera20k/releases)下载适用于 Windows、macOS 或 Linux 的安装程序。它会找到你的《尤里的复仇》，并把 VERA20K 安装到一个新文件夹。
 
-声音和操作设置请使用 **Options**，VERA 专属功能请使用 **Vera Options**。
-
 如需通过 CnCNet 客户端启动 YR 单人遭遇战或战役，请参阅[离线客户端设置](integrations/cncnet/README.md)。
 
 ## 参与贡献
 
-欢迎帮忙。你可以编写代码、重构引擎、测试游戏、提出想法，或对照原版游玩，告诉我们哪些地方感觉不对。
-直接提交 PR 即可，剩下的交给我们。
+欢迎任何形式的帮助，以下方向最需要人手。每一项都链接到它在路线图中的页面，里面有正在进行的工作和下一步：
+
+- **[玩法与战斗](https://github.com/YuriPlanet/vera20k/issues/3830)：** 单位行为、伤害，以及遭遇战日常运行的稳定性。
+- **[性能](https://github.com/YuriPlanet/vera20k/issues/3831)：** 大规模战斗和旧硬件上的帧率与响应速度。
+- **[多人模式](https://github.com/YuriPlanet/vera20k/issues/3832)：** 加入、开始和持续进行在线对战，以及合作模式的稳定性。
+- **[界面与音频](https://github.com/YuriPlanet/vera20k/issues/3833)：** 菜单、文本、翻译和声音。
+- **[战役](https://github.com/YuriPlanet/vera20k/issues/3834)：** 任务已可启动，但要完整打通仍需努力：任务目标、触发器、脚本过场、存档读档和进入下一关。
+- **[模组兼容](https://github.com/YuriPlanet/vera20k/issues/3835)：** Ares 和 Phobos 的功能，同时不改变原版游戏的默认行为。
+- **[测试](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity)：** 对照原版游玩 VERA20K，报告玩起来不一样的地方。
 
 贡献者可以负责引擎的某些部分，并有很大的自由度去做推动 VERA20K 发展的改动。
 
@@ -81,8 +80,6 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 - **构建工具：** Windows 上需要 Visual Studio 的 C++ 生成工具，Rust 安装程序会提示安装；macOS 上运行
   `xcode-select --install`；Debian 和 Ubuntu 上运行 `sudo apt install build-essential libasound2-dev libxkbcommon-x11-0 pkg-config`。
 
-VERA20K 已在 Windows、Linux 和 macOS 上运行游玩过。
-
 ```sh
 git clone https://github.com/YuriPlanet/vera20k.git
 cd vera20k
@@ -107,12 +104,12 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 
 ## 自定义
 
-大地图容量会自动选择，无需编译开关：`Size` 的宽与高之和最多为 1024；不超过 512 时保留原有寻址，超过时使用扩展网格。生成命令、存档版本与验证范围见[大地图说明](README.md#large-maps)。
+大地图容量会自动选择，无需编译开关：`Size` 的宽与高之和最多为 1024。
 
 默认情况下，VERA20K 的玩法与原版游戏一致。其他新功能（包括 Ares 等模组的扩展）都必须默认关闭，
 只能通过以下方式之一开启：
 
-- **VERA 玩家选项**，位于 **Options → Vera Options**，保存在 `VERA.INI` 的 `[VERA]` 节下。
+- **VERA 玩家选项**，位于 **Options**，保存在 `VERA.INI` 的 `[VERA]` 节下。
 - **构建选项**，例如用 `--features ares` 编译受支持的 [Ares 扩展](docs/ares.md)。
 - **INI 键**，由模组或地图设置。
 
@@ -135,13 +132,15 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 《命令与征服》和《红色警戒》源码、World-Altering Editor、Final Alert、YRpp、Ares、Phobos，
 以及其他为此做出贡献的项目和社区。
 
-版权所有 © 2026 Halvor Nikolai Rusten 及 VERA20K 贡献者。本项目采用 [GPLv3](LICENSE-GPL) 许可证。本仓库不包含游戏文件。
+版权所有 © 2026 Halvor Nikolai Rusten 及 VERA20K 贡献者。本项目采用 [GPLv3](LICENSE-GPL) 许可证，并附有[附加条款](LEGAL.md#additional-terms)。本仓库不包含游戏文件。
 Command & Conquer 和 Red Alert 是 Electronic Arts Inc. 的商标，截图和应用图标（《红色警戒2》的红星）中的游戏美术资源归 Electronic Arts 所有。
 VERA20K 与 Electronic Arts 无隶属关系，也未获其认可。
 
+**在分享、出售或复刻（fork）VERA20K 之前，请先阅读[法律声明](LEGAL.md)。**
+
 ## 文档
 
-- [编译与运行](#编译与运行)：环境要求和从源码构建。
+- [WebAssembly 预览版](docs/wasm.zh-CN.md)：在浏览器中运行的可选单人版本。
 - [INI 配置方案](docs/ini-roots.md)：选择规则、美术和 AI 文件。
 - [Ares](docs/ares.md)、[Phobos](docs/phobos.md) 和 [NPatch](docs/npatch.md)：扩展的支持情况与限制。
 - [引擎概览](docs/index.md)：代码结构以及引擎各部分如何协同工作。

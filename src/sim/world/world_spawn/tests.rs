@@ -394,7 +394,7 @@ fn map_entity(type_id: &str, category: EntityCategory, cell: (u16, u16)) -> MapE
         recruitable_b: true,
         group: -1,
         follows: None,
-        structure_upgrades: [None, None, None],
+        structure_columns: Default::default(),
         structure_ai_sellable: false,
         structure_ai_repairable: false,
         structure_online: true,
@@ -456,7 +456,7 @@ fn map_veterancy_seed_matches_native_percent_and_rank() {
             line.push_str(token);
         }
         let ini = IniFile::from_str(&format!("[{section}]\n0={line}\n"));
-        let placements = crate::map::entities::parse_map_entities(&ini);
+        let placements = crate::map::entities::parse_map_entities(&ini, 4);
         assert_eq!(placements.len(), 1, "{id}: {token:?}");
         let native_percent = row["parsed_percent"]
             .as_i64()
@@ -495,6 +495,44 @@ fn map_veterancy_seed_matches_native_percent_and_rank() {
         std::collections::BTreeSet::from(["aircraft", "infantry", "unit"])
     );
     assert_eq!(compared, 81, "native percent and atoi boundary controls");
+}
+
+/// `UnitClass::Read_INI` queues and commences a map line's mission after
+/// Unlimbo (`0x0074361B..0x0074363B`) for every Unit, miners included.
+/// SOV03's Chrono Miner (`Civie2,CMIN,...,Sleep,06B56D1C`) sleeps instead of
+/// keeping the Harvest its Unlimbo idle mode chose. An authored Harvest
+/// leaves the miner harvesting.
+#[test]
+fn a_map_placed_chrono_miner_takes_its_authored_mission() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let place = |mission: &str| {
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 1);
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        let ini = IniFile::from_str(&format!(
+            "[Units]\n0=Russians,CMIN,256,16,16,64,{mission},None\n"
+        ));
+        let placements = crate::map::entities::parse_map_entities(&ini, 4);
+        assert_eq!(sim.spawn_from_map(&placements, Some(rules)), 1);
+        let miner = sim.substrate.entities.values().next().unwrap();
+        assert!(miner.is_harvester());
+        let id = miner.stable_id();
+        (sim, id)
+    };
+    use crate::sim::mission::MissionType;
+    let current = |sim: &Simulation, id: u64| {
+        let mission = sim.substrate.entities.get(id).unwrap().mission;
+        (mission.current().known(), mission.queued().known())
+    };
+
+    let (sim, miner) = place("Sleep");
+    assert_eq!(current(&sim, miner), (Some(MissionType::Sleep), None));
+
+    let (sim, miner) = place("Harvest");
+    assert_eq!(current(&sim, miner), (Some(MissionType::Harvest), None));
 }
 
 /// Radio65A750 and Building43BCBD..43BCD5 execute unchanged in the retained
@@ -1220,8 +1258,9 @@ fn infantry_owner_discovery_leaves_building_power_radar_and_spysat_inputs_unchan
 
 #[test]
 fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
-    // Retail Building440DFD/446767 allocate a nullable614 only after successful
-    // placement. Exercise both actual Unlimbo paths, including failed marks.
+    // A campaign Unlimbo lights its building (`0x00440D6C..0x00440E02`) only
+    // after a successful placement. Exercise both actual Unlimbo paths,
+    // including failed marks.
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[BuildingTypes]\n0=GALITE\n[GALITE]\nStrength=100\n\
          LightVisibility=5000\nLightIntensity=.2\n",
@@ -1242,24 +1281,21 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
         .first_key_value()
         .unwrap();
     assert!(source.active);
-    assert_eq!((source.rx, source.ry), (6, 5));
+    assert_eq!(
+        (source.center_x, source.center_y),
+        (6 * 256 + 128, 5 * 256 + 128)
+    );
     assert_eq!(authored.lighting_sources.pending().len(), 1);
     authored.lighting_sources.discard_pending();
     authored
         .lighting_sources
         .set_building_light_active(authored_id, false);
-    Simulation::allocate_building_light(
-        &authored.interner,
-        &authored.substrate,
-        &mut authored.lighting_sources,
-        authored_id,
-        &rules,
-    );
+    authored.light_building(authored_id, &rules);
     assert!(
-        !authored.lighting_sources.buildings()[&authored_id].active,
-        "a repeated construction callback must not activate an existing614"
+        authored.lighting_sources.buildings()[&authored_id].active,
+        "the light block Enables an existing614 (0x00554A60)"
     );
-    assert_eq!(authored.lighting_sources.pending().len(), 1);
+    assert_eq!(authored.lighting_sources.pending().len(), 2);
 
     let mut held = Simulation::with_seed(0x1a42);
     install_constructor_test_playfield(&mut held);
@@ -1321,6 +1357,44 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
     );
     assert!(failed_new.lighting_sources.buildings().is_empty());
     assert!(failed_new.lighting_sources.pending().is_empty());
+}
+
+/// A campaign Unlimbo skips the light block for a building the player has
+/// not discovered on ground open to the player (`Cell+0x12C & 0x10`,
+/// `0x00440D25..0x00440D4B`) and discovers it for the player instead
+/// (`0x00440D61`). A human-owned one CellPUT missed, here on open but
+/// unmapped ground, opens and so lights (`0x004466D5`).
+#[test]
+fn campaign_unlimbo_discovers_a_building_on_open_ground_instead_of_lighting_it() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=GALITE\n[GALITE]\nStrength=100\n\
+         LightVisibility=5000\nLightIntensity=.2\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(0x1a44);
+    install_constructor_test_playfield(&mut sim);
+    install_constructor_flat_terrain(&mut sim);
+    install_american_house(&mut sim);
+    let player = sim.interner.get("Americans").unwrap();
+    sim.session.set_current_house_for_test(Some(player));
+    sim.fog = crate::sim::vision::FogState::new(10, 10);
+    sim.fog.set_ground_bits_for_test(player, 6, 5, 0x10);
+    assert_eq!(
+        sim.spawn_from_map(
+            &[map_entity("GALITE", EntityCategory::Structure, (6, 5))],
+            Some(&rules),
+        ),
+        1
+    );
+    let (&id, light) = sim
+        .lighting_sources
+        .buildings()
+        .first_key_value()
+        .expect("the opening lights the lamp");
+    assert!(light.active);
+    let lamp = sim.substrate.entities.get(id).unwrap();
+    assert!(lamp.discovery.discovered_by_current_house());
+    assert!(lamp.building_art.actually_placed());
 }
 
 fn install_constructor_test_playfield(sim: &mut Simulation) {
@@ -2396,7 +2470,7 @@ fn authored_retail_upgrade_scene(
         .set_current_house_for_test(sim.interner.get("Americans"));
     // This bounded arena gives the opponent a tank, without a starting base.
     sim.session.game_options_mut_for_test().short_game = false;
-    let placements = crate::map::entities::parse_map_entities(&map);
+    let placements = crate::map::entities::parse_map_entities(&map, 4);
     assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 2);
     let host = sim.substrate.entities.get(1).unwrap();
     assert!(host.building_upgrades().count() > 0);
@@ -2434,6 +2508,8 @@ fn authored_retail_wall_tower_zero_capacity_upgrade_is_retained() {
     );
     let host_type = rules.object("GADUMY").unwrap();
     assert_eq!(host_type.image, "NTIRON");
+    assert!(!host_type.has_turret);
+    assert!(!rules.object("GAPILL").unwrap().has_turret);
     assert!(!host_type.turret_anim_is_voxel);
     assert!(host_type.turret_anim.is_none());
     assert_eq!((host_type.turret_anim_x, host_type.turret_anim_y), (0, 0));
@@ -2453,7 +2529,7 @@ fn authored_retail_wall_tower_zero_capacity_upgrade_is_retained() {
     sim.session
         .set_current_house_for_test(sim.interner.get("Americans"));
     sim.session.game_options_mut_for_test().short_game = false;
-    let placements = crate::map::entities::parse_map_entities(&map);
+    let placements = crate::map::entities::parse_map_entities(&map, 4);
     assert_eq!(sim.spawn_from_map(&placements, Some(&rules)), 2);
 
     let host = sim.substrate.entities.get(1).unwrap();
@@ -2757,7 +2833,9 @@ fn techno_constructor_authored_upgrades_consume_temporaries_with_native_ids() {
         .current_raw();
     let mut expected = SimRng::new(seed);
     let mut base = map_entity("BASE", EntityCategory::Structure, (10, 12));
-    base.structure_upgrades = [Some("UP1".to_string()), Some("UP2".to_string()), None];
+    base.structure_columns.upgrade_count = 2;
+    base.structure_columns.upgrade_tokens =
+        [Some("UP1".to_string()), Some("UP2".to_string()), None];
     let words = [
         (expected.next_u32() & 0xFFFF) as u16,
         (expected.next_u32() & 0xFFFF) as u16,
@@ -3183,9 +3261,10 @@ fn map_spawn_attaches_the_type_attach_effect_list() {
          AttachEffect.InitialDelays=3\n",
     ))
     .expect("attach effect rules");
-    let placements = parse_map_entities(&IniFile::from_str(
-        "[Units]\n0=Americans,MTNK,256,30,40,0,Guard,None\n",
-    ));
+    let placements = parse_map_entities(
+        &IniFile::from_str("[Units]\n0=Americans,MTNK,256,30,40,0,Guard,None\n"),
+        4,
+    );
     assert_eq!(placements.len(), 1, "the map reader keeps the Unit line");
 
     let mut sim = Simulation::with_seed(0xAE6);
@@ -3219,3 +3298,75 @@ fn map_spawn_attaches_the_type_attach_effect_list() {
 
 #[path = "country_veterancy_tests.rs"]
 mod country_veterancy_tests;
+
+/// ReadScenarioBuildings sets its upgrade slots to -1 once, before the loop
+/// (`0x0044F838..0x0044F846`), and overwrites one only for a present token
+/// (`0x0044FA82..0x0044FAAB`): a line that stops after its count reuses the
+/// previous line's upgrade types.
+#[test]
+fn a_short_structures_line_reuses_the_previous_lines_upgrade_types() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=BASE\n1=UP1\n\
+         [BASE]\nStrength=500\nFoundation=2x2\nUpgrades=1\n\
+         [UP1]\nStrength=100\nPowersUpBuilding=BASE\n",
+    ))
+    .unwrap();
+    let entities = crate::map::entities::parse_map_entities(
+        &IniFile::from_str(
+            "[Structures]\n\
+         0=Americans,BASE,256,10,12,0,None,0,0,1,1,0,UP1,None,None,0,0\n\
+         1=Americans,BASE,256,14,12,0,None,0,0,1,1,0\n",
+        ),
+        4,
+    );
+    let mut sim = Simulation::with_seed(0xC701_0007);
+
+    assert_eq!(sim.spawn_from_map(&entities, Some(&rules)), 4);
+    let up1 = sim.interner.get("UP1");
+    for parent in sim
+        .substrate
+        .entities
+        .values()
+        .filter(|entity| sim.interner.resolve(entity.type_ref()) == "BASE")
+    {
+        assert_eq!(*parent.building_upgrades().types(), [up1, None, None]);
+    }
+}
+
+/// `0x0044FC07..0x0044FC16` hands field 11 to the light Unlimbo gave a
+/// HasSpotlight building (BuildingLightClass::SetBehaviour `0x00436BE0`); a
+/// line that stops short passes 1. Retail maps author 0, which stops the light.
+#[test]
+fn structures_field_11_sets_the_building_lights_behaviour() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=LIGHT\n[LIGHT]\nHasSpotlight=yes\nStrength=100\nFoundation=1x1\n",
+    ))
+    .unwrap();
+    let entities = crate::map::entities::parse_map_entities(
+        &IniFile::from_str(
+            "[Structures]\n\
+         0=Americans,LIGHT,256,4,4,0,None,0,0,1,0,0,None,None,None,0,0\n\
+         1=Americans,LIGHT,256,7,4,0,None,0,0,1\n",
+        ),
+        4,
+    );
+    let mut sim = Simulation::with_seed(0xC701_0008);
+    install_constructor_test_playfield(&mut sim);
+    install_american_house(&mut sim);
+
+    assert_eq!(sim.spawn_from_map(&entities, Some(&rules)), 2);
+    let drawn: Vec<bool> = [(4, 4), (7, 4)]
+        .into_iter()
+        .map(|cell| {
+            let light = sim
+                .substrate
+                .entities
+                .values()
+                .find(|entity| (entity.position.rx(), entity.position.ry()) == cell)
+                .and_then(|entity| entity.building_light.light())
+                .expect("HasSpotlight building owns a light");
+            sim.building_spotlight(light, None, &rules).is_some()
+        })
+        .collect();
+    assert_eq!(drawn, [false, true]);
+}

@@ -161,8 +161,8 @@ impl TeamScriptVm {
                 id,
                 TeamTypeIniMetadata {
                     house: fields.read_string_with("House", 0x80, None, |_, value| {
-                        // ReadHouseType475540 uses a case-sensitive physical
-                        // <Player @ A>..<Player @ H> table, then the shared
+                        // ReadHouseType475540 uses case-sensitive player
+                        // tokens (VERA extends A..H to A..AD), then the shared
                         // case-insensitive country alias-before-ID lookup.
                         if let Some(player) =
                             crate::rules::native_processing::house_type_player_at(value)

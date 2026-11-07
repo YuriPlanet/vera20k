@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use winit::dpi::PhysicalSize;
-use winit::window::Window;
+use winit::window::{UserAttentionType, Window};
 
 use crate::app::match_runtime::frame_pacer::LocalFramePacer;
 use crate::ui::game_screen::GameScreen;
@@ -30,7 +30,8 @@ pub(crate) struct PlatformState {
     pub(crate) window: Arc<Window>,
     /// Whether the OS cursor is clipped to the window rectangle
     /// edge-scroll lock), so it cannot leave the game while the player scrolls
-    /// the map. On by default, by default; the cursor-lock hotkey flips it,
+    /// the map. Off until startup copies the player's saved `LockCursor`
+    /// choice (off by default); the cursor-lock hotkey flips it,
     /// and `apply_cursor_confinement` re-applies it on every focus regain because
     /// the OS drops the clip on alt-tab. Presentation-only — never serialized or
     /// read by the deterministic simulation.
@@ -86,16 +87,26 @@ pub(crate) struct PlatformState {
     /// zero-sized `Resized` instead. Both signals feed this flag, so the redraw
     /// loop parks on every platform. Presentation-only.
     pub(crate) window_hidden: bool,
+    /// Whether [`Self::request_attention`] asked for the player's attention
+    /// since the window was last active, so the regain edge clears it: X11
+    /// keeps its urgency hint until then. Presentation-only.
+    pub(crate) attention_requested: bool,
     /// Local wall-clock admission state. Never serialized or read by the sim.
     pub(crate) frame_pacer: LocalFramePacer,
+    /// Whether the next visible pass must draw, or may only service the
+    /// match because the presented picture still stands. Presentation-only.
+    pub(crate) redraw_gate: crate::app::match_runtime::redraw_gate::RedrawGate,
     /// Loaded GameConfig — missing config.toml falls back to the executable
     /// root; `None` only when config loading or executable-root discovery
     /// fails. Set once at process start from `GameConfig::load()`; not
     /// mutated afterwards.
     pub(crate) game_config: Option<crate::util::config::GameConfig>,
     /// A sealed capture's exact surface. Present only in capture runs, which
-    /// keep it through match launch and never zoom or go full screen.
+    /// keep it through match launch and never go full screen.
     pub(crate) capture_client_size: Option<PhysicalSize<u32>>,
+    /// A capture's battle zoom and sidebar size in place of the Options
+    /// choices; read only while `capture_client_size` is set.
+    pub(crate) capture_presentation: CapturePresentation,
     /// Whether the windowed window still has to be put on the Display choice's
     /// screen. Set when the window comes back from full screen, because winit
     /// restores the placement it saved on entry and does that on its own
@@ -105,6 +116,34 @@ pub(crate) struct PlatformState {
     /// Whether `options_profile.window_placement` moved since VERA.INI was
     /// last written, so leaving the game writes it once. Presentation-only.
     pub(crate) window_placement_unsaved: bool,
+}
+
+/// The Options presentation choices a capture runs its battle at. A sealed
+/// map profile may set them (`MapPresentationProfile`); otherwise a capture
+/// keeps zoom 100%, the Normal sidebar, the native radar and the sidebar's
+/// own pixels, whatever its size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CapturePresentation {
+    pub(crate) zoom: crate::ui::main_menu_dialogs::options::Zoom,
+    pub(crate) sidebar: crate::ui::main_menu_dialogs::options::SidebarSize,
+    pub(crate) hd_radar: bool,
+    pub(crate) smooth_sidebar: bool,
+    /// A map picture (`app::map_picture`) draws the battlefield alone,
+    /// without the build description over it, and its camera goes past the
+    /// playable area's edges.
+    pub(crate) map_picture: bool,
+}
+
+impl Default for CapturePresentation {
+    fn default() -> Self {
+        Self {
+            zoom: crate::ui::main_menu_dialogs::options::Zoom::Percent(100),
+            sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
+            hd_radar: false,
+            smooth_sidebar: false,
+            map_picture: false,
+        }
+    }
 }
 
 impl PlatformState {
@@ -118,7 +157,7 @@ impl PlatformState {
             .is_some_and(|config| config.gameplay.pause_on_focus_loss);
         Self {
             window,
-            cursor_confined: true,
+            cursor_confined: false,
             pointer_held: std::cell::Cell::new(false),
             pointer_in_client: true,
             os_cursor_visible: None,
@@ -128,9 +167,12 @@ impl PlatformState {
             window_active: true,
             pause_on_focus_loss,
             window_hidden: false,
+            attention_requested: false,
             frame_pacer: LocalFramePacer::new(),
+            redraw_gate: crate::app::match_runtime::redraw_gate::RedrawGate::from_environment(),
             game_config,
             capture_client_size,
+            capture_presentation: CapturePresentation::default(),
             recenter_windowed: false,
             window_placement_unsaved: false,
         }
@@ -153,5 +195,31 @@ impl PlatformState {
     /// cursor. Presentation-only.
     pub(crate) fn owns_pointer(&self) -> bool {
         self.pointer_in_client && self.window_active
+    }
+    /// VERA's own (gamemd never flashes its window): while another
+    /// application is in front, flash the taskbar button (Windows), bounce
+    /// the Dock icon (macOS) or mark the window urgent (X11, Wayland), so a
+    /// player waiting in the background sees that their game needs them.
+    /// `until_back` keeps the Dock icon bouncing until the player returns;
+    /// otherwise it bounces once. Presentation-only.
+    pub(crate) fn request_attention(&mut self, until_back: bool) {
+        if self.window_active {
+            return;
+        }
+        let kind = if until_back {
+            UserAttentionType::Critical
+        } else {
+            UserAttentionType::Informational
+        };
+        log::info!("Asked for the player's attention ({kind:?})");
+        self.window.request_user_attention(Some(kind));
+        self.attention_requested = true;
+    }
+
+    /// The window is active again: drop a request the window system keeps.
+    pub(crate) fn clear_attention(&mut self) {
+        if std::mem::take(&mut self.attention_requested) {
+            self.window.request_user_attention(None);
+        }
     }
 }

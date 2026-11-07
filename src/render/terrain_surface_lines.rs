@@ -23,13 +23,16 @@ impl SurfaceLineBatch {
     }
 }
 
+/// One ordered store. `a_sample` addresses the logical pixel whose tactical
+/// A the GPU reads ([`a_sample`]); a point (mode 6) carries its signed
+/// channels in `strength`, `destination_weight` and `source_x`.
 #[repr(C)]
 #[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
 struct Operation {
     z: u32,
     strength: i32,
     rgb: u32,
-    alpha: u32,
+    a_sample: u32,
     mode: u32,
     destination_weight: i32,
     gate_x: i32,
@@ -46,30 +49,62 @@ fn packed_rgb(rgb: [u8; 3]) -> u32 {
     u32::from(rgb[0]) | (u32::from(rgb[1]) << 8) | (u32::from(rgb[2]) << 16)
 }
 
+/// A logical pixel as the shader's A address, two i16. Pixels beyond i16
+/// clamp to pixels that are still off the plane, which read 127.
+fn a_sample(point: [i32; 2]) -> u32 {
+    let [x, y] = point.map(|v| v.clamp(i16::MIN.into(), i16::MAX.into()) as i16 as u16);
+    u32::from(x) | (u32::from(y) << 16)
+}
+
+/// Opaque stores over a rectangle clipped to the logical surface; with an A
+/// offset, only where the A pixel that far from each pixel is nonzero.
+fn opaque_rect(
+    rect: [i32; 4],
+    word: u16,
+    a_offset: Option<[i32; 2]>,
+    viewport: SurfaceLineViewport,
+    size: [u32; 2],
+    emit: &mut impl FnMut(&[([i32; 2], Operation)]),
+) {
+    let logical = size.map(|v| (v as f32 / viewport.zoom).ceil() as i32);
+    let [x, y, w, h] = crate::util::rect::clip_rect(rect, [0, 0, logical[0], logical[1]]);
+    for py in y..y + h {
+        for px in x..x + w {
+            let (mode, sample) = match a_offset {
+                Some([dx, dy]) => (10, a_sample([px + dx, py + dy])),
+                None => (4, 0),
+            };
+            emit(&[(
+                [px, py],
+                Operation {
+                    rgb: u32::from(word),
+                    a_sample: sample,
+                    mode,
+                    ..Default::default()
+                },
+            )]);
+        }
+    }
+}
+
 fn raster_draw(
     draw: SurfaceDraw,
     viewport: SurfaceLineViewport,
     size: [u32; 2],
-    alpha: &mut impl FnMut([i32; 2]) -> u16,
     emit: &mut impl FnMut(&[([i32; 2], Operation)]),
 ) -> Result<(), crate::render::wave_geometry::WaveRasterError> {
     use crate::render::surface_line::{antialiased_line, ellipse, rasterize_z_clipped};
     let line = match draw {
         SurfaceDraw::OpaqueRect { rect, word } => {
-            let logical = size.map(|v| (v as f32 / viewport.zoom).ceil() as i32);
-            let [x, y, w, h] = crate::util::rect::clip_rect(rect, [0, 0, logical[0], logical[1]]);
-            for py in y..y + h {
-                for px in x..x + w {
-                    emit(&[(
-                        [px, py],
-                        Operation {
-                            rgb: u32::from(word),
-                            mode: 4,
-                            ..Default::default()
-                        },
-                    )]);
-                }
-            }
+            opaque_rect(rect, word, None, viewport, size, emit);
+            return Ok(());
+        }
+        SurfaceDraw::GatedOpaqueRect {
+            rect,
+            word,
+            a_offset,
+        } => {
+            opaque_rect(rect, word, Some(a_offset), viewport, size, emit);
             return Ok(());
         }
 
@@ -110,24 +145,20 @@ fn raster_draw(
         }
         SurfaceDraw::Point(point) => {
             let screen = point.screen.to_array();
-            let a = alpha(screen);
-            if a != 0 {
-                let word = crate::render::tactical_compat::pack_rgb(
-                    crate::render::tactical_compat::modulate_rgb(point.rgb, a),
-                    crate::render::native_surface_format::RGB565,
-                );
-                emit(&[(
-                    screen,
-                    Operation {
-                        // Keep the signed candidate intact across the scalar ABI.
-                        z: point.candidate_z as u32,
-                        rgb: u32::from(word),
-                        alpha: u32::from(a),
-                        mode: 6,
-                        ..Default::default()
-                    },
-                )]);
-            }
+            // The shader admits, modulates and packs it by the live A (`point_word`).
+            emit(&[(
+                screen,
+                Operation {
+                    // Keep the signed candidate intact across the scalar ABI.
+                    z: point.candidate_z as u32,
+                    strength: point.rgb[0],
+                    destination_weight: point.rgb[1],
+                    source_x: point.rgb[2],
+                    a_sample: a_sample(screen),
+                    mode: 6,
+                    ..Default::default()
+                },
+            )]);
             return Ok(());
         }
         SurfaceDraw::Ellipse {
@@ -162,10 +193,8 @@ fn raster_draw(
             size.map(|v| (v as f32 / viewport.zoom).ceil() as i32),
             viewport.z_origin_y,
             |pair| {
-                let a = alpha(pair[0].primary);
-                if a == 0 {
-                    return;
-                }
+                // Both stores read the primary's A, and skip together on 0.
+                let sample = a_sample(pair[0].primary);
                 // A pair must use the SAME primary depth sample. Sample the
                 // logical primary's center after presentation zoom, never the
                 // secondary output's depth. Native parity is zoom1.
@@ -182,7 +211,7 @@ fn raster_draw(
                             z: u32::from(pixel.z),
                             strength: pixel.source_weight,
                             rgb: packed_rgb(rgb),
-                            alpha: u32::from(a),
+                            a_sample: sample,
                             mode: if pixel.destination_source == pixel.point {
                                 3
                             } else {
@@ -215,20 +244,17 @@ fn raster_draw(
         } else {
             pixel.point
         };
-        let a = if mode == 8 { 127 } else { alpha(sample) };
-        if a != 0 {
-            emit(&[(
-                pixel.point,
-                Operation {
-                    z: u32::from(pixel.z),
-                    rgb,
-                    strength,
-                    alpha: u32::from(a),
-                    mode,
-                    ..Default::default()
-                },
-            )]);
-        }
+        emit(&[(
+            pixel.point,
+            Operation {
+                z: u32::from(pixel.z),
+                rgb,
+                strength,
+                a_sample: a_sample(sample),
+                mode,
+                ..Default::default()
+            },
+        )]);
     };
     if mode == 0 {
         rasterize(
@@ -282,12 +308,16 @@ fn operation_limit(device: &wgpu::Device) -> usize {
 }
 
 pub(super) fn shader_source(webgl: bool) -> String {
-    let source = include_str!("terrain_surface_lines.wgsl");
+    let source = format!(
+        "{}\n{}",
+        crate::render::tactical_shader::A_SOURCE,
+        include_str!("terrain_surface_lines.wgsl")
+    );
     if !webgl {
-        return crate::render::tactical_shader::source(source);
+        return crate::render::tactical_shader::source(&source);
     }
     let source = crate::render::webgl::patch(
-        source,
+        &source,
         "@group(1) @binding(0) var<storage, read> operations: array<Operation>;",
         "@group(1) @binding(0) var operation_table: texture_2d<u32>;
 fn operation_word(index: u32) -> u32 {
@@ -323,11 +353,115 @@ struct Prepared {
     instance_capacity: usize,
     count: u32,
     scissor: [u32; 4],
+    /// The rectangles the snapshot copies ([`SnapshotCover::snapshot_rects`]).
+    snapshot: Vec<[u32; 4]>,
+}
+
+/// Edge of the square tiles a surface-line snapshot copies, in target pixels.
+const SNAPSHOT_TILE: u32 = 32;
+
+/// The target pixels a batch's blends read from the snapshot (`fs_main`'s
+/// `old_words` and `old_depth` loads): each output pixel, and the gate and
+/// source pixels its stores test or copy. Their bounds scissor the blends.
+/// The snapshot copies only the tiles of those bounds that hold such a
+/// pixel, so effects far apart do not copy the picture between them; every
+/// other reader of the snapshot copies its own pixels first.
+#[derive(Default)]
+struct SnapshotCover {
+    size: [u32; 2],
+    columns: u32,
+    /// Left, top, right and bottom, before clipping to the target.
+    bounds: [u32; 4],
+    tiles: Vec<u64>,
+}
+
+impl SnapshotCover {
+    fn reset(&mut self, size: [u32; 2]) {
+        self.size = size;
+        self.columns = size[0].div_ceil(SNAPSHOT_TILE);
+        self.bounds = [size[0], size[1], 0, 0];
+        let tiles = self.columns as usize * size[1].div_ceil(SNAPSHOT_TILE) as usize;
+        self.tiles.clear();
+        self.tiles.resize(tiles.div_ceil(64), 0);
+    }
+
+    /// Add the target pixels `left..right` by `top..bottom`.
+    fn add(&mut self, left: u32, top: u32, right: u32, bottom: u32) {
+        let [l, t, r, b] = &mut self.bounds;
+        *l = (*l).min(left);
+        *t = (*t).min(top);
+        *r = (*r).max(right);
+        *b = (*b).max(bottom);
+        let (right, bottom) = (right.min(self.size[0]), bottom.min(self.size[1]));
+        if left >= right || top >= bottom {
+            return;
+        }
+        for row in top / SNAPSHOT_TILE..=(bottom - 1) / SNAPSHOT_TILE {
+            for column in left / SNAPSHOT_TILE..=(right - 1) / SNAPSHOT_TILE {
+                let tile = (row * self.columns + column) as usize;
+                self.tiles[tile / 64] |= 1 << (tile % 64);
+            }
+        }
+    }
+
+    /// The blends' scissor: the bounds, clipped to the target.
+    fn scissor(&self) -> [u32; 4] {
+        let [left, top, right, bottom] = self.bounds;
+        let (right, bottom) = (right.min(self.size[0]), bottom.min(self.size[1]));
+        [
+            left,
+            top,
+            right.saturating_sub(left),
+            bottom.saturating_sub(top),
+        ]
+    }
+
+    /// One rectangle per run of read tiles in a tile row, within the scissor.
+    fn snapshot_rects(&self, rects: &mut Vec<[u32; 4]>) {
+        rects.clear();
+        let [x, y, width, height] = self.scissor();
+        if width == 0 || height == 0 {
+            return;
+        }
+        let read = |row: u32, column: u32| {
+            let tile = (row * self.columns + column) as usize;
+            self.tiles[tile / 64] & (1 << (tile % 64)) != 0
+        };
+        let (last_row, last_column) = (
+            (y + height - 1) / SNAPSHOT_TILE,
+            (x + width - 1) / SNAPSHOT_TILE,
+        );
+        for row in y / SNAPSHOT_TILE..=last_row {
+            let mut column = x / SNAPSHOT_TILE;
+            while column <= last_column {
+                if !read(row, column) {
+                    column += 1;
+                    continue;
+                }
+                let first = column;
+                while column <= last_column && read(row, column) {
+                    column += 1;
+                }
+                let left = (first * SNAPSHOT_TILE).max(x);
+                let top = (row * SNAPSHOT_TILE).max(y);
+                let right = (column * SNAPSHOT_TILE).min(x + width);
+                let bottom = ((row + 1) * SNAPSHOT_TILE).min(y + height);
+                rects.push([left, top, right - left, bottom - top]);
+            }
+        }
+    }
 }
 
 pub(super) struct SurfaceLineGpu {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
+    /// Group 2: the tactical A source the A-gated stores read.
+    a_layout: wgpu::BindGroupLayout,
+    /// The neutral source (127 everywhere), bound without a live plane.
+    neutral_a: (wgpu::TextureView, wgpu::Buffer),
+    a_binding: wgpu::BindGroup,
+    /// The live plane `a_binding` holds; `None` for the neutral source.
+    bound_a_view: Option<wgpu::TextureView>,
     batches: Vec<Prepared>,
     active: usize,
     #[cfg(test)]
@@ -338,14 +472,64 @@ pub(super) struct SurfaceLineGpu {
     written: std::collections::HashSet<[i32; 2]>,
     operations: Vec<Operation>,
     instances: Vec<PixelInstance>,
+    cover: SnapshotCover,
+}
+
+fn a_binding(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    (view, uniform): (&wgpu::TextureView, &wgpu::Buffer),
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Surface line tactical A"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: uniform.as_entire_binding(),
+            },
+        ],
+    })
 }
 
 impl SurfaceLineGpu {
     pub(super) fn new(
         device: &wgpu::Device,
+        queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
         snapshot: &wgpu::BindGroupLayout,
     ) -> Self {
+        let a_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Surface line tactical A"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let neutral_a = crate::render::shroud_buffer::neutral_gpu_source(device, queue);
+        let a_binding = a_binding(device, &a_layout, (&neutral_a.0, &neutral_a.1));
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Surface line ordered pixel operations"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -375,7 +559,7 @@ impl SurfaceLineGpu {
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Surface line shared snapshot layout"),
-            bind_group_layouts: &[Some(snapshot), Some(&layout)],
+            bind_group_layouts: &[Some(snapshot), Some(&layout), Some(&a_layout)],
             immediate_size: 0,
         });
         let attrs = wgpu::vertex_attr_array![0=>Float32x4,1=>Uint32x2];
@@ -411,6 +595,10 @@ impl SurfaceLineGpu {
         Self {
             pipeline,
             layout,
+            a_layout,
+            neutral_a,
+            a_binding,
+            bound_a_view: None,
             batches: Vec::new(),
             active: 0,
             #[cfg(test)]
@@ -419,6 +607,7 @@ impl SurfaceLineGpu {
             written: Default::default(),
             operations: Vec::new(),
             instances: Vec::new(),
+            cover: SnapshotCover::default(),
         }
     }
 
@@ -433,11 +622,8 @@ impl SurfaceLineGpu {
         self.work.sort_by_key(|(point, _)| (point[1], point[0]));
         self.operations.clear();
         self.instances.clear();
+        self.cover.reset(size);
         let mut start = 0;
-        let mut left = size[0];
-        let mut top = size[1];
-        let mut right = 0;
-        let mut bottom = 0;
         while start < self.work.len() {
             let point = self.work[start].0;
             let mut end = start + 1;
@@ -457,27 +643,34 @@ impl SurfaceLineGpu {
                 ],
                 span: [start as u32, (end - start) as u32],
             });
-            left = left.min(x.floor().max(0.) as u32);
-            top = top.min(y.floor().max(0.) as u32);
-            right = right.max((x + zoom).ceil().max(0.) as u32);
-            bottom = bottom.max((y + zoom).ceil().max(0.) as u32);
+            self.cover.add(
+                x.floor().max(0.) as u32,
+                y.floor().max(0.) as u32,
+                (x + zoom).ceil().max(0.) as u32,
+                (y + zoom).ceil().max(0.) as u32,
+            );
+            let pixel = |x: i32, y: i32| {
+                [
+                    x.max(0) as u32,
+                    y.max(0) as u32,
+                    x.saturating_add(1).max(0) as u32,
+                    y.saturating_add(1).max(0) as u32,
+                ]
+            };
             // Snapshot the shared primary gate as well as output coverage.
             //Cross-source pairs remain atomic across every chunk boundary.
             for (_, operation) in &self.work[start..end] {
                 if operation.mode == 3 || operation.mode == 5 {
-                    left = left.min(operation.gate_x.max(0) as u32);
-                    top = top.min(operation.gate_y.max(0) as u32);
-                    right = right.max(operation.gate_x.saturating_add(1).max(0) as u32);
-                    bottom = bottom.max(operation.gate_y.saturating_add(1).max(0) as u32);
+                    let [l, t, r, b] = pixel(operation.gate_x, operation.gate_y);
+                    self.cover.add(l, t, r, b);
                 }
-                if matches!(operation.mode, 7 | 9) {
-                    //7601FB reads a displaced old word, which can lie outside
-                    //this chunk's output rect. Snapshot its actual address,
-                    //not an invented clamped neighbor or stale scratch word.
-                    left = left.min(operation.source_x.max(0) as u32);
-                    top = top.min(operation.source_y.max(0) as u32);
-                    right = right.max(operation.source_x.saturating_add(1).max(0) as u32);
-                    bottom = bottom.max(operation.source_y.saturating_add(1).max(0) as u32);
+                // 7601FB reads a displaced old word, which can lie outside
+                // this chunk's output rect: snapshot its actual address, not
+                // an invented clamped neighbor or stale scratch word. The
+                // X-major pair (mode 5) reads the other OLD destination.
+                if matches!(operation.mode, 5 | 7 | 9) {
+                    let [l, t, r, b] = pixel(operation.source_x, operation.source_y);
+                    self.cover.add(l, t, r, b);
                 }
             }
             start = end;
@@ -538,6 +731,7 @@ impl SurfaceLineGpu {
                 instance_capacity,
                 count: 0,
                 scissor: [0; 4],
+                snapshot: Vec::new(),
             };
             if index == self.batches.len() {
                 self.batches.push(prepared);
@@ -557,15 +751,9 @@ impl SurfaceLineGpu {
             ),
         }
         queue.write_buffer(&batch.instances, 0, bytemuck::cast_slice(&self.instances));
-        right = right.min(size[0]);
-        bottom = bottom.min(size[1]);
         batch.count = self.instances.len() as u32;
-        batch.scissor = [
-            left,
-            top,
-            right.saturating_sub(left),
-            bottom.saturating_sub(top),
-        ];
+        batch.scissor = self.cover.scissor();
+        self.cover.snapshot_rects(&mut batch.snapshot);
         self.active += 1;
         self.work.clear();
         self.written.clear();
@@ -576,6 +764,44 @@ impl TerrainDrawRenderer {
     #[cfg(test)]
     pub(crate) fn set_surface_line_operation_limit(&mut self, limit: Option<usize>) {
         self.surface_lines.test_operation_limit = limit;
+    }
+
+    /// Bind the A plane later surface-line draws read, or the neutral 127
+    /// without one (sandbox, no world). Cached by the plane's view, which
+    /// stays the same until a resize.
+    pub(crate) fn bind_surface_line_a(
+        &mut self,
+        device: &wgpu::Device,
+        source: Option<&crate::render::shroud_buffer::ShroudBuffer>,
+    ) {
+        let lines = &mut self.surface_lines;
+        let source = source.map(|source| source.gpu_source());
+        if lines.bound_a_view.as_ref() == source.map(|(view, _)| view) {
+            return;
+        }
+        let neutral = (&lines.neutral_a.0, &lines.neutral_a.1);
+        lines.a_binding = a_binding(device, &lines.a_layout, source.unwrap_or(neutral));
+        lines.bound_a_view = source.map(|(view, _)| view.clone());
+    }
+
+    /// Bind an A plane of `size` logical pixels holding `a` at each, for
+    /// tests that drive surface lines without a world.
+    #[cfg(test)]
+    pub(crate) fn bind_surface_line_a_fixture(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        size: [u32; 2],
+        mut a: impl FnMut([i32; 2]) -> u16,
+    ) {
+        let pixels: Vec<u8> = (0..size[1] as i32)
+            .flat_map(|y| (0..size[0] as i32).map(move |x| [x, y]))
+            .map(|point| u8::try_from(a(point)).expect("A is one byte"))
+            .collect();
+        let source = crate::render::shroud_buffer::ShroudBuffer::fixture(
+            device, queue, size, [0.0; 2], &pixels,
+        );
+        self.bind_surface_line_a(device, Some(&source));
     }
 
     /// Recycle the derived upload ranges before preparing this composite.
@@ -598,7 +824,6 @@ impl TerrainDrawRenderer {
         radials: &[crate::render::radial_indicator::RadialIndicatorDraw],
         viewport: SurfaceLineViewport,
         mut high_detail: impl FnMut(crate::render::laser::LaserDrawColor) -> bool,
-        mut alpha: impl FnMut([i32; 2]) -> u16,
     ) -> SurfaceLineBatch {
         let start = self.surface_lines.active;
         self.surface_lines.work.clear();
@@ -654,7 +879,7 @@ impl TerrainDrawRenderer {
                 }
             }
         };
-        let prepare_draw = |gpu: &mut SurfaceLineGpu, draw: SurfaceDraw, alpha: &mut _| {
+        let prepare_draw = |gpu: &mut SurfaceLineGpu, draw: SurfaceDraw| {
             let wave = matches!(draw, SurfaceDraw::Wave(_));
             if wave {
                 // Even adjacent coalesced Surface bodies need the preceding
@@ -669,7 +894,7 @@ impl TerrainDrawRenderer {
                 gpu.upload(device, queue, viewport.zoom, size);
             }
             let first = gpu.active;
-            if let Err(error) = raster_draw(draw, viewport, size, alpha, &mut |operations| {
+            if let Err(error) = raster_draw(draw, viewport, size, &mut |operations| {
                 store(gpu, operations)
             }) {
                 // Roll back this whole Wave, including any size-driven
@@ -690,12 +915,12 @@ impl TerrainDrawRenderer {
         for laser in lasers {
             if laser.duration > 0 {
                 laser.lines(viewport.camera, high_detail(laser.color), |line| {
-                    prepare_draw(&mut self.surface_lines, SurfaceDraw::Line(line), &mut alpha);
+                    prepare_draw(&mut self.surface_lines, SurfaceDraw::Line(line));
                 });
             }
         }
         for draw in draws {
-            prepare_draw(&mut self.surface_lines, draw, &mut alpha);
+            prepare_draw(&mut self.surface_lines, draw);
         }
         for &segment in segments {
             let line = segment.project(viewport.camera);
@@ -710,19 +935,18 @@ impl TerrainDrawRenderer {
                         strength: line.strength,
                     },
                 }),
-                &mut alpha,
             );
         }
         //Tactical6D4678 draws RadBeam after trails and before selected radials.
         for &draw in post_trail_draws {
-            prepare_draw(&mut self.surface_lines, draw, &mut alpha);
+            prepare_draw(&mut self.surface_lines, draw);
         }
         //Tactical6D467F follows Laser/EBolt/LineTrail/RadBeam, before the bandbox,
         //second rally and selected Foot action. Keep each object's ellipse/ray
         //stores interleaved in CurrentObjects encounter order.
         for &radial in radials {
             radial.draws(viewport.clip, |draw| {
-                prepare_draw(&mut self.surface_lines, draw, &mut alpha)
+                prepare_draw(&mut self.surface_lines, draw)
             });
         }
         self.surface_lines
@@ -734,7 +958,8 @@ impl TerrainDrawRenderer {
     }
 
     /// Replay this range at its native phase: line stores consume the current
-    /// destination and perform their own ABuffer multiplication.
+    /// destination and perform their own ABuffer multiplication, reading the
+    /// A plane [`Self::bind_surface_line_a`] bound.
     /// Reuses the SAME snapshot and live depth as ordinary tactical drawing.
     pub(crate) fn draw_surface_lines(
         &mut self,
@@ -771,10 +996,13 @@ impl TerrainDrawRenderer {
                     occlusion_query_set: None,
                     multiview_mask: None,
                 });
-                pass.set_scissor_rect(x, y, w, h);
                 pass.set_pipeline(&self.snapshot_pipeline);
                 pass.set_bind_group(0, &targets.source, &[]);
-                pass.draw(0..3, 0..1);
+                // Only the tiles the blends read (`SnapshotCover`).
+                for &[x, y, w, h] in &batch.snapshot {
+                    pass.set_scissor_rect(x, y, w, h);
+                    pass.draw(0..3, 0..1);
+                }
             }
             {
                 let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -789,6 +1017,7 @@ impl TerrainDrawRenderer {
                 pass.set_pipeline(&self.surface_lines.pipeline);
                 pass.set_bind_group(0, &targets.snapshot, &[]);
                 pass.set_bind_group(1, &batch.binding, &[]);
+                pass.set_bind_group(2, &self.surface_lines.a_binding, &[]);
                 pass.set_vertex_buffer(0, batch.instances.slice(..));
                 pass.draw(0..6, 0..batch.count);
             }

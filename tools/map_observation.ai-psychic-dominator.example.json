@@ -139,5 +139,21 @@
   "cursor_position": [
     720,
     556
+  ],
+  "gestures": [
+    {
+      "issue_after_step": 9040,
+      "gesture": {
+        "kind": "drag",
+        "from": [
+          200,
+          140
+        ],
+        "to": [
+          440,
+          590
+        ]
+      }
+    }
   ]
 }

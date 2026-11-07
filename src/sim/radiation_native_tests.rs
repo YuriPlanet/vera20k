@@ -31,8 +31,9 @@ fn light_lifecycle_matches_original_site_and_cell_boundaries() {
 /// build never runs that owner: `RadSiteExt::CreateLight` replaces the whole
 /// activation and tints from the bound type's `RadColor` on every theater, so
 /// the corpus's per-frame tints cannot hold there. The capability's own tests
-/// cover the type-colored field instead.
-#[cfg(not(feature = "phobos"))]
+/// cover the type-colored field instead. Ares skips the substitution too
+/// (`0x65B5FB`), so the corpus does not hold in an Ares build either.
+#[cfg(not(any(feature = "phobos", feature = "ares")))]
 #[test]
 fn snow_light_lifecycle_matches_original_site_and_cell_boundaries() {
     assert_light_lifecycle(

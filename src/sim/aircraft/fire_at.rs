@@ -15,14 +15,18 @@
 //!   Hornet's bomb (`NormalBomb`) and the Osprey's depth charge
 //!   (`DepthCharge`) are ROT 1, where FireAt alone would launch them at
 //!   speed 1 and leave the bullet's ramp to accelerate them.
-//! - Then, for the current player's aircraft (`0x0050B6F0`), it asks
-//!   `MapClass::IsShrouded @ 0x00586360` about its Location (`+0x9C`), the
-//!   Location offset by (0x200, 0x200), (-0x200, -0x200) and (0x200,
-//!   -0x200), that last one twice (the fourth corner is never asked), and
-//!   the target's GetCoords. At the first shrouded one it reveals
+//! - Then, on each client whose `0x0050B6F0` admits the owner (the owner's
+//!   own client, or in a campaign the player's for a `PlayerControl=`
+//!   house too), it asks `MapClass::IsShrouded @ 0x00586360` of that
+//!   client's map about its Location (`+0x9C`), the Location offset by
+//!   (0x200, 0x200), (-0x200, -0x200) and (0x200, -0x200), that last one
+//!   twice (the fourth corner is never asked), and the target's GetCoords.
+//!   At the first shrouded one it reveals
 //!   `[General] AttackingAircraftSightRange=` around its Location
 //!   (`MapClass::RevealArea @ 0x005678E0` by height, final 0 then final 1),
-//!   which maps those cells for good.
+//!   which maps those cells for good. RevealArea's house gate
+//!   (`0x00567AB0..0x00567B12`) writes that client's map for the owner
+//!   itself or, under `AllyReveal=`, an ally.
 //! - Last, with or without a bullet, an aircraft with `+0x6CA` is removed
 //!   (UnInit, vt+0xF8 = `FootClass::UnInit @ 0x004DE5D0`). Only the kamikaze
 //!   tracker's Push sets it (`crate::sim::kamikaze`), on a missile whose
@@ -47,6 +51,7 @@
 //! 30). The oracle's speeds are exact fractions; no retail aircraft fires a
 //! ROT 0 bullet.
 
+use crate::sim::intern::InternedId;
 use crate::sim::projectile::launch::{AircraftBulletCourse, aircraft_bullet_velocity};
 use crate::sim::projectile::{ProjectileCoord, ProjectileVelocity};
 
@@ -99,15 +104,16 @@ pub(crate) trait FireAtHost {
     fn weapon0_speed(&mut self) -> i32;
     /// The bullet's new velocity.
     fn set_velocity(&mut self, velocity: ProjectileVelocity);
-    /// `0x0050B6F0` on the owner (`+0x21C`): it is the current player.
-    fn owner_is_player(&mut self) -> bool;
+    /// The clients on which `0x0050B6F0` admits the owner (`+0x21C`), each
+    /// asking with its own PlayerPtr.
+    fn player_clients(&mut self) -> Vec<InternedId>;
     /// The Location (`+0x9C`).
     fn location(&mut self) -> ProjectileCoord;
-    /// `MapClass::IsShrouded @ 0x00586360`.
-    fn is_shrouded(&mut self, point: ProjectileCoord) -> bool;
+    /// `MapClass::IsShrouded @ 0x00586360` on `client`'s map.
+    fn is_shrouded(&mut self, client: InternedId, point: ProjectileCoord) -> bool;
     /// `MapClass::RevealArea(Location, AttackingAircraftSightRange, owner, 0,
-    /// 0, 0, 1, final)`.
-    fn reveal_area(&mut self, final_pass: bool);
+    /// 0, 0, 1, final)` on `client`'s map.
+    fn reveal_area(&mut self, client: InternedId, final_pass: bool);
     /// `+0x6CA`.
     fn destroy_after_firing(&mut self) -> bool;
     /// UnInit (vt+0xF8).
@@ -136,21 +142,24 @@ pub(crate) fn fire_at(host: &mut impl FireAtHost) {
         if let Some(course) = course {
             host.set_velocity(aircraft_bullet_velocity(shot.velocity, course));
         }
-        if host.owner_is_player() {
+        for client in host.player_clients() {
             let location = host.location();
             let shrouded = SHROUD_PROBES.iter().any(|&(dx, dy)| {
-                host.is_shrouded(ProjectileCoord::new(
-                    location.x.wrapping_add(dx),
-                    location.y.wrapping_add(dy),
-                    location.z,
-                ))
+                host.is_shrouded(
+                    client,
+                    ProjectileCoord::new(
+                        location.x.wrapping_add(dx),
+                        location.y.wrapping_add(dy),
+                        location.z,
+                    ),
+                )
             }) || {
                 let target = host.target_coords();
-                host.is_shrouded(target)
+                host.is_shrouded(client, target)
             };
             if shrouded {
-                host.reveal_area(false);
-                host.reveal_area(true);
+                host.reveal_area(client, false);
+                host.reveal_area(client, true);
             }
         }
     }

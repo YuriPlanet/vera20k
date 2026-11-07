@@ -1,0 +1,28 @@
+{
+  "format": 1,
+  "pass": "2026-11-04 trigger-class audit notes",
+  "tag": "[2026-11-04 trigger-class audit]",
+  "planned_against": "Saved shared gamemd.exe on 2026-11-04. Each paragraph is appended after the function's existing plate; no earlier text is changed.",
+  "atomic": true,
+  "description": "Corrects three notes the trigger-class audit found stale: they still said VERA had not ported code it now ports.",
+  "ops": [
+    {
+      "op": "append_plate",
+      "address": "0x007014A0",
+      "function": ["TechnoClass__ChangeOwner"],
+      "text": "The pre comments at 0x7015A2 and 0x7015AE that say \"Rust: not ported, issue #758\" are stale. VERA ports the RecordKill(NULL) call (0x7015A8) and the capture score (0x7015D2) in Simulation::change_owner_inherited (src/sim/world/mod.rs); issue #758 closed on 2026-10-10."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x00702D40",
+      "function": ["TechnoClass__RecordKill"],
+      "text": "Corrects the VERA sentence of the first paragraph. The port is src/sim/combat/record_kill.rs. Since vera20k#3837 a House's losses are booked only here and by RegisterKill 0x703230, not at UnInit. ChangeOwner's call with no killer (0x7015A8) is ported in Simulation::change_owner_inherited (src/sim/world/mod.rs); issue #758 closed on 2026-10-10."
+    },
+    {
+      "op": "append_plate",
+      "address": "0x00575EE0",
+      "function": ["NotifyBridgeSpanCollapse"],
+      "text": "The 2026-09-11 paragraph's \"complete live Tag event dispatch is still open\" is stale. VERA raises event 31 through each tagged span cell's Tag in Simulation::dispatch_bridge_cell_tag_event (src/sim/trigger_runtime.rs), called from the bridge rim and ordinary-damage publishers."
+    }
+  ]
+}

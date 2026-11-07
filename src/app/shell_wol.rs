@@ -6,9 +6,10 @@
 //! Quick Match runs the same login and then its own runner
 //! (`0x0079FC40`, [`quick_match`]).
 //!
-//! The normal online visit has no welcome: Custom Match is its only mode, so
+//! The normal online visit has no welcome: Custom Match is its mode, so
 //! Internet and every return to mode 0 go straight to its sign-in `0x10F`,
-//! whose Back leaves WOL. Native diagnostics keep the retail welcome.
+//! whose Back leaves WOL. Its lobby's Quick Match runs the Quick Match runner
+//! and comes back to the lobby. Native diagnostics keep the retail welcome.
 //!
 //! The WOLAPI COM object, its servers and its credential store are outside
 //! the shell: they meet it only through [`WolServiceRequest`] /
@@ -19,12 +20,17 @@
 pub(crate) mod buddies;
 pub(crate) mod buddy;
 mod live_service;
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub(crate) use live_service::lobby_base_url;
 pub(crate) mod lobby;
+mod lobby_phrases;
 mod login;
+pub(crate) mod login_info;
 pub(crate) mod my_info;
 pub(crate) mod options;
 pub(crate) mod page;
 pub(crate) mod persona;
+pub(crate) mod player_card;
 pub(crate) mod quick_match;
 mod service;
 mod test_service;
@@ -34,6 +40,7 @@ pub(crate) use live_service::OnlineCleanup;
 pub(crate) use live_service::RELEASES_URL;
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 pub(crate) use live_service::discard_spawned_visit;
+pub(crate) use live_service::keep_network_report;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) use live_service::retire_visit_for_exit;
 pub(crate) use live_service::{
@@ -42,7 +49,7 @@ pub(crate) use live_service::{
 pub(crate) use live_service::{
     local_choices_agreed, online_cleanup_pending, online_exit_ready, online_match_id,
 };
-pub(crate) use login::{combo_popup, login_layout, open_login_art};
+pub(crate) use login::{account_form_layout, combo_popup, login_layout, open_login_art};
 pub(crate) use service::{
     NET_STATUS_LOST, WolApiStatus, WolHighScoreRecord, WolLadderRecord, WolLoginAccepted,
     WolProvider, WolServer, WolServerList, WolServiceEvent, WolServiceRequest, request,
@@ -63,6 +70,7 @@ pub(crate) fn poll(state: &mut AppState) -> Option<crate::util::time::Instant> {
         my_info::poll_scroll_repeat(state),
         buddy::poll(state),
         page::poll_scroll_repeat(state),
+        player_card::poll_scroll_repeat(state),
         lobby::poll(state),
         quick_match::poll(state),
         live_service::poll(state),
@@ -187,6 +195,7 @@ pub(crate) struct WolVisit {
     /// `[0xA8B244]`; `None` is mode 0.
     mode: Option<WolMode>,
     /// `[0xA8B248]`: the mode the Buddy List runner returns to (0, 4 or 6).
+    /// VERA: also 4 for a Quick Match runner the online lobby started.
     return_mode: Option<WolMode>,
     /// Login category `[0xB73678]`: set once the login flow returned 1.
     authenticated: bool,
@@ -225,6 +234,14 @@ pub(crate) struct WolVisit {
     /// the match and cleared on runner entry (`0x00787973`); the chat sinks
     /// show nothing while it is set.
     in_game: bool,
+    /// VERA: this match started from VERA's own game room, which stays
+    /// joined through the match so its players return to it afterwards
+    /// (`finish` asks the lobby for it back).
+    pub(crate) back_to_room: bool,
+    /// VERA: BC6's Continue after a co-op mission: the stage the kept
+    /// room's host takes when the room comes back. The runner's post-match
+    /// entry drops it unless it waits for that room.
+    pub(crate) cooperative_resume: Option<crate::app::shell_network_setup::CooperativeResume>,
     /// `![0xB77DC0]`: connected to a server. A WOLAPI creation
     /// (`0x00786485`) and a failed login clear it, a connect sets it, and a
     /// lost connection outside a match clears it.
@@ -289,6 +306,8 @@ impl WolVisit {
             motd: None,
             last_pager: None,
             in_game: false,
+            back_to_room: false,
+            cooperative_resume: None,
             connected: false,
             disconnected: false,
             relogin: None,
@@ -493,6 +512,17 @@ pub(crate) fn open_lobby(state: &mut AppState, postmatch: bool) {
     }
 }
 
+/// `WOL_Main` with return mode 4 after a runner returned 0
+/// (`0x0077B491..0x0077B4A6`): the login is kept, the mode-loop pass applies
+/// and the custom lobby runner opens.
+pub(super) fn reopen_lobby(state: &mut AppState) {
+    if let Some(visit) = state.frontend.wol.as_mut() {
+        visit.mode = Some(WolMode::CustomMatch);
+    }
+    apply_wol_preferences(state);
+    lobby::open(state, false);
+}
+
 /// PrepareSession state 0x11 runs `WOL_Main` again. Its game-start exit
 /// (`0x0077B5B5`) kept the WOLAPI object and left the shuffle flag forced
 /// on, so this entry saves the flag as it is now. The settings re-read,
@@ -500,6 +530,15 @@ pub(crate) fn open_lobby(state: &mut AppState, postmatch: bool) {
 /// mode-loop apply (`0x0077B402`) and the lobby runner with postmatch set
 /// (`0x0077B44B`) follow.
 pub(crate) fn reenter_after_match(state: &mut AppState) {
+    if let Some(visit) = state.frontend.wol.as_mut()
+        && matches!(
+            visit.mode,
+            Some(WolMode::QuickMatch | WolMode::QuickCoop | WolMode::PlayBuddy)
+        )
+    {
+        // VERA's kept game room returns only to the custom lobby runner.
+        visit.back_to_room = false;
+    }
     live_service::match_returned(state);
     persona::enter_wol_main(state);
     read_wol_settings(state);

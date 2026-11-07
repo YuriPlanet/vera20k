@@ -26,13 +26,13 @@
 //! (overlay grid, bridge topology). Does NOT depend on render/ui/
 //! audio/net.
 
-use crate::map::houses::{HouseAllianceMap, is_allied_with};
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::weapon_type::WeaponType;
 use crate::sim::cell_rect::{CellRef, get_cellclass_in_query};
 use crate::sim::components::DriveCoord;
+use crate::sim::house_diplomacy::HouseAlliances;
 use crate::sim::intern::InternedId;
 use crate::sim::intern::StringInterner;
 use crate::sim::overlay_grid::OverlayGrid;
@@ -60,7 +60,7 @@ const CLIFF_STEP_LEVELS: i32 = 4;
 pub struct LineOfFireInputs<'a> {
     pub overlay_grid: Option<&'a OverlayGrid>,
     pub overlay_registry: Option<&'a OverlayTypeRegistry>,
-    pub alliances: Option<&'a HouseAllianceMap>,
+    pub alliances: Option<&'a HouseAlliances>,
 }
 
 impl<'a> LineOfFireInputs<'a> {
@@ -173,8 +173,9 @@ pub(crate) fn cell_blocks_line_of_fire<'a>(
                 (owner, probe.firing_house, los.alliances)
             // Terrain-only fixtures may not bind the owner into this interner.
             // Preserve InRange's prior unresolvable-house admission policy.
-            && let (Some(owner), Some(firer)) = (interner.try_resolve(owner), interner.try_resolve(firer))
-            && is_allied_with(alliances, owner, firer)
+            && interner.try_resolve(owner).is_some()
+            && interner.try_resolve(firer).is_some()
+            && alliances.is_allied(interner, owner, firer)
         {
             return false;
         }

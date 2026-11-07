@@ -133,6 +133,10 @@ impl CombatLightRuntime {
     }
 
     /// Age the pre-existing vector before this logic frame's producers append.
+    /// RESIDUAL (invisible): `SpotLightClass::UpdateAll @ 0x005FF390` runs at
+    /// 0x0055B5BE, after the trigger events and the team/DiskLaser loops, so a
+    /// light those create is aged once and first draws at stage 8, one frame
+    /// shorter. Here every new light first draws at stage 0.
     pub(crate) fn commit_frame(&mut self, new_entries: impl IntoIterator<Item = CombatLight>) {
         for entry in &mut self.entries {
             entry.stage = entry.stage.saturating_add(STAGE_STEP);

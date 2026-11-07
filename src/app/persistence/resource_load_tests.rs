@@ -16,6 +16,153 @@ const LOAD_CLOCK_MS: u64 = 16_000;
 const SAVED_ELAPSED_BUCKETS: u32 = 180;
 const MISSING_FOLLOW_ID: u64 = 0xBAD_F011;
 
+#[test]
+fn packed_ice_bytes_survive_materialization_and_saved_resource_loading() {
+    use crate::map::map_file::MapFile;
+    use crate::util::{base64::base64_decode, ini_writer, lzo};
+    use ::base64::Engine;
+
+    let Some((root, mut assets)) = retail_assets() else {
+        return;
+    };
+    let original = assets.get_ref("XMP03T4.MAP").unwrap().to_vec();
+    let stock = MapFile::from_bytes(&original).unwrap();
+    let section = stock.ini.section("IsoMapPack5").unwrap();
+    let packed = base64_decode(&section.read_packed_text()).unwrap();
+    let mut records = lzo::decompress_chunks(&packed, 512 * 512 * 11 + 4).unwrap();
+    // Actual retail record744 crosses the 8192-byte decompression boundary.
+    assert_eq!(&records[8184..8195], &[68, 0, 28, 0, 140, 0, 0, 0, 0, 4, 0]);
+    let next: [u8; 11] = records[8195..8206].try_into().unwrap();
+    let next_cell = (
+        u16::from_le_bytes([next[0], next[1]]),
+        u16::from_le_bytes([next[2], next[3]]),
+    );
+    let end = records
+        .chunks(11)
+        .position(|record| record.len() >= 4 && record[..4] == [0; 4])
+        .map_or(records.len(), |index| index * 11);
+    records.truncate(end);
+    records[8194] = 0x80; // Authored derivative, not a stock/native numeric golden.
+    let mut duplicate = next;
+    let alias_x =
+        i16::try_from(i32::from(next_cell.0) + 512 * (i32::from(next_cell.1) + 1)).unwrap();
+    duplicate[..2].copy_from_slice(&alias_x.to_le_bytes());
+    duplicate[2..4].copy_from_slice(&(-1i16).to_le_bytes());
+    duplicate[10] = 1;
+    records.extend_from_slice(&duplicate);
+    let mut missed = next;
+    missed[..2].copy_from_slice(&i16::MAX.to_le_bytes());
+    missed[2..4].copy_from_slice(&i16::MAX.to_le_bytes());
+    missed[10] = 0xff;
+    records.extend_from_slice(&missed);
+    records.extend_from_slice(&[0; 4]);
+    let encoded =
+        ::base64::engine::general_purpose::STANDARD.encode(lzo::compress_chunks(&records, 0x2000));
+    let values: Vec<_> = encoded
+        .as_bytes()
+        .chunks(70)
+        .enumerate()
+        .map(|(index, bytes)| {
+            (
+                index.to_string(),
+                std::str::from_utf8(bytes).unwrap().to_owned(),
+            )
+        })
+        .collect();
+    let refs: Vec<_> = values
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect();
+    let keys: Vec<_> = section.keys().collect();
+    let cleared = ini_writer::remove_ini_keys(&original, "IsoMapPack5", &keys);
+    let derivative = ini_writer::set_ini_values(&cleared, "IsoMapPack5", &refs);
+    let directory = TestDirectory::new("packed-ice-resource-load");
+    directory.write("authored.map", &derivative);
+    let path = directory.path().join("authored.map");
+    let name = path.to_str().unwrap();
+    let loaded =
+        crate::map::source::load_map_by_name_or_path_with_assets(&root, name, &assets).unwrap();
+    let mut owner = retail_rules_owner(&assets);
+    let mode = crate::rules::retail_sources::select_ini(&assets, "MPBattleMD.ini")
+        .unwrap()
+        .ini;
+    let mut cache = TileVariantSelectorCache::default();
+    let (mut runtime, metadata, _) =
+        bound_saved_world(loaded, name, &mut assets, &mut owner, &mode, &mut cache);
+    let ice = |grid: &ResolvedTerrainGrid, (x, y)| grid.cell(x, y).unwrap().legacy_ice_byte;
+    assert_eq!(
+        ice(runtime.simulation.resolved_terrain().unwrap(), (68, 28)),
+        0x80
+    );
+    assert_eq!(
+        ice(runtime.simulation.resolved_terrain().unwrap(), next_cell),
+        1
+    );
+    assert_eq!(
+        runtime
+            .simulation
+            .resolved_terrain()
+            .unwrap()
+            .iter()
+            .filter(|cell| cell.legacy_ice_byte != 0)
+            .count(),
+        2,
+        "the out-of-range record cannot alter an allocated cell"
+    );
+    assert!(
+        runtime
+            .simulation
+            .rebuild_dynamic_navigation(&runtime.resources.rules)
+    );
+    let hash = runtime.resources.rules.simulation_config_hash();
+    let bytes = snapshot_bytes(&runtime, &owner, &metadata, None, hash);
+    std::fs::remove_file(&path).unwrap();
+    let repository = SaveRepository::at(directory.path().join("saves"));
+    let frontend = frontend_main();
+    let clock = || LOAD_CLOCK_MS;
+    let view = SavedGamePreparationView {
+        repository: &repository,
+        current_simulation: None,
+        frontend_main: &frontend,
+        rules_owner: &owner,
+        tile_cache: &cache,
+        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
+        load_clock: &clock,
+    };
+    let restored = assets
+        .prepare_saved_load(|assets| PreparedSavedGame::prepare_resources(&bytes, &view, assets))
+        .unwrap();
+    assert_eq!(
+        ice(
+            restored.world.simulation.resolved_terrain().unwrap(),
+            (68, 28)
+        ),
+        0x80
+    );
+    assert_eq!(
+        ice(
+            restored.world.simulation.resolved_terrain().unwrap(),
+            next_cell
+        ),
+        1
+    );
+    let stock =
+        crate::map::source::load_map_by_name_or_path_with_assets(&root, "XMP03T4.MAP", &assets)
+            .unwrap();
+    let (fresh, _, _) = bound_saved_world(
+        stock,
+        "XMP03T4.MAP",
+        &mut assets,
+        &mut owner,
+        &mode,
+        &mut cache,
+    );
+    assert_eq!(
+        ice(fresh.simulation.resolved_terrain().unwrap(), (68, 28)),
+        0
+    );
+}
+
 fn map_text(theater: &str, strength: i32, size: u32) -> String {
     // This Pack5 record is the existing map/source.rs one-cell fixture. The
     // map owner supplies the remaining native Size diamond from retail Clear.
@@ -87,7 +234,6 @@ fn bound_saved_world(
     );
     init_helpers::bind_rules_asset_closure(
         &mut rules,
-        &fixed_art,
         &overlay_registry,
         &roots,
         &[],
@@ -396,9 +542,18 @@ fn assert_incoming_resources(
         (2, 7, 0)
     );
     assert!(!cell.overlay_blocks);
-    assert_eq!(cell.speed_costs.track, Some(0));
-    assert_eq!(cell.speed_costs.wheel, Some(0));
-    assert_eq!(cell.speed_costs.float, Some(100));
+    assert_eq!(
+        cell.speed_costs.track,
+        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
+    );
+    assert_eq!(
+        cell.speed_costs.wheel,
+        Some(crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO)
+    );
+    assert_eq!(
+        cell.speed_costs.float,
+        Some(crate::util::native_x87::NativeF32Bits::ONE)
+    );
     assert!(sim.path_grid().unwrap().is_walkable(8, 8));
     assert_eq!(sim.overlay_grid().unwrap().cell(8, 8).overlay_id, None);
     assert_eq!(sim.overlay_grid().unwrap().cell(7, 8).overlay_id, None);
@@ -1027,6 +1182,58 @@ fn retail_saved_resources_prepare_cold() {
         "uncommitted candidate cannot warm the process cache"
     );
     assert!(cold_owner.saved_scenario_rules().is_none());
+}
+
+#[test]
+fn saved_infantry_sequence_bank_survives_image_without_sequence() {
+    let Some(mut save) = incoming_save("TEMPERATE", "[SLAV]\nImage=MONEY\n") else {
+        return;
+    };
+    let clock = || LOAD_CLOCK_MS;
+    let frontend = frontend_main();
+    let cache = TileVariantSelectorCache::default();
+    let view = SavedGamePreparationView {
+        repository: &save.repository,
+        current_simulation: None,
+        frontend_main: &frontend,
+        rules_owner: &save.owner,
+        tile_cache: &cache,
+        lighting: &crate::app::presentation::lighting::MatchLighting::default(),
+        load_clock: &clock,
+    };
+    let prepared = save
+        .assets
+        .prepare_saved_load(|assets| {
+            PreparedSavedGame::prepare_resources(&save.bytes, &view, assets)
+        })
+        .expect("saved InfantryType bank survives resource preparation");
+    let rules = &prepared.resources.rules;
+    assert_eq!(rules.object("SLAV").unwrap().image, "MONEY");
+    assert!(rules.art().get("MONEY").unwrap().sequence.is_none());
+    // ReadSequenceData523D2D preserves the bank when this map image has no
+    // Sequence. InfantryTypeLoad524B10 restores that bank; the two resource
+    // binding passes above must not replace it with the final image's defaults.
+    // These are the retail [SlaveSequence] FireUp and FireUpSounds inputs.
+    let fire_up = rules
+        .animation_sequence("SLAV")
+        .unwrap()
+        .infantry_action(4)
+        .unwrap();
+    assert_eq!(
+        (
+            fire_up.start_frame,
+            fire_up.frames_per_facing,
+            fire_up.facings
+        ),
+        (164, 8, 8)
+    );
+    let sounds: Vec<_> = rules
+        .object("SLAV")
+        .unwrap()
+        .sequence_sounds(4)
+        .map(|sound| (sound.frame, sound.sound_id.as_str()))
+        .collect();
+    assert_eq!(sounds, [(2, "SlaveAttack")]);
 }
 
 #[test]

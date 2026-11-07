@@ -135,14 +135,10 @@ impl super::object_health::ObjectHealthHost for ReceiverHealthHost<'_, '_, '_> {
             }
             HealthCallback::Destroy => {
                 if self.execute_world_callbacks {
-                    //The existing fallback never books a loss a real Kill
-                    //already booked. Both ordinary and delayed death use the
-                    //same Destroy here, before Techno's PostMortem branch.
-                    Simulation::record_destruction_once(
-                        &mut self.world.substrate,
-                        &mut self.world.houses,
-                        id,
-                    );
+                    // Both ordinary and delayed death use the same Destroy
+                    // here, before Techno's PostMortem branch. It books no
+                    // loss: the Kill above already called RecordKill.
+                    Simulation::close_kill_record(&mut self.world.substrate, id);
                     if super::world_receiver::callbacks_enabled(self.world) {
                         self.world.detach_all(id, true, context);
                     }
@@ -179,15 +175,11 @@ pub(super) fn commit_receiver_health(
     let attacker_owner = event.source_house.or(live_source_owner);
     let hostile_source = |target: &GameEntity,
                           source_owner: Option<InternedId>,
-                          alliances: &HouseAllianceMap,
+                          alliances: &HouseAlliances,
                           interner: &StringInterner| {
         attacker_id != RAD_NO_ATTACKER
             && source_owner.is_some_and(|source_owner| {
-                !crate::map::houses::is_allied_with(
-                    alliances,
-                    interner.resolve(target.owner()),
-                    interner.resolve(source_owner),
-                )
+                !alliances.is_allied(interner, target.owner(), source_owner)
             })
     };
     if let Some(value) = receive_outcome.psychedelic_value {
@@ -209,7 +201,7 @@ pub(super) fn commit_receiver_health(
                 hostile_source(
                     target,
                     attacker_owner,
-                    world.house_alliances.as_map(),
+                    &world.house_alliances,
                     &world.interner,
                 ),
             )),
@@ -295,7 +287,7 @@ pub(super) fn commit_receiver_health(
         if execute_world_callbacks {
             update_anger_nodes(
                 &mut world.houses,
-                world.house_alliances.as_map(),
+                &world.house_alliances,
                 &world.interner,
                 victim_owner,
                 source_owner,
@@ -347,7 +339,7 @@ pub(super) fn commit_receiver_health(
         let hostile = hostile_source(
             target,
             attacker_owner,
-            world.house_alliances.as_map(),
+            &world.house_alliances,
             &world.interner,
         );
         latch_hostile_hit = survivor && hostile;

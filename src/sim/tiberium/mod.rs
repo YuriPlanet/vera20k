@@ -374,48 +374,7 @@ pub(crate) fn place_tiberium(
     });
     let current = *ctx.overlay_grid.cell(cell.0, cell.1);
     if current.overlay_id.is_none() {
-        let admission = ctx.new_cell_admission?;
-        admit_new_tiberium_target(ctx.overlay_grid, ctx.source_object_cells, admission, cell)?;
-        let variants = ctx.overlay_registry.flat_tiberium_variant_ids(ty)?;
-        let overlay_id = variants[ctx.rng.next_range_u32(12) as usize];
-        // Overlay ctor5FC380 ->Cell47C550 refuses Unlimbo on any Terrain,
-        // including an ordinary tree which CanGerminate4838E0 admitted.
-        // Place487190 still returns success and writes the requested data.
-        // Original execution: tibtre.json ordinary_tree_creation_refused.
-        let terrain_blocks_overlay = admission
-            .live_objects
-            .terrain_object_cells
-            .contains_key(&cell);
-        if !terrain_blocks_overlay {
-            mark_placed_tiberium(ctx, admission, cell, overlay_id);
-        }
-        ctx.ore_growth_state.add_native_growth_queue_cell(
-            ctx.overlay_grid,
-            ctx.overlay_registry,
-            ctx.tiberium_types,
-            ctx.resolved_terrain,
-            ctx.growth_enabled,
-            type_id,
-            cell.0,
-            cell.1,
-            ctx.binary_frame,
-            ctx.rng,
-        );
-        // 4872A0: the identity store already registered the cell mutation.
-        // Write the exact raw byte, even when Mark refused the identity,
-        // without creating a second deferred overlay-dirty item.
-        ctx.overlay_grid.write_cell_data(cell.0, cell.1, amount);
-        if let Some(dirty) = ctx.dirty_cells.as_deref_mut() {
-            dirty.mark_tactical_once(cell);
-            dirty.mark_radar([cell]);
-        }
-        return Some(TiberiumPlacement {
-            cell,
-            overlay_construction: Some(crate::sim::world::OverlayConstructionReceipt::new(
-                cell,
-                terrain_blocks_overlay,
-            )),
-        });
+        return place_new_tiberium(ctx, cell, type_id, amount);
     }
 
     let view = tiberium_cell_view(
@@ -455,6 +414,62 @@ pub(crate) fn place_tiberium(
     Some(TiberiumPlacement {
         cell,
         overlay_construction: None,
+    })
+}
+
+/// The new-cell arm of `CellClass::PlaceTiberium @ 0x00487190`, entered when
+/// `CanPlaceTiberium @ 0x004838E0` admits the cell. The rest of the arm runs
+/// on the Cell that admission returns. `VoxelAnimClass::AI` inlines this arm
+/// with amount 0 (0x0074A385, 0x0074A5F0).
+pub(crate) fn place_new_tiberium(
+    ctx: &mut PlaceTiberiumContext<'_>,
+    cell: (u16, u16),
+    type_id: TiberiumTypeId,
+    amount: u8,
+) -> Option<TiberiumPlacement> {
+    let ty = ctx.tiberium_types.get(type_id)?;
+    let admission = ctx.new_cell_admission?;
+    let cell =
+        admit_new_tiberium_target(ctx.overlay_grid, ctx.source_object_cells, admission, cell)?;
+    let variants = ctx.overlay_registry.flat_tiberium_variant_ids(ty)?;
+    let overlay_id = variants[ctx.rng.next_range_u32(12) as usize];
+    // Overlay ctor5FC380 ->Cell47C550 refuses Unlimbo on any Terrain,
+    // including an ordinary tree which CanGerminate4838E0 admitted.
+    // Place487190 still returns success and writes the requested data.
+    // Original execution: tibtre.json ordinary_tree_creation_refused.
+    let terrain_blocks_overlay = admission
+        .live_objects
+        .terrain_object_cells
+        .contains_key(&cell);
+    if !terrain_blocks_overlay {
+        mark_placed_tiberium(ctx, admission, cell, overlay_id);
+    }
+    ctx.ore_growth_state.add_native_growth_queue_cell(
+        ctx.overlay_grid,
+        ctx.overlay_registry,
+        ctx.tiberium_types,
+        ctx.resolved_terrain,
+        ctx.growth_enabled,
+        type_id,
+        cell.0,
+        cell.1,
+        ctx.binary_frame,
+        ctx.rng,
+    );
+    // 4872A0: the identity store already registered the cell mutation.
+    // Write the exact raw byte, even when Mark refused the identity,
+    // without creating a second deferred overlay-dirty item.
+    ctx.overlay_grid.write_cell_data(cell.0, cell.1, amount);
+    if let Some(dirty) = ctx.dirty_cells.as_deref_mut() {
+        dirty.mark_tactical_once(cell);
+        dirty.mark_radar([cell]);
+    }
+    Some(TiberiumPlacement {
+        cell,
+        overlay_construction: Some(crate::sim::world::OverlayConstructionReceipt::new(
+            cell,
+            terrain_blocks_overlay,
+        )),
     })
 }
 
@@ -1753,8 +1768,8 @@ SpreadPercentage=.06
             .reset_native_tiberium_classes(rules.tiberium_types.len(), 0);
         let mut terrain = flat_clear_terrain();
         let cell = terrain.cell_mut_for_test(0, 0).unwrap();
-        cell.speed_costs.foot = Some(37);
-        cell.base_speed_costs.foot = Some(37);
+        cell.speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(37));
+        cell.base_speed_costs.foot = Some(crate::rules::terrain_rules::test_speed_percent(37));
         let mut overlay = OverlayGrid::new(1, 1);
         overlay.place_overlay(0, 0, overlay_registry.id_for_name("TIB01").unwrap(), 3);
         assert!(crate::sim::overlay_grid::recalc_overlay_passability(
@@ -1804,7 +1819,7 @@ SpreadPercentage=.06
                 .unwrap()
                 .speed_costs
                 .foot,
-            Some(37),
+            Some(crate::rules::terrain_rules::test_speed_percent(37)),
             "the restored land row is the cell's own, read without publication"
         );
         let repeated = sim.overlay_grid.as_mut().unwrap().recalculate_runtime_cell(

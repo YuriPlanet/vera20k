@@ -140,9 +140,6 @@ fn supplied_rules(input: &Value) -> RuleSet {
     let art = IniFile::from_str(&text);
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     let object = rules.object(name).unwrap();
     assert_eq!(object.deploy_fire, input["deploy_fire"] != 0);
     assert_eq!(object.immune_to_radiation, input["immune"] != 0);
@@ -463,9 +460,6 @@ fn stock_deployed_guard_readers_bind_physical_type_weapon_and_raw_action_gates()
     let art = IniFile::from_bytes(&art_bytes).unwrap();
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
     rules.install_art_data(ArtRegistry::from_ini(&art));
-    rules.bind_animation_sequences(
-        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
-    );
     // Physical values are separate from the synthetic signed-record controls.
     // This checks their production binding; the companion does not execute INI
     // loading and cannot certify the complete retail reader/scenario chain.

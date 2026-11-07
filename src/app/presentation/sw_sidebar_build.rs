@@ -7,7 +7,7 @@
 use crate::app::AppState;
 use crate::app::presentation::sidebar_build::{
     CameoStatusLabels, READY_PAD_X, READY_PAD_Y, build_gclock_stage_instance,
-    place_canvas_crop_in_slot, superweapon_status_label,
+    place_canvas_crop_in_slot, status_label_fit, superweapon_status_label,
 };
 use crate::render::batch::SpriteInstance;
 use crate::render::sidebar_chrome::SidebarChromeEntry;
@@ -55,14 +55,22 @@ pub(crate) fn build(
         out.chrome.push(sprite_art(entry, toggle, DEPTH_ART));
         // `ToggleSWButtonClass::Draw` outlines the hovered toggle too.
         if toggle.contains(cursor_x as f32, cursor_y as f32) {
-            push_outline(&mut out.hover, toggle, hover_tint);
+            crate::app::presentation::sidebar_build::push_rect_outline(
+                &mut out.hover,
+                toggle,
+                hover_tint,
+            );
         }
     }
     if !sw.expanded {
         return out;
     }
     if let Some(rect) = crate::app::presentation::sw_sidebar::hovered_entry_rect(state) {
-        push_outline(&mut out.hover, rect, hover_tint);
+        crate::app::presentation::sidebar_build::push_rect_outline(
+            &mut out.hover,
+            rect,
+            hover_tint,
+        );
     }
     if let Some(art) = art {
         let center_height = sw.ui.cameo_height.max(48) as f32;
@@ -194,9 +202,11 @@ pub(crate) fn build(
         {
             // Native screen pixels, like `SWButtonClass::Draw` on
             // `DSurface::Composite`.
-            let text_w = state.renderer.bit_font.text_width(text) as f32;
+            let font = &state.renderer.bit_font;
+            let fit = status_label_fit(font, text, slot.w, None);
+            let text_w = font.fitted(fit, |font| font.text_width(text)) as f32;
             let strip_w = text_w + READY_PAD_X * 2.0;
-            let strip_h = state.renderer.bit_font.cell_height() + READY_PAD_Y * 2.0;
+            let strip_h = font.cell_height() + READY_PAD_Y * 2.0;
             out.overlay.push(SpriteInstance {
                 position: [slot.x + (slot.w - strip_w) * 0.5, slot.y],
                 size: [strip_w, strip_h.min(slot.h)],
@@ -208,41 +218,20 @@ pub(crate) fn build(
                 ..Default::default()
             });
             let text_x = slot.x + (slot.w - text_w) * 0.5;
-            out.text.extend(state.renderer.bit_font.build_text(
-                text,
-                text_x,
-                slot.y + READY_PAD_Y,
-                1.0,
-                DEPTH_TEXT,
-                ready_tint,
-                [0.0, 0.0],
-            ));
+            out.text.extend(font.fitted(fit, |font| {
+                font.build_text(
+                    text,
+                    text_x,
+                    slot.y + READY_PAD_Y,
+                    1.0,
+                    DEPTH_TEXT,
+                    ready_tint,
+                    [0.0, 0.0],
+                )
+            }));
         }
     }
     out
-}
-
-/// `SWButtonClass::Draw`: a one-pixel `Drawing::Rect` in the tooltip colour
-/// around the hovered gadget.
-fn push_outline(out: &mut Vec<SpriteInstance>, rect: Rect, tint: [f32; 3]) {
-    let border = 1.0;
-    for (x, y, w, h) in [
-        (rect.x, rect.y, rect.w, border),
-        (rect.x, rect.y + rect.h - border, rect.w, border),
-        (rect.x, rect.y, border, rect.h),
-        (rect.x + rect.w - border, rect.y, border, rect.h),
-    ] {
-        out.push(SpriteInstance {
-            position: [x, y],
-            size: [w, h],
-            uv_origin: [0.0, 0.0],
-            uv_size: [1.0, 1.0],
-            depth: 0.00044,
-            tint,
-            alpha: 1.0,
-            ..Default::default()
-        });
-    }
 }
 
 fn readiness_text<'a>(

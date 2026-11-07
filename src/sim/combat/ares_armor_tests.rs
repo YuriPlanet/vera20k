@@ -149,7 +149,8 @@ fn custom_armor_passive_and_retaliation_flags_are_independent_of_each_other_and_
             "multiplier={multiplier}, passive={passive}, retaliate={retaliate}",
         );
         assert_eq!(
-            sim.greatest_threat_represented(&rules, None, scorer, ScanMission::Guard, None),
+            sim.greatest_threat_represented(&rules, None, scorer, ScanMission::Guard, None)
+                .and_then(crate::sim::combat::TargetKind::object_id),
             passive.then_some(target),
             "multiplier={multiplier}, passive={passive}, retaliate={retaliate}",
         );
@@ -183,7 +184,7 @@ fn custom_armor_positive_receive_and_estimate_share_the_effective_record() {
         &rules,
         &sim.interner,
         &sim.houses,
-        sim.house_alliances.as_map(),
+        &sim.house_alliances,
         false,
         0,
         sim.resolved_terrain.as_ref(),
@@ -205,7 +206,7 @@ fn custom_armor_threat_score_consumes_both_effectiveness_terms() {
             &rules,
             &sim.interner,
             sim.resolved_terrain.as_ref(),
-            Some(sim.house_alliances.as_map()),
+            Some(&sim.house_alliances),
             greatest_threat::ThreatCoefficients {
                 my_effectiveness: mine,
                 target_effectiveness: theirs,

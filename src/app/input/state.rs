@@ -11,6 +11,7 @@ use crate::sim::snapshot::saved_local_view::{
     SavedCursorModes, SavedLocalView, SavedLocalViewError, SavedTargeting,
 };
 use std::collections::HashSet;
+use winit::event::MouseButton;
 use winit::keyboard::{KeyCode, ModifiersState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -163,6 +164,7 @@ impl PreparedSavedLocalView {
         input.planning.reset();
         sidebar.repair_mode_on = modes.repair;
         sidebar.sell_mode_on = modes.sell;
+        sidebar.command_bar_closed = modes.command_bar_closed;
         input.targeting_mode = self.targeting;
         // The preview is derived from the cursor; the next tactical frame
         // recomputes it. The BandBoxLeftUp retry copy (+1190..+1198) loads
@@ -178,6 +180,7 @@ impl PreparedSavedLocalView {
         // same next-press behavior without persisting a wall-clock Instant.
         // Original reset witnesses: saved_game_layout.json/postload_clock_reset.
         input.last_control_group_press = None;
+        input.build_repeat = Default::default();
         input.reset_cheer_clock();
     }
 }
@@ -185,6 +188,9 @@ impl PreparedSavedLocalView {
 pub(crate) struct MatchInputState {
     /// Presentation display depth; ScenarioSession owns the gameplay lock.
     pub(crate) cursor_visibility: crate::app::input::cursor::CursorVisibility,
+    /// The cursor the last drawn frame showed. Native's SetCursor writes are
+    /// retained state, and over the sidebar only a LEFTUP dispatch writes one.
+    shown_cursor: std::cell::Cell<Option<crate::app::types::CursorFeedbackKind>>,
     pub(crate) camera_x: f32,
     pub(crate) camera_y: f32,
     /// Camera-owned requests awaiting Tactical__AI's next single commit.
@@ -216,6 +222,7 @@ pub(crate) struct MatchInputState {
     /// saved nor simulation state and is discarded when pointer focus changes.
     last_cursor_window: Option<(f32, f32)>,
     pub(crate) keys_held: HashSet<KeyCode>,
+    pub(crate) camera_scroll_keys: super::hotkeys::CameraScrollKeys,
     pub(crate) hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings,
     pub(crate) hotkey_modifiers: ModifiersState,
     /// Local AllToCheer730F30 admission scalar84555C. The simulation owns
@@ -230,8 +237,9 @@ pub(crate) struct MatchInputState {
     pub(crate) cursor_coordinates: bool,
     /// One-shot Shift+S request, consumed at the next render submission.
     pub(crate) retail_screenshot_requested: bool,
-    /// True while left-dragging on minimap (camera pan mode).
-    pub(crate) minimap_dragging: bool,
+    /// Button owning the pending radar press. VERA right-click controls use
+    /// Right; retail input uses Left. Other button edges cannot steal it.
+    minimap_press_button: Option<MouseButton>,
     /// Touch gestures translated into mouse input (Windows touchscreens). Its
     /// sticky gesture lives here, beside the other pointer bytes, so the match
     /// teardown ladder resets it with them.
@@ -258,6 +266,8 @@ pub(crate) struct MatchInputState {
     /// state: the original stamps `timeGetTime()` here and only a recall writes
     /// it — assigning with Ctrl+digit never does.
     pub(crate) last_control_group_press: Option<(usize, crate::util::time::Instant)>,
+    /// Types the local player builds endlessly (Ctrl + left click on a cameo).
+    pub(crate) build_repeat: crate::app::input::build_repeat::BuildRepeat,
     /// The object the camera is following, i.e. `DisplayClass +0x11A0` behind
     /// its valid byte `+0x119C`. `None` is the cleared pair.
     pub(crate) follow_target: Option<u64>,
@@ -391,11 +401,29 @@ impl MatchInputState {
         }
     }
 
+    /// Record the cursor a drawn frame shows (`None` is the normal arrow).
+    pub(crate) fn note_shown_cursor(&self, kind: Option<crate::app::types::CursorFeedbackKind>) {
+        self.shown_cursor.set(kind);
+    }
+
+    /// The cursor over the sidebar. SBGadget::Action 6ABA40 (flags 8,
+    /// 6A4C12) and SelectClass::Action 6AAD00 (6AAD61) set the normal cursor,
+    /// but their masks take LEFTUP and no LEFTHELD: with the left button held
+    /// nothing writes one and the last cursor stays.
+    pub(crate) fn sidebar_cursor(&self) -> Option<crate::app::types::CursorFeedbackKind> {
+        if self.tactical_mouse.left_held() {
+            self.shown_cursor.get()
+        } else {
+            None
+        }
+    }
+
     /// Construct the match input owner with the ordinary startup defaults.
     pub(crate) fn new(hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings) -> Self {
         Self {
             cursor_visibility: Default::default(),
-            minimap_dragging: false,
+            shown_cursor: Default::default(),
+            minimap_press_button: None,
             touch_mapper: crate::app::input::touch::TouchMouseMapper::new(),
             cursor_from_touch: false,
             selection_state: crate::sim::selection::SelectionState::new(),
@@ -404,6 +432,7 @@ impl MatchInputState {
             selection_voice_enabled: true,
             queued_order_mode: crate::app::types::OrderMode::Move,
             last_control_group_press: None,
+            build_repeat: Default::default(),
             follow_target: None,
             targeting_mode: None,
             building_placement_preview: None,
@@ -423,6 +452,7 @@ impl MatchInputState {
             cursor_zoom: None,
             last_cursor_window: None,
             keys_held: HashSet::new(),
+            camera_scroll_keys: Default::default(),
             hotkey_bindings,
             hotkey_modifiers: ModifiersState::empty(),
             last_cheer_frame: -100,
@@ -622,6 +652,7 @@ impl MatchInputState {
                 self.finish_building_placement();
             }
             LifecycleOutput::BuildingProductionAbandoned { owner }
+            | LifecycleOutput::ConstructionYardCaptured { owner }
                 if local_house == Some(owner) =>
             {
                 self.clear_building_placement();
@@ -661,13 +692,45 @@ impl MatchInputState {
         }
     }
 
+    pub(crate) fn minimap_press_active(&self) -> bool {
+        self.minimap_press_button.is_some()
+    }
+
+    pub(crate) fn minimap_press_button(&self) -> Option<MouseButton> {
+        self.minimap_press_button
+    }
+
+    pub(crate) fn begin_minimap_press(&mut self, button: MouseButton) -> bool {
+        if self
+            .minimap_press_button
+            .is_some_and(|owner| owner != button)
+        {
+            return false;
+        }
+        self.minimap_press_button = Some(button);
+        self.selection_state.cancel_drag();
+        true
+    }
+
+    pub(crate) fn finish_minimap_press(&mut self, button: MouseButton) -> bool {
+        if self.minimap_press_button != Some(button) {
+            return false;
+        }
+        self.cancel_minimap_press();
+        true
+    }
+
+    pub(crate) fn cancel_minimap_press(&mut self) {
+        self.minimap_press_button = None;
+    }
+
     /// Deactivate683EB0/4AEAD0's drag/capture teardown: the tactical capture
     /// byte, the band rectangle and the minimap gesture. Armed cursor modes
     /// (building placement, superweapon targeting, repair/sell) and physical
     /// held-button state survive this call — the pause overlay cancels a drag,
     /// never a pending placement.
     pub(crate) fn cancel_tactical_drag(&mut self) {
-        self.minimap_dragging = false;
+        self.cancel_minimap_press();
         self.selection_state.cancel_drag();
         self.tactical_mouse.cancel_mouse_drag();
         // The touch gesture is the mapper's; without this a finger still down
@@ -736,6 +799,7 @@ impl MatchInputState {
                 // Active YR PlanMgr is outside Mouse's saved Display body.
                 planning: false,
                 targeting,
+                command_bar_closed: sidebar.command_bar_closed,
             },
         )
     }

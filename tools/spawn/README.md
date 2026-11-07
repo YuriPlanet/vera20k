@@ -13,7 +13,9 @@ directories (docs/spawn.md). Nothing here is used by ordinary play.
   cursor, `relay_ready`/`latency_ready`/`renew_relay`/`finish`/`leave`,
   `match/resume`; `start_confirmed`, `timing_confirmed`, `relay_renewed`).
   Grants and ordering certificates are signed by `relay_grant.mjs` in the
-  lobby's format (docs/lobby-protocol.md). Results go to `OUT/results.json`.
+  lobby's format (docs/lobby-protocol.md): `VO1C`, or `VO2C` with
+  `--pacing on|off` (`run.sh`: `PACING=on|off`). Results go to `OUT/results.json`.
+  `run.sh` takes `RELAY_PORT` and `SERVICE_PORT` when 5000 or 8787 is in use.
 * `run.sh` builds nothing; it starts the relay (relay mode) and the mock, then
   both clients, waits for both processes to exit, and prints each client's
   exit status and `spawn_result.json` (docs/spawn.md "Results"; exit status 0
@@ -60,6 +62,10 @@ BIN=$(ls -t target/owned-worktrees/*/fast/vera20k | head -n 1)
 
 A launcher can copy `version`, `rules_digest` and `map.source_sha256` into
 `[Settings] ExpectedVersion`, `ExpectedRulesDigest`, `ExpectedMapDigest`.
+`rules_digest` is Battle's. `[Settings] GameMode` selects a stock `MPModesMD.ini`
+row (default 1), and the digest covers that row's INI, so another mode takes its
+digest from the report's `game_modes`. Cooperative plays one mission: the launcher
+writes its enemy AI houses, and no next mission or progress follows.
 
 Useful log lines: `Direct spawn: source=`, `Direct spawn: every guest answered`,
 `Relay spawn:`, `Spawn test hook: pressing Leave`, `Match end ready for local

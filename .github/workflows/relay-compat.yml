@@ -9,7 +9,8 @@ name: Relay compatibility
 # client as a control.
 #
 # Label a PR `relay-compat-break` when it changes the records on purpose, after
-# a client that reads them has shipped; client failures then only warn.
+# a client that reads them has shipped; client failures then only warn, and a
+# release the change's example no longer builds against plays its own.
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]

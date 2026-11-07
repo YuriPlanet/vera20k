@@ -676,3 +676,51 @@ fn secret_lab_can_build_matches_original_human_ai_limit_and_priority_controls() 
         assert_eq!(answer, int(&row["answer"]), "{}", row["name"]);
     }
 }
+
+/// VERA's room bans refuse the retail Spy and the stolen-tech units to every
+/// house, even on the computer's limit-only FindFactory route and after a
+/// spy stole the tech.
+#[test]
+#[cfg(not(feature = "ares"))]
+fn retail_room_bans_refuse_the_spy_and_stolen_tech_units() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    let americans = sim.interner.intern("Americans");
+    let mut house = HouseState::new(americans, 0, None, false, 0, 10);
+    house.steal_tech(2);
+    sim.houses.register(house);
+    let spy = rules.object("SPY").unwrap();
+    let psi_commando = rules.object("PTROOP").unwrap();
+    for product in [spy, psi_commando] {
+        assert_eq!(
+            can_build(&sim, rules, americans, product, false, true),
+            CanBuild::Yes
+        );
+    }
+
+    sim.session.game_options_mut_for_test().bans.spy = true;
+    assert_eq!(
+        can_build(&sim, rules, americans, spy, false, true),
+        CanBuild::No
+    );
+    assert_eq!(
+        can_build(&sim, rules, americans, spy, true, true),
+        CanBuild::No
+    );
+    assert_eq!(
+        can_build(&sim, rules, americans, psi_commando, false, true),
+        CanBuild::Yes
+    );
+    sim.session.game_options_mut_for_test().bans.stolen_tech = true;
+    assert_eq!(
+        can_build(&sim, rules, americans, psi_commando, false, true),
+        CanBuild::No
+    );
+}

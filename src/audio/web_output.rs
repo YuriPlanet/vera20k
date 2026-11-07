@@ -111,6 +111,9 @@ struct WebOutput {
     block_secs: f64,
     interleaved: Vec<f32>,
     planar: Vec<f32>,
+    /// `copyToChannel` refuses a view of the threaded build's shared Wasm
+    /// memory, so each channel crosses in this JavaScript-owned array.
+    channel: js_sys::Float32Array,
     on_ended: Closure<dyn FnMut()>,
 }
 
@@ -141,6 +144,7 @@ impl WebOutput {
             block_secs: BLOCK_FRAMES as f64 / f64::from(sample_rate),
             interleaved: vec![0.0; BLOCK_FRAMES * CHANNELS],
             planar: vec![0.0; BLOCK_FRAMES],
+            channel: js_sys::Float32Array::new_with_length(BLOCK_FRAMES as u32),
             on_ended: Closure::new(|| {
                 OUTPUT.with(|slot| {
                     if let Some(output) = slot.borrow_mut().as_mut() {
@@ -180,7 +184,8 @@ impl WebOutput {
             for (frame, sample) in self.planar.iter_mut().enumerate() {
                 *sample = self.interleaved[frame * CHANNELS + channel];
             }
-            buffer.copy_to_channel(&self.planar, channel as i32)?;
+            self.channel.copy_from(&self.planar);
+            buffer.copy_to_channel_with_f32_array(&self.channel, channel as i32)?;
         }
         let node = self.ctx.create_buffer_source()?;
         node.set_buffer(Some(buffer));

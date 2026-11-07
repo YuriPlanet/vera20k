@@ -18,10 +18,10 @@ use crate::rules::ini_parser::is_native_none_type_name;
 use crate::rules::ini_value::{crt_atoi, truncate_native_bytes};
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
-use crate::util::state_hasher::hash_indices;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::ObjectSubstrate;
 use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
+use crate::util::state_hasher::hash_indices;
 
 const ACTION_PLAY_SOUND: i32 = 19;
 const ACTION_FORCE_TRIGGER: i32 = 22;
@@ -130,8 +130,9 @@ pub enum TriggerEffect {
     HomeCamera {
         coord: Option<[i32; 3]>,
     },
-    /// Execute105/70F120: the app owns the process wall-clock bubble. Reveal
-    /// is synchronous in sim; this ordered cue never becomes gameplay state.
+    /// 70F120 from trigger action 105 or team script action 52: the app owns
+    /// the process wall-clock bubble. Reveal is synchronous in sim; this
+    /// ordered cue never becomes gameplay state.
     TalkBubble {
         actor: Option<u64>,
         value: i32,
@@ -725,6 +726,174 @@ pub struct TriggerRuntime {
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
     stop_before_action: Option<i32>,
+    /// Dev campaign trigger-trace capture: `Some` while recording.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    #[serde(skip)]
+    trace: Option<TriggerTrace>,
+}
+
+/// Records of the dev campaign trigger-trace capture, taken after each step.
+/// Observation only: nothing here feeds back into simulation state.
+#[cfg(any(test, feature = "dev-overlays"))]
+#[derive(Debug, Clone, Default)]
+struct TriggerTrace {
+    springs: Vec<TriggerSpringRecord>,
+    events: Vec<TriggerTraceEvent>,
+    next_seq: u32,
+    /// The (Spring `seq`, action ordinal) each nested record happens in.
+    parents: Vec<(u32, usize)>,
+    /// Inside a poll or House raise loop, whose own raises are not recorded.
+    window: bool,
+    /// The frame of the latest record, for records made without a session.
+    frame: u32,
+    /// The latest recorded (result, persist) of each (Trigger, event ordinal).
+    predicates: BTreeMap<(usize, usize), (bool, bool)>,
+}
+
+#[cfg(any(test, feature = "dev-overlays"))]
+impl TriggerTrace {
+    fn next_seq(&mut self) -> u32 {
+        self.next_seq += 1;
+        self.next_seq - 1
+    }
+}
+
+/// A trace record other than a Spring. `seq` orders it among the Springs, so
+/// a native replay can rebuild each frame's poll, House raises and the world
+/// inputs between them.
+#[cfg(any(test, feature = "dev-overlays"))]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "event")]
+pub enum TriggerTraceEvent {
+    /// Logic55AFB0's Tag poll begins (`end` false) or ends.
+    Poll {
+        seq: u32,
+        binary_frame: u32,
+        end: bool,
+    },
+    /// HouseClass::Update's event-8 raise (4F8F87..4F8FBC) begins or ends.
+    HouseRaise {
+        seq: u32,
+        binary_frame: u32,
+        house: String,
+        end: bool,
+    },
+    /// A SetGlobal689670/SetLocal689910 write through the shared owner.
+    Variable {
+        seq: u32,
+        binary_frame: u32,
+        parent: Option<(u32, usize)>,
+        global: bool,
+        index: i32,
+        set: bool,
+    },
+    /// A live Tag constructed after the trace started (Team Tags, Tags first
+    /// attached at run time), with its Trigger chain.
+    TagConstructed {
+        seq: u32,
+        binary_frame: u32,
+        parent: Option<(u32, usize)>,
+        tag: TraceTag,
+    },
+    /// The first record: the live Tags in registry order, the Logic, map and
+    /// House Tag vectors, the poll's dirty flags and the set variables.
+    Init {
+        seq: u32,
+        binary_frame: u32,
+        tags: Vec<TraceTag>,
+        logic: Vec<usize>,
+        map: Vec<usize>,
+        houses: Vec<(String, Vec<usize>)>,
+        dirty: [bool; 4],
+        globals: Vec<u32>,
+        locals: Vec<u32>,
+    },
+    /// A Tag6E53A0 raise from outside the poll and House raise loops, or one
+    /// nested in an action. The loops' own raises are left to the replay.
+    Dispatch {
+        seq: u32,
+        binary_frame: u32,
+        parent: Option<(u32, usize)>,
+        tag: usize,
+        kind: i32,
+        force: bool,
+        actor: Option<u64>,
+        cell: (i16, i16),
+    },
+    /// A HasOccurred71E940 result for an event kind that reads the world,
+    /// recorded when it differs from the same event's previous result.
+    /// `persist` is set when this call wrote the persistence flag.
+    Predicate {
+        seq: u32,
+        binary_frame: u32,
+        parent: Option<(u32, usize)>,
+        trigger: usize,
+        ordinal: usize,
+        result: bool,
+        persist: bool,
+    },
+    /// A reinforcement member Place_Reinforcement_Members (0x65E010) could
+    /// not place: every direction refused, or the nearby search found no
+    /// Cell (`cell` (0,0)). Its residual (the next member left in limbo
+    /// natively) needs a refused placement followed by another member; with
+    /// no Cell from the start, native deletes every member (0x65E601,
+    /// 0x65E618) and leaves none.
+    PlacementRefused {
+        seq: u32,
+        binary_frame: u32,
+        parent: Option<(u32, usize)>,
+        cell: (i16, i16),
+    },
+    /// A Tag's attachment count (+2C) after an attach or detach.
+    Refs {
+        seq: u32,
+        binary_frame: u32,
+        parent: Option<(u32, usize)>,
+        tag: usize,
+        refs: i32,
+    },
+}
+
+/// A live Tag in a trace record: its index, TagType ID, attachment count and
+/// Trigger chain (live index, TriggerType ID, enabled), first to last.
+#[cfg(any(test, feature = "dev-overlays"))]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct TraceTag {
+    pub tag: usize,
+    pub tag_type: String,
+    pub refs: i32,
+    pub triggers: Vec<(usize, String, bool)>,
+}
+
+/// Event kinds a native replay computes itself from the trigger state, the
+/// frame and the variables; the trace records every other kind's results.
+#[cfg(any(test, feature = "dev-overlays"))]
+const REPLAYED_EVENT_KINDS: [i32; 8] = [EVENT_ANY, 13, 14, 27, 28, 36, 37, 47];
+
+/// One Spring7265C0 call, recorded for the dev campaign trigger-trace capture.
+/// Observation only: it never feeds back into simulation state.
+#[cfg(any(test, feature = "dev-overlays"))]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct TriggerSpringRecord {
+    /// Order among all trace records.
+    pub seq: u32,
+    /// The (Spring `seq`, action ordinal) this Spring happens in, if nested.
+    pub parent: Option<(u32, usize)>,
+    pub binary_frame: u32,
+    /// The TriggerType ID, as authored in the map's [Triggers].
+    pub trigger: String,
+    /// The live Tag holding the Trigger and its TagType ID, if any.
+    pub tag: Option<(usize, String)>,
+    /// Whether the raise was forced (Force bypasses the event predicates).
+    pub forced: bool,
+    /// The event kind raised to the Tag (0 for a Trigger forced by Force22).
+    pub raised_kind: i32,
+    /// The object Spring received (stable ID and type ID), if any.
+    pub actor: Option<(u64, String)>,
+    /// The packed Cell Spring received; (0,0) is the empty Cell.
+    pub cell: (i16, i16),
+    /// Each executed action kind and whether Execute reported it handled.
+    pub actions: Vec<(i32, bool)>,
 }
 
 /// Draw-free transfer of the outgoing Scenario's local values into a fresh
@@ -977,6 +1146,36 @@ struct TriggerActionContext {
 pub const SCENARIO_GLOBAL_COUNT: usize = 50;
 
 impl Simulation {
+    /// `TalkBubble::SetObjectAndFrame @ 0x0070F120`, called by trigger
+    /// action 105 and team script action 52. A null object or frame 0 clears
+    /// the bubble (`0x0070F194..0x0070F1CC`); otherwise it shows `frame` over
+    /// `actor` for `TalkBubbleTime` (Rules `+0x1800`).
+    pub(crate) fn talk_bubble_set_object_and_frame(
+        &mut self,
+        actor: Option<u64>,
+        frame: i32,
+        context: crate::sim::world::UninitContext<'_>,
+    ) {
+        let actor = actor.filter(|_| frame != 0);
+        let duration = if actor.is_some() {
+            context.rules().general.talk_bubble_time
+        } else {
+            0
+        };
+        //70F134/13A/173 commits the request BEFORE Map callbacks. A nested
+        //105 from discovery must win.
+        self.publish_trigger_effects(vec![TriggerEffect::TalkBubble {
+            actor,
+            value: if actor.is_some() { frame } else { 0 },
+            duration,
+        }]);
+        if let Some(actor) = actor {
+            //70F159..70F189: flags0/0/0/1/1, current player (not the Team
+            //owner), literal radius2, including negative values.
+            self.reveal_talk_bubble_actor(actor, context);
+        }
+    }
+
     /// Validate this owner's retained identities before the restore coordinator
     /// publishes a candidate. No map re-read or live constructor runs on load.
     /// Destruction may leave orphan Triggers until their shared725C70 tickets
@@ -1351,6 +1550,20 @@ impl Simulation {
                 .unwrap()
                 .triggers
                 .insert(0, index);
+        }
+        #[cfg(any(test, feature = "dev-overlays"))]
+        if self.trigger_runtime.trace.is_some() {
+            let tag = self.trigger_runtime.trace_tag(tag_index);
+            Self::trace_event(
+                &mut self.trigger_runtime,
+                self.session.binary_frame(),
+                |seq, binary_frame, parent| TriggerTraceEvent::TagConstructed {
+                    seq,
+                    binary_frame,
+                    parent,
+                    tag,
+                },
+            );
         }
         tag_index
     }
@@ -1738,9 +1951,10 @@ impl Simulation {
                             self.interner.resolve(kind),
                         )
                         .is_some()
-                    && rules.type_array_index(
+                    && self.interner.type_array_index(
+                        kind,
                         crate::rules::object_type::ObjectCategory::Infantry,
-                        self.interner.resolve(kind),
+                        rules,
                     ) == Some(condition.value);
                 if matched {
                     *persistence = true;
@@ -1903,7 +2117,7 @@ impl Simulation {
                 true
             }
             32 | 57 => {
-                //71EEFB/71EF1F ->49FAE0 with House+5550 (active, not owned).
+                //71EFA8/71EFCB ->49FAE0 with House+5550 (active, not owned).
                 //The null incoming House reaches the original generic true
                 //tail without writing persistence.
                 let Some(owner) = incoming_house else {
@@ -2003,7 +2217,7 @@ impl Simulation {
                 })
             }
             30 | 58 => {
-                //71EFA2/71EFC2 selects Event.value's Country, then the retained
+                //71F099/71F0BD select Event.value's Country, then the retained
                 //House power ratio. Neither branch writes persistence.
                 let owner = {
                     u16::try_from(condition.value).ok().and_then(|country| {
@@ -2102,14 +2316,19 @@ impl Simulation {
                 let bit = 1u32.wrapping_shl(ordinal as u32);
                 let completed = self.trigger_runtime.trigger(index).unwrap().completed & bit != 0;
                 if !completed {
-                    if !self.has_occurred(
+                    #[cfg(any(test, feature = "dev-overlays"))]
+                    let before = persistence;
+                    let occurred = self.has_occurred(
                         ordinal,
                         input,
                         incoming_house,
                         &mut persistence,
                         rules,
                         index,
-                    ) {
+                    );
+                    #[cfg(any(test, feature = "dev-overlays"))]
+                    self.trace_predicate(index, ordinal, occurred, persistence && !before);
+                    if !occurred {
                         result = false;
                         continue;
                     }
@@ -2198,6 +2417,22 @@ impl Simulation {
         if (self.session.binary_frame() as i32) % 8 != 0 {
             return;
         }
+        #[cfg(any(test, feature = "dev-overlays"))]
+        let trace_house = |sim: &mut Self, end: bool| {
+            let house = sim.interner.resolve(house).to_owned();
+            Self::trace_event(
+                &mut sim.trigger_runtime,
+                sim.session.binary_frame(),
+                |seq, binary_frame, _| TriggerTraceEvent::HouseRaise {
+                    seq,
+                    binary_frame,
+                    house,
+                    end,
+                },
+            );
+        };
+        #[cfg(any(test, feature = "dev-overlays"))]
+        trace_house(self, false);
         let count = self
             .trigger_runtime
             .house_tags
@@ -2228,6 +2463,8 @@ impl Simulation {
                 frame_effects,
             );
         }
+        #[cfg(any(test, feature = "dev-overlays"))]
+        trace_house(self, true);
         self.publish_trigger_effects(effects);
     }
 
@@ -2796,6 +3033,8 @@ impl Simulation {
             self.trigger_runtime.spring_actions_left = MAX_TRIGGER_SPRING_ACTIONS;
         }
         self.trigger_runtime.spring_depth += 1;
+        #[cfg(any(test, feature = "dev-overlays"))]
+        let record = self.trace_spring(index, type_index, input);
         let mut result = false;
         for ordinal in 0..count {
             if self.trigger_runtime.spring_actions_left == 0 {
@@ -2807,7 +3046,11 @@ impl Simulation {
             let context = self.trigger_action_context(type_index, Some(index), input, rules);
             let action =
                 self.trigger_runtime.definitions.trigger_types[type_index].actions[ordinal].clone();
-            result |= self.apply_live_trigger_action(
+            #[cfg(any(test, feature = "dev-overlays"))]
+            if let (Some((_, seq)), Some(trace)) = (record, self.trigger_runtime.trace.as_mut()) {
+                trace.parents.push((seq, ordinal));
+            }
+            let handled = self.apply_live_trigger_action(
                 &action,
                 context,
                 effects,
@@ -2815,9 +3058,189 @@ impl Simulation {
                 overlay_registry,
                 frame_effects,
             );
+            #[cfg(any(test, feature = "dev-overlays"))]
+            if let (Some((record, _)), Some(trace)) = (record, self.trigger_runtime.trace.as_mut())
+            {
+                trace.parents.pop();
+                trace.springs[record]
+                    .actions
+                    .push((action.entry.kind, handled));
+            }
+            result |= handled;
         }
         self.trigger_runtime.spring_depth -= 1;
         result
+    }
+
+    /// Push a Spring record; returns its index and `seq` while recording.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    fn trace_spring(
+        &mut self,
+        live: usize,
+        type_index: usize,
+        input: TagEventInput,
+    ) -> Option<(usize, u32)> {
+        let runtime = &self.trigger_runtime;
+        runtime.trace.as_ref()?;
+        let tag = runtime.tag_order.iter().copied().find(|&tag| {
+            runtime
+                .tag(tag)
+                .is_some_and(|live_tag| live_tag.triggers.contains(&live))
+        });
+        let tag = tag.map(|tag| {
+            let tag_type = runtime.tag(tag).unwrap().type_index;
+            (tag, runtime.definitions.tag_types[tag_type].id.clone())
+        });
+        let record = TriggerSpringRecord {
+            seq: 0,
+            parent: None,
+            binary_frame: self.session.binary_frame(),
+            trigger: runtime.definitions.trigger_types[type_index].id.clone(),
+            tag,
+            forced: input.force,
+            raised_kind: input.kind,
+            actor: input.actor.map(|id| {
+                let type_id = self
+                    .substrate
+                    .entities
+                    .get(id)
+                    .map_or("?", |entity| self.interner.resolve(entity.type_ref()));
+                (id, type_id.to_owned())
+            }),
+            cell: input.cell,
+            actions: Vec::new(),
+        };
+        let trace = self.trigger_runtime.trace.as_mut()?;
+        let seq = trace.next_seq();
+        let parent = trace.parents.last().copied();
+        trace.springs.push(TriggerSpringRecord {
+            seq,
+            parent,
+            ..record
+        });
+        Some((trace.springs.len() - 1, seq))
+    }
+
+    /// Push a non-Spring trace record built from its `seq`, `binary_frame`
+    /// and parent while recording.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    fn trace_event(
+        trigger_runtime: &mut TriggerRuntime,
+        binary_frame: u32,
+        event: impl FnOnce(u32, u32, Option<(u32, usize)>) -> TriggerTraceEvent,
+    ) {
+        if let Some(trace) = trigger_runtime.trace.as_mut() {
+            let seq = trace.next_seq();
+            let parent = trace.parents.last().copied();
+            let event = event(seq, binary_frame, parent);
+            if let TriggerTraceEvent::Poll { end, .. } | TriggerTraceEvent::HouseRaise { end, .. } =
+                event
+            {
+                trace.window = !end;
+            }
+            trace.frame = binary_frame;
+            trace.events.push(event);
+        }
+    }
+
+    /// Record a reinforcement member the placement could not place.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    pub(crate) fn trace_placement_refused(&mut self, cell: (i16, i16)) {
+        Self::trace_event(
+            &mut self.trigger_runtime,
+            self.session.binary_frame(),
+            |seq, binary_frame, parent| TriggerTraceEvent::PlacementRefused {
+                seq,
+                binary_frame,
+                parent,
+                cell,
+            },
+        );
+    }
+
+    /// Record a HasOccurred71E940 result for a world-reading event kind when
+    /// it differs from that event's previous recorded result.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    fn trace_predicate(&mut self, trigger: usize, ordinal: usize, result: bool, persist: bool) {
+        let Some(trace) = self.trigger_runtime.trace.as_mut() else {
+            return;
+        };
+        let type_index = self.trigger_runtime.triggers[trigger]
+            .as_ref()
+            .unwrap()
+            .type_index;
+        let kind = self.trigger_runtime.definitions.trigger_types[type_index].events[ordinal].kind;
+        if REPLAYED_EVENT_KINDS.contains(&kind)
+            || trace
+                .predicates
+                .insert((trigger, ordinal), (result, persist))
+                == Some((result, persist))
+        {
+            return;
+        }
+        let seq = trace.next_seq();
+        let parent = trace.parents.last().copied();
+        trace.events.push(TriggerTraceEvent::Predicate {
+            seq,
+            binary_frame: self.session.binary_frame(),
+            parent,
+            trigger,
+            ordinal,
+            result,
+            persist,
+        });
+    }
+
+    /// Start or stop recording the dev trigger-trace capture. Stopping drops
+    /// anything not yet taken. Starting records the live Tags first.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    pub fn record_trigger_springs(&mut self, on: bool) {
+        self.trigger_runtime.trace = on.then(TriggerTrace::default);
+        if !on {
+            return;
+        }
+        let runtime = &self.trigger_runtime;
+        let tags = runtime
+            .tag_order
+            .iter()
+            .map(|&tag| runtime.trace_tag(tag))
+            .collect();
+        let houses = runtime
+            .house_tags
+            .iter()
+            .map(|(&house, tags)| (self.interner.resolve(house).to_owned(), tags.clone()))
+            .collect();
+        let init = TriggerTraceEvent::Init {
+            seq: 0,
+            binary_frame: self.session.binary_frame(),
+            tags,
+            logic: runtime.logic_tags.clone(),
+            map: runtime.map_tags.clone(),
+            houses,
+            dirty: runtime.dirty,
+            globals: runtime.globals_set.iter().copied().collect(),
+            locals: runtime.locals_set.iter().copied().collect(),
+        };
+        let trace = self.trigger_runtime.trace.as_mut().unwrap();
+        trace.next_seq = 1;
+        trace.frame = self.session.binary_frame();
+        trace.events.push(init);
+    }
+
+    /// The Spring calls and other trace records made since the last take,
+    /// each oldest first.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    pub fn take_trigger_trace(&mut self) -> (Vec<TriggerSpringRecord>, Vec<TriggerTraceEvent>) {
+        self.trigger_runtime
+            .trace
+            .as_mut()
+            .map(|trace| {
+                (
+                    std::mem::take(&mut trace.springs),
+                    std::mem::take(&mut trace.events),
+                )
+            })
+            .unwrap_or_default()
     }
 
     /// Diagnostic admission for a later campaign countdown without playing
@@ -2870,6 +3293,25 @@ impl Simulation {
         self.trigger_runtime
             .dispatch_trace
             .push((index, input.kind));
+        #[cfg(any(test, feature = "dev-overlays"))]
+        if self.trigger_runtime.tag(index).is_some()
+            && let Some(trace) = self.trigger_runtime.trace.as_mut()
+        {
+            let parent = trace.parents.last().copied();
+            if parent.is_some() || !trace.window {
+                let seq = trace.next_seq();
+                trace.events.push(TriggerTraceEvent::Dispatch {
+                    seq,
+                    binary_frame: self.session.binary_frame(),
+                    parent,
+                    tag: index,
+                    kind: input.kind,
+                    force: input.force,
+                    actor: input.actor,
+                    cell: input.cell,
+                });
+            }
+        }
         let Some(tag) = self.trigger_runtime.tag(index) else {
             return false;
         };
@@ -3018,6 +3460,19 @@ impl Simulation {
         if !(0..count as i32).contains(&index) {
             return false;
         }
+        #[cfg(any(test, feature = "dev-overlays"))]
+        Self::trace_event(
+            trigger_runtime,
+            session.binary_frame(),
+            |seq, binary_frame, parent| TriggerTraceEvent::Variable {
+                seq,
+                binary_frame,
+                parent,
+                global,
+                index,
+                set,
+            },
+        );
         let values = if global {
             &mut trigger_runtime.globals_set
         } else {
@@ -3067,6 +3522,16 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> Vec<TriggerEffect> {
         let mut effects = Vec::new();
+        #[cfg(any(test, feature = "dev-overlays"))]
+        Self::trace_event(
+            &mut self.trigger_runtime,
+            self.session.binary_frame(),
+            |seq, binary_frame, _| TriggerTraceEvent::Poll {
+                seq,
+                binary_frame,
+                end: false,
+            },
+        );
         self.trigger_runtime.logic_cursor = 0;
         while let Some(&tag) = self
             .trigger_runtime
@@ -3186,6 +3651,16 @@ impl Simulation {
         }
         self.session.finish_scenario_timer_poll();
         self.trigger_runtime.dirty = [false; 4];
+        #[cfg(any(test, feature = "dev-overlays"))]
+        Self::trace_event(
+            &mut self.trigger_runtime,
+            self.session.binary_frame(),
+            |seq, binary_frame, _| TriggerTraceEvent::Poll {
+                seq,
+                binary_frame,
+                end: true,
+            },
+        );
         effects
     }
 
@@ -3356,6 +3831,8 @@ impl Simulation {
         // client with a smaller thread stack aborts before the depth guard.
         // Execute6DF0E7..6DF134 (original instructions) iterates the live registry in order and ignores Spring's
         // result. Re-read its live length after every synchronous callback.
+        // 6DF112..6DF119 passes Spring7265C0 a NULL object and the empty
+        // Cell [B0E680], never this Spring's own object or Cell.
         if action.entry.kind == ACTION_FORCE_TRIGGER {
             if let Some(DefinitionReference::Trigger(target)) = action.reference {
                 let mut ordinal = 0;
@@ -3368,7 +3845,7 @@ impl Simulation {
                     {
                         self.spring_live_trigger(
                             live,
-                            context.input,
+                            TagEventInput::default(),
                             effects,
                             rules,
                             overlay_registry,
@@ -3594,7 +4071,7 @@ impl Simulation {
                     .with_effects(frame_effects),
             ),
             51 => {
-                //6DED66 calls the incoming House's577C90 map transition,
+                //6DEF9B calls the incoming House's577C90 map transition,
                 //then returns AL1 independently of the void service result.
                 self.trigger_reshroud_map(context.incoming_house, rules);
             }
@@ -4307,7 +4784,7 @@ impl Simulation {
                 }
             }
             100 | 117 => {
-                // Execute6DF546/6DF90E -> radar movie5BFF50. Preparation,
+                // Execute6DF546/6DF90E -> radar movie5BF390. Preparation,
                 // the game-mode gate and missing-media handling are app-owned;
                 // the action returns success independently of queue admission.
                 effects.push(TriggerEffect::RadarMovie {
@@ -4553,6 +5030,12 @@ impl Simulation {
                     frame_effects,
                 );
             }
+            43 => {
+                let (Some(index), Some(waypoint)) = (value, action.waypoint_index) else {
+                    return false;
+                };
+                return self.trigger_play_voxel_anim_at_waypoint(rules, index, waypoint as i32);
+            }
             58 => {
                 let (Some(intensity), Some(waypoint)) = (value, action.waypoint_index) else {
                     return false;
@@ -4750,7 +5233,11 @@ impl Simulation {
                 // +0x34..+0x40. ActionEntry.params is chunk[1..], so these are
                 // exactly indices 2..5; params[0]/[1] must never leak in.
                 if let Some(raw_local_size) = parse_visible_map_area(&action.params) {
-                    let _ = self.change_visible_map_area(raw_local_size, rules);
+                    let _ = self.change_visible_map_area(
+                        raw_local_size,
+                        crate::sim::world::UninitContext::new(rules, overlay_registry)
+                            .with_effects(frame_effects),
+                    );
                 }
             }
             145 => {
@@ -4811,31 +5298,15 @@ impl Simulation {
                 } else {
                     None
                 };
-                let value = value.unwrap_or(0);
-                let actor = actor.filter(|_| value != 0);
-                let duration = if actor.is_some() {
-                    rules.general.talk_bubble_time
-                } else {
-                    0
-                };
-                effects.push(TriggerEffect::TalkBubble {
-                    actor,
-                    value: if actor.is_some() { value } else { 0 },
-                    duration,
-                });
-                //70F134/13A/173 commits the request BEFORE Map callbacks.
-                //A nested105 from discovery must win. Commit earlier cues
-                //to the one frame-output queue before entering that receiver.
+                // Commit earlier cues to the one frame-output queue before
+                // the bubble's own cue and reveal.
                 self.publish_trigger_effects(std::mem::take(effects));
-                if let Some(actor) = actor {
-                    //70F159..70F189: flags0/0/0/1/1, current player (not
-                    //the Team owner), literal radius2, including negative values.
-                    self.reveal_talk_bubble_actor(
-                        actor,
-                        crate::sim::world::UninitContext::new(rules, overlay_registry)
-                            .with_effects(frame_effects),
-                    );
-                }
+                self.talk_bubble_set_object_and_frame(
+                    actor,
+                    value.unwrap_or(0),
+                    crate::sim::world::UninitContext::new(rules, overlay_registry)
+                        .with_effects(frame_effects),
+                );
             }
             106 => {
                 // Active inline Execute6DF5D1, not the similarly annotated
@@ -5049,7 +5520,7 @@ impl Simulation {
                 }
             }
             1 | 2 | ACTION_ANNOUNCE_WIN | ACTION_ANNOUNCE_LOSE | ACTION_END_SCENARIO => {
-                //6DDCB1/6DDD23 and6DF399..6DF3CE use PlayerPtr, not the
+                //6DEA37/6DEA67 and6DDD77/6DDD93/6DDDAF use PlayerPtr, not the
                 //incoming Trigger House. The shared House result/timer
                 //owner drives normal frame termination and ScenarioExit.
                 use crate::sim::house_state::HouseOutcomeKind;
@@ -5087,16 +5558,57 @@ impl TriggerRuntime {
         self.cell_tags.remove(&NativeCellIdentity::Dummy);
     }
 
+    /// A live Tag as trace records show it.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    fn trace_tag(&self, tag: usize) -> TraceTag {
+        let live = self.tag(tag).unwrap();
+        TraceTag {
+            tag,
+            tag_type: self.definitions.tag_types[live.type_index].id.clone(),
+            refs: live.refs,
+            triggers: live
+                .triggers
+                .iter()
+                .map(|&trigger| {
+                    let live = self.trigger(trigger).unwrap();
+                    let id = self.definitions.trigger_types[live.type_index].id.clone();
+                    (trigger, id, live.enabled)
+                })
+                .collect(),
+        }
+    }
+
+    /// Record a Tag's attachment count after it changed.
+    #[cfg(any(test, feature = "dev-overlays"))]
+    fn trace_refs(&mut self, tag: usize) {
+        let refs = self.tag(tag).unwrap().refs;
+        if let Some(trace) = self.trace.as_mut() {
+            let seq = trace.next_seq();
+            let parent = trace.parents.last().copied();
+            trace.events.push(TriggerTraceEvent::Refs {
+                seq,
+                binary_frame: trace.frame,
+                parent,
+                tag,
+                refs,
+            });
+        }
+    }
+
     fn replace_cell_trigger_tag(&mut self, cell: NativeCellIdentity, tag: Option<usize>) {
         if let Some(previous) = self.cell_tags.remove(&cell)
             && let Some(old) = self.tags[previous].as_mut()
         {
             old.refs = old.refs.wrapping_sub(1);
+            #[cfg(any(test, feature = "dev-overlays"))]
+            self.trace_refs(previous);
         }
         if let Some(tag) = tag {
             self.cell_tags.insert(cell, tag);
             let live = self.tags[tag].as_mut().unwrap();
             live.refs = live.refs.wrapping_add(1);
+            #[cfg(any(test, feature = "dev-overlays"))]
+            self.trace_refs(tag);
         }
     }
     fn replace_trigger_tag_attachment(
@@ -5109,12 +5621,16 @@ impl TriggerRuntime {
             && matches!(attachment, TagAttachment::Object(_))
         {
             old.refs = old.refs.wrapping_sub(1);
+            #[cfg(any(test, feature = "dev-overlays"))]
+            self.trace_refs(previous);
         }
         if let Some(tag) = tag {
             self.attachments.insert(attachment, tag);
             let live = self.tags[tag].as_mut().unwrap();
             if matches!(attachment, TagAttachment::Object(_)) {
                 live.refs = live.refs.wrapping_add(1);
+                #[cfg(any(test, feature = "dev-overlays"))]
+                self.trace_refs(tag);
             }
         }
         tag.is_some()
@@ -5193,6 +5709,12 @@ impl TriggerRuntime {
     /// Steam gamemd; tools/spatial_oracle/trigger_crate.json.
     pub(crate) fn mark_crate_pickup_event(&mut self) {
         self.dirty[3] = true;
+    }
+    /// LogicClass::AI's ambient fade writes Scenario+34AB after each step
+    /// (`0x0055B4BA`), so the next Logic55AFB0 poll tries events 45/46
+    /// before event 13.
+    pub(crate) fn mark_ambient_light_changed(&mut self) {
+        self.dirty[2] = true;
     }
     /// TagClass::IsTransferable6E57C0 reads each linked LIVE Trigger's
     /// Type+A0, without enabled, pending or difficulty tests (retail gamemd).
@@ -5433,7 +5955,9 @@ mod direct_strike_tests;
 #[cfg(test)]
 mod meteor_action_tests {
     use super::*;
+    use crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art;
     use crate::sim::anim_class::meteor_tests::{formed_rules, formed_sim};
+    use crate::sim::world::voxel_meteor_tests::{fly_to_expiry, waypoint_sim};
     #[test]
     fn counted_action58_uses_literal_intensity_and_tail_waypoint_through_live_dispatch() {
         let rules = formed_rules("");
@@ -5503,6 +6027,58 @@ mod meteor_action_tests {
             )]));
         assert!(!invalid.trigger_meteor_shower(&missing, 0, 7));
         assert_eq!(invalid.anims().count(), 0);
+    }
+
+    /// Active43 PlayVoxelAnimAtWP6E2520 through live dispatch: retail
+    /// METEOR01 starts above its waypoint (749668..74981F), keeps a straight
+    /// line back to the waypoint cell (74A7C8) and scatters PEBBLEs where it
+    /// ends (74A288..301).
+    #[test]
+    fn action43_drops_retail_meteor01_on_its_waypoint_cell_and_scatters_pebbles() {
+        let Some(rules) = retail_unlayered_rules_with_art() else {
+            return;
+        };
+        let meteor = rules.voxel_anim_type_id_by_name("METEOR01").unwrap();
+        let pebble = rules.voxel_anim_type_id_by_name("PEBBLE").unwrap();
+        let actions =
+            crate::map::actions::parse_actions(&crate::rules::ini_parser::IniFile::from_str(
+                &format!("[Actions]\nCUE=1,43,0,{},0,0,0,0,H\n", meteor.0),
+            ));
+        let entry = actions["CUE"].entries()[0].clone();
+        let action = RuntimeDefinitions::default().resolve_action(entry, None, None, None);
+        let mut sim = waypoint_sim(&rules);
+        assert!(sim.apply_live_trigger_action(
+            &action,
+            TriggerActionContext {
+                live_index: None,
+                incoming_house: None,
+                input: TagEventInput::default()
+            },
+            &mut Vec::new(),
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::empty()
+        ));
+        let ids = sim.voxel_anims().ids();
+        assert_eq!(ids.len(), 1);
+        let piece = sim.voxel_anims().get(ids[0]).unwrap();
+        assert_eq!(piece.type_id(), meteor);
+        assert_eq!(piece.owner_house(), None);
+        assert!(piece.in_logic_vector());
+        // Unlimbo749794 and Bounce4397E0 both take the raised launch start.
+        assert_eq!(piece.world_coord(), piece.bounce().position_leptons());
+        assert!(piece.world_coord().z > 0);
+        let impact = fly_to_expiry(&mut sim, &rules, ids[0]);
+        assert_eq!((impact.x / 256, impact.y / 256), (40, 40));
+        let children = sim.voxel_anims().ids();
+        assert!(!children.is_empty());
+        assert!(children.len() as i32 <= 2 * rules.voxel_anim_type(meteor).spawn_count);
+        for child in children {
+            let child = sim.voxel_anims().get(child).unwrap();
+            assert_eq!(child.type_id(), pebble);
+            assert_eq!(child.owner_house(), None);
+            assert_eq!(child.world_coord(), impact);
+        }
     }
 }
 

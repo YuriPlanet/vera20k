@@ -278,7 +278,7 @@ pub(crate) fn render_keyboard_shell(
             font,
             &title_text,
             rect_to_text_rect(layout.title),
-            ShellAlign::H_CENTER,
+            ShellAlign::PANEL_TITLE,
             [0.0; 2],
             SHELL_CONTROL_TEXT_DEPTH,
             PathAReveal {

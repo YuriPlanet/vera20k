@@ -217,7 +217,13 @@ pub(crate) fn dispatch_foot_mission(
                     .substrate
                     .entities
                     .get(id)
-                    .and_then(|actor| sim.object_type(actor.type_ref(), rules))
+                    .and_then(|actor| {
+                        sim.interner.object_type_in_category(
+                            actor.type_ref(),
+                            crate::rules::object_type::ObjectCategory::Infantry,
+                            rules,
+                        )
+                    })
                     .is_some_and(|object| object.undeploy_delay < 0) =>
         {
             let _ = sim.infantry_do_action(
@@ -231,8 +237,19 @@ pub(crate) fn dispatch_foot_mission(
                 .substrate
                 .entities
                 .get(id)
-                .and_then(|actor| sim.object_type(actor.type_ref(), rules))
-                .and_then(|object| rules.animation_sequence(&object.id))
+                .and_then(|actor| {
+                    sim.interner.object_type_in_category(
+                        actor.type_ref(),
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        rules,
+                    )
+                })
+                .and_then(|object| {
+                    rules.animation_sequence_in_category(
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        &object.id,
+                    )
+                })
                 .and_then(|set| set.infantry_action(31))
                 .map_or(0, |record| record.frames_per_facing);
             MissionHandlerEvaluation::cadence(count)
@@ -362,7 +379,7 @@ pub(crate) fn dispatch_foot_mission(
             {
                 let _ = sim.assign_target_represented(
                     id,
-                    Some(crate::sim::combat::TargetKind::Entity(target)),
+                    Some(target),
                     rules,
                     ctx.overlay_registry,
                     ctx.effects,
@@ -443,7 +460,13 @@ pub(crate) fn dispatch_foot_mission(
                 .substrate
                 .entities
                 .get(id)
-                .and_then(|actor| sim.object_type(actor.type_ref(), rules))
+                .and_then(|actor| {
+                    sim.interner.object_type_in_category(
+                        actor.type_ref(),
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        rules,
+                    )
+                })
                 .is_some_and(|object| {
                     object.undeploy_delay >= 0 || (object.deploy_fire && object.immune_to_radiation)
                 }) =>
@@ -453,13 +476,22 @@ pub(crate) fn dispatch_foot_mission(
                 .substrate
                 .entities
                 .get(id)
-                .and_then(|actor| sim.object_type(actor.type_ref(), rules))
+                .and_then(|actor| {
+                    sim.interner.object_type_in_category(
+                        actor.type_ref(),
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        rules,
+                    )
+                })
                 .expect("deployed shim type resolved");
             if object.undeploy_delay >= 0 {
                 //521355..52137D: unforced Undeploy31, then raw Count31.
                 let _ = sim.infantry_do_action(id, 31, false, rules, ctx.effects);
                 let count = rules
-                    .animation_sequence(&object.id)
+                    .animation_sequence_in_category(
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        &object.id,
+                    )
                     .and_then(|set| set.infantry_action(31))
                     .map_or(0, |record| record.frames_per_facing);
                 MissionHandlerEvaluation::cadence(count)
@@ -539,7 +571,10 @@ pub(crate) fn dispatch_foot_mission(
                 if fired {
                     let _ = sim.infantry_do_action(id, 29, false, rules, ctx.effects);
                     let count = rules
-                        .animation_sequence(&object.id)
+                        .animation_sequence_in_category(
+                            crate::rules::object_type::ObjectCategory::Infantry,
+                            &object.id,
+                        )
                         .and_then(|set| set.infantry_action(29))
                         .map_or(0, |record| record.frames_per_facing);
                     MissionHandlerEvaluation::cadence(count)
@@ -954,7 +989,11 @@ fn infantry_automatic_guard_delay(
     let Some(house) = sim.houses.get(&actor.owner()) else {
         return -1;
     };
-    let Some(object) = sim.object_type(actor.type_ref(), rules) else {
+    let Some(object) = sim.interner.object_type_in_category(
+        actor.type_ref(),
+        crate::rules::object_type::ObjectCategory::Infantry,
+        rules,
+    ) else {
         return -1;
     };
     if house.is_controlled_by_human(sim.session.game_mode_nonzero())
@@ -1004,7 +1043,10 @@ fn infantry_automatic_guard_delay(
         //521631..521659 returns raw signed Count27 even when DoAction refuses.
         let _ = sim.infantry_do_action(id, 27, false, rules, effects);
         return rules
-            .animation_sequence(&object.id)
+            .animation_sequence_in_category(
+                crate::rules::object_type::ObjectCategory::Infantry,
+                &object.id,
+            )
             .and_then(|set| set.infantry_action(27))
             .map_or(0, |record| record.frames_per_facing);
     }
@@ -1194,8 +1236,8 @@ pub(crate) fn enter_idle_mode(
 /// 0x004176F0`, `BuildingClass::Enter_Idle_Mode @ 0x0044D6A0`), then
 /// Ready_To_Commence and Commence, so the mission it picks is current at once
 /// when the object is ready.
-/// A fresh object with nowhere to go takes Guard; a map placement then assigns
-/// its authored mission over it. A factory-built vehicle used to keep no
+/// A fresh object with nowhere to go takes Guard; a map placement then queues
+/// and commences its authored mission over it (`commit_map_placement_mission`). A factory-built vehicle used to keep no
 /// mission at all, so its dispatch took the missionless 450-frame arm instead
 /// of Mission_Guard's cadence. A placed building queues Construction; its
 /// ready byte (`+0x6DD`, `0x00454250`) is clear unless its cell-put discovery
@@ -1502,6 +1544,28 @@ fn hunt_scans(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
         .is_some_and(|obj| obj.stupid_hunt)
 }
 
+/// Whether `id`'s Hunt handler ([`evaluate_foot_hunt`]) reaches
+/// Greatest_Threat this frame as the world stands, for the batched target
+/// scans (`techno_ai::scan_batch`): its handler is due, it holds no target
+/// (Retaliate_And_Scan scans only then), its type scans ([`hunt_scans`]),
+/// it does not take the Unit deploy arm (`mcv_deploy::hunt_deploys`), and it
+/// is not a deployed infantryman: a computer house's undeploys, and a human
+/// house's, which scans, is left out with it. A held target the drop step
+/// would drop, and the computer capture arm, are not foreseen; those objects
+/// scan live, if at all.
+pub(super) fn foot_hunt_scans_ahead(sim: &Simulation, id: u64, rules: &RuleSet) -> bool {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return false;
+    };
+    entity.mission.current().known() == Some(MissionType::Hunt)
+        && entity.attack_target.target().is_none()
+        && !entity.infantry_deploy_doing()
+        && foot_mission_handler_due(sim, id, sim.session.binary_frame())
+        && hunt_scans(sim, id, rules)
+        && !(entity.category() == EntityCategory::Unit
+            && crate::sim::mcv_deploy::hunt_deploys(sim, id, rules))
+}
+
 /// Mission_Hunt's infantry arms, for the target its scan installed. They draw
 /// nothing themselves; a Teleport man's destination setter draws for his spot
 /// in the cell (`place_infantry_in_native_cell`).
@@ -1729,7 +1793,7 @@ fn area_guard_post_off_building(sim: &mut Simulation, id: u64) {
     };
     let owner = entity.owner();
     if !crate::sim::combat::combat_weapon::is_ally_by_object(
-        Some(sim.house_alliances.as_map()),
+        Some(&sim.house_alliances),
         &sim.interner,
         owner,
         building_owner,
@@ -1900,7 +1964,7 @@ fn evaluate_foot_rescue(
             )
         });
         if let (Some(point), Some(pick)) = (point, pick)
-            && let Some(target) = coords(sim, crate::sim::combat::TargetKind::Entity(pick))
+            && let Some(target) = coords(sim, pick)
         {
             //1.5 is exact for the native integer range, so this signed
             //scaled comparison preserves its strict FCOMP result without
@@ -1909,7 +1973,7 @@ fn evaluate_foot_rescue(
             if i64::from(distance) * 2 < i64::from(foot_threat_range(sim, id, rules)) * 3 {
                 let _ = sim.assign_target_represented(
                     id,
-                    Some(crate::sim::combat::TargetKind::Entity(pick)),
+                    Some(pick),
                     rules,
                     ctx.overlay_registry,
                     ctx.effects,
@@ -1967,9 +2031,9 @@ fn evaluate_foot_rescue(
 /// Where Area Guard's Retaliate_And_Scan looks for an object holding no
 /// target: `post`'s coordinate, once the object can acquire a target and its
 /// targeting timer has run out; `None` when the handler does not scan.
-/// `0x004D6EF5..0x004D6F06` uses archive+48. A queued mission can leave no
-/// archive; that invalid native pointer is outside this ordinary lane. Every
-/// term is a pure read, so their order is not observable.
+/// `0x004D6EF5..0x004D6F06` uses archive+48; a guard without a post never
+/// reaches the scan (`0x004D6E6E`), so it answers `None`. Every term is a
+/// pure read, so their order is not observable.
 fn area_guard_scan_point(
     sim: &Simulation,
     id: u64,
@@ -1993,6 +2057,31 @@ fn area_guard_scan_point(
             .as_ref(),
     )?;
     Some([coord.x, coord.y, coord.z])
+}
+
+/// Where `id`'s Area Guard handler ([`evaluate_foot_area_guard`]) scans this
+/// frame as the world stands, for the batched target scans
+/// (`techno_ai::scan_batch`): its handler is due, it holds no target, it is
+/// not a deployed infantryman (whose Area Guard is the deploy shim's,
+/// `0x00521320`: its arms act or re-acquire in place), and
+/// [`area_guard_scan_point`] answers for its post. The heads that return
+/// before the scan, a post the handler archives at this run and a target the
+/// leash drops are not foreseen; those objects scan live, if at all.
+pub(super) fn foot_area_guard_scan_ahead(
+    sim: &Simulation,
+    id: u64,
+    rules: &RuleSet,
+) -> Option<[i32; 3]> {
+    let entity = sim.substrate.entities.get(id)?;
+    if entity.mission.current().known() != Some(MissionType::AreaGuard)
+        || entity.attack_target.target().is_some()
+        || entity.infantry_deploy_doing()
+        || entity.is_harvester()
+        || !foot_mission_handler_due(sim, id, sim.session.binary_frame())
+    {
+        return None;
+    }
+    area_guard_scan_point(sim, id, rules, entity.archive_target())
 }
 
 /// Smallest value of the Area Guard cadence jitter draw (`RandomRanged(1, 5)`).
@@ -2153,12 +2242,13 @@ pub(super) fn evaluate_foot_area_guard(
     {
         return MissionHandlerEvaluation::cadence(1);
     }
-    if sim
-        .substrate
-        .entities
-        .get(id)
-        .is_some_and(|entity| entity.attack_target.target().is_none())
-    {
+    // `0x004D6ED1..0x004D6F25`: the idle action belongs to the post branch's
+    // no-Target arm (a Target the scan found returned above). A guard that
+    // approached skips it even when Approach dropped its Target
+    // (`0x004D6F2D` jumps to `0x004D6F38`), and so does a guard without a
+    // post (a queued mission kept the head from archiving one,
+    // `0x004D6D78..0x004D6D87`).
+    if archive.is_some() && needs_target {
         let _ = sim.infantry_idle_action(id, rules, ctx.overlay_registry, ctx.effects);
     }
     //4D6F38..4D701F re-reads TarCom after idle and queues before the cadence
@@ -2777,13 +2867,7 @@ fn infantry_deployed_attack_reacquire(
     // one was found. It writes no `+0x50C`, so the setter leaves the flag
     // clear.
     if had_target || pick.is_some() {
-        let _ = sim.assign_target_represented(
-            id,
-            pick.map(crate::sim::combat::TargetKind::Entity),
-            rules,
-            ctx.overlay_registry,
-            ctx.effects,
-        );
+        let _ = sim.assign_target_represented(id, pick, rules, ctx.overlay_registry, ctx.effects);
     }
     if pick.is_some() {
         return None;
@@ -2800,7 +2884,13 @@ fn infantry_deployed_attack_reacquire(
             .substrate
             .entities
             .get(id)
-            .and_then(|actor| sim.object_type(actor.type_ref(), rules))
+            .and_then(|actor| {
+                sim.interner.object_type_in_category(
+                    actor.type_ref(),
+                    crate::rules::object_type::ObjectCategory::Infantry,
+                    rules,
+                )
+            })
             .is_some_and(|object| object.jumpjet)
     {
         return None;

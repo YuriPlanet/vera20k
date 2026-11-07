@@ -74,6 +74,8 @@ struct Targets {
 pub(crate) struct PackedSurface {
     targets: Targets,
     stencil: packed::Stencil,
+    /// Surface pixels per camera pixel, whole: each camera pixel is a block.
+    scale: u32,
 }
 
 pub(crate) struct TerrainDrawRenderer {
@@ -435,7 +437,12 @@ impl TerrainDrawRenderer {
             reference_body_pipeline: pipeline("fs_body", false),
             #[cfg(test)]
             reference_shadow_pipeline: pipeline("fs_shadow", false),
-            surface_lines: surface_lines::SurfaceLineGpu::new(device, format, &snapshot_layout),
+            surface_lines: surface_lines::SurfaceLineGpu::new(
+                device,
+                queue,
+                format,
+                &snapshot_layout,
+            ),
             ion_blasts: ion_blasts::IonBlastGpu::new(device, format, &snapshot_layout),
             packed: packed::PackedSpriteGpu::new(device, queue, format, batch),
             source_layout,
@@ -518,15 +525,19 @@ impl TerrainDrawRenderer {
 
     /// Attach output-local derived scratch without changing the tactical
     /// camera, frame counters or primary target. Recreate only on resize.
+    /// `scale` is the surface's pixels per camera pixel (the sidebar's at the
+    /// window's pixels, `SidebarFrame::in_window`).
     pub(crate) fn create_packed_surface(
         &self,
         device: &wgpu::Device,
         color: &wgpu::Texture,
         depth: &wgpu::TextureView,
+        scale: u32,
     ) -> PackedSurface {
         PackedSurface {
             targets: self.create_targets(device, color, depth),
             stencil: self.packed.create_stencil(color.size()),
+            scale: scale.max(1),
         }
     }
 
@@ -1256,7 +1267,10 @@ mod webgl_shader_tests {
                 "ion blast",
                 tactical_shader::source(include_str!("terrain_ion_blast.wgsl")),
             ),
-            ("scaled copy", include_str!("scaled_copy.wgsl").to_owned()),
+            (
+                "scaled copy",
+                crate::render::scaled_copy::shader_source(true),
+            ),
             (
                 "chrono screen",
                 crate::render::chrono_screen::shader_source(true),
@@ -1269,6 +1283,15 @@ mod webgl_shader_tests {
                 "combat light",
                 pad_camera_structs(&crate::render::combat_light::shader_source(true)),
             ),
+            (
+                "shroud compose",
+                crate::render::shroud_buffer::compose_shader_source().to_string(),
+            ),
+            (
+                "radar compose",
+                crate::render::radar::compose::shader_source(),
+            ),
+            ("voxel raster", crate::render::voxel_gpu::shader_source()),
         ]
     }
 

@@ -60,7 +60,6 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
     let theater =
         crate::map::theater::load_theater(&mut assets, &map.header.theater).expect("ALL01 theater");
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art_ini));
-    let sequences = crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art_ini);
     let overlays = OverlayTypeRegistry::from_ini(&rules_ini, Some(&art_ini));
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
@@ -155,7 +154,6 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         theater.extension,
         crate::rules::terrain_asset_catalog::TerrainAssetLoadPhase::Fresh,
     );
-    rules.bind_animation_sequences(&sequences);
     let overlay_shps = crate::rules::effect_asset_catalog::resolved_overlay_shp_ids(
         &overlays,
         &assets,

@@ -287,6 +287,7 @@ fn retail_rock_shadow_admits_generated_live_and_restored_overlay() {
     let build = |sim: &Simulation, atlas: &BridgeAtlas| {
         let mut instances = Vec::new();
         build_bridge_shadow_instances_inner(
+            crate::render::cell_window::CellWindow::Whole,
             sim.resolved_terrain().unwrap(),
             atlas,
             &fixture.names,
@@ -570,6 +571,7 @@ impl RetailBridgeFixture {
         let (mut instances, mut draws) = (Vec::new(), Vec::new());
         match kind {
             BridgeFrameKind::Shadow => build_bridge_shadow_instances_inner(
+                crate::render::cell_window::CellWindow::Whole,
                 &terrain,
                 atlas,
                 &self.names,
@@ -665,6 +667,7 @@ fn assert_native_cell_sweep_order(
     }
     let mut instances = Vec::new();
     build_bridge_shadow_instances_inner(
+        crate::render::cell_window::CellWindow::Whole,
         &terrain,
         atlas,
         &fixture.names,
@@ -1391,6 +1394,7 @@ fn retail_high_bridge_damage_and_repair_reach_shadow_pixels() {
             let overlays = sim.overlay_grid().unwrap();
             let mut instances = Vec::new();
             build_bridge_shadow_instances_inner(
+                crate::render::cell_window::CellWindow::Whole,
                 terrain,
                 &atlas,
                 &fixture.names,
