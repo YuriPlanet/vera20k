@@ -5731,12 +5731,6 @@ impl RuleSet {
                     .then_some(rules.ai_base_spacing);
             }
         }
-        for (name, flag) in processed.building_spotlight_flags() {
-            if let Some(building) = rules
-                .object_list
-                .iter_mut()
-                .find(|o| o.category == ObjectCategory::Building && o.id == name)
-            {
         #[cfg(feature = "ares")]
         {
             for (name, ext) in processed.building_type_ext_states() {
@@ -5769,6 +5763,12 @@ impl RuleSet {
                     });
             }
         }
+        for (name, flag) in processed.building_spotlight_flags() {
+            if let Some(building) = rules
+                .object_list
+                .iter_mut()
+                .find(|o| o.category == ObjectCategory::Building && o.id == name)
+            {
                 building.has_spotlight = flag;
             }
         }
@@ -8464,6 +8464,25 @@ impl RuleSet {
                 veterancy.hash(&mut hasher);
                 self.ares_veterancy().hash(&mut hasher);
             }
+            // BuildingTypeExt rubble, repair and garrison keys.
+            let building_type_ext = self
+                .object_list
+                .iter()
+                .filter(|object| {
+                    object.building_type_ext()
+                        != &crate::rules::ares_building_type::BuildingTypeExtRules::default()
+                })
+                .map(|object| {
+                    (
+                        (object.category, object.id.to_ascii_uppercase()),
+                        object.building_type_ext(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            if !building_type_ext.is_empty() {
+                b"ares-building-type-ext-rules-v1".hash(&mut hasher);
+                building_type_ext.hash(&mut hasher);
+            }
             let crews = self
                 .object_list
                 .iter()
@@ -8762,6 +8781,20 @@ impl RuleSet {
         if !airburst_flags.is_empty() {
             b"airburst-retained-flag-v1".hash(&mut hasher);
             airburst_flags.hash(&mut hasher);
+        }
+        // Ares BulletTypeExt SubjectToTrenches=no decides garrison hits.
+        #[cfg(feature = "ares")]
+        {
+            let trench_immune = self
+                .projectiles
+                .iter()
+                .filter(|(_, projectile)| !projectile.ares_subject_to_trenches)
+                .map(|(id, _)| id.to_ascii_uppercase())
+                .collect::<std::collections::BTreeSet<_>>();
+            if !trench_immune.is_empty() {
+                b"ares-subject-to-trenches-v1".hash(&mut hasher);
+                trench_immune.hash(&mut hasher);
+            }
         }
         // Phobos airburst/splits inputs. Defaults leave the stock hash
         // unchanged; any authored value must invalidate a save.

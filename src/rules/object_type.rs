@@ -3112,7 +3112,6 @@ impl ObjectType {
         self.promotion_eva = eva;
     }
 
-    /// Ares BuildingTypeExt Academy.* (`rules::ares_veterancy`).
     /// Ares BuildingTypeExt rubble and repair keys (`rules::ares_building_type`).
     #[cfg(feature = "ares")]
     pub(crate) fn building_type_ext(
@@ -3128,6 +3127,7 @@ impl ObjectType {
         &mut self.building_type_ext
     }
 
+    /// Ares BuildingTypeExt Academy.* (`rules::ares_veterancy`).
     #[cfg(feature = "ares")]
     pub(crate) fn academy(&self) -> &crate::rules::ares_veterancy::AcademyTypeRules {
         &self.academy

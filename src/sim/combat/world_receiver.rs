@@ -3452,6 +3452,114 @@ fn ares_snapped_target(
     })
 }
 
+/// `BulletExt::ExtData::DamageOccupants @ 10019AC0`: a shot at a garrisoned
+/// building whose type has a positive `UC.PassThrough` passes through to one
+/// occupant, unless its projectile is `SubjectToTrenches=` (default) and a
+/// Scenario `RandomDouble` is at least the pass-through rate. The occupant
+/// is `RandomRanged(0, n - 1)`; when `UC.FatalRate` is positive and another
+/// `RandomDouble` is below it he is taken out of the list, announced
+/// (`Destroyed`, the Death_Announcement slot) and UnInit, with no kill
+/// recorded; otherwise he receives `ceil(Health * UC.DamageMultiplier)`
+/// of the bullet's warhead from its owner (not ignoring defences, no
+/// passenger escape). The firing index is fixed up and the raid status
+/// evaluated. True when the shot passed through.
+#[cfg(feature = "ares")]
+fn ares_damage_occupants(
+    world: &mut Simulation,
+    run: &mut ReceiverRun<'_>,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    detonation: &ProjectileDetonation,
+    effects: &mut DeathEffects,
+) -> bool {
+    let current = world.projectiles.current_detonation(*detonation);
+    let ProjectileTarget::Entity(building_id) = current.target else {
+        return false;
+    };
+    let Some(building) = world
+        .substrate
+        .entities
+        .get(building_id)
+        .filter(|building| building.category() == EntityCategory::Structure)
+    else {
+        return false;
+    };
+    let Some(object) = world.object_type(building.type_ref(), rules) else {
+        return false;
+    };
+    let ext = object.building_type_ext();
+    let occupants = building.passenger_role.occupants().ids().to_vec();
+    let pass_through = f64::from_bits(ext.uc_pass_through.bits());
+    if occupants.is_empty() || pass_through <= 0.0 {
+        return false;
+    }
+    let subject_to_trenches = current
+        .payload
+        .projectile_type()
+        .and_then(|id| rules.projectile(world.interner.resolve(id)))
+        .is_none_or(|projectile| projectile.ares_subject_to_trenches);
+    if subject_to_trenches && world.scenario_rng.random_double() >= pass_through {
+        return false;
+    }
+    let last = occupants.len() as i32 - 1;
+    let victim = occupants[world.scenario_rng.next_range_i32_inclusive(0, last) as usize];
+    let fatal_rate = f64::from_bits(ext.uc_fatal_rate.bits());
+    let multiplier = f64::from_bits(ext.uc_damage_multiplier.bits());
+    let context =
+        crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(run.effects());
+    if fatal_rate > 0.0 && world.scenario_rng.random_double() < fatal_rate {
+        if let Some(building) = world.substrate.entities.get_mut(building_id) {
+            building
+                .passenger_role
+                .occupants_mut()
+                .remove_expired(victim);
+        }
+        if let Some(event) = world.substrate.entities.get(victim).and_then(|entity| {
+            death_announcement_event(
+                world.object_type(entity.type_ref(), rules)?,
+                entity.category(),
+                entity.position.rx(),
+                entity.position.ry(),
+                entity.owner(),
+            )
+        }) {
+            world.dispatch_unit_lost_events(&[event]);
+        }
+        crate::sim::passenger::garrison_eject::uninit_garrison_passenger_without_exit(
+            world, victim, context,
+        );
+        world.refresh_spatial_threat(building_id, rules, None);
+    } else {
+        // `static_cast<int>(std::ceil(Health * multiplier))`; Health is the
+        // bullet's undivided damage.
+        let damage = (f64::from(current.payload.base_damage) * multiplier).ceil() as i32;
+        let event = EntityDamageEvent::direct_receiver(
+            victim,
+            damage,
+            0,
+            current.source_id,
+            detonation_source_house(world, &current),
+            current.payload.warhead,
+            ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: true,
+            },
+        );
+        let (death, mut pings) =
+            commit_entities(world, run, &[event], None, rules, overlay_registry);
+        effects.append(death);
+        effects.under_attack_events.append(&mut pings);
+    }
+    if let Some(building) = world.substrate.entities.get_mut(building_id) {
+        let occupants = building.passenger_role.occupants_mut();
+        if occupants.fire_index() >= occupants.count() {
+            occupants.reset_fire_index();
+        }
+    }
+    world.ares_eval_raid_status(building_id, rules, overlay_registry, run.effects());
+    true
+}
+
 /// `BulletClass::DetonateAtCoord @ 0x004690B0` up to its receivers: the
 /// radiation site, then the special-warhead chain or, in its final else, the
 /// shrapnel (`0x00469A51`) and `Apply_area_damage` (`0x00489280`) records,
@@ -3568,6 +3676,20 @@ fn emit_detonation_receivers<'r>(
                 effects,
             );
             world.apply_ares_attach_effect_detonation(coordinate, source_house, warhead, rules);
+            // applyOccupantDamage, snapped bullets only: a shot that passes
+            // through to a garrison's occupant is neutered.
+            if ares_snapped_target(world, detonation).is_some()
+                && ares_damage_occupants(
+                    world,
+                    run,
+                    rules,
+                    overlay_registry,
+                    detonation,
+                    &mut out.effects,
+                )
+            {
+                world.projectiles.neuter(detonation.projectile_id);
+            }
         }
         //10053851 reads the Bullet's live Target (+0x10C) after the effects;
         // a permanent capture returns 0x469AA4 past every vanilla arm.

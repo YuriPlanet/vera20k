@@ -955,25 +955,44 @@ pub fn can_dock_occupier_garrison(
     if building.is_warped_out() {
         return false;
     }
-    if !passenger_obj.occupier {
-        return false;
-    }
-    let same_owner = passenger.owner() == building.owner();
-    if !same_owner && !owner_is_multiplay_passive(building.owner(), &sim.houses) {
-        return false;
-    }
-    if occupants.count() as u32 == building_obj.max_number_occupants {
-        return false;
-    }
-    if is_at_or_below_red_hp(
+    let passive = owner_is_multiplay_passive(building.owner(), &sim.houses);
+    let red_health = is_at_or_below_red_hp(
         building.health.current(),
         building_obj.strength,
         rules.general.condition_red,
-    ) {
-        return false;
+    );
+    // Ares 3.0 10017060 (hook 0x457D58) replaces the occupier arm.
+    #[cfg(feature = "ares")]
+    {
+        crate::sim::ares_garrison::occupier_admitted(
+            sim,
+            passenger,
+            building,
+            passenger_obj,
+            building_obj,
+            occupants.count(),
+            passive,
+            red_health,
+        )
     }
-    // `0x00457D98`: `TechnoClass::IsMindControlled`.
-    !passenger.mind_control.is_mind_controlled()
+    #[cfg(not(feature = "ares"))]
+    {
+        if !passenger_obj.occupier {
+            return false;
+        }
+        let same_owner = passenger.owner() == building.owner();
+        if !same_owner && !passive {
+            return false;
+        }
+        if occupants.count() as u32 == building_obj.max_number_occupants {
+            return false;
+        }
+        if red_health {
+            return false;
+        }
+        // `0x00457D98`: `TechnoClass::IsMindControlled`.
+        !passenger.mind_control.is_mind_controlled()
+    }
 }
 
 /// [`can_dock_occupier_garrison`] by id, as `CanBeOccupiedBy`'s callers that
@@ -1355,6 +1374,10 @@ pub fn add_garrison_occupant(
         // Admission and Limbo keep the occupant's TarCom and passive flag.
         pax.passenger_role.set_inside_transport(building_id, false);
     }
+    // Ares 3.0 10017240 (hook 0x52297F): an occupier of another house
+    // raids the building (sim::ares_garrison).
+    #[cfg(feature = "ares")]
+    sim.ares_occupier_entered(building_id, owner, rules, registry, effects);
     sim.refresh_spatial_threat(building_id, rules, None);
     if count == 1 {
         let _ = Simulation::mark_entity_refresh(&sim.substrate, building_id);

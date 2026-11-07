@@ -2213,6 +2213,8 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     }
     #[cfg(feature = "ares")]
     entity.display_production_to.hash_state(hasher);
+    #[cfg(feature = "ares")]
+    entity.ares_raid.hash_state(hasher);
     entity.bunker.occupant().hash(hasher);
     // Reciprocal link + install machine are authoritative lifecycle state.
     entity.bunker.link().hash(hasher);

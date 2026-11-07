@@ -1884,8 +1884,13 @@ fn the_nearest_own_bunker_with_room_takes_an_occupier() {
         .unwrap()
         .health
         .set_for_test(100);
-    assert!(!garrison_seek(&mut sim, &rules, infantry));
-    assert!(!entity(&sim, infantry).building_entry.seeking());
+    // Ares 3.0 10017060 (hook 0x457D58) refuses a red building only when it
+    // is civilian (TechLevel -1).
+    #[cfg(not(feature = "ares"))]
+    {
+        assert!(!garrison_seek(&mut sim, &rules, infantry));
+        assert!(!entity(&sim, infantry).building_entry.seeking());
+    }
 }
 
 /// Script action 63 (`0x006E9EC8`) through the team pass: the occupier a

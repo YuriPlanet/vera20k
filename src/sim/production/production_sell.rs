@@ -417,6 +417,11 @@ pub fn can_sell_building(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
             entity.mission.effective().known(),
             Some(MissionType::Selling | MissionType::Construction)
         );
+    // Ares 3.0 10017200 (hook 0x4494D2): a raided building cannot be sold.
+    #[cfg(feature = "ares")]
+    if entity.ares_raid.raided() {
+        return false;
+    }
     entity.category() == EntityCategory::Structure
         && entity.drain.draining_me().is_none()
         && !object.unsellable

@@ -153,6 +153,11 @@ pub struct ProjectileType {
     /// Phobos constructor defaults; only Phobos builds read or consume them.
     #[cfg(feature = "phobos")]
     pub phobos_airburst: crate::rules::phobos_airburst::PhobosAirburstType,
+    /// Ares BulletTypeExt `SubjectToTrenches` (`+0x11`, constructor true,
+    /// Valueable<bool> read by `100193C0`): a false one always passes a
+    /// shot into a garrison's occupants (`sim::ares_garrison`).
+    #[cfg(feature = "ares")]
+    pub(crate) ares_subject_to_trenches: bool,
     /// Current native Image25 text; SHP admission is separately retained below.
     pub image: Option<String>,
     /// Admitted native5F9070 requests, independently of later Image text.
@@ -467,6 +472,8 @@ impl ProjectileType {
             phobos_airburst: crate::rules::phobos_airburst::PhobosAirburstType::from_section(
                 section,
             ),
+            #[cfg(feature = "ares")]
+            ares_subject_to_trenches: section.read_ares_bool("SubjectToTrenches", true),
             image: None,
             image_loads: Vec::new(),
             voxel_image_load: None,

@@ -838,6 +838,13 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) display_production_to: crate::sim::spy_infiltration::DisplayProductionTo,
+    /// A building's Ares `OwnerBeforeRaid` (BuildingExt `+0x8`), a
+    /// [`RaidState`] that `sim::ares_garrison` owns.
+    ///
+    /// [`RaidState`]: crate::sim::ares_garrison::RaidState
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_raid: crate::sim::ares_garrison::RaidState,
     /// A building's HasBeenCaptured byte (`BuildingClass+0x6E3`), a
     /// [`HasBeenCaptured`] that `crew_survival` owns.
     ///
@@ -2188,6 +2195,8 @@ impl GameEntity {
             pending_c4_detonation: Default::default(),
             #[cfg(feature = "ares")]
             display_production_to: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_raid: Default::default(),
             has_been_captured: Default::default(),
             no_survivor: Default::default(),
             nominal_survivor: false,

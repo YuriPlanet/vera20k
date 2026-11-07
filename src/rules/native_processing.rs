@@ -2369,6 +2369,21 @@ impl ProcessedRulesLayers {
         self.member_states(RulesTypeFamily::Building, |member| &member.infiltration)
     }
 
+    /// The retained BuildingTypeExt rubble and repair reads, by BuildingType.
+    #[cfg(feature = "ares")]
+    pub(crate) fn building_type_ext_states(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            &str,
+            &crate::rules::ares_building_type::BuildingTypeExtRules,
+        ),
+    > {
+        self.member_states(RulesTypeFamily::Building, |member| {
+            &member.building_type_ext
+        })
+    }
+
     pub(crate) fn ares_techno_states(
         &self,
     ) -> impl Iterator<
@@ -2391,21 +2406,6 @@ impl ProcessedRulesLayers {
             .filter_map(|(family, members)| {
                 family.object_category().map(|category| (category, members))
             })
-    /// The retained BuildingTypeExt rubble and repair reads, by BuildingType.
-    #[cfg(feature = "ares")]
-    pub(crate) fn building_type_ext_states(
-        &self,
-    ) -> impl Iterator<
-        Item = (
-            &str,
-            &crate::rules::ares_building_type::BuildingTypeExtRules,
-        ),
-    > {
-        self.member_states(RulesTypeFamily::Building, |member| {
-            &member.building_type_ext
-        })
-    }
-
             .flat_map(|(category, members)| {
                 members.iter().map(move |member| {
                     (
@@ -7885,6 +7885,40 @@ impl RulesPassProcessor {
                             self.family_mut(family)[index]
                                 .infiltration
                                 .read_pass(&raw, super_weapon);
+                            // 1000DD40: Rubble.Destroyed/Intact through the
+                            // Find-only BuildingType reader 1000CA20 and their
+                            // anims through the AnimType reader 1000C9C0.
+                            let rubble_types = ["Rubble.Destroyed", "Rubble.Intact"].map(|key| {
+                                self.resolve_existing_type_from(
+                                    &raw,
+                                    key,
+                                    RulesTypeFamily::Building,
+                                )
+                            });
+                            let rubble_anims =
+                                ["Rubble.Destroyed.Anim", "Rubble.Intact.Anim"].map(|key| {
+                                    self.resolve_existing_type_from(
+                                        &raw,
+                                        key,
+                                        RulesTypeFamily::Animation,
+                                    )
+                                });
+                            // 1000DD40 CanBeOccupiedBy: the Find-only
+                            // InfantryType vector 1000ED90.
+                            let allowed_occupiers = self.resolve_existing_list_from(
+                                &raw,
+                                "CanBeOccupiedBy",
+                                RulesTypeFamily::Infantry,
+                                2048,
+                            );
+                            self.family_mut(family)[index].building_type_ext.read_pass(
+                                &raw,
+                                crate::rules::ares_building_type::BuildingTypeExtReferences {
+                                    rubble_types,
+                                    rubble_anims,
+                                    allowed_occupiers,
+                                },
+                            );
                             // 1000DD40: Academy.Types/Academy.Ignore through
                             // the Find-only TechnoType vector1000EDD0, then
                             // the four bonuses and the computed +138 flag.
@@ -7979,29 +8013,6 @@ impl RulesPassProcessor {
                             derived.set("Invisible", "yes");
                             derived.set("RadarVisible", "no");
                             body.overlay_rules_pass(&derived);
-                            // 1000DD40: Rubble.Destroyed/Intact through the
-                            // Find-only BuildingType reader 1000CA20 and their
-                            // anims through the AnimType reader 1000C9C0.
-                            let rubble_types = ["Rubble.Destroyed", "Rubble.Intact"].map(|key| {
-                                self.resolve_existing_type_from(
-                                    &raw,
-                                    key,
-                                    RulesTypeFamily::Building,
-                                )
-                            });
-                            let rubble_anims =
-                                ["Rubble.Destroyed.Anim", "Rubble.Intact.Anim"].map(|key| {
-                                    self.resolve_existing_type_from(
-                                        &raw,
-                                        key,
-                                        RulesTypeFamily::Animation,
-                                    )
-                                });
-                            self.family_mut(family)[index].building_type_ext.read_pass(
-                                &raw,
-                                rubble_types,
-                                rubble_anims,
-                            );
                         }
                         // ToOverlay's ART section is +1F8 (0x004610DE).
                         if let Some(overlay) = self.resolve_fixed_art_reference(

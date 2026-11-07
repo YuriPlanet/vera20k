@@ -8,10 +8,13 @@
 //!   switches a destroyed building to its rubble and a rebuilt rubble back.
 //! - `EngineerRepairable` (`+0x231`, Nullable over `Repairable=`): the
 //!   engineer's repair action and arrival (`sim::world::world_orders`).
+//! - Urban combat and garrisons (`UC.*`, `Bunker.Raidable`,
+//!   `CanBeOccupiedBy`, `+0x68..+0x80`, `+0xD0`): `sim::ares_garrison`.
 
 use crate::rules::ares_warhead::HouseSelector;
 use crate::rules::foundation::Foundation;
 use crate::rules::ini_parser::IniSection;
+use crate::util::native_x87::NativeF64Bits;
 
 /// One direction of the advanced rubble switch: `Rubble.Destroyed*` on a
 /// normal building (the rubble it turns into) or `Rubble.Intact*` on a
@@ -59,14 +62,29 @@ impl RubbleSwitch {
 /// The building chain's BuildingTypeExt fields. The constructor
 /// (`BuildingTypeExt::ExtData::ExtData @ 1000CAE0`) clears both rubble
 /// types, anims and removes, sets both owners to `Default`, the destroyed
-/// strength to 0 and the intact strength to -1, and leaves
-/// `EngineerRepairable` unset.
+/// strength to 0 and the intact strength to -1, both UC rates to 0.0, the
+/// UC damage multiplier to 1.0, `Bunker.Raidable` to false, the occupier
+/// list to empty, and leaves `EngineerRepairable` unset.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct BuildingTypeExtRules {
     pub(crate) rubble_destroyed: RubbleSwitch,
     pub(crate) rubble_intact: RubbleSwitch,
     /// `EngineerRepairable` (`+0x231`, Nullable<bool> `1000E9B0`).
     pub(crate) engineer_repairable: Option<bool>,
+    /// `UC.PassThrough` (`+0x68`): how often a shot passes through the
+    /// building to one of its occupants (Valueable<double> `1000EB00`).
+    pub(crate) uc_pass_through: NativeF64Bits,
+    /// `UC.FatalRate` (`+0x70`): how often that occupant dies outright.
+    pub(crate) uc_fatal_rate: NativeF64Bits,
+    /// `UC.DamageMultiplier` (`+0x78`): the occupant's share of the damage.
+    pub(crate) uc_damage_multiplier: NativeF64Bits,
+    /// `Bunker.Raidable` (`+0x80`): an empty building of another house may
+    /// be garrisoned, which raids it.
+    pub(crate) bunker_raidable: bool,
+    /// `CanBeOccupiedBy` (`+0xD0`): the InfantryTypes that may garrison it,
+    /// any when empty (Find-only `ValueableVector<InfantryTypeClass*>`
+    /// `1000ED90`).
+    pub(crate) allowed_occupiers: Vec<String>,
 }
 
 impl Default for BuildingTypeExtRules {
@@ -75,26 +93,48 @@ impl Default for BuildingTypeExtRules {
             rubble_destroyed: RubbleSwitch::new(0),
             rubble_intact: RubbleSwitch::new(-1),
             engineer_repairable: None,
+            uc_pass_through: NativeF64Bits::POSITIVE_ZERO,
+            uc_fatal_rate: NativeF64Bits::POSITIVE_ZERO,
+            uc_damage_multiplier: NativeF64Bits::ONE,
+            bunker_raidable: false,
+            allowed_occupiers: Vec::new(),
         }
     }
 }
 
+/// The registry's Find-only type lookups of one BuildingType pass: `None`
+/// keeps a field (absent or unknown), `Some(None)` clears a pointer for a
+/// blank value, and a reached vector read replaces the list.
+#[derive(Debug, Default)]
+pub(crate) struct BuildingTypeExtReferences {
+    /// `Rubble.Destroyed`, `Rubble.Intact` (`1000CA20`).
+    pub(crate) rubble_types: [Option<Option<String>>; 2],
+    /// `Rubble.Destroyed.Anim`, `Rubble.Intact.Anim` (`1000C9C0`).
+    pub(crate) rubble_anims: [Option<Option<String>>; 2],
+    /// `CanBeOccupiedBy` (`1000ED90`).
+    pub(crate) allowed_occupiers: Option<Vec<String>>,
+}
+
 impl BuildingTypeExtRules {
-    /// One reached BuildingType pass in the DLL's order (`1000DD40`):
-    /// Destroyed before Intact for the types, the anims, the owners, the
-    /// strengths and the removes, then `EngineerRepairable` near the end.
-    /// `types` and `anims` are the registry's Find-only lookups in that
-    /// order (`None` keeps the field, `Some(None)` clears it for a blank
-    /// value); the rest are Valueable reads that keep their value on an
-    /// absent, empty or invalid read.
+    /// One reached BuildingType pass in the DLL's order (`1000DD40`): the
+    /// UC block and `Bunker.Raidable`, then Destroyed before Intact for the
+    /// rubble types, anims, owners, strengths and removes, then
+    /// `CanBeOccupiedBy` and `EngineerRepairable`. `references` holds the
+    /// registry's lookups; the rest are Valueable/Nullable reads that keep
+    /// their value on an absent, empty or invalid read.
     pub(crate) fn read_pass(
         &mut self,
         section: &IniSection,
-        types: [Option<Option<String>>; 2],
-        anims: [Option<Option<String>>; 2],
+        references: BuildingTypeExtReferences,
     ) {
-        let [destroyed_type, intact_type] = types;
-        let [destroyed_anim, intact_anim] = anims;
+        self.uc_pass_through =
+            section.read_ares_double_bits("UC.PassThrough", self.uc_pass_through);
+        self.uc_fatal_rate = section.read_ares_double_bits("UC.FatalRate", self.uc_fatal_rate);
+        self.uc_damage_multiplier =
+            section.read_ares_double_bits("UC.DamageMultiplier", self.uc_damage_multiplier);
+        self.bunker_raidable = section.read_ares_bool("Bunker.Raidable", self.bunker_raidable);
+        let [destroyed_type, intact_type] = references.rubble_types;
+        let [destroyed_anim, intact_anim] = references.rubble_anims;
         if let Some(name) = destroyed_type {
             self.rubble_destroyed.building_type = name;
         }
@@ -124,6 +164,9 @@ impl BuildingTypeExtRules {
             section.read_ares_bool("Rubble.Destroyed.Remove", self.rubble_destroyed.remove);
         self.rubble_intact.remove =
             section.read_ares_bool("Rubble.Intact.Remove", self.rubble_intact.remove);
+        if let Some(occupiers) = references.allowed_occupiers {
+            self.allowed_occupiers = occupiers;
+        }
         self.engineer_repairable =
             section.read_ares_nullable_bool("EngineerRepairable", self.engineer_repairable);
     }
@@ -160,6 +203,16 @@ impl BuildingTypeExtRules {
     pub(crate) fn engineer_repairable(&self, repairable: bool) -> bool {
         self.engineer_repairable.unwrap_or(repairable)
     }
+
+    /// `BuildingTypeExt::ExtData::CanBeOccupiedBy`: any InfantryType while
+    /// the list is empty, else one it names.
+    pub(crate) fn can_be_occupied_by(&self, infantry_type: &str) -> bool {
+        self.allowed_occupiers.is_empty()
+            || self
+                .allowed_occupiers
+                .iter()
+                .any(|id| id.eq_ignore_ascii_case(infantry_type))
+    }
 }
 
 /// `BuildingTypeExt::IsFoundationEqual`, inlined into `1000D1C0`: the same
@@ -190,7 +243,7 @@ mod tests {
     fn rubble_reads_keep_the_constructor_strengths_and_clear_on_blank() {
         let mut rules = BuildingTypeExtRules::default();
         let empty = IniFile::from_str("[B]\nStrength=1\n");
-        rules.read_pass(empty.section("B").unwrap(), [None, None], [None, None]);
+        rules.read_pass(empty.section("B").unwrap(), Default::default());
         assert_eq!(
             [
                 rules.rubble_destroyed.strength,
@@ -205,8 +258,11 @@ mod tests {
         );
         rules.read_pass(
             ini.section("B").unwrap(),
-            [Some(Some("RUBBLE".into())), None],
-            [None, Some(Some("FIRE".into()))],
+            BuildingTypeExtReferences {
+                rubble_types: [Some(Some("RUBBLE".into())), None],
+                rubble_anims: [None, Some(Some("FIRE".into()))],
+                allowed_occupiers: None,
+            },
         );
         assert_eq!(
             rules.rubble_destroyed.building_type.as_deref(),
@@ -220,8 +276,10 @@ mod tests {
         assert!(!rules.engineer_repairable(true));
         rules.read_pass(
             empty.section("B").unwrap(),
-            [Some(None), None],
-            [None, None],
+            BuildingTypeExtReferences {
+                rubble_types: [Some(None), None],
+                ..Default::default()
+            },
         );
         assert_eq!(rules.rubble_destroyed.building_type, None);
     }
