@@ -13,8 +13,9 @@
 //! included). So every draw goes to the earliest stage after every earlier
 //! draw it overlaps. Same-kind draws that already compose in sequence inside
 //! one transaction (ordinary draws in one render pass, read-only edits in one
-//! reduction interval, combat lights in one replayed pass) may share a stage
-//! even when they overlap; their order inside the stage stays parent order.
+//! reduction interval, read-write edits in one interval, combat lights in one
+//! replayed pass) may share a stage even when they overlap; their order inside
+//! the stage stays parent order.
 //! Stages replay in index order.
 //! Footprints are tested on a tile grid: a false overlap only costs a stage.
 
@@ -31,7 +32,8 @@ pub(super) enum StageKind {
     PackedAlone,
     /// One read-only reduction interval; overlapping edits reduce in order.
     EditReadOnly,
-    /// One read-write edit wave, pairwise disjoint.
+    /// One read-write interval; overlapping edits keep their order inside it
+    /// (waves, replays or the live depth test, `TerrainDrawRenderer::draw_span`).
     EditReadWrite,
     /// Combat lights; overlapping ones edit in order within each pass.
     Light,
@@ -46,6 +48,7 @@ impl StageKind {
             (self, next),
             (Self::Ordinary, Self::Ordinary)
                 | (Self::EditReadOnly, Self::EditReadOnly)
+                | (Self::EditReadWrite, Self::EditReadWrite)
                 | (Self::Light, Self::Light)
         )
     }
@@ -188,8 +191,6 @@ mod tests {
         let packed = StageKind::Packed;
         plan.push(packed, [0, 0, 20, 20], 0);
         plan.push(packed, [10, 10, 20, 20], 1);
-        plan.push(StageKind::EditReadWrite, [0, 0, 8, 8], 2);
-        plan.push(StageKind::EditReadWrite, [4, 4, 8, 8], 3);
         plan.push(StageKind::PackedAlone, [48, 48, 4, 4], 4);
         plan.push(StageKind::PackedAlone, [56, 56, 4, 4], 5);
         assert_eq!(
@@ -197,8 +198,6 @@ mod tests {
             [
                 (packed, vec![0]),
                 (packed, vec![1]),
-                (StageKind::EditReadWrite, vec![2]),
-                (StageKind::EditReadWrite, vec![3]),
                 (StageKind::PackedAlone, vec![4]),
                 (StageKind::PackedAlone, vec![5]),
             ]
@@ -206,6 +205,27 @@ mod tests {
         // The grid is cleared with the plan.
         plan.push(StageKind::Ordinary, [0, 0, 64, 64], 6);
         assert_eq!(stage_items(&mut plan), [(StageKind::Ordinary, vec![6])]);
+    }
+
+    /// Overlapping trees share a read-write interval, in order, until an
+    /// ordinary draw they overlap comes between.
+    #[test]
+    fn overlapping_read_write_edits_share_a_stage_until_another_draw_meets_them() {
+        let edit = StageKind::EditReadWrite;
+        let mut plan = ObjectStages::new([64, 64]);
+        plan.push(edit, [0, 0, 8, 8], 0);
+        plan.push(edit, [4, 4, 8, 8], 1);
+        plan.push(StageKind::Ordinary, [6, 6, 8, 8], 2);
+        plan.push(edit, [10, 10, 8, 8], 3);
+        plan.push(edit, [40, 40, 8, 8], 4);
+        assert_eq!(
+            stage_items(&mut plan),
+            [
+                (edit, vec![0, 1, 4]),
+                (StageKind::Ordinary, vec![2]),
+                (edit, vec![3]),
+            ]
+        );
     }
 
     #[test]
