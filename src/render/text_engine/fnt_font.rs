@@ -72,23 +72,29 @@ impl FntFont {
         codepoints.sort_unstable_by_key(|&(cp, _)| cp);
 
         let rows = fnt.bitmap_rows;
+        // Every width narrows the same rectangles, so each glyph's pixels
+        // merge once.
+        let mut scratch = MergeScratch::default();
+        let stand_in_px = units_per_pixel(0x58);
+        let stand_in =
+            missing.map(|glyph| PixelGlyph::merge(glyph, rows, stand_in_px, &mut scratch));
+        let pixels: Vec<PixelGlyph> = codepoints
+            .iter()
+            .map(|&(cp, glyph)| {
+                PixelGlyph::merge(glyph, rows, units_per_pixel(u32::from(cp)), &mut scratch)
+            })
+            .collect();
         let outlines = |width: f32| {
-            let mut glyphs: Vec<GlyphOutline> = Vec::with_capacity(codepoints.len() + 1);
-            let px = units_per_pixel(0x58);
-            glyphs.push(match missing {
-                Some(glyph) => GlyphOutline::from_bitmap(glyph, rows, baseline_row, px, width),
-                None => GlyphOutline::empty((5.0 * px as f32 * width).round() as i32),
+            let mut glyphs: Vec<GlyphOutline> = Vec::with_capacity(pixels.len() + 1);
+            glyphs.push(match &stand_in {
+                Some(glyph) => glyph.outline(baseline_row, width),
+                None => GlyphOutline::empty((5.0 * stand_in_px as f32 * width).round() as i32),
             });
-            for &(cp, glyph) in &codepoints {
-                let px = units_per_pixel(u32::from(cp));
-                glyphs.push(GlyphOutline::from_bitmap(
-                    glyph,
-                    rows,
-                    baseline_row,
-                    px,
-                    width,
-                ));
-            }
+            glyphs.extend(
+                pixels
+                    .iter()
+                    .map(|glyph| glyph.outline(baseline_row, width)),
+            );
             glyphs
         };
 
@@ -129,26 +135,30 @@ impl FntFont {
     }
 }
 
-/// One glyph's rectangles in font units, y up, plus its advance.
-struct GlyphOutline {
-    advance: u16,
-    /// [x0, y0, x1, y1] with x0 < x1, y0 < y1.
-    rects: Vec<[i32; 4]>,
+/// One glyph's lit pixels merged into rectangles: horizontal runs per row,
+/// and a run that repeats exactly on the next row extends downwards.
+struct PixelGlyph {
+    /// Font units per pixel.
+    px: i32,
+    /// Bitmap width in pixels.
+    width: usize,
+    /// `[x0, x1, top row, row below]` in pixels, in the order they close.
+    rects: Vec<[usize; 4]>,
 }
 
-impl GlyphOutline {
-    fn empty(advance: i32) -> Self {
-        Self {
-            advance: advance.clamp(0, i32::from(u16::MAX)) as u16,
-            rects: Vec::new(),
-        }
-    }
+/// [`PixelGlyph::merge`]'s row buffers, kept from glyph to glyph.
+#[derive(Default)]
+struct MergeScratch {
+    /// Rectangles still growing downwards: (x0, x1, first row).
+    open: Vec<(usize, usize, usize)>,
+    /// The open rectangles for the next row.
+    next_open: Vec<(usize, usize, usize)>,
+    /// One row's runs of lit pixels: (x0, x1).
+    runs: Vec<(usize, usize)>,
+}
 
-    /// Lit pixels merged into rectangles: horizontal runs per row, and a run
-    /// that repeats exactly on the next row extends downwards. `px` font
-    /// units per pixel, columns `narrow` times as wide.
-    fn from_bitmap(glyph: &FntGlyph, rows: u32, baseline_row: u32, px: i32, narrow: f32) -> Self {
-        let column = |x: usize| (x as f32 * px as f32 * narrow).round() as i32;
+impl PixelGlyph {
+    fn merge(glyph: &FntGlyph, rows: u32, px: i32, scratch: &mut MergeScratch) -> Self {
         let width = glyph.width as usize;
         let lit = |x: usize, y: usize| {
             glyph
@@ -156,19 +166,15 @@ impl GlyphOutline {
                 .get((y * width + x) * 4 + 3)
                 .is_some_and(|&alpha| alpha != 0)
         };
-        // Open rectangles: (x0, x1, first row).
-        let mut open: Vec<(usize, usize, usize)> = Vec::new();
+        let MergeScratch {
+            open,
+            next_open,
+            runs,
+        } = scratch;
+        open.clear();
         let mut rects = Vec::new();
-        let mut close = |(x0, x1, top): (usize, usize, usize), bottom: usize| {
-            rects.push([
-                column(x0),
-                (baseline_row as i32 - bottom as i32) * px,
-                column(x1),
-                (baseline_row as i32 - top as i32) * px,
-            ]);
-        };
         for y in 0..=rows as usize {
-            let mut runs = Vec::new();
+            runs.clear();
             if y < rows as usize {
                 let mut x = 0;
                 while x < width {
@@ -183,19 +189,48 @@ impl GlyphOutline {
                     }
                 }
             }
-            let mut still_open = Vec::with_capacity(runs.len());
-            for rect in open.drain(..) {
-                if let Some(at) = runs.iter().position(|&run| run == (rect.0, rect.1)) {
+            next_open.clear();
+            for &(x0, x1, top) in open.iter() {
+                if let Some(at) = runs.iter().position(|&run| run == (x0, x1)) {
                     runs.remove(at);
-                    still_open.push(rect);
+                    next_open.push((x0, x1, top));
                 } else {
-                    close(rect, y);
+                    rects.push([x0, x1, top, y]);
                 }
             }
-            still_open.extend(runs.into_iter().map(|(x0, x1)| (x0, x1, y)));
-            open = still_open;
+            next_open.extend(runs.iter().map(|&(x0, x1)| (x0, x1, y)));
+            std::mem::swap(open, next_open);
         }
-        Self::empty(column(width + 1)).with_rects(rects)
+        Self { px, width, rects }
+    }
+
+    /// The glyph in font units, columns `narrow` times as wide.
+    fn outline(&self, baseline_row: u32, narrow: f32) -> GlyphOutline {
+        let px = self.px;
+        let column = |x: usize| (x as f32 * px as f32 * narrow).round() as i32;
+        let row = |y: usize| (baseline_row as i32 - y as i32) * px;
+        let rects = self
+            .rects
+            .iter()
+            .map(|&[x0, x1, top, bottom]| [column(x0), row(bottom), column(x1), row(top)])
+            .collect();
+        GlyphOutline::empty(column(self.width + 1)).with_rects(rects)
+    }
+}
+
+/// One glyph's rectangles in font units, y up, plus its advance.
+struct GlyphOutline {
+    advance: u16,
+    /// [x0, y0, x1, y1] with x0 < x1, y0 < y1.
+    rects: Vec<[i32; 4]>,
+}
+
+impl GlyphOutline {
+    fn empty(advance: i32) -> Self {
+        Self {
+            advance: advance.clamp(0, i32::from(u16::MAX)) as u16,
+            rects: Vec::new(),
+        }
     }
 
     fn with_rects(mut self, rects: Vec<[i32; 4]>) -> Self {
@@ -217,7 +252,8 @@ impl GlyphOutline {
     }
 
     /// The `glyf` record: one clockwise four-point contour per rectangle.
-    fn encode(&self, out: &mut Vec<u8>) {
+    /// `xs`, `ys`: buffers for the coordinates, kept from glyph to glyph.
+    fn encode(&self, out: &mut Vec<u8>, xs: &mut Vec<u8>, ys: &mut Vec<u8>) {
         if self.rects.is_empty() {
             return;
         }
@@ -233,33 +269,32 @@ impl GlyphOutline {
         const ON_CURVE: u8 = 0x01;
         const X_SAME: u8 = 0x10;
         const Y_SAME: u8 = 0x20;
-        let points: Vec<[i32; 2]> = self
+        let points = self
             .rects
             .iter()
-            .flat_map(|&[x0, y0, x1, y1]| [[x0, y1], [x1, y1], [x1, y0], [x0, y0]])
-            .collect();
+            .flat_map(|&[x0, y0, x1, y1]| [[x0, y1], [x1, y1], [x1, y0], [x0, y0]]);
         let mut previous = [0, 0];
-        let mut flags = Vec::with_capacity(points.len());
-        let (mut xs, mut ys) = (Vec::new(), Vec::new());
-        for point in &points {
+        xs.clear();
+        ys.clear();
+        // The flags come first, so they go straight out.
+        for point in points {
             let (dx, dy) = (point[0] - previous[0], point[1] - previous[1]);
             let mut flag = ON_CURVE;
             if dx == 0 {
                 flag |= X_SAME;
             } else {
-                push_i16(&mut xs, dx);
+                push_i16(xs, dx);
             }
             if dy == 0 {
                 flag |= Y_SAME;
             } else {
-                push_i16(&mut ys, dy);
+                push_i16(ys, dy);
             }
-            flags.push(flag);
-            previous = *point;
+            out.push(flag);
+            previous = point;
         }
-        out.extend_from_slice(&flags);
-        out.extend_from_slice(&xs);
-        out.extend_from_slice(&ys);
+        out.extend_from_slice(xs);
+        out.extend_from_slice(ys);
     }
 }
 
@@ -293,9 +328,10 @@ impl Writer {
         let mut bbox = [i32::MAX, i32::MAX, i32::MIN, i32::MIN];
         let mut hmtx = Vec::with_capacity(glyphs.len() * 4);
         let mut advance_max = 0u16;
+        let (mut xs, mut ys) = (Vec::new(), Vec::new());
         for glyph in glyphs {
             push_u32(&mut loca, glyf.len() as u32);
-            glyph.encode(&mut glyf);
+            glyph.encode(&mut glyf, &mut xs, &mut ys);
             while glyf.len() % 4 != 0 {
                 glyf.push(0);
             }
@@ -459,7 +495,12 @@ impl Writer {
         let count = self.tables.len() as u32;
         let entry_selector = 31 - count.leading_zeros();
         let search_range = (1u32 << entry_selector) * 16;
-        let mut out = Vec::new();
+        let tables_len: usize = self
+            .tables
+            .iter()
+            .map(|(_, data)| data.len().next_multiple_of(4))
+            .sum();
+        let mut out = Vec::with_capacity(12 + self.tables.len() * 16 + tables_len);
         push_u32(&mut out, 0x0001_0000);
         push_u16(&mut out, count);
         push_u16(&mut out, search_range);
