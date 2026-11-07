@@ -38,7 +38,7 @@ use crate::sim::combat::TargetKind;
 use crate::sim::combat::receiver_fixture::with_building_fire_stub;
 use crate::sim::mission::MissionDispatchTimer;
 use crate::sim::mission::state::MissionTestFixture;
-use crate::sim::projectile::ProjectileCoord;
+use crate::sim::projectile::{ProjectileCoord, ProjectilePayload};
 use crate::sim::timer::{CdTimer, PAUSED_START_FRAME};
 use crate::util::fixed_math::SimFixed;
 

@@ -113,6 +113,7 @@ use crate::sim::combat::{BuildingShot, fire_coord};
 use crate::sim::intern::StringInterner;
 use crate::sim::mission::authority::LiveReadyInputProvider;
 use crate::sim::mission::{MISSION_STUB_FRAMES, MissionId, MissionType};
+#[cfg(not(feature = "ares"))]
 use crate::sim::projectile::ProjectilePayload;
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
@@ -1742,7 +1743,7 @@ impl crate::sim::world::ObjectSubstrate {
     /// (`0x00450496..0x004504CD`): a building with a support count (`+0x664`)
     /// gives the bullet the [`support_multiplier`] of it (`+0x150`) and
     /// restarts the count; with none the bullet keeps Construct's
-    /// [`ProjectilePayload::UNSCALED`]. The live receiver asks it for a
+    /// [`ProjectilePayload::UNSCALED`](crate::sim::projectile::ProjectilePayload::UNSCALED). The live receiver asks it for a
     /// launched delayed shot only ([`BuildingShot::Delayed`]); FireAt's early
     /// exits and a refused launch return no bullet and keep the count.
     ///
