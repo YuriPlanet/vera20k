@@ -305,12 +305,12 @@ impl AcceptedRmgStartStaging {
         }
     }
 
-    /// A Skirmish rematch's staging: the first launch consumed the accepted
-    /// setup, but the shell keeps the accepted map's Scenario `+0x11C0` cells
-    /// (`0x0058B830`), which Full_Init copies again (`0x006873E6`), as the
-    /// network rematch does. `None` unless `RandMap.Sed` is selected and the
+    /// Staging from the shell's retained Scenario `+0x11C0` cells
+    /// (`0x0058B830`), which Full_Init copies again (`0x006873E6`): a network
+    /// guest's launch and a Skirmish rematch after the accepted setup was
+    /// consumed. `None` unless `RandMap.Sed` is selected and the
     /// shell holds a start.
-    pub(crate) fn for_rematch(
+    pub(crate) fn from_retained_staging(
         staging: &crate::map::preview::ScenarioStartStaging,
         selected_map_file: Option<&str>,
     ) -> Option<Self> {
@@ -1709,15 +1709,21 @@ mod tests {
         for slot in 0..4 {
             staging.cells[slot] = (slot as i16 + 10, 20);
         }
-        let rematch = AcceptedRmgStartStaging::for_rematch(&staging, Some("randmap.sed"))
+        let rematch = AcceptedRmgStartStaging::from_retained_staging(&staging, Some("randmap.sed"))
             .expect("random map rematch staging");
         let table = rematch.waypoint_table_for_admission();
         assert_eq!(table.len(), 4);
         assert_eq!((table[&3].rx, table[&3].ry), (13, 20));
 
-        assert!(AcceptedRmgStartStaging::for_rematch(&staging, Some("large500.yrm")).is_none());
+        assert!(
+            AcceptedRmgStartStaging::from_retained_staging(&staging, Some("large500.yrm"))
+                .is_none()
+        );
         let empty = crate::map::preview::ScenarioStartStaging::default();
-        assert!(AcceptedRmgStartStaging::for_rematch(&empty, Some(RANDMAP_SED_FILE)).is_none());
+        assert!(
+            AcceptedRmgStartStaging::from_retained_staging(&empty, Some(RANDMAP_SED_FILE))
+                .is_none()
+        );
     }
 
     #[test]

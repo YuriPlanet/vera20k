@@ -166,7 +166,7 @@ impl App {
         let rematch_staging = accepted_random_map
             .is_none()
             .then(|| {
-                crate::app::shell_random_map::AcceptedRmgStartStaging::for_rematch(
+                crate::app::shell_random_map::AcceptedRmgStartStaging::from_retained_staging(
                     &state.frontend.multiplayer_shell_runtime.start_staging(),
                     session.selected_map_file.as_deref(),
                 )
