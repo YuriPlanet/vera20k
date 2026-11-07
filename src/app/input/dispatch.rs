@@ -2044,7 +2044,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::AutoLoad => {}
         // A chord runs in the window owner before this dispatch; a binding on
         // a typing key reaches here, after the chat edit.
-        HotkeyCommand::FpsCounter | HotkeyCommand::LockCursor | HotkeyCommand::FullScreen => {
+        HotkeyCommand::PerformanceStats | HotkeyCommand::LockCursor | HotkeyCommand::FullScreen => {
             run_window_command(state, command)
         }
         HotkeyCommand::RenderInterpolation => {
@@ -2071,12 +2071,15 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
             let full_screen = state.platform.window.fullscreen().is_none();
             crate::app::App::set_full_screen(state, full_screen);
         }
-        HotkeyCommand::FpsCounter => {
-            let shown = state.renderer.fps_overlay.toggle();
+        HotkeyCommand::PerformanceStats => {
+            let shown = state.renderer.performance_overlay.toggle();
             if let Some(dialog) = state.frontend.options_dialog.as_mut() {
-                dialog.sync_fps_counter(shown);
+                dialog.sync_performance_stats(shown);
             }
-            log::info!("FPS overlay: {}", if shown { "shown" } else { "hidden" });
+            log::info!(
+                "Performance stats: {}",
+                if shown { "shown" } else { "hidden" }
+            );
         }
         _ => return,
     }

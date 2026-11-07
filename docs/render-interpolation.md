@@ -16,11 +16,10 @@ presentation state rather than adding interpolation components to simulation.
   as VERA's other extra options. It is saved as `RenderInterpolation=yes` or
   `RenderInterpolation=no` in `[VERA]` of the active writable `VERA.INI` profile.
   Options acceptance and normal exit save the choice; a map load keeps it.
-- Press **Ctrl+Alt+I** in a match to toggle
-  immediately; the FPS overlay displays `INTERP ON` or `INTERP OFF`. The overlay
-  is hidden by default: press **Ctrl+Alt+F** on any screen to show or hide it.
-  `INTERP BYPASS` means requested but bypassed (pause, exact capture, or unlimited
-  speed). In particular, turn game speed down from unlimited before comparing.
+- Press **Ctrl+Alt+I** in a match to toggle it immediately; Keyboard Options
+  can rebind the key. A requested interpolation is bypassed while paused,
+  during an exact capture and at unlimited speed, so turn game speed down from
+  unlimited before comparing.
 - Set `VERA20K_RENDER_INTERPOLATION=0` or `1` before launching to override the
   saved startup choice. The effective choice is reflected by the checkbox and
   later ordinary profile writes; unset/other values use the saved preference.
@@ -88,5 +87,5 @@ changed. The Ctrl+Alt+I chord is local presentation input, not a game command.
   window presentation; interpolation does not fix CPU spikes.
 
 Focused checks: `cargo test -p vera20k --lib --no-default-features render_interpolation`
-and the `fps_overlay` filter. The normal game build keeps its default features.
+and the `performance_overlay` filter. The normal game build keeps its default features.
 

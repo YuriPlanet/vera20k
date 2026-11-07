@@ -94,8 +94,8 @@ pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "VERA:WolTestService";
 pub(crate) const WOL_TEST_SERVICE_HELP: &str = "VERA:WolTestServiceHelp";
 pub(crate) const SKIP_INTRO_LABEL: &str = "VERA:SkipIntro";
 pub(crate) const SKIP_INTRO_HELP: &str = "VERA:SkipIntroHelp";
-pub(crate) const FPS_COUNTER_LABEL: &str = "VERA:FpsCounter";
-pub(crate) const FPS_COUNTER_HELP: &str = "VERA:FpsCounterHelp";
+pub(crate) const PERFORMANCE_STATS_LABEL: &str = "VERA:PerformanceStats";
+pub(crate) const PERFORMANCE_STATS_HELP: &str = "VERA:PerformanceStatsHelp";
 /// VERA's end-game switches, the pair of `[EndGameScreens]` presentation
 /// stages. The verdict is what the match shows where it is decided; the score
 /// page is the dialog after it. Each stage owns its picture *and* its music, so
@@ -603,7 +603,7 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's developer box: the window's FPS readout. Like Full Screen it
     /// shows and changes live state at once, and is never saved: the readout
     /// starts hidden at every launch.
-    FpsCounter,
+    PerformanceStats,
     /// VERA's developer box: the next launch skips `Init_Game`'s logo movie
     /// (`0x0052C5E2`); the splash and the first-run intro still play.
     SkipIntro,
@@ -668,7 +668,7 @@ pub(crate) enum LauncherOptionsEvent {
     HdRadarChanged(bool),
     SmoothSidebarChanged(bool),
     HdMapPreviewsChanged(bool),
-    FpsCounterChanged(bool),
+    PerformanceStatsChanged(bool),
     SkipIntroChanged(bool),
     CustomEndGameBannerChanged(bool),
     CustomEndGameScoreChanged(bool),
@@ -721,7 +721,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) shift_queue: bool,
     pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
-    pub(crate) fps_counter: bool,
+    pub(crate) performance_stats: bool,
     pub(crate) skip_intro: bool,
     /// The country's own end-game picture is allowed; see
     /// [`LauncherCheckboxId::CustomEndGameBanner`].
@@ -767,7 +767,7 @@ impl Default for LauncherOptionsValues {
             hd_map_previews: true,
             shift_queue: false,
             wol_test_service: false,
-            fps_counter: false,
+            performance_stats: false,
             skip_intro: false,
             custom_end_game_banner: false,
             custom_end_game_score: false,
@@ -1166,7 +1166,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::HdRadar => &mut self.values.hd_radar,
             LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
             LauncherCheckboxId::HdMapPreviews => &mut self.values.hd_map_previews,
-            LauncherCheckboxId::FpsCounter => &mut self.values.fps_counter,
+            LauncherCheckboxId::PerformanceStats => &mut self.values.performance_stats,
             LauncherCheckboxId::SkipIntro => &mut self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => &mut self.values.custom_end_game_score,
@@ -1216,9 +1216,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::HdMapPreviews => self
                 .pending_events
                 .push(LauncherOptionsEvent::HdMapPreviewsChanged(checked)),
-            LauncherCheckboxId::FpsCounter => self
+            LauncherCheckboxId::PerformanceStats => self
                 .pending_events
-                .push(LauncherOptionsEvent::FpsCounterChanged(checked)),
+                .push(LauncherOptionsEvent::PerformanceStatsChanged(checked)),
             LauncherCheckboxId::SkipIntro => self
                 .pending_events
                 .push(LauncherOptionsEvent::SkipIntroChanged(checked)),
@@ -1244,8 +1244,8 @@ impl OptionsDialogState {
     }
 
     /// Follow Ctrl+Alt+F while the page is open, so the box shows the readout.
-    pub(crate) fn sync_fps_counter(&mut self, shown: bool) {
-        self.values.fps_counter = shown;
+    pub(crate) fn sync_performance_stats(&mut self, shown: bool) {
+        self.values.performance_stats = shown;
     }
 
     /// Like gamemd's combo owner `0x00617250`, a press emits GUIComboOpen
@@ -1473,7 +1473,7 @@ impl Category {
             // Internet for stand-in servers, so only `[VERA] WolTestService=`
             // turns it on.
             Self::Developer => &[
-                Setting::Checkbox(Check::FpsCounter),
+                Setting::Checkbox(Check::PerformanceStats),
                 Setting::Checkbox(Check::SkipIntro),
             ],
         }
@@ -2144,7 +2144,7 @@ mod tests {
                 Check::SmoothSidebar,
                 Check::HdMapPreviews,
                 Check::ShiftQueue,
-                Check::FpsCounter,
+                Check::PerformanceStats,
                 Check::SkipIntro,
                 Check::CustomEndGameBanner,
                 Check::CustomEndGameScore,

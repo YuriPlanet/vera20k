@@ -14,7 +14,7 @@
 //!
 //! wgpu-core 30 records passes and encodes them at `CommandEncoder::finish`
 //! (`command/mod.rs` `encode_commands`), so each submission here also carries
-//! the driver encoding of the passes before it. The FPS panel counts that
+//! the driver encoding of the passes before it. The performance panel counts that
 //! time as handing the frame to the driver, not as recording draw calls.
 
 use crate::util::time::{Duration, Instant};
@@ -27,6 +27,9 @@ const CLOSED_PASSES_PER_SUBMISSION: usize = 128;
 pub(super) struct PassSubmission {
     device: wgpu::Device,
     queue: wgpu::Queue,
+    /// Marks each split-off command buffer's span for the GPU time of the
+    /// frame; times nothing until the frame owner hands it the GPU's timer.
+    pub(super) timer: crate::render::gpu_timer::GpuTimer,
     pending_passes: usize,
     submissions: usize,
     /// Wall time spent finishing and submitting this frame's bounded batches.
@@ -41,6 +44,7 @@ impl PassSubmission {
         Self {
             device: device.clone(),
             queue: queue.clone(),
+            timer: Default::default(),
             pending_passes: 0,
             submissions: 0,
             submit_time: Duration::ZERO,
@@ -93,7 +97,9 @@ impl PassSubmission {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Native object replay continuation"),
             });
-        let completed = std::mem::replace(encoder, next);
+        let mut completed = std::mem::replace(encoder, next);
+        self.timer.end(&mut completed);
+        self.timer.begin(encoder);
         let started = Instant::now();
         self.queue.submit([completed.finish()]);
         self.submit_time += started.elapsed();

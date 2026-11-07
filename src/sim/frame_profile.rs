@@ -1,5 +1,5 @@
 //! Per-match frame-time accounting for the end-of-match report and the
-//! in-game FPS panel's Most CPU row.
+//! in-game performance panel's Most CPU row.
 //!
 //! The dashboard reports one tick cost and one frame rate, but a report that
 //! answers "where did the time go" needs the frame split into phases. This
@@ -227,7 +227,7 @@ impl FrameProfile {
     }
 
     /// Per-phase nanoseconds and frames since the last reset. A reader that
-    /// diffs two samples (the FPS panel) sees a reset as fewer frames.
+    /// diffs two samples (the performance panel) sees a reset as fewer frames.
     pub fn totals_ns(&self) -> (u64, [u128; PHASE_COUNT]) {
         (self.frames, self.spans_ns)
     }
