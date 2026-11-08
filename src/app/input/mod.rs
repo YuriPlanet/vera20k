@@ -11,6 +11,7 @@ pub(crate) mod commands;
 pub(crate) mod coop_score;
 pub(crate) mod context_order;
 pub(crate) mod cursor;
+pub(crate) mod hardware_cursor;
 pub(crate) mod connection;
 pub(crate) mod diplomacy;
 pub(crate) mod restate;

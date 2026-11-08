@@ -25,7 +25,7 @@ use std::collections::HashMap;
 use super::{
     CURSOR_TIMER_UNIT_MS, CursorHotspot, CursorId, PlanningBadge, SoftwareCursor,
     SoftwareCursorFrame, SoftwareCursorSequence, build_cursor_frame, frame_to_canvas_rgba,
-    load_mouse_shape, resolve_hotspot,
+    load_mouse_shape, next_art_id, resolve_hotspot,
 };
 use crate::assets::asset_manager::AssetManager;
 use crate::render::batch::BatchRenderer;
@@ -255,6 +255,9 @@ pub(crate) fn build_ares_software_cursor(
         sequences,
         planning_badges,
         ares: true,
+        shp,
+        palette,
+        art_id: next_art_id(),
     })
 }
 

@@ -652,18 +652,23 @@ impl App {
     /// The one owner of the window's own cursor after the startup splash, set
     /// after each frame's draw. gamemd's WWMouse constructor (`0x007B8730`)
     /// hides it with `ShowCursor(FALSE)` (`0x007B88BA`) and the game draws
-    /// mouse.shp itself, so it shows only where VERA draws no cursor but the
-    /// player points: over a status screen; over the battlefield where
-    /// `use_software_cursor` turns mouse.shp off (the debug pause, whose
-    /// developer overlay takes the pointer, or a missing mouse.sha) while
+    /// mouse.shp itself; VERA has the window system draw that shape
+    /// (`input::hardware_cursor`). The system arrow shows only where VERA
+    /// draws no cursor but the player points: over a status screen; over the
+    /// battlefield where `use_software_cursor` turns mouse.shp off (the debug
+    /// pause, whose developer overlay takes the pointer, or a missing mouse.sha) while
     /// WWMouse's depth is visible; wherever the pointer left the client area,
     /// because `DefWindowProc` answers a non-client `WM_SETCURSOR` with the
     /// system arrow and mouse.shp has no title-bar art, or the window is not
     /// active (see `PlatformState::owns_pointer`); and elsewhere only
     /// without mouse.sha, which the shell pages draw whenever it loaded.
-    fn show_os_cursor_only_without_game_cursor(state: &mut AppState, battlefield_drawn: bool) {
+    fn show_os_cursor_only_without_game_cursor(
+        state: &mut AppState,
+        event_loop: &ActiveEventLoop,
+        battlefield_drawn: bool,
+    ) {
         let status_screen_drawn = std::mem::take(&mut state.frontend.status_screen_drawn);
-        let visible = !state.platform.owns_pointer()
+        let arrow = !state.platform.owns_pointer()
             || if state.platform.cursor_confined {
                 // Confined: the game owns the pointer through its
                 // software cursor, so keep the OS cursor hidden everywhere the game
@@ -689,17 +694,7 @@ impl App {
                             .is_none()
                     }
             };
-        // Asking winit is not free on Windows: `set_cursor_visible` runs
-        // `refresh_os_cursor`, which clears any OS cursor clip winit does not own
-        // itself, so repeating the same answer every frame would tear
-        // `cursor_confined` down once per frame and let the pointer slip out of
-        // the window between two re-asserts. Hand over only a transition, then put
-        // the clip straight back.
-        if state.platform.os_cursor_visible == Some(visible) {
-            return;
-        }
-        crate::app::input::cursor::set_os_cursor_visible(state, visible);
-        crate::app::input::cursor::reassert_cursor_confinement(state);
+        crate::app::input::hardware_cursor::show(state, event_loop, arrow);
     }
 
     /// Dispatch rendering based on current GameScreen state.
@@ -716,7 +711,16 @@ impl App {
             .renderer
             .bit_font
             .begin_frame(&state.renderer.gpu.device, &state.renderer.batch_renderer);
+        state.platform.hardware_cursor.set_frames_read_back(
+            shell_capture.is_some()
+                || hidden_run.is_some()
+                || state
+                    .match_state
+                    .match_diagnostics
+                    .playback_capture_requested(),
+        );
         if let Some(presented) = crate::app::persistence::commands::pump_saved_game_load(state) {
+            crate::app::input::hardware_cursor::hide_game_cursor(state);
             return Ok(if presented {
                 FrameRenderOutcome::Presented
             } else {
@@ -1429,7 +1433,11 @@ impl App {
             // central primary-client rectangle.
             apply_screen_shake(state, &mut encoder, &output.texture, offset_px);
         }
-        Self::show_os_cursor_only_without_game_cursor(state, game_render_output.is_some());
+        Self::show_os_cursor_only_without_game_cursor(
+            state,
+            event_loop,
+            game_render_output.is_some(),
+        );
 
         let entry_sequence_identity = match shell_capture.as_deref_mut() {
             Some(session) if session.is_entry_sequence() => {

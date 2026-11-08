@@ -197,7 +197,7 @@ winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSCursor", "NSImage", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSView", "NSWindow"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSLocale", "NSString", "NSURL"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSGeometry", "NSLocale", "NSString", "NSURL", "objc2-core-foundation"] }
 
 # --- Windows program icon and version details ---
 # build.rs compiles them into vera20k.exe with the Windows SDK's resource
