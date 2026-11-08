@@ -1579,6 +1579,9 @@ pub struct ObjectType {
     /// AircraftType+DFC, Carryall reader41CC9B..41CCC7; ctor41C8D0=false.
     /// Aircraft's landing-base query41B6A0 combines it with live cargo/radio.
     pub(crate) carryall: bool,
+    /// AircraftType's retained ART Trailer/SpawnDelay (41CCEF..41CD4E),
+    /// projected only by the ordered Rules process owner.
+    aircraft_trailer: crate::rules::aircraft_trailer::AircraftTrailer,
     /// `JumpJet=` in rules.ini — `TechnoTypeClass+0xD94`, a sibling of the
     /// nine parameters below rather than a gate on them.
     pub jumpjet: bool,
@@ -2782,6 +2785,18 @@ impl ObjectType {
         bounty: &crate::rules::ares_bounty::BountyTypeRules,
     ) {
         self.bounty = bounty.clone();
+    }
+
+    /// AircraftType's retained fixed-ART Trailer and signed SpawnDelay.
+    pub fn aircraft_trailer(&self) -> &crate::rules::aircraft_trailer::AircraftTrailer {
+        &self.aircraft_trailer
+    }
+
+    pub(crate) fn project_aircraft_trailer(
+        &mut self,
+        trailer: &crate::rules::aircraft_trailer::AircraftTrailer,
+    ) {
+        self.aircraft_trailer.clone_from(trailer);
     }
 
     #[cfg(feature = "ares")]
@@ -4628,6 +4643,7 @@ impl ObjectType {
             fly_back: section.read_bool("FlyBack", false),
             landable: section.read_bool("Landable", false),
             carryall: section.read_bool("Carryall", false),
+            aircraft_trailer: Default::default(),
             // gamemd-derived: `TechnoTypeClass::ReadINI` reads `JumpJet` into
             // its own boolean at `+0xD94` (`0x007151EC PUSH 0x843640` ->
             // `0x00715200 MOV [EBP+0xD94],AL`), the last member of the same
