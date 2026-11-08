@@ -64,14 +64,14 @@ pub(crate) fn building_speed_type(ty: &ObjectType) -> Option<SpeedType> {
 /// where it is marked, and its locomotor's Mark_All_Occupation_Bits(0)
 /// clears the bits its track holds, the next Cell of a driving unit
 /// included. The test reads that state instead of writing it.
-pub(crate) struct LiftedUnit {
+pub struct LiftedUnit {
     id: u64,
     /// Cells whose ground-plane vehicle bit the lift clears.
     ground_cells: Vec<(u16, u16)>,
 }
 
 impl LiftedUnit {
-    pub(crate) fn read(sim: &Simulation, id: u64) -> Self {
+    pub fn read(sim: &Simulation, id: u64) -> Self {
         let ground_cells = sim
             .unit_mark_up_raw_cleared(id)
             .into_iter()
@@ -100,7 +100,7 @@ impl LiftedUnit {
 /// `lifted` reads the map as it stands while that Unit is lifted for the
 /// test ([`LiftedUnit`]).
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn can_place_building_at(
+pub fn can_place_building_at(
     sim: &Simulation,
     rules: &RuleSet,
     registry: Option<&OverlayTypeRegistry>,

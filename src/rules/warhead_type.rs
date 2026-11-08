@@ -74,18 +74,6 @@ pub struct WarheadType {
     /// at `0x0075d47c`, key string `0x00847e54`).
     pub delay_kill_at_max_f64: f64,
     /// Whether this warhead can damage walls/bridges (Wall=yes).
-    /// `Sparky=`, `Bullets=`, `Deform=` and `DeformThreshhold=` are retained
-    /// from their WarheadTypeClass ReadINI fields; their gameplay effects are
-    /// outside these state-retention issues. `Sparky` has one consumer:
-    /// `BuildingClass::ReceiveDamage @ 0x00442230` tests it for each
-    /// foundation cell of its NowYellow/NowRed loop (`0x00442785`) and, by
-    /// Scenario `RandomRanged` draws (`0x004427C0`, `0x00442804`), may build
-    /// one of Rules' `OnFire` anims (`+0xB78`) there. That arm is dormant:
-    /// the constructor stores `false` (`0x0075CF77`), and all 28 stock
-    /// `Sparky=` entries are `no`, including `[Fire]` and `[Fire2]`. The
-    /// `Apply_area_damage @ 0x00489280` helper does not read the retained
-    /// metadata above.
-    ///
     /// The field itself is `WarheadTypeClass+0x144` (ReadINI `0x0075d508`,
     /// key string `0x0081ac58`).
     pub wall: bool,
@@ -94,11 +82,12 @@ pub struct WarheadType {
     /// `WarheadTypeClass+0x147` (ReadINI `0x0075d556`, key string
     /// `0x00847e00`).
     pub wood: bool,
-    /// `Sparky=` (`WarheadTypeClass+0x14A`, constructor false at
-    /// `0x0075CF77`): Ares 3.0's TerrainClass_ReceiveDamage_ForestFire
-    /// (1004F4E0, hook 0x71B99E) sets a flammable tree it hurts alight
-    /// (`sim::terrain_fire`). Stock data sets it on no warhead.
-    #[cfg(feature = "ares")]
+    /// BuildingReceiveDamage442785 tests +14A for the per-foundation-cell
+    /// OnFire loop after NowYellow/NowRed. WarheadCtor75CF77 starts false;
+    /// ReadINI75D576..75D58A and Save75E2D1/Load75E0F0 retain the byte.
+    /// The ordered Rules processor owns its current-default read. Ares 3.0's
+    /// TerrainClass_ReceiveDamage_ForestFire (1004F4E0, hook 0x71B99E) also
+    /// sets a flammable tree it hurts alight (`sim::terrain_fire`).
     pub sparky: bool,
     /// `Fire=` -> `WarheadTypeClass+0x14C` (ReadINI `0x0075d5f2`, key string
     /// `0x00836f04`) over the constructor's 0 (`0x0075cf83`). Techno
@@ -147,6 +136,16 @@ pub struct WarheadType {
     /// @0x005276D0 at ReadINI @0x0075D7A7 stores the signed value at +0x100;
     /// constructor default is 0 (`0x0075CEF8`) and there is no post-read clamp.
     pub deform_threshold: i32,
+    /// VERA's `DeformDepth=`, which gamemd does not read: how many levels one
+    /// dent sinks the middle of its crater, as deep as the open ground around
+    /// it allows. A signed int, default 1 (Tiberian Sun's single level);
+    /// terrain deformation reads it as `1..=16`.
+    pub deform_depth: i32,
+    /// VERA's `DeformRadius=`, which gamemd does not read: how many cells
+    /// around the hit cell one dent sinks, deepest in the middle. A signed
+    /// int, default 0 (Tiberian Sun's single cell); terrain deformation reads
+    /// it as `0..=11`.
+    pub deform_radius: i32,
     /// `Bullets=` at +0x17A, ReadBool @0x005295F0 called from ReadINI
     /// @0x0075DA01; constructor default false (`0x0075D04A`).
     pub bullets: bool,
@@ -643,8 +642,7 @@ impl WarheadType {
             delay_kill_at_max_f64,
             wall: section.read_bool("Wall", false),
             wood: section.read_bool("Wood", false),
-            #[cfg(feature = "ares")]
-            sparky: section.read_bool("Sparky", false),
+            sparky: false,
             fire: section.read_bool("Fire", false),
             penetrates_bunker: section.read_bool("PenetratesBunker", false),
             affects_allies: section.read_bool("AffectsAllies", true),
@@ -654,13 +652,15 @@ impl WarheadType {
             affects_enemies: section.read_bool("AffectsEnemies", true),
             affects_neutral: section.read_bool("AffectsNeutral", true),
             psychic_damage: section.read_bool("PsychicDamage", false),
-            // Conventional, AnimList and EMEffect keep the constructor's false
-            // and empty values (`0x0075CF89`, `0x0075CFB3`): the ordered Rules
-            // processor owns those reads and RuleSet publishes its result.
+            // Conventional, Sparky, AnimList and EMEffect keep constructor
+            // defaults here: the ordered Rules processor owns those reads
+            // and RuleSet publishes its result.
             anim_list: Vec::new(),
             inf_death: section.read_int("InfDeath", Self::DEFAULT_INF_DEATH),
             deform_f64: section.read_double("Deform", 0.0),
             deform_threshold: section.read_int("DeformThreshhold", 0),
+            deform_depth: section.read_int("DeformDepth", 1),
+            deform_radius: section.read_int("DeformRadius", 0),
             bullets: section.read_bool("Bullets", false),
             veinhole: section.read_bool("Veinhole", false),
             // ReadInt current defaults fold each projected Rules pass; there

@@ -35,7 +35,7 @@ const MAX_ANCHOR_DRAWS: i32 = 200;
 /// A resolved neutral tech building: its type name plus foundation footprint
 /// cell offsets (NW-anchor-relative). The footprint is the base rectangle the
 /// original walks from `type+0xDFC`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TechType {
     pub name: String,
     pub footprint: Vec<(i16, i16)>,

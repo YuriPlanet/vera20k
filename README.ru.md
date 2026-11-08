@@ -122,6 +122,8 @@ Ghidra, затем переносят его поведение на Rust и п�
 Настройки звука, графики и управления сохраняются в `VERA.INI`. Правила игры задаются
 настройками лобби, модами или картами.
 
+Как сделать собственный мод, объясняется в [руководстве по созданию модов](docs/modding.md).
+
 ## Поддержка проекта
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Поддержать VERA20K через PayPal" height="23"></a>
@@ -154,6 +156,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## Документация
 
 - [Предварительная версия на WebAssembly](docs/wasm.md): необязательная однопользовательская сборка, которая работает в браузере.
+- [Руководство по созданию модов](docs/modding.md): что моды могут и чего не могут и чем VERA20K отличается от оригинальной игры.
 - [Профили INI](docs/ini-roots.md): выбор файлов правил, графики и ИИ.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) и [NPatch](docs/npatch.md): поддержка расширений и её ограничения.
 - [Обзор движка](docs/index.md): структура кода и то, как части движка работают вместе.

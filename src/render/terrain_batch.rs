@@ -79,7 +79,7 @@ pub(crate) struct TerrainBatchStats {
     pub pieces: usize,
     /// Independent snapshot/commit transactions, including read-only chunks.
     pub waves: usize,
-    /// Actual render passes; read-only reduction uses four per transaction.
+    /// Actual render passes.
     pub passes: usize,
     pub tile_dependencies: usize,
 }

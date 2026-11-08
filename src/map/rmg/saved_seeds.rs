@@ -337,6 +337,7 @@ mod tests {
             tiberium_layout: 19,
             vegetation: 29,
             urban_presence: 13,
+            urban_enabled: false,
             width: 2,
             height: 1,
             accessibility: 89,

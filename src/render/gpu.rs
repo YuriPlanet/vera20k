@@ -35,9 +35,9 @@ mod web_present;
 pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
 
 /// True on the browser's WebGL2 fallback device, which has no storage buffers,
-/// compute, fragment atomics or reinterpreting texture views. Renderers that
-/// use those select render-target equivalents there; every other device keeps
-/// its ordinary path. Always false outside the browser build.
+/// compute or reinterpreting texture views. Renderers that use those select
+/// render-target equivalents there; every other device keeps its ordinary path.
+/// Always false outside the browser build.
 pub(crate) fn webgl_fallback(device: &wgpu::Device) -> bool {
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     {
@@ -377,16 +377,17 @@ impl GpuContext {
                 downlevel.flags
             );
         }
-        // TerrainDrawRenderer reduces ordered read-only Bullet destinations
-        // with fragment atomics. Reject an insufficient downlevel adapter here
-        // rather than panicking later during render-pipeline validation.
+        // The packed sprite resolve reads its compute results through a
+        // writable storage binding (terrain_packed.rs). Reject an insufficient
+        // downlevel adapter here rather than panicking later during bind group
+        // layout validation.
         if !webgl
             && !downlevel
                 .flags
                 .contains(wgpu::DownlevelFlags::FRAGMENT_WRITABLE_STORAGE)
         {
             bail!(
-                "native projectile drawing requires fragment-writable storage, \
+                "native sprite drawing requires fragment-writable storage, \
                  adapter downlevel flags are {:?}",
                 downlevel.flags
             );
@@ -617,7 +618,10 @@ impl GpuContext {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         texture.create_view(&Default::default())

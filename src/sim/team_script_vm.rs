@@ -1005,7 +1005,7 @@ impl TeamScriptVm {
     }
 
     /// The TaskForce of TeamType `team_type_id`, if it resolved.
-    pub(crate) fn task_force_of(
+    pub fn task_force_of(
         &self,
         team_type_id: InternedId,
     ) -> Option<&TeamTaskForceDefinition> {

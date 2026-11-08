@@ -267,6 +267,31 @@ pub(crate) fn lat_fixed_tile_live(
     tile
 }
 
+/// Every tile [`lat_fixed_tile`] and [`slope_fixed_tile`] can choose: each
+/// enabled ground's base and LAT tiles and both ramp ranges, unordered.
+pub(crate) fn fixup_tiles(lat_config: &LatConfig, slope_config: SlopeFixupConfig) -> Vec<i32> {
+    let mut tiles = Vec::new();
+    for ground in lat_config
+        .grounds
+        .iter()
+        .filter(|ground| ground.is_enabled())
+    {
+        tiles.push(ground.base_tile);
+        if ground.lat_base != -1 {
+            tiles.extend(ground.lat_base + 1..=ground.lat_base + LAT_LAST_OFFSET);
+        }
+    }
+    for (base, last_offset) in [
+        (slope_config.ramp_base, RAMP_BASE_LAST_OFFSET),
+        (slope_config.ramp_smooth, RAMP_SMOOTH_LAST_OFFSET),
+    ] {
+        if base != -1 {
+            tiles.extend(base..=base + last_offset);
+        }
+    }
+    tiles
+}
+
 fn ramp_range_contains(tile: i32, base: i32, last_offset: i32) -> bool {
     let end = if base == -1 { -1 } else { base + last_offset };
     base <= tile && tile <= end

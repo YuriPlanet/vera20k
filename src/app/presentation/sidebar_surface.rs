@@ -55,6 +55,63 @@ pub(crate) struct SidebarSurface {
     text_camera_buffer: wgpu::Buffer,
     text_camera: wgpu::BindGroup,
     window: MaskedCopy,
+    /// The UI camera [`Self::write_cameras`] last wrote.
+    written_ui: Option<CameraUniform>,
+    /// What the surfaces were last drawn from ([`Self::redraw_for`]).
+    drawn: Option<(SidebarPicture, SidebarFrame, CameraUniform)>,
+}
+
+/// Every instance stream the sidebar's surfaces draw (`draw_passes`).
+pub(crate) const SIDEBAR_STREAMS: [&str; 16] = [
+    "sidebar_chrome",
+    "sidebar_cameo",
+    "sidebar_cameo_hover",
+    "sidebar_unavailable",
+    "sidebar_flash",
+    "sidebar_queue_overlay",
+    "sidebar_queue_text",
+    "sidebar_label_overlay",
+    "sidebar_label_text",
+    "sidebar_gclock",
+    "sidebar_cameo_overlay",
+    "sidebar_text",
+    "radar_anim",
+    "minimap",
+    "radar_content_boundary",
+    "command_bar",
+];
+
+/// The stream of the radar's viewport outline, the one that moves with the
+/// camera on the sidebar.
+pub(crate) const VIEWPORT_OUTLINE: &str = "viewport_rect";
+
+/// Every input of the sidebar's draw besides its frame and camera. Equal
+/// inputs draw equal pixels, so the surfaces already hold them.
+#[derive(PartialEq)]
+pub(crate) struct SidebarPicture {
+    /// The generation of each instance stream it draws.
+    pub(crate) streams: Vec<u64>,
+    /// The texture of each layer that has one.
+    pub(crate) textures: Vec<Option<wgpu::BindGroup>>,
+    /// The generations of the minimap's and the housing's pictures.
+    pub(crate) radar: [u64; 2],
+    /// The generation of the [`VIEWPORT_OUTLINE`], and whether it lies
+    /// wholly on the minimap's quad.
+    pub(crate) outline: u64,
+    pub(crate) outline_on_minimap: bool,
+    pub(crate) text_in_surface: bool,
+}
+
+/// How much of the surfaces a frame draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SidebarRedraw {
+    /// They already hold the picture.
+    Nothing,
+    /// Only the minimap's composition, or an outline that stays on it,
+    /// changed. The quad is opaque, so only its pixels change, whatever the
+    /// surface held there.
+    Minimap,
+    Whole,
 }
 
 /// One part's surface, and the camera the batch pipelines draw into it with.
@@ -102,6 +159,8 @@ impl SidebarSurface {
             text_camera_buffer,
             text_camera,
             window,
+            written_ui: None,
+            drawn: None,
         };
         surface.place(queue);
         surface
@@ -125,7 +184,74 @@ impl SidebarSurface {
             .resize(device, frame.surface_draw_size());
         self.bar.surface.resize(device, frame.bar_draw_size());
         self.frame = frame;
+        self.written_ui = None;
         self.place(queue);
+    }
+
+    /// What this frame must draw for `picture`, recording it as the one the
+    /// surfaces will hold.
+    pub(crate) fn redraw_for(&mut self, picture: SidebarPicture) -> SidebarRedraw {
+        // Scrolling moves the streams and their camera together.
+        let camera = CameraUniform {
+            camera_pos: [0.0; 2],
+            ..self.column_camera
+        };
+        let inputs = (picture, self.frame, camera);
+        let redraw = match self.drawn.as_mut() {
+            Some(drawn) if *drawn == inputs => SidebarRedraw::Nothing,
+            Some(drawn) => {
+                drawn.0.radar[0] = inputs.0.radar[0];
+                // The quad repaints an outline that was and stays on it.
+                if drawn.0.outline_on_minimap && inputs.0.outline_on_minimap {
+                    drawn.0.outline = inputs.0.outline;
+                }
+                if *drawn == inputs {
+                    SidebarRedraw::Minimap
+                } else {
+                    SidebarRedraw::Whole
+                }
+            }
+            None => SidebarRedraw::Whole,
+        };
+        self.drawn = Some(inputs);
+        redraw
+    }
+
+    /// The column's pixels under `quad`, as a scissor rect; None if it is off
+    /// the surface.
+    pub(crate) fn column_area(
+        &self,
+        quad: &crate::render::batch::SpriteInstance,
+    ) -> Option<[u32; 4]> {
+        let origin = self.column_camera.camera_pos;
+        let scale = self.frame.draw_scale() as f32;
+        let left = (quad.position[0] - origin[0]) * scale;
+        let top = (quad.position[1] - origin[1]) * scale;
+        let (width, height) = self.frame.surface_draw_size();
+        // Float casts saturate, so a quad past the corner clamps to it.
+        let right = ((left + quad.size[0] * scale).ceil() as u32).min(width);
+        let bottom = ((top + quad.size[1] * scale).ceil() as u32).min(height);
+        let (left, top) = (
+            (left.floor() as u32).min(width),
+            (top.floor() as u32).min(height),
+        );
+        (right > left && bottom > top).then_some([left, top, right - left, bottom - top])
+    }
+
+    /// Whether all of `quads` lie within the column pixels `area`.
+    pub(crate) fn quads_within(
+        &self,
+        area: [u32; 4],
+        quads: &[crate::render::batch::SpriteInstance],
+    ) -> bool {
+        quads.iter().all(|quad| {
+            self.column_area(quad).is_some_and(|[x, y, width, height]| {
+                x >= area[0]
+                    && y >= area[1]
+                    && x + width <= area[0] + area[2]
+                    && y + height <= area[1] + area[3]
+            })
+        })
     }
 
     fn place(&self, queue: &wgpu::Queue) {
@@ -145,6 +271,10 @@ impl SidebarSurface {
     /// origin. The bar's corner also shifts the camera row `vs_depth` reads;
     /// that moves all of the bar's layers alike, so their order stands.
     pub(crate) fn write_cameras(&mut self, queue: &wgpu::Queue, ui: CameraUniform) {
+        if self.written_ui == Some(ui) {
+            return;
+        }
+        self.written_ui = Some(ui);
         let frame = self.frame;
         for (part, size, corner) in [
             (
@@ -264,7 +394,12 @@ impl SidebarSurface {
         encoder: &'e mut wgpu::CommandEncoder,
         clear: wgpu::Color,
     ) -> wgpu::RenderPass<'e> {
-        self.begin_surface_pass(part, encoder, Some(clear))
+        self.begin_surface_pass(
+            part,
+            encoder,
+            wgpu::LoadOp::Clear(clear),
+            wgpu::LoadOp::Clear(crate::render::native_z::STORED_DEPTH_CLEAR),
+        )
     }
 
     pub(crate) fn begin_load_pass<'e>(
@@ -272,14 +407,32 @@ impl SidebarSurface {
         part: SidebarPart,
         encoder: &'e mut wgpu::CommandEncoder,
     ) -> wgpu::RenderPass<'e> {
-        self.begin_surface_pass(part, encoder, None)
+        self.begin_surface_pass(part, encoder, wgpu::LoadOp::Load, wgpu::LoadOp::Load)
+    }
+
+    /// Begin the pass that redraws `area` of the column in place: the rest of
+    /// its colour stays, and depth restarts for the layers drawn there.
+    pub(crate) fn begin_area_pass<'e>(
+        &self,
+        encoder: &'e mut wgpu::CommandEncoder,
+        [x, y, width, height]: [u32; 4],
+    ) -> wgpu::RenderPass<'e> {
+        let mut pass = self.begin_surface_pass(
+            SidebarPart::Column,
+            encoder,
+            wgpu::LoadOp::Load,
+            wgpu::LoadOp::Clear(crate::render::native_z::STORED_DEPTH_CLEAR),
+        );
+        pass.set_scissor_rect(x, y, width, height);
+        pass
     }
 
     fn begin_surface_pass<'e>(
         &self,
         part: SidebarPart,
         encoder: &'e mut wgpu::CommandEncoder,
-        clear: Option<wgpu::Color>,
+        color: wgpu::LoadOp<wgpu::Color>,
+        depth: wgpu::LoadOp<f32>,
     ) -> wgpu::RenderPass<'e> {
         let surface = &self.part(part).surface;
         encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -289,16 +442,14 @@ impl SidebarSurface {
                 resolve_target: None,
                 depth_slice: None,
                 ops: wgpu::Operations {
-                    load: clear.map_or(wgpu::LoadOp::Load, wgpu::LoadOp::Clear),
+                    load: color,
                     store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: surface.depth_view(),
                 depth_ops: Some(wgpu::Operations {
-                    load: clear.map_or(wgpu::LoadOp::Load, |_| {
-                        wgpu::LoadOp::Clear(crate::render::native_z::STORED_DEPTH_CLEAR)
-                    }),
+                    load: depth,
                     // Depth orders the part's own layers only.
                     store: wgpu::StoreOp::Store,
                 }),
@@ -1200,5 +1351,72 @@ mod tests {
             surface.prepare_packed(&gpu.device, &renderer);
             assert!(surface.packed.is_some());
         }
+    }
+
+    /// Only the minimap's composition changing redraws only its quad, in the
+    /// surface's own pixels.
+    #[test]
+    #[ignore = "requires a wgpu adapter; makes the production sidebar surface"]
+    fn a_minimap_composition_change_redraws_only_its_quad() {
+        const SRGB: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
+        let gpu = gpu();
+        let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, SRGB);
+        let frame = SidebarFrame::native(400, 300);
+        let mut surface = SidebarSurface::new(&gpu.device, &gpu.queue, SRGB, &batch, frame);
+        let picture = |stream, minimap, housing, outline, outline_on_minimap| SidebarPicture {
+            streams: vec![stream],
+            textures: Vec::new(),
+            radar: [minimap, housing],
+            outline,
+            outline_on_minimap,
+            text_in_surface: true,
+        };
+        surface.write_cameras(&gpu.queue, batch.ui_camera_uniform());
+        for (stream, minimap, housing, outline, on_minimap, redraw) in [
+            (1, 1, 1, 1, true, SidebarRedraw::Whole),
+            (1, 1, 1, 1, true, SidebarRedraw::Nothing),
+            (1, 2, 1, 1, true, SidebarRedraw::Minimap),
+            (1, 2, 1, 2, true, SidebarRedraw::Minimap),
+            (1, 2, 1, 3, false, SidebarRedraw::Whole),
+            (1, 2, 1, 4, false, SidebarRedraw::Whole),
+            (1, 2, 2, 4, false, SidebarRedraw::Whole),
+            (2, 3, 2, 4, false, SidebarRedraw::Whole),
+        ] {
+            assert_eq!(
+                surface.redraw_for(picture(stream, minimap, housing, outline, on_minimap)),
+                redraw
+            );
+        }
+        // The camera's own scroll moves nothing on the surface.
+        let scrolled = CameraUniform {
+            camera_pos: [50.0, 25.0],
+            ..batch.ui_camera_uniform()
+        };
+        surface.write_cameras(&gpu.queue, scrolled);
+        assert_eq!(
+            surface.redraw_for(picture(2, 3, 2, 4, false)),
+            SidebarRedraw::Nothing
+        );
+
+        let origin = surface.column_camera.camera_pos;
+        let quad = |x, y| crate::render::batch::SpriteInstance {
+            position: [origin[0] + x, origin[1] + y],
+            size: [140.0, 108.0],
+            ..Default::default()
+        };
+        assert_eq!(
+            surface.column_area(&quad(16.0, 49.0)),
+            Some([16, 49, 140, 108])
+        );
+        assert_eq!(
+            surface.column_area(&quad(16.0, 250.0)),
+            Some([16, 250, 140, 50])
+        );
+        assert_eq!(surface.column_area(&quad(16.0, 300.0)), None);
+        surface.set_frame(&gpu.device, &gpu.queue, frame.in_window(300, false));
+        assert_eq!(
+            surface.column_area(&quad(16.0, 49.0)),
+            Some([48, 147, 420, 324])
+        );
     }
 }

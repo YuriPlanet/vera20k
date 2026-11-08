@@ -251,6 +251,9 @@ pub(crate) struct WolAccountForm {
     /// The status line: what to do, what the form waits for or the lobby's
     /// refusal.
     pub(crate) status: String,
+    /// The VERA text `status` was drawn from, so a language reload resolves it
+    /// again; `None` when the lobby supplied the message itself.
+    status_text: Option<StatusText>,
     /// A request is out; OK waits for its answer.
     pub(crate) busy: bool,
     /// Login's Remember password box: whether it is ticked.
@@ -272,8 +275,47 @@ impl std::fmt::Debug for WolAccountForm {
     }
 }
 
+/// One status line VERA draws itself: its language-file key and the values
+/// filled into it. Kept beside the resolved text so a language reload can
+/// resolve it again without losing a lobby message, which is stored as
+/// written instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StatusText {
+    key: &'static str,
+    values: Vec<(&'static str, String)>,
+}
+
+impl StatusText {
+    fn new(key: &'static str) -> Self {
+        Self {
+            key,
+            values: Vec::new(),
+        }
+    }
+
+    fn with(key: &'static str, values: &[(&'static str, &str)]) -> Self {
+        Self {
+            key,
+            values: values
+                .iter()
+                .map(|(name, value)| (*name, (*value).to_owned()))
+                .collect(),
+        }
+    }
+
+    fn resolve(&self) -> String {
+        let values: Vec<(&str, &dyn std::fmt::Display)> = self
+            .values
+            .iter()
+            .map(|(name, value)| (*name, value as &dyn std::fmt::Display))
+            .collect();
+        tr_fill(self.key, &values)
+    }
+}
+
 impl WolAccountForm {
-    fn with_fields(kind: FormKind, fields: Vec<AccountField>, status: String) -> Self {
+    fn with_fields(kind: FormKind, fields: Vec<AccountField>, status: StatusText) -> Self {
+        let resolved = status.resolve();
         let mut form = Self {
             kind,
             fields,
@@ -282,7 +324,8 @@ impl WolAccountForm {
             name: String::new(),
             email: String::new(),
             password: String::new(),
-            status,
+            status: resolved,
+            status_text: Some(status),
             busy: false,
             remember: None,
             remembered: false,
@@ -313,7 +356,7 @@ impl WolAccountForm {
                 AccountField::new(FieldKind::Name, "VERA:Username"),
                 AccountField::new(FieldKind::Password, "VERA:Password"),
             ],
-            String::new(),
+            StatusText::new("VERA:SignInPrompt"),
         );
         form.remember = Some(false);
         form.prefill_name(name);
@@ -324,16 +367,40 @@ impl WolAccountForm {
             form.remembered = true;
             form.remember = Some(true);
         }
-        form.status = form.sign_in_status();
+        let status = form.sign_in_status();
+        form.set_status(status);
         form
     }
 
-    fn sign_in_status(&self) -> String {
-        tr(if self.remembered {
+    fn sign_in_status(&self) -> StatusText {
+        StatusText::new(if self.remembered {
             "VERA:SignInRemembered"
         } else {
             "VERA:SignInPrompt"
         })
+    }
+
+    /// Set VERA's own status text, keeping its key so a language reload can
+    /// resolve it again.
+    fn set_status(&mut self, status: StatusText) {
+        self.status = status.resolve();
+        self.status_text = Some(status);
+    }
+
+    /// Set a message another owner supplied, such as the lobby's refusal: it
+    /// stands as written and no language reload rewrites it.
+    fn set_message(&mut self, message: String) {
+        self.status = message;
+        self.status_text = None;
+    }
+
+    /// Resolve the status line from the language files in use again, unless
+    /// the lobby supplied its message. The other texts this form draws are
+    /// resolved every frame.
+    pub(crate) fn refresh_text(&mut self) {
+        if let Some(status) = &self.status_text {
+            self.status = status.resolve();
+        }
     }
 
     /// Play as Guest, its username prefilled.
@@ -341,7 +408,7 @@ impl WolAccountForm {
         let mut form = Self::with_fields(
             FormKind::Guest,
             vec![AccountField::new(FieldKind::Name, "VERA:Username")],
-            tr("VERA:GuestPrompt"),
+            StatusText::new("VERA:GuestPrompt"),
         );
         form.prefill_name(name);
         form
@@ -357,7 +424,7 @@ impl WolAccountForm {
                 AccountField::new(FieldKind::Password, "VERA:Password"),
                 AccountField::new(FieldKind::Confirm, "VERA:ConfirmPassword"),
             ],
-            tr("VERA:RegisterPrompt"),
+            StatusText::new("VERA:RegisterPrompt"),
         );
         form.prefill_name(name);
         form
@@ -368,7 +435,7 @@ impl WolAccountForm {
         let mut form = Self::with_fields(
             FormKind::Verify,
             vec![AccountField::new(FieldKind::Code, "VERA:Code")],
-            tr_fill("VERA:VerifyPrompt", &[("email", &email)]),
+            StatusText::with("VERA:VerifyPrompt", &[("email", &email)]),
         );
         form.name = name;
         form.email = email;
@@ -381,7 +448,7 @@ impl WolAccountForm {
         let mut form = Self::with_fields(
             FormKind::Forgot,
             vec![AccountField::new(FieldKind::Name, "VERA:Username")],
-            tr("VERA:ForgotPrompt"),
+            StatusText::new("VERA:ForgotPrompt"),
         );
         form.prefill_name(name);
         form
@@ -396,7 +463,7 @@ impl WolAccountForm {
                 AccountField::new(FieldKind::Password, "VERA:NewPassword"),
                 AccountField::new(FieldKind::Confirm, "VERA:ConfirmPassword"),
             ],
-            tr_fill("VERA:ResetPrompt", &[("name", &name)]),
+            StatusText::with("VERA:ResetPrompt", &[("name", &name)]),
         );
         form.name = name;
         form
@@ -410,7 +477,7 @@ impl WolAccountForm {
                 AccountField::new(FieldKind::Name, "VERA:Username"),
                 AccountField::new(FieldKind::Password, "VERA:Password"),
             ],
-            tr("VERA:DeletePrompt"),
+            StatusText::new("VERA:DeletePrompt"),
         );
         form.prefill_name(name);
         form
@@ -566,7 +633,8 @@ impl WolAccountForm {
         {
             field.edit.set_units_limited([], PASSWORD_LIMIT);
         }
-        self.status = self.sign_in_status();
+        let status = self.sign_in_status();
+        self.set_status(status);
     }
 
     /// Remember password's click. Unticked on the remembered sign-in, this
@@ -579,7 +647,7 @@ impl WolAccountForm {
         }
         self.drop_placeholder();
         self.focus(1);
-        self.status = tr("VERA:SignInForgotten");
+        self.set_status(StatusText::new("VERA:SignInForgotten"));
         Some(AccountFormAction::ForgetSignIn)
     }
 
@@ -610,7 +678,7 @@ impl WolAccountForm {
                     AccountRequest::Verify { .. } => {}
                 }
                 self.busy = true;
-                self.status = tr("VERA:ContactingOnline");
+                self.set_status(StatusText::new("VERA:ContactingOnline"));
                 Some(AccountFormAction::Send(request))
             }
             FORM_CANCEL => Some(AccountFormAction::Close),
@@ -684,7 +752,7 @@ impl WolAccountForm {
         self.busy = false;
         self.buttons = ShellButtonInteraction::default();
         if let Err(message) = answer {
-            self.status = message;
+            self.set_message(message);
             return None;
         }
         match self.kind {
@@ -707,7 +775,8 @@ impl WolAccountForm {
             FormKind::Delete => {
                 self.kind = FormKind::Deleted;
                 self.fields.clear();
-                self.status = tr_fill("VERA:AccountDeleted", &[("name", &self.name)]);
+                let status = StatusText::with("VERA:AccountDeleted", &[("name", &self.name)]);
+                self.set_status(status);
                 Some(AccountDone::Deleted {
                     name: self.name.clone(),
                 })
@@ -726,6 +795,26 @@ mod tests {
             form.focus(index);
             form.insert_text(value);
         }
+    }
+
+    /// The status line keeps the VERA key it came from, so a language reload
+    /// can resolve it again; a lobby message stays as written.
+    #[test]
+    fn the_status_line_remembers_its_key() {
+        let mut form = WolAccountForm::sign_in("Tanya", Some("Tanya"));
+        assert!(form.remembered);
+        assert_eq!(
+            form.status_text.as_ref().map(|status| status.key),
+            Some("VERA:SignInRemembered")
+        );
+        assert_eq!(form.status, crate::i18n::tr("VERA:SignInRemembered"));
+        let status = form.status.clone();
+        form.refresh_text();
+        assert_eq!(form.status, status);
+
+        form.answered(Err("Lobby said no".into()));
+        assert_eq!(form.status, "Lobby said no");
+        assert!(form.status_text.is_none());
     }
 
     #[test]

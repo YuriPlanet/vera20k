@@ -1252,9 +1252,9 @@ impl Simulation {
     /// FNPC 0x56DC20 as `Find_Path` calls it (0x4D3B0A..0x4D3B76 and
     /// 0x4D3D6C..0x4D3DD8): seed = target cell, Type+67C speed, zone =
     /// GetZoneID(current cell, table row, OnBridge), the table row, OnBridge,
-    /// footprint 1x1, height check on, occupancy check = the Subterranean
-    /// obstacle flag (Type+D2C, never set for stock infantry), bridge cells
-    /// allowed, nearest to the actor's current cell.
+    /// footprint 1x1, height check on, independent burrow flag when Type+D2C
+    /// and the original destination passes486FF0, no occupancy check, bridge
+    /// cells allowed, nearest to the actor's current cell.
     fn find_path_nearby_cell(
         &self,
         id: u64,
@@ -1269,11 +1269,6 @@ impl Simulation {
         let object = self
             .object_type(actor.type_ref(), rules)
             .ok_or("Find_Path FNPC requires the mover type")?;
-        if object.movement_zone == MovementZone::Subterranean {
-            return Err(
-                "Find_Path FNPC obstacle flag (Type+D2C, 0x486FF0) is not represented".into(),
-            );
-        }
         let zone = find_path_search_zone(object.movement_zone)
             .ok_or("Find_Path FNPC requires a valid MovementZone")?;
         let terrain = self
@@ -1288,6 +1283,21 @@ impl Simulation {
             .ok_or("Find_Path FNPC requires original Map Size")?;
         let current = coord_cell(ground_pose::position_world_coord(&actor.position));
         let current = (i32::from(current.0), i32::from(current.1));
+        // Find_Path4D3AEE/4D3D50 tests the original destination, not the
+        // replacement candidates. Its answer becomes FNPC's tenth argument.
+        let require_burrowable = object.movement_zone == MovementZone::Subterranean && {
+            let cells = NativeCellQuery::canonical(terrain);
+            let target = cells.lookup(target);
+            crate::sim::cell_rect::cell_allows_burrowing(
+                &cells,
+                target,
+                self.playfield_bounds(),
+                Some(crate::sim::cell_rect::BurrowingContents {
+                    occupancy: &self.substrate.occupancy,
+                    terrain_objects: self.terrain_objects.cell_index(),
+                }),
+            )
+        };
         let required_zone_id = zones.get_zone_id_native(
             terrain,
             (current.0 as u16, current.1 as u16),
@@ -1299,6 +1309,7 @@ impl Simulation {
                 (i32::from(target.0), i32::from(target.1)),
                 NearbyArgs {
                     check_height: true,
+                    require_burrowable,
                     target_cell: Some(current),
                     ..NearbyArgs::plain(
                         PassabilityArgs {
@@ -1316,9 +1327,9 @@ impl Simulation {
     }
 
     /// `PathfinderClass::EstimateZoneCost` 0x42D170, shared by Find_Path and
-    /// Approach_Target. Both native callers pass a Foot and movement override
-    /// -1, so its type supplies the movement row. The caller owns its limit:
-    /// Find_Path uses Chebyshev+6; Approach uses Chebyshev+8.
+    /// Approach_Target. Those callers pass a Foot and movement override-1,
+    /// so its type supplies the movement row. Unit746000 instead requests
+    /// Normal explicitly. The caller owns its cost limit.
     ///
     /// The two CellStruct arguments and bridge booleans are already copied
     /// inputs. The body retains both GetCell results before projecting either
@@ -1341,6 +1352,7 @@ impl Simulation {
             start_bridge,
             goal_bridge,
             rules,
+            None,
         )
     }
 
@@ -1349,6 +1361,7 @@ impl Simulation {
     /// read: the second lookup and the bridge helpers may restamp Dummy,
     /// including before the original arguments are reread for distances.
     /// The bridge booleans are copied inputs, not live Cell flag queries.
+    /// A movement override supplies42D170's explicit row; None is native-1.
     pub(crate) fn estimate_zone_cost_in_query(
         &self,
         id: u64,
@@ -1357,8 +1370,8 @@ impl Simulation {
         start_bridge: bool,
         goal_bridge: bool,
         rules: &RuleSet,
+        movement_override: Option<MovementZone>,
     ) -> Result<i32, String> {
-        use crate::sim::cell_rect::get_cellclass_fallback;
         use crate::sim::pathfinding::zone_build::find_high_bridge_record_index;
         use crate::sim::pathfinding::zone_hierarchy::{
             ZonePrecheckExclusions, ZonePrecheckOutcome, ZonePrecheckThreat, zone_precheck_flat,
@@ -1381,28 +1394,26 @@ impl Simulation {
             .zone_grid
             .as_ref()
             .ok_or("EstimateZoneCost requires zone topology")?;
-        let lookup = |cell: (i16, i16)| {
-            get_cellclass_fallback(Some(terrain), i32::from(cell.0), i32::from(cell.1))
-        };
         let cells = NativeCellQuery::canonical(terrain);
-        let start_cell = lookup(start.coord(&cells)); //42D1A1
-        let goal_cell = lookup(goal.coord(&cells)); //42D1B2, after start's lookup
+        let start_cell = cells.lookup(start.coord(&cells)); //42D1A1
+        let goal_cell = cells.lookup(goal.coord(&cells)); //42D1B2, after start's lookup
         let start_projection = live_hierarchy_projection(
-            terrain,
+            &cells,
             zones.bridge_records(),
-            &start_cell,
+            start_cell,
             start_bridge,
             self.playfield_bounds(),
         )?;
         let goal_projection = live_hierarchy_projection(
-            terrain,
+            &cells,
             zones.bridge_records(),
-            &goal_cell,
+            goal_cell,
             goal_bridge,
             self.playfield_bounds(),
         )?;
+        let movement_zone = movement_override.unwrap_or(object.movement_zone);
         let hierarchy = zones
-            .hierarchy_for(object.movement_zone)
+            .hierarchy_for(movement_zone)
             .ok_or("EstimateZoneCost requires the native movement row")?;
         let start_zone = zones
             .hierarchy_zone_at_native(0, start_projection)
@@ -1424,7 +1435,7 @@ impl Simulation {
             hierarchy,
             start_zone,
             goal_zone,
-            object.movement_zone,
+            movement_zone,
             &ZonePrecheckExclusions::default(),
             Some(ZonePrecheckThreat::new(coefficient, &threat_lookup)),
         )?

@@ -64,6 +64,7 @@ fn playfield_projection_grid(side: u16) -> TerrainGrid {
         origin_x: 0.0,
         origin_y: 0.0,
         bridge_middle_tiles: None,
+        deformation_tiles: Vec::new(),
     }
 }
 

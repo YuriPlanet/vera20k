@@ -120,6 +120,8 @@ cargo run --release --bin vera20k
 
 تُحفظ إعدادات الصوت والرسوم والتحكم في `VERA.INI`. وتأتي قواعد اللعب من إعدادات الردهة أو التعديلات أو الخرائط.
 
+يشرح [دليل التعديلات](docs/modding.md) كيفية صنع تعديلاتك الخاصة.
+
 ## الدعم
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="ادعم VERA20K عبر PayPal" height="23"></a>
@@ -151,6 +153,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## التوثيق
 
 - [معاينة WebAssembly](docs/wasm.md): بنية اختيارية للعب الفردي تعمل في المتصفح.
+- [دليل التعديلات](docs/modding.md): ما تستطيع التعديلات فعله وما لا تستطيعه، وكيف يختلف VERA20K عن اللعبة الأصلية.
 - [ملفات تعريف INI](docs/ini-roots.md): اختيار ملفات القواعد والرسوم والذكاء الاصطناعي.
 - [Ares](docs/ares.md) و[Phobos](docs/phobos.md) و[NPatch](docs/npatch.md): دعم الإضافات وحدوده.
 - [نظرة عامة على المحرك](docs/index.md): تنظيم الشيفرة وكيف تترابط أجزاء المحرك.

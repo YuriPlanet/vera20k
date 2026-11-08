@@ -121,6 +121,8 @@ including extensions from mods such as Ares, stay off until they are turned on w
 Sound, graphics and controls are saved in `VERA.INI`. Gameplay rules come from lobby
 settings, mods or maps.
 
+The [modding guide](docs/modding.md) explains how to make your own mods.
+
 ## Support
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Support VERA20K via PayPal" height="23"></a>
@@ -152,6 +154,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## Documentation
 
 - [WebAssembly preview](docs/wasm.md): an opt-in single-player build that runs in a browser.
+- [Modding guide](docs/modding.md): what mods can and can't do, and how VERA20K differs from the original game.
 - [INI profiles](docs/ini-roots.md): choosing rules, art and AI files.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md), [NPatch](docs/npatch.md) and [VeraX](docs/verax.md): extension support and limitations.
 - [Engine overview](docs/index.md): code layout and how the engine fits together.

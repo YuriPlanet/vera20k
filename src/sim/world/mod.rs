@@ -40,6 +40,7 @@ mod network_commands;
 mod object_entry;
 mod queued_command;
 mod sinking;
+mod terrain_deformation;
 mod time_warp;
 mod trigger_chrono;
 mod type_tech_levels;
@@ -87,6 +88,8 @@ mod aircraft_move;
 pub(crate) use aircraft_move::tests::fixture as aircraft_search_fixture;
 mod building_working_sound;
 pub use building_working_sound::working_sound_building;
+#[cfg(test)]
+mod civilian_evacuation_tests;
 pub(crate) mod damage_consequences;
 pub mod display_layers;
 mod display_registry;
@@ -897,11 +900,13 @@ pub enum SimSoundEvent {
         owner: InternedId,
         type_id: InternedId,
     },
-    /// Depot MissionRepair44BDB2 reaches CreateRadarEvent8 after a service
-    /// request completes. The app resolves the local-owner+41A gate and
-    /// existing client radar admission before playing EVA_UnitRepaired.
+    /// MissionRepair reaches CreateRadarEvent8 after a service completes.
+    /// Hospital44B93F already admits House50B6F0; depot44BD96 leaves the
+    /// local-owner+41A gate to the app. Both use its existing radar admission
+    /// before EVA_UnitRepaired.
     UnitRepaired {
         owner: InternedId,
+        owner_admitted: bool,
         radar: RadarEventRequest,
     },
     /// `BuildingClass::ChangeOwner @ 0x00448260` announce block
@@ -7277,6 +7282,8 @@ impl Simulation {
             self.terrain_objects
                 .project_cell_occupation(&mut resolved_terrain, cell);
         }
+        // VERA terrain deformation follows the saved rules, as on a new map.
+        resolved_terrain.set_terrain_deformation(rules.combat_damage.terrain_deformation);
         self.resolved_terrain = Some(resolved_terrain);
         self.terrain_speed_config = terrain_speed_config;
         self.resolve_rule_animation_lists(rules);

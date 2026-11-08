@@ -41,10 +41,13 @@ pub(crate) fn launcher_values_from_profile(
         vera_icon: profile.vera_icon,
         hd_radar: profile.hd_radar,
         smooth_sidebar: profile.smooth_sidebar,
+        smooth_online_menus: profile.smooth_online_menus,
         hd_map_previews: profile.hd_map_previews,
         shift_queue: profile.shift_queue,
+        terrain_deformation: profile.terrain_deformation,
         wol_test_service: profile.wol_test_service,
         performance_stats: false,
+        show_string_keys: profile.show_string_keys,
         skip_intro: profile.skip_intro,
         custom_end_game_banner: profile.custom_end_game_banner,
         custom_end_game_score: profile.custom_end_game_score,
@@ -105,6 +108,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     /// Move the window to the picked screen, or hand it back to the system.
     fn set_display(&mut self, display: DisplayTarget);
     fn set_full_screen(&mut self, full_screen: bool);
+    /// Put the window back as a launch opens it.
+    fn restore_launch_window(&mut self);
     fn store_original_shape(&mut self, original_shape: bool);
     fn store_yr_original_style(&mut self, yr_original_style: bool);
     fn store_render_interpolation(&mut self, enabled: bool);
@@ -117,13 +122,20 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_hd_radar(&mut self, enabled: bool);
     /// Draw the sidebar's art from lightly smoothed xBR copies (`[VERA] SmoothSidebar=`).
     fn store_smooth_sidebar(&mut self, enabled: bool);
+    /// Smooth the online client's enlarged art (`[VERA] SmoothOnlineMenus=`).
+    fn store_smooth_online_menus(&mut self, enabled: bool);
     /// Show VERA's own map pictures in the setup screens (`[VERA] HdMapPreviews=`).
     fn store_hd_map_previews(&mut self, enabled: bool);
     /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
     fn store_language(&mut self, tag: String);
     fn store_shift_queue(&mut self, shift_queue: bool);
+    /// Let explosions dent the ground from the next game on
+    /// (`[VERA] TerrainDeformation=`).
+    fn store_terrain_deformation(&mut self, enabled: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
     fn set_performance_stats(&mut self, shown: bool);
+    /// Show each label's string-table key instead of its text.
+    fn set_show_string_keys(&mut self, shown: bool);
     fn store_skip_intro(&mut self, skip: bool);
     /// Whether a finished match draws the country's own end-game picture.
     fn store_custom_end_game_banner(&mut self, enabled: bool);
@@ -154,6 +166,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::FullScreenChanged(full_screen) => {
             operations.set_full_screen(full_screen);
         }
+        LauncherOptionsEvent::SetWindowSizeRequested => operations.restore_launch_window(),
         LauncherOptionsEvent::OriginalShapeChanged(original_shape) => {
             operations.store_original_shape(original_shape);
         }
@@ -175,17 +188,26 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::SmoothSidebarChanged(enabled) => {
             operations.store_smooth_sidebar(enabled);
         }
+        LauncherOptionsEvent::SmoothOnlineMenusChanged(enabled) => {
+            operations.store_smooth_online_menus(enabled);
+        }
         LauncherOptionsEvent::HdMapPreviewsChanged(enabled) => {
             operations.store_hd_map_previews(enabled);
         }
         LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
             operations.store_shift_queue(shift_queue);
         }
+        LauncherOptionsEvent::TerrainDeformationChanged(enabled) => {
+            operations.store_terrain_deformation(enabled);
+        }
         LauncherOptionsEvent::WolTestServiceChanged(wol_test_service) => {
             operations.store_wol_test_service(wol_test_service);
         }
         LauncherOptionsEvent::PerformanceStatsChanged(shown) => {
             operations.set_performance_stats(shown)
+        }
+        LauncherOptionsEvent::ShowStringKeysChanged(shown) => {
+            operations.set_show_string_keys(shown)
         }
         LauncherOptionsEvent::SkipIntroChanged(skip) => {
             operations.store_skip_intro(skip);
@@ -399,6 +421,7 @@ mod tests {
             render_interpolation: false,
             mouse_wheel_zoom: true,
             shift_queue: true,
+            terrain_deformation: true,
             wol_test_service: true,
             ..RetailOptionsProfile::default()
         });
@@ -410,6 +433,7 @@ mod tests {
         assert!(!booleans.render_interpolation);
         assert!(booleans.mouse_wheel_zoom);
         assert!(booleans.shift_queue);
+        assert!(booleans.terrain_deformation);
         assert!(booleans.wol_test_service);
     }
 }

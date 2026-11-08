@@ -342,6 +342,12 @@ pub(crate) const DEFAULT_PARTICLE_SYSTEMS: [(&str, PublishPointer); 9] = [
 /// The kept lists. Each Rules offset is the constructor's empty vector and the
 /// read's store; the empty read keeps the vector at the address given.
 const LISTS: &[(&str, PublishList)] = &[
+    // RulesCtor666568..66659E starts +B74 empty. ReadAudioVisual66B0E4..
+    //66B1CF retains the ordered Anim pointers; Save6750B5/Load677050 keep
+    // this vector. Full Type reset uses the shared expired-pointer policy.
+    ("OnFire", |rules, ids| {
+        rules.general.on_fire = ids.to_vec();
+    }),
     // RulesCtor6656C0..6656E4; ReadGeneral66D6E2..66D7B1.
     ("BarrelDebris", |rules, ids| {
         rules.general.barrel_debris = ids.to_vec();

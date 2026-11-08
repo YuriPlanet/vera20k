@@ -121,6 +121,8 @@ moddar som Ares, måste vara avstängd tills den slås på med något av följan
 Inställningar för ljud, grafik och kontroller sparas i `VERA.INI`. Spelreglerna kommer från
 lobbyinställningar, moddar eller kartor.
 
+[Moddningsguiden](docs/modding.md) förklarar hur man gör egna moddar.
+
 ## Stöd projektet
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Stöd VERA20K via PayPal" height="23"></a>
@@ -152,6 +154,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## Dokumentation
 
 - [WebAssembly-förhandsversion](docs/wasm.md): ett valfritt enspelarbygge som körs i webbläsaren.
+- [Moddningsguide](docs/modding.md): vad moddar kan och inte kan göra och hur VERA20K skiljer sig från originalspelet.
 - [INI-profiler](docs/ini-roots.md): välja regel-, grafik- och AI-filer.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) och [NPatch](docs/npatch.md): stöd för tilläggen och deras begränsningar.
 - [Motoröversikt](docs/index.md): kodens upplägg och hur motorns delar hänger ihop.

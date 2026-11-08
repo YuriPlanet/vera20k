@@ -30,6 +30,7 @@ use super::phases::starts::{StartsArgs, StartsCtx};
 use super::phases::tech_buildings::{TechArgs, TechCtx, TechType};
 use super::phases::tiberium::{TiberiumArgs, TiberiumCtx};
 use super::phases::trees::{TreeArgs, TreeCtx};
+use super::phases::urban;
 use super::phases::water::{PlayableRect, WaterArgs};
 use super::phases::zones::{self, ZoneKind, ZoneParams};
 use super::phases::{
@@ -40,7 +41,7 @@ use super::rng::RmgRng;
 use super::scratch::RmgScratch;
 use super::tiles::TileIds;
 use super::x87::Gaussian;
-use super::{MapGeometry, RmgConstructionTrace, Stage};
+use super::{MapGeometry, RmgConstructionPhase, RmgConstructionTrace, Stage};
 use crate::map::playfield::PlayfieldBounds;
 
 /// The land-type count of the wheel-impassable table (`zones::LAND_TYPES`).
@@ -95,6 +96,12 @@ pub struct PipelineInputs<'a> {
     pub width: i32,
     /// `MaxTrees` (`MapSeed+0x2FC`; 0 disables trees).
     pub max_trees: i32,
+    /// VERA extension: the urban stage's buildings, presence and opt-in, and
+    /// the seed its own stream starts from.
+    pub urban_types: &'a [TechType],
+    pub urban_presence: i32,
+    pub urban_enabled: bool,
+    pub seed: u16,
     /// Whether a river may attempt waterfall terrain, decided by the
     /// generation's very first draw. Only the river carver reads the value;
     /// the draw that produces it is stream-relevant to every map type.
@@ -501,6 +508,32 @@ pub fn run_pipeline(
     }
     observe(Stage::Rocks, grid, &waypoints, &terrain);
 
+    // ---- VERA: towns for an opted-in Urban Presence ------------------------
+    // Last of the placement stages and on its own stream, so everything above
+    // is the original's; an original seed never gets here.
+    let urban_placements = if inputs.urban_enabled {
+        let args = TechArgs {
+            map_type: inputs.map_type,
+            map_w,
+            local_rect,
+            stride: stride as i32,
+            cliff_back_impassability: inputs.cliff_back_impassability,
+        };
+        let empty_regions = super::phases::regions::Regions::default();
+        let mut ctx = TechCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            blocks: inputs.blocks,
+            rng: &mut *rng,
+            regions: &empty_regions,
+            types: inputs.urban_types,
+        };
+        urban::run(&mut ctx, &args, inputs.urban_presence, inputs.seed)
+    } else {
+        Vec::new()
+    };
+
     // ---- Final recalc ------------------------------------------------------
     lat_fixup::run(grid, inputs.ids);
     observe(Stage::RecalcFinal, grid, &waypoints, &terrain);
@@ -511,6 +544,17 @@ pub fn run_pipeline(
             .into_iter()
             .map(|placement| (placement.name, placement.x, placement.y)),
     );
+    // The urban buildings follow every original structure, each traced as an
+    // emitted constructor so the load replays it like the others.
+    for placement in urban_placements {
+        construction_trace.push_emitted(
+            RmgConstructionPhase::Urban,
+            placement.name.clone(),
+            structures.len(),
+            (placement.x as u16, placement.y as u16),
+        );
+        structures.push((placement.name, placement.x, placement.y));
+    }
 
     PipelineOutput {
         waypoints,

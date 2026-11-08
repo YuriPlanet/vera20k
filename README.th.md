@@ -112,6 +112,8 @@ cargo run --release --bin vera20k
 การตั้งค่าเสียง กราฟิก และการควบคุมจะบันทึกไว้ใน `VERA.INI` กฎการเล่นมาจากการตั้งค่าล็อบบี้
 ม็อด หรือแผนที่
 
+[คู่มือการทำม็อด](docs/modding.md)อธิบายวิธีสร้างม็อดของคุณเอง
+
 ## สนับสนุนโครงการ
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="สนับสนุน VERA20K ผ่าน PayPal" height="23"></a>
@@ -142,6 +144,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## เอกสาร
 
 - [รุ่นทดลอง WebAssembly](docs/wasm.md): บิลด์สำหรับผู้เล่นคนเดียวแบบเลือกใช้ได้ ซึ่งทำงานในเบราว์เซอร์
+- [คู่มือการทำม็อด](docs/modding.md): สิ่งที่ม็อดทำได้และทำไม่ได้ และ VERA20K แตกต่างจากเกมต้นฉบับอย่างไร
 - [โปรไฟล์ INI](docs/ini-roots.md): การเลือกไฟล์กฎ ไฟล์ art และไฟล์ AI
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) และ [NPatch](docs/npatch.md): การรองรับส่วนขยายและข้อจำกัด
 - [ภาพรวมของเอนจิน](docs/index.md): โครงสร้างโค้ดและการทำงานร่วมกันของส่วนต่าง ๆ ในเอนจิน

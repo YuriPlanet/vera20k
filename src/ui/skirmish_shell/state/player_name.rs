@@ -544,7 +544,9 @@ impl SkirmishShellState {
 /// A hover message to the status line ([`SkirmishStatics::hover`]). Returns
 /// whether the help changed.
 pub fn set_status_help_text(state: &mut SkirmishShellState, text: impl Into<String>) -> bool {
-    state.statics.hover(&text.into(), crate::util::time::Instant::now())
+    state
+        .statics
+        .hover(&text.into(), crate::util::time::Instant::now())
 }
 
 pub fn clear_status_help_text(state: &mut SkirmishShellState) -> bool {
@@ -731,6 +733,21 @@ pub fn repair_teams_for_selected_mode(state: &mut SkirmishShellState, modes: &[S
 
 pub fn combo_dropdown_open(state: &SkirmishShellState) -> bool {
     state.open_combo_dropdown.is_some()
+}
+
+/// VERA: Esc closes a list that a Skirmish or random map control has open.
+/// True when one was open.
+pub fn close_combo_dropdown(state: &mut SkirmishShellState) -> bool {
+    let random_map = state
+        .random_map_setup_modal
+        .as_mut()
+        .is_some_and(|modal| modal.open_combo.take().is_some());
+    let combo = state.open_combo_dropdown.take().is_some();
+    if combo {
+        state.dropdown_scroll_drag = None;
+        state.dropdown_scroll_press = None;
+    }
+    random_map || combo
 }
 
 pub fn player_name_edit_rect_hit(layout: &SkirmishShellLayout, x: i32, y: i32) -> bool {

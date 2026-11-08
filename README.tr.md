@@ -121,6 +121,8 @@ diğer her yeni özellik, şu yollardan biriyle açılana kadar kapalı kalmalı
 Ses, grafik ve kontrol ayarları `VERA.INI` dosyasına kaydedilir. Oynanış kuralları lobi
 ayarlarından, modlardan veya haritalardan gelir.
 
+Kendi modlarınızı nasıl yapacağınızı [mod yapım kılavuzu](docs/modding.md) anlatıyor.
+
 ## Destek
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="VERA20K'yi PayPal üzerinden destekleyin" height="23"></a>
@@ -154,6 +156,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## Belgeler
 
 - [WebAssembly önizlemesi](docs/wasm.md): tarayıcıda çalışan, isteğe bağlı tek oyunculu bir derleme.
+- [Mod yapım kılavuzu](docs/modding.md): modların neleri yapıp neleri yapamayacağı ve VERA20K ile orijinal oyun arasındaki farklar.
 - [INI profilleri](docs/ini-roots.md): kural, grafik ve yapay zekâ dosyalarını seçme.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) ve [NPatch](docs/npatch.md): eklenti desteği ve sınırlamaları.
 - [Motora genel bakış](docs/index.md): kodun düzeni ve motorun parçalarının nasıl bir araya geldiği.

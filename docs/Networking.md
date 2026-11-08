@@ -28,11 +28,19 @@ The HTTPS service supplies match-specific relay credentials before the same load
 and command handoff. Both paths transfer selected authored maps or generated
 seed/preview data and verify build, rules and effective-map agreement before start.
 
-Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`) in an
-online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;
-`/translate off` stops it. Received lobby, room and match chat written in the other
-script (Latin versus CJK) is sent to the lobby's translation service. The original
-stays; its translation follows as a line from the same sender marked `»`.
+Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`, `ru`,
+`ar`, `th`, `tr`, `sv`) in an online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;
+`/translate off` stops it. The online lobby's Chat Translation page picks the same
+languages or Off, and sets where lines are translated (lobby, game rooms, matches,
+private messages), whether the source language is named, whether languages sharing the
+reader's alphabet are translated, and which languages the player already reads, all
+saved as `[VERA] Translate*=`. Choosing a language other than English starts with
+shared-alphabet lines translated too. Received chat in another script is sent to the lobby's
+translation service: for a Latin-script language a line with any letter outside it, for
+any other language a line with none of its letters. The original stays; its translation
+follows as a line from the same sender marked `»`, starting with a bracketed note in the
+reader's language that names the source language, unless it only repeats the original
+or the service says it was already in a language the player reads.
 
 The app services reliable messages and intermediate progress while loading, and
 continues servicing transport during frame waits. Gameplay uses the same

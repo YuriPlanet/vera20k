@@ -6,9 +6,9 @@
 //! live move all agree on what a saved name means.
 //!
 //! Two kinds of target. A saved screen name points at one screen of the
-//! Options list. [`DisplayTarget::Auto`] names no screen: the window stays
-//! where the system puts it, as in every build before this option. A name the
-//! desktop no longer lists answers nothing in the same way.
+//! Options list. [`DisplayTarget::Auto`] names no screen: the window stays on
+//! whichever one the system puts it. A name the desktop no longer lists answers
+//! nothing in the same way.
 //!
 //! VERA's own option: `[VERA]` is VERA's section and no engine reads it, and
 //! retail's `0xD5` has no such list.
@@ -16,7 +16,7 @@
 //! Presentation-only: nothing here is serialized into a replay, hashed, or read
 //! by the deterministic simulation.
 
-use winit::dpi::PhysicalPosition;
+use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::monitor::MonitorHandle;
 use winit::window::{Fullscreen, Window};
 
@@ -109,44 +109,76 @@ pub(crate) fn screen_for(
     Some(displays[index].handle.clone())
 }
 
-/// Where the window sits on `monitor` when it is not full screen: centred, the
-/// same way the window manager would place a window the player just opened.
-///
-/// The centring happens in physical pixels against the monitor's own rectangle,
-/// so a mixed-DPI desktop keeps the window on the screen it was moved to. A
-/// window larger than that screen starts at its corner instead of hanging off
-/// it, so the player can still reach the whole frame.
-pub(crate) fn centered_outer_position(
-    window: &Window,
-    monitor: &MonitorHandle,
+/// The corner that centres a window of `outer` size on the screen at `origin`,
+/// all in the desktop's physical pixels. A window larger than the screen
+/// starts at its corner instead of hanging off it, so the player can still
+/// reach the whole frame.
+fn centered_corner(
+    origin: PhysicalPosition<i32>,
+    screen: PhysicalSize<u32>,
+    outer: PhysicalSize<u32>,
 ) -> PhysicalPosition<i32> {
-    let monitor_size = monitor.size();
-    let monitor_origin = monitor.position();
-    let window_size = window.outer_size();
     PhysicalPosition::new(
-        monitor_origin.x + (monitor_size.width as i32 - window_size.width as i32).max(0) / 2,
-        monitor_origin.y + (monitor_size.height as i32 - window_size.height as i32).max(0) / 2,
+        origin.x + (screen.width as i32 - outer.width as i32).max(0) / 2,
+        origin.y + (screen.height as i32 - outer.height as i32).max(0) / 2,
     )
 }
 
-/// Whether a window whose outer top-left corner sits at `corner` would show
-/// its title bar on one of `screens` (each an origin and size in the desktop's
-/// physical pixels): the corner plus a small grab margin must land inside a
-/// screen, so a saved placement on a screen since unplugged or rearranged
-/// opens where the system puts it instead of off the desktop.
-pub(crate) fn title_bar_on_a_screen(
-    corner: PhysicalPosition<i32>,
-    screens: impl IntoIterator<Item = (PhysicalPosition<i32>, winit::dpi::PhysicalSize<u32>)>,
-) -> bool {
-    const GRAB: i32 = 32;
-    let (x, y) = (
-        corner.x.saturating_add(GRAB),
-        corner.y.saturating_add(GRAB / 2),
+/// Where the window sits on `monitor` when it is not full screen: centred. The
+/// centring happens against the monitor's own rectangle, so a mixed-DPI desktop
+/// keeps the window on the screen it was moved to.
+fn centered_outer_position(window: &Window, monitor: &MonitorHandle) -> PhysicalPosition<i32> {
+    centered_corner(monitor.position(), monitor.size(), window.outer_size())
+}
+
+/// The screen a windowed game belongs on: the Display list's choice, or the one
+/// the window is on when the list names none or that screen is gone. A browser
+/// tab has no screens, so its canvas stays where the page put it.
+fn home_screen(
+    window: &Window,
+    displays: &[MonitorChoice],
+    target: &DisplayTarget,
+) -> Option<MonitorHandle> {
+    screen_for(displays, target)
+        .or_else(|| window.current_monitor())
+        .or_else(|| window.primary_monitor())
+}
+
+/// A windowed launch opens in the middle of its screen.
+pub(crate) fn center_at_launch(
+    window: &Window,
+    displays: &[MonitorChoice],
+    target: &DisplayTarget,
+) {
+    if let Some(monitor) = home_screen(window, displays, target) {
+        window.set_outer_position(centered_outer_position(window, &monitor));
+    }
+}
+
+/// Put the windowed window back as a launch opens it: `size` across, in logical
+/// units, in the middle of its screen.
+///
+/// The corner comes from the size the window is about to have rather than the
+/// one it reports, because a resize can land after the request returns
+/// (`SWP_ASYNCWINDOWPOS` in winit's Windows backend).
+pub(crate) fn restore_launch_placement(
+    window: &Window,
+    displays: &[MonitorChoice],
+    target: &DisplayTarget,
+    size: LogicalSize<u32>,
+) {
+    window.set_maximized(false);
+    let (inner, outer) = (window.inner_size(), window.outer_size());
+    let _ = window.request_inner_size(size);
+    let Some(monitor) = home_screen(window, displays, target) else {
+        return;
+    };
+    let client: PhysicalSize<u32> = size.to_physical(monitor.scale_factor());
+    let outer = PhysicalSize::new(
+        client.width + outer.width.saturating_sub(inner.width),
+        client.height + outer.height.saturating_sub(inner.height),
     );
-    screens.into_iter().any(|(origin, size)| {
-        (origin.x..origin.x.saturating_add(size.width as i32)).contains(&x)
-            && (origin.y..origin.y.saturating_add(size.height as i32)).contains(&y)
-    })
+    window.set_outer_position(centered_corner(monitor.position(), monitor.size(), outer));
 }
 
 /// Move the windowed window onto `target`'s screen, centred.
@@ -223,25 +255,20 @@ mod tests {
     }
 
     #[test]
-    fn a_saved_corner_opens_only_where_its_title_bar_shows() {
-        use winit::dpi::PhysicalSize;
-        // A main screen and a second one to its left.
-        let screens = [
-            (PhysicalPosition::new(0, 0), PhysicalSize::new(1920, 1080)),
-            (
-                PhysicalPosition::new(-1280, 0),
-                PhysicalSize::new(1280, 1024),
-            ),
-        ];
-        let on = |x, y| title_bar_on_a_screen(PhysicalPosition::new(x, y), screens);
-        assert!(on(100, 100));
-        assert!(on(-1280, 0), "the left screen's own corner");
-        // Past the right edge, or above the top, nothing can grab it.
-        assert!(!on(1920 - 32, 100));
-        assert!(on(100, -16));
-        assert!(!on(100, -17));
-        // The left screen is shorter than the main one.
-        assert!(!on(-600, 1024 - 8));
+    fn a_window_centres_on_its_screen_without_hanging_off_it() {
+        let corner = |origin: (i32, i32), screen: (u32, u32), outer: (u32, u32)| {
+            let corner = centered_corner(
+                PhysicalPosition::new(origin.0, origin.1),
+                PhysicalSize::new(screen.0, screen.1),
+                PhysicalSize::new(outer.0, outer.1),
+            );
+            (corner.x, corner.y)
+        };
+        assert_eq!(corner((0, 0), (3440, 1440), (800, 632)), (1320, 404));
+        // A screen left of the main one has a negative origin.
+        assert_eq!(corner((-1280, 0), (1280, 1024), (800, 600)), (-1040, 212));
+        // Too tall for the screen: the title bar stays at the top of it.
+        assert_eq!(corner((0, 0), (1024, 600), (800, 632)), (112, 0));
     }
 
     #[test]

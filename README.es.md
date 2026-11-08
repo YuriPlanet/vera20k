@@ -125,6 +125,8 @@ de estas opciones:
 Los ajustes de sonido, gráficos y controles se guardan en `VERA.INI`. Las reglas de juego
 provienen de los ajustes del lobby, los mods o los mapas.
 
+La [guía de modding](docs/modding.md) explica cómo crear mods propios.
+
 ## Apoya el proyecto
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Apoya a VERA20K con PayPal" height="23"></a>
@@ -156,6 +158,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## Documentación
 
 - [Vista previa en WebAssembly](docs/wasm.md): una compilación opcional para un jugador que se ejecuta en el navegador.
+- [Guía de modding](docs/modding.md): qué pueden hacer los mods y qué no, y en qué se diferencia VERA20K del juego original.
 - [Perfiles INI](docs/ini-roots.md): elegir los archivos de reglas, arte e IA.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) y [NPatch](docs/npatch.md): compatibilidad con las extensiones y sus limitaciones.
 - [Visión general del motor](docs/index.md): organización del código y cómo encajan las piezas del motor.

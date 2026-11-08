@@ -114,7 +114,7 @@ const OPTIONS_0XD5_HOVER_CHECKPOINTS: [(&str, Category, (i32, i32)); 3] = [
     (
         "options-0xd5-hover-tooltips",
         Category::Interface,
-        (160, 158),
+        (160, 245),
     ),
     ("options-0xd5-hover-music", Category::Audio, (200, 97)),
 ];
@@ -1308,6 +1308,8 @@ impl ShellCaptureRequest {
                             | movies::WolTarget::ModernRoomOptions
                             | movies::WolTarget::ModernSpectators
                             | movies::WolTarget::ModernOptions
+                            | movies::WolTarget::ModernChatTranslation
+                            | movies::WolTarget::ModernChatTranslationList
                     )
             }
             Some(movies::MoviesTarget::WolWelcome {

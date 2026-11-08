@@ -102,6 +102,8 @@ VERA20K は、既定ではオリジナルのゲームと同じようにプレイ
 
 サウンド、グラフィック、操作の設定は `VERA.INI` に保存されます。ゲームプレイのルールは、ロビーの設定、MOD、マップによって決まります。
 
+自分で MOD を作る方法は [MOD 制作ガイド](docs/modding.md)で説明しています。
+
 ## プロジェクトの支援
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="PayPal で VERA20K を支援" height="23"></a>
@@ -125,6 +127,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## ドキュメント
 
 - [WebAssembly プレビュー](docs/wasm.md)：ブラウザーで動作する、オプトインのシングルプレイ用ビルド。
+- [MOD 制作ガイド](docs/modding.md)：MOD でできることとできないこと、VERA20K とオリジナル版の違い。
 - [INI プロファイル](docs/ini-roots.md)：ルール、アート、AI の各ファイルの選択。
 - [Ares](docs/ares.md)、[Phobos](docs/phobos.md)、[NPatch](docs/npatch.md)：拡張機能への対応状況と制限事項。
 - [エンジンの概要](docs/index.md)：コード構成とエンジン全体の仕組み。
