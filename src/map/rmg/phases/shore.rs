@@ -195,12 +195,12 @@ fn compute_mask(ctx: &mut ShoreCtx<'_>, x: i32, y: i32, mode: i32) -> i32 {
         1 if self_water => return 0,
         _ => {}
     }
-    let record = ctx.scratch.get(x, y);
-    if !record.shore_enable {
+    if !ctx.scratch.shore_enable(x, y) {
         return 0;
     }
-    if record.shore_mask >= 0 {
-        return record.shore_mask;
+    let cached = ctx.scratch.shore_mask(x, y);
+    if cached >= 0 {
+        return cached;
     }
 
     let mut mask = 0;
@@ -235,7 +235,7 @@ fn compute_mask(ctx: &mut ShoreCtx<'_>, x: i32, y: i32, mode: i32) -> i32 {
 fn erode(ctx: &mut ShoreCtx<'_>, x: i32, y: i32, region_id: i32, keep: bool) -> bool {
     let mask2 = compute_mask(ctx, x, y, 2);
     if ctx.scratch.in_diamond(x, y) {
-        ctx.scratch.get_mut(x, y).shore_mask = mask2;
+        ctx.scratch.set_shore_mask(x, y, mask2);
     }
     let m = compute_mask(ctx, x, y, 0);
     if m <= 0 {
@@ -289,7 +289,7 @@ fn erode(ctx: &mut ShoreCtx<'_>, x: i32, y: i32, region_id: i32, keep: bool) -> 
     for dir in 0..8 {
         let (nx, ny) = RmgGrid::step(x, y, dir);
         if ctx.scratch.in_diamond(nx, ny) {
-            ctx.scratch.get_mut(nx, ny).shore_mask = -1;
+            ctx.scratch.set_shore_mask(nx, ny, -1);
             // Result deliberately discarded, like the original.
             let _ = erode(ctx, nx, ny, region_id, keep);
         }
@@ -327,9 +327,9 @@ fn cleanup(ctx: &mut ShoreCtx<'_>, x: i32, y: i32, region_id: i32, keep: bool) {
     for dir in 0..8 {
         let (nx, ny) = RmgGrid::step(x, y, dir);
         if ctx.scratch.in_diamond(nx, ny) {
-            ctx.scratch.get_mut(nx, ny).shore_mask = -1;
+            ctx.scratch.set_shore_mask(nx, ny, -1);
             let mask = compute_mask(ctx, nx, ny, 2);
-            ctx.scratch.get_mut(nx, ny).shore_mask = mask;
+            ctx.scratch.set_shore_mask(nx, ny, mask);
         }
     }
 }

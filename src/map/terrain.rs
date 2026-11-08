@@ -92,6 +92,8 @@ pub trait TacticalCellLookup: std::fmt::Debug {
     fn bridge_cell(&self, rx: u16, ry: u16) -> Option<TacticalBridgeCell>;
     /// Conservative upper bound on live signed cell levels, including zero.
     fn max_cell_level(&self) -> i8;
+    /// Conservative lower bound on live signed cell levels, including zero.
+    fn min_cell_level(&self) -> i8;
 }
 
 /// Literal inputs to the native comparisons; production borrows its live grid.
@@ -114,6 +116,11 @@ impl TacticalCellLookup for TacticalCellFixture<'_> {
         self.levels
             .values()
             .fold(0, |max, &level| max.max(level as i8))
+    }
+    fn min_cell_level(&self) -> i8 {
+        self.levels
+            .values()
+            .fold(0, |min, &level| min.min(level as i8))
     }
 }
 
@@ -249,6 +256,9 @@ pub struct TerrainGrid {
     /// Bridge middle tiles a live publication can write, for the atlas
     /// pre-load. None when the theater lacks BridgeMiddle1/2 or both sets.
     pub bridge_middle_tiles: Option<crate::map::theater::BridgeMiddleTiles>,
+    /// Tiles terrain deformation can write, for the atlas pre-load when the
+    /// rules switch it on ([`ResolvedTerrainGrid::deformation_atlas_tiles`]).
+    pub deformation_tiles: Vec<u16>,
 }
 
 /// Convert isometric cell coordinates to screen-space pixel position — **the
@@ -354,9 +364,22 @@ pub fn screen_to_cell_tactical_inverse(
         * HEIGHT_STEP as usize;
     let scan_attempts = TACTICAL_INVERSE_MAX_SCAN_ATTEMPTS
         .max(terrain_lift + TACTICAL_BRIDGE_EXTRA_HEIGHT_PX as usize);
+    // VERA terrain deformation: ground below Level 0 draws lower than flat
+    // ground, so its unprojected cell lies above the cursor. With any on the
+    // map the scan carries on through the cursor's own row and up by the
+    // deepest level; without any it stops a row below the cursor as native
+    // does.
+    let below_zero_rows = context.cells.map_or(0, |cells| {
+        usize::from(cells.min_cell_level().min(0).unsigned_abs()) * HEIGHT_STEP as usize
+    });
+    let scan_rows = if below_zero_rows == 0 {
+        scan_attempts
+    } else {
+        scan_attempts + 1 + below_zero_rows
+    };
     let mut scan_y = input_y + scan_attempts as f32;
 
-    for _ in 0..scan_attempts {
+    for _ in 0..scan_rows {
         let (candidate_rx, candidate_ry) = screen_to_iso(input_x, scan_y);
         let Some((cell_rx, cell_ry)) = rounded_lookup_cell(candidate_rx, candidate_ry) else {
             scan_y -= 1.0;
@@ -574,6 +597,7 @@ pub fn build_terrain_grid_from_resolved(
         origin_x: min_x,
         origin_y: min_y,
         bridge_middle_tiles,
+        deformation_tiles: resolved.deformation_atlas_tiles(),
     }
 }
 
@@ -675,6 +699,38 @@ mod tests {
 
         let (rx, ry) = screen_to_iso(-500.0, -500.0);
         assert_eq!(result, TacticalInverseResult::Fallback { rx, ry });
+    }
+
+    #[test]
+    fn screen_to_cell_tactical_inverse_finds_ground_below_level_zero() {
+        // A pit at Level -3.
+        let levels: BTreeMap<_, _> = (8..=13u16)
+            .flat_map(|rx| (8..=13u16).map(move |ry| ((rx, ry), -3i8 as u8)))
+            .collect();
+        let inverse = |y| {
+            screen_to_cell_tactical_inverse(
+                0.0,
+                y,
+                TacticalInverseContext {
+                    cells: Some(&crate::map::terrain::TacticalCellFixture {
+                        levels: &levels,
+                        bridges: None,
+                    }),
+                    viewport_offset_x: 0.0,
+                    viewport_offset_y: 0.0,
+                },
+            )
+        };
+        // The centre of cell (10, 10) draws 45 pixels below its flat row.
+        assert_eq!(
+            inverse(375.0),
+            TacticalInverseResult::Cell { rx: 10.0, ry: 10.0 }
+        );
+        // Flat ground behind the pit resolves on its own row.
+        assert_eq!(
+            inverse(165.0),
+            TacticalInverseResult::Cell { rx: 4.5, ry: 4.5 }
+        );
     }
 
     #[test]

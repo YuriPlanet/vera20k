@@ -62,6 +62,12 @@ impl RulesTypeReferences {
         }
     }
 
+    /// A kept pointer's current stored ID, `None` while it is null.
+    #[cfg(feature = "ares")]
+    pub(crate) fn pointer(&self, key: &str) -> Option<&str> {
+        self.pointers.get(key).map(String::as_str)
+    }
+
     pub(crate) fn list(&self, key: &str) -> &[String] {
         self.lists.get(key).map_or(&[], Vec::as_slice)
     }
@@ -167,6 +173,12 @@ const POINTERS: &[(&str, PublishPointer)] = &[
     // names resolve through FindOrAllocate `0x0075E3B0` (call `0x00669145`).
     ("EMPulseWarhead", |rules, id| {
         rules.general.empulse_warhead = named(id);
+    }),
+    // ReadGeneral's SmallVisceroid (ReadString returning at `0x0066E6B0`,
+    // UnitType FindOrAllocate); Ares' tiberium death visceroid reads it.
+    #[cfg(feature = "ares")]
+    ("SmallVisceroid", |rules, id| {
+        rules.general.small_visceroid = named(id);
     }),
     // ReadGeneral (`0x0066D530`), AnimTypes through `0x00428B80` unless
     // noted: OreTwinkle +1870 (`0x0066788E`, `0x0066D67B..0x0066D6A2`),

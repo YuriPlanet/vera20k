@@ -988,9 +988,14 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
         .iter()
         .map(|row| row.1)
         .collect();
+    // Ares (hook 0x5F57B5) adds 84 and 83 while the object lives on.
+    let expected: &[i32] = if cfg!(feature = "ares") {
+        &[43, 48, 29, 84, 83]
+    } else {
+        &[43, 48, 29]
+    };
     assert_eq!(
-        raised,
-        [43, 48, 29],
+        raised, expected,
         "nested kill visits retain the Tag dispatch guard; the outer receiver must reread Alive before first-damage events"
     );
     assert!(matches!(

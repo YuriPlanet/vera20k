@@ -109,6 +109,7 @@ where
             sim,
             rules,
             source_house,
+            owner,
             crate::sim::world::UninitContext::with_rules(rules),
         ),
         ParticleBehavesLike::Fire => super::fire::tick_particle(

@@ -237,6 +237,12 @@ mod layered_enum_history {
         );
         let rules = processed_rules(&layers);
         let destination = rules.super_weapon("Destination").unwrap();
+        // Ares LoadFromINIFile (10033370's tail) writes -1 over every pass's
+        // read for a type its ChronoWarp handler takes.
+        if cfg!(feature = "ares") {
+            assert_eq!(destination.pre_dependent, -1);
+            return;
+        }
         assert_eq!(destination.pre_dependent, 3);
         // Fire_SW4FAE6C indexes the registry by this field; it does not
         // search for a type with a matching dispatch kind. Lookup only,

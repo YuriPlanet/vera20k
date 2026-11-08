@@ -118,7 +118,13 @@ fn building_strategy(
         &mut sim.houses,
         owner,
     );
-    forget_defeated_enemy(&sim.interner, &sim.house_alliances, &mut sim.houses, owner);
+    forget_defeated_enemy(
+        &sim.interner,
+        &sim.house_alliances,
+        &mut sim.houses,
+        owner,
+        sim.session.game_mode_nonzero(),
+    );
     // `0x004FD77C..0x004FD79B`: a signed IQ (`+0x24C`) compare.
     if sim.session.game_mode_nonzero()
         || sim
@@ -276,7 +282,15 @@ fn pick_enemy(
                 .is_some_and(|peer| !peer.multiplay_passive() && !peer.is_defeated())
     });
     if let Some(peer) = first {
-        update_anger_nodes(houses, house_alliances, interner, owner, peer, 1);
+        update_anger_nodes(
+            houses,
+            house_alliances,
+            interner,
+            owner,
+            peer,
+            1,
+            session.game_mode_nonzero(),
+        );
     }
 }
 
@@ -287,6 +301,7 @@ fn forget_defeated_enemy(
     house_alliances: &HouseAlliances,
     houses: &mut Houses,
     owner: InternedId,
+    game_mode_nonzero: bool,
 ) {
     let Some(enemy) = houses.get(&owner).and_then(|house| house.enemy_house()) else {
         return;
@@ -306,6 +321,7 @@ fn forget_defeated_enemy(
         owner,
         enemy,
         anger.wrapping_neg(),
+        game_mode_nonzero,
     );
     if let Some(house) = houses.get_mut(&owner) {
         house.forget_enemy();
@@ -459,6 +475,11 @@ pub(crate) fn all_to_hunt(
 /// a strict-positive/strict-greater winner rule. Rust's sparse map represents
 /// untouched constructor-zero nodes without materializing serialized state.
 /// With no winner the enemy is cleared (`0x0050484F`).
+///
+/// Ares 3.0 HouseClass_AddAnger_MultiplayPassive 10023FB0 (hook
+/// `0x00504796`): outside a campaign (`game_mode_nonzero`) the node update
+/// loop runs zero times for a `MultiplayPassive` peer; the enemy rescan
+/// still runs.
 pub(crate) fn update_anger_nodes(
     houses: &mut crate::sim::houses::Houses,
     alliances: &HouseAlliances,
@@ -466,9 +487,21 @@ pub(crate) fn update_anger_nodes(
     owner: InternedId,
     peer: InternedId,
     delta: i32,
+    game_mode_nonzero: bool,
 ) {
+    #[cfg(feature = "ares")]
+    let passive_peer =
+        game_mode_nonzero && houses.get(&peer).is_some_and(HouseState::multiplay_passive);
+    #[cfg(not(feature = "ares"))]
+    let passive_peer = {
+        let _ = game_mode_nonzero;
+        false
+    };
     let peer_is_registered = peer != owner && houses.contains_key(&peer);
-    if peer_is_registered && let Some(house) = houses.get_mut(&owner) {
+    if peer_is_registered
+        && !passive_peer
+        && let Some(house) = houses.get_mut(&owner)
+    {
         house.add_anger(peer, delta);
     }
 

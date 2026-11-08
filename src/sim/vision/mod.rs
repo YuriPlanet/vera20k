@@ -457,6 +457,9 @@ impl OwnerVisibility {
     /// CreateGap6FB170 updates the counter and both ground bits together.
     /// Preserve cache/frame/pending state; later Map5673A0 fire disclosure
     /// must see the erased ground bits and reach its ordinary reveal leaf.
+    /// Ares TechnoClass_CreateGap_Optimize (1004D360, hook 0x6FB306) and
+    /// DeleteGap_Optimize (1004D3A0, hook 0x6FB5F0) rewrite these cell
+    /// updates with fewer GetCellAt calls and the same writes.
     fn add_gap_cell(&mut self, index: usize) {
         if self.shroud_knowledge[index].add_gap() {
             self.set_ground_bits(
@@ -1346,13 +1349,17 @@ impl FogState {
 
     pub(crate) fn forget_fogged_live_object(&mut self, id: u64) {
         self.note_shared_write();
-        self.fogged_live_objects.retain(|(_, candidate)| *candidate != id);
+        self.fogged_live_objects
+            .retain(|(_, candidate)| *candidate != id);
     }
 
     /// Building4519A8..B2 copies its fog flag to a replacement slot Anim.
     pub(crate) fn inherit_object_fog(&mut self, parent: u64, child: u64) {
-        let viewers: Vec<_> = self.fogged_live_objects.iter()
-            .filter_map(|&(viewer, id)| (id == parent).then_some(viewer)).collect();
+        let viewers: Vec<_> = self
+            .fogged_live_objects
+            .iter()
+            .filter_map(|&(viewer, id)| (id == parent).then_some(viewer))
+            .collect();
         for viewer in viewers {
             self.set_object_fogged(viewer, child, true);
         }
@@ -3225,7 +3232,6 @@ pub(crate) fn publish_gap_generator_event(
         }
     }
 }
-
 
 #[cfg(test)]
 mod tracked_cells_tests;

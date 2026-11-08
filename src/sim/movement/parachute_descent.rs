@@ -92,6 +92,9 @@ impl crate::sim::world::Simulation {
                 entity.advance_fall_rate(
                     rules.general.parachute_max_fall_rate,
                     rules.general.no_parachute_max_fall_rate,
+                    self.interner
+                        .try_resolve(entity.type_ref())
+                        .and_then(|_| self.interner.object_type(entity.type_ref(), rules)),
                 );
             }
         }
@@ -186,6 +189,20 @@ impl crate::sim::world::Simulation {
         rules: &crate::rules::ruleset::RuleSet,
         owner_id: u64,
     ) -> Option<crate::sim::anim_class::AnimId> {
+        // Ares 3.0 10047C60 (hook 0x5F5ADD), before the canopy type: an
+        // `IsBomb` Foot sets IsABomb (+8F), so it lands as a bomb.
+        #[cfg(feature = "ares")]
+        if let Some(owner) = self.substrate.entities.get(owner_id)
+            && owner.category().is_foot()
+            && self
+                .interner
+                .try_resolve(owner.type_ref())
+                .and_then(|_| self.interner.object_type(owner.type_ref(), rules))
+                .is_some_and(|object| object.techno_combat().roles().is_bomb())
+            && let Some(owner) = self.substrate.entities.get_mut(owner_id)
+        {
+            owner.mark_parachuted_bomb();
+        }
         let owner = self.substrate.entities.get(owner_id)?;
         let owner_house = owner.owner();
         let side = self
@@ -387,7 +404,13 @@ impl crate::sim::world::Simulation {
         };
         if crate::sim::movement::air_movement::current_fly_height(entity, terrain) > 0 {
             if !entity.lifecycle.in_limbo() {
-                entity.advance_fall_rate(max_fall_rate, rules.general.no_parachute_max_fall_rate);
+                entity.advance_fall_rate(
+                    max_fall_rate,
+                    rules.general.no_parachute_max_fall_rate,
+                    self.interner
+                        .try_resolve(entity.type_ref())
+                        .and_then(|_| self.interner.object_type(entity.type_ref(), rules)),
+                );
             }
             return false;
         }

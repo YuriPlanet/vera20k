@@ -1525,3 +1525,30 @@ fn retail_metadata_entries_match_the_full_resolution() {
         "{by_image} by image, {by_type} by type"
     );
 }
+
+/// Ares art palettes read as named (CustomPalette::LoadFromINI): the
+/// AnimTypeExt `CustomPalette` (1000A4B0) and the TechnoTypeExt
+/// `CameoPalette` (1003DFB0, from ImageFile); an empty value keeps none.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_art_palettes_keep_the_named_file() {
+    let art = ArtRegistry::from_ini(&IniFile::from_str(
+        "[FIRE]\nCustomPalette=fire~~~.pal\n[SMOKE]\nCustomPalette=\n\
+         [MTNK]\nCameoPalette=cameo2.pal\n[HTNK]\nImage=MTNK\n[E1]\nCameo=E1ICON\n",
+    ));
+    let palette = |anim: &str| {
+        art.anim_runtime_config(anim)
+            .and_then(|config| config.ares_custom_palette.clone())
+    };
+    assert_eq!(palette("FIRE").as_deref(), Some("fire~~~.pal"));
+    assert_eq!(palette("SMOKE"), None);
+    assert_eq!(
+        art.resolve_declared_cameo_palette("MTNK", "MTNK"),
+        Some("cameo2.pal")
+    );
+    assert_eq!(
+        art.resolve_declared_cameo_palette("HTNK", "MTNK"),
+        Some("cameo2.pal")
+    );
+    assert_eq!(art.resolve_declared_cameo_palette("E1", "E1"), None);
+}

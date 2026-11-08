@@ -113,6 +113,16 @@ impl VoxQueue {
         }
     }
 
+    /// Ares trigger action 148 (TActionExt::Execute 100396C0) stores its
+    /// value, at least -1, in the process cache when it is below the voice
+    /// count; a larger value leaves the cache alone.
+    #[cfg(feature = "ares")]
+    pub fn set_trigger_voice(&mut self, index: i32, registry: &EvaRegistry) {
+        if index < registry.voice_count() {
+            self.selected_voice = index.max(-1);
+        }
+    }
+
     pub const fn selected_voice(&self) -> i32 {
         self.selected_voice
     }

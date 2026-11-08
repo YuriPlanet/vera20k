@@ -7,6 +7,7 @@
 
 use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::ui::chat_translation::ChatLanguage;
 use crate::ui::main_menu_dialogs::options::{
     DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels,
     LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult, OptionsDialogState,
@@ -41,10 +42,13 @@ pub(crate) fn launcher_values_from_profile(
         vera_icon: profile.vera_icon,
         hd_radar: profile.hd_radar,
         smooth_sidebar: profile.smooth_sidebar,
+        smooth_online_menus: profile.smooth_online_menus,
         hd_map_previews: profile.hd_map_previews,
         shift_queue: profile.shift_queue,
+        terrain_deformation: profile.terrain_deformation,
         wol_test_service: profile.wol_test_service,
         performance_stats: false,
+        show_string_keys: profile.show_string_keys,
         skip_intro: profile.skip_intro,
         custom_end_game_banner: profile.custom_end_game_banner,
         custom_end_game_score: profile.custom_end_game_score,
@@ -52,6 +56,7 @@ pub(crate) fn launcher_values_from_profile(
         detailed_eva_text: profile.detailed_eva_text,
         sidebar: profile.sidebar,
         health_bars: profile.health_bars,
+        translate_chat: profile.translate_chat,
         // The slider's position is the stored level less the retail strength,
         // so gamemd's own bands sit at the left end.
         house_color_position: profile
@@ -117,13 +122,23 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_hd_radar(&mut self, enabled: bool);
     /// Draw the sidebar's art from lightly smoothed xBR copies (`[VERA] SmoothSidebar=`).
     fn store_smooth_sidebar(&mut self, enabled: bool);
+    /// Smooth the online client's enlarged art (`[VERA] SmoothOnlineMenus=`).
+    fn store_smooth_online_menus(&mut self, enabled: bool);
     /// Show VERA's own map pictures in the setup screens (`[VERA] HdMapPreviews=`).
     fn store_hd_map_previews(&mut self, enabled: bool);
     /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
     fn store_language(&mut self, tag: String);
+    /// The language received online chat is translated into, or `None` for
+    /// off (`[VERA] TranslateChat=`).
+    fn store_chat_translation(&mut self, language: Option<ChatLanguage>);
     fn store_shift_queue(&mut self, shift_queue: bool);
+    /// Let explosions dent the ground from the next game on
+    /// (`[VERA] TerrainDeformation=`).
+    fn store_terrain_deformation(&mut self, enabled: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
     fn set_performance_stats(&mut self, shown: bool);
+    /// Show each label's string-table key instead of its text.
+    fn set_show_string_keys(&mut self, shown: bool);
     fn store_skip_intro(&mut self, skip: bool);
     /// Whether a finished match draws the country's own end-game picture.
     fn store_custom_end_game_banner(&mut self, enabled: bool);
@@ -151,6 +166,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),
+        LauncherOptionsEvent::ChatTranslationSelected(language) => {
+            operations.store_chat_translation(language);
+        }
         LauncherOptionsEvent::FullScreenChanged(full_screen) => {
             operations.set_full_screen(full_screen);
         }
@@ -175,17 +193,26 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::SmoothSidebarChanged(enabled) => {
             operations.store_smooth_sidebar(enabled);
         }
+        LauncherOptionsEvent::SmoothOnlineMenusChanged(enabled) => {
+            operations.store_smooth_online_menus(enabled);
+        }
         LauncherOptionsEvent::HdMapPreviewsChanged(enabled) => {
             operations.store_hd_map_previews(enabled);
         }
         LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
             operations.store_shift_queue(shift_queue);
         }
+        LauncherOptionsEvent::TerrainDeformationChanged(enabled) => {
+            operations.store_terrain_deformation(enabled);
+        }
         LauncherOptionsEvent::WolTestServiceChanged(wol_test_service) => {
             operations.store_wol_test_service(wol_test_service);
         }
         LauncherOptionsEvent::PerformanceStatsChanged(shown) => {
             operations.set_performance_stats(shown)
+        }
+        LauncherOptionsEvent::ShowStringKeysChanged(shown) => {
+            operations.set_show_string_keys(shown)
         }
         LauncherOptionsEvent::SkipIntroChanged(skip) => {
             operations.store_skip_intro(skip);
@@ -399,6 +426,7 @@ mod tests {
             render_interpolation: false,
             mouse_wheel_zoom: true,
             shift_queue: true,
+            terrain_deformation: true,
             wol_test_service: true,
             ..RetailOptionsProfile::default()
         });
@@ -410,6 +438,7 @@ mod tests {
         assert!(!booleans.render_interpolation);
         assert!(booleans.mouse_wheel_zoom);
         assert!(booleans.shift_queue);
+        assert!(booleans.terrain_deformation);
         assert!(booleans.wol_test_service);
     }
 }

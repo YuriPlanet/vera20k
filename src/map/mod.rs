@@ -22,6 +22,7 @@ pub mod bridge_pavement;
 pub mod bridge_rim_tiles;
 pub mod cell_index;
 pub(crate) mod construction_trace;
+pub mod corner_heights;
 pub mod scenario_menu;
 pub mod scenario_sources;
 pub mod skirmish_scenarios;

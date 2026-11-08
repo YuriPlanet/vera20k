@@ -324,7 +324,7 @@ fn a_dying_vehicle_plays_its_explosion_then_its_destroy_anim() {
         };
         let mut replay = sim.scenario_rng.clone();
         let mut recorded = Vec::new();
-        sim.unit_death_explosion(&rules, unit, &mut recorded);
+        sim.unit_death_explosion(&rules, unit, &mut recorded, None, FrameEffects::empty());
         let explosion = pick(&mut replay, &["EXPA", "EXPB", "EXPC"]);
         let destroy = pick(&mut replay, &["DESTA"]);
         assert_eq!(
@@ -365,7 +365,7 @@ fn an_exploding_vehicle_with_ammo_dies_with_its_last_explosion() {
             }
             let mut replay = sim.scenario_rng.clone();
             let mut recorded = Vec::new();
-            sim.unit_death_explosion(&rules, unit, &mut recorded);
+            sim.unit_death_explosion(&rules, unit, &mut recorded, None, FrameEffects::empty());
             let picked = pick(&mut replay, &["EXPA", "EXPB", "EXPC"]);
             let expected = if last { "EXPC".to_string() } else { picked };
             let played: Vec<_> = anims(&sim).into_iter().map(|anim| anim.0).collect();

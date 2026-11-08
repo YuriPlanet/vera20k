@@ -2556,7 +2556,7 @@ pub(crate) fn load_map_initial_with_assets(
         }
         options.normalize();
 
-        let settings = crate::map::rmg::RmgSettings::load(asset_manager);
+        let mut settings = crate::map::rmg::RmgSettings::load(asset_manager);
         let theater_name = crate::map::rmg::emit::theater_name(options.theater);
         let theater = crate::map::theater::load_theater(asset_manager, theater_name)
             .ok_or_else(|| anyhow::anyhow!("random map: theater {theater_name} unavailable"))?;
@@ -2621,6 +2621,18 @@ pub(crate) fn load_map_initial_with_assets(
                 .neutral_tech_buildings(),
             owner.fixed_art(),
         );
+        // VERA: the theater's civilian buildings, for an opted-in Urban
+        // Presence; the same list the setup dialog's preview generated with.
+        if options.urban_enabled {
+            settings.urban_types = crate::map::rmg::tech_catalog::resolve_urban(
+                generated_rules.native.rules(),
+                owner.fixed_art(),
+                &tech_types,
+                theater.extension,
+                theater_name,
+                |file| asset_manager.contains(file),
+            );
+        }
         let mut generated = crate::map::rmg::build::generate_map(
             &options,
             &settings,
@@ -3639,6 +3651,7 @@ fn load_map_first_step(
                                                         &td.iso_palette,
                                                         td.extension,
                                                         &grid,
+                                                        rules.combat_damage.terrain_deformation,
                                                         services.gpu,
                                                         services.batch,
                                                     ),

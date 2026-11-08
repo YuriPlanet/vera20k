@@ -7,6 +7,7 @@
 //! Retail's controls and VERA's own share one dialog, sorted into the
 //! [`Category`] pages its right-hand column picks between.
 
+use crate::ui::chat_translation::ChatLanguage;
 use crate::ui::shell::trackbar::{
     TrackbarHold, TrackbarPress, trackbar_position_from_x, trackbar_press,
 };
@@ -80,6 +81,8 @@ pub(crate) const HD_RADAR_LABEL: &str = "VERA:HdRadar";
 pub(crate) const HD_RADAR_HELP: &str = "VERA:HdRadarHelp";
 pub(crate) const SMOOTH_SIDEBAR_LABEL: &str = "VERA:SmoothSidebar";
 pub(crate) const SMOOTH_SIDEBAR_HELP: &str = "VERA:SmoothSidebarHelp";
+pub(crate) const SMOOTH_ONLINE_MENUS_LABEL: &str = "VERA:SmoothOnlineMenus";
+pub(crate) const SMOOTH_ONLINE_MENUS_HELP: &str = "VERA:SmoothOnlineMenusHelp";
 /// The Interface page's HD Map Previews (`app::map_picture`). The browser
 /// build cannot start the hidden run that draws a map's picture.
 pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
@@ -96,6 +99,11 @@ pub(crate) const SKIP_INTRO_LABEL: &str = "VERA:SkipIntro";
 pub(crate) const SKIP_INTRO_HELP: &str = "VERA:SkipIntroHelp";
 pub(crate) const PERFORMANCE_STATS_LABEL: &str = "VERA:PerformanceStats";
 pub(crate) const PERFORMANCE_STATS_HELP: &str = "VERA:PerformanceStatsHelp";
+/// VERA's developer box: arms Ctrl+Alt+K, which switches every label between
+/// its text and its own string-table key, VERA's own `VERA:` labels included.
+/// Saved in `[VERA] ShowStringKeys=`; a start shows the texts.
+pub(crate) const SHOW_STRING_KEYS_LABEL: &str = "VERA:ShowStringKeys";
+pub(crate) const SHOW_STRING_KEYS_HELP: &str = "VERA:ShowStringKeysHelp";
 /// VERA's end-game switches, the pair of `[EndGameScreens]` presentation
 /// stages. The verdict is what the match shows where it is decided; the score
 /// page is the dialog after it. Each stage owns its picture *and* its music, so
@@ -110,6 +118,9 @@ pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "VERA:CustomEndGameMovieHelp
 pub(crate) const DETAILED_EVA_TEXT_LABEL: &str = "VERA:DetailedEvaText";
 pub(crate) const DETAILED_EVA_TEXT_HELP: &str = "VERA:DetailedEvaTextHelp";
 pub(crate) const SHIFT_QUEUE_HELP: &str = "VERA:ShiftQueueHelp";
+/// VERA's terrain deformation box (`docs/terrain-deformation.md`).
+pub(crate) const TERRAIN_DEFORMATION_LABEL: &str = "VERA:TerrainDeformation";
+pub(crate) const TERRAIN_DEFORMATION_HELP: &str = "VERA:TerrainDeformationHelp";
 pub(crate) const DISPLAY_LABEL: &str = "VERA:Display";
 pub(crate) const DISPLAY_HELP: &str = "VERA:DisplayHelp";
 /// VERA's health-bar list. The retail string table has nothing for it.
@@ -125,6 +136,12 @@ pub(crate) const DISPLAY_AUTO_LABEL: &str = "VERA:DisplayAuto";
 /// own name for itself, so they need no translation.
 pub(crate) const LANGUAGE_LABEL: &str = "VERA:Language";
 pub(crate) const LANGUAGE_HELP: &str = "VERA:LanguageHelp";
+/// The Interface page's Chat Translation list. After its off row, the rows
+/// are each language's own name for itself.
+pub(crate) const CHAT_TRANSLATION_LABEL: &str = "VERA:ChatTranslation";
+pub(crate) const CHAT_TRANSLATION_HELP: &str = "VERA:ChatTranslationHelp";
+/// The Chat Translation list's first row: no translation.
+pub(crate) const CHAT_TRANSLATION_NONE_LABEL: &str = "VERA:ChatTranslationNone";
 /// The Developer page's Check for Updates: the desktop updater
 /// (`app::updater`) checks once the dialog has slid out. The browser build
 /// has no updater.
@@ -435,6 +452,9 @@ pub(crate) enum LauncherComboId {
     HealthBars,
     /// The `[VERA] Language=` list: VERA's interface language.
     Language,
+    /// The `[VERA] TranslateChat=` list: the language received online chat
+    /// is translated into, or off.
+    ChatTranslation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -572,6 +592,10 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's own box: Shift + left click on a mobile build cameo queues
     /// several copies instead of gamemd's one. It applies at once.
     ShiftQueue,
+    /// VERA's own box: explosions dent open ground as in Tiberian Sun and a
+    /// nuke leaves a crater. Saved; the next game's rules read it, so a match
+    /// already running keeps its own.
+    TerrainDeformation,
     /// VERA's developer box: Internet answers from the stand-in WOL test
     /// service instead of showing that WOLAPI is missing. The next Internet
     /// visit reads it.
@@ -598,6 +622,10 @@ pub(crate) enum LauncherCheckboxId {
     /// at that multiple (`render::sidebar_smoothing`). Saved; a battle
     /// follows it at once.
     SmoothSidebar,
+    /// VERA's own box: the online client's enlarged art draws lightly
+    /// smoothed (`BatchRenderer::draw_chrome`). Saved; the next frame follows
+    /// it.
+    SmoothOnlineMenus,
     /// VERA's own box: the setup screens' map preview shows VERA's own
     /// drawing of the whole map (`app::map_picture`) instead of the
     /// map's `[PreviewPack]` picture. On by default; saved, and the next
@@ -610,6 +638,10 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's developer box: the next launch skips `Init_Game`'s logo movie
     /// (`0x0052C5E2`); the splash and the first-run intro still play.
     SkipIntro,
+    /// VERA's developer box: arms Ctrl+Alt+K, which switches every label
+    /// between its text and its own string-table key. Saved; a start shows
+    /// the texts until the hotkey asks for keys.
+    ShowStringKeys,
     /// VERA's box: the score page draws the country's own victory or defeat
     /// picture from `[EndGameScreens]` instead of the side's `MP*SCRN` art. On
     /// by default — a rules set that names pictures shows them — and it covers
@@ -660,10 +692,14 @@ pub(crate) enum LauncherOptionsEvent {
     DisplaySelected(DisplayTarget),
     /// The Language list's pick, a language tag, applied at once.
     LanguageSelected(String),
+    /// The Chat Translation list's pick, applied at once: a language, or
+    /// `None` for off.
+    ChatTranslationSelected(Option<ChatLanguage>),
     FullScreenChanged(bool),
     OriginalShapeChanged(bool),
     YrOriginalStyleChanged(bool),
     ShiftQueueChanged(bool),
+    TerrainDeformationChanged(bool),
     WolTestServiceChanged(bool),
     RenderInterpolationChanged(bool),
     MouseWheelZoomChanged(bool),
@@ -672,8 +708,10 @@ pub(crate) enum LauncherOptionsEvent {
     VeraIconChanged(bool),
     HdRadarChanged(bool),
     SmoothSidebarChanged(bool),
+    SmoothOnlineMenusChanged(bool),
     HdMapPreviewsChanged(bool),
     PerformanceStatsChanged(bool),
+    ShowStringKeysChanged(bool),
     SkipIntroChanged(bool),
     CustomEndGameBannerChanged(bool),
     CustomEndGameScoreChanged(bool),
@@ -723,11 +761,15 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) vera_icon: bool,
     pub(crate) hd_radar: bool,
     pub(crate) smooth_sidebar: bool,
+    pub(crate) smooth_online_menus: bool,
     pub(crate) hd_map_previews: bool,
     pub(crate) shift_queue: bool,
+    pub(crate) terrain_deformation: bool,
     pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) performance_stats: bool,
+    /// `[VERA] ShowStringKeys=`, the String Keys box, then each toggle.
+    pub(crate) show_string_keys: bool,
     pub(crate) skip_intro: bool,
     /// The country's own end-game picture is allowed; see
     /// [`LauncherCheckboxId::CustomEndGameBanner`].
@@ -744,6 +786,9 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) sidebar: SidebarSize,
     /// The Health Bars list's choice; like Sidebar, it applies at once.
     pub(crate) health_bars: HealthBarMode,
+    /// The Chat Translation list's choice, `None` for off; like Sidebar, it
+    /// applies at once.
+    pub(crate) translate_chat: Option<ChatLanguage>,
     /// VERA's team-colour strength as the slider's position,
     /// [`crate::rules::house_colors::STRENGTH_MIN`] less than the level the
     /// profile stores. Position 0 is gamemd's own bands.
@@ -772,10 +817,13 @@ impl Default for LauncherOptionsValues {
             vera_icon: false,
             hd_radar: false,
             smooth_sidebar: false,
+            smooth_online_menus: false,
             hd_map_previews: true,
             shift_queue: false,
+            terrain_deformation: false,
             wol_test_service: false,
             performance_stats: false,
+            show_string_keys: false,
             skip_intro: false,
             custom_end_game_banner: false,
             custom_end_game_score: false,
@@ -783,6 +831,7 @@ impl Default for LauncherOptionsValues {
             detailed_eva_text: false,
             sidebar: SidebarSize::Normal,
             health_bars: HealthBarMode::Vanilla,
+            translate_chat: None,
             house_color_position: 0,
             score_position: 4,
             sound_position: 7,
@@ -1166,6 +1215,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::OriginalShape => &mut self.values.original_shape,
             LauncherCheckboxId::YrOriginalStyle => &mut self.values.yr_original_style,
             LauncherCheckboxId::ShiftQueue => &mut self.values.shift_queue,
+            LauncherCheckboxId::TerrainDeformation => &mut self.values.terrain_deformation,
             LauncherCheckboxId::WolTestService => &mut self.values.wol_test_service,
             LauncherCheckboxId::RenderInterpolation => &mut self.values.render_interpolation,
             LauncherCheckboxId::MouseWheelZoom => &mut self.values.mouse_wheel_zoom,
@@ -1174,8 +1224,10 @@ impl OptionsDialogState {
             LauncherCheckboxId::VeraIcon => &mut self.values.vera_icon,
             LauncherCheckboxId::HdRadar => &mut self.values.hd_radar,
             LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
+            LauncherCheckboxId::SmoothOnlineMenus => &mut self.values.smooth_online_menus,
             LauncherCheckboxId::HdMapPreviews => &mut self.values.hd_map_previews,
             LauncherCheckboxId::PerformanceStats => &mut self.values.performance_stats,
+            LauncherCheckboxId::ShowStringKeys => &mut self.values.show_string_keys,
             LauncherCheckboxId::SkipIntro => &mut self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => &mut self.values.custom_end_game_score,
@@ -1199,6 +1251,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShiftQueue => self
                 .pending_events
                 .push(LauncherOptionsEvent::ShiftQueueChanged(checked)),
+            LauncherCheckboxId::TerrainDeformation => self
+                .pending_events
+                .push(LauncherOptionsEvent::TerrainDeformationChanged(checked)),
             LauncherCheckboxId::WolTestService => self
                 .pending_events
                 .push(LauncherOptionsEvent::WolTestServiceChanged(checked)),
@@ -1223,12 +1278,18 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => self
                 .pending_events
                 .push(LauncherOptionsEvent::SmoothSidebarChanged(checked)),
+            LauncherCheckboxId::SmoothOnlineMenus => self
+                .pending_events
+                .push(LauncherOptionsEvent::SmoothOnlineMenusChanged(checked)),
             LauncherCheckboxId::HdMapPreviews => self
                 .pending_events
                 .push(LauncherOptionsEvent::HdMapPreviewsChanged(checked)),
             LauncherCheckboxId::PerformanceStats => self
                 .pending_events
                 .push(LauncherOptionsEvent::PerformanceStatsChanged(checked)),
+            LauncherCheckboxId::ShowStringKeys => self
+                .pending_events
+                .push(LauncherOptionsEvent::ShowStringKeysChanged(checked)),
             LauncherCheckboxId::SkipIntro => self
                 .pending_events
                 .push(LauncherOptionsEvent::SkipIntroChanged(checked)),
@@ -1310,6 +1371,14 @@ impl OptionsDialogState {
         self.open_combo = None;
         self.pending_events
             .push(LauncherOptionsEvent::HealthBarModeSelected(mode));
+    }
+
+    /// The Chat Translation list publishes its pick at once, like Sidebar.
+    pub(crate) fn select_chat_translation(&mut self, language: Option<ChatLanguage>) {
+        self.values.translate_chat = language;
+        self.open_combo = None;
+        self.pending_events
+            .push(LauncherOptionsEvent::ChatTranslationSelected(language));
     }
 
     /// The Display list publishes its pick at once too: the window moves to
@@ -1441,28 +1510,33 @@ impl Category {
                 Setting::Checkbox(Check::TargetLines),
                 Setting::Checkbox(Check::ShowHidden),
                 Setting::Checkbox(Check::ShiftQueue),
+                Setting::Checkbox(Check::TerrainDeformation),
                 Setting::Checkbox(Check::CustomEndGameBanner),
                 Setting::Checkbox(Check::CustomEndGameScore),
                 Setting::Checkbox(Check::CustomEndGameMovie),
             ],
             Self::Interface if !HAS_HD_MAP_PREVIEWS => &[
                 Setting::List(List::Language),
+                Setting::List(List::ChatTranslation),
                 Setting::List(List::Sidebar),
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::Tooltips),
                 Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
+                Setting::Checkbox(Check::SmoothOnlineMenus),
                 Setting::Checkbox(Check::DetailedEvaText),
             ],
             Self::Interface => &[
                 Setting::List(List::Language),
+                Setting::List(List::ChatTranslation),
                 Setting::List(List::Sidebar),
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::Tooltips),
                 Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
+                Setting::Checkbox(Check::SmoothOnlineMenus),
                 Setting::Checkbox(Check::HdMapPreviews),
                 Setting::Checkbox(Check::DetailedEvaText),
             ],
@@ -1483,6 +1557,7 @@ impl Category {
             Self::Developer => &[
                 Setting::Checkbox(Check::PerformanceStats),
                 Setting::Checkbox(Check::SkipIntro),
+                Setting::Checkbox(Check::ShowStringKeys),
             ],
         }
     }
@@ -2120,6 +2195,7 @@ mod tests {
             List::Display,
             List::HealthBars,
             List::Language,
+            List::ChatTranslation,
         ]
         .map(Setting::List)
         .into_iter()
@@ -2150,9 +2226,12 @@ mod tests {
                 Check::VeraIcon,
                 Check::HdRadar,
                 Check::SmoothSidebar,
+                Check::SmoothOnlineMenus,
                 Check::HdMapPreviews,
                 Check::ShiftQueue,
+                Check::TerrainDeformation,
                 Check::PerformanceStats,
+                Check::ShowStringKeys,
                 Check::SkipIntro,
                 Check::CustomEndGameBanner,
                 Check::CustomEndGameScore,

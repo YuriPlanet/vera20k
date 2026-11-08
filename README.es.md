@@ -55,7 +55,7 @@ página en la hoja de ruta, con el trabajo en curso y el siguiente paso:
 - **[Jugabilidad y combate](https://github.com/YuriPlanet/vera20k/issues/3830):** comportamiento de las unidades, daño y fiabilidad de las escaramuzas.
 - **[Rendimiento](https://github.com/YuriPlanet/vera20k/issues/3831):** fotogramas por segundo y respuesta en batallas grandes y en equipos antiguos.
 - **[Multijugador](https://github.com/YuriPlanet/vera20k/issues/3832):** unirse a partidas en línea, empezarlas y mantenerlas en marcha, y la fiabilidad del juego cooperativo.
-- **[Interfaz y audio](https://github.com/YuriPlanet/vera20k/issues/3833):** menús, textos, traducciones y sonido.
+- **[Interfaz y audio](https://github.com/YuriPlanet/vera20k/issues/3833):** menús, textos, [traducciones](src/i18n/README.md) y sonido.
 - **[Campañas](https://github.com/YuriPlanet/vera20k/issues/3834):** las misiones se pueden iniciar, pero jugarlas hasta el final aún requiere trabajo: objetivos, disparadores, transiciones con scripts, guardado y carga, y el paso a la siguiente misión.
 - **[Compatibilidad con mods](https://github.com/YuriPlanet/vera20k/issues/3835):** funciones de Ares y Phobos, sin cambiar los valores predeterminados del juego original.
 - **[Pruebas](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** jugar VERA20K junto al original e informar de lo que se juega de forma distinta.
@@ -125,6 +125,8 @@ de estas opciones:
 Los ajustes de sonido, gráficos y controles se guardan en `VERA.INI`. Las reglas de juego
 provienen de los ajustes del lobby, los mods o los mapas.
 
+La [guía de modding](docs/modding.md) explica cómo crear mods propios.
+
 ## Apoya el proyecto
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Apoya a VERA20K con PayPal" height="23"></a>
@@ -149,11 +151,14 @@ Command & Conquer y Red Alert son marcas comerciales de Electronic Arts Inc., y 
 pantalla y el icono de la aplicación, la estrella roja de Red Alert 2, muestran arte del juego
 propiedad de Electronic Arts. VERA20K no está afiliado a Electronic Arts ni cuenta con su respaldo.
 
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 **Lee el [aviso legal](LEGAL.md) antes de compartir, vender o hacer un fork de VERA20K.**
 
 ## Documentación
 
 - [Vista previa en WebAssembly](docs/wasm.md): una compilación opcional para un jugador que se ejecuta en el navegador.
+- [Guía de modding](docs/modding.md): qué pueden hacer los mods y qué no, y en qué se diferencia VERA20K del juego original.
 - [Perfiles INI](docs/ini-roots.md): elegir los archivos de reglas, arte e IA.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) y [NPatch](docs/npatch.md): compatibilidad con las extensiones y sus limitaciones.
 - [Visión general del motor](docs/index.md): organización del código y cómo encajan las piezas del motor.

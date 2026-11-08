@@ -542,6 +542,10 @@ fn trigger_duplicate_type_keeps_selected_cameo_kind_through_sidebar_projection()
     );
 }
 
+// The native insertion order and top row: Ares 3.0 inserts at its own
+// lower bound (1002C2D0, hook 0x6A8710) and keeps the top cameo row after
+// a removal (1002C660, hook 0x6AA600); see docs/ares-sidebar-ui-hooks.md.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn trigger_cameo_flash_reaches_view_and_survives_projection_save_lifecycle() {
     let native: Value = serde_json::from_str(crate::test_fixture::text(
@@ -627,6 +631,10 @@ fn trigger_cameo_flash_reaches_view_and_survives_projection_save_lifecycle() {
     );
 }
 
+// The native insertion order and top row: Ares 3.0 inserts at its own
+// lower bound (1002C2D0, hook 0x6A8710) and keeps the top cameo row after
+// a removal (1002C660, hook 0x6AA600); see docs/ares-sidebar-ui-hooks.md.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn original_post_removal_scroll_reaches_view_and_hit_test() {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
@@ -739,6 +747,10 @@ fn production_projection_uses_rule_side_category_flags_and_csf_utf16_inputs() {
     assert_eq!(compared, 26 * 26);
 }
 
+// The native insertion order and top row: Ares 3.0 inserts at its own
+// lower bound (1002C2D0, hook 0x6A8710) and keeps the top cameo row after
+// a removal (1002C660, hook 0x6AA600); see docs/ares-sidebar-ui-hooks.md.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn native_order_reaches_localized_views_scrolling_and_click_identity() {
     let (sim, rules, owner, csf, expected) = native_history_world();

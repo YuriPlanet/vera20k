@@ -46,7 +46,7 @@ pub(crate) fn ring_mask(
     // neighbor pointers before classifying NW,N,NE,W,E,SW,S,SE. Retain the
     // shared border identity rather than copying its changing coordinate.
     let target = i32::from(grid.cell_native(x, y).level as i8) + 4;
-    if !scratch.in_diamond(x, y) || !scratch.get(x, y).shore_enable {
+    if !scratch.in_diamond(x, y) || !scratch.shore_enable(x, y) {
         return 0;
     }
     let mut neighbors = [(CellRef::Border, (0, 0)); 8];

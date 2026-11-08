@@ -275,7 +275,7 @@ impl Simulation {
             4 => {
                 self.substrate.write_grapple_roll(victim, SimFixed::ZERO);
                 self.grapple_splashes(victim, origin, rules);
-                if warhead.culling && self.grapple_cull_admitted(owner, victim, rules) {
+                if warhead.culling && self.grapple_cull_admitted(owner, victim, warhead, rules) {
                     self.grapple_cull(owner, victim, rules, effects);
                     return;
                 }
@@ -411,25 +411,59 @@ impl Simulation {
         }
     }
 
-    fn grapple_cull_admitted(&self, owner: u64, victim: u64, rules: &RuleSet) -> bool {
+    fn grapple_cull_admitted(
+        &mut self,
+        owner: u64,
+        victim: u64,
+        warhead: &crate::rules::warhead_type::WarheadType,
+        rules: &RuleSet,
+    ) -> bool {
         let Some(target) = self.substrate.entities.get(victim) else {
             return false;
         };
         let Some(kind) = self.object_type(target.type_ref(), rules) else {
             return false;
         };
-        match crate::sim::combat::health_category(
-            target.health.current(),
-            kind.strength,
-            rules.general.condition_red,
-            rules.general.condition_yellow,
-        ) {
-            0 => true,
-            1 => self.substrate.entities.get(owner).is_some_and(|source| {
-                super::super::veterancy::raw_is_elite(source.veterancy.raw())
-            }),
-            _ => false,
-        }
+        // Ares ParasiteClass_UpdateSquiddy_Culling (10053AC0, hook 0x629BC0)
+        // replaces the red/elite-at-yellow test with CanCull 10052590.
+        #[cfg(feature = "ares")]
+        let admitted = {
+            let (health, strength) = (target.health, kind.strength);
+            let Some(veterancy) = self
+                .substrate
+                .entities
+                .get(owner)
+                .map(|source| source.veterancy.raw())
+            else {
+                return false;
+            };
+            crate::sim::combat::object_health::ares_can_cull(
+                warhead,
+                veterancy,
+                health,
+                strength,
+                rules.general.condition_red,
+                rules.general.condition_yellow,
+                &mut self.scenario_rng,
+            )
+        };
+        #[cfg(not(feature = "ares"))]
+        let admitted = {
+            let _ = warhead;
+            match crate::sim::combat::health_category(
+                target.health.current(),
+                kind.strength,
+                rules.general.condition_red,
+                rules.general.condition_yellow,
+            ) {
+                0 => true,
+                1 => self.substrate.entities.get(owner).is_some_and(|source| {
+                    super::super::veterancy::raw_is_elite(source.veterancy.raw())
+                }),
+                _ => false,
+            }
+        };
+        admitted
     }
 
     fn grapple_cull(
@@ -453,7 +487,16 @@ impl Simulation {
         };
         let source_cost = self.cost_of(source.owner(), source_type, rules);
         let target_cost = self.cost_of(target.owner(), target_type, rules);
-        if source_type.trainable {
+        // Ares 10053AC0 resumes past this experience block (0x629C5D) when
+        // the victim's house counts the squid's house an ally (the owner
+        // itself included), else at the block (0x629BF3).
+        #[cfg(feature = "ares")]
+        let gains = !self
+            .house_alliances
+            .is_allied(&self.interner, target.owner(), source.owner());
+        #[cfg(not(feature = "ares"))]
+        let gains = true;
+        if gains && source_type.trainable {
             self.substrate
                 .entities
                 .get_mut(owner)

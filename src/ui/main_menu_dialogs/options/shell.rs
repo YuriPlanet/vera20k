@@ -8,22 +8,26 @@
 //! one column at the places retail's first band uses.
 
 use super::{
+    CHAT_TRANSLATION_HELP, CHAT_TRANSLATION_LABEL, CHAT_TRANSLATION_NONE_LABEL,
     CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP,
     CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL,
-    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, DETAILED_EVA_TEXT_HELP, DETAILED_EVA_TEXT_LABEL, DEVELOPER_OPTIONS_LABEL,
-    DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FULL_SCREEN_HELP,
-    FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL,
-    HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
+    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, ChatLanguage,
+    DETAILED_EVA_TEXT_HELP, DETAILED_EVA_TEXT_LABEL, DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL,
+    DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FULL_SCREEN_HELP, FULL_SCREEN_LABEL,
+    HAS_CHECK_FOR_UPDATES, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP,
+    HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
     HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LANGUAGE_HELP, LANGUAGE_LABEL, LOCK_CURSOR_HELP,
     LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
     LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
     MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
     PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame,
     RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP,
-    RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
-    SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting,
-    SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
-    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP,
+    SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP, SKIP_INTRO_LABEL,
+    SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL,
+    Setting, SidebarSize, TERRAIN_DEFORMATION_HELP, TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP,
+    VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP,
+    YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
 
@@ -33,6 +37,7 @@ use crate::ui::shell::geom::{
     RectPx, ShellScale, center_offset, child_window, dlu_rect, right_panel_rects,
 };
 use crate::ui::shell::menu_page::{self, MenuPageButtonSpec, MenuPageSpec};
+use crate::ui::shell::modal::{ModalKind, message_box_base};
 use crate::ui::shell::trackbar::{authored_track, thumb_left_at};
 use crate::ui::skirmish_shell::{COMBO_FACE_H, DropdownMetrics, combo_face_rect};
 
@@ -150,6 +155,10 @@ const LIST_PITCH: i32 = 27;
 /// "Custom End Game Banner", wrap, and a caption that wraps loses its second
 /// line to the 10-DLU height.
 const BOX_W: i32 = 160;
+/// The Esc menu's rows start where a `0x121` box's text does (40,40).
+const ESC_MENU_X: i32 = 40;
+const ESC_MENU_Y: i32 = 40;
+const ESC_MENU_LIST_Y: i32 = ESC_MENU_Y + 2 * BOX_PITCH + 3;
 
 /// A caption the page paints, by what it names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -318,6 +327,47 @@ impl LauncherOptionsLayout {
         }
     }
 
+    /// VERA's Esc menu (`app::shell_menu`): a few of the pages' settings where
+    /// its `0x121` box would have its text, on that box's own mapping
+    /// (`message_box_layout_on`). The list comes last because it opens over
+    /// what lies below it.
+    pub(crate) fn esc_menu(width: i32, height: i32, scale: ShellScale) -> Self {
+        let dialog = message_box_base(ModalKind::ThreeButton, width, height, scale).dialog;
+        let px = |rect: RectPx| scale.scale_rect(rect.translate(dialog.x, dialog.y));
+        let dlu = |x, y, w, h| px(dlu_rect(x, y, w, h));
+        let caption = dlu_rect(ESC_MENU_X, ESC_MENU_LIST_Y, 0, 0);
+        let nothing = RectPx::new(0, 0, 0, 0);
+        Self {
+            category: Category::ALL[0],
+            title: nothing,
+            warning: nothing,
+            status_help: nothing,
+            labels: vec![(
+                dlu(ESC_MENU_X, ESC_MENU_LIST_Y, 120, 10),
+                PageLabel::List(LauncherComboId::Language),
+            )],
+            combos: vec![(
+                LauncherComboId::Language,
+                px(RectPx::new(caption.x, caption.y + 16, 180, COMBO_FACE_H)),
+            )],
+            trackbars: Vec::new(),
+            checkboxes: vec![
+                (
+                    LauncherCheckboxId::FullScreen,
+                    dlu(ESC_MENU_X, ESC_MENU_Y, BOX_W, 10),
+                ),
+                (
+                    LauncherCheckboxId::PerformanceStats,
+                    dlu(ESC_MENU_X, ESC_MENU_Y + BOX_PITCH, BOX_W, 10),
+                ),
+            ],
+            buttons: Vec::new(),
+            scale,
+            screen: (width.max(0) as u32, height.max(0) as u32),
+            battle_frame: (width.max(0) as u32, height.max(0) as u32),
+        }
+    }
+
     /// The same page for a battle frame other than the window: a zoomed or
     /// 4:3 match (`App::match_zoom_geometry`).
     pub(crate) fn with_battle_frame(mut self, battle_frame: (u32, u32)) -> Self {
@@ -424,6 +474,17 @@ impl OptionsDialogState {
         self.shell_interaction.hovered_button = None;
     }
 
+    /// Close the open list with its close sound. False when none was open.
+    pub(crate) fn shell_close_list(&mut self) -> bool {
+        if self.open_combo.take().is_none() {
+            return false;
+        }
+        self.pending_events
+            .push(LauncherOptionsEvent::Cue(LauncherCue::ComboClose));
+        self.shell_interaction.popup_hovered = None;
+        true
+    }
+
     pub(crate) fn shell_labels(
         &self,
         layout: &LauncherOptionsLayout,
@@ -506,10 +567,13 @@ impl OptionsDialogState {
             LauncherCheckboxId::VeraIcon => VERA_ICON_LABEL,
             LauncherCheckboxId::HdRadar => HD_RADAR_LABEL,
             LauncherCheckboxId::SmoothSidebar => SMOOTH_SIDEBAR_LABEL,
+            LauncherCheckboxId::SmoothOnlineMenus => SMOOTH_ONLINE_MENUS_LABEL,
             LauncherCheckboxId::HdMapPreviews => HD_MAP_PREVIEWS_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
+            LauncherCheckboxId::TerrainDeformation => TERRAIN_DEFORMATION_LABEL,
             LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
             LauncherCheckboxId::PerformanceStats => PERFORMANCE_STATS_LABEL,
+            LauncherCheckboxId::ShowStringKeys => SHOW_STRING_KEYS_LABEL,
             LauncherCheckboxId::SkipIntro => SKIP_INTRO_LABEL,
             LauncherCheckboxId::CustomEndGameBanner => CUSTOM_END_GAME_BANNER_LABEL,
             LauncherCheckboxId::CustomEndGameScore => CUSTOM_END_GAME_SCORE_LABEL,
@@ -572,10 +636,13 @@ impl OptionsDialogState {
             LauncherCheckboxId::VeraIcon => self.values.vera_icon,
             LauncherCheckboxId::HdRadar => self.values.hd_radar,
             LauncherCheckboxId::SmoothSidebar => self.values.smooth_sidebar,
+            LauncherCheckboxId::SmoothOnlineMenus => self.values.smooth_online_menus,
             LauncherCheckboxId::HdMapPreviews => self.values.hd_map_previews,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
+            LauncherCheckboxId::TerrainDeformation => self.values.terrain_deformation,
             LauncherCheckboxId::WolTestService => self.values.wol_test_service,
             LauncherCheckboxId::PerformanceStats => self.values.performance_stats,
+            LauncherCheckboxId::ShowStringKeys => self.values.show_string_keys,
             LauncherCheckboxId::SkipIntro => self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => self.values.custom_end_game_score,
@@ -666,6 +733,36 @@ impl OptionsDialogState {
             .collect()
     }
 
+    /// The Chat Translation list's rows, top to bottom: off, then each
+    /// language.
+    fn chat_translation_choices() -> Vec<Option<ChatLanguage>> {
+        std::iter::once(None)
+            .chain(ChatLanguage::all().map(Some))
+            .collect()
+    }
+
+    /// A Chat Translation row's text: [`CHAT_TRANSLATION_NONE_LABEL`] or the
+    /// language's own name.
+    fn chat_translation_label(language: Option<ChatLanguage>) -> String {
+        language.map_or_else(
+            || tr(CHAT_TRANSLATION_NONE_LABEL),
+            |language| language.name().to_owned(),
+        )
+    }
+
+    /// The Chat Translation face's text.
+    pub(crate) fn shell_chat_translation_label(&self) -> String {
+        Self::chat_translation_label(self.values.translate_chat)
+    }
+
+    /// The Chat Translation popup's rows, top to bottom.
+    pub(crate) fn shell_chat_translation_rows(&self) -> Vec<String> {
+        Self::chat_translation_choices()
+            .into_iter()
+            .map(Self::chat_translation_label)
+            .collect()
+    }
+
     pub(crate) fn shell_popup(&self, layout: &LauncherOptionsLayout) -> Option<LauncherComboPopup> {
         let combo = self.open_combo?;
         // The list box hangs under the painted face; its rows use this
@@ -706,6 +803,13 @@ impl OptionsDialogState {
                     .iter()
                     .position(|choice| choice.tag == self.language);
                 (self.languages.len(), selected)
+            }
+            LauncherComboId::ChatTranslation => {
+                let choices = Self::chat_translation_choices();
+                let selected = choices
+                    .iter()
+                    .position(|language| *language == self.values.translate_chat);
+                (choices.len(), selected)
             }
         };
         let metrics = DropdownMetrics::scaled(layout.scale);
@@ -813,13 +917,22 @@ impl OptionsDialogState {
                 LauncherCheckboxId::VeraIcon => LauncherStatusHelp::Vera(VERA_ICON_HELP),
                 LauncherCheckboxId::HdRadar => LauncherStatusHelp::Vera(HD_RADAR_HELP),
                 LauncherCheckboxId::SmoothSidebar => LauncherStatusHelp::Vera(SMOOTH_SIDEBAR_HELP),
+                LauncherCheckboxId::SmoothOnlineMenus => {
+                    LauncherStatusHelp::Vera(SMOOTH_ONLINE_MENUS_HELP)
+                }
                 LauncherCheckboxId::HdMapPreviews => LauncherStatusHelp::Vera(HD_MAP_PREVIEWS_HELP),
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Vera(SHIFT_QUEUE_HELP),
+                LauncherCheckboxId::TerrainDeformation => {
+                    LauncherStatusHelp::Vera(TERRAIN_DEFORMATION_HELP)
+                }
                 LauncherCheckboxId::WolTestService => {
                     LauncherStatusHelp::Vera(WOL_TEST_SERVICE_HELP)
                 }
                 LauncherCheckboxId::PerformanceStats => {
                     LauncherStatusHelp::Vera(PERFORMANCE_STATS_HELP)
+                }
+                LauncherCheckboxId::ShowStringKeys => {
+                    LauncherStatusHelp::Vera(SHOW_STRING_KEYS_HELP)
                 }
                 LauncherCheckboxId::SkipIntro => LauncherStatusHelp::Vera(SKIP_INTRO_HELP),
                 LauncherCheckboxId::CustomEndGameBanner => {
@@ -847,6 +960,7 @@ impl OptionsDialogState {
                     LauncherComboId::Display => DISPLAY_HELP,
                     LauncherComboId::HealthBars => HEALTH_BARS_HELP,
                     LauncherComboId::Language => LANGUAGE_HELP,
+                    LauncherComboId::ChatTranslation => CHAT_TRANSLATION_HELP,
                 })
             })
     }
@@ -891,6 +1005,12 @@ impl OptionsDialogState {
                 LauncherComboId::Language => {
                     match row.and_then(|row| self.languages.get(row)).cloned() {
                         Some(choice) => self.select_language(&choice.tag),
+                        None => self.open_combo = None,
+                    }
+                }
+                LauncherComboId::ChatTranslation => {
+                    match row.and_then(|row| Self::chat_translation_choices().get(row).copied()) {
+                        Some(language) => self.select_chat_translation(language),
                         None => self.open_combo = None,
                     }
                 }
@@ -977,6 +1097,7 @@ fn list_caption(id: LauncherComboId) -> String {
         LauncherComboId::Display => DISPLAY_LABEL,
         LauncherComboId::HealthBars => HEALTH_BARS_LABEL,
         LauncherComboId::Language => LANGUAGE_LABEL,
+        LauncherComboId::ChatTranslation => CHAT_TRANSLATION_LABEL,
     })
 }
 
@@ -1317,6 +1438,119 @@ mod tests {
                 open,
                 close,
                 LauncherOptionsEvent::LanguageSelected("zh-CN".to_owned()),
+            ]
+        );
+    }
+
+    /// VERA's Esc menu: its settings keep off the box's buttons and its list,
+    /// the longest thing there, stays on the smallest window. Esc shuts the
+    /// list with its sound.
+    #[test]
+    fn esc_menu_settings_stay_clear_of_the_box_buttons() {
+        use crate::i18n::LanguageChoice;
+        use crate::ui::shell::modal::message_box_layout_on;
+        let mut state = state();
+        let languages = (0..10)
+            .map(|i| LanguageChoice {
+                tag: i.to_string(),
+                name: i.to_string(),
+            })
+            .collect();
+        state.set_languages(languages, "0".to_owned());
+        for (w, h) in [(640, 480), (1920, 1080)] {
+            let scale = ShellScale::for_window(w, h);
+            let layout = LauncherOptionsLayout::esc_menu(w, h, scale);
+            let message_box = message_box_layout_on(ModalKind::ThreeButton, w, h, scale);
+            let face = layout.combo_rect(LauncherComboId::Language).unwrap();
+            state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
+            let list = state.shell_popup(&layout).unwrap().rect;
+            let boxes = layout.checkboxes.iter().map(|(_, rect)| *rect);
+            for rect in boxes.chain([face, list]) {
+                assert!(
+                    rect.x >= message_box.dialog.x && rect.x + rect.w <= message_box.ok.x,
+                    "{w}x{h}: {rect:?}"
+                );
+                assert!(
+                    rect.y >= message_box.dialog.y && rect.y + rect.h <= h,
+                    "{w}x{h}: {rect:?}"
+                );
+            }
+            assert!(state.shell_close_list());
+            assert!(!state.shell_close_list());
+            assert_eq!(
+                state.drain_output().events,
+                [
+                    LauncherOptionsEvent::Cue(LauncherCue::ComboOpen),
+                    LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
+                ]
+            );
+        }
+    }
+
+    #[test]
+    fn esc_menu_checkboxes_publish_what_the_options_page_does() {
+        let mut state = state();
+        let layout = LauncherOptionsLayout::esc_menu(800, 600, ShellScale::RETAIL);
+        let event = |id, checked| match id {
+            LauncherCheckboxId::FullScreen => LauncherOptionsEvent::FullScreenChanged(checked),
+            _ => LauncherOptionsEvent::PerformanceStatsChanged(checked),
+        };
+        for id in [
+            LauncherCheckboxId::FullScreen,
+            LauncherCheckboxId::PerformanceStats,
+        ] {
+            let checked = !state.shell_checkbox_checked(id);
+            let rect = checkbox(&layout, id);
+            state.shell_mouse_down(rect.x + 2, rect.y + 2, &layout);
+            assert!(
+                state.drain_output().events.contains(&event(id, checked)),
+                "{id:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn chat_translation_list_picks_a_language_or_off() {
+        let mut state = state();
+        state.select_category(Category::Interface);
+        let layout = page(Category::Interface);
+        let face = layout.combo_rect(LauncherComboId::ChatTranslation).unwrap();
+        assert_eq!(
+            state.shell_chat_translation_label(),
+            tr(CHAT_TRANSLATION_NONE_LABEL)
+        );
+        state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
+        let popup = state.shell_popup(&layout).unwrap();
+        assert_eq!(
+            (popup.combo, popup.rows, popup.selected),
+            (LauncherComboId::ChatTranslation, 15, 0),
+            "off, then the fourteen languages"
+        );
+        assert!(popup.rect.y + popup.rect.h <= layout.status_help.y);
+        state.drain_output();
+        // Japanese, the fourth language: the pick publishes at once.
+        let japanese = popup.row_rect(4);
+        state.shell_mouse_down(japanese.x + 10, japanese.y + 5, &layout);
+        assert_eq!(state.shell_chat_translation_label(), "日本語");
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
+                LauncherOptionsEvent::ChatTranslationSelected(Some(ChatLanguage::Japanese)),
+            ]
+        );
+        // The list opens on that pick, and its first row turns translation off.
+        state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
+        let popup = state.shell_popup(&layout).unwrap();
+        assert_eq!(popup.selected, 4);
+        state.drain_output();
+        let off = popup.row_rect(0);
+        state.shell_mouse_down(off.x + 10, off.y + 5, &layout);
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
+                LauncherOptionsEvent::ChatTranslationSelected(None),
             ]
         );
     }
@@ -1888,12 +2122,16 @@ mod tests {
                 "{category:?}"
             );
         }
-        // The Developer page holds FPS and Skip Startup Logo only.
+        // The Developer page holds FPS, String Keys and Skip Startup Logo only.
         let layout = page(Category::Developer);
         for (id, event) in [
             (
                 LauncherCheckboxId::PerformanceStats,
                 LauncherOptionsEvent::PerformanceStatsChanged(true),
+            ),
+            (
+                LauncherCheckboxId::ShowStringKeys,
+                LauncherOptionsEvent::ShowStringKeysChanged(true),
             ),
             (
                 LauncherCheckboxId::SkipIntro,

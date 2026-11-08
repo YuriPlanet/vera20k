@@ -2335,3 +2335,18 @@ fn total_bales(sim: &Simulation, registry: &OverlayTypeRegistry) -> u32 {
     }
     total
 }
+
+/// Ares 3.0 1002C8A0 (hook 0x48248D): the Money crate pays `base +
+/// RandomRanged(0, [CrateRules] RandomCrateMoney)`; 0 pays the base and
+/// draws nothing.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_random_crate_money_bounds_the_top_up() {
+    let rules =
+        RuleSet::from_ini(&IniFile::from_str("[CrateRules]\nRandomCrateMoney=0\n")).unwrap();
+    let mut rng = crate::sim::rng::SimRng::new(7);
+    let before = rng.clone();
+    let base = NativeF64Bits::from_bits(2000.0_f64.to_bits());
+    assert_eq!(effects::money_crate_amount(&mut rng, &rules, 0, base), 2000);
+    assert_eq!(rng.next_u32(), before.clone().next_u32(), "no draw");
+}

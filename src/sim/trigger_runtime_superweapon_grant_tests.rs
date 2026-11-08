@@ -374,10 +374,14 @@ fn super_grant_one_time_nuke_uses_payload_speed_and_ground_warning_without_silo(
             ),
             (2688, 2688, origin_z)
         );
-        assert_eq!(
-            bullet.velocity().native().map(|n| n.bits()),
+        // Installed Ares (SW_NuclearMissile::Activate 10072FF0) drops the
+        // granted payload at exactly (0, 0, -100).
+        let velocity = if cfg!(feature = "ares") {
+            [0, 0, 0xc059000000000000]
+        } else {
             [0xb9be6aaf04000000, 0xbd0b936000000000, 0xc059000000000000]
-        );
+        };
+        assert_eq!(bullet.velocity().native().map(|n| n.bits()), velocity);
         assert_eq!(bullet.source_id(), crate::sim::combat::RAD_NO_ATTACKER);
         assert_eq!(bullet.firer_house(), None);
         assert!(!bullet.payload().bright());

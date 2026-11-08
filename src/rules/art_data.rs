@@ -82,6 +82,13 @@ pub struct ArtEntry {
     pub(crate) cameo_pcx: Option<String>,
     #[cfg(feature = "ares")]
     pub(crate) alt_cameo_pcx: Option<String>,
+    /// Ares TechnoTypeExt+0x11C `CameoPalette` (CustomPalette, read from
+    /// ImageFile by 1003DFB0 after InitialPayload.Nums): the palette file a
+    /// nonempty read names, `~~~` standing for the theater extension.
+    /// StripClass_Draw_Main (Ares.dll 1005E390, hook 0x6A9A2A) draws the SHP
+    /// cameo with it when it loads, else CAMEO.PAL.
+    #[cfg(feature = "ares")]
+    pub(crate) cameo_palette: Option<String>,
     /// Replace 2nd char of filename with theater-specific letter.
     pub new_theater: bool,
     /// Use theater file extension (e.g., `.tem`) instead of `.shp`.
@@ -346,6 +353,19 @@ pub struct AnimTypeRuntimeConfig {
     /// `Victim`): the House a `MakeInfantry=` animation takes.
     #[cfg(feature = "phobos")]
     pub(crate) phobos_make_infantry_owner: crate::rules::ares_warhead::HouseSelector,
+    /// Ares AnimTypeExt+8 `MakeInfantryOwner` (Valueable<OwnerHouseKind>,
+    /// constructor Invoker; LoadFromINI 1000A4B0), the House
+    /// AnimTypeExt::SetMakeInfOwner (1000A5F0) gives the anim.
+    #[cfg(feature = "ares")]
+    pub(crate) ares_make_infantry_owner: crate::rules::ares_warhead::HouseSelector,
+    /// Ares AnimTypeExt+0xC `CustomPalette` (CustomPalette, Temperate
+    /// mode): the palette file a nonempty read names, `~~~` standing for
+    /// the theater extension (`CustomPalette::LoadFromINI`, 1000A4B0 after
+    /// MakeInfantryOwner). AnimClass_Draw_SetPalette (Ares.dll 1000ACE0,
+    /// hook 0x4232CE) draws the anim with it when it loads; the anim atlas
+    /// has no per-type palette, so nothing reads it yet.
+    #[cfg(feature = "ares")]
+    pub(crate) ares_custom_palette: Option<String>,
     /// Phobos `CreateUnit=` + `CreateUnit.Owner` (default `Victim`) +
     /// `CreateUnit.RemapAnim` (default no): `Some` when the animation names a
     /// unit type, which overrides the owner kind and permits remap.
@@ -428,6 +448,23 @@ pub struct AnimTypeRuntimeConfig {
     pub spawns_particle: Option<String>,
     /// art.ini `NumParticles=`, `AnimTypeClass+0x2D0`.
     pub num_particles: i32,
+    /// Ares AnimTypeExt+0x18/+0x1C `SpawnsParticle.RangeMinimum` and
+    /// `SpawnsParticle.RangeMaximum` (Valueable<Leptons>, constructor 0;
+    /// LoadFromINI 1000A4B0 through 1000A5D0): either nonzero spreads the
+    /// SpawnsParticle particles around the anim (`Simulation::anim_middle`).
+    #[cfg(feature = "ares")]
+    pub(crate) ares_spawns_particle_range: [i32; 2],
+    /// Ares AnimTypeExt+0x24 `Damage.Delay` (Valueable<int>, constructor 0):
+    /// above zero, an anim whose `Damage=` is at least 1 delivers its whole
+    /// Damage once every this many frames.
+    #[cfg(feature = "ares")]
+    pub(crate) ares_damage_delay: i32,
+    /// Ares AnimTypeExt+0x20 `Weapon` (Valueable<WeaponTypeClass*>, Find
+    /// only, constructor null): the weapon whose bullet the anim's damage
+    /// detonates instead of the area damage. The ordered Rules processor
+    /// resolves it with the ART body (`AnimTypeReferences`).
+    #[cfg(feature = "ares")]
+    pub(crate) ares_weapon: Option<String>,
     /// art.ini `ShouldFogRemove=`, `AnimTypeClass+0x374`.
     /// Constructor default **true**.
     pub should_fog_remove: bool,
@@ -767,6 +804,11 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         #[cfg(feature = "phobos")]
         phobos_make_infantry_owner: crate::rules::ares_warhead::HouseSelector::Victim
             .read(section, "MakeInfantryOwner"),
+        #[cfg(feature = "ares")]
+        ares_make_infantry_owner: crate::rules::ares_warhead::HouseSelector::Invoker
+            .read(section, "MakeInfantryOwner"),
+        #[cfg(feature = "ares")]
+        ares_custom_palette: section.read_name("CustomPalette", 2048).map(str::to_owned),
         // `CreateUnit` is a `Nullable<TechnoTypeClass*>`: `none` clears it and
         // an authored name is a presence signal here. A name no factory
         // resolves is treated as present (the type itself is not modeled).
@@ -806,6 +848,17 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         flamer: section.read_bool("Flamer", false),
         spawns_particle: None,
         num_particles: section.read_int("NumParticles", 0),
+        // AnimTypeExt::LoadFromINIFile (1000A4B0) reads both Leptons through
+        // INI_EX's double (1000A6D0: cells * 256), then Damage.Delay.
+        #[cfg(feature = "ares")]
+        ares_spawns_particle_range: [
+            section.read_ares_leptons("SpawnsParticle.RangeMinimum", 0),
+            section.read_ares_leptons("SpawnsParticle.RangeMaximum", 0),
+        ],
+        #[cfg(feature = "ares")]
+        ares_damage_delay: section.read_ares_int("Damage.Delay", 0),
+        #[cfg(feature = "ares")]
+        ares_weapon: None,
         // Both constructor defaults are 1, not 0.
         should_fog_remove: section.read_bool("ShouldFogRemove", true),
         should_use_cell_drawer: section.read_bool("ShouldUseCellDrawer", true),
@@ -1081,6 +1134,8 @@ impl ArtRegistry {
             let cameo_pcx = section.read_ares_pcx_filename("CameoPCX");
             #[cfg(feature = "ares")]
             let alt_cameo_pcx = section.read_ares_pcx_filename("AltCameoPCX");
+            #[cfg(feature = "ares")]
+            let cameo_palette = section.read_name("CameoPalette", 2048).map(str::to_owned);
             let new_theater: bool = section.read_bool("NewTheater", false);
             let theater: bool = section.read_bool("Theater", false);
             let scorch: bool = section.read_bool("Scorch", false);
@@ -1262,6 +1317,8 @@ impl ArtRegistry {
                     cameo_pcx,
                     #[cfg(feature = "ares")]
                     alt_cameo_pcx,
+                    #[cfg(feature = "ares")]
+                    cameo_palette,
                     new_theater,
                     theater,
                     scorch,
@@ -1955,6 +2012,15 @@ impl ArtRegistry {
             entry.and_then(|entry| entry.cameo_pcx.as_deref()),
             entry.and_then(|entry| entry.alt_cameo_pcx.as_deref()),
         ]
+    }
+
+    /// The type's Ares `CameoPalette`, from the same ImageFile section as its
+    /// PCX cameos.
+    #[cfg(feature = "ares")]
+    pub fn resolve_declared_cameo_palette(&self, type_id: &str, rules_image: &str) -> Option<&str> {
+        let resolved = self.resolve_object_art(type_id, rules_image);
+        self.get(&resolved.base_art_id)
+            .and_then(|entry| entry.cameo_palette.as_deref())
     }
 
     /// Resolve the declared palette id for an asset, if any.

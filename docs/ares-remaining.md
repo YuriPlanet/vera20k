@@ -1,0 +1,274 @@
+# Ares 3.0: remaining work
+
+This page lists what the Ares 3.0 port still lacks, and for each gap the gamemd logic it
+depends on. The supported chains are listed in [ares.md](ares.md); each chain's addresses,
+dispositions and smaller residuals are in its own `docs/ares-*.md`, and the hooks skipped
+on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
+
+## Where it stands
+
+- Everything is behind the `ares` cargo feature; default builds keep their behaviour. The
+  one deliberate default-build change: buildings and aircraft no longer take stealth from
+  `Cloakable=` (native vanilla never did; see [ares-bugfixes.md](ares-bugfixes.md)).
+- INI keys: the restored Ares source reads 684 distinct keys. The engine reads every
+  gameplay key among them. The keys still unread are UI and front-end keys (uimd.ini
+  `[UISettings]`, campaign `HoverSound`, the movie list, `SW.TimerVisibility`,
+  `DebugKeysEnabled`, `DirectX.Force`, the random-map `GenerateUrbanAreas`) and the
+  presentation keys `DamageSmokeParticleSystems` / `DamageSparksParticleSystems`. Ares
+  3.0 itself never loads `[RadiationTypes]` or `AttachEffect.Damage`/`.DamageDelay`
+  (no reader in the DLL; see [ares-radiation.md](ares-radiation.md) and
+  [ares-attach-effect.md](ares-attach-effect.md)). `ares-src/report/ini_coverage.tsv` is
+  not exhaustive; use the key scan under Tools.
+- Hooks: Ares 3.0 installs 1448 (`report/hooks.tsv` also lists 234 0.A hooks that 3.0
+  removed). The engine source cites 937; the chain docs give 407 more a disposition
+  (ported elsewhere, equivalent, not applicable, skipped or residual); 104 are
+  untouched, listed at the end.
+- Tests at the commit that adds this page (RA2_DIR set to a retail install):
+  - core `--features ares`: 8468 passed, 2 failed in the last full run; one of the two, the
+    WithConst test, was a fixture expectation fixed afterwards and passes in a focused rerun
+    of `sim::scenario_bootstrap::`
+  - core default: 7985 passed, 1 failed
+  - client `--features ares`: 3829 passed, 6 failed
+  - client default: 3788 passed, 6 failed
+  - `check -p vera20k --lib --features ares,phobos`: passes
+  The remaining failures are environment-only: the local retail install is Traditional
+  Chinese, so `rules::campaign_loading::tests::campaign_mission_names_use_physical_mission_and_csf_inputs`
+  and six client CSF tests (selection_navigation x4,
+  `messages::trigger_message_csf_labels_match_original_lookup_through_retail_archive_reader`,
+  `tooltips::retail_ifv_tip_names_its_turret_or_passenger`) compare against English text.
+  They fail the same way on main.
+
+## Blocked on gamemd logic VERA does not port
+
+These Ares features hook stock gamemd code that VERA has no port of, in either build.
+Porting that stock code changes default builds, so it belongs in its own native chain
+first; the Ares part is then small. None of them is reachable with retail YR data.
+
+| Ares feature (keys, hooks) | Needs this stock gamemd logic | Retail |
+|---|---|---|
+| Carryall totes: `Carryall.Allowed`, `Carryall.SizeLimit` (0x417D75, 0x416E37) | The Carryall tote: AircraftClass::Receive_Radio message 8 for a `Carryall=` type (0x4194C5), the Tote action, Mission_Move_Carryall 0x416D50 | No `Carryall=` type |
+| `Passengers.Allowed`/`Disallowed` on aircraft (0x41949F, 10048D10) | Aircraft passengers: the transport arms of AircraftClass::Receive_Radio 0x4190B0 (0xE admission 0x4193B7, 0xF answer 0x41946B, 0x15) and an aircraft hold. Retail transports SHAD and HIND are Jumpjet VehicleTypes and already work | No AircraftType has `Passengers=` |
+| `DigIn`, `DigOut`, `DigInSound`, `DigOutSound` (0x728EF0, 0x7292CF, 0x7293DA, 0x7297C4, 0x7299A9) | TunnelLocomotionClass (the subterranean locomotor) | No subterranean type |
+| `Assaulter.Level` (0x457DB7, 10016FD0) and KillOccupants' assaulter arm (0x4586CA) | The stock `Assaulter=` arms: CanBeOccupiedBy 0x457DAD..0x457DD3 and the assault at 0x522A09..0x522A45 | No assaulter infantry |
+| Visceroid merge (0x739F21, 1004C530) | UnitClass::UpdateVisceroid, called from UnitClass::AI 0x7360C0 | Visceroids spawn only when a mod enables tiberium damage |
+| `NoSelfGuardArea` (0x51E748) | The healer's self-GuardArea arm of the infantry input ladder (0x51E710..0x51E748) | Healers never self-guard |
+| Player Detonate: `IvanBomb.CanDetonateTimeBomb`, `IvanBomb.CanDetonateDeathBomb` (0x6FFEC0) | The DETONATE event (0x4C7823) and the self-hover action | Not set |
+| Gate placement selling walls (0x440709, 100156F0) | BuildingClass::Unlimbo's Gate/WallTower arms that sell the walls under them | No gate over walls |
+| Tunnel entry by an absorber click (0x44351A, 100172F0) | The absorber click that sends radio 0x10 | Ares tunnels are mod-only |
+
+Stock gaps found in passing, with no Ares dependency:
+- BuildingType GetPipMax (0x45ECE0): retail refineries show 5 ore pips where native shows
+  30 (GAREFN, NAREFN) or 15 (YAREFN).
+- Generate_Starting_Units (0x5D6D80) stops for every later house when one house has no
+  starting-unit candidates; VERA skips only that house.
+
+## Ares mechanisms ported in part
+
+| Mechanism | What is missing | Where |
+|---|---|---|
+| `CanMakeStuffUp` | The Rules draws and the 90-frame infantry panic are ported and the written values are saved in `AresMadeUpRules`, but nothing reads them yet: 28 Rules fields with about 110 read sites, many in free functions without a Simulation | [ares-warhead-residuals.md](ares-warhead-residuals.md) |
+| EMP | Harvesters, the AI Walk path, mind-controlled victims, falling objects, Hover/Ship/Rocket movers, and announceAttack (10062150) | [ares-emp.md](ares-emp.md) |
+| Refinery storage | `[Basic] FillSilos=`, the Weeder store, Removed_From_Game's keepTiberium arm, a fifth tiberium slot, the storage pips (0x44D755, 0x709B4E) and the `Message.SilosNeeded` text (needs a sim-to-client message event) | [ares-tiberium.md](ares-tiberium.md) |
+| Trench traversal | Only a buildings-only selection gets the cursor and click; Ctrl+Alt over a friendly trench keeps its stock answer; `GarrisonedIn` is not kept | [ares-building-hooks.md](ares-building-hooks.md) |
+| Deactivated objects | The deactivated cursor and click arms | [ares-cloak-power.md](ares-cloak-power.md) |
+| Firestorm zones | Recalc writers other than the toggle (an overlay change, trigger action 40) and placing a section during a firestorm keep the old zone class | [ares-firestorm.md](ares-firestorm.md) |
+| `StartInMultiplayer.WithConst` | By the ported chain a human's starting yard is never Grand_Opened (no lights or active anims), and its House's primary centre falls back to the start cell (4FD150 republishes none, 1001ED60 restores the saved cell); compare with the game in a mod that sets it | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
+| DropPod | A negative count (native loops about 2^32 tries), SetDestination's prologue and Teleporter arm, the Foot's own locomotor answering while the pod flies, a landing past the end of `DropPod=` | [ares-superweapon-types.md](ares-superweapon-types.md) |
+| HunterSeeker | The tube coordinate of a target in a tunnel; the facing conversion may differ by one binary-angle unit | [ares-hunter-seeker.md](ares-hunter-seeker.md) |
+| Terrain fire | Finish_Fire_Death's crumble of a zero-health tree (a lethal hit removes the tree first), the spread runs after the animation step | [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md) |
+| Tunnels | The tunnel pips (10044C90) | [ares-building-hooks.md](ares-building-hooks.md) |
+| Ares ParticleSystemExt | Ares' own Smoke/Spark/Railgun particle simulation with its own random draws | [ares-anim-particles.md](ares-anim-particles.md) |
+
+## Presentation and UI not ported
+
+- Unit art: WaterImage and the SHP facings and change-type draws (Ext/Techno/Hooks.Art.cpp),
+  AlphaImage lights (Ext/Techno/Hooks.Alpha.cpp), `NoSpawnAlt` (Ext/TechnoType/Hooks.Art.cpp),
+  PCX cameos (Misc/Cameos.cpp), the ore-gather anim under EMP, the load-screen colours
+  (Ext/Side/Hooks.cpp). Listed at the end.
+- The Ares campaign menu (uimd.ini `[UISettings]` `CampaignList`, `Campaign1`..`Campaign4`,
+  the campaign keys `DebugOnly`/`HoverSound`/`Summary`) and unlimited player colours
+  (`[Colors] Count` above 8). Ares' defaults match the engine. See
+  [ares-sidebar-ui-hooks.md](ares-sidebar-ui-hooks.md).
+- The CSF loader hooks (Misc/CSFLoader.cpp) are deferred: CSF loading is handled separately.
+- The random map generator (Misc/RMG.cpp) and DLL plumbing (Checksum, Savegame,
+  CopyProtection, Debug, Swizzle, Ares.cpp), most of which does not apply to the engine.
+
+## How to continue
+
+Evidence, in this order of authority: `ares-src/decompiled/functions/<addr>.c` (Ghidra C of
+the real 3.0 DLL), `ares-src/reference/gamemd_hooks/<addr>.c` (the gamemd function around
+each hook, hooked line marked), the annotated gamemd Ghidra database, and `ares-src/src`
+(restored source, for orientation; where it and the DLL disagree, the DLL wins). These
+are not in the repository.
+
+For each item:
+- Port the INI read exactly (section, key, constructor default, Valueable/Nullable,
+  parser, Find vs FindOrAllocate, read order) into the extension's `src/rules/ares_*.rs`
+  reader with the `read_ares_*` helpers.
+- Port the hook at the engine's single owner of the hooked gamemd function, behind
+  `cfg(feature = "ares")`, citing the Ares.dll function and the gamemd hook address.
+- New simulation state is saved (serde default) and world-hashed in an owner struct with
+  rule-named operations; the architecture guards check this.
+- One to three focused tests per mechanism. A stock oracle test that an installed Ares
+  hook changes gets an Ares expectation or a `cfg(not(feature = "ares"))` gate citing the
+  hook.
+- Move the item's row from this page into its chain doc, and add the chain to
+  [ares.md](ares.md).
+
+## Tools
+
+Ares INI keys the engine does not quote (run beside `ares-src/` and `vera20k/`):
+
+```python
+import os, re
+pat = re.compile(r'(?:Read\w*|Get\w*|\.Read)\s*\(\s*(?:exINI|exArtINI|pINI|pArtINI|INI)?\s*,?\s*'
+                 r'(?:pSection|section|pID|pArtSection|sec\w*|pKey|"[^"]+")\s*,\s*"([A-Za-z][A-Za-z0-9_.%]*)"')
+keys = {m.group(1) for r, _, fs in os.walk('ares-src/src') for f in fs if f.endswith('.cpp')
+        for m in pat.finditer(open(os.path.join(r, f), encoding='latin-1').read())}
+src = '\n'.join(open(os.path.join(r, f), encoding='utf-8', errors='replace').read()
+                for r, _, fs in os.walk('vera20k/src') for f in fs if f.endswith('.rs')).lower()
+quoted = lambda k: ('"' + k.lower().split('%')[0]) in src if '%' in k else ('"' + k.lower() + '"') in src
+print(sorted(k for k in keys if not quoted(k)))
+```
+
+Ares 3.0 hooks that neither the engine nor a chain doc cites:
+
+```python
+import os, re
+def tokens(paths):
+    text = '\n'.join(open(p, encoding='utf-8', errors='replace').read() for p in paths).upper()
+    return {t.lstrip('0') for t in re.findall(r'[0-9A-F]{5,8}', text)}
+src = tokens(os.path.join(r, f) for r, _, fs in os.walk('vera20k/src') for f in fs if f.endswith('.rs'))
+docs = tokens(os.path.join('vera20k/docs', f) for f in os.listdir('vera20k/docs')
+              if f.startswith('ares') and f != 'ares-remaining.md')
+dll = {p[0].upper().lstrip('0'): p[3].upper().lstrip('0')
+       for p in (l.rstrip('\n').split('\t') for l in open('ares-src/symbols/hooks_30.tsv', encoding='latin-1')) if len(p) > 3}
+rows = [r for r in (l.rstrip('\n').split('\t') for l in open('ares-src/report/hooks.tsv', encoding='latin-1'))][1:]
+rows = [r for r in rows if r[2] != 'removed_in_3.0']
+keys = lambda r: {r[0].upper().lstrip('0'), dll.get(r[0].upper().lstrip('0'), '')} - {''}
+print(sum(bool(keys(r) & src) for r in rows), 'cited in src of', len(rows))
+for r in rows:
+    if not keys(r) & src and not keys(r) & docs:
+        print(r[0], r[1], r[3])
+```
+
+gamemd decompiler: a headless Ghidra project over the annotated database, outside the
+repository. Import once (`analyzeHeadless <dir>/ghidra-gamemd gamemd -import
+gamemd-annotated-2026-11-03.gzf`), then decompile the function containing each address
+with a post-script that calls `DecompInterface.decompileFunction(getFunctionContaining(addr),
+120, monitor)`.
+
+Retail INIs for retail tests: run the repo's `extract-ini` into `ini/` and set `RA2_DIR`.
+
+## Untouched hooks
+
+These 104 Ares 3.0 hooks have no citation in the engine or in another chain doc (the
+hook script above skips this page). Most are the random map generator, DLL plumbing and
+unit art.
+
+| Hook | Ares.dll | Name | Source |
+|---|---|---|---|
+| `0x545904` | `1006A920` | IsometricTileTypeClass_CreateFromINIList_MediansFix | `Misc/RMG.cpp` |
+| `0x58FA51` | `1006ADB0` | RMG_PlaceWEBridge | `Misc/RMG.cpp` |
+| `0x58FBDD` | `1006AD50` | RMG_FixPavedRoadEnd_Bridges_East | `Misc/RMG.cpp` |
+| `0x58FCC6` | `1006AD80` | RMG_FixPavedRoadEnd_Bridges_West | `Misc/RMG.cpp` |
+| `0x58FE7B` | `1006AD90` | RMG_PlaceNSBridge | `Misc/RMG.cpp` |
+| `0x59000E` | `1006AD60` | RMG_FixPavedRoadEnd_Bridges_North | `Misc/RMG.cpp` |
+| `0x5900F7` | `1006AD70` | RMG_FixPavedRoadEnd_Bridges_South | `Misc/RMG.cpp` |
+| `0x596C81` | `1006A940` | MapSeedClass_DialogFunc_GetData | `Misc/RMG.cpp` |
+| `0x596FFE` | `1006ACF0` | RMG_EnableArchipelago | `Misc/RMG.cpp` |
+| `0x5970EA` | `1006AD10` | RMG_EnableDesert | `Misc/RMG.cpp` |
+| `0x5971EA` | `1006A980` | MapSeedClass_DialogFunc_SetData | `Misc/RMG.cpp` |
+| `0x5982D5` | `1006ABF0` | MapSeedClass_LoadFromINI | `Misc/RMG.cpp` |
+| `0x598FB8` | `1006ABD0` | MapSeedClass_Generate_UrbanAreas | `Misc/RMG.cpp` |
+| `0x5A5C6A` | `1006AA90` | MapSeedClass_Generate_PlacePavedRoads_RoadEndNE | `Misc/RMG.cpp` |
+| `0x5A5D6F` | `1006AAC0` | MapSeedClass_Generate_PlacePavedRoads_RoadEndSW | `Misc/RMG.cpp` |
+| `0x5A5F6A` | `1006AAA0` | MapSeedClass_Generate_PlacePavedRoads_RoadEndNW | `Misc/RMG.cpp` |
+| `0x5A6464` | `1006AAB0` | MapSeedClass_Generate_PlacePavedRoads_RoadEndSE | `Misc/RMG.cpp` |
+| `0x5A65CA` | `1006ABA0` | MapSeedClass_Generate_PlaceUrbanStructures_Start | `Misc/RMG.cpp` |
+| `0x5A6619` | `1006AB70` | MapSeedClass_Generate_PlaceUrbanStructures_Loop | `Misc/RMG.cpp` |
+| `0x5A66B0` | `1006AB90` | MapSeedClass_Generate_PlaceUrbanStructures_SanityCheck | `Misc/RMG.cpp` |
+| `0x5A6998` | `1006AAD0` | MapSeedClass_Generate_PlaceUrbanFoots | `Misc/RMG.cpp` |
+| `0x420A71` | `100475A0` | AlphaShapeClass_CTOR_Anims | `Ext/Techno/Hooks.Alpha.cpp` |
+| `0x420F75` | `10047470` | AlphaLightClass_UpdateScreen_ShouldDraw | `Ext/Techno/Hooks.Alpha.cpp` |
+| `0x4210AC` | `10047440` | AlphaLightClass_UpdateScreen_Header | `Ext/Techno/Hooks.Alpha.cpp` |
+| `0x4211AC` | `10047400` | AlphaLightClass_UpdateScreen_Body | `Ext/Techno/Hooks.Alpha.cpp` |
+| `0x421371` | `100477D0` | TacticalClass_UpdateAlphasInRectangle_ShouldDraw | `Ext/Techno/Hooks.Alpha.cpp` |
+| `0x42146E` | `10047780` | TacticalClass_UpdateAlphasInRectangle_Header | `Ext/Techno/Hooks.Alpha.cpp` |
+| `0x42152C` | `10047740` | TacticalClass_UpdateAlphasInRectangle_Body | `Ext/Techno/Hooks.Alpha.cpp` |
+| `0x421730` | `10047610` | AlphaShapeClass_SDDTOR | `Ext/Techno/Hooks.Alpha.cpp` |
+| `0x421798` | `10047670` | AlphaShapeClass_SDDTOR_Anims | `Ext/Techno/Hooks.Alpha.cpp` |
+| `0x423B0B` | `100476C0` | AnimClass_Update_AlphaLight | `Ext/Techno/Hooks.Alpha.cpp` |
+| `0x5F3D65` | `100476E0` | ObjectClass_DTOR | `Ext/Techno/Hooks.Alpha.cpp` |
+| `0x71944E` | `10047810` | TeleportLocomotionClass_ILocomotion_Process | `Ext/Techno/Hooks.Alpha.cpp` |
+| `0x4A1C10` | `1005F550` | Checksummer_Add_BYTE | `Misc/Checksum.cpp` |
+| `0x4A1CA0` | `1005F600` | Checksummer_Add_bool | `Misc/Checksum.cpp` |
+| `0x4A1D30` | `1005F5E0` | Checksummer_Add_WORD | `Misc/Checksum.cpp` |
+| `0x4A1D50` | `1005F5C0` | Checksummer_Add_DWORD | `Misc/Checksum.cpp` |
+| `0x4A1D70` | `1005F660` | Checksummer_Add_float | `Misc/Checksum.cpp` |
+| `0x4A1D90` | `1005F640` | Checksummer_Add_double | `Misc/Checksum.cpp` |
+| `0x52E9AA` | `1005F680` | Frontend_WndProc_Checksum | `Misc/Checksum.cpp` |
+| `0x64DEA0` | `1005F6E0` | Multiplay_LogToSYNC_NOMPDEBUG | `Misc/Checksum.cpp` |
+| `0x6516F0` | `1005F720` | Multiplay_LogToSync_MPDEBUG | `Misc/Checksum.cpp` |
+| `0x73B4A0` | `100481E0` | UnitClass_DrawVXL_WaterType | `Ext/Techno/Hooks.Art.cpp` |
+| `0x73C5FC` | `10048190` | UnitClass_DrawSHP_WaterType | `Ext/Techno/Hooks.Art.cpp` |
+| `0x73C613` | `10047FE0` | UnitClass_DrawSHP_FacingsA | `Ext/Techno/Hooks.Art.cpp` |
+| `0x73C655` | `10047E80` | UnitClass_DrawSHP_ChangeType1 | `Ext/Techno/Hooks.Art.cpp` |
+| `0x73C69D` | `10047E80` | UnitClass_DrawSHP_ChangeType1 | `Ext/Techno/Hooks.Art.cpp` |
+| `0x73C702` | `10047E80` | UnitClass_DrawSHP_ChangeType1 | `Ext/Techno/Hooks.Art.cpp` |
+| `0x73C733` | `10048180` | UnitClass_DrawSHP_SkipTurretedShadow | `Ext/Techno/Hooks.Art.cpp` |
+| `0x73CD01` | `10048150` | UnitClass_DrawSHP_FacingsB | `Ext/Techno/Hooks.Art.cpp` |
+| `0x483BF1` | `1006ADE0` | CellClass_Load_Crates | `Misc/Savegame.cpp` |
+| `0x559F31` | `1006AE70` | LoadOptionsClass_GetFileInfo | `Misc/Savegame.cpp` |
+| `0x565215` | `1006AEC0` | MapClass_CTOR_NoInit_Crates | `Misc/Savegame.cpp` |
+| `0x67CEFE` | `1006ADF0` | Game_Save_FixLog | `Misc/Savegame.cpp` |
+| `0x67D04E` | `1006AE10` | Game_Save_SavegameInformation | `Misc/Savegame.cpp` |
+| `0x67D300` | `1006AEF0` | SaveGame_Start | `Misc/Savegame.cpp` |
+| `0x67E42E` | `1006AED0` | SaveGame | `Misc/Savegame.cpp` |
+| `0x67F7C8` | `1006AE50` | LoadGame_End | `Misc/Savegame.cpp` |
+| `0x47AE36` | `10003B00` | CDFileClass_SetFileName | `Ares.cpp` |
+| `0x47B026` | `10003B90` | FileFindOpen | `Ares.cpp` |
+| `0x52C5E0` | `10003AE0` | Ares_NoLogo | `Ares.cpp` |
+| `0x52F639` | `10003C90` | YR_CmdLineParse | `Ares.cpp` |
+| `0x6AD0ED` | `10003AD0` | Ares_AllowSinglePlay | `Ares.cpp` |
+| `0x7CD810` | `10003B40` | ExeRun | `Ares.cpp` |
+| `0x7CD8EF` | `10003B60` | ExeTerminate | `Ares.cpp` |
+| `0x479110` | `1005F7F0` | CD_NeverAsk | `Misc/CopyProtection.cpp` |
+| `0x49F5C0` | `1005F820` | CopyProtection_IsLauncherRunning | `Misc/CopyProtection.cpp` |
+| `0x49F620` | `1005F830` | CopyProtection_NotifyLauncher | `Misc/CopyProtection.cpp` |
+| `0x49F7A0` | `1005F810` | CopyProtection_CheckProtectedData | `Misc/CopyProtection.cpp` |
+| `0x55CFDF` | `1005F7A0` | BlowMeUp | `Misc/CopyProtection.cpp` |
+| `0x4068E0` | `100620D0` | Debug_Log | `Misc/Debug.cpp` |
+| `0x4A4AC0` | `100620D0` | Debug_Log | `Misc/Debug.cpp` |
+| `0x4C850B` | `10062120` | Exception_Dialog | `Misc/Debug.cpp` |
+| `0x534A4D` | `10062140` | Theater_Init_ResetLogStatus | `Misc/Debug.cpp` |
+| `0x687C56` | `10062130` | INIClass_ReadScenario_ResetLogStatus | `Misc/Debug.cpp` |
+| `0x525C28` | `10065550` | INIClass_Parse_IniSectionIncludes_CopySection1 | `Misc/IniSectionIncludes.cpp` |
+| `0x525CA5` | `100655B0` | INIClass_Parse_IniSectionIncludes_PreProcess1 | `Misc/IniSectionIncludes.cpp` |
+| `0x525DDB` | `100655E0` | INIClass_Parse_IniSectionIncludes_PreProcess2 | `Misc/IniSectionIncludes.cpp` |
+| `0x525E44` | `10065580` | INIClass_Parse_IniSectionIncludes_CopySection2 | `Misc/IniSectionIncludes.cpp` |
+| `0x5260D9` | `10065610` | INIClass_Parse_Override | `Misc/IniSectionIncludes.cpp` |
+| `0x55403D` | `1002F850` | LoadProgressMgr_Draw_SkipShadowOnNullString3 | `Ext/Side/Hooks.cpp` |
+| `0x642B36` | `1002F870` | ProgressScreenClass_GetLoadTextColor | `Ext/Side/Hooks.cpp` |
+| `0x642B91` | `1002F870` | ProgressScreenClass_GetSideColor | `Ext/Side/Hooks.cpp` |
+| `0x643BB9` | `1002F890` | ProgressScreenClass_UpdateSingleProgressBar | `Ext/Side/Hooks.cpp` |
+| `0x5F848C` | `100413A0` | ObjectTypeClass_Load3DArt_NoSpawnAlt2 | `Ext/TechnoType/Hooks.Art.cpp` |
+| `0x5F9634` | `100413B0` | ObjectTypeClass_LoadFromINI | `Ext/TechnoType/Hooks.Art.cpp` |
+| `0x73B6E3` | `10041460` | UnitClass_DrawVXL_NoSpawnAlt | `Ext/TechnoType/Hooks.Art.cpp` |
+| `0x69801A` | `1006AF40` | Game_GetGameTypePrefs_MultiEngineer | `Misc/Skirmish.cpp` |
+| `0x699043` | `1006AF00` | GameMode_SaveGameSettings_MultiEngineer | `Misc/Skirmish.cpp` |
+| `0x6AEE6A` | `1006B070` | Skirmish_InitializeDialog_MultiEngineer | `Misc/Skirmish.cpp` |
+| `0x6CF240` | `1006C5B0` | SwizzleManagerClass_Swizzle | `Misc/Swizzle.cpp` |
+| `0x6CF2C0` | `1006C540` | SwizzleManagerClass_Here_I_Am | `Misc/Swizzle.cpp` |
+| `0x6CF350` | `1006C440` | SwizzleManagerClass_ConvertNodes | `Misc/Swizzle.cpp` |
+| `0x6A9A43` | `1005E300` | StripClass_Draw_DrawPCX | `Misc/Cameos.cpp` |
+| `0x712045` | `1005E480` | TechnoTypeClass_GetCameo | `Misc/Cameos.cpp` |
+| `0x525D23` | `100652F0` | INIClass_Parse_IteratorChar2 | `Misc/IniIteratorChar.cpp` |
+| `0x5260A2` | `10065280` | INIClass_Parse_IteratorChar1 | `Misc/IniIteratorChar.cpp` |
+| `0x533058` | `10002A80` | CommandClassCallback_Register | `Ares.Commands.cpp` |
+| `0x685659` | `100057F0` | Scenario_ClearClasses | `Ares.Ext.cpp` |
+| `0x6BC0CD` | `10005820` | LoadRA2MD | `Ares.GlobalControls.cpp` |
+| `0x5FACDF` | `10006030` | Options_LoadFromINI | `Ares.UISettings.cpp` |
+| `0x73D219` | `10053E50` | UnitClass_Draw_OreGatherAnim | `Ext/WarheadType/Hooks.EMP.cpp` |
+| `0x4C8FE0` | `100641A0` | Exception_Handler | `Misc/Exception.cpp` |
+| `0x64CCBF` | `1006A280` | DoList_ReplaceReconMessage | `Misc/Network.cpp` |

@@ -214,23 +214,67 @@ pub(crate) fn recalc_base_plan(
         }
     }
 
+    // Ares 3.0 HouseClass_GenerateAIBuildList_CountExtra 10023940 (hook
+    // 0x00505C95) runs on the copied list, which still matches `priority`
+    // node for node: past the yard at 0, each type's first node takes its
+    // AIBuildCounts/AIExtraCounts copies for the House difficulty (+0x184),
+    // each inserted at RandomRanged(i + 1, Count). The count is re-read as
+    // the list grows, so inserted copies are visited (and skipped) too.
+    #[cfg(feature = "ares")]
+    {
+        let mut index = 1;
+        while index < priority.len() {
+            let candidate = priority[index];
+            if !priority[..index]
+                .iter()
+                .any(|seen| seen.base_plan_type_index == candidate.base_plan_type_index)
+            {
+                let copies = candidate
+                    .building_type_ext()
+                    .ai_extra_copies(difficulty.table_index(), |low, high| {
+                        scenario_rng.next_range_i32_inclusive(low, high)
+                    });
+                for _ in 0..copies {
+                    let at = scenario_rng
+                        .next_range_i32_inclusive(index as i32 + 1, priority.len() as i32)
+                        as usize;
+                    priority.insert(at, candidate);
+                }
+            }
+            index += 1;
+        }
+    }
+
+    // Ares 3.0 HouseClass_GenerateAIBuildList_SkipManualCopy 10023BD0 (hook
+    // 0x00505B58) and _FullAutoCopy 10023B10 (hook 0x00505C34, EDI = 0 into
+    // `cmp ecx,edi` at 0x00505C39) copy the whole list from index 0, so a
+    // list shorter than the three hand-copied seeds no longer reads past it.
+    #[cfg(not(feature = "ares"))]
     assert!(
         priority.len() >= 3,
         "active Recalc priority contains its three native seed entries"
     );
     let mut final_values = Vec::with_capacity(priority.len());
+    let seeds = priority.len().min(3);
     final_values.extend(
-        priority[..3]
+        priority[..seeds]
             .iter()
             .map(|candidate| candidate.base_plan_type_index),
     );
     final_values.extend(
-        priority[3..]
+        priority[seeds..]
             .iter()
             .map(|candidate| candidate.base_plan_type_index),
     );
 
-    let defense_count = match rules.side_base_defense_counts(side_index) {
+    // Campaign SuperWeapon buildings: Ares 3.0
+    // HouseClass_GenerateAIBuildList_SWAllowed 10023B90 (hook 0x005055D8)
+    // admits them in a campaign whatever the SuperWeapons option says. VERA's
+    // campaign GameOptions never turn SuperWeapons off (`match_bootstrap`
+    // copies only GameSpeed and BuildOffAlly), so `super_weapons` is already
+    // true there.
+    #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
+    let mut defense_count = match rules.side_base_defense_counts(side_index) {
         Some(counts) => counts.get(difficulty.table_index()).copied().unwrap_or(0),
         None => match side_index {
             0 => rules.allied_base_defense_counts[difficulty.table_index()],
@@ -239,6 +283,19 @@ pub(crate) fn recalc_base_plan(
             _ => 0,
         },
     };
+    // Ares 3.0 HouseClass_GenerateAIBuildList_PadWithN1 10023B30 (hook
+    // 0x00505CF1, reached only past the `jle` at 0x00505CEB, so only with a
+    // positive count): a list of fewer than four entries takes base defense
+    // nodes (-1) at its end until it holds four, each counting as one of the
+    // defenses and drawing no RNG; the count can go negative. The rest are
+    // inserted as below.
+    #[cfg(feature = "ares")]
+    if defense_count > 0 {
+        while final_values.len() < 4 {
+            final_values.push(-1);
+            defense_count = defense_count.wrapping_sub(1);
+        }
+    }
     for _ in 0..defense_count.max(0) {
         let insert_after = scenario_rng
             .next_range_u32_inclusive(3, final_values.len().wrapping_sub(1) as u32)
@@ -307,12 +364,15 @@ fn move_eligible_seed<'a>(
 /// `+0x900`, `RADAR` BuildRadar `+0xA34`, `TECH` BuildTech `+0x91C`, `PROC`
 /// BuildRefinery `+0x8E4`; jump table `0x0050548C`). Recalc passes the types
 /// it has planned; the base defense choice the house's own building types.
+/// Ares 3.0 replaces the body (hook 0x505360 -> 10024520) with
+/// `PrerequisitesListed @ 10021C50`: any one of the type's prerequisite lists
+/// (`ObjectType::ares_prerequisite_lists`) fully among `present`.
 pub(crate) fn prerequisites_satisfied(
     candidate: &ObjectType,
     present: &[&ObjectType],
     rules: &RuleSet,
 ) -> bool {
-    candidate.prerequisite.iter().all(|entry| {
+    let listed = |entry: &Prerequisite| {
         #[cfg(feature = "ares")]
         if let Some(group) = rules.ares_prerequisite_group(*entry) {
             // Ares3.0 hook505360 -> ListContainsAll10008370 inspects only
@@ -346,7 +406,12 @@ pub(crate) fn prerequisites_satisfied(
             }
             Prerequisite::GenericGroup(_) => false,
         }
-    })
+    };
+    #[cfg(feature = "ares")]
+    let mut lists = candidate.ares_prerequisite_lists();
+    #[cfg(not(feature = "ares"))]
+    let mut lists = std::iter::once(candidate.prerequisite.as_slice());
+    lists.any(|list| list.iter().all(&listed))
 }
 
 #[cfg(all(test, feature = "ares"))]
@@ -488,6 +553,70 @@ mod tests {
             1,
             "a type without the key keeps the stock single node"
         );
+    }
+
+    /// Ares 10023B30 (hook 0x505CF1): a three-node list takes its first base
+    /// defense as a fourth node without a draw; the second then has the one
+    /// slot `RandomRanged(3, 3)`, which draws nothing either. Stock draws
+    /// `RandomRanged(3, 2)` for the first.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_short_plan_pads_defense_nodes_without_drawing() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nHarvesterUnit=HARV\nAIExtraRefineries=0,0,0\n\
+             AISlaveMinerNumber=1,1,1\nAlliedBaseDefenseCounts=2,2,2\n\
+             SovietBaseDefenseCounts=0,0,0\nThirdBaseDefenseCounts=0,0,0\n\
+             [AI]\nBuildConst=CON\nBuildPower=POW\nBuildRefinery=REF\n\
+             BuildBarracks=REF\nBuildWeapons=REF\nBuildRadar=REF\nBuildTech=REF\n\
+             [Countries]\n0=Americans\n[Sides]\nAllied=Americans\n[Americans]\nSide=Allied\n\
+             [VehicleTypes]\n0=HARV\n[HARV]\nOwner=Americans\nStrength=1\n\
+             [BuildingTypes]\n0=CON\n1=POW\n2=REF\n\
+             [CON]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\n\
+             [POW]\nOwner=Americans\nAIBuildThis=yes\nTechLevel=1\n\
+             [REF]\nOwner=Americans\nAIBuildThis=no\nTechLevel=1\n",
+        ))
+        .unwrap();
+        let (plan, rng) =
+            generated_values(&rules, "Americans", 0, HouseDifficulty::Normal, 0x505CF1);
+        let con = rules.object("CON").unwrap().base_plan_type_index;
+        let pow = rules.object("POW").unwrap().base_plan_type_index;
+        assert_eq!(values(&plan), [con, pow, pow, -1, -1]);
+        assert_eq!(rng.logical_state(), SimRng::new(0x505CF1).logical_state());
+    }
+
+    /// Ares 10023940: `AIBuildCounts=3` plans a type three times (two extra
+    /// nodes after its first), `AIExtraCounts` adds up to its value more, and
+    /// a difficulty without an entry keeps the single node and draws nothing.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_ai_build_counts_add_copies_after_the_first_node() {
+        let rules = basic_rules(
+            "7=TEST\n",
+            "[TEST]\nOwner=Americans,Russians,YuriCountry\n\
+             AIBuildThis=yes\nTechLevel=1\nFoundation=1x1\n\
+             AIBuildCounts=3,3\nAIExtraCounts=0,2\n",
+        );
+        let test_index = rules.object("TEST").unwrap().base_plan_type_index;
+        let copies = |difficulty| {
+            let (plan, rng) = generated_values(&rules, "Americans", 0, difficulty, 0x505C95);
+            let values = values(&plan);
+            let first = values
+                .iter()
+                .position(|value| *value == test_index)
+                .unwrap();
+            assert!(values[..first].iter().all(|value| *value != test_index));
+            (
+                values.iter().filter(|value| **value == test_index).count(),
+                rng,
+            )
+        };
+        assert_eq!(copies(HouseDifficulty::Hard).0, 3);
+        let (normal, _) = copies(HouseDifficulty::Normal);
+        assert!((3..=5).contains(&normal), "{normal}");
+        // The fixture draws nothing else, so no draw at all here.
+        let (easy, rng) = copies(HouseDifficulty::Easy);
+        assert_eq!(easy, 1);
+        assert_eq!(rng.logical_state(), SimRng::new(0x505C95).logical_state());
     }
 
     /// NPSE C2C331..C2C367 repeats the eligible vector before the

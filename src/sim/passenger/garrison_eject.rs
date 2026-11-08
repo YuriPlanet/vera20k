@@ -112,7 +112,7 @@ fn garrison_inside_foundation_fallback(rx: u16, ry: u16, width: u16, height: u16
 /// `KillOccupants(NULL)` (`0x00458184`) UnInits each remaining occupant
 /// (vtable `+0xF8`, `0x004585F3`), last first, with no RecordKill and no
 /// Health store.
-fn uninit_garrison_passenger_without_exit(
+pub(crate) fn uninit_garrison_passenger_without_exit(
     sim: &mut Simulation,
     passenger_id: u64,
     context: UninitContext<'_>,
@@ -385,6 +385,14 @@ pub(crate) fn kill_building_occupants(
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
         building.passenger_role.occupants_mut().clear();
     }
+    // Ares 3.0 100136C0 (hook 0x458729): an emptied raided building goes back.
+    #[cfg(feature = "ares")]
+    sim.ares_eval_raid_status(
+        building_id,
+        context.rules(),
+        context.registry(),
+        context.effects(),
+    );
     sim.refresh_spatial_threat(building_id, context.rules(), context.terrain());
 }
 
@@ -438,6 +446,9 @@ pub(crate) fn sell_building_occupants(
     if let Some(building) = sim.substrate.entities.get_mut(building_id) {
         building.passenger_role.occupants_mut().clear();
     }
+    // Ares 3.0 100136C0 (hook 0x4581CD): an emptied raided building goes back.
+    #[cfg(feature = "ares")]
+    sim.ares_eval_raid_status(building_id, rules, registry, frame_effects);
 
     //SellBuilding4581D6 refreshes after its complete occupant ejection.
     sim.refresh_spatial_threat(building_id, rules, None);

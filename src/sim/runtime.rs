@@ -950,7 +950,11 @@ where
             );
         }
     }
-    sim.install_resolved_terrain_for_new_map(resolved_terrain.clone());
+    let mut terrain = resolved_terrain.clone();
+    // VERA terrain deformation follows the scenario's rules before any zone
+    // is built from this grid.
+    terrain.set_terrain_deformation(rules.combat_damage.terrain_deformation);
+    sim.install_resolved_terrain_for_new_map(terrain);
     // Active `CellClass` overlay identity exists before the Techno map
     // sections are read. Install the already-resolved grid now so every
     // UnitClass virtual Unlimbo sees ore, walls, and structural bridges.
@@ -1436,6 +1440,11 @@ pub fn finalize_constructed_scenario(
     // Every production caller installs the live grid first, so the argument
     // is only the fallback for callers that never populated one.
     let mut overlay_grid = sim.take_overlay_grid_for_load().unwrap_or(overlay_grid);
+    // Read_INI_Basic @ 0x00689E90 reads TiberiumDeathToVisceroid over the
+    // fresh Set_Defaults true (0x00683610); Ares' visceroid reads it.
+    #[cfg(feature = "ares")]
+    sim.session
+        .read_map_tiberium_death_to_visceroid(map_data.basic.tiberium_death_to_visceroid);
     // Attach the TIBTRE ore-spawner animation index to the terrain objects
     // constructed ahead of the map entities. Its authoritative raw SHP count
     // is rules-owned; presentation atlases retain only body-frame ranges.

@@ -2,7 +2,9 @@ use super::*;
 
 fn rules_with_unspawned_types() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(
-        "[General]\nBridgeExplosions=EXP_A,EXP_B\nMetallicDebris=DEBRIS_A,DEBRIS_B\n\
+        // EXP_A/EXP_B are registered for Ares's Find-only BridgeExplosions.
+        "[Animations]\n0=EXP_A\n1=EXP_B\n\
+         [General]\nBridgeExplosions=EXP_A,EXP_B\nMetallicDebris=DEBRIS_A,DEBRIS_B\n\
          [InfantryTypes]\n0=UNSPAWNED_INF\n[UNSPAWNED_INF]\nStrength=100\n\
          [VehicleTypes]\n0=UNSPAWNED_UNIT\n[UNSPAWNED_UNIT]\nStrength=200\n\
          [AircraftTypes]\n0=UNSPAWNED_AIR\n[UNSPAWNED_AIR]\nStrength=300\n\

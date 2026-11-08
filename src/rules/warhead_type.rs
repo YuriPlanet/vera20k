@@ -94,6 +94,12 @@ pub struct WarheadType {
     /// `WarheadTypeClass+0x147` (ReadINI `0x0075d556`, key string
     /// `0x00847e00`).
     pub wood: bool,
+    /// `Sparky=` (`WarheadTypeClass+0x14A`, constructor false at
+    /// `0x0075CF77`): Ares 3.0's TerrainClass_ReceiveDamage_ForestFire
+    /// (1004F4E0, hook 0x71B99E) sets a flammable tree it hurts alight
+    /// (`sim::terrain_fire`). Stock data sets it on no warhead.
+    #[cfg(feature = "ares")]
+    pub sparky: bool,
     /// `Fire=` -> `WarheadTypeClass+0x14C` (ReadINI `0x0075d5f2`, key string
     /// `0x00836f04`) over the constructor's 0 (`0x0075cf83`). Techno
     /// What_Action on a Cell keeps a Fire warhead off a destroyable cliff
@@ -141,6 +147,16 @@ pub struct WarheadType {
     /// @0x005276D0 at ReadINI @0x0075D7A7 stores the signed value at +0x100;
     /// constructor default is 0 (`0x0075CEF8`) and there is no post-read clamp.
     pub deform_threshold: i32,
+    /// VERA's `DeformDepth=`, which gamemd does not read: how many levels one
+    /// dent sinks the middle of its crater, as deep as the open ground around
+    /// it allows. A signed int, default 1 (Tiberian Sun's single level);
+    /// terrain deformation reads it as `1..=16`.
+    pub deform_depth: i32,
+    /// VERA's `DeformRadius=`, which gamemd does not read: how many cells
+    /// around the hit cell one dent sinks, deepest in the middle. A signed
+    /// int, default 0 (Tiberian Sun's single cell); terrain deformation reads
+    /// it as `0..=11`.
+    pub deform_radius: i32,
     /// `Bullets=` at +0x17A, ReadBool @0x005295F0 called from ReadINI
     /// @0x0075DA01; constructor default false (`0x0075D04A`).
     pub bullets: bool,
@@ -511,6 +527,17 @@ impl WarheadType {
     pub(crate) fn ares_rules(&self) -> Option<&crate::rules::ares_warhead::AresWarheadRules> {
         self.ares.as_ref()
     }
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_rules_mut(
+        &mut self,
+    ) -> Option<&mut crate::rules::ares_warhead::AresWarheadRules> {
+        self.ares.as_mut()
+    }
+    /// The Ares 3.0 damage-modifier group of this warhead's WarheadTypeExt.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_combat(&self) -> Option<&crate::rules::ares_warhead::WarheadCombatRules> {
+        self.ares.as_ref().map(|ares| ares.combat())
+    }
     pub(crate) fn bind_ares_rules(
         &mut self,
         rules: Option<&crate::rules::ares_warhead::AresWarheadRules>,
@@ -585,8 +612,14 @@ impl WarheadType {
         let percent_at_max_f64 = f64::from(percent_at_max_native);
         let delay_kill_at_max_f64 = f64::from(section.read_float("DelayKillAtMax", 1.0));
 
-        // The IntVector reader (`0x0075DD22` -> `0x00475D70`).
-        let debris_maximums: Vec<i32> = section.read_int_list("DebrisMaximums").unwrap_or_default();
+        // The IntVector reader (`0x0075DD22` -> `0x00475D70`). Ares 3.0
+        // WarheadTypeClass_LoadFromINI_ListLength (1005C080, hook 0x75D660)
+        // reads it through ParseList<int> (1005B030) instead.
+        #[cfg(feature = "ares")]
+        let debris_maximums = section.read_ares_int_list("DebrisMaximums");
+        #[cfg(not(feature = "ares"))]
+        let debris_maximums = section.read_int_list("DebrisMaximums");
+        let debris_maximums: Vec<i32> = debris_maximums.unwrap_or_default();
 
         // `WarheadTypeClass::ReadINI @ 0x0075DA95..0x0075DAE6`: MaxDebris is
         // read first (`0x0075DA95 PUSH 0x84439C` -> `0x0075DAB1` +0x1C4),
@@ -620,6 +653,8 @@ impl WarheadType {
             delay_kill_at_max_f64,
             wall: section.read_bool("Wall", false),
             wood: section.read_bool("Wood", false),
+            #[cfg(feature = "ares")]
+            sparky: section.read_bool("Sparky", false),
             fire: section.read_bool("Fire", false),
             penetrates_bunker: section.read_bool("PenetratesBunker", false),
             affects_allies: section.read_bool("AffectsAllies", true),
@@ -636,6 +671,8 @@ impl WarheadType {
             inf_death: section.read_int("InfDeath", Self::DEFAULT_INF_DEATH),
             deform_f64: section.read_double("Deform", 0.0),
             deform_threshold: section.read_int("DeformThreshhold", 0),
+            deform_depth: section.read_int("DeformDepth", 1),
+            deform_radius: section.read_int("DeformRadius", 0),
             bullets: section.read_bool("Bullets", false),
             veinhole: section.read_bool("Veinhole", false),
             // ReadInt current defaults fold each projected Rules pass; there
@@ -988,7 +1025,8 @@ mod tests {
         // only reader is `TiberiumClass::ReadINI_Fields @ 0x00721B4F`. The
         // warhead key is "DebrisTypes" @ 0x0075DAF5.
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
-            "[Warheads]\n0=W\n[W]\nDebris=CRYSTAL1\nDebrisTypes=TIRE\n",
+            // TIRE is registered for Ares's Find-only DebrisTypes read.
+            "[VoxelAnims]\n0=TIRE\n[Warheads]\n0=W\n[W]\nDebris=CRYSTAL1\nDebrisTypes=TIRE\n",
         ))
         .unwrap();
         assert_eq!(rules.warhead("W").unwrap().debris_types, ["TIRE"]);

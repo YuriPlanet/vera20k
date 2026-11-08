@@ -5182,12 +5182,12 @@ mod tests {
                 z_adjust: -32,
                 color: [0, 255, 0],
                 house: None,
-                house_color: false,
+                house_color: crate::sim::combat::radiation_beam::BeamHouseColor::None,
                 duration: 15,
                 amplitude: NativeF64Bits::from_bits(40.0_f64.to_bits()),
                 eruption: false,
             },
-            |_| [0; 3],
+            |_, _| [0; 3],
         );
         let initial =
             serde_json::to_value(MapRadiationBeamObservation::capture(&beams).unwrap()).unwrap();

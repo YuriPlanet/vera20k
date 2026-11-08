@@ -23,7 +23,7 @@ pub(crate) use pause_menu::render_pause_menu_shell;
 mod saved_games;
 pub(crate) use saved_games::{family_saved_game_overlays, render_saved_game_shell};
 mod launcher_options;
-pub(crate) use launcher_options::{render_launcher_options, zoom_label};
+pub(crate) use launcher_options::{paint_options_settings, render_launcher_options, zoom_label};
 mod modals;
 mod network_failure;
 pub(crate) use modals::render_saved_game_loading;
@@ -918,6 +918,9 @@ fn render_skirmish_shell_with_atlas(
         .and_then(|sequence| sequence.frames.first())
         .map(|frame| &frame.texture);
 
+    // A game room's Choose Map is one of the online client's screens.
+    let smooth_art = state.smooth_online_menus()
+        && state.frontend.shell_route == crate::app::shell_route::ShellRoute::NetworkSetup;
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("Skirmish Shell"),
         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -941,11 +944,12 @@ fn render_skirmish_shell_with_atlas(
         occlusion_query_set: None,
         multiview_mask: None,
     });
-    state.renderer.batch_renderer.draw_with_buffer_passthrough(
+    state.renderer.batch_renderer.draw_chrome(
         &mut pass,
         &atlas.texture,
         &buffer,
         count,
+        smooth_art,
     );
     if let (Some(preview), Some((buffer, count))) = (
         state.frontend.skirmish_preview_texture.as_ref(),
@@ -959,11 +963,12 @@ fn render_skirmish_shell_with_atlas(
         );
     }
     if let Some((buffer, count)) = marker_buffer.as_ref() {
-        state.renderer.batch_renderer.draw_with_buffer_passthrough(
+        state.renderer.batch_renderer.draw_chrome(
             &mut pass,
             &atlas.texture,
             buffer,
             *count,
+            smooth_art,
         );
     }
     if let Some((buffer, count)) = marker_label_buffer.as_ref() {
@@ -985,11 +990,12 @@ fn render_skirmish_shell_with_atlas(
     draw_scissored_text(&mut pass, state, &shell_draws, &scissored_text_buffers);
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());
     if let Some((buffer, count)) = dropdown_buffer.as_ref() {
-        state.renderer.batch_renderer.draw_with_buffer_passthrough(
+        state.renderer.batch_renderer.draw_chrome(
             &mut pass,
             &atlas.texture,
             buffer,
             *count,
+            smooth_art,
         );
     }
     draw_scissored_text(

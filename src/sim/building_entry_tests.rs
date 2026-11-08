@@ -1884,8 +1884,13 @@ fn the_nearest_own_bunker_with_room_takes_an_occupier() {
         .unwrap()
         .health
         .set_for_test(100);
-    assert!(!garrison_seek(&mut sim, &rules, infantry));
-    assert!(!entity(&sim, infantry).building_entry.seeking());
+    // Ares 3.0 10017060 (hook 0x457D58) refuses a red building only when it
+    // is civilian (TechLevel -1).
+    #[cfg(not(feature = "ares"))]
+    {
+        assert!(!garrison_seek(&mut sim, &rules, infantry));
+        assert!(!entity(&sim, infantry).building_entry.seeking());
+    }
 }
 
 /// Script action 63 (`0x006E9EC8`) through the team pass: the occupier a
@@ -2849,4 +2854,67 @@ fn retail_all01_script64_conscript_admits_a_map_civilian_garrison() {
         entity(&sim, conscript).navigation.nav_com(),
         Some(NavTargetRef::object(building))
     );
+}
+
+/// Ares 100145B0 (hook 0x44D8A1): an `Armory=` building's Mission_Unload
+/// kicks its first passenger out through ExitObject, and Ares 10014100
+/// (hook 0x444D26) gives a human Armory's trainee the exit post's
+/// Area_Guard as a Hospital's patient gets.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_armory_unload_kicks_out_its_trainee_on_guard() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(&format!(
+            "{}[ARMORY]\nStrength=500\nArmory=yes\nPassengers=5\n",
+            RULES.replace("5=NATBNK\n", "5=NATBNK\n6=ARMORY\n")
+        )),
+        &IniFile::from_str(&format!("{ART}[ARMORY]\nFoundation=2x2\n")),
+    )
+    .unwrap();
+    let (mut sim, _) = arena(&rules);
+    let armory = spawn(&mut sim, &rules, "ARMORY", "Americans", 16, 10);
+    let trainee = sim
+        .construct_object_limbo_at_height(
+            "INIT",
+            "Americans",
+            1,
+            1,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(trainee)
+        .unwrap()
+        .passenger_role = PassengerRole::inside_for_test(armory, false);
+    sim.substrate
+        .entities
+        .get_mut(armory)
+        .unwrap()
+        .passenger_role
+        .cargo_mut()
+        .unwrap()
+        .board_forced_chain(&[(trainee, 1.0)]);
+    let now = sim.session.binary_frame();
+    sim.substrate
+        .mission_assign_exact(armory, MissionId::from_known(MissionType::Unload), now)
+        .unwrap();
+    sim.object_ai_visit_one(
+        armory,
+        Some(&rules),
+        crate::sim::world::ObjectAiCtx::default(),
+    );
+    assert!(
+        entity(&sim, armory)
+            .passenger_role
+            .cargo()
+            .is_none_or(|cargo| cargo.is_empty())
+    );
+    let trainee = entity(&sim, trainee);
+    assert!(!trainee.lifecycle.in_limbo());
+    let area_guard = MissionId::from_known(MissionType::AreaGuard);
+    assert!(trainee.mission.current() == area_guard || trainee.mission.queued() == area_guard);
 }

@@ -327,15 +327,75 @@ pub(crate) struct CameoStatusLabels<'a> {
     pub hold: &'a str,
     pub charging: &'a str,
     pub active: &'a str,
+    /// Ares: each type's localized `Text.*` labels ([`ares_status_texts`]).
+    #[cfg(feature = "ares")]
+    pub ares: Option<&'a AresStatusTexts>,
+}
+
+/// Each SuperWeaponType's localized NameReadiness texts, keyed by its
+/// upper-case section: Preparing, Hold, Ready, Charging, Active; an empty
+/// label resolves to no text.
+#[cfg(feature = "ares")]
+pub(crate) type AresStatusTexts = std::collections::HashMap<String, [String; 5]>;
+
+/// Resolve every type's Ares `Text.*` labels through the shared CSF owner.
+#[cfg(feature = "ares")]
+pub(crate) fn ares_status_texts(
+    rules: &crate::rules::ruleset::RuleSet,
+    text: impl Fn(&str) -> String,
+) -> AresStatusTexts {
+    rules
+        .super_weapons
+        .values()
+        .map(|sw| {
+            let texts = sw.ares_texts();
+            let labels = [
+                texts.preparing(),
+                texts.hold(),
+                texts.ready(),
+                texts.charging(),
+                texts.active(),
+            ];
+            (
+                sw.id.to_ascii_uppercase(),
+                labels.map(|label| {
+                    if label.is_empty() {
+                        String::new()
+                    } else {
+                        text(label)
+                    }
+                }),
+            )
+        })
+        .collect()
 }
 
 /// `SuperClass::NameReadiness6CC2B0` status label; `None` while it has no
 /// status text. Shared by the right cameo strip and the left sidebar button.
+/// Ares's replacement (hook 6CC2B0, Ares.dll 100356A0) returns the type's
+/// `Text.*` label, `Text.Preparing` without a status, and nothing for an
+/// empty label.
 pub(crate) fn superweapon_status_label<'a>(
+    section: Option<&str>,
     display: crate::sim::superweapon::SuperWeaponDisplay,
     labels: CameoStatusLabels<'a>,
 ) -> Option<&'a str> {
     use crate::sim::superweapon::SuperWeaponStatus;
+    #[cfg(feature = "ares")]
+    if let (Some(texts), Some(section)) = (labels.ares, section)
+        && let Some(texts) = texts.get(&section.to_ascii_uppercase())
+    {
+        let text = &texts[match display.status {
+            None => 0,
+            Some(SuperWeaponStatus::Hold) => 1,
+            Some(SuperWeaponStatus::Ready) => 2,
+            Some(SuperWeaponStatus::Charging) => 3,
+            Some(SuperWeaponStatus::Active) => 4,
+        }];
+        return (!text.is_empty()).then_some(text.as_str());
+    }
+    #[cfg(not(feature = "ares"))]
+    let _ = section;
     display.status.map(|status| match status {
         SuperWeaponStatus::Hold => labels.hold,
         SuperWeaponStatus::Ready => labels.ready,
@@ -350,7 +410,7 @@ fn cameo_status_text<'a>(
     labels: CameoStatusLabels<'a>,
 ) -> Option<&'a str> {
     if let Some(display) = item.super_weapon_display {
-        return superweapon_status_label(display, labels);
+        return superweapon_status_label(item.super_weapon_section.as_deref(), display, labels);
     }
     if item.is_ready {
         Some(labels.ready)
@@ -1070,6 +1130,8 @@ mod tests {
             hold: "On Hold",
             charging: "Charging",
             active: "Firestorm On",
+            #[cfg(feature = "ares")]
+            ares: None,
         };
         let display = SuperWeaponDisplay {
             stage: 0,
@@ -1159,6 +1221,49 @@ mod tests {
     /// The cameo status slot carries `TXT_HOLD` for suspended production, the
     /// same way it carries `TXT_READY` for a placement-ready building. Before
     /// this, a held or unaffordable item looked identical to an idle one.
+    /// Ares NameReadiness (hook 6CC2B0, 100356A0): per-type `Text.*`,
+    /// Text.Preparing without a status, nothing for an empty label.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_status_label_reads_the_type_texts() {
+        use super::{CameoStatusLabels, ares_status_texts, superweapon_status_label};
+        use crate::sim::superweapon::{SuperWeaponDisplay, SuperWeaponStatus as S};
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[SuperWeaponTypes]\n0=Sonar\n[Sonar]\nText.Preparing=TXT_WAIT\n\
+                 Text.Hold=\nText.Ready=TXT_GO\n",
+            ))
+            .unwrap();
+        let texts = ares_status_texts(&rules, |label| format!("<{label}>"));
+        let labels = CameoStatusLabels {
+            ready: "Ready",
+            hold: "On Hold",
+            charging: "Charging",
+            active: "Active",
+            ares: Some(&texts),
+        };
+        let label = |section, status| {
+            let display = SuperWeaponDisplay {
+                stage: 0,
+                draw_progress: true,
+                status,
+            };
+            superweapon_status_label(section, display, labels)
+        };
+        assert_eq!(label(Some("sonar"), None), Some("<TXT_WAIT>"));
+        assert_eq!(label(Some("Sonar"), Some(S::Ready)), Some("<TXT_GO>"));
+        assert_eq!(
+            label(Some("Sonar"), Some(S::Hold)),
+            Some("<TXT_HOLD>"),
+            "an empty read keeps the constructor label"
+        );
+        assert_eq!(
+            label(Some("Sonar"), Some(S::Active)),
+            Some("<TXT_FIRESTORM_ON>")
+        );
+        assert_eq!(label(Some("Other"), Some(S::Ready)), Some("Ready"));
+    }
+
     #[test]
     fn cameo_status_text_covers_ready_and_hold() {
         use super::{CameoStatusLabels, cameo_status_text};
@@ -1167,6 +1272,8 @@ mod tests {
             hold: "On Hold",
             charging: "Charging",
             active: "Active",
+            #[cfg(feature = "ares")]
+            ares: None,
         };
 
         let mut item = crate::ui::sidebar::SidebarItem {

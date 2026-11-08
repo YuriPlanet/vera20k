@@ -184,6 +184,92 @@ impl MissileSpawnParams {
         // The block's last read, `<prefix>Type=` through `0x0067BD30`, is the
         // ordered Rules processor's ([`MissileSpawnRules::set_type`]).
     }
+
+    /// Ares `Missile.Custom` block (TechnoTypeExt+0x330): the constructor
+    /// `1003C710` memsets the 0x34-byte RocketStruct to zero, and its owner
+    /// type stands as its Type.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_custom(type_name: &str) -> Self {
+        let zero = NativeF32Bits::POSITIVE_ZERO;
+        Self {
+            type_name: type_name.to_owned(),
+            pause_frames: 0,
+            tilt_frames: 0,
+            pitch_initial: zero,
+            pitch_final: zero,
+            turn_rate: zero,
+            raise_rate: 0,
+            acceleration: zero,
+            altitude: 0,
+            damage: 0,
+            elite_damage: 0,
+            body_length: 0,
+            lazy_curve: false,
+            warhead: String::new(),
+            elite_warhead: String::new(),
+        }
+    }
+
+    /// Ares `detail::read<RocketStruct>` (Ares.dll 10040740, through
+    /// `Valueable<RocketStruct>::Read` 1003FA60) for `<prefix>.*` keys: the
+    /// Ares int, float and bool readers in order, each keeping the field on
+    /// a failed read. `RaiseRate` is read as a float and truncated (`F2I`,
+    /// 100772B0). The final `<prefix>.Type` read is dead: TechnoTypeExt's
+    /// reader overwrites Type with its own AircraftType right after.
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_ares(&mut self, section: &IniSection, prefix: &str) {
+        let key = |suffix: &str| format!("{prefix}.{suffix}");
+        self.pause_frames = section.read_ares_int(&key("PauseFrames"), self.pause_frames);
+        self.tilt_frames = section.read_ares_int(&key("TiltFrames"), self.tilt_frames);
+        self.pitch_initial = section.read_ares_float_bits(&key("PitchInitial"), self.pitch_initial);
+        self.pitch_final = section.read_ares_float_bits(&key("PitchFinal"), self.pitch_final);
+        self.turn_rate = section.read_ares_float_bits(&key("TurnRate"), self.turn_rate);
+        // read<float> into a scratch float (binary64 scan, FSTP dword),
+        // then F2I; a failed read keeps the field.
+        if let Some(raise) = section.read_ares_nullable_double_bits(&key("RaiseRate"), None) {
+            use crate::util::native_x87::MaskedX87Chop53;
+            let raise = MaskedX87Chop53::store_f32_masked_chop(MaskedX87Chop53::load_f64(raise));
+            self.raise_rate =
+                MaskedX87Chop53::ftol_i32_low_masked(MaskedX87Chop53::load_f32(raise));
+        }
+        self.acceleration = section.read_ares_float_bits(&key("Acceleration"), self.acceleration);
+        self.altitude = section.read_ares_int(&key("Altitude"), self.altitude);
+        self.damage = section.read_ares_int(&key("Damage"), self.damage);
+        self.elite_damage = section.read_ares_int(&key("EliteDamage"), self.elite_damage);
+        self.body_length = section.read_ares_int(&key("BodyLength"), self.body_length);
+        self.lazy_curve = section.read_ares_bool(&key("LazyCurve"), self.lazy_curve);
+    }
+}
+
+/// What a Rocket owner's type adds to its block: the takeoff and trailer
+/// puffs, the trailer spacing and the impact weapons. Stock gamemd hardcodes
+/// the first three (`V3TAKOFF`, `V3TRAIL`, 3 frames) and fires no weapon;
+/// Ares reads them from the owner's AircraftType
+/// (`ares_techno_type::CustomMissileRules`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RocketTypeExt<'a> {
+    pub takeoff_anim: Option<&'a str>,
+    pub trailer_anim: Option<&'a str>,
+    pub trailer_separation: i32,
+    /// `Missile.Weapon` and `Missile.EliteWeapon` of a custom missile.
+    pub weapons: [Option<&'a str>; 2],
+}
+
+impl RocketTypeExt<'static> {
+    /// The hardcoded gamemd puffs (`0x006623AE`, `0x00662DC3`, `0x00662E08`).
+    pub const STOCK: Self = Self {
+        takeoff_anim: Some(crate::rules::effect_asset_catalog::ROCKET_TAKEOFF_ANIM),
+        trailer_anim: Some(crate::rules::effect_asset_catalog::ROCKET_TRAIL_ANIM),
+        trailer_separation: 3,
+        weapons: [None, None],
+    };
+}
+
+impl RocketTypeExt<'_> {
+    /// The weapon Detonate fires in place of its explosion, if any.
+    pub fn weapon(&self, elite: bool) -> Option<&str> {
+        self.weapons[usize::from(elite)]
+    }
 }
 
 /// The three `RocketStruct` blocks.

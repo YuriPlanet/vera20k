@@ -1057,6 +1057,14 @@ fn native_deploy_rules(input: &serde_json::Value) -> RuleSet {
         .as_f64()
         .map(|frequency| format!("[AudioVisual]\nIdleActionFrequency={frequency}\n"))
         .unwrap_or_default();
+    // Ares 3.0 tests IsDesolator where the stock deploy shim tests
+    // ImmuneToRadiation (hooks 0x5215F9/0x52138C); a type other than DESO
+    // authors it from the row's immune bit so the executions keep their gate.
+    let desolator = if cfg!(feature = "ares") && type_name != "DESO" {
+        format!("IsDesolator={}\n", input["immune"].as_i64().unwrap_or(0))
+    } else {
+        String::new()
+    };
     let ini = IniFile::from_str(&format!(
         "{idle_keys}[General]\nAIAutoDeployFrameDelay={delays}\n\
          [Guard]\nRate=0.1\n[Sticky]\nRate=0.1\n[Area Guard]\nRate=0.1\n[Move]\nRate=0.1\n\
@@ -1065,7 +1073,7 @@ fn native_deploy_rules(input: &serde_json::Value) -> RuleSet {
          Locomotor={{4A582744-9839-11D1-B709-00A024DDAFD1}}\n\
          Deployer={}\nDeployedCrushable={}\nDeployFire={}\nUndeployDelay={}\nImmuneToRadiation={}\n\
          SprayAttack={}\nDeploySound=GIDeploy\nUndeploySound=GIUndeploy\n\
-         {weapon_keys}\n\
+         {desolator}{weapon_keys}\n\
          [SUPPLIED0]\nAreaFire={}\n[SUPPLIED1]\nAreaFire={}\n",
         input["blockage_path_delay"].as_i64().unwrap_or(0),
         input["deployer"].as_i64().unwrap_or(1),
@@ -1601,12 +1609,18 @@ fn infantry_unload_full_original_handler_matches52_supplied_controls() {
         let result = sim
             .infantry_mission_unload(id, &rules, crate::sim::world::FrameEffects::default())
             .unwrap();
-        assert_eq!(
-            result as u32,
-            row["return_eax"].as_u64().unwrap() as u32,
-            "{}: native return",
-            row["input"]
-        );
+        // Ares InfantryClass_Mi_Unload_Undeploy (1005CD20, hook 0x51F716):
+        // a Deployer's deployed arm (Doing 27..30) returns 1, not 450.
+        let input = &row["input"];
+        let deployed_arm = input["kind"] == "unload"
+            && input["deployer"].as_i64().unwrap_or(1) != 0
+            && (27..=30).contains(&input["doing"].as_i64().unwrap_or(-1));
+        let expected = if cfg!(feature = "ares") && deployed_arm {
+            1
+        } else {
+            row["return_eax"].as_u64().unwrap() as u32
+        };
+        assert_eq!(result as u32, expected, "{}: native return", row["input"]);
         assert_native_deploy_state(&sim, id, row);
     }
     assert_eq!(corpus.as_array().unwrap().len(), 52);
@@ -1880,4 +1894,31 @@ fn a_chaos_drone_deploy_fires_its_weapon_at_its_own_cell() {
         entity.attack_target.target(),
         Some(TargetKind::Cell(10, 10))
     );
+}
+
+/// Ares 3.0 TechnoClass_CanDeploySlashUnload_NoManualUnload (10049E70, hook
+/// 0x700EEC): a `NoManualUnload` transport outside a tank bunker refuses at
+/// the bridge test, though the stock transport arm admits it.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_no_manual_unload_refuses_an_unbunkered_transport() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=LCRF\n1=SEALED\n[LCRF]\nPassengers=5\n\
+         [SEALED]\nPassengers=5\nNoManualUnload=yes\n",
+    ))
+    .expect("transport rules");
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, false, 0, 10,
+        ));
+    let open = sim
+        .spawn_object("LCRF", "Americans", 20, 22, 0, &rules)
+        .unwrap();
+    let sealed = sim
+        .spawn_object("SEALED", "Americans", 24, 22, 0, &rules)
+        .unwrap();
+    assert!(sim.can_deploy_slash_unload(open, &rules));
+    assert!(!sim.can_deploy_slash_unload(sealed, &rules));
 }

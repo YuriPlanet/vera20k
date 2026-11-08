@@ -524,6 +524,37 @@ fn eject_head_passenger(
                 passenger.passenger_role.clear_transporter();
             }
             sim.queue_order_mission(pax_id, MissionType::Move, rules);
+            // Ares UnitClass_Mi_Unload_Decactivated1004CF80 (hook73DBF9): a
+            // Deactivated passenger's locomotor is powered off, and an
+            // unpowered one only reaches its placement cell.
+            #[cfg(feature = "ares")]
+            let dest = {
+                if sim
+                    .substrate
+                    .entities
+                    .get(pax_id)
+                    .is_some_and(|passenger| passenger.deactivated.is_offline())
+                {
+                    Simulation::locomotor_power_off(
+                        &mut sim.scenario_rng,
+                        &mut sim.substrate,
+                        &sim.resolved_terrain,
+                        pax_id,
+                    );
+                }
+                let powered = sim.substrate.entities.get(pax_id).and_then(|passenger| {
+                    let cells = sim
+                        .resolved_terrain
+                        .as_ref()
+                        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                    crate::sim::movement::motion_query::is_powered(passenger, cells.as_ref())
+                });
+                if powered == Some(false) {
+                    place_cell
+                } else {
+                    dest
+                }
+            };
             if let Err(cause) = sim.assign_destination_represented(
                 pax_id,
                 Some(crate::sim::components::NavTargetRef::cell(dest.0, dest.1)),
@@ -785,6 +816,203 @@ pub(crate) fn building_mission_unload_absorber(
     unload_epilogue(&mut sim.scenario_rng, &sim.substrate, rules, id)
 }
 
+/// Ares 3.0 `BuildingClass_Mi_Unload_Tunnel` (`100174A0`, hook
+/// `0x0044D8A7`, ahead of the absorber scan): a `Tunnel=` building whose
+/// owner's network of its type holds a Foot unloads one
+/// ([`ares_tunnel_unload_one`]) and returns the Unload epilogue
+/// (`0x0044DC84`), whatever the unload did. `None` takes the stock arms.
+#[cfg(feature = "ares")]
+pub(crate) fn ares_tunnel_mission_unload(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    effects: FrameEffects<'_>,
+) -> Option<i32> {
+    let tunnel = sim.ares_tunnel_type(id, rules)?;
+    let owner = sim.substrate.entities.get(id)?.owner();
+    let member = *sim.ares_tunnels.members(owner, tunnel).last()?;
+    ares_tunnel_unload_one(
+        sim,
+        rules,
+        id,
+        owner,
+        tunnel,
+        member,
+        overlay_registry,
+        effects,
+    );
+    Some(unload_epilogue(
+        &mut sim.scenario_rng,
+        &sim.substrate,
+        rules,
+        id,
+    ))
+}
+
+/// `TunnelData::UnloadOne @ 100098A0` for the network's last `member`:
+/// sixteen steps over the eight cells around the building's Location
+/// (GetMapCoords), starting at the one opposite its facing
+/// (`(((facing + 0x8000) >> 12) + 1) >> 1`) and turning clockwise; the
+/// first eight also need the next cell outward open, which becomes the
+/// destination. A step takes a cell the member's Can_Enter_Cell admits
+/// (at the building's cell level) that holds no structural bridge. Under
+/// the IKnowWhatImDoing latch the member is put there facing `dir << 5`:
+/// infantry on a free sub location of the cell centre at Z 0
+/// (`PickInfantrySublocation`), anything else on the nearest cell for its
+/// SpeedType from that cell (`Pathfinding_Find`, the plain argument set of
+/// the Unload water search). The building type's `LeaveTransportSound=`
+/// plays at its coordinates, the member queues Move to the destination and
+/// leaves the network. Answers whether it left.
+///
+/// RESIDUAL: native puts a vehicle on cell (0, 0) when the nearest-cell
+/// search fails, and drops a member whose Put fails; VERA keeps that
+/// member in the network. Trigger: no free cell for its SpeedType, or a
+/// refused Unlimbo. Frequency: rare.
+#[cfg(feature = "ares")]
+#[allow(clippy::too_many_arguments)]
+fn ares_tunnel_unload_one(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    owner: crate::sim::intern::InternedId,
+    tunnel: usize,
+    member: u64,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    effects: FrameEffects<'_>,
+) -> bool {
+    let now = sim.session.binary_frame();
+    let Some((base, facing16, height, fallback_z, sound, coords)) =
+        sim.substrate.entities.get(id).and_then(|building| {
+            let object = sim.object_type(building.type_ref(), rules)?;
+            Some((
+                (building.position.rx(), building.position.ry()),
+                building.body_facing_current(now),
+                object_cell_height(sim, building),
+                building.position.z(),
+                object.leave_transport_sound.clone(),
+                crate::sim::movement::ground_pose::object_get_coords(
+                    building,
+                    sim.resolved_terrain.as_ref(),
+                ),
+            ))
+        })
+    else {
+        return false;
+    };
+    let Some((category, speed_type)) = sim.substrate.entities.get(member).and_then(|foot| {
+        Some((
+            foot.category(),
+            sim.object_type(foot.type_ref(), rules)?.speed_type,
+        ))
+    }) else {
+        return false;
+    };
+    let start = usize::from(dir_from_facing16(facing16.wrapping_add(0x8000)));
+    let mut need_far = true;
+    for step in 0..16 {
+        let dir = (start + step) & 7;
+        let near = cell_from(base, DIRECTION_DELTAS[dir]);
+        let far = near.and_then(|cell| cell_from(cell, DIRECTION_DELTAS[dir]));
+        let args = InfantryEntryArgs {
+            direction: dir as i32,
+            height,
+            previous_cell: None,
+        };
+        let near_open = near.is_some_and(|cell| {
+            passenger_can_enter(sim, rules, overlay_registry, member, cell, args)
+        });
+        let far_open = far.is_some_and(|cell| {
+            passenger_can_enter(sim, rules, overlay_registry, member, cell, args)
+        });
+        if let Some(near) = near
+            && near_open
+            && (!need_far || far_open)
+            && !cell_has_structural_bridge(sim, near)
+        {
+            let cell = if category == EntityCategory::Infantry {
+                let Some((sub_cell, _)) = bump_crush::pick_infantry_sublocation(
+                    sim.resolved_terrain.as_ref(),
+                    &sim.substrate.raw_cell_occupation,
+                    &sim.substrate.occupancy,
+                    &sim.substrate.entities,
+                    rules,
+                    &sim.interner,
+                    &mut sim.scenario_rng,
+                    DriveCoord::cell(near.0, near.1, 0),
+                ) else {
+                    return false;
+                };
+                if let Some(foot) = sim.substrate.entities.get_mut(member) {
+                    foot.sub_cell.hold(sub_cell);
+                    if let Some(locomotor) = foot.locomotor.as_mut() {
+                        locomotor.store_ground_layer(false);
+                    }
+                }
+                near
+            } else {
+                let passability = PassabilityArgs {
+                    speed_type,
+                    required_zone_id: None,
+                    movement_zone: MovementZone::Normal,
+                    bridge_aware_zone: false,
+                };
+                let Some(found) = sim.nearby_passable_cell(
+                    (i32::from(near.0), i32::from(near.1)),
+                    NearbyArgs::plain(passability, NearbyFootprint::SINGLE),
+                ) else {
+                    return false;
+                };
+                found
+            };
+            let z = cell_level_or(sim, cell, fallback_z);
+            let position = exit_cell_position(sim, member, cell.0, cell.1, z);
+            let outcome = sim.try_reveal_entity_with_context(
+                member,
+                crate::sim::world::RevealRequest {
+                    position,
+                    placement: PlacementEvidence::MarkSucceeded,
+                    logic_eligible: true,
+                },
+                crate::sim::world::UninitContext::with_rules(rules)
+                    .with_effects(effects)
+                    .with_unlimbo_facing(Some((dir as u8) << 5)),
+            );
+            if !matches!(outcome, crate::sim::world::RevealOutcome::Revealed { .. }) {
+                return false;
+            }
+            sim.ares_tunnels.pop(owner, tunnel);
+            if let Some(sound) = sound {
+                sim.sound_events.emit(SimSoundEvent::voc_at_world_coord(
+                    sound,
+                    crate::sim::anim_class::AnimWorldCoord {
+                        x: coords.x,
+                        y: coords.y,
+                        z: coords.z,
+                    },
+                ));
+            }
+            let destination = if need_far { far.unwrap_or(near) } else { near };
+            sim.queue_order_mission(member, MissionType::Move, rules);
+            if let Err(cause) = sim.assign_destination_represented(
+                member,
+                Some(crate::sim::components::NavTargetRef::cell(
+                    destination.0,
+                    destination.1,
+                )),
+                rules,
+                overlay_registry,
+                effects,
+            ) {
+                log::warn!("Tunnel unload destination {member}: {cause}");
+            }
+            return true;
+        }
+        need_far = step != 7 && need_far;
+    }
+    false
+}
+
 /// The `Passengers > 0` branch of `UnitClass::Mission_Unload @ 0x0073D630`.
 ///
 /// Returns the handler's dispatch delay; the caller writes the epilogue.
@@ -863,9 +1091,17 @@ pub(crate) fn unit_mission_unload(
                 // `FUN_0070DC60` → `Type+0x808 TurretCount > 0` (`0x00717880`):
                 // a turreted transport (the IFV) keeps its last passenger —
                 // `+0x6E4 = (cargo == 1 ? 0 : 1)` (`0x0073D82C`..`0x0073D83C`).
+                // Ares 3.0 UnitClass_Mi_Unload_LastPassenger (1005D5B0, hook
+                // 0x73D81E) reads the type's `Gunner=` instead.
                 let turreted = sim
                     .object_type(entity.type_ref(), rules)
-                    .is_some_and(|obj| obj.turret_count > 0);
+                    .is_some_and(|obj| {
+                        if crate::rules::ARES_ENABLED {
+                            obj.gunner
+                        } else {
+                            obj.turret_count > 0
+                        }
+                    });
                 if let Some(entity) = sim.substrate.entities.get_mut(id) {
                     if turreted {
                         entity.transport_unload_keep_count.count = if cargo == 1 { 0 } else { 1 };

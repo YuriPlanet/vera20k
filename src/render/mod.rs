@@ -111,3 +111,5 @@ pub mod xbr;
 
 #[cfg(test)]
 mod sidebar_gpu_tests;
+#[cfg(test)]
+mod smooth_chrome_gpu_tests;

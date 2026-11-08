@@ -131,6 +131,11 @@ pub(crate) struct RetailOptionsProfile {
     /// it. Off by default, so new profiles start like gamemd. A profile from
     /// before the rename keeps its `SkipStartupLogo=` choice.
     pub(crate) skip_intro: bool,
+    /// `[VERA] ShowStringKeys=`: the Developer page's String Keys box. On, it
+    /// arms Ctrl+Alt+K, which switches every label between its text and its
+    /// own string-table key. Off by default; a start with it on shows the
+    /// texts until the hotkey asks for keys.
+    pub(crate) show_string_keys: bool,
     /// `[VERA] RenderInterpolation=`: client-only motion smoothing. Off by
     /// default, so new profiles draw the original tick-stepped motion; it never
     /// changes the simulation rate or saves.
@@ -157,6 +162,10 @@ pub(crate) struct RetailOptionsProfile {
     /// copies at that multiple (`render::sidebar_smoothing`). Off by default;
     /// presentation only.
     pub(crate) smooth_sidebar: bool,
+    /// `[VERA] SmoothOnlineMenus=`: VERA's online client draws its enlarged
+    /// art through the smooth shader (`BatchRenderer::draw_chrome`). Off by
+    /// default; presentation only.
+    pub(crate) smooth_online_menus: bool,
     /// `[VERA] HdMapPreviews=`: the setup screens' map preview shows VERA's
     /// own drawing of the whole map (`app::map_picture`) in place of
     /// the map's `[PreviewPack]` picture. On by default; presentation only.
@@ -176,6 +185,13 @@ pub(crate) struct RetailOptionsProfile {
     /// mobile strip while [`Self::shift_queue`] is on. VERA's own convenience;
     /// gamemd never reads this section. Clamped by [`SHIFT_QUEUE_COUNT_RANGE`].
     pub(crate) shift_queue_count: u32,
+    /// `[VERA] TerrainDeformation=`: the Options page's Terrain Deformation
+    /// box. Explosions dent open ground as in Tiberian Sun and a nuke leaves a
+    /// crater (`docs/terrain-deformation.md`). Unlike the presentation boxes it
+    /// changes the rules each new game reads, so online peers must agree on it
+    /// ([`crate::rules::personal_rules::PersonalRules::set_terrain_deformation`]).
+    /// Off by default.
+    pub(crate) terrain_deformation: bool,
     /// `[VERA] WolTestService=`: Internet answers from VERA's stand-in WOL
     /// service instead of showing `TXT_APIMISSING`: the Options page's
     /// developer box. Off by default; no real service exists yet.
@@ -219,8 +235,10 @@ pub(crate) struct RetailOptionsProfile {
     /// simulation never reads it, and the profile writer round-trips the value.
     pub(crate) health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode,
     /// `[VERA] TranslateChat=`: the language received online chat is
-    /// translated into, or `None`, the default, for off. Only the `/translate`
-    /// chat command changes it ([`Self::commit_chat_translation`]).
+    /// translated into, or `None`, the default, for off. The Options list
+    /// changes it and Options' accept writes it with the rest; the
+    /// `/translate` chat command writes it alone
+    /// ([`Self::commit_chat_translation`]).
     pub(crate) translate_chat: Option<crate::ui::chat_translation::ChatLanguage>,
     /// `[VERA] Language=`: the tag of the interface language the player chose
     /// ([`crate::i18n`]); `None`, the default, follows the system's languages.
@@ -319,6 +337,7 @@ impl Default for RetailOptionsProfile {
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
             yr_original_style: false,
             skip_intro: false,
+            show_string_keys: false,
             render_interpolation: false,
             mouse_wheel_zoom: false,
             right_click_orders: false,
@@ -326,10 +345,12 @@ impl Default for RetailOptionsProfile {
             vera_icon: false,
             hd_radar: false,
             smooth_sidebar: false,
+            smooth_online_menus: false,
             hd_map_previews: true,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
+            terrain_deformation: false,
             wol_test_service: false,
             solo_skirmish: false,
             commander_feedback: true,
@@ -361,7 +382,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 27],
+    pub(crate) vera: [(&'static str, String); 31],
 }
 
 impl RetailOptionsLoad {
@@ -561,6 +582,7 @@ impl RetailOptionsProfile {
             // logo; the writer drops it.
             let legacy_skip = vera.read_bool("SkipStartupLogo", self.skip_intro);
             self.skip_intro = vera.read_bool("SkipIntro", legacy_skip);
+            self.show_string_keys = vera.read_bool("ShowStringKeys", self.show_string_keys);
             self.render_interpolation =
                 vera.read_bool("RenderInterpolation", self.render_interpolation);
             self.mouse_wheel_zoom = vera.read_bool("MouseWheelZoom", self.mouse_wheel_zoom);
@@ -569,6 +591,8 @@ impl RetailOptionsProfile {
             self.vera_icon = vera.read_bool("VeraIcon", self.vera_icon);
             self.hd_radar = vera.read_bool("HdRadar", self.hd_radar);
             self.smooth_sidebar = vera.read_bool("SmoothSidebar", self.smooth_sidebar);
+            self.smooth_online_menus =
+                vera.read_bool("SmoothOnlineMenus", self.smooth_online_menus);
             self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
@@ -581,6 +605,8 @@ impl RetailOptionsProfile {
             self.shift_queue_count = clamp_shift_queue_count(
                 vera.read_int("ShiftQueueCount", self.shift_queue_count as i32),
             );
+            self.terrain_deformation =
+                vera.read_bool("TerrainDeformation", self.terrain_deformation);
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
@@ -764,13 +790,26 @@ impl RetailOptionsProfile {
                     format_bool(self.smooth_sidebar).to_string(),
                 ),
                 (
+                    "SmoothOnlineMenus",
+                    format_bool(self.smooth_online_menus).to_string(),
+                ),
+                (
                     "HdMapPreviews",
                     format_bool(self.hd_map_previews).to_string(),
                 ),
                 ("Language", self.language.clone().unwrap_or_default()),
+                ("TranslateChat", self.translate_chat_value().to_owned()),
                 (
                     "DetailedEvaText",
                     format_bool(self.detailed_eva_text).to_string(),
+                ),
+                (
+                    "TerrainDeformation",
+                    format_bool(self.terrain_deformation).to_string(),
+                ),
+                (
+                    "ShowStringKeys",
+                    format_bool(self.show_string_keys).to_string(),
                 ),
             ],
         }
@@ -893,8 +932,16 @@ impl RetailOptionsProfile {
     }
 
     fn transform_chat_translation(&self, input: &[u8]) -> Vec<u8> {
-        let tag = self.translate_chat.map_or("off", |language| language.tag());
-        set_ini_values(input, VERA_SECTION, &[("TranslateChat", tag)])
+        set_ini_values(
+            input,
+            VERA_SECTION,
+            &[("TranslateChat", self.translate_chat_value())],
+        )
+    }
+
+    /// The `[VERA] TranslateChat=` value: the language's tag, or `off`.
+    fn translate_chat_value(&self) -> &'static str {
+        self.translate_chat.map_or("off", |language| language.tag())
     }
 
     fn transform_wol_preferences(&self, input: &[u8]) -> Vec<u8> {
@@ -1549,6 +1596,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
             sidebar: SidebarSize::ExtraLarge,
             yr_original_style: true,
             skip_intro: true,
+            show_string_keys: true,
             shift_queue: true,
             shift_queue_count: 7,
             wol_test_service: true,
@@ -1571,6 +1619,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert_eq!(reread.retained_profile.sidebar, SidebarSize::ExtraLarge);
         assert!(reread.retained_profile.yr_original_style);
         assert!(reread.retained_profile.skip_intro);
+        assert!(reread.retained_profile.show_string_keys);
         assert!(reread.retained_profile.shift_queue);
         assert!(reread.retained_profile.wol_test_service);
         assert!(reread.retained_profile.solo_skirmish);
@@ -1585,6 +1634,31 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(
             written.contains("SkipIntro=yes") && !written.contains("SkipStartupLogo"),
             "{written}"
+        );
+    }
+
+    #[test]
+    fn options_accept_writes_the_chat_translation_language() {
+        use crate::ui::chat_translation::ChatLanguage;
+        let startup = RetailStartupOptions::default();
+        let profile = RetailOptionsProfile {
+            translate_chat: Some(ChatLanguage::Japanese),
+            ..RetailOptionsProfile::default()
+        };
+        // A language picked in Options replaces one /translate saved.
+        let accepted = profile.transform_settings(b"[VERA]\r\nTranslateChat=zh-Hans\r\n");
+        assert_eq!(
+            load_snapshot(&startup, &accepted)
+                .retained_profile
+                .translate_chat,
+            Some(ChatLanguage::Japanese)
+        );
+        let off = RetailOptionsProfile::default().transform_settings(&accepted);
+        assert_eq!(
+            load_snapshot(&startup, &off)
+                .retained_profile
+                .translate_chat,
+            None
         );
     }
 
@@ -1653,15 +1727,17 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let unset = load_snapshot(&startup, &unset).retained_profile;
         assert_eq!(unset.window_placement, None);
         // The lock starts off, its icon is the red star, the radar is native
-        // and the sidebar sharp, and map previews are VERA's own; all five
-        // round-trip.
+        // and the sidebar and online menus sharp, and map previews are VERA's
+        // own; all six round-trip.
         assert!(!unset.lock_cursor && !unset.vera_icon);
         assert!(!unset.hd_radar && !unset.smooth_sidebar && unset.hd_map_previews);
+        assert!(!unset.smooth_online_menus);
         let changed = RetailOptionsProfile {
             lock_cursor: true,
             vera_icon: true,
             hd_radar: true,
             smooth_sidebar: true,
+            smooth_online_menus: true,
             hd_map_previews: false,
             ..RetailOptionsProfile::default()
         }
@@ -1669,6 +1745,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let changed = load_snapshot(&startup, &changed).retained_profile;
         assert!(changed.lock_cursor && changed.vera_icon);
         assert!(changed.hd_radar && changed.smooth_sidebar && !changed.hd_map_previews);
+        assert!(changed.smooth_online_menus);
     }
 
     #[test]
@@ -2364,5 +2441,17 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
                 .detailed_eva_text
         );
         assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+    }
+
+    #[test]
+    fn terrain_deformation_defaults_off_and_round_trips_through_the_vera_section() {
+        let startup = RetailStartupOptions::default();
+        let read = |bytes: &[u8]| load_snapshot(&startup, bytes).retained_profile;
+        assert!(!read(b"").terrain_deformation);
+        let mut profile = read(b"[VERA]\nTerrainDeformation=yes\n");
+        assert!(profile.terrain_deformation);
+        assert!(read(&profile.transform_settings(b"")).terrain_deformation);
+        profile.terrain_deformation = false;
+        assert!(!read(&profile.transform_settings(b"")).terrain_deformation);
     }
 }
