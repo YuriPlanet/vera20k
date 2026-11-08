@@ -64,7 +64,7 @@ impl ProduceCash {
 
 /// The Floating Disc drain link pair, `TechnoClass+0x1CC`/`+0x1D0`.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub(crate) struct Drain {
+pub struct Drain {
     /// `TechnoClass+0x1CC DrainTarget`: the building this object is draining
     /// (Floating Disc). Set by `Fire_At`'s `DrainWeapon` arm
     /// ([`install_drain_link`]), cleared by `UnitClass::AI`'s cell recheck,
@@ -85,7 +85,7 @@ pub(crate) struct Drain {
 
 impl Drain {
     /// The building this object is draining.
-    pub(crate) fn target(&self) -> Option<u64> {
+    pub fn target(&self) -> Option<u64> {
         self.target
     }
 

@@ -725,7 +725,7 @@ fn cell_to_u16(cell: (i32, i32)) -> Option<(u16, u16)> {
 /// pushes besides the seed. Every static caller loads `g_Map` as ECX, so
 /// [`Simulation::nearby_passable_cell`] supplies the map itself.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct NearbyArgs {
+pub struct NearbyArgs {
     pub passability: PassabilityArgs,
     pub footprint: NearbyFootprint,
     pub allow_bridge_cells: bool,
@@ -861,7 +861,7 @@ impl crate::sim::world::Simulation {
     /// zone grids, the playfield, the radius cap from the map's Size
     /// ([`map_owned_radius_cap`]) and the current frame for the no-target
     /// pick. `None` when nothing passes or the map size is unknown.
-    pub(crate) fn nearby_passable_cell(
+    pub fn nearby_passable_cell(
         &self,
         seed: (i32, i32),
         args: NearbyArgs,

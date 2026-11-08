@@ -255,7 +255,7 @@ impl HouseStrategyEmergencyState {
         self.all_to_hunt_bias
     }
 
-    pub(crate) const fn last_building_attack_frame(&self) -> i32 {
+    pub const fn last_building_attack_frame(&self) -> i32 {
         self.last_building_attack_frame
     }
 
@@ -1733,7 +1733,7 @@ impl HouseState {
 
     /// Counter49FAE0's logical item query. Sparse lookup replaces native
     /// allocation/zero-fill; allocator capacity has no gameplay consumer here.
-    pub(crate) fn produced_count(&self, category: ObjectCategory, type_index: i32) -> i32 {
+    pub fn produced_count(&self, category: ObjectCategory, type_index: i32) -> i32 {
         self.produced_type_counts[category as usize]
             .get(&type_index)
             .copied()

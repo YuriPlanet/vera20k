@@ -37,7 +37,7 @@ mod thief_capture_tests;
 
 /// `HouseClass::CanBuild`'s answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CanBuild {
+pub enum CanBuild {
     /// 0.
     No,
     /// 1.
@@ -83,7 +83,7 @@ pub(crate) enum CanBuild {
 /// owner, whose Ares signed-capacity branch has executed component controls in
 /// `tools/rules_oracle/ares_factory_owners.json`. This does not claim the whole
 /// Ares qualification prefix, every additional prerequisite policy or hijacking.
-pub(crate) fn can_build(
+pub fn can_build(
     sim: &Simulation,
     rules: &RuleSet,
     owner: InternedId,

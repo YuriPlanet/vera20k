@@ -85,9 +85,8 @@ pub use self::production_types::*;
 
 // Re-exports for external consumers (files outside production/ that previously
 // imported private submodules directly).
-pub(crate) use self::can_build::{
-    CanBuild, can_build, initialize_factory_primary, toggle_factory_primary,
-};
+pub use self::can_build::{CanBuild, can_build};
+pub(crate) use self::can_build::{initialize_factory_primary, toggle_factory_primary};
 #[cfg(feature = "ares")]
 pub(crate) use self::can_build::owns_prerequisites;
 pub use self::can_build::{can_select_factory_primary, find_factory, object_find_factory};

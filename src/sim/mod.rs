@@ -30,7 +30,7 @@ pub mod attach_effect;
 pub(crate) mod object_fall;
 #[cfg(any(test, feature = "test-support"))]
 pub mod arena_fixture;
-pub(crate) mod build_site;
+pub mod build_site;
 pub mod building_art;
 #[cfg(feature = "ares")]
 pub mod bounty;
