@@ -97,8 +97,9 @@ pub(crate) const SKIP_INTRO_LABEL: &str = "VERA:SkipIntro";
 pub(crate) const SKIP_INTRO_HELP: &str = "VERA:SkipIntroHelp";
 pub(crate) const PERFORMANCE_STATS_LABEL: &str = "VERA:PerformanceStats";
 pub(crate) const PERFORMANCE_STATS_HELP: &str = "VERA:PerformanceStatsHelp";
-/// VERA's developer box: every label reads as its own string-table key,
-/// VERA's own `VERA:` labels included. Live state only; no profile stores it.
+/// VERA's developer box: arms Ctrl+Alt+K, which switches every label between
+/// its text and its own string-table key, VERA's own `VERA:` labels included.
+/// Saved in `[VERA] ShowStringKeys=`; a start shows the texts.
 pub(crate) const SHOW_STRING_KEYS_LABEL: &str = "VERA:ShowStringKeys";
 pub(crate) const SHOW_STRING_KEYS_HELP: &str = "VERA:ShowStringKeysHelp";
 /// VERA's end-game switches, the pair of `[EndGameScreens]` presentation
@@ -628,13 +629,13 @@ pub(crate) enum LauncherCheckboxId {
     /// shows and changes live state at once, and is never saved: the readout
     /// starts hidden at every launch.
     PerformanceStats,
-    /// VERA's developer box: every label reads as its own string-table key,
-    /// the game's and VERA's own, so a screen names the key it draws. Like
-    /// Performance Stats, it changes at once and is never saved.
-    ShowStringKeys,
     /// VERA's developer box: the next launch skips `Init_Game`'s logo movie
     /// (`0x0052C5E2`); the splash and the first-run intro still play.
     SkipIntro,
+    /// VERA's developer box: arms Ctrl+Alt+K, which switches every label
+    /// between its text and its own string-table key. Saved; a start shows
+    /// the texts until the hotkey asks for keys.
+    ShowStringKeys,
     /// VERA's box: the score page draws the country's own victory or defeat
     /// picture from `[EndGameScreens]` instead of the side's `MP*SCRN` art. On
     /// by default — a rules set that names pictures shows them — and it covers
@@ -759,7 +760,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) performance_stats: bool,
-    /// The String Keys box's live state when the page opened, then each toggle.
+    /// `[VERA] ShowStringKeys=`, the String Keys box, then each toggle.
     pub(crate) show_string_keys: bool,
     pub(crate) skip_intro: bool,
     /// The country's own end-game picture is allowed; see
@@ -1540,8 +1541,8 @@ impl Category {
             // turns it on.
             Self::Developer => &[
                 Setting::Checkbox(Check::PerformanceStats),
-                Setting::Checkbox(Check::ShowStringKeys),
                 Setting::Checkbox(Check::SkipIntro),
+                Setting::Checkbox(Check::ShowStringKeys),
             ],
         }
     }

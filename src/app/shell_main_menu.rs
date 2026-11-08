@@ -1,5 +1,6 @@
 use super::*;
 use crate::app::persistence::options::audio::AudioVolumeOperations;
+use crate::util::time::{Duration, Instant};
 
 /// Private operation seam for the retail shell's confirmed quit transaction.
 /// Keeping the ordering here lets unit tests observe persistence dispatch
@@ -65,6 +66,14 @@ impl AppState {
                 csf,
             );
         }
+        // The login form keeps its status line as resolved text; the rest of
+        // that page resolves every frame.
+        if let Some(visit) = self.frontend.wol.as_mut()
+            && let crate::app::shell_wol::WolPage::Login(login) = &mut visit.page
+            && let Some(form) = login.account.as_mut()
+        {
+            form.refresh_text();
+        }
     }
 
     /// The String Keys hotkey: with the Developer box ticked, keys and texts
@@ -112,9 +121,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.renderer.performance_overlay.set_visible(shown);
     }
     fn set_show_string_keys(&mut self, shown: bool) {
-        // Live state only, like the FPS readout: the loaded table and the
-        // language catalog both answer with keys, and the hotkey starts from
-        // keys shown. Map titles follow, as they do on a language change.
+        // Saved, and applied at once: the box arms the hotkey but leaves the
+        // texts showing, so ticking it never swaps the page under the pointer.
+        // The loaded table and the language catalog both answer with keys once
+        // the hotkey asks; map titles follow, as on a language change.
+        self.persistence.options_profile.show_string_keys = shown;
         crate::i18n::set_show_string_keys(shown);
         self.refresh_string_key_labels();
     }
@@ -1182,6 +1193,26 @@ impl App {
         Ok(())
     }
 
+    /// While the Developer page's String Keys box is ticked, reload a language
+    /// file rewritten in the settings folder or the checkout's `src/i18n`, so
+    /// its texts (and their keys) follow without a restart. Returns the next
+    /// check, keeping the event loop awake for it even on a still screen.
+    pub(super) fn poll_language_files(state: &mut AppState) -> Option<Instant> {
+        if !crate::i18n::string_keys_enabled() {
+            return None;
+        }
+        let settings_dir = state
+            .platform
+            .game_config
+            .as_ref()
+            .map(|config| config.paths.settings_dir().to_path_buf());
+        if crate::i18n::poll_language_files(settings_dir.as_deref()) {
+            state.refresh_string_key_labels();
+            state.platform.window.request_redraw();
+        }
+        Some(Instant::now() + Duration::from_secs(1))
+    }
+
     /// Resolve a CSF string key to display text, falling back to the supplied
     /// English string when the table is absent or missing the key.
     pub(super) fn csf_label(state: &AppState, key: &str, fallback: &str) -> String {
@@ -1217,7 +1248,6 @@ impl App {
             labels,
             state.platform.window.fullscreen().is_some(),
             state.renderer.performance_overlay.is_visible(),
-            crate::i18n::string_keys_enabled(),
             state.audio.launcher_audio_available,
             displays,
         );

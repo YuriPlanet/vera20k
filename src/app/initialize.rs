@@ -391,6 +391,9 @@ impl App {
                 .map(|config| config.paths.settings_dir()),
             options_profile.language.as_deref(),
         );
+        // The Developer page's String Keys box arms Ctrl+Alt+K; a saved choice
+        // still opens on the texts until the hotkey asks for keys.
+        crate::i18n::set_show_string_keys(options_profile.show_string_keys);
         options_profile.render_interpolation =
             crate::app::presentation::interpolation::startup_enabled(
                 options_profile.render_interpolation,
