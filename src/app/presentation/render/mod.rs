@@ -47,11 +47,13 @@ mod placement_gpu_tests;
 mod status_gpu_tests;
 #[cfg(test)]
 mod target_laser_gpu_tests;
+pub(crate) use draw_passes::draw_software_cursor;
 #[cfg(test)]
 pub(crate) use draw_passes::{draw_bridge_shadows, draw_pooled_cell_bodies};
 pub(crate) mod draw_plan_lowering;
 mod merge_passes;
 pub(crate) mod minimap_transaction;
+pub(crate) mod terrain_picture;
 mod object_stages;
 #[cfg(test)]
 mod object_stages_gpu_tests;
@@ -812,9 +814,9 @@ pub(crate) fn render_game(
             sidebar_unavailable: &sidebar.unavailable,
             sidebar_flash: &sidebar.flash,
             sidebar_gclock: &sidebar.gclock,
+            minimap: &sidebar.minimap,
             smooth_chrome: sidebar.smooth_chrome,
             smooth_command_bar: sidebar.smooth_command_bar,
-            software_cursor: ui.software_cursor_draw,
         },
     );
     let finished = render_started.map(|_| Instant::now());

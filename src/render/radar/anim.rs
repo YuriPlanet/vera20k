@@ -426,6 +426,8 @@ pub struct RadarAnimState {
     online: Option<(BatchTexture, BatchTexture)>,
     pub width: u32,
     pub height: u32,
+    /// Advances with each replay of paints.
+    picture_generation: u64,
 }
 impl RadarAnimState {
     /// Literal ordinary native endpoints are 0 and 32; malformed frames are
@@ -451,6 +453,7 @@ impl RadarAnimState {
             online: None,
             width,
             height,
+            picture_generation: 0,
         })
     }
     pub fn replace_frames(
@@ -551,6 +554,10 @@ impl RadarAnimState {
     pub fn texture(&self) -> &BatchTexture {
         &self.displayed
     }
+    /// A number that changes whenever [`Self::texture`]'s picture may have.
+    pub fn picture_generation(&self) -> u64 {
+        self.picture_generation
+    }
     /// Replay the paints since the last replay into the surface, copying it
     /// to the shown texture at each show. Encode it before the sidebar draws
     /// [`Self::texture`], and after the minimap's composition, which the
@@ -566,6 +573,7 @@ impl RadarAnimState {
         if paints.is_empty() {
             return;
         }
+        self.picture_generation += 1;
         // Every draw's quads go up together; each draw reads its own range.
         let size = [self.width as f32, self.height as f32];
         let mut quads = Vec::new();

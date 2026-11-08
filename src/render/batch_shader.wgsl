@@ -139,14 +139,10 @@ fn fs_surface_store(input: VertexOutput) -> @location(0) vec4f {
 
 fn shade(input: VertexOutput, a: u32) -> vec4f {
     let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
-    var color: vec4f = textureSample(t_sprite, s_sprite, input.uv);
-    if (input.source_palette != 0u) {
-        color = indexed_color(index, input.source_palette);
-    }
-    return shade_color(input, color, index, a);
+    return shade_color(input, sampled_source_color(input.uv, index, input.source_palette), index, a);
 }
 
-// What a source colour stores: the shared end of every colour path here.
+// What an encoded source colour stores: the shared end of every colour path here.
 fn shade_color(input: VertexOutput, color: vec4f, index: u32, a: u32) -> vec4f {
     // Discard fully transparent pixels so they don't write to the depth buffer.
     // Without this, transparent regions of sprite quads would occlude objects behind them.
@@ -374,5 +370,6 @@ fn fs_shell_smooth(input: VertexOutput) -> @location(0) vec4f {
         );
     }
     let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
-    return shade_color(input, color, index, tactical_a_at(input.position.xy));
+    let encoded = vec4f(srgb_encode(color.rgb), color.a);
+    return shade_color(input, encoded, index, tactical_a_at(input.position.xy));
 }
