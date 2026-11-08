@@ -267,19 +267,6 @@ pub(crate) struct RetailOptionsProfile {
     /// voice never names it. Client presentation only: no sim, audio, state
     /// hash or network protocol reads it. Off by default.
     pub(crate) detailed_eva_text: bool,
-    /// `[VERA] WindowX/WindowY`: where the windowed game last sat, so the next
-    /// launch opens there. `None`, with neither key written, until the window
-    /// has sat somewhere. Its size is not kept: a windowed launch always opens
-    /// at gamemd's startup size ([`RetailOptionsLoad::startup_shell_screen`]).
-    pub(crate) window_placement: Option<WindowPlacement>,
-}
-
-/// The windowed game's last placement: its outer top-left corner in the
-/// desktop's physical pixels, the frame monitors report theirs in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct WindowPlacement {
-    pub(crate) x: i32,
-    pub(crate) y: i32,
 }
 
 /// The two process-start products obtained from one physical `VERA.INI`
@@ -364,7 +351,6 @@ impl Default for RetailOptionsProfile {
             online_locale: 0,
             display: crate::ui::main_menu_dialogs::options::DisplayTarget::Auto,
             detailed_eva_text: false,
-            window_placement: None,
         }
     }
 }
@@ -655,18 +641,6 @@ impl RetailOptionsProfile {
                 self.display =
                     crate::ui::main_menu_dialogs::options::DisplayTarget::from_ini_value(value);
             }
-            // Earlier builds also saved the window's size and wrote a window
-            // never placed as 0x0, which still reads as unset; the writer
-            // drops those keys.
-            let unplaced = ["WindowWidth", "WindowHeight"]
-                .iter()
-                .any(|key| vera.is_present(key) && vera.read_int(key, 0) <= 0);
-            if vera.is_present("WindowX") && vera.is_present("WindowY") && !unplaced {
-                self.window_placement = Some(WindowPlacement {
-                    x: vera.read_int("WindowX", 0),
-                    y: vera.read_int("WindowY", 0),
-                });
-            }
         }
     }
 
@@ -851,23 +825,8 @@ impl RetailOptionsProfile {
         let output =
             crate::util::ini_writer::set_ini_byte_values(&output, NETWORK_SECTION, &network);
         let output = apply_formatted_section(&output, VERA_SECTION, &formatted.vera);
-        // The corner is written only once the window has one, so a profile
-        // without it opens the window as a first launch does.
-        let output = match self.window_placement {
-            Some(placement) => {
-                let (x, y) = (placement.x.to_string(), placement.y.to_string());
-                set_ini_values(
-                    &output,
-                    VERA_SECTION,
-                    &[("WindowX", x.as_str()), ("WindowY", y.as_str())],
-                )
-            }
-            None => crate::util::ini_writer::remove_ini_keys(
-                &output,
-                VERA_SECTION,
-                &["WindowX", "WindowY"],
-            ),
-        };
+        // The window keys are from earlier builds: a windowed launch now
+        // always opens centred, at gamemd's startup size.
         crate::util::ini_writer::remove_ini_keys(
             &output,
             VERA_SECTION,
@@ -875,6 +834,8 @@ impl RetailOptionsProfile {
                 "RA2Look",
                 "SoundDefaultsApplied",
                 "SkipStartupLogo",
+                "WindowX",
+                "WindowY",
                 "WindowWidth",
                 "WindowHeight",
                 "WindowMaximized",
@@ -1692,42 +1653,19 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(chat.reads(ChatLanguage::Korean));
     }
 
-    /// The window keeps only its corner. The size and maximised keys earlier
-    /// builds wrote are dropped, and their 0x0 for a window never placed
-    /// still reads as unset, as no corner at all does.
+    /// A windowed launch opens centred, so the window keys earlier builds
+    /// wrote are dropped at the next save.
     #[test]
-    fn window_corner_round_trips_and_the_saved_size_retires() {
+    fn saved_window_keys_retire() {
         let startup = RetailStartupOptions::default();
-        let window_keys = |bytes: &[u8]| -> Vec<String> {
-            let ini = IniFile::from_bytes(bytes).unwrap();
-            let vera = ini.section(VERA_SECTION).unwrap();
-            vera.keys()
-                .filter(|key| key.starts_with("Window"))
-                .map(str::to_owned)
-                .collect()
-        };
-        let placed = RetailOptionsProfile {
-            window_placement: Some(WindowPlacement { x: -1200, y: 40 }),
-            ..RetailOptionsProfile::default()
-        };
-        let output = placed.transform_settings(
+        let output = RetailOptionsProfile::default().transform_settings(
             b"[VERA]\nWindowX=5\nWindowY=6\nWindowWidth=1280\nWindowHeight=720\n\
               WindowMaximized=yes\n",
         );
-        assert_eq!(window_keys(&output), ["WindowX", "WindowY"]);
-        assert_eq!(
-            load_snapshot(&startup, &output)
-                .retained_profile
-                .window_placement,
-            placed.window_placement
-        );
-        let unplaced = b"[VERA]\nWindowX=0\nWindowY=0\nWindowWidth=0\nWindowHeight=0\n";
-        let profile = load_snapshot(&startup, unplaced).retained_profile;
-        assert_eq!(profile.window_placement, None);
-        let unset = profile.transform_settings(unplaced);
-        assert!(window_keys(&unset).is_empty());
-        let unset = load_snapshot(&startup, &unset).retained_profile;
-        assert_eq!(unset.window_placement, None);
+        let ini = IniFile::from_bytes(&output).unwrap();
+        let vera = ini.section(VERA_SECTION).unwrap();
+        assert!(!vera.keys().any(|key| key.starts_with("Window")));
+        let unset = load_snapshot(&startup, &output).retained_profile;
         // The lock starts off, its icon is the red star, the radar is native
         // and the sidebar and online menus sharp, and map previews are VERA's
         // own; all six round-trip.

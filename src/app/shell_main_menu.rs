@@ -110,6 +110,9 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
     fn set_full_screen(&mut self, full_screen: bool) {
         App::set_full_screen(self, full_screen);
     }
+    fn restore_launch_window(&mut self) {
+        App::restore_launch_window(self);
+    }
     fn set_performance_stats(&mut self, shown: bool) {
         // Live state only; no profile stores it, so each launch starts hidden.
         self.renderer.performance_overlay.set_visible(shown);
@@ -1254,6 +1257,8 @@ impl App {
             displays,
         );
         dialog.set_languages(crate::i18n::choices(), crate::i18n::selected_language());
+        let launch = state.platform.launch_window_size;
+        dialog.set_launch_window_size((launch.width, launch.height));
         dialog
     }
 

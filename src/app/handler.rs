@@ -241,35 +241,13 @@ impl App {
         )));
     }
 
-    /// Note where the windowed window sits for the next launch, which opens it
-    /// there at gamemd's startup size. Full screen, maximised and minimised
-    /// windows keep the last ordinary corner. winit reports full screen until
-    /// the exit animation's last resize, so the animation's corners are
-    /// skipped too.
-    fn remember_window_placement(state: &mut AppState) {
-        let window = &state.platform.window;
-        if state.platform.capture_client_size.is_some()
-            || window.fullscreen().is_some()
-            || window.is_minimized().unwrap_or(false)
-            || window.is_maximized()
-        {
-            return;
-        }
-        let Ok(corner) = window.outer_position() else {
-            return;
-        };
-        let size = window.inner_size();
-        if size.width == 0 || size.height == 0 {
-            return;
-        }
-        let placement = crate::app::persistence::options_profile::WindowPlacement {
-            x: corner.x,
-            y: corner.y,
-        };
-        let profile = &mut state.persistence.options_profile;
-        if profile.window_placement != Some(placement) {
-            profile.window_placement = Some(placement);
-            state.platform.window_placement_unsaved = true;
+    /// The Esc menu's Set Window Size button: the window as a launch opens it.
+    /// A full-screen window leaves full screen first and macOS animates that,
+    /// so `follow_window_full_screen` does the rest once the window is out.
+    pub(crate) fn restore_launch_window(state: &mut AppState) {
+        if state.platform.capture_client_size.is_none() {
+            state.platform.launch_window_owed = true;
+            state.platform.window.set_fullscreen(None);
         }
     }
 
@@ -315,6 +293,16 @@ impl App {
                     );
                 }
                 state.platform.recenter_windowed = !on_choice;
+            }
+            if std::mem::take(&mut state.platform.launch_window_owed) {
+                let displays = crate::app::display_target::current_displays(&state.platform.window);
+                let size = state.platform.launch_window_size;
+                crate::app::display_target::restore_launch_placement(
+                    &state.platform.window,
+                    &displays,
+                    &state.persistence.options_profile.display,
+                    winit::dpi::LogicalSize::new(size.width, size.height),
+                );
             }
         }
         let changed = state.persistence.options_profile.full_screen != full_screen;
@@ -647,12 +635,6 @@ impl ApplicationHandler for App {
                 }
                 _ => state.platform.redraw_gate.note_input(),
             }
-        }
-        // Every screen remembers where the player puts the window.
-        if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_))
-            && let Some(state) = self.state.as_mut()
-        {
-            Self::remember_window_placement(state);
         }
         let shell_capture_active = self.shell_capture.is_some();
         let hidden_run_active = self.hidden_run.is_some();
@@ -2214,11 +2196,6 @@ impl ApplicationHandler for App {
         if let Some(state) = self.state.as_mut() {
             crate::app::match_runtime::sim_tick::flush_replay_log(state);
             crate::app::map_picture::stop_for_exit(&mut state.frontend.map_pictures);
-            // However the game ends (Exit, the close button, Cmd-Q), the
-            // next launch opens the window where the player left it.
-            if std::mem::take(&mut state.platform.window_placement_unsaved) {
-                crate::app::persistence::options::persist_options_profile(state);
-            }
         }
         log::logger().flush();
         // A confirmed quit (its cascade's Theme Stop(0), 0x0052E7EC, has run)
