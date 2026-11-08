@@ -58,6 +58,10 @@ pub type AnimId = u64;
 
 mod flaming_guy;
 
+#[cfg(test)]
+#[path = "anim_animated_tiberium_tests.rs"]
+mod animated_tiberium_tests;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AnimWorldCoord {
     pub x: i32,
@@ -360,9 +364,10 @@ pub struct AnimObject {
     /// exactly as `AnimClass::SetOwnerObject @ 0x00424B50` stores it. Read it
     /// through [`Simulation::anim_absolute_coord`] for a world position; read
     /// the field directly only where native reads the stored `ObjectClass`
-    /// coordinate directly, which is the multiplayer sync checksum
-    /// (`Compute_Game_Sync_Checksum @ 0x0064DAB0` folds `+0x9c`/`+0xa0`) and
-    /// the state hash. All three axes are world leptons.
+    /// coordinate directly: the multiplayer sync checksum
+    /// (`Compute_Game_Sync_Checksum @ 0x0064DAB0` folds `+0x9c`/`+0xa0`),
+    /// HideIfNoOre and post-load Tiberium conversion4261D0. All three axes
+    /// are world leptons.
     world_coord: AnimWorldCoord,
     draw_flags: u32,
     z_adjust: i32,
@@ -1902,16 +1907,9 @@ impl Simulation {
         removed
     }
 
-    /// `CellClass::Get_Tiberium_Value @ 0x00485020` of the anim's cell. Native
-    /// finds it from the raw Location through Object vtable `+0x1BC`
-    /// (`0x005F6960`): two Map[coord] lookups (`0x00565730`), whose miss is the
-    /// shared dummy cell.
-    fn anim_cell_tiberium_value(
-        &self,
-        location: AnimWorldCoord,
-        rules: &RuleSet,
-        overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
-    ) -> Result<i32, TiberiumImageError> {
+    /// One Map565730 lookup and Cell+44/+11E read. Live IsAnimatedTiberium
+    /// AI424402 and post-load426224 use this same real/dummy field owner.
+    fn anim_cell_overlay_fields(&self, location: AnimWorldCoord) -> (Option<u8>, u8) {
         let grid_fields = |(rx, ry): (u16, u16)| {
             self.overlay_grid
                 .as_ref()
@@ -1921,15 +1919,10 @@ impl Simulation {
                     (cell.overlay_id, cell.overlay_data)
                 })
         };
-        let (overlay_id, overlay_data) = match self.resolved_terrain.as_ref() {
+        match self.resolved_terrain.as_ref() {
             Some(terrain) => {
                 let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-                let point = crate::sim::components::DriveCoord {
-                    x: location.x,
-                    y: location.y,
-                    z: location.z,
-                };
-                match crate::sim::movement::ground_pose::query_object_cell(&cells, point) {
+                match cells.lookup_world(location.x, location.y) {
                     cell @ crate::map::cell_index::NativeCellIdentity::Real(_) => {
                         let (rx, ry) = cells.coord(cell);
                         grid_fields((rx as u16, ry as u16)).unwrap_or((None, 0))
@@ -1942,13 +1935,73 @@ impl Simulation {
             None => Self::map_coord_cell(&self.resolved_terrain, location.x, location.y)
                 .and_then(grid_fields)
                 .unwrap_or_else(|| self.effective_shared_cell_dummy().overlay_fields()),
-        };
+        }
+    }
+
+    /// Cell485020 value from raw Location via Object5F6960: two Map565730
+    /// lookups. Keep its first lookup separate from the shared field read.
+    fn anim_cell_tiberium_value(
+        &self,
+        location: AnimWorldCoord,
+        rules: &RuleSet,
+        overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    ) -> Result<i32, TiberiumImageError> {
+        if let Some(terrain) = self.resolved_terrain.as_ref() {
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let _ = cells.lookup_world(location.x, location.y);
+        }
+        let (overlay_id, overlay_data) = self.anim_cell_overlay_fields(location);
         crate::map::tiberium_cell::tiberium_value(
             overlay_id,
             overlay_data,
             overlay_registry,
             &rules.tiberium_types,
         )
+    }
+
+    /// Anims_Refresh_Tiberium_LightConverts4261D0, after user-load lighting:
+    /// all flagged stored Anims sample raw Location, including inactive and
+    /// attached entries. Non-resource cells keep the prior Convert. This is not
+    /// the live AI's virtual coordinate minus384, and does not alter timers,
+    /// intensity, depth, attachment or RNG.
+    pub fn refresh_animated_tiberium_after_load(
+        &mut self,
+        rules: &RuleSet,
+        overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    ) -> Result<(), TiberiumImageError> {
+        // Remap writes have no callbacks. Snapshot the selected coordinates
+        // in storage order so the shared setter retains touch invalidation.
+        let candidates: Vec<_> = self
+            .anims()
+            .filter(|(_, anim)| {
+                rules
+                    .art()
+                    .anim_runtime_config(self.interner.resolve(anim.type_id))
+                    .is_some_and(|config| config.is_animated_tiberium)
+            })
+            .map(|(&id, anim)| (id, anim.world_coord))
+            .collect();
+        for (id, location) in candidates {
+            let (Some(overlay), _) = self.anim_cell_overlay_fields(location) else {
+                continue;
+            };
+            let Some(kind) =
+                overlay_registry.tiberium_type_for_overlay(&rules.tiberium_types, overlay)?
+            else {
+                continue;
+            };
+            let tiberium = rules
+                .tiberium_types
+                .get(kind)
+                .ok_or(TiberiumImageError::MissingType(kind))?;
+            if let Ok(index) = u8::try_from(tiberium.color_scheme() / 2) {
+                assert!(self.substrate.anims.set_anim_remap(
+                    id,
+                    AnimRemap::ColorScheme(crate::rules::house_colors::HouseColorIndex(index)),
+                ));
+            }
+        }
+        Ok(())
     }
 
     pub fn visit_anim(
@@ -1978,13 +2031,7 @@ impl Simulation {
         if config.is_flaming_guy {
             self.anim_flaming_guy_ai(id, &config, rules, overlay_registry);
         }
-        let Some((first_guard, inactive, location)) = self.anim(id).map(|anim| {
-            (
-                anim.runtime.first_ai_guard,
-                anim.runtime.inactive,
-                anim.world_coord,
-            )
-        }) else {
+        let Some(location) = self.anim(id).map(|anim| anim.world_coord) else {
             return Ok(false);
         };
 
@@ -2021,11 +2068,6 @@ impl Simulation {
                 AnimOccupationOperation::Mark,
             );
         }
-        if inactive {
-            self.destroy_anim(id, rules);
-            return Ok(false);
-        }
-
         // `AnimClass::AI 0x00423C24`: a bouncing chunk flies its body before
         // the trailer and the first-AI guard; touching down ends it.
         if self.anim(id).is_some_and(|anim| anim.bounce.is_some())
@@ -2039,7 +2081,11 @@ impl Simulation {
             return Ok(false);
         };
 
-        if let Some(trailer_name) = config.trailer_anim.as_deref()
+        // AnimAI4242A6/4242B0 gates only this producer on ObjectAlive and
+        // inactive. Bounce above still runs before the retirement gate.
+        if !self.substrate.pending_delete.contains_object(&id)
+            && self.anim(id).is_some_and(|anim| !anim.runtime.inactive)
+            && let Some(trailer_name) = config.trailer_anim.as_deref()
             && trailer_cadence_matches(
                 u64::from(self.session.binary_frame()),
                 config.trailer_seperation,
@@ -2105,11 +2151,18 @@ impl Simulation {
             if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.runtime.inactive = true; //424358 writes+19B before UnInit.
             }
+        }
+
+        // AnimAI42435F rereads after prefix callbacks. All inactive writers
+        // share this retirement; a Bouncer may already have landed/retired.
+        if self.anim(id).is_some_and(|anim| anim.runtime.inactive) {
             self.destroy_anim(id, rules);
             return Ok(false);
         }
-
-        if first_guard {
+        if self
+            .anim(id)
+            .is_some_and(|anim| anim.runtime.first_ai_guard)
+        {
             if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.runtime.first_ai_guard = false;
             }
@@ -2137,6 +2190,31 @@ impl Simulation {
         // FlamingGuyAI can retire this receiver before the ordinary tail.
         if self.substrate.pending_delete.contains_object(&id) {
             return Ok(false);
+        }
+        // AnimAI4243BC..424427: compare the exact CellAnim type at virtual
+        // GetCoords minus384 in XY. A mismatch writes inactive but falls
+        // through this visit's frame/damage work; retirement is next visit.
+        if config.is_animated_tiberium {
+            let Some(mut location) = self.anim_absolute_coord(id) else {
+                return Ok(false);
+            };
+            location.x = location.x.wrapping_sub(384);
+            location.y = location.y.wrapping_sub(384);
+            let (overlay, _) = self.anim_cell_overlay_fields(location);
+            let matches = if let Some(overlay) = overlay {
+                let registry = overlay_registry.unwrap_or_else(|| rules.overlay_registry());
+                registry
+                    .flags(overlay)
+                    .ok_or(TiberiumImageError::MissingOverlay(i32::from(overlay)))?
+                    .cell_anim
+                    .as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case(self.interner.resolve(type_id)))
+            } else {
+                false
+            };
+            if !matches && let Some(anim) = self.substrate.anims.get_mut(id) {
+                anim.runtime.inactive = true;
+            }
         }
         let mut action = VisitAction::None;
         let mut random_loop_delay = None;
@@ -2724,12 +2802,9 @@ impl Simulation {
     /// Its independent attached-Bullet arm clears +17C before UnInit (4251AD).
     /// Native comparisons: tools/spatial_oracle/display_anim_owner.json.
     ///
-    /// Residual: native AI checks +19B at42435F after looping-sound, bounce and
-    /// visibility work; `visit_anim` currently checks it earlier, after ore
-    /// visibility/occupation.
-    /// Owner expiry during combat therefore still needs that prefix audit when
-    /// its missing effects land. Occupied-cell424358 and animated-tiberium424427
-    /// writers of +19B remain unported. No claim of complete Anim AI parity.
+    /// AI checks +19B at42435F after its bounce/trailer/DropZone prefix. The
+    /// same gate serves owner expiry, occupied-cell424358 and the later
+    /// IsAnimatedTiberium424427 writer; the latter finishes its current visit.
     pub(crate) fn anim_pointer_expired(
         &mut self,
         id: AnimId,
