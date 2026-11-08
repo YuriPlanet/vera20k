@@ -314,6 +314,8 @@ pub mod move_sound_tests;
 #[cfg(test)]
 mod path_delay_rules_tests;
 #[cfg(test)]
+mod allow_shrouded_subterannean_moves_tests;
+#[cfg(test)]
 mod read_double_percent_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod retail_ini_fixture;

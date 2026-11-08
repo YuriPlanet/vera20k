@@ -775,13 +775,11 @@ impl Simulation {
     ///   Teleport ([`teleport_move_to`]), Jumpjet
     ///   ([`Self::jumpjet_move_to`]), Hover ([`hover_move_to`]) or Walk
     ///   ([`set_walk_destination_coord`]) — unless Foot+0x6AC skips it once.
-    /// - RESIDUALS, both dormant on retail data: the `MovementZone=Subterannean`
-    ///   arm (`0x00742097..0x007422D7`, TechnoType `+0xD2C`, which
-    ///   TechnoTypeClass::ReadINI sets at `0x0071608A`), whose planner
-    ///   `0x007447B0` fills the NavQueue and heads for its first post, and the
-    ///   Tunnel-locomotor arm (`0x007427C0..0x00742C14`, CLSID `0x007E9A50`),
-    ///   which tries a ground path (`0x00746000`) before digging. No retail
-    ///   rules, mode or map file names that zone or that locomotor.
+    /// - The `MovementZone=Subterannean` arm (`0x00742097..0x007422D7`,
+    ///   Type+D2C read71608A) uses the shared burrowing planner7447B0 and
+    ///   existing NavQueue before the ordinary Foot setter.
+    /// - The separate Tunnel-locomotor arm (`0x007427C0..0x00742C14`, CLSID
+    ///   `0x007E9A50`) stays outside the intentional eight-controller boundary.
     ///
     /// Returns false for a receiver without a represented Move_To or a
     /// refused destination. Foot4D9628 calls the destination's +4C coordinate
@@ -1055,6 +1053,10 @@ impl Simulation {
                 }
             }
         }
+        let (burrowing_destination, clear_queue) = self
+            .burrowing_setter_destination(id, destination, clear_queue, rules)
+            .unwrap_or_else(|cause| panic!("Unit {id} burrowing destination: {cause}"));
+        destination = burrowing_destination;
         // Native7422F4/7423CA clears NavQueue after the Enter arm, before
         // the UnitRepair/Bunker tail. A false flag preserves non-NULL requests for
         // Enter's pop; the modified-NULL arm7423CA clears the queue regardless.

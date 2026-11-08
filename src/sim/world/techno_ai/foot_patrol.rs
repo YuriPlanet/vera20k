@@ -452,7 +452,7 @@ fn zone_cost(
     goal_bridge: bool,
     rules: &RuleSet,
 ) -> i32 {
-    sim.estimate_zone_cost_in_query(id, start, goal, start_bridge, goal_bridge, rules)
+    sim.estimate_zone_cost_in_query(id, start, goal, start_bridge, goal_bridge, rules, None)
         .expect("Patrol zone-cost topology")
 }
 
