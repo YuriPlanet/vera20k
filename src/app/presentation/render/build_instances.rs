@@ -1244,6 +1244,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
                         tactical_center_cell,
                         tactical_w as i32,
                         tactical_h as i32,
+                        state.match_state.input.zoom_level,
                         minimap_rect.x,
                         minimap_rect.y,
                         minimap_rect.w,

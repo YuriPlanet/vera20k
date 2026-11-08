@@ -118,7 +118,12 @@ pub(super) fn native_viewport_rect(
     center_cell: (u16, u16),
     tactical_width: i32,
     tactical_height: i32,
+    world_zoom: f32,
 ) -> NativeRadarRect {
+    // VERA's wheel zoom changes the visible world extent, independently of
+    // the radar/UI scale. Feed world pixels to the unchanged native worker.
+    let tactical_width = (tactical_width as f32 / world_zoom) as i32;
+    let tactical_height = (tactical_height as f32 / world_zoom) as i32;
     let center = surface.cell_to_surface_pixel(center_cell);
     native_viewport_rect_from_center(surface, center, tactical_width, tactical_height)
 }
