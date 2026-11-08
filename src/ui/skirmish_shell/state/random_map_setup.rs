@@ -497,6 +497,16 @@ impl RandomMapSetupModalState {
         self.generated_preview = None;
     }
 
+    /// VERA: Load hands its seed over. The sliders let go of the values the
+    /// player set, so they show the seed's, and a LAN or online dialog holds
+    /// the seed to its own limits, towns off.
+    pub fn adopt_saved_seed(&mut self, options: RmgOptions) {
+        self.options = options;
+        self.normalize_options();
+        self.advanced_values = None;
+        self.advanced_hold = None;
+    }
+
     /// Surprise Me: randomize the option subset and invalidate the result.
     pub fn randomize_options(
         &mut self,
@@ -683,6 +693,41 @@ mod tests {
             false,
             true,
         )
+    }
+
+    /// VERA: a loaded seed takes over the sliders, and a LAN or online dialog
+    /// holds it to its own limits, towns off.
+    #[test]
+    fn a_loaded_seed_resets_the_sliders_and_obeys_the_dialog() {
+        let saved = RmgOptions {
+            seed: 0x1234,
+            urban_enabled: true,
+            urban_presence: 30,
+            num_players: crate::map::rmg::MAX_PLAYERS,
+            ..Default::default()
+        };
+        let mut offline = opened();
+        assert!(offline.change_advanced(AdvancedField::Water, 77));
+        offline.adopt_saved_seed(saved.clone());
+        assert_eq!(offline.advanced_values, None);
+        assert_eq!(offline.advanced_value(AdvancedField::Buildings), 30);
+        assert_eq!(offline.options.num_players, crate::map::rmg::MAX_PLAYERS);
+
+        let mut network = RandomMapSetupModalState::open(
+            RmgOptions {
+                seed: 0x1234,
+                ..Default::default()
+            },
+            None,
+            true,
+            false,
+        );
+        network.adopt_saved_seed(saved);
+        assert!(!network.options.urban_enabled);
+        assert_eq!(
+            network.options.num_players,
+            crate::map::rmg::NATIVE_MAX_PLAYERS
+        );
     }
 
     /// VERA: Advanced values survive Generate's re-roll, which still draws as

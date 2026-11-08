@@ -143,7 +143,9 @@ impl RmgOptions {
         read("Vegetation", &mut self.vegetation);
         read("UrbanPresence", &mut self.urban_presence);
         read("Resources", &mut self.resources);
-        self.urban_enabled = section.read_bool(VERA_URBAN_KEY, self.urban_enabled);
+        // VERA: written only when set, so a seed without the key has no towns,
+        // whatever `self` held.
+        self.urban_enabled = section.read_bool(VERA_URBAN_KEY, false);
     }
 
     /// Serialize to `.SED` bytes, writing every key in the original's order.
@@ -221,6 +223,28 @@ mod tests {
     fn sed_description(raw: &str) -> SeedDescription {
         let ini = IniFile::from_str(&format!("[RandomMap]\nDescription={raw}\n"));
         read_description(ini.section_or_empty(SECTION), &SeedDescription::default())
+    }
+
+    /// VERA's towns key is written only when set, so a seed without it turns
+    /// the towns off whatever options it is read over.
+    #[test]
+    fn a_seed_without_the_towns_key_leaves_the_towns_off() {
+        let seed = |urban_enabled| {
+            let options = RmgOptions {
+                seed: 7,
+                urban_enabled,
+                ..RmgOptions::default()
+            };
+            IniFile::from_bytes(&options.to_sed_bytes()).expect("seed INI")
+        };
+        let mut read = RmgOptions {
+            urban_enabled: true,
+            ..RmgOptions::default()
+        };
+        read.apply_sed(&seed(false));
+        assert!(!read.urban_enabled);
+        read.apply_sed(&seed(true));
+        assert!(read.urban_enabled);
     }
 
     #[test]
