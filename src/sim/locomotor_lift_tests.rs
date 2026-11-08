@@ -17,6 +17,86 @@ fn retail_rules() -> Option<RuleSet> {
     Some(crate::rules::retail_ini_fixture::retail_battle_rules()?.rules)
 }
 
+#[test]
+fn magnetron_ground_release_change_house_at_touchdown() {
+    use crate::rules::art_data::ArtRegistry;
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::process_owner::NativeScenarioRulesPrefix;
+    use crate::rules::retail_ini_fixture::{retail_assets, retail_rules_owner};
+    use crate::rules::retail_sources::select_ini;
+    use crate::rules::team_ai_ini::TeamAiIniRegistry;
+
+    let Some((_, assets)) = retail_assets() else {
+        return;
+    };
+    let battle = select_ini(&assets, "MPBattleMD.ini").unwrap();
+    let (mut rules, _, art, _) = retail_rules_owner(&assets)
+        .load_scenario(
+            NativeScenarioRulesPrefix::NonCampaign(Some(&battle.ini)),
+            &IniFile::empty(),
+        )
+        .unwrap()
+        .into_parts();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+
+    for change_house in [false, true] {
+        let (mut sim, grid, magnetron, tank) = lift(&rules);
+        let old_owner = entity(&sim, tank).owner();
+        let americans = sim.interner.get("Americans").unwrap();
+        sim.houses
+            .get_mut(&americans)
+            .unwrap()
+            .set_country_for_test(Some(americans));
+        let country = rules.country_index("Americans").unwrap().0;
+        let action = if change_house {
+            format!("14,0,{country}")
+        } else {
+            "0,0,0".into()
+        };
+        let map_text = format!(
+            "[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n\
+             [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
+             [Basic]\nNewINIFormat=4\n\
+             [Triggers]\nTRANSFER=Americans,<none>,Transfer at touchdown,0,1,1,1,0\n\
+             [Events]\nTRANSFER=1,1,0,-1\n\
+             [Actions]\nTRANSFER=1,{action},0,0,0,0,A\n\
+             [Tags]\nTRANSFER_TAG=2,Transfer at touchdown,TRANSFER\n\
+             [CellTags]\n16017=TRANSFER_TAG\n"
+        );
+        let map = crate::map::map_file::MapFile::from_bytes(map_text.as_bytes()).unwrap();
+        let teams = TeamAiIniRegistry::from_sources(&IniFile::empty(), &map.ini, true);
+        sim.initialize_trigger_definitions(&map, &teams, None, None, None);
+        sim.install_authored_cell_trigger_tags(&map);
+        sim.attach_object_trigger_tag(tank, Some("TRANSFER_TAG"));
+        sim.classify_map_triggers(&rules);
+
+        assert_eq!(
+            crate::sim::movement::air_movement::current_fly_height(
+                entity(&sim, tank),
+                sim.resolved_terrain.as_ref(),
+            ),
+            0,
+            "release before the tank rises"
+        );
+        eprintln!("change_house={change_house}: ordering the Magnetron away");
+        move_away(&mut sim, magnetron);
+        assert!(run_until(&mut sim, &rules, &grid, 300, |sim| {
+            !entity(sim, tank).lift.swap_active()
+        }));
+        let tank = entity(&sim, tank);
+        assert_eq!((tank.position.rx(), tank.position.ry()), (17, 16));
+        assert_eq!(
+            tank.owner(),
+            if change_house { americans } else { old_owner }
+        );
+        assert_eq!(
+            tank.locomotor.as_ref().unwrap().active_kind(),
+            LocomotorKind::Drive
+        );
+        eprintln!("change_house={change_house}: tank landed with Drive");
+    }
+}
+
 /// The flat arena: `Americans` (human) field the Magnetron, `Russians`
 /// (computer) the tanks.
 fn arena(rules: &RuleSet) -> (Simulation, PathGrid) {
