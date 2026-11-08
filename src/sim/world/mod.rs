@@ -251,7 +251,10 @@ pub use lifecycle::{
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use lifecycle::{LifecycleTestEvent, RevealFailure};
-pub(crate) use load_object_lifecycle::{LoadObjectLifecycle, OverlayConstructionReceipt};
+pub(crate) use load_object_lifecycle::LoadObjectLifecycle;
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) use load_object_lifecycle::LoadOverlayHandle;
+pub use load_object_lifecycle::LoadOverlayLifecycleError;
 pub(crate) use logic_vector::{LogicMembership, LogicVector};
 pub(crate) use object_entry::{EntryFacts, FootEntryReceiver};
 #[cfg(any(test, feature = "test-support"))]
@@ -318,7 +321,6 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::smudge_grid::SmudgeGrid;
 use crate::sim::team_script_vm::TeamScriptVm;
 use crate::sim::terrain_object::TerrainObjectStore;
-use crate::sim::tiberium::TiberiumPlacementObjectContext;
 use crate::sim::trigger_runtime::{TriggerEffect, TriggerRuntime};
 use crate::sim::vision::{self, FogState};
 use crate::util::fixed_math::SimFixed;
@@ -2071,11 +2073,11 @@ fn dispatch_smudge_inline(
     spread_enabled: bool,
     dirty_cells: &mut crate::sim::dirty_cells::DirtyCells,
     construction: &mut crate::sim::smudge_grid::SmudgeConstruction<'_>,
-) {
+) -> Result<(), crate::rules::overlay_types::TiberiumImageError> {
     let (Some(smudge_grid), Some(overlay_grid), Some(terrain)) =
         (smudge_grid, overlay_grid, terrain)
     else {
-        return;
+        return Ok(());
     };
     let mut tiberium = crate::sim::combat::smudge_dispatch::SmudgeTiberiumContext {
         overlay_grid,
@@ -2102,7 +2104,7 @@ fn dispatch_smudge_inline(
         &mut tiberium,
         scenario_rng,
         Some(construction),
-    );
+    )
 }
 
 /// Existing process RNG owner lent to a detached saved-world candidate.
@@ -4704,7 +4706,7 @@ impl Simulation {
             &mut self.native_unique_ids,
             priority,
         );
-        dispatch_smudge_inline(
+        let result = dispatch_smudge_inline(
             &request,
             rules,
             overlay_registry,
@@ -4728,6 +4730,11 @@ impl Simulation {
             self.uninit_with_context(id, lifecycle::UninitContext::new(rules, overlay_registry));
         }
         Self::flush_smudge_dirty(&mut self.smudge_grid, &mut self.dirty_cells);
+        if let Err(error) = result {
+            // Safe refusal of this optional mark on native-invalid input;
+            // preserve its earlier constructor/scorch effects and stop it.
+            log::error!("Smudge placement stopped: {error}");
+        }
     }
 
     /// Execute59 at6DE313 uses +90 as a waypoint, not the +44 tail or an
@@ -4760,7 +4767,7 @@ impl Simulation {
         // Keep every call, including after depletion. The shared owner
         // performs each native lookup and owns RNG/queues/radar/cleanup.
         for _ in 0..109 {
-            Self::reduce_tiberium_at_with_native_context(
+            if let Err(error) = Self::reduce_tiberium_at_with_native_context(
                 terrain_objects,
                 ore_growth_config,
                 ore_growth_state,
@@ -4774,7 +4781,12 @@ impl Simulation {
                 1,
                 rules,
                 Some(overlay_registry),
-            );
+            ) {
+                // A malformed native Image stops this trigger action. Prior
+                // reductions remain; no later reduction or RNG is replayed.
+                log::error!("Tiberium trigger action failed: {error}");
+                return false;
+            }
         }
         true
     }
@@ -4793,7 +4805,10 @@ impl Simulation {
         amount: A,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    ) -> crate::sim::tiberium::ReduceTiberiumOutcome {
+    ) -> Result<
+        crate::sim::tiberium::ReduceTiberiumOutcome,
+        crate::rules::overlay_types::TiberiumImageError,
+    > {
         let mut ctx = crate::sim::tiberium::ReduceTiberiumContext {
             overlay_grid: world_overlay_grid.as_mut(),
             ore_growth_state: &mut *world_ore_growth_state,
@@ -4953,74 +4968,44 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    ) {
-        // Native TiberiumClass drivers run before the main live-object vector,
-        // growth first and spread second.
+        effects: FrameEffects<'_>,
+    ) -> Result<(), FrameAdvanceError> {
         let native_growth_ready = !rules.tiberium_types.is_empty()
             && self.ore_growth_state.native_tiberium_state().classes.len()
                 == rules.tiberium_types.len()
-            && self.overlay_grid.is_some()
-            && overlay_registry.is_some();
-        if native_growth_ready {
-            let live_objects = TiberiumPlacementObjectContext::new(
-                &self.substrate.entities,
-                &self.substrate.occupancy,
-                &self.substrate.raw_cell_occupation,
-                rules,
-                &self.interner,
-                self.terrain_objects.cell_index(),
-            );
-            if let (Some(grid), Some(registry)) = (self.overlay_grid.as_mut(), overlay_registry) {
-                let dirty_start = grid.pending_dirty_cells().len();
-                self.ore_growth_state.tick_native_growth_driver(
-                    grid,
-                    registry,
-                    &rules.tiberium_types,
-                    self.resolved_terrain.as_ref(),
-                    self.terrain_objects.spawning_cells(),
-                    Some(live_objects),
-                    &mut self.scenario_rng,
-                    self.session.binary_frame(),
-                    self.ore_growth_config.grows(),
-                    self.ore_growth_config.spreads(),
-                    self.ore_growth_config.tiberium_grows_flag(),
-                    Some(&mut self.dirty_cells),
-                );
-                let spread = self.ore_growth_state.tick_native_spread_driver(
-                    grid,
-                    registry,
-                    &rules.tiberium_types,
-                    self.resolved_terrain.as_ref(),
-                    self.terrain_objects.spawning_cells(),
-                    Some(live_objects),
-                    &mut self.scenario_rng,
-                    self.session.binary_frame(),
-                    self.ore_growth_config.grows(),
-                    self.ore_growth_config.spreads(),
-                    Some(&mut self.dirty_cells),
-                );
-                // Original Place487190 -> Overlay Mark5FC570 -> Recalc47D2B0
-                // publishes LandType before Logic55B4DC returns to live-object
-                // AI. Within the ore loops, a stamped cell is excluded by its
-                // overlay identity before admission reads its land; growth and
-                // source gates use density/slope. Their Recalcs can therefore
-                // publish as this batch without changing admission or RNG order.
-                // Native cell results: tools/spatial_oracle/ore_queue.json.
-                let marked = grid.pending_dirty_cells()[dirty_start..].to_vec();
-                self.publish_tiberium_cells(rules, registry, &marked);
-                // No identity allocator runs between these ordinary ore
-                // constructors. Their stock CellAnim branch is absent. Apply
-                // their ordered registry/ID effects before live-object AI;
-                // Scenario IDs and retirement order are preserved independently
-                // of the intervening Scenario RNG and queue mutations.
-                Self::publish_overlay_constructions(
-                    &mut self.native_unique_ids,
-                    &mut self.load_objects,
-                    &mut self.substrate,
-                    spread.into_overlay_constructions(),
-                );
-            }
+            && self.overlay_grid.is_some();
+        if native_growth_ready && let Some(registry) = overlay_registry {
+            let dirty_start = self
+                .overlay_grid
+                .as_ref()
+                .unwrap()
+                .pending_dirty_cells()
+                .len();
+            self.tick_native_growth_driver(rules, registry, effects)
+                .map_err(|error| {
+                    FrameAdvanceError::new(
+                        self.session.tick(),
+                        self.session.binary_frame(),
+                        0,
+                        error.to_string(),
+                    )
+                })?;
+            self.tick_native_spread_driver(rules, registry, effects)
+                .map_err(|error| {
+                    FrameAdvanceError::new(
+                        self.session.tick(),
+                        self.session.binary_frame(),
+                        0,
+                        error.to_string(),
+                    )
+                })?;
+            // Preserve the existing ordinary-ore Recalc batch. Structural and
+            // CellAnim Mark paths have already completed synchronously.
+            let marked =
+                self.overlay_grid.as_ref().unwrap().pending_dirty_cells()[dirty_start..].to_vec();
+            self.publish_tiberium_cells(rules, registry, &marked);
         }
+        Ok(())
     }
 
     /// Overlay Mark5FC570 ->Recalc47D2B0 completes before its Logic caller
@@ -5042,25 +5027,6 @@ impl Simulation {
             }
         }
         self.finish_terrain_navigation_changes(rules, &[]);
-    }
-
-    pub(crate) fn publish_overlay_constructions(
-        native_unique_ids: &mut Option<NativeUniqueIdCursor>,
-        load_objects: &mut LoadObjectLifecycle,
-        substrate: &mut ObjectSubstrate,
-        receipts: impl IntoIterator<Item = OverlayConstructionReceipt>,
-    ) {
-        for receipt in receipts {
-            let stable_id = substrate.allocate_stable_id();
-            let handle = load_objects
-                .construct_overlay(stable_id, receipt.cell(), || {
-                    NativeUniqueIdCursor::assign_runtime(native_unique_ids)
-                })
-                .expect("runtime Overlay constructor must join its owned registries");
-            load_objects
-                .finish_cell_construction(handle, receipt, &mut substrate.pending_delete)
-                .expect("runtime Overlay constructor must finish its owned lifecycle");
-        }
     }
 
     /// `MapClass::In_Bounds @ 0x00568300` — the active diamond test against

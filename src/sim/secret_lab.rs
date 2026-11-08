@@ -214,7 +214,8 @@ mod tests {
                             skirmish_session: None,
                             campaign_map: None,
                         },
-                    );
+                    )
+                    .unwrap();
                 } else {
                     Simulation::assign_secret_lab_production(
                         &mut sim.interner,

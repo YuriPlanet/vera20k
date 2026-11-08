@@ -98,7 +98,7 @@ fn income_scene(row: &Value) -> Scene {
             land.section_name()
         ));
     }
-    let mut ini = IniFile::from_str(&text);
+    let mut ini = crate::rules::tiberium_type::with_tiberium_image_slots(&IniFile::from_str(&text));
     for (slot, name) in ["Riparius", "Cruentus", "Vinifera", "Aboreus"]
         .iter()
         .enumerate()
@@ -406,7 +406,7 @@ pub(super) fn scene(input: &Value) -> Scene {
             "[Countries]\n0=Americans\n[Americans]\nIncomeMult={mult}\n"
         ));
     }
-    let ini = IniFile::from_str(&text);
+    let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&IniFile::from_str(&text));
     let art = IniFile::from_str(
         "[GAREFN]\nFoundation=4x3\nQueueingCell=4,1\n[GAREFX]\nFoundation=4x3\nQueueingCell=4,1\n[GAOREP]\nFoundation=2x2\n",
     );
@@ -653,8 +653,8 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
                                 CargoBale {
                                     tiberium_type,
                                     resource_type:
-                                        crate::sim::tiberium::resource_type_for_tiberium_image(
-                                            ty.image,
+                                        crate::sim::tiberium::resource_type_for_tiberium_slot(
+                                            ty.id,
                                         ),
                                     value: ty.value as u16,
                                 },
@@ -1032,7 +1032,8 @@ fn mission_harvest_states_two_and_three_match_the_original_dispatch() {
                 overlay_registry: Some(crate::sim::tiberium::test_support::overlay_registry()),
                 ..Default::default()
             },
-        );
+        )
+        .unwrap();
         let entity = s.sim.substrate.entities.get(s.miner).unwrap();
         let timer = entity.mission.dispatch_timer();
         let delay = timer.delay();

@@ -2614,7 +2614,7 @@ fn finish_concrete_death(
                 frame_effects,
             );
         }
-        world.drop_unit_cargo_crate(dead_id, rules, overlay_registry);
+        world.drop_unit_cargo_crate(dead_id, rules, overlay_registry, frame_effects);
     }
 
     // InfantryClass::ReceiveDamage reads the killing call's InfDeath off its

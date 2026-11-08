@@ -228,7 +228,8 @@ fn a_computer_area_guard_takes_its_archived_list_head() {
             id,
             &rules,
             crate::sim::world::ObjectAiCtx::default(),
-        );
+        )
+        .unwrap();
         let context = format!("human {human}, archive {archive:?}");
         if !human && archive == A {
             assert_eq!(nav_com(&sim, id), Some(A), "{context}");

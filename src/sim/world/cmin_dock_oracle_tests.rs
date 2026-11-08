@@ -925,7 +925,8 @@ fn mission_harvest_teleporter_arms_match_the_original_dispatch() {
                 overlay_registry: Some(crate::sim::tiberium::test_support::overlay_registry()),
                 ..Default::default()
             },
-        );
+        )
+        .unwrap();
         let entity = s.sim.substrate.entities.get(s.miner).unwrap();
         let timer = entity.mission.dispatch_timer();
         assert_eq!(

@@ -363,7 +363,8 @@ fn original_64_slot_expiry_controls_and_actual_sprite_frame_histories() {
                     &rules,
                     None,
                     crate::sim::world::FrameEffects::default(),
-                );
+                )
+                .unwrap();
                 let anim = sim.anim(expired).unwrap();
                 assert_eq!(
                     anim.runtime().current_frame,

@@ -1164,6 +1164,16 @@ impl ProcessedRulesLayers {
                 "land row has invalid derived ground blocking",
             ));
         }
+        let overlay_count = families.get(&RulesTypeFamily::Overlay).map_or(0, Vec::len);
+        if registry
+            .tiberiums
+            .iter()
+            .any(|member| !member.tiberium_image.valid_saved_state(overlay_count))
+        {
+            return Err(RulesError::InvalidSavedState(
+                "invalid retained Tiberium image binding or counts",
+            ));
+        }
         registry.validate_techno_type_order()?;
         registry.validate_prerequisites()?;
         registry.validate_radiation_types()?;
@@ -2057,7 +2067,15 @@ impl ProcessedRulesLayers {
     /// The Debris factory answers belong to this read, not a final text lookup.
     pub(crate) fn tiberium_read_states(
         &self,
-    ) -> impl Iterator<Item = (&str, &IniSection, i32, &[String])> {
+    ) -> impl Iterator<
+        Item = (
+            &str,
+            &IniSection,
+            i32,
+            &[String],
+            crate::rules::tiberium_type::TiberiumImageState,
+        ),
+    > {
         self.native_type_construction_trace
             .registry_state()
             .tiberiums
@@ -2068,6 +2086,7 @@ impl ProcessedRulesLayers {
                     &member.body,
                     member.tiberium_color_scheme,
                     member.tiberium_debris.as_slice(),
+                    member.tiberium_image,
                 )
             })
     }
@@ -4231,7 +4250,16 @@ impl NativeRulesRegistryState {
     /// Numeric-ID history is intentionally not represented here and therefore
     /// cannot be rewound by this operation.
     pub(crate) fn destructive_reset(self) -> Self {
+        // RulesClass::Reset6686C0 deletes Overlay/Anim types but has no
+        // Tiberium deletion loop. PointerExpired722140 drops their bindings;
+        // scalar fields, body history and Tiberium array identity survive.
+        let mut tiberiums = self.tiberiums;
+        for member in &mut tiberiums {
+            member.tiberium_image.clear_overlay();
+            member.tiberium_debris.clear();
+        }
         Self {
+            tiberiums,
             // Reset6686C0 deletes Types, retaining the same RulesClass scalars.
             rules_threat_coefficient_defaults: self.rules_threat_coefficient_defaults,
             //6686C0..668BF0 has no RulesExt reconstruction. Early-map Process
@@ -4570,6 +4598,9 @@ struct ProcessedType {
     /// ReadINI721B20..721C1E retains these on the same live Tiberium object.
     tiberium_color_scheme: i32,
     tiberium_debris: Vec<String>,
+    // Mandatory saved field: flattened Image text loses the retained slope
+    // count and cannot distinguish a detached binding after Rules reset.
+    tiberium_image: crate::rules::tiberium_type::TiberiumImageState,
     /// HouseType ctor511416 writes-1. Side67259A and the late Side reader
     /// 51209E/4756F0 update this binding on the same retained Country.
     country_side_index: i32,
@@ -5185,6 +5216,7 @@ impl ProcessedType {
             country_color_scheme: 0,
             tiberium_color_scheme: 0,
             tiberium_debris: Vec::new(),
+            tiberium_image: Default::default(),
             country_side_index: -1,
             country_parent: String::new(),
             country_veterancy: CountryVeterancyState::default(),
@@ -8858,6 +8890,16 @@ impl RulesPassProcessor {
                 {
                     self.tiberiums[index].tiberium_debris = debris;
                 }
+                // Image is the last read (721C3F..721CD6), after the Debris
+                // factory calls. Capture this physical pass's Overlay slot;
+                // projecting the merged body must not bind it a second time.
+                let overlay_count = self
+                    .families
+                    .get(&RulesTypeFamily::Overlay)
+                    .map_or(0, Vec::len);
+                self.tiberiums[index]
+                    .tiberium_image
+                    .read_ini(&section, overlay_count)?;
             }
         }
         Ok(())

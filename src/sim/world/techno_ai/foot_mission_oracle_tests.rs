@@ -1702,7 +1702,7 @@ fn run_recorded_handler(
         }
     }
     if row["input"]["dispatch_entry"] == true {
-        super::dispatch_foot_mission(&mut fixture.sim, fixture.actor, rules, ctx);
+        super::dispatch_foot_mission(&mut fixture.sim, fixture.actor, rules, ctx).unwrap();
     } else {
         let actual = if row["input"]["mission"] == 21 {
             super::evaluate_foot_rescue(&mut fixture.sim, fixture.actor, rules, ctx)

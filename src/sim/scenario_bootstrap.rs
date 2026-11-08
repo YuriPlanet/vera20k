@@ -3726,7 +3726,8 @@ mod tests {
             house_roster: &HouseRoster::default(),
             skirmish_session: Some(&launch),
             campaign_map: None,
-        });
+        })
+        .unwrap();
         sim.hash_state_every(std::num::NonZeroU64::MIN);
         (
             SimRuntime {
@@ -6591,16 +6592,18 @@ mod tests {
             overlay_grid_for_queues.as_ref(),
             (SIZE, SIZE),
         );
-        let output = sim.finalize_scenario_post_map(ScenarioPostMapInput {
-            map_width: SIZE,
-            map_height: SIZE,
-            fill_silos: false,
-            rules: &rules,
-            overlay_registry: &overlays,
-            house_roster: &house_roster,
-            skirmish_session: Some(&launch),
-            campaign_map: None,
-        });
+        let output = sim
+            .finalize_scenario_post_map(ScenarioPostMapInput {
+                map_width: SIZE,
+                map_height: SIZE,
+                fill_silos: false,
+                rules: &rules,
+                overlay_registry: &overlays,
+                house_roster: &house_roster,
+                skirmish_session: Some(&launch),
+                campaign_map: None,
+            })
+            .unwrap();
         assert_eq!(
             output.crates,
             Some(crate::sim::crates::CratePlacement {

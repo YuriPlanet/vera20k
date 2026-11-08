@@ -22,7 +22,7 @@ use crate::sim::miner::CargoBale;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
 use crate::sim::movement::teleport_movement::ChronoWarp;
-use crate::sim::tiberium::resource_type_for_tiberium_image;
+use crate::sim::tiberium::resource_type_for_tiberium_slot;
 use crate::sim::world::{FrameEffects, PlacementEvidence, Simulation, UninitContext};
 
 impl Simulation {
@@ -701,7 +701,7 @@ impl Simulation {
             .then(|| {
                 let slot = TiberiumTypeId(0);
                 let ty = rules.tiberium_types.get(slot)?;
-                CargoBale::of_type(slot, resource_type_for_tiberium_image(ty.image), rules)
+                CargoBale::of_type(slot, resource_type_for_tiberium_slot(ty.id), rules)
             })
             .flatten();
         // CreateMembers65DE53..65DE80 fills literal Storage slot0 of every

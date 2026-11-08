@@ -186,7 +186,8 @@ fn retail_smkpuff_effect_builder_matches_original_translucency() {
                 while visits < target_visits {
                     clock += 1;
                     sim.session_mut_for_test().set_binary_frame_for_test(clock);
-                    sim.visit_anim(id, &rules, None, FrameEffects::default());
+                    sim.visit_anim(id, &rules, None, FrameEffects::default())
+                        .unwrap();
                     visits += 1;
                 }
                 assert_eq!(

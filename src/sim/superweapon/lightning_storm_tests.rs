@@ -1019,6 +1019,7 @@ fn a_strikes_explosion_precedes_its_area_damage_on_ore() {
          [Riparius]\nImage=1\nValue=25\n\
          [CR1]\nCrater=yes\nWidth=1\nHeight=1\n",
     );
+    let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
     let mut rules = RuleSet::from_ini(&ini).expect("ore-order lightning rules");
     rules.replace_art_registry_for_test(ArtRegistry::from_ini(&IniFile::from_str(
         "[EXPLOSION]\nCrater=yes\nScorch=no\nFrameWidth=100\nFrameHeight=100\n",

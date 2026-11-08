@@ -426,7 +426,8 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                     overlay_registry: Some(registry()),
                     ..Default::default()
                 },
-            );
+            )
+            .unwrap();
             s.sim
                 .substrate
                 .entities
