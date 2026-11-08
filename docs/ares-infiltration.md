@@ -46,8 +46,19 @@ Saboteur=yes                            ; plants a C4Delay charge and is spent
 - `SpyEffect.RevealRadar`/`KeepRadar` add the spy to the building's
   DisplayProductionTo only: VERA keeps no RadarVisibleTo, so the spy does
   not see the owner's sight.
-- `SpyEffect.StolenTechIndex`, `Cursor.Spy` other than its default `Enter`,
-  and `SpyEffect.UndoReverseEngineer`'s list (reverse engineering is not
-  ported; only its tech recheck and EVA run).
-- The revealed factory's production cameo, `EnemyUIName`, the observer arms
-  of the status text and `Fake=`.
+- `Cursor.Spy` other than its default `Enter`.
+- The revealed factory's production cameo, `EnemyUIName` and the observer
+  arms of the status text.
+
+`SpyEffect.StolenTechIndex` (BuildingTypeExt +0xBC, read in `1000DD40` after
+`SpyEffect.SuperWeaponPermanent`) is ported: a nonempty list replaces the
+type's 32-bit set with the bits of its indexes below 32. `10012000` ORs the
+set into the spy's house's HouseExt StolenTech (+0x40,
+`HouseState::steal_ares_tech`, saved and hashed once nonzero), requests the
+tech recheck and plays `EVA_TechnologyStolen` to the owner and
+`EVA_BuildingInfiltrated` and `EVA_NewTechnologyAcquired` to the spy, after
+the power outage arm. `Prerequisite.StolenTechs` consumes it
+(`docs/ares-prerequisites.md`). `Fake=` (BuildingTypeExt +0x5F) labels the
+selected building `TXT_FAKE` in DrawExtraInfo `10015F10` (hook `0x70AA60`,
+`ui_overlays::build_building_status_render_instances`) in place of its
+power, money and PRIMARY texts; nothing else in Ares 3.0 reads it.

@@ -54,7 +54,11 @@ DeactivateDimOperator=0.65 ; ... while missing its Operator
   `[AudioVisual]StealthSpeakDelay`/`SubterraneanSpeakDelay`: the radar
   tracker has no EVA channel. The keys are read; no line plays.
 - The sonar pulse's TechnoExt SonarTimer term of CloakDisallowed.
-- Deactivated cursor actions (`10044AD0` and the What_Action hooks), the
-  Activate/Deactivate factory-queue refresh and the sound mutex.
-- PoweredBy's team liberation, spawn and slave manager updates and the
-  silent reselection; prism-forwarded jammer retention on capture.
+- Deactivated cursor actions (`10044AD0` and the What_Action hooks, and
+  the Deactivated arm of Building ClickedAction `10016F60`, hook
+  `0x443414`, whose trench arm is ported), the Activate/Deactivate
+  factory-queue refresh and the sound mutex.
+- Prism-forwarded jammer retention on capture. (PoweredBy's team liberation,
+  silent reselection and the spawn/slave manager updates of EnableEMPEffect2
+  `10062980`, DisableEMPEffect2 `10062650` and updateSpawnManager `10063070`
+  are in `sim/powered_by.rs`.)

@@ -89,12 +89,11 @@ cites each hook.
   the four KickOutUnit hooks); the default changes nothing.
 - ShouldDisableCameo's replacement (0x50B370): queue admission keeps the
   stock CheckBuildLimit.
-- `AIInnerBase` (0x506306), Doggie (0x51F628, 0x518CB3, 0x51ABD7,
+- Doggie (0x51F628, 0x518CB3, 0x51ABD7,
   0x5200C1), `DeathAnims=` owners (0x51849A), Mission_Guard's SW gate
   (0x449716) and the ICBM crate's Ares Nuke type (0x6CEEB0): dormant on
   retail data.
-- Presentation and input: building `EVA.Lost` and the damage-kill
-  Death_Announcement (0x44D760, 0x44266B), `Message.SilosNeeded`
+- Presentation and input: `Message.SilosNeeded`
   (0x4F8C23), the ready-building and hotkey factory lookups (0x6A9822,
   0x6AB312, 0x535DB6, 0x535E76), the Money SW tooltip (0x6A932B),
   `SW.TimerVisibility` (0x6D49D1), the observer strip (0x6AA0CA, 0x6AA164),
@@ -119,7 +118,7 @@ DLL removed are not listed.
 | `44019D` | BuildingClass_Update_Battery | `10014690` | ported earlier |
 | `4409F4` | BuildingClass_Put_ProduceCash | `10014490` | residual: Ares' ProduceCash payout replacement and `ProduceCashDisplay` (ares-building-types.md) |
 | `440C08` | BuildingClass_Put_AIBaseNormal | `10014460` | ported earlier |
-| `44266B` | BuildingClass_ReceiveDamage_Destroyed | `10014520` | residual: buildings killed by damage run Death_Announcement (Spacebar event cell; presentation) |
+| `44266B` | BuildingClass_ReceiveDamage_Destroyed | `10014520` | ported: a damage-killed building runs `building_death_announcement` after DestructionEffects ([ares-warhead-residuals.md](ares-warhead-residuals.md)) |
 | `444D26` | BuildingClass_KickOutUnit_ArmoryExitBug | `10014100` | ported: an Armory's exit takes the Hospital post (`production_queue::ExitProducer`) |
 | `445A72` | BuildingClass_Remove_AIBaseNormal | `10014580` | ported earlier |
 | `4467D6` | BuildingClass_Place_NeedsEngineer | `100143C0` | ported: unengineered NeedsEngineer counts as Powered at the opening (`anim_power_policy`) |
@@ -131,7 +130,7 @@ DLL removed are not listed.
 | `44C844` | BuildingClass_MissionRepair_Reload | `10014190` | residual: per-docker reload timers and TechnoType `ReloadRate` at airfields; VERA keeps the stock dock reload |
 | `44D4CA` | BuildingClass_Mi_Missile_NoReport | `10014130` | ported earlier |
 | `44D755` | BuildingClass_GetPipFillLevel_Tiberium | `10013FD0` | residual: pip fill of building/house tiberium storage (Refinery.UseStorage; VERA keeps no storage) |
-| `44D760` | BuildingClass_Destroyed_UnitLost | `10013F10` | residual: building `EVA.Lost` (TechnoTypeExt +0x394 is not read; unset by default for buildings) |
+| `44D760` | BuildingClass_Destroyed_UnitLost | `10013F10` | ported: building `EVA.Lost` (`combat::ares_building_lost_event`) |
 | `44D8A1` | BuildingClass_UnloadPassengers_Unload | `100145B0` | ported: Hospital/Armory Mission_Unload kicks out the first passenger (`building_missions::mission_unload`) |
 | `44E855` | BuildingClass_PowerProduced_EMP | `10014440` | ported: an EMP'd plant outputs no power (`power_system`) |
 | `4509B4` | BuildingClass_UpdateRepair_Funds | `10014630` | ported earlier |
@@ -182,7 +181,7 @@ DLL removed are not listed.
 | `505C95` | HouseClass_GenerateAIBuildList_CountExtra | `10023940` | ported earlier |
 | `505CF1` | HouseClass_GenerateAIBuildList_PadWithN1 | `10023B30` | ported: short plans padded with defense nodes, no draw |
 | `50610E` | HouseClass_FindPositionForBuilding_FixShipyard | `100238A0` | equivalent: no shipyard answers the empty cell (`naval_base_placement`) |
-| `506306` | HouseClass_FindPlaceToBuild_Evaluate | `10023860` | residual: `AIInnerBase`: the CloakGenerator key arm of FindBaseBuildingSite is not ported (dormant: no retail CloakGenerator) |
+| `506306` | HouseClass_FindPlaceToBuild_Evaluate | `10023860` | ported: `AIInnerBase` picks the inner-base key (`ai_base_site::SiteKey::InnerBase`) |
 | `5D705E` | MPGameMode_SpawnBaseUnit_BaseUnit | `10023C80` | equivalent: no base unit skips construction (`scenario_bootstrap`) |
 | `688B37` | MPGameModeClass_CreateStartingUnits_B | `10023BF0` | not applicable: Generate_Random_Units runs only without a game mode object (0x686937); VERA starts skirmish houses through the mode |
 

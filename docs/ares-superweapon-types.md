@@ -309,23 +309,16 @@ cannon shows the Super's `EMPulse.PulseBall` (none allowed) and waits its
 `EMPulse.PulseDelay`. The common launch, money and trigger events 75/77
 work as for the other new types.
 
-**Type=DropPod** has its readers but no launch. `DropPod.Minimum`,
-`.Maximum`, `.Veterancy` (2.0) and `.Types` are read per pass, and so are
-`[General] DropPodTrailer=`, `DropPodTypes=`, `DropPodMinimum=` and
-`DropPodMaximum=`. Every type reference is a Find; an unknown name is
-skipped. The handler sets its EVA lines and the DropPod AI mode, but the
-type still dispatches as an unknown `Type=` and drops nothing.
+**Type=DropPod** has its readers here; part 5 adds its launch.
+`DropPod.Minimum`, `.Maximum`, `.Veterancy` (2.0) and `.Types` are read per
+pass, and so are `[General] DropPodTrailer=`, `DropPodTypes=`,
+`DropPodMinimum=` and `DropPodMaximum=`. Every type reference is a Find; an
+unknown name is skipped. The handler sets its EVA lines and the DropPod AI
+mode.
 
 ### Still not included after part 4
 
-- `Type=DropPod`'s launch (SW_DropPod::Activate `10070E40`) needs the
-  DropPod locomotor, which VERA does not have (gamemd
-  DropPodLocomotionClass, `0x4B5xxx`). It also needs TechnoExt's
-  CreateWithDroppod (the piggybacked locomotor swap) and the map's free-cell
-  search. So do the locomotor hooks `0x4B5EB0` (`DropPodTrailer`, else
-  SMOKEY, every 6 frames), `0x4B5F9E` (no report without sounds) and
-  `0x4B619F` (no AtmosphereEntry anim when unset). A launch spends the
-  charge with no effect.
+- `Type=DropPod`'s launch: see part 5.
 - An EMP cannon whose weapon 0 is `IsLaser=` aims its barrel by vt+0x2C8's
   laser arm (`0x0043E968`); VERA uses the EMP arm. When no arc reaches the
   cell, the stock barrel takes an uninitialized word; VERA's barrel counts
@@ -343,3 +336,85 @@ type still dispatches as an unknown `Type=` and drops nothing.
   does not skip it.
 - The palette `Light.*` (hook `0x555E50`) is still not applied (see part
   3).
+
+## Part 5: the DropPod launch
+
+```ini
+[General]
+DropPodTypes=E1,MTNK
+DropPodMinimum=2
+DropPodMaximum=4
+DropPodTrailer=SMOKEY
+DropPodWeapon=Vulcan2
+DropPodHeight=2000
+DropPodSpeed=75
+DropPodAngle=0.79
+DropPod=DROPPOD,DROPPOD2
+
+[AudioVisual]
+DropPodPuff=DROPEXP
+AtmosphereEntry=PODRING
+
+[DropPodSpecial]
+Type=DropPod
+DropPod.Types=MTNK
+DropPod.Veterancy=1.0
+```
+
+`Type=DropPod` now dispatches to SW_DropPod::Activate (`10070E40`,
+`sim::superweapon::drop_pod`). It refuses without types (`DropPod.Types`,
+else `DropPodTypes=`) and otherwise always activates. One Scenario draw picks
+the count between `DropPod.Minimum`/`.Maximum` (else the `[General]` pair);
+each of three tries per unit draws a type (a BuildingType ends the drop),
+creates it for the firer with at least `DropPod.Veterancy` (capped by
+`VeteranCap=`), takes the nearby Wheel cell of the current cell
+(`Find_Nearby_Passable_Cell @ 0x0056DC20`) and lands it there with
+TechnoExt::CreateWithDroppod (`10044030`) when the cell is open to it. A
+second draw then picks where the walk over that cell's eight neighbours
+starts; the first one the unit may enter becomes the current cell. A unit
+still in limbo is deleted.
+
+CreateWithDroppod gives the Foot gamemd's DropPod locomotor, piggybacked
+over its own (VERA keeps the pod as the Foot's `DropPodFlight`; while it is
+set, FootClass::AI's Process is the pod's), publishes the cell as NavCom,
+queues Guard and faces north. The pod's Move_To (`0x004B6040`) puts the Foot
+`DropPodHeight=` (1500) above the ground, run back along `DropPodAngle=`
+(pi/2, read clamped into [pi/8, 3pi/8]) toward +X, or toward -X when that
+point is off the playfield, and shows `AtmosphereEntry=`. Its Process
+(`0x004B5B70`) moves the Foot `max(height / 10 + 2, DropPodSpeed=)` (40) a
+frame along the angle; every third frame a `DropPodWeapon=` strafes a point
+near the cell for twice its Damage unless an ally stands there. On the
+ground the Foot leaves limbo again at its Location with `DropPodPuff=` and
+`DropPod=` item 0 (item 1 for a far-side entry), idles, commences its
+mission and scatters; a refused Unlimbo blows 100 `C4Warhead=` and leaves it
+in limbo. The stock RulesClass keys are kept only in an Ares build: no stock
+path installs the DropPod locomotor.
+
+A computer House fires it through the Ares AI's DropPod mode (PickTarget
+`10038640`, case 0x13): one Scenario `RandomRanged(1, 4)` picks a zone
+(north, east, south, west), `HouseClass::PickRandomCellInZone @ 0x00501AC0`
+a random cell in it (`RandomRanged(radius, 2 * radius)` leptons off the
+base, the radius clamped into 0x300..0x800, along a facing a raw draw puts
+within 0x2000 of the zone's, clamped into the playfield), and the nearby
+Foot cell there (`Find_Nearby_Passable_Cell`, 1x1, bridges allowed) is the
+target unless it is empty or CanFireAt refuses it. Zone 0 of the same port
+is the one the base-return search (House500200) uses.
+
+| gamemd hook | Ares.dll | Name | Disposition |
+|---|---|---|---|
+| `0x4B5EB0` | `1005C8B0` | DropPodLocomotionClass_ILocomotion_Process_Smoke | Ported: `DropPodTrailer=` (unset: SMOKEY) every 6 frames with or without a weapon. |
+| `0x4B5F9E` | `1005C890` | DropPodLocomotionClass_ILocomotion_Process_Report | Ported: no report sound for a weapon without `Report=`; the Main draw stays. |
+| `0x4B619F` | `1005C870` | DropPodLocomotionClass_ILocomotion_MoveTo_AtmosphereEntry | Ported: no AtmosphereEntry anim when unset. |
+
+### Still not included after part 5
+
+- A negative DropPod count loops about 2^32 tries natively; VERA makes none.
+- CreateWithDroppod's SetDestination runs only the Foot tail (NavCom and the
+  pod's Move_To), not the class setter's prologue; a `Teleporter=` Unit's
+  setter arm is not taken. Its See(0, 0) repeats the Unlimbo's reveal.
+- While the pod flies, Is_Moving, the layer and a mission's Move_To reach the
+  Foot's own locomotor, which natively stays suspended and unasked; a Guard
+  that finds a target mid-air can leave a Drive destination behind.
+- A landing past the end of `DropPod=` (no item 0, or no item 1 for a
+  far-side entry) reads out of bounds natively; VERA shows no pod.
+

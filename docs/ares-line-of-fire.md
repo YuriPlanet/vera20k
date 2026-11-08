@@ -81,12 +81,11 @@ DLL, VERA keeps the facing's first frame.
 
 ## Not covered
 
-- The other BulletTypeExt keys: `Parachuted` (`46867F`), `Splits`,
-  `RetargetSelf`, `RetargetAccuracy`, `AirburstSpread` and `AroundTarget`
-  (the airburst tail `469EBA`, `1001A090`, which Ares builds skip),
+- The other BulletTypeExt keys: `Parachuted` (`46867F`),
   `AttachedSystem` (`5F4FE7`) and the anim palette
   (`468379`). None is set by retail rules; retail's only `Airburst=`
-  projectile (`V3AirburstP`) is fired by no weapon.
+  projectile (`V3AirburstP`) is fired by no weapon. The split keys and the
+  airburst tail are in [ares-combat-sim-hooks.md](ares-combat-sim-hooks.md).
 - The original shared probe's oracle vectors
   (`shared_collision_vectors.json`, which include anchor-bit cliffs) run in
   default builds only; the Ares bodies are covered by their own tests.

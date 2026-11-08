@@ -166,21 +166,18 @@ TogglePower=-1                          ; the IQ a computer needs to balance
 `SlamSound` replaces `BuildingSlam` for the placed type
 (`app/match_runtime/sound_dispatch.rs`, `10010290`, hook `0x4FB2FD`).
 `UnitSell`, `SecretLab.GenerateOnCapture`, `ReverseEngineersVictims`,
-`ProduceCashDisplay` and `AIInnerBase` below are read
+`ProduceCashDisplay` and `AIInnerBase` are read
 (`ResidualBuildingTypeRules` in `rules/ares_building_type.rs`), and the
 RulesExt `UnitsUnsellable` with the other `[General]` keys
-(`AresGeneralRules`); nothing consumes them.
+(`AresGeneralRules`). `UnitSell`, `UnitsUnsellable`,
+`ReverseEngineersVictims` and `ProduceCashDisplay` are consumed
+([ares-reverse-engineering.md](ares-reverse-engineering.md)).
 
 ### Not covered in part 2
 
-- `UnitSell` and `UnitsUnsellable`: VERA has no unit sale on a repair depot
-  (`FootClass::CanBeSold 0x004D9E70`, `FootClass::Sell 0x004D9F70`, the
-  SELL event's unit arm `0x004C6F5A`), which `10048FD0` (hook `0x4D9EBD`)
-  gates.
 - `SecretLab.GenerateOnCapture`: part of the Ares Secret Lab rework
-  (`SecretLab.PossibleBoons`, `UpdateSecretLab`), which VERA does not port.
-- `ReverseEngineersVictims`: grinder reverse engineering (10012E00, hooks
-  `0x5198AD`, `0x73A1BC`) is not ported.
+  (`SecretLab.PossibleBoons`, `UpdateSecretLab`), which VERA does not port
+  ([ares-reverse-engineering.md](ares-reverse-engineering.md)).
 - HouseExt `Degrades=` in a map's house section (`10021A70`): a house takes
   its country's answer.
 - `MassSelectable` (`10013CF0`, hook `0x459C03`): the stock band-selection
@@ -192,7 +189,7 @@ RulesExt `UnitsUnsellable` with the other `[General]` keys
 - `ProduceCashDisplay` (`100117C0`): it rides Ares' replaced ProduceCash
   payout (`100146E0`, `10013D40`, `10014490`: hooks `0x43FD2C`, `0x4482BD`,
   `0x4409F4`, with the upgrades' cash timers), which VERA does not port.
-- `AIInnerBase` (`10023860`, hook `0x506306`): its `CloakGenerator=` arm of
-  `FindBaseBuildingSite` is not ported (`sim::ai_base_site`).
+- `AIInnerBase` (`10023860`, hook `0x506306`) is consumed: it picks the
+  inner-base key of `FindBaseBuildingSite` (`sim::ai_base_site`).
 - `IsBaseNormal`'s per-building `NoBaseNormal` (a `Deliver.BaseNormal=no`
   delivery) is the superweapon chain's.

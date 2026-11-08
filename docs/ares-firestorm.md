@@ -59,6 +59,15 @@ House is short of power). Every change updates each of the House's sections:
   the House's first Firestorm Super instead.
 - Infantry and vehicles cannot enter a powered section and walk through an
   unpowered one; a powered section cannot be sold and shows no health bar.
+- Each change ends with `Update_Pathfinding_1` (RebuildZoneConnectivity
+  `0x0056C510`, from the retained classes) and `Update_Pathfinding_2`
+  (`0x00586990`) over the sections' cells, whose Recalc reaches
+  RecalcZoneType's building arm: a section of a House whose firestorm is
+  up makes its cell Impassable (`0x00483D9E`, Ares `10014B70`, hook
+  `0x483D94`), so the zone hierarchy no longer connects through a powered
+  wall; dropping it gives the cell back its terrain class. A restored game
+  gives powered sections' cells the class again before its navigation
+  rebuild.
 - Placing a section (by the player or the computer) fills the gap to a
   same-House or allied section up to `GuardRange` cells away in each straight
   direction with new sections that build up; the placement cursor marks
@@ -67,7 +76,8 @@ House is short of power). Every change updates each of the House's sections:
 ## Where VERA20K owns it
 
 - `rules/ares_firestorm.rs`: RulesExt `+0xF0..+0x108` (`1002AAF0`,
-  `1002A800`); `rules/ares_building_type.rs`: `Firestorm.Wall` (`+0x5D`);
+  `1002A800`); `rules/ares_building_type.rs`: `Firestorm.Wall` (`+0x5D`)
+  and `IsTrench` (`+0x84`);
   `rules/object_type.rs` and `rules/ares_bullet_type.rs`: the stock
   `IgnoresFirestorm=` (`0x005F92D0`); `rules/superweapon_type.rs`: the kind
   and SW_Firewall::LoadFromINI (`10071620`).
@@ -76,8 +86,9 @@ House is short of power). Every change updates each of the House's sections:
   (Building+0x61C, saved and hashed); SetFirestormState `10022590`,
   UpdateFirewall `10013280`, UpdateFirewallLinks `10013630`,
   IsActiveFirestormWall `10012770`, ImmolateVictim, FindFirstFirestorm
-  (`10014DF0`, hook `0x5880A0`), buildLines `100113D0` and the placement
-  shadow (`0x006D59D0` under hooks `0x6D5455`/`0x6D5A5C`).
+  (`10014DF0`, hook `0x5880A0`), buildLines `100113D0`, the placement
+  shadow (`0x006D59D0` under hooks `0x6D5455`/`0x6D5A5C`) and
+  SetFirestormState's zone batch over the sections' cells.
 - `sim/superweapon/firewall.rs`: Activate `100715C0`, Deactivate
   `100715F0`, through the charge-drain owners in `superweapon/fire.rs` and
   `superweapon/mod.rs`.
@@ -97,12 +108,25 @@ House is short of power). Every change updates each of the House's sections:
 
 ## Not included
 
-- The zone rebuild after a firestorm change (`Update_Pathfinding_1/2`) and
-  RecalcZoneType's powered-section arm (hook `0x483D94`): VERA's path grid
-  blocks every building cell, so units route around a powered wall as
-  natively and around an unpowered one too, as for `IsPassable=` buildings.
-- Trench lines (`IsTrench`, the other half of `IsLinkable`) are not ported.
-- The `FirewallToggle` network event (`0x61`) has no producer in VERA.
+- RecalcZoneType's building arm runs only in SetFirestormState's batch
+  (`map::resolved_terrain::recalc_zone_type_with_buildings`, from
+  `Simulation::ares_firestorm_update_pathfinding`). VERA's other Recalc
+  writers (an overlay change on the cell, the playfield resize of trigger
+  action 40) take the terrain inputs alone, and a section placed or
+  removed while the firestorm is up keeps its cell's class until the next
+  toggle, where native's placement Recalc applies the arm at once.
+  Effect: the zones connect through that one section until the next
+  toggle; the path grid blocks it either way. Frequency: building a
+  section during a firestorm.
+- Trench lines (`IsTrench`, the other half of `IsLinkable`) link through
+  the same line building and placement shadow, and trench traversal
+  moves occupants between neighbouring trenches
+  ([ares-building-hooks.md](ares-building-hooks.md)).
+- The `FirewallToggle` network event (`0x61`): Ares 3.0 handles it
+  (Networking_RespondToEvent `1006A540`, a SetFirestormState toggle) but
+  never raises it (the DLL holds no raiser; the restored
+  RaiseFirewallToggle has no caller), so no player action produces it
+  there either.
 - The low-power drop and the tech-tree recheck of a click run, natively,
   for the local player's House only; VERA runs them for every
   human-controlled House.

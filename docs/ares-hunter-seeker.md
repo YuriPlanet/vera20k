@@ -40,15 +40,44 @@ placement, mission, target and cleanup owners.
   GenericWarhead and UnitDelivery share these readers and playback consumers;
   stock redirected superweapons retain their existing announcement paths.
 
-This is a bounded launch and initial-acquisition port. It does not establish
-complete flying hunter movement, impact behavior or reacquisition after target
-loss. Stock redirected superweapons retain their existing settlement path.
-No mod-specific unit names, resource readers or assets are included.
+This is a bounded launch and initial-acquisition port, plus three hooks of
+the flight (`Ext/Techno/Hooks.HunterSeeker.cpp`):
 
-The flight's tuning keys are read and consumed by nothing until that flight
-(`Ext/Techno/Hooks.HunterSeeker.cpp`, hooks 0x4CCB84..0x4D8D95) is ported:
-the TechnoType `HunterSeeker.DetonateProximity`, `.DescendProximity`,
-`.AscentSpeed`, `.DescentSpeed` and `.EmergeSpeed` (Nullable<int>,
-`rules::ares_techno_type`) and their `[General]` defaults
-`HunterSeekerDetonateProximity` .. `HunterSeekerEmergeSpeed` (Valueable<int>,
-0, read by LoadAfterTypeData 1002A800 after HSBuilding; `AresGeneralRules`).
+- Height step (`FlyRuntime::step_height`): a `HunterSeeker=` Fly that is not
+  a Dropship climbs at `HunterSeeker.EmergeSpeed` while taking off and
+  `.AscentSpeed` otherwise (1004D930, hook 0x4CDE64), and descends at
+  `.DescentSpeed` (1004DA20, hook 0x4CDF54), each capped by the remaining
+  distance. The TechnoType keys (Nullable<int>, `rules::ares_techno_type`)
+  fall back to `[General] HunterSeekerAscentSpeed`, `DescentSpeed` and
+  `EmergeSpeed` (Valueable<int>, 0, LoadAfterTypeData 1002A800).
+- Landing (1004D8A0, hook 0x4CE85A, `sim::world::fly_landing`): a
+  HunterSeeker never lands. Without a target its landing callback runs the
+  acquisition above; on success the Fly stops landing and takes the type's
+  flight level, the hunter unlinks its first radio contact, queues Attack
+  and commences it.
+
+The rest of the flight (`Ext/Techno/Hooks.HunterSeeker.cpp`, `sim::hunter_seeker`):
+
+- Process (1004D7A0, hook 0x4CCB84, before the queued-mission check): a
+  hunter drops a Techno Target that left the playfield, is iron-curtained or
+  is being warped out (Assign_Target(NULL)) and, without a Target, runs the
+  landing callback's reacquire block.
+- Target update (1004DA90, hook 0x4CD9C8, in UpdateFlightMotion): the Fly's
+  destination follows the Target's GetCoords raised to the cell floor, and
+  the body and turret facings snap toward it. The tube coordinate of a
+  target in a tunnel is not represented.
+- Horizontal step (1004DC30, hook 0x4CF3D0): within
+  `HunterSeeker.DetonateProximity` (else `[General]`) of its destination a
+  hunter with a Techno Target detonates: the Target, then the hunter, take
+  weapon 0's Damage and Warhead (ReceiveDamage, IgnoreDefenses), then the C4
+  flash and Apply_area_damage at the hunter, and the step returns 0. Within
+  `.DescendProximity` FlightLevel blends from the type's flight height down
+  to the Target's Z (at least 10); farther it looks 10 cells ahead along its
+  facing and climbs back to its FlightLevel over higher ground. The facing
+  angle uses the engine's coordinate-facing kernel (`facing16_between`),
+  which may differ from YRpp's DirStruct conversion by one binary-angle unit.
+- Leaving the map (1004E050, hook 0x4D8D95, PerCellProcess's exit): the
+  hunter hits its Techno Target with weapon 0 before its UnInit.
+
+Stock redirected superweapons retain their existing settlement
+path. No mod-specific unit names, resource readers or assets are included.

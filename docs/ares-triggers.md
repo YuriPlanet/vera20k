@@ -35,8 +35,8 @@ so Ares' Persistable answer (hook `0x71F9C0`) never reaches a latch.
 | 73, 74 | the object abducted something; 74 of House Value (the previous owner) | the abduction, on the abductor |
 | 75, 76 | a superweapon of type index Value was activated (75) or deactivated (76) | the owner's House Tags |
 | 77 | the named superweapon fired within 5 cells of waypoint Value | the owner's House Tags |
-| 78 | the Trigger's House reverse engineered the named type | never met (see below) |
-| 79, 80 | something (79) or the named type (80) was reverse engineered | not raised |
+| 78 | the Trigger's House reverse engineered the named type | House Tag polls |
+| 79, 80 | something (79) or the named type (80) was reverse engineered | the grinder, on its Tag |
 | 81, 82 | the Trigger's House owns at least Value (81) or at most Value (82) of the named type | House Tag polls |
 | 83, 84 | the object was attacked or destroyed; 84 by House Value | every damage the object survives so far |
 | 85 | the object was destroyed by House Value | RecordKill |
@@ -93,7 +93,8 @@ into that House's index first (hook `0x71EE79`).
   entries and the actions; `sim/trigger_runtime.rs` calls them first and owns
   GetFlags and the House parameter lookups.
 - Raise sites: `sim/combat/object_health.rs`, `sim/combat/record_kill.rs`,
-  `sim/world/spotlight.rs`, `sim/abduction.rs`, `sim/superweapon/fire.rs`
+  `sim/world/spotlight.rs`, `sim/abduction.rs`, `sim/reverse_engineering.rs`,
+  `sim/superweapon/fire.rs`
   and `sim/superweapon/mod.rs`.
 - `sim/house_tracking.rs` (KeepAlive Buildings), `sim/power_system.rs`
   (AuxPower), `sim/vehicle_theft/driver_kill.rs` (KillDriver),
@@ -101,8 +102,6 @@ into that House's index first (hook `0x71EE79`).
 
 ## Not included
 
-- Reverse engineering (Grinding `ReverseEngineersVictims`) is not ported, so
-  78 is never met and 79/80 are never raised.
 - 76 from a drain running out or a hold runs its Triggers without the frame's
   sound boundary and overlay table, which those House passes do not receive.
 - PrepareSaveToINI's parameter kinds (hook `0x71F39B`) and the action write

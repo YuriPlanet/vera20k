@@ -54,6 +54,44 @@ save/load. A destructive scenario reset rebuilds the six defaults. Definitions
 enter the simulation configuration hash; House counts and sidebar membership
 remain with their existing owners.
 
+## Lists, negatives, theaters and stolen technology
+
+TechnoTypeExt `LoadFromINIFile` (`1003DFB0`) reads, after the `Survivor.*`
+keys: `Prerequisite.Lists` (stock ReadInteger, default the current count
+minus one, at least 0, plus one; the vector grows or truncates),
+`Prerequisite.List0`..`Prerequisite.List<n>` through the same Parse
+`100085F0` as `Prerequisite=`, `Prerequisite.Negative`, then
+`Prerequisite.RequiredTheaters` (a nonempty value replaces the all-theaters
+constructor mask with the FindTheater bits of its names) and, after
+CameoPalette, `Prerequisite.StolenTechs` (a nonempty value replaces the set
+with each token's `atoi` below 32). List 0 is `ObjectType::prerequisite`: Ares
+parses `Prerequisite=` into it with the parser the stock read already uses,
+and no stock reader of the stock list remains once CanBuild, the planner
+check and the power plant choice are replaced. Lists 1.. and the other keys
+live in `AresPrerequisiteRules` (`rules::ares_techno_type`), saved with the
+Ares type data and checked against the registry on restore.
+
+`production::requirements_met` (`RequirementsMet @ 10021FF0`) answers, in
+DLL order: Unbuildable for a scenario theater outside the mask; Forbidden
+when the house owns any `Prerequisite.Negative` entry (HouseOwnsAny
+`100081E0`); Overridden for a reverse-engineered type; Incomplete when the
+house's HouseExt StolenTech lacks a required bit; then the existing override,
+lab, TechLevel, stolen-side-tech, house, FactoryOwners, shell and tech level
+answers. CanBuild (PrereqValidate `10021B00`) refuses every answer below
+Complete; the lab boon pick still takes only Forbidden and Incomplete.
+`production::owns_prerequisites` (`PrerequisitesMet @ 10021CA0`, the human
+arm and the AI power plant filter) and the planner's
+`prerequisites_satisfied` (hook `0x505360` -> `10024520` ->
+`PrerequisitesListed @ 10021C50`) accept any one fully met list.
+`SpyEffect.StolenTechIndex` supplies the bits (`docs/ares-infiltration.md`).
+
+Residuals: the Ares constructor leaves the list vector empty until a Rules
+section is first read (Initialize `1003DEC0` sizes it to one), so natively a
+listed type without any section matches no list; VERA always has list 0
+(empty for such a type). Such a type keeps `TechLevel=-1`, so a human cannot
+build it either way; only the planner can differ. The parser and theater
+logs are not written.
+
 ## Evidence and bounds
 
 The [native control documentation](../tools/rules_oracle/ares_prerequisites.md)

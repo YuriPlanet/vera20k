@@ -52,7 +52,7 @@ CloningFacility=yes                ; clones vehicles of its Naval=
 
 ## Not covered
 
-- Reverse engineering (`CanBeReversed`, `ReversedAs`,
-  `ReverseEngineersVictims`).
+- Reverse engineering is its own chain
+  ([ares-reverse-engineering.md](ares-reverse-engineering.md)).
 - `IKnowWhatImDoing` is VERA's placement scope: preplaced map objects skip
   academies because they are read inside it.

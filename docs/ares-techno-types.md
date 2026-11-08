@@ -213,18 +213,15 @@ nothing consumes them:
 - `DigIn`, `DigOut`, `DigInSound`, `DigOutSound`: the Tunnel locomotor is
   not ported. `Assaulter.Level`: the stock `Assaulter=` arm of
   CanBeOccupiedBy (hook 0x457DB7) is not ported.
-- `Convert.Deploy` (1004C070, hook 0x73DE90), which also replaces the stock
-  +6E1 test of every simple deployer's Unload; `InitialPayload.Nums` and
-  its partner `InitialPayload.Types`, which is not read (hooks 0x446EE2,
-  0x4D718C).
-- `CanBeReversed`, `ReversedAs`: grinder reverse engineering
-  (`HouseExt::ReverseEngineer`, hooks 0x5198AD, 0x73A1BC) is not ported.
+- `Convert.Deploy` and `InitialPayload.Types`/`.Nums` are now consumed
+  ([ares-transports.md](ares-transports.md)).
+- `CanBeReversed`, `ReversedAs` and `Unsellable` are now consumed
+  ([ares-reverse-engineering.md](ares-reverse-engineering.md)).
 - `FakeOf`: only the selection's value readout reads it
   (TacticalSelection 0x731D90, hook 0x731E08), which VERA does not draw.
-- `EVA.Lost`: Ares rewrites the unit-lost cue (FootClass_Destroyed
-  10049080, hook 0x4D98C0, adding the DontScore and Insignificant gates) and
-  gives buildings one (10013F10, hook 0x44D760); VERA keeps the stock
-  `EVA_UnitLost` of `Death_Announcement`.
+- `EVA.Lost` is consumed by the unit-lost cue (FootClass_Destroyed
+  10049080, hook 0x4D98C0; buildings 10013F10, hook 0x44D760;
+  [ares-warhead-residuals.md](ares-warhead-residuals.md)).
 - `NoSelfGuardArea` (10049710, hook 0x51E748): the healer infantry's
   GuardArea over itself (0x51E710..0x51E748) is not ported.
 - `RadialIndicatorRadius` of non-building technos (0x41BE80) and the

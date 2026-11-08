@@ -42,7 +42,8 @@ complete mission loading or all downstream campaign extensions.
 
 Supported extensions:
 
-- [Ordinary ground and tower EMP](ares-emp.md) (bounded human Drive/Walk, unteamed AI Drive and independent powered defensive buildings)
+- [Ordinary ground and tower EMP](ares-emp.md) (bounded human Drive/Walk, unteamed AI Drive and independent powered defensive buildings;
+  team members, spawners and Fly/Jumpjet victims follow in [warhead residuals](ares-warhead-residuals.md))
 - [Water and land type conversion](../src/sim/game_entity/type_conversion.rs):
   `Convert.Water` applies over water or beach; `Convert.Land` applies over land
   and bridges. It uses the same in-place conversion owner as script action 68,
@@ -79,7 +80,8 @@ Supported extensions:
   `.Num`, `.Aircraft` and `Parachute.Anim` in front of the SideExt values.
 - [Country AI power plants](ares-country-powerplants.md): `AI.PowerPlants=`
   and the draw among the plants the AI can build when it splices one.
-- [Generic production prerequisites](ares-prerequisites.md)
+- [Generic production prerequisites](ares-prerequisites.md), with `Prerequisite.Lists`,
+  `Prerequisite.Negative`, `Prerequisite.RequiredTheaters` and `Prerequisite.StolenTechs`.
 - [Factory-source restrictions](../src/sim/production/can_build.rs) (`BuiltAt`,
   `Factory.ExplicitOnly`) and [Country plan qualification](../tools/rules_oracle/ares_factory_owners.md)
   (`FactoryOwners`, forbidden Countries and permanent plans).
@@ -163,15 +165,15 @@ Supported extensions:
   passive acquisition, `CivilianEnemy`, damage smoke and sparks,
   `CrashSpin`, `PassengerTurret`, self-healing rates and combat delay, fall
   rates, `AirRate`, `NoManualUnload`/`NoManualEnter`, the Desolator, cow and
-  bomb roles, drain keys and building reload. Carryall totes, tunnels and
-  the HunterSeeker flight speeds remain outside this chain.
+  bomb roles, drain keys and building reload. Carryall totes remain outside
+  this chain.
 - [Superweapon retail types](ares-superweapon-types.md): Ares handlers for
   the Chronosphere and ChronoWarp (`Chronosphere.*`, `Chronoshift.*`), Nuke
   (`Nuke.*`, `NukeFlash.Duration`, `PreImpactAnim`), Psychic Dominator
   (`Dominator.*`) and Genetic Mutator (`Mutate.*`), with `Light.*`. Building
   chronoshift, the SpyPlane and the Lightning Storm (`Lightning.*`,
   `LightningRod.Modifier`) and EMPulse with the stock EMP cannon mission
-  follow in parts 2 to 4; the DropPod launch remains outside it.
+  follow in parts 2 to 4, and part 5 is the DropPod launch with its AI target.
 - [Prism forwarding](ares-prism-forwarding.md): `PrismForwarding.*` networks
   with support weapons, chain and network limits, damage bonus, charge delay,
   allied feeds and support breaking. Radiation-beam and electric-bolt support
@@ -179,22 +181,26 @@ Supported extensions:
 - [Trigger events and actions](ares-triggers.md): events 62..88 with
   TechTypeExists and the Player@X lookups, their damage, kill, spotlight,
   abduction and superweapon raise sites, and actions 98 and 146..149.
-  Reverse-engineering events and the Firestorm actions remain outside it.
+  The reverse-engineering events are in
+  [reverse engineering](ares-reverse-engineering.md).
 - [Tiberium, ore and harvesters](ares-tiberium.md): TiberiumExt heal,
   explosion and debris keys, tiberium damage and healing toggles,
   `TiberiumProof`/`Remains`/`Spill`, the explosive harvester, harvester and
   slave-miner scans, `RandomCrateMoney` and `RepairStopOnInsufficientFunds`.
-  Refinery storage, chain-reacting overlays and visceroids remain outside it.
+  Refinery storage (`Refinery.UseStorage`), chain-reacting overlays and the
+  visceroid spawn follow; the visceroid merge needs a stock port first.
 - [Line of fire and bullet types](ares-line-of-fire.md): the Ares obstacle
   walk with `SolidHeight`, `SolidLevel` and `AlliedSolidTransparency`,
   BulletTypeExt `SubjectToBuildings`, `SolidLevel`, `SubjectToTrenches` and
-  `BallisticScatter.*`, inviso impacts and shrapnel weapons. Airburst splits,
-  parachuted bullets and `AnimLength` remain outside this chain.
+  `BallisticScatter.*`, inviso impacts and shrapnel weapons. Airburst splits
+  are in [combat and simulation hooks](ares-combat-sim-hooks.md); parachuted
+  bullets remain outside this chain.
 - [Firestorm walls](ares-firestorm.md): the Firewall superweapon (`Type=Firestorm`),
   `Firestorm.Wall` sections with their animations, burning, passability, bullet
   interception and sale gate, the `Firestorm*` globals and trigger actions 92/93.
-  The zone rebuild after a toggle, trenches and the FirewallToggle event remain
-  outside this chain.
+  The zone rebuild after a toggle and the trench lines are in
+  [building hooks](ares-building-hooks.md); no Ares function raises the
+  FirewallToggle event.
 - [Mouse cursors](ares-cursors.md): the `[MouseCursors]` list with the nine Ares
   cursors, every `Cursor.*` key of techno, weapon, building and superweapon types,
   and the action overrides on the tactical map and the radar.
@@ -209,14 +215,40 @@ Supported extensions:
   dispositions, including healers, gap and spotlight hooks, rank immunities, the
   AI base plan and unit-chooser fixes, power-toggle and EMP power, and infantry
   death-anim owners.
-- The last ExtData keys: every Ares 3.0 ExtData INI key is now read. The
+- The last ExtData keys of `report/ini_coverage.tsv`. The
   [RulesExt general keys](ares-techno-hooks.md#rulesext-general-keys) and
   [presentation keys](ares-techno-types.md#presentation-keys) list the wired
   consumers (airstrike voices, `EnemyUIName`, gate and slam sounds, bullet
   `AnimLength`, `InfantryElectrocuted`, `EnemyWrench`, `DiskLaserAnimEnabled`,
   `AIFriendlyDistance`, `StartInMultiplayerUnitCost`, `CameoPalette`) and the
-  keys whose mechanism is still missing (hunter-seeker flight, Carryall,
-  Tunnel, reverse engineering, unit selling, `InitialPayload`, TS laser waves).
+  keys whose mechanism is still missing (see [remaining work](ares-remaining.md)).
+- [Combat and simulation hooks](ares-combat-sim-hooks.md): the Ares cell-spread
+  walk, the EMP construction filter, `LaserThickness` and TS laser waves
+  (`Wave.IsLaser`, `Wave.IsBigLaser`), chronoshift validation, a building's
+  free units, the factory hand-off, the Droppod team plane, bullet `Splits` and
+  airburst, `StartInMultiplayer.Types` and `.WithConst`, the aircraft `Dock=`
+  click, HunterSeeker flight and terrain fire.
+- [Building hooks](ares-building-hooks.md): the `Wall=` any-wall query, gates on
+  walls, trench lines and trench traversal (event 0x60), custom foundation
+  pips, Ares tunnels (`[TunnelTypes]`, `Tunnel=`), `Passengers.Allowed` and
+  `Passengers.Disallowed`, and the firestorm zone rebuild.
+- [Reverse engineering, unit selling and the Secret Lab](ares-reverse-engineering.md):
+  grinder reverse engineering with its trigger events and
+  `SpyEffect.UndoReverseEngineer`, `UnitSell`/`Unsellable` sales on a depot,
+  the ProduceCash rework with `ProduceCashDisplay`, and `SecretLab.*`.
+- [Transports and payloads](ares-transports.md): `InitialPayload.*`,
+  `Convert.Deploy` and Hospital/Armory eviction on sale and capture.
+- [Warhead, AI and techno residuals](ares-warhead-residuals.md): airborne
+  victims of the curtain, EMP and AttachEffect, PoweredBy team, spawn and slave
+  updates, `TeamRetaliate`, `AIInnerBase`, `EVA.Lost`, EMP on Fly and Jumpjet
+  victims, and the `CanMakeStuffUp` draws.
+- [Sidebar and interface hooks](ares-sidebar-ui-hooks.md): no cameo limit, the
+  Ares cameo insertion and top row, and Shift-click batch production. The CSF
+  loader hooks are deferred.
+- [Radiation types](ares-radiation.md): Ares 3.0 never loads `[RadiationTypes]`;
+  its snow-theater hook is the only live radiation hook.
+- [Hooks skipped on purpose](ares-skipped-hooks.md) and
+  [remaining work](ares-remaining.md).
 - [INI Include and inheritance](ini-directives.md). The read-only `asset ini-expand` probe works
   in every build.
 - [Extended authored House ally lists](../tools/input_oracle/ares_allies_reader.md).
@@ -258,8 +290,10 @@ the merged pull requests that carried each chain:
   Storm superweapon types with building chronoshift, prism forwarding,
   trigger events and actions, tiberium and harvesters, the line of fire, EMPulse,
   firestorm walls, mouse cursors, the Misc/Bugfixes hooks, anim and particle
-  extensions, the remaining Techno, Building, House and Infantry hooks, and
-  the last ExtData keys.
+  extensions, the remaining Techno, Building, House and Infantry hooks, the
+  last ExtData keys, and the combat, building, tunnel, DropPod,
+  reverse-engineering, transport, refinery-storage, Secret Lab,
+  prerequisite-list and sidebar chains.
 
 ## Original project and authors
 

@@ -71,8 +71,8 @@ reads the list or the overrides.
 
 ## Not covered
 
-- `DisplayClass_ChooseAction_CanSell` (`0x6929FC`): selling a Unit or
-  Aircraft in sell mode needs Unit selling, which VERA does not have.
+- `DisplayClass_ChooseAction_CanSell` (`0x6929FC`) is ported with the unit
+  sale ([ares-reverse-engineering.md](ares-reverse-engineering.md)).
 - `DisplayClass_LeftMouseButtonUp_ExecPowerToggle` (`0x4ABFBE`) and the
   TogglePower/NoTogglePower actions: the player's toggle-power mode (the Ares
   TogglePower command, `0x69281E`) is not in VERA.

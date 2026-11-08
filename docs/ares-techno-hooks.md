@@ -91,12 +91,11 @@ Every `HasSpotlight=` Techno gets its BuildingLight at TechnoClass::Unlimbo
   cursor and order rungs have no single per-class What_Action entry to gate.
   Effect: a deactivated selection still shows and sends its stock actions,
   which IsControllable already refuses for most orders.
-- `Passengers.Allowed`/`.Disallowed` (0x73769E): the two Find-only lists
-  are not read. Bridge occupation-bit memory (0x7441B6/0x744216): needs a
-  per-Unit flag; units can still leave a stale 0x20 bit near bridges.
+- Bridge occupation-bit memory (0x7441B6/0x744216): needs a per-Unit
+  flag; units can still leave a stale 0x20 bit near bridges.
 - Init_1's capture manager and parasite for any weapon slot and the
   parasite slot hooks (0x629804, 0x62A020, 0x62A7B1); the gunner temporal
-  swap (0x74642C, 0x74653C); InitialPayload (0x446EE2, 0x4D718C); grinder
+  swap (0x74642C, 0x74653C); grinder
   reverse engineering (0x5198AD, 0x73A1BC); small visceroid merging
   (0x739F21, a raw type swap); Hover DeployToLand (0x513EAA, 0x514A21,
   0x514DFE); NoSelfGuardArea (0x51E748: the healer's self arm it skips is
@@ -153,16 +152,15 @@ InfantryElectrocuted=         ; Find only; unset: ELECTRO, else AnimTypes[1]
 
 ### Not covered
 
-- `TeamRetaliate` (`1003A180`, hook `0x6EB432`): retaliating needs
-  `TechnoClass::IsCloseEnoughToAttackCoords` (vt+0x3B0) for an armed focus,
-  which VERA has not ported; computer teams keep the stock reaction.
+- `TeamRetaliate` (`1003A180`, hook `0x6EB432`) is consumed by
+  `team_ai::ares_team_retaliate` ([ares-warhead-residuals.md](ares-warhead-residuals.md)).
 - `CanMakeStuffUp` (`100677B0`, hook `0x687C16`; `100680F0`, hook `0x55AFB3`): Ares'
   randomized VeteranRatio/BuildSpeed/BuildupTime write the immutable Rules,
   and its 90-frame infantry panic is not ported.
 - `Message.SilosNeeded` (`10024AE0`, hook `0x4F8C23`): the silo nag is
   unreachable while VERA has no Ares tiberium storage (hook `0x4F9610`).
-- `UnitsUnsellable`: no unit sale on a repair depot
-  ([ares-building-types.md](ares-building-types.md)).
+- `UnitsUnsellable`: the unit sale on a depot
+  ([ares-reverse-engineering.md](ares-reverse-engineering.md)).
 - The `HunterSeeker*` defaults: [ares-hunter-seeker.md](ares-hunter-seeker.md).
 - `StartInMultiplayerUnitCost` unset: Ares' own average also takes the
   HouseType `StartInMultiplayer.Types`, which VERA does not read; HouseType
@@ -197,13 +195,13 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `41BE80` | ObjectClass_DrawRadialIndicator | `10049A70` | residual: radial indicators for all technos (presentation) |
 | `41D5AE` | AirstrikeClass_PointerGotInvalid_AirstrikeAbortSound | `10048DE0` | residual: per-type airstrike abort voice (audio) |
 | `41D940` | AirstrikeClass_Fire_AirstrikeAttackVoice | `10048D60` | residual: per-type airstrike attack voice (audio) |
-| `446EE2` | BuildingClass_Place_InitialPayload | `10048EB0` | residual: InitialPayload passengers |
+| `446EE2` | BuildingClass_Place_InitialPayload | `10048EB0` | ported: [ares-transports.md](ares-transports.md) |
 | `44A03C` | BuildingClass_Mi_Selling_Transfer | `10048E90` | ported earlier |
 | `4566B0` | BuildingClass_GetRangeOfRadial_Radius | `10048E60` | residual: RadialIndicatorRadius (presentation) |
 | `471C96` | CaptureManagerClass_CanCapture | `10048ED0` | ported earlier |
-| `4D718C` | FootClass_Put_InitialPayload | `100491B0` | residual: InitialPayload passengers |
+| `4D718C` | FootClass_Put_InitialPayload | `100491B0` | ported: [ares-transports.md](ares-transports.md) |
 | `4D85E4` | FootClass_UpdatePosition_TiberiumDamage | `10049280` | ported earlier |
-| `4D98C0` | FootClass_Destroyed | `10049080` | ported earlier |
+| `4D98C0` | FootClass_Destroyed | `10049080` | ported: the DontScore/Insignificant gates and `EVA.Lost` ([ares-warhead-residuals.md](ares-warhead-residuals.md)) |
 | `4D9920` | FootClass_SelectAutoTarget_Cloaked | `100491E0` | ported earlier |
 | `4D9A83` | FootClass_PointerGotInvalid_OccupierVehicleThief | `10049180` | residual: Occupier+VehicleThief destination expiry |
 | `4D9EBD` | FootClass_CanBeSold_SellUnit | `10048FD0` | ported earlier |
@@ -281,7 +279,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `735584` | UnitClass_CTOR_TurretROT | `1004BC40` | ported: Unit secondary facing TurretROT |
 | `73758A` | UnitClass_ReceivedRadioCommand_QueryEnterAsPassenger_KillDriver | `1004C250` | ported earlier |
 | `73762B` | UnitClass_ReceivedRadioCommand_BySize1 | `1004C150` | ported: Passengers.BySize=no counts heads |
-| `73769E` | UnitClass_ReceivedRadioCommand_SpecificPassengers | `1004C270` | residual: Passengers.Allowed/Disallowed |
+| `73769E` | UnitClass_ReceivedRadioCommand_SpecificPassengers | `1004C270` | ported: `sim::radio::receive::unit_can_enter_radio` (Passengers.Allowed/Disallowed, [ares-building-hooks.md](ares-building-hooks.md)) |
 | `73778F` | UnitClass_ReceivedRadioCommand_BySize2 | `1004C190` | not applicable: Unit DockNow (0x15) arm is not represented |
 | `73782F` | UnitClass_ReceivedRadioCommand_BySize3 | `1004C1D0` | ported: Passengers.BySize=no counts heads |
 | `737994` | UnitClass_ReceivedRadioCommand_BySize4 | `1004C210` | ported: Passengers.BySize=no counts heads |
@@ -292,7 +290,7 @@ Hooks the 3.0 DLL removed (34 in these files) are not listed.
 | `739B8A` | UnitClass_SimpleDeploy_Facing | `1004C2D0` | ported: simple deployer turns to DeployDir first |
 | `739F21` | UnitClass_UpdatePosition_Visceroid | `1004C530` | residual: small visceroids merge |
 | `73A1BC` | UnitClass_UpdatePosition_EnteredGrinder | `1004C460` | residual: grinder reverse engineering and hijacker refund |
-| `73DE90` | UnitClass_Mi_Unload_SimpleDeployer | `1004C070` | ported earlier |
+| `73DE90` | UnitClass_Mi_Unload_SimpleDeployer | `1004C070` | ported: [ares-transports.md](ares-transports.md) |
 | `740031` | UnitClass_GetActionOnObject_NoManualUnload | `1004BEF0` | ported earlier |
 | `74031A` | UnitClass_GetActionOnObject_NoManualEnter | `1004BEA0` | ported earlier |
 | `741206` | UnitClass_CanFire | `1004BC80` | ported: moving IFV fires unless its gunner weapon is Temporal |

@@ -67,7 +67,7 @@ as Ares in both builds); **residual** (gameplay, but its host is unported);
 | `0x4CA0E3` | `1005C960` | Abandoned building production clears the sidebar's pointers to it | n/a: dangling-pointer guard; VERA's placement holds no object pointer |
 | `0x4CA437` | `1005C9A0` | FactoryClass::ComputeCRC skips a crashing log | n/a: logging |
 | `0x4D5782` | `1005C9F0` | Approach_Target does not chase a passively acquired Target | ported: `foot_approach::approach_foot_target` |
-| `0x4D9EE1` | `1005CA30` | A unit is sold at the depot's dock coordinate | residual: `FootClass::CanBeSold @ 0x004D9E70` (the player's sell cursor over a unit at a depot) is unported |
+| `0x4D9EE1` | `1005CA30` | A unit is sold at the depot's dock coordinate | ported: `production::foot_can_be_sold` ([ares-reverse-engineering.md](ares-reverse-engineering.md)) |
 | `0x4DB87E` | `1005CA50` | A Foot's parasite takes its new Location | ported: `ground_pose::foot_set_location` |
 | `0x4FA2E0` | `1005CC10` | SetThreat rejects a negative index | equivalent: `house_threat` refuses writes outside its grid |
 | `0x5005CC`, `0x50067C`, `0x5007BE` | `1005CBD0`, `1005CB30`, `1005CBF0` | The infantry production-request flag no longer falls through to the vehicle flag | ported (presentation): `app::sidebar_projection` cameo prediction |
