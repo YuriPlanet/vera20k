@@ -59,6 +59,20 @@ impl App {
             return false;
         }
         let is_escape = code == KeyCode::Escape && pressed && !repeat;
+        // VERA's Esc menu: the held key that opened it must not close it, and
+        // Esc closes its open list first.
+        if repeat
+            && state
+                .frontend
+                .shell_message_box
+                .as_ref()
+                .is_some_and(|message_box| message_box.keeps_page())
+        {
+            return true;
+        }
+        if is_escape && Self::close_shell_menu_list(state) {
+            return true;
+        }
         if state.frontend.shell_message_box.is_some() {
             // IsDialogMessage in the native modal pump5D4D50 admits Enter
             // as IDOK1 and Escape as IDCANCEL2. MessageBoxProc5D36A0 maps
@@ -303,10 +317,12 @@ impl App {
                 state.platform.recenter_windowed = !on_choice;
             }
         }
+        let changed = state.persistence.options_profile.full_screen != full_screen;
         state.persistence.options_profile.full_screen = full_screen;
         if let Some(dialog) = state.frontend.options_dialog.as_mut() {
             dialog.sync_full_screen(full_screen);
         }
+        Self::shell_menu_follow_full_screen(state, full_screen, changed);
     }
 
     /// After a frame could not be taken, fit the surface to the window's size
@@ -960,24 +976,7 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => {
                 log::info!("Close requested");
-                // Active YR treats a terminated launcher Options pump as an
-                // always-apply final result: Apply -> destroy -> one write.
-                // Complete that transaction before unrelated shell teardown.
-                crate::app::input::keyboard::prepare_terminal_exit(state);
-                Self::close_launcher_options_terminal(state);
-                if Self::native_skirmish_shell_active(state) {
-                    // A terminal exit has no Start/Back transaction, so pack the
-                    // page's current controls into the durable record first. The
-                    // pack spends no `Scenario` draw: Random markers keep the
-                    // value already cached behind them.
-                    state.frontend.multiplayer_shell_runtime.pack_durable_state(
-                        &state.frontend.skirmish_shell_state,
-                        state.frontend.scenario_catalog.shell_maps(),
-                        &state.frontend.skirmish_modes,
-                    );
-                    Self::teardown_skirmish_shell_for_start(state);
-                    state.frontend.multiplayer_shell_runtime.persist_snapshot();
-                }
+                Self::prepare_shell_terminal_exit(state);
                 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
                 if Self::begin_network_goodbye(state) {
                     return;
@@ -1216,6 +1215,18 @@ impl ApplicationHandler for App {
                         crate::app::input::keyboard::key(state, &event);
                         return;
                     }
+                    InputLayer::Page(ModalPage::ShellMessageBox) => {
+                        if let PhysicalKey::Code(code) = event.physical_key {
+                            Self::raise_shell_message_box(state);
+                            Self::handle_main_menu_dialog_key(
+                                state,
+                                code,
+                                event.state.is_pressed(),
+                                event.repeat,
+                            );
+                        }
+                        return;
+                    }
                     // The status card took the shell error's keys.
                     InputLayer::ShellTransition
                     | InputLayer::HouseOutcomeWait
@@ -1226,6 +1237,9 @@ impl ApplicationHandler for App {
                 if matches!(screen, ScreenPage::NetworkSetup | ScreenPage::Skirmish)
                     && crate::app::frontend::preview_zoom::key(state, &event)
                 {
+                    return;
+                }
+                if Self::shell_menu_key(state, &event, screen) {
                     return;
                 }
                 if screen == ScreenPage::CoopScore {
@@ -1364,25 +1378,6 @@ impl ApplicationHandler for App {
                     {
                         return;
                     }
-                    if screen == ScreenPage::Skirmish && is_escape {
-                        if state
-                            .frontend
-                            .skirmish_shell_state
-                            .choose_map_modal
-                            .is_some()
-                        {
-                            // The chooser's loop (`0x007759E0`) runs without
-                            // IsDialogMessage: Escape does nothing.
-                            state.platform.window.request_redraw();
-                            return;
-                        }
-                        Self::handle_skirmish_shell_action(
-                            state,
-                            crate::ui::skirmish_shell::SkirmishShellAction::BackOrExit,
-                        );
-                        state.platform.window.request_redraw();
-                        return;
-                    }
 
                     if screen == ScreenPage::Wol {
                         Self::handle_wol_key(
@@ -1402,20 +1397,6 @@ impl ApplicationHandler for App {
                             Self::handle_load_saved_game_key(state, code);
                         }
                         state.platform.window.request_redraw();
-                        return;
-                    }
-
-                    if matches!(
-                        screen,
-                        ScreenPage::SinglePlayer
-                            | ScreenPage::MoviesAndCredits
-                            | ScreenPage::MovieList
-                            | ScreenPage::Campaign
-                    ) && is_escape
-                    {
-                        // IsDialogMessageA turns Escape into IDCANCEL (id 2),
-                        // which the 0x100/0x101/0x129/0x94 procs and the common
-                        // handler 0x00622B50 ignore: the dialog stays open.
                         return;
                     }
 
@@ -1580,6 +1561,14 @@ impl ApplicationHandler for App {
                         crate::app::input::keyboard::cursor_moved(state);
                         return;
                     }
+                    // The open box takes the move; the update offer's change
+                    // list follows it.
+                    InputLayer::Page(ModalPage::ShellMessageBox) => {
+                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                        crate::app::updater::notes::cursor_moved(state);
+                        Self::shell_menu_pointer(state, None);
+                        return;
+                    }
                     // The status card took the shell error's moves.
                     InputLayer::ShellTransition
                     | InputLayer::HouseOutcomeWait
@@ -1675,6 +1664,18 @@ impl ApplicationHandler for App {
                     }
                     InputLayer::Page(ModalPage::Keyboard) => {
                         crate::app::input::keyboard::mouse(state, button, btn_state.is_pressed());
+                        return;
+                    }
+                    InputLayer::Page(ModalPage::ShellMessageBox) => {
+                        if button == MouseButton::Left {
+                            Self::raise_shell_message_box(state);
+                            if btn_state.is_pressed() {
+                                Self::handle_shell_message_box_mouse_down(state);
+                            } else {
+                                Self::handle_shell_message_box_mouse_up(state);
+                            }
+                            state.platform.window.request_redraw();
+                        }
                         return;
                     }
                     // The status card took the shell error's buttons.
@@ -1811,6 +1812,11 @@ impl ApplicationHandler for App {
                     InputLayer::Page(ModalPage::Keyboard) => {
                         crate::app::input::keyboard::wheel(state, lines);
                         state.platform.window.request_redraw();
+                        return;
+                    }
+                    InputLayer::Page(ModalPage::ShellMessageBox) => {
+                        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                        crate::app::updater::notes::wheel(state, lines);
                         return;
                     }
                     // ComboDropWin consumes no mouse-wheel selection/scroll;

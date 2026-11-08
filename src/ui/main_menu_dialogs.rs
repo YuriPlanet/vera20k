@@ -48,6 +48,10 @@ pub(crate) const CAMPAIGN_REPLAY_TITLE_KEY: &str = "TXT_TO_REPLAY";
 pub(crate) const CAMPAIGN_REPLAY_YES_KEY: &str = "TXT_YES";
 pub(crate) const CAMPAIGN_REPLAY_NO_KEY: &str = "TXT_NO";
 
+/// The Esc menu's buttons, captioned as the main menu's own.
+const SHELL_MENU_OPTIONS_KEY: &str = "GUI:Options";
+const SHELL_MENU_EXIT_KEY: &str = "GUI:ExitGame";
+
 /// The resolved strings of a shell message box (ShellMessageBox__Run
 /// `0x005D3490`): body, OK-slot button (`0x5AE`, result0), optional
 /// Cancel-slot caption (control2, result1) and optional third button
@@ -88,6 +92,17 @@ impl ShellMessageBoxLabels {
         }
     }
 
+    /// VERA's Esc menu: the main menu's own Options and Exit Game captions in
+    /// the OK and third slots, and no question.
+    pub fn shell_menu(csf: &CsfLookup<'_>) -> Self {
+        Self {
+            title: String::new(),
+            confirm: csf(SHELL_MENU_OPTIONS_KEY, "Options"),
+            cancel: csf(EXIT_CONFIRM_CANCEL_KEY, EXIT_CONFIRM_CANCEL_FALLBACK),
+            third: csf(SHELL_MENU_EXIT_KEY, "Exit Game"),
+        }
+    }
+
     /// Campaign defeat's retry prompt: Yes in the OK slot, No in Cancel's.
     pub fn campaign_replay(csf: &CsfLookup<'_>) -> Self {
         Self {
@@ -124,5 +139,17 @@ mod tests {
         assert_eq!(failed.confirm, "TXT_OK");
         assert!(failed.cancel.is_empty());
         assert_eq!(failed.kind(), crate::ui::shell::modal::ModalKind::BodyOk);
+    }
+
+    /// Options answers 0, Exit Game 2 and Cancel 1, so the three captions
+    /// must land in the OK, third and Cancel slots of the three-button box.
+    #[test]
+    fn the_esc_menu_is_the_three_button_box() {
+        let lookup = |key: &str, _fallback: &str| key.to_string();
+        let menu = ShellMessageBoxLabels::shell_menu(&lookup);
+        assert_eq!(menu.confirm, SHELL_MENU_OPTIONS_KEY);
+        assert_eq!(menu.third, SHELL_MENU_EXIT_KEY);
+        assert_eq!(menu.cancel, EXIT_CONFIRM_CANCEL_KEY);
+        assert_eq!(menu.kind(), crate::ui::shell::modal::ModalKind::ThreeButton);
     }
 }

@@ -350,10 +350,10 @@ pub fn message_box_layout_on(
     screen_h: i32,
     scale: geom::ShellScale,
 ) -> MessageBoxLayout {
+    let base = message_box_base(kind, screen_w, screen_h, scale);
     if scale.is_retail() {
-        return message_box_layout(kind, screen_w, screen_h);
+        return base;
     }
-    let base = message_box_layout(kind, geom::SHELL_BASE_W, geom::SHELL_BASE_H);
     MessageBoxLayout {
         dialog: scale.scale_rect(base.dialog),
         body: scale.scale_rect(base.body),
@@ -361,6 +361,20 @@ pub fn message_box_layout_on(
         cancel: base.cancel.map(|rect| scale.scale_rect(rect)),
         third: base.third.map(|rect| scale.scale_rect(rect)),
         scale,
+    }
+}
+
+/// The box in the coordinates [`message_box_layout_on`] maps it from.
+pub fn message_box_base(
+    kind: ModalKind,
+    screen_w: i32,
+    screen_h: i32,
+    scale: geom::ShellScale,
+) -> MessageBoxLayout {
+    if scale.is_retail() {
+        message_box_layout(kind, screen_w, screen_h)
+    } else {
+        message_box_layout(kind, geom::SHELL_BASE_W, geom::SHELL_BASE_H)
     }
 }
 
