@@ -971,6 +971,12 @@ impl App {
                 });
         state.renderer.gpu.timer.begin_frame(&mut encoder);
         state.renderer.window_ui.begin_frame();
+        if state.match_state.input.retail_screenshot_requested {
+            state
+                .renderer
+                .retail_screenshot_frame_cache
+                .retain_presented(&state.renderer.gpu.device, &mut encoder);
+        }
         let mut pending_main_menu_entry_token = None;
         let mut pending_main_menu_title_receipt = None;
         use crate::app::diagnostics::shell_capture::PresentedShell;
@@ -1316,6 +1322,12 @@ impl App {
                     state
                         .renderer
                         .copy_game_frame_to(&mut encoder, &output.texture);
+                    render::draw_software_cursor(
+                        state,
+                        &mut encoder,
+                        &view,
+                        render_output.software_cursor,
+                    );
                     render_output
                 };
                 game_render_output = Some(game_output);

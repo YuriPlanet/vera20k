@@ -19,7 +19,7 @@
 //! Stages replay in index order.
 //! Footprints are tested on a tile grid: a false overlap only costs a stage.
 
-const TILE: u32 = 16;
+const TILE: u32 = 8;
 
 /// Which transaction family replays a stage.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

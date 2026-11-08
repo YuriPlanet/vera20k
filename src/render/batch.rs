@@ -128,7 +128,7 @@ const INSTANCE_STRIDE: u64 = std::mem::size_of::<SpriteInstance>() as u64;
 /// Allows the shader to convert screen-space pixel coordinates into
 /// normalized clip space, and to apply camera scrolling.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
     /// Viewport width and height in pixels.
     pub screen_size: [f32; 2],
@@ -312,6 +312,10 @@ struct PooledBuffer {
     buffer: wgpu::Buffer,
     /// Maximum number of SpriteInstance elements the buffer can hold.
     capacity: usize,
+    /// The bytes last uploaded, so a repeated stream is not uploaded again.
+    contents: Vec<u8>,
+    /// Advances when what the stream draws changes.
+    generation: u64,
 }
 
 /// Pool of named GPU instance buffers that persist across frames.
@@ -475,8 +479,13 @@ impl InstanceBufferPool {
         instances: &[SpriteInstance],
     ) {
         let needed: usize = instances.len();
+        let previous_count = self.counts.insert(key, needed as u32);
         if needed == 0 {
-            self.counts.insert(key, 0);
+            if let Some(entry) = self.buffers.get_mut(&key)
+                && previous_count != Some(0)
+            {
+                entry.generation += 1;
+            }
             return;
         }
 
@@ -485,8 +494,20 @@ impl InstanceBufferPool {
             PooledBuffer {
                 buffer: Self::alloc_buffer(device, key.0, cap),
                 capacity: cap,
+                contents: Vec::new(),
+                generation: 0,
             }
         });
+        let byte_data: &[u8] = bytemuck::cast_slice(instances);
+        if entry.contents == byte_data {
+            if previous_count != Some(needed as u32) {
+                entry.generation += 1;
+            }
+            return;
+        }
+        entry.contents.clear();
+        entry.contents.extend_from_slice(byte_data);
+        entry.generation += 1;
 
         // Grow if the current buffer is too small.
         if needed > entry.capacity {
@@ -495,7 +516,6 @@ impl InstanceBufferPool {
             entry.capacity = new_cap;
         }
 
-        let byte_data: &[u8] = bytemuck::cast_slice(instances);
         match path {
             UploadPath::Queue(queue) => queue.write_buffer(&entry.buffer, 0, byte_data),
             UploadPath::Recorded(encoder) => {
@@ -507,7 +527,13 @@ impl InstanceBufferPool {
                     .copy_from_slice(byte_data);
             }
         }
-        self.counts.insert(key, needed as u32);
+    }
+
+    /// A number that changes whenever what `key`'s stream draws changes.
+    pub(crate) fn generation(&self, key: &'static str) -> u64 {
+        self.buffers
+            .get(&(key, 0))
+            .map_or(0, |entry| entry.generation)
     }
 
     /// Get a previously uploaded buffer and its instance count.
