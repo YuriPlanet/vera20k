@@ -87,6 +87,66 @@ fn spread_heights_and_band_match_the_original_slices() {
     }
 }
 
+/// A raw Cell token can project to coordinates no Cell token expresses: here
+/// a negative remainder and a wrapped quotient, which the packed Map lookup
+/// still resolves to the real cell (19, 17). The run keeps its records, and
+/// the game goes on with them.
+#[test]
+fn a_run_on_coordinates_no_cell_token_expresses_keeps_its_records() {
+    use crate::sim::command::CommandEnvelope;
+    let (mut sim, rules, registry) = crate::sim::world::entry_test_fixture::fixture_with_rules(
+        "[VehicleTypes]\n0=PLANNER\n[PLANNER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    sim.session.set_current_house_for_test(Some(owner));
+    let records: Vec<_> = [(15, 15), (16, 15)]
+        .into_iter()
+        .map(|(x, y)| {
+            let entity_id = sim
+                .spawn_object_with_overlay_registry(
+                    "PLANNER",
+                    "Americans",
+                    x,
+                    y,
+                    0,
+                    &rules,
+                    &registry,
+                )
+                .unwrap();
+            let mut record = sim
+                .encode_megamission_record(
+                    owner,
+                    &Command::Move {
+                        entity_id,
+                        target_rx: 19,
+                        target_ry: 17,
+                    },
+                )
+                .unwrap();
+            record.payload_mut()[12..16].copy_from_slice(&(-65_518_493_i32).to_le_bytes());
+            CommandEnvelope::synchronized(record, 0)
+        })
+        .collect();
+    let mut run: Vec<_> = records
+        .iter()
+        .cloned()
+        .map(super::QueuedCommand::from_envelope)
+        .collect();
+    let before = run.clone();
+    sim.adjust_staged_megamission_destinations(&mut run, &rules, Some(&registry));
+    assert_eq!(run, before);
+
+    sim.apply_due_commands(&records, &rules, 0, Some(&registry), Default::default());
+    let grid = sim.path_grid.clone();
+    for _ in 0..32 {
+        sim.advance_tick(&[], Some(&rules), grid.as_deref(), Some(&registry), 67);
+    }
+}
+
 #[test]
 fn planning_flags_use_the_production_group_destination_distributor() {
     use crate::sim::command::{CommandEnvelope, MegaMissionRecord};
