@@ -2336,6 +2336,16 @@ fn ares_settle_starting_construction_yards(
             &crate::sim::mission::authority::LiveReadyInputProvider { rules },
         );
         sim.with_object_placement_scope(|sim| sim.building_enter_idle_mode(id, false, rules));
+        // The WithConst yard is unlimboed through the starting-object route
+        // (`unlimbo_starting_object_near_base`), which — unlike the MCV
+        // deploy's `unlimbo_constructed_parent` — leaves the body in
+        // Construction. Its queued Idle only applies on a later Update, so the
+        // first frame replays the build-up and, with the forced Guard current,
+        // Mission_Construction never runs to complete it: the build-up loops.
+        // Apply the Idle body now so a starting yard stands finished.
+        if let Some(entity) = sim.substrate.entities.get_mut(id) {
+            entity.initialize_building_idle_body(sim.session.binary_frame() as i32);
+        }
     }
     let house = sim
         .houses
