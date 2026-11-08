@@ -121,6 +121,8 @@ diğer her yeni özellik, şu yollardan biriyle açılana kadar kapalı kalmalı
 Ses, grafik ve kontrol ayarları `VERA.INI` dosyasına kaydedilir. Oynanış kuralları lobi
 ayarlarından, modlardan veya haritalardan gelir.
 
+Kendi modlarınızı nasıl yapacağınızı [mod yapım kılavuzu](docs/modding.md) anlatıyor.
+
 ## Destek
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="VERA20K'yi PayPal üzerinden destekleyin" height="23"></a>

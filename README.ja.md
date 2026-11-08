@@ -102,6 +102,8 @@ VERA20K は、既定ではオリジナルのゲームと同じようにプレイ
 
 サウンド、グラフィック、操作の設定は `VERA.INI` に保存されます。ゲームプレイのルールは、ロビーの設定、MOD、マップによって決まります。
 
+自分で MOD を作る方法は [MOD 制作ガイド](docs/modding.md)で説明しています。
+
 ## プロジェクトの支援
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="PayPal で VERA20K を支援" height="23"></a>

@@ -121,6 +121,8 @@ including extensions from mods such as Ares, stay off until they are turned on w
 Sound, graphics and controls are saved in `VERA.INI`. Gameplay rules come from lobby
 settings, mods or maps.
 
+The [modding guide](docs/modding.md) explains how to make your own mods.
+
 ## Support
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Support VERA20K via PayPal" height="23"></a>

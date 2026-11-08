@@ -121,6 +121,8 @@ moddar som Ares, måste vara avstängd tills den slås på med något av följan
 Inställningar för ljud, grafik och kontroller sparas i `VERA.INI`. Spelreglerna kommer från
 lobbyinställningar, moddar eller kartor.
 
+[Moddningsguiden](docs/modding.md) förklarar hur man gör egna moddar.
+
 ## Stöd projektet
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Stöd VERA20K via PayPal" height="23"></a>
