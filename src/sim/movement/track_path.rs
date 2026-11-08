@@ -869,6 +869,24 @@ impl Simulation {
                 frame_effects,
             );
         }
+        // 741B28..741BC5: a Unit asleep (Get_Mission) and tethered to the
+        // Carryall coming to lift it (`aircraft::carryall`) calls the
+        // Carryall off: its destination is dropped, then UNTETHER and BREAK.
+        if let Some(unit) = self.substrate.entities.get(id)
+            && unit.tether.partner().is_some()
+            && unit.mission.effective()
+                == crate::sim::mission::MissionId::from_known(MissionType::Sleep)
+            && let Some(carryall) = unit.radio_contacts.slot(0)
+            && self.is_carryall(carryall, rules)
+        {
+            self.assign_aircraft_destination(carryall, None, rules, frame_effects);
+            for message in [
+                crate::sim::radio::RadioMessage::Untether,
+                crate::sim::radio::RadioMessage::Break,
+            ] {
+                crate::sim::radio::transmit_to_contact(self, id, message, rules, frame_effects);
+            }
+        }
         // 741C4F..741C78 decides on the state after that break.
         let enter_radio_arm = {
             let actor = self

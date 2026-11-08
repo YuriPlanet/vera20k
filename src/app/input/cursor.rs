@@ -1032,8 +1032,9 @@ pub(super) fn capability_cursor_for_hover(
         // 5. Entry: a Unit's Select over a friendly building it may enter
         //    (refinery, Service Depot, Tank Bunker, Grinder), an Infantryman's
         //    over a Grinding= building, either's over a friendly passenger
-        //    carrier, Alt's Move included, and an Aircraft's NoEnter over a
-        //    UnitRepair= building (`context_order::entry_action`).
+        //    carrier, Alt's Move included, an Aircraft's NoEnter over a
+        //    UnitRepair= building and a Carryall's Tote over a Unit
+        //    (`context_order::entry_action`).
         if let Some(action) = rules
             .filter(|_| {
                 matches!(
@@ -1057,6 +1058,8 @@ pub(super) fn capability_cursor_for_hover(
                 crate::sim::world::EntryClickAction::NoEnter => CursorFeedbackKind::NoEnter,
                 crate::sim::world::EntryClickAction::Grind => CursorFeedbackKind::Grind,
                 crate::sim::world::EntryClickAction::Enter => CursorFeedbackKind::Enter,
+                crate::sim::world::EntryClickAction::Tote => CursorFeedbackKind::Tote,
+                crate::sim::world::EntryClickAction::Nothing => CursorFeedbackKind::Default,
             };
         }
 
@@ -1683,6 +1686,8 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         CursorFeedbackKind::Minimap(id) => Some(id),
         CursorFeedbackKind::Enter | CursorFeedbackKind::Grind => Some(CursorId::Enter),
         CursorFeedbackKind::NoEnter => Some(CursorId::NoEnter),
+        // `SetCursorFromAction @ 0x004AAE90`: action 0x11, row 0x36.
+        CursorFeedbackKind::Tote => Some(CursorId::Tote),
         CursorFeedbackKind::EngineerDamage => Some(CursorId::EngineerRepair),
         CursorFeedbackKind::RepairAction(valid) => Some(if valid {
             CursorId::Repair

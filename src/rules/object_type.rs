@@ -2576,6 +2576,11 @@ pub struct ObjectType {
     /// ctor 0 @ `0x005237DC`): an IFV carrying this infantryman names it in
     /// its turret tooltip (`0x00746BB8`).
     pub use_own_name: bool,
+    /// InfantryType `Civilian=` (`+0xEC1`, ReadBool `0x0052454A..0x00524564`,
+    /// ctor 0 @ `0x005237A1`): an evacuee. An aircraft such a passenger sends
+    /// DOCK_NOW retreats (`0x00419349`), and a retreating transport that
+    /// carries one off the map counts it evacuated (`0x00413CF9`).
+    pub civilian: bool,
     /// `DestroyParticleSystems=` CSV list. Parsed for completeness;
     /// no live consumer in retail YR.
     pub destroy_particle_systems: Vec<String>,
@@ -5517,6 +5522,7 @@ impl ObjectType {
             cyborg: section.read_bool("Cyborg", false),
             use_own_name: category == ObjectCategory::Infantry
                 && section.read_bool("UseOwnName", false),
+            civilian: category == ObjectCategory::Infantry && section.read_bool("Civilian", false),
             destroy_particle_systems: Vec::new(),
             damage_smoke_offset: IVec3::from_array(
                 section.read_coord_tokens("DamageSmokeOffset", [0; 3]),

@@ -745,13 +745,10 @@ fn ejection_keeps_the_passengers_target_unless_it_leaves_another_houses_open_tra
         }
         let effects = crate::sim::world::FrameEffects::default();
         if transport_type == "SHAD" {
-            assert!(super::eject_from_aircraft(
-                &mut fx.sim,
-                &fx.rules,
-                None,
-                transport,
-                effects
-            ));
+            assert!(
+                super::eject_from_aircraft(&mut fx.sim, &fx.rules, None, transport, effects)
+                    .is_some()
+            );
         } else {
             assert!(matches!(
                 super::eject_head_passenger(&mut fx.sim, &fx.rules, transport, None, effects),
@@ -1265,26 +1262,49 @@ fn nighthawk_unloads_only_when_landed() {
     assert_eq!(fx.cargo_ids(shad).len(), 2, "pitched: nothing leaves");
 
     pitch(&mut fx, SIM_ZERO);
-    let mut frames = Vec::new();
-    for _ in 0..80 {
-        crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
-        fx.sim
-            .session
-            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
-        for &id in &pax {
-            if fx.revealed(id) && !frames.iter().any(|(seen, _)| *seen == id) {
-                frames.push((id, fx.frame()));
-            }
+    let dispatch = |fx: &mut Fixture, frames: u32| {
+        for _ in 0..frames {
+            crate::sim::aircraft::dispatch_mission(
+                &mut fx.sim,
+                shad,
+                &fx.rules,
+                Default::default(),
+            );
+            fx.sim
+                .session
+                .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
         }
-    }
-    assert_eq!(
-        frames.len(),
-        2,
-        "landed: both passengers leave ({frames:?})"
+    };
+    dispatch(&mut fx, 80);
+    assert!(fx.revealed(pax[1]), "landed: the cargo head leaves");
+    // `0x00415C27..0x00415C3F` tethers the aircraft to it, and state 3
+    // waits while tethered (`0x004154BB`).
+    let tether = |fx: &Fixture| {
+        fx.sim
+            .substrate
+            .entities
+            .get(shad)
+            .unwrap()
+            .tether
+            .partner()
+    };
+    assert_eq!(tether(&fx), Some(pax[1]));
+    assert!(!fx.revealed(pax[0]), "the next waits for the tether");
+
+    // The first one's cell step sends radio 8, which releases it.
+    crate::sim::radio::transmit_to_contact(
+        &mut fx.sim,
+        pax[1],
+        crate::sim::radio::RadioMessage::RequestClearance,
+        &fx.rules,
+        Default::default(),
     );
-    assert_eq!(frames[0].0, pax[1], "cargo head first");
-    let gap = frames[1].1 - frames[0].1;
-    assert!((14..=16).contains(&gap), "one per [Unload] dispatch: {gap}");
+    assert_eq!(tether(&fx), None);
+    dispatch(&mut fx, 16);
+    assert!(
+        fx.revealed(pax[0]),
+        "released: the next leaves on its dispatch"
+    );
     for &id in &pax {
         assert_eq!(fx.cell(id), (20, 20), "placed at the aircraft's cell");
     }
@@ -1294,7 +1314,9 @@ fn nighthawk_unloads_only_when_landed() {
 /// `0x00415B10`: five conscripts leave a landed Nighthawk one per `[Unload]`
 /// dispatch, each `Unlimbo`ed at the aircraft's own cell and sent on a Move
 /// to the first table-order neighbour (`DAT_00817A58`: S, SW, SE, NW, NE, N,
-/// W, E) its `Can_Enter_Cell` accepted; the aircraft ends up in Guard.
+/// W, E) its `Can_Enter_Cell` accepted; each next one waits until the last
+/// one out has stepped away (the tether, `0x00415C27`); the aircraft ends up
+/// in Guard.
 /// Native gives no distinctness guarantee across passengers — the scan
 /// restarts at S every time — so the assertion is membership in the eight
 /// neighbours plus the table's first entry for the first passenger.
@@ -1314,10 +1336,19 @@ fn nighthawk_ejects_five_passengers_to_scanned_neighbours() {
     // (id, reveal frame, mission, destination) captured the tick each surfaces.
     type Surfaced = (u64, u32, MissionId, Option<(u16, u16)>);
     let mut out: Vec<Surfaced> = Vec::new();
-    for _ in 0..200 {
+    for _ in 0..1200 {
         fx.tick();
         for &id in &pax {
             if fx.revealed(id) && !out.iter().any(|(seen, ..)| *seen == id) {
+                // Tethered to the last one out, the aircraft lets the next
+                // go only once that one stepped off its cell.
+                if let Some(&(previous, ..)) = out.last() {
+                    assert_ne!(
+                        fx.cell(previous),
+                        (20, 20),
+                        "{id} left before {previous} stepped away"
+                    );
+                }
                 let e = fx.sim.substrate.entities.get(id).expect("passenger");
                 let dest =
                     crate::sim::movement::movement_goal_cell(e).or(match e.navigation.nav_com() {
@@ -1342,8 +1373,8 @@ fn nighthawk_ejects_five_passengers_to_scanned_neighbours() {
     for pair in out.windows(2) {
         let gap = pair[1].1 - pair[0].1;
         assert!(
-            (14..=16).contains(&gap),
-            "one per [Unload] dispatch: gap {gap} ({out:?})"
+            gap >= 14,
+            "one per [Unload] dispatch at most: gap {gap} ({out:?})"
         );
     }
     let neighbours: Vec<(u16, u16)> = super::DIRECTION_DELTAS
@@ -1366,7 +1397,7 @@ fn nighthawk_ejects_five_passengers_to_scanned_neighbours() {
     // passenger south.
     assert_eq!(out[0].3, Some((20, 21)), "first passenger scanned S first");
 
-    for _ in 0..40 {
+    for _ in 0..400 {
         fx.tick();
     }
     assert!(fx.cargo_ids(shad).is_empty());
@@ -2264,13 +2295,16 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
             .unwrap();
             let rng_before = fx.sim.scenario_rng.state();
             if aircraft {
-                assert!(!super::eject_from_aircraft(
-                    &mut fx.sim,
-                    &fx.rules,
-                    None,
-                    transport,
-                    crate::sim::world::FrameEffects::default()
-                ));
+                assert!(
+                    super::eject_from_aircraft(
+                        &mut fx.sim,
+                        &fx.rules,
+                        None,
+                        transport,
+                        crate::sim::world::FrameEffects::default()
+                    )
+                    .is_none()
+                );
             } else {
                 assert!(matches!(
                     super::eject_head_passenger(

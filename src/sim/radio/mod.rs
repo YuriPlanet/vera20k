@@ -344,7 +344,10 @@ fn transmit_over_out(
 pub enum RadioMessage {
     Hello = 0x02,
     Break = 0x03,
-    DockingComplete = 0x07, // name inferred
+    /// Hold still: a Carryall about to lift a Unit sends it
+    /// (`0x00416EC3`); the Unit drops its destination and Target, queues
+    /// Sleep and tethers itself to the sender (`0x0073750A`).
+    HoldStill = 0x07, // name inferred
     /// Infantry arrival51A80C: the common Techno receiver untethers the
     /// sender and then sends BREAK (`0x006F4C29..0x006F4C47`).
     RequestClearance = 0x08,
@@ -395,9 +398,12 @@ pub enum RadioMessage {
     Reload = 0x1F, // name inferred
     IsRepairing = 0x22,
     IsOccupied = 0x23,
+    /// "Will you be lifted?": a Carryall asks the Unit it will tote
+    /// (`0x00416E84`); the Unit's answer is `0x0073745C`.
+    WantRide = 0x24, // name inferred
 }
 // Deliberately omitted: 0x10 RESERVE_DOCK (a mission-queue verb argument, not a
-// wire message) and 0x24 WANT_RIDE (dormant in stock YR).
+// wire message).
 
 impl RadioMessage {
     /// The wire opcode byte.
@@ -414,6 +420,10 @@ impl RadioMessage {
 pub enum RadioResponse {
     None = 0,
     Roger = 1,
+    /// "Come aboard": an aircraft's answer to DOCK_NOW (`0x0041938E`), on
+    /// which a docking aircraft boards its contact
+    /// (`AircraftClass::Mission_Enter`, `0x0041A02C..0x0041A058`).
+    Attach = 0x05, // name inferred
     Negatory = 0x0A,
     /// DOCKING echoed back: a transport answers it once it has taken the
     /// sender as its own destination (Unit `0x00737955`, `0x00737984`). The
@@ -469,6 +479,7 @@ fn message_codes_match_wire_opcodes() {
 fn response_codes_match_wire_opcodes() {
     assert_eq!(RadioResponse::None.code(), 0);
     assert_eq!(RadioResponse::Roger.code(), 1);
+    assert_eq!(RadioResponse::Attach.code(), 0x05);
     assert_eq!(RadioResponse::Negatory.code(), 0x0A);
     assert_eq!(RadioResponse::AlreadyThere.code(), 0x14);
     assert_eq!(RadioResponse::Queued.code(), 0x17);

@@ -3867,7 +3867,19 @@ fn entry_orders(
         let mission = match action {
             crate::sim::world::EntryClickAction::Enter => crate::sim::mission::MissionType::Enter,
             crate::sim::world::EntryClickAction::Grind => crate::sim::mission::MissionType::Eaten,
-            crate::sim::world::EntryClickAction::NoEnter => return false,
+            crate::sim::world::EntryClickAction::NoEnter
+            | crate::sim::world::EntryClickAction::Nothing => return false,
+            // Aircraft ClickedAction (`0x00417BD0`) case 0x11:
+            // Player_Assign_Mission(Move, NULL, unit).
+            crate::sim::world::EntryClickAction::Tote => {
+                if sim.techno_player_controllable(id, rules) {
+                    orders.push(Command::MoveToObject {
+                        entity_id: id,
+                        target_id: hover.stable_id,
+                    });
+                }
+                return false;
+            }
         };
         if sim.techno_player_controllable(id, rules) {
             orders.push(Command::MegaMission {

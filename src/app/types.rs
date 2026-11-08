@@ -342,6 +342,8 @@ pub(crate) enum CursorFeedbackKind {
     Grind,
     /// NoEnter cursor (action 0x1F, row 0x1A at `0x004AB382`).
     NoEnter,
+    /// Tote cursor (action 0x11): a Carryall over a Unit it may lift.
+    Tote,
     /// Engineer action28 damage cursor. Its uncommon authored-threshold
     /// display route remains outside the ordinary repair cursor proof.
     EngineerDamage,

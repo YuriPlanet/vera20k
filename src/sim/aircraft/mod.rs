@@ -10,6 +10,7 @@
 
 mod airfield;
 pub mod attack_mission;
+pub mod carryall;
 pub mod drop_payload;
 pub(crate) mod enter_mission;
 pub(crate) mod fire_at;
@@ -170,7 +171,8 @@ pub(crate) fn restart_patrol_after_restore(entity: &mut GameEntity) {
 /// before locomotor Process (`+0x40`), so the handlers' Scenario draws and
 /// NavCom reservations interleave with the other objects' AI in Logic order.
 ///
-/// The handlers: Mission_Move (`0x004166E0`, [`move_mission`]),
+/// The handlers: Mission_Move (`0x004166E0`, [`move_mission`]; a Carryall's
+/// `0x00416D50`, [`carryall`]),
 /// Mission_Attack (`0x00417FE0`, [`attack_mission`]), Mission_Guard for
 /// Guard and Sticky and Mission_AreaGuard ([`guard_mission`]), Mission_Enter
 /// ([`enter_mission`]), Mission_Hunt (`0x00414A80`, [`hunt_mission`]),
@@ -211,7 +213,13 @@ pub(crate) fn dispatch_mission(
     let delay = match entity.mission.current().known() {
         Some(MissionType::Move) => {
             let state = handler_state(entity);
-            let (next, delay) = sim.aircraft_move(id, state, rules, registry, ctx.effects);
+            // The Move slot `0x004166C0`: a `Carryall=` type (Type+0xDFC)
+            // tail-jumps to Mission_Move_Carryall `0x00416D50`.
+            let (next, delay) = if sim.is_carryall(id, rules) {
+                sim.aircraft_move_carryall(id, state, rules, registry, ctx.effects)
+            } else {
+                sim.aircraft_move(id, state, rules, registry, ctx.effects)
+            };
             write_state(&mut sim.substrate, id, state, next);
             delay
         }
@@ -310,7 +318,8 @@ pub(crate) fn queue_mission(
 /// `read` and left `next`. Those handlers write it only where it changes,
 /// and never after their `Enter_Idle_Mode(0, 1)` (vt+0x484), whose Commence
 /// zeroes it. The stores are the handlers' own: Mission_Move_NonCarryall
-/// (`0x004166E0`) at `0x0041675D..0x00416AB6`, Mission_Attack (`0x00417FE0`)
+/// (`0x004166E0`) at `0x0041675D..0x00416AB6`, Mission_Move_Carryall
+/// (`0x00416D50`) at `0x00416EFF..0x004172A6`, Mission_Attack (`0x00417FE0`)
 /// at `0x0041801B..0x00418D17`.
 fn write_state(substrate: &mut crate::sim::world::ObjectSubstrate, id: u64, read: u8, next: u8) {
     if next != read
