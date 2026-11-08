@@ -923,6 +923,13 @@ pub(crate) fn render_shell_message_box_over_page(
             text: &overlay.text,
             cursor: crate::app::frontend::shell_pass::top_software_cursor(state, CURSOR_DEPTH),
             effects: None,
+            // Over the online client's pages the box matches the page.
+            smooth_art: state.smooth_online_menus()
+                && matches!(
+                    crate::app::input::precedence::presented(state).1,
+                    crate::app::input::precedence::ScreenPage::Wol
+                        | crate::app::input::precedence::ScreenPage::NetworkSetup
+                ),
         },
     );
 }
