@@ -87,6 +87,12 @@ impl HardwareCursor {
     pub(crate) fn set_frames_read_back(&mut self, read_back: bool) {
         self.frames_read_back = read_back;
     }
+
+    /// Whether the window system draws what stands at the pointer, so moving
+    /// it changes no pixel of the frame.
+    pub(crate) fn on_cursor_plane(&self) -> bool {
+        self.shown != Shown::Hidden
+    }
 }
 
 /// Whether the window system shows this draw's cursor, `frame` of `id`, so

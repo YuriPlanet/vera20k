@@ -637,11 +637,16 @@ impl ApplicationHandler for App {
         {
             return;
         }
-        // Any event but a redraw may change the next picture.
-        if !matches!(event, WindowEvent::RedrawRequested)
-            && let Some(state) = self.state.as_mut()
-        {
-            state.platform.redraw_gate.note_input();
+        // Any event but a redraw may change the next picture; pointer motion
+        // alone has a limit of its own.
+        if let Some(state) = self.state.as_mut() {
+            match event {
+                WindowEvent::RedrawRequested => {}
+                WindowEvent::CursorMoved { .. } | WindowEvent::AxisMotion { .. } => {
+                    state.platform.redraw_gate.note_pointer_motion();
+                }
+                _ => state.platform.redraw_gate.note_input(),
+            }
         }
         // Every screen remembers where the player puts the window.
         if matches!(event, WindowEvent::Moved(_) | WindowEvent::Resized(_))
@@ -1872,6 +1877,14 @@ impl ApplicationHandler for App {
             }
             WindowEvent::Ime(ime) => crate::app::input::ime::event(state, ime),
             WindowEvent::RedrawRequested => {
+                // Inside the draw limits the draw waits for `about_to_wait`.
+                if state
+                    .platform
+                    .redraw_gate
+                    .hold_requested_draw(Instant::now())
+                {
+                    return;
+                }
                 match Self::render_frame(state, event_loop, None, None, FramePass::Draw) {
                     Ok(FrameRenderOutcome::Deferred) => {
                         event_loop.set_control_flow(ControlFlow::Poll);
@@ -2093,7 +2106,7 @@ impl ApplicationHandler for App {
                 // An invisible window receives no RedrawRequested; drive the
                 // same frame directly, as the hidden capture drivers do. It
                 // stands for a visible window, so a still picture is probed.
-                let pass = match state.platform.redraw_gate.next_pass() {
+                let pass = match state.platform.redraw_gate.next_pass(Instant::now()) {
                     crate::app::match_runtime::redraw_gate::NextPass::Probe => FramePass::Probe,
                     crate::app::match_runtime::redraw_gate::NextPass::Draw => FramePass::Draw,
                 };
@@ -2147,24 +2160,30 @@ impl ApplicationHandler for App {
                         shell_scroll_wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil),
                     );
                 }
-            } else if state.platform.redraw_gate.next_pass()
+            } else if state.platform.redraw_gate.next_pass(Instant::now())
                 == crate::app::match_runtime::redraw_gate::NextPass::Probe
             {
-                // The presented picture still stands. Service the match as the
-                // hidden loop does; the pass draws only once the picture
-                // changed. Window events and explicit redraw requests still
-                // draw at once, and a picture that starts moving goes back to
-                // a redraw per refresh from the next refresh.
-                match Self::render_frame(state, event_loop, None, None, FramePass::Probe) {
-                    Ok(FrameRenderOutcome::Deferred) => {
+                // The presented picture still stands, or the draw limits hold
+                // the next one. Service the match as the hidden loop does; the
+                // pass draws only once the picture changed and the limits let
+                // it. Window events draw at once, and a moving picture or an
+                // asked-for redraw draws as soon as the limits pass.
+                let pass = state
+                    .platform
+                    .redraw_gate
+                    .probe_due(Instant::now())
+                    .then(|| Self::render_frame(state, event_loop, None, None, FramePass::Probe));
+                match pass {
+                    Some(Ok(FrameRenderOutcome::Deferred)) => {
                         event_loop.set_control_flow(ControlFlow::Poll);
                         state.platform.window.request_redraw();
                     }
                     outcome => {
-                        if let Err(err) = outcome {
+                        if let Some(Err(err)) = outcome {
                             log::error!("Render: {err:#}");
                         }
-                        if state.platform.redraw_gate.next_pass()
+                        let now = Instant::now();
+                        if state.platform.redraw_gate.next_pass(now)
                             == crate::app::match_runtime::redraw_gate::NextPass::Draw
                         {
                             event_loop.set_control_flow(
@@ -2172,8 +2191,7 @@ impl ApplicationHandler for App {
                             );
                             state.platform.window.request_redraw();
                         } else {
-                            let wake = Instant::now()
-                                + crate::app::match_runtime::frame_pacer::SERVICE_WAKE;
+                            let wake = state.platform.redraw_gate.probe_wake(now);
                             event_loop.set_control_flow(ControlFlow::WaitUntil(
                                 shell_scroll_wake.map_or(wake, |service| service.min(wake)),
                             ));
