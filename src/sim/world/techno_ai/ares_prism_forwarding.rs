@@ -37,8 +37,6 @@
 //!   (`10016490`) draw no beam or bolt (presentation; the bolt would also
 //!   take its Main draws and spark system). The `IsLaser=` beam, `Report=`
 //!   and `ROF=` of a support weapon are ported.
-//! - `LaserThickness=` (WeaponTypeExt `+0x64`) is not read, so every beam
-//!   starts at the -1 default's thickness of 3 before `Intensity`.
 //! - The BuildingExt destructor's RemoveFromNetwork: a building removed
 //!   without a Detach_All leaves its id in its neighbours' links, which every
 //!   walk below skips.

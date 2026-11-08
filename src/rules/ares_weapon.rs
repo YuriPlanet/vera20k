@@ -218,6 +218,10 @@ pub struct AresWeaponVisuals {
     pub(crate) wave_color: Option<[i32; 3]>,
     /// `Wave.ReverseAgainstVehicles/Aircraft/Buildings/Infantry/Others`.
     wave_reverse: [bool; 5],
+    /// `LaserThickness` (+0x64, Valueable<int>, -1): the laser's line width
+    /// for SpawnLaser (100563A0), FireAt (100563D0) and the Prism support
+    /// beam (10016490); each keeps its own default for -1.
+    pub(crate) laser_thickness: i32,
 }
 
 impl AresWeaponVisuals {
@@ -237,6 +241,7 @@ impl AresWeaponVisuals {
             wave_intensity: None,
             wave_color: None,
             wave_reverse: [is_mag_beam, false, false, false, false],
+            laser_thickness: -1,
         }
     }
 
@@ -280,6 +285,7 @@ impl AresWeaponVisuals {
             visuals.bolt_colors[slot] =
                 section.read_ares_nullable_color(key, visuals.bolt_colors[slot]);
         }
+        visuals.laser_thickness = section.read_ares_int("LaserThickness", visuals.laser_thickness);
         visuals
     }
 
@@ -448,6 +454,8 @@ mod tests {
     fn laser_wave_and_detonation_keys_read_over_constructor_defaults() {
         let visuals = read("[W]\nWave.IsLaser=yes\nWave.IsBigLaser=x\n", false);
         assert_eq!(visuals.wave_is_laser, [true, false]);
+        assert_eq!(visuals.laser_thickness, -1);
+        assert_eq!(read("[W]\nLaserThickness=6\n", false).laser_thickness, 6);
         assert_eq!(read("[W]\nDamage=1\n", false).wave_is_laser, [false; 2]);
         let file = IniFile::from_str(
             "[W]\nIvanBomb.CanDetonateTimeBomb=no\nIvanBomb.CanDetonateDeathBomb=bad\n",

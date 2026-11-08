@@ -1002,7 +1002,7 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
     ) else {
         return AoEDamageResult::default();
     };
-    for &(dx, dy) in cell_spread::splash_cells(warhead.cell_spread_f64) {
+    for &(dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64).iter() {
         let cell = collector.prepare_cell(dx, dy, warhead, &mut layer_context, &mut cell_prelude);
         collector.capture_cell(&cell, entities, &layer_context, terrain_objects);
     }
@@ -2739,6 +2739,9 @@ mod tests {
         }
     }
 
+    /// Stock table only: Ares walks the CellSpreadEnumerator instead
+    /// (`cell_spread::area_damage_cells`, hooks `0x4895B8`..`0x4899BE`).
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn gsi_04_07_damage_band11_repeated_cell_dispatches_receiver_twice() {
         let ini = IniFile::from_str(
@@ -2843,6 +2846,63 @@ mod tests {
         assert_eq!(entities.get(100).unwrap().health.current(), 70);
         assert_eq!(entities.get(300).unwrap().health.current(), 70);
         assert_eq!(entities.get(400).unwrap().health.current(), 70);
+    }
+
+    /// Ares 3.0 DamageArea_CellSpread1/2/3 (`100531F0`/`10053250`/`10053270`,
+    /// hooks `0x4895B8`/`0x4895C7`/`0x4899BE`): the CellSpreadEnumerator's
+    /// first ring visits `(-1,-1)` before `(1,-1)`; the stock table visits
+    /// `(1,-1)` first.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_area_damage_walks_the_cell_spread_enumerator_ring_order() {
+        let ini = IniFile::from_str(
+            "[InfantryTypes]\n\
+             [VehicleTypes]\n0=TESTUNIT\n\
+             [AircraftTypes]\n\
+             [BuildingTypes]\n\
+             [Warheads]\n0=RINGWH\n\
+             [TESTUNIT]\nStrength=100\nArmor=heavy\n\
+             [RINGWH]\nCellSpread=1\nPercentAtMax=1\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+        );
+        let rules = RuleSet::from_ini(&ini).expect("ring rules");
+        let warhead = rules.warhead("RINGWH").unwrap().clone();
+        let make_ground = |stable_id, rx, ry, sub_x, sub_y| {
+            let mut entity = GameEntity::test_default(stable_id, "TESTUNIT", "Soviet", rx, ry);
+            entity
+                .position
+                .set_sub_x_for_test(SimFixed::from_num(sub_x));
+            entity
+                .position
+                .set_sub_y_for_test(SimFixed::from_num(sub_y));
+            entity
+        };
+        let mut entities = EntityStore::new();
+        entities.insert(make_ground(100, 20, 20, 128, 128));
+        // (1,-1) and (-1,-1), each about 182 leptons from the impact.
+        entities.insert(make_ground(200, 21, 19, 0, 255));
+        entities.insert(make_ground(300, 19, 19, 255, 255));
+        let mut occupancy = OccupancyGrid::new();
+        for &(id, rx, ry) in &[(100, 20, 20), (200, 21, 19), (300, 19, 19)] {
+            prepend_ground(&mut occupancy, rx, ry, id);
+        }
+        let mut terrain = crate::map::resolved_terrain::test_grid(48, 48, test_terrain_cell);
+        let mut interner = test_interner();
+        let _handles =
+            crate::sim::type_handle_table::ResolvedRuleHandles::resolve(&rules, &mut interner);
+        let warhead_ref = interner.intern("RINGWH");
+        let result = apply_aoe_damage(
+            &mut entities,
+            20,
+            20,
+            30,
+            &warhead,
+            &rules,
+            &mut interner,
+            (crate::sim::combat::RAD_NO_ATTACKER, warhead_ref),
+            native_lists(&occupancy, &mut terrain, None),
+        );
+        assert_eq!(hit_ids(&result.hits), vec![100, 300, 200]);
     }
 
     #[test]

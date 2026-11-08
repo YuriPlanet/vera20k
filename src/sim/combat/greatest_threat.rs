@@ -421,7 +421,10 @@ fn threat_score(
 
     // B: the candidate's selected weapon against the scorer. A candidate
     // already targeting the scorer contributes the negated term (`FCHS` at
-    // `0x0070CEB9`).
+    // `0x0070CEB9`). Both verses terms read `WarheadType::interaction`, which
+    // under Ares is the extension's table, as TechnoClass_EvalThreatRating_
+    // Verses1 (10054310, hook 0x70CEA0) and TechnoClass_EvalThreatRating
+    // (100542E0, hook 0x70CF45) read it.
     let scorer_as_target = techno_target_facts(
         scorer,
         scorer_type,

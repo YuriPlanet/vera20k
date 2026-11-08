@@ -217,8 +217,10 @@ pub(crate) fn apply_multiplier_crate(
         *slot =
             X87::store_f64_masked_chop(X87::mul(X87::load_f64(magnitude), X87::load_f64(*slot)));
         // Ares Armor2@1005F870 writes Ext+88 then calls RecalculateStats
-        // @1005F89D; Firepower2@1005F997 does the same for Ext+80. Both
-        // aggregate before the recipient callback/next actor (Ares Crates.cpp).
+        // @1005F89D; Firepower2 (1005F970, hook 0x483226) does the same for
+        // Ext+80 at 1005F997. Both store the magnitude into a 1.0 slot, the
+        // product above, and aggregate before the recipient callback/next
+        // actor (Ares Crates.cpp).
         #[cfg(feature = "ares")]
         entity.recompute_ares_attached_stats(rules, interner);
         let owner = entity.owner();

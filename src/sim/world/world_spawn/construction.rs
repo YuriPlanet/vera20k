@@ -350,6 +350,8 @@ impl Simulation {
         // no owner guard; a Techno without a represented house is a
         // fixture case. Rust never re-runs this InitFromType tail (Unit
         // slot +0x24 can); only retail [SPY], an Infantry, sets the keys.
+        // Ares 3.0 Sides_Disguise (1002F9C0, hook 0x6F422F) wears the owner
+        // house's GetDisguise instead, which `side_disguise` answers.
         if obj.can_disguise
             && obj.perma_disguise
             && let Some(side) = houses.get(&ge.owner()).map(|h| h.side_index())

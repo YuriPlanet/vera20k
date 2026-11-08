@@ -69,8 +69,6 @@ PrismForwarding.EliteSupportWeapon=     ; same, elite array
 
 - `IsRadBeam=` and `IsElectricBolt=` support weapons draw nothing; their
   `Report=` and `ROF=` still apply.
-- `LaserThickness=` is not read: beams start at 3 before `Intensity`, and
-  Fire_IsLaser's non-Prism laser widths stay stock.
 - The Hospital/Armory eviction of the Sell and ChangeOwner hooks.
 - The BuildingExt destructor's cleanup for a building removed without a
   Detach_All; the network walks skip such ids.

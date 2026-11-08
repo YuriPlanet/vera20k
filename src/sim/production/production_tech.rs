@@ -72,8 +72,16 @@ fn append_construction_options(
     let Some(building) = sim.entities().get(building_id) else {
         return;
     };
+    // Ares 3.0 BuildingClass_UpdateConstructionOptions_ExcludeDisabled
+    // (10053D80, hook 0x4456E5) adds IsUnderEMP (vt+0x37C, Building's is
+    // Techno 0x0070EFD0: +0x504 > 0) to the limbo test.
+    #[cfg(feature = "ares")]
+    let disabled = building.emp_remaining() > 0;
+    #[cfg(not(feature = "ares"))]
+    let disabled = false;
     if sim.session.current_house() != Some(building.owner())
         || building.lifecycle.in_limbo()
+        || disabled
         || !building.discovery.discovered_by_current_house()
         || !building.building_online()
     {

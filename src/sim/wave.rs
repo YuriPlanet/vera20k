@@ -624,6 +624,9 @@ impl Wave {
 
     /// gamemd-derived: `WaveClass::UpdateCells @ 0x007610F0`.
     fn update_cells(&mut self, terrain: Option<&ResolvedTerrainGrid>) {
+        // Stock Clear frees the vector; Ares 3.0 WaveClass_RecalculateAffected
+        // Cells_Clear (10057180, hook 0x76110B) only zeroes its count. Either
+        // leaves it empty, which `Vec::clear` is.
         self.recorded_cells.clear();
         if self.active_geometry {
             let mut previous = lepton_cell(self.source);

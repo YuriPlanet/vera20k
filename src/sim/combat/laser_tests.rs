@@ -49,10 +49,13 @@ fn weapon_ini(name: &str, input: &Value) -> String {
     let [r, g, b] = values_or(&input["inner"], [100, 120, 140]);
     let [or, og, ob] = values_or(&input["outer"], [10, 20, 30]);
     let [sr, sg, sb] = values_or(&input["spread"], [0, 0, 0]);
+    let thickness = input["laser_thickness"]
+        .as_i64()
+        .map_or_else(String::new, |value| format!("LaserThickness={value}\n"));
     format!(
         "[{name}]\nIsLaser={is_laser}\nIsHouseColor={house}\nIsSingleColor={single}\nIsBigLaser={big}\n\
          LaserDuration={duration}\nLaserInnerColor={r},{g},{b}\n\
-         LaserOuterColor={or},{og},{ob}\nLaserOuterSpread={sr},{sg},{sb}\n"
+         LaserOuterColor={or},{og},{ob}\nLaserOuterSpread={sr},{sg},{sb}\n{thickness}"
     )
 }
 
@@ -135,16 +138,21 @@ fn assert_birth(actual: LaserBirth, expected: &Value, name: &str) {
         expected["duration"].as_i64().unwrap() as i32,
         "{name} duration"
     );
-    assert_eq!(
-        actual.width,
-        expected["width"].as_i64().unwrap() as i32,
-        "{name} width"
-    );
-    assert_eq!(
-        actual.supported,
-        expected["supported"] == 1,
-        "{name} support flag"
-    );
+    // The native widths are stock FireAt's; Ares Fire_IsLaser (100563D0)
+    // replaces them ([`ares_laser_thickness_sets_the_fire_at_and_spawn_laser_widths`]).
+    #[cfg(not(feature = "ares"))]
+    {
+        assert_eq!(
+            actual.width,
+            expected["width"].as_i64().unwrap() as i32,
+            "{name} width"
+        );
+        assert_eq!(
+            actual.supported,
+            expected["supported"] == 1,
+            "{name} support flag"
+        );
+    }
 }
 
 #[test]
@@ -270,6 +278,7 @@ fn admitted_laser_births_match_original_building_and_unit_callers() {
 
 /// FireAt `0x006FF549..0x006FF571`: an infantryman's (LUNR's) house-colour
 /// laser is 2 wide like a Unit's; an explicit-colour one keeps 1.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn an_infantry_house_color_laser_is_two_wide() {
     for (house_color, width) in [(true, 2), (false, 1)] {
@@ -303,6 +312,69 @@ fn an_infantry_house_color_laser_is_two_wide() {
             .collect::<Vec<_>>();
         assert_eq!(widths, [width], "house colour {house_color}");
     }
+}
+
+/// Ares TechnoClass_Fire_IsLaser (100563D0, hook 0x6FF4DE) replaces FireAt's
+/// widths: without `LaserThickness=` a non-building beam is 2 wide whatever
+/// its colour and a non-Prism building's 3; a set thickness replaces both,
+/// supported above 3 for a non-building. TechnoClass_FireLaser (100563A0,
+/// hook 0x6FD438) gives a direct SpawnLaser a thickness above 1.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_laser_thickness_sets_the_fire_at_and_spawn_laser_widths() {
+    let fire = |kind: &str, category, input: Value| {
+        let rules = fixture_rules(&input);
+        let mut sim = Simulation::new();
+        sim.session.set_binary_frame_for_test(200);
+        place(&mut sim, 1, kind, category, [3200, 3200, 0]);
+        place(&mut sim, 2, "TARGET", EntityCategory::Unit, [640, 640, 0]);
+        laser::fired(
+            &mut sim,
+            &rules,
+            1,
+            TargetKind::Entity(2),
+            0,
+            rules.weapon("LaserProbe").unwrap(),
+            0,
+        );
+        sim.lifecycle_outputs
+            .iter()
+            .find_map(|output| match output {
+                LifecycleOutput::LaserCreated(birth) => Some((birth.width, birth.supported)),
+                _ => None,
+            })
+    };
+    let infantry = EntityCategory::Infantry;
+    let building = EntityCategory::Structure;
+    assert_eq!(
+        fire("INF", infantry, json!({ "house_color": false })),
+        Some((2, false))
+    );
+    assert_eq!(fire("OTHER", building, json!({})), Some((3, false)));
+    assert_eq!(
+        fire("INF", infantry, json!({ "laser_thickness": 5 })),
+        Some((5, true))
+    );
+    assert_eq!(
+        fire("OTHER", building, json!({ "laser_thickness": 5 })),
+        Some((5, false))
+    );
+
+    let rules = fixture_rules(&json!({ "laser_thickness": 5 }));
+    let mut sim = Simulation::new();
+    place(&mut sim, 1, "UNIT", EntityCategory::Unit, [1280, 1280, 0]);
+    place(&mut sim, 2, "TARGET", EntityCategory::Unit, [1536, 1280, 0]);
+    let birth = *laser::create(
+        &mut sim,
+        &rules,
+        1,
+        crate::sim::projectile::ProjectileTarget::Entity(2),
+        0,
+        rules.weapon("LaserProbe").unwrap(),
+        Some(ProjectileCoord::new(1280, 1280, 0)),
+    )
+    .unwrap();
+    assert_eq!((birth.width, birth.supported), (5, false));
 }
 
 /// Phobos `TechnoClass_LaserZap_IsSingleColor` (`0x6FD446`): a stock FireAt

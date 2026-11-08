@@ -61,6 +61,10 @@ pub(crate) fn fired(
     if super::world_fire::fire_at_effect(weapon) != super::world_fire::FireAtEffect::Laser {
         return;
     }
+    // 100563D0 reads the fired weapon's extension (EBX), not the building
+    // arm's re-read below.
+    #[cfg(feature = "ares")]
+    let thickness = weapon.ares_visuals.laser_thickness;
     let Some(source) = world.substrate.entities.get(source_id) else {
         return;
     };
@@ -85,38 +89,46 @@ pub(crate) fn fired(
         weapon
     };
     #[cfg(not(feature = "ares"))]
-    let prism = source.category() == EntityCategory::Structure && rules.is_prism_type(obj);
-    // Ares TechnoClass_Fire_IsLaser (100563D0, hook 0x6FF4DE), its Prism
-    // arm: a `PrismForwarding=` tower that can fire, with SupportingPrisms
-    // (Ares: the longest chain behind it), thickens by `-Intensity` (a
-    // negative one) or `Intensity` per link (a positive one) and is always
-    // supported.
+    let (width, supported) = {
+        let prism = source.category() == EntityCategory::Structure && rules.is_prism_type(obj);
+        let supported = prism && prism_support_count > 0;
+        // FireAt6FF549..6FF571: every non-building firer's house-colour laser is
+        // 2 wide (a LUNR on MoonPatr, which makes it buildable); a non-Prism
+        // building keeps the constructor's 1.
+        let width = if prism {
+            if supported { 5 } else { 3 }
+        } else if source.category() != EntityCategory::Structure && weapon.is_house_color {
+            2
+        } else {
+            1
+        };
+        (width, supported)
+    };
+    // Ares TechnoClass_Fire_IsLaser (100563D0, hook 0x6FF4DE) skips the stock
+    // widths (to 0x6FF656). The fired weapon's `LaserThickness=` (unset -1)
+    // sets them: a building's beam is it or 3, and a `PrismForwarding=` tower
+    // that can fire, with SupportingPrisms (Ares: the longest chain behind
+    // it), thickens by `-Intensity` (a negative one) or `Intensity` per link
+    // (a positive one) and is always supported. Any other firer's beam is it
+    // (supported above 3) or 2.
     #[cfg(feature = "ares")]
-    let (prism, intensity) = {
+    let (width, supported) = if source.category() == EntityCategory::Structure {
         let forwarding = obj.building_type_ext().prism_forwarding();
-        (
-            source.category() == EntityCategory::Structure && forwarding.can_attack(),
-            forwarding.intensity(),
-        )
-    };
-    let supported = prism && prism_support_count > 0;
-    // FireAt6FF549..6FF571: every non-building firer's house-colour laser is
-    // 2 wide (a LUNR on MoonPatr, which makes it buildable); a non-Prism
-    // building keeps the constructor's 1.
-    #[cfg(not(feature = "ares"))]
-    let supported_width = 5;
-    #[cfg(feature = "ares")]
-    let supported_width = match intensity {
-        i32::MIN..0 => 3i32.wrapping_sub(intensity),
-        0 => 3,
-        _ => 3i32.wrapping_add(intensity.wrapping_mul(prism_support_count)),
-    };
-    let width = if prism {
-        if supported { supported_width } else { 3 }
-    } else if source.category() != EntityCategory::Structure && weapon.is_house_color {
-        2
+        let base = if thickness < 0 { 3 } else { thickness };
+        if forwarding.can_attack() && prism_support_count > 0 {
+            let width = match forwarding.intensity() {
+                intensity @ i32::MIN..0 => base.wrapping_sub(intensity),
+                0 => base,
+                intensity => base.wrapping_add(intensity.wrapping_mul(prism_support_count)),
+            };
+            (width, true)
+        } else {
+            (base, false)
+        }
+    } else if thickness < 0 {
+        (2, false)
     } else {
-        1
+        (thickness, thickness > 3)
     };
     if let Some(laser) = create(
         world,
@@ -197,7 +209,7 @@ pub(crate) fn create<'w>(
             )
         };
     let to = super::fire_coord::effect_target_coordinate(world, rules, target)?;
-    Some(construct(
+    let birth = construct(
         &world.session,
         &mut world.lifecycle_outputs,
         from,
@@ -206,7 +218,14 @@ pub(crate) fn create<'w>(
         weapon.laser_duration,
         color,
         NativeF32Bits::POSITIVE_ZERO,
-    ))
+    );
+    // Ares 3.0 TechnoClass_FireLaser (100563A0, hook 0x6FD438): a
+    // `LaserThickness=` above 1 replaces the constructed width.
+    #[cfg(feature = "ares")]
+    if weapon.ares_visuals.laser_thickness > 1 {
+        birth.width = weapon.ares_visuals.laser_thickness;
+    }
+    Some(birth)
 }
 
 /// Phobos `BulletExt::SimulatedFiringLaser`: the same copied birth from
@@ -375,6 +394,14 @@ pub(crate) fn support_beam(
         NativeF32Bits::POSITIVE_ZERO,
     );
     birth.width = 3;
+    // 10016490 gives a support weapon's beam its `LaserThickness=` when it
+    // is not negative (the unset -1 keeps 3).
+    #[cfg(feature = "ares")]
+    if let Some(weapon) = weapon
+        && weapon.ares_visuals.laser_thickness >= 0
+    {
+        birth.width = weapon.ares_visuals.laser_thickness;
+    }
     if supporting_prisms > 0 {
         if intensity < 0 {
             birth.width = birth.width.wrapping_sub(intensity);

@@ -618,7 +618,7 @@ pub(crate) fn collect_area(
             .cell_target_detaches
             .append(&mut cliff_effects.cell_target_detaches);
     }
-    for &(dx, dy) in cell_spread::splash_cells(warhead.cell_spread_f64) {
+    for &(dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64).iter() {
         let (spread_cell, detached_cell) = {
             let mut prelude = crate::sim::world::simulation_area_damage_cell_prelude(
                 rules,
