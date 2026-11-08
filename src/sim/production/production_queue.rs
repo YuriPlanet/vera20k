@@ -272,6 +272,17 @@ pub(in crate::sim) fn exit_produced_object(
     else {
         return BuildingExit::Failed;
     };
+    // Ares `CloningFacility=yes` is the VehicleType counterpart of the Infantry
+    // arm's Cloning Vats loop, so it runs for every exit arm before placement.
+    #[cfg(feature = "ares")]
+    exit_cloning_facility_copies(
+        sim,
+        rules,
+        producer_id,
+        product_type,
+        overlay_registry,
+        effects,
+    );
     // NPSE 2.0 Exit_Object C33940..C33998 reads the producer's Naval,
     // unlike capped starts and abandonment, which read the product's type.
     let Some(kind) = UnitChoiceKind::of(product_type.category, producer_type.naval) else {
@@ -934,6 +945,9 @@ fn exit_cloning_vat_copies(
             producer_type.factory_type()
                 == Some(crate::rules::object_type::FactoryType::InfantryType)
                 && !producer_type.cloning
+                // Ares `Cloneable=no` also suppresses Cloning Vats infantry
+                // copies; stock YR keeps the default true.
+                && product_type.cloneable
         });
     if !clones {
         return;
@@ -974,6 +988,97 @@ fn exit_cloning_vat_copies(
             sim,
             rules,
             vat_id,
+            clone_id,
+            (0, 0),
+            overlay_registry,
+            effects,
+        );
+    }
+}
+
+/// Ares `CloningFacility=` ([Buildings / Factories and Cloning]): the
+/// VehicleType version of the Cloning Vats. When an ordinary yard finishes a
+/// cloneable VehicleType, every `CloningFacility=yes` yard of the same House
+/// with the same `Naval=` setting kicks out one free copy. `ClonedAs=`
+/// replaces the copy's type; `Cloning=yes` vats keep their own Infantry arm
+/// loop above.
+///
+/// The producing yard must not itself be a cloning facility, otherwise every
+/// copy would recursively clone itself. RESIDUAL: `ClonedAt=` lists and the
+/// `Factory=` exclusion are not modelled.
+#[cfg(feature = "ares")]
+fn exit_cloning_facility_copies(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    producer_id: u64,
+    product_type: &crate::rules::object_type::ObjectType,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    effects: FrameEffects<'_>,
+) {
+    use crate::rules::object_type::ObjectCategory;
+    if product_type.category != ObjectCategory::Vehicle || !product_type.cloneable {
+        return;
+    }
+    let Some(producer) = sim.substrate.entities.get(producer_id) else {
+        return;
+    };
+    let owner = producer.owner();
+    let Some(producer_type) = sim.entity_object_type(producer, rules) else {
+        return;
+    };
+    if producer_type.cloning || producer_type.cloning_facility {
+        return;
+    }
+    let naval = producer_type.naval;
+    let clone_name = product_type
+        .cloned_as
+        .as_deref()
+        .unwrap_or(product_type.id.as_str());
+    let Some(clone_type) = rules
+        .object(clone_name)
+        .filter(|object| object.category == ObjectCategory::Vehicle)
+    else {
+        return;
+    };
+    let facility_ids: Vec<u64> = sim
+        .houses
+        .get(&owner)
+        .map(|house| house.base_projection().buildings().to_vec())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|id| {
+            sim.substrate
+                .entities
+                .get(*id)
+                .and_then(|facility| sim.entity_object_type(facility, rules))
+                .is_some_and(|object| object.cloning_facility && object.naval == naval)
+        })
+        .collect();
+    for facility_id in facility_ids {
+        let Some(facility_owner) = sim
+            .substrate
+            .entities
+            .get(facility_id)
+            .map(|facility| sim.interner.resolve(facility.owner()).to_owned())
+        else {
+            continue;
+        };
+        let Some(clone_id) = sim.construct_resolved_object_limbo_at_height(
+            clone_type,
+            &facility_owner,
+            0,
+            0,
+            0,
+            0,
+            rules,
+            effects,
+        ) else {
+            continue;
+        };
+        let _ = exit_produced_object(
+            sim,
+            rules,
+            facility_id,
             clone_id,
             (0, 0),
             overlay_registry,

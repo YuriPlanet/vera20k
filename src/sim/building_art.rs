@@ -448,6 +448,12 @@ impl Simulation {
         if first_opening {
             self.open_super_weapon_anims(id, damaged, garrisoned, rules);
         }
+        // 0x00446580..0x004466D5: an SHP-turret type's slot-9 animation. Its
+        // name and anchor live on the rules section, so this is the only place
+        // the slot is built; a repeat opening keeps whatever is installed.
+        if first_opening {
+            self.install_shp_turret_anim(id, damaged, rules);
+        }
         // 0x004466D5..0x0044676C: the light block Unlimbo shares.
         if first_opening {
             self.light_building(id, rules);
@@ -557,6 +563,39 @@ impl Simulation {
             config.anim_type = normal_name.to_owned();
         }
         Some(config)
+    }
+
+    /// Grand_Opening `0x00446580..0x004466D5`. A `Turret=yes` type without
+    /// `TurretAnimIsVoxel=` builds a slot-9 AnimClass from the *rules*
+    /// `TurretAnim` name at its `TurretAnimX/Y`/`ZAdjust` anchor. The draw takes
+    /// that animation's frame from the turret facing, so nothing here depends on
+    /// its timer; the slot exists so the turret has an owner, an anchor and a
+    /// name. Retail never reaches it (every stock `Turret=yes` type is voxel);
+    /// MO's 23 non-voxel turret buildings do.
+    pub(crate) fn install_shp_turret_anim(&mut self, id: u64, damaged: bool, rules: &RuleSet) {
+        let occupied = self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.building_art.anim_slots[9].is_some());
+        if occupied {
+            return;
+        }
+        let Some(config) = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
+            .and_then(crate::rules::art_data::shp_turret_anim_config)
+        else {
+            return;
+        };
+        let name = config.anim_type.clone();
+        let slot = self.allocate_building_anim_slot(id, 9, &name, damaged, 0, &config, rules);
+        // A turret whose SHP no archive holds leaves slot 9 empty and draws
+        // nothing, as natively; the name and that outcome are worth one line
+        // when a mod's data is in question.
+        log::debug!("SHP turret building {id}: slot 9 [{name}] -> {slot:?}");
     }
 
     /// PowerUp451420..4514EC restores normal occupied slots, retires recovered

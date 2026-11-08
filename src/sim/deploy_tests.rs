@@ -1741,6 +1741,38 @@ fn transport_may_unload(
     sim.can_deploy_slash_unload(id, &rules)
 }
 
+/// MO's `[AHVYBOT]` Future Tank X-0 ships `Passengers=4` with hidden
+/// `InitialPayload` crew and `NoManualUnload/NoManualEnter=yes`. The player
+/// must not get a Deploy/Unload command just because the cargo hold exists.
+#[cfg(feature = "ares")]
+#[test]
+fn no_manual_unload_hides_the_deploy_command_for_hidden_crew() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=X0\n1=APC\n\
+         [X0]\nPassengers=4\nNoManualUnload=yes\nNoManualEnter=yes\n\
+         InitialPayload.Types=GI\nInitialPayload.Nums=4\n\
+         [APC]\nPassengers=4\n",
+    ))
+    .expect("MO hidden-crew rules");
+    let mut sim = Simulation::new();
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    let x0 = sim
+        .spawn_object("X0", "Americans", 20, 22, 0, &rules)
+        .expect("X-0 builds");
+    let apc = sim
+        .spawn_object("APC", "Americans", 21, 22, 0, &rules)
+        .expect("APC builds");
+    let x0_type = rules.object("X0").expect("X-0 type");
+    assert!(x0_type.no_manual_unload && x0_type.no_manual_enter);
+    assert_eq!(x0_type.initial_payload, vec![("GI".to_owned(), 4)]);
+    assert!(!sim.can_deploy_slash_unload(x0, &rules));
+    assert!(sim.can_deploy_slash_unload(apc, &rules));
+}
+
 /// The transport arm (`Passengers=` above 0, `0x00700EEC..0x007010BB`):
 /// refused on a bridge, beside a bridge deck (own cell or a N/S/E/W
 /// neighbour, not a diagonal), on Water when its owner is human, and in a

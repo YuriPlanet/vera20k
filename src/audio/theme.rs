@@ -294,6 +294,11 @@ pub(crate) struct ThemeRuntime {
     /// Whether Start_Scenario owns the pending slot (scenario reset cancel).
     scenario_owns_pending: bool,
     allow_context: ThemeAllowContext,
+    /// VERA session state: play indices whose file failed to prepare. They
+    /// leave the automatic playlist (via `mark_unavailable`) and are never
+    /// handed to the decoder again, so a missing Repeat=yes or fallback
+    /// request cannot retry — and warn — on every tick.
+    failed_plays: Vec<i32>,
 }
 
 impl Default for ThemeRuntime {
@@ -308,6 +313,7 @@ impl Default for ThemeRuntime {
             shuffle: false,
             scenario_owns_pending: false,
             allow_context: ThemeAllowContext::default(),
+            failed_plays: Vec::new(),
         }
     }
 }
@@ -918,17 +924,42 @@ impl ThemeRuntime {
         if index >= 0 && self.score_volume > 0 {
             self.slots.retained = index;
             if physical.stream_exists() {
+                // An index whose file already failed once this session is
+                // never handed to the decoder again; native PlayFile would
+                // just fail on every poll, and the AUTO fallback would warn
+                // once per tick.
+                let known_failed = self.failed_plays.contains(&index);
                 let stem = self.entry(index).map(|entry| entry.sound.clone());
-                match stem.as_deref().and_then(prepare) {
+                let prepared = if known_failed {
+                    None
+                } else {
+                    stem.as_deref().and_then(prepare)
+                };
+                match prepared {
                     Some(prepared) => {
                         action.start = Some(prepared);
                         self.slots.active = index;
                     }
                     None => {
-                        // PlayFile's failure is ignored natively (active :=
-                        // index while nothing streams); Rust leaves active -1
-                        // so AI's next poll consumes pending the same way.
-                        self.slots.active = THEME_NONE;
+                        // PlayFile's failure is ignored natively and active
+                        // still becomes the index (`0x00720D39`); only with
+                        // active set does a later Stop(1) — Start_Scenario's
+                        // no-Theme= path — clear the slots, leaving active -1
+                        // here stranded `retained` and stalled in-game
+                        // auto-play for a whole match (observed with MO's
+                        // absent AlliedLoad/SCORE files).
+                        // VERA: the failed track leaves the automatic
+                        // playlist for the rest of the session and is not
+                        // requeued, so a Repeat=yes request cannot retry the
+                        // same missing file on every tick.
+                        if !known_failed {
+                            self.failed_plays.push(index);
+                            if let Some(catalog) = self.catalog.as_mut() {
+                                catalog.mark_unavailable(index);
+                            }
+                        }
+                        self.slots.active = index;
+                        return action;
                     }
                 }
             } else {
@@ -1901,7 +1932,9 @@ mod tests {
         assert_eq!(
             theme.slots(),
             ThemeSlots {
-                active: -1,
+                // Native Play_Song assigns active := index even when PlayFile
+                // fails; only the missing track leaves the playlist.
+                active: 6,
                 retained: 6,
                 pending: THEME_AUTO
             }
@@ -2012,6 +2045,69 @@ mod tests {
         assert_eq!(
             theme.slots.pending, THEME_HOLD,
             "Stop must not auto-restart music"
+        );
+    }
+
+    /// MO regression: the Ares side loading theme (`[AlliedLoad]`,
+    /// Sound=cybertek) fails to prepare in an install without that file,
+    /// leaving `retained` set while the stream stays idle. Start_Scenario's
+    /// no-`Theme=` `Stop(1)` must still clear those stale slots, or
+    /// Main_Tick never queues AUTO again and no in-game music ever starts
+    /// (observed: `retained=100, pending=-1` for a whole match).
+    #[test]
+    fn failed_loading_theme_does_not_stall_ingame_autoplay() {
+        let mut theme = stock_runtime();
+        let mut missing = |_stem: &str| None;
+        let loading = theme.from_name("LOADING");
+        let action = theme.play_song(loading, gates(true), MusicOutputState::Idle, &mut missing);
+        assert!(action.start.is_none());
+        assert_eq!(
+            theme.saved_slots(),
+            [loading, THEME_NONE],
+            "native retains the failed request, but Repeat=yes must not requeue it"
+        );
+        assert!(
+            !theme.is_allowed(loading),
+            "the missing track leaves the automatic playlist"
+        );
+        // Start_Scenario without [Basic] Theme=: Stop(1) clears the stale
+        // slots even though nothing is streaming.
+        theme.stop(gates(true), true, MusicOutputState::Idle);
+        assert_eq!(theme.saved_slots(), [THEME_NONE, THEME_NONE]);
+        // Main_Tick queues AUTO and the AI starts the first surviving track.
+        theme.main_tick(true, gates(true), MusicOutputState::Idle);
+        assert_eq!(theme.saved_slots()[1], THEME_AUTO);
+        let mut ok = prepared;
+        let action = theme.ai(gates(true), MusicOutputState::Idle, &mut ok, &mut no_draw);
+        assert_eq!(
+            action.start.as_ref().map(|track| track.stem.as_str()),
+            Some("BrainFre")
+        );
+    }
+
+    /// With every file missing, each failed Play retires one entry and the
+    /// loop converges on silent no-ops instead of warning once per tick.
+    #[test]
+    fn all_missing_catalog_converges_without_repeated_prepares() {
+        let mut theme = stock_runtime();
+        let prepares = std::cell::Cell::new(0u32);
+        let mut missing = |_stem: &str| {
+            prepares.set(prepares.get() + 1);
+            None
+        };
+        theme.main_tick(true, gates(true), MusicOutputState::Idle);
+        for _ in 0..16 {
+            theme.ai(
+                gates(true),
+                MusicOutputState::Idle,
+                &mut missing,
+                &mut no_draw,
+            );
+        }
+        assert_eq!(
+            prepares.get(),
+            5,
+            "one prepare per playable entry: BrainFreeze, Drok, Deceiver, PhatAttack + the index-0 fallback"
         );
     }
 

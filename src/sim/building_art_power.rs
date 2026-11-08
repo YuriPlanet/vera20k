@@ -37,6 +37,61 @@ impl Simulation {
         self.set_building_anim_slot(id, slot, damaged, false, 0, rules);
     }
 
+    /// A neutral/AI preset building does not receive `Grand_Opening` from a
+    /// foreign viewer (`0x0044D632`/`0x0044D664`), so its `PoweredSpecial`
+    /// ActiveAnim (the Tesla Reactor's charged sphere) can stay uninstalled
+    /// until an operational edge happens to dispatch. Complete those slots on
+    /// the ordinary visit; the check is idempotent and only fills empty ones.
+    pub(crate) fn ensure_powered_special_slots(&mut self, id: u64, rules: &RuleSet) {
+        let Some(object) = self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
+        else {
+            return;
+        };
+        if !object.powered_special {
+            return;
+        }
+        for slot in 0..21u8 {
+            if !self.building_anim_power_flags(id, slot, rules).powered_special {
+                continue;
+            }
+            let installed = self
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|entity| entity.building_art.anim_slots[usize::from(slot)])
+                .is_some_and(|anim| self.substrate.anims.get(anim).is_some());
+            if !installed {
+                self.create_power_slot(id, slot, rules);
+            }
+        }
+    }
+
+    /// A preset (map-authored or AI) building never receives Grand_Opening from
+    /// a foreign viewer, so its rules-owned slot-9 SHP turret would never be
+    /// built. Fill it on the ordinary operational visit; empty slots only, so a
+    /// building that already has one keeps it.
+    pub(crate) fn ensure_shp_turret_anim(&mut self, id: u64, rules: &RuleSet) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if entity.building_art.anim_slots[9].is_some() {
+            return;
+        }
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        let damaged = requested_damage_state(
+            entity.health,
+            object.strength,
+            rules.general.condition_yellow,
+        );
+        self.install_shp_turret_anim(id, damaged, rules);
+    }
+
     /// Restore4545D0 clears SuperLowPower20 before ascending visits. Loss4547C0
     /// uses Powered/Light/Effect precedence and marks replay before scalar delete.
     pub(crate) fn apply_building_anim_power(&mut self, id: u64, restoring: bool, rules: &RuleSet) {
@@ -804,5 +859,46 @@ mod tests {
             .unwrap()
             .is_anim_delayed_fire = true;
         assert_ne!(base, rules.simulation_config_hash());
+    }
+
+    /// MO's neutral Tesla Reactor shows its charged sphere through a
+    /// `PoweredSpecial` ActiveAnim. A preset neutral building skips
+    /// Grand_Opening, so the sphere must be completed on the ordinary visit
+    /// even when no operational edge dispatches.
+    #[test]
+    fn powered_special_sphere_is_installed_without_an_operational_edge_and_is_idempotent() {
+        let mut rules = rules(100, "PoweredSpecial=yes\n");
+        let entry = rules.art_entry_mut_for_test("B").unwrap();
+        entry.building_anim_power = [BuildingAnimPowerFlags::default(); 21];
+        entry.building_anim_power[3].powered_special = true;
+        let (mut sim, id) = building(100);
+        assert!(sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .building_art
+            .anim_slots[3]
+            .is_none());
+        sim.ensure_powered_special_slots(id, &rules);
+        let first = sim
+            .substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .building_art
+            .anim_slots[3];
+        assert!(first.is_some(), "the PoweredSpecial slot must exist");
+        sim.ensure_powered_special_slots(id, &rules);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .building_art
+                .anim_slots[3],
+            first,
+            "a second visit must not replace the animation"
+        );
     }
 }

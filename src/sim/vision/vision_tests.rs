@@ -364,7 +364,11 @@ fn test_allied_visibility_is_shared() {
 
 // -- Sight cap tests --
 
+/// Retail `RevealArea` caps `Sight` at 10. Under `ares` the cap is lifted
+/// (see `collect_reveal_cells`'s octagonal branch), so this retail assertion
+/// is skipped there.
 #[test]
+#[cfg(not(feature = "ares"))]
 fn test_sight_capped_at_max_range() {
     let mut store = EntityStore::new();
     // Spawn with sight=15, which exceeds MAX_SIGHT_RANGE (10).
@@ -381,6 +385,21 @@ fn test_sight_capped_at_max_range() {
     assert!(fog.is_cell_visible(intern::test_intern("Americans"), 30, 20));
     // Cell at distance 11 should NOT be visible (capped).
     assert!(!fog.is_cell_visible(intern::test_intern("Americans"), 31, 20));
+}
+
+/// Ares 0.6 lifts the `Sight` cap: `Sight > 10` lights an octagonal field via
+/// a `CellSpreadEnumerator` instead of being truncated to the retail 10.
+#[test]
+#[cfg(feature = "ares")]
+fn test_sight_extends_past_ten_under_ares() {
+    let cells = collect_reveal_cells(30, 30, 15, 0, false, None, (60, 60), None);
+    // Retail radius 10 admits 309 cells; an Ares radius-15 octagon admits far
+    // more, and reaches cells the retail walk never touches.
+    assert!(cells.len() > 309, "expected >309 cells, got {}", cells.len());
+    // A cell 15 straight out along an axis is inside the octagon.
+    assert!(cells.contains(&(45, 30)));
+    // The octagon is centred on the source.
+    assert!(cells.contains(&(30, 30)));
 }
 
 /// `TechnoClass::UpdateReveal @ 0x0070AF50`: a `SIGHT`-ability veteran sees

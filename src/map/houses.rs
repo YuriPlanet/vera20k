@@ -11,7 +11,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::rules::color_scheme::ColorSchemeEntry;
-use crate::rules::house_colors::{DEFAULT_SCHEME_ENTRY, HouseColorIndex};
+use crate::rules::house_colors::{DEFAULT_SCHEME_ENTRY, HouseColorIndex, NO_REMAP};
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::ini_value::{crt_atoi, strtok};
 use crate::rules::ruleset::RuleSet;
@@ -43,6 +43,23 @@ const fn pack_scenario_base_plan_cell(x: i32, y: i32) -> u32 {
 pub type HouseColorMap = HashMap<String, HouseColorIndex>;
 /// Normalized alliance graph keyed by uppercase house name.
 pub type HouseAllianceMap = BTreeMap<String, BTreeSet<String>>;
+
+/// The distinct colour ramps a match's House map uses, in index order.
+///
+/// One wall body tile is baked per entry: a wall segment is an owned object
+/// and its remap band follows the placing House, so the overlay atlas needs a
+/// tile for every colour the match can build a wall with. `NO_REMAP` is not
+/// included — callers add the unowned variant themselves.
+pub fn distinct_house_colors(colors: &HouseColorMap) -> Vec<HouseColorIndex> {
+    let mut distinct: Vec<HouseColorIndex> = colors
+        .values()
+        .copied()
+        .filter(|color| *color != NO_REMAP)
+        .collect();
+    distinct.sort_unstable_by_key(|color| color.0);
+    distinct.dedup();
+    distinct
+}
 
 /// Parsed metadata for one active house listed in `[Houses]`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -690,5 +707,22 @@ mod tests {
             .insert("BRITISH".into());
         assert!(is_allied_with(&alliances, " americans", "British "));
         assert!(!is_allied_with(&alliances, "British", "Americans"));
+    }
+
+    /// Walls bake one body tile per colour the match can build with, so the
+    /// distinct list drops Neutral/Special's shared `NO_REMAP` and repeats.
+    #[test]
+    fn distinct_house_colors_are_the_sorted_unique_ramps_of_the_match() {
+        let mut colors = HouseColorMap::new();
+        colors.insert("Americans".into(), HouseColorIndex(3));
+        colors.insert("Europeans".into(), HouseColorIndex(1));
+        colors.insert("Russians".into(), HouseColorIndex(3));
+        colors.insert("Neutral".into(), NO_REMAP);
+        colors.insert("Special".into(), NO_REMAP);
+        assert_eq!(
+            distinct_house_colors(&colors),
+            vec![HouseColorIndex(1), HouseColorIndex(3)]
+        );
+        assert!(distinct_house_colors(&HouseColorMap::new()).is_empty());
     }
 }

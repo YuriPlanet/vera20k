@@ -777,3 +777,63 @@ fn ares_simple_deployer_converts_to_its_convert_deploy_type() {
     assert_eq!(sim.interner.resolve(entity.type_ref()), "SDEP2");
     assert_eq!(entity.mission_leaf.as_unit().unwrap().deployed(), 0);
 }
+
+/// Ares 2.0 `UnitTypeExt::Convert.Deploy`: MO's Athena Cannon `[BASS]` and
+/// `[BASS2]` are two fire modes, not a Siege Chopper-style deploy. The type
+/// swap must happen only after the deployment completed, keep the same
+/// object ID, and leave the destination able to deploy (and move) again.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_convert_deploy_swaps_the_two_modes_after_deployment_completes() {
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [VehicleTypes]\n0=BASS\n1=BASS2\n\
+         [BASS]\nStrength=370\nSpeed=4\nIsSimpleDeployer=yes\nConvert.Deploy=BASS2\n\
+         Ammo=1\nPrimary=STRIKE\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [BASS2]\nStrength=370\nSpeed=4\nIsSimpleDeployer=yes\nConvert.Deploy=BASS\n\
+         Ammo=1\nPrimary=STRIKE\nCanPassiveAquire=no\n\
+         Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+         [STRIKE]\nWarhead=WH\n[WH]\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    assert_eq!(
+        rules.object("BASS").unwrap().deploy_conversion().unwrap().id,
+        "BASS2"
+    );
+    assert_eq!(
+        rules
+            .object("BASS2")
+            .unwrap()
+            .deploy_conversion()
+            .unwrap()
+            .id,
+        "BASS"
+    );
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 19);
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let id = sim
+        .spawn_object_at_height("BASS", "Americans", 10, 10, 0, 0, &rules)
+        .unwrap();
+    let effects = crate::sim::world::FrameEffects::default();
+
+    // An undeployed deploy-order attempt leaves the type alone until the
+    // deployment has actually completed (no DeployingAnim here: immediate).
+    sim.update_unit_simple_deploy(id, true, &rules, effects)
+        .unwrap();
+    let entity = sim.substrate.entities.get(id).unwrap();
+    assert_eq!(sim.interner.resolve(entity.type_ref()), "BASS2");
+    assert!(!entity.is_fully_deployed(), "Ares keeps the mode movable");
+    assert!(!entity.unit_deploying());
+    assert!(entity.deploy_anim().is_none());
+
+    // Pressing D again on the no-attack mode returns to `[BASS]`.
+    sim.update_unit_simple_deploy(id, true, &rules, effects)
+        .unwrap();
+    assert_eq!(
+        sim.interner
+            .resolve(sim.substrate.entities.get(id).unwrap().type_ref()),
+        "BASS"
+    );
+}

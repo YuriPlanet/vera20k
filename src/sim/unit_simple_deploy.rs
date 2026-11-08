@@ -140,6 +140,14 @@ impl Simulation {
         let deploy_to_land = object.deploy_to_land;
         let configured_anim = object.deploying_anim.clone();
         let object_has_deploying_anim = configured_anim.is_some();
+        // Ares 2.0 `UnitTypeExt::Convert.Deploy` (the installed Ares
+        // IsSimpleDeployer hook): the type swap happens only after the deploy
+        // and its optional DeployingAnim have completed, not on the order.
+        #[cfg(feature = "ares")]
+        let convert_target = deploying
+            .then(|| object.deploy_conversion().cloned())
+            .flatten();
+        let mut deploy_completed = false;
         let active = if deploying {
             leaf.deploy_begin_active()
         } else {
@@ -175,6 +183,7 @@ impl Simulation {
             let entity = self.substrate.entities.get_mut(id).expect("same Unit");
             if entity.native_stage().value() >= threshold {
                 entity.mission_leaf.set_unit_deployed(u8::from(deploying));
+                deploy_completed = deploying;
                 if deploying {
                     entity.mission_leaf.set_unit_deploy_begin_active(0);
                 } else {
@@ -237,6 +246,8 @@ impl Simulation {
                     .expect("same Unit")
                     .mission_leaf
                     .set_unit_deployed(u8::from(deploying));
+                // Ares converts immediately when no DeployingAnim exists.
+                deploy_completed = deploying;
             }
         }
         // Undeploy739E56..739E6C: IsDisguised41C010 then ClearDisguise746720.
@@ -253,7 +264,7 @@ impl Simulation {
         }
         // The native updaters request these sounds on every admitted visit,
         // independently of whether this call finished or merely waited.
-        Self::emit_deploy_action_sound(
+        let sound = Self::emit_deploy_action_sound(
             &mut self.interner,
             &self.substrate,
             self.resolved_terrain.as_ref(),
@@ -261,7 +272,29 @@ impl Simulation {
             id,
             if deploying { 27 } else { 31 },
             rules,
-        )
+        );
+        #[cfg(not(feature = "ares"))]
+        let _ = deploy_completed;
+        // Ares 2.0 type conversion (MO `[BASS]` <-> `[BASS2]`, `[SIREN]`,
+        // `[AERO]`, ...): after the deploy completed, swap the very same
+        // Techno into the alternate mode. `convert_techno_type` retains the
+        // object ID, team, health ratio, veterancy and ammo. The destination
+        // must be able to deploy again, so reset the deployment leaf and its
+        // retained animation; Mission_Unload's tail then queues Guard and the
+        // converted vehicle stays movable, as Ares documents.
+        #[cfg(feature = "ares")]
+        if deploy_completed
+            && let Some(target) = convert_target
+            && self.convert_techno_type(id, &target, rules, effects)
+        {
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                entity.mission_leaf.set_unit_deployed(0);
+                entity.mission_leaf.set_unit_deploy_begin_active(0);
+                entity.mission_leaf.set_unit_deploy_reverse_active(0);
+                let _ = entity.take_deploy_anim();
+            }
+        }
+        sound
     }
 
     /// Ares 3.0 UnitClass_SimpleDeploy_Facing (1004C2D0, hook 0x739B8A): a

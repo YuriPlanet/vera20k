@@ -139,7 +139,8 @@ pub struct AttackerFacts {
     /// `AircraftClass+0x6CA` spawn retreat/collision flag
     /// (`SpawnRetreat__Push 0x0054E47D`).
     pub aircraft_spawn_collision: bool,
-    /// `TechnoClass+0x2FC` Ammo, which Ares' NoAmmoWeapon arm reads.
+    /// `TechnoClass+0x2FC Ammo`, the live signed count (-1 is unlimited).
+    /// Ares 0.C `NoAmmoWeapon` reads it in `What_Weapon_Should_I_Use`.
     pub ammo: i32,
 }
 
@@ -804,6 +805,16 @@ fn techno_what_weapon_should_i_use<'r>(
     target: Option<&TargetFacts>,
     get_weapon: impl Fn(i32) -> Option<&'r WeaponType>,
 ) -> i32 {
+    // Ares 0.C `TechnoTypeExt::NoAmmoWeapon` (installed Ares hook on
+    // `TechnoClass::What_Weapon_Should_I_Use`): an Ammo count at or below
+    // NoAmmoAmount overrides the entire ladder with that one slot. The
+    // DeployFire class arms of `what_weapon_should_i_use` already ran and
+    // still win, matching Ares' documented limitation. MO's `[ABRM]` fires
+    // its 0-cost `AbramsLaser` secondary while its 1-round 145mm reloads.
+    #[cfg(feature = "ares")]
+    if let Some(index) = obj.no_ammo_weapon_index(attacker.ammo) {
+        return index;
+    }
     // A @ 0x006F333B: turreted non-gattling types fire the gunner slot,
     // unconditionally (`-1` collapses to 0).
     if obj.turret_count > 0 && !obj.is_gattling {
@@ -1736,6 +1747,115 @@ mod tests {
             aircraft_spawn_collision: false,
             ammo: -1,
         }
+    }
+
+    /// MO's `[ABRM]`: `Ammo=1`, `NoAmmoWeapon=1` and a 0-cost
+    /// `AbramsLaser` secondary. Ares 0.C overrides the ordinary ladder only
+    /// while the live Ammo count is at or below `NoAmmoAmount`.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_no_ammo_weapon_overrides_the_ladder_at_the_inclusive_boundary() {
+        let ini = IniFile::from_str(
+            "[VehicleTypes]\n0=ABRM\n[ABRM]\nPrimary=CANNON\nSecondary=LASER\n\
+             NoAmmoWeapon=1\nNoAmmoAmount=1\nAmmo=2\n\
+             [WeaponTypes]\n0=CANNON\n1=LASER\n\
+             [CANNON]\nWarhead=WH\n[LASER]\nWarhead=WH\nAmmo=0\n[WH]\n",
+        );
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let obj = rules.object("ABRM").unwrap();
+        let weapon = |index: i32| match index {
+            0 => rules.weapon("CANNON"),
+            1 => rules.weapon("LASER"),
+            _ => None,
+        };
+        for (ammo, expected) in [(2, 0), (1, 1), (0, 1)] {
+            let attacker = AttackerFacts {
+                ammo,
+                ..facts(TechnoKind::Unit)
+            };
+            assert_eq!(
+                what_weapon_should_i_use(&rules, obj, &attacker, None, &weapon),
+                expected,
+                "Ammo {ammo}"
+            );
+        }
+        // An unset NoAmmoWeapon must leave the retail ladder alone.
+        assert_eq!(
+            rules.object("ABRM").unwrap().no_ammo_weapon_index(0),
+            Some(1)
+        );
+    }
+
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_no_ammo_weapon_reads_the_live_ammo_tracker_and_resolves_the_laser() {
+        use crate::sim::ammo::TechnoAmmo;
+        let ini = IniFile::from_str(
+            "[VehicleTypes]\n0=ABRM\n[ABRM]\nPrimary=CANNON\nSecondary=LASER\n\
+             NoAmmoWeapon=1\nAmmo=1\n\
+             [WeaponTypes]\n0=CANNON\n1=LASER\n\
+             [CANNON]\nWarhead=WH\n[LASER]\nWarhead=WH\nAmmo=0\nIsLaser=yes\n[WH]\n",
+        );
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let obj = rules.object("ABRM").unwrap();
+        let mut tank = GameEntity::test_default(1, "ABRM", "Americans", 5, 5);
+        let entities = EntityStore::new();
+        let interner = crate::sim::intern::test_interner();
+        for (rounds, expected_index, expected_weapon) in [(1, 0, "CANNON"), (0, 1, "LASER")] {
+            let mut ammo = TechnoAmmo::new(1);
+            ammo.set_current_for_test(rounds);
+            tank.install_ammo_for_test(Some(ammo));
+            let attacker = attacker_facts(&tank, obj);
+            assert_eq!(attacker.ammo, rounds);
+            let selected = resolve_selected_weapon(
+                &rules,
+                &tank,
+                obj,
+                &attacker,
+                None,
+                &entities,
+                &interner,
+            )
+            .unwrap();
+            assert_eq!(selected.index, expected_index, "Ammo {rounds}");
+            assert_eq!(selected.weapon_id, expected_weapon);
+            assert_eq!(
+                selected.weapon.ammo_cost(),
+                if rounds == 0 { 0 } else { 1 },
+                "the fallback laser must not be blocked by T47's Ammo check"
+            );
+        }
+    }
+
+    /// Ares documents that NoAmmoWeapon cannot override DeployFireWeapon;
+    /// the class arms of `0x005218E0`/`0x00746CD0` run before the ladder.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_deploy_fire_weapon_wins_over_no_ammo_weapon() {
+        let ini = IniFile::from_str(
+            "[InfantryTypes]\n0=GUNNER\n[GUNNER]\nPrimary=RIFLE\nSecondary=BEAM\n\
+             DeployFire=yes\nDeployFireWeapon=2\nNoAmmoWeapon=1\n\
+             [WeaponTypes]\n0=RIFLE\n1=BEAM\n2=DEPLOYED\n\
+             [RIFLE]\nWarhead=WH\n[BEAM]\nWarhead=WH\n[DEPLOYED]\nWarhead=WH\n[WH]\n",
+        );
+        let rules = RuleSet::from_ini(&ini).unwrap();
+        let obj = rules.object("GUNNER").unwrap();
+        let weapon = |index: i32| match index {
+            0 => rules.weapon("RIFLE"),
+            1 => rules.weapon("BEAM"),
+            2 => rules.weapon("DEPLOYED"),
+            _ => None,
+        };
+        let attacker = AttackerFacts {
+            kind: TechnoKind::Infantry,
+            deploy_fire_active: true,
+            ammo: 0,
+            ..facts(TechnoKind::Infantry)
+        };
+        assert_eq!(
+            what_weapon_should_i_use(&rules, obj, &attacker, None, &weapon),
+            2
+        );
     }
 
     fn techno<'a>(obj: &'a ObjectType, kind: TechnoKind) -> TargetFacts<'a> {

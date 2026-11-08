@@ -448,17 +448,28 @@ fn resolve_trigger_owner(
 ) -> Option<TeamAiTriggerOwner> {
     match &trigger.owner {
         AiTriggerOwnerIni::All => Some(TeamAiTriggerOwner::All),
-        AiTriggerOwnerIni::Country(owner) => rules
-            .country_index(owner)
-            .map(TeamAiTriggerOwner::Country)
-            .or_else(|| {
+        AiTriggerOwnerIni::Country(owner) => {
+            // TriggerTypeClass::Read resolves the owner with
+            // HouseTypeClass::FindIndexOfName, which accepts a Country's
+            // display Name as well as its stored ID. Mental Omega's AIMO
+            // writes the display name ("Russia" for [USSR] Name=Russia);
+            // the stock ID-only lookup cannot bind those triggers and turns
+            // them into a fixed-source refusal. Use the native trigger lookup
+            // under the compiled Ares capability.
+            let resolved = if crate::rules::ARES_ENABLED {
+                rules.trigger_house_type_index(owner)
+            } else {
+                rules.country_index(owner)
+            };
+            resolved.map(TeamAiTriggerOwner::Country).or_else(|| {
                 diagnostics.push(TeamAiInstallDiagnostic::UnknownAiTriggerOwner {
                     trigger_id: trigger.id.clone(),
                     owner: owner.clone(),
                     source: trigger.source,
                 });
                 None
-            }),
+            })
+        }
     }
 }
 

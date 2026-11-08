@@ -496,6 +496,26 @@ fn production_install_refuses_fixed_resolution_loss_but_keeps_scenario_omissions
 }
 
 #[test]
+fn ares_trigger_owner_lookup_accepts_country_display_names() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n\
+         [Countries]\n0=USSR\n[USSR]\nName=Russia\n",
+    ))
+    .expect("minimal rules");
+    // Mental Omega's AIMO writes owner="Russia" for [USSR] Name=Russia.
+    // The ID-only lookup misses it; the gamemd-derived trigger owner lookup
+    // used under the Ares capability binds it to the stored Country.
+    assert!(rules.country_index("Russia").is_none());
+    assert_eq!(
+        rules
+            .trigger_house_type_index("Russia")
+            .map(|index| index.0),
+        rules.country_index("USSR").map(|index| index.0)
+    );
+    assert!(rules.trigger_house_type_index("Russia").is_some());
+}
+
+#[test]
 fn fixed_trigger_naming_an_absent_team_type_installs_without_a_team() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[InfantryTypes]\n0=E1\n[E1]\nStrength=100\n",

@@ -412,3 +412,29 @@ fn combined_absorber_and_garrison_save_firing_order_then_unload_separate_lists()
     assert!(!scene.actor(first).lifecycle.in_limbo());
     assert_eq!(scene.output("Americans"), 350);
 }
+
+/// Ares/MO neutral tech buildings (`NeedsEngineer=yes`) change owner on the
+/// first Engineer. Their full-health action must be Capture, not the
+/// ConditionRed Damage arm — the latter also shows the repair wrench cursor
+/// instead of the capture/enter cursor over the building.
+#[test]
+fn needs_engineer_building_reports_capture_while_still_at_full_health() {
+    let patch = "[GAPOWR]\nCapturable=yes\nNeedsEngineer=yes\nRepairable=yes\n";
+    let Some(mut scene) = Scene::new(patch) else {
+        return;
+    };
+    let rules = scene.0.resources.rules.clone();
+    let target = rules.object("GAPOWR").expect("patched building type");
+    assert!(target.needs_engineer && target.capturable && target.repairable);
+    // A hostile full-strength building: the ordinary threshold comparison
+    // returns Damage, which is exactly what the neutral-tech arm overrides.
+    let building = scene.spawn("GAPOWR", "Russians", (16, 14));
+    let engineer = scene.spawn("ENGINEER", "Americans", (6, 14));
+    assert_eq!(
+        scene
+            .0
+            .simulation
+            .engineer_building_action(engineer, building, &rules),
+        Some(super::world_orders::EngineerBuildingAction::Capture)
+    );
+}

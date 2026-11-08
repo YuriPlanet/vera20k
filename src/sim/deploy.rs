@@ -322,8 +322,11 @@ impl Simulation {
                     return false;
                 }
                 let bunkered = entity.bunker.link().installed_in().is_some();
+                // Ares `NoManualUnload=yes` hides the transport arm from the
+                // player's Deploy/Unload key. A genuine `DeploysInto`, simple
+                // deployer, bunker or deploy-fire unit still deploys normally.
                 if object.deploys_into.is_none()
-                    && object.passengers == 0
+                    && (object.passengers == 0 || object.no_manual_unload)
                     && !object.is_simple_deployer
                     && !bunkered
                     && !object.deploy_fire

@@ -91,13 +91,17 @@ fn unload_epilogue(
 
 /// Whether this entity's type takes the transport branch of the Unit Unload
 /// handler (`Type+0x5E0 Passengers > 0`, gate at `0x0073D6EC`).
+///
+/// Ares `NoManualUnload=yes` types (MO's Future Tank X-0) carry hidden
+/// `InitialPayload` crew; they still own a cargo hold, but neither the player
+/// nor the AI mission handlers may treat them as unloadable transports.
 pub(crate) fn is_vehicle_transport_type(
     sim: &Simulation,
     entity: &GameEntity,
     rules: &RuleSet,
 ) -> bool {
     sim.object_type(entity.type_ref(), rules)
-        .is_some_and(|obj| obj.passengers > 0)
+        .is_some_and(|obj| obj.passengers > 0 && !obj.no_manual_unload)
 }
 
 fn cell_from(base: (u16, u16), delta: (i32, i32)) -> Option<(u16, u16)> {

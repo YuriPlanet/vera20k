@@ -91,6 +91,7 @@ fn map_music_action_follows_native_read_and_queue() {
             sfx_player: None,
             launcher_audio_available: input["device"].as_bool().unwrap_or(true),
             theme_startup_suppressed: input["suppressed"].as_bool().unwrap_or(false),
+            last_theme_diag: None,
             master_groups: Default::default(),
             restore_muted: false,
         };

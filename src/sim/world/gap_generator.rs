@@ -228,6 +228,14 @@ impl Simulation {
             .is_operational()
             == operational
         {
+            // No operational edge this visit. A neutral/AI preset building
+            // never had Grand_Opening from the local viewer, so make sure its
+            // PoweredSpecial ActiveAnim (e.g. the Tesla Reactor's sphere) is
+            // installed rather than waiting for an edge that may never fire.
+            if operational {
+                self.ensure_powered_special_slots(id, rules);
+                self.ensure_shp_turret_anim(id, rules);
+            }
             self.update_building_working_sound(id, rules, frame_effects);
             return;
         }

@@ -1146,6 +1146,16 @@ impl Simulation {
                 if !object.capturable {
                     return None;
                 }
+                // Ares/MO neutral tech buildings (nuclear reactor, oil
+                // derrick, ...) are `Capturable=yes` + `NeedsEngineer=yes`.
+                // The first Engineer changes their owner outright, so the
+                // ConditionRed damage arm below does not apply. Deciding
+                // `Capture` here also shows the engineer's capture/enter
+                // cursor instead of the wrench cursor over a full-health
+                // neutral building (see `cursor.rs`'s EngineerDamage arm).
+                if object.needs_engineer {
+                    return Some(EngineerBuildingAction::Capture);
+                }
                 // Ares 3.0 10025540/10025550 (hooks 0x51E5BB, 0x51E5E1): the
                 // action is GetEngineerEnterEnemyBuildingAction's.
                 #[cfg(feature = "ares")]
@@ -1679,8 +1689,16 @@ impl Simulation {
             //519D82..519EA5: with MultiEngineer on, a hostile building above
             //ConditionRed takes damage and consumes the Engineer before the
             //Capturable, Selling and warp tests.
+            //
+            // Ares/MO neutral tech buildings (nuclear reactor, oil derrick,
+            // ...) are `Capturable=yes` + `NeedsEngineer=yes`; they are meant
+            // to change owner on the first Engineer, not to be worn down by
+            // repeated MultiEngineer C4 hits. Leaving them on that branch
+            // makes the building lose health, enter the damaged art and eat
+            // the Engineer before the capture branch at 519F44 can run.
             #[cfg(not(feature = "ares"))]
             let multi_engineer = (!repair
+                && !object.needs_engineer
                 && self.session.game_mode_nonzero()
                 && self.session.game_options().multi_engineer)
                 .then(|| {
@@ -1697,6 +1715,7 @@ impl Simulation {
             // anything else goes on to the capture (0x519EAA).
             #[cfg(feature = "ares")]
             let multi_engineer = (!repair
+                && !object.needs_engineer
                 && self.ares_engineer_enemy_building_action(building_id, rules)
                     == EngineerBuildingAction::Damage)
                 .then(|| {
@@ -1820,6 +1839,10 @@ impl Simulation {
                         registry,
                         frame_effects,
                     );
+                    // A tech building may still be showing the damaged art from
+                    // an earlier MultiEngineer hit. Resync it after the owner
+                    // swap so a successful capture never leaves a wreck shell.
+                    self.refresh_building_damage_state(building_id, rules);
                 }
                 if let Some(building) = self.substrate.entities.get_mut(building_id) {
                     // Techno+0x338 (`0x00519F94`).

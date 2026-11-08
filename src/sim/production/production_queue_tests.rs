@@ -2968,3 +2968,137 @@ fn local_strip_raw_place_preserves_remote_change_and_shared_hash() {
     assert_eq!(PlaceRecord::decode(&records[1]).unwrap().house_id, 1);
     assert_eq!(sim.state_hash(), hash);
 }
+
+/// A synthetic pair of war factories: `GAWEAP` produces, `GAWEAP2` is MO's
+/// Ares `CloningFacility=yes` yard. `cloneable_override` lets one test check
+/// `Cloneable=no` without duplicating the world setup.
+#[cfg(feature = "ares")]
+fn cloning_facility_world(cloneable_override: &str) -> (Simulation, RuleSet, InternedId, u64) {
+    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[Countries]\n0=Americans\n[InfantryTypes]\n[VehicleTypes]\n0=MTNK\n\
+         [AircraftTypes]\n[BuildingTypes]\n0=GAWEAP\n1=GAWEAP2\n\
+         [MTNK]\nCost=700\nStrength=300\nSpeed=6\nTechLevel=1\nOwner=Americans\n{cloneable_override}\n\
+         [GAWEAP]\nOwner=Americans\nFactory=UnitType\nWeaponsFactory=yes\n\
+         [GAWEAP2]\nOwner=Americans\nFactory=UnitType\nWeaponsFactory=yes\nCloningFacility=yes\n"
+    )))
+    .expect("cloning facility rules");
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let owner = sim.interner.intern("Americans");
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 50_000, 10,
+        ));
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    spawn_structure(&mut sim, &rules, 1, "Americans", "GAWEAP", 10, 10);
+    spawn_structure(&mut sim, &rules, 2, "Americans", "GAWEAP2", 20, 20);
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .base_projection_mut()
+        .replace_buildings_for_test(vec![1, 2]);
+    let product = sim
+        .construct_object_limbo_at_height(
+            "MTNK",
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .expect("paid vehicle waiting in limbo");
+    (sim, rules, owner, product)
+}
+
+#[cfg(feature = "ares")]
+fn mtnk_count(sim: &Simulation) -> usize {
+    let mtnk = sim.interner.get("MTNK").unwrap();
+    sim.substrate
+        .entities
+        .values()
+        .filter(|entity| entity.type_ref() == mtnk)
+        .count()
+}
+
+/// Ares `CloningFacility=yes` is the vehicle counterpart of the Cloning Vats:
+/// MO's `[GAWEAP2]` must copy what the ordinary `[GAWEAP]` produces.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_cloning_facility_duplicates_vehicle_output() {
+    let (mut sim, rules, _owner, product) = cloning_facility_world("");
+    let _ = super::production_queue::exit_produced_object(
+        &mut sim,
+        &rules,
+        1,
+        product,
+        (0, 0),
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(
+        mtnk_count(&sim),
+        2,
+        "GAWEAP2 kicks out one free copy of the GAWEAP vehicle"
+    );
+}
+
+/// `Cloneable=no` suppresses `CloningFacility=yes` as well as the native
+/// Infantry Cloning Vats loop.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_cloneable_no_suppresses_cloning_facility() {
+    let (mut sim, rules, _owner, product) = cloning_facility_world("Cloneable=no");
+    let _ = super::production_queue::exit_produced_object(
+        &mut sim,
+        &rules,
+        1,
+        product,
+        (0, 0),
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(mtnk_count(&sim), 1, "no free copy for a non-cloneable unit");
+}
+
+/// Ares `InitialPayload.Types/Nums`: a transport built with the MO-style keys
+/// constructs its free passengers straight into cargo.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_initial_payload_fills_cargo_at_construction() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[Countries]\n0=Americans\n[InfantryTypes]\n0=E1\n[VehicleTypes]\n0=CARRIER\n\
+         [AircraftTypes]\n[BuildingTypes]\n\
+         [E1]\nStrength=100\nSize=1\n\
+         [CARRIER]\nStrength=300\nPassengers=3\nSizeLimit=1\nOpenTopped=yes\n\
+         InitialPayload.Types=E1\nInitialPayload.Nums=3\n",
+    ))
+    .expect("initial payload rules");
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    let _carrier = sim
+        .construct_object_limbo_at_height(
+            "CARRIER",
+            "Americans",
+            0,
+            0,
+            0,
+            0,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .expect("transport with an initial payload");
+    let e1 = sim.interner.get("E1").unwrap();
+    assert_eq!(
+        sim.substrate
+            .entities
+            .values()
+            .filter(|entity| entity.type_ref() == e1)
+            .count(),
+        3,
+        "InitialPayload.Nums=3 creates three riders"
+    );
+}
