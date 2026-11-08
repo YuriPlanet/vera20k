@@ -811,9 +811,8 @@ mod tests {
             depth: 0.5,
             ..Default::default()
         };
-        let tooltip = gpu
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let tooltip = crate::render::gpu::create_init_buffer(&gpu
+            .device, &wgpu::util::BufferInitDescriptor {
                 label: None,
                 contents: bytemuck::bytes_of(&tooltip),
                 usage: wgpu::BufferUsages::VERTEX,
@@ -1065,9 +1064,8 @@ mod tests {
                     [60.0, 48.0]
                 }
             );
-            let buffer = gpu
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            let buffer = crate::render::gpu::create_init_buffer(&gpu
+                .device, &wgpu::util::BufferInitDescriptor {
                     label: None,
                     contents: bytemuck::bytes_of(&instance),
                     usage: wgpu::BufferUsages::VERTEX,
@@ -1084,9 +1082,8 @@ mod tests {
                 depth: 0.00042,
                 ..Default::default()
             };
-            let status_buffer = gpu
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            let status_buffer = crate::render::gpu::create_init_buffer(&gpu
+                .device, &wgpu::util::BufferInitDescriptor {
                     label: None,
                     contents: bytemuck::bytes_of(&status),
                     usage: wgpu::BufferUsages::VERTEX,
@@ -1098,9 +1095,8 @@ mod tests {
                 world.camera_pos,
             )
             .unwrap();
-            let clock_buffer = gpu
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            let clock_buffer = crate::render::gpu::create_init_buffer(&gpu
+                .device, &wgpu::util::BufferInitDescriptor {
                     label: None,
                     contents: bytemuck::bytes_of(&clock),
                     usage: wgpu::BufferUsages::VERTEX,
@@ -1112,9 +1108,8 @@ mod tests {
                 ],
                 ..status
             };
-            let hold_buffer = gpu
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            let hold_buffer = crate::render::gpu::create_init_buffer(&gpu
+                .device, &wgpu::util::BufferInitDescriptor {
                     label: None,
                     contents: bytemuck::bytes_of(&hold),
                     usage: wgpu::BufferUsages::VERTEX,

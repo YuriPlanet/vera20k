@@ -7,7 +7,6 @@
 //! native 64 byte-mask surfaces once, and applies every active record in the
 //! native reverse insertion order in encoded RGB565 space.
 
-use wgpu::util::DeviceExt;
 
 /// One combat light the tactical pass draws this frame. Render-owned draw DTO
 /// (F06); the app runtime that ages and drains lights produces these.
@@ -101,7 +100,7 @@ impl CombatLightRenderer {
                 count: None,
             }],
         });
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let camera_buffer = crate::render::gpu::create_init_buffer(&device, &wgpu::util::BufferInitDescriptor {
             label: Some("Combat Light Camera"),
             contents: &super::webgl::uniform_bytes(
                 device,

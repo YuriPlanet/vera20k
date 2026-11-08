@@ -717,7 +717,7 @@ impl BatchRenderer {
             _native_z_pad: 0.0,
         };
         let camera_buffer: wgpu::Buffer =
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            crate::render::gpu::create_init_buffer(&device, &wgpu::util::BufferInitDescriptor {
                 label: Some("Camera Uniform"),
                 contents: &crate::render::webgl::uniform_bytes(
                     device,
@@ -739,7 +739,7 @@ impl BatchRenderer {
 
         // UI camera — identical layout but always zoom=1.0 for screen-fixed elements.
         let ui_camera_buffer: wgpu::Buffer =
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            crate::render::gpu::create_init_buffer(&device, &wgpu::util::BufferInitDescriptor {
                 label: Some("UI Camera Uniform"),
                 contents: &crate::render::webgl::uniform_bytes(
                     device,
@@ -1755,7 +1755,7 @@ impl BatchRenderer {
         &self,
         device: &wgpu::Device,
     ) -> (wgpu::Buffer, wgpu::BindGroup) {
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let buffer = crate::render::gpu::create_init_buffer(&device, &wgpu::util::BufferInitDescriptor {
             label: Some("Surface UI Camera Uniform"),
             contents: &crate::render::webgl::uniform_bytes(
                 device,
@@ -1787,7 +1787,7 @@ impl BatchRenderer {
             zoom,
             ..self.ui_camera_uniform()
         };
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let buffer = crate::render::gpu::create_init_buffer(&device, &wgpu::util::BufferInitDescriptor {
             label: Some("Frame world projection"),
             contents: &crate::render::webgl::uniform_bytes(device, bytemuck::bytes_of(&uniform)),
             usage: wgpu::BufferUsages::UNIFORM,
@@ -1841,16 +1841,17 @@ impl BatchRenderer {
         gpu: &GpuContext,
         instances: &[SpriteInstance],
     ) -> Option<(wgpu::Buffer, u32)> {
-        if instances.is_empty() {
+        if instances.is_empty() || gpu.device_lost() {
             return None;
         }
-        let buffer: wgpu::Buffer =
-            gpu.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("External Batch Instances"),
-                    contents: bytemuck::cast_slice(instances),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
+        let buffer = crate::render::gpu::create_init_buffer(
+            &gpu.device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("External Batch Instances"),
+                contents: bytemuck::cast_slice(instances),
+                usage: wgpu::BufferUsages::VERTEX,
+            },
+        );
         Some((buffer, instances.len() as u32))
     }
 

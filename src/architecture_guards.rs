@@ -436,7 +436,11 @@ fn engine_per_client_reads_have_pinned_callers() {
         ),
         (
             "observer_houses",
-            &[("sim/scenario_session.rs", 6), ("sim/snapshot.rs", 1)],
+            &[
+                ("sim/scenario_session.rs", 6),
+                ("sim/scenario_bootstrap.rs", 1),
+                ("sim/snapshot.rs", 1),
+            ],
         ),
         (
             "is_observer_house",

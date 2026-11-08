@@ -941,6 +941,15 @@ impl App {
             crate::app::frontend::shell_transition::MainMenuFirstPaintPoll::Acquire => {}
         }
 
+        // A lost device can draw nothing further: say so once and quit, rather
+        // than freeze a window that will never repaint. `acquire_frame` also
+        // refuses to hand out frames after this, so the dialog is the only
+        // thing the player would otherwise see change.
+        if let Some(message) = state.renderer.gpu.take_device_loss_report() {
+            crate::app::system_dialog::report_device_lost(&message);
+            event_loop.exit();
+            return Ok(FrameRenderOutcome::Unavailable);
+        }
         let Some(output) = state
             .renderer
             .gpu

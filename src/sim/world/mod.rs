@@ -5628,9 +5628,18 @@ impl Simulation {
         for &id in order {
             let first_occurrence = seen.insert(id);
             debug_assert!(first_occurrence, "logic order has duplicate id {id}");
+            let kind = self.classify_object(id);
+            let flagged = kind.is_some_and(|kind| self.logic_membership_flag(id, kind));
+            if !flagged {
+                log::error!(
+                    "logic membership mismatch: id={id} kind={kind:?} \
+                     pending_delete={} display={}",
+                    self.substrate.pending_delete.contains_object(&id),
+                    self.substrate.display.layer_of(id).is_some(),
+                );
+            }
             debug_assert!(
-                self.classify_object(id)
-                    .is_some_and(|kind| self.logic_membership_flag(id, kind)),
+                flagged,
                 "logic order id {id} is missing or not membership-flagged",
             );
         }

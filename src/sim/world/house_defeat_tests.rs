@@ -114,6 +114,111 @@ fn sim_with_houses(sides: &[u8]) -> (Simulation, Vec<InternedId>) {
 }
 
 #[test]
+fn a_spectated_match_runs_on_after_the_first_computer_falls() {
+    // A single-player skirmish watched by the local observer: the observer is
+    // passive (no starting forces, so the defeat gate leaves it alone) and
+    // human. The match must not end while two hostile computers still fight.
+    let (mut sim, owners) = sim_with_houses(&[0, 1, 2, 3]);
+    sim.session.set_current_house_for_test(Some(owners[3]));
+    sim.session.install_multiplayer_house_identity(
+        crate::skirmish_modes::MpModeClass::Battle,
+        vec![owners[3]],
+    );
+    sim.make_house_multiplay_passive(owners[3]);
+    sim.houses
+        .get_mut(&owners[3])
+        .unwrap()
+        .set_is_human_for_test(true);
+    for owner in &owners {
+        sim.houses
+            .get_mut(owner)
+            .unwrap()
+            .tracking_mut()
+            .set_for_test(1, &[], (0, 0, 0), &[]);
+    }
+    sim.houses
+        .get_mut(&owners[0])
+        .unwrap()
+        .tracking_mut()
+        .set_for_test(0, &[], (0, 0, 0), &[]);
+    sim.check_defeat(None, None);
+    assert!(sim.houses[&owners[0]].is_defeated());
+    assert!(
+        sim.session.outcome_request().is_none(),
+        "the observer is still watching two hostile computers"
+    );
+    // The second computer falls: one side is left, so the verdict publishes.
+    sim.houses
+        .get_mut(&owners[1])
+        .unwrap()
+        .tracking_mut()
+        .set_for_test(0, &[], (0, 0, 0), &[]);
+    sim.check_defeat(None, None);
+    // The flag waits out `SavourDelay` and is published on a later House pass.
+    sim.session.set_binary_frame_for_test(5000);
+    sim.check_defeat(None, None);
+    assert!(
+        sim.session.outcome_request().is_some(),
+        "the last surviving computer ends the watched match"
+    );
+}
+
+/// A watched match must not finish while the computers are one alliance and
+/// the observer is still behind the screen. The pairwise "is the field a
+/// single side" scan counts every living human: a spectator is passive (the
+/// defeat gate needs that to leave its empty House alone) yet there is still
+/// a player behind it, and native counts such a House the moment it is not
+/// passive. Before, the observer dropped out of the scan and the computers'
+/// own alliance read as one faction left.
+#[test]
+fn an_observed_match_runs_on_while_the_computers_form_one_alliance() {
+    let (mut sim, owners) = sim_with_houses(&[0, 1, 2, 3]);
+    sim.session.set_current_house_for_test(Some(owners[3]));
+    sim.session.install_multiplayer_house_identity(
+        crate::skirmish_modes::MpModeClass::Battle,
+        vec![owners[3]],
+    );
+    sim.make_house_multiplay_passive(owners[3]);
+    sim.houses
+        .get_mut(&owners[3])
+        .unwrap()
+        .set_is_human_for_test(true);
+    for owner in &owners {
+        sim.houses
+            .get_mut(owner)
+            .unwrap()
+            .tracking_mut()
+            .set_for_test(1, &[], (0, 0, 0), &[]);
+    }
+    // The three computers ally each other — the effect a defeated computer's
+    // `[AI] Paranoid` pass has, which the mode's vt+4 does not forbid.
+    let mut allies = crate::map::houses::HouseAllianceMap::new();
+    for n in 0..3u8 {
+        let set = (0..3u8)
+            .filter(|m| *m != n)
+            .map(|m| format!("HOUSE{m}"))
+            .collect();
+        allies.insert(format!("HOUSE{n}"), set);
+    }
+    sim.install_house_alliances(
+        crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(allies),
+        &rules(3),
+    );
+    // One of them dies.
+    sim.houses
+        .get_mut(&owners[0])
+        .unwrap()
+        .tracking_mut()
+        .set_for_test(0, &[], (0, 0, 0), &[]);
+    sim.check_defeat(None, None);
+    assert!(sim.houses[&owners[0]].is_defeated());
+    assert!(
+        sim.session.outcome_request().is_none(),
+        "the observer is still watching, and the computers' alliance is not the whole field"
+    );
+}
+
+#[test]
 fn observer_defeat_waits_for_hostile_players_then_finishes_without_loss_voice() {
     use crate::sim::scenario_session::ScenarioGameMode;
     use crate::sim::world::SimSoundEvent;

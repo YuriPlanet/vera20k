@@ -3373,9 +3373,18 @@ impl Simulation {
     /// gamemd-derived: active YR `LogicClass__UnregisterObject @ 0x0055BAE0`
     /// gates removal on the object's membership flag, performs the first-match
     /// stable erase, then repairs that flag.
+    ///
+    /// A delete can reach here after the object has already left its store
+    /// (a scalar path that never ran UnInit, or a double finalize): the id
+    /// must still come out of the vector, or the next frame's membership
+    /// check panics over an order entry nothing owns any more.
     fn unregister_logic_object(&mut self, stable_id: u64) -> bool {
         let Some(kind) = self.classify_object(stable_id) else {
-            return false;
+            let orphan = self.substrate.logic.remove_first(stable_id);
+            if orphan {
+                log::warn!("logic order dropped orphan id {stable_id}: its object is already gone");
+            }
+            return orphan;
         };
         if !self.logic_membership_flag(stable_id, kind) {
             return false;
@@ -6744,6 +6753,11 @@ impl Simulation {
         context: UninitContext<'_>,
         game_state: i32,
     ) {
+        // The Logic slot goes with the object, whether or not an earlier
+        // UnInit ran. A delete arriving without one would otherwise leave
+        // the id in the vector and panic the next frame's membership check;
+        // this is idempotent for the paths that already concealed it.
+        self.unregister_logic_object(stable_id);
         let kind = self.classify_object(stable_id);
         if kind == Some(ObjectKind::Spotlight) {
             self.destroy_spotlight(stable_id, context);

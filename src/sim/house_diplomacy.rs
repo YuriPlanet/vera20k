@@ -414,9 +414,14 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        // 0x00501640..0x00501662: the mode's vt+4, else Rules AlliesAllowed.
-        // Battle and FreeForAll, the skirmish-listed modes, share vt+4
-        // 0x005C0E30, which answers false.
+        // 0x00501640..0x00501662: the mode's vt+4, else Rules AlliesAllowed —
+        // an OR, not a gate the mode can close. The Rules half is
+        // `Rules+0x14B5`, read as "AlliesAllowed" (its INI read is at
+        // 0x672148). Battle and FreeForAll, the skirmish-listed modes, share
+        // vt+4 0x005C0E30, which answers false (`xor al, al; ret`): that half
+        // cannot open the gate on its own and the match's
+        // `MultiplayerDialogSettings` value decides. Every other mode class's
+        // vt+4 is not ported yet, so only the Rules half is read here.
         if !rules.general.allies_allowed {
             return;
         }
