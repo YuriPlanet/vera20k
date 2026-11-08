@@ -409,6 +409,38 @@ impl Simulation {
         }
     }
 
+    /// Ares TechnoClass_Update1004B320's Deactivated Unit block, after the
+    /// operator update: a Unit with a NavCom, held by no Magnetron (+2B0),
+    /// whose locomotor still moves (ILocomotion+10) drops the destination
+    /// (vt+0x480(0, 1)) and stops its driver (vt+0x500).
+    #[cfg(feature = "ares")]
+    pub(crate) fn stop_ares_deactivated_unit_driving(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        if !entity.deactivated.is_offline()
+            || entity.category() != EntityCategory::Unit
+            || entity.navigation.nav_com().is_none()
+            || entity.lift.source().is_some()
+            || crate::sim::movement::motion_query::is_moving(entity) != Some(true)
+        {
+            return;
+        }
+        if let Err(cause) = self.assign_destination_represented(id, None, rules, registry, effects)
+        {
+            log::warn!("Deactivated unit {id} destination: {cause}");
+        }
+        if let Err(cause) = self.foot_stop_driver(id, rules, registry, effects) {
+            log::warn!("Deactivated unit {id} driver: {cause}");
+        }
+    }
+
     /// `TechnoClass::Reactivate @ 0x0070FBE0`: ResetOrdersToGuard
     /// (vt+0x3D0), a Foot's ILocomotion Power_On (the base `0x0055A8F0` in
     /// every family), its type's `ActivateSound=` where it stands if it was
@@ -439,35 +471,9 @@ impl Simulation {
             if entity.emp_remaining() > 0 {
                 return;
             }
-            if self
-                .object_type(entity.type_ref(), rules)
-                .is_some_and(|object| object.powered_unit)
-            {
-                //100454F0 scans the existing House+6C building order, not its
-                // aggregate center count: matching PowersUnit, counted+662,
-                // and no EMP on that center. No second building registry.
-                let powered = self.houses.get(&entity.owner()).is_some_and(|house| {
-                    house.base_projection().buildings().iter().any(|building| {
-                        self.substrate
-                            .entities
-                            .get(*building)
-                            .is_some_and(|center| {
-                                center.building_powered_center.is_counted()
-                                    && center.emp_remaining() <= 0
-                                    && self
-                                        .object_type(center.type_ref(), rules)
-                                        .and_then(|object| object.powers_unit.as_deref())
-                                        .is_some_and(|name| {
-                                            self.interner
-                                                .resolve(entity.type_ref())
-                                                .eq_ignore_ascii_case(name)
-                                        })
-                            })
-                    })
-                });
-                if !powered {
-                    return;
-                }
+            //100454F0: a PoweredUnit= center or the PoweredBy source.
+            if !self.ares_is_powered(id, rules) {
+                return;
             }
             // Activate1004CCE2..1004CCF4 applies this after power admission.
             if !self.ares_is_operated(id, rules) {
@@ -590,6 +596,13 @@ impl Simulation {
             .wrapping_add(self.session.binary_frame() as i32)
             .wrapping_add(entity.native_unique_id());
         if phase % 30 != 0 {
+            return;
+        }
+        // Ares UnitClass_Update_Deactivated1004CFD0 (hook736135) skips the
+        // draws and the sparks while IsPowered100454F0 holds: EMP and
+        // Operator victims do not sparkle.
+        #[cfg(feature = "ares")]
+        if self.ares_is_powered(id, rules) {
             return;
         }
         let dy = self.scenario_rng.next_range_i32_inclusive(-100, 100);

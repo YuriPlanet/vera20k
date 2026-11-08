@@ -177,11 +177,30 @@ impl Simulation {
         if object.invisible_in_game || (object.gate && building.is_open_gate()) {
             return Ok(false);
         }
+        // Ares 3.0 InfantryClass_Update 10014DB0 (hook 0x51BD4C): an `IsPassable`
+        // building is ignored (0x51BD7D); a `Firestorm.Wall` one takes the
+        // stock FirestormWall branch (0x51BD56) in place of `FirestormWall=`:
+        // only while its owner's firestorm is up does the man scatter.
+        #[cfg(feature = "ares")]
+        if object.building_type_ext().is_passable {
+            return Ok(false);
+        }
+        #[cfg(feature = "ares")]
+        if object.building_type_ext().firestorm_wall {
+            if !self.ares_firestorm.is_active(building.owner()) {
+                return Ok(false);
+            }
+        } else if object.laser_fence {
+            return Ok(false);
+        }
         // RESIDUAL: specialized fence state. This prefix compares LaserFence+618
         // with8/12 and reads its owner's Firestorm+1FA. Their runtime
         // owners are absent. Such types retain the prior no-Scatter behavior
         // until those separate mechanisms establish the required state.
         // Stock GAPILE and all ordinary barracks have both type flags false.
+        // (Ares builds own the firestorm arm above; the hook leaves the stock
+        // `FirestormWall=` flag unread.)
+        #[cfg(not(feature = "ares"))]
         if object.laser_fence || object.firestorm_wall {
             return Ok(false);
         }
@@ -240,6 +259,19 @@ impl Simulation {
         let Some(kind) = admitted else {
             return Ok(LocomotorProcess::default());
         };
+        // Ares TechnoExt::CreateWithDroppod (10044030) installs the DropPod
+        // locomotor over the Foot's own: its Process (`0x004B5B70`) is the
+        // one this call makes until the pod lands.
+        #[cfg(feature = "ares")]
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.ares_drop_pod().is_some())
+        {
+            self.process_drop_pod_locomotor(stable_id, rules, overlay_registry, ctx.effects);
+            return Ok(LocomotorProcess::admitted());
+        }
         match kind {
             LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Walk => self
                 .process_ground_locomotor_one(stable_id, rules, overlay_registry, ctx.effects)
@@ -856,6 +888,31 @@ impl Simulation {
             return Ok(outcome);
         }
 
+        // Ares 3.0 10014BA0 (hook 0x4DA53E) burns a live Foot standing in
+        // an active firestorm wall, then heals one in tiberium, right after
+        // FootAI's TechnoAI call; the hook then replays 4DA53E..548's
+        // Object+90 reload, so a burnt Foot returns here.
+        #[cfg(feature = "ares")]
+        if !tube_active_at_entry
+            && sim.substrate.entities.get(stable_id).is_some_and(|entity| {
+                matches!(
+                    entity.category(),
+                    EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
+                )
+            })
+        {
+            outcome.bridge_state_changed |=
+                sim.ares_foot_firestorm(stable_id, rules, overlay_registry, object_ctx.effects);
+            sim.ares_foot_tiberium_heal(stable_id, rules);
+            if sim
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_none_or(|entity| entity.death.is_dying() || !entity.lifecycle.object_alive())
+            {
+                return Ok(outcome);
+            }
+        }
         // Foot4DA54E follows the post-TechnoAI Object+90 gate above.
         // An entry-active Tube bypasses FootAI; it must retain the byte.
         if !tube_active_at_entry
@@ -955,6 +1012,10 @@ impl Simulation {
                     return None;
                 }
                 let object = sim.interner.object_type(entity.type_ref(), rules)?;
+                #[cfg(feature = "ares")]
+                let air_rate = object.techno_combat().movement().air_rate();
+                #[cfg(not(feature = "ares"))]
+                let air_rate = 0;
                 Some((
                     crate::sim::animation::FootBodyCadence {
                         walk_rate: object.walk_rate,
@@ -962,9 +1023,10 @@ impl Simulation {
                     },
                     object.hover_attack,
                     object.deploy_to_land,
+                    air_rate,
                 ))
             });
-            if let (Some((cadence, hover_attack, deploy_to_land)), Some(entity)) =
+            if let (Some((cadence, hover_attack, deploy_to_land, air_rate)), Some(entity)) =
                 (foot_body_cadence, sim.substrate.entities.get_mut(stable_id))
             {
                 crate::sim::animation::tick_foot_body_frame_counter(
@@ -973,6 +1035,7 @@ impl Simulation {
                     cadence,
                     hover_attack,
                     deploy_to_land,
+                    air_rate,
                     sim.resolved_terrain.as_ref(),
                     sim.session.binary_frame(),
                 );

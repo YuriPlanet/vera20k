@@ -24,6 +24,7 @@ use crate::sim::world::{SimSoundEvent, Simulation};
 
 /// The `[SuperWeaponTypes]` entry Launch case 3 selects for the player's next
 /// click (`0x006CC46E`, the literal index 4: retail ChronoWarpSpecial).
+#[cfg(not(feature = "ares"))]
 fn chrono_warp_selection(rules: &RuleSet) -> Option<&str> {
     rules
         .super_weapon_order
@@ -31,9 +32,18 @@ fn chrono_warp_selection(rules: &RuleSet) -> Option<&str> {
         .map(String::as_str)
 }
 
-/// Whether the local selection is the Chrono Warp (`0x008809A0 == 4`).
+/// Whether the local selection is the Chrono Warp (`0x008809A0 == 4`). The
+/// Ares hook 6CBCDE (10035870) asks instead whether the selected type's
+/// `Type=` is ChronoWarp.
 pub(crate) fn chrono_warp_selected(targeting: Option<&TargetingMode>, rules: &RuleSet) -> bool {
     let selected = targeting.and_then(TargetingMode::as_super_weapon);
+    #[cfg(feature = "ares")]
+    return selected.is_some_and(|name| {
+        rules
+            .super_weapon(name)
+            .is_some_and(|sw| sw.kind == SuperWeaponKind::ChronoWarp)
+    });
+    #[cfg(not(feature = "ares"))]
     selected.is_some_and(|name| {
         chrono_warp_selection(rules).is_some_and(|warp| warp.eq_ignore_ascii_case(name))
             || rules.super_weapon(name).is_some_and(|warp| {
@@ -106,6 +116,28 @@ pub(super) fn follow_selection_writes(
             }
             continue;
         }
+        // Installed Ares (SWTypeExt::Launch 10033201) clears a redirected
+        // Nuke's, Dominator's or Genetic Mutator's selection only when it is
+        // the fired type.
+        #[cfg(feature = "ares")]
+        if rules
+            .super_weapon(sim.interner().resolve(*sw_type))
+            .is_some_and(|sw| {
+                matches!(
+                    sw.kind,
+                    SuperWeaponKind::MultiMissile
+                        | SuperWeaponKind::PsychicDominator
+                        | SuperWeaponKind::GeneticConverter
+                )
+            })
+        {
+            if selected
+                .is_some_and(|name| name.eq_ignore_ascii_case(sim.interner().resolve(*sw_type)))
+            {
+                *targeting = None;
+            }
+            continue;
+        }
         match rules
             .super_weapon(sim.interner().resolve(*sw_type))
             .map(|sw| sw.kind)
@@ -114,7 +146,13 @@ pub(super) fn follow_selection_writes(
             Some(
                 SuperWeaponKind::GenericWarhead
                 | SuperWeaponKind::UnitDelivery
-                | SuperWeaponKind::HunterSeeker,
+                | SuperWeaponKind::HunterSeeker
+                | SuperWeaponKind::Protect
+                | SuperWeaponKind::Battery
+                | SuperWeaponKind::SonarPulse
+                | SuperWeaponKind::EMPulse
+                | SuperWeaponKind::Firestorm
+                | SuperWeaponKind::DropPod,
             ) => {
                 // Ares new-type cleanup only clears the fired selection:
                 // an automatic launch must not disarm a different SW.
@@ -125,8 +163,16 @@ pub(super) fn follow_selection_writes(
                 }
             }
             Some(SuperWeaponKind::ChronoSphere) => {
-                *targeting = chrono_warp_selection(rules)
-                    .map(|name| TargetingMode::SuperWeapon(name.to_string()));
+                // SW_ChronoSphere::Activate (1006ED30) selects its own warp.
+                #[cfg(feature = "ares")]
+                let warp = rules
+                    .super_weapon(sim.interner().resolve(*sw_type))
+                    .and_then(|sphere| {
+                        crate::sim::superweapon::ares_chrono_warp_for(rules, sphere)
+                    });
+                #[cfg(not(feature = "ares"))]
+                let warp = chrono_warp_selection(rules);
+                *targeting = warp.map(|name| TargetingMode::SuperWeapon(name.to_string()));
             }
             Some(
                 SuperWeaponKind::MultiMissile
@@ -462,8 +508,12 @@ mod tests {
             serde_json::from_str(crate::test_fixture::text("tools/superweapon_oracle.json"))
                 .unwrap();
         for (section, name) in [
+            // Installed Ares clears only the fired type's selection for its
+            // redirected Nuke and Genetic Mutator (SWTypeExt::Launch 10033201).
+            #[cfg(not(feature = "ares"))]
             ("nuke_launch", "NukeSpecial"),
             ("iron_curtain_launch", "IronCurtainSpecial"),
+            #[cfg(not(feature = "ares"))]
             ("genetic_launch", "GeneticConverterSpecial"),
             ("psychic_launch", "PsychicRevealSpecial"),
         ] {

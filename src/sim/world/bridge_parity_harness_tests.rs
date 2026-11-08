@@ -429,7 +429,19 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // client's PlayerPtr map (`0x00567AB0..0x00567B12`). Only the fog digest
 // moves; route, replay and absolute RNG tripwires above stay green.
 // Previous: 0x8962_19D2_2722_4F7D.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x534D_F91E_A02A_F8B2;
+// Ares builds also fold two retained Ares states for every actor here:
+// AttachEffectClass::Update10058E00 (TechnoClass_Update hook 0x6F9E50 ->
+// 1004B320) settles the type-effect state at Disabled on each actor's first
+// update, since no type sets AttachEffect.Duration, and RecalculateStats
+// 100460A0's attached-cloak byte folds even while false. Hash composition
+// only: a temporary control skipping just those two folds in an Ares build
+// gave the default value, every per-frame replay diagnostic field matched
+// the default build's, and every tripwire above stayed green. Control removed.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = if cfg!(feature = "ares") {
+    0xF5A9_CCCB_69E6_AD58
+} else {
+    0x534D_F91E_A02A_F8B2
+};
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so

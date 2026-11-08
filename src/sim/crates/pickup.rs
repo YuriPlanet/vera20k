@@ -541,6 +541,7 @@ pub(crate) fn pickup_crate(
             POWERUP_MONEY => {
                 let amount = effects::money_crate_amount(
                     &mut sim.scenario_rng,
+                    rules,
                     selection.solo_money,
                     magnitude,
                 );

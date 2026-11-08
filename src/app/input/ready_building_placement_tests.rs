@@ -936,6 +936,10 @@ fn pending_produce_right_click_suspends_on_arrival_without_duplicate_orders() {
     }
 }
 
+// The Infantry request mark falls through to the Vehicle one only without
+// Ares (FactoryClass flag fixes 1005CBD0/1005CB30/1005CBF0, hooks
+// 0x5005CC/0x50067C/0x5007BE).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn pending_alternating_clicks_retain_native_hold_request_and_resume_on_arrival() {
     let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(

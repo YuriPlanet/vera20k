@@ -720,6 +720,9 @@ impl Fixture {
     }
 }
 
+/// Ares replaces the hostile arm (hooks `0x51E5BB`, `0x51E5E1`; see
+/// `sim::ares_rubble`'s tests).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn original_half_threshold_and_friendly_repair_object_actions() {
     let native = corpus();

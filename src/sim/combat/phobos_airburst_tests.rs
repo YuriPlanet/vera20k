@@ -447,7 +447,10 @@ fn child_rad_beam_takes_the_house_color_and_the_scattered_source_coords() {
         .collect();
     assert_eq!(births.len(), 1, "the expired firer no longer blocks it");
     assert_eq!(births[0].house, Some(americans));
-    assert!(births[0].house_color);
+    assert_eq!(
+        births[0].house_color,
+        crate::sim::combat::radiation_beam::BeamHouseColor::Laser
+    );
     assert_eq!(
         births[0].to, births[0].from,
         "GetTargetCoordsForFiring: Inviso + FlakScatter uses the bullet's own location"

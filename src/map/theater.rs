@@ -1263,44 +1263,42 @@ pub fn inject_bridge_middle_tiles(
     asset_manager: &crate::assets::asset_manager::AssetManager,
 ) {
     for &tile_id in &table.tile_ids {
-        let Some(filename) = lookup.filename(tile_id as i32) else {
+        if let Err(error) = inject_template_tiles(needed, tile_id, lookup, asset_manager) {
             log::warn!(
-                "Bridge anchor variant tile_id {} has no entry in TilesetLookup; skipping pre-load",
-                tile_id
+                "Bridge anchor variant tile_id {tile_id}: {error}; cell will render as native tile_id on damage"
             );
-            continue;
-        };
-        let filename: String = filename.to_string();
-        let Some(tmp_data) = asset_manager.get_ref(&filename) else {
-            log::warn!(
-                "Bridge anchor variant TMP {} missing from MIX archives; cell will render as native tile_id on damage",
-                filename
-            );
-            continue;
-        };
-        let tmp = match TmpFile::from_bytes(tmp_data) {
-            Ok(t) => t,
-            Err(e) => {
-                log::warn!(
-                    "Bridge anchor variant TMP {} failed to parse: {:#}",
-                    filename,
-                    e
-                );
-                continue;
-            }
-        };
-        let cell_count = (tmp.template_width * tmp.template_height) as usize;
-        for sub_tile in 0..cell_count {
-            if tmp.tiles[sub_tile].is_none() {
-                continue;
-            }
-            needed.insert(TileKey {
-                tile_id,
-                sub_tile: sub_tile as u8,
-                variant: 0,
-            });
         }
     }
+}
+
+/// Inject a TileKey for every subtile image of `tile_id`'s TMP template into
+/// the atlas pre-loader's `needed` set. The error says why none were added.
+pub fn inject_template_tiles(
+    needed: &mut HashSet<TileKey>,
+    tile_id: u16,
+    lookup: &TilesetLookup,
+    asset_manager: &crate::assets::asset_manager::AssetManager,
+) -> Result<(), String> {
+    let filename = lookup
+        .filename(tile_id as i32)
+        .ok_or("no entry in TilesetLookup")?;
+    let tmp_data = asset_manager
+        .get_ref(filename)
+        .ok_or_else(|| format!("TMP {filename} missing from MIX archives"))?;
+    let tmp = TmpFile::from_bytes(tmp_data)
+        .map_err(|error| format!("TMP {filename} failed to parse: {error:#}"))?;
+    let cell_count = (tmp.template_width * tmp.template_height) as usize;
+    for sub_tile in 0..cell_count {
+        if tmp.tiles[sub_tile].is_none() {
+            continue;
+        }
+        needed.insert(TileKey {
+            tile_id,
+            sub_tile: sub_tile as u8,
+            variant: 0,
+        });
+    }
+    Ok(())
 }
 
 /// Load RGBA tile images for tiles needed by the map. Groups by tile_id

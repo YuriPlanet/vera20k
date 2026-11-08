@@ -22,7 +22,7 @@ use crate::sim::superweapon::SuperWeaponView;
 use crate::sim::world::{LifecycleOutput, Simulation, TickLane};
 use crate::ui::sidebar::cameo_order::{
     Cameo, CameoId, CameoKey, CameoRequestState, CameoStrips, pending_production_affordability,
-    pending_production_prediction_rate, pending_production_smoothed_stage,
+    pending_production_prediction_rate, pending_production_smoothed_stage, strip_rejects_entry,
 };
 use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
 use crate::ui::sidebar::{ArmedSidebarEntry, SidebarChromeLayoutSpec, SidebarTab, SidebarView};
@@ -1031,16 +1031,13 @@ impl SidebarProjectionState {
                         )
                         .is_some()
                     {
-                        let mut duration = crate::sim::production::type_base_build_time(
-                            object.cost,
-                            rules.production.build_speed,
-                        );
+                        let mut duration = crate::sim::production::type_build_time(object, rules);
                         // Select6AB8B6..6AB8DA: Building Wall's coefficient
                         // follows the shared type vt+88 duration. The actual
                         // Time_To_Build has its own later wall arm6F4917.
-                        if object.category == crate::rules::object_type::ObjectCategory::Building
-                            && object.wall
-                        {
+                        // Ares SelectClass_ProcessInput_BuildTime (hook
+                        // 6AB8BB ->10041950) skips it with BuildTime.Speed.
+                        if object.wall_build_speed_applies() {
                             use crate::util::native_x87::MaskedX87Chop53 as X87;
                             duration = X87::ftol_i32_low_masked(X87::mul(
                                 X87::load_i32(duration),
@@ -1064,6 +1061,10 @@ impl SidebarProjectionState {
 
     /// The original Infantry set/clear arm5005CC/5007BE falls through to
     /// the Naval-selected Vehicle slot; its getter reads only Infantry.
+    /// Ares 3.0 sets only the Infantry flag: HouseClass_SetFactoryCreatedManually
+    /// (1005CBD0, hook 0x5005CC), HouseClass_ClearFactoryCreatedManually
+    /// (1005CB30, hook 0x50067C) and HouseClass_SetFactoryCreatedManually2
+    /// (1005CBF0, hook 0x5007BE).
     fn set_prediction_category(&mut self, category: ProductionCategory, naval: bool, set: bool) {
         let mut update = |category| {
             if set {
@@ -1073,7 +1074,7 @@ impl SidebarProjectionState {
             }
         };
         update(category);
-        if category == ProductionCategory::Infantry {
+        if category == ProductionCategory::Infantry && !crate::rules::ARES_ENABLED {
             update(if naval {
                 ProductionCategory::Ship
             } else {
@@ -1443,7 +1444,9 @@ pub(crate) fn prepare_saved_order(
                 "saved sidebar strip {index} has an invalid request state"
             ));
         }
-        if identities.len() > 76 {
+        // AddCameo admits one entry past 75 (cameo_order.rs); an Ares strip is
+        // unbounded (Ares.dll 1002C160, hook 0x6A63B7).
+        if strip_rejects_entry(identities.len().saturating_sub(1)) {
             return Err(format!(
                 "saved sidebar strip {index} exceeds native admission capacity"
             ));
@@ -1699,6 +1702,10 @@ mod tests {
         assert!(restored.production_factory_visits(&sim).is_empty());
     }
 
+    // The Infantry request mark falls through to the Vehicle one only without
+    // Ares (FactoryClass flag fixes 1005CBD0/1005CB30/1005CBF0, hooks
+    // 0x5005CC/0x50067C/0x5007BE).
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn begin_attempt_clears_the_first_request_gate_without_discarding_failed_request() {
         use crate::app::input::sidebar_eva::{CameoClick, CameoOrder};

@@ -491,6 +491,8 @@ impl Simulation {
             if !kills.contains(&victim) {
                 continue;
             }
+            #[cfg(feature = "ares")]
+            self.ares_crush_damage(id, victim, rules, registry, effects);
             if let Some(entity) = self.substrate.entities.get(victim) {
                 super::bump_crush::emit_crush_kill_sounds_at(
                     entity,
@@ -512,7 +514,7 @@ impl Simulation {
                 .is_some_and(|entity| entity.category() == EntityCategory::Unit)
             {
                 crushed_unit = true;
-                self.unit_death_explosion(rules, victim, &mut Vec::new());
+                self.unit_death_explosion(rules, victim, &mut Vec::new(), registry, effects);
             }
             self.free_all_captures(victim, rules, registry, effects);
             // `UnitClass::Crush_Or_Prescatter_Cell @ 0x007416A0`: the
@@ -545,6 +547,54 @@ impl Simulation {
         if self.per_cell_owner_alive(id) {
             self.foot_per_cell_process(id, reason, rules, registry, effects);
         }
+    }
+
+    /// Ares UnitClass_CrushCell_CrushDamage (Ares.dll 1004BCE0, hook
+    /// 0x7418AA), ahead of the CrushSound: the crusher receives the victim
+    /// type's `CrushDamage` for the victim's rank with its
+    /// `CrushDamage.Warhead`, else `[CombatDamage] C4Warhead`, as
+    /// `ReceiveDamage(&damage, 0, warhead, null, false, false, null)`. A zero
+    /// damage or a null warhead deals none.
+    #[cfg(feature = "ares")]
+    fn ares_crush_damage(
+        &mut self,
+        crusher: u64,
+        victim: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        use crate::sim::combat::veterancy::VeterancyRank;
+        let Some(entity) = self.substrate.entities.get(victim) else {
+            return;
+        };
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return;
+        };
+        let rank = match entity.veterancy.rank_kind() {
+            VeterancyRank::Rookie => 0,
+            VeterancyRank::Veteran => 1,
+            VeterancyRank::Elite => 2,
+        };
+        let (damage, warhead) = object.techno_combat().combat().crush_damage(rank);
+        let warhead = warhead.unwrap_or(Some(rules.bridge_warheads.c4_name.as_str()));
+        let Some(warhead) = warhead.filter(|name| !name.is_empty() && damage != 0) else {
+            return;
+        };
+        let warhead_ref = self.interner.intern(warhead);
+        let receiver = crate::sim::combat::EntityDamageEvent::direct_receiver(
+            crusher,
+            damage,
+            0,
+            crate::sim::combat::RAD_NO_ATTACKER,
+            None,
+            warhead_ref,
+            crate::sim::combat::ReceiverCallFlags {
+                ignore_defenses: false,
+                arg6: false,
+            },
+        );
+        self.commit_direct_damage_receiver(rules, registry, receiver, effects);
     }
 
     /// Unit73AFD4..73B06E. The Cell is selected from the entry sample;
@@ -1311,6 +1361,26 @@ impl Simulation {
             {
                 return Ok(None);
             }
+            // Ares 3.0 10017760 (hook 0x51A2AD): a `Tunnel=` building takes
+            // him into its owner's network (`sim::ares_tunnel`) instead,
+            // through CAN_LOAD; a refusal takes the transport arm's refusal
+            // (`0x0051A488`).
+            #[cfg(feature = "ares")]
+            if let Some(tunnel) = self.ares_tunnel_type(candidate, rules) {
+                let house = self
+                    .substrate
+                    .entities
+                    .get(candidate)
+                    .map(|building| building.owner());
+                if let Some(house) = house
+                    && self.ares_can_enter_tunnel(
+                        id, candidate, house, tunnel, rules, registry, effects,
+                    )
+                {
+                    return Ok(Some(false));
+                }
+                return self.infantry_per_cell_enter_refused(id, rules, registry, effects);
+            }
             board_passenger(
                 self,
                 rules,
@@ -1348,6 +1418,18 @@ impl Simulation {
             );
             return Ok(Some(false));
         }
+        self.infantry_per_cell_enter_refused(id, rules, registry, effects)
+    }
+
+    /// The Infantry Enter arm's refusal (`0x0051A488..0x0051A4BC`): the NULL
+    /// destination, Guard queued and a Scatter from no coordinate.
+    fn infantry_per_cell_enter_refused(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> Result<Option<bool>, FrameAdvanceError> {
         self.assign_null_destination(id, rules, registry, effects);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             crate::sim::mission::authority::queue_entity_mission_deferred(
@@ -1395,6 +1477,21 @@ impl Simulation {
         ) else {
             return false;
         };
+        // Ares 3.0 10017870 (hook 0x73A23F), before the `UnitAbsorb=` test:
+        // on Enter with a `Tunnel=` building as its NavCom, the unit asks it
+        // CAN_LOAD and enters its own House's network (`sim::ares_tunnel`);
+        // a refusal takes the refusal below (`0x0073A796`).
+        #[cfg(feature = "ares")]
+        if let Some(tunnel) = self.ares_tunnel_type(building, rules)
+            && unit.mission.effective() == MissionId::from_known(MissionType::Enter)
+            && nav_com_is(unit, building)
+        {
+            let house = unit.owner();
+            if !self.ares_can_enter_tunnel(id, building, house, tunnel, rules, registry, effects) {
+                self.unit_per_cell_enter_refused(id, rules, registry, effects);
+            }
+            return true;
+        }
         if !self
             .substrate
             .entities
@@ -1640,6 +1737,12 @@ impl Simulation {
         if reason != PerCellReason::Arrival {
             return;
         }
+        // Ares 3.0 10049280 (hook 0x4D85E4): tiberium damage first; a Foot it
+        // kills leaves the whole call (0x4D8F29), Techno tail included.
+        #[cfg(feature = "ares")]
+        if self.ares_foot_tiberium_damage(id, rules, registry, effects) {
+            return;
+        }
         self.refresh_unit_sensor_at_per_cell(id, rules, registry);
         //4D8657..4D868D compares the two coarse threat buckets and migrates
         //the cached contribution BEFORE4D870E replaces retained Foot+55C.
@@ -1705,6 +1808,10 @@ impl Simulation {
                     EntityCategory::Structure => false,
                 })
         {
+            // Ares 3.0 FootClass_UpdatePosition_HunterSeeker (1004E050, hook
+            // 0x4D8D95): a hunter leaving the map hits its Target first.
+            #[cfg(feature = "ares")]
+            self.ares_hunter_seeker_parting_strike(id, rules, registry, effects);
             self.uninit_with_context(
                 id,
                 UninitContext::new(rules, registry).with_effects(effects),

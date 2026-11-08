@@ -110,6 +110,34 @@ pub struct PsychicDominatorState {
     /// `0x00A9FAC4`: the anim Process follows, the first one and from the
     /// strike the second.
     anim: Option<AnimId>,
+    /// Ares: SW_PsychicDominator::CurrentPsyDom's type (`100C1C88`), held
+    /// from Activate until the state machine's end.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_super: Option<InternedId>,
+    /// Ares PsychicDominatorStateMachine's Deferment (`+0x1C`), and whether
+    /// the machine is registered (its clock not yet zeroed).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_deferment: i32,
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_machine: bool,
+    /// CurrentPsyDom's `Light.*`, which UpdateLighting (hook 53C280) reads
+    /// while the Dominator tints the scenario.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_light: Option<crate::rules::superweapon_type::AresSuperWeaponLighting>,
+}
+
+#[cfg(feature = "ares")]
+impl PsychicDominatorState {
+    /// CurrentPsyDom's `Light.*`, none without one.
+    pub(crate) fn ares_light(
+        &self,
+    ) -> Option<crate::rules::superweapon_type::AresSuperWeaponLighting> {
+        self.ares_super.and(self.ares_light)
+    }
 }
 
 /// `PsyDom::Active @ 0x0053B400`: any status but 0, the fade back included.
@@ -202,6 +230,12 @@ pub(super) fn process(
     overlay_registry: Option<&OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> bool {
+    // Ares hook 53AF40 (10037B40) skips the stock Process; its state
+    // machine (10070BA0) runs in its place.
+    if cfg!(feature = "ares") {
+        #[cfg(feature = "ares")]
+        return ares_process(sim, rules, overlay_registry, frame_effects);
+    }
     match sim.psychic_dominator.status {
         Status::Idle => {}
         Status::Started => sim.psychic_dominator.status = Status::Rising,
@@ -397,6 +431,7 @@ impl PsychicDominatorState {
             cell,
             owner,
             anim,
+            ..Self::default()
         }
     }
 
@@ -421,4 +456,366 @@ impl PsychicDominatorState {
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn fires_for_test(stage: i32, frames: i32, percent: i32) -> bool {
     fires(stage, frames, percent)
+}
+
+/// SW_PsychicDominator::Activate (Ares 3.0 `100707C0`, hook 6CC390): a
+/// charged Super becomes CurrentPsyDom and registers its state machine with
+/// the type's `SW.Deferment` (else 0); PsyDom's status becomes 1, its owner
+/// the Super's, its cell `cell` and its anim none. Reports activation even
+/// when uncharged.
+#[cfg(feature = "ares")]
+pub(super) fn ares_launch(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw_type: InternedId,
+    sw: &crate::rules::superweapon_type::SuperWeaponType,
+    (rx, ry): (u16, u16),
+) {
+    if !super::is_charged(sim, owner, sw_type) {
+        return;
+    }
+    let launch = rules
+        .super_weapon_metadata(&sw.id)
+        .map(|metadata| metadata.launch());
+    let deferment = launch.and_then(|launch| launch.deferment()).unwrap_or(0);
+    let state = &mut sim.psychic_dominator;
+    state.ares_light = launch.map(|launch| launch.lighting());
+    state.ares_super = Some(sw_type);
+    state.ares_deferment = deferment;
+    state.ares_machine = true;
+    state.status = Status::Started;
+    state.owner = Some(owner);
+    state.cell = (rx as i16, ry as i16);
+    state.anim = None;
+}
+
+/// SW_PsychicDominator::AbortFire (Ares 3.0 `10070780`), from ClickFire
+/// (10035130): a Dominator already active (PsyDom::Active) refuses the
+/// launch; the owner's client prints `Message.Abort`.
+#[cfg(feature = "ares")]
+pub(super) fn ares_abort_fire(
+    sim: &mut Simulation,
+    owner: InternedId,
+    sw_type: InternedId,
+) -> bool {
+    if !active(sim) {
+        return false;
+    }
+    sim.sound_events
+        .emit(SimSoundEvent::AresSuperWeaponAborted { owner, sw_type });
+    true
+}
+
+/// PsychicDominatorStateMachine::Update (Ares 3.0 `10070BA0`) for one frame,
+/// with CurrentPsyDom's SWTypeExt, after a positive Deferment counts down:
+/// - 1: the type's `Dominator.FirstAnim` (else `[General]
+///   DominatorFirstAnim=`) `Dominator.FirstAnimHeight` over the cell's
+///   GetCoords becomes PsyDom's anim; `SW.ActivationSound` (else
+///   `[AudioVisual] PsychicDominatorActivateSound=`) plays there, every
+///   client prints `Message.Activate`; status 2, the ambient fade timer
+///   restarts for one frame and UpdateLighting runs;
+/// - 2: once the anim has shown `frames * Dominator.FireAtPercentage / 100`
+///   (integer; else `DominatorFireAtPercentage=`) frames, PsyDom::Fire
+///   ([`ares_fire`]) and status 3;
+/// - 3: within 10 frames of the anim's last, status 4;
+/// - 4: within 1 frame, status 5, the cell empty, no anim, UpdateLighting;
+/// - 5: once the ambient reaches its target, no CurrentPsyDom, status 0,
+///   UpdateLighting, and the machine ends.
+///
+/// A missing anim passes each wait. Returns whether Fire changed a bridge.
+#[cfg(feature = "ares")]
+fn ares_process(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) -> bool {
+    if !sim.psychic_dominator.ares_machine {
+        return false;
+    }
+    let state = &mut sim.psychic_dominator;
+    if state.ares_deferment > 0 {
+        state.ares_deferment -= 1;
+        if state.ares_deferment != 0 {
+            return false;
+        }
+    }
+    let Some(sw) = state
+        .ares_super
+        .and_then(|typ| rules.super_weapon(sim.interner.resolve(typ)))
+    else {
+        return false;
+    };
+    let Some(metadata) = rules.super_weapon_metadata(&sw.id) else {
+        return false;
+    };
+    let dominator = metadata.launch().dominator();
+    let general = &rules.general;
+    match sim.psychic_dominator.status {
+        Status::Started => {
+            let (rx, ry) = sim.psychic_dominator.cell;
+            let ground = crate::sim::projectile::cell_ground_coord(
+                sim.resolved_terrain.as_ref(),
+                rx as u16,
+                ry as u16,
+            );
+            let coords = [
+                ground.x,
+                ground.y,
+                ground.z.wrapping_add(dominator.first_anim_height),
+            ];
+            let anim = match &dominator.first_anim {
+                Some(anim) => anim.clone(),
+                None => Some(general.dominator_first_anim.clone()),
+            }
+            .and_then(|name| super::spawn_super_anim(sim, rules, &name, coords));
+            sim.psychic_dominator.anim = anim;
+            let sound = match &sw.presentation.activation_sound {
+                Some(sound) => sound.clone(),
+                None => general.psychic_dominator_activate_sound.clone(),
+            };
+            if let Some(sound_id) = sound {
+                sim.sound_events.emit(SimSoundEvent::VocAtCoord {
+                    sound_id,
+                    coordinate: crate::sim::components::DriveCoord {
+                        x: coords[0],
+                        y: coords[1],
+                        z: coords[2],
+                    },
+                    flags: 0,
+                });
+            }
+            if let (Some(owner), Some(sw_type)) = (
+                sim.psychic_dominator.owner,
+                sim.psychic_dominator.ares_super,
+            ) {
+                sim.sound_events
+                    .emit(SimSoundEvent::AresSuperWeaponActivated { owner, sw_type });
+            }
+            sim.psychic_dominator.status = Status::Rising;
+            let frame = sim.session.binary_frame() as i32;
+            sim.session
+                .lighting_mut()
+                .restart_transition_timer(frame, START_FADE_FRAMES);
+            sim.update_lighting();
+        }
+        Status::Rising => {
+            if sim.psychic_dominator.anim.is_some() {
+                let (stage, frames) = anim_progress(sim, rules);
+                let percent = dominator
+                    .fire_at_percentage
+                    .unwrap_or(general.dominator_fire_at_percentage);
+                if frames.wrapping_mul(percent) / 100 > stage {
+                    return false;
+                }
+            }
+            let changed = ares_fire(sim, rules, sw, overlay_registry, frame_effects);
+            sim.psychic_dominator.status = Status::Struck;
+            return changed;
+        }
+        Status::Struck => {
+            let (stage, frames) = anim_progress(sim, rules);
+            if sim.psychic_dominator.anim.is_none() || frames.wrapping_sub(stage) <= ENDING_FRAMES {
+                sim.psychic_dominator.status = Status::Ending;
+            }
+        }
+        Status::Ending => {
+            let (stage, frames) = anim_progress(sim, rules);
+            if sim.psychic_dominator.anim.is_none() || frames.wrapping_sub(stage) <= LAST_FRAMES {
+                let state = &mut sim.psychic_dominator;
+                state.status = Status::FadingBack;
+                state.cell = (0, 0);
+                state.anim = None;
+                sim.update_lighting();
+            }
+        }
+        Status::FadingBack => {
+            let lighting = sim.session.lighting();
+            if lighting.current_ambient() == lighting.target_ambient() {
+                let state = &mut sim.psychic_dominator;
+                state.ares_super = None;
+                state.status = Status::Idle;
+                state.ares_machine = false;
+                sim.update_lighting();
+            }
+        }
+        Status::Idle => {}
+    }
+    false
+}
+
+/// The PsyDom_Fire hook (Ares 3.0 `10037840`, hook 53B080) that replaces
+/// `PsyDom::MindControlArea`, at the cell's GetCoords with CurrentPsyDom's
+/// SWTypeExt:
+/// 1. `Dominator.Ripple`: a flagged IonBlast (no beam);
+/// 2. `SW.CreateRadarEvent`: a type-13 radar event at the cell;
+/// 3. `Dominator.SecondAnim` (else `[General] DominatorSecondAnim=`)
+///    `Dominator.SecondAnimHeight` up becomes PsyDom's anim;
+/// 4. a positive GetDamage (`SW.Damage`, else `DominatorDamage=`) with a
+///    GetWarhead (`SW.Warhead`, else `DominatorWarhead=`): DamageArea there,
+///    affecting Tiberium, no source, from PsyDom's owner;
+/// 5. `Dominator.Capture`: each Techno on GetRange (`10070900`: `SW.Range`,
+///    else the `DominatorCaptureRange=` spread) once, in UniqueID order,
+///    through the Dominate lambda (`10035FE0`): not curtained, BalloonHover,
+///    in the air or driverless; admitted by `SW.AffectsHouse`/
+///    `SW.AffectsTarget`; a controlled one only with
+///    `Dominator.CaptureMindControlled`, a permanently controlled one only
+///    with `.CapturePermaMindControlled`, an `ImmuneToPsionics=` (or
+///    PSIONICSIMMUNE) one only with `.CaptureImmuneToPsionics`; captured
+///    ([`Simulation::ares_dominate`]); a computer owner then sends each captured
+///    Foot to Hunt, first to last.
+#[cfg(feature = "ares")]
+fn ares_fire(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    sw: &crate::rules::superweapon_type::SuperWeaponType,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) -> bool {
+    let Some(metadata) = rules.super_weapon_metadata(&sw.id) else {
+        return false;
+    };
+    let launch = metadata.launch();
+    let targeting = metadata.targeting();
+    let dominator = launch.dominator().clone();
+    let general = &rules.general;
+    let owner = sim.psychic_dominator.owner;
+    let centre = sim.psychic_dominator.cell;
+    let ground = crate::sim::projectile::cell_ground_coord(
+        sim.resolved_terrain.as_ref(),
+        centre.0 as u16,
+        centre.1 as u16,
+    );
+    let coords = [ground.x, ground.y, ground.z];
+    if dominator.ripple {
+        sim.add_dominator_ion_blast(coords);
+    }
+    if launch.radar_event() {
+        sim.sound_events.emit(SimSoundEvent::RadarEvent {
+            radar: RadarEventRequest::new(
+                RadarEventType::ImpactSilent,
+                centre.0 as u16,
+                centre.1 as u16,
+            ),
+        });
+    }
+    sim.psychic_dominator.anim = None;
+    let second = match &dominator.second_anim {
+        Some(anim) => anim.clone(),
+        None => Some(general.dominator_second_anim.clone()),
+    };
+    if let Some(second) = second {
+        let at = [
+            coords[0],
+            coords[1],
+            coords[2].wrapping_add(dominator.second_anim_height),
+        ];
+        sim.psychic_dominator.anim = super::spawn_super_anim(sim, rules, &second, at);
+    }
+    let mut bridge_changed = false;
+    let damage = launch.damage().unwrap_or(general.dominator_damage);
+    let warhead = match launch.warhead() {
+        Some(warhead) => warhead.map(str::to_owned),
+        None => Some(general.dominator_warhead.clone()),
+    };
+    if damage > 0
+        && let Some(name) = warhead
+        && let Some(warhead) = rules.warhead(&name)
+    {
+        let [x, y, z] = coords;
+        let warhead_id = sim.interner.intern(&name);
+        bridge_changed = crate::sim::combat::world_receiver::apply_area_damage(
+            sim,
+            rules,
+            overlay_registry,
+            crate::sim::projectile::ProjectileCoord::new(x, y, z),
+            damage,
+            warhead,
+            true,
+            (crate::sim::combat::RAD_NO_ATTACKER, owner, warhead_id),
+            frame_effects,
+        )
+        .bridge_state_changed;
+    }
+    let Some(owner) = owner.filter(|_| dominator.capture) else {
+        return bridge_changed;
+    };
+    let range = match launch.range() {
+        (width, height) if width < 0.0 && height < 0 => (general.dominator_capture_range as f32, 0),
+        range => range,
+    };
+    let ring = match &dominator.control_anim {
+        Some(anim) => anim.clone(),
+        None => rules.mind_control.perma_controlled_anim.clone(),
+    };
+    let frame = sim.session.binary_frame();
+    let mut minions = Vec::new();
+    for id in super::protect::area_technos_in_spread(sim, range, (centre.0 as u16, centre.1 as u16))
+    {
+        let Some(entity) = sim.substrate.entities.get(id) else {
+            continue;
+        };
+        let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+            continue;
+        };
+        let immune = object.immune_to_psionics
+            || object
+                .promotion_abilities()
+                .is_some_and(|abilities| abilities.psionics_immune(entity.veterancy.raw()));
+        let controlled = entity.mind_control.controller().is_some();
+        if crate::sim::superweapon::invulnerability::is_invulnerable(
+            entity.invulnerability.as_ref(),
+            frame,
+        ) || object.balloon_hover
+            || crate::sim::movement::air_movement::is_high_flying(
+                entity,
+                sim.resolved_terrain.as_ref(),
+                Some((rules, &sim.interner)),
+            )
+            || entity.driver_killed()
+            || !targeting
+                .affects_house()
+                .intersects(sim.ares_house_relation(owner, entity.owner()))
+            || !super::protect::techno_affected(sim, entity, targeting.affects_target())
+            || controlled && !dominator.capture_mind_controlled
+            || entity.mind_control.permanent()
+                && !controlled
+                && !dominator.capture_perma_mind_controlled
+            || immune && !dominator.capture_immune_to_psionics
+        {
+            continue;
+        }
+        let foot = entity.category() != crate::map::entities::EntityCategory::Structure;
+        sim.ares_dominate(
+            id,
+            owner,
+            dominator.permanent_capture,
+            ring.as_deref(),
+            rules,
+            overlay_registry,
+            frame_effects,
+        );
+        if foot {
+            minions.push(id);
+        }
+    }
+    let game_mode_nonzero = sim.session.game_mode_nonzero();
+    let human = sim
+        .houses
+        .get(&owner)
+        .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
+    if !human {
+        let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };
+        for id in minions {
+            let _ = sim.mission_queue_exact(
+                id,
+                crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Hunt),
+                0,
+                frame,
+                &readiness,
+            );
+        }
+    }
+    bridge_changed
 }

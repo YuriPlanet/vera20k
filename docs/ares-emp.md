@@ -2,8 +2,10 @@
 
 This optional chain requires the compile-time `ares` feature. Default builds do
 not read the extension keys or run its Bullet/AI producers. It covers ordinary
-human-controlled Drive/Walk and ordinary AI Drive victims without Team, Spawn, Slave, Capture, Temporal,
-war-factory contact, harvester or falling/death-threshold dependencies. It also
+human-controlled Drive/Walk, AI Drive and every Fly/Jumpjet victim (Aircraft
+included), in or out of a Team, with Spawn, Slave or Capture managers, a held
+Magnetron victim or a Temporal warp, and the EMP.Threshold deaths; harvesters,
+falling objects and mind-controlled victims stay outside it. It also
 admits an independent ordinary powered defensive building without linked Prism
 support or factory/provider/occupant/undeploy dependencies. Other victims are not
 treated as generic offline objects. This is partial EMP support.
@@ -92,6 +94,33 @@ upgrade-added output) are not covered by the negative-power tower comparisons.
 Their EMP/output accounting and downstream House effects remain unproved;
 frequency is unknown and explicit use may expose incorrect power availability.
 No native immunity/output behavior is inferred from that coverage gap.
+
+## Airborne victims and managers
+
+Delivery10062320 hands the first activation to enableEMPEffect10062B40. An
+Aircraft whose GetHeight is above 0 and that no Magnetron holds (Foot+6AD) or
+dropped (+6AE) crashes at once: the counter stays written, the
+63/62 events still fire, then TechnoExt::Destroy10044300 kills it with the
+firer as killer and House (C4 warhead, ignore defenses); no sparkle or
+deactivation. Every other first hit saves LastMission, lets a Temporal
+warper go, releases a Magnetron's held object, takes a Foot out of its team
+(LiberateMember(-1, false)), deactivates (reselecting a selected victim),
+frees a CaptureManager's victims, runs updateSpawnManager10063070 with the
+firer and suspends a SlaveManager's AI timer; these are the shared owners
+PoweredBy's EnableEMPEffect2 also uses (`sim::powered_by`). Under EMP,
+updateSpawnManager destroys each rocket node (+14) with a Unit in states 1..4
+and pauses the SpawnTimer and UpdateTimer; DisableEMPEffect100627F0 (natural
+expiry or a healing hit) resumes them and the slave timer before the sparkle
+and AI recovery. After any delivery that leaves the counter positive, the
+inlined EMP.Threshold (TechnoTypeExt+13C) destroys the victim when the live counter
+exceeds |Threshold|: always for a positive one, and for the default -1 only
+while IsInAir, without a Parachute, not crashing and, for a Foot, not held
+or dropped by a Magnetron. So an airborne Jumpjet hit for more than one frame
+dies by default, and stays deactivated in the air with EMP.Threshold=0. The
+regressions `ares_emp_flying_aircraft_crash_and_airborne_jumpjet_threshold`
+and `ares_emp_spawner_loses_flying_rockets_and_holds_timers_until_expiry`
+cover both paths. The ground recovery of a landed AI Aircraft or Jumpjet is
+the same queued EMPAIRecoverMission/Hunt as AI Drive.
 
 ## Input and state ownership
 
@@ -305,11 +334,12 @@ can draw for authored RandomRate/bounce settings. Counter writes
 are delivery/cap and one decrement per actual AI visit; Deactivate/Reactivate keep
 their existing mission/destination timer writes. Anim expiry writes loop_remaining=0.
 
-Still open: AI Walk and Team/task resumption, other building mechanisms/aircraft and airborne half-distance
-collection, positive threshold death, managers/temporal/capture/harvester interactions.
-Their trigger is an EMP hit on those victims; the current producer omits the EMP
-effect there, which can change combat and scripted behavior whenever such victims
-are used. Native TypeImmune scanner indices18/19 have synthetic getter evidence,
+Still open: the AI Walk path, harvesters (DisableEMPEffect's saved-mission
+recovery), mind-controlled and falling victims, Hover/Ship/Rocket movers, other
+building mechanisms and announceAttack10062150's radar event and EVA warning for
+the player's harvesters and base buildings. Their trigger is an EMP hit on
+those victims; the current producer omits the EMP effect there, which can change
+combat and scripted behavior whenever such victims are used. Native TypeImmune scanner indices18/19 have synthetic getter evidence,
 but their production configuration meaning is not established; the shared 18-slot
 weapon owner is not expanded. The native lazy default-immunity cache is represented
 by an equivalent immutable Type/category decision on this chain, not persisted as

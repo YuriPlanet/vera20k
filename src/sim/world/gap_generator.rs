@@ -142,6 +142,16 @@ impl Simulation {
             // operational unless two retained Tesla chargers bypass it.
             online: entity.building_online(),
             tesla_chargers: entity.tesla_charge.chargers().len() as i32,
+            charger_bypass: {
+                #[cfg(feature = "ares")]
+                let keep = self
+                    .power_states
+                    .get(&entity.owner())
+                    .is_some_and(|state| state.keeps_online(&object.id));
+                #[cfg(not(feature = "ares"))]
+                let keep = false;
+                if keep { 0 } else { 2 }
+            },
             emp_remaining: entity.emp_remaining(),
             health: entity.health.current(),
             powered: object.powered,
@@ -183,7 +193,7 @@ impl Simulation {
             .then(|| {
                 (
                     self.building_operational_state(id, rules),
-                    i32::from(object.gap_radius_in_cells),
+                    object.gap_radius_in_cells,
                 )
             })
             .and_then(|(state, radius)| state.map(|state| (state, radius)))
@@ -246,10 +256,23 @@ impl Simulation {
         // The dispatcher opens with its `PowersUnit=` arms
         // (`sim::powered_unit`).
         self.powered_center_edge(id, operational, rules, frame_effects);
+        // Ares hook4549F8 (10016E30) updates a sensor array on the on edge
+        // right after that arm.
+        #[cfg(feature = "ares")]
+        if operational {
+            self.update_ares_sensor_array(id, rules, registry);
+        }
         // The `0x004549B0` off edge frees a Psychic Tower's captives
         // (`0x00454B3D`) before its gap and power slots.
         if !operational {
+            // Ares BuildingClass_UpdatePowered_PrismForward (10016950, hook
+            // 0x454B3D) takes the building out of its Prism network first.
+            #[cfg(feature = "ares")]
+            self.substrate.ares_prism_remove_from_network(id, true);
             self.free_all_captures(id, rules, registry, frame_effects);
+            // Ares hook454B5F (10016E30) on the off edge.
+            #[cfg(feature = "ares")]
+            self.update_ares_sensor_array(id, rules, registry);
         }
         if let Some((_, radius)) = self.gap_operational_state(id, rules) {
             // `0x00454B91..0x00454BEB`: the off edge's removal (`+0x269` set)
@@ -412,8 +435,8 @@ impl Simulation {
         }
         let owner = entity.owner();
         let charged = entity.gap_generator.supercharged;
-        let normal = i32::from(object.gap_radius_in_cells);
-        let super_radius = i32::from(object.super_gap_radius_in_cells);
+        let normal = object.gap_radius_in_cells;
+        let super_radius = object.super_gap_radius_in_cells;
         let operational = self.building_operational_state(id, rules) == Some(true);
         let charge = !charged && operational;
         let radius = if charge { super_radius } else { normal };
@@ -631,9 +654,7 @@ impl Simulation {
     fn map_callback_gap_radius(&self, id: u64, rules: &RuleSet) -> Option<i32> {
         let entity = self.substrate.entities.get(id)?;
         let object = self.interner.object_type(entity.type_ref(), rules)?;
-        object
-            .gap_generator
-            .then(|| i32::from(object.gap_radius_in_cells))
+        object.gap_generator.then(|| object.gap_radius_in_cells)
     }
 }
 

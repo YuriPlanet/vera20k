@@ -1729,6 +1729,7 @@ fn recompute_wall_connectivity_target(
         let connects = match crate::sim::cell_kernel::wall_connection_step(
             neighbor_id.map_or(-1, i32::from),
             i32::from(overlay_id),
+            Some(registry),
         ) {
             crate::sim::cell_kernel::WallConnectionStep::Return(connected) => connected,
             // Existing residual: this cleanup view does not implement native

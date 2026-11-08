@@ -487,6 +487,37 @@ fn finite_building_fires_a_rapid_pair_refills_zero_and_keeps_last_round_rearm() 
     assert_eq!(scene.count(gun), 1);
 }
 
+/// Ares 3.0 BuildingClass_Update_Reload (100478E0, hook 0x43FE8E): a
+/// building other than a Hospital or Armory reloads through
+/// TechnoClass::Reload, by `ReloadAmount` on its reload clock, where the
+/// stock visit refills an empty magazine at once.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_building_reloads_by_reload_amount_on_its_clock() {
+    let Some(mut scene) = Scene::new(
+        "[GAPILL]\nAmmo=4\nInitialAmmo=0\nReloadAmount=3\nReload=10\nEmptyReload=10\n\
+         CanPassiveAquire=no\n",
+    ) else {
+        return;
+    };
+    let gun = scene.spawn("GAPILL", "Americans", (16, 20));
+    for _ in 0..3 {
+        if scene.count(gun) != 0 {
+            break;
+        }
+        scene.frame();
+    }
+    assert_eq!(scene.count(gun), 3);
+    let reload = scene.reload(gun);
+    assert_eq!(reload.duration(), 10);
+    while scene.now() < reload.start_frame() + reload.duration() {
+        scene.frame();
+        assert_eq!(scene.count(gun), 3, "the clock holds the next round");
+    }
+    scene.frame();
+    assert_eq!(scene.count(gun), 4, "ReloadAmount is capped by Ammo=");
+}
+
 #[test]
 fn finite_unit_empty_reload_expires_after_fire_and_survives_actual_snapshot_restore() {
     let Some(mut scene) = Scene::new(

@@ -105,6 +105,12 @@ const SETUP_USE_MAP_Y: i32 = 122;
 const SETUP_LOAD_Y: i32 = 149;
 const SETUP_SAVE_Y: i32 = 176;
 const SETUP_DELETE_Y: i32 = 203;
+/// VERA: the Advanced/Basic toggle takes the column's next slot below Delete,
+/// at the same 27-unit pitch.
+const SETUP_ADVANCED_Y: i32 = 230;
+/// VERA: the Advanced view's seven sliders, at the option rows' 24-unit pitch
+/// from the first row; the last ends above the progress widgets (217).
+const SETUP_ADVANCED_ROW_Y: [i32; 7] = [41, 65, 90, 114, 138, 163, 187];
 /// Hidden until the generate block runs.
 const SETUP_PROGRESS_TEXT_RECT: (i32, i32, i32, i32) = (74, 219, 150, 11);
 const SETUP_PROGRESS_BAR_RECT: (i32, i32, i32, i32) = (229, 217, 100, 21);
@@ -277,6 +283,52 @@ pub enum ChooseMapModalButton {
     CreateRandomMap0x583,
 }
 
+/// VERA: the generator fields the Advanced view sets, each a 0..100 slider.
+/// The original derives all of them from the map type on every Generate
+/// (`MapSeedClass::RandomizeDerivedFields @ 0x00597260`) and shows none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdvancedField {
+    Water,
+    Hills,
+    Buildings,
+    Vegetation,
+    OreFields,
+    /// `RegionSize`: the largest plateau, one height level, the Inland and
+    /// Mountainous map types keep before cutting it into levels with cliffs.
+    PlateauSize,
+    Accessibility,
+}
+
+impl AdvancedField {
+    /// Row order in the Advanced view.
+    pub const ALL: [Self; 7] = [
+        Self::Water,
+        Self::Hills,
+        Self::Buildings,
+        Self::Vegetation,
+        Self::OreFields,
+        Self::PlateauSize,
+        Self::Accessibility,
+    ];
+
+    pub const fn row(self) -> usize {
+        self as usize
+    }
+
+    /// The row label: the string table's own names where it has one.
+    pub const fn label(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Water => ("GUI:Water", "Water"),
+            Self::Hills => ("GUI:Hills", "Hills"),
+            Self::Buildings => ("GUI:Buildings", "Buildings"),
+            Self::Vegetation => ("GUI:Vegetation", "Vegetation"),
+            Self::OreFields => ("GUI:TiberiumFields", "Ore Fields"),
+            Self::PlateauSize => ("VERA:RandomMapPlateauSize", "Plateau Size"),
+            Self::Accessibility => ("GUI:Accessability", "Accessibility"),
+        }
+    }
+}
+
 /// Every interactive control in the random-map setup dialog `0x105`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RandomMapSetupControl {
@@ -293,6 +345,11 @@ pub enum RandomMapSetupControl {
     Save0x6c3,
     Delete0x6c4,
     Cancel0x5c0,
+    /// VERA: switches the option rows between the original controls and
+    /// the Advanced sliders (offline Skirmish only).
+    AdvancedToggle,
+    /// VERA: one of the Advanced view's sliders.
+    Advanced(AdvancedField),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -351,6 +408,12 @@ pub struct RandomMapSetupLayout {
     pub save: RectPx,
     pub delete: RectPx,
     pub cancel: RectPx,
+    /// VERA: the Advanced/Basic toggle in the right column.
+    pub advanced: RectPx,
+    /// VERA: the Advanced view's labels and slider windows, by
+    /// [`AdvancedField::row`].
+    pub advanced_label_rects: [RectPx; 7],
+    pub advanced_control_rects: [RectPx; 7],
     /// Status line `0x695` (the family static, template 303x12 DLU).
     pub status_help: RectPx,
     pub progress_text: RectPx,
@@ -892,6 +955,23 @@ pub fn compute_random_map_setup_layout(screen_w: u32, screen_h: u32) -> RandomMa
         save: right_button(SETUP_SAVE_Y),
         delete: right_button(SETUP_DELETE_Y),
         cancel: back_rect(screen_w, panel),
+        advanced: right_button(SETUP_ADVANCED_Y),
+        advanced_label_rects: std::array::from_fn(|row| {
+            dlu_rect(
+                SETUP_LABEL_X,
+                SETUP_ADVANCED_ROW_Y[row] - 1,
+                SETUP_LABEL_W,
+                SETUP_TRACKBAR_H + 2,
+            )
+        }),
+        advanced_control_rects: std::array::from_fn(|row| {
+            child_window(
+                SETUP_CONTROL_X,
+                SETUP_ADVANCED_ROW_Y[row],
+                SETUP_CONTROL_W,
+                SETUP_TRACKBAR_H,
+            )
+        }),
         status_help: crate::ui::shell::layout::status_line_rect(
             RectPx::new(2, 355, 303, 12),
             screen_w,
@@ -946,6 +1026,45 @@ pub fn random_map_setup_control_at(
         .find(|(rect, _)| rect.contains(x, y))
         .map(|(_, control)| *control)
 }
+
+/// [`random_map_setup_control_at`] for a dialog that may show the Advanced
+/// view (VERA): there the sliders take the option rows, and an `extended`
+/// dialog also has the Advanced/Basic toggle.
+pub fn random_map_setup_control_at_view(
+    layout: &RandomMapSetupLayout,
+    x: i32,
+    y: i32,
+    extended: bool,
+    advanced: bool,
+) -> Option<RandomMapSetupControl> {
+    if extended && layout.advanced.contains(x, y) {
+        return Some(RandomMapSetupControl::AdvancedToggle);
+    }
+    if !advanced {
+        return random_map_setup_control_at(layout, x, y);
+    }
+    if let Some(field) = AdvancedField::ALL
+        .into_iter()
+        .find(|field| layout.advanced_control_rects[field.row()].contains(x, y))
+    {
+        return Some(RandomMapSetupControl::Advanced(field));
+    }
+    // Everything but the option rows hit-tests as in the basic view.
+    random_map_setup_control_at(layout, x, y).filter(|control| {
+        SETUP_BASIC_ROW_CONTROLS
+            .iter()
+            .all(|row_control| row_control != control)
+    })
+}
+
+const SETUP_BASIC_ROW_CONTROLS: [RandomMapSetupControl; 6] = [
+    RandomMapSetupControl::MapType0x405,
+    RandomMapSetupControl::Time0x3ea,
+    RandomMapSetupControl::Theater0x407,
+    RandomMapSetupControl::Size0x406,
+    RandomMapSetupControl::Resources0x408,
+    RandomMapSetupControl::Players0x3eb,
+];
 
 /// The open list of a combo row: directly under the face, as tall as its
 /// entries. The resource reserves a taller extent per combo, but a Windows
@@ -1264,6 +1383,9 @@ impl ScaledRects for RandomMapSetupLayout {
             save: self.save.scaled_rects(scale),
             delete: self.delete.scaled_rects(scale),
             cancel: self.cancel.scaled_rects(scale),
+            advanced: self.advanced.scaled_rects(scale),
+            advanced_label_rects: self.advanced_label_rects.scaled_rects(scale),
+            advanced_control_rects: self.advanced_control_rects.scaled_rects(scale),
             status_help: self.status_help.scaled_rects(scale),
             progress_text: self.progress_text.scaled_rects(scale),
             progress_bar: self.progress_bar.scaled_rects(scale),
@@ -1374,6 +1496,7 @@ pub fn choose_map_modal_button_at(
 #[cfg(test)]
 mod tests {
     use super::RandomMapSetupControl;
+    use super::{AdvancedField, random_map_setup_control_at_view};
     use super::{
         ChooseMapModalButton, RectPx, SavedSeedMode, ShellScale, SkirmishCheckboxId,
         checkbox_icon_rect, checkbox_text_rect, choose_map_modal_button_at, combo_arrow_rect,
@@ -1501,6 +1624,43 @@ mod tests {
         assert_eq!(setup.seed_field, dlu_rect(279, 287, 50, 12));
         assert_eq!(setup.progress_text, dlu_rect(74, 219, 150, 11));
         assert_eq!(setup.progress_bar, dlu_rect(229, 217, 100, 21));
+    }
+
+    /// VERA: the seven Advanced sliders sit at the option rows' pitch above
+    /// the progress widgets, and the toggle takes the column slot below
+    /// Delete; in the Advanced view the sliders replace the option rows.
+    #[test]
+    fn advanced_sliders_and_toggle_fit_the_dialog() {
+        let setup = compute_random_map_setup_layout(800, 600);
+        let sliders = setup.advanced_control_rects;
+        for pair in sliders.windows(2) {
+            assert!(pair[0].y + pair[0].h <= pair[1].y, "{pair:?} overlap");
+        }
+        assert!(sliders[6].y + sliders[6].h <= setup.progress_text.y);
+        assert!(setup.advanced.y >= setup.delete.y + setup.delete.h);
+        assert!(setup.advanced.y + setup.advanced.h <= setup.cancel.y);
+
+        let water = sliders[AdvancedField::Water.row()];
+        let (cx, cy) = (water.x + water.w / 2, water.y + water.h / 2);
+        assert_eq!(
+            random_map_setup_control_at_view(&setup, cx, cy, true, true),
+            Some(RandomMapSetupControl::Advanced(AdvancedField::Water))
+        );
+        assert_eq!(
+            random_map_setup_control_at_view(&setup, cx, cy, true, false),
+            Some(RandomMapSetupControl::MapType0x405),
+            "the basic view keeps the original rows"
+        );
+        let toggle = (setup.advanced.x + 4, setup.advanced.y + 4);
+        assert_eq!(
+            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, true, false),
+            Some(RandomMapSetupControl::AdvancedToggle)
+        );
+        assert_eq!(
+            random_map_setup_control_at_view(&setup, toggle.0, toggle.1, false, false),
+            None,
+            "network dialogs have no toggle"
+        );
     }
 
     #[test]

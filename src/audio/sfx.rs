@@ -2090,6 +2090,11 @@ impl SfxPlayer {
     pub(crate) fn set_eva_side(&mut self, side: i32, rules: &crate::rules::ruleset::RuleSet) {
         self.vox.set_side(side, rules);
     }
+    /// Ares trigger action 148's voice selection ([`super::vox::VoxQueue::set_trigger_voice`]).
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_trigger_eva_voice(&mut self, index: i32, registry: &EvaRegistry) {
+        self.vox.set_trigger_voice(index, registry);
+    }
     pub(crate) fn eva_entry_done(&self, index: i32, registry: &EvaRegistry) -> bool {
         registry
             .entry_by_index(index)

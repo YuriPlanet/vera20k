@@ -204,6 +204,17 @@ fn center_member(id: u64, row: &Value) -> GameEntity {
     entity
 }
 
+/// Ares AbstractClass_Distance2DSquared_1/2 (1005C1A0, hook 0x5F6515;
+/// 1005C240, hook 0x5F6560) clamp a squared distance these original rows wrap.
+fn ares_clamps(points: impl IntoIterator<Item = [i32; 2]>, to: [i32; 2]) -> bool {
+    cfg!(feature = "ares")
+        && points.into_iter().any(|point| {
+            let dx = i64::from(point[0].wrapping_sub(to[0]));
+            let dy = i64::from(point[1].wrapping_sub(to[1]));
+            dx * dx + dy * dy > i64::from(i32::MAX)
+        })
+}
+
 #[test]
 fn calc_center_matches_the_original() {
     for (number, row) in rows("center").iter().enumerate() {
@@ -238,6 +249,11 @@ fn calc_center_matches_the_original() {
                 );
                 // The head stands in for a missing closest member.
                 let closest = closest.unwrap_or(0);
+                if focus
+                    .is_some_and(|focus| ares_clamps(samples.iter().map(|sample| sample.xy), focus))
+                {
+                    continue;
+                }
                 assert_eq!(
                     closest,
                     index(&row["closest"]),
@@ -287,6 +303,9 @@ fn recruit_matches_the_original() {
         } else {
             xy(&row["zone"])
         };
+        if ares_clamps(candidates.iter().map(|candidate| candidate.xy), origin) {
+            continue;
+        }
         let mut asked = Vec::new();
         let winner = recruit_pick(
             candidates.iter().copied(),

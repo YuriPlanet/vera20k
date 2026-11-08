@@ -133,7 +133,25 @@ fn retail_campaign_weapon_ordinals_and_fields_match_original_process_arrays() {
             )
             .unwrap()
             .into_parts();
-        let expected = row["weapon_registry"].as_array().unwrap();
+        #[cfg_attr(not(feature = "ares"), allow(unused_mut))]
+        let mut expected = row["weapon_registry"].as_array().unwrap().clone();
+        // Installed Ares's SW_NuclearMissile::Initialize (10073360), at the end
+        // of NukeSpecial's ReadINI (hook 6CEE43), allocates NukePayload right
+        // after the NukeCarrier that read allocated.
+        #[cfg(feature = "ares")]
+        if let (Some(carrier), Some(payload)) = (
+            expected
+                .iter()
+                .position(|weapon| weapon["id"] == "NukeCarrier"),
+            expected
+                .iter()
+                .position(|weapon| weapon["id"] == "NukePayload"),
+        ) && payload > carrier
+        {
+            let weapon = expected.remove(payload);
+            expected.insert(carrier + 1, weapon);
+        }
+        let expected = &expected;
         let actual: Vec<_> = (0..expected.len())
             .map(|index| {
                 let weapon = rules

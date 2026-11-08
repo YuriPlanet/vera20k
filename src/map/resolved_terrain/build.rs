@@ -274,6 +274,8 @@ impl ResolvedTerrainGrid {
                 wood_bridge_set_start: None,
                 tile_animations: Vec::new(),
                 destroyable_cliff_catalog: None,
+                deformation_catalog: None,
+                deformation_enabled: false,
                 bridge_recalc_catalog: None,
                 allocation_caches: Default::default(),
             };
@@ -982,6 +984,8 @@ impl ResolvedTerrainGrid {
             wood_bridge_set_start: None,
             tile_animations,
             destroyable_cliff_catalog: None,
+            deformation_catalog: None,
+            deformation_enabled: false,
             bridge_recalc_catalog: None,
             allocation_caches: Default::default(),
         };

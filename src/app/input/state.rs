@@ -372,6 +372,11 @@ impl MatchInputState {
         self.last_cursor_window = Some(point);
     }
 
+    /// The OS pointer's last position in window pixels, while one is known.
+    pub(crate) fn pointer_in_window(&self) -> Option<(f32, f32)> {
+        self.last_cursor_window
+    }
+
     /// Begin a fresh physical pointer history after focus or client entry changes.
     pub(crate) fn reset_window_cursor_motion(&mut self) {
         self.last_cursor_window = None;

@@ -499,6 +499,7 @@ fn kirov_pose_upload_and_replay(interpolated: bool) {
             let object = crate::app::presentation::instances::projectile_draw_instance_sampled(
                 sim.projectiles().get(id).unwrap(),
                 painted,
+                sim.session().binary_frame(),
                 kind,
                 "BlimpBombP",
                 HouseColorIndex(8),

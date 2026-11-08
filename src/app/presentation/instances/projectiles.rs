@@ -145,6 +145,7 @@ pub(crate) fn projectile_visitor<'a>(
         if let Some(object) = projectile_draw_instance_sampled(
             projectile,
             painted,
+            sim.session().binary_frame(),
             kind,
             type_id,
             scheme,
@@ -206,6 +207,7 @@ pub(crate) fn projectile_draw_instance(
     projectile_draw_instance_sampled(
         projectile,
         PointPose::bullet(projectile).current(),
+        0,
         kind,
         type_id,
         scheme,
@@ -223,6 +225,7 @@ pub(crate) fn projectile_draw_instance(
 pub(crate) fn projectile_draw_instance_sampled(
     projectile: &Projectile,
     painted: PointSample,
+    logic_frame: u32,
     kind: &ProjectileType,
     type_id: &str,
     scheme: HouseColorIndex,
@@ -310,11 +313,12 @@ pub(crate) fn projectile_draw_instance_sampled(
         };
         return Some(PlannedObjectInstance::object(parent, vec![piece]));
     }
-    let frame = u16::from(crate::sim::projectile::projectile_shp_frame_with_velocity(
+    let frame = crate::sim::projectile::projectile_shp_frame_with_velocity(
         projectile,
         kind,
         painted.bullet_velocity(projectile.velocity()),
-    ));
+        logic_frame,
+    );
     let entry = atlas?.projectile_sprite(type_id, kind, frame, scheme)?;
     let (ground_z, structural) =
         super::foot_depth::floor_probe(terrain, painted.coord[0], painted.coord[1]);

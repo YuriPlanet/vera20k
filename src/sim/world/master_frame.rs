@@ -309,6 +309,10 @@ impl Simulation {
                 self.lifecycle_outputs.emit(LifecycleOutput::LogicVisit);
             }
             FrameStep::Triggers => {
+                // Ares LogicClass_Update_1000 100680F0 heads Logic55AFB0
+                // (hook 0x55AFB3), before its trigger poll.
+                #[cfg(feature = "ares")]
+                self.ares_make_stuff_up_logic(rules);
                 if request.poll_triggers {
                     self.poll_triggers_for_master_frame(rules, overlay_registry, effects);
                 }

@@ -231,6 +231,13 @@ fn facts(input: &Value) -> FireFacts {
             },
             on_bridge: flag(&f["on_bridge"]),
             z: int(&f["z"]),
+            // The native rows run without Ares: no DisableWeaponTimer.
+            #[cfg(feature = "ares")]
+            weapons_disabled: false,
+            #[cfg(feature = "ares")]
+            transporter_gunner_open_topped: false,
+            #[cfg(feature = "ares")]
+            transporter_cloaked: false,
             emp_remaining: int(&f["emp_remaining"]),
             death_frame_counter: int(&f["death_frame_counter"]),
             fire_particles_live: flag(&f["fire_particles_live"]),
@@ -250,6 +257,10 @@ fn facts(input: &Value) -> FireFacts {
                 Some("idle") => Some(Link::None),
                 Some(other) => Some(link(&Value::from(other))),
             },
+            // The native rows run without Ares: no UnitClass_CanFire
+            // (1004BC80) weapon test.
+            #[cfg(feature = "ares")]
+            temporal_gunner_weapon: false,
             owner_is_human: flag(&f["owner_is_human"]),
             // Foot `0x004DE770` (SETNE); a Building's vt+0x380 is false.
             paralyzed: class.is_foot()
@@ -280,6 +291,8 @@ fn facts(input: &Value) -> FireFacts {
             // The native corpus supplies the host flag and installed-turret
             // input separately; the production fact now carries the query result.
             building_has_turret: flag(&ft["turret"]) || flag(&f["turret_upgrade"]),
+            #[cfg(feature = "ares")]
+            prism_breaks_support: false,
         },
         firer_type: FirerTypeFacts {
             natural: flag(&ft["natural"]),
@@ -310,6 +323,8 @@ fn facts(input: &Value) -> FireFacts {
         target: TargetFacts {
             kind: target_kind(t["kind"].as_str().unwrap()),
             bomb: flag(&t["bomb"]),
+            #[cfg(feature = "ares")]
+            bomb_fixed: false,
             in_limbo: flag(&t["in_limbo"]),
             on_bridge: flag(&t["on_bridge"]),
             z: int(&t["z"]),
@@ -458,6 +473,7 @@ impl FireQuery for RowQuery<'_> {
         let facts = crate::sim::power_system::OperationalFacts {
             online: flag(&f["online"]),
             tesla_chargers: int(&f["tesla_chargers"]),
+            charger_bypass: 2,
             emp_remaining: int(&f["emp_remaining"]),
             health: int(&f["health"]),
             powered: flag(&ft["powered"]),
@@ -514,6 +530,19 @@ fn original_fire_error_rows() {
     assert_eq!(rows.len(), 1191);
     let mut failures = Vec::new();
     for row in rows {
+        // Ares replaces U6 (UnitClass_CanFire_Heal 1004E540, hook 0x741113),
+        // U10 (UnitClass_CanFire 1004BC80, hook 0x741206) and I2
+        // (InfantryClass_CanFire_Heal 1004E270, hook 0x51C913);
+        // `ares_heal_and_temporal_fire_errors` holds their Ares rows.
+        if cfg!(feature = "ares")
+            && row["input"]["name"].as_str().is_some_and(|name| {
+                ["U6.", "U10.", "I2."]
+                    .iter()
+                    .any(|arm| name.starts_with(arm))
+            })
+        {
+            continue;
+        }
         let input = resolve(&corpus["defaults"], &row["input"]);
         let (code, calls) = evaluate(&input);
         let native_calls: Vec<&str> = row["calls"]
@@ -607,4 +636,45 @@ fn retail_fire_error_flags() {
     assert!(rules.weapon("DiskLaser").unwrap().fire_while_moving);
     // U7's key is unset in retail: every type keeps the constructor's yes.
     assert!(object("MTNK").mobile_fire);
+}
+
+/// Ares 3.0 on the original rows of the three arms it replaces: a healing
+/// Unit takes any damaged Techno (1004E540, hook 0x741113), a medic any
+/// damaged Techno (1004E270, hook 0x51C913), and a moving Unit holding a
+/// TemporalClass fires unless its selected gunner weapon is Temporal
+/// (1004BC80, hook 0x741206).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_heal_and_temporal_fire_errors() {
+    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/fire_error.json",
+    ))
+    .unwrap();
+    let input = |name: &str| {
+        let row = corpus["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["input"]["name"] == name)
+            .unwrap_or_else(|| panic!("{name}"));
+        resolve(&corpus["defaults"], &row["input"])
+    };
+    let code = |name: &str| evaluate(&input(name)).0;
+    // The wounded-infantry twin with a vehicle target.
+    let mut wounded_vehicle = input("I2.twin.medic_vs_wounded_infantry");
+    wounded_vehicle["target"]["kind"] = Value::from("unit");
+    let illegal = FireError::Illegal as i32;
+    assert_ne!(code("U6.healer_vs_infantry"), illegal);
+    assert_ne!(code("U6.healer_vs_non_vehicle"), illegal);
+    assert_eq!(code("U6.healer_vs_full_health_vehicle"), illegal);
+    assert_eq!(code("U6.healer_vs_cell"), illegal);
+    assert_ne!(evaluate(&wounded_vehicle).0, illegal);
+    assert_eq!(
+        code("I2.medic_vs_vehicle"),
+        illegal,
+        "a full-health vehicle"
+    );
+    assert_eq!(code("I2.medic_vs_cell"), illegal);
+    assert_eq!(code("I2.medic_vs_healthy_infantry"), illegal);
+    assert_ne!(code("U10.temporal_idle_moving"), FireError::Moving as i32);
 }

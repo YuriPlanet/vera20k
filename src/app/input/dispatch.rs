@@ -104,7 +104,8 @@ fn handle_mouse_input_inner(state: &mut AppState, button: MouseButton, btn_state
             return;
         }
         // The shell error card is main-menu only.
-        Some(ModalPage::ShellError | ModalPage::NetworkFailure) | None => {}
+        Some(ModalPage::ShellError | ModalPage::NetworkFailure | ModalPage::ShellMessageBox)
+        | None => {}
     }
     // Paused in-game Options overlay owns the mouse: route press/release/checkbox/
     // Back here and CONSUME the click so it never reaches the tactical viewport or
@@ -921,7 +922,7 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
             crate::app::input::keyboard::cursor_moved(state);
             return;
         }
-        Some(ModalPage::ShellError) | None => {}
+        Some(ModalPage::ShellError | ModalPage::ShellMessageBox) | None => {}
     }
     // Paused in-game Options overlay: drive a live slider drag (visual/stored only —
     // cadence applies on close, KD-8) and swallow the move so it can't begin a
@@ -1146,6 +1147,8 @@ pub(crate) fn push_local_eva(state: &mut AppState, event: &str) {
 /// gamemd reads the modifier for the right button only (`0x006AAD66`), so an
 /// unshifted or right-button press is byte-for-byte the ported decision. The
 /// sound and the EVA line are spoken once per click regardless of the repeat.
+/// An `ares` build repeats on Shift without the option, five copies
+/// ([`sidebar_eva::produce_copies`]).
 fn sidebar_cameo_press(
     state: &mut AppState,
     type_id: &str,
@@ -1289,13 +1292,15 @@ fn sidebar_cameo_press(
         Some(sidebar_eva::CameoOrder::Produce) => {
             // The copies carry the current tick, so they execute in one frame in
             // issue order; the sound and EVA above were spoken once. Shift
-            // repeats only while the Options page's Shift-Click Batch Queue
-            // (`[VERA] ShiftQueue=`) is ticked, `[VERA] ShiftQueueCount=` times.
+            // repeats while the Options page's Shift-Click Batch Queue
+            // (`[VERA] ShiftQueue=`) is ticked, `[VERA] ShiftQueueCount=` times,
+            // and in an `ares` build always (Ares.dll 10064520, hook 0x6AB773).
             let profile = &state.persistence.options_profile;
-            let repeat = sidebar_eva::shift_queue_repeat_with_queue(
+            let repeat = sidebar_eva::produce_copies(
                 category,
                 own_for_repeat,
-                shift && profile.shift_queue,
+                shift,
+                profile.shift_queue,
                 profile.shift_queue_count,
                 building_production_queue,
             );
@@ -2058,9 +2063,10 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::AutoLoad => {}
         // A chord runs in the window owner before this dispatch; a binding on
         // a typing key reaches here, after the chat edit.
-        HotkeyCommand::PerformanceStats | HotkeyCommand::LockCursor | HotkeyCommand::FullScreen => {
-            run_window_command(state, command)
-        }
+        HotkeyCommand::PerformanceStats
+        | HotkeyCommand::LockCursor
+        | HotkeyCommand::FullScreen
+        | HotkeyCommand::StringKeys => run_window_command(state, command),
         HotkeyCommand::RenderInterpolation => {
             let enabled = state.match_state.match_presentation.interpolation.toggle();
             state.persistence.options_profile.render_interpolation = enabled;
@@ -2090,11 +2096,13 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
             if let Some(dialog) = state.frontend.options_dialog.as_mut() {
                 dialog.sync_performance_stats(shown);
             }
+            crate::app::App::shell_menu_follow_performance_stats(state, shown);
             log::info!(
                 "Performance stats: {}",
                 if shown { "shown" } else { "hidden" }
             );
         }
+        HotkeyCommand::StringKeys => state.toggle_string_keys_view(),
         _ => return,
     }
     state.platform.window.request_redraw();
@@ -2156,7 +2164,18 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
         }
         super::superweapon_cameo::SuperWeaponClick::Target => {
             queue_selection_snapshot_command(state, Vec::new(), false);
-            push_local_eva(state, sidebar_eva::EVA_SELECT_TARGET);
+            // Ares 10034D60 (hook 6AAF9D) plays the type's EVA.SelectTarget,
+            // whose constructor default is the stock literal.
+            #[cfg(feature = "ares")]
+            let cue = state
+                .rules()
+                .and_then(|rules| rules.super_weapon(section))
+                .and_then(|sw| sw.select_target_eva.clone());
+            #[cfg(not(feature = "ares"))]
+            let cue = Some(sidebar_eva::EVA_SELECT_TARGET.to_owned());
+            if let Some(cue) = cue {
+                push_local_eva(state, &cue);
+            }
         }
         super::superweapon_cameo::SuperWeaponClick::Launch(sw_type_id) => {
             let owner = preferred_local_owner_name(state).unwrap_or_default();
@@ -2173,6 +2192,15 @@ fn press_super_weapon(state: &mut AppState, section: &str, right: bool, gui_soun
     if click == super::superweapon_cameo::SuperWeaponClick::Refused
         && let Some(refusal) = selection.as_ref().and_then(|(view, _)| view.ares_refusal)
     {
+        // 10034DA0: CanFire's refusal plays EVA.Impatient (default -1).
+        if refusal == crate::sim::superweapon::AresCameoRefusal::NotReady
+            && let Some(cue) = state
+                .rules()
+                .and_then(|rules| rules.super_weapon(section))
+                .and_then(|sw| sw.impatient_eva.clone())
+        {
+            push_local_eva(state, &cue);
+        }
         crate::app::input::messages::post_ares_superweapon_refusal(state, section, refusal);
     }
 }
@@ -3766,13 +3794,20 @@ fn queue_stop_for_selected(state: &mut AppState) {
 
 /// Whether the Stop walk issues to this object: one it may control (vt+0xA0)
 /// or that is active (vt+0x9C, `0x00730ECD..0x00730EE3`), so an offline
-/// Robot Tank a click selected stays put.
+/// Robot Tank a click selected stays put. Ares 3.0
+/// StopCommandClass_Execute_Berzerk (1005D110, hook 0x730EE5) passes over a
+/// berserk one.
 fn stop_qualifies(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
     id: u64,
 ) -> bool {
-    sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules)
+    (sim.techno_player_controllable(id, rules) || sim.techno_is_active(id, rules))
+        && !(crate::rules::ARES_ENABLED
+            && sim
+                .entities()
+                .get(id)
+                .is_some_and(|entity| entity.berserk.is_active()))
 }
 
 /// The Stop walk, then its cue `PlayGlobal(Rules+720, 0x2000, 1.0)`

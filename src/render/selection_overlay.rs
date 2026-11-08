@@ -60,6 +60,10 @@ pub struct SelectionOverlay {
     /// Phobos custom insignia SHPs keyed by their normalized file name.
     #[cfg(feature = "phobos")]
     insignia_shapes: std::collections::HashMap<String, CenteredShapeStrip>,
+    /// Ares `IvanBomb.Image` SHPs keyed by their file name, MOUSEPAL like
+    /// the BOMBCURS.SHP they replace; a name that did not load is absent.
+    #[cfg(feature = "ares")]
+    ares_bomb_images: std::collections::HashMap<String, CenteredShapeStrip>,
 }
 
 /// Every frame of one SHP packed side by side at its stored size, each with
@@ -272,6 +276,9 @@ impl CenteredShapeStrip {
         alpha: f32,
     ) -> Vec<SpriteInstance> {
         let mut instances = Vec::with_capacity(preview.cells.len());
+        //Ares10015340/100153B0 (hooks 4A8C77/4A8DD7) lift SetActiveFoundation's
+        //120- and SetPendingFoundation's 50-cell copies; previews hold the
+        //whole list.
         //6D5030 / Ares100155C0 walks actual-list bounds X outer/Y inner;
         //The ordinary preview contains its bit2 active cells, possibly sparse
         //or outside declared X/Y. Pending-bit4 drawing is a separate residual.
@@ -449,7 +456,61 @@ impl SelectionOverlay {
             digital_shapes: Vec::new(),
             #[cfg(feature = "phobos")]
             insignia_shapes: std::collections::HashMap::new(),
+            #[cfg(feature = "ares")]
+            ares_bomb_images: std::collections::HashMap::new(),
         }
+    }
+
+    /// Load every weapon's Ares `IvanBomb.Image` candidates once per match:
+    /// `read<SHPStruct*>` (Ares.dll 10040640) loads the file at Rules read
+    /// and keeps the pointer; TechnoClass_DrawExtras_IvanBombImage
+    /// (10056CC0, hook 0x6F523C) draws it through BOMBCURS's MOUSEPAL convert.
+    #[cfg(feature = "ares")]
+    pub(crate) fn load_ares_bomb_images(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        batch: &BatchRenderer,
+        assets: &AssetManager,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
+        let names: std::collections::BTreeSet<&str> = rules
+            .weapons_iter()
+            .flat_map(|weapon| {
+                weapon
+                    .ares_ivan_bomb
+                    .image_names()
+                    .iter()
+                    .map(String::as_str)
+            })
+            .collect();
+        for name in names {
+            if let Some(strip) = CenteredShapeStrip::from_assets_on_device(
+                device,
+                queue,
+                batch,
+                assets,
+                &name.to_ascii_lowercase(),
+                "mousepal.pal",
+            ) {
+                self.ares_bomb_images.insert(name.to_owned(), strip);
+            }
+        }
+    }
+
+    /// The bomb image for a carrier whose `IvanBomb.Image` candidates are
+    /// `names`: the last that loaded, else BOMBCURS.SHP.
+    pub(crate) fn bomb_image(&self, names: &[String]) -> Option<&CenteredShapeStrip> {
+        #[cfg(feature = "ares")]
+        if let Some(strip) = names
+            .iter()
+            .rev()
+            .find_map(|name| self.ares_bomb_images.get(name))
+        {
+            return Some(strip);
+        }
+        let _ = names;
+        self.bomb_clock()
     }
 
     /// Load each `[DigitalDisplayTypes]` entry's `Shape=`/`Palette=` once per

@@ -333,6 +333,7 @@ pub(crate) fn render_campaign_page(
             text: &text,
             cursor: software_cursor(state, CURSOR_DEPTH),
             effects: None,
+            smooth_art: false,
         },
     );
     Ok(true)

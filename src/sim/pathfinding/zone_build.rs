@@ -215,6 +215,7 @@ pub(crate) fn build_base_zone_topology(
     rebuild_base_zone_topology(
         movement_classes,
         retained_levels_from_path(path_grid, width, height),
+        resolved_terrain.terrain_deformation(),
         bridge_records,
         width,
         height,
@@ -228,6 +229,7 @@ pub(crate) fn build_base_zone_topology(
 pub(crate) fn rebuild_base_zone_topology(
     movement_classes: Vec<u8>,
     levels: Vec<u8>,
+    signed_levels: bool,
     bridge_records: &[BridgeEndpointRecord],
     width: u16,
     height: u16,
@@ -240,7 +242,7 @@ pub(crate) fn rebuild_base_zone_topology(
 
     assert_eq!(levels.len(), movement_classes.len());
     let (zone_ids, zone_count, mut edge_buckets) =
-        rebuild_node_indices(&movement_classes, &levels, width, height);
+        rebuild_node_indices(&movement_classes, &levels, signed_levels, width, height);
     register_bridge_base_edges(
         &mut edge_buckets,
         &zone_ids,
@@ -332,6 +334,7 @@ fn retained_levels_from_path(path_grid: &PathGrid, width: u16, height: u16) -> V
 fn rebuild_node_indices(
     movement_classes: &[u8],
     levels: &[u8],
+    signed_levels: bool,
     width: u16,
     height: u16,
 ) -> (Vec<ZoneId>, ZoneId, BaseEdgeBuckets) {
@@ -358,6 +361,7 @@ fn rebuild_node_indices(
                 movement_classes,
                 &mut node_indices,
                 levels,
+                signed_levels,
                 width,
                 height,
                 &mut edge_buckets,
@@ -379,6 +383,7 @@ fn flood_fill_node_index(
     movement_classes: &[u8],
     node_indices: &mut [ZoneId],
     levels: &[u8],
+    signed_levels: bool,
     width: u16,
     height: u16,
     edge_buckets: &mut BaseEdgeBuckets,
@@ -402,7 +407,7 @@ fn flood_fill_node_index(
         let Some(level) = base_level_at(levels, left, seed_y, width, height) else {
             break;
         };
-        if (i16::from(level) - i16::from(carried_level)).abs() >= 2 {
+        if level_gap(level, carried_level, signed_levels) >= 2 {
             break;
         }
         node_indices[index] = node_id;
@@ -419,6 +424,7 @@ fn flood_fill_node_index(
         movement_class,
         node_indices,
         levels,
+        signed_levels,
         width,
         height,
     );
@@ -433,7 +439,7 @@ fn flood_fill_node_index(
         let Some(level) = base_level_at(levels, right, seed_y, width, height) else {
             break;
         };
-        if (i16::from(level) - i16::from(carried_level)).abs() >= 4 {
+        if level_gap(level, carried_level, signed_levels) >= 4 {
             break;
         }
         node_indices[index] = node_id;
@@ -450,6 +456,7 @@ fn flood_fill_node_index(
         movement_class,
         node_indices,
         levels,
+        signed_levels,
         width,
         height,
     );
@@ -467,8 +474,7 @@ fn flood_fill_node_index(
             base_level_at(levels, reference_x, seed_y, width, height),
         ) {
             let neighbor = node_indices[candidate];
-            let height_allowed =
-                (i16::from(candidate_level) - i16::from(reference_level)).abs() < 2;
+            let height_allowed = level_gap(candidate_level, reference_level, signed_levels) < 2;
             if neighbor == 0 && movement_classes[candidate] == movement_class && height_allowed {
                 let child_advance = flood_fill_node_index(
                     scan_x as u16,
@@ -477,6 +483,7 @@ fn flood_fill_node_index(
                     movement_classes,
                     node_indices,
                     levels,
+                    signed_levels,
                     width,
                     height,
                     edge_buckets,
@@ -506,8 +513,7 @@ fn flood_fill_node_index(
             base_level_at(levels, reference_x, seed_y, width, height),
         ) {
             let neighbor = node_indices[candidate];
-            let height_allowed =
-                (i16::from(candidate_level) - i16::from(reference_level)).abs() < 2;
+            let height_allowed = level_gap(candidate_level, reference_level, signed_levels) < 2;
             if neighbor == 0 && movement_classes[candidate] == movement_class && height_allowed {
                 let child_advance = flood_fill_node_index(
                     scan_x as u16,
@@ -516,6 +522,7 @@ fn flood_fill_node_index(
                     movement_classes,
                     node_indices,
                     levels,
+                    signed_levels,
                     width,
                     height,
                     edge_buckets,
@@ -546,6 +553,22 @@ fn base_level_at(levels: &[u8], x: i32, y: i32, width: u16, height: u16) -> Opti
     levels.get(base_record_index(x, y, width, height)?).copied()
 }
 
+/// Height gap between two retained zone Levels. Native reads both bytes
+/// zero-extended (`MapClass__FloodFillBaseZoneScanline @ 0x0056CBC0` and
+/// `MapClass__FloodFillZoneLevelScanline @ 0x0058253C`: `xor eax,eax;
+/// mov al,[record]`), the signed gap for every Level below 128. Terrain
+/// deformation lowers ground below Level 0, so with it switched on
+/// ([`ResolvedTerrainGrid::terrain_deformation`]) they read signed, as a
+/// cell's own height is; unsigned, a crater would split from the ground
+/// around it at the next zone rebuild.
+pub(super) fn level_gap(a: u8, b: u8, signed: bool) -> u8 {
+    if signed {
+        (a as i8).abs_diff(b as i8)
+    } else {
+        a.abs_diff(b)
+    }
+}
+
 fn register_scanline_edge(
     edge_buckets: &mut BaseEdgeBuckets,
     candidate_x: i32,
@@ -556,6 +579,7 @@ fn register_scanline_edge(
     captured_class: u8,
     node_indices: &[ZoneId],
     levels: &[u8],
+    signed_levels: bool,
     width: u16,
     height: u16,
 ) {
@@ -571,7 +595,7 @@ fn register_scanline_edge(
         base_level_at(levels, reference_x, reference_y, width, height),
     ) {
         (Some(candidate_level), Some(reference_level)) => {
-            (i16::from(candidate_level) - i16::from(reference_level)).abs() < 2
+            level_gap(candidate_level, reference_level, signed_levels) < 2
         }
         _ => false,
     };
@@ -1935,6 +1959,7 @@ mod tests {
         let (zone_ids, zone_count, edge_buckets) = rebuild_node_indices(
             &movement_classes,
             &retained_levels_from_path(&grid, 2, 2),
+            false,
             2,
             2,
         );
@@ -1952,8 +1977,13 @@ mod tests {
             grid.set_cell_for_test((index % 2) as u16, (index / 2) as u16, level, false, false);
         }
 
-        let (zone_ids, zone_count, edge_buckets) =
-            rebuild_node_indices(&[0; 4], &retained_levels_from_path(&grid, 2, 2), 2, 2);
+        let (zone_ids, zone_count, edge_buckets) = rebuild_node_indices(
+            &[0; 4],
+            &retained_levels_from_path(&grid, 2, 2),
+            false,
+            2,
+            2,
+        );
         let adjacency = edge_buckets.into_adjacency(zone_count);
 
         assert_eq!(zone_ids, vec![1, 1, 2, 2]);
@@ -1973,6 +2003,7 @@ mod tests {
         let (zone_ids, zone_count, _) = rebuild_node_indices(
             &[zone_class::GROUND, 7, 7, zone_class::GROUND],
             &retained_levels_from_path(&grid, 2, 2),
+            false,
             2,
             2,
         );
@@ -1987,8 +2018,13 @@ mod tests {
         grid.set_cell_for_test(0, 0, 0, false, false);
         grid.set_cell_for_test(1, 0, 4, false, false);
 
-        let (zone_ids, zone_count, _) =
-            rebuild_node_indices(&[0; 2], &retained_levels_from_path(&grid, 2, 1), 2, 1);
+        let (zone_ids, zone_count, _) = rebuild_node_indices(
+            &[0; 2],
+            &retained_levels_from_path(&grid, 2, 1),
+            false,
+            2,
+            1,
+        );
 
         assert_eq!(zone_ids, vec![1, 2]);
         assert_eq!(zone_count, 2);

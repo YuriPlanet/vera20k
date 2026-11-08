@@ -55,6 +55,7 @@ mod bridge_flags;
 mod build;
 mod cell_recalc;
 mod cliffs;
+mod deformation;
 mod mutation;
 mod native_cell;
 mod pavement;
@@ -127,6 +128,41 @@ pub(crate) fn recalc_zone_type(
         overlay_zone_type,
         land_type,
         wheel_speed_at_or_below_one_percent(wheel_speed),
+        terrain_object_occupation,
+    )
+}
+
+/// [`recalc_zone_type`] with the object list's building arm
+/// (`0x00483D94..0x00483DB0`), which runs after the wheel test and before
+/// any later object: `building_impassable` is a building there whose cell is
+/// Impassable (6, `0x00483D6B`). The stock arm's FirestormWall= branch
+/// needs `HouseClass::FirestormActive` (`+0x1FA`), which only Ares sets
+/// (its `Firestorm.Wall` sections take that branch: Ares 3.0 10014B70, hook
+/// 0x483D94), so default builds have no caller; the LaserFence branch is
+/// not ported (no retail type is a laser fence).
+#[cfg(feature = "ares")]
+pub(crate) fn recalc_zone_type_with_buildings(
+    outside: bool,
+    overlay_zone_type: Option<u8>,
+    land_type: u8,
+    wheel_speed: Option<crate::util::native_x87::NativeF32Bits>,
+    terrain_object_occupation: Option<i32>,
+    building_impassable: bool,
+) -> u8 {
+    let wheel_blocked = wheel_speed_at_or_below_one_percent(wheel_speed);
+    let reaches_objects = !outside
+        && overlay_zone_type.is_none()
+        && land_type != LandType::Water.as_index()
+        && land_type != LandType::Beach.as_index()
+        && !wheel_blocked;
+    if building_impassable && reaches_objects {
+        return zone_class::IMPASSABLE;
+    }
+    recalc_zone_type_for_wheel_block(
+        outside,
+        overlay_zone_type,
+        land_type,
+        wheel_blocked,
         terrain_object_occupation,
     )
 }
@@ -814,6 +850,13 @@ pub struct ResolvedTerrainGrid {
     /// Immutable active-theater sparse TMP authority used only by the two
     /// verified destroyable-cliff callers.
     destroyable_cliff_catalog: Option<DestroyableCliffCatalog>,
+    /// Immutable active-theater clear and ramp stamps for terrain
+    /// deformation.
+    deformation_catalog: Option<deformation::DeformationCatalog>,
+    /// Whether the scenario's rules switched terrain deformation on
+    /// (`[CombatDamage] TerrainDeformation=`); see
+    /// [`Self::set_terrain_deformation`].
+    deformation_enabled: bool,
     /// Immutable pristine/policy inputs, shared by derived clones and snapshot
     /// templates. Mutable terrain, bounds and overlays remain separate owners.
     bridge_recalc_catalog: Option<Arc<BridgeRecalcCatalog>>,
@@ -1111,6 +1154,8 @@ impl ResolvedTerrainGrid {
             wood_bridge_set_start: None,
             tile_animations: Vec::new(),
             destroyable_cliff_catalog: None,
+            deformation_catalog: None,
+            deformation_enabled: false,
             bridge_recalc_catalog: None,
             allocation_caches: Default::default(),
         }
@@ -1435,6 +1480,14 @@ impl ResolvedTerrainGrid {
         self.level_span
     }
 
+    /// Tiles terrain deformation may write at runtime, for the atlas
+    /// pre-load; empty without the theater's tiles.
+    pub fn deformation_atlas_tiles(&self) -> Vec<u16> {
+        self.deformation_catalog
+            .as_ref()
+            .map_or_else(Vec::new, deformation::DeformationCatalog::tile_ids)
+    }
+
     /// Epoch of mutable cell access; see the field note.
     pub fn mutation_epoch(&self) -> u64 {
         self.mutation_epoch
@@ -1519,6 +1572,10 @@ impl ResolvedTerrainGrid {
 impl crate::map::terrain::TacticalCellLookup for ResolvedTerrainGrid {
     fn max_cell_level(&self) -> i8 {
         self.level_span().max
+    }
+
+    fn min_cell_level(&self) -> i8 {
+        self.level_span().min
     }
 
     fn cell_level(&self, rx: u16, ry: u16) -> Option<u8> {

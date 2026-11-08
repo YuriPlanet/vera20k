@@ -139,6 +139,13 @@ impl AppState {
         }
     }
 
+    /// Whether VERA's online client draws its enlarged art smoothed
+    /// (`[VERA] SmoothOnlineMenus=`). The native-UI diagnostics, the only
+    /// sessions without that client, keep their art's own pixels.
+    pub(crate) fn smooth_online_menus(&self) -> bool {
+        self.persistence.options_profile.smooth_online_menus && !self.frontend.native_shell_ui
+    }
+
     /// Whether the setup screens show VERA's own map pictures
     /// (`[VERA] HdMapPreviews=`, `app::map_picture`). Captures keep the map's
     /// `[PreviewPack]` picture, which retail comparisons check, and the

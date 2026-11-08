@@ -61,6 +61,8 @@ mod tests;
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+#[cfg(feature = "ares")]
+use crate::rules::superweapon_type::SuperWeaponType;
 use crate::sim::combat::RAD_NO_ATTACKER;
 use crate::sim::combat::world_receiver::apply_area_damage;
 use crate::sim::intern::InternedId;
@@ -198,4 +200,131 @@ pub(crate) fn launch(
         }
     }
     true
+}
+
+/// SW_GeneticMutator::GetWarhead (Ares 3.0 `10072030`): the type's non-null
+/// `SW.Warhead`, else `[SpecialWeapons] MutateExplosionWarhead=` under its
+/// `Mutate.Explosion` (unset: `[General] MutateExplosion=`), else
+/// `MutateWarhead=`.
+#[cfg(feature = "ares")]
+fn ares_warhead<'r>(rules: &'r RuleSet, sw: &SuperWeaponType) -> Option<&'r str> {
+    let launch = rules.super_weapon_metadata(&sw.id)?.launch();
+    if let Some(warhead) = launch.warhead().flatten() {
+        return Some(warhead);
+    }
+    let general = &rules.general;
+    Some(
+        if launch
+            .mutate()
+            .explosion
+            .unwrap_or(general.mutate_explosion)
+        {
+            &general.mutate_explosion_warhead
+        } else {
+            &general.mutate_warhead
+        },
+    )
+}
+
+/// SW_GeneticMutator::Activate (Ares 3.0 `10071C60`, hook 6CC390) for
+/// `owner`'s Super of `sw` at `cell`, after GetWarhead (`10072030`). Charged:
+/// - with `Mutate.Explosion` (else `[General] MutateExplosion=`), one
+///   DamageArea at the cell's deck coordinates with GetDamage (`10071F60`:
+///   `SW.Damage`, else 10000), no source object, not affecting Tiberium,
+///   from the owner;
+/// - otherwise each infantryman on GetRange (`10071F80`: `SW.Range`, else a
+///   3x3 rectangle, or radius 5 for an explosion), once and in UniqueID order,
+///   that `SW.AffectsHouse`/`SW.AffectsTarget` admit, unless a `Cyborg=` one
+///   with `Mutate.IgnoreCyborg` or a `NotHuman=` one with
+///   `Mutate.IgnoreNotHuman`, takes its Strength as damage ignoring
+///   defenses from the owner: `C4Warhead=` for a `Natural=` one with
+///   `Mutate.KillNatural`, else the warhead.
+///
+/// The IonBlast anim, the sound and the radar event are the common Launch's
+/// (GetAnim `10071F30`, GetSound `10072000`). It reports activation even
+/// when uncharged.
+#[cfg(feature = "ares")]
+pub(super) fn ares_launch(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw_type: InternedId,
+    sw: &SuperWeaponType,
+    cell: (u16, u16),
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) {
+    if !super::is_charged(sim, owner, sw_type) {
+        return;
+    }
+    let Some(metadata) = rules.super_weapon_metadata(&sw.id) else {
+        return;
+    };
+    let launch = metadata.launch();
+    let mutate = launch.mutate();
+    let explosion = mutate.explosion.unwrap_or(rules.general.mutate_explosion);
+    let warhead_name = ares_warhead(rules, sw).unwrap_or_default().to_owned();
+    if explosion {
+        let Some(warhead) = rules.warhead(&warhead_name) else {
+            return;
+        };
+        let [x, y, z] = super::deck_coords(sim, cell);
+        let origin = (
+            RAD_NO_ATTACKER,
+            Some(owner),
+            sim.interner.intern(&warhead_name),
+        );
+        apply_area_damage(
+            sim,
+            rules,
+            overlay_registry,
+            crate::sim::projectile::ProjectileCoord::new(x, y, z),
+            launch.damage().unwrap_or(10000),
+            warhead,
+            false,
+            origin,
+            frame_effects,
+        );
+        return;
+    }
+    let range = match launch.range() {
+        (width, height) if width < 0.0 && height < 0 => (3.0, 3),
+        range => range,
+    };
+    let targeting = metadata.targeting();
+    for id in super::protect::area_technos(sim, range, cell) {
+        let Some(entity) = sim.substrate.entities.get(id) else {
+            continue;
+        };
+        if entity.category() != EntityCategory::Infantry
+            || !targeting
+                .affects_house()
+                .intersects(sim.ares_house_relation(owner, entity.owner()))
+            || !super::protect::techno_affected(sim, entity, targeting.affects_target())
+        {
+            continue;
+        }
+        let Some(object) = sim.object_type(entity.type_ref(), rules) else {
+            continue;
+        };
+        if object.cyborg && mutate.ignore_cyborg || object.not_human && mutate.ignore_not_human {
+            continue;
+        }
+        let warhead = if object.natural && mutate.kill_natural {
+            rules.bridge_warheads.c4_name.clone()
+        } else {
+            warhead_name.clone()
+        };
+        if let Some(event) = super::strength_receiver_event(
+            &mut sim.interner,
+            &sim.substrate,
+            rules,
+            id,
+            &warhead,
+            Some(owner),
+            true,
+        ) {
+            sim.commit_direct_damage_receiver(rules, overlay_registry, event, frame_effects);
+        }
+    }
 }

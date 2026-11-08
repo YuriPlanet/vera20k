@@ -416,7 +416,19 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // #3710 folds the game options' room bans (all off here): hash composition
 // only. A temporary control omitting that fold gave the previous value, with
 // every tripwire above green. Control removed. Previous: 0xD3E2_D02E_809A_1CCD.
-const SLICE6_BASELINE_HASH: u64 = 0xD8C3_5827_8CA8_5375;
+// Ares builds also fold two retained Ares states for every actor here:
+// AttachEffectClass::Update10058E00 (TechnoClass_Update hook 0x6F9E50 ->
+// 1004B320) settles the type-effect state at Disabled on each actor's first
+// update, since no type sets AttachEffect.Duration, and RecalculateStats
+// 100460A0's attached-cloak byte folds even while false. Hash composition
+// only: a temporary control skipping just those two folds in an Ares build
+// gave the default value, every per-frame replay diagnostic field matched
+// the default build's, and every tripwire above stayed green. Control removed.
+const SLICE6_BASELINE_HASH: u64 = if cfg!(feature = "ares") {
+    0xF21F_9A9D_57BE_D7E7
+} else {
+    0xD8C3_5827_8CA8_5375
+};
 
 #[test]
 fn replay_hash_stable_through_slice6() {
