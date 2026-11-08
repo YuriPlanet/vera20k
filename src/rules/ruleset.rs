@@ -1021,6 +1021,10 @@ pub struct GeneralRules {
     /// clears it; ReadGeneral66FC36..66FC50 retains the current byte.
     /// The shared manual-attack query owns the disguise and blink exceptions.
     pub attack_cursor_on_disguise: bool,
+    /// `[General] AllowShroudedSubteranneanMoves`, Rules+17EF. Constructor
+    /// 665650 clears it at66776F; ReadGeneral66EB03..66EB1C retains the
+    /// current bool. Foot object-click4D785F consumes this shroud gate.
+    allow_shrouded_subterannean_moves: bool,
     /// `[General] DefaultMirageDisguises=` selection pool, in source order.
     pub default_mirage_disguises: Vec<String>,
     /// General AlliedDisguise/SovietDisguise/ThirdDisguise (Rules
@@ -2707,6 +2711,7 @@ impl Default for GeneralRules {
                 None,
             ],
             attack_cursor_on_disguise: false,
+            allow_shrouded_subterannean_moves: false,
             default_mirage_disguises: Vec::new(),
             infantry_disguises: Default::default(),
             secret_lab_choices: Default::default(),
@@ -3412,6 +3417,10 @@ pub(crate) fn ambient_change_terms(rate: f64, step: f64) -> (bool, i32, i32) {
 }
 
 impl GeneralRules {
+    pub fn allow_shrouded_subterannean_moves(&self) -> bool {
+        self.allow_shrouded_subterannean_moves
+    }
+
     pub(crate) fn threat_coefficient_defaults(
         &self,
     ) -> super::threat_coefficients::ThreatCoefficients {
@@ -3903,6 +3912,7 @@ impl GeneralRules {
             growth_rate_minutes: general.read_double("GrowthRate", 2.0) as f32,
             // Published from the retained General pass owner.
             attack_cursor_on_disguise: defaults.attack_cursor_on_disguise,
+            allow_shrouded_subterannean_moves: defaults.allow_shrouded_subterannean_moves,
             // Filled from the native ordered TerrainType list owner after
             // processing, including allocation/none-token/retention semantics.
             default_mirage_disguises: Vec::new(),
@@ -6196,6 +6206,7 @@ impl RuleSet {
         (general.drain_money_frame_delay, general.drain_money_amount) =
             processed.drain_money_controls();
         general.attack_cursor_on_disguise = processed.attack_cursor_on_disguise();
+        general.allow_shrouded_subterannean_moves = processed.allow_shrouded_subterannean_moves();
         general.tree_strength = processed.tree_strength();
         general.threat_coefficient_defaults = processed.threat_coefficient_defaults();
         general.bomb_ticking_sound = processed.bomb_ticking_sound().map(str::to_owned);
@@ -7697,6 +7708,10 @@ impl RuleSet {
             .hash(&mut hasher);
         b"attack-cursor-disguise-v1".hash(&mut hasher);
         self.general.attack_cursor_on_disguise.hash(&mut hasher);
+        b"allow-shrouded-subterannean-moves-v1".hash(&mut hasher);
+        self.general
+            .allow_shrouded_subterannean_moves
+            .hash(&mut hasher);
         // InfantryType ReadINI5245B8..5245F5 retains both theft bytes across
         // invalid later reads. Flattened text alone cannot identify that state.
         let mut theft_flags: Vec<_> = self

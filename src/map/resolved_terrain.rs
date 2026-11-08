@@ -72,9 +72,9 @@ mod tests;
 pub(crate) use allocated_order::{AllocatedCellOrder, ROW_NEIGHBORS};
 pub(crate) use bridge_flags::RealCellBridgeFlags0x1180;
 pub use build::OverlayLoadSource;
+pub(crate) use build::cliff_back_normal_reclass_applies;
 pub use build::{AuthoredTerrainFill, RadarColorMetadata, current_tile_permissions};
 use build::{presentation_tile_parts, wheel_speed_at_or_below_one_percent};
-pub(crate) use build::cliff_back_normal_reclass_applies;
 pub(crate) use cell_recalc::{
     AutomaticTubeAllocation, AutomaticTubeRequest, LoadCellRecalcEffects, LoadCellRecalcError,
     LoadCellRecalcOutcome, LoadCellRecalcState, is_behind_cliff,
@@ -793,6 +793,10 @@ pub struct ResolvedTerrainGrid {
     /// Active theater tile registry length. Positive out-of-range ids present
     /// as ClearTile while their stored semantic id remains untouched.
     tile_registry_len: Option<usize>,
+    /// Saved IsometricTileTypeClass+0x305 values in physical registry order.
+    /// Cell486FF0 indexes these using its current signed tile, independently
+    /// of the rendered ClearTile fallback. None means no bound tile registry.
+    tile_burrowing_permissions: Option<Vec<bool>>,
     /// Smudge CanPlace's Morphable read of the shared dummy's constructor
     /// tile 0xFFFF, derived once from the active theater registry: every
     /// index below 0 or at least the count reads theater tile 0. False
@@ -1100,6 +1104,7 @@ impl ResolvedTerrainGrid {
             clear_tile_id: 0,
             water_tiles: crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
             tile_registry_len: None,
+            tile_burrowing_permissions: None,
             dummy_accepts_smudge: false,
             bridge_set_start: None,
             high_bridge_rim_tiles: None,
@@ -1108,6 +1113,26 @@ impl ResolvedTerrainGrid {
             destroyable_cliff_catalog: None,
             bridge_recalc_catalog: None,
             allocation_caches: Default::default(),
+        }
+    }
+
+    /// Cell486FF0 skips the AllowBurrowing read when Cell+38 is outside the
+    /// active tile array; valid indices read the saved TileType+0x305 value.
+    pub fn tile_allows_burrowing(&self, tile: i32) -> bool {
+        usize::try_from(tile)
+            .ok()
+            .and_then(|index| self.tile_burrowing_permissions.as_ref()?.get(index))
+            .copied()
+            .unwrap_or(true)
+    }
+
+    /// VERA's future-affecting terrain identity includes the retained flags.
+    /// Native Tile ComputeCRC549B70 omits +0x305; this is not that diagnostic.
+    pub(crate) fn hash_burrowing_permissions(&self, hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        if let Some(permissions) = &self.tile_burrowing_permissions {
+            b"tile-burrowing-permissions-v1".hash(hasher);
+            permissions.hash(hasher);
         }
     }
 

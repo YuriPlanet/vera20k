@@ -909,13 +909,10 @@ mod tests {
         query: (u16, u16),
         enabled: bool,
     ) -> (u16, u16) {
-        let cell = crate::sim::cell_rect::get_cellclass_fallback(
-            Some(terrain),
-            i32::from(query.0 as i16),
-            i32::from(query.1 as i16),
-        );
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let cell = cells.lookup((query.0 as i16, query.1 as i16));
         crate::sim::pathfinding::zone_search::native_path_entry::live_hierarchy_projection(
-            terrain, records, &cell, enabled, None,
+            &cells, records, cell, enabled, None,
         )
         .expect("fixture has an addressable terminating projection")
     }
@@ -1278,6 +1275,13 @@ mod tests {
 
     #[test]
     fn gsi_04_12_hierarchy_projection_no_record_ties_choose_east_and_south() {
+        use crate::map::resolved_terrain::NativeCellQuery;
+        use crate::sim::cell_rect::PlayfieldBounds;
+        use crate::sim::pathfinding::zone_map::ZoneQueryCell::{Copied, Retained};
+        use crate::sim::pathfinding::zone_search::native_path_entry::{
+            live_hierarchy_projection, resolve_bridge_endpoint,
+        };
+
         let horizontal = redirect_terrain(7, 5, Some(100), None, |cell| {
             if cell.ry == 2 && (2..=4).contains(&cell.rx) {
                 cell.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
@@ -1291,6 +1295,23 @@ mod tests {
             project_live_cell_for_test(&horizontal, &[], (3, 2), true),
             (5, 2)
         );
+        let cells = NativeCellQuery::canonical(&horizontal);
+        assert_eq!(
+            resolve_bridge_endpoint(&cells, &[], Copied((3, 2)), Copied((1, 2)), None),
+            Ok((1, 2)),
+            "5833F0's no-record search measures from its separate reference"
+        );
+        let records = [BridgeEndpointRecord {
+            endpoint_a: (1, 1),
+            endpoint_b: (5, 1),
+            active: true,
+            bridge_kind: BridgeRecordKind::High,
+        }];
+        assert_eq!(
+            resolve_bridge_endpoint(&cells, &records, Copied((3, 0)), Copied((3, 0)), None),
+            Ok((5, 1)),
+            "5833F0 admits a nonstructural cell at tolerance one and returns raw endpoint B on a tie"
+        );
 
         let vertical = redirect_terrain(5, 7, Some(100), None, |cell| {
             if cell.rx == 2 && (2..=4).contains(&cell.ry) {
@@ -1303,6 +1324,30 @@ mod tests {
         assert_eq!(
             project_live_cell_for_test(&vertical, &[], (2, 3), true),
             (2, 5)
+        );
+
+        // No high exit: both mode-one sentinel probes stamp the same Dummy.
+        //5833F0 re-reads a retained input, but preserves a copied input;
+        //583180 retains its distinct unsupported record[-1] policy.
+        let mut terrain = redirect_terrain(5, 1, None, None, |_| {});
+        terrain.test_set_native_allocated_cells(&[(2, 0), (4, 0)]);
+        let cells = NativeCellQuery::isolated(&terrain);
+        cells.dummy().test_set_retained_bridge_flags(0x900);
+        let bounds = Some(PlayfieldBounds::from_normalized_local_size(5, 0, 0, 5, 1));
+        assert_eq!(
+            resolve_bridge_endpoint(&cells, &[], Copied((3, 0)), Copied((4, 0)), bounds),
+            Ok((3, 0))
+        );
+        let input = cells.lookup((3, 0));
+        assert_eq!(
+            resolve_bridge_endpoint(&cells, &[], Retained(input), Copied((4, 0)), bounds),
+            Ok((0, 0))
+        );
+        assert_eq!(cells.coord(input), (0, 0));
+        let input = cells.lookup((3, 0));
+        assert_eq!(
+            live_hierarchy_projection(&cells, &[], input, true, bounds),
+            Err("583180 record[-1] after sentinel fallback")
         );
     }
 

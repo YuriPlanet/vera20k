@@ -2725,6 +2725,13 @@ impl ProcessedRulesLayers {
             .rules_attack_cursor_on_disguise
     }
 
+    /// Rules+17EF, retained ReadGeneral66EB03..66EB1C boolean.
+    pub(crate) fn allow_shrouded_subterannean_moves(&self) -> bool {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_allow_shrouded_subterannean_moves
+    }
+
     /// Rules+1866, retained by AudioVisual66B7A7..66B7D2 through the
     /// current-RGB default of ReadColorRGB474B50.
     pub(crate) fn chrono_beam_color(&self) -> [u8; 3] {
@@ -3738,6 +3745,7 @@ pub(crate) struct NativeRulesRegistryState {
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
     rules_attack_cursor_on_disguise: bool,
+    rules_allow_shrouded_subterannean_moves: bool,
     rules_spotlight: crate::rules::ruleset::SpotlightRules,
     rules_ammo_crate_damage: i32,
     rules_tiberium_explosion_damage: i32,
@@ -3848,6 +3856,7 @@ impl Default for NativeRulesRegistryState {
             rules_maximum_cheer_rate: crate::rules::ruleset::DEFAULT_MAXIMUM_CHEER_RATE,
             rules_talk_bubble_time: general.talk_bubble_time,
             rules_attack_cursor_on_disguise: general.attack_cursor_on_disguise,
+            rules_allow_shrouded_subterannean_moves: general.allow_shrouded_subterannean_moves(),
             rules_spotlight: general.spotlight,
             // Rules665CD4=700; pointer fields665A18/665A24/666BD5 start null.
             rules_ammo_crate_damage: 100,
@@ -4298,6 +4307,7 @@ impl NativeRulesRegistryState {
             rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
             rules_talk_bubble_time: self.rules_talk_bubble_time,
             rules_attack_cursor_on_disguise: self.rules_attack_cursor_on_disguise,
+            rules_allow_shrouded_subterannean_moves: self.rules_allow_shrouded_subterannean_moves,
             rules_spotlight: self.rules_spotlight,
             rules_ammo_crate_damage: self.rules_ammo_crate_damage,
             rules_tiberium_explosion_damage: self.rules_tiberium_explosion_damage,
@@ -5462,6 +5472,7 @@ struct RulesPassProcessor {
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
     rules_attack_cursor_on_disguise: bool,
+    rules_allow_shrouded_subterannean_moves: bool,
     rules_spotlight: crate::rules::ruleset::SpotlightRules,
     rules_ammo_crate_damage: i32,
     rules_tiberium_explosion_damage: i32,
@@ -5549,6 +5560,8 @@ impl RulesPassProcessor {
             rules_maximum_cheer_rate: registry_state.rules_maximum_cheer_rate,
             rules_talk_bubble_time: registry_state.rules_talk_bubble_time,
             rules_attack_cursor_on_disguise: registry_state.rules_attack_cursor_on_disguise,
+            rules_allow_shrouded_subterannean_moves: registry_state
+                .rules_allow_shrouded_subterannean_moves,
             rules_spotlight: registry_state.rules_spotlight,
             rules_ammo_crate_damage: registry_state.rules_ammo_crate_damage,
             rules_tiberium_explosion_damage: registry_state.rules_tiberium_explosion_damage,
@@ -6272,6 +6285,12 @@ impl RulesPassProcessor {
         let Some(section) = pass.section("General") else {
             return;
         };
+        // RulesClass::ReadGeneral66D530, original66EB03..66EB1C:
+        // ReadBool5295F0 uses the current byte; Type reset6686C0 retains it.
+        self.rules_allow_shrouded_subterannean_moves = section.read_bool(
+            "AllowShroudedSubteranneanMoves",
+            self.rules_allow_shrouded_subterannean_moves,
+        );
         // ReadGeneral0066FDB1..0066FDD9 / ReadINI_IntVector00475D70:
         // exact key, 512-byte string, comma tokens through CRT atoi; an
         // absent/empty read keeps the prior vector. Counts are raw frames.
@@ -9008,6 +9027,8 @@ impl RulesPassProcessor {
                     rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
                     rules_talk_bubble_time: self.rules_talk_bubble_time,
                     rules_attack_cursor_on_disguise: self.rules_attack_cursor_on_disguise,
+                    rules_allow_shrouded_subterannean_moves: self
+                        .rules_allow_shrouded_subterannean_moves,
                     rules_spotlight: self.rules_spotlight,
                     rules_ammo_crate_damage: self.rules_ammo_crate_damage,
                     rules_tiberium_explosion_damage: self.rules_tiberium_explosion_damage,
