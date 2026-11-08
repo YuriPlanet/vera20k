@@ -182,6 +182,11 @@ const SMOOTH_NATIVE_FOOTPRINT: f32 = 0.995;
 const SMOOTH_STRENGTH: f32 = 0.4;
 // FFmpeg's `eq` threshold of 155, on these 0..1 channels.
 const SMOOTH_EQUAL: f32 = 0.6078;
+// A corner takes the nearer of its two neighbours' colours, so where either
+// neighbour is closer than this its rounding would move the pixel by at most
+// 40% of this. Too little to see, and leaving those pixels out spares the
+// costly part of the test on most of the art's fine grain.
+const SMOOTH_CONTRAST: f32 = 0.06;
 
 struct SmoothTexel {
     // Premultiplied so that clear pixels add no colour. Square roots stand in
@@ -224,19 +229,21 @@ fn smooth_same(a: SmoothTexel, b: SmoothTexel) -> bool {
     return all(a.yuva == b.yuva);
 }
 
-// One turn of the rule, named as in `render::xbr::corner`. `at` is the
-// fragment's place in the source pixel with the corner this turn rounds at
-// (1, 1); `pixel` is a screen pixel's size there.
+// One turn of the rule, named as in `render::xbr::corner`, for a corner whose
+// `ph` and `pf` both differ from `pe`. `right` and `down` are the turn's axes
+// in the page. `at` is the fragment's place in the source pixel with the
+// corner this turn rounds at (1, 1); `pixel` is a screen pixel's size there.
 fn smooth_corner(
+    cell: vec2f, bounds: vec4f, right: vec2f, down: vec2f,
     pe: SmoothTexel, pi: SmoothTexel, ph: SmoothTexel, pf: SmoothTexel,
     pg: SmoothTexel, pc: SmoothTexel, pd: SmoothTexel, pb: SmoothTexel,
-    f4: SmoothTexel, i4: SmoothTexel, h5: SmoothTexel, i5: SmoothTexel,
     at: vec2f, pixel: f32,
 ) -> SmoothCorner {
     var corner: SmoothCorner;
-    if smooth_same(pe, ph) || smooth_same(pe, pf) {
-        return corner;
-    }
+    let f4 = smooth_texel(cell, 2.0 * right, bounds);
+    let i4 = smooth_texel(cell, 2.0 * right + down, bounds);
+    let h5 = smooth_texel(cell, 2.0 * down, bounds);
+    let i5 = smooth_texel(cell, right + 2.0 * down, bounds);
     let e = smooth_df(pe, pc) + smooth_df(pe, pg) + smooth_df(pi, h5) + smooth_df(pi, f4)
         + 4.0 * smooth_df(ph, pf);
     let i = smooth_df(ph, pd) + smooth_df(ph, i5) + smooth_df(pf, i4) + smooth_df(pf, pb)
@@ -304,38 +311,42 @@ fn smooth_chrome(position: vec2f, rect: vec4f, scale: vec2f) -> vec4f {
         + (pg.color * before.x + ph.color * middle.x + pi.color * after.x) * after.y;
 
     // A stretched bar's corners would smear along it, and a corner needs two
-    // differing neighbours that meet; most pixels have none.
-    let round_h = !smooth_same(pe, ph);
-    let round_f = !smooth_same(pe, pf);
-    let round_b = !smooth_same(pe, pb);
-    let round_d = !smooth_same(pe, pd);
+    // neighbours that meet there and differ from this pixel; most have none.
+    let differs_h = smooth_df(pe, ph) > SMOOTH_CONTRAST;
+    let differs_f = smooth_df(pe, pf) > SMOOTH_CONTRAST;
+    let differs_b = smooth_df(pe, pb) > SMOOTH_CONTRAST;
+    let differs_d = smooth_df(pe, pd) > SMOOTH_CONTRAST;
+    let round_bottom_right = differs_h && differs_f;
+    let round_top_right = differs_f && differs_b;
+    let round_top_left = differs_b && differs_d;
+    let round_bottom_left = differs_d && differs_h;
     if max(scale.x, scale.y) > 2.0 * min(scale.x, scale.y)
-        || !(round_h && round_f || round_f && round_b || round_b && round_d || round_d && round_h)
+        || !(round_bottom_right || round_top_right || round_top_left || round_bottom_left)
     {
         return smooth_store(box_filtered);
     }
 
-    let a0 = smooth_texel(cell, vec2f(-2.0, -1.0), bounds);
-    let a1 = smooth_texel(cell, vec2f(-1.0, -2.0), bounds);
-    let b1 = smooth_texel(cell, vec2f(0.0, -2.0), bounds);
-    let c1 = smooth_texel(cell, vec2f(1.0, -2.0), bounds);
-    let c4 = smooth_texel(cell, vec2f(2.0, -1.0), bounds);
-    let d0 = smooth_texel(cell, vec2f(-2.0, 0.0), bounds);
-    let f4 = smooth_texel(cell, vec2f(2.0, 0.0), bounds);
-    let g0 = smooth_texel(cell, vec2f(-2.0, 1.0), bounds);
-    let g5 = smooth_texel(cell, vec2f(-1.0, 2.0), bounds);
-    let h5 = smooth_texel(cell, vec2f(0.0, 2.0), bounds);
-    let i4 = smooth_texel(cell, vec2f(2.0, 1.0), bounds);
-    let i5 = smooth_texel(cell, vec2f(1.0, 2.0), bounds);
-
     let pixel = 2.0 / (scale.x + scale.y);
-    let bottom_right = smooth_corner(pe, pi, ph, pf, pg, pc, pd, pb, f4, i4, h5, i5, at, pixel);
-    let top_right = smooth_corner(pe, pc, pf, pb, pi, pa, ph, pd, b1, c1, f4, c4,
-        vec2f(1.0 - at.y, at.x), pixel);
-    let top_left = smooth_corner(pe, pa, pb, pd, pc, pg, pf, ph, d0, a0, b1, a1,
-        vec2f(1.0) - at, pixel);
-    let bottom_left = smooth_corner(pe, pg, pd, ph, pa, pi, pb, pf, h5, g5, d0, g0,
-        vec2f(at.y, 1.0 - at.x), pixel);
+    var bottom_right: SmoothCorner;
+    var top_right: SmoothCorner;
+    var top_left: SmoothCorner;
+    var bottom_left: SmoothCorner;
+    if round_bottom_right {
+        bottom_right = smooth_corner(cell, bounds, vec2f(1.0, 0.0), vec2f(0.0, 1.0),
+            pe, pi, ph, pf, pg, pc, pd, pb, at, pixel);
+    }
+    if round_top_right {
+        top_right = smooth_corner(cell, bounds, vec2f(0.0, -1.0), vec2f(1.0, 0.0),
+            pe, pc, pf, pb, pi, pa, ph, pd, vec2f(1.0 - at.y, at.x), pixel);
+    }
+    if round_top_left {
+        top_left = smooth_corner(cell, bounds, vec2f(-1.0, 0.0), vec2f(0.0, -1.0),
+            pe, pa, pb, pd, pc, pg, pf, ph, vec2f(1.0) - at, pixel);
+    }
+    if round_bottom_left {
+        bottom_left = smooth_corner(cell, bounds, vec2f(0.0, 1.0), vec2f(-1.0, 0.0),
+            pe, pg, pd, ph, pa, pi, pb, pf, vec2f(at.y, 1.0 - at.x), pixel);
+    }
 
     // Opposite corners combine; of the two diagonals, the one that moves this
     // pixel most is the edge it lies on.

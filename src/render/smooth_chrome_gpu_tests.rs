@@ -247,3 +247,32 @@ fn an_enlarged_staircase_rounds_each_corner_by_forty_percent() {
     assert!(close(at(&blocks, 14, 11), [255; 3]));
     assert!(close(at(&blocks, 15, 9), [0; 3]));
 }
+
+#[test]
+#[ignore = "requires a wgpu adapter"]
+fn a_staircase_too_faint_to_see_keeps_its_corners() {
+    let renderer = Renderer::new();
+    let corner_of_white = |other: u8| {
+        let page: Vec<[u8; 4]> = (0..64)
+            .map(|index| {
+                if index % 8 + index / 8 < 8 {
+                    WHITE
+                } else {
+                    [other, other, other, 255]
+                }
+            })
+            .collect();
+        renderer.draw(
+            &page,
+            [8, 8],
+            quad([24.0, 24.0], [0.0, 0.0], [1.0, 1.0]),
+            [24, 24],
+            true,
+        )[11 * 24 + 14]
+    };
+    // On square roots 245 is 0.044 from white, under the cutoff: no rounding.
+    assert_eq!(corner_of_white(245)[..3], WHITE[..3]);
+    // 225 is 0.132 from white, over it: 1 - 0.3 x 0.132 = 0.96, stored as 246.
+    let rounded = corner_of_white(225);
+    assert!(close(rounded, [246; 3]), "{rounded:?}");
+}
