@@ -1404,6 +1404,37 @@ fn nighthawk_ejects_five_passengers_to_scanned_neighbours() {
     assert_eq!(fx.mission(shad), MissionId::from_known(MissionType::Guard));
 }
 
+/// A rifleman ordered to Enter a landed Nighthawk walks aboard: the
+/// aircraft's DOCKING (`0x004193B7`) and CAN_LOAD (`0x0041946B`) answer
+/// ROGER, so his arrival in its cell boards him (Infantry
+/// `0x0051A3E6..0x0051A485`).
+#[test]
+fn rifleman_boards_a_landed_nighthawk() {
+    let mut fx = Fixture::new(|_, _| false);
+    let shad = fx.spawn("SHAD", 20, 20, 0);
+    Simulation::set_object_height_unmarked(
+        &mut fx.sim.substrate,
+        &fx.sim.resolved_terrain,
+        shad,
+        0,
+    );
+    let soldier = fx.spawn("E1", 23, 20, 0);
+    assert!(fx.apply(Command::MegaMission {
+        entity_id: soldier,
+        mission: MissionType::Enter,
+        target: None,
+        destination: Some(crate::sim::combat::TargetKind::Entity(shad)),
+    }));
+    for _ in 0..400 {
+        if fx.cargo_ids(shad) == [soldier] {
+            break;
+        }
+        fx.tick();
+    }
+    assert_eq!(fx.cargo_ids(shad), [soldier], "he boards the aircraft");
+    assert!(!fx.revealed(soldier));
+}
+
 /// Aircraft Mission_Unload (`0x004151E0`, KickOutUnit `0x00415B10`) never
 /// clears Transporter (`+0x11C`): a soldier who boarded through the
 /// transport arm (`0x0051A463`) keeps it after a landed aircraft sets him

@@ -1263,9 +1263,12 @@ pub(crate) fn mission_unload(
             // `eject_from_aircraft` reveals each passenger at the aircraft's
             // own height (the landed-aircraft route), so a still aircraft at
             // altitude would leave its cargo in the air. Dormant in retail
-            // (see the doc above).
+            // (see the doc above). A Carryall, which rests at its loaded
+            // landing base and sets its cargo on the ground itself
+            // (`aircraft::carryall`), takes the native test alone.
             if crate::sim::movement::motion_query::is_moving(entity) != Some(true)
-                && aircraft_landed(entity, sim.resolved_terrain.as_ref())
+                && (aircraft_landed(entity, sim.resolved_terrain.as_ref())
+                    || sim.is_carryall(id, rules))
                 && let Some(entity) = sim.substrate.entities.get_mut(id)
             {
                 entity.mission.set_handler_state(AIR_STATE_EJECT);

@@ -3,15 +3,21 @@ use crate::sim::command::Command;
 use crate::sim::radio::{RadioMessage, RadioPayload, RadioResponse};
 use crate::sim::world::Simulation;
 
-/// A Carryall (`[HORNET]`'s Fly locomotor with `Carryall=yes`) and a tank.
-const RULES: &str = "[AircraftTypes]\n0=HORNET\n1=CARRY\n\
-    [CARRY]\nCarryall=yes\nLandable=yes\nSpeed=12\nSpeedType=Winged\nStrength=75\n\
-    Locomotor={4A582746-9839-11d1-B709-00A024DDAFD1}\n\
-    [VehicleTypes]\n0=TANK\n1=BIGTANK\n\
-    [TANK]\nStrength=300\nSpeed=4\nSpeedType=Track\nSize=2\n\
-    Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
-    [BIGTANK]\nStrength=300\nSpeed=4\nSpeedType=Track\nSize=3\n\
-    Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n";
+/// A Carryall (`[HORNET]`'s Fly locomotor with `Carryall=yes`) and two
+/// tanks, with `carry` and `tank` added to their sections (an INI's later
+/// copy of a section adds nothing).
+fn rules(carry: &str, tank: &str) -> String {
+    format!(
+        "[AircraftTypes]\n0=HORNET\n1=CARRY\n\
+         [CARRY]\nCarryall=yes\nLandable=yes\nSpeed=12\nSpeedType=Winged\nStrength=75\n\
+         Locomotor={{4A582746-9839-11d1-B709-00A024DDAFD1}}\n{carry}\
+         [VehicleTypes]\n0=TANK\n1=BIGTANK\n\
+         [TANK]\nStrength=300\nSpeed=4\nSpeedType=Track\nSize=2\n\
+         Locomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\n{tank}\
+         [BIGTANK]\nStrength=300\nSpeed=4\nSpeedType=Track\nSize=3\n\
+         Locomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\n"
+    )
+}
 
 struct Fixture {
     sim: Simulation,
@@ -20,9 +26,9 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn new(extra: &str) -> Self {
+    fn new(carry: &str, tank: &str) -> Self {
         let (mut sim, rules, registry) =
-            crate::sim::world::entry_test_fixture::fixture_with_rules(&format!("{RULES}{extra}"));
+            crate::sim::world::entry_test_fixture::fixture_with_rules(&rules(carry, tank));
         let owner = sim.interner.intern("Americans");
         sim.houses
             .register(crate::sim::house_state::HouseState::new(
@@ -94,7 +100,7 @@ fn carried(sim: &Simulation, carryall: u64, unit: u64) -> bool {
 /// flies it away and sets the tank down under it (`0x00416AF0`).
 #[test]
 fn carryall_totes_an_allied_tank_and_sets_it_down() {
-    let mut fx = Fixture::new("");
+    let mut fx = Fixture::new("", "");
     let carryall = fx.spawn("CARRY", 15, 15);
     let tank = fx.spawn("TANK", 18, 15);
     assert_eq!(
@@ -148,11 +154,47 @@ fn carryall_totes_an_allied_tank_and_sets_it_down() {
     );
 }
 
+/// Loaded, the Carryall's Unload (the self-click, ClickedAction case 4)
+/// waits only for its locomotor to stop (`0x0041549D`), though it rests at
+/// its loaded landing base, then sets the tank down (`0x004154E7`).
+#[test]
+fn a_loaded_carryall_sets_its_cargo_down_on_unload() {
+    let mut fx = Fixture::new("", "");
+    let carryall = fx.spawn("CARRY", 15, 15);
+    let tank = fx.spawn("TANK", 18, 15);
+    fx.order(Command::MoveToObject {
+        entity_id: carryall,
+        target_id: tank,
+    });
+    assert!(fx.run_until(1500, |sim| carried(sim, carryall, tank)));
+    fx.order(Command::UnloadPassengers {
+        transport_id: carryall,
+    });
+    assert!(
+        fx.run_until(600, |sim| {
+            !sim.substrate
+                .entities
+                .get(tank)
+                .unwrap()
+                .lifecycle
+                .in_limbo()
+        }),
+        "the Carryall sets the tank down"
+    );
+    let cargo = fx.sim.substrate.entities.get(tank).unwrap();
+    assert!(!cargo.is_on_carryall());
+    assert!(
+        cargo.position.rx().abs_diff(18) <= 1 && cargo.position.ry().abs_diff(15) <= 1,
+        "set down where it was lifted: {:?}",
+        cargo.position
+    );
+}
+
 /// WANT_RIDE, Unit `0x0073745C`: ROGER from a free Unit, NEGATORY once it
 /// is tethered (`+0x418`).
 #[test]
 fn a_tethered_unit_refuses_want_ride() {
-    let mut fx = Fixture::new("");
+    let mut fx = Fixture::new("", "");
     let carryall = fx.spawn("CARRY", 15, 15);
     let tank = fx.spawn("TANK", 18, 15);
     let want_ride = |fx: &mut Fixture| {

@@ -246,10 +246,12 @@ impl EnterHost for WorldEnter<'_> {
     /// so an aircraft reaches this with another aircraft as its radio
     /// contact. Natively its Limbo BREAKs that contact first, so the
     /// AddPassenger that follows runs on a NULL contact's cargo
-    /// (`0x0041A036..0x0041A048`) and faults; VERA does nothing. Trigger:
-    /// an aircraft docking with an aircraft, which no order or team action
-    /// forms.
-    fn board_contact(&mut self) {}
+    /// (`0x0041A036..0x0041A048`) and faults; VERA enters idle mode
+    /// instead, as any other answer does. Trigger: an aircraft docking with
+    /// an aircraft, which no order or team action forms.
+    fn board_contact(&mut self) {
+        self.enter_idle_mode();
+    }
 
     /// The Carryall delivery (`0x0041A06D..0x0041A124`): the cargo's head
     /// comes off the hold (`CargoClass::RemoveFirstPassenger`), the

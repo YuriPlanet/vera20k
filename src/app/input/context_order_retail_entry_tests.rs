@@ -1171,3 +1171,39 @@ fn a_carryall_over_the_players_tank_totes_it() {
     );
     assert!(selected.is_empty());
 }
+
+/// A Carryall's hold counts (`+0x114`, Aircraft What_Action
+/// `0x00417DCD..0x00417DDA`) though its type has no `Passengers=`: loaded,
+/// its self-click offers Unload.
+#[test]
+fn a_loaded_carryall_offers_unload() {
+    let ini = crate::rules::ini_parser::IniFile::from_str(
+        "[Countries]\n0=Americans\n1=Russians\n\
+         [AircraftTypes]\n0=CARRY\n[CARRY]\nCarryall=yes\nLandable=yes\nStrength=75\n\
+         Locomotor={4A582746-9839-11d1-B709-00A024DDAFD1}\n",
+    );
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let mut sim = arena(&rules);
+    let carryall = sim
+        .spawn_object("CARRY", "Americans", 13, 16, 0, &rules)
+        .expect("carryall");
+    let owner = sim.interner().get("Americans");
+    let unload = |sim: &Simulation| {
+        let entity = sim.entities().get(carryall).unwrap();
+        let object = sim.interner().object_type(entity.type_ref(), &rules);
+        crate::app::input::transport_orders::unload_command(entity, object, owner)
+    };
+    assert_eq!(unload(&sim), None, "empty");
+    let mut cargo = crate::sim::passenger::PassengerCargo::new(0, 0.0);
+    cargo.board_forced_chain(&[(999, 2.0)]);
+    sim.entities_mut_for_test()
+        .get_mut(carryall)
+        .unwrap()
+        .passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
+    assert_eq!(
+        unload(&sim),
+        Some(Command::UnloadPassengers {
+            transport_id: carryall
+        })
+    );
+}
