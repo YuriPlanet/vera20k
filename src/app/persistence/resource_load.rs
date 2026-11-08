@@ -241,7 +241,7 @@ impl PreparedSavedGame {
             SnapshotProcessState::Cold(view.frontend_main),
             SnapshotProcessState::Live,
         );
-        let mut world = PreparedLoad::prepare_snapshot(
+        let world = PreparedLoad::prepare_snapshot(
             snapshot,
             process,
             rules,
@@ -270,10 +270,9 @@ impl PreparedSavedGame {
             )?;
         let local_view = PreparedSavedLocalView::new(saved_view, &world.simulation, rules)?;
         crate::app::presentation::lighting::validate_saved_lighting(&lighting, &world.simulation)?;
-        // Load685120 ->53AB50 calls the canonical selector after restoring
-        // incoming effects. Its one Cell refresh is staged below; outgoing
-        // process palette/cache state stays immutable during preparation.
-        world.simulation.reinitialize_lighting_after_user_load();
+        // Shared user-load preparation reselected the incoming effects'
+        // lighting before refreshing Anim conversions. The one Cell refresh
+        // is staged below; outgoing process palettes remain unchanged.
         let scheme_normal_rgb = view
             .lighting
             .normal_scheme_for_user_load(view.current_simulation, &theater_name);
