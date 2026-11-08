@@ -13,7 +13,7 @@ use crate::ui::shell::geom::{RectPx, ShellScale};
 use crate::ui::shell::static_reveal::DialogStatics;
 use crate::ui::shell::trackbar::{TrackbarHold, TrackbarPress, TrackbarRange};
 
-use super::super::layout::RandomMapSetupControl;
+use super::super::layout::{AdvancedField, RandomMapSetupControl};
 use super::choose_map::ChooseMapSelection;
 
 /// Process Main as the dialog's `RandomRanged` source. The app supplies process
@@ -219,6 +219,44 @@ pub struct RandomMapSetupModalState {
     /// sizes past Very Large. A LAN or online dialog keeps the original limits,
     /// which every peer and the lobby accept.
     pub extended: bool,
+    /// VERA extension (offline Skirmish): the option rows show the Advanced
+    /// sliders instead of the original controls.
+    pub advanced: bool,
+    /// VERA extension: the Advanced values the player set, by
+    /// [`AdvancedField::row`]. `None` until a slider moves; Surprise Me clears
+    /// them. While set they replace the map-type-derived values that every
+    /// Generate re-rolls, after the re-roll's draws.
+    pub advanced_values: Option<[i32; 7]>,
+    /// An Advanced slider holding the mouse since a press on it.
+    pub advanced_hold: Option<TrackbarHold<AdvancedField>>,
+}
+
+/// The Advanced sliders' range, the fields' own clamp (`RmgOptions::normalize`).
+pub const ADVANCED_RANGE: TrackbarRange = TrackbarRange::new(0, 100, 1);
+
+/// The option field an Advanced slider sets.
+fn advanced_field_mut(options: &mut RmgOptions, field: AdvancedField) -> &mut i32 {
+    match field {
+        AdvancedField::Water => &mut options.water_amount,
+        AdvancedField::Hills => &mut options.ruggedness,
+        AdvancedField::Buildings => &mut options.urban_presence,
+        AdvancedField::Vegetation => &mut options.vegetation,
+        AdvancedField::OreFields => &mut options.tiberium_layout,
+        AdvancedField::PlateauSize => &mut options.region_size,
+        AdvancedField::Accessibility => &mut options.accessibility,
+    }
+}
+
+fn advanced_field(options: &RmgOptions, field: AdvancedField) -> i32 {
+    match field {
+        AdvancedField::Water => options.water_amount,
+        AdvancedField::Hills => options.ruggedness,
+        AdvancedField::Buildings => options.urban_presence,
+        AdvancedField::Vegetation => options.vegetation,
+        AdvancedField::OreFields => options.tiberium_layout,
+        AdvancedField::PlateauSize => options.region_size,
+        AdvancedField::Accessibility => options.accessibility,
+    }
 }
 
 impl RandomMapSetupModalState {
@@ -250,6 +288,9 @@ impl RandomMapSetupModalState {
             previous_selection,
             statics: DialogStatics::default(),
             extended,
+            advanced: false,
+            advanced_values: None,
+            advanced_hold: None,
         };
         modal.normalize_options();
         modal
@@ -269,6 +310,8 @@ impl RandomMapSetupModalState {
             if self.options.theater >= NATIVE_THEATER_ITEMS as i32 {
                 self.options.theater = 0;
             }
+            // VERA's towns are offline-only, like the Advanced view.
+            self.options.urban_enabled = false;
         }
     }
 
@@ -297,6 +340,12 @@ impl RandomMapSetupModalState {
             // Accept and save both require a generated result.
             C::Ok0x6c5 | C::Save0x6c3 => self.generated,
             C::Load0x6c2 | C::Delete0x6c4 => self.saved_seed_buttons_enabled,
+            // Plateau size reaches only the generator's plateau split, which
+            // runs for Inland and Mountainous (`SplitOversizedRegions`).
+            C::Advanced(AdvancedField::PlateauSize) => {
+                self.extended && matches!(self.options.map_type, 3 | 4)
+            }
+            C::AdvancedToggle | C::Advanced(_) => self.extended,
             _ => true,
         }
     }
@@ -425,6 +474,10 @@ impl RandomMapSetupModalState {
             self.open_combo = None;
             press
         } else {
+            if self.advanced {
+                // VERA: the Advanced view hides the combos.
+                return None;
+            }
             let combo = super::super::layout::random_map_setup_control_at(layout, x, y)
                 .and_then(SetupCombo::from_control)
                 .filter(|combo| self.is_enabled(combo.control()))?;
@@ -444,6 +497,16 @@ impl RandomMapSetupModalState {
         self.generated_preview = None;
     }
 
+    /// VERA: Load hands its seed over. The sliders let go of the values the
+    /// player set, so they show the seed's, and a LAN or online dialog holds
+    /// the seed to its own limits, towns off.
+    pub fn adopt_saved_seed(&mut self, options: RmgOptions) {
+        self.options = options;
+        self.normalize_options();
+        self.advanced_values = None;
+        self.advanced_hold = None;
+    }
+
     /// Surprise Me: randomize the option subset and invalidate the result.
     pub fn randomize_options(
         &mut self,
@@ -451,6 +514,10 @@ impl RandomMapSetupModalState {
         rng: &mut impl RandomRanged,
         description: &str,
     ) {
+        // VERA: Surprise Me also drops the Advanced values, so the derived
+        // fields are random again.
+        self.advanced_values = None;
+        self.options.urban_enabled = false;
         randomize(&mut self.options, settings, rng, description);
         self.generated = false;
         self.generated_preview = None;
@@ -465,6 +532,83 @@ impl RandomMapSetupModalState {
         rng: &mut impl RandomRanged,
     ) {
         derive_from_map_type(&mut self.options, settings, rng);
+        // VERA: Advanced values the player set replace the re-rolled ones;
+        // the re-roll still runs, so it draws from Main exactly as before.
+        if let Some(values) = self.advanced_values {
+            for field in AdvancedField::ALL {
+                *advanced_field_mut(&mut self.options, field) = values[field.row()];
+            }
+        }
+    }
+
+    /// Switch the option rows between the original controls and the
+    /// Advanced sliders. Any open list or held slider lets go.
+    pub fn toggle_advanced(&mut self) {
+        self.advanced = !self.advanced;
+        self.open_combo = None;
+        self.players_hold = None;
+        self.advanced_hold = None;
+    }
+
+    /// The value an Advanced slider shows: the player's, else the option's.
+    /// Buildings reads 0 until the player turns the towns on, since the
+    /// presence the map type rolls places nothing by itself.
+    pub fn advanced_value(&self, field: AdvancedField) -> i32 {
+        if field == AdvancedField::Buildings && !self.options.urban_enabled {
+            return 0;
+        }
+        self.advanced_values.map_or_else(
+            || advanced_field(&self.options, field),
+            |values| values[field.row()],
+        )
+    }
+
+    /// A press at device `(x, y)` on an Advanced slider window. Returns
+    /// whether the value changed.
+    pub fn press_advanced(
+        &mut self,
+        field: AdvancedField,
+        x: i32,
+        y: i32,
+        window: RectPx,
+        scale: ShellScale,
+    ) -> bool {
+        let press = ADVANCED_RANGE.press_in(self.advanced_value(field), x, y, window, scale);
+        self.advanced_hold = press.hold(field);
+        match press {
+            TrackbarPress::Jump(value) => self.change_advanced(field, value),
+            _ => false,
+        }
+    }
+
+    /// A move while an Advanced slider holds the mouse. Returns whether the
+    /// value changed.
+    pub fn drag_advanced(&mut self, x: i32, window: RectPx, scale: ShellScale) -> bool {
+        let Some(hold) = self.advanced_hold.filter(|hold| hold.dragging) else {
+            return false;
+        };
+        self.change_advanced(hold.id, ADVANCED_RANGE.value_at_in(x, window, scale))
+    }
+
+    /// Set one Advanced value. The first change captures every field's
+    /// current value, so the sliders the player did not touch keep theirs.
+    pub fn change_advanced(&mut self, field: AdvancedField, value: i32) -> bool {
+        let value = value.clamp(ADVANCED_RANGE.min, ADVANCED_RANGE.max);
+        if self.advanced_value(field) == value {
+            return false;
+        }
+        let mut values = self
+            .advanced_values
+            .unwrap_or_else(|| AdvancedField::ALL.map(|field| self.advanced_value(field)));
+        values[field.row()] = value;
+        self.advanced_values = Some(values);
+        *advanced_field_mut(&mut self.options, field) = value;
+        // Moving Buildings above zero turns the towns on (`urban_enabled`).
+        if field == AdvancedField::Buildings {
+            self.options.urban_enabled = value > 0;
+        }
+        self.on_option_changed();
+        true
     }
 
     /// Begin the synchronous generate block: every control goes inert.
@@ -472,6 +616,7 @@ impl RandomMapSetupModalState {
         self.generating = true;
         self.open_combo = None;
         self.players_hold = None;
+        self.advanced_hold = None;
     }
 
     /// Release a failed worker without presenting an old/partial map as a
@@ -548,6 +693,122 @@ mod tests {
             false,
             true,
         )
+    }
+
+    /// VERA: a loaded seed takes over the sliders, and a LAN or online dialog
+    /// holds it to its own limits, towns off.
+    #[test]
+    fn a_loaded_seed_resets_the_sliders_and_obeys_the_dialog() {
+        let saved = RmgOptions {
+            seed: 0x1234,
+            urban_enabled: true,
+            urban_presence: 30,
+            num_players: crate::map::rmg::MAX_PLAYERS,
+            ..Default::default()
+        };
+        let mut offline = opened();
+        assert!(offline.change_advanced(AdvancedField::Water, 77));
+        offline.adopt_saved_seed(saved.clone());
+        assert_eq!(offline.advanced_values, None);
+        assert_eq!(offline.advanced_value(AdvancedField::Buildings), 30);
+        assert_eq!(offline.options.num_players, crate::map::rmg::MAX_PLAYERS);
+
+        let mut network = RandomMapSetupModalState::open(
+            RmgOptions {
+                seed: 0x1234,
+                ..Default::default()
+            },
+            None,
+            true,
+            false,
+        );
+        network.adopt_saved_seed(saved);
+        assert!(!network.options.urban_enabled);
+        assert_eq!(
+            network.options.num_players,
+            crate::map::rmg::NATIVE_MAX_PLAYERS
+        );
+    }
+
+    /// VERA: Advanced values survive Generate's re-roll, which still draws as
+    /// before; untouched sliders keep the values they showed; Surprise Me
+    /// makes them random again.
+    #[test]
+    fn advanced_values_replace_the_generate_reroll_until_surprise_me() {
+        struct Counting(i32);
+        impl RandomRanged for Counting {
+            fn ranged(&mut self, min: i32, _max: i32) -> i32 {
+                self.0 += 1;
+                min
+            }
+        }
+        let mut state = opened();
+        state.options.ruggedness = 40;
+        assert!(state.change_advanced(AdvancedField::Water, 77));
+        assert_eq!(
+            state.advanced_values.unwrap()[AdvancedField::Hills.row()],
+            40
+        );
+
+        let mut rng = Counting(0);
+        state.reroll_derived_for_generate(&RmgSettings::default(), &mut rng);
+        assert_eq!(rng.0, 8, "the re-roll still makes all eight draws");
+        assert_eq!(state.options.water_amount, 77);
+        assert_eq!(
+            state.options.ruggedness, 40,
+            "an untouched slider keeps its value"
+        );
+
+        state.randomize_options(&RmgSettings::default(), &mut MaxRng, "Random Map");
+        assert_eq!(state.advanced_values, None);
+        assert_ne!(state.advanced_value(AdvancedField::Water), 77);
+    }
+
+    /// VERA: only moving Buildings above zero turns the towns on, and the
+    /// slider reads 0 until then; Surprise Me turns them off again.
+    #[test]
+    fn only_the_buildings_slider_turns_the_towns_on() {
+        let mut state = opened();
+        state.options.urban_presence = 63;
+        assert_eq!(state.advanced_value(AdvancedField::Buildings), 0);
+        state.change_advanced(AdvancedField::Water, 30);
+        assert!(
+            !state.options.urban_enabled,
+            "another slider leaves them off"
+        );
+        assert!(state.change_advanced(AdvancedField::Buildings, 40));
+        assert!(state.options.urban_enabled);
+        assert_eq!(state.options.urban_presence, 40);
+        state.randomize_options(&RmgSettings::default(), &mut MaxRng, "Random Map");
+        assert!(!state.options.urban_enabled);
+    }
+
+    #[test]
+    fn the_advanced_toggle_is_offline_skirmish_only() {
+        let mut network = RandomMapSetupModalState::open(
+            RmgOptions {
+                seed: 0x1234,
+                ..Default::default()
+            },
+            None,
+            false,
+            false,
+        );
+        assert!(!network.is_enabled(RandomMapSetupControl::AdvancedToggle));
+        let mut offline = opened();
+        assert!(offline.is_enabled(RandomMapSetupControl::AdvancedToggle));
+        let plateau = RandomMapSetupControl::Advanced(AdvancedField::PlateauSize);
+        offline.set_map_type(1);
+        assert!(
+            !offline.is_enabled(plateau),
+            "continents have no plateau split"
+        );
+        offline.set_map_type(4);
+        assert!(offline.is_enabled(plateau));
+        offline.toggle_advanced();
+        assert!(offline.advanced);
+        network.toggle_advanced();
+        let _ = network;
     }
 
     #[test]
