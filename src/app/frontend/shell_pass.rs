@@ -32,11 +32,24 @@ pub(crate) fn owner_draw_button_label_rect(rect: RectPx, pressed: bool) -> RectP
     )
 }
 
+/// The cursor a page draws. A message box over the page draws it above itself
+/// instead ([`top_software_cursor`]).
+pub(crate) fn software_cursor(
+    state: &AppState,
+    depth: f32,
+) -> Option<(&BatchTexture, SpriteInstance)> {
+    use crate::app::input::precedence::{ModalPage, modal_page};
+    if modal_page(state) == Some(ModalPage::ShellMessageBox) {
+        return None;
+    }
+    top_software_cursor(state, depth)
+}
+
 /// Default software cursor in screen space (camera at the origin): the raw
 /// pointer minus the hotspot, sized to the current animation frame and grown
 /// with a fitted menu's art, drawn from the sequence's frame-0 texture. `None`
 /// without a software cursor.
-pub(crate) fn software_cursor(
+pub(crate) fn top_software_cursor(
     state: &AppState,
     depth: f32,
 ) -> Option<(&BatchTexture, SpriteInstance)> {
@@ -108,6 +121,43 @@ pub(crate) fn encode_shell_pass(
     label: &str,
     composition: ShellComposition<'_>,
 ) {
+    encode_composition(
+        state,
+        encoder,
+        destination,
+        label,
+        composition,
+        wgpu::LoadOp::Clear(crate::app::types::CLEAR_COLOR),
+    );
+}
+
+/// Encode `composition` over what the shell source surface already holds and
+/// present the result to `destination`.
+pub(crate) fn encode_shell_pass_over_page(
+    state: &AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    destination: &wgpu::Texture,
+    label: &str,
+    composition: ShellComposition<'_>,
+) {
+    encode_composition(
+        state,
+        encoder,
+        destination,
+        label,
+        composition,
+        wgpu::LoadOp::Load,
+    );
+}
+
+fn encode_composition(
+    state: &AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    destination: &wgpu::Texture,
+    label: &str,
+    composition: ShellComposition<'_>,
+    color_load: wgpu::LoadOp<wgpu::Color>,
+) {
     let ShellComposition {
         draws,
         text,
@@ -145,7 +195,7 @@ pub(crate) fn encode_shell_pass(
             depth_slice: None,
             resolve_target: None,
             ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(crate::app::types::CLEAR_COLOR),
+                load: color_load,
                 store: wgpu::StoreOp::Store,
             },
         })],

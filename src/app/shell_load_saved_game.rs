@@ -92,6 +92,15 @@ impl App {
         state.platform.window.request_redraw();
     }
 
+    /// VERA's Esc menu (`app::shell_menu`): the error box keeps Esc.
+    pub(super) fn load_saved_game_leaves_escape(state: &AppState) -> bool {
+        state
+            .frontend
+            .load_saved_game
+            .as_ref()
+            .is_some_and(|browser| browser.prompt.is_none())
+    }
+
     /// Enter and Escape reach the proc as IDOK/IDCANCEL, which it ignores;
     /// they answer the error message box while it is up.
     pub(super) fn handle_load_saved_game_key(state: &mut AppState, code: KeyCode) {

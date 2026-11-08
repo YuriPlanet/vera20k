@@ -1181,6 +1181,13 @@ impl App {
                         }
                     }
                 }
+                if page == Some(ModalPage::ShellMessageBox) {
+                    crate::app::frontend::main_menu_shell_render::render_shell_message_box_over_page(
+                        state,
+                        &mut encoder,
+                        &output.texture,
+                    );
+                }
             }
             GameScreen::Loading => {
                 match crate::app::loading::pump::render_loading_screen(

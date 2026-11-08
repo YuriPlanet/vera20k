@@ -45,8 +45,9 @@ pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{
     PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES,
     PlayerNameEditState, SkirmishShellDialog, SkirmishShellState, accept_selected_map,
-    blur_player_name_edit, clear_status_help_text, combo_dropdown_open, dismiss_validation_modal,
-    drain_pending_ui_sounds, focus_player_name_edit, handle_player_name_backspace,
+    blur_player_name_edit, clear_status_help_text, close_combo_dropdown, combo_dropdown_open,
+    dismiss_validation_modal, drain_pending_ui_sounds, focus_player_name_edit,
+    handle_player_name_backspace,
     handle_player_name_delete, handle_player_name_end, handle_player_name_home,
     handle_player_name_left, handle_player_name_right, handle_player_name_tab,
     initialize_rows_for_selected_map, insert_player_name_text, player_name_caret_prefix,

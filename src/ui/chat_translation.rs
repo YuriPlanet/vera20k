@@ -5,8 +5,8 @@
 //! (`docs/lobby-protocol.md`) and the reply is shown under the original, which
 //! always stays visible.
 
-/// A language received chat can be translated into. GAME.FNT draws Latin-1,
-/// CJK, kana and Hangul, so only these are offered.
+/// A language received chat can be translated into. The lobby's translator
+/// must offer each tag: an unsupported target gets no reply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ChatLanguage {
     English,
@@ -18,10 +18,15 @@ pub(crate) enum ChatLanguage {
     French,
     Spanish,
     Portuguese,
+    Russian,
+    Arabic,
+    Thai,
+    Turkish,
+    Swedish,
 }
 
 /// Each language's lobby tag and its own name.
-const LANGUAGES: [(ChatLanguage, &str, &str); 9] = [
+const LANGUAGES: [(ChatLanguage, &str, &str); 14] = [
     (ChatLanguage::English, "en", "English"),
     (ChatLanguage::SimplifiedChinese, "zh-Hans", "简体中文"),
     (ChatLanguage::TraditionalChinese, "zh-Hant", "繁體中文"),
@@ -31,6 +36,11 @@ const LANGUAGES: [(ChatLanguage, &str, &str); 9] = [
     (ChatLanguage::French, "fr", "Français"),
     (ChatLanguage::Spanish, "es", "Español"),
     (ChatLanguage::Portuguese, "pt", "Português"),
+    (ChatLanguage::Russian, "ru", "Русский"),
+    (ChatLanguage::Arabic, "ar", "العربية"),
+    (ChatLanguage::Thai, "th", "ไทย"),
+    (ChatLanguage::Turkish, "tr", "Türkçe"),
+    (ChatLanguage::Swedish, "sv", "Svenska"),
 ];
 
 /// The chat notice for a `/translate` with an unknown language.
@@ -87,22 +97,40 @@ impl ChatLanguage {
             .map(|(language, ..)| language)
     }
 
-    /// Whether a received line needs translating into this language. The
-    /// script boundary is the WOL language gate's (`0x007B7D90`: every unit
-    /// below 0x100 is Latin): a Latin-script reader gets lines with a letter
-    /// past Latin-1, a CJK reader all-Latin-1 lines with a letter.
+    /// Whether a received line needs translating into this language. Latin-1
+    /// is the WOL language gate's boundary (`0x007B7D90`: every unit below
+    /// 0x100 is Latin). A Latin-script reader gets a line with any letter they
+    /// can't read. Any other reader gets a line with letters, none of them
+    /// their own script's: a Russian line naming a `GI` is still Russian.
     pub(crate) fn needs(self, text: &[u16]) -> bool {
-        let latin_reader = matches!(
-            self,
-            Self::English | Self::German | Self::French | Self::Spanish | Self::Portuguese
-        );
-        let mut letters = char::decode_utf16(text.iter().copied())
+        let (own, other) = char::decode_utf16(text.iter().copied())
             .filter_map(Result::ok)
-            .filter(|ch| ch.is_alphabetic());
-        if latin_reader {
-            letters.any(|ch| u32::from(ch) >= 0x100)
-        } else {
-            text.iter().all(|unit| *unit < 0x100) && letters.next().is_some()
+            .filter(|ch| ch.is_alphabetic())
+            .fold((false, false), |(own, other), ch| {
+                let ours = self.writes(ch);
+                (own || ours, other || !ours)
+            });
+        other && (self.writes('a') || !own)
+    }
+
+    /// Whether `ch` is a letter of this language's script. Turkish alone of
+    /// the Latin-script languages here has letters past Latin-1.
+    fn writes(self, ch: char) -> bool {
+        let code = u32::from(ch);
+        match self {
+            Self::English
+            | Self::German
+            | Self::French
+            | Self::Spanish
+            | Self::Portuguese
+            | Self::Swedish => code < 0x100,
+            Self::Turkish => code < 0x100 || matches!(ch, 'Ğ' | 'ğ' | 'İ' | 'ı' | 'Ş' | 'ş'),
+            Self::SimplifiedChinese | Self::TraditionalChinese | Self::Japanese | Self::Korean => {
+                crate::render::text_engine::fonts::is_cjk_sized(code)
+            }
+            Self::Russian => matches!(code, 0x0400..=0x052F),
+            Self::Arabic => crate::i18n::is_right_to_left_letter(ch),
+            Self::Thai => matches!(code, 0x0E00..=0x0E7F),
         }
     }
 }
@@ -165,6 +193,30 @@ mod tests {
     }
 
     #[test]
+    fn non_latin_readers_get_lines_without_a_letter_of_their_script() {
+        use ChatLanguage::*;
+        assert!(Russian.needs(&w("rush his ore miners")));
+        assert!(Russian.needs(&w("冲他矿车")));
+        assert!(!Russian.needs(&w("раш на руду, GI рядом")));
+        assert!(Arabic.needs(&w("rush")));
+        assert!(!Arabic.needs(&w("هجوم على القاعدة gg")));
+        assert!(Thai.needs(&w("rush")));
+        assert!(!Thai.needs(&w("บุกฐานเลย gg")));
+        assert!(!Thai.needs(&w("100% :)")));
+        assert!(SimplifiedChinese.needs(&w("раш на руду")));
+    }
+
+    #[test]
+    fn turkish_letters_past_latin_1_are_foreign_to_everyone_but_turkish_readers() {
+        use ChatLanguage::*;
+        let turkish = "şimdi üssüne saldır";
+        assert!(!Turkish.needs(&w(turkish)));
+        assert!(English.needs(&w(turkish)));
+        assert!(Turkish.needs(&w("冲他矿车")));
+        assert!(!Swedish.needs(&w("anfall basen på östra sidan")));
+    }
+
+    #[test]
     fn translate_command_picks_saves_and_stops_a_language() {
         let parse = |line: &str| parse_command(&w(line));
         assert_eq!(parse("/translate"), Some(TranslateCommand::Show));
@@ -177,6 +229,10 @@ mod tests {
             Some(TranslateCommand::Set(Some(
                 ChatLanguage::TraditionalChinese
             )))
+        );
+        assert_eq!(
+            parse("/translate ru"),
+            Some(TranslateCommand::Set(Some(ChatLanguage::Russian)))
         );
         assert_eq!(parse("/translate off"), Some(TranslateCommand::Set(None)));
         assert_eq!(parse("/translate klingon"), Some(TranslateCommand::Usage));

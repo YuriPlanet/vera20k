@@ -292,6 +292,94 @@ fn build_text(
     out
 }
 
+/// The list that is open, over the page: its backing and frame, then its rows.
+fn build_open_list(
+    font: &BitFont,
+    atlas: &SkirmishShellChromeAtlas,
+    layout: &LauncherOptionsLayout,
+    dialog: &OptionsDialogState,
+) -> (Vec<SpriteInstance>, Vec<ShellTextDraw>) {
+    let mut instances = Vec::new();
+    let mut texts = Vec::new();
+    let Some(popup) = dialog.shell_popup(layout) else {
+        return (instances, texts);
+    };
+    let scale = layout.scale;
+    push_solid_rect_px(
+        &mut instances,
+        atlas.white_pixel,
+        popup.rect,
+        SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
+        SHELL_DROPDOWN_DEPTH,
+    );
+    let text_inset = (3.0 * scale.factor()).round() as i32;
+    let original_shape = dialog.shell_checkbox_checked(LauncherCheckboxId::OriginalShape);
+    let rows: Vec<String> = match popup.combo {
+        LauncherComboId::Zoom => layout
+            .zoom_choices()
+            .into_iter()
+            .map(|zoom| zoom_label(zoom, layout.screen(), original_shape))
+            .collect(),
+        LauncherComboId::Sidebar => layout
+            .sidebar_choices()
+            .into_iter()
+            .map(SidebarSize::label)
+            .collect(),
+        LauncherComboId::Display => dialog.shell_display_rows(),
+        LauncherComboId::HealthBars => HealthBarMode::choices()
+            .into_iter()
+            .map(HealthBarMode::label)
+            .collect(),
+        LauncherComboId::Language => dialog.shell_language_rows(),
+        LauncherComboId::ChatTranslation => dialog.shell_chat_translation_rows(),
+    };
+    for (i, row_text) in rows.iter().enumerate() {
+        let rect = popup.row_rect(i);
+        if popup.hovered.unwrap_or(popup.selected) == i {
+            push_solid_rect_px(
+                &mut instances,
+                atlas.white_pixel,
+                rect,
+                OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+                SHELL_DROPDOWN_DEPTH,
+            );
+        }
+        texts.push(text_draw(
+            font,
+            row_text,
+            RectPx::new(rect.x + text_inset, rect.y, rect.w - 2 * text_inset, rect.h),
+            ShellAlign::V_CENTER,
+            SHELL_LABEL_TEXT_RGB,
+            scale.factor(),
+        ));
+    }
+    push_ownerdraw_two_pixel_bevel_frame_px(
+        &mut instances,
+        atlas.white_pixel,
+        popup.rect,
+        SHELL_DROPDOWN_DEPTH,
+    );
+    (instances, texts)
+}
+
+/// Options' controls on another box's art: VERA's Esc menu shows a few of
+/// them. They paint in submission order, after the box and its buttons.
+pub(crate) fn paint_options_settings(
+    draw: &mut crate::render::shell_paint::ModalDraw,
+    font: &BitFont,
+    atlas: &SkirmishShellChromeAtlas,
+    layout: &LauncherOptionsLayout,
+    settings: &OptionsDialogState,
+) {
+    draw.sprites
+        .extend(build_controls(atlas, layout, settings, false));
+    draw.text
+        .extend(build_text(font, layout, settings, None, false));
+    let (list, rows) = build_open_list(font, atlas, layout, settings);
+    draw.sprites.extend(list);
+    draw.text.extend(rows);
+}
+
 /// Shared mode1 launcher frame,60CF00 default background and621E90 composition.
 /// Resource-specific children (such as D5 warning71C) remain with their owner.
 pub(super) fn launcher_background_instances(
@@ -434,64 +522,11 @@ pub(crate) fn render_launcher_options(
         &status_label.into_iter().collect::<Vec<_>>(),
         scale.factor(),
     ));
-    let mut popup_instances = Vec::new();
-    let mut popup_text = Vec::new();
-    if let Some(popup) = dialog.shell_popup(&layout).filter(|_| !leaving) {
-        push_solid_rect_px(
-            &mut popup_instances,
-            atlas.white_pixel,
-            popup.rect,
-            SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
-            SHELL_DROPDOWN_DEPTH,
-        );
-        let text_inset = (3.0 * scale.factor()).round() as i32;
-        let original_shape = dialog.shell_checkbox_checked(LauncherCheckboxId::OriginalShape);
-        let rows: Vec<String> = match popup.combo {
-            LauncherComboId::Zoom => layout
-                .zoom_choices()
-                .into_iter()
-                .map(|zoom| zoom_label(zoom, layout.screen(), original_shape))
-                .collect(),
-            LauncherComboId::Sidebar => layout
-                .sidebar_choices()
-                .into_iter()
-                .map(SidebarSize::label)
-                .collect(),
-            LauncherComboId::Display => dialog.shell_display_rows(),
-            LauncherComboId::HealthBars => HealthBarMode::choices()
-                .into_iter()
-                .map(HealthBarMode::label)
-                .collect(),
-            LauncherComboId::Language => dialog.shell_language_rows(),
-            LauncherComboId::ChatTranslation => dialog.shell_chat_translation_rows(),
-        };
-        for (i, row_text) in rows.iter().enumerate() {
-            let rect = popup.row_rect(i);
-            if popup.hovered.unwrap_or(popup.selected) == i {
-                push_solid_rect_px(
-                    &mut popup_instances,
-                    atlas.white_pixel,
-                    rect,
-                    OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
-                    SHELL_DROPDOWN_DEPTH,
-                );
-            }
-            popup_text.push(text_draw(
-                &state.renderer.bit_font,
-                row_text,
-                RectPx::new(rect.x + text_inset, rect.y, rect.w - 2 * text_inset, rect.h),
-                ShellAlign::V_CENTER,
-                SHELL_LABEL_TEXT_RGB,
-                scale.factor(),
-            ));
-        }
-        push_ownerdraw_two_pixel_bevel_frame_px(
-            &mut popup_instances,
-            atlas.white_pixel,
-            popup.rect,
-            SHELL_DROPDOWN_DEPTH,
-        );
-    }
+    let (popup_instances, popup_text) = if leaving {
+        (Vec::new(), Vec::new())
+    } else {
+        build_open_list(&state.renderer.bit_font, atlas, &layout, dialog)
+    };
     state.renderer.batch_renderer.update_camera(
         &state.renderer.gpu,
         state.render_width() as f32,

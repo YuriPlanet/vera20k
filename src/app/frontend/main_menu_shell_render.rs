@@ -198,7 +198,12 @@ impl MainMenuCover {
 
     fn of(state: &AppState) -> Self {
         Self::new(
-            state.frontend.shell_message_box.is_some() || state.frontend.quit_cascade.is_some(),
+            state
+                .frontend
+                .shell_message_box
+                .as_ref()
+                .is_some_and(|message_box| !message_box.keeps_page())
+                || state.frontend.quit_cascade.is_some(),
             external_menu_wait(state),
         )
     }
@@ -890,20 +895,55 @@ const EXIT_CONFIRM_MODAL_DEPTHS: shell_paint::ModalDepths = shell_paint::ModalDe
     text: 0.00040,
 };
 
+/// Paint the open message box over a page that keeps showing: the page has
+/// been composed on the shell surface, so the box and the cursor go on top
+/// and the surface is presented again.
+pub(crate) fn render_shell_message_box_over_page(
+    state: &AppState,
+    encoder: &mut wgpu::CommandEncoder,
+    destination: &wgpu::Texture,
+) {
+    let (Some(overlay), Some(chrome)) = (
+        build_shell_message_box_overlay(state),
+        state.frontend.skirmish_shell_chrome.as_ref(),
+    ) else {
+        return;
+    };
+    let draws = [crate::app::frontend::shell_pass::TexturedDraw {
+        texture: &chrome.texture,
+        instances: overlay.sprites,
+    }];
+    crate::app::frontend::shell_pass::encode_shell_pass_over_page(
+        state,
+        encoder,
+        destination,
+        "Shell message box over page",
+        crate::app::frontend::shell_pass::ShellComposition {
+            draws: &draws,
+            text: &overlay.text,
+            cursor: crate::app::frontend::shell_pass::top_software_cursor(state, CURSOR_DEPTH),
+            effects: None,
+        },
+    );
+}
+
 /// Build the shell message box (0xCE/0x120/0x121) SHP modal overlay when it is open: the centered
 /// PUDLGBGN panel + populated MNBTTN buttons and labels, sourced from
 /// the skirmish chrome atlas (the only atlas that loads PUDLGBGN/MNBTTN). The
 /// pressed button is read from the shared shell controller (its top dialog is the
 /// modal while open). Returns `None` when the modal is closed or its art is absent.
 fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::ModalDraw> {
-    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     use crate::app::frontend::state::ShellMessageBoxPurpose;
     use crate::ui::shell::modal;
     let message_box = state.frontend.shell_message_box.as_ref()?;
     let modal_state = &message_box.labels;
     let atlas = state.frontend.skirmish_shell_chrome.as_ref()?;
-    // VERA's updater boxes draw Red Alert 2's art, the others gamemd's.
+    // VERA's own boxes pick their art: the Esc menu the Allied eagle, the
+    // updater's Red Alert 2's. The others draw gamemd's.
     let background = match message_box.purpose {
+        ShellMessageBoxPurpose::ShellMenu(_) => {
+            atlas.mode_two_dialog_background(Some(crate::ui::sidebar::SidebarTheme::Allied))
+        }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         ShellMessageBoxPurpose::UpdateOffer(_)
         | ShellMessageBoxPurpose::UpdateProgress
@@ -985,7 +1025,6 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
                 }),
         );
     }
-    #[cfg_attr(all(target_arch = "wasm32", target_os = "unknown"), allow(unused_mut))]
     let mut draw = shell_paint::paint_modal_shp(
         &state.renderer.bit_font,
         background,
@@ -996,6 +1035,15 @@ fn build_shell_message_box_overlay(state: &AppState) -> Option<shell_paint::Moda
         layout.scale,
         EXIT_CONFIRM_MODAL_DEPTHS,
     );
+    if let Some(settings) = message_box.menu_settings() {
+        crate::app::frontend::skirmish_shell_render::paint_options_settings(
+            &mut draw,
+            &state.renderer.bit_font,
+            atlas,
+            &shell_layout::shell_menu_settings_layout(state),
+            settings,
+        );
+    }
     // The list lies on the dialog's picture, which has no list backing.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     if let Some((notes, geometry)) = notes {
