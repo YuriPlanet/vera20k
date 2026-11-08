@@ -2184,6 +2184,8 @@ impl OrderingRoom {
         ticket: Ticket,
         payload: &[u8],
         now_ms: u64,
+        now: u64,
+        archive_pulls: &mut RateBudget,
     ) -> Result<Vec<Vec<u8>>, RelayError> {
         if self.storage_failed {
             return Ok(error(OrderError::StorageUnavailable, self.next_seq));
@@ -2196,6 +2198,14 @@ impl OrderingRoom {
         let mut reader = Reader(&payload[1..]);
         match (kind, reader.varint()) {
             (PULL_REQUEST, Ok(next)) if reader.is_empty() => {
+                // The read happens even if its reply then exceeds an output
+                // budget, so the sender pays for it first.
+                if next < self.hot_oldest_seq() {
+                    if !archive_pulls.permits(now, 1, PLAYER_ARCHIVE_PULLS_PER_SECOND) {
+                        return Err(RelayError::RateLimited);
+                    }
+                    archive_pulls.charge(now, 1);
+                }
                 match self.history_page(next, ORDERING_PULL_LIMIT) {
                     Ok(records) => {
                         let mut output = vec![self.status(now_ms)];
@@ -5140,6 +5150,71 @@ mod tests {
         assert_eq!(std::fs::read(room.join("stream.data")).unwrap(), before);
     }
 
+    fn started_journal_room(
+        directory: &TestDirectory,
+    ) -> (RelayServer, ClientSession, ClientSession) {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::with_journal(key.clone(), 2, &directory.0).unwrap();
+        let (mut first, mut second) = (client(&key, 0), client(&key, 1));
+        let cert = certificate(&key, 3, 1300);
+        for client in [&mut first, &mut second] {
+            connect(&mut server, client, 0);
+            configure(&mut server, client, &cert, 0);
+        }
+        (server, first, second)
+    }
+
+    #[test]
+    fn a_pull_past_its_senders_budget_is_refused_before_it_reads() {
+        let directory = TestDirectory::new();
+        let (mut server, _first, mut second) = started_journal_room(&directory);
+        server.advance_clock(112_000, unix(112_000));
+        for _ in 0..PLAYER_ARCHIVE_PULLS_PER_SECOND {
+            assert!(matches!(
+                pull(&mut server, &mut second, 1, 112_000)[0],
+                OrderEvent::Status(_)
+            ));
+        }
+        // A read now finds a broken index and fails the room's storage.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(directory.0.join("05".repeat(16)).join("stream.index"))
+            .unwrap()
+            .set_len(0)
+            .unwrap();
+        let mut bytes = Vec::new();
+        second.pull_ordering(1, &mut bytes).unwrap();
+        assert_eq!(
+            server
+                .process_at(endpoint(&second), &bytes, unix(112_000), 112_000)
+                .err(),
+            Some(RelayError::RateLimited)
+        );
+        assert!(!ordering(&server).storage_failed);
+    }
+
+    #[test]
+    fn archive_pages_read_back_records_of_any_length_up_to_the_last() {
+        let directory = TestDirectory::new();
+        let (mut server, mut first, _second) = started_journal_room(&directory);
+        let mut bytes = Vec::new();
+        first
+            .test_submit(1, b"longer than a frame end", &mut bytes)
+            .unwrap();
+        events(&mut server, &mut first, &bytes, 0);
+        server.advance_clock(3000, unix(3000));
+        let room = server.rooms.get_mut(&[5; 16]).unwrap();
+        let ordering = room.ordering.as_mut().unwrap();
+        let committed: Vec<_> = ordering
+            .history
+            .iter()
+            .map(|entry| entry.bytes.clone())
+            .collect();
+        assert!(committed.len() > ORDERING_PULL_LIMIT);
+        while ordering.pop_oldest() {}
+        assert_eq!(ordering.full_history(), committed);
+    }
+
     #[test]
     fn a_player_silent_for_ten_minutes_departs_through_the_stream() {
         let key = SecretKey::new([73; 32]);
@@ -5912,7 +5987,17 @@ impl RelayServer {
                 .get_mut(&message.ticket.room)
                 .ok_or(RelayError::Unregistered)?;
             if let Some(ordering) = room.ordering.as_mut() {
-                let replies = ordering.request(message.ticket, payload, now_ms)?;
+                let admission = self
+                    .admissions
+                    .get_mut(&message.ticket.player)
+                    .ok_or(RelayError::Unregistered)?;
+                let replies = ordering.request(
+                    message.ticket,
+                    payload,
+                    now_ms,
+                    now,
+                    &mut admission.archive_pulls,
+                )?;
                 if payload.first() == Some(&PULL_REQUEST) {
                     self.ordering_counts.pull_replies += 1;
                 }

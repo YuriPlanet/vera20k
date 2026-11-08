@@ -59,8 +59,12 @@ const TICKET_DOMAIN: &[u8] = b"VERA20k relay ticket v2\0";
 const KEY_DOMAIN: &[u8] = b"VERA20k relay packet key v2\0";
 const COOKIE_DOMAIN: &[u8] = b"VERA20k relay source v2\0";
 const INGRESS_PER_SECOND: u64 = 16_384;
-const HANDSHAKES_PER_SECOND: u64 = 512;
+// Room for the lobby's 256 sessions and an hour's 512 new guests, whose tickets
+// live 300 seconds, each at their own rate. A handshake costs a few HMACs.
+const HANDSHAKES_PER_SECOND: u64 = 8192;
 const PLAYER_HANDSHAKES_PER_SECOND: u64 = 8;
+// Pulls that read the journal. A catching-up client sends about ten a second.
+const PLAYER_ARCHIVE_PULLS_PER_SECOND: u64 = 256;
 const PLAYER_BYTES_PER_SECOND: u64 = 2 * 1024 * 1024;
 const ROOM_BYTES_PER_SECOND: u64 = 64 * 1024 * 1024;
 const TOTAL_BYTES_PER_SECOND: u64 = 64 * 1024 * 1024;
@@ -786,6 +790,7 @@ struct Admission {
     retain_until: u64,
     handshakes: RateBudget,
     packets: RateBudget,
+    archive_pulls: RateBudget,
     outgoing: RateBudget,
     order_packets: RateBudget,
 }
@@ -1443,6 +1448,7 @@ impl RelayServer {
                 .remove(&message.ticket.player)
                 .unwrap_or_default(),
             packets: RateBudget::default(),
+            archive_pulls: RateBudget::default(),
             outgoing: RateBudget::default(),
             order_packets: RateBudget::default(),
         });
@@ -2166,9 +2172,11 @@ mod tests {
             SocketAddrV4::new(Ipv4Addr::LOCALHOST, 32002),
         );
 
-        // Distinct players still share the relay-wide budget.
+        // Distinct players still share the relay-wide budget, which outlasts
+        // the lobby's 256 sessions and an hour's 512 new guests.
         let mut server = RelayServer::new(key.clone(), 1);
         let players = HANDSHAKES_PER_SECOND / PLAYER_HANDSHAKES_PER_SECOND;
+        assert!(players >= 768);
         for player in 1..=players + 1 {
             let mut id = [0; 16];
             id[..8].copy_from_slice(&player.to_le_bytes());
