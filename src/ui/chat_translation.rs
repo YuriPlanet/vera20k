@@ -94,7 +94,8 @@ pub(crate) struct ChatTranslationSettings {
     /// Keep the `[Translated from Thai]` note a translation starts with.
     pub(crate) show_source: bool,
     /// Also translate other languages written in the reader's own alphabet.
-    /// Every such line costs a model call, so it starts off.
+    /// Every such line costs a model call; [`Self::set_language`] sets where
+    /// it starts.
     pub(crate) same_alphabet: bool,
     /// One bit per [`LANGUAGES`] row.
     readable: u16,
@@ -113,6 +114,17 @@ impl Default for ChatTranslationSettings {
 }
 
 impl ChatTranslationSettings {
+    /// Choose the language received chat is translated into. A newly chosen
+    /// language starts with [`Self::same_alphabet`] on, as its readers mostly
+    /// want English chat translated. English starts with it off: nearly every
+    /// Latin line would cost a model call only to be hidden.
+    pub(crate) fn set_language(&mut self, language: Option<ChatLanguage>) {
+        if self.language != language {
+            self.language = language;
+            self.same_alphabet = language.is_some_and(|language| language != ChatLanguage::English);
+        }
+    }
+
     pub(crate) fn translates(&self, place: ChatPlace) -> bool {
         self.places[place as usize]
     }
