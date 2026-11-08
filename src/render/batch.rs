@@ -228,6 +228,35 @@ pub(crate) fn create_unorm_texture_view_on_device(
     texture.create_view(&Default::default())
 }
 
+/// The sampled colour texture behind a page.
+fn page_texture_on_device(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    rgba_data: &[u8],
+    [width, height]: [u32; 2],
+    format: wgpu::TextureFormat,
+) -> wgpu::Texture {
+    device.create_texture_with_data(
+        queue,
+        &wgpu::TextureDescriptor {
+            label: Some("Batch Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        },
+        wgpu::util::TextureDataOrder::LayerMajor,
+        rgba_data,
+    )
+}
+
 fn source_index_texture_on_device(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -1495,26 +1524,41 @@ impl BatchRenderer {
         let source_indices = source_indices
             .as_ref()
             .unwrap_or(&self.default_source_indices);
-        let texture: wgpu::Texture = device.create_texture_with_data(
+        let texture = page_texture_on_device(
+            device,
             queue,
-            &wgpu::TextureDescriptor {
-                label: Some("Batch Texture"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            },
-            wgpu::util::TextureDataOrder::LayerMajor,
             rgba_data,
+            [width, height],
+            wgpu::TextureFormat::Rgba8UnormSrgb,
         );
         self.batch_texture(device, &texture, source_indices, width, height)
+    }
+
+    /// A page shaders read as encoded colour, the palette bytes as they are,
+    /// so no pixel pays to decode them and encode them back. Only for pages
+    /// their blitters know to be encoded: the tile atlas's terrain draw.
+    pub(crate) fn create_encoded_texture_on_device(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        rgba_data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> BatchTexture {
+        let texture = page_texture_on_device(
+            device,
+            queue,
+            rgba_data,
+            [width, height],
+            wgpu::TextureFormat::Rgba8Unorm,
+        );
+        self.batch_texture(
+            device,
+            &texture,
+            &self.default_source_indices,
+            width,
+            height,
+        )
     }
 
     /// A zeroed palette-index page for the SHP atlas, writable with

@@ -426,7 +426,15 @@ fn tree_transactions_preserve_tmp_shp_voxel_overlap_and_coalesced_order() {
         &[0],
     );
     let zview = ztex.create_view(&Default::default());
-    let tmp_group = batch.create_zdepth_bind_group_on_device(&gpu.device, &white.view, &zview);
+    // Tile pages are encoded, like the production tile atlas's.
+    let tile_page = batch.create_encoded_texture_on_device(
+        &gpu.device,
+        &gpu.queue,
+        &[248, 252, 248, 255],
+        1,
+        1,
+    );
+    let tmp_group = batch.create_zdepth_bind_group_on_device(&gpu.device, &tile_page.view, &zview);
     let tmp = sprite([0.0, 4.0], [96.0, 1.0], 4.0); // actual TMP Z32768
     let tmp_buffer = gpu
         .device

@@ -135,7 +135,7 @@ fn terrain_pixel(input: VertexOutput, shadow: bool) -> TerrainOutput {
                 tactical_a_at(input.position.xy));
         }
         for (var i = 0u; i <= state.halves; i++) { word = native_half_word(word); }
-        output.color = vec4f(srgb_decode(retail_encoded(word)), 1.0);
+        output.color = vec4f(retail_linear(word), 1.0);
     } else {
         output.color = vec4f(body_color(input, admitted.index), 1.0);
     }
