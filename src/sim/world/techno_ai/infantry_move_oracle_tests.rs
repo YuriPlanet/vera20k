@@ -23,7 +23,7 @@ fn deployed_move_matches_native_action_navigation_timer_and_rng() {
             .unwrap()
             .mission
             .write_dispatch_epilogue(now as i32, 0);
-        dispatch_foot_mission(&mut sim, id, &rules, Default::default());
+        dispatch_foot_mission(&mut sim, id, &rules, Default::default()).unwrap();
         assert_eq!(
             sim.substrate
                 .entities

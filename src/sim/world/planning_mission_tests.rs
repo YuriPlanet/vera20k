@@ -746,6 +746,8 @@ fn retail_planned_and_ordinary_harvest_extracts_ore_after_walking() {
             assert!(sim.rebuild_dynamic_navigation(&rules));
             // Native Harvest73E67F..73E6C2 requires an owned instance of a
             // type in Dock=. An enemy refinery must not satisfy that gate.
+            // Ares 3.0 1004D6C0 (hook 0x73E66D) skips that loop, so HARV
+            // (Dock= set) harvests with or without a refinery there.
             if let Some(dock_owner) = dock_owner {
                 sim.spawn_object("NAREFN", dock_owner, 40, 40, 0, &rules)
                     .unwrap();
@@ -828,14 +830,14 @@ fn retail_planned_and_ordinary_harvest_extracts_ore_after_walking() {
                 harvest_dispatched,
                 "Harvest must reach the mission owner, planning={planning}"
             );
-            let owns_dock = dock_owner == Some("Americans");
+            let harvests = dock_owner == Some("Americans") || crate::rules::ARES_ENABLED;
             assert_eq!(
                 !actor.miner.as_ref().unwrap().cargo().is_empty(),
-                owns_dock,
+                harvests,
                 "planning={planning}, dock_owner={dock_owner:?}, mission={:?}",
                 actor.mission
             );
-            if owns_dock {
+            if harvests {
                 assert_eq!((actor.position.rx(), actor.position.ry()), (17, 12));
             } else {
                 // An armed miner may subsequently acquire the other house's

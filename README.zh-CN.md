@@ -46,7 +46,7 @@ VERA20K 由玩家打造、为玩家而做，项目的方向由玩家说了算。
 - **[玩法与战斗](https://github.com/YuriPlanet/vera20k/issues/3830)：** 单位行为、伤害，以及遭遇战日常运行的稳定性。
 - **[性能](https://github.com/YuriPlanet/vera20k/issues/3831)：** 大规模战斗和旧硬件上的帧率与响应速度。
 - **[多人模式](https://github.com/YuriPlanet/vera20k/issues/3832)：** 加入、开始和持续进行在线对战，以及合作模式的稳定性。
-- **[界面与音频](https://github.com/YuriPlanet/vera20k/issues/3833)：** 菜单、文本、翻译和声音。
+- **[界面与音频](https://github.com/YuriPlanet/vera20k/issues/3833)：** 菜单、文本、[翻译](src/i18n/README.md)和声音。
 - **[战役](https://github.com/YuriPlanet/vera20k/issues/3834)：** 任务已可启动，但要完整打通仍需努力：任务目标、触发器、脚本过场、存档读档和进入下一关。
 - **[模组兼容](https://github.com/YuriPlanet/vera20k/issues/3835)：** Ares 和 Phobos 的功能，同时不改变原版游戏的默认行为。
 - **[测试](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity)：** 对照原版游玩 VERA20K，报告玩起来不一样的地方。
@@ -115,6 +115,8 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 
 声音、画面和操作设置保存在 `VERA.INI` 中。游戏规则由大厅设置、模组或地图决定。
 
+[模组制作指南](docs/modding.md)介绍了如何制作自己的模组。
+
 ## 支持项目
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="通过 PayPal 支持 VERA20K" height="23"></a>
@@ -136,11 +138,14 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 Command & Conquer 和 Red Alert 是 Electronic Arts Inc. 的商标，截图和应用图标（《红色警戒2》的红星）中的游戏美术资源归 Electronic Arts 所有。
 VERA20K 与 Electronic Arts 无隶属关系，也未获其认可。
 
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 **在分享、出售或复刻（fork）VERA20K 之前，请先阅读[法律声明](LEGAL.md)。**
 
 ## 文档
 
 - [WebAssembly 预览版](docs/wasm.zh-CN.md)：在浏览器中运行的可选单人版本。
+- [模组制作指南](docs/modding.md)：模组能做什么、不能做什么，以及 VERA20K 与原版游戏的区别。
 - [INI 配置方案](docs/ini-roots.md)：选择规则、美术和 AI 文件。
 - [Ares](docs/ares.md)、[Phobos](docs/phobos.md) 和 [NPatch](docs/npatch.md)：扩展的支持情况与限制。
 - [引擎概览](docs/index.md)：代码结构以及引擎各部分如何协同工作。

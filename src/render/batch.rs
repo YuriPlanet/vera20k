@@ -128,7 +128,7 @@ const INSTANCE_STRIDE: u64 = std::mem::size_of::<SpriteInstance>() as u64;
 /// Allows the shader to convert screen-space pixel coordinates into
 /// normalized clip space, and to apply camera scrolling.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
     /// Viewport width and height in pixels.
     pub screen_size: [f32; 2],
@@ -228,6 +228,35 @@ pub(crate) fn create_unorm_texture_view_on_device(
     texture.create_view(&Default::default())
 }
 
+/// The sampled colour texture behind a page.
+fn page_texture_on_device(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    rgba_data: &[u8],
+    [width, height]: [u32; 2],
+    format: wgpu::TextureFormat,
+) -> wgpu::Texture {
+    device.create_texture_with_data(
+        queue,
+        &wgpu::TextureDescriptor {
+            label: Some("Batch Texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        },
+        wgpu::util::TextureDataOrder::LayerMajor,
+        rgba_data,
+    )
+}
+
 fn source_index_texture_on_device(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -283,14 +312,19 @@ struct PooledBuffer {
     buffer: wgpu::Buffer,
     /// Maximum number of SpriteInstance elements the buffer can hold.
     capacity: usize,
+    /// The bytes last uploaded, so a repeated stream is not uploaded again.
+    contents: Vec<u8>,
+    /// Advances when what the stream draws changes.
+    generation: u64,
 }
 
 /// Pool of named GPU instance buffers that persist across frames.
 ///
 /// Instead of creating and destroying GPU buffers every frame (expensive driver
-/// round-trips), this pool keeps buffers alive and overwrites their contents
-/// with `queue.write_buffer()`. Buffers grow automatically when needed (2x strategy)
-/// but never shrink, avoiding repeated reallocations.
+/// round-trips), this pool keeps buffers alive and overwrites their contents,
+/// with `queue.write_buffer()` or, for a frame's uploads, copies recorded from
+/// reused staging chunks ([`Self::record_uploads`]). Buffers grow automatically
+/// when needed (2x strategy) but never shrink, avoiding repeated reallocations.
 ///
 /// Usage pattern:
 /// 1. Call `upload()` for each named buffer (mutably borrows pool).
@@ -302,11 +336,67 @@ pub struct InstanceBufferPool {
     /// Instance counts for each buffer written this frame.
     /// Stored separately so `get()` can return count without needing the data.
     counts: HashMap<(&'static str, usize), u32>,
+    /// The staging chunks [`Self::record_uploads`] copies from, created on its
+    /// first use. A chunk is reused once the GPU has copied out of it.
+    belt: Option<wgpu::util::StagingBelt>,
 }
 
 /// Minimum buffer capacity in elements. Avoids tiny buffers that immediately
 /// need reallocation. 64 instances × 48 bytes = 3 KB — negligible VRAM.
 const MIN_POOL_CAPACITY: usize = 64;
+
+/// Bytes in one staging chunk of recorded uploads: a frame's streams at
+/// 1080p with a few hundred objects fit in one. A larger single upload gets
+/// a chunk of its own size.
+const UPLOAD_CHUNK_BYTES: u64 = 1 << 20;
+
+/// Where an upload's bytes go.
+enum UploadPath<'a> {
+    /// `Queue::write_buffer`, which lands before everything in the next
+    /// submission, and creates a staging buffer for each call.
+    Queue(&'a wgpu::Queue),
+    /// A copy recorded into the encoder from the pool's staging chunks.
+    Recorded(&'a mut wgpu::CommandEncoder),
+}
+
+/// A frame's uploads recorded into one encoder
+/// ([`InstanceBufferPool::record_uploads`]). Dropping it closes the staging
+/// chunks it wrote, to be reused after `encoder`'s submission completes.
+pub(crate) struct RecordedUploads<'a> {
+    pool: &'a mut InstanceBufferPool,
+    device: &'a wgpu::Device,
+    encoder: &'a mut wgpu::CommandEncoder,
+}
+
+impl RecordedUploads<'_> {
+    pub(crate) fn upload(&mut self, key: &'static str, instances: &[SpriteInstance]) {
+        self.upload_page(key, 0, instances);
+    }
+
+    /// One page of a stream split per atlas page, read with
+    /// [`InstanceBufferPool::get_page`].
+    pub(crate) fn upload_page(
+        &mut self,
+        key: &'static str,
+        page: usize,
+        instances: &[SpriteInstance],
+    ) {
+        self.pool.upload_keyed(
+            self.device,
+            UploadPath::Recorded(self.encoder),
+            (key, page),
+            instances,
+        );
+    }
+}
+
+impl Drop for RecordedUploads<'_> {
+    fn drop(&mut self) {
+        if let Some(belt) = self.pool.belt.as_mut() {
+            belt.finish_and_recall_on_submit(self.encoder);
+        }
+    }
+}
 
 impl Default for InstanceBufferPool {
     fn default() -> Self {
@@ -320,6 +410,25 @@ impl InstanceBufferPool {
         Self {
             buffers: HashMap::new(),
             counts: HashMap::new(),
+            belt: None,
+        }
+    }
+
+    /// Record uploads into `encoder` as copies out of the pool's reused
+    /// staging chunks: `Queue::write_buffer` creates a staging buffer for
+    /// each call, about half of what a frame's uploads cost. A copy takes
+    /// effect where it sits among `encoder`'s commands, while a queue write
+    /// lands before everything in the next submission, so record the uploads
+    /// before any pass that draws them. `encoder` must then be submitted.
+    pub(crate) fn record_uploads<'a>(
+        &'a mut self,
+        device: &'a wgpu::Device,
+        encoder: &'a mut wgpu::CommandEncoder,
+    ) -> RecordedUploads<'a> {
+        RecordedUploads {
+            pool: self,
+            device,
+            encoder,
         }
     }
 
@@ -344,7 +453,12 @@ impl InstanceBufferPool {
         page: usize,
         instances: &[SpriteInstance],
     ) {
-        self.upload_keyed(&gpu.device, &gpu.queue, (key, page), instances);
+        self.upload_keyed(
+            &gpu.device,
+            UploadPath::Queue(&gpu.queue),
+            (key, page),
+            instances,
+        );
     }
 
     pub(crate) fn upload_on_device(
@@ -354,19 +468,24 @@ impl InstanceBufferPool {
         key: &'static str,
         instances: &[SpriteInstance],
     ) {
-        self.upload_keyed(device, queue, (key, 0), instances);
+        self.upload_keyed(device, UploadPath::Queue(queue), (key, 0), instances);
     }
 
     fn upload_keyed(
         &mut self,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        path: UploadPath<'_>,
         key: (&'static str, usize),
         instances: &[SpriteInstance],
     ) {
         let needed: usize = instances.len();
+        let previous_count = self.counts.insert(key, needed as u32);
         if needed == 0 {
-            self.counts.insert(key, 0);
+            if let Some(entry) = self.buffers.get_mut(&key)
+                && previous_count != Some(0)
+            {
+                entry.generation += 1;
+            }
             return;
         }
 
@@ -375,8 +494,20 @@ impl InstanceBufferPool {
             PooledBuffer {
                 buffer: Self::alloc_buffer(device, key.0, cap),
                 capacity: cap,
+                contents: Vec::new(),
+                generation: 0,
             }
         });
+        let byte_data: &[u8] = bytemuck::cast_slice(instances);
+        if entry.contents == byte_data {
+            if previous_count != Some(needed as u32) {
+                entry.generation += 1;
+            }
+            return;
+        }
+        entry.contents.clear();
+        entry.contents.extend_from_slice(byte_data);
+        entry.generation += 1;
 
         // Grow if the current buffer is too small.
         if needed > entry.capacity {
@@ -385,9 +516,24 @@ impl InstanceBufferPool {
             entry.capacity = new_cap;
         }
 
-        let byte_data: &[u8] = bytemuck::cast_slice(instances);
-        queue.write_buffer(&entry.buffer, 0, byte_data);
-        self.counts.insert(key, needed as u32);
+        match path {
+            UploadPath::Queue(queue) => queue.write_buffer(&entry.buffer, 0, byte_data),
+            UploadPath::Recorded(encoder) => {
+                let belt = self.belt.get_or_insert_with(|| {
+                    wgpu::util::StagingBelt::new(device.clone(), UPLOAD_CHUNK_BYTES)
+                });
+                let size = wgpu::BufferSize::new(byte_data.len() as u64).expect("instances");
+                belt.write_buffer(encoder, &entry.buffer, 0, size)
+                    .copy_from_slice(byte_data);
+            }
+        }
+    }
+
+    /// A number that changes whenever what `key`'s stream draws changes.
+    pub(crate) fn generation(&self, key: &'static str) -> u64 {
+        self.buffers
+            .get(&(key, 0))
+            .map_or(0, |entry| entry.generation)
     }
 
     /// Get a previously uploaded buffer and its instance count.
@@ -460,6 +606,8 @@ pub struct BatchRenderer {
     /// depth write OFF. Overlays draw unconditionally over terrain because
     /// tiles without Z-data skip Z-testing entirely.
     overlay_passthrough_pipeline: wgpu::RenderPipeline,
+    /// The same direct store through VERA's smooth client (`fs_shell_smooth`).
+    smooth_chrome_pipeline: wgpu::RenderPipeline,
     surface_store_pipeline: wgpu::RenderPipeline,
     /// Depth-only pipeline: colour target fully masked, depth write ON, Less
     /// compare. Stamps a sprite's opaque silhouette so a later depth-testing
@@ -495,6 +643,8 @@ pub struct BatchRenderer {
     /// Camera uniform buffer (group 0) — world camera with zoom.
     // Exact bytes last written by the camera owner; scissor consumers read
     // this record instead of independently reconstructing scroll/zoom/origin.
+    // It is what the two buffers hold, from their creation on, so a write of
+    // the same bytes is skipped.
     uploaded_camera: std::sync::RwLock<UploadedCameras>,
     camera_buffer: wgpu::Buffer,
     /// World blitters use the shared A texture for source palette selection.
@@ -764,6 +914,8 @@ impl BatchRenderer {
         };
         let overlay_passthrough_pipeline =
             passthrough("Batch Pipeline (Overlay Passthrough)", "fs_main");
+        let smooth_chrome_pipeline =
+            passthrough("Batch Pipeline (Smooth Chrome)", "fs_shell_smooth");
         // DSurface4C0750's A-gated dashed stores: the same direct store,
         // bound with the live A source.
         let surface_store_pipeline = passthrough(
@@ -1194,6 +1346,7 @@ impl BatchRenderer {
             default_zshape_bind_group,
             zdepth_pipeline,
             overlay_passthrough_pipeline,
+            smooth_chrome_pipeline,
             surface_store_pipeline,
             #[cfg(test)]
             depth_stamp_pipeline,
@@ -1397,26 +1550,41 @@ impl BatchRenderer {
         let source_indices = source_indices
             .as_ref()
             .unwrap_or(&self.default_source_indices);
-        let texture: wgpu::Texture = device.create_texture_with_data(
+        let texture = page_texture_on_device(
+            device,
             queue,
-            &wgpu::TextureDescriptor {
-                label: Some("Batch Texture"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            },
-            wgpu::util::TextureDataOrder::LayerMajor,
             rgba_data,
+            [width, height],
+            wgpu::TextureFormat::Rgba8UnormSrgb,
         );
         self.batch_texture(device, &texture, source_indices, width, height)
+    }
+
+    /// A page shaders read as encoded colour, the palette bytes as they are,
+    /// so no pixel pays to decode them and encode them back. Only for pages
+    /// their blitters know to be encoded: the tile atlas's terrain draw.
+    pub(crate) fn create_encoded_texture_on_device(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        rgba_data: &[u8],
+        width: u32,
+        height: u32,
+    ) -> BatchTexture {
+        let texture = page_texture_on_device(
+            device,
+            queue,
+            rgba_data,
+            [width, height],
+            wgpu::TextureFormat::Rgba8Unorm,
+        );
+        self.batch_texture(
+            device,
+            &texture,
+            &self.default_source_indices,
+            width,
+            height,
+        )
     }
 
     /// A zeroed palette-index page for the SHP atlas, writable with
@@ -1614,6 +1782,14 @@ impl BatchRenderer {
     /// scrolling. The argument uses unscaled native rows, not target pixels.
     pub(crate) fn update_native_z_origin(&self, queue: &wgpu::Queue, origin_y: f32) {
         let mut uploaded = self.uploaded_camera.write().expect("camera owner lock");
+        // Each queue write costs a staging buffer, and a frame's origin is
+        // usually the one `write_camera` already uploaded.
+        if [uploaded.world, uploaded.ui]
+            .iter()
+            .all(|camera| camera.native_z_origin_y.to_bits() == origin_y.to_bits())
+        {
+            return;
+        }
         uploaded.world.native_z_origin_y = origin_y;
         uploaded.ui.native_z_origin_y = origin_y;
         let offset = std::mem::offset_of!(CameraUniform, native_z_origin_y) as u64;
@@ -1714,11 +1890,20 @@ impl BatchRenderer {
     }
 
     pub(crate) fn write_camera(&self, queue: &wgpu::Queue, uniform: CameraUniform) {
-        let mut uploaded = self.uploaded_camera.write().expect("camera owner lock");
-        uploaded.world = uniform;
-        uploaded.ui = ui_camera(uniform);
-        queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&uniform));
-        queue.write_buffer(&self.ui_camera_buffer, 0, bytemuck::bytes_of(&uploaded.ui));
+        let mut guard = self.uploaded_camera.write().expect("camera owner lock");
+        let uploaded = &mut *guard;
+        let ui = ui_camera(uniform);
+        // Each queue write costs a staging buffer; a camera that has not
+        // moved is already in its buffer.
+        for (buffer, held, camera) in [
+            (&self.camera_buffer, &mut uploaded.world, uniform),
+            (&self.ui_camera_buffer, &mut uploaded.ui, ui),
+        ] {
+            if bytemuck::bytes_of(held) != bytemuck::bytes_of(&camera) {
+                queue.write_buffer(buffer, 0, bytemuck::bytes_of(&camera));
+                *held = camera;
+            }
+        }
     }
 
     /// Create a standalone instance buffer (not stored in the renderer).
@@ -1968,6 +2153,32 @@ impl BatchRenderer {
         count: u32,
     ) {
         self.draw_with_buffer_passthrough_range(render_pass, texture, buffer, 0, count);
+    }
+
+    /// A chrome page's direct store. With `smooth`, an enlarged quad draws
+    /// box-filtered with a little of xBR's rounding (`fs_shell_smooth`), for
+    /// VERA's online client; a quad at its own size draws as it would without
+    /// it. Only for RGBA pages.
+    pub(crate) fn draw_chrome<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        texture: &'a BatchTexture,
+        buffer: &'a wgpu::Buffer,
+        count: u32,
+        smooth: bool,
+    ) {
+        if !smooth {
+            self.draw_with_buffer_passthrough(render_pass, texture, buffer, count);
+            return;
+        }
+        if count == 0 {
+            return;
+        }
+        render_pass.set_pipeline(&self.smooth_chrome_pipeline);
+        render_pass.set_bind_group(0, &self.surface_camera_bind_group, &[]);
+        render_pass.set_bind_group(1, &texture.bind_group, &[]);
+        render_pass.set_vertex_buffer(0, buffer.slice(..));
+        render_pass.draw(0..6, 0..count);
     }
 
     /// A contiguous direct-store range, bypassing both A and Z. Health pips

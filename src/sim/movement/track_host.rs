@@ -439,6 +439,12 @@ impl Simulation {
                     entity.navigation.stop_moving();
                     entity.navigation.path_replay_mut().clear_live_head();
                     entity.navigation.settle_destination_setter();
+                    // RESIDUAL: 0x004B2259 asks Get_Mission (vt+0x184 =
+                    // 0x005B3040: current, else queued); this reads current.
+                    // They differ only for an arrival while current is NONE
+                    // with Move queued, before the first Commence (rare):
+                    // native enters idle mode here, VERA once the commenced
+                    // Mission_Move does.
                     if entity.mission.current().known() == Some(MissionType::Move) {
                         let returns = self.unit_enter_idle_mode(id, rules, false, effects);
                         observe(self, id, TrackWorldEvent::Arrival);
@@ -1180,7 +1186,7 @@ impl Simulation {
     /// Executed native latch/END/NavQueue controls: foot_enter_idle.json.
     /// Actual-GI Archive consumer: basic-factory-output-prerequisites packet.
     /// The class tail runs even when this base returns false for the latch.
-    /// Scatter+687, Formation+520 and non-cell NavQueue remain named
+    /// Scatter+687 and Formation+520 remain named
     /// sibling residuals; fresh factory E1 has their constructor-empty state.
     pub(crate) fn foot_enter_idle_base(
         &mut self,
@@ -1231,25 +1237,14 @@ impl Simulation {
         };
         // Foot4D8382..83E2 takes NavQueue even with an existing NavCom.
         // Preserve its saved return independently from the resulting NavCom.
-        // Non-Cell targets and other class END remain bounded base-receiver
-        // gaps; no whole mission tick substitutes for those calls.
-        let queued_cell = entity
-            .navigation
-            .nav_queue()
-            .first()
-            .copied()
-            .and_then(|next| {
-                if let crate::sim::components::NavTargetRef::Cell { rx, ry } = next {
-                    Some((rx, ry))
-                } else {
-                    None
-                }
-            });
+        //4D8395 forwards the actual Abstract pointer, including an Object
+        // target appended by the burrowing planner. Other class END arms
+        // remain bounded; no whole mission tick substitutes for them.
+        let queued_target = entity.navigation.nav_queue().first().copied();
         // 4D838E..83CA: vt+0x480(queue[0], 0) through the one dispatcher,
         // which keeps its own NavCom fallback for a receiver no class setter
         // represents, then the queue shift.
-        if let Some((rx, ry)) = queued_cell {
-            let target = crate::sim::components::NavTargetRef::cell(rx, ry);
+        if let Some(target) = queued_target {
             if let Err(cause) =
                 self.assign_destination_keeping_queue(id, Some(target), rules, registry, effects)
             {
@@ -1263,7 +1258,7 @@ impl Simulation {
         }
         // A consumed NavQueue or ended piggyback returns true before
         // the Infantry Archive arm and final zero-speed setter.
-        if ended || queued_cell.is_some() {
+        if ended || queued_target.is_some() {
             return true;
         }
         // Foot4D8472..852A: Archive belongs to Techno, and +2DC is

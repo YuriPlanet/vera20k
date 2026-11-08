@@ -19,27 +19,24 @@
 //!   and rules state for building exceptions.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-use std::collections::{BTreeMap, BTreeSet};
+#[cfg(test)]
+use std::collections::BTreeMap;
 
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::{InternedId, StringInterner};
-use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
-use crate::sim::ore_growth::OreGrowthState;
+#[cfg(test)]
 use crate::sim::overlay_grid::OverlayGrid;
+use crate::sim::overlay_mark_host::RuntimeOverlayError;
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::terrain_object::TerrainObjectState;
 use crate::sim::terrain_object::TerrainObjectStore;
 #[cfg(feature = "phobos")]
 use crate::sim::tiberium::SpawnerSpread;
-use crate::sim::tiberium::{
-    NewTiberiumAdmission, PlaceTiberiumContext, TiberiumPlacement, TiberiumPlacementObjectContext,
-    spread_tiberium,
-};
+use crate::sim::tiberium::spread_tiberium;
 use crate::sim::timer::CdTimer;
+use crate::sim::world::FrameEffects;
 use crate::util::native_x87::{MaskedX87Chop53, MaskedX87Ordering, NativeF32Bits, NativeF64Bits};
 
 /// Native Terrain AI71C745..71C796: signed abs/remainder, PC53/chop
@@ -143,208 +140,105 @@ impl TerrainAnimationState {
     }
 }
 
-/// Short-lived mutation context for the stateful terrain spawner tick.
-pub struct TerrainSpawnContext<'a> {
-    pub overlay_grid: Option<&'a mut OverlayGrid>,
-    pub resolved_terrain: Option<&'a ResolvedTerrainGrid>,
-    pub overlay_registry: Option<&'a OverlayTypeRegistry>,
-    pub ore_growth_state: Option<&'a mut OreGrowthState>,
-    growth_enabled: bool,
-    spread_enabled: bool,
-    pub dirty_cells: Option<&'a mut crate::sim::dirty_cells::DirtyCells>,
-    pub binary_frame: u32,
-    pub spawning_terrain_cells: Option<&'a BTreeSet<(u16, u16)>>,
-    pub entities: Option<&'a EntityStore>,
-    pub occupancy: Option<&'a OccupancyGrid>,
-    /// Live raw occupation planes, which a new ore Overlay's Mark tests.
-    pub(crate) raw_occupation: Option<&'a RawCellOccupationGrid>,
-    pub rules: &'a RuleSet,
-    pub interner: Option<&'a StringInterner>,
-    /// Terrain objects (trees, rocks) indexed by cell — the non-Techno half of the
-    /// native `Cell+0xE4` FirstObject list that `CanSpreadTiberium` reads.
-    pub terrain_object_cells: Option<&'a BTreeMap<(u16, u16), u64>>,
-    pub rng: &'a mut SimRng,
+/// Dispatch one TerrainClass AI slot: the animation and ore emission
+/// ([`tick_terrain_animation`]), then under Ares the forest fire.
+pub(crate) fn tick_terrain_object_ai(
+    sim: &mut crate::sim::world::Simulation,
+    stable_id: u64,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    effects: FrameEffects<'_>,
+) -> Result<(), RuntimeOverlayError> {
+    #[cfg(feature = "ares")]
+    let live = sim
+        .terrain_objects
+        .objects()
+        .get(&stable_id)
+        .is_some_and(|terrain| terrain.is_live());
+    tick_terrain_animation(sim, stable_id, rules, overlay_registry, effects)?;
+    // Ares 3.0 TerrainClass_Update_ForestFire (1004F530, hook 0x71C7C2)
+    // follows the IsAnimated draw. VERA runs it after the whole stage step:
+    // the order differs only for an animated flammable non-spawner tree
+    // whose stage reaches its midpoint the same frame (none in retail).
+    #[cfg(feature = "ares")]
+    if live {
+        sim.ares_spread_forest_fire(stable_id, rules);
+    }
+    Ok(())
 }
 
-impl<'a> TerrainSpawnContext<'a> {
-    pub fn new(
-        overlay_grid: Option<&'a mut OverlayGrid>,
-        rules: &'a RuleSet,
-        rng: &'a mut SimRng,
-    ) -> Self {
-        Self {
-            overlay_grid,
-            resolved_terrain: None,
-            overlay_registry: None,
-            ore_growth_state: None,
-            growth_enabled: true,
-            spread_enabled: true,
-            dirty_cells: None,
-            binary_frame: 0,
-            spawning_terrain_cells: None,
-            entities: None,
-            occupancy: None,
-            raw_occupation: None,
-            rules,
-            interner: None,
-            terrain_object_cells: None,
-            rng,
-        }
-    }
-
-    pub fn with_validation_context(
-        mut self,
-        resolved_terrain: Option<&'a ResolvedTerrainGrid>,
-        overlay_registry: Option<&'a OverlayTypeRegistry>,
-    ) -> Self {
-        self.resolved_terrain = resolved_terrain;
-        self.overlay_registry = overlay_registry;
-        self
-    }
-
-    pub fn with_growth_queue(
-        mut self,
-        ore_growth_state: &'a mut OreGrowthState,
-        binary_frame: u32,
-        growth_enabled: bool,
-        spread_enabled: bool,
-    ) -> Self {
-        self.ore_growth_state = Some(ore_growth_state);
-        self.binary_frame = binary_frame;
-        self.growth_enabled = growth_enabled;
-        self.spread_enabled = spread_enabled;
-        self
-    }
-
-    pub fn with_dirty_tracking(
-        mut self,
-        dirty_cells: &'a mut crate::sim::dirty_cells::DirtyCells,
-    ) -> Self {
-        self.dirty_cells = Some(dirty_cells);
-        self
-    }
-
-    pub fn with_spawning_terrain_cells(mut self, cells: &'a BTreeSet<(u16, u16)>) -> Self {
-        self.spawning_terrain_cells = Some(cells);
-        self
-    }
-
-    pub(crate) fn with_live_object_context(
-        mut self,
-        entities: &'a EntityStore,
-        occupancy: &'a OccupancyGrid,
-        raw_occupation: &'a RawCellOccupationGrid,
-        interner: &'a StringInterner,
-        terrain_object_cells: &'a BTreeMap<(u16, u16), u64>,
-    ) -> Self {
-        self.entities = Some(entities);
-        self.occupancy = Some(occupancy);
-        self.raw_occupation = Some(raw_occupation);
-        self.interner = Some(interner);
-        self.terrain_object_cells = Some(terrain_object_cells);
-        self
-    }
-}
-
-/// Test adapter over the same single-object animation and spread owners.
-/// Production dispatch follows retained Logic order, not this cell-key order.
-#[cfg(any(test, feature = "test-support"))]
-pub fn tick_terrain_animations_stateful(
-    spawners: &mut BTreeMap<(u16, u16), TerrainAnimationState>,
-    mut ctx: TerrainSpawnContext<'_>,
-) {
-    if spawners.is_empty() {
-        return;
-    }
-
-    let spawner_cells: BTreeSet<(u16, u16)> = spawners.keys().copied().collect();
-    for &cell in &spawner_cells {
-        if let Some(spawner) = spawners.get_mut(&cell) {
-            tick_terrain_spawner_one_inner(spawner, cell, &spawner_cells, &mut ctx);
-        }
-    }
-}
-
-/// Dispatch one TerrainClass AI slot through the retained animation owner.
-///
-/// `None` means no animation midpoint fired on this visit. `Some` carries every
-/// cell the midpoint germinated: the stock spawner stops after one, a Phobos
-/// build runs `SpawnsTiberium.CellsPerAnim=` attempts and breaks on the first
-/// refusal.
-pub(crate) fn tick_terrain_spawner_stateful_one(
-    spawner: &mut TerrainAnimationState,
-    cell: (u16, u16),
-    spawner_cells: &BTreeSet<(u16, u16)>,
-    mut ctx: TerrainSpawnContext<'_>,
-) -> Option<Vec<TiberiumPlacement>> {
-    tick_terrain_spawner_one_inner(spawner, cell, spawner_cells, &mut ctx)
-}
-
-fn tick_terrain_spawner_one_inner(
-    spawner: &mut TerrainAnimationState,
-    cell: (u16, u16),
-    spawner_cells: &BTreeSet<(u16, u16)>,
-    ctx: &mut TerrainSpawnContext<'_>,
-) -> Option<Vec<TiberiumPlacement>> {
-    let source_cells = ctx.spawning_terrain_cells.unwrap_or(spawner_cells);
-    let terrain_type = ctx.interner.and_then(|interner| {
-        ctx.rules
-            .terrain_object_type_case_insensitive(interner.resolve(spawner.type_ref))
-    });
-    let is_animated = terrain_type.is_none_or(|ty| ty.is_animated);
-    let spawns_tiberium =
-        terrain_type.map_or_else(|| source_cells.contains(&cell), |ty| ty.spawns_tiberium);
-    if !spawner.tick(ctx.binary_frame, is_animated, spawns_tiberium, ctx.rng) {
-        return None;
-    }
-    let rules = ctx.rules;
-    let (Some(grid), Some(registry), Some(state), Some(terrain), Some(objects)) = (
-        ctx.overlay_grid.as_deref_mut(),
-        ctx.overlay_registry,
-        ctx.ore_growth_state.as_deref_mut(),
-        ctx.resolved_terrain,
-        live_object_context(
-            ctx.entities,
-            ctx.occupancy,
-            ctx.raw_occupation,
-            ctx.rules,
-            ctx.interner,
-            ctx.terrain_object_cells,
-        ),
-    ) else {
-        return None;
+/// TerrainClass::AI71C730's IsAnimated draw, stage step and ore emission.
+/// The retained Stage/rate/timer and any probability draw change before the
+/// midpoint's forced spread. Release the animation borrow before entering
+/// Overlay5FC380/Mark5FC570, whose CellAnim callbacks require the full live
+/// Simulation and its existing owners.
+fn tick_terrain_animation(
+    sim: &mut crate::sim::world::Simulation,
+    stable_id: u64,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    effects: FrameEffects<'_>,
+) -> Result<(), RuntimeOverlayError> {
+    let Some(cell) = sim
+        .terrain_objects
+        .objects()
+        .get(&stable_id)
+        .filter(|terrain| terrain.is_live())
+        .map(TerrainObjectState::cell)
+    else {
+        return Ok(());
     };
+    let Some(type_ref) = sim
+        .terrain_objects
+        .animations()
+        .get(&stable_id)
+        .map(TerrainAnimationState::type_ref)
+    else {
+        return Ok(());
+    };
+    let terrain_type = rules.terrain_object_type_case_insensitive(sim.interner.resolve(type_ref));
+    let is_animated = terrain_type.is_none_or(|ty| ty.is_animated);
+    let spawns_tiberium = terrain_type.map_or_else(
+        || sim.terrain_objects.spawning_cells().contains(&cell),
+        |ty| ty.spawns_tiberium,
+    );
+    let fired = {
+        let Some((spawner, _, _)) = sim.terrain_objects.animation_with_indexes_mut(stable_id)
+        else {
+            return Ok(());
+        };
+        spawner.tick(
+            sim.session.binary_frame(),
+            is_animated,
+            spawns_tiberium,
+            &mut sim.scenario_rng,
+        )
+    };
+    if !fired {
+        return Ok(());
+    }
+    let Some(registry) = overlay_registry else {
+        return Ok(());
+    };
+    if sim.overlay_grid.is_none() || sim.resolved_terrain.is_none() {
+        return Ok(());
+    }
     #[cfg(feature = "phobos")]
     let ext = terrain_type.map(|ty| &ty.spawns_tiberium_ext);
-    // `TerrainTypeExt::GetCellsPerAnim` replaces the stock one spread per
-    // animation with a count drawn once here; a single-valued or reversed
-    // `SpawnsTiberium.CellsPerAnim=` range draws nothing.
+    // TerrainTypeExt::GetCellsPerAnim draws once after the native midpoint
+    // reset. Single-valued/reversed ranges draw nothing, including zero attempts.
     #[cfg(feature = "phobos")]
     let cells = ext.map_or(1, |ext| {
         let range = ext.cells_per_anim;
         if range.is_single() {
             range.low
         } else {
-            ctx.rng.next_range_i32_inclusive(range.low, range.high)
+            sim.scenario_rng
+                .next_range_i32_inclusive(range.low, range.high)
         }
     });
     #[cfg(not(feature = "phobos"))]
     let cells = 1;
-    let mut placement = PlaceTiberiumContext {
-        overlay_grid: grid,
-        ore_growth_state: state,
-        overlay_registry: registry,
-        tiberium_types: &rules.tiberium_types,
-        resolved_terrain: Some(terrain),
-        source_object_cells: source_cells,
-        new_cell_admission: Some(NewTiberiumAdmission::runtime(terrain, objects)),
-        live_objects: Some(objects.object_view()),
-        rng: ctx.rng,
-        binary_frame: ctx.binary_frame,
-        growth_enabled: ctx.growth_enabled,
-        spread_enabled: ctx.spread_enabled,
-        dirty_cells: ctx.dirty_cells.as_deref_mut(),
-    };
     #[cfg(feature = "phobos")]
     let spread_context = ext.map(|ext| SpawnerSpread {
         tiberium_type: ext.tiberium_type,
@@ -353,85 +247,28 @@ fn tick_terrain_spawner_one_inner(
     });
     #[cfg(not(feature = "phobos"))]
     let spread_context = None;
-    let mut placed = Vec::new();
+    let mut placed_cells = Vec::new();
+    let mut result = Ok(());
     for _ in 0..cells.max(0) {
-        match spread_tiberium(&mut placement, cell, true, spread_context) {
-            Some(emitted) => placed.push(emitted),
-            None => break,
+        match spread_tiberium(sim, rules, registry, cell, true, spread_context, effects) {
+            Ok(Some(emitted)) => placed_cells.push(emitted.cell()),
+            Ok(None) => break,
+            Err(error) => {
+                result = Err(error);
+                break;
+            }
         }
     }
-    Some(placed)
-}
-/// Dispatch the TerrainClass AI leaf for one current LogicClass slot.
-pub(crate) fn tick_terrain_object_ai(
-    sim: &mut crate::sim::world::Simulation,
-    stable_id: u64,
-    rules: &crate::rules::ruleset::RuleSet,
-    overlay_registry: Option<&OverlayTypeRegistry>,
-) {
-    let Some(cell) = sim
-        .terrain_objects
-        .objects()
-        .get(&stable_id)
-        .filter(|terrain| terrain.is_live())
-        .map(TerrainObjectState::cell)
-    else {
-        return;
-    };
-    let Some((spawner, spawning_cells, cell_index)) =
-        sim.terrain_objects.animation_with_indexes_mut(stable_id)
-    else {
-        return;
-    };
-    let emission = tick_terrain_spawner_stateful_one(
-        spawner,
-        cell,
-        spawning_cells,
-        TerrainSpawnContext::new(sim.overlay_grid.as_mut(), rules, &mut sim.scenario_rng)
-            .with_growth_queue(
-                &mut sim.ore_growth_state,
-                sim.session.binary_frame(),
-                sim.ore_growth_config.grows(),
-                sim.ore_growth_config.spreads(),
-            )
-            .with_dirty_tracking(&mut sim.dirty_cells)
-            .with_spawning_terrain_cells(spawning_cells)
-            .with_live_object_context(
-                &sim.substrate.entities,
-                &sim.substrate.occupancy,
-                &sim.substrate.raw_cell_occupation,
-                &sim.interner,
-                cell_index,
-            )
-            .with_validation_context(sim.resolved_terrain.as_ref(), overlay_registry),
-    );
-    #[cfg(feature = "phobos")]
-    let midpoint_fired = emission.is_some();
-    // Overlay Mark5FC570 ->Cell Recalc47D2B0 is synchronous: a later
-    // Logic object (including a miner) sees the new LandType this frame.
-    let placed_cells: Vec<(u16, u16)> = emission
-        .iter()
-        .flatten()
-        .map(TiberiumPlacement::cell)
-        .collect();
-    if !placed_cells.is_empty()
-        && let Some(registry) = overlay_registry
-    {
+    // Keep the existing plain-ore Recalc batching, including successful cells
+    // preceding an error. Structural and CellAnim callbacks already ran inside
+    // the shared constructor; no deferred Overlay identity receipt remains.
+    if !placed_cells.is_empty() {
         sim.publish_tiberium_cells(rules, registry, &placed_cells);
     }
-    crate::sim::world::Simulation::publish_overlay_constructions(
-        &mut sim.native_unique_ids,
-        &mut sim.load_objects,
-        &mut sim.substrate,
-        emission
-            .into_iter()
-            .flatten()
-            .filter_map(TiberiumPlacement::into_overlay_construction),
-    );
+    result?;
     #[cfg(feature = "phobos")]
-    if midpoint_fired {
-        spawn_spawner_particle(sim, rules, stable_id);
-    }
+    spawn_spawner_particle(sim, rules, stable_id);
+    Ok(())
 }
 
 /// Phobos `TerrainTypeExt`'s `SpawnsTiberium.Particle`, emitted after the
@@ -467,24 +304,6 @@ fn spawn_spawner_particle(
         glam::IVec3::new(location.x, location.y, location.z),
         rules,
     );
-}
-
-fn live_object_context<'a>(
-    entities: Option<&'a EntityStore>,
-    occupancy: Option<&'a OccupancyGrid>,
-    raw_occupation: Option<&'a RawCellOccupationGrid>,
-    rules: &'a RuleSet,
-    interner: Option<&'a StringInterner>,
-    terrain_object_cells: Option<&'a BTreeMap<(u16, u16), u64>>,
-) -> Option<TiberiumPlacementObjectContext<'a>> {
-    Some(TiberiumPlacementObjectContext::new(
-        entities?,
-        occupancy?,
-        raw_occupation?,
-        rules,
-        interner?,
-        terrain_object_cells?,
-    ))
 }
 
 /// Compatibility construction without a native fresh-map prefix.
@@ -790,12 +609,8 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::overlay_types::OverlayTypeRegistry;
     use crate::rules::ruleset::RuleSet;
-    use crate::sim::entity_store::EntityStore;
 
     use crate::sim::intern::StringInterner;
-
-    use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
-    use crate::sim::ore_growth::OreGrowthState;
 
     #[test]
     fn probability_boundaries_match_original_executable_controls() {
@@ -888,45 +703,40 @@ mod tests {
         )
     }
 
-    /// The full `CellClass::PlaceTiberium` context, so spawner tests observe the
-    /// overlay cells a live spawner writes.
+    /// A complete live world: these synthetic animation controls enter the same
+    /// TerrainClass AI and Overlay constructor as the runtime.
     struct SpawnWorld {
         binary_frame: u32,
         registry: OverlayTypeRegistry,
         rules: RuleSet,
-        overlay_grid: OverlayGrid,
-        growth_state: OreGrowthState,
-        terrain: ResolvedTerrainGrid,
-        interner: StringInterner,
-        entities: EntityStore,
-        occupancy: OccupancyGrid,
-        raw_occupation: RawCellOccupationGrid,
-        terrain_object_cells: BTreeMap<(u16, u16), u64>,
+        sim: crate::sim::world::Simulation,
     }
 
     impl SpawnWorld {
         fn new() -> Self {
-            let rules = RuleSet::from_ini(&IniFile::from_str(
+            let text = format!(
                 "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
-                 [Tiberiums]\n0=Riparius\n\
-                 [Riparius]\nImage=1\nGrowth=2200\nGrowthPercentage=.06\n\
-                 Spread=2200\nSpreadPercentage=.06\n",
-            ))
-            .expect("spawn world rules");
-            let mut growth_state = OreGrowthState::new(32, 32);
-            growth_state.reset_native_tiberium_classes(rules.tiberium_types.len(), 0);
+                 [TerrainTypes]\n0=TIBTRE_HALF\n\
+                 [TIBTRE_HALF]\nIsAnimated=yes\nSpawnsTiberium=yes\n\
+                 {}",
+                crate::sim::tiberium::test_support::tiberium_rules_text(),
+            );
+            let ini = IniFile::from_str(&text);
+            let rules = RuleSet::from_ini(&ini).expect("spawn world rules");
+            let registry = OverlayTypeRegistry::from_ini(&ini, None);
+            let mut sim = crate::sim::world::Simulation::new();
+            sim.overlay_grid = Some(OverlayGrid::new(32, 32));
+            sim.install_resolved_terrain_for_new_map(resolved_grid(32, 32));
+            sim.ore_growth_config =
+                crate::sim::ore_growth::OreGrowthConfig::for_test(true, true, false);
+            sim.ore_growth_state = crate::sim::ore_growth::OreGrowthState::new(32, 32);
+            sim.ore_growth_state
+                .reset_native_tiberium_classes(rules.tiberium_types.len(), 0);
             Self {
                 binary_frame: 0,
-                registry: registry_with_tib_variants(),
+                registry,
                 rules,
-                overlay_grid: OverlayGrid::new(32, 32),
-                growth_state,
-                terrain: resolved_grid(32, 32),
-                interner: StringInterner::default(),
-                entities: EntityStore::new(),
-                occupancy: OccupancyGrid::new(),
-                raw_occupation: RawCellOccupationGrid::new(),
-                terrain_object_cells: BTreeMap::new(),
+                sim,
             }
         }
 
@@ -935,41 +745,54 @@ mod tests {
             spawners: &mut BTreeMap<(u16, u16), TerrainAnimationState>,
             rng: &mut SimRng,
         ) {
-            tick_terrain_animations_stateful(
-                spawners,
-                TerrainSpawnContext::new(Some(&mut self.overlay_grid), &self.rules, rng)
-                    .with_growth_queue(&mut self.growth_state, self.binary_frame, true, true)
-                    .with_live_object_context(
-                        &self.entities,
-                        &self.occupancy,
-                        &self.raw_occupation,
-                        &self.interner,
-                        &self.terrain_object_cells,
-                    )
-                    .with_validation_context(Some(&self.terrain), Some(&self.registry)),
-            );
+            if self.sim.terrain_objects.objects().is_empty() {
+                let objects = spawners
+                    .iter()
+                    .map(|(&cell, state)| crate::map::overlay::TerrainObject {
+                        rx: cell.0,
+                        ry: cell.1,
+                        name: self.sim.interner.resolve(state.type_ref()).to_string(),
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    construct_terrain_objects(&mut self.sim, &objects, &self.rules, false),
+                    objects.len()
+                );
+            }
+            self.sim
+                .session
+                .set_binary_frame_for_test(self.binary_frame);
+            std::mem::swap(&mut self.sim.scenario_rng, rng);
+            for (&cell, state) in spawners {
+                let id = self
+                    .sim
+                    .terrain_objects
+                    .id_at(cell)
+                    .expect("constructed spawner cell");
+                self.sim.terrain_objects.seed_animation(id, state.clone());
+                tick_terrain_object_ai(
+                    &mut self.sim,
+                    id,
+                    &self.rules,
+                    Some(&self.registry),
+                    FrameEffects::default(),
+                )
+                .unwrap();
+                *state = self.sim.terrain_objects.animations()[&id].clone();
+            }
+            std::mem::swap(&mut self.sim.scenario_rng, rng);
             self.binary_frame += 1;
         }
 
-        /// Every occupied overlay cell as `(cell, overlay_data)`.
         fn placed(&self) -> Vec<((u16, u16), u8)> {
-            self.overlay_grid
+            self.sim
+                .overlay_grid
+                .as_ref()
+                .unwrap()
                 .iter_occupied()
                 .map(|(rx, ry, cell)| ((rx, ry), cell.overlay_data))
                 .collect()
         }
-    }
-
-    fn registry_with_tib_variants() -> OverlayTypeRegistry {
-        let mut ini_text = String::from("[OverlayTypes]\n");
-        for i in 1..=12 {
-            ini_text.push_str(&format!("{}=TIB{:02}\n", i - 1, i));
-        }
-        for i in 1..=12 {
-            ini_text.push_str(&format!("[TIB{:02}]\nTiberium=yes\n", i));
-        }
-        let ini = IniFile::from_str(&ini_text);
-        OverlayTypeRegistry::from_ini(&ini, None)
     }
 
     /// `CellClass::PlaceTiberium @ 0x0048728C` reveals a tree's new ore into
@@ -984,7 +807,7 @@ mod tests {
             if landed {
                 for ry in 0..32 {
                     for rx in 0..32 {
-                        world.raw_occupation.mark_ground(
+                        world.sim.substrate.raw_cell_occupation.mark_ground(
                             rx,
                             ry,
                             crate::sim::occupancy::OBJECT_OCCUPATION_BIT,
@@ -995,7 +818,7 @@ mod tests {
             let mut spawners = BTreeMap::new();
             spawners.insert(
                 (10, 10),
-                spawner(&mut world.interner, "TIBTRE_HALF", 500_000),
+                spawner(&mut world.sim.interner, "TIBTRE_HALF", 500_000),
             );
             let mut rng = SimRng::new(42);
             for _ in 0..200 {
@@ -1018,7 +841,7 @@ mod tests {
             let mut spawners = BTreeMap::new();
             spawners.insert(
                 (10, 10),
-                spawner(&mut world.interner, "TIBTRE_HALF", 500_000),
+                spawner(&mut world.sim.interner, "TIBTRE_HALF", 500_000),
             );
             let mut rng = SimRng::new(seed);
             for _ in 0..200 {

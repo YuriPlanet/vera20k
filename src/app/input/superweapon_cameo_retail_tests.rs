@@ -376,12 +376,23 @@ fn authored_stock_action_case_and_unknown_layer_drive_cursor_and_press() {
             SuperWeaponClick::Target,
             Some(CursorId::Nuke),
         ),
+        // Installed Ares gives the redirected MultiMissile its custom action
+        // whatever Action= says (SW_NuclearMissile::Initialize 10073360).
+        #[cfg(not(feature = "ares"))]
         (
             RulesLayerKind::Scenario,
             "UnknownAction",
             "None",
             SuperWeaponClick::Launch(id),
             None,
+        ),
+        #[cfg(feature = "ares")]
+        (
+            RulesLayerKind::Scenario,
+            "UnknownAction",
+            "Nuke",
+            SuperWeaponClick::Target,
+            Some(CursorId::Nuke),
         ),
     ] {
         layers.push(

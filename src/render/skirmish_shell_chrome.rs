@@ -47,7 +47,7 @@ fn render_side_dialog_art(
     render_shp_entry_labeled(assets, image, &label, &palette, 0)
 }
 
-/// Red Alert 2's own neutral mode-2 background, a Desolator in a burning city:
+/// Red Alert 2's own neutral mode-2 background, a Tesla Trooper in a burning city:
 /// `PUDLGBGN.SHP` through `DIALOG.PAL`, both from `ra2.mix -> local.mix`. Yuri's
 /// Revenge's copies of the name win the ordinary lookup. VERA's updater boxes
 /// draw it; gamemd has no updater.

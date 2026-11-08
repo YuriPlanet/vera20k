@@ -78,6 +78,32 @@ impl ResolvedTerrainGrid {
         old_overlay_zone_type != terrain_cell.overlay_zone_type || old != new
     }
 
+    /// RecalcZoneType (`0x00483C80`) of one cell whose terrain inputs are
+    /// unchanged, with the object list's building arm answered by the caller
+    /// ([`super::recalc_zone_type_with_buildings`]). Answers whether the
+    /// class changed.
+    #[cfg(feature = "ares")]
+    pub(crate) fn recalc_zone_type_with_buildings_at(
+        &mut self,
+        (rx, ry): (u16, u16),
+        building_impassable: bool,
+    ) -> bool {
+        let Some(cell) = self.cell_mut(rx, ry) else {
+            return false;
+        };
+        let zone_type = super::recalc_zone_type_with_buildings(
+            cell.outside_playfield,
+            cell.overlay_zone_type,
+            cell.land_type,
+            cell.speed_costs.wheel,
+            cell.terrain_object_occupation,
+            building_impassable,
+        );
+        let changed = cell.zone_type != zone_type;
+        cell.zone_type = zone_type;
+        changed
+    }
+
     /// Commit occupation and its derived blocking/Zone fields at the same seam.
     /// Preserve the occupation writer's pristine-ground predicate: it differs
     /// from the overlay writer's effective-Land predicate.

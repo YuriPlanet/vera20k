@@ -342,6 +342,11 @@ fn compare(s: &Scene, native: &Value, context: &str) {
         "scenario_rng":{"disabled":view.disabled,"index_a":view.index_a,"index_b":view.index_b,"state":view.words}
     });
     for (key, value) in fields.as_object().unwrap() {
+        // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no score.
+        #[cfg(feature = "ares")]
+        if key == "score" {
+            continue;
+        }
         assert_eq!(value, &native[key], "{context}: {key}");
     }
     for (id, field) in [
@@ -426,7 +431,8 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
                     overlay_registry: Some(registry()),
                     ..Default::default()
                 },
-            );
+            )
+            .unwrap();
             s.sim
                 .substrate
                 .entities

@@ -62,6 +62,66 @@ impl Simulation {
             .first_building_on_layer(x as u16, y as u16, MovementLayer::Ground)
     }
 
+    /// Ares 3.0 FlyLocomotionClass_UpdateLanding 1004D8A0 (hook 0x4CE85A)
+    /// replaces a `HunterSeeker=` type's landing (to 0x4CE852): it never
+    /// lands. Without a Target (+0x2B4) it asks Acquire_Hunter_Seeker_Target
+    /// (Fly vt+0x94, [`Self::acquire_hunter_seeker_target`]); when that
+    /// finds one, the Fly stops landing (+0x51) and takes the type's flight
+    /// level (vt+0xBC into +0x38), the hunter sends NotifyUnlink to its first
+    /// contact (vt+0x274(3)), queues Attack (vt+0x1E8(1, 0)) and commences
+    /// it (vt+0x1EC). Process (1004D7A0, hook 0x4CCB84) runs the same block.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_hunter_seeker_reacquire(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        use crate::sim::mission::{MissionId, MissionType};
+        let has_target = |sim: &Self| {
+            sim.substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.attack_target.target().is_some())
+        };
+        if has_target(self) {
+            return;
+        }
+        self.acquire_hunter_seeker_target(id, rules, registry, frame_effects);
+        if !has_target(self) {
+            return;
+        }
+        let flight_level = self.substrate.entities.get(id).map_or(0, |entity| {
+            air_movement::type_flight_level(entity, Some((rules, &self.interner)))
+        });
+        if let Some(fly) = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .and_then(|entity| entity.locomotor.as_mut())
+            .and_then(|locomotor| locomotor.fly_runtime_mut())
+        {
+            fly.resume_hunt(flight_level);
+        }
+        crate::sim::radio::transmit_to_contact(
+            self,
+            id,
+            crate::sim::radio::RadioMessage::Break,
+            rules,
+            frame_effects,
+        );
+        let frame = self.session.binary_frame();
+        let _ = self.mission_queue_exact(
+            id,
+            MissionId::from_known(MissionType::Attack),
+            0,
+            frame,
+            &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+        );
+        let _ = self.substrate.mission_commence_exact(id, frame);
+    }
+
     pub(super) fn apply_fly_landing_callback(
         &mut self,
         id: u64,
@@ -69,6 +129,17 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
+        #[cfg(feature = "ares")]
+        if self
+            .substrate
+            .entities
+            .get(id)
+            .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
+            .is_some_and(|object| object.hunter_seeker)
+        {
+            self.ares_hunter_seeker_reacquire(id, rules, registry, frame_effects);
+            return;
+        }
         let entity = self
             .substrate
             .entities
@@ -1019,6 +1090,50 @@ mod tests {
             );
             assert_eq!(sim.scenario_rng.logical_state(), rng);
         }
+    }
+
+    /// Ares FlyLocomotionClass_UpdateLanding (1004D8A0, hook 0x4CE85A): a
+    /// HunterSeeker never lands. With no target to acquire, its landing
+    /// callback leaves the Fly landing at its speed; the stock callback of
+    /// the same Fly asks a stop.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_hunter_seeker_skips_the_landing_callback() {
+        let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/fly_landing_phase.json",
+        ))
+        .unwrap();
+        let row = rows
+            .iter()
+            .find(|row| row["before"]["phase"][1] == 1)
+            .unwrap();
+        let hunter = RuleSet::from_ini(&IniFile::from_str(
+            "[AircraftTypes]\n0=TEST\n[TEST]\nHunterSeeker=yes\nLandable=yes\nStrength=100\n\
+             Speed=10\nLocomotor={4A582746-9839-11D1-B709-00A024DDAFD1}\n",
+        ))
+        .unwrap();
+        let fly = |sim: &Simulation| {
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .locomotor
+                .as_ref()
+                .unwrap()
+                .fly_runtime()
+                .unwrap()
+                .clone()
+        };
+        let (mut sim, rules) = fixture(row);
+        sim.apply_fly_landing_callback(
+            1,
+            &hunter,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        assert!(fly(&sim).landing() && !fly(&sim).target_speed_is_zero());
+        sim.apply_fly_landing_callback(1, &rules, None, crate::sim::world::FrameEffects::default());
+        assert!(fly(&sim).target_speed_is_zero());
     }
 
     #[test]

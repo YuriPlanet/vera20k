@@ -50,6 +50,8 @@ mod native_identity_tests;
 mod railgun_native_tests;
 #[cfg(test)]
 mod virus_tests;
+#[cfg(all(test, feature = "ares"))]
+mod ares_gas_tests;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParticleSystem {

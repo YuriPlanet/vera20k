@@ -245,6 +245,10 @@ fn pending_strip_clock_hold_no_init_and_limit_match_original_histories() {
     }
 }
 
+// The native insertion order and top row: Ares 3.0 inserts at its own
+// lower bound (1002C2D0, hook 0x6A8710) and keeps the top cameo row after
+// a removal (1002C660, hook 0x6AA600); see docs/ares-sidebar-ui-hooks.md.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn original_trigger_tabs_and_cameo_flash_deadlines() {
     let native = trigger_corpus();
@@ -645,6 +649,10 @@ fn replay_history(context: &Value) {
     }
 }
 
+// The native insertion order and top row: Ares 3.0 inserts at its own
+// lower bound (1002C2D0, hook 0x6A8710) and keeps the top cameo row after
+// a removal (1002C660, hook 0x6AA600); see docs/ares-sidebar-ui-hooks.md.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn original_histories_preserve_survivors_and_reinsert_using_current_costs() {
     let corpus = corpus();
@@ -655,11 +663,15 @@ fn original_histories_preserve_survivors_and_reinsert_using_current_costs() {
     }
 }
 
+// Ares 3.0 keeps its own unbounded cameo vector per tab, so the native 75-entry
+// capacity history does not hold in an `ares` build.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn original_capacity_gate_and_duplicate_rejection_do_not_move_entries() {
     replay_history(&corpus()["capacity_history"]);
 }
 
+#[cfg(not(feature = "ares"))]
 #[test]
 fn reconciliation_adds_before_pruning_and_retries_on_the_next_recheck() {
     let corpus = corpus();
@@ -859,6 +871,8 @@ fn original_complete_recalculate_preserves_order_and_adjusts_each_strip_scroll()
         strips.retain(case["visible_slots"].as_u64().unwrap() as usize / 2, |id| {
             !removed.contains(fixture.name(id))
         });
+        // Ares 3.0 replaces Recalculate's TopRow rule (see `retain`).
+        #[cfg(not(feature = "ares"))]
         assert_eq!(
             strips.scroll_row(SidebarTab::Vehicle),
             case["top_row_after"].as_u64().unwrap() as usize,
@@ -942,4 +956,129 @@ fn scroll_commands_queue_one_row_each_until_the_next_visit() {
     }
     assert_eq!(rows, [1, 2, 2], "the row past the end is dropped");
     assert!(!strips.has_pending_scroll());
+}
+
+/// Ares 3.0 drops the 75-entry strip limit (`SidebarClass_AddCameo_SkipSizeCheck`
+/// Ares.dll 1002C160, hook 0x6A63B7; `StripClass_AddCameo_ReplaceItAll`
+/// Ares.dll 1002C2D0, hook 0x6A8710) and runs `FlashCameo` (Ares.dll 1002C1D0,
+/// hook 0x6AC6D9) over the whole tab vector. Duplicates are still rejected.
+#[cfg(feature = "ares")]
+#[test]
+fn an_ares_strip_admits_and_flashes_entries_past_the_native_limit() {
+    let mut interner = StringInterner::new();
+    let ids: Vec<_> = (0..120)
+        .map(|index| interner.intern(&format!("CAMEO{index}")))
+        .collect();
+    let cameo = |id| Cameo {
+        id: CameoId::Object(id),
+        tab: SidebarTab::Vehicle,
+        available: true,
+        key: CameoKey::Techno {
+            own_side: true,
+            considered_aircraft: false,
+            naval: false,
+            tech_level: 1,
+            cost: 100,
+            name: "Test Type".to_string(),
+        },
+    };
+    let mut strips = CameoStrips::default();
+    for id in &ids {
+        assert!(strips.insert(&cameo(*id)));
+    }
+    assert!(!strips.insert(&cameo(ids[0])), "an identity enters once");
+    assert_eq!(strips.items(SidebarTab::Vehicle).len(), ids.len());
+
+    // The last-admitted type (index 119) is the 120th entry of the strip.
+    let index_of = |id: CameoId| match id {
+        CameoId::Object(id) => ids.iter().position(|known| *known == id).map(|i| i as i32),
+        CameoId::SuperWeapon(_) => None,
+    };
+    strips.flash_type_index(SidebarTab::Vehicle, 119, 30, 1000, index_of);
+    let (deadlines, _) = strips.saved_flash();
+    let at = strips
+        .items(SidebarTab::Vehicle)
+        .iter()
+        .position(|item| item.id == CameoId::Object(ids[119]))
+        .unwrap();
+    assert_eq!(deadlines[SidebarTab::Vehicle.tab_index()][at], 1030);
+}
+
+/// Vehicle cameos `U0..` with rising costs, so the strip order is the index order.
+fn costed_vehicle_cameos(count: usize) -> Vec<Cameo> {
+    let mut interner = StringInterner::new();
+    (0..count)
+        .map(|i| Cameo {
+            id: CameoId::Object(interner.intern(&format!("U{i}"))),
+            tab: SidebarTab::Vehicle,
+            available: true,
+            key: CameoKey::Techno {
+                own_side: true,
+                considered_aircraft: false,
+                naval: false,
+                tech_level: 1,
+                cost: 100 + i as i32,
+                name: format!("U{i}"),
+            },
+        })
+        .collect()
+}
+
+/// Two entries with the same key: AddCameo 6A6300 -> InsertEntry 6A8710 puts the
+/// newcomer before the existing one; Ares 3.0 `ReplaceItAll` (Ares.dll 1002C2D0)
+/// puts it after, as `std::lower_bound` skips an entry that "sorts before" it.
+#[test]
+fn an_equal_key_enters_before_the_existing_cameo_unless_ares_lower_bounds_it() {
+    let mut interner = StringInterner::new();
+    let mut twin = |name: &str| Cameo {
+        id: CameoId::Object(interner.intern(name)),
+        tab: SidebarTab::Vehicle,
+        available: true,
+        key: CameoKey::Techno {
+            own_side: true,
+            considered_aircraft: false,
+            naval: false,
+            tech_level: 1,
+            cost: 100,
+            name: "Twin".to_string(),
+        },
+    };
+    let (first, second) = (twin("FIRST"), twin("SECOND"));
+    let mut strips = CameoStrips::default();
+    assert!(strips.insert(&first));
+    assert!(strips.insert(&second));
+    let order: Vec<_> = strips
+        .items(SidebarTab::Vehicle)
+        .iter()
+        .map(|item| item.id)
+        .collect();
+    let expected = if cfg!(feature = "ares") {
+        [first.id, second.id]
+    } else {
+        [second.id, first.id]
+    };
+    assert_eq!(order, expected);
+}
+
+/// Twelve cameos, two visible rows, scrolled to row 2 (top = U4). Native
+/// Recalculate 6AA600 jumps to row 3 when the last cameo disappears, or U0;
+/// Ares 3.0 `RecheckCameos` (Ares.dll 1002C660) looks U4 up again with
+/// `lower_bound` and stays on row 2 (after U0 goes, row 2 starts one cameo past
+/// U4, because `lower_bound` passes the cameo itself).
+#[test]
+fn ares_recalculate_keeps_the_top_cameo_row_where_native_jumps() {
+    let after = |removed: &str| {
+        let cameos = costed_vehicle_cameos(12);
+        let gone = cameos.iter().find(|c| c.key.name() == removed).unwrap().id;
+        let mut strips = CameoStrips::from_retained([vec![], vec![], vec![], cameos], [0, 0, 0, 2]);
+        strips.retain(2, |id| id != gone);
+        strips.scroll_row(SidebarTab::Vehicle)
+    };
+    let (later, earlier) = if cfg!(feature = "ares") {
+        (2, 2)
+    } else {
+        (3, 3)
+    };
+    assert_eq!(after("U11"), later);
+    assert_eq!(after("U0"), earlier);
 }

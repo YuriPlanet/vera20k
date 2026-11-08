@@ -55,7 +55,7 @@ Yuri's Revenge и установит VERA20K в новую папку.
 - **[Игровой процесс и бои](https://github.com/YuriPlanet/vera20k/issues/3830):** поведение юнитов, урон и стабильность обычных схваток.
 - **[Производительность](https://github.com/YuriPlanet/vera20k/issues/3831):** частота кадров и отзывчивость в больших сражениях и на старом железе.
 - **[Мультиплеер](https://github.com/YuriPlanet/vera20k/issues/3832):** подключение к онлайн-матчам, их запуск и продолжение, а также надёжность совместной игры.
-- **[Интерфейс и звук](https://github.com/YuriPlanet/vera20k/issues/3833):** меню, тексты, переводы и звук.
+- **[Интерфейс и звук](https://github.com/YuriPlanet/vera20k/issues/3833):** меню, тексты, [переводы](src/i18n/README.md) и звук.
 - **[Кампании](https://github.com/YuriPlanet/vera20k/issues/3834):** миссии запускаются, но чтобы пройти их до конца, нужна работа: цели, триггеры, скриптовые переходы, сохранение и загрузка, переход к следующей миссии.
 - **[Совместимость с модами](https://github.com/YuriPlanet/vera20k/issues/3835):** возможности Ares и Phobos без изменения стандартного поведения оригинальной игры.
 - **[Тестирование](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** играть в VERA20K параллельно с оригиналом и сообщать, что работает иначе.
@@ -122,6 +122,8 @@ Ghidra, затем переносят его поведение на Rust и п�
 Настройки звука, графики и управления сохраняются в `VERA.INI`. Правила игры задаются
 настройками лобби, модами или картами.
 
+Как сделать собственный мод, объясняется в [руководстве по созданию модов](docs/modding.md).
+
 ## Поддержка проекта
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Поддержать VERA20K через PayPal" height="23"></a>
@@ -147,11 +149,14 @@ Command & Conquer и Red Alert — товарные знаки Electronic Arts I
 приложения (красной звезде из Red Alert 2) показана игровая графика, принадлежащая Electronic Arts.
 VERA20K не связан с Electronic Arts и не одобрен компанией.
 
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 **Прочитай [юридическое уведомление](LEGAL.md), прежде чем распространять, продавать или форкать VERA20K.**
 
 ## Документация
 
 - [Предварительная версия на WebAssembly](docs/wasm.md): необязательная однопользовательская сборка, которая работает в браузере.
+- [Руководство по созданию модов](docs/modding.md): что моды могут и чего не могут и чем VERA20K отличается от оригинальной игры.
 - [Профили INI](docs/ini-roots.md): выбор файлов правил, графики и ИИ.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) и [NPatch](docs/npatch.md): поддержка расширений и её ограничения.
 - [Обзор движка](docs/index.md): структура кода и то, как части движка работают вместе.

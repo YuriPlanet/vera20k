@@ -326,6 +326,8 @@ pub enum SnapshotError {
 /// Structural failures found before a deserialized simulation is admitted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SnapshotRestoreError {
+    #[error(transparent)]
+    Tiberium(#[from] crate::rules::overlay_types::TiberiumImageError),
     #[cfg(feature = "ares")]
     #[error("object {object_id} has invalid attached stats: {reason}")]
     InvalidAttachedStatsState {
@@ -1526,10 +1528,7 @@ fn restore_object_references(
         }
 
         for (field, system_id) in [
-            (
-                "fire_particle_system",
-                entity.fire_particle_system.system(),
-            ),
+            ("fire_particle_system", entity.fire_particle_system.system()),
             (
                 "spark_particle_system",
                 entity.spark_particle_system.system(),
@@ -2333,6 +2332,10 @@ impl Simulation {
                 .map_err(|error| SnapshotRestoreError::InvalidSavedCellLand(error.to_string()))?;
         }
 
+        // Ares 3.0 10014B70 (hook 0x483D94): a powered firestorm section's
+        // Impassable class is a Recalc product the template lacks.
+        #[cfg(feature = "ares")]
+        self.ares_firestorm_restore_zone_classes(rules);
         if !self.rebuild_dynamic_navigation(rules) {
             return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
         }
@@ -2415,7 +2418,7 @@ impl Simulation {
                 spreads,
                 current_frame,
                 native_rect,
-            ))
+            )?)
     }
 }
 
@@ -2598,6 +2601,7 @@ mod tests {
                  Spread=23\n\
                  SpreadPercentage=1\n",
             );
+            let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
             let rules = RuleSet::from_ini(&ini).expect("post-load tiberium fixture rules");
             let registry = OverlayTypeRegistry::from_ini(&ini, None);
             let ore_id = registry.id_for_name("ORE").expect("fixture ORE id");
@@ -2707,12 +2711,14 @@ mod tests {
                                 &rules.tiberium_types,
                                 overlay.cell(ore_cell.0, ore_cell.1).overlay_id.unwrap()
                             )
+                            .unwrap()
                             .unwrap(),
                         ore_cell.0,
                         ore_cell.1,
                         41,
                         &mut throwaway_rng,
                     )
+                    .unwrap()
                     .is_some()
             );
             assert!(
@@ -2723,6 +2729,7 @@ mod tests {
                                 &rules.tiberium_types,
                                 overlay.cell(ore_cell.0, ore_cell.1).overlay_id.unwrap()
                             )
+                            .unwrap()
                             .unwrap(),
                         overlay,
                         registry,
@@ -2736,6 +2743,7 @@ mod tests {
                         true,
                         &mut throwaway_rng,
                     )
+                    .unwrap()
                     .is_some()
             );
         }
@@ -2871,7 +2879,8 @@ mod tests {
                         true,
                         7,
                         (8, 8),
-                    );
+                    )
+                    .unwrap();
                 assert_eq!(fresh.growth_entries, 2);
             }
             assert_eq!(sim.ore_growth_state.native_rect(), (8, 8));
@@ -2942,6 +2951,7 @@ mod tests {
                 live_grid.as_ref(),
                 (8, 8),
             )
+            .unwrap()
             .expect("overlay grid present");
             sim.overlay_grid = live_grid;
 
@@ -4872,6 +4882,7 @@ mod tests {
                 owner_fire_coordinate: Some(active_source),
                 owner_current_target: Some(active_target),
                 target_position: Some(active_endpoint),
+                ares: None,
                 target_is_unit: false,
             },
             None,
@@ -4884,6 +4895,7 @@ mod tests {
                 owner_fire_coordinate: Some(active_source),
                 owner_current_target: Some(active_target),
                 target_position: Some(moved_endpoint),
+                ares: None,
                 target_is_unit: false,
             },
             None,

@@ -681,12 +681,30 @@ fn factories_admit(
         return false;
     };
     task_force.entries.iter().all(|entry| {
-        let factory = rules
-            .object_in_category(
-                entry.member_type.category,
-                sim.interner.resolve(entry.member_type.id),
-            )
+        let object = rules.object_in_category(
+            entry.member_type.category,
+            sim.interner.resolve(entry.member_type.id),
+        );
+        // Ares 3.0 HouseClass_CanInstantiateTeam 100240D0 (hook 0x0050965E)
+        // fails an entry without a type (0x005096F1).
+        #[cfg(feature = "ares")]
+        if object.is_none() {
+            return false;
+        }
+        let factory = object
             .is_some_and(|obj| find_factory(sim, rules, owner, obj, true, true, false).is_some());
+        // The same hook admits a factory's entry only while the type's
+        // `BuildLimit=` leaves room for the entry's whole count, unless the
+        // house's difficulty has `[GlobalControls] AllowBypassBuildLimit`;
+        // otherwise the entry takes the no-factory path (0x00509671).
+        #[cfg(feature = "ares")]
+        let factory = factory
+            && object.is_some_and(|obj| {
+                sim.houses.get(&owner).is_some_and(|house| {
+                    rules.ares_ai_bypasses_build_limit(house.difficulty().table_index())
+                }) || crate::sim::production::ares_build_limit_remaining(sim, rules, owner, obj)
+                    >= entry.count
+            });
         if factory {
             return true;
         }

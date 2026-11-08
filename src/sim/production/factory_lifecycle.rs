@@ -10,8 +10,7 @@
 use super::CancelOutcome;
 use super::can_build::{check_build_limit, find_factory};
 use super::factory::{
-    AbandonedObject, EnqueueOutcome, FactoryHolder, held_time_to_build, time_to_build,
-    time_to_build_inputs,
+    AbandonedObject, EnqueueOutcome, FactoryHolder, held_time_to_build, object_time_to_build,
 };
 use super::production_tech::{
     factory_category_for_building, production_category_for_object, strip_keeps,
@@ -365,7 +364,7 @@ pub(super) fn start_active_production(
         .entities
         .get_mut(stable_id)?
         .record_production_start_price(start_price);
-    let time_to_build = time_to_build(&time_to_build_inputs(sim, rules, owner_id, obj));
+    let time_to_build = object_time_to_build(sim, rules, owner_id, obj);
     let frame = sim.session.binary_frame();
     let money = crate::sim::credit_income::available_money(&sim.houses, owner_id);
     sim.production
@@ -1097,6 +1096,13 @@ pub(in crate::sim) fn update_factory_queue(
     category: ProductionCategory,
     effects: FrameEffects<'_>,
 ) {
+    // Ares 3.0 HouseClass_Update_Factories_Queues 10025100 (hook 0x00509140)
+    // first runs the BuildingType/DontCare call again for BuildCat::Combat,
+    // so the defense strip's queue follows its construction yards too.
+    #[cfg(feature = "ares")]
+    if category == ProductionCategory::Building {
+        update_factory_queue(sim, rules, owner, ProductionCategory::Defense, effects);
+    }
     let queued: Vec<_> = sim
         .production
         .factories()

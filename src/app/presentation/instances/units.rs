@@ -1404,7 +1404,6 @@ fn rocket_draw_key_bits(
     let rocket = entity.locomotor.as_ref()?.rocket_runtime()?;
     let (block, _) = state
         .rules()?
-        .missile_spawn
         .rocket_block(sim.interner().resolve(entity.type_ref()));
     rocket.draw_key_bits(block)
 }
@@ -2727,16 +2726,23 @@ fn harvest_overlay<'a>(
     let facing = entity.body_facing_current(frame);
     let counter = entity.body_frame_counter.get();
     #[cfg(feature = "phobos")]
-    if let Some((anim, frames_per_dir)) = gather_animation(rules, object, sim, entity) {
-        let (type_id, palette_context) = anim
-            .map_or((HARVEST_OVERLAY_IMAGE, ShpPaletteContext::Legacy), |anim| {
-                (anim, ShpPaletteContext::Harvest)
+    match gather_animation(rules, object, sim, entity) {
+        Ok(Some((anim, frames_per_dir))) => {
+            let (type_id, palette_context) = anim
+                .map_or((HARVEST_OVERLAY_IMAGE, ShpPaletteContext::Legacy), |anim| {
+                    (anim, ShpPaletteContext::Harvest)
+                });
+            return Some(HarvestOverlay {
+                type_id,
+                palette_context,
+                frame: oregath_frame(counter, frame, facing, frames_per_dir)?,
             });
-        return Some(HarvestOverlay {
-            type_id,
-            palette_context,
-            frame: oregath_frame(counter, frame, facing, frames_per_dir)?,
-        });
+        }
+        Ok(None) => {}
+        Err(error) => {
+            log::warn!("Cannot draw ore gathering: {error}");
+            return None;
+        }
     }
     Some(HarvestOverlay {
         type_id: HARVEST_OVERLAY_IMAGE,
@@ -2757,33 +2763,41 @@ fn gather_animation<'a>(
     object: &'a crate::rules::object_type::ObjectType,
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
-) -> Option<(Option<&'a str>, i32)> {
+) -> Result<Option<(Option<&'a str>, i32)>, crate::rules::overlay_types::TiberiumImageError> {
     let gathering = object.ore_gathering();
-    let resource = crate::sim::tiberium::tiberium_cell_view(
-        sim.overlay_grid().as_ref()?,
+    let Some(grid) = sim.overlay_grid() else {
+        return Ok(None);
+    };
+    let Some(resource) = crate::sim::tiberium::tiberium_cell_view(
+        grid,
         rules.overlay_registry(),
         &rules.tiberium_types,
         (entity.position.rx(), entity.position.ry()),
-    )?;
-    let slot = if gathering.tiberiums.is_empty() {
-        0
-    } else {
-        gathering
-            .tiberiums
-            .iter()
-            .position(|index| *index == i32::from(resource.tiberium_type.0))?
+    )?
+    else {
+        return Ok(None);
     };
-    let anim = gathering.anims.get(slot).map(String::as_str);
-    // A slot past the shorter list, or a non-positive frame count, would read
-    // out of the vector or divide-fault the native `%`; both keep the stock
-    // 15-frame row here.
-    let frames = gathering
-        .frames_per_dir
-        .get(slot)
-        .filter(|frames| **frames > 0)
-        .copied()
-        .unwrap_or(STOCK_GATHER_FRAMES_PER_DIR);
-    Some((anim, frames))
+    Ok((|| {
+        let slot = if gathering.tiberiums.is_empty() {
+            0
+        } else {
+            gathering
+                .tiberiums
+                .iter()
+                .position(|index| *index == i32::from(resource.tiberium_type.0))?
+        };
+        let anim = gathering.anims.get(slot).map(String::as_str);
+        // A slot past the shorter list, or a non-positive frame count, would read
+        // out of the vector or divide-fault the native `%`; both keep the stock
+        // 15-frame row here.
+        let frames = gathering
+            .frames_per_dir
+            .get(slot)
+            .filter(|frames| **frames > 0)
+            .copied()
+            .unwrap_or(STOCK_GATHER_FRAMES_PER_DIR);
+        Some((anim, frames))
+    })())
 }
 
 /// The gather overlay's frame (`0x0073D1E2..0x0073D273`): `(Foot+0x538 + Frame)
@@ -2964,6 +2978,13 @@ mod tests {
             if int(&row["pixel_format"]) != 2 {
                 continue;
             }
+            // Ares 1004CEA0 (hook 0x73C143) replaces the stock deactivated
+            // halving with the DeactivateDim factors, which
+            // `unit_light_tests::ares_deactivate_dims_replace_the_stock_unit_halving`
+            // checks; these rows record the stock halving.
+            if cfg!(feature = "ares") && row["deactivated"].as_bool().unwrap() {
+                continue;
+            }
             let mut unit = GameEntity::test_default(1, "HTNK", "Russians", 10, 10);
             unit.berserk
                 .set_active_for_test(row["berzerk"].as_bool().unwrap());
@@ -3012,7 +3033,7 @@ mod tests {
             );
             compared += 1;
         }
-        assert_eq!(compared, 51);
+        assert_eq!(compared, if cfg!(feature = "ares") { 49 } else { 51 });
     }
 
     /// Retail `[AudioVisual] IronCurtainColor=0;4` reads 0 through ReadInt

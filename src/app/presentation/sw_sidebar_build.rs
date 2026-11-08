@@ -238,7 +238,8 @@ fn readiness_text<'a>(
     view: &crate::sim::superweapon::SuperWeaponView,
     labels: CameoStatusLabels<'a>,
 ) -> Option<&'a str> {
-    superweapon_status_label(view.display, labels).or(view.is_ready.then_some(labels.ready))
+    superweapon_status_label(Some(&view.display_name), view.display, labels)
+        .or(view.is_ready.then_some(labels.ready))
 }
 
 fn sprite_cameo(

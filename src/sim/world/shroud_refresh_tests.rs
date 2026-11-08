@@ -1824,7 +1824,8 @@ fn initial_house_sight_matches_original_update_tail() {
                         skirmish_session: None,
                         campaign_map: None,
                     },
-                );
+                )
+                .unwrap();
             });
             let events = startup["events"].as_array().unwrap();
             assert_eq!(

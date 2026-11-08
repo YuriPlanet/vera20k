@@ -1837,6 +1837,7 @@ fn collect_effect_names_includes_weapon_anim_entries() {
 [VehicleTypes]\n\n\
 [AircraftTypes]\n\n\
 [BuildingTypes]\n\n\
+[Animations]\n0=MGUN-N\n1=MGUN-NE\n2=MGUN-E\n3=MGUN-SE\n4=MGUN-S\n5=MGUN-SW\n6=MGUN-W\n7=MGUN-NW\n\n\
 [E1]\nStrength=125\nArmor=flak\nSpeed=4\nPrimary=TestWeapon\n\n\
 [TestWeapon]\nDamage=1\nWarhead=TestWH\nAnim=MGUN-N,MGUN-NE,MGUN-E,MGUN-SE,MGUN-S,MGUN-SW,MGUN-W,MGUN-NW\nOccupantAnim=UCFLASH\n\n\
 [TestWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
@@ -2386,7 +2387,7 @@ fn refreshed_sprites_upload_to_a_growth_page_and_leave_resident_ones_in_place() 
                     mip_level_count: 1,
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
                     usage: wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
                 },

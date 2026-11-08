@@ -283,6 +283,10 @@ fn render_cameo(
     {
         return Some(cameo);
     }
+    #[cfg(feature = "ares")]
+    let custom = techno_cameo_palette(type_id, &rules_image, rules, asset_manager);
+    #[cfg(feature = "ares")]
+    let palette = custom.as_ref().unwrap_or(palette);
     let resolved_image = rules
         .art()
         .resolve_effective_image_id(type_id, &rules_image);
@@ -347,6 +351,10 @@ fn render_alt_cameo(
             }
         }
     }
+    #[cfg(feature = "ares")]
+    let custom = techno_cameo_palette(type_id, &rules_image, rules, asset_manager);
+    #[cfg(feature = "ares")]
+    let palette = custom.as_ref().unwrap_or(palette);
     let alt_cameo = rules
         .art()
         .resolve_declared_alt_cameo_id(type_id, &rules_image)?;
@@ -355,6 +363,24 @@ fn render_alt_cameo(
     cameo.kind = CameoKind::Promoted;
     log::debug!("Sidebar alt cameo {} loaded from {}", type_id, shp_name);
     Some(cameo)
+}
+
+/// Ares StripClass_Draw_Main (1005E390, hook 0x6A9A2A): a techno's SHP
+/// cameo draws with its art `CameoPalette` when that file loads, else
+/// CAMEO.PAL. The `~~~` theater placeholder is not resolved here (the atlas
+/// is not built per theater), so such a name keeps CAMEO.PAL.
+#[cfg(feature = "ares")]
+fn techno_cameo_palette(
+    type_id: &str,
+    rules_image: &str,
+    rules: &RuleSet,
+    asset_manager: &AssetManager,
+) -> Option<Palette> {
+    rules
+        .art()
+        .resolve_declared_cameo_palette(type_id, rules_image)
+        .and_then(|name| asset_manager.get_ref(name))
+        .and_then(|data| Palette::from_bytes(data).ok())
 }
 
 /// Load a superweapon sidebar image SHP directly by name.
@@ -375,6 +401,15 @@ fn render_superweapon_cameo(
         cameo.kind = CameoKind::SuperWeapon;
         return Some(cameo);
     }
+    // Ares SidebarPalette (hooks 6A9948/6A9A2A): the type's own palette for
+    // its SHP cameo when the file loads, else CAMEO.PAL.
+    #[cfg(feature = "ares")]
+    let custom = sw
+        .sidebar_palette()
+        .and_then(|name| asset_manager.get_ref(name))
+        .and_then(|data| Palette::from_bytes(data).ok());
+    #[cfg(feature = "ares")]
+    let palette = custom.as_ref().unwrap_or(palette);
     if let Some(image_name) = sw.sidebar_image.as_deref() {
         let shp_name = format!("{image_name}.SHP");
         if let Some(data) = asset_manager.get_ref(&shp_name)
@@ -1018,6 +1053,84 @@ mod tests {
         #[cfg(not(feature = "phobos"))]
         {
             assert!(image.is_none());
+        }
+    }
+
+    /// Ares SidebarPalette (hooks 6A9948/6A9A2A): a loadable palette draws the
+    /// SW cameo SHP; a missing file keeps CAMEO.PAL.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn superweapon_sidebar_palette_draws_its_cameo() {
+        use crate::{
+            assets::asset_manager::AssetManager, assets::pal_file::Palette,
+            map::source::test_support::TestDirectory, rules::ini_parser::IniFile,
+            rules::ruleset::RuleSet,
+        };
+        let dir = TestDirectory::new("sw-sidebar-palette");
+        write_small_shp(&dir, "swicon.shp");
+        let mut pal = vec![0u8; 768];
+        pal[3..6].copy_from_slice(&[10, 20, 30]);
+        dir.write("swicon.pal", &pal);
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let cameo = Palette::from_rgb(|_| [1, 2, 3]);
+        let custom = Palette::from_bytes(&pal).unwrap();
+        for (key, palette) in [("swicon.pal", &custom), ("missing.pal", &cameo)] {
+            let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+                "[SuperWeaponTypes]\n0=Cell\n[Cell]\nSidebarImage=SWICON\nSidebarPalette={key}\n"
+            )))
+            .unwrap();
+            let sw = rules.super_weapon("Cell").unwrap();
+            let drawn = super::render_superweapon_cameo(sw, &assets, &cameo, &rules).unwrap();
+            let shp = assets.get_ref("SWICON.SHP").unwrap();
+            let expected = super::render_shp_frame0("Cell", shp, palette).unwrap();
+            assert_eq!(drawn.rgba, expected.rgba, "{key}");
+        }
+    }
+
+    /// Ares CameoPalette (StripClass_Draw_Main 1005E390, hook 0x6A9A2A): a
+    /// loadable art palette draws the type's SHP cameo and its AltCameo; a
+    /// missing file keeps CAMEO.PAL.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn techno_cameo_palette_draws_its_shp_cameos() {
+        use crate::{
+            assets::asset_manager::AssetManager,
+            assets::pal_file::Palette,
+            map::source::test_support::TestDirectory,
+            rules::{art_data::ArtRegistry, ini_parser::IniFile, ruleset::RuleSet},
+        };
+        let dir = TestDirectory::new("techno-cameo-palette");
+        write_old_cameos(&dir);
+        let mut pal = vec![0u8; 768];
+        pal[3..6].copy_from_slice(&[10, 20, 30]);
+        dir.write("tankicon.pal", &pal);
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let cameo = Palette::from_rgb(|_| [1, 2, 3]);
+        let custom = Palette::from_bytes(&pal).unwrap();
+        for (key, palette) in [("tankicon.pal", &custom), ("missing.pal", &cameo)] {
+            let art = IniFile::from_str(&format!(
+                "[TEST]\nCameo=OLDICON\nAltCameo=OLDALT\nCameoPalette={key}\n"
+            ));
+            let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+                &IniFile::from_str("[BuildingTypes]\n0=TEST\n[TEST]\nStrength=1\n"),
+                &art,
+            )
+            .unwrap();
+            rules.install_art_data(ArtRegistry::from_ini(&art));
+            for (drawn, file) in [
+                (
+                    super::render_cameo("TEST", &assets, &rules, &cameo),
+                    "OLDICON.SHP",
+                ),
+                (
+                    super::render_alt_cameo("TEST", &assets, &rules, &cameo),
+                    "OLDALT.SHP",
+                ),
+            ] {
+                let shp = assets.get_ref(file).unwrap();
+                let expected = super::render_shp_frame0("TEST", shp, palette).unwrap();
+                assert_eq!(drawn.unwrap().rgba, expected.rgba, "{key} {file}");
+            }
         }
     }
 

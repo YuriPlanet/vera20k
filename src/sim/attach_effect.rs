@@ -1443,7 +1443,7 @@ impl Simulation {
                             .as_ref()
                             .and_then(|terrain| terrain.cell(rx, ry))
                             .map_or(0, |cell| {
-                                i32::from(cell.level)
+                                i32::from(cell.level as i8)
                                     .wrapping_mul(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS)
                             });
                         let centre = crate::sim::cell_kernel::cell_center(

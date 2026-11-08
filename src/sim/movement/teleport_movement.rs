@@ -431,6 +431,14 @@ impl TeleportRuntime {
         self.resolved = Some(coord);
     }
 
+    /// Ares 3.0 InfantryClass_Remove_Teleport (1005CD50, hook 0x51DF27):
+    /// Limbo resets `+0x28` to the null coordinate, so the next REMOVE leaves
+    /// the Location's occupation instead of the old Marked one.
+    #[cfg(feature = "ares")]
+    pub(crate) fn forget_resolved_destination(&mut self) {
+        self.resolved = None;
+    }
+
     pub(super) fn stop(&mut self) {
         self.requested = false;
         if let Some(warp) = self.warp.as_mut() {
@@ -595,7 +603,19 @@ impl crate::sim::world::Simulation {
         {
             return Ok(false);
         }
-        if actor.parasite.is_paralyzed(self.session.binary_frame())
+        // Ares 3.0 TeleportLocomotionClass_ILocomotion_MoveTo_Deactivated
+        // (1005D3E0, hook 0x71810D), first: a deactivated owner, or one whose
+        // locomotor is powered off, refuses too.
+        #[cfg(feature = "ares")]
+        let ares_refuses = actor.deactivated.is_offline()
+            || !actor
+                .locomotor
+                .as_ref()
+                .is_some_and(|locomotor| locomotor.is_powered());
+        #[cfg(not(feature = "ares"))]
+        let ares_refuses = false;
+        if ares_refuses
+            || actor.parasite.is_paralyzed(self.session.binary_frame())
             || actor.is_warped_out()
             || actor.is_warping_in()
         {

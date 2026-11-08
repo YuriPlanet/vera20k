@@ -10,6 +10,7 @@
 //! - Part of render/ — depends on assets/ (SHP/Palette), render/batch (GPU upload).
 //! - Reads overlay data from map/ (OverlayEntry, TerrainObject).
 
+use crate::util::lookup_hash::LookupMap;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::OnceLock;
 
@@ -100,6 +101,26 @@ fn resolve_body_frame(requested: u8, frame_sizes: &[(u16, u16)]) -> Option<usize
 /// so the prefix can never drift between sides.
 pub const SMUDGE_KEY_PREFIX: &str = "__smudge::";
 
+const TIBERIUM_IMAGE_PREFIX: &str = "__tiberium::";
+
+/// DrawOverlay47F860..47F963 selects the SHP by Tiberium Image, but keeps
+/// the resource Convert (87F6B8) and the live resource draw offset. A selected
+/// sprite such as TRACKS01 may also be drawn ordinarily with another palette.
+pub fn tiberium_image_key(name: &str, frame: i32) -> OverlaySpriteKey {
+    OverlaySpriteKey {
+        name: format!("{TIBERIUM_IMAGE_PREFIX}{name}"),
+        frame,
+    }
+}
+
+fn overlay_body_key(name: String, frame: i32, tiberium: bool) -> OverlaySpriteKey {
+    if tiberium {
+        tiberium_image_key(&name, frame)
+    } else {
+        OverlaySpriteKey { name, frame }
+    }
+}
+
 /// Source identity for Terrain DrawIt's body frame, apart from overlay keys:
 /// a TerrainType draws its own image even when an OverlayType shares its name.
 pub fn terrain_body_key(name: &str, frame: i32) -> OverlaySpriteKey {
@@ -183,10 +204,13 @@ fn runtime_low_bridge_sprite_keys(
             continue;
         };
         for &frame in &frames {
-            keys.insert(OverlaySpriteKey {
-                name: name.clone(),
-                frame: i32::from(frame),
-            });
+            keys.insert(overlay_body_key(
+                name.clone(),
+                i32::from(frame),
+                overlay_registry
+                    .flags(overlay_id)
+                    .is_some_and(|flags| flags.tiberium),
+            ));
         }
     }
     keys
@@ -195,9 +219,11 @@ fn runtime_low_bridge_sprite_keys(
 /// Atlas keys reachable through the native flat/sloped resource selector.
 ///
 /// Active YR `CellClass__DrawOverlay_Body @ 0x0047F6A0` may draw any of the
-/// TiberiumClass's12 primary and8 extra images (no extras for Image2) while
+/// TiberiumClass's retained primary and extra images while
 /// retaining the Cell data byte. Preload the same range owner the display
 /// selector uses, including images absent from the current map pack.
+/// PlaceTiberium487266..48728C can also create any of its twelve flat slots
+/// as a live unflagged overlay, whose later draw takes the ordinary palette.
 fn runtime_tiberium_sprite_keys(
     overlay_registry: &OverlayTypeRegistry,
     tiberium_types: &TiberiumTypeRegistry,
@@ -205,15 +231,22 @@ fn runtime_tiberium_sprite_keys(
     let mut keys = HashSet::new();
     for ty in tiberium_types.types() {
         let variant_ids = overlay_registry.tiberium_display_variant_ids(ty);
-        for overlay_id in variant_ids {
-            let Some(name) = overlay_registry.name(overlay_id).map(str::to_owned) else {
+        for (variant, overlay_id) in variant_ids.enumerate() {
+            let Some(name) = overlay_registry.name(overlay_id as u8).map(str::to_owned) else {
                 continue;
             };
-            for frame in 0..ty.max_density {
-                keys.insert(OverlaySpriteKey {
-                    name: name.clone(),
-                    frame: i32::from(frame),
-                });
+            let ordinary_placement = variant < 12
+                && overlay_registry
+                    .flags(overlay_id as u8)
+                    .is_some_and(|flags| !flags.tiberium);
+            for frame in 0..ty.image().density_levels() {
+                keys.insert(tiberium_image_key(&name, frame));
+                if ordinary_placement {
+                    keys.insert(OverlaySpriteKey {
+                        name: name.clone(),
+                        frame,
+                    });
+                }
             }
         }
     }
@@ -246,10 +279,11 @@ fn runtime_crate_sprite_keys(
             && crate::map::bridge_facts::high_bridge_stamp_for_overlay(overlay_id).is_none()
             && let Some(name) = resolve_overlay_name_for_render(overlay_registry, overlay_id)
         {
-            keys.insert(OverlaySpriteKey {
+            keys.insert(overlay_body_key(
                 name,
-                frame: i32::from(CRATE_BODY_FRAME),
-            });
+                i32::from(CRATE_BODY_FRAME),
+                flags.tiberium,
+            ));
         }
     }
 
@@ -344,10 +378,13 @@ fn runtime_crate_sprite_keys(
                 continue;
             };
             for frame in frames {
-                keys.insert(OverlaySpriteKey {
-                    name: name.clone(),
-                    frame: i32::from(frame),
-                });
+                keys.insert(overlay_body_key(
+                    name.clone(),
+                    i32::from(frame),
+                    overlay_registry
+                        .flags(overlay_id)
+                        .is_some_and(|flags| flags.tiberium),
+                ));
             }
         }
     }
@@ -378,8 +415,9 @@ pub struct OverlaySpriteEntry {
 pub struct OverlayAtlas {
     /// The packed GPU texture.
     pub texture: BatchTexture,
-    /// Lookup: (name, frame) → UV rectangle + offset data.
-    entries: HashMap<OverlaySpriteKey, OverlaySpriteEntry>,
+    /// Lookup: (name, frame) → UV rectangle + offset data. Every drawn
+    /// overlay, terrain object and smudge looks its sprite up here.
+    entries: LookupMap<OverlaySpriteKey, OverlaySpriteEntry>,
     /// Union of every entry's rectangle, fixed with `entries` at construction.
     art_extent: crate::render::cell_window::ArtExtent,
     zshapes: Option<OverlayZShapes>,
@@ -522,15 +560,16 @@ pub(crate) fn build_overlay_atlas_on_device(
         if let Some(mapped_name) =
             resolve_overlay_name_for_render(overlay_registry, entry.overlay_id)
         {
-            needed.insert(OverlaySpriteKey {
-                name: mapped_name.clone(),
-                frame: i32::from(entry.frame),
-            });
+            let tiberium = overlay_registry
+                .flags(entry.overlay_id)
+                .is_some_and(|flags| flags.tiberium);
+            needed.insert(overlay_body_key(
+                mapped_name.clone(),
+                i32::from(entry.frame),
+                tiberium,
+            ));
             // Retain frame0 alongside the authored byte; lookups stay exact.
-            needed.insert(OverlaySpriteKey {
-                name: mapped_name,
-                frame: 0,
-            });
+            needed.insert(overlay_body_key(mapped_name, 0, tiberium));
         }
     }
 
@@ -579,10 +618,11 @@ pub(crate) fn build_overlay_atlas_on_device(
             let frame_count: u32 = wall_body_frame_count(flags.damage_levels);
             wall_frames_loaded += frame_count;
             for frame in 0..frame_count {
-                needed.insert(OverlaySpriteKey {
-                    name: mapped_name.clone(),
-                    frame: frame as i32,
-                });
+                needed.insert(overlay_body_key(
+                    mapped_name.clone(),
+                    frame as i32,
+                    flags.tiberium,
+                ));
             }
         }
     }
@@ -633,10 +673,16 @@ pub(crate) fn build_overlay_atlas_on_device(
     let mut load_fail_count: u32 = 0;
 
     for key in &needed {
-        let flags: OverlayTypeFlags = overlay_registry
-            .flags_by_name(&key.name)
+        let resource_image = key.name.strip_prefix(TIBERIUM_IMAGE_PREFIX);
+        let mut flags: OverlayTypeFlags = overlay_registry
+            .flags_by_name(resource_image.unwrap_or(&key.name))
             .cloned()
             .unwrap_or_default();
+        if resource_image.is_some() {
+            // The stored cell, not the selected type's flags, chose this
+            // drawing branch. This also keeps its -12 pixel body offset.
+            flags.tiberium = true;
+        }
         // Palette selection:
         // - Tiberium overlays → tiberium palette (e.g., temperat.pal), NO remap
         // - Walls/veins/veinhole → unit palette
@@ -839,7 +885,9 @@ fn render_overlay_sprite(
         load_overlay_shape(
             asset_manager,
             overlay_registry,
-            &key.name,
+            key.name
+                .strip_prefix(TIBERIUM_IMAGE_PREFIX)
+                .unwrap_or(&key.name),
             theater_ext,
             theater_name,
         )
@@ -1243,7 +1291,7 @@ fn pack_overlay_sprites(
 struct PackedOverlaySprites {
     rgba: Vec<u8>,
     source_indices: Vec<u8>,
-    entries: HashMap<OverlaySpriteKey, OverlaySpriteEntry>,
+    entries: LookupMap<OverlaySpriteKey, OverlaySpriteEntry>,
     width: u32,
     height: u32,
 }
@@ -1275,8 +1323,8 @@ fn pack_overlay_pixels(sprites: &[RenderedOverlay], max_texture_dim: u32) -> Pac
 
     let mut rgba: Vec<u8> = vec![0u8; (atlas_width * atlas_height * 4) as usize];
     let mut source_indices = vec![0u8; (atlas_width * atlas_height) as usize];
-    let mut entries: HashMap<OverlaySpriteKey, OverlaySpriteEntry> =
-        HashMap::with_capacity(plan.placements.len());
+    let mut entries: LookupMap<OverlaySpriteKey, OverlaySpriteEntry> =
+        LookupMap::with_capacity_and_hasher(plan.placements.len(), Default::default());
     let aw: f32 = atlas_width as f32;
     let ah: f32 = atlas_height as f32;
 
@@ -1326,7 +1374,7 @@ impl OverlayAtlas {
     pub(crate) fn from_test_texture(texture: BatchTexture) -> Self {
         Self {
             texture,
-            entries: HashMap::new(),
+            entries: LookupMap::default(),
             art_extent: Default::default(),
             zshapes: None,
         }
@@ -1448,7 +1496,7 @@ mod tests {
     use super::{
         MAX_OVERLAY_FRAME_COUNT, OverlaySpriteKey, resolve_body_frame, runtime_crate_sprite_keys,
         runtime_low_bridge_sprite_keys, runtime_tiberium_sprite_keys, stored_frame_offset,
-        wall_body_frame_count,
+        tiberium_image_key, wall_body_frame_count,
     };
     use crate::map::overlay::OverlayEntry;
     use crate::rules::crate_rules::CrateRules;
@@ -1705,15 +1753,9 @@ mod tests {
         };
         let resource_keys = runtime_crate_sprite_keys(&resource_registry, &resource_rules);
         for frame in 0..=11 {
-            assert!(resource_keys.contains(&OverlaySpriteKey {
-                name: "TIBBOX".to_owned(),
-                frame,
-            }));
+            assert!(resource_keys.contains(&tiberium_image_key("TIBBOX", frame)));
         }
-        assert!(resource_keys.contains(&OverlaySpriteKey {
-            name: "ROADTIB".to_owned(),
-            frame: 0,
-        }));
+        assert!(resource_keys.contains(&tiberium_image_key("ROADTIB", 0)));
         assert_eq!(resource_keys.len(), 13);
     }
 
@@ -1894,7 +1936,8 @@ mod tests {
             }
         }
         for name in resource_names {
-            text.push_str(&format!("[{name}]\nTiberium=yes\n"));
+            let flag = if name == "GEM01" { "no" } else { "yes" };
+            text.push_str(&format!("[{name}]\nTiberium={flag}\n"));
         }
         let ini = IniFile::from_str(&text);
         let overlays = OverlayTypeRegistry::from_ini(&ini, None);
@@ -1902,12 +1945,20 @@ mod tests {
 
         let keys = runtime_tiberium_sprite_keys(&overlays, &tiberiums);
 
-        assert_eq!(keys.len(), 288, "2 types * 12 images * 12 densities");
+        // PlaceTiberium487286 may select this unflagged flat slot. Its later
+        // DrawOverlay takes the ordinary branch, independently of resource
+        // cells that select the same SHP through their Image binding.
+        assert!(keys.contains(&OverlaySpriteKey {
+            name: "GEM01".into(),
+            frame: 11
+        }));
+        assert_eq!(
+            keys.len(),
+            300,
+            "288 resource keys plus 12 ordinary flat frames"
+        );
         for (name, frame) in [("TIB05", 8), ("GEM01", 11)] {
-            assert!(keys.contains(&OverlaySpriteKey {
-                name: name.to_string(),
-                frame,
-            }));
+            assert!(keys.contains(&tiberium_image_key(name, frame)));
         }
     }
 }

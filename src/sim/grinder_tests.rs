@@ -695,7 +695,8 @@ fn eaten_idles_when_its_grinder_expires_without_falling_back_to_hunt() {
         civ,
         &rules,
         crate::sim::world::ObjectAiCtx::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(
         sim.substrate
             .entities

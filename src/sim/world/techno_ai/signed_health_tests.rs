@@ -2,6 +2,11 @@ use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::game_entity::GameEntity;
 
+// The stock pulse these executions record; Ares 3.0 hooks 0x70BE80
+// (1004B2F0) and 0x6FA743 (1004B820) replace it with GetSelfHealAmount
+// (10044E80), which caps at Strength and never faults
+// (`ares_self_heal_tests`).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn original_selfheal_tail_and_192_height_rows_retain_art_and_mark_smoke() {
     use crate::rules::particle_system_type::ParticleSystemTypeId;
@@ -116,6 +121,7 @@ fn original_selfheal_tail_and_192_height_rows_retain_art_and_mark_smoke() {
     assert_eq!(checked, 228);
 }
 
+#[cfg(not(feature = "ares"))]
 fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     let input = &row["input"];
     let category = if input["kind"] == "building" {
@@ -157,6 +163,11 @@ fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     (sim, rules)
 }
 
+// The stock pulse these executions record; Ares 3.0 hooks 0x70BE80
+// (1004B2F0) and 0x6FA743 (1004B820) replace it with GetSelfHealAmount
+// (10044E80), which caps at Strength and never faults
+// (`ares_self_heal_tests`).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn production_self_heal_matches_original_signed_cadence_and_increment() {
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -221,6 +232,11 @@ fn production_self_heal_matches_original_signed_cadence_and_increment() {
     }
 }
 
+// The stock pulse these executions record; Ares 3.0 hooks 0x70BE80
+// (1004B2F0) and 0x6FA743 (1004B820) replace it with GetSelfHealAmount
+// (10044E80), which caps at Strength and never faults
+// (`ares_self_heal_tests`).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn whole_object_ai_keeps_wrapping_self_heal_and_signed_frame_period() {
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(

@@ -217,3 +217,57 @@ fn retail_mtnk_body_light_follows_bridge_arrival_and_ground_side_cell() {
     };
     sample(&scene, side, &cases[2]);
 }
+
+/// Ares UnitClass_DrawVXL_Deactivated1004CEA0 (hook73C143): the dim factors
+/// replace the stock halving, EMP first, then the operator test.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_deactivate_dims_replace_the_stock_unit_halving() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=TANK\n1=ROBO\n[ROBO]\nOperator=_ANY_\n\
+         [AudioVisual]\nDeactivateDimPowered=.25\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    let owner = sim.intern("OWNER");
+    for (id, name) in [(1, "TANK"), (2, "ROBO")] {
+        let kind = sim.intern(name);
+        sim.entities_mut_for_test()
+            .insert(GameEntity::new_at_frame_zero_for_test(
+                id,
+                40,
+                50,
+                0,
+                0,
+                owner,
+                Health::new(100),
+                kind,
+                EntityCategory::Unit,
+                0,
+                5,
+                true,
+            ));
+    }
+    let light = crate::render::palette_light::PaletteLight::color_scheme([1000; 3], 1000);
+    let level = |sim: &Simulation, id: u64| {
+        let unit = sim.entities().get(id).unwrap();
+        unit_voxel_effect_light(unit, [1.; 3], light, Some(&rules), sim, 0)
+            .1
+            .brightness()
+    };
+    assert_eq!(level(&sim, 1), 1000);
+    for id in [1, 2] {
+        sim.entities_mut_for_test()
+            .get_mut(id)
+            .unwrap()
+            .deactivated
+            .set_for_test(true);
+    }
+    assert_eq!(level(&sim, 1), 250, "DeactivateDimPowered, not 500");
+    assert_eq!(level(&sim, 2), 650, "an empty Operator hull uses 0.65");
+    sim.entities_mut_for_test()
+        .get_mut(1)
+        .unwrap()
+        .set_emp_remaining_for_test(3);
+    assert_eq!(level(&sim, 1), 800, "EMP's 0.8 takes precedence");
+}

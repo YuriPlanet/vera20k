@@ -9,8 +9,9 @@
 ///
 /// Field names map to the original record's documented offsets: coordinate at
 /// +0x00, height +0x08, velocity +0x10, rough probability +0x18, green +0x20,
-/// sand +0x28, region id +0x38, stamp +0x3C, shore-mask cache +0x40, water
-/// lock +0x45, visited +0x47, shore enable +0x4A, water/region flag +0x4B.
+/// sand +0x28, region id +0x38, stamp +0x3C, water lock +0x45, visited +0x47,
+/// water/region flag +0x4B. The record's shore-mask cache (+0x40) and shore
+/// enable (+0x4A) live in [`RmgScratch`]'s own arrays.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScratchCell {
     pub x: i16,
@@ -29,16 +30,11 @@ pub struct ScratchCell {
     /// Per-pass marker (blob candidate, patch id, BFS stamp). Starts 0 like
     /// the region field; the region stage resets it to -1.
     pub stamp: i32,
-    /// Cached shore neighbor-water mask; -1 = invalid (recompute).
-    pub shore_mask: i32,
     /// Set on cells that are water or water-adjacent. Locks them against
     /// height changes and patch placement.
     pub water_lock: bool,
     /// Visited marker for the tree-region walk.
     pub visited: bool,
-    /// Shore-tiler per-cell enable; defaults on. Cleared nowhere in the
-    /// paths ported so far, but the flag is real and gates mask computation.
-    pub shore_enable: bool,
     /// Water/region propagation flag written during water seeding, consumed
     /// by the region water pass, cleared on blob rollback.
     pub water_region: bool,
@@ -62,10 +58,8 @@ impl Default for ScratchCell {
             p_sand: 0.0,
             region: 0,
             stamp: 0,
-            shore_mask: -1,
             water_lock: false,
             visited: false,
-            shore_enable: true,
             water_region: false,
             lake_allow: false,
         }
@@ -73,10 +67,19 @@ impl Default for ScratchCell {
 }
 
 /// The generator's working grid plus the isometric diamond that bounds it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RmgScratch {
     width: usize,
     cells: Vec<ScratchCell>,
+    /// The shore tiler's per-cell cache (-1 = invalid, recompute) and enable
+    /// flag, the native record's +0x40 and +0x4A
+    /// (`MapClass::RmgShoreWaterMask @ 0x0057B210`), kept out of
+    /// [`ScratchCell`] and stored diagonal-major like
+    /// [`super::grid::RmgGrid`]: the tiler reads both on every cell of every
+    /// full-map pass in native (anti-diagonal) order, so a compact
+    /// consecutive layout is what keeps those passes in cache.
+    shore_masks: Vec<i32>,
+    shore_enables: Vec<bool>,
     diamond_min: i32,
     diamond_max: i32,
 }
@@ -106,9 +109,41 @@ impl RmgScratch {
         Self {
             width,
             cells,
+            shore_masks: vec![-1; 2 * width * width],
+            shore_enables: vec![true; 2 * width * width],
             diamond_min,
             diamond_max,
         }
+    }
+
+    fn shore_slot(&self, x: i32, y: i32) -> usize {
+        (x + y) as usize * self.width + x as usize
+    }
+
+    /// The cached shore neighbor-water mask; -1 = invalid (recompute).
+    pub fn shore_mask(&self, x: i32, y: i32) -> i32 {
+        self.shore_masks[self.shore_slot(x, y)]
+    }
+
+    pub fn set_shore_mask(&mut self, x: i32, y: i32, mask: i32) {
+        let slot = self.shore_slot(x, y);
+        self.shore_masks[slot] = mask;
+    }
+
+    /// Shore-tiler per-cell enable; defaults on. Cleared nowhere in the
+    /// paths ported so far, but the flag is real and gates mask computation.
+    pub fn shore_enable(&self, x: i32, y: i32) -> bool {
+        self.shore_enables[self.shore_slot(x, y)]
+    }
+
+    pub fn set_shore_enable(&mut self, x: i32, y: i32, enable: bool) {
+        let slot = self.shore_slot(x, y);
+        self.shore_enables[slot] = enable;
+    }
+
+    /// Re-enable the shore tiler on every cell.
+    pub fn enable_all_shores(&mut self) {
+        self.shore_enables.fill(true);
     }
 
     pub fn width(&self) -> usize {
@@ -174,9 +209,7 @@ impl RmgScratch {
 
     /// Invalidate every cached shore mask (the tiler's reset pass).
     pub fn invalidate_shore_masks(&mut self) {
-        for cell in &mut self.cells {
-            cell.shore_mask = -1;
-        }
+        self.shore_masks.fill(-1);
     }
 }
 
@@ -189,8 +222,9 @@ mod tests {
         let cell = ScratchCell::default();
         assert_eq!(cell.region, 0, "water-stage convention: 0 = free");
         assert_eq!(cell.stamp, 0);
-        assert_eq!(cell.shore_mask, -1, "mask cache starts invalid");
-        assert!(cell.shore_enable, "shore enable defaults on");
+        let scratch = RmgScratch::new(16, 4, 12);
+        assert_eq!(scratch.shore_mask(5, 5), -1, "mask cache starts invalid");
+        assert!(scratch.shore_enable(5, 5), "shore enable defaults on");
         assert!(!cell.water_lock);
         assert!(!cell.water_region);
         assert!(!cell.visited);

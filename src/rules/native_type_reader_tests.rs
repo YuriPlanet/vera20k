@@ -294,7 +294,15 @@ fn retail_particle_systems_bind_registered_particles() {
         .filter(|system| system.holds_what.is_none())
         .map(|system| system.name.as_str())
         .collect();
-    assert_eq!(unbound, ["SmallGreySmokeSys"]);
+    // Retail names SmallGreySmokeSys only in DamageParticleSystems=, which
+    // Ares reads Find-only (TechnoTypeClass_LoadFromINI_ListLength 1005BF90,
+    // hook 0x7125DF), so it allocates no such system.
+    let expected: &[&str] = if cfg!(feature = "ares") {
+        &[]
+    } else {
+        &["SmallGreySmokeSys"]
+    };
+    assert_eq!(unbound, expected);
 }
 
 #[test]
@@ -483,7 +491,9 @@ fn retail_references_publish_their_authored_names() {
 #[test]
 fn techno_references_read_none_as_null() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[BuildingTypes]\n0=YARD\n[YARD]\nFreeUnit=none\n\
+        // The listed types are registered for Ares's Find-only lists.
+        "[Animations]\n0=BOOM\n[VoxelAnims]\n0=TIRE\n[ParticleSystems]\n0=SMOKE\n\
+         [BuildingTypes]\n0=YARD\n[YARD]\nFreeUnit=none\n\
          [VehicleTypes]\n0=TANK\n\
          [TANK]\nUnloadingClass=none\nEnslaves=<none>\nNaturalParticleSystem=none\n\
          RefinerySmokeParticleSystem=<none>\nExplosion=none,BOOM\nDestroyAnim=<none>,BOOM\n\
@@ -514,7 +524,7 @@ fn techno_references_read_none_as_null() {
 #[test]
 fn warhead_debris_types_read_none_as_null() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[Warheads]\n0=WH\n[WH]\nDebrisTypes=none,TIRE,<none>\n",
+        "[VoxelAnims]\n0=TIRE\n[Warheads]\n0=WH\n[WH]\nDebrisTypes=none,TIRE,<none>\n",
     ))
     .unwrap();
 
@@ -531,7 +541,7 @@ fn warhead_debris_types_read_none_as_null() {
 #[test]
 fn weapon_anims_read_none_as_null() {
     let mut layers = RulesLayerStack::new(IniFile::from_str(
-        "[VehicleTypes]\n0=TANK\n[TANK]\nPrimary=GUN\nSecondary=ZAP\n\
+        "[Animations]\n0=GUNFIRE\n[VehicleTypes]\n0=TANK\n[TANK]\nPrimary=GUN\nSecondary=ZAP\n\
          [GUN]\nAnim=none,GUNFIRE\nOccupantAnim=none\nOpenToppedAnim=<none>\n\
          AttachedParticleSystem=SPARKS\n\
          [ZAP]\nAttachedParticleSystem=none\n",
@@ -875,7 +885,8 @@ fn scenario_reset_clears_the_rules_class_type_pointers_and_keeps_the_scalars() {
 #[test]
 fn general_type_references_read_none_as_null() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[General]\nOreTwinkle=none\nBarrelParticle=<none>\nNukeTakeOff=none\nWake=none\n\
+        // MCV is registered for Ares's Find-only BaseUnit read.
+        "[VehicleTypes]\n0=MCV\n[General]\nOreTwinkle=none\nBarrelParticle=<none>\nNukeTakeOff=none\nWake=none\n\
          DominatorWarhead=none\nChronoBlast=<none>\nWarpIn=none\nIronCurtainInvokeAnim=none\n\
          InfantryExplode=none\nMoveFlash=<none>\nParachute=none\nEngineer=none\n\
          AlliedCrew=<none>\nDamageFireTypes=none,FIRE1\nDeadBodies=<none>,BODY1\n\
@@ -961,7 +972,14 @@ fn type_lists_name_the_type_the_factory_found() {
 
     assert_eq!(rules.shipyard_types, ["GACNST"]);
     assert_eq!(rules.build_const_types, ["GACNST"]);
-    assert_eq!(rules.build_power_types, [&long[..24]]);
+    // Ares's Find-only Buf_AI read (1005B830, hook 0x672B0E) compares the
+    // whole token with the stored 24-byte ID, so the long name finds none.
+    let long_type: &[&str] = if cfg!(feature = "ares") {
+        &[]
+    } else {
+        &[&long[..24]]
+    };
+    assert_eq!(rules.build_power_types, long_type);
 }
 
 /// Retail RULESMD over ARTMD, alone and under each of the nine mode INIs
@@ -971,6 +989,8 @@ fn type_lists_name_the_type_the_factory_found() {
 /// deleted typed reads published, taken once on the base build. Each stack
 /// also runs after Full_Init's reset of the previous one's live state, as a
 /// later scenario does, and publishes the same references.
+// Ares reads these lists Find-only through ParseList (Misc/Bugfixes.Buffer.cpp).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn retail_published_references_are_pinned() {
     use crate::rules::retail_ini_fixture::{art_registry, retail_ini, retail_rules_and_art};

@@ -20,16 +20,18 @@ use std::hash::{Hash, Hasher};
 use crate::map::authored_overlay::NativeOverlayMapShape;
 use crate::map::basic::{BasicSection, SpecialFlagsSection};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
-use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::overlay_types::{OverlayTypeRegistry, TiberiumImageError};
+use crate::rules::ruleset::RuleSet;
 use crate::rules::tiberium_type::{TiberiumTypeId, TiberiumTypeRegistry};
 use crate::sim::overlay_grid::OverlayGrid;
+use crate::sim::overlay_mark_host::RuntimeOverlayError;
 use crate::sim::rng::SimRng;
 use crate::sim::tiberium::{
-    ADJACENT_OFFSETS, NativeCellObjectView, NewTiberiumAdmission, PlaceTiberiumContext,
-    TiberiumPlacementObjectContext, admit_new_tiberium_target, can_spread_tiberium, place_tiberium,
-    spread_tiberium,
+    ADJACENT_OFFSETS, NativeCellObjectView, NewTiberiumAdmission, TiberiumPlacementObjectContext,
+    admit_new_tiberium_target, can_spread_tiberium, place_tiberium, spread_tiberium,
 };
 use crate::sim::timer::CdTimer;
+use crate::sim::world::{FrameEffects, Simulation};
 use crate::util::native_heap::NativeHeap;
 use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering};
 
@@ -465,7 +467,6 @@ pub struct NativeSpreadProcessStats {
     pub placed_entries: u32,
     pub reinserted_entries: u32,
     pub bitmap_clears: u32,
-    overlay_constructions: Vec<crate::sim::world::OverlayConstructionReceipt>,
 }
 
 impl NativeSpreadProcessStats {
@@ -479,14 +480,6 @@ impl NativeSpreadProcessStats {
         self.placed_entries += other.placed_entries;
         self.reinserted_entries += other.reinserted_entries;
         self.bitmap_clears += other.bitmap_clears;
-        self.overlay_constructions
-            .extend(other.overlay_constructions);
-    }
-
-    pub(crate) fn into_overlay_constructions(
-        self,
-    ) -> Vec<crate::sim::world::OverlayConstructionReceipt> {
-        self.overlay_constructions
     }
 }
 
@@ -630,16 +623,18 @@ impl OreGrowthState {
         ry: u16,
         native_frame: u32,
         rng: &mut SimRng,
-    ) -> Option<NativeTiberiumQueueEntry> {
+    ) -> Result<Option<NativeTiberiumQueueEntry>, TiberiumImageError> {
         let cell = overlay_grid.cell(rx, ry);
         // 7235C1..7235E2: density admission precedes the signed ARRAY-counter
         // check, distinct from the processor's heap-count check. Rebuild does
         // not repeat admission; the original request can duplicate a seed.
         // Original execution/goldens: tools/spatial_oracle/ore_queue.{json,md}.
         if cell.overlay_data >= GROWTH_QUEUE_DENSITY_LIMIT {
-            return None;
+            return Ok(None);
         }
-        let class = self.native_tiberium.classes.get(type_id.0 as usize)?;
+        let Some(class) = self.native_tiberium.classes.get(type_id.0 as usize) else {
+            return Ok(None);
+        };
         if class.growth.array_len() as i64
             > i64::from(native_tiberium_queue_capacity(self.native_rect)) - 10
         {
@@ -652,9 +647,11 @@ impl OreGrowthState {
                 resolved_terrain,
                 growth_enabled,
                 &cells,
-            );
+            )?;
         }
-        let class = self.native_tiberium.classes.get_mut(type_id.0 as usize)?;
+        let Some(class) = self.native_tiberium.classes.get_mut(type_id.0 as usize) else {
+            return Ok(None);
+        };
         let entry = NativeTiberiumQueueEntry {
             rx,
             ry,
@@ -662,7 +659,7 @@ impl OreGrowthState {
         };
         class.growth.push(entry);
         class.growth_bitmap.insert((rx, ry));
-        Some(entry)
+        Ok(Some(entry))
     }
 
     /// `AddToSpreadQueue @ 0x00722AF0` with an explicit receiver (`this`):
@@ -685,8 +682,8 @@ impl OreGrowthState {
         native_frame: u32,
         spread_enabled: bool,
         rng: &mut SimRng,
-    ) -> Option<NativeTiberiumQueueEntry> {
-        can_spread_tiberium(
+    ) -> Result<Option<NativeTiberiumQueueEntry>, TiberiumImageError> {
+        if can_spread_tiberium(
             overlay_grid,
             overlay_registry,
             tiberium_types,
@@ -695,10 +692,16 @@ impl OreGrowthState {
             rx,
             ry,
             spread_enabled,
-        )?;
-        let class = self.native_tiberium.classes.get(store_type.0 as usize)?;
+        )?
+        .is_none()
+        {
+            return Ok(None);
+        }
+        let Some(class) = self.native_tiberium.classes.get(store_type.0 as usize) else {
+            return Ok(None);
+        };
         if class.spread_bitmap.contains(&(rx, ry)) {
-            return None;
+            return Ok(None);
         }
         // 722B12..722B43: both admission and receiver bitmap precede the
         // signed ARRAY-counter >= capacity-20 check. No post-rebuild dedupe:
@@ -718,7 +721,7 @@ impl OreGrowthState {
                 &occupied_cells,
                 spread_enabled,
                 &cells,
-            );
+            )?;
         }
         let class = &mut self.native_tiberium.classes[store_type.0 as usize];
         let entry = NativeTiberiumQueueEntry {
@@ -728,495 +731,7 @@ impl OreGrowthState {
         };
         class.spread.push(entry);
         class.spread_bitmap.insert((rx, ry));
-        Some(entry)
-    }
-
-    /// Process all due native growth queues through the shared cell mutation boundary.
-    pub fn tick_native_growth_driver(
-        &mut self,
-        overlay_grid: &mut OverlayGrid,
-        overlay_registry: &OverlayTypeRegistry,
-        tiberium_types: &TiberiumTypeRegistry,
-        resolved_terrain: Option<&ResolvedTerrainGrid>,
-        source_object_cells: &BTreeSet<(u16, u16)>,
-        live_objects: Option<TiberiumPlacementObjectContext<'_>>,
-        rng: &mut SimRng,
-        current_frame: u32,
-        growth_enabled: bool,
-        spread_enabled: bool,
-        tiberium_grows_flag: bool,
-        mut dirty_cells: Option<&mut crate::sim::dirty_cells::DirtyCells>,
-    ) -> NativeGrowthProcessStats {
-        // `0x00722C48`: `ScenarioClass+0x34A6` gates the whole driver.
-        if !growth_enabled {
-            return NativeGrowthProcessStats::default();
-        }
-        let due_ids: Vec<TiberiumTypeId> = self
-            .native_tiberium
-            .classes
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, class)| {
-                class
-                    .growth_timer
-                    .expired(current_frame as i32)
-                    .then(|| u8::try_from(idx).ok().map(TiberiumTypeId))
-                    .flatten()
-            })
-            .collect();
-        let mut stats = NativeGrowthProcessStats::default();
-        for type_id in due_ids {
-            stats.add(self.process_native_growth_for_type_with_placement(
-                type_id,
-                overlay_grid,
-                overlay_registry,
-                tiberium_types,
-                resolved_terrain,
-                source_object_cells,
-                live_objects,
-                rng,
-                current_frame,
-                growth_enabled,
-                spread_enabled,
-                dirty_cells.as_deref_mut(),
-            ));
-            if let (Some(class), Some(ty)) = (
-                self.native_tiberium.classes.get_mut(type_id.0 as usize),
-                tiberium_types.get(type_id),
-            ) {
-                // `0x00722C9E..0x00722CE3`: see `native_growth_timer_reload`.
-                class.growth_timer = CdTimer::started(
-                    current_frame as i32,
-                    native_growth_timer_reload(ty.growth, tiberium_grows_flag),
-                );
-            }
-        }
-        stats
-    }
-
-    /// Native `GrowthProcessor` for one tiberium type.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn process_native_growth_for_type(
-        &mut self,
-        type_id: TiberiumTypeId,
-        overlay_grid: &mut OverlayGrid,
-        overlay_registry: &OverlayTypeRegistry,
-        tiberium_types: &TiberiumTypeRegistry,
-        resolved_terrain: Option<&ResolvedTerrainGrid>,
-        source_object_cells: &BTreeSet<(u16, u16)>,
-        rng: &mut SimRng,
-        current_frame: u32,
-        spread_enabled: bool,
-    ) -> NativeGrowthProcessStats {
-        self.process_native_growth_for_type_with_placement(
-            type_id,
-            overlay_grid,
-            overlay_registry,
-            tiberium_types,
-            resolved_terrain,
-            source_object_cells,
-            None,
-            rng,
-            current_frame,
-            true,
-            spread_enabled,
-            None,
-        )
-    }
-
-    fn process_native_growth_for_type_with_placement(
-        &mut self,
-        type_id: TiberiumTypeId,
-        overlay_grid: &mut OverlayGrid,
-        overlay_registry: &OverlayTypeRegistry,
-        tiberium_types: &TiberiumTypeRegistry,
-        resolved_terrain: Option<&ResolvedTerrainGrid>,
-        source_object_cells: &BTreeSet<(u16, u16)>,
-        live_objects: Option<TiberiumPlacementObjectContext<'_>>,
-        rng: &mut SimRng,
-        current_frame: u32,
-        growth_enabled: bool,
-        spread_enabled: bool,
-        mut dirty_cells: Option<&mut crate::sim::dirty_cells::DirtyCells>,
-    ) -> NativeGrowthProcessStats {
-        let Some(ty) = tiberium_types.get(type_id) else {
-            return NativeGrowthProcessStats::default();
-        };
-        let class_idx = type_id.0 as usize;
-        let Some(class) = self.native_tiberium.classes.get(class_idx) else {
-            return NativeGrowthProcessStats::default();
-        };
-        // `GrowthProcessor @ 0x00722F00` entry gate (`0x00722F09..0x00722F36`):
-        // no heap, empty heap, or `GrowthPercentage <= 1e-05` returns.
-        if class.growth.is_empty() || !native_percentage_drives(ty.growth_percentage_bits) {
-            return NativeGrowthProcessStats::default();
-        }
-
-        let batch = native_processor_batch(
-            class.growth.len(),
-            ty.growth_percentage_bits,
-            GROWTH_BATCH_MIN,
-            GROWTH_BATCH_MAX,
-        );
-        let actual_attempts = signed_abs_mod_plus_one(rng.next_u32(), batch);
-        let mut stats = NativeGrowthProcessStats {
-            processor_calls: 1,
-            attempt_rng_draws: 1,
-            requested_attempts: actual_attempts.max(0) as u32,
-            ..NativeGrowthProcessStats::default()
-        };
-        // `0x00722F85..0x00722F9C`: `heap count > capacity - 2 * attempts`
-        // rebuilds this type's growth queue before the first pop.
-        {
-            let class = &self.native_tiberium.classes[class_idx];
-            let heap_count = class.growth.len() as i64;
-            let threshold = i64::from(class.growth.capacity())
-                - GROWTH_PROCESSOR_REBUILD_BATCH_FACTOR * i64::from(actual_attempts);
-            if threshold < heap_count {
-                let cells = native_rebuild_cells(self.native_rect, overlay_grid);
-                self.rebuild_growth_queue_for_type(
-                    type_id,
-                    overlay_grid,
-                    overlay_registry,
-                    tiberium_types,
-                    resolved_terrain,
-                    growth_enabled,
-                    &cells,
-                );
-            }
-        }
-
-        // `0x00722F9C..0x00722FEA`: the first root is popped before the
-        // attempts test, so a non-positive attempts word (`0x80000000` only)
-        // drops one entry and returns.
-        let mut pending = self.native_tiberium.classes[class_idx].growth.pop_root();
-        if pending.is_some() {
-            stats.popped_entries += 1;
-        }
-        if actual_attempts < 1 {
-            return stats;
-        }
-        let mut processed: i32 = 0;
-        while let Some(entry) = pending.take() {
-            let current_type = current_tiberium_type(
-                overlay_grid,
-                overlay_registry,
-                tiberium_types,
-                entry.rx,
-                entry.ry,
-            );
-            if current_type == Some(type_id) {
-                let spread_was_queued = self.native_tiberium.classes[class_idx]
-                    .spread_bitmap
-                    .contains(&(entry.rx, entry.ry));
-                let object_view = live_objects.map(|objects| objects.object_view());
-                // `CellClass::GrowTiberium @ 0x00483710` (= `PlaceTiberium(type,
-                // 1)`, whose existing-cell branch feeds `AddToSpreadQueue`). Its
-                // result is not consulted: the processor continues on the
-                // cell's data byte.
-                let placed = {
-                    let mut context = PlaceTiberiumContext {
-                        overlay_grid,
-                        ore_growth_state: self,
-                        overlay_registry,
-                        tiberium_types,
-                        resolved_terrain,
-                        source_object_cells,
-                        new_cell_admission: None,
-                        live_objects: object_view,
-                        rng,
-                        binary_frame: current_frame,
-                        growth_enabled,
-                        spread_enabled,
-                        dirty_cells: dirty_cells.as_deref_mut(),
-                    };
-                    place_tiberium(&mut context, (entry.rx, entry.ry), type_id, 1).is_some()
-                };
-                if placed {
-                    stats.grown_entries += 1;
-                    stats.spread_feed_calls += 1;
-                    if !spread_was_queued
-                        && self.native_tiberium.classes[class_idx]
-                            .spread_bitmap
-                            .contains(&(entry.rx, entry.ry))
-                    {
-                        stats.spread_enqueued_entries += 1;
-                    }
-                }
-
-                // `0x00723030..0x007230D8`: the literal `< 0x0B` reinsert
-                // test, one Scenario draw for the new priority
-                // (`abs(raw % 50)`), heap insert, flag set, then
-                // `AddToSpreadQueue` (a no-op when the `PlaceTiberium` feed
-                // already set the spread flag).
-                let post_data = overlay_grid.cell(entry.rx, entry.ry).overlay_data;
-                if post_data < GROWTH_QUEUE_DENSITY_LIMIT {
-                    let replacement = NativeTiberiumQueueEntry {
-                        rx: entry.rx,
-                        ry: entry.ry,
-                        priority_bits: processor_reinsert_priority(current_frame, rng.next_u32())
-                            .to_bits(),
-                    };
-                    let class = &mut self.native_tiberium.classes[class_idx];
-                    class.growth.push(replacement);
-                    class.growth_bitmap.insert((entry.rx, entry.ry));
-                    stats.reinserted_entries += 1;
-                    self.add_native_spread_queue_cell(
-                        type_id,
-                        overlay_grid,
-                        overlay_registry,
-                        tiberium_types,
-                        resolved_terrain,
-                        source_object_cells,
-                        object_view,
-                        entry.rx,
-                        entry.ry,
-                        current_frame,
-                        spread_enabled,
-                        rng,
-                    );
-                } else {
-                    self.native_tiberium.classes[class_idx]
-                        .growth_bitmap
-                        .remove(&(entry.rx, entry.ry));
-                    stats.full_clears += 1;
-                }
-            } else {
-                // A type mismatch drops the entry without touching the flag.
-                stats.stale_entries += 1;
-            }
-            // `0x0072312B..0x0072313E`: every popped entry counts as one
-            // attempt; the next root is popped only while attempts remain.
-            processed += 1;
-            if actual_attempts <= processed {
-                break;
-            }
-            pending = self.native_tiberium.classes[class_idx].growth.pop_root();
-            if pending.is_some() {
-                stats.popped_entries += 1;
-            }
-        }
-
-        stats
-    }
-
-    /// Process all due native spread queues.
-    pub fn tick_native_spread_driver(
-        &mut self,
-        overlay_grid: &mut OverlayGrid,
-        overlay_registry: &OverlayTypeRegistry,
-        tiberium_types: &TiberiumTypeRegistry,
-        resolved_terrain: Option<&ResolvedTerrainGrid>,
-        source_object_cells: &BTreeSet<(u16, u16)>,
-        live_objects: Option<TiberiumPlacementObjectContext<'_>>,
-        rng: &mut SimRng,
-        current_frame: u32,
-        growth_enabled: bool,
-        spread_enabled: bool,
-        mut dirty_cells: Option<&mut crate::sim::dirty_cells::DirtyCells>,
-    ) -> NativeSpreadProcessStats {
-        // `SpreadDriver_AllTypes @ 0x007221B0` tests only Basic growth
-        // (`0x007221B8`, Scenario+0x34A6). The spread bit gates sources inside
-        // the processor; due queues still consume budget RNG and reload while
-        // it is off. Executed histories: tools/spatial_oracle/ore_queue.md.
-        if !growth_enabled {
-            return NativeSpreadProcessStats::default();
-        }
-        let due_ids: Vec<TiberiumTypeId> = self
-            .native_tiberium
-            .classes
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, class)| {
-                class
-                    .spread_timer
-                    .expired(current_frame as i32)
-                    .then(|| u8::try_from(idx).ok().map(TiberiumTypeId))
-                    .flatten()
-            })
-            .collect();
-        let mut stats = NativeSpreadProcessStats::default();
-        let new_cell_admission = resolved_terrain
-            .zip(live_objects)
-            .map(|(terrain, objects)| NewTiberiumAdmission::runtime(terrain, objects));
-        for type_id in due_ids {
-            stats.add(self.process_native_spread_for_type_with_placement(
-                type_id,
-                overlay_grid,
-                overlay_registry,
-                tiberium_types,
-                resolved_terrain,
-                source_object_cells,
-                new_cell_admission,
-                rng,
-                current_frame,
-                spread_enabled,
-                dirty_cells.as_deref_mut(),
-            ));
-            if let (Some(class), Some(ty)) = (
-                self.native_tiberium.classes.get_mut(type_id.0 as usize),
-                tiberium_types.get(type_id),
-            ) {
-                // `SpreadDriver_AllTypes @ 0x00722205..0x00722227`: the raw
-                // `Spread=` int (`TiberiumClass+0x9C`) reloads the timer; no
-                // multiplier and no flag test on this driver.
-                class.spread_timer = CdTimer::started(current_frame as i32, ty.spread);
-            }
-        }
-        stats
-    }
-
-    fn process_native_spread_for_type_with_placement(
-        &mut self,
-        type_id: TiberiumTypeId,
-        overlay_grid: &mut OverlayGrid,
-        overlay_registry: &OverlayTypeRegistry,
-        tiberium_types: &TiberiumTypeRegistry,
-        resolved_terrain: Option<&ResolvedTerrainGrid>,
-        source_object_cells: &BTreeSet<(u16, u16)>,
-        new_cell_admission: Option<NewTiberiumAdmission<'_>>,
-        rng: &mut SimRng,
-        current_frame: u32,
-        spread_enabled: bool,
-        mut dirty_cells: Option<&mut crate::sim::dirty_cells::DirtyCells>,
-    ) -> NativeSpreadProcessStats {
-        let Some(ty) = tiberium_types.get(type_id) else {
-            return NativeSpreadProcessStats::default();
-        };
-        let class_idx = type_id.0 as usize;
-        if self.native_tiberium.classes.get(class_idx).is_none() {
-            return NativeSpreadProcessStats::default();
-        };
-        // `SpreadProcessor @ 0x00722440` entry gate: empty heap or
-        // `SpreadPercentage <= 1e-05` returns.
-        if self.native_tiberium.classes[class_idx].spread.is_empty()
-            || !native_percentage_drives(ty.spread_percentage_bits)
-        {
-            return NativeSpreadProcessStats::default();
-        }
-
-        let batch = native_processor_batch(
-            self.native_tiberium.classes[class_idx].spread.len(),
-            ty.spread_percentage_bits,
-            SPREAD_BATCH_MIN,
-            SPREAD_BATCH_MAX,
-        );
-        let budget = signed_abs_mod_plus_one(rng.next_u32(), batch);
-        let mut stats = NativeSpreadProcessStats {
-            processor_calls: 1,
-            budget_rng_draws: 1,
-            requested_budget: budget.max(0) as u32,
-            ..NativeSpreadProcessStats::default()
-        };
-        // `0x007224C9..0x007224E3`: `heap count > capacity - 0x14` rebuilds
-        // this type's spread queue before the first pop.
-        {
-            let class = &self.native_tiberium.classes[class_idx];
-            let heap_count = class.spread.len() as i64;
-            if i64::from(class.spread.capacity()) - SPREAD_PROCESSOR_REBUILD_SLACK < heap_count {
-                let cells = native_rebuild_cells(self.native_rect, overlay_grid);
-                let occupied_cells = native_occupied_cells(
-                    source_object_cells,
-                    new_cell_admission.map(|admission| admission.live_objects().object_view()),
-                );
-                self.rebuild_spread_queue_for_type(
-                    type_id,
-                    overlay_grid,
-                    overlay_registry,
-                    tiberium_types,
-                    resolved_terrain,
-                    &occupied_cells,
-                    spread_enabled,
-                    &cells,
-                );
-            }
-        }
-        // `0x007224E8..0x0072252E`: the first root is popped before the budget
-        // test (a non-positive budget word drops it and returns).
-        let mut pending = self.native_tiberium.classes[class_idx].spread.pop_root();
-        if pending.is_some() {
-            stats.popped_entries += 1;
-        }
-        if budget < 1 {
-            return stats;
-        }
-        let mut processed_sources: i32 = 0;
-        while let Some(entry) = pending.take() {
-            let valid_targets = count_native_spread_targets(
-                overlay_grid,
-                source_object_cells,
-                new_cell_admission,
-                entry.rx,
-                entry.ry,
-            );
-            if valid_targets == 0 {
-                self.native_tiberium.classes[class_idx]
-                    .spread_bitmap
-                    .remove(&(entry.rx, entry.ry));
-                stats.zero_target_entries += 1;
-                stats.bitmap_clears += 1;
-                // Zero targets spend no budget; the loop pops the next root.
-                pending = self.native_tiberium.classes[class_idx].spread.pop_root();
-                if pending.is_some() {
-                    stats.popped_entries += 1;
-                }
-                continue;
-            }
-
-            stats.spread_calls += 1;
-            processed_sources += 1;
-            // `CellClass::SpreadTiberium @ 0x00483780` spreads the cell's
-            // CURRENT TiberiumClass (a stale entry of another class still
-            // spreads whatever now sits there; an empty cell fails its own
-            // `CanSpreadTiberium` re-check without a draw).
-            let mut placement = PlaceTiberiumContext {
-                overlay_grid,
-                ore_growth_state: self,
-                overlay_registry,
-                tiberium_types,
-                resolved_terrain,
-                source_object_cells,
-                new_cell_admission,
-                live_objects: new_cell_admission
-                    .map(|admission| admission.live_objects().object_view()),
-                rng,
-                binary_frame: current_frame,
-                growth_enabled: true,
-                spread_enabled,
-                dirty_cells: dirty_cells.as_deref_mut(),
-            };
-            if let Some(placed) = spread_tiberium(&mut placement, (entry.rx, entry.ry), false, None)
-            {
-                stats.placed_entries += 1;
-                stats
-                    .overlay_constructions
-                    .extend(placed.into_overlay_construction());
-            }
-
-            // `0x0072259A..0x00722614`: more than one valid target reinserts
-            // the source at priority 0 without an RNG draw.
-            if valid_targets > 1 {
-                let class = &mut self.native_tiberium.classes[class_idx];
-                class.spread.push(NativeTiberiumQueueEntry {
-                    rx: entry.rx,
-                    ry: entry.ry,
-                    priority_bits: 0.0f32.to_bits(),
-                });
-                class.spread_bitmap.insert((entry.rx, entry.ry));
-                stats.reinserted_entries += 1;
-            }
-            // `0x00722619..0x00722630`: the budget is checked after each
-            // processed source; the next root is popped only while it remains.
-            if budget <= processed_sources {
-                break;
-            }
-            pending = self.native_tiberium.classes[class_idx].spread.pop_root();
-            if pending.is_some() {
-                stats.popped_entries += 1;
-            }
-        }
-
-        stats
+        Ok(Some(entry))
     }
 
     /// Rebuild native growth then spread queues from the current cells.
@@ -1248,7 +763,7 @@ impl OreGrowthState {
         tiberium_spreads_enabled: bool,
         current_frame: u32,
         native_rect: (u16, u16),
-    ) -> NativeTiberiumRebuildStats {
+    ) -> Result<NativeTiberiumRebuildStats, TiberiumImageError> {
         self.native_rect = native_rect;
         self.reset_native_tiberium_classes(tiberium_types.len(), current_frame);
         let cells = native_rebuild_cells(native_rect, overlay_grid);
@@ -1262,7 +777,7 @@ impl OreGrowthState {
                 resolved_terrain,
                 basic_growth_enabled,
                 &cells,
-            );
+            )?;
         }
         for ty in tiberium_types.types() {
             stats.spread_entries += self.rebuild_spread_queue_for_type(
@@ -1274,9 +789,9 @@ impl OreGrowthState {
                 occupied_cells,
                 tiberium_spreads_enabled,
                 &cells,
-            );
+            )?;
         }
-        stats
+        Ok(stats)
     }
 
     /// `TiberiumClass::RebuildGrowthQueue @ 0x007233A0`: reset this type's
@@ -1292,19 +807,19 @@ impl OreGrowthState {
         resolved_terrain: Option<&ResolvedTerrainGrid>,
         growth_enabled: bool,
         cells: &[(u16, u16)],
-    ) -> usize {
+    ) -> Result<usize, TiberiumImageError> {
         let capacity = native_tiberium_queue_capacity(self.native_rect);
         let Some(ty) = tiberium_types.get(type_id) else {
-            return 0;
+            return Ok(0);
         };
         let Some(class) = self.native_tiberium.classes.get_mut(type_id.0 as usize) else {
-            return 0;
+            return Ok(0);
         };
         class.growth.reset_for_rebuild(capacity);
         class.growth_bitmap.clear();
         let mut seeded = 0;
         for &(rx, ry) in cells {
-            if current_tiberium_type(overlay_grid, overlay_registry, tiberium_types, rx, ry)
+            if current_tiberium_type(overlay_grid, overlay_registry, tiberium_types, rx, ry)?
                 != Some(type_id)
                 || !native_can_grow_tiberium(
                     ty,
@@ -1324,7 +839,7 @@ impl OreGrowthState {
             class.growth_bitmap.insert((rx, ry));
             seeded += 1;
         }
-        seeded
+        Ok(seeded)
     }
 
     /// `TiberiumClass::RebuildSpreadQueue @ 0x007228B0`: the spread twin,
@@ -1339,10 +854,10 @@ impl OreGrowthState {
         occupied_cells: &BTreeSet<(u16, u16)>,
         spread_enabled: bool,
         cells: &[(u16, u16)],
-    ) -> usize {
+    ) -> Result<usize, TiberiumImageError> {
         let capacity = native_tiberium_queue_capacity(self.native_rect);
         if tiberium_types.get(type_id).is_none() {
-            return 0;
+            return Ok(0);
         }
         if self
             .native_tiberium
@@ -1350,7 +865,7 @@ impl OreGrowthState {
             .get(type_id.0 as usize)
             .is_none()
         {
-            return 0;
+            return Ok(0);
         }
         {
             let class = &mut self.native_tiberium.classes[type_id.0 as usize];
@@ -1361,7 +876,7 @@ impl OreGrowthState {
         for &(rx, ry) in cells {
             // `RebuildSpreadQueue` alone tests `GetTiberiumType == class`
             // before `CanSpreadTiberium`.
-            if current_tiberium_type(overlay_grid, overlay_registry, tiberium_types, rx, ry)
+            if current_tiberium_type(overlay_grid, overlay_registry, tiberium_types, rx, ry)?
                 != Some(type_id)
             {
                 continue;
@@ -1375,7 +890,7 @@ impl OreGrowthState {
                 rx,
                 ry,
                 spread_enabled,
-            )
+            )?
             .is_none()
             {
                 continue;
@@ -1389,7 +904,7 @@ impl OreGrowthState {
             class.spread_bitmap.insert((rx, ry));
             seeded += 1;
         }
-        seeded
+        Ok(seeded)
     }
 
     /// Native `ClearSpreadBitmaps_AllTypes` for one removed cell. Heap entries
@@ -1420,7 +935,7 @@ impl OreGrowthState {
         native_frame: u32,
         spread_enabled: bool,
         rng: &mut SimRng,
-    ) -> usize {
+    ) -> Result<usize, TiberiumImageError> {
         let map_height = self.effective_map_height();
         // `Reduce_Tiberium @ 0x00480A80` offers each direction to
         // `Cell_in_bounds_check @ 0x00568300`, the MapRect diamond, not a
@@ -1458,13 +973,13 @@ impl OreGrowthState {
                     native_frame,
                     spread_enabled,
                     rng,
-                )
+                )?
                 .is_some()
             {
                 inserted += 1;
             }
         }
-        inserted
+        Ok(inserted)
     }
 
     fn effective_map_height(&self) -> u16 {
@@ -1558,7 +1073,7 @@ fn native_can_grow_tiberium(
 ) -> bool {
     growth_enabled
         && cell_is_flat(resolved_terrain, cell.0, cell.1)
-        && overlay_data < ty.max_density.saturating_sub(1)
+        && i32::from(overlay_data) < ty.image().density_levels().wrapping_sub(1)
         && native_percentage_admits(ty.growth_percentage_bits)
 }
 
@@ -1600,8 +1115,10 @@ fn current_tiberium_type(
     tiberium_types: &TiberiumTypeRegistry,
     rx: u16,
     ry: u16,
-) -> Option<TiberiumTypeId> {
-    let overlay_id = overlay_grid.cell(rx, ry).overlay_id?;
+) -> Result<Option<TiberiumTypeId>, TiberiumImageError> {
+    let Some(overlay_id) = overlay_grid.cell(rx, ry).overlay_id else {
+        return Ok(None);
+    };
     overlay_registry.tiberium_type_for_overlay(tiberium_types, overlay_id)
 }
 
@@ -1654,6 +1171,720 @@ fn growth_queue_priority_delay(raw: u32) -> i32 {
     (raw as i32)
         .wrapping_abs()
         .wrapping_rem(GROWTH_QUEUE_PRIORITY_WINDOW as i32)
+}
+
+/// The scheduling control flow borrows the world so a placement can execute
+/// Mark's existing synchronous callbacks. Queue storage and pure rebuild logic
+/// remain private to OreGrowthState in this module. No field is extracted from
+/// Simulation while an Anim/Mark callback can re-enter that owner.
+impl Simulation {
+    pub(crate) fn tick_native_growth_driver(
+        &mut self,
+        rules: &RuleSet,
+        overlay_registry: &OverlayTypeRegistry,
+        effects: FrameEffects<'_>,
+    ) -> Result<NativeGrowthProcessStats, RuntimeOverlayError> {
+        let tiberium_types = &rules.tiberium_types;
+        let current_frame = self.session.binary_frame();
+        let growth_enabled = self.ore_growth_config.grows();
+        let tiberium_grows_flag = self.ore_growth_config.tiberium_grows_flag();
+
+        // `0x00722C48`: `ScenarioClass+0x34A6` gates the whole driver.
+        if !growth_enabled {
+            return Ok(NativeGrowthProcessStats::default());
+        }
+        let due_ids: Vec<TiberiumTypeId> = self
+            .ore_growth_state
+            .native_tiberium
+            .classes
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, class)| {
+                class
+                    .growth_timer
+                    .expired(current_frame as i32)
+                    .then(|| u8::try_from(idx).ok().map(TiberiumTypeId))
+                    .flatten()
+            })
+            .collect();
+        let mut stats = NativeGrowthProcessStats::default();
+        for type_id in due_ids {
+            stats.add(self.process_native_growth_for_type_with_placement(
+                type_id,
+                rules,
+                overlay_registry,
+                effects,
+            )?);
+            if let (Some(class), Some(ty)) = (
+                self.ore_growth_state
+                    .native_tiberium
+                    .classes
+                    .get_mut(type_id.0 as usize),
+                tiberium_types.get(type_id),
+            ) {
+                // `0x00722C9E..0x00722CE3`: see `native_growth_timer_reload`.
+                class.growth_timer = CdTimer::started(
+                    current_frame as i32,
+                    native_growth_timer_reload(ty.growth, tiberium_grows_flag),
+                );
+            }
+        }
+        Ok(stats)
+    }
+
+    pub(crate) fn process_native_growth_for_type_with_placement(
+        &mut self,
+        type_id: TiberiumTypeId,
+        rules: &RuleSet,
+        overlay_registry: &OverlayTypeRegistry,
+        effects: FrameEffects<'_>,
+    ) -> Result<NativeGrowthProcessStats, RuntimeOverlayError> {
+        let tiberium_types = &rules.tiberium_types;
+        let current_frame = self.session.binary_frame();
+        let growth_enabled = self.ore_growth_config.grows();
+        let spread_enabled = self.ore_growth_config.spreads();
+
+        let Some(ty) = tiberium_types.get(type_id) else {
+            return Ok(NativeGrowthProcessStats::default());
+        };
+        let class_idx = type_id.0 as usize;
+        let Some(class) = self.ore_growth_state.native_tiberium.classes.get(class_idx) else {
+            return Ok(NativeGrowthProcessStats::default());
+        };
+        // `GrowthProcessor @ 0x00722F00` entry gate (`0x00722F09..0x00722F36`):
+        // no heap, empty heap, or `GrowthPercentage <= 1e-05` returns.
+        if class.growth.is_empty() || !native_percentage_drives(ty.growth_percentage_bits) {
+            return Ok(NativeGrowthProcessStats::default());
+        }
+
+        let batch = native_processor_batch(
+            class.growth.len(),
+            ty.growth_percentage_bits,
+            GROWTH_BATCH_MIN,
+            GROWTH_BATCH_MAX,
+        );
+        let actual_attempts = signed_abs_mod_plus_one(self.scenario_rng.next_u32(), batch);
+        let mut stats = NativeGrowthProcessStats {
+            processor_calls: 1,
+            attempt_rng_draws: 1,
+            requested_attempts: actual_attempts.max(0) as u32,
+            ..NativeGrowthProcessStats::default()
+        };
+        // `0x00722F85..0x00722F9C`: `heap count > capacity - 2 * attempts`
+        // rebuilds this type's growth queue before the first pop.
+        {
+            let class = &self.ore_growth_state.native_tiberium.classes[class_idx];
+            let heap_count = class.growth.len() as i64;
+            let threshold = i64::from(class.growth.capacity())
+                - GROWTH_PROCESSOR_REBUILD_BATCH_FACTOR * i64::from(actual_attempts);
+            if threshold < heap_count {
+                let cells = native_rebuild_cells(
+                    self.ore_growth_state.native_rect,
+                    self.overlay_grid
+                        .as_ref()
+                        .expect("ore driver has a live grid"),
+                );
+                self.ore_growth_state.rebuild_growth_queue_for_type(
+                    type_id,
+                    self.overlay_grid
+                        .as_ref()
+                        .expect("ore driver has a live grid"),
+                    overlay_registry,
+                    tiberium_types,
+                    self.resolved_terrain.as_ref(),
+                    growth_enabled,
+                    &cells,
+                )?;
+            }
+        }
+
+        // `0x00722F9C..0x00722FEA`: the first root is popped before the
+        // attempts test, so a non-positive attempts word (`0x80000000` only)
+        // drops one entry and returns.
+        let mut pending = self.ore_growth_state.native_tiberium.classes[class_idx]
+            .growth
+            .pop_root();
+        if pending.is_some() {
+            stats.popped_entries += 1;
+        }
+        if actual_attempts < 1 {
+            return Ok(stats);
+        }
+        let mut processed: i32 = 0;
+        while let Some(entry) = pending.take() {
+            let current_type = current_tiberium_type(
+                self.overlay_grid
+                    .as_ref()
+                    .expect("ore driver has a live grid"),
+                overlay_registry,
+                tiberium_types,
+                entry.rx,
+                entry.ry,
+            )?;
+            if current_type == Some(type_id) {
+                let spread_was_queued = self.ore_growth_state.native_tiberium.classes[class_idx]
+                    .spread_bitmap
+                    .contains(&(entry.rx, entry.ry));
+                let placed = place_tiberium(
+                    self,
+                    rules,
+                    overlay_registry,
+                    (entry.rx, entry.ry),
+                    type_id,
+                    1,
+                    effects,
+                )?
+                .is_some();
+                if placed {
+                    stats.grown_entries += 1;
+                    stats.spread_feed_calls += 1;
+                    if !spread_was_queued
+                        && self.ore_growth_state.native_tiberium.classes[class_idx]
+                            .spread_bitmap
+                            .contains(&(entry.rx, entry.ry))
+                    {
+                        stats.spread_enqueued_entries += 1;
+                    }
+                }
+
+                // `0x00723030..0x007230D8`: the literal `< 0x0B` reinsert
+                // test, one Scenario draw for the new priority
+                // (`abs(raw % 50)`), heap insert, flag set, then
+                // `AddToSpreadQueue` (a no-op when the `PlaceTiberium` feed
+                // already set the spread flag).
+                let post_data = self
+                    .overlay_grid
+                    .as_ref()
+                    .expect("ore driver has a live grid")
+                    .cell(entry.rx, entry.ry)
+                    .overlay_data;
+                if post_data < GROWTH_QUEUE_DENSITY_LIMIT {
+                    let replacement = NativeTiberiumQueueEntry {
+                        rx: entry.rx,
+                        ry: entry.ry,
+                        priority_bits: processor_reinsert_priority(
+                            current_frame,
+                            self.scenario_rng.next_u32(),
+                        )
+                        .to_bits(),
+                    };
+                    let class = &mut self.ore_growth_state.native_tiberium.classes[class_idx];
+                    class.growth.push(replacement);
+                    class.growth_bitmap.insert((entry.rx, entry.ry));
+                    stats.reinserted_entries += 1;
+                    self.ore_growth_state.add_native_spread_queue_cell(
+                        type_id,
+                        self.overlay_grid
+                            .as_ref()
+                            .expect("ore driver has a live grid"),
+                        overlay_registry,
+                        tiberium_types,
+                        self.resolved_terrain.as_ref(),
+                        self.terrain_objects.spawning_cells(),
+                        Some(NativeCellObjectView::new(
+                            &self.substrate.occupancy,
+                            self.terrain_objects.cell_index(),
+                        )),
+                        entry.rx,
+                        entry.ry,
+                        current_frame,
+                        spread_enabled,
+                        &mut self.scenario_rng,
+                    )?;
+                } else {
+                    self.ore_growth_state.native_tiberium.classes[class_idx]
+                        .growth_bitmap
+                        .remove(&(entry.rx, entry.ry));
+                    stats.full_clears += 1;
+                }
+            } else {
+                // A type mismatch drops the entry without touching the flag.
+                stats.stale_entries += 1;
+            }
+            // `0x0072312B..0x0072313E`: every popped entry counts as one
+            // attempt; the next root is popped only while attempts remain.
+            processed += 1;
+            if actual_attempts <= processed {
+                break;
+            }
+            pending = self.ore_growth_state.native_tiberium.classes[class_idx]
+                .growth
+                .pop_root();
+            if pending.is_some() {
+                stats.popped_entries += 1;
+            }
+        }
+
+        Ok(stats)
+    }
+
+    pub(crate) fn tick_native_spread_driver(
+        &mut self,
+        rules: &RuleSet,
+        overlay_registry: &OverlayTypeRegistry,
+        effects: FrameEffects<'_>,
+    ) -> Result<NativeSpreadProcessStats, RuntimeOverlayError> {
+        let tiberium_types = &rules.tiberium_types;
+        let current_frame = self.session.binary_frame();
+        let growth_enabled = self.ore_growth_config.grows();
+
+        // `SpreadDriver_AllTypes @ 0x007221B0` tests only Basic growth
+        // (`0x007221B8`, Scenario+0x34A6). The spread bit gates sources inside
+        // the processor; due queues still consume budget RNG and reload while
+        // it is off. Executed histories: tools/spatial_oracle/ore_queue.md.
+        if !growth_enabled {
+            return Ok(NativeSpreadProcessStats::default());
+        }
+        let due_ids: Vec<TiberiumTypeId> = self
+            .ore_growth_state
+            .native_tiberium
+            .classes
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, class)| {
+                class
+                    .spread_timer
+                    .expired(current_frame as i32)
+                    .then(|| u8::try_from(idx).ok().map(TiberiumTypeId))
+                    .flatten()
+            })
+            .collect();
+        let mut stats = NativeSpreadProcessStats::default();
+        for type_id in due_ids {
+            stats.add(self.process_native_spread_for_type_with_placement(
+                type_id,
+                rules,
+                overlay_registry,
+                effects,
+            )?);
+            if let (Some(class), Some(ty)) = (
+                self.ore_growth_state
+                    .native_tiberium
+                    .classes
+                    .get_mut(type_id.0 as usize),
+                tiberium_types.get(type_id),
+            ) {
+                // `SpreadDriver_AllTypes @ 0x00722205..0x00722227`: the raw
+                // `Spread=` int (`TiberiumClass+0x9C`) reloads the timer; no
+                // multiplier and no flag test on this driver.
+                class.spread_timer = CdTimer::started(current_frame as i32, ty.spread);
+            }
+        }
+        Ok(stats)
+    }
+
+    pub(crate) fn process_native_spread_for_type_with_placement(
+        &mut self,
+        type_id: TiberiumTypeId,
+        rules: &RuleSet,
+        overlay_registry: &OverlayTypeRegistry,
+        effects: FrameEffects<'_>,
+    ) -> Result<NativeSpreadProcessStats, RuntimeOverlayError> {
+        let tiberium_types = &rules.tiberium_types;
+        let spread_enabled = self.ore_growth_config.spreads();
+
+        let Some(ty) = tiberium_types.get(type_id) else {
+            return Ok(NativeSpreadProcessStats::default());
+        };
+        let class_idx = type_id.0 as usize;
+        if self
+            .ore_growth_state
+            .native_tiberium
+            .classes
+            .get(class_idx)
+            .is_none()
+        {
+            return Ok(NativeSpreadProcessStats::default());
+        };
+        // `SpreadProcessor @ 0x00722440` entry gate: empty heap or
+        // `SpreadPercentage <= 1e-05` returns.
+        if self.ore_growth_state.native_tiberium.classes[class_idx]
+            .spread
+            .is_empty()
+            || !native_percentage_drives(ty.spread_percentage_bits)
+        {
+            return Ok(NativeSpreadProcessStats::default());
+        }
+
+        let batch = native_processor_batch(
+            self.ore_growth_state.native_tiberium.classes[class_idx]
+                .spread
+                .len(),
+            ty.spread_percentage_bits,
+            SPREAD_BATCH_MIN,
+            SPREAD_BATCH_MAX,
+        );
+        let budget = signed_abs_mod_plus_one(self.scenario_rng.next_u32(), batch);
+        let mut stats = NativeSpreadProcessStats {
+            processor_calls: 1,
+            budget_rng_draws: 1,
+            requested_budget: budget.max(0) as u32,
+            ..NativeSpreadProcessStats::default()
+        };
+        // `0x007224C9..0x007224E3`: `heap count > capacity - 0x14` rebuilds
+        // this type's spread queue before the first pop.
+        {
+            let class = &self.ore_growth_state.native_tiberium.classes[class_idx];
+            let heap_count = class.spread.len() as i64;
+            if i64::from(class.spread.capacity()) - SPREAD_PROCESSOR_REBUILD_SLACK < heap_count {
+                let cells = native_rebuild_cells(
+                    self.ore_growth_state.native_rect,
+                    self.overlay_grid
+                        .as_ref()
+                        .expect("ore driver has a live grid"),
+                );
+                let occupied_cells = native_occupied_cells(
+                    self.terrain_objects.spawning_cells(),
+                    self.resolved_terrain
+                        .as_ref()
+                        .map(|terrain| {
+                            NewTiberiumAdmission::runtime(
+                                terrain,
+                                TiberiumPlacementObjectContext::new(
+                                    &self.substrate.entities,
+                                    &self.substrate.occupancy,
+                                    &self.substrate.raw_cell_occupation,
+                                    rules,
+                                    &self.interner,
+                                    self.terrain_objects.cell_index(),
+                                ),
+                            )
+                        })
+                        .map(|admission| admission.live_objects().object_view()),
+                );
+                self.ore_growth_state.rebuild_spread_queue_for_type(
+                    type_id,
+                    self.overlay_grid
+                        .as_ref()
+                        .expect("ore driver has a live grid"),
+                    overlay_registry,
+                    tiberium_types,
+                    self.resolved_terrain.as_ref(),
+                    &occupied_cells,
+                    spread_enabled,
+                    &cells,
+                )?;
+            }
+        }
+        // `0x007224E8..0x0072252E`: the first root is popped before the budget
+        // test (a non-positive budget word drops it and returns).
+        let mut pending = self.ore_growth_state.native_tiberium.classes[class_idx]
+            .spread
+            .pop_root();
+        if pending.is_some() {
+            stats.popped_entries += 1;
+        }
+        if budget < 1 {
+            return Ok(stats);
+        }
+        let mut processed_sources: i32 = 0;
+        while let Some(entry) = pending.take() {
+            let valid_targets = count_native_spread_targets(
+                self.overlay_grid
+                    .as_ref()
+                    .expect("ore driver has a live grid"),
+                self.terrain_objects.spawning_cells(),
+                self.resolved_terrain.as_ref().map(|terrain| {
+                    NewTiberiumAdmission::runtime(
+                        terrain,
+                        TiberiumPlacementObjectContext::new(
+                            &self.substrate.entities,
+                            &self.substrate.occupancy,
+                            &self.substrate.raw_cell_occupation,
+                            rules,
+                            &self.interner,
+                            self.terrain_objects.cell_index(),
+                        ),
+                    )
+                }),
+                entry.rx,
+                entry.ry,
+            );
+            if valid_targets == 0 {
+                self.ore_growth_state.native_tiberium.classes[class_idx]
+                    .spread_bitmap
+                    .remove(&(entry.rx, entry.ry));
+                stats.zero_target_entries += 1;
+                stats.bitmap_clears += 1;
+                // Zero targets spend no budget; the loop pops the next root.
+                pending = self.ore_growth_state.native_tiberium.classes[class_idx]
+                    .spread
+                    .pop_root();
+                if pending.is_some() {
+                    stats.popped_entries += 1;
+                }
+                continue;
+            }
+
+            stats.spread_calls += 1;
+            processed_sources += 1;
+            // `CellClass::SpreadTiberium @ 0x00483780` spreads the cell's
+            // CURRENT TiberiumClass (a stale entry of another class still
+            // spreads whatever now sits there; an empty cell fails its own
+            // `CanSpreadTiberium` re-check without a draw).
+            if spread_tiberium(
+                self,
+                rules,
+                overlay_registry,
+                (entry.rx, entry.ry),
+                false,
+                None,
+                effects,
+            )?
+            .is_some()
+            {
+                stats.placed_entries += 1;
+            }
+
+            // `0x0072259A..0x00722614`: more than one valid target reinserts
+            // the source at priority 0 without an RNG draw.
+            if valid_targets > 1 {
+                let class = &mut self.ore_growth_state.native_tiberium.classes[class_idx];
+                class.spread.push(NativeTiberiumQueueEntry {
+                    rx: entry.rx,
+                    ry: entry.ry,
+                    priority_bits: 0.0f32.to_bits(),
+                });
+                class.spread_bitmap.insert((entry.rx, entry.ry));
+                stats.reinserted_entries += 1;
+            }
+            // `0x00722619..0x00722630`: the budget is checked after each
+            // processed source; the next root is popped only while it remains.
+            if budget <= processed_sources {
+                break;
+            }
+            pending = self.ore_growth_state.native_tiberium.classes[class_idx]
+                .spread
+                .pop_root();
+            if pending.is_some() {
+                stats.popped_entries += 1;
+            }
+        }
+
+        Ok(stats)
+    }
+}
+
+// Fixture adapters only; production drivers borrow their resident Simulation.
+impl OreGrowthState {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn process_native_growth_for_type_with_placement(
+        &mut self,
+        type_id: TiberiumTypeId,
+        overlay_grid: &mut OverlayGrid,
+        overlay_registry: &OverlayTypeRegistry,
+        tiberium_types: &TiberiumTypeRegistry,
+        resolved_terrain: Option<&ResolvedTerrainGrid>,
+        source_object_cells: &BTreeSet<(u16, u16)>,
+        live_objects: Option<TiberiumPlacementObjectContext<'_>>,
+        rng: &mut SimRng,
+        current_frame: u32,
+        growth_enabled: bool,
+        spread_enabled: bool,
+        dirty_cells: Option<&mut crate::sim::dirty_cells::DirtyCells>,
+    ) -> NativeGrowthProcessStats {
+        let mut context = crate::sim::tiberium::PlaceTiberiumContext {
+            overlay_grid,
+            ore_growth_state: self,
+            overlay_registry,
+            tiberium_types,
+            resolved_terrain,
+            source_object_cells,
+            new_cell_admission: resolved_terrain
+                .zip(live_objects)
+                .map(|(terrain, objects)| NewTiberiumAdmission::runtime(terrain, objects)),
+            live_objects: live_objects.map(|objects| objects.object_view()),
+            rng,
+            binary_frame: current_frame,
+            growth_enabled,
+            spread_enabled,
+            dirty_cells,
+        };
+        crate::sim::tiberium::test_support::with_placement_fixture(
+            &mut context,
+            |sim, rules, registry| {
+                sim.process_native_growth_for_type_with_placement(
+                    type_id,
+                    rules,
+                    registry,
+                    FrameEffects::default(),
+                )
+            },
+        )
+        .expect("valid queue fixture")
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn tick_native_growth_driver(
+        &mut self,
+        overlay_grid: &mut OverlayGrid,
+        overlay_registry: &OverlayTypeRegistry,
+        tiberium_types: &TiberiumTypeRegistry,
+        resolved_terrain: Option<&ResolvedTerrainGrid>,
+        source_object_cells: &BTreeSet<(u16, u16)>,
+        live_objects: Option<TiberiumPlacementObjectContext<'_>>,
+        rng: &mut SimRng,
+        current_frame: u32,
+        growth_enabled: bool,
+        spread_enabled: bool,
+        tiberium_grows_flag: bool,
+        dirty_cells: Option<&mut crate::sim::dirty_cells::DirtyCells>,
+    ) -> NativeGrowthProcessStats {
+        let mut context = crate::sim::tiberium::PlaceTiberiumContext {
+            overlay_grid,
+            ore_growth_state: self,
+            overlay_registry,
+            tiberium_types,
+            resolved_terrain,
+            source_object_cells,
+            new_cell_admission: resolved_terrain
+                .zip(live_objects)
+                .map(|(terrain, objects)| NewTiberiumAdmission::runtime(terrain, objects)),
+            live_objects: live_objects.map(|objects| objects.object_view()),
+            rng,
+            binary_frame: current_frame,
+            growth_enabled,
+            spread_enabled,
+            dirty_cells,
+        };
+        crate::sim::tiberium::test_support::with_placement_fixture(
+            &mut context,
+            |sim, rules, registry| {
+                sim.ore_growth_config =
+                    OreGrowthConfig::for_test(growth_enabled, spread_enabled, tiberium_grows_flag);
+                sim.tick_native_growth_driver(rules, registry, FrameEffects::default())
+            },
+        )
+        .expect("valid queue fixture")
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn process_native_growth_for_type(
+        &mut self,
+        type_id: TiberiumTypeId,
+        overlay_grid: &mut OverlayGrid,
+        overlay_registry: &OverlayTypeRegistry,
+        tiberium_types: &TiberiumTypeRegistry,
+        resolved_terrain: Option<&ResolvedTerrainGrid>,
+        source_object_cells: &BTreeSet<(u16, u16)>,
+        rng: &mut SimRng,
+        current_frame: u32,
+        spread_enabled: bool,
+    ) -> NativeGrowthProcessStats {
+        let mut context = crate::sim::tiberium::PlaceTiberiumContext {
+            overlay_grid,
+            ore_growth_state: self,
+            overlay_registry,
+            tiberium_types,
+            resolved_terrain,
+            source_object_cells,
+            new_cell_admission: None,
+            live_objects: None,
+            rng,
+            binary_frame: current_frame,
+            growth_enabled: true,
+            spread_enabled,
+            dirty_cells: None,
+        };
+        crate::sim::tiberium::test_support::with_placement_fixture(
+            &mut context,
+            |sim, rules, registry| {
+                sim.ore_growth_config = OreGrowthConfig::for_test(true, spread_enabled, false);
+                sim.process_native_growth_for_type_with_placement(
+                    type_id,
+                    rules,
+                    registry,
+                    FrameEffects::default(),
+                )
+            },
+        )
+        .expect("valid queue fixture")
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn tick_native_spread_driver(
+        &mut self,
+        overlay_grid: &mut OverlayGrid,
+        overlay_registry: &OverlayTypeRegistry,
+        tiberium_types: &TiberiumTypeRegistry,
+        resolved_terrain: Option<&ResolvedTerrainGrid>,
+        source_object_cells: &BTreeSet<(u16, u16)>,
+        live_objects: Option<TiberiumPlacementObjectContext<'_>>,
+        rng: &mut SimRng,
+        current_frame: u32,
+        growth_enabled: bool,
+        spread_enabled: bool,
+        dirty_cells: Option<&mut crate::sim::dirty_cells::DirtyCells>,
+    ) -> NativeSpreadProcessStats {
+        let mut context = crate::sim::tiberium::PlaceTiberiumContext {
+            overlay_grid,
+            ore_growth_state: self,
+            overlay_registry,
+            tiberium_types,
+            resolved_terrain,
+            source_object_cells,
+            new_cell_admission: resolved_terrain
+                .zip(live_objects)
+                .map(|(terrain, objects)| NewTiberiumAdmission::runtime(terrain, objects)),
+            live_objects: live_objects.map(|objects| objects.object_view()),
+            rng,
+            binary_frame: current_frame,
+            growth_enabled,
+            spread_enabled,
+            dirty_cells,
+        };
+        crate::sim::tiberium::test_support::with_placement_fixture(
+            &mut context,
+            |sim, rules, registry| {
+                sim.ore_growth_config =
+                    OreGrowthConfig::for_test(growth_enabled, spread_enabled, false);
+                sim.tick_native_spread_driver(rules, registry, FrameEffects::default())
+            },
+        )
+        .expect("valid queue fixture")
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn process_native_spread_for_type_with_placement(
+        &mut self,
+        type_id: TiberiumTypeId,
+        overlay_grid: &mut OverlayGrid,
+        overlay_registry: &OverlayTypeRegistry,
+        tiberium_types: &TiberiumTypeRegistry,
+        resolved_terrain: Option<&ResolvedTerrainGrid>,
+        source_object_cells: &BTreeSet<(u16, u16)>,
+        new_cell_admission: Option<NewTiberiumAdmission<'_>>,
+        rng: &mut SimRng,
+        current_frame: u32,
+        spread_enabled: bool,
+        dirty_cells: Option<&mut crate::sim::dirty_cells::DirtyCells>,
+    ) -> NativeSpreadProcessStats {
+        let mut context = crate::sim::tiberium::PlaceTiberiumContext {
+            overlay_grid,
+            ore_growth_state: self,
+            overlay_registry,
+            tiberium_types,
+            resolved_terrain,
+            source_object_cells,
+            new_cell_admission,
+            live_objects: new_cell_admission
+                .map(|admission| admission.live_objects().object_view()),
+            rng,
+            binary_frame: current_frame,
+            growth_enabled: true,
+            spread_enabled,
+            dirty_cells,
+        };
+        crate::sim::tiberium::test_support::with_placement_fixture(
+            &mut context,
+            |sim, rules, registry| {
+                sim.ore_growth_config = OreGrowthConfig::for_test(true, spread_enabled, false);
+                sim.process_native_spread_for_type_with_placement(
+                    type_id,
+                    rules,
+                    registry,
+                    FrameEffects::default(),
+                )
+            },
+        )
+        .expect("valid queue fixture")
+    }
 }
 
 #[cfg(test)]
@@ -1832,17 +2063,19 @@ SpreadPercentage=.06
         );
         let mut state = make_state(8, 8);
 
-        let stats = state.rebuild_native_tiberium_queues_from_overlays(
-            &overlay_grid,
-            &overlay_registry,
-            &tiberium_types,
-            None,
-            &BTreeSet::new(),
-            true,
-            true,
-            77,
-            (8, 8),
-        );
+        let stats = state
+            .rebuild_native_tiberium_queues_from_overlays(
+                &overlay_grid,
+                &overlay_registry,
+                &tiberium_types,
+                None,
+                &BTreeSet::new(),
+                true,
+                true,
+                77,
+                (8, 8),
+            )
+            .expect("valid native image fixture");
 
         assert_eq!(
             stats,
@@ -1893,17 +2126,19 @@ SpreadPercentage=.06
         );
         let mut state = make_state(8, 8);
 
-        let stats = state.rebuild_native_tiberium_queues_from_overlays(
-            &overlay_grid,
-            &overlay_registry,
-            &tiberium_types,
-            None,
-            &BTreeSet::new(),
-            true,
-            false,
-            77,
-            (8, 8),
-        );
+        let stats = state
+            .rebuild_native_tiberium_queues_from_overlays(
+                &overlay_grid,
+                &overlay_registry,
+                &tiberium_types,
+                None,
+                &BTreeSet::new(),
+                true,
+                false,
+                77,
+                (8, 8),
+            )
+            .expect("valid native image fixture");
 
         assert_eq!(
             stats,
@@ -1963,17 +2198,19 @@ SpreadPercentage=.06
         source_object_cells.insert((5, 5));
         let mut state = make_state(8, 8);
 
-        let stats = state.rebuild_native_tiberium_queues_from_overlays(
-            &overlay_grid,
-            &overlay_registry,
-            &tiberium_types,
-            None,
-            &source_object_cells,
-            false,
-            true,
-            99,
-            (8, 8),
-        );
+        let stats = state
+            .rebuild_native_tiberium_queues_from_overlays(
+                &overlay_grid,
+                &overlay_registry,
+                &tiberium_types,
+                None,
+                &source_object_cells,
+                false,
+                true,
+                99,
+                (8, 8),
+            )
+            .expect("valid native image fixture");
 
         assert_eq!(
             stats,
@@ -2010,30 +2247,34 @@ SpreadPercentage=.06
         );
         let empty = OverlayGrid::new(8, 8);
         let mut state = make_state(8, 8);
-        state.rebuild_native_tiberium_queues_from_overlays(
-            &populated,
-            &overlay_registry,
-            &tiberium_types,
-            None,
-            &BTreeSet::new(),
-            true,
-            true,
-            1,
-            (8, 8),
-        );
+        state
+            .rebuild_native_tiberium_queues_from_overlays(
+                &populated,
+                &overlay_registry,
+                &tiberium_types,
+                None,
+                &BTreeSet::new(),
+                true,
+                true,
+                1,
+                (8, 8),
+            )
+            .expect("valid native image fixture");
         assert!(!state.native_tiberium_state().classes[0].growth.is_empty());
 
-        let stats = state.rebuild_native_tiberium_queues_from_overlays(
-            &empty,
-            &overlay_registry,
-            &tiberium_types,
-            None,
-            &BTreeSet::new(),
-            true,
-            true,
-            2,
-            (8, 8),
-        );
+        let stats = state
+            .rebuild_native_tiberium_queues_from_overlays(
+                &empty,
+                &overlay_registry,
+                &tiberium_types,
+                None,
+                &BTreeSet::new(),
+                true,
+                true,
+                2,
+                (8, 8),
+            )
+            .expect("valid native image fixture");
 
         assert_eq!(stats, NativeTiberiumRebuildStats::default());
         for class in &state.native_tiberium_state().classes {
@@ -2060,30 +2301,34 @@ SpreadPercentage=.06
         expected_after_accepts.next_u32();
         expected_after_accepts.next_u32();
 
-        let first = state.add_native_growth_queue_cell(
-            &overlay_grid,
-            &overlay_registry,
-            &tiberium_types,
-            None,
-            true,
-            TiberiumTypeId(0),
-            1,
-            1,
-            100,
-            &mut rng,
-        );
-        let second = state.add_native_growth_queue_cell(
-            &overlay_grid,
-            &overlay_registry,
-            &tiberium_types,
-            None,
-            true,
-            TiberiumTypeId(0),
-            1,
-            1,
-            100,
-            &mut rng,
-        );
+        let first = state
+            .add_native_growth_queue_cell(
+                &overlay_grid,
+                &overlay_registry,
+                &tiberium_types,
+                None,
+                true,
+                TiberiumTypeId(0),
+                1,
+                1,
+                100,
+                &mut rng,
+            )
+            .expect("valid native image fixture");
+        let second = state
+            .add_native_growth_queue_cell(
+                &overlay_grid,
+                &overlay_registry,
+                &tiberium_types,
+                None,
+                true,
+                TiberiumTypeId(0),
+                1,
+                1,
+                100,
+                &mut rng,
+            )
+            .expect("valid native image fixture");
         assert_eq!(
             rng.logical_state(),
             expected_after_accepts.logical_state(),
@@ -2091,18 +2336,20 @@ SpreadPercentage=.06
         );
         let before_reject = rng.state();
         let before_reject_logical = rng.logical_state();
-        let rejected = state.add_native_growth_queue_cell(
-            &overlay_grid,
-            &overlay_registry,
-            &tiberium_types,
-            None,
-            true,
-            TiberiumTypeId(0),
-            2,
-            1,
-            100,
-            &mut rng,
-        );
+        let rejected = state
+            .add_native_growth_queue_cell(
+                &overlay_grid,
+                &overlay_registry,
+                &tiberium_types,
+                None,
+                true,
+                TiberiumTypeId(0),
+                2,
+                1,
+                100,
+                &mut rng,
+            )
+            .expect("valid native image fixture");
 
         assert!(first.is_some());
         assert!(second.is_some());
@@ -2149,18 +2396,20 @@ SpreadPercentage=.06
         }
         assert!(queue.is_empty());
         let mut rng = SimRng::new(1);
-        state.add_native_growth_queue_cell(
-            &grid,
-            &registry,
-            &types,
-            None,
-            true,
-            TiberiumTypeId(0),
-            4,
-            4,
-            100,
-            &mut rng,
-        );
+        state
+            .add_native_growth_queue_cell(
+                &grid,
+                &registry,
+                &types,
+                None,
+                true,
+                TiberiumTypeId(0),
+                4,
+                4,
+                100,
+                &mut rng,
+            )
+            .expect("valid native image fixture");
         assert!(state.native_tiberium.classes[0].growth.array_len() < 55);
     }
 
@@ -2182,20 +2431,22 @@ SpreadPercentage=.06
         }
         assert!(queue.is_empty());
         let mut rng = SimRng::new(1);
-        state.add_native_spread_queue_cell(
-            TiberiumTypeId(0),
-            &grid,
-            &registry,
-            &types,
-            None,
-            &BTreeSet::new(),
-            None,
-            4,
-            4,
-            100,
-            true,
-            &mut rng,
-        );
+        state
+            .add_native_spread_queue_cell(
+                TiberiumTypeId(0),
+                &grid,
+                &registry,
+                &types,
+                None,
+                &BTreeSet::new(),
+                None,
+                4,
+                4,
+                100,
+                true,
+                &mut rng,
+            )
+            .expect("valid native image fixture");
         assert!(state.native_tiberium.classes[0].spread.array_len() < 44);
     }
 
@@ -2645,49 +2896,55 @@ SpreadPercentage=.06
         state.reset_native_tiberium_classes(tiberium_types.len(), 10);
         let mut rng = SimRng::new(11);
 
-        let first = state.add_native_spread_queue_cell(
-            TiberiumTypeId(0),
-            &overlay_grid,
-            &overlay_registry,
-            &tiberium_types,
-            None,
-            &BTreeSet::new(),
-            None,
-            1,
-            1,
-            100,
-            true,
-            &mut rng,
-        );
+        let first = state
+            .add_native_spread_queue_cell(
+                TiberiumTypeId(0),
+                &overlay_grid,
+                &overlay_registry,
+                &tiberium_types,
+                None,
+                &BTreeSet::new(),
+                None,
+                1,
+                1,
+                100,
+                true,
+                &mut rng,
+            )
+            .expect("valid native image fixture");
         let before_dedupe = rng.state();
-        let second = state.add_native_spread_queue_cell(
-            TiberiumTypeId(0),
-            &overlay_grid,
-            &overlay_registry,
-            &tiberium_types,
-            None,
-            &BTreeSet::new(),
-            None,
-            1,
-            1,
-            100,
-            true,
-            &mut rng,
-        );
-        let disabled = state.add_native_spread_queue_cell(
-            TiberiumTypeId(0),
-            &overlay_grid,
-            &overlay_registry,
-            &tiberium_types,
-            None,
-            &BTreeSet::new(),
-            None,
-            1,
-            1,
-            100,
-            false,
-            &mut rng,
-        );
+        let second = state
+            .add_native_spread_queue_cell(
+                TiberiumTypeId(0),
+                &overlay_grid,
+                &overlay_registry,
+                &tiberium_types,
+                None,
+                &BTreeSet::new(),
+                None,
+                1,
+                1,
+                100,
+                true,
+                &mut rng,
+            )
+            .expect("valid native image fixture");
+        let disabled = state
+            .add_native_spread_queue_cell(
+                TiberiumTypeId(0),
+                &overlay_grid,
+                &overlay_registry,
+                &tiberium_types,
+                None,
+                &BTreeSet::new(),
+                None,
+                1,
+                1,
+                100,
+                false,
+                &mut rng,
+            )
+            .expect("valid native image fixture");
 
         assert!(first.is_some());
         assert_eq!(second, None);
@@ -3277,17 +3534,19 @@ SpreadPercentage=.06
             overlay_grid.place_overlay(cell.0, cell.1, tib01, 3);
         }
         let mut state = make_state(8, 8);
-        state.rebuild_native_tiberium_queues_from_overlays(
-            &overlay_grid,
-            &overlay_registry,
-            &tiberium_types,
-            None,
-            &BTreeSet::new(),
-            true,
-            true,
-            77,
-            (8, 8),
-        );
+        state
+            .rebuild_native_tiberium_queues_from_overlays(
+                &overlay_grid,
+                &overlay_registry,
+                &tiberium_types,
+                None,
+                &BTreeSet::new(),
+                true,
+                true,
+                77,
+                (8, 8),
+            )
+            .expect("valid native image fixture");
         let class = &state.native_tiberium_state().classes[0];
         let heap_order: Vec<(u16, u16)> = class
             .growth
@@ -3359,17 +3618,19 @@ SpreadPercentage=.06
         overlay_grid.place_overlay(6, 5, tib01, 4);
         let occupied = BTreeSet::from([(5u16, 5u16)]);
         let mut state = make_state(8, 8);
-        let stats = state.rebuild_native_tiberium_queues_from_overlays(
-            &overlay_grid,
-            &overlay_registry,
-            &tiberium_types,
-            None,
-            &occupied,
-            true,
-            true,
-            77,
-            (8, 8),
-        );
+        let stats = state
+            .rebuild_native_tiberium_queues_from_overlays(
+                &overlay_grid,
+                &overlay_registry,
+                &tiberium_types,
+                None,
+                &occupied,
+                true,
+                true,
+                77,
+                (8, 8),
+            )
+            .expect("valid native image fixture");
         assert_eq!(
             stats,
             NativeTiberiumRebuildStats {
@@ -3384,20 +3645,22 @@ SpreadPercentage=.06
         let mut rng = SimRng::new(4);
         let before = rng.state();
         assert_eq!(
-            state.add_native_spread_queue_cell(
-                TiberiumTypeId(0),
-                &overlay_grid,
-                &overlay_registry,
-                &tiberium_types,
-                None,
-                &occupied,
-                None,
-                5,
-                5,
-                100,
-                true,
-                &mut rng,
-            ),
+            state
+                .add_native_spread_queue_cell(
+                    TiberiumTypeId(0),
+                    &overlay_grid,
+                    &overlay_registry,
+                    &tiberium_types,
+                    None,
+                    &occupied,
+                    None,
+                    5,
+                    5,
+                    100,
+                    true,
+                    &mut rng,
+                )
+                .expect("valid native image fixture"),
             None,
             "an occupied source is rejected before the priority draw"
         );

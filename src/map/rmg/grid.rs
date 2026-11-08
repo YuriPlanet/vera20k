@@ -59,9 +59,9 @@ pub enum CellRef {
     Border,
 }
 
-/// Working grid, indexed by the same linear (x, y) scheme as the scratch
-/// array. Cells outside the map's valid band read as `None`, which is what
-/// terminates the native iteration.
+/// Working grid, addressed by the same (x, y) as the scratch array but stored
+/// diagonal-major ([`RmgGrid::slot`]). Cells outside the map's valid band
+/// read as `None`, which is what terminates the native iteration.
 #[derive(Debug, Clone)]
 pub struct RmgGrid {
     width: usize,
@@ -84,7 +84,8 @@ impl RmgGrid {
             width,
             diamond_min,
             diamond_max,
-            cells: vec![GridCell::default(); width * width],
+            // Diagonal-major (see `slot`): rows of constant x + y, 2W of them.
+            cells: vec![GridCell::default(); 2 * width * width],
             // Original Cell constructor47BC11 writesFFFF, not zero;
             // startup565060 and Resize5670F2 construct the shared Dummy.
             // RMG599E70 resets only allocated iterator cells. Native input
@@ -130,13 +131,13 @@ impl RmgGrid {
     }
 
     pub fn get(&self, x: i32, y: i32) -> Option<&GridCell> {
-        self.is_valid(x, y)
-            .then(|| &self.cells[y as usize * self.width + x as usize])
+        self.is_valid(x, y).then(|| &self.cells[self.slot(x, y)])
     }
 
     pub fn get_mut(&mut self, x: i32, y: i32) -> Option<&mut GridCell> {
         self.is_valid(x, y)
-            .then(move || &mut self.cells[y as usize * self.width + x as usize])
+            .then(|| self.slot(x, y))
+            .map(move |slot| &mut self.cells[slot])
     }
 
     /// The original's cell-pointer lookup, kept as a held reference: an
@@ -186,7 +187,21 @@ impl RmgGrid {
             self.is_valid(x, y),
             "a held cell reference names a valid cell"
         );
-        y as usize * self.width + x as usize
+        self.slot(x, y)
+    }
+
+    /// Storage slot of an in-bounds cell: diagonal-major, `(x + y) * W + x`.
+    ///
+    /// [`Self::native_cells`] walks anti-diagonals `(x + 1, y - 1)`, so this
+    /// puts consecutive cells of that scan in consecutive slots; the row-major
+    /// `y * W + x` put each one a whole row apart and missed the cache on
+    /// every step of the shore tiler's full-map passes. The linear scratch
+    /// walks that read the grid (`PartitionRegions @ 0x0058CF90`, the hill
+    /// corner morph) take those misses instead, but once per stage rather than
+    /// after every blob. A storage choice only: cells are still addressed by
+    /// `(x, y)`, so no value or order changes.
+    fn slot(&self, x: i32, y: i32) -> usize {
+        (x + y) as usize * self.width + x as usize
     }
 
     /// Cell lookup with the original's fallback semantics: an invalid

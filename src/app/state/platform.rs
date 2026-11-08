@@ -55,9 +55,11 @@ pub(crate) struct PlatformState {
     /// frame does not re-issue it. winit's call is not free on Windows: it runs
     /// `refresh_os_cursor`, which clears any OS cursor clip winit does not itself
     /// own, so repeating it per frame would tear `cursor_confined` down every
-    /// frame. `show_os_cursor_only_without_game_cursor` is the only writer and
-    /// re-asserts the clip after each transition. Presentation-only.
+    /// frame. `input::hardware_cursor` issues it and re-asserts the clip after
+    /// each transition. Presentation-only.
     pub(crate) os_cursor_visible: Option<bool>,
+    /// What the window system shows at the pointer.
+    pub(crate) hardware_cursor: crate::app::input::hardware_cursor::HardwareCursor,
     /// Live message-pump modifiers for focused shell controls. Gameplay keeps
     /// its separate paused-input admission snapshot.
     pub(crate) live_modifiers: winit::keyboard::ModifiersState,
@@ -161,6 +163,7 @@ impl PlatformState {
             pointer_held: std::cell::Cell::new(false),
             pointer_in_client: true,
             os_cursor_visible: None,
+            hardware_cursor: Default::default(),
             live_modifiers: winit::keyboard::ModifiersState::empty(),
             held_modifier_keys: Default::default(),
             ime: Default::default(),

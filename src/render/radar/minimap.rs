@@ -538,7 +538,12 @@ impl MinimapRenderer {
             .map(|r| &r.house_color_ramps)
             .unwrap_or(&default_ramps);
         let projection = self.radar_projection_facts();
+        let terrain = self.native_radar_terrain.as_ref();
         let winners = self.radar_tracker.visible_winners(|entry| {
+            let pixel_cell = match terrain {
+                Some(terrain) => Some(terrain.visibility_cell((entry.x, entry.y))),
+                None => projection.mapless_pixel_to_cell(entry.x, entry.y),
+            };
             radar_pixel_candidate_eligible(
                 entry,
                 entities,
@@ -550,7 +555,7 @@ impl MinimapRenderer {
                 game_mode_nonzero,
                 rules,
                 interner,
-                projection,
+                pixel_cell,
                 cells.as_ref(),
             )
         });
@@ -645,7 +650,6 @@ impl MinimapRenderer {
                     self.compositor.set_fallback_base(queue, &self.rgba_scratch);
                 }
                 self.compositor.set_stores(device, queue, &self.stores);
-                self.compositor.request();
             },
         );
         self.last_sim_tick = sim_tick;
@@ -823,6 +827,11 @@ impl MinimapRenderer {
         encoder: &mut wgpu::CommandEncoder,
     ) {
         self.compositor.encode(device, encoder);
+    }
+
+    /// A number that changes whenever [`Self::map_texture`]'s picture does.
+    pub fn picture_generation(&self) -> u64 {
+        self.compositor.generation()
     }
 
     /// The minimap picture for drawing: the HD radar's while it is on. Both

@@ -59,7 +59,13 @@ impl HdRadar {
                 MINIMAP_HEIGHT * scale,
                 PICTURE_FORMAT,
             ),
-            textures: SurfaceTextures::new(device, queue, geometry, words),
+            textures: SurfaceTextures::new(
+                device,
+                queue,
+                (width, height),
+                &geometry.visibility_cells(),
+                words,
+            ),
             revision,
             origin: [offset.0.max(0) * scaled, offset.1.max(0) * scaled],
             size: [width, height],
@@ -87,10 +93,13 @@ impl HdRadar {
     }
 
     /// Upload the HD terrain where its revision changed.
-    pub fn refresh(&mut self, queue: &wgpu::Queue, (words, revision): (&[u16], u64)) {
-        if revision != self.revision {
+    /// Upload `words` if they changed, returning whether they did.
+    pub fn refresh(&mut self, queue: &wgpu::Queue, (words, revision): (&[u16], u64)) -> bool {
+        let changed = revision != self.revision;
+        if changed {
             self.textures.write_words(queue, words);
             self.revision = revision;
         }
+        changed
     }
 }

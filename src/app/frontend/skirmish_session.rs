@@ -1751,6 +1751,8 @@ fn draw_native_shell_country(
         draw_country_for_progress(registry, progress, cooperative_role, roster, rng)
             .map(|index| LaunchCountry::from_country_index(index as u32))
     } else {
+        // Ares 3.0 HouseTypeExt::PickRandomCountry: 1001DD30 (hook
+        // 0x0069B670) for AI rows, 1001DD50 (hook 0x0069B774) for humans.
         #[cfg(feature = "ares")]
         {
             let ai = matches!(role, RandomCountryRole::Ai { .. });

@@ -160,6 +160,7 @@ impl Veterancy {
     /// seeded for EVERY house's elite (`0x006FA0D0` is reached from the
     /// non-human branch too); only the sound and EVA are gated, and that gate
     /// belongs to the app layer, which knows the local player.
+    #[cfg_attr(feature = "ares", allow(dead_code))]
     pub(crate) fn sample_promotion(
         &mut self,
         flashing: &mut Flashing,
@@ -205,6 +206,117 @@ impl Veterancy {
             return;
         }
         self.raw = accumulate(self.raw, recipient_cost, points, veteran_ratio, veteran_cap);
+    }
+
+    /// The rank the accumulator holds now, in the `+0x13C` cache's codes.
+    /// Ares UpdateVeterancy10046AFE..10046B1F tests the single with the same
+    /// `>= 2.0` / `>= 1.0` order as `GetVeterancyLevel @ 0x00750030`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn level(&self) -> i8 {
+        veterancy_level(self.raw)
+    }
+
+    /// Ares UpdateVeterancy10046D6C stores the (possibly re-ranked) level.
+    #[cfg(feature = "ares")]
+    pub(crate) fn store_level(&mut self, level: i8) {
+        self.rank_cache = level;
+    }
+
+    /// Ares RegisterDestruction_Veterancy's AddExperience lambda
+    /// (`1004EE30`): `weighted / (cost * VeteranRatio) + vet`, capped from
+    /// above at `VeteranCap` (`ja`, so an equal sum stores itself) and, once
+    /// stored as a single, floored at zero. Unlike `VeterancyClass::Add`'s
+    /// caller, any nonzero recipient cost counts, so a negative one drains.
+    #[cfg(feature = "ares")]
+    pub(crate) fn add_ares_kill_experience(
+        &mut self,
+        recipient_cost: i32,
+        weighted: i32,
+        veteran_ratio: f64,
+        veteran_cap: f64,
+    ) {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
+        if recipient_cost == 0 || weighted <= 0 {
+            return;
+        }
+        let quotient = X87::div(
+            X87::load_i32(weighted),
+            X87::mul(
+                X87::load_i32(recipient_cost),
+                X87::load_f64(NativeF64Bits::from_bits(veteran_ratio.to_bits())),
+            ),
+        );
+        let sum = X87::add(quotient, X87::load_f32(self.raw));
+        let cap = X87::load_f64(NativeF64Bits::from_bits(veteran_cap.to_bits()));
+        let stored = if X87::compare(sum, cap) == MaskedX87Ordering::Greater {
+            cap
+        } else {
+            sum
+        };
+        self.raw = X87::store_f32_masked_chop(stored);
+        if X87::compare(
+            X87::load_f32(self.raw),
+            X87::load_f64(NativeF64Bits::POSITIVE_ZERO),
+        ) == MaskedX87Ordering::Less
+        {
+            self.raw = NativeF32Bits::POSITIVE_ZERO;
+        }
+    }
+
+    /// Ares ApplyAcademy (`10020750`, `10020820..10020850`): a `bonus`
+    /// above the current single replaces it, capped at `VeteranCap`, as a
+    /// single; anything else leaves it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn apply_academy_bonus(
+        &mut self,
+        bonus: crate::util::native_x87::NativeF64Bits,
+        veteran_cap: f64,
+    ) {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
+        let bonus = X87::load_f64(bonus);
+        if X87::compare(bonus, X87::load_f32(self.raw)) != MaskedX87Ordering::Greater {
+            return;
+        }
+        let cap = X87::load_f64(NativeF64Bits::from_bits(veteran_cap.to_bits()));
+        let stored = if X87::compare(bonus, cap) == MaskedX87Ordering::Greater {
+            cap
+        } else {
+            bonus
+        };
+        self.raw = X87::store_f32_masked_chop(stored);
+    }
+
+    /// Ares UpdateVeterancy10046C7A..10046CB1: after a successful
+    /// Promote.*Type conversion, a nonzero Promote.*Experience is added to
+    /// the single, floored at zero, capped at `VeteranCap` and stored as a
+    /// single. Returns whether it wrote.
+    #[cfg(feature = "ares")]
+    pub(crate) fn add_promotion_experience(
+        &mut self,
+        experience: crate::util::native_x87::NativeF64Bits,
+        veteran_cap: f64,
+    ) -> bool {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
+        let zero = X87::load_f64(NativeF64Bits::POSITIVE_ZERO);
+        let experience = X87::load_f64(experience);
+        // fucomi/jnp: only an ordered equality with zero skips.
+        if X87::compare(experience, zero) == MaskedX87Ordering::Equal {
+            return false;
+        }
+        let sum = X87::add(experience, X87::load_f32(self.raw));
+        let floored = if X87::compare(zero, sum) == MaskedX87Ordering::Greater {
+            zero
+        } else {
+            sum
+        };
+        let cap = X87::load_f64(NativeF64Bits::from_bits(veteran_cap.to_bits()));
+        let stored = if X87::compare(floored, cap) == MaskedX87Ordering::Greater {
+            cap
+        } else {
+            floored
+        };
+        self.raw = X87::store_f32_masked_chop(stored);
+        true
     }
 }
 
@@ -571,6 +683,58 @@ pub fn self_heal_eligible(
     }
     let health = entity.health.current();
     health != object.strength && health != 0
+}
+
+/// Ares 3.0 `TechnoExt::ExtData::GetSelfHealAmount` (Ares.dll 10044E80):
+/// the points one pulse heals, which replaces [`self_heal_eligible`]
+/// (hook 0x70BE80, 1004B2F0: `amount > 0`) and the `+1` of
+/// `TechnoClass::AI_Update` (hook 0x6FA743, 1004B820), in this order:
+/// 1. nothing while the `SelfHealing.CombatDelay` timer (TechnoExt+0x5C)
+///    runs;
+/// 2. the same `SelfHealing=`/`SELF_HEAL` gate;
+/// 3. `Frame % max(ftol(rate * 900), 1) == 0`, the rate `SelfHealing.Rate`
+///    or `RepairRate`;
+/// 4. a nonzero Health below `clamp(ftol(Strength * SelfHealing.%sMax) + 1,
+///    1, Strength)`, which takes `SelfHealing.%sAmount` (a negative amount
+///    heals nothing), at most up to that cap.
+///
+/// Both conversions are the CRT `_ftol2` (100772B0), INT_MIN out of range.
+#[cfg(feature = "ares")]
+pub fn ares_self_heal_amount(
+    entity: &GameEntity,
+    object: &ObjectType,
+    frame: i32,
+    repair_rate_minutes: f64,
+) -> i32 {
+    use crate::util::native_x87::MaskedX87Chop53 as X;
+    let combat = entity.ares_self_heal_combat;
+    if combat.start_frame() != crate::sim::timer::PAUSED_START_FRAME && combat.remaining(frame) > 0
+    {
+        return 0;
+    }
+    let rank = entity.veterancy.rank_kind();
+    if !object.self_healing && !has_weapon_ability(rank, object, Ability::SelfHeal) {
+        return 0;
+    }
+    let ext = object.techno_combat().self_healing();
+    let rate = ext.rate(repair_rate_minutes);
+    let period = X::fistp_i32_masked(X::mul(X::load_f64(rate), X::load_i32(900))).max(1);
+    if frame % period != 0 {
+        return 0;
+    }
+    let (amount, max) = ext.amount_and_max(match rank {
+        VeterancyRank::Rookie => 0,
+        VeterancyRank::Veteran => 1,
+        VeterancyRank::Elite => 2,
+    });
+    let strength = object.strength;
+    let cap = X::fistp_i32_masked(X::mul(X::load_i32(strength), X::load_f64(max))).wrapping_add(1);
+    let cap = if cap < 1 { 1 } else { cap.min(strength) };
+    let health = entity.health.current();
+    if health == 0 || health >= cap || amount < 0 {
+        return 0;
+    }
+    amount.min(cap.wrapping_sub(health))
 }
 
 /// The award a kill is worth, before the recipient's own cost divides it.

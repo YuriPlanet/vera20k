@@ -8,6 +8,7 @@ use crate::sim::production::{
     ReadyBuildingView,
 };
 use crate::sim::superweapon::SuperWeaponView;
+use crate::util::lookup_hash::LookupMap;
 
 use super::cameo_order::{CameoId, CameoRequestState, CameoStrips};
 use super::gadget_flash::SidebarGadgetState;
@@ -187,36 +188,29 @@ pub(crate) fn build_sidebar_view_with_spec(
     // strip entries, including ready buildings and superweapons. This builder
     // consumes those retained entries for the selected strip only; the button
     // bits and the active tab arrive as event-driven state.
-    let mut strips = SidebarTab::all().map(|tab| {
-        let entries = collect_build_entries(
-            tab.category(),
-            queue_items,
-            build_options,
-            ready_buildings,
-            armed,
-            interner,
-            sw_views,
-        );
-        let mut entries: std::collections::HashMap<_, _> = entries
-            .into_iter()
-            .map(|entry| (entry.identity, entry))
-            .collect();
-        cameo_order
-            .items(tab)
-            .iter()
-            .filter_map(|cameo| {
-                let mut entry = entries.remove(&cameo.id)?;
-                entry.display_name = cameo.key.name().to_string();
-                Some(entry)
-            })
-            .collect::<Vec<_>>()
-    });
     // The active tab is owned by the switch itself: native switches on the
     // four tab commands, on the tab buttons and on the two AddCameo/Recalculate
     // transitions, and it never substitutes another strip because the selected
     // one is empty (HasEntries refuses the switch instead).
+    let mut entries: LookupMap<_, _> = collect_build_entries(
+        active_tab.category(),
+        queue_items,
+        build_options,
+        ready_buildings,
+        armed,
+        interner,
+        sw_views,
+    )
+    .into_iter()
+    .map(|entry| (entry.identity, entry))
+    .collect();
+    // Each entry draws under its retained cameo's name.
+    let all_entries: Vec<_> = cameo_order
+        .items(active_tab)
+        .iter()
+        .filter_map(|cameo| Some((entries.remove(&cameo.id)?, cameo.key.name())))
+        .collect();
     let scroll_rows = cameo_order.scroll_row(active_tab);
-    let mut all_entries = std::mem::take(&mut strips[active_tab.tab_index()]);
     let total_items = all_entries.len();
     let total_rows = total_items.div_ceil(CAMEO_COLUMNS);
 
@@ -330,11 +324,11 @@ pub(crate) fn build_sidebar_view_with_spec(
     let visible_items = scroll_rows * CAMEO_COLUMNS;
     let max_visible = visible_rows * CAMEO_COLUMNS;
     let items: Vec<SidebarItem> = all_entries
-        .drain(..)
+        .into_iter()
         .skip(visible_items)
         .take(max_visible)
         .enumerate()
-        .map(|(idx, entry)| {
+        .map(|(idx, (entry, display_name))| {
             let row = idx / CAMEO_COLUMNS;
             let col = idx % CAMEO_COLUMNS;
             let x = (layout.sidebar_x
@@ -350,7 +344,7 @@ pub(crate) fn build_sidebar_view_with_spec(
                     h: layout_spec.cameo_height.round(),
                 },
                 type_id: entry.type_id,
-                display_name: entry.display_name,
+                display_name: display_name.to_owned(),
                 cost: entry.cost,
                 has_cameo_art: false,
                 alt_cameo: false,
@@ -402,7 +396,6 @@ fn category_is_on_tab(
 struct BuildEntry {
     identity: CameoId,
     type_id: String,
-    display_name: String,
     cost: Option<i32>,
     /// Exact House factory/queue slot represented by this cameo. The Vehicle
     /// tab is presentation-only grouping and must not replace Ship/Aircraft.
@@ -435,7 +428,7 @@ fn collect_build_entries(
     // cameo's armed state is part of its drawn state (`draw_object_cameo`).
     let armed_sw_section: Option<&str> = armed.and_then(ArmedSidebarEntry::as_super_weapon);
     let resolve = |id: InternedId| -> String {
-        interner.map_or(format!("#{}", id.index()), |i| i.resolve(id).to_string())
+        interner.map_or_else(|| format!("#{}", id.index()), |i| i.resolve(id).to_string())
     };
 
     // Resolve presentation for Super entries. Retained strip order above
@@ -452,7 +445,6 @@ fn collect_build_entries(
             sw_entries.push(BuildEntry {
                 identity: CameoId::SuperWeapon(sw.type_id),
                 type_id,
-                display_name: sw.display_name.clone(),
                 cost: None,
                 queue_category: ProductionCategory::Defense,
                 enabled: sw.sidebar_enabled(),
@@ -491,7 +483,6 @@ fn collect_build_entries(
             BuildEntry {
                 identity: CameoId::Object(opt.type_id),
                 type_id: resolve(opt.type_id),
-                display_name: opt.display_name.clone(),
                 cost: Some(opt.cost),
                 queue_category: opt.queue_category,
                 enabled: true,
@@ -523,7 +514,6 @@ fn collect_build_entries(
             entries.push(BuildEntry {
                 identity: CameoId::Object(r.type_id),
                 type_id: r_type_str,
-                display_name: r.display_name.clone(),
                 cost: None,
                 queue_category: r.queue_category,
                 enabled: true,
@@ -600,7 +590,6 @@ mod tests {
     ) -> BuildOption {
         BuildOption {
             type_id: interner.intern(id),
-            display_name: id.to_string(),
             cost: 900,
             object_category: ObjectCategory::Vehicle,
             queue_category: category,

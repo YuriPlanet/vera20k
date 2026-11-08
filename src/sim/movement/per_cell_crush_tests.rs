@@ -347,3 +347,54 @@ fn a_battle_fortress_crushing_a_tank_plays_its_death_explosion() {
         .unwrap();
     assert_eq!(rocking.native_bits()[3], 0xbd4c_cccd);
 }
+
+/// Ares UnitClass_CrushCell_CrushDamage (hook 0x7418AA): crushing a type
+/// with `CrushDamage=` damages the crusher with its `CrushDamage.Warhead`;
+/// an explicit `none` warhead deals nothing.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_crush_damage_hurts_the_crusher() {
+    let crush = |warhead: &str| {
+        let rules = crate::rules::ruleset::RuleSet::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=TANK\n[InfantryTypes]\n0=SPIKE\n[Warheads]\n0=SPIKEWH\n\
+                 [TANK]\nStrength=300\nArmor=heavy\nCrusher=yes\nSpeed=4\n\
+                 [SPIKE]\nStrength=50\nArmor=none\nCrushable=yes\nCrushDamage=40\n\
+                 CrushDamage.Warhead={warhead}\n\
+                 [SPIKEWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n"
+            )),
+        )
+        .unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x7418AA);
+        let tank = sim
+            .spawn_object("TANK", "Russians", 10, 10, 0, &rules)
+            .unwrap();
+        let spike = sim
+            .spawn_object("SPIKE", "Americans", 12, 10, 0, &rules)
+            .unwrap();
+        let mut position = sim.substrate.entities.get(tank).unwrap().position;
+        let centre = position_world_coord(&position);
+        position.put_world_xy([centre.x + 16, centre.y]);
+        sim.substrate.entities.get_mut(spike).unwrap().position = position;
+        sim.substrate.occupancy = OccupancyGrid::rebuild(&sim.substrate.entities);
+        sim.per_cell_process(
+            tank,
+            PerCellReason::Arrival,
+            &rules,
+            None,
+            FrameEffects::default(),
+        )
+        .unwrap();
+        let crushed = sim
+            .substrate
+            .entities
+            .get(spike)
+            .is_none_or(|spike| !spike.lifecycle.object_alive());
+        (
+            crushed,
+            sim.substrate.entities.get(tank).unwrap().health.current(),
+        )
+    };
+    assert_eq!(crush("SPIKEWH"), (true, 260));
+    assert_eq!(crush("none"), (true, 300));
+}

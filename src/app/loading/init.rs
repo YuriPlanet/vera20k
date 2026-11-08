@@ -2375,7 +2375,8 @@ impl MapLoadInitial {
             overlay_grid,
             &house_roster,
             Some(&match_launch_descriptor),
-        );
+        )
+        .expect("generated scenario post-map initialization");
         let crate_name_id =
             |name: Option<&str>| name.and_then(|name| overlay_registry.id_for_name(name));
         let mut presented = Vec::new();
@@ -2555,7 +2556,7 @@ pub(crate) fn load_map_initial_with_assets(
         }
         options.normalize();
 
-        let settings = crate::map::rmg::RmgSettings::load(asset_manager);
+        let mut settings = crate::map::rmg::RmgSettings::load(asset_manager);
         let theater_name = crate::map::rmg::emit::theater_name(options.theater);
         let theater = crate::map::theater::load_theater(asset_manager, theater_name)
             .ok_or_else(|| anyhow::anyhow!("random map: theater {theater_name} unavailable"))?;
@@ -2620,6 +2621,18 @@ pub(crate) fn load_map_initial_with_assets(
                 .neutral_tech_buildings(),
             owner.fixed_art(),
         );
+        // VERA: the theater's civilian buildings, for an opted-in Urban
+        // Presence; the same list the setup dialog's preview generated with.
+        if options.urban_enabled {
+            settings.urban_types = crate::map::rmg::tech_catalog::resolve_urban(
+                generated_rules.native.rules(),
+                owner.fixed_art(),
+                &tech_types,
+                theater.extension,
+                theater_name,
+                |file| asset_manager.contains(file),
+            );
+        }
         let mut generated = crate::map::rmg::build::generate_map(
             &options,
             &settings,
@@ -3574,7 +3587,7 @@ fn load_map_first_step(
                                                 map_data.header.width as u16,
                                                 map_data.header.height as u16,
                                             ),
-                                        );
+                                        )?;
                                             if let Some(stats) = queue_stats {
                                                 log::info!(
                                                     "Initialized generated native tiberium queues before germination: {} growth, {} spread",
@@ -3589,7 +3602,7 @@ fn load_map_first_step(
                 &overlay_registry,
                 map_data.header.width as u16,
                 map_data.header.height as u16,
-            );
+            )?;
                                             log::info!(
                                                 "Generated final InitCellAttributes(1): {} of {} real cells germinated (value total {})",
                                                 germination.germinated_cells,
@@ -3638,6 +3651,7 @@ fn load_map_first_step(
                                                         &td.iso_palette,
                                                         td.extension,
                                                         &grid,
+                                                        rules.combat_damage.terrain_deformation,
                                                         services.gpu,
                                                         services.batch,
                                                     ),
@@ -3955,7 +3969,7 @@ fn load_map_first_step(
             overlay_grid,
             &house_roster,
             match_launch_descriptor.as_ref(),
-        );
+        )?;
                                                                             if !output.navigation_published {
             log::error!("Initial navigation rebuild failed: resolved terrain is unavailable");
         }

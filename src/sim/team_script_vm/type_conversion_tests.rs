@@ -29,7 +29,7 @@ fn scene() -> (Simulation, RuleSet, u64, Vec<u64>) {
              [FOOT2]\nAttachEffect.Duration=3\nAttachEffect.InitialDelay=2\nAttachEffect.FirepowerMultiplier=3\n\
              Spotlight.StartHeight=650\nSpotlight.DisableGreen=yes\n",
         ));
-        ini
+        crate::rules::tiberium_type::with_tiberium_image_slots(&ini)
     };
     let rules = RuleSet::from_ini(&ini).unwrap();
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 19);

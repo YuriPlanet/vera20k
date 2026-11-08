@@ -309,6 +309,10 @@ impl Simulation {
                 self.lifecycle_outputs.emit(LifecycleOutput::LogicVisit);
             }
             FrameStep::Triggers => {
+                // Ares LogicClass_Update_1000 100680F0 heads Logic55AFB0
+                // (hook 0x55AFB3), before its trigger poll.
+                #[cfg(feature = "ares")]
+                self.ares_make_stuff_up_logic(rules);
                 if request.poll_triggers {
                     self.poll_triggers_for_master_frame(rules, overlay_registry, effects);
                 }
@@ -327,7 +331,7 @@ impl Simulation {
                 );
             }
             FrameStep::Lighting => self.tick_scenario_lighting_transition(rules),
-            FrameStep::OreGrowth => self.tick_ore_growth_rungs(rules, overlay_registry),
+            FrameStep::OreGrowth => self.tick_ore_growth_rungs(rules, overlay_registry, effects)?,
             // `BombListClass::UpdateAll` follows growth and spread (0x0055B4E1).
             FrameStep::BombList => Self::bomb_list_update(
                 &self.interner,
@@ -458,8 +462,20 @@ impl Simulation {
                 // registry, and `crate_regen_rung_runs_in_every_production_frame`
                 // pins that.
                 if let Some(overlay_registry) = overlay_registry {
-                    let regen =
-                        crate::sim::crates::tick_crate_regeneration(self, rules, overlay_registry);
+                    let regen = crate::sim::crates::tick_crate_regeneration(
+                        self,
+                        rules,
+                        overlay_registry,
+                        effects,
+                    )
+                    .map_err(|error| {
+                        FrameAdvanceError::new(
+                            self.session.tick(),
+                            self.session.binary_frame(),
+                            0,
+                            error.to_string(),
+                        )
+                    })?;
                     if regen.visible != 0 {
                         // Native Mark mutates live CellClass land/zone/bridge
                         // state synchronously. Rust's BridgeRuntimeState

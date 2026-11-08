@@ -95,6 +95,7 @@ struct FragOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> FragOutput {
+    // Tile pages are Rgba8Unorm: this is already the encoded colour.
     let color: vec4f = textureSample(t_sprite, s_sprite, input.uv);
     if (color.a < 0.01) {
         discard;

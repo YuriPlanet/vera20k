@@ -217,8 +217,10 @@ pub(crate) fn apply_multiplier_crate(
         *slot =
             X87::store_f64_masked_chop(X87::mul(X87::load_f64(magnitude), X87::load_f64(*slot)));
         // Ares Armor2@1005F870 writes Ext+88 then calls RecalculateStats
-        // @1005F89D; Firepower2@1005F997 does the same for Ext+80. Both
-        // aggregate before the recipient callback/next actor (Ares Crates.cpp).
+        // @1005F89D; Firepower2 (1005F970, hook 0x483226) does the same for
+        // Ext+80 at 1005F997. Both store the magnitude into a 1.0 slot, the
+        // product above, and aggregate before the recipient callback/next
+        // actor (Ares Crates.cpp).
         #[cfg(feature = "ares")]
         entity.recompute_ares_attached_stats(rules, interner);
         let owner = entity.owner();
@@ -347,6 +349,7 @@ pub(super) fn apply_heal_base_crate(
 /// the Scenario RNG. `HouseClass::Add_Credits @ 0x004F9950` then adds it.
 pub(super) fn money_crate_amount(
     scenario_rng: &mut SimRng,
+    rules: &RuleSet,
     solo_money: i32,
     magnitude: NativeF64Bits,
 ) -> i32 {
@@ -354,7 +357,16 @@ pub(super) fn money_crate_amount(
         return solo_money;
     }
     let base = magnitude_amount(magnitude);
-    scenario_rng.next_range_i32_inclusive(base, base.wrapping_add(900))
+    // Ares 3.0 1002C8A0 (hook 0x48248D): `base + RandomRanged(0,
+    // [CrateRules] RandomCrateMoney)`; its default 900 draws the same span.
+    #[cfg(feature = "ares")]
+    return base
+        .wrapping_add(scenario_rng.next_range_i32_inclusive(0, rules.ares_random_crate_money()));
+    #[cfg(not(feature = "ares"))]
+    {
+        let _ = rules;
+        scenario_rng.next_range_i32_inclusive(base, base.wrapping_add(900))
+    }
 }
 
 /// `Math__ftol` of one `[Powerups]` magnitude double, the damage base the Gas
@@ -433,7 +445,8 @@ pub(super) fn apply_tiberium_crate(
     registry: &crate::rules::overlay_types::OverlayTypeRegistry,
     cell: (i16, i16),
     base: DriveCoord,
-) {
+    frame_effects: FrameEffects<'_>,
+) -> Result<(), crate::sim::crates::RuntimeOverlayError> {
     // `0x00481EAD..0x00481ED1`: `RandomRanged(0, Tiberiums.Count - 1)` picks
     // the ore type, and a drawn 1 clamps it to 0 (`cmp edi,1`/`jne`/`xor
     // edi,edi` at `0x00481ECC..0x00481ED1`) — both paths fall into the same
@@ -445,7 +458,7 @@ pub(super) fn apply_tiberium_crate(
         // Unpinned defensive edge: with no registered ore type native would
         // draw `RandomRanged(0, -1)` and index an empty array; VERA leaves
         // the arm (and its RNG) alone instead.
-        return;
+        return Ok(());
     }
     let drawn = sim
         .scenario_rng
@@ -453,99 +466,68 @@ pub(super) fn apply_tiberium_crate(
     // Unpinned: past 256 ore types `u8::try_from` fails where native keeps
     // indexing the type array with the raw value; VERA drops the arm there.
     let Ok(type_index) = u8::try_from(if drawn == 1 { 0 } else { drawn }) else {
-        return;
+        return Ok(());
     };
     let type_id = crate::rules::tiberium_type::TiberiumTypeId(type_index);
     let (Ok(pickup_x), Ok(pickup_y)) = (u16::try_from(cell.0), u16::try_from(cell.1)) else {
-        return;
+        return Ok(());
     };
     // `CellClass::IncreaseTiberium @ 0x00487190` runs on the live map: the
     // shared placement owner already consumes the exact native draw order —
     // the twelve-image flat variant pick, the growth-queue priority draw and
     // the spread feeds — so the arm drives it with the scenario RNG and never
     // draws around it (see `place_tiberium`).
-    let binary_frame = sim.session.binary_frame();
-    let growth_enabled = sim.ore_growth_config.grows();
-    let spread_enabled = sim.ore_growth_config.spreads();
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
-        // Native always increases tiberium through the map owner; a mapless
-        // fixture has no Cell to write and stops after its Draw1.
-        return;
-    };
-    let live_objects = crate::sim::tiberium::TiberiumPlacementObjectContext::new(
-        &sim.substrate.entities,
-        &sim.substrate.occupancy,
-        &sim.substrate.raw_cell_occupation,
-        rules,
-        &sim.interner,
-        sim.terrain_objects.cell_index(),
-    );
-    let admission = crate::sim::tiberium::NewTiberiumAdmission::runtime(terrain, live_objects);
-    let Some(grid) = sim.overlay_grid.as_mut() else {
-        return;
-    };
-    let mut context = crate::sim::tiberium::PlaceTiberiumContext {
-        overlay_grid: grid,
-        ore_growth_state: &mut sim.ore_growth_state,
-        overlay_registry: registry,
-        tiberium_types: &rules.tiberium_types,
-        resolved_terrain: Some(terrain),
-        source_object_cells: sim.terrain_objects.spawning_cells(),
-        new_cell_admission: Some(admission),
-        live_objects: Some(admission.live_objects().object_view()),
-        rng: &mut sim.scenario_rng,
-        binary_frame,
-        growth_enabled,
-        spread_enabled,
-        dirty_cells: Some(&mut sim.dirty_cells),
-    };
-    let mut receipts = Vec::new();
     let mut placed_cells = Vec::new();
-    if let Some(placement) =
-        crate::sim::tiberium::place_tiberium(&mut context, (pickup_x, pickup_y), type_id, 1)
-    {
-        placed_cells.push(placement.cell());
-        receipts.extend(placement.into_overlay_construction());
-    }
-    // `0x00481EDD..0x00481F68`: the loop count, then per pass one
-    // `RandomRanged(0, 0x300)` distance and the one raw draw inside 0x49F420
-    // (the snap-1 CellCentre mask applies after the 512-cell fallback).
-    let count = context.rng.next_range_i32_inclusive(10, 20);
-    for _ in 0..count.max(0) {
-        let distance = context.rng.next_range_i32_inclusive(0, 0x300);
-        let (x, y) = crate::sim::combat::inviso_scatter::random_direction_coord(
-            cell_grid,
-            context.rng,
-            base.x,
-            base.y,
-            distance,
-            crate::sim::combat::inviso_scatter::RandomDirectionSnap::CellCenter,
-        );
-        let target = (
-            crate::util::lepton::lepton_to_cell(x)
-                .try_into()
-                .unwrap_or(u16::MAX),
-            crate::util::lepton::lepton_to_cell(y)
-                .try_into()
-                .unwrap_or(u16::MAX),
-        );
-        if let Some(placement) =
-            crate::sim::tiberium::place_tiberium(&mut context, target, type_id, 1)
-        {
+    let result = (|| {
+        if let Some(placement) = crate::sim::tiberium::place_tiberium(
+            sim,
+            rules,
+            registry,
+            (pickup_x, pickup_y),
+            type_id,
+            1,
+            frame_effects,
+        )? {
             placed_cells.push(placement.cell());
-            receipts.extend(placement.into_overlay_construction());
         }
-    }
-    drop(context);
-    // Place487190's overlay constructor joins the runtime registries and its
-    // Mark republishes the cell's land, as the ore drivers publish theirs.
-    Simulation::publish_overlay_constructions(
-        &mut sim.native_unique_ids,
-        &mut sim.load_objects,
-        &mut sim.substrate,
-        receipts,
-    );
+        //481EDD..481F68 keeps every distance/direction draw on refused cells.
+        let count = sim.scenario_rng.next_range_i32_inclusive(10, 20);
+        for _ in 0..count.max(0) {
+            let distance = sim.scenario_rng.next_range_i32_inclusive(0, 0x300);
+            let (x, y) = crate::sim::combat::inviso_scatter::random_direction_coord(
+                cell_grid,
+                &mut sim.scenario_rng,
+                base.x,
+                base.y,
+                distance,
+                crate::sim::combat::inviso_scatter::RandomDirectionSnap::CellCenter,
+            );
+            let target = (
+                crate::util::lepton::lepton_to_cell(x)
+                    .try_into()
+                    .unwrap_or(u16::MAX),
+                crate::util::lepton::lepton_to_cell(y)
+                    .try_into()
+                    .unwrap_or(u16::MAX),
+            );
+            if let Some(placement) = crate::sim::tiberium::place_tiberium(
+                sim,
+                rules,
+                registry,
+                target,
+                type_id,
+                1,
+                frame_effects,
+            )? {
+                placed_cells.push(placement.cell());
+            }
+        }
+        Ok(())
+    })();
+    // Keep the existing batch publication even when malformed input stops a
+    // later selection. Completed constructor writes remain authoritative.
     sim.publish_tiberium_cells(rules, registry, &placed_cells);
+    result
 }
 
 /// The Explosion arm `0x00482565..0x0048271E`: the picker first takes

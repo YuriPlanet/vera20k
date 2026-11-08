@@ -24,6 +24,8 @@ fn names(values: &Value) -> Vec<String> {
         .collect()
 }
 
+// Ares reads these lists Find-only through ParseList (Misc/Bugfixes.Buffer.cpp).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn select_anim_inputs_match_native_retained_passes() {
     let native: Value = serde_json::from_str(crate::test_fixture::text(
@@ -94,6 +96,8 @@ fn select_anim_inputs_match_native_retained_passes() {
     );
 }
 
+// Ares reads these lists Find-only through ParseList (Misc/Bugfixes.Buffer.cpp).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn type_reset_clears_retired_references_then_rebuilds_native_physical_bindings() {
     let native: Value = serde_json::from_str(crate::test_fixture::text(

@@ -1420,7 +1420,8 @@ fn retained_powerup_ordinal_keeps_a_late_duplicate_anim_constructor() {
         )
         .is_empty()
     );
-    sim.visit_anim(id, &rules, None, FrameEffects::default());
+    sim.visit_anim(id, &rules, None, FrameEffects::default())
+        .unwrap();
     assert!(sim.anim(id).is_some());
     assert_eq!(sim.scenario_rng.native_state_hex(), rng);
 }
@@ -1473,13 +1474,17 @@ fn retail_cash_pickup_does_not_rebind_a_failed_animation_until_reread() {
             .spawn_object("MTNK", "Americans", 20, 22, 0, rules)
             .unwrap();
         let owner = sim.interner.intern("Americans");
-        assert!(super::super::place_crate(
-            &mut sim,
-            rules,
-            rules.overlay_registry(),
-            (21, 22),
-            Some(0)
-        ));
+        assert!(
+            super::super::place_crate(
+                &mut sim,
+                rules,
+                rules.overlay_registry(),
+                (21, 22),
+                Some(0),
+                FrameEffects::default()
+            )
+            .unwrap()
+        );
         assert!(pickup_crate(
             &mut sim,
             rules,
@@ -1639,15 +1644,19 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
         sim.scenario_rng = SimRng::new(placement_seed);
         sim.main_rng = MainRng::new(placement_seed);
         sim.mapgen_rng = SimRng::new(placement_seed);
-        assert!(super::super::place_crate(
-            &mut sim,
-            &rules,
-            &registry,
-            cell,
-            input
-                .get("scalar")
-                .map(|value| value.as_u64().unwrap() as u8)
-        ));
+        assert!(
+            super::super::place_crate(
+                &mut sim,
+                &rules,
+                &registry,
+                cell,
+                input
+                    .get("scalar")
+                    .map(|value| value.as_u64().unwrap() as u8),
+                FrameEffects::default()
+            )
+            .unwrap()
+        );
         let slot_values = |sim: &Simulation| {
             json!(
                 sim.crate_authority
@@ -1792,7 +1801,8 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
                 &rules,
                 Some(&registry),
                 crate::sim::world::FrameEffects::default(),
-            );
+            )
+            .unwrap();
             if let Some(control) = history
                 .iter()
                 .find(|control| control["frame"].as_u64() == Some(u64::from(frame)))
@@ -2067,7 +2077,9 @@ fn tiberium_crate_with_the_drawn_type_one_clamps_to_type_zero_and_places_anyway(
     assert_eq!(
         pickup
             .overlay_id
-            .and_then(|id| registry.tiberium_type_for_overlay(&rules.tiberium_types, id))
+            .and_then(|id| registry
+                .tiberium_type_for_overlay(&rules.tiberium_types, id)
+                .unwrap())
             .map(|type_id| type_id.0),
         Some(0),
         "the drawn 1 plants the first registered type"
@@ -2269,7 +2281,7 @@ fn tiberium_fixture() -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, 
     sim.session.set_binary_frame_for_test(100);
     sim.playfield_bounds_mut_for_test().as_mut().unwrap().base = 10;
     sim.set_playfield_size_height_for_test(Some(10));
-    let rules = RuleSet::from_ini(&IniFile::from_str(
+    let mut ini = IniFile::from_str(
         "[InfantryTypes]\n0=E1\n[AircraftTypes]\n[VehicleTypes]\n[BuildingTypes]\n\
          [E1]\nStrength=100\n\
          [Tiberiums]\n0=Riparius\n1=Cruentus\n\
@@ -2277,23 +2289,22 @@ fn tiberium_fixture() -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, 
          [Cruentus]\nImage=2\nValue=50\nGrowth=10000\nGrowthPercentage=0\nSpread=10000\nSpreadPercentage=0\n\
          [CrateRules]\nCrateImg=SILVER\nWoodCrateImg=WOOD\nWaterCrateImg=WATER\nCrateRadius=3.0\n\
          [Powerups]\nTiberium=0,<none>,no\n",
-    ))
-    .unwrap();
-    // The ore drivers size their per-type queues from the same tables.
+    );
+    ini.merge(&IniFile::from_str(
+        &crate::sim::tiberium::test_support::tiberium_rules_text(),
+    ));
+    // Preserve WOOD at slot0 while the Tiberium images occupy native slots.
+    ini.merge(&IniFile::from_str(
+        "[OverlayTypes]\n1=WOOD\n[WOOD]\nCrate=yes\nLand=Clear\n",
+    ));
+    let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
+    let rules = RuleSet::from_ini(&ini).unwrap();
     sim.ore_growth_state.reset_native_tiberium_classes_for_rect(
         (8, 8),
         rules.tiberium_types.len(),
         100,
     );
-    let mut registry_text = String::from("[OverlayTypes]\n0=WOOD\n");
-    for index in 1..=12 {
-        registry_text.push_str(&format!("{index}=TIB{index:02}\n"));
-    }
-    registry_text.push_str("[WOOD]\nCrate=yes\nLand=Clear\n");
-    for index in 1..=12 {
-        registry_text.push_str(&format!("[TIB{index:02}]\nTiberium=yes\nLand=Tiberium\n"));
-    }
-    let registry = OverlayTypeRegistry::from_ini(&IniFile::from_str(&registry_text), None);
+    let registry = rules.overlay_registry().clone();
     place_registered_crate(&mut sim, &registry, CELL, POWERUP_TIBERIUM as u8);
     let owner = house(&mut sim, "H0", false);
     let actor = place_actor(
@@ -2323,4 +2334,19 @@ fn total_bales(sim: &Simulation, registry: &OverlayTypeRegistry) -> u32 {
         }
     }
     total
+}
+
+/// Ares 3.0 1002C8A0 (hook 0x48248D): the Money crate pays `base +
+/// RandomRanged(0, [CrateRules] RandomCrateMoney)`; 0 pays the base and
+/// draws nothing.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_random_crate_money_bounds_the_top_up() {
+    let rules =
+        RuleSet::from_ini(&IniFile::from_str("[CrateRules]\nRandomCrateMoney=0\n")).unwrap();
+    let mut rng = crate::sim::rng::SimRng::new(7);
+    let before = rng.clone();
+    let base = NativeF64Bits::from_bits(2000.0_f64.to_bits());
+    assert_eq!(effects::money_crate_amount(&mut rng, &rules, 0, base), 2000);
+    assert_eq!(rng.next_u32(), before.clone().next_u32(), "no draw");
 }

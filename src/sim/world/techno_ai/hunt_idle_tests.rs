@@ -67,7 +67,8 @@ fn a_hunter_without_a_target_idles_unless_a_campaign_computer_owns_it() {
         let idle_timer = entity.infantry.as_ref().unwrap().idle_action_timer();
         assert!(idle_timer.due(now), "a fresh rifleman is ready to idle");
 
-        crate::sim::world::dispatch_foot_mission(&mut sim, hunter, &rules, ObjectAiCtx::default());
+        crate::sim::world::dispatch_foot_mission(&mut sim, hunter, &rules, ObjectAiCtx::default())
+            .unwrap();
 
         let entity = sim.substrate.entities.get(hunter).unwrap();
         assert_eq!(entity.attack_target.target(), None, "no enemy to hunt");
@@ -145,7 +146,8 @@ fn campaign_hunt_marches_to_the_current_players_primary_or_alternate_base() {
                 dispatch_timer: MissionDispatchTimer::at_frame(now),
             });
 
-        crate::sim::world::dispatch_foot_mission(&mut sim, hunter, &rules, ObjectAiCtx::default());
+        crate::sim::world::dispatch_foot_mission(&mut sim, hunter, &rules, ObjectAiCtx::default())
+            .unwrap();
 
         let actor = sim.entities().get(hunter).unwrap();
         assert_eq!(actor.attack_target.target(), None);

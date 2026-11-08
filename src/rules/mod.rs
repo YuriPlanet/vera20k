@@ -115,6 +115,7 @@
 //! - rules/ is depended on by: sim/, map/, render/, app/, audio/, ui/, net/
 //! - rules/ does NOT depend on (outside tests): sim/, render/, ui/, audio/, net/
 
+pub mod aircraft_trailer;
 pub mod airstrike;
 pub(crate) mod threat_coefficients;
 #[cfg(feature = "phobos")]
@@ -176,6 +177,8 @@ pub(crate) mod ares_country_presentation;
 pub(crate) mod ares_side_extension;
 pub(crate) mod ares_warhead;
 #[cfg(feature = "ares")]
+pub mod ares_weapon;
+#[cfg(feature = "ares")]
 pub(crate) mod ares_spotlight;
 #[cfg(feature = "ares")]
 pub(crate) mod ares_driver;
@@ -183,6 +186,28 @@ pub(crate) mod ares_driver;
 pub(crate) mod ares_crew;
 #[cfg(feature = "ares")]
 pub(crate) mod ares_bounty;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_infiltration;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_building_type;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_bullet_type;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_firestorm;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_prism_forwarding;
+#[cfg(feature = "ares")]
+pub mod ares_cloak_power;
+#[cfg(feature = "ares")]
+pub mod ares_mouse_cursor;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_veterancy;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_production;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_techno_type;
+#[cfg(feature = "ares")]
+pub(crate) mod ares_tiberium;
 pub mod armor;
 pub mod alpha_image_assets;
 pub mod country_loading;
@@ -289,6 +314,8 @@ mod mirage_disguise_tests;
 pub mod move_sound_tests;
 #[cfg(test)]
 mod path_delay_rules_tests;
+#[cfg(test)]
+mod allow_shrouded_subterannean_moves_tests;
 #[cfg(test)]
 mod read_double_percent_tests;
 #[cfg(any(test, feature = "test-support"))]

@@ -101,6 +101,24 @@ impl Simulation {
         }
     }
 
+    /// The building anim power policy's `Powered=` test (`0x004467D0`,
+    /// `0x00451A54`, `0x00454BF7`). Ares 3.0 BuildingClass_Place_NeedsEngineer
+    /// 100143C0 (hook `0x004467D6`), _PlayAnim_NeedsEngineer 10014400
+    /// (`0x00451A54`) and _UpdatePowered_NeedsEngineer 100145F0
+    /// (`0x00454BF7`) also count a `NeedsEngineer=` building no engineer has
+    /// entered (`+0x6CC`).
+    pub(crate) fn anim_power_policy(
+        object: &crate::rules::object_type::ObjectType,
+        entity: &crate::sim::game_entity::GameEntity,
+    ) -> bool {
+        #[cfg(feature = "ares")]
+        if object.needs_engineer && !entity.building_has_engineer.is_set() {
+            return true;
+        }
+        let _ = entity;
+        object.powered
+    }
+
     ///4549B0 slot tail, after the gap publication. Ordinary low power and the
     ///PoweredSpecial House outage are distinct conditions in the original.
     pub(crate) fn update_building_anim_power(
@@ -115,7 +133,8 @@ impl Simulation {
         let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
             return;
         };
-        if object.powered && crate::sim::power_system::native_building_power_drain(object.power) > 0
+        if Self::anim_power_policy(object, entity)
+            && crate::sim::power_system::native_building_power_drain(object.power) > 0
         {
             self.apply_building_anim_power(id, operational, rules);
         }
@@ -377,6 +396,28 @@ mod tests {
         }
     }
 
+    /// Ares 100143C0 (hook 0x4467D6): an unpowered-type `NeedsEngineer=`
+    /// building opens with its powered anims paused until an engineer
+    /// enters; stock leaves them running.
+    #[test]
+    fn needs_engineer_opening_pauses_until_engineered() {
+        let rules = rules(100, "NeedsEngineer=yes");
+        let (mut sim, id) = building(100);
+        sim.grand_opening(
+            id,
+            false,
+            true,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let anim = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
+        assert_eq!(
+            sim.anim(anim).unwrap().runtime().paused,
+            cfg!(feature = "ares")
+        );
+    }
+
     #[test]
     fn operational_edge_pauses_real_animation_without_stopping_its_timer() {
         let rules = rules(100, "Powered=yes\nPower=-10");
@@ -431,7 +472,8 @@ mod tests {
             &rules,
             None,
             crate::sim::world::FrameEffects::default(),
-        );
+        )
+        .unwrap();
         assert_eq!(sim.anim(anim).unwrap().runtime().current_frame, 0);
         assert_eq!(
             sim.anim(anim).unwrap().runtime().frame_timer.start_frame(),
@@ -452,7 +494,8 @@ mod tests {
             &rules,
             None,
             crate::sim::world::FrameEffects::default(),
-        );
+        )
+        .unwrap();
         assert_eq!(sim.anim(anim).unwrap().runtime().current_frame, 1);
         assert_eq!(
             sim.anim(anim).unwrap().runtime().frame_timer.start_frame(),

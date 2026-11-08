@@ -3843,6 +3843,19 @@ impl TacticalCaptureSession {
                     command_bar.map(|(receipt, _)| receipt),
                 )
             };
+            if scheduled.gesture.is_quickload() {
+                // The key queues the ordinary two-phase loader. This sealed
+                // gesture must finish its loading frame and restoration before
+                // recording the rewound clock, without advancing simulation.
+                ensure!(
+                    crate::app::persistence::commands::pump_saved_game_load(state) == Some(true),
+                    "literal quickload did not present its loading frame"
+                );
+                ensure!(
+                    crate::app::persistence::commands::pump_saved_game_load(state) == Some(false),
+                    "literal quickload did not finish its queued restoration"
+                );
+            }
             let neutral_input_restored = crate::app::input::camera::camera_input_idle(state)
                 && state.match_state.input.hotkey_modifiers.is_empty()
                 && !state.match_state.input.selection_state.is_band_box_active()
@@ -5169,12 +5182,12 @@ mod tests {
                 z_adjust: -32,
                 color: [0, 255, 0],
                 house: None,
-                house_color: false,
+                house_color: crate::sim::combat::radiation_beam::BeamHouseColor::None,
                 duration: 15,
                 amplitude: NativeF64Bits::from_bits(40.0_f64.to_bits()),
                 eruption: false,
             },
-            |_| [0; 3],
+            |_, _| [0; 3],
         );
         let initial =
             serde_json::to_value(MapRadiationBeamObservation::capture(&beams).unwrap()).unwrap();

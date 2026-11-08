@@ -16,6 +16,7 @@ use std::sync::{
 };
 
 use super::wire::EventBatch;
+use crate::ui::chat_translation::{ChatLanguage, ChatReply};
 use super::wire::{ChannelList, Envelope, Session};
 use serde_json::Value;
 use serde_json::json;
@@ -297,7 +298,7 @@ pub(super) enum Response {
     },
     Translated {
         id: u64,
-        outcome: Result<String, TranslateFailure>,
+        outcome: Result<ChatReply, TranslateFailure>,
     },
 }
 
@@ -737,11 +738,16 @@ impl Client {
     }
 }
 
-fn translation_result(result: Result<Value, RequestFailure>) -> Result<String, TranslateFailure> {
+fn translation_result(
+    result: Result<Value, RequestFailure>,
+) -> Result<ChatReply, TranslateFailure> {
     match result {
         Ok(value) => value["text"]
             .as_str()
-            .map(str::to_owned)
+            .map(|text| ChatReply {
+                text: text.to_owned(),
+                source: value["source"].as_str().and_then(ChatLanguage::from_tag),
+            })
             .ok_or(TranslateFailure::Unavailable),
         Err(RequestFailure::Status(400)) => Err(TranslateFailure::Unsupported),
         Err(_) => Err(TranslateFailure::Unavailable),

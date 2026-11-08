@@ -171,12 +171,41 @@ fn allocated(events: &Value) -> bool {
         .any(|event| event[0] == "allocate")
 }
 
+/// Ares UnitClass_SimpleDeploy_Height (1004C380, hook 0x739ADA) deploys an
+/// airborne non-DeployToLand deployer, where the native row refuses;
+/// `ares_airborne_deployer_without_deploy_to_land_deploys` holds it.
+fn ares_deploys_in_the_air(row: &Value) -> bool {
+    cfg!(feature = "ares") && row["input"]["name"] == "air_without_deploy_to_land"
+}
+
+/// The native refusal row under Ares: the deploy animation begins in the air.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_airborne_deployer_without_deploy_to_land_deploys() {
+    let row = corpus()["lifecycle"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["input"]["name"] == "air_without_deploy_to_land")
+        .unwrap();
+    let (mut sim, rules, id) = native_fixture(&row["input"], &row["before"]);
+    sim.update_unit_simple_deploy(id, true, &rules, crate::sim::world::FrameEffects::default())
+        .unwrap();
+    let entity = sim.substrate.entities.get(id).unwrap();
+    let leaf = entity.mission_leaf.as_unit().unwrap();
+    assert_eq!((leaf.deployed(), leaf.deploy_begin_active()), (0, 1));
+    assert!(!entity.landing_for_deploy(), "no DeployToLand, no landing");
+}
+
 #[test]
 fn updater_flags_stage_and_signed_boundaries_match_native_lifecycle() {
     let data = corpus();
     let rows = data["lifecycle"].as_array().unwrap();
     assert_eq!(rows.len(), 100);
     for (index, row) in rows.iter().enumerate() {
+        if ares_deploys_in_the_air(row) {
+            continue;
+        }
         let (mut sim, rules, id) = native_fixture(&row["input"], &row["before"]);
         let rng = sim.rng_state();
         let deploying = row["input"]["entry"].as_u64().unwrap_or(0x739ac0) != 0x739cd0;
@@ -207,6 +236,9 @@ fn updater_reads_the_height_on_any_layer() {
             continue;
         }
         airborne += 1;
+        if ares_deploys_in_the_air(row) {
+            continue;
+        }
         let (mut sim, rules, id) = native_fixture(&row["input"], &row["before"]);
         let entity = sim.substrate.entities.get_mut(id).unwrap();
         entity
@@ -692,4 +724,56 @@ fn landing_and_attached_animation_survive_snapshot_and_continue_identically() {
     assert!(entity.unit_deploying());
     assert!(entity.deploy_anim().is_some());
     compare_snapshot_continuation(sim, &rules, id, "simple deploy animation");
+}
+
+/// Ares 3.0 UnitClass_SimpleDeploy_Facing (1004C2D0, hook 0x739B8A): a
+/// deployer with a DeployingAnim that does not face `DeployDir` (east here)
+/// turns first and starts no deploy animation on that visit.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_simple_deployer_faces_deploy_dir_before_its_animation() {
+    let (mut sim, rules, id) = fixture(&json!({}));
+    let frame = sim.session.binary_frame();
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .body_facing
+        .snap(0xC000, frame);
+    sim.update_unit_simple_deploy(id, true, &rules, crate::sim::world::FrameEffects::default())
+        .unwrap();
+    let entity = sim.substrate.entities.get(id).unwrap();
+    assert!(entity.deploy_anim().is_none(), "no animation while turning");
+    assert_eq!(entity.mission_leaf.as_unit().unwrap().deployed(), 0);
+}
+
+/// Ares 3.0 UnitClass_Mi_Unload_SimpleDeployer (1004C070, hook 0x73DE90):
+/// a simple deployer without a DeployingAnim deploys at once on its Unload
+/// visit, then converts in place to its `Convert.Deploy` type and is no
+/// longer deployed; the Unload queues Guard as usual.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_simple_deployer_converts_to_its_convert_deploy_type() {
+    let ini = IniFile::from_str(
+        "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+         [VehicleTypes]\n0=SDEP\n1=SDEP2\n\
+         [SDEP]\nStrength=300\nSpeed=6\nIsSimpleDeployer=yes\nConvert.Deploy=SDEP2\n\
+         Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+         [SDEP2]\nStrength=300\nSpeed=6\n\
+         Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+         [Unload]\nRate=0.016\n[Guard]\nRate=0.1\n[Clear]\nBuildable=yes\n",
+    );
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::from_str("")).unwrap();
+    let mut sim = Simulation::with_seed(0);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let id = sim
+        .spawn_object("SDEP", "Russians", 10, 10, 64, &rules)
+        .unwrap();
+    assert_eq!(
+        sim.unit_simple_mission_unload(id, &rules, FrameEffects::default()),
+        Ok(450)
+    );
+    let entity = sim.substrate.entities.get(id).unwrap();
+    assert_eq!(sim.interner.resolve(entity.type_ref()), "SDEP2");
+    assert_eq!(entity.mission_leaf.as_unit().unwrap().deployed(), 0);
 }

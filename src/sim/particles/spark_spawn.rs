@@ -387,8 +387,11 @@ fn signed_modulo(raw: i32, divisor: i32) -> i32 {
 }
 
 /// `CDQ; XOR EAX,EDX; SUB EAX,EDX; CDQ; IDIV` — absolute value first, then the
-/// remainder. Equal to modulo-then-abs for every input except `i32::MIN`,
-/// where native's `NEG` overflows.
+/// remainder (Z velocity, `0x0062EA62..0x0062EA6B`).
+///
+/// RESIDUAL: for a raw `i32::MIN` native's absolute value overflows and stays
+/// negative, so its remainder is `-(2^31 mod |divisor|)`; this takes
+/// `unsigned_abs` and returns the positive value. One raw draw in 2^32.
 ///
 /// VERA-internal, gamemd equivalent UNCHECKED: a zero divisor returns 0 where
 /// native raises `#DE`.
