@@ -156,6 +156,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## Documentación
 
 - [Vista previa en WebAssembly](docs/wasm.md): una compilación opcional para un jugador que se ejecuta en el navegador.
+- [Guía de modding](docs/modding.md): qué pueden hacer los mods y qué no, y en qué se diferencia VERA20K del juego original.
 - [Perfiles INI](docs/ini-roots.md): elegir los archivos de reglas, arte e IA.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) y [NPatch](docs/npatch.md): compatibilidad con las extensiones y sus limitaciones.
 - [Visión general del motor](docs/index.md): organización del código y cómo encajan las piezas del motor.

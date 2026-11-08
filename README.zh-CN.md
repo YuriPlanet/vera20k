@@ -143,6 +143,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## 文档
 
 - [WebAssembly 预览版](docs/wasm.zh-CN.md)：在浏览器中运行的可选单人版本。
+- [模组制作指南](docs/modding.md)：模组能做什么、不能做什么，以及 VERA20K 与原版游戏的区别。
 - [INI 配置方案](docs/ini-roots.md)：选择规则、美术和 AI 文件。
 - [Ares](docs/ares.md)、[Phobos](docs/phobos.md) 和 [NPatch](docs/npatch.md)：扩展的支持情况与限制。
 - [引擎概览](docs/index.md)：代码结构以及引擎各部分如何协同工作。

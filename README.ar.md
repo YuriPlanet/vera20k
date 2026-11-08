@@ -151,6 +151,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## التوثيق
 
 - [معاينة WebAssembly](docs/wasm.md): بنية اختيارية للعب الفردي تعمل في المتصفح.
+- [دليل التعديلات](docs/modding.md): ما تستطيع التعديلات فعله وما لا تستطيعه، وكيف يختلف VERA20K عن اللعبة الأصلية.
 - [ملفات تعريف INI](docs/ini-roots.md): اختيار ملفات القواعد والرسوم والذكاء الاصطناعي.
 - [Ares](docs/ares.md) و[Phobos](docs/phobos.md) و[NPatch](docs/npatch.md): دعم الإضافات وحدوده.
 - [نظرة عامة على المحرك](docs/index.md): تنظيم الشيفرة وكيف تترابط أجزاء المحرك.

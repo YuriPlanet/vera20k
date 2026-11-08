@@ -154,6 +154,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## Belgeler
 
 - [WebAssembly önizlemesi](docs/wasm.md): tarayıcıda çalışan, isteğe bağlı tek oyunculu bir derleme.
+- [Mod yapım kılavuzu](docs/modding.md): modların neleri yapıp neleri yapamayacağı ve VERA20K ile orijinal oyun arasındaki farklar.
 - [INI profilleri](docs/ini-roots.md): kural, grafik ve yapay zekâ dosyalarını seçme.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) ve [NPatch](docs/npatch.md): eklenti desteği ve sınırlamaları.
 - [Motora genel bakış](docs/index.md): kodun düzeni ve motorun parçalarının nasıl bir araya geldiği.

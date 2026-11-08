@@ -125,6 +125,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## ドキュメント
 
 - [WebAssembly プレビュー](docs/wasm.md)：ブラウザーで動作する、オプトインのシングルプレイ用ビルド。
+- [MOD 制作ガイド](docs/modding.md)：MOD でできることとできないこと、VERA20K とオリジナル版の違い。
 - [INI プロファイル](docs/ini-roots.md)：ルール、アート、AI の各ファイルの選択。
 - [Ares](docs/ares.md)、[Phobos](docs/phobos.md)、[NPatch](docs/npatch.md)：拡張機能への対応状況と制限事項。
 - [エンジンの概要](docs/index.md)：コード構成とエンジン全体の仕組み。
