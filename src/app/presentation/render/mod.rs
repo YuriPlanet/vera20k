@@ -804,6 +804,8 @@ pub(crate) fn render_game(
         &composition_view,
         &draw_passes::DrawPassData {
             cell_body_draws: &world.cell_body_draws,
+            terrain: &world.terrain.normal,
+            smudge: &world.smudge,
             bridge_shadows: &world.bridge_body_shadow,
             object_layers: &world.object_layers,
             fogged_objects: &world.fogged_objects,
@@ -815,6 +817,7 @@ pub(crate) fn render_game(
             sidebar_flash: &sidebar.flash,
             sidebar_gclock: &sidebar.gclock,
             minimap: &sidebar.minimap,
+            viewport_rect: &sidebar.viewport_rect,
             smooth_chrome: sidebar.smooth_chrome,
             smooth_command_bar: sidebar.smooth_command_bar,
         },
@@ -959,6 +962,18 @@ fn upload_to_gpu(
         }
     };
 
+    // The sidebar's streams scroll with the UI camera, and its text with it
+    // unless a raster already placed that on the surface.
+    let ui_camera = state.renderer.batch_renderer.ui_camera_uniform().camera_pos;
+    let text_camera = if matches!(
+        crate::app::presentation::sidebar_surface::column_text(state),
+        crate::app::presentation::sidebar_surface::ColumnText::Surface(Some(_))
+    ) {
+        [0.0; 2]
+    } else {
+        ui_camera
+    };
+
     // Recorded ahead of every pass that draws them (`InstanceBufferPool::
     // record_uploads`).
     let renderer = &mut state.renderer;
@@ -1015,23 +1030,23 @@ fn upload_to_gpu(
     pool.upload("factory_rally_second", &ui.factory_rally_second);
 
     // Sidebar + minimap
-    pool.upload("minimap", &sidebar.minimap);
-    pool.upload("viewport_rect", &sidebar.viewport_rect);
-    pool.upload("radar_content_boundary", &sidebar.content_boundary);
-    pool.upload("sidebar_chrome", &sidebar.chrome);
-    pool.upload("command_bar", &sidebar.command_bar);
-    pool.upload("radar_anim", &sidebar.radar_anim);
-    pool.upload("sidebar_cameo", &sidebar.cameo);
-    pool.upload("sidebar_cameo_hover", &sidebar.cameo_hover);
-    pool.upload("sidebar_unavailable", &sidebar.unavailable);
-    pool.upload("sidebar_flash", &sidebar.flash);
-    pool.upload("sidebar_gclock", &sidebar.gclock);
-    pool.upload("sidebar_queue_overlay", &sidebar.queue_overlay);
-    pool.upload("sidebar_queue_text", &sidebar.queue_text);
-    pool.upload("sidebar_label_overlay", &sidebar.label_overlay);
-    pool.upload("sidebar_label_text", &sidebar.label_text);
-    pool.upload("sidebar_cameo_overlay", &sidebar.cameo_overlay);
-    pool.upload("sidebar_text", &sidebar.text);
+    pool.upload_following("minimap", &sidebar.minimap, ui_camera);
+    pool.upload_following("viewport_rect", &sidebar.viewport_rect, ui_camera);
+    pool.upload_following("radar_content_boundary", &sidebar.content_boundary, ui_camera);
+    pool.upload_following("sidebar_chrome", &sidebar.chrome, ui_camera);
+    pool.upload_following("command_bar", &sidebar.command_bar, ui_camera);
+    pool.upload_following("radar_anim", &sidebar.radar_anim, ui_camera);
+    pool.upload_following("sidebar_cameo", &sidebar.cameo, ui_camera);
+    pool.upload_following("sidebar_cameo_hover", &sidebar.cameo_hover, ui_camera);
+    pool.upload_following("sidebar_unavailable", &sidebar.unavailable, ui_camera);
+    pool.upload_following("sidebar_flash", &sidebar.flash, ui_camera);
+    pool.upload_following("sidebar_gclock", &sidebar.gclock, ui_camera);
+    pool.upload_following("sidebar_queue_overlay", &sidebar.queue_overlay, ui_camera);
+    pool.upload_following("sidebar_queue_text", &sidebar.queue_text, text_camera);
+    pool.upload_following("sidebar_label_overlay", &sidebar.label_overlay, ui_camera);
+    pool.upload_following("sidebar_label_text", &sidebar.label_text, text_camera);
+    pool.upload_following("sidebar_cameo_overlay", &sidebar.cameo_overlay, ui_camera);
+    pool.upload_following("sidebar_text", &sidebar.text, text_camera);
     #[cfg(feature = "phobos")]
     {
         pool.upload("sw_sidebar_chrome", &sidebar.sw_sidebar_chrome);
