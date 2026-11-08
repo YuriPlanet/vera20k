@@ -133,6 +133,7 @@ impl Simulation {
             return;
         };
         let owner = entity.owner();
+        let type_id = entity.type_ref();
         let source = entity
             .passenger_role
             .transporter()
@@ -148,6 +149,7 @@ impl Simulation {
         self.sound_events.emit(SimSoundEvent::UnitPromoted {
             owner,
             sound_id,
+            type_id,
             world,
             eva,
         });

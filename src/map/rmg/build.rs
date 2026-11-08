@@ -419,6 +419,121 @@ mod tests {
         .expect("generated map")
     }
 
+    /// VERA extension: a thirty-player seed gets a start for every player.
+    #[test]
+    fn a_thirty_player_map_places_every_start() {
+        let options = RmgOptions {
+            num_players: 30,
+            ..options(1, 0)
+        };
+        let generated = generate_map(
+            &options,
+            &RmgSettings::default(),
+            &resolved(),
+            &one_by_one(),
+            &[],
+        );
+        assert_eq!(generated.unfilled_start_slots, 0);
+        let mut slots: Vec<u8> = generated.start_waypoints.iter().map(|w| w.0).collect();
+        slots.sort_unstable();
+        assert_eq!(slots, (0..30).collect::<Vec<u8>>());
+    }
+
+    /// VERA extension: thirty players' islands survive the start threshold,
+    /// so an archipelago seats every player at the default and largest size.
+    #[test]
+    #[ignore = "slow; run when changing what it covers"]
+    fn thirty_player_archipelagos_place_every_start() {
+        let Some((settings, resolved, blocks)) = retail_inputs() else {
+            return;
+        };
+        for size in [0, crate::map::rmg::MAX_SIZE_OPTION] {
+            let options = RmgOptions {
+                num_players: 30,
+                width: size,
+                height: size,
+                ..options(0, 0)
+            };
+            let generated = generate_map(&options, &settings, &resolved, &blocks, &[]);
+            assert_eq!(
+                (
+                    generated.unfilled_start_slots,
+                    generated.start_waypoints.len()
+                ),
+                (0, 30),
+                "size option {size}"
+            );
+        }
+    }
+
+    /// VERA extension: the largest size option generates a 500x500 interior.
+    #[test]
+    #[ignore = "slow; run when changing what it covers"]
+    fn a_colossal_thirty_player_map_generates_at_500() {
+        let options = RmgOptions {
+            num_players: 30,
+            width: crate::map::rmg::MAX_SIZE_OPTION,
+            height: crate::map::rmg::MAX_SIZE_OPTION,
+            ..options(1, 0)
+        };
+        let generated = generate_map(
+            &options,
+            &RmgSettings::default(),
+            &resolved(),
+            &one_by_one(),
+            &[],
+        );
+        assert_eq!(generated.unfilled_start_slots, 0);
+        assert_eq!(generated.start_waypoints.len(), 30);
+        assert_eq!(
+            (
+                generated.map_file.header.width,
+                generated.map_file.header.height
+            ),
+            (504, 512)
+        );
+    }
+
+    /// VERA extension: the dialog's Urban and Desert theaters and
+    /// its Archipelago map type generate from retail data with every start
+    /// placed, and DESERT's empty waterfall sets are absent to the generator.
+    #[test]
+    #[ignore = "slow; run when changing what it covers"]
+    fn the_added_theaters_and_archipelago_generate_from_retail_data() {
+        for (theater, name) in [(2, "URBAN"), (3, "DESERT")] {
+            let Some((settings, resolved, blocks)) = retail_inputs_for(name) else {
+                return;
+            };
+            if name == "DESERT" {
+                assert_eq!(resolved.ids.cliffs.waterfall_bases(), [-1; 4]);
+            } else {
+                assert!(
+                    resolved
+                        .ids
+                        .cliffs
+                        .waterfall_bases()
+                        .iter()
+                        .all(|&b| b >= 0)
+                );
+            }
+            for map_type in [0, 1, 4] {
+                let options = RmgOptions {
+                    num_players: 8,
+                    ..options(map_type, theater)
+                };
+                let generated = generate_map(&options, &settings, &resolved, &blocks, &[]);
+                assert_eq!(
+                    (
+                        generated.unfilled_start_slots,
+                        generated.start_waypoints.len()
+                    ),
+                    (0, 8),
+                    "{name} map type {map_type}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn generate_map_is_deterministic() {
         let resolved = resolved();
@@ -571,10 +686,21 @@ mod tests {
         ResolvedTheaterInputs,
         crate::map::rmg::theater_blocks::TheaterTileBlocks,
     )> {
+        retail_inputs_for("TEMPERATE")
+    }
+
+    /// [`retail_inputs`] for the named retail theater.
+    fn retail_inputs_for(
+        theater_name: &str,
+    ) -> Option<(
+        RmgSettings,
+        ResolvedTheaterInputs,
+        crate::map::rmg::theater_blocks::TheaterTileBlocks,
+    )> {
         let (_, mut assets) = crate::rules::retail_ini_fixture::retail_assets()?;
         let rules = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini")?;
-        let theater = crate::map::theater::load_theater(&mut assets, "TEMPERATE")
-            .expect("retail TEMPERATE theater");
+        let theater = crate::map::theater::load_theater(&mut assets, theater_name)
+            .unwrap_or_else(|| panic!("retail {theater_name} theater"));
         let ruleset = crate::rules::ruleset::RuleSet::from_ini(&rules).expect("retail rules");
         let resolved = ResolvedTheaterInputs::from_theater(
             &theater,

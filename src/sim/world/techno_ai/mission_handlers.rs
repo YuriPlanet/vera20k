@@ -84,15 +84,15 @@ pub(crate) fn dispatch_foot_mission(
     id: u64,
     rules: &RuleSet,
     ctx: super::ObjectAiCtx<'_>,
-) -> bool {
+) -> Result<bool, crate::rules::overlay_types::TiberiumImageError> {
     let mut bridge_changed = false;
     let now = sim.session.binary_frame();
     if !foot_mission_handler_due(sim, id, now) {
-        return bridge_changed;
+        return Ok(bridge_changed);
     }
     let input = {
         let Some(entity) = sim.substrate.entities.get(id) else {
-            return bridge_changed;
+            return Ok(bridge_changed);
         };
         let category = entity.category();
         let mission = entity.mission.current().known();
@@ -167,8 +167,9 @@ pub(crate) fn dispatch_foot_mission(
                 ctx.overlay_registry,
                 id,
                 ctx.effects,
-            ) else {
-                return bridge_changed;
+            )?
+            else {
+                return Ok(bridge_changed);
             };
             MissionHandlerEvaluation::cadence(delay)
         }
@@ -500,7 +501,7 @@ pub(crate) fn dispatch_foot_mission(
                 //52139A..5213EE: native GetCell/MapCell, Cell's site and
                 // fixed GetWeapon1. This lookup never substitutes the deck.
                 let Some(at) = sim.own_map_cell(id) else {
-                    return bridge_changed;
+                    return Ok(bridge_changed);
                 };
                 let target = crate::sim::combat::TargetKind::Cell(at.0, at.1);
                 let actor = sim.substrate.entities.get(id).expect("deployed shim actor");
@@ -512,7 +513,7 @@ pub(crate) fn dispatch_foot_mission(
                     &sim.substrate.entities,
                     &sim.interner,
                 ) else {
-                    return bridge_changed;
+                    return Ok(bridge_changed);
                 };
                 let below = sim.radiation.site_at(at).is_none_or(|site| {
                     crate::sim::radiation::RadiationState::current_site_level(site)
@@ -614,7 +615,7 @@ pub(crate) fn dispatch_foot_mission(
         // effects synchronously; its signed return reaches this epilogue.
         (EntityCategory::Infantry, Some(MissionType::Unload)) => {
             let Ok(delay) = sim.infantry_mission_unload(id, rules, ctx.effects) else {
-                return bridge_changed;
+                return Ok(bridge_changed);
             };
             MissionHandlerEvaluation::cadence(delay)
         }
@@ -673,7 +674,7 @@ pub(crate) fn dispatch_foot_mission(
             }) =>
         {
             let Ok(delay) = sim.unit_simple_mission_unload(id, rules, ctx.effects) else {
-                return bridge_changed;
+                return Ok(bridge_changed);
             };
             MissionHandlerEvaluation::cadence(delay)
         }
@@ -701,9 +702,13 @@ pub(crate) fn dispatch_foot_mission(
             // Miner's kick (`0x00740815..0x0074084F`, `sim::slave_manager`),
             // then the harvester arms and the Construction Yard maker's Unload
             // arm, in that order.
-            if let Some(delay) =
-                sim.slave_master_mission_kick(id, mission, rules, ctx.overlay_registry, ctx.effects)
-            {
+            if let Some(delay) = sim.slave_master_mission_kick(
+                id,
+                mission,
+                rules,
+                ctx.overlay_registry,
+                ctx.effects,
+            )? {
                 MissionHandlerEvaluation::cadence(delay)
             } else if harvester_guard_override_requeues_harvest(sim, id, rules) {
                 // `Queue_Mission(10, 0); return 1` at `0x0074092C` /
@@ -726,7 +731,7 @@ pub(crate) fn dispatch_foot_mission(
         // `InfantryClass::Mission_Harvest @ 0x00522E70` (Infantry `vt+0x224`),
         // the slave's dig (`sim::slave_manager`).
         (EntityCategory::Infantry, Some(MissionType::Harvest)) => {
-            match sim.infantry_mission_harvest(id, rules, ctx.overlay_registry, ctx.effects) {
+            match sim.infantry_mission_harvest(id, rules, ctx.overlay_registry, ctx.effects)? {
                 (delay, true) => MissionHandlerEvaluation::queue(delay, MissionType::Guard),
                 (delay, false) => MissionHandlerEvaluation::cadence(delay),
             }
@@ -763,7 +768,7 @@ pub(crate) fn dispatch_foot_mission(
                 rules,
                 ctx.overlay_registry,
                 ctx.effects,
-            ) {
+            )? {
                 Some(delay) => MissionHandlerEvaluation::cadence(delay),
                 None => evaluate_foot_area_guard(sim, id, rules, ctx),
             }
@@ -863,7 +868,7 @@ pub(crate) fn dispatch_foot_mission(
         // original never writes.
         (category, mission) => match base_mission_handler_delay(category, mission) {
             Some(delay) => MissionHandlerEvaluation::cadence(delay),
-            None => return bridge_changed,
+            None => return Ok(bridge_changed),
         },
     };
 
@@ -901,7 +906,7 @@ pub(crate) fn dispatch_foot_mission(
             .mission
             .write_dispatch_epilogue(now as i32, evaluation.delay);
     }
-    bridge_changed
+    Ok(bridge_changed)
 }
 
 #[derive(Debug, Clone, Copy)]

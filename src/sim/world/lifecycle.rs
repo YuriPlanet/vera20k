@@ -1690,7 +1690,7 @@ impl Simulation {
                 .get(stable_id)
                 .is_some_and(|entity| entity.category() == EntityCategory::Structure)
         {
-            for viewer in self.fog_viewers() {
+            for &viewer in self.fog_viewers().iter() {
                 self.freeze_building_in_fog(viewer, stable_id, false, context);
             }
         }

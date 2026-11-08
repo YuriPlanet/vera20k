@@ -371,7 +371,8 @@ fn voxel_anim_logic_visit_delivers_native_deck_height_and_low_bridge_selection()
             .set_bounce_for_test(body(case));
         assert!(sim.live_object_order_snapshot().contains(&id));
         let before = sim.state_hash();
-        sim.visit_voxel_anim(id, &rules, crate::sim::world::FrameEffects::default());
+        sim.visit_voxel_anim(id, &rules, crate::sim::world::FrameEffects::default())
+            .unwrap();
         sim.process_pending_delete_with(
             &rules,
             Some(rules.overlay_registry()),

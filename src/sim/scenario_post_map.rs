@@ -63,7 +63,7 @@ impl Simulation {
     pub(crate) fn finalize_scenario_post_map(
         &mut self,
         input: ScenarioPostMapInput<'_>,
-    ) -> ScenarioPostMapOutput {
+    ) -> Result<ScenarioPostMapOutput, crate::sim::crates::RuntimeOverlayError> {
         // Runtime rebuilds use this same sim-owned publication seam. Crate
         // placement below reads the newly published canonical grid.
         let navigation_published = self.rebuild_dynamic_navigation(input.rules);
@@ -81,7 +81,8 @@ impl Simulation {
                 input.rules,
                 input.overlay_registry,
                 player_count,
-            );
+                FrameEffects::default(),
+            )?;
             // Startup OverlayClass::Mark completes synchronously before native
             // proceeds to AI credits; the placement refreshed the bridge
             // records and navigation from the now-final CellClass state.
@@ -241,7 +242,7 @@ impl Simulation {
             input.overlay_registry,
             input.map_width,
             input.map_height,
-        );
+        )?;
 
         // gamemd Fill_In_Data684C9A..684D43 reads Evade+0 (8A38E0), the
         // incoming global0 captured by CampaignCarryOver::Save4C6180.
@@ -280,7 +281,7 @@ impl Simulation {
         // fresh-only owner and therefore retains, rather than recaptures, them.
         Self::retain_initial_house_technos(&self.substrate, &mut self.houses);
 
-        ScenarioPostMapOutput {
+        Ok(ScenarioPostMapOutput {
             navigation_published,
             crates,
             ore_twinkle,
@@ -288,7 +289,7 @@ impl Simulation {
             opening_view_coord: player_view.map(|(coord, _)| coord),
             #[cfg(any(test, feature = "test-support"))]
             skirmish_order,
-        }
+        })
     }
 
     /// `Post_Map_Init`'s Special-House pass. Before its per-House loop
@@ -427,6 +428,7 @@ mod tests {
              CrateMinimum=1\n\
              CrateMaximum=1\n",
         );
+        let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
         (
             RuleSet::from_ini(&ini).expect("post-map rules"),
             OverlayTypeRegistry::from_ini(&ini, None),
@@ -463,6 +465,7 @@ mod tests {
              [TIBCELL]\n\
              Tiberium=yes\n",
         );
+        let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
         let mut rules = RuleSet::from_ini(&ini).expect("twinkle rules");
         let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
             "[TWNK1]\nLoopCount=-1\nRandomLoopDelay=120,300\nDetailLevel=2\nHideIfNoOre=true\nRate=450\n",
@@ -531,7 +534,8 @@ mod tests {
             .register(HouseState::new(campaign_owner, 0, None, false, 0, 10));
         campaign.session.set_game_mode(ScenarioGameMode::Campaign);
         sim.session.set_binary_frame_for_test(17);
-        sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster));
+        sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster))
+            .unwrap();
         assert_eq!(
             *sim.houses[&hard].enemy_search_timer(),
             CdTimer::started(17, -7)
@@ -548,7 +552,9 @@ mod tests {
             *sim.houses[&passive].enemy_search_timer(),
             CdTimer::started(0, 0)
         );
-        campaign.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster));
+        campaign
+            .finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster))
+            .unwrap();
         assert_eq!(
             *campaign.houses[&campaign_owner].enemy_search_timer(),
             CdTimer::started(0, 0)
@@ -599,6 +605,7 @@ mod tests {
              [TIBCELL]\n\
              Tiberium=yes\n",
         );
+        let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
         (
             RuleSet::from_ini(&ini).expect("special-ally rules"),
             OverlayTypeRegistry::from_ini(&ini, None),
@@ -698,6 +705,7 @@ mod tests {
             let roster = HouseRoster::default();
             let (_, draws) = trace_draws(|| {
                 sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster))
+                    .unwrap()
             });
             assert!(
                 draws.is_empty(),
@@ -761,7 +769,7 @@ mod tests {
             let before = loaded.rng_state();
             let mut input = generic_post_map_input(&rules, &overlays, &roster);
             input.campaign_map = Some(&map);
-            let output = loaded.finalize_scenario_post_map(input);
+            let output = loaded.finalize_scenario_post_map(input).unwrap();
             assert_eq!(
                 output.opening_view_cell,
                 Some(expected),
@@ -819,7 +827,7 @@ mod tests {
             let before = sim.rng_state();
             let mut input = generic_post_map_input(&rules, &overlays, &roster);
             input.campaign_map = Some(&map);
-            let output = sim.finalize_scenario_post_map(input);
+            let output = sim.finalize_scenario_post_map(input).unwrap();
             assert_eq!(
                 output.opening_view_cell,
                 Some((
@@ -897,11 +905,13 @@ mod tests {
         let rng = sim.rng_state();
         let ids = sim.native_unique_ids.as_ref().unwrap().current_raw();
         let absent_late_roster = HouseRoster::default();
-        let output = sim.finalize_scenario_post_map(generic_post_map_input(
-            &rules,
-            &overlays,
-            &absent_late_roster,
-        ));
+        let output = sim
+            .finalize_scenario_post_map(generic_post_map_input(
+                &rules,
+                &overlays,
+                &absent_late_roster,
+            ))
+            .unwrap();
         assert_eq!(sim.house_alliances.as_map(), &alliances);
         assert_eq!(sim.houses.order(), order);
         assert_eq!(
@@ -963,8 +973,9 @@ mod tests {
         let main_before = sim.main_rng.state();
         let roster = HouseRoster::default();
 
-        let output =
-            sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster));
+        let output = sim
+            .finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster))
+            .unwrap();
 
         let native_order: Vec<(u16, u16)> =
             crate::map::authored_overlay::NativeOverlayMapShape::new(8, 8)
@@ -1052,8 +1063,9 @@ mod tests {
             ],
         );
         let roster = HouseRoster::default();
-        let output =
-            sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster));
+        let output = sim
+            .finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster))
+            .unwrap();
         let alliances = sim.house_alliances.as_map();
         for other in ["A", "B"] {
             assert!(
@@ -1091,7 +1103,8 @@ mod tests {
             ],
         );
         let roster = HouseRoster::default();
-        sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster));
+        sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster))
+            .unwrap();
         let alliances = sim.house_alliances.as_map();
         for other in ["Special", "A"] {
             assert!(
@@ -1122,7 +1135,8 @@ mod tests {
             &[("H", "Americans", false), ("Special", "Special", false)],
         );
         let roster = HouseRoster::default();
-        sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster));
+        sim.finalize_scenario_post_map(generic_post_map_input(&rules, &overlays, &roster))
+            .unwrap();
         assert!(crate::map::houses::are_houses_mutually_allied(
             sim.house_alliances.as_map(),
             "Special",

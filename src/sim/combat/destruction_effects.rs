@@ -710,7 +710,7 @@ impl Simulation {
         // (`sim::ares_tiberium_storage`). The stock spill has no store to
         // read in default builds.
         #[cfg(feature = "ares")]
-        self.ares_destroy_refinery_storage(building_id, rules);
+        self.ares_destroy_refinery_storage(building_id, rules, effects);
 
         // 12. `0x00441C3D..0x00441CA9`: the fuse (`+0x528`) restarts at the
         // frame, 0 long for an `Explodes=` type (TechnoType `+0xD15`) or a

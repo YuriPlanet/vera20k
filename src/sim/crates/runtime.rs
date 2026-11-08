@@ -26,7 +26,8 @@
 use crate::rules::crate_rules::CrateRules;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::world::Simulation;
+use crate::sim::overlay_mark_host::RuntimeOverlayError;
+use crate::sim::world::{FrameEffects, Simulation};
 
 use super::state::CRATE_SLOT_CAPACITY;
 use super::{
@@ -199,10 +200,11 @@ pub(crate) fn tick_crate_regeneration(
     sim: &mut Simulation,
     rules: &RuleSet,
     overlay_registry: &OverlayTypeRegistry,
-) -> CrateRegeneration {
+    effects: FrameEffects<'_>,
+) -> Result<CrateRegeneration, RuntimeOverlayError> {
     let mut result = CrateRegeneration::default();
     if !sim.session.game_mode_nonzero() || !sim.session.game_options().crates {
-        return result;
+        return Ok(result);
     }
     let current_frame = sim.session.binary_frame() as i32;
     for index in 0..CRATE_SLOT_CAPACITY {
@@ -221,7 +223,8 @@ pub(crate) fn tick_crate_regeneration(
             rules,
             overlay_registry,
             ForcedPostPrecheckFailure::None,
-        ) {
+            effects,
+        )? {
             OneCrateResult::HardRejected => {}
             OneCrateResult::AcceptedGhost => result.accepted = result.accepted.wrapping_add(1),
             OneCrateResult::AcceptedVisible => {
@@ -230,7 +233,7 @@ pub(crate) fn tick_crate_regeneration(
             }
         }
     }
-    result
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -715,7 +718,9 @@ mod tests {
             };
             let rng_before = sim.scenario_rng.state();
 
-            let regen = tick_crate_regeneration(&mut sim, &rules, &registry);
+            let regen =
+                tick_crate_regeneration(&mut sim, &rules, &registry, FrameEffects::default())
+                    .unwrap();
 
             assert_eq!(regen, CrateRegeneration::default());
             assert_eq!(sim.crate_authority.slots()[0].cell_x, 8);
@@ -756,7 +761,8 @@ mod tests {
         };
         let untouched = sim.crate_authority.slots()[0];
 
-        let regen = tick_crate_regeneration(&mut sim, &rules, &registry);
+        let regen =
+            tick_crate_regeneration(&mut sim, &rules, &registry, FrameEffects::default()).unwrap();
 
         assert_eq!(regen.expired, 1, "only the due slot expires");
         assert_eq!(regen.accepted, 1, "one replacement placer call");
@@ -803,7 +809,8 @@ mod tests {
             cell_y: 15,
         };
 
-        let regen = tick_crate_regeneration(&mut sim, &rules, &registry);
+        let regen =
+            tick_crate_regeneration(&mut sim, &rules, &registry, FrameEffects::default()).unwrap();
 
         assert_eq!(regen.expired, 1);
         assert_eq!(regen.visible, 1);

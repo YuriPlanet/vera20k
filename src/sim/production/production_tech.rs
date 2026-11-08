@@ -130,7 +130,6 @@ pub(super) fn build_option_for_owner(
     };
     Some(BuildOption {
         type_id: type_interned,
-        display_name: obj.name.clone().unwrap_or_else(|| obj.id.clone()),
         cost,
         object_category: obj.category,
         queue_category: production_category_for_object(obj),

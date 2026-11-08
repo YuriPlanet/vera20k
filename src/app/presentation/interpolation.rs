@@ -612,7 +612,10 @@ pub(crate) fn screen_position(state: &AppState, entity: &GameEntity) -> (f32, f3
 /// Hidden-window skipped intervals and map loads snap instead of long lerps.
 pub(crate) fn prepare(state: &mut AppState, exact_capture: bool) {
     if state.frontend.screen != crate::ui::game_screen::GameScreen::InGame {
-        state.renderer.fps_overlay.set_simulation_readout(None);
+        state
+            .renderer
+            .performance_overlay
+            .set_simulation_readout(None);
         return;
     }
     let held = exact_capture
@@ -646,7 +649,7 @@ pub(crate) fn prepare(state: &mut AppState, exact_capture: bool) {
     }
     state
         .renderer
-        .fps_overlay
+        .performance_overlay
         .set_simulation_readout(Some(interpolation.readout()));
 }
 

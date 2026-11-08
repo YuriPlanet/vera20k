@@ -4,25 +4,26 @@
 //! Match-lifetime diagnostic replay lives in `app::match_diagnostics`; this
 //! owner is process-scoped tooling state.
 
+use crate::app::presentation::render::RenderPhases;
 use crate::util::time::{Duration, Instant};
 use std::collections::VecDeque;
 
 const FRAME_TIMER_WINDOW: usize = 60;
 
 /// In-game render phase spans during one observation window: their means for
-/// the dashboard's report, their totals for the FPS panel's Most CPU row.
+/// the dashboard's report, their totals for the performance panel's Most CPU row.
 ///
 /// The spans are wall time from `presentation::render::render_game`; this meter
 /// only sums them, so a single slow frame cannot mislead the report.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct RenderTimingMeter {
     frames: u32,
-    sums: [Duration; 7],
+    sums: [Duration; RenderPhases::COUNT],
 }
 
 impl RenderTimingMeter {
     /// Fold one finished render into the totals.
-    pub(crate) fn record(&mut self, phases: crate::app::presentation::render::RenderPhases) {
+    pub(crate) fn record(&mut self, phases: RenderPhases) {
         self.frames = self.frames.saturating_add(1);
         for (sum, span) in self.sums.iter_mut().zip(phases.spans()) {
             *sum += span;
@@ -30,19 +31,19 @@ impl RenderTimingMeter {
     }
 
     /// Each phase's summed span, in `RenderPhases::spans` order.
-    pub(crate) fn totals(&self) -> [Duration; 7] {
+    pub(crate) fn totals(&self) -> [Duration; RenderPhases::COUNT] {
         self.sums
     }
 
     /// Mean span of each phase in milliseconds, or `None` before the first
     /// render. Order matches `RenderPhases::spans`.
     #[cfg(feature = "telemetry-dashboard")]
-    pub(crate) fn mean_ms(&self) -> Option<[f32; 7]> {
+    pub(crate) fn mean_ms(&self) -> Option<[f32; RenderPhases::COUNT]> {
         if self.frames == 0 {
             return None;
         }
         let frames = self.frames as f32;
-        let mut means = [0.0f32; 7];
+        let mut means = [0.0f32; RenderPhases::COUNT];
         for (mean, sum) in means.iter_mut().zip(self.sums) {
             *mean = sum.as_secs_f32() * 1000.0 / frames;
         }
@@ -61,7 +62,11 @@ impl RenderTimingMeter {
             ui_ms: means[3],
             sidebar_ms: means[4],
             upload_ms: means[5],
-            other_ms: means[6],
+            lights_ms: means[6],
+            effects_ms: means[7],
+            draw_calls_ms: means[8],
+            handoff_ms: means[9],
+            other_ms: means[10],
         })
     }
 }

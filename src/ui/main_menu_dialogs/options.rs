@@ -86,8 +86,6 @@ pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
     !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 pub(crate) const HD_MAP_PREVIEWS_LABEL: &str = "VERA:HdMapPreviews";
 pub(crate) const HD_MAP_PREVIEWS_HELP: &str = "VERA:HdMapPreviewsHelp";
-pub(crate) const ORIGINAL_FONT_LABEL: &str = "VERA:OriginalFont";
-pub(crate) const ORIGINAL_FONT_HELP: &str = "VERA:OriginalFontHelp";
 pub(crate) const SHIFT_QUEUE_LABEL: &str = "VERA:ShiftQueue";
 /// The two category pages retail's string table has no band name for.
 pub(crate) const CONTROLS_LABEL: &str = "VERA:Controls";
@@ -96,8 +94,8 @@ pub(crate) const WOL_TEST_SERVICE_LABEL: &str = "VERA:WolTestService";
 pub(crate) const WOL_TEST_SERVICE_HELP: &str = "VERA:WolTestServiceHelp";
 pub(crate) const SKIP_INTRO_LABEL: &str = "VERA:SkipIntro";
 pub(crate) const SKIP_INTRO_HELP: &str = "VERA:SkipIntroHelp";
-pub(crate) const FPS_COUNTER_LABEL: &str = "VERA:FpsCounter";
-pub(crate) const FPS_COUNTER_HELP: &str = "VERA:FpsCounterHelp";
+pub(crate) const PERFORMANCE_STATS_LABEL: &str = "VERA:PerformanceStats";
+pub(crate) const PERFORMANCE_STATS_HELP: &str = "VERA:PerformanceStatsHelp";
 /// VERA's end-game switches, the pair of `[EndGameScreens]` presentation
 /// stages. The verdict is what the match shows where it is decided; the score
 /// page is the dialog after it. Each stage owns its picture *and* its music, so
@@ -108,6 +106,9 @@ pub(crate) const CUSTOM_END_GAME_SCORE_LABEL: &str = "VERA:CustomEndGameScore";
 pub(crate) const CUSTOM_END_GAME_SCORE_HELP: &str = "VERA:CustomEndGameScoreHelp";
 pub(crate) const CUSTOM_END_GAME_MOVIE_LABEL: &str = "VERA:CustomEndGameMovie";
 pub(crate) const CUSTOM_END_GAME_MOVIE_HELP: &str = "VERA:CustomEndGameMovieHelp";
+/// VERA's accessibility box: retail's string table has nothing for it.
+pub(crate) const DETAILED_EVA_TEXT_LABEL: &str = "VERA:DetailedEvaText";
+pub(crate) const DETAILED_EVA_TEXT_HELP: &str = "VERA:DetailedEvaTextHelp";
 pub(crate) const SHIFT_QUEUE_HELP: &str = "VERA:ShiftQueueHelp";
 pub(crate) const DISPLAY_LABEL: &str = "VERA:Display";
 pub(crate) const DISPLAY_HELP: &str = "VERA:DisplayHelp";
@@ -120,8 +121,8 @@ pub(crate) const HOUSE_COLOR_STRENGTH_LABEL: &str = "VERA:HouseColorStrength";
 pub(crate) const HOUSE_COLOR_STRENGTH_HELP: &str = "VERA:HouseColorStrengthHelp";
 /// The Display list's first row: the window system's own choice.
 pub(crate) const DISPLAY_AUTO_LABEL: &str = "VERA:DisplayAuto";
-/// VERA's Language list, and the main menu's button that opens it. Its rows
-/// are each language's own name for itself, so they need no translation.
+/// VERA's Language list on the Interface page. Its rows are each language's
+/// own name for itself, so they need no translation.
 pub(crate) const LANGUAGE_LABEL: &str = "VERA:Language";
 pub(crate) const LANGUAGE_HELP: &str = "VERA:LanguageHelp";
 /// The Developer page's Check for Updates: the desktop updater
@@ -302,10 +303,12 @@ pub(crate) enum HealthBarMode {
     #[default]
     Vanilla,
     /// [`Self::Vanilla`], plus a bare strip on every other object the local
-    /// player can see.
+    /// player can see on a revealed cell. Neutral/Special passive houses are
+    /// scenery and get no automatic strip.
     Always,
     /// [`Self::Vanilla`], plus a bare strip on every other object the local
-    /// player can see that is below full health.
+    /// player can see on a revealed cell that is below full health. Same
+    /// passive-house exclusion as [`Self::Always`].
     AlwaysExceptFull,
 }
 
@@ -600,15 +603,10 @@ pub(crate) enum LauncherCheckboxId {
     /// map's `[PreviewPack]` picture. On by default; saved, and the next
     /// preview follows it.
     HdMapPreviews,
-    /// VERA's own box: interface text draws in the game's own GAME.FNT,
-    /// scaled evenly, instead of VERA's vector fonts
-    /// (`render::text_engine`). Characters GAME.FNT lacks still draw from the
-    /// vector fonts. It applies at once and is saved.
-    OriginalFont,
     /// VERA's developer box: the window's FPS readout. Like Full Screen it
     /// shows and changes live state at once, and is never saved: the readout
     /// starts hidden at every launch.
-    FpsCounter,
+    PerformanceStats,
     /// VERA's developer box: the next launch skips `Init_Game`'s logo movie
     /// (`0x0052C5E2`); the splash and the first-run intro still play.
     SkipIntro,
@@ -626,6 +624,8 @@ pub(crate) enum LauncherCheckboxId {
     /// losing clip before the score page opens and the battle is torn down.
     /// Read when the match ends, so it needs no live apply either.
     CustomEndGameMovie,
+    /// VERA-only accessibility box: detailed EVA text rows, default off.
+    DetailedEvaText,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -673,12 +673,12 @@ pub(crate) enum LauncherOptionsEvent {
     HdRadarChanged(bool),
     SmoothSidebarChanged(bool),
     HdMapPreviewsChanged(bool),
-    OriginalFontChanged(bool),
-    FpsCounterChanged(bool),
+    PerformanceStatsChanged(bool),
     SkipIntroChanged(bool),
     CustomEndGameBannerChanged(bool),
     CustomEndGameScoreChanged(bool),
     CustomEndGameMovieChanged(bool),
+    DetailedEvaTextChanged(bool),
     /// VERA's team-colour strength, as the level the profile stores.
     HouseColorStrengthChanged(u8),
     ScorePreview(f32),
@@ -724,11 +724,10 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) hd_radar: bool,
     pub(crate) smooth_sidebar: bool,
     pub(crate) hd_map_previews: bool,
-    pub(crate) original_font: bool,
     pub(crate) shift_queue: bool,
     pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
-    pub(crate) fps_counter: bool,
+    pub(crate) performance_stats: bool,
     pub(crate) skip_intro: bool,
     /// The country's own end-game picture is allowed; see
     /// [`LauncherCheckboxId::CustomEndGameBanner`].
@@ -739,6 +738,8 @@ pub(crate) struct LauncherOptionsValues {
     /// The exit waits for the closing commander clip; see
     /// [`LauncherCheckboxId::CustomEndGameMovie`].
     pub(crate) custom_end_game_movie: bool,
+    /// The accessibility box; see [`LauncherCheckboxId::DetailedEvaText`].
+    pub(crate) detailed_eva_text: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
     pub(crate) sidebar: SidebarSize,
     /// The Health Bars list's choice; like Sidebar, it applies at once.
@@ -772,14 +773,14 @@ impl Default for LauncherOptionsValues {
             hd_radar: false,
             smooth_sidebar: false,
             hd_map_previews: true,
-            original_font: true,
             shift_queue: false,
             wol_test_service: false,
-            fps_counter: false,
+            performance_stats: false,
             skip_intro: false,
             custom_end_game_banner: false,
             custom_end_game_score: false,
             custom_end_game_movie: false,
+            detailed_eva_text: false,
             sidebar: SidebarSize::Normal,
             health_bars: HealthBarMode::Vanilla,
             house_color_position: 0,
@@ -1174,12 +1175,12 @@ impl OptionsDialogState {
             LauncherCheckboxId::HdRadar => &mut self.values.hd_radar,
             LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
             LauncherCheckboxId::HdMapPreviews => &mut self.values.hd_map_previews,
-            LauncherCheckboxId::OriginalFont => &mut self.values.original_font,
-            LauncherCheckboxId::FpsCounter => &mut self.values.fps_counter,
+            LauncherCheckboxId::PerformanceStats => &mut self.values.performance_stats,
             LauncherCheckboxId::SkipIntro => &mut self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => &mut self.values.custom_end_game_score,
             LauncherCheckboxId::CustomEndGameMovie => &mut self.values.custom_end_game_movie,
+            LauncherCheckboxId::DetailedEvaText => &mut self.values.detailed_eva_text,
         };
         *slot = !*slot;
         let checked = *slot;
@@ -1225,12 +1226,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::HdMapPreviews => self
                 .pending_events
                 .push(LauncherOptionsEvent::HdMapPreviewsChanged(checked)),
-            LauncherCheckboxId::OriginalFont => self
+            LauncherCheckboxId::PerformanceStats => self
                 .pending_events
-                .push(LauncherOptionsEvent::OriginalFontChanged(checked)),
-            LauncherCheckboxId::FpsCounter => self
-                .pending_events
-                .push(LauncherOptionsEvent::FpsCounterChanged(checked)),
+                .push(LauncherOptionsEvent::PerformanceStatsChanged(checked)),
             LauncherCheckboxId::SkipIntro => self
                 .pending_events
                 .push(LauncherOptionsEvent::SkipIntroChanged(checked)),
@@ -1243,6 +1241,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::CustomEndGameMovie => self
                 .pending_events
                 .push(LauncherOptionsEvent::CustomEndGameMovieChanged(checked)),
+            LauncherCheckboxId::DetailedEvaText => self
+                .pending_events
+                .push(LauncherOptionsEvent::DetailedEvaTextChanged(checked)),
             LauncherCheckboxId::Tooltips
             | LauncherCheckboxId::TargetLines
             | LauncherCheckboxId::ShowHidden => {}
@@ -1256,8 +1257,8 @@ impl OptionsDialogState {
     }
 
     /// Follow Ctrl+Alt+F while the page is open, so the box shows the readout.
-    pub(crate) fn sync_fps_counter(&mut self, shown: bool) {
-        self.values.fps_counter = shown;
+    pub(crate) fn sync_performance_stats(&mut self, shown: bool) {
+        self.values.performance_stats = shown;
     }
 
     /// Like gamemd's combo owner `0x00617250`, a press emits GUIComboOpen
@@ -1339,13 +1340,6 @@ impl OptionsDialogState {
         self.language = tag.to_owned();
         self.pending_events
             .push(LauncherOptionsEvent::LanguageSelected(tag.to_owned()));
-    }
-
-    /// The main menu's Language button: the Interface page, its Language list
-    /// open.
-    pub(crate) fn open_language_list(&mut self) {
-        self.select_category(Category::Interface);
-        self.open_combo = Some(LauncherComboId::Language);
     }
 
     /// gamemd-derived: `OptionsClass__ShowLauncherDialog @ 0x0055FC80` gives
@@ -1459,7 +1453,7 @@ impl Category {
                 Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
-                Setting::Checkbox(Check::OriginalFont),
+                Setting::Checkbox(Check::DetailedEvaText),
             ],
             Self::Interface => &[
                 Setting::List(List::Language),
@@ -1470,7 +1464,7 @@ impl Category {
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
                 Setting::Checkbox(Check::HdMapPreviews),
-                Setting::Checkbox(Check::OriginalFont),
+                Setting::Checkbox(Check::DetailedEvaText),
             ],
             Self::Audio => &[
                 Setting::Slider(Slider::Score),
@@ -1487,7 +1481,7 @@ impl Category {
             // Internet for stand-in servers, so only `[VERA] WolTestService=`
             // turns it on.
             Self::Developer => &[
-                Setting::Checkbox(Check::FpsCounter),
+                Setting::Checkbox(Check::PerformanceStats),
                 Setting::Checkbox(Check::SkipIntro),
             ],
         }
@@ -2157,13 +2151,13 @@ mod tests {
                 Check::HdRadar,
                 Check::SmoothSidebar,
                 Check::HdMapPreviews,
-                Check::OriginalFont,
                 Check::ShiftQueue,
-                Check::FpsCounter,
+                Check::PerformanceStats,
                 Check::SkipIntro,
                 Check::CustomEndGameBanner,
                 Check::CustomEndGameScore,
                 Check::CustomEndGameMovie,
+                Check::DetailedEvaText,
             ]
             .map(Setting::Checkbox),
         )

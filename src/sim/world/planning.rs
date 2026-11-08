@@ -535,6 +535,27 @@ impl Simulation {
         self.reset_planning_after_player_load();
     }
 
+    /// Give `actor` an empty, executing path, as a planned order leaves it.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn start_empty_planning_path_for_test(&mut self, actor: u64) {
+        self.planning.paths.insert(
+            actor,
+            PlanningPath {
+                nodes: Vec::new(),
+                pending: -1,
+                loop_start: None,
+                loop_changed: false,
+                executing: true,
+                current: None,
+            },
+        );
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn has_planning_path_for_test(&self, actor: u64) -> bool {
+        self.planning.paths.contains_key(&actor)
+    }
+
     pub(crate) fn validate_planning_references(&self) -> Result<(), &'static str> {
         let validate_house = |record: &CommandRecord| {
             let issuer = self

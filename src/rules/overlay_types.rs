@@ -19,13 +19,6 @@ use crate::rules::object_image::ObjectImageState;
 
 #[cfg(any(test, feature = "test-support"))]
 const STOCK_FLAT_RIPARIUS_VARIANT_COUNT: usize = 12;
-const TIBERIUM_FLAT_VARIANT_COUNT: usize = 12;
-const NATIVE_TIBERIUM_PRIMARY_IMAGE_COUNT: usize = 12;
-const NATIVE_TIBERIUM_EXTRA_IMAGE_COUNT: usize = 8;
-const NATIVE_CRUENTUS_OVERLAY_BASE: usize = 27;
-const NATIVE_RIPARIUS_OVERLAY_BASE: usize = 102;
-const NATIVE_VINIFERA_OVERLAY_BASE: usize = 127;
-const NATIVE_ABOREUS_OVERLAY_BASE: usize = 147;
 
 /// Per-overlay-type vertical draw bias, in screen pixels.
 ///
@@ -33,56 +26,26 @@ const NATIVE_ABOREUS_OVERLAY_BASE: usize = 147;
 /// overlays; every other overlay type gets 0.
 const OVERLAY_TYPE_Y_DRAW_BIAS_PX: f32 = -12.0;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct NativeTiberiumOverlayRange {
-    base: usize,
-    primary_count: usize,
-    extra_count: usize,
-}
-
-impl NativeTiberiumOverlayRange {
-    const fn new(base: usize, primary_count: usize, extra_count: usize) -> Self {
-        Self {
-            base,
-            primary_count,
-            extra_count,
-        }
-    }
-
-    fn contains(self, overlay_id: usize) -> bool {
-        let primary_end = self.base + self.primary_count;
-        (self.base..primary_end).contains(&overlay_id)
-            || (primary_end..primary_end + self.extra_count).contains(&overlay_id)
-    }
-}
-
-/// Cold-read projection of TiberiumClass::ReadINI721C5C..721CD6.
-/// Native Image2 leaves the previous extra count intact: Image1 then Image2
-/// retains8, whereas constructor then Image2 has0. The existing rules model
-/// retains only the final Image, so layered reread history is not represented.
-fn native_tiberium_overlay_range(image: u8) -> NativeTiberiumOverlayRange {
-    match image {
-        2 => NativeTiberiumOverlayRange::new(
-            NATIVE_CRUENTUS_OVERLAY_BASE,
-            NATIVE_TIBERIUM_PRIMARY_IMAGE_COUNT,
-            0,
-        ),
-        3 => NativeTiberiumOverlayRange::new(
-            NATIVE_VINIFERA_OVERLAY_BASE,
-            NATIVE_TIBERIUM_PRIMARY_IMAGE_COUNT,
-            NATIVE_TIBERIUM_EXTRA_IMAGE_COUNT,
-        ),
-        4 => NativeTiberiumOverlayRange::new(
-            NATIVE_ABOREUS_OVERLAY_BASE,
-            NATIVE_TIBERIUM_PRIMARY_IMAGE_COUNT,
-            NATIVE_TIBERIUM_EXTRA_IMAGE_COUNT,
-        ),
-        _ => NativeTiberiumOverlayRange::new(
-            NATIVE_RIPARIUS_OVERLAY_BASE,
-            NATIVE_TIBERIUM_PRIMARY_IMAGE_COUNT,
-            NATIVE_TIBERIUM_EXTRA_IMAGE_COUNT,
-        ),
-    }
+/// A reached native null dereference, array access or division cannot be
+/// interpreted as an empty resource. Loading/runtime owners stop that operation;
+/// presentation owners report it and omit the draw. An unused cold-null Image
+/// remains valid stored state and is not rejected by speculative atlas loading.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum TiberiumImageError {
+    #[error("Tiberium slot {0:?} does not exist")]
+    MissingType(TiberiumTypeId),
+    #[error("Tiberium slot {0:?} has no bound Image overlay")]
+    UnboundImage(TiberiumTypeId),
+    #[error("Tiberium image refers to absent Overlay slot {0}")]
+    MissingOverlay(i32),
+    #[error("Tiberium slot {tiberium:?} has invalid {field} divisor {value}")]
+    InvalidDivisor {
+        tiberium: TiberiumTypeId,
+        field: &'static str,
+        value: i32,
+    },
+    #[error("Tiberium slot {tiberium:?} cannot draw slope {slope}")]
+    InvalidSlope { tiberium: TiberiumTypeId, slope: u8 },
 }
 
 /// Overlay id bands whose radar colour comes back with green and blue swapped.
@@ -610,60 +573,100 @@ impl OverlayTypeRegistry {
         ids.try_into().ok()
     }
 
-    /// Flat overlay variants for one parsed tiberium type image family.
-    pub fn flat_tiberium_variant_ids(&self, ty: &TiberiumType) -> Option<[u8; 12]> {
-        let mut ids: Vec<u8> = Vec::with_capacity(TIBERIUM_FLAT_VARIANT_COUNT);
-        for variant in 1..=TIBERIUM_FLAT_VARIANT_COUNT {
-            let name = tiberium_flat_overlay_name(ty.image, variant as u8)?;
-            let id = self.id_for_name(&name)?;
-            if !self.flags(id).is_some_and(|flags| flags.tiberium) {
-                return None;
-            }
-            ids.push(id);
-        }
-        ids.try_into().ok()
+    /// The pointer retained by TiberiumRead721C5C..721CD6 names the Overlay
+    /// object's constructor ordinal (+294), not its name or current flags.
+    fn tiberium_image_base(&self, ty: &TiberiumType) -> Result<i32, TiberiumImageError> {
+        let base = ty
+            .image()
+            .base_overlay()
+            .ok_or(TiberiumImageError::UnboundImage(ty.id))? as i32;
+        self.tiberium_image_slot(base)?;
+        Ok(base)
     }
 
-    /// Reproduce the native overlay flag gate and ordered tiberium range lookup.
+    fn tiberium_image_slot(&self, ordinal: i32) -> Result<u8, TiberiumImageError> {
+        let id = u8::try_from(ordinal).map_err(|_| TiberiumImageError::MissingOverlay(ordinal))?;
+        self.name(id)
+            .ok_or(TiberiumImageError::MissingOverlay(ordinal))?;
+        Ok(id)
+    }
+
+    /// PlaceTiberium48725C..487286: select exactly one physical slot after
+    /// the caller draws RandomRanged(0,11). Neither name nor Tiberium flag is
+    /// tested. Do not eagerly validate the other eleven possible selections.
+    pub fn tiberium_placement_overlay_id(
+        &self,
+        ty: &TiberiumType,
+        variant: u32,
+    ) -> Result<u8, TiberiumImageError> {
+        let base = self.tiberium_image_base(ty)?;
+        self.tiberium_image_slot(base.wrapping_add(variant as i32))
+    }
+
+    /// Fixture convenience only. Runtime selects and checks one slot after
+    /// its RNG draw, never eagerly validates the twelve possible outcomes.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn flat_tiberium_variant_ids(
+        &self,
+        ty: &TiberiumType,
+    ) -> Result<[u8; 12], TiberiumImageError> {
+        let mut slots = [0; 12];
+        for (variant, slot) in slots.iter_mut().enumerate() {
+            *slot = self.tiberium_placement_overlay_id(ty, variant as u32)?;
+        }
+        Ok(slots)
+    }
+
+    /// OverlayToTiberiumIndex5FDD20: flag gate, then ordered pointer/range
+    /// reads. A reached null before a later match faults natively; an earlier
+    /// match returns without touching later nulls. Flagged misses return slot0.
     pub fn tiberium_type_for_overlay(
         &self,
         tiberium_types: &TiberiumTypeRegistry,
         overlay_id: u8,
-    ) -> Option<TiberiumTypeId> {
-        if !self.flags(overlay_id).is_some_and(|flags| flags.tiberium) {
-            return None;
+    ) -> Result<Option<TiberiumTypeId>, TiberiumImageError> {
+        let flags = self
+            .flags(overlay_id)
+            .ok_or(TiberiumImageError::MissingOverlay(i32::from(overlay_id)))?;
+        if !flags.tiberium {
+            return Ok(None);
         }
-
+        let ordinal = i32::from(overlay_id);
         for ty in tiberium_types.types() {
-            if native_tiberium_overlay_range(ty.image).contains(usize::from(overlay_id)) {
-                return Some(ty.id);
+            let base = self.tiberium_image_base(ty)?;
+            let primary_end = base.wrapping_add(ty.image().primary_count());
+            let extra_end = primary_end.wrapping_add(ty.image().slope_count());
+            if (base..primary_end).contains(&ordinal) || (primary_end..extra_end).contains(&ordinal)
+            {
+                return Ok(Some(ty.id));
             }
         }
-
-        tiberium_types.types().first().map(|ty| ty.id)
+        tiberium_types
+            .get(TiberiumTypeId(0))
+            .ok_or(TiberiumImageError::MissingType(TiberiumTypeId(0)))?;
+        Ok(Some(TiberiumTypeId(0)))
     }
 
-    /// Registered image slots the native resource display can select.
-    /// ReadINI721C5C..721CD6 installs12 primary slots and8 extras, except
-    /// a cold Cruentus (Image2) read, which has no extras. This shares the range owner
-    /// used by OverlayToTiberiumIndex5FDD20 rather than inferring filenames.
-    pub fn tiberium_display_variant_ids(&self, ty: &TiberiumType) -> std::ops::Range<u8> {
-        let range = native_tiberium_overlay_range(ty.image);
-        range.base as u8
-            ..(range.base + range.primary_count + range.extra_count).min(self.names.len()) as u8
+    /// Speculative atlas prefetch, not a native read. Only return available
+    /// slots; an unused null or truncated possible range must not reject a map.
+    /// Actual placement/drawing checks its single reached slot separately.
+    pub fn tiberium_display_variant_ids(&self, ty: &TiberiumType) -> std::ops::Range<usize> {
+        let Some(base) = ty.image().base_overlay().map(|base| base as usize) else {
+            return 0..0;
+        };
+        let limit = self.names.len().min(256);
+        let count = ty
+            .image()
+            .primary_count()
+            .saturating_add(ty.image().slope_count())
+            .max(0) as usize;
+        base.min(limit)..base.saturating_add(count).min(limit)
     }
 
-    /// Resolve the resource image selected for one rendered cell.
-    ///
-    /// The stored overlay identity remains authoritative for resource type and
-    /// density. This returns only the display identity; callers keep the Cell
-    /// overlay-data byte as the SHP frame.
-    ///
-    /// Active YR `CellClass__DrawOverlay_Body @ 0x0047F6A0` selects the parsed
-    /// TiberiumClass from the stored overlay. Flat47F8D7 uses product%12;
-    /// slope47F888 uses2 extras per slope for the green families. Preserve
-    /// signed coordinate products/remainders before validating the final ID.
-    /// Invalid slopes and cold Cruentus slopes have no valid native draw.
+    /// DrawOverlay47F860..47F8FD: classify the stored overlay, then use the
+    /// retained primary/extra counts and signed cell-product remainder. The
+    /// cell's density stays the SHP frame. Invalid native divisions/slots are
+    /// explicit errors, never a fallback to the stored overlay's image.
     pub fn tiberium_display_overlay_id(
         &self,
         tiberium_types: &TiberiumTypeRegistry,
@@ -671,27 +674,48 @@ impl OverlayTypeRegistry {
         rx: u16,
         ry: u16,
         slope: u8,
-    ) -> Option<u8> {
-        let ty = self
-            .tiberium_type_for_overlay(tiberium_types, overlay_id)
-            .and_then(|id| tiberium_types.get(id))?;
-        let range = native_tiberium_overlay_range(ty.image);
-        let signed_rx = i32::from(rx as i16);
-        let signed_ry = i32::from(ry as i16);
-        let product = signed_rx.wrapping_mul(signed_ry);
-        let display_ordinal = if slope == 0 {
-            (range.base as i32).wrapping_add(product % range.primary_count as i32)
-        } else {
-            let per_slope = range.extra_count as i32 / 4;
-            if slope > 4 || per_slope == 0 {
-                return None;
-            }
-            (range.base as i32 + range.primary_count as i32)
-                .wrapping_add((i32::from(slope) - 1) * per_slope)
-                .wrapping_add(product % per_slope)
+    ) -> Result<Option<u8>, TiberiumImageError> {
+        let Some(type_id) = self.tiberium_type_for_overlay(tiberium_types, overlay_id)? else {
+            return Ok(None);
         };
-        let display_id = u8::try_from(display_ordinal).ok()?;
-        self.name(display_id).map(|_| display_id)
+        let ty = tiberium_types
+            .get(type_id)
+            .ok_or(TiberiumImageError::MissingType(type_id))?;
+        let product = i32::from(rx as i16).wrapping_mul(i32::from(ry as i16));
+        let offset = if slope == 0 {
+            let divisor = ty.image().primary_count();
+            if divisor <= 0 {
+                return Err(TiberiumImageError::InvalidDivisor {
+                    tiberium: ty.id,
+                    field: "primary image",
+                    value: divisor,
+                });
+            }
+            product % divisor
+        } else {
+            // Keep the existing safety bound on malformed slope inputs.
+            if slope > 4 {
+                return Err(TiberiumImageError::InvalidSlope {
+                    tiberium: ty.id,
+                    slope,
+                });
+            }
+            let divisor = ty.image().slope_count() / 4;
+            if divisor <= 0 {
+                return Err(TiberiumImageError::InvalidDivisor {
+                    tiberium: ty.id,
+                    field: "slope image",
+                    value: divisor,
+                });
+            }
+            ty.image()
+                .primary_count()
+                .wrapping_add((i32::from(slope) - 1).wrapping_mul(divisor))
+                .wrapping_add(product % divisor)
+        };
+        let base = self.tiberium_image_base(ty)?;
+        self.tiberium_image_slot(base.wrapping_add(offset))
+            .map(Some)
     }
 
     /// Total number of registered overlay types.
@@ -719,19 +743,6 @@ fn stock_flat_riparius_variant_index(name: &str) -> Option<usize> {
     (1..=STOCK_FLAT_RIPARIUS_VARIANT_COUNT)
         .contains(&variant)
         .then_some(variant - 1)
-}
-
-fn tiberium_flat_overlay_name(image: u8, variant: u8) -> Option<String> {
-    if variant == 0 || variant as usize > TIBERIUM_FLAT_VARIANT_COUNT {
-        return None;
-    }
-    match image {
-        1 => Some(format!("TIB{:02}", variant)),
-        2 => Some(format!("GEM{:02}", variant)),
-        image => image
-            .checked_sub(1)
-            .map(|suffix| format!("TIB{}_{:02}", suffix, variant)),
-    }
 }
 
 fn parse_land_type(value: &str) -> Option<LandType> {
@@ -1174,27 +1185,6 @@ Image=4
     }
 
     #[test]
-    fn native_tiberium_overlay_range_covers_every_u8_selector() {
-        let cruentus = NativeTiberiumOverlayRange::new(27, 12, 0);
-        let riparius = NativeTiberiumOverlayRange::new(102, 12, 8);
-        let vinifera = NativeTiberiumOverlayRange::new(127, 12, 8);
-        let aboreus = NativeTiberiumOverlayRange::new(147, 12, 8);
-
-        for image in u8::MIN..=u8::MAX {
-            let expected = match image {
-                2 => cruentus,
-                3 => vinifera,
-                4 => aboreus,
-                _ => riparius,
-            };
-            assert_eq!(native_tiberium_overlay_range(image), expected);
-        }
-        for image in [0, 1, 5, 255] {
-            assert_eq!(native_tiberium_overlay_range(image), riparius);
-        }
-    }
-
-    #[test]
     fn overlay_to_tiberium_index_covers_stock_primary_and_extra_boundaries() {
         let (overlays, tiberiums) = stock_shaped_tiberium_registries(None);
         let cases = [
@@ -1221,7 +1211,7 @@ Image=4
             assert_eq!(overlay_id, expected_overlay_id, "{name} compact id");
             assert_eq!(
                 overlays.tiberium_type_for_overlay(&tiberiums, overlay_id),
-                Some(TiberiumTypeId(expected_type_id)),
+                Ok(Some(TiberiumTypeId(expected_type_id))),
                 "{name} type"
             );
         }
@@ -1230,7 +1220,7 @@ Image=4
         assert_eq!(after_gem, 39);
         assert_eq!(
             overlays.tiberium_type_for_overlay(&tiberiums, after_gem),
-            Some(TiberiumTypeId(0)),
+            Ok(Some(TiberiumTypeId(0))),
             "Cruentus has no extra range; a flagged miss falls back to type zero"
         );
     }
@@ -1246,26 +1236,32 @@ Image=4
         };
         let overlays = OverlayTypeRegistry::from_ini(&rules, None);
         let tiberiums = TiberiumTypeRegistry::from_ini(&rules);
-        for (image, first, last) in [
-            (1, "TIB01", "TIB20"),
-            (2, "GEM01", "GEM12"),
-            (3, "TIB2_01", "TIB2_20"),
-            (4, "TIB3_01", "TIB3_20"),
+        for (slot, first, last) in [
+            (0, "TIB01", "TIB20"),
+            (1, "GEM01", "GEM12"),
+            (2, "TIB2_01", "TIB2_20"),
+            (3, "TIB3_01", "TIB3_20"),
         ] {
-            let range = native_tiberium_overlay_range(image);
-            let last_id = range.base + range.primary_count + range.extra_count - 1;
-            for (overlay_id, name) in [(range.base, first), (last_id, last)] {
+            let ty = tiberiums.get(TiberiumTypeId(slot)).unwrap();
+            let first_id = ty.image().base_overlay().unwrap();
+            let last_id =
+                first_id + (ty.image().primary_count() + ty.image().slope_count()) as u32 - 1;
+            for (overlay_id, name) in [(first_id, first), (last_id, last)] {
                 let overlay_id = u8::try_from(overlay_id).unwrap();
-                assert_eq!(overlays.name(overlay_id), Some(name), "image {image}");
-                let ty = overlays
-                    .tiberium_type_for_overlay(&tiberiums, overlay_id)
-                    .and_then(|id| tiberiums.get(id))
-                    .unwrap_or_else(|| panic!("{name} resolves to a Tiberium"));
-                assert_eq!(ty.image, image, "{name}");
+                assert_eq!(overlays.name(overlay_id), Some(name), "slot {slot}");
+                assert_eq!(
+                    overlays
+                        .tiberium_type_for_overlay(&tiberiums, overlay_id)
+                        .unwrap(),
+                    Some(ty.id)
+                );
             }
         }
         assert_eq!(overlays.name(168), Some("SROCK01"));
-        assert_eq!(overlays.tiberium_type_for_overlay(&tiberiums, 168), None);
+        assert_eq!(
+            overlays.tiberium_type_for_overlay(&tiberiums, 168),
+            Ok(None)
+        );
     }
 
     #[test]
@@ -1274,7 +1270,7 @@ Image=4
         let overlay_id = overlays.id_for_name("TIB2_01").expect("TIB2_01 id");
         assert_eq!(
             overlays.tiberium_type_for_overlay(&tiberiums, overlay_id),
-            None
+            Ok(None)
         );
     }
 
@@ -1285,14 +1281,14 @@ Image=4
         assert_eq!(stray_id, 167);
         assert_eq!(
             overlays.tiberium_type_for_overlay(&tiberiums, stray_id),
-            Some(TiberiumTypeId(0))
+            Ok(Some(TiberiumTypeId(0)))
         );
 
         let (unflagged, tiberiums) = stock_shaped_tiberium_registries(Some("STRAY"));
         let stray_id = unflagged.id_for_name("STRAY").expect("STRAY id");
         assert_eq!(
             unflagged.tiberium_type_for_overlay(&tiberiums, stray_id),
-            None
+            Ok(None)
         );
     }
 
@@ -1332,7 +1328,28 @@ Image=5
         assert_eq!(target, 102);
         assert_eq!(
             overlays.tiberium_type_for_overlay(&tiberiums, target),
-            Some(TiberiumTypeId(1))
+            Ok(Some(TiberiumTypeId(1)))
+        );
+
+        let cold_first =
+            IniFile::from_str(&text.replace("[Nonmatching]\nImage=2", "[Nonmatching]"));
+        let cold_first = TiberiumTypeRegistry::from_ini(&cold_first);
+        assert_eq!(
+            overlays.tiberium_type_for_overlay(&cold_first, target),
+            Err(TiberiumImageError::UnboundImage(TiberiumTypeId(0))),
+            "the first visited null cannot be skipped to a later match"
+        );
+        let cold_later =
+            IniFile::from_str(&text.replace("[FirstDefault]\nImage=1", "[FirstDefault]"));
+        let cold_later = TiberiumTypeRegistry::from_ini(&cold_later);
+        let earlier_match = OverlayTypeRegistry::from_ini(
+            &IniFile::from_str(&(text + "\n[FILL027]\nTiberium=yes\n")),
+            None,
+        );
+        assert_eq!(
+            earlier_match.tiberium_type_for_overlay(&cold_later, 27),
+            Ok(Some(TiberiumTypeId(0))),
+            "an earlier match never visits the later null"
         );
     }
 
@@ -1341,14 +1358,14 @@ Image=5
         let (overlays, tiberiums) = stock_shaped_tiberium_registries(None);
         assert_eq!(
             overlays.tiberium_type_for_overlay(&tiberiums, u8::MAX),
-            None
+            Err(TiberiumImageError::MissingOverlay(255))
         );
 
         let empty_types = TiberiumTypeRegistry::from_ini(&IniFile::from_str(""));
         let stray_id = overlays.id_for_name("STRAY").expect("STRAY id");
         assert_eq!(
             overlays.tiberium_type_for_overlay(&empty_types, stray_id),
-            None
+            Err(TiberiumImageError::MissingType(TiberiumTypeId(0)))
         );
     }
 
@@ -1363,9 +1380,9 @@ Image=5
         ];
 
         for (ty, (first, last, first_extra)) in tiberiums.types().iter().zip(expected) {
-            let variants = overlays
-                .flat_tiberium_variant_ids(ty)
-                .unwrap_or_else(|| panic!("flat variants for {}", ty.section));
+            let variants: Vec<_> = (0..12)
+                .map(|variant| overlays.tiberium_placement_overlay_id(ty, variant).unwrap())
+                .collect();
             assert_eq!(variants.len(), 12);
             assert_eq!(
                 variants[0],
@@ -1396,17 +1413,17 @@ Image=5
 
         assert_eq!(
             overlays.tiberium_display_overlay_id(&tiberiums, tib12, 4, 7, 0),
-            Some(tib05),
+            Ok(Some(tib05)),
             "4 * 7 % 12 selects the fifth Riparius flat image"
         );
         assert_eq!(
             overlays.tiberium_display_overlay_id(&tiberiums, gem12, 0, 7, 0),
-            Some(gem01),
+            Ok(Some(gem01)),
             "the stored Cruentus identity selects the GEM flat-image family"
         );
         assert_eq!(
             overlays.tiberium_display_overlay_id(&tiberiums, tib12, u16::MAX, 1, 0),
-            tib01.checked_sub(1),
+            Ok(tib01.checked_sub(1)),
             "(short)0xffff is -1, so the signed family-base addition selects base - 1"
         );
     }

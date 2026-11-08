@@ -6,6 +6,7 @@
 
 use crate::sim::StageClass;
 use crate::sim::intern::InternedId;
+use crate::util::lookup_hash::{LookupMap, LookupSet};
 use std::collections::HashMap;
 
 pub(crate) use crate::sim::snapshot::SavedCameoId as CameoId;
@@ -590,7 +591,7 @@ impl CameoStrips {
 
     /// Refresh the pointed-to type/House values without moving entries.
     pub(crate) fn refresh_keys(&mut self, candidates: &[Cameo]) {
-        let current: HashMap<_, _> = candidates.iter().map(|item| (item.id, item)).collect();
+        let current: LookupMap<_, _> = candidates.iter().map(|item| (item.id, item)).collect();
         for entry in self.strips.iter_mut().flatten() {
             if let Some(item) = current.get(&entry.id) {
                 entry.clone_from(item);
@@ -734,7 +735,7 @@ impl CameoStrips {
             }
         }
         let counted: [usize; 4] = std::array::from_fn(|index| self.strips[index].len());
-        let available: std::collections::HashSet<_> = candidates
+        let available: LookupSet<_> = candidates
             .iter()
             .filter(|item| item.available)
             .map(|item| item.id)
@@ -814,19 +815,15 @@ impl CameoStrips {
         for (id, category, name, cost) in options
             .iter()
             .filter(|item| item.visible_in_sidebar())
-            .map(|item| {
+            .map(|item| (item.type_id, item.queue_category, "", item.cost))
+            .chain(ready.iter().map(|item| {
                 (
                     item.type_id,
                     item.queue_category,
-                    &item.display_name,
-                    item.cost,
+                    item.display_name.as_str(),
+                    0,
                 )
-            })
-            .chain(
-                ready
-                    .iter()
-                    .map(|item| (item.type_id, item.queue_category, &item.display_name, 0)),
-            )
+            }))
         {
             let strip = &mut result.strips[SidebarTab::for_category(category).tab_index()];
             if !strip.iter().any(|entry| entry.id == CameoId::Object(id)) {
@@ -840,7 +837,7 @@ impl CameoStrips {
                         naval: false,
                         tech_level: 0,
                         cost,
-                        name: name.clone(),
+                        name: name.to_owned(),
                     },
                 });
             }

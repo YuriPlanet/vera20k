@@ -194,8 +194,7 @@ impl Simulation {
         };
         if entity.attack_target.target().is_some()
             || !crate::sim::world::weapon_at_index(self, rules, id, 1)
-                .and_then(|weapon| weapon.warhead.as_deref())
-                .and_then(|name| rules.warhead(name))
+                .and_then(|weapon| rules.weapon_warhead(weapon))
                 .is_some_and(|warhead| warhead.electric_assault)
         {
             return false;

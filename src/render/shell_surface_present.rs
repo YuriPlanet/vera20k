@@ -26,8 +26,9 @@ const EFFECTS_BUFFER_SIZE: u64 = (EFFECTS_WORD_COUNT * std::mem::size_of::<u32>(
 /// quantization and before the presentation codebook.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct SurfaceEffects {
-    /// Rows at the top and bottom faded by Show_Credits `0x004C3E30`: row
-    /// `r` from the edge keeps `floor(v * f / 256)` per channel with
+    /// Output rows at each edge covered by Show_Credits' `0x004C3E30`
+    /// native 32-row fade. Output rows map back to logical row `r`, which
+    /// keeps `floor(v * f / 256)` per channel with
     /// `f = 255 - min(256 - 8r, 255)`. Zero disables the fade.
     pub(crate) fade_rows: u32,
 }
@@ -578,6 +579,139 @@ mod tests {
         assert_eq!(EFFECTS_BUFFER_SIZE, 16);
         assert_eq!(SurfaceEffects { fade_rows: 32 }.words(600), [32, 600, 0, 0]);
         assert_eq!(SurfaceEffects::default().words(480), [0, 480, 0, 0]);
+    }
+
+    #[test]
+    #[ignore = "requires a wgpu adapter for production GPU readback"]
+    fn credits_fade_scales_both_edges_without_dark_bands() {
+        use crate::render::{frame_readback::PendingTextureReadback, gpu::block_on};
+        use std::time::Duration;
+
+        // No display handle, surface, window, input or audio device is created.
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
+        });
+        let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            compatible_surface: None,
+            ..Default::default()
+        }))
+        .expect("credits fade regression requires a wgpu adapter");
+        let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+            .expect("request credits fade test device");
+        let profile = Profile::Buffer(device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&ACTIVE_RETAIL_RGB565_PRESENTATION.shader_words()),
+                usage: wgpu::BufferUsages::STORAGE,
+            },
+        ));
+        let effects = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: EFFECTS_BUFFER_SIZE,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let layout = create_bind_group_layout(&device);
+        let format = wgpu::TextureFormat::Bgra8Unorm;
+        const HEIGHT: u32 = 200;
+        let targets = create_targets(
+            &device,
+            &layout,
+            &profile,
+            [&effects; 2],
+            format.add_srgb_suffix(),
+            format,
+            1,
+            HEIGHT,
+        );
+        let pipeline = create_pipeline(&device, &layout, format);
+        queue.write_texture(
+            targets.source_texture.as_image_copy(),
+            &[255; HEIGHT as usize * 4],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: None,
+            },
+            wgpu::Extent3d {
+                width: 1,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+        );
+        let render = |fade_rows| {
+            queue.write_buffer(
+                &effects,
+                0,
+                bytemuck::cast_slice(&SurfaceEffects { fade_rows }.words(HEIGHT)),
+            );
+            let mut encoder = device.create_command_encoder(&Default::default());
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: None,
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &targets.presented_view,
+                        resolve_target: None,
+                        depth_slice: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_pipeline(&pipeline);
+                pass.set_bind_group(0, &targets.effects_bind_group, &[]);
+                pass.draw(0..3, 0..1);
+            }
+            let readback = PendingTextureReadback::encode(
+                &device,
+                &mut encoder,
+                &targets.presented_texture,
+                format,
+                1,
+                HEIGHT,
+            )
+            .unwrap();
+            let submission = queue.submit([encoder.finish()]);
+            readback
+                .finish(&device, submission, Duration::from_secs(5))
+                .unwrap()
+        };
+        let pixel = |bytes: &[u8], row: u32| -> [u8; 4] {
+            bytes[row as usize * 4..row as usize * 4 + 4]
+                .try_into()
+                .unwrap()
+        };
+        let plain = render(0);
+        let retail = render(32);
+        assert_eq!(pixel(&retail, 0), [0, 0, 0, 255]);
+        assert_ne!(pixel(&retail, 24), [0, 0, 0, 255]);
+        for fade_rows in [48, 64] {
+            let scaled = render(fade_rows);
+            for row in [0, 8, 16, 24, 31] {
+                let scaled_row = (row * fade_rows).div_ceil(32);
+                for (base_y, scaled_y) in [
+                    (row, scaled_row),
+                    (HEIGHT - 1 - row, HEIGHT - 1 - scaled_row),
+                ] {
+                    assert_eq!(
+                        pixel(&scaled, scaled_y),
+                        pixel(&retail, base_y),
+                        "fade_rows={fade_rows}, logical row={row}"
+                    );
+                }
+            }
+            assert_eq!(pixel(&scaled, fade_rows), pixel(&plain, fade_rows));
+            assert_eq!(
+                pixel(&scaled, HEIGHT - 1 - fade_rows),
+                pixel(&plain, HEIGHT - 1 - fade_rows)
+            );
+        }
     }
 
     #[test]

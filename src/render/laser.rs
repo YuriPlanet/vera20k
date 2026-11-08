@@ -142,9 +142,11 @@ impl LaserDraw {
             if high_detail && outer.is_none() {
                 // RESIDUAL: General outerRGB[0,0,0] selects DSurface4BC750
                 // with per-channel masks and interpolated Z. Those shared
-                // AA branches remain unported; stock frequency is unknown.
-                // Missing AA pixels affect generic laser/ray coverage, not
-                // this stock DiskLaser's nonzero80/0/88 outer-color arm.
+                // AA branches remain unported. Dormant in retail: only
+                // LaserFire and LaserFire2 set LaserOuterColor=0,0,0, and no
+                // retail object fires them; house-colour lasers take the
+                // Special arm (0x005509F0), and this stock DiskLaser's
+                // outer color is the nonzero 80/0/88.
                 return;
             }
             // General detail0 draws center/A/B without fade; detail!=0

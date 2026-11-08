@@ -630,8 +630,7 @@ pub(crate) fn assign_target_stored(
                             actor, kind, 0, entities, rules, interner,
                         )
                     })
-                    .and_then(|weapon| weapon.warhead.as_deref())
-                    .and_then(|warhead| rules.warhead(warhead))
+                    .and_then(|weapon| rules.weapon_warhead(weapon))
                     .is_some_and(|warhead| warhead.is_locomotor)
             })
             || actor.airstrike_link() == Some(receiver))

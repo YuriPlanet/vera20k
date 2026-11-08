@@ -2627,6 +2627,7 @@ fn mineral_start_inputs_retain_native_reader_state_across_process_and_reset() {
          [CombatDamage]\nTiberiumExplosionDamage=-7\nC4Warhead=Super\n\
          [Tiberiums]\n0=TIB\n[TIB]\nImage=1\nColor=Later\nDebris=A,A,<none>, B\n",
     );
+    let root = crate::rules::tiberium_type::with_tiberium_image_slots(&root);
     let first = RulesLayerStack::new(root)
         .process_with_fixed_art(&art)
         .unwrap();
@@ -2697,7 +2698,13 @@ fn mineral_start_inputs_retain_native_reader_state_across_process_and_reset() {
         .unwrap();
     let rules = RuleSet::from_processed_rules(&reset).unwrap();
     assert_eq!(rules.combat_damage.tiberium_explosion_damage, -7);
-    assert!(rules.tiberium_types.is_empty());
+    let retained = rules.tiberium_types.get(TiberiumTypeId(0)).unwrap();
+    assert_eq!(retained.section, "TIB");
+    assert!(retained.debris().is_empty());
+    assert_eq!(retained.image().base_overlay(), None);
+    assert_eq!(retained.image().density_levels(), 12);
+    assert_eq!(retained.image().primary_count(), 12);
+    assert_eq!(retained.image().slope_count(), 8);
     assert!(rules.bridge_warheads.c4_name.is_empty());
 }
 
@@ -3319,10 +3326,15 @@ fn existing_type_keeps_prior_fields_and_applies_current_body() {
 
 #[test]
 fn tiberium_pass_reuses_numeric_slot_and_ignores_replacement_identity() {
-    let processed = process_rules_passes(
+    let root = crate::rules::tiberium_type::with_tiberium_image_slots(&IniFile::from_str(
         "[Tiberiums]\n0=Riparius\n[Riparius]\nImage=1\nValue=25\n",
-        "[Tiberiums]\n0=Cruentus\n[Riparius]\nImage=4\n[Cruentus]\nImage=2\n",
+    ));
+    let mut layers = RulesLayerStack::new(root);
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Tiberiums]\n0=Cruentus\n[Riparius]\nImage=4\n[Cruentus]\nImage=2\n"),
     );
+    let processed = layers.process().unwrap();
 
     assert_eq!(
         processed.ini().section("Tiberiums").unwrap().registry_ids(),
@@ -3336,11 +3348,12 @@ fn tiberium_pass_reuses_numeric_slot_and_ignores_replacement_identity() {
 
 #[test]
 fn tiberium_out_of_range_slot_appends_one_live_type() {
-    let processed = RulesLayerStack::new(IniFile::from_str(
+    let root = crate::rules::tiberium_type::with_tiberium_image_slots(&IniFile::from_str(
         "[Tiberiums]\n7=Riparius\n0=Cruentus\n[Riparius]\nImage=1\n[Cruentus]\nImage=2\n",
-    ))
-    .process()
-    .expect("Tiberium pass processes");
+    ));
+    let processed = RulesLayerStack::new(root)
+        .process()
+        .expect("Tiberium pass processes");
 
     assert_eq!(
         processed.ini().section("Tiberiums").unwrap().registry_ids(),

@@ -475,6 +475,10 @@ fn account_mouse(
 
 /// Shared scrollbar repeats of the open drop list.
 pub(crate) fn poll_scroll_repeat(state: &mut AppState) -> Option<Instant> {
+    // Every pass polls: build the layout only while the page is open.
+    if !matches!(state.frontend.wol.as_ref()?.page, WolPage::Login(_)) {
+        return None;
+    }
     let layout = login_layout(state);
     let (x, y) = state.match_state.input.cursor_px();
     let WolPage::Login(login) = &mut state.frontend.wol.as_mut()?.page else {

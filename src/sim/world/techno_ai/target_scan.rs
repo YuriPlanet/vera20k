@@ -850,10 +850,8 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
     }
 
     fn inaccurate(&self, weapon: &'r WeaponType) -> bool {
-        weapon
-            .projectile
-            .as_deref()
-            .and_then(|id| self.rules.projectile(id))
+        self.rules
+            .weapon_projectile(weapon)
             .is_some_and(|projectile| projectile.inaccurate)
     }
 

@@ -321,7 +321,7 @@ impl Simulation {
                     NativeF32Bits::POSITIVE_ZERO,
                 );
                 let warhead_name = weapon.warhead.as_deref().expect("Disk damage warhead");
-                let warhead = rules.warhead(warhead_name).expect("Disk damage warhead");
+                let warhead = rules.weapon_warhead(weapon).expect("Disk damage warhead");
                 let warhead_id = self.interner.intern(warhead_name);
                 let receipt = crate::sim::combat::world_receiver::apply_area_damage(
                     self,

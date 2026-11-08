@@ -460,7 +460,19 @@ pub(crate) fn pickup_crate(
     // `0x00481D86`: removal, then the replacement crate.
     let _ = remove_pickup_crate(sim, rules, registry, cell);
     if multiplayer && sim.session.game_options().crates {
-        let _ = place_one_random_crate(sim, rules, registry, ForcedPostPrecheckFailure::None);
+        if let Err(error) = place_one_random_crate(
+            sim,
+            rules,
+            registry,
+            ForcedPostPrecheckFailure::None,
+            frame_effects,
+        ) {
+            // The bool pickup receiver has no fallible continuation. Native
+            // would fault in the replacement's invalid Image/Mark chain;
+            // refuse the remaining pickup effect while keeping prior writes.
+            log::error!("crate pickup replacement at {cell:?} stopped: {error}");
+            return false;
+        }
     }
     if powerup == POWERUP_SQUAD {
         powerup = POWERUP_MONEY;
@@ -707,7 +719,14 @@ pub(crate) fn pickup_crate(
                 );
             }
             POWERUP_TIBERIUM => {
-                effects::apply_tiberium_crate(sim, rules, registry, cell, center);
+                if let Err(error) =
+                    effects::apply_tiberium_crate(sim, rules, registry, cell, center, frame_effects)
+                {
+                    // Native-invalid Image: stop this pickup arm after its
+                    // preceding writes, with no later placement/animation draw.
+                    log::error!("Tiberium crate failed: {error}");
+                    return false;
+                }
             }
             _ => {}
         }

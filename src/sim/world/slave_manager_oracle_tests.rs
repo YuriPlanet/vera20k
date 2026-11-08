@@ -715,12 +715,15 @@ fn ai_update_matches_the_original_node_machine() {
     let corpus = corpus();
     for (row, name) in rows(&corpus, "ai_update") {
         let mut s = row_scene(&row["input"]);
-        s.scene.sim.slave_ai_update(
-            s.master,
-            &s.scene.rules,
-            Some(registry()),
-            crate::sim::world::FrameEffects::default(),
-        );
+        s.scene
+            .sim
+            .slave_ai_update(
+                s.master,
+                &s.scene.rules,
+                Some(registry()),
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
         compare_state(&s, row, &name);
     }
 }
@@ -742,12 +745,15 @@ fn manager_machine_matches_the_original_owner_states_and_relocation() {
             if group == "relocation" && row["input"]["passable"] == serde_json::json!([null]) {
                 s.scene.sim.zone_grid = None;
             }
-            s.scene.sim.slave_manager_step(
-                s.master,
-                &s.scene.rules,
-                Some(registry()),
-                crate::sim::world::FrameEffects::default(),
-            );
+            s.scene
+                .sim
+                .slave_manager_step(
+                    s.master,
+                    &s.scene.rules,
+                    Some(registry()),
+                    crate::sim::world::FrameEffects::default(),
+                )
+                .unwrap();
             compare_state(&s, row, &name);
         }
     }
@@ -790,12 +796,16 @@ fn slave_mission_harvest_matches_the_original_dig() {
     for (row, name) in rows(&corpus, "slave_harvest") {
         let mut s = row_scene(&row["input"]);
         let slave = s.slaves[&0];
-        let (delay, guard) = s.scene.sim.infantry_mission_harvest(
-            slave,
-            &s.scene.rules,
-            Some(registry()),
-            crate::sim::world::FrameEffects::default(),
-        );
+        let (delay, guard) = s
+            .scene
+            .sim
+            .infantry_mission_harvest(
+                slave,
+                &s.scene.rules,
+                Some(registry()),
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
         if guard {
             let frame = s.scene.sim.session.binary_frame();
             s.scene
@@ -840,7 +850,9 @@ fn slave_miner_helpers_match_the_original() {
         let sim = &mut s.scene.sim;
         match row["input"]["helper"].as_str().unwrap() {
             "should_recall" => {
-                let answer = sim.should_recall_slaves(master, rules, Some(registry()));
+                let answer = sim
+                    .should_recall_slaves(master, rules, Some(registry()))
+                    .unwrap();
                 assert_eq!(
                     u64::from(answer),
                     row["answer"].as_u64().unwrap(),
@@ -870,13 +882,17 @@ fn slave_miner_kick_matches_the_original_guard_and_area_guard() {
     for (row, name) in rows(&corpus, "unit_mission") {
         let mut s = row_scene(&row["input"]);
         let mission = mission(row["input"]["owner_mission"].as_str().unwrap());
-        let kicked = s.scene.sim.slave_master_mission_kick(
-            s.master,
-            mission,
-            &s.scene.rules,
-            Some(registry()),
-            crate::sim::world::FrameEffects::default(),
-        );
+        let kicked = s
+            .scene
+            .sim
+            .slave_master_mission_kick(
+                s.master,
+                mission,
+                &s.scene.rules,
+                Some(registry()),
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
         assert_eq!(
             kicked.is_some(),
             row["kicked"].as_bool().unwrap(),

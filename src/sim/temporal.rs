@@ -106,8 +106,6 @@
 //!     House4F92D2→Building4456D0 membership pass does honor the online latch:
 //!     existing cameos may stay dark while new additions wait for release.
 //!     `0x0044017E` reads660 for Tesla charging, not construction options.
-//! - SlaveManager release with the attacker as liberator (`0x006B0AE0`):
-//!   VERA models no slave release on any master death.
 //! - `WarpPerStep` (`+0x4C`, written each step, read by no sim function) and
 //!   the `+0x2C` timer and `+0x38`/`+0x3C` fields (no writer) are not kept.
 //! - An engineer turned away from a warped building (`0x00519EF2`) is not
@@ -278,8 +276,7 @@ pub(crate) fn init_temporal(object_type: &ObjectType, rules: &RuleSet) -> Tempor
     let temporal = crate::sim::combat::combat_weapon::weapon_for_index(object_type, 0, 0)
         .and_then(|record| record.weapon_id)
         .and_then(|weapon_name| rules.weapon(weapon_name))
-        .and_then(|weapon| weapon.warhead.as_deref())
-        .and_then(|warhead| rules.warhead(warhead))
+        .and_then(|weapon| rules.weapon_warhead(weapon))
         .is_some_and(|warhead| warhead.temporal);
     TemporalState {
         link: temporal.then(TemporalLink::default),
@@ -924,6 +921,7 @@ impl Simulation {
             && let Some(object) = self.object_type(entity.type_ref(), rules)
             && let Some(event) = crate::sim::combat::death_announcement_event(
                 object,
+                entity.type_ref(),
                 category,
                 entity.position.rx(),
                 entity.position.ry(),

@@ -58,11 +58,7 @@ pub(super) fn emit_projectile_shrapnel(
     let Some(child_weapon) = rules.weapon(child_weapon_name) else {
         return;
     };
-    let Some(child_projectile) = child_weapon
-        .projectile
-        .as_deref()
-        .and_then(|name| rules.projectile(name))
-    else {
+    let Some(child_projectile) = rules.weapon_projectile(child_weapon) else {
         return;
     };
     let Some(child_warhead_name) = child_weapon.warhead.as_deref() else {

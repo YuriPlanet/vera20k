@@ -408,7 +408,8 @@ fn a_retail_area_guard_tanya_with_a_building_target_plants_c4() {
         FrameEffects::default(),
     )
     .unwrap();
-    crate::sim::world::dispatch_foot_mission(&mut sim, tanya, &rules, ObjectAiCtx::default());
+    crate::sim::world::dispatch_foot_mission(&mut sim, tanya, &rules, ObjectAiCtx::default())
+        .unwrap();
     assert_eq!(
         sim.substrate.entities.get(tanya).unwrap().mission.queued(),
         SABOTAGE
@@ -832,7 +833,8 @@ fn a_computer_tanya_reaching_her_navcom_cell_on_sabotage_sets_off_c4_there() {
         FrameEffects::default(),
     )
     .unwrap();
-    crate::sim::world::dispatch_foot_mission(&mut sim, tanya, &rules, ObjectAiCtx::default());
+    crate::sim::world::dispatch_foot_mission(&mut sim, tanya, &rules, ObjectAiCtx::default())
+        .unwrap();
     let queued = sim.substrate.entities.get(tanya).unwrap();
     assert_eq!(queued.mission.queued(), SABOTAGE);
     assert_eq!(

@@ -27,6 +27,7 @@ use crate::sim::world::ObjectSubstrate;
 /// the radar event is admitted.
 pub(crate) fn death_announcement_event(
     obj: &crate::rules::object_type::ObjectType,
+    type_id: InternedId,
     category: EntityCategory,
     rx: u16,
     ry: u16,
@@ -48,12 +49,18 @@ pub(crate) fn death_announcement_event(
                 .unit_lost_eva()
                 .unwrap_or(Some("EVA_UnitLost"))?
                 .to_owned(),
+            type_id,
             radar_event: true,
         })
     }
     #[cfg(not(feature = "ares"))]
     {
-        Some(UnitLostEvent { rx, ry, owner })
+        Some(UnitLostEvent {
+            rx,
+            ry,
+            owner,
+            type_id,
+        })
     }
 }
 
@@ -65,6 +72,7 @@ pub(crate) fn death_announcement_event(
 #[cfg(feature = "ares")]
 pub(crate) fn ares_building_lost_event(
     obj: &crate::rules::object_type::ObjectType,
+    type_id: InternedId,
     rx: u16,
     ry: u16,
     owner: InternedId,
@@ -76,6 +84,7 @@ pub(crate) fn ares_building_lost_event(
         rx,
         ry,
         owner,
+        type_id,
         eva: obj.unit_lost_eva().flatten()?.to_owned(),
         radar_event: false,
     })
@@ -103,6 +112,7 @@ impl crate::sim::world::Simulation {
             && let Some(object) = self.object_type(entity.type_ref(), rules)
             && let Some(event) = ares_building_lost_event(
                 object,
+                entity.type_ref(),
                 entity.position.rx(),
                 entity.position.ry(),
                 entity.owner(),
@@ -455,16 +465,17 @@ fn ares_unit_lost_lines_follow_eva_lost_and_the_score_gate() {
     ));
     rules.bind_type_eva_references(&ini, &eva);
     let owner = InternedId::from_index(1);
+    let type_id = InternedId::from_index(2);
     let object = |name: &str| rules.object(name).unwrap();
     let foot = |name: &str| {
-        death_announcement_event(object(name), EntityCategory::Infantry, 3, 4, owner)
+        death_announcement_event(object(name), type_id, EntityCategory::Infantry, 3, 4, owner)
             .map(|event| (event.eva, event.radar_event))
     };
     assert_eq!(foot("E1"), Some(("EVA_UnitLost".to_owned(), true)));
     assert_eq!(foot("E2"), None);
     assert_eq!(foot("E3"), None);
     let building = |name: &str| {
-        ares_building_lost_event(object(name), 3, 4, owner)
+        ares_building_lost_event(object(name), type_id, 3, 4, owner)
             .map(|event| (event.eva, event.radar_event))
     };
     assert_eq!(building("POWR"), None);

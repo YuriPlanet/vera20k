@@ -434,7 +434,8 @@ fn an_archive_destination_clears_a_stale_useless_latch_after_a_scan_miss() {
             ),
             ..Default::default()
         },
-    );
+    )
+    .unwrap();
     let entity = sim.substrate.entities.get(harvester).unwrap();
     assert_eq!(
         entity.navigation.nav_com(),

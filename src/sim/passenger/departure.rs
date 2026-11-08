@@ -75,17 +75,7 @@ pub fn depart_cargo_head(
     if emptied {
         // Foot4DE710 also calls the empty-hold reset when RemoveFirst returns
         // null. Keep that lifecycle effect before reporting NoCargo.
-        super::remove_gunner(
-            &sim.interner,
-            &sim.session,
-            &mut sim.scenario_rng,
-            &mut sim.substrate,
-            &mut sim.houses,
-            &mut sim.power_states,
-            rules,
-            transport_id,
-            removed.map(|(id, _)| id),
-        );
+        sim.remove_gunner(rules, transport_id, removed.map(|(id, _)| id));
     }
     let (passenger_id, passenger_size) = removed.ok_or(DepartureFailure::NoCargo)?;
     if route == DepartureRoute::Hospital

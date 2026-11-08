@@ -369,6 +369,28 @@ pub(crate) fn terrain_projection_differs(cells: &NativeCellQuery<'_>, [x, y]: [i
     }) != cell
 }
 
+/// The terrain exit that the Event IDLE (`0x004C752A..0x004C7577`) and
+/// DEPLOY (`0x004C7719..0x004C775C`) arms share. Off a bridge (`+0x8C`), the
+/// cell at the actor's Location (`0x00565730`) is flat (slope byte `+0x11C`
+/// is 0) and [`terrain_projection_differs`] (vt+0x2B0) finds its screen
+/// projection in another cell: the event then ends at `0x004C8109` with no
+/// effect.
+pub(crate) fn event_hidden_flat_cell(sim: &Simulation, id: u64) -> bool {
+    let (Some(terrain), Some(actor)) = (
+        sim.resolved_terrain.as_ref(),
+        sim.substrate.entities.get(id),
+    ) else {
+        return false;
+    };
+    if actor.on_bridge() {
+        return false;
+    }
+    let cells = NativeCellQuery::canonical(terrain);
+    let [x, y] = position_world_xy(&actor.position);
+    cells.ground_fields(cells.lookup_world(x, y)).1 == 0
+        && terrain_projection_differs(&cells, [x, y])
+}
+
 /// Foot+BC4DDC40(false) -> Object5F6A70. The navigation coordinate can be a
 /// paid head; source bridge selection is independent of the cached path layer.
 /// Both ground samples precede the conditional structural-cell lookup.

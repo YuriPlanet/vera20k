@@ -593,6 +593,7 @@ pub(crate) fn collect_area(
             impact_z,
         },
         world.session.no_damage(),
+        world.session.truce_harvester_types(rules, &world.interner),
     ) else {
         return combat_aoe::AoEDamageResult::default();
     };
@@ -2490,7 +2491,7 @@ pub(crate) fn handle_death(
                 // and the Stun: TiberiumSpill.
                 #[cfg(feature = "ares")]
                 if callbacks_enabled(world) {
-                    world.ares_spill_tiberium(dead_id, rules);
+                    world.ares_spill_tiberium(dead_id, rules, run.effects());
                 }
                 // 0x00702206..0x00702210: RADIO OVER_OUT to every contact and
                 // the Stun, between the death sounds and the debris.
@@ -2504,7 +2505,7 @@ pub(crate) fn handle_death(
                 // Ares 3.0 1004B050 (hook 0x702216): TiberiumRemains.
                 #[cfg(feature = "ares")]
                 if callbacks_enabled(world) {
-                    world.ares_tiberium_remains(dead_id, rules);
+                    world.ares_tiberium_remains(dead_id, rules, run.effects());
                 }
                 // 0x00702216..0x00702228: then the Fire system link is released.
                 if let Some(dead) = world.substrate.entities.get_mut(dead_id) {
@@ -2753,7 +2754,7 @@ fn finish_concrete_death(
         // (`0x0050B6F0`) and the `CreateRadarEvent(7)` dedupe (`0x004D98FE`)
         // need the house table and radar queue, which the world owns.
         if !unit_lost_suppressed
-            && let Some(event) = death_announcement_event(obj, category, rx, ry, owner)
+            && let Some(event) = death_announcement_event(obj, type_id, category, rx, ry, owner)
         {
             effects.unit_lost_events.push(event);
         }
@@ -2871,7 +2872,7 @@ fn finish_concrete_death(
                 frame_effects,
             );
         }
-        world.drop_unit_cargo_crate(dead_id, rules, overlay_registry);
+        world.drop_unit_cargo_crate(dead_id, rules, overlay_registry, frame_effects);
     }
 
     // InfantryClass::ReceiveDamage reads the killing call's InfDeath off its
@@ -2887,6 +2888,20 @@ fn finish_concrete_death(
         // `InfantryClass::ReceiveDamage` on result 4 (`0x00518077..0x0051808E`):
         // a dying slave leaves its master's node (RemoveSlave).
         Simulation::remove_slave(&world.session, &mut world.substrate, dead_id);
+        // `0x00518093..0x005180E2`: a dying rider whose `Transporter`
+        // (`+0x11C`) is a Unit whose type has `Gunner=yes` (`GetType()->+0x805`)
+        // calls that Unit's RemoveGunner (vtable `+0x4D8`, `0x007464E0`).
+        // Retail reaches it only for a rider that can take damage while its
+        // Transporter is set, i.e. in an `OpenTopped=` transport, and the only
+        // such Unit, BFRT, has no `Gunner=`.
+        if let Some(transporter) = world
+            .substrate
+            .entities
+            .get(dead_id)
+            .and_then(|entity| entity.passenger_role.transporter())
+        {
+            world.remove_gunner(rules, transporter, Some(dead_id));
+        }
         // The house InfDeath 8 and 9 give their anim (`0x0051887B`,
         // `0x00518A96`): the source's owner (`+0x21C`), else the house
         // argument.
@@ -3338,13 +3353,10 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
         .payload
         .installed_weapon()
         .and_then(|weapon| rules.weapon(world.interner.resolve(weapon)))
-        .and_then(|weapon| weapon.projectile.as_deref())
-        .and_then(|projectile| rules.projectile(projectile))
+        .and_then(|weapon| rules.weapon_projectile(weapon))
         .map_or(0, |projectile| projectile.detonation_altitude);
     let weapon = rules.weapon(NUKE_PAYLOAD_WEAPON);
-    let warhead = weapon
-        .and_then(|weapon| weapon.warhead.as_deref())
-        .and_then(|name| rules.warhead(name));
+    let warhead = weapon.and_then(|weapon| rules.weapon_warhead(weapon));
     let damage = weapon.map_or(0, |weapon| weapon.damage);
     // Ares hook 46B371 (10036880): a superweapon's falling nuke takes that
     // type's `Nuke.Payload` (its speed and BulletType) with its GetDamage
@@ -3716,6 +3728,7 @@ fn ares_damage_occupants(
         if let Some(event) = world.substrate.entities.get(victim).and_then(|entity| {
             death_announcement_event(
                 world.object_type(entity.type_ref(), rules)?,
+                entity.type_ref(),
                 entity.category(),
                 entity.position.rx(),
                 entity.position.ry(),
@@ -3790,10 +3803,7 @@ fn emit_detonation_receivers<'r>(
         .installed_weapon()
         .and_then(|weapon| rules.weapon(world.interner.resolve(weapon)))
         && weapon.rad_level > 0
-        && let Some(rad_warhead) = weapon
-            .warhead
-            .as_deref()
-            .and_then(|name| rules.warhead(name))
+        && let Some(rad_warhead) = rules.weapon_warhead(weapon)
     {
         out.effects
             .rad_detonations

@@ -14,6 +14,7 @@ use crate::ui::shell::geom::{self, RectPx};
 use crate::ui::shell::in_game_options::{build_in_game_options_descriptor, control};
 use crate::ui::shell::in_game_shell::{InGameShellLayout, InGameShellSizes};
 use crate::ui::shell::layout::{InGameOptionsAnchor, layout_pass_in_game_options};
+use crate::ui::sidebar::command_bar::spacer_pieces;
 
 pub(super) fn shell_layout(
     atlas: &SidebarChromeAtlas,
@@ -43,11 +44,12 @@ pub(super) fn shell_layout(
         },
     )?;
     // Phobos `[Sidebar] CenterPauseMenuBackground`; the hook rewrites the same
-    // rectangle every active-game modal paints first.
+    // rectangle every active-game modal paints first. Without the switch the
+    // art is stretched over the battlefield, VERA's frames being any size.
     Some(if center_background {
         layout.with_centered_background(width, height)
     } else {
-        layout
+        layout.with_battlefield_background()
     })
 }
 
@@ -108,7 +110,10 @@ pub(crate) fn current_in_game_shell_layout(state: &AppState) -> Option<InGameShe
     // The Phobos switch is absent from builds without the capability, so those
     // keep the native top-left placement.
     #[cfg(feature = "phobos")]
-    let center_background = state.match_state.match_presentation.center_pause_menu_background;
+    let center_background = state
+        .match_state
+        .match_presentation
+        .center_pause_menu_background;
     #[cfg(not(feature = "phobos"))]
     let center_background = false;
     Some(InGameShellGeometry {
@@ -121,9 +126,21 @@ pub(crate) fn current_in_game_shell_layout(state: &AppState) -> Option<InGameShe
     })
 }
 
-/// Native blit at canvas size, with an optional source-preserving clip. No art
-/// is stretched to fill unused pixels at resolutions larger than its canvas.
+/// Native blit at canvas size, with an optional source-preserving clip. Only
+/// the background and LSPACER are stretched ([`push_art_scaled`]).
 pub(super) fn push_art(
+    out: &mut Vec<SpriteInstance>,
+    entry: SidebarChromeEntry,
+    rect: RectPx,
+    clip: RectPx,
+) {
+    let [w, h] = entry.pixel_size.map(|v| v as i32);
+    push_art_scaled(out, entry, RectPx::new(rect.x, rect.y, w, h), clip);
+}
+
+/// The whole canvas drawn over `rect`, scaled to its size, then clipped as
+/// [`push_art`] clips; at the canvas size it is that blit.
+fn push_art_scaled(
     out: &mut Vec<SpriteInstance>,
     entry: SidebarChromeEntry,
     rect: RectPx,
@@ -131,13 +148,13 @@ pub(super) fn push_art(
 ) {
     let x = rect.x.max(clip.x);
     let y = rect.y.max(clip.y);
-    let right = (rect.x + entry.pixel_size[0] as i32).min(clip.x + clip.w);
-    let bottom = (rect.y + entry.pixel_size[1] as i32).min(clip.y + clip.h);
+    let right = (rect.x + rect.w).min(clip.x + clip.w);
+    let bottom = (rect.y + rect.h).min(clip.y + clip.h);
     if right <= x || bottom <= y {
         return;
     }
-    let sx = entry.uv_size[0] / entry.pixel_size[0];
-    let sy = entry.uv_size[1] / entry.pixel_size[1];
+    let sx = entry.uv_size[0] / rect.w as f32;
+    let sy = entry.uv_size[1] / rect.h as f32;
     out.push(SpriteInstance {
         position: [x as f32, y as f32],
         size: [(right - x) as f32, (bottom - y) as f32],
@@ -166,9 +183,12 @@ pub(super) fn background_instances(
         800 => atlas.background_medium,
         _ => atlas.background_large,
     };
-    // Original 72F540 order; the background clear is performed by the render pass.
+    // Original 72F540 order; the background clear is performed by the render
+    // pass. The background fills its layout rectangle (`shell_layout`).
+    if let Some(entry) = background {
+        push_art_scaled(&mut out, entry, layout.background, screen);
+    }
     for (entry, rect) in [
-        (background, layout.background),
         (atlas.top_strip_thin, layout.credits),
         (atlas.top_strip_sidebar, layout.top),
         (Some(atlas.radar), layout.radar),
@@ -192,8 +212,22 @@ pub(super) fn background_instances(
     if let Some(entry) = atlas.unknown_top_housing {
         push_art(&mut out, entry, layout.addon, screen);
     }
+    // LSPACER reaches the closed left cap as the match's bar lays it out
+    // (`spacer_pieces`).
     if let Some(entry) = atlas.command_bar.spacer {
-        push_art(&mut out, entry, layout.bottom_spacer, layout.bottom_clip);
+        let strip = layout.bottom_clip;
+        let cap_x = (layout.closed_left_cap.x - layout.bottom_spacer.x).max(0) as u32;
+        let pieces = spacer_pieces(cap_x, entry.pixel_size[0] as u32);
+        for piece in pieces.into_iter().flatten() {
+            let rect = RectPx::new(
+                layout.bottom_spacer.x + piece.x as i32,
+                layout.bottom_spacer.y,
+                piece.w as i32,
+                layout.bottom_spacer.h,
+            );
+            let columns = entry.columns(piece.source_x as f32, piece.source_w as f32);
+            push_art_scaled(&mut out, columns, rect, strip);
+        }
     }
     // 621FCE passes false: closed LENDCAP frame2, without BTTNBKGD repeats.
     if let Some(entry) = atlas.command_bar.left_cap[2] {
@@ -674,4 +708,31 @@ fn begin_shell_pass<'e>(
         occlusion_query_set: None,
         multiview_mask: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// At the 1121x741 frame the 856x736 background reaches the 953x709
+    /// battlefield's far corner and still shows its whole canvas.
+    #[test]
+    fn scaled_background_samples_its_whole_canvas_over_the_battlefield() {
+        let entry = SidebarChromeEntry {
+            uv_origin: [0.25, 0.5],
+            uv_size: [0.5, 0.25],
+            pixel_size: [856.0, 736.0],
+        };
+        let mut out = Vec::new();
+        let battlefield = RectPx::new(0, 0, 953, 709);
+        push_art_scaled(&mut out, entry, battlefield, RectPx::new(0, 0, 1121, 741));
+        let [sprite] = out.as_slice() else {
+            panic!("one background sprite, got {}", out.len());
+        };
+        assert_eq!((sprite.position, sprite.size), ([0.0; 2], [953.0, 709.0]));
+        assert_eq!(sprite.uv_origin, entry.uv_origin);
+        for (uv, expected) in sprite.uv_size.into_iter().zip(entry.uv_size) {
+            assert!((uv - expected).abs() < 1e-6, "{uv} != {expected}");
+        }
+    }
 }

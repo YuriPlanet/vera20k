@@ -439,6 +439,12 @@ impl Simulation {
                     entity.navigation.stop_moving();
                     entity.navigation.path_replay_mut().clear_live_head();
                     entity.navigation.settle_destination_setter();
+                    // RESIDUAL: 0x004B2259 asks Get_Mission (vt+0x184 =
+                    // 0x005B3040: current, else queued); this reads current.
+                    // They differ only for an arrival while current is NONE
+                    // with Move queued, before the first Commence (rare):
+                    // native enters idle mode here, VERA once the commenced
+                    // Mission_Move does.
                     if entity.mission.current().known() == Some(MissionType::Move) {
                         let returns = self.unit_enter_idle_mode(id, rules, false, effects);
                         observe(self, id, TrackWorldEvent::Arrival);

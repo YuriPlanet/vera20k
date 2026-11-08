@@ -1247,6 +1247,20 @@ fn sidebar_cameo_press(
     }
     if let Some(line) = click.eva {
         push_local_eva(state, line);
+        // Accessibility: `EVA_Building` / `EVA_Training` / `EVA_Canceled`
+        // name no object, but the clicked cameo's type key is right here.
+        // Other click lines (hold, refusal, target select) post nothing.
+        crate::app::input::messages::post_eva_production_start(state, line, type_id);
+        // A single ABANDON removed exactly this cameo's build. ABANDON_ALL
+        // removed a set the voice does not name either, so it names nothing.
+        if line == sidebar_eva::EVA_CANCELED && sidebar_eva::cancel_names_clicked_type(click.order)
+        {
+            crate::app::input::messages::post_eva_cancel(
+                state,
+                type_id,
+                sidebar_eva::is_structure_strip(category),
+            );
+        }
     }
     let owner = preferred_local_owner_name(state).and_then(|name| {
         state
@@ -2048,7 +2062,7 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::AutoLoad => {}
         // A chord runs in the window owner before this dispatch; a binding on
         // a typing key reaches here, after the chat edit.
-        HotkeyCommand::FpsCounter | HotkeyCommand::LockCursor | HotkeyCommand::FullScreen => {
+        HotkeyCommand::PerformanceStats | HotkeyCommand::LockCursor | HotkeyCommand::FullScreen => {
             run_window_command(state, command)
         }
         HotkeyCommand::RenderInterpolation => {
@@ -2075,12 +2089,15 @@ pub(crate) fn run_window_command(state: &mut AppState, command: HotkeyCommand) {
             let full_screen = state.platform.window.fullscreen().is_none();
             crate::app::App::set_full_screen(state, full_screen);
         }
-        HotkeyCommand::FpsCounter => {
-            let shown = state.renderer.fps_overlay.toggle();
+        HotkeyCommand::PerformanceStats => {
+            let shown = state.renderer.performance_overlay.toggle();
             if let Some(dialog) = state.frontend.options_dialog.as_mut() {
-                dialog.sync_fps_counter(shown);
+                dialog.sync_performance_stats(shown);
             }
-            log::info!("FPS overlay: {}", if shown { "shown" } else { "hidden" });
+            log::info!(
+                "Performance stats: {}",
+                if shown { "shown" } else { "hidden" }
+            );
         }
         _ => return,
     }
@@ -3537,11 +3554,26 @@ mod item83_selection_order_tests {
                     Some(pill)
                 );
             } else if phase == 2 {
-                assert!(sim.apply_command(
-                    "Americans",
-                    &Command::EjectBunker { bunker_id: pill },
-                    Some(rules)
-                ));
+                // Phase 1 installed through the production install-end seam;
+                // clear the same two links for the post-release band. This
+                // control is about selection, not about the eject chain: the
+                // VERA-only opcode 0x31 now queues the Unload mission instead
+                // of releasing at command time (#3675).
+                {
+                    let entities = sim.entities_mut_for_test();
+                    entities
+                        .get_mut(pill)
+                        .unwrap()
+                        .bunker
+                        .set_bunker_occupant_for_test(None);
+                    entities
+                        .get_mut(tank)
+                        .unwrap()
+                        .bunker
+                        .set_bunker_link_for_test(
+                            crate::sim::docking::bunker_link::BunkerLink::None,
+                        );
+                }
                 assert_eq!(sim.entities().get(pill).unwrap().bunker.occupant(), None);
                 assert_eq!(
                     sim.entities()
@@ -4151,10 +4183,12 @@ fn deploy_key_command(
     let entity = sim.entities().get(entity_id)?;
     let obj = rules.and_then(|rules| sim.interner().object_type(entity.type_ref(), rules));
     match entity.category() {
-        // Absorbers and garrisons share unload admission.
-        EntityCategory::Structure => {
-            super::transport_orders::unload_command(entity, obj, local_owner)
-        }
+        // Selection730B28..730B5E sends Event9 for an occupied Building.
+        // Its native receiver owns NULL setters and Unload; self-click keeps
+        // the separate MEGAMISSION/absorber admission in transport_orders.
+        EntityCategory::Structure => (!entity.passenger_role.occupants().is_empty()
+            && local_owner.is_none_or(|owner| entity.owner() == owner))
+        .then_some(Command::DeployMcv { entity_id }),
         EntityCategory::Infantry => Some(Command::ToggleInfantryDeploy { entity_id }),
         // A unit in a tank bunker deploys out of it: its Unload's bunker arm
         // (`0x0073D63B`) runs before the transport arm.

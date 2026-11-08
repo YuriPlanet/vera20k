@@ -94,13 +94,13 @@ pub(super) fn emit(world: &mut Simulation, rules: &RuleSet, detonation: &Project
     let Some(child_type_name) = weapon.projectile.as_deref() else {
         return;
     };
-    let Some(child_type) = rules.projectile(child_type_name) else {
+    let Some(child_type) = rules.weapon_projectile(weapon) else {
         return;
     };
     let Some(warhead_name) = weapon.warhead.as_deref() else {
         return;
     };
-    let Some(warhead) = rules.warhead(warhead_name) else {
+    let Some(warhead) = rules.weapon_warhead(weapon) else {
         return;
     };
     let warhead_id = world.interner.intern(warhead_name);
@@ -1085,11 +1085,8 @@ fn admit_firing_effects(
         super::electric_bolt::create_effect(world, rules, origin, effect_to, context.weapon, None);
     }
     if context.weapon.is_rad_beam {
-        let mode = if context
-            .weapon
-            .warhead
-            .as_deref()
-            .and_then(|name| rules.warhead(name))
+        let mode = if rules
+            .weapon_warhead(context.weapon)
             .is_some_and(|warhead| warhead.temporal)
         {
             super::radiation_beam::CopiedBeamMode::Chrono

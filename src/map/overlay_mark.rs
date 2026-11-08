@@ -122,9 +122,6 @@ pub(crate) struct OverlayCellAnim<'a> {
     pub(crate) anim_xy: [i32; 2],
     /// The CellClass Mark resolved; the tint copies its `+0x10A`.
     pub(crate) cell: NativeCellIdentity,
-    /// `CellClass::GetTiberiumType @ 0x00485010` on that cell after Mark's
-    /// writes. `Some` enters the tint block at `0x005FD1C5..0x005FD1F4`.
-    pub(crate) tiberium: Option<TiberiumTypeId>,
 }
 
 /// The CellClass surface `OverlayClass::Mark` reads and writes, and the
@@ -132,6 +129,11 @@ pub(crate) struct OverlayCellAnim<'a> {
 /// data and slope; a write to the dummy is a write to the dummy.
 pub(crate) trait OverlayMarkHost {
     type Error;
+    type CellAnim;
+
+    /// A reached native Tiberium pointer/division failure follows the host's
+    /// ordinary synchronous error path, preserving preceding Mark writes.
+    fn tiberium_error(error: crate::rules::overlay_types::TiberiumImageError) -> Self::Error;
 
     /// `MapClass::Get_CellClass @ 0x005657A0` on a packed cell. A miss stamps
     /// the shared dummy's coordinate and returns the dummy.
@@ -190,10 +192,20 @@ pub(crate) trait OverlayMarkHost {
         cell: NativeCellIdentity,
     ) -> Result<(), Self::Error>;
     /// `AnimClass::AnimClass @ 0x00421EA0` with `(CellAnim, coord, 0, 1,
-    /// 0x600, 0, 0)`, then the tint block when the cell resolved a class.
-    fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<(), Self::Error>;
+    /// 0x600, 0, 0)`, including its synchronous delay-zero Start.
+    fn spawn_cell_anim(
+        &mut self,
+        request: OverlayCellAnim<'_>,
+    ) -> Result<Self::CellAnim, Self::Error>;
+    /// `0x005FD1C5..0x005FD1F4`, after construction and the live cell lookup.
+    fn tint_cell_anim(&mut self, anim: Self::CellAnim, tiberium: TiberiumTypeId);
     /// `CellClass::RecalcAttributes @ 0x0047D2B0` with -1.
     fn recalc(&mut self, cell: NativeCellIdentity) -> Result<(), Self::Error>;
+    /// Ordinary ore batches may publish this final Recalc together before
+    /// the next object. Structural and CellAnim arms always use `recalc`.
+    fn recalc_ordinary(&mut self, cell: NativeCellIdentity) -> Result<(), Self::Error> {
+        self.recalc(cell)
+    }
 }
 
 /// Run `OverlayClass::Mark @ 0x005FC570` after the base Mark and the
@@ -283,16 +295,10 @@ pub(crate) fn mark_overlay<H: OverlayMarkHost>(
 
     // 0x005FD112..0x005FD1F4: reached written or not.
     if let Some(anim) = flags.cell_anim.as_deref() {
-        let tiberium = request.tiberium_types.and_then(|tiberium_types| {
-            u8::try_from(host.identity(anchor))
-                .ok()
-                .and_then(|identity| {
-                    request
-                        .registry
-                        .tiberium_type_for_overlay(tiberium_types, identity)
-                })
-        });
-        host.spawn_cell_anim(OverlayCellAnim {
+        //5FD1AE completes the constructor and delay-zero Start before
+        //5FD1BB samples the cell. Start can change the live overlay, and a
+        //reached invalid Image must retain that preceding constructor prefix.
+        let anim = host.spawn_cell_anim(OverlayCellAnim {
             anim,
             location: request.location,
             anim_xy: [
@@ -300,10 +306,27 @@ pub(crate) fn mark_overlay<H: OverlayMarkHost>(
                 request.location[1].wrapping_add(CELL_ANIM_OFFSET_LEPTONS),
             ],
             cell: anchor,
-            tiberium,
         })?;
+        let tiberium = match (
+            request.tiberium_types,
+            u8::try_from(host.identity(anchor)).ok(),
+        ) {
+            (Some(types), Some(identity)) => request
+                .registry
+                .tiberium_type_for_overlay(types, identity)
+                .map_err(H::tiberium_error)?,
+            _ => None,
+        };
+        if let Some(tiberium) = tiberium {
+            host.tint_cell_anim(anim, tiberium);
+        }
     }
-    finish(host, anchor)
+    if high.is_none() && flags.cell_anim.is_none() {
+        host.recalc_ordinary(anchor)?;
+        Ok(OverlayMarkOutcome::Marked)
+    } else {
+        finish(host, anchor)
+    }
 }
 
 /// `0x005FD1FA`: the common Recalc of the retained CellClass. The lifecycle
@@ -341,7 +364,8 @@ fn germinate<H: OverlayMarkHost>(
                 host.data(neighbor),
             )
         },
-    );
+    )
+    .map_err(H::tiberium_error)?;
     match germinated {
         Some(germinated) => host.write_data(anchor, germinated.density),
         None => Ok(()),
@@ -537,7 +561,8 @@ mod tests {
         Cleanup,
         MergeZones,
         Increment((i16, i16)),
-        Anim([i32; 2], Option<TiberiumTypeId>),
+        Anim([i32; 2]),
+        Tint(TiberiumTypeId),
         Recalc((i16, i16)),
     }
 
@@ -587,6 +612,11 @@ mod tests {
 
     impl OverlayMarkHost for MockHost {
         type Error = &'static str;
+        type CellAnim = ();
+
+        fn tiberium_error(_error: crate::rules::overlay_types::TiberiumImageError) -> Self::Error {
+            "invalid Tiberium image"
+        }
 
         fn cell(&mut self, coord: (i16, i16)) -> NativeCellIdentity {
             match self.index(coord) {
@@ -712,9 +742,12 @@ mod tests {
         }
 
         fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<(), Self::Error> {
-            self.calls
-                .push(Call::Anim(request.anim_xy, request.tiberium));
+            self.calls.push(Call::Anim(request.anim_xy));
             Ok(())
+        }
+
+        fn tint_cell_anim(&mut self, (): (), tiberium: TiberiumTypeId) {
+            self.calls.push(Call::Tint(tiberium));
         }
 
         fn recalc(&mut self, cell: NativeCellIdentity) -> Result<(), Self::Error> {
@@ -843,7 +876,7 @@ mod tests {
         // written, at Location + 0x180, tinted by the cell's TiberiumClass
         // after the writes; then the common Recalc and a true return.
         let types = dense(
-            1,
+            148,
             "[OV0]\nTiberium=yes\nLand=Tiberium\nCellAnim=SPARK\n\
              [Tiberiums]\n0=Riparius\n[Riparius]\nImage=1\n",
         );
@@ -858,7 +891,7 @@ mod tests {
             refused.calls,
             vec![
                 Call::Passable(SpeedType::Track, true),
-                Call::Anim(anim_xy, None),
+                Call::Anim(anim_xy),
                 Call::Recalc((1, 1)),
             ]
         );
@@ -866,9 +899,10 @@ mod tests {
         let mut written = MockHost::new(4, 4);
         mark(&mut written, &types, MarkCrateImages::default(), (1, 1), 0).unwrap();
         assert_eq!(
-            &written.calls[written.calls.len() - 2..],
+            &written.calls[written.calls.len() - 3..],
             &[
-                Call::Anim(anim_xy, Some(TiberiumTypeId(0))),
+                Call::Anim(anim_xy),
+                Call::Tint(TiberiumTypeId(0)),
                 Call::Recalc((1, 1)),
             ]
         );

@@ -1183,7 +1183,8 @@ fn retail_a_walking_passenger_runs_mission_enter() {
         gi,
         rules,
         crate::sim::world::ObjectAiCtx::default(),
-    );
+    )
+    .unwrap();
     assert_eq!(sim.scenario_rng.state(), replay.state());
     assert_eq!(entity(&sim, gi).mission.dispatch_timer().delay(), delay);
     assert_eq!(entity(&sim, gi).radio_contacts.slot(0), Some(ifv));
@@ -1380,7 +1381,8 @@ fn retail_a_refused_move_here_breaks_the_passengers_contact() {
         gi,
         rules,
         crate::sim::world::ObjectAiCtx::default(),
-    );
+    )
+    .unwrap();
 
     let pax = entity(&sim, gi);
     assert!(pax.radio_contacts.is_empty(), "the transport broke it");

@@ -1871,6 +1871,9 @@ pub(super) fn spawn_event_ingress_unit(
 /// compared marker and scan slices visit only the declared 4x4 cells.
 /// A bare test constructor
 /// remains in limbo, so Unit PerCell correctly refuses it before the Foot tail.
+/// Cell 3,4 lies off the playfield, so the actor retreats: IsAllowedToLeaveMap
+/// (`0x004DA1D0`) then admits its own Cell (`0x0073F364..0x0073F388`) and the
+/// Unit's own-cell arm (`0x0073AE1B`) lets the call reach the Foot line slice.
 pub(super) fn sparse_line_ingress_fixture() -> (
     Simulation,
     crate::rules::ruleset::RuleSet,
@@ -1892,6 +1895,15 @@ pub(super) fn sparse_line_ingress_fixture() -> (
     );
     sim.session.set_map_width_for_test(5);
     sim.session.set_map_height_for_test(5);
+    sim.substrate
+        .entities
+        .get_mut(actor)
+        .unwrap()
+        .mission
+        .set_current_for_test(
+            crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Retreat),
+            0,
+        );
     (sim, rules, houses, actor)
 }
 

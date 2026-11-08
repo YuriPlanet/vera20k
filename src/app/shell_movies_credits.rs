@@ -5,12 +5,12 @@
 
 use crate::sim::trigger_runtime::ThemeRequest;
 use crate::ui::shell::list::ListMetrics;
-use std::sync::Arc;
 use crate::util::time::Instant;
+use std::sync::Arc;
 
 use super::{App, AppState};
 use crate::app::frontend::credits_roll::{
-    CreditsInput, CreditsReturn, CreditsRoll, CreditsRollSession,
+    CreditsInput, CreditsReturn, CreditsRoll, CreditsRollSession, CreditsViewport,
 };
 use crate::app::frontend::fullscreen_movie::{FullscreenMovie, MovieReturn, movie_stem};
 use crate::app::shell_route::ShellRoute;
@@ -452,9 +452,13 @@ impl App {
             return;
         };
         let lookup = |key: &str| Self::csf_label(state, key, &format!("MISSING:'{key}'"));
+        let viewport = CreditsViewport::new(
+            state.renderer.gpu.config.width,
+            state.renderer.gpu.config.height,
+        );
         let lines = crate::ui::movies_credits_shell::parse_credits(
             &bytes,
-            state.renderer.gpu.config.height as i32,
+            viewport.surface_height,
             &lookup,
         );
         let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();

@@ -255,7 +255,10 @@ pub use lifecycle::{
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use lifecycle::{LifecycleTestEvent, RevealFailure};
-pub(crate) use load_object_lifecycle::{LoadObjectLifecycle, OverlayConstructionReceipt};
+pub(crate) use load_object_lifecycle::LoadObjectLifecycle;
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) use load_object_lifecycle::LoadOverlayHandle;
+pub use load_object_lifecycle::LoadOverlayLifecycleError;
 pub(crate) use logic_vector::{LogicMembership, LogicVector};
 pub(crate) use object_entry::{EntryFacts, FootEntryReceiver};
 #[cfg(any(test, feature = "test-support"))]
@@ -322,7 +325,6 @@ use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::smudge_grid::SmudgeGrid;
 use crate::sim::team_script_vm::TeamScriptVm;
 use crate::sim::terrain_object::TerrainObjectStore;
-use crate::sim::tiberium::TiberiumPlacementObjectContext;
 use crate::sim::trigger_runtime::{TriggerEffect, TriggerRuntime};
 use crate::sim::vision::{self, FogState};
 use crate::util::fixed_math::SimFixed;
@@ -684,13 +686,21 @@ pub enum SimSoundEvent {
         world: crate::sim::anim_class::AnimWorldCoord,
     },
     /// A building finished construction — play EVA "Construction complete".
-    BuildingComplete { owner: InternedId },
+    /// `type_id` is the factory's already-resolved completed product; the app
+    /// names it in the optional accessibility text line. Transient event only:
+    /// drained each frame, never a gameplay hash or persisted identity input.
+    BuildingComplete {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// `HouseClass::Place_Production 0x004FB5C6..0x004FB644`: a unit left the
     /// factory of a human-controlled house. `EVA_UnitReady` plays for the
-    /// local owner once its client admits `radar` (type 6).
+    /// local owner once its client admits `radar` (type 6). `type_id` is the
+    /// held product the factory completed, carried for the optional text line.
     UnitComplete {
         owner: InternedId,
         radar: RadarEventRequest,
+        type_id: InternedId,
     },
     /// One accepted HouseClass win/loss transition. The app resolves the
     /// local owner's faction-specific STANDARD EVA; this edge is transient so
@@ -794,9 +804,13 @@ pub enum SimSoundEvent {
     /// skirmish that is `owner == the local player`, which the app resolves.
     /// `sound_id` is `None` when the rules key is absent or empty (native's
     /// invalid Voc index is silence).
+    /// `type_id` is the promoted object's already-resolved type reference; the
+    /// app names it in the optional accessibility text line. Transient event
+    /// only: drained each frame, never a gameplay hash or persisted identity.
     UnitPromoted {
         owner: InternedId,
         sound_id: Option<InternedId>,
+        type_id: InternedId,
         /// The object's Location (`0x006FA092..0x006FA0BC`,
         /// `0x006FA0FF..0x006FA12A`); with Ares, its Transporter's when it
         /// rides in one (UpdateVeterancy10046D2F..10046D40).
@@ -829,10 +843,12 @@ pub enum SimSoundEvent {
     /// `TechnoClass::Death_Announcement @ 0x004D98C0` fired for a unit of
     /// `owner` (a human house) that is not `Spawned=`. The app plays
     /// `EVA_UnitLost` for the local owner once its client admits `radar`
-    /// (`CreateRadarEvent(7, cell)`, 8-cell dedupe).
+    /// (`CreateRadarEvent(7, cell)`, 8-cell dedupe). `type_id` is the dead
+    /// techno's own interned type, resolved at the death site; transient.
     UnitLost {
         owner: InternedId,
         radar: RadarEventRequest,
+        type_id: InternedId,
         /// Ares FootClass_Destroyed (10049080, hook 0x4D98C0) and
         /// BuildingClass_Destroyed_UnitLost (10013F10, hook 0x44D760): the
         /// victim type's `EVA.Lost`, spoken whether or not `radar` is
@@ -857,8 +873,13 @@ pub enum SimSoundEvent {
     /// `+0x6DD`): `TechnoClass+0x41A` (owner is the local player) and no
     /// `UndeploysInto=` (`Type+0x408`) — an undeploying building stays
     /// silent. Each removed upgrade uses the same event at
-    /// `0x0044AB22..0x0044AB36`. App plays `EVA_StructureSold`.
-    StructureSold { owner: InternedId },
+    /// `0x0044AB22..0x0044AB36`. App plays `EVA_StructureSold`. `type_id`
+    /// names the building that was sold (or whose upgrade was removed); the
+    /// emit site already resolved it. Transient accessibility fact only.
+    StructureSold {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// A sale order's click (`BuildingClass::Sell_Back @ 0x00447110`:
     /// `VocClass::PlayAtPos` of `[AudioVisual] GenericClick=`) for the
     /// owner's player (`HouseClass::IsHumanPlayer @ 0x0050B6F0`; the app
@@ -868,8 +889,14 @@ pub enum SimSoundEvent {
     /// switched on while `Health != Type.Strength` (`0x00447059`) and the
     /// owner is the local player (`0x004470A4 CALL 0x0050B6F0`). App plays
     /// `EVA_Repairing` for the local owner. Depot MissionRepair44C507 emits
-    /// the same request when its first paid service step starts.
-    Repairing { owner: InternedId },
+    /// the same request when its first paid service step starts. `type_id` is
+    /// the building being repaired (ToggleRepair) or the depot that began the
+    /// service (MissionRepair); both are already resolved at the emit site.
+    /// Transient accessibility fact only.
+    Repairing {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// Depot MissionRepair44BDB2 reaches CreateRadarEvent8 after a service
     /// request completes. The app resolves the local-owner+41A gate and
     /// existing client radar admission before playing EVA_UnitRepaired.
@@ -879,7 +906,7 @@ pub enum SimSoundEvent {
     },
     /// `BuildingClass::ChangeOwner @ 0x00448260` announce block
     /// (`0x004483C0..0x0044848F`) for an engineer capture
-    /// (`InfantryClass::PerCellProcess 0x00519A27 PUSH 1` = announce). Native
+    /// (`InfantryClass::PerCellProcess 0x00519F79 PUSH 1` = announce). Native
     /// gate: the OLD or the NEW owner is the local player (`0x004483C6` /
     /// `0x004483D1 CALL 0x0050B6F0`), the new owner's type not
     /// `MultiplayPassive` (`0x004483E1`). `tech_building` is `NeedsEngineer=`
@@ -1039,13 +1066,19 @@ pub enum SimSoundEvent {
     /// Owner is the building owner at AddGarrisonOccupant time; civilian
     /// ownership transfer is reported separately from building reconciliation.
     /// App layer plays EVA_StructureGarrisoned if owner is local human.
-    StructureGarrisoned { owner: InternedId },
+    /// `type_id` is the occupied building, already resolved at the emit site.
+    StructureGarrisoned {
+        owner: InternedId,
+        type_id: InternedId,
+    },
     /// CheckAutoSellOrCivilian458200 abandoned an empty map garrison.
     /// House50B6F0 already admitted the old owner. The sound precedes radar
     /// admission; EVA plays only when CreateRadarEvent accepts the request.
     StructureAbandoned {
         owner: InternedId,
         radar: crate::sim::radar::RadarEventRequest,
+        /// The abandoned building, already resolved at the emit site.
+        type_id: InternedId,
     },
     /// First-occupant SFX from rulesmd [AudioVisual] BuildingGarrisonedSound.
     /// Positional cue gated on owner == local human, at the occupant's
@@ -2150,11 +2183,11 @@ fn dispatch_smudge_inline(
     spread_enabled: bool,
     dirty_cells: &mut crate::sim::dirty_cells::DirtyCells,
     construction: &mut crate::sim::smudge_grid::SmudgeConstruction<'_>,
-) {
+) -> Result<(), crate::rules::overlay_types::TiberiumImageError> {
     let (Some(smudge_grid), Some(overlay_grid), Some(terrain)) =
         (smudge_grid, overlay_grid, terrain)
     else {
-        return;
+        return Ok(());
     };
     let mut tiberium = crate::sim::combat::smudge_dispatch::SmudgeTiberiumContext {
         overlay_grid,
@@ -2181,7 +2214,7 @@ fn dispatch_smudge_inline(
         &mut tiberium,
         scenario_rng,
         Some(construction),
-    );
+    )
 }
 
 /// Existing process RNG owner lent to a detached saved-world candidate.
@@ -3379,6 +3412,7 @@ impl Simulation {
             self.sound_events.emit(SimSoundEvent::UnitLost {
                 owner: event.owner,
                 radar: RadarEventRequest::new(RadarEventType::UnitLost, event.rx, event.ry),
+                type_id: event.type_id,
                 #[cfg(feature = "ares")]
                 eva,
                 #[cfg(feature = "ares")]
@@ -4833,7 +4867,7 @@ impl Simulation {
             &mut self.native_unique_ids,
             priority,
         );
-        dispatch_smudge_inline(
+        let result = dispatch_smudge_inline(
             &request,
             rules,
             overlay_registry,
@@ -4857,6 +4891,11 @@ impl Simulation {
             self.uninit_with_context(id, lifecycle::UninitContext::new(rules, overlay_registry));
         }
         Self::flush_smudge_dirty(&mut self.smudge_grid, &mut self.dirty_cells);
+        if let Err(error) = result {
+            // Safe refusal of this optional mark on native-invalid input;
+            // preserve its earlier constructor/scorch effects and stop it.
+            log::error!("Smudge placement stopped: {error}");
+        }
     }
 
     /// Execute59 at6DE313 uses +90 as a waypoint, not the +44 tail or an
@@ -4889,7 +4928,7 @@ impl Simulation {
         // Keep every call, including after depletion. The shared owner
         // performs each native lookup and owns RNG/queues/radar/cleanup.
         for _ in 0..109 {
-            Self::reduce_tiberium_at_with_native_context(
+            if let Err(error) = Self::reduce_tiberium_at_with_native_context(
                 terrain_objects,
                 ore_growth_config,
                 ore_growth_state,
@@ -4903,7 +4942,12 @@ impl Simulation {
                 1,
                 rules,
                 Some(overlay_registry),
-            );
+            ) {
+                // A malformed native Image stops this trigger action. Prior
+                // reductions remain; no later reduction or RNG is replayed.
+                log::error!("Tiberium trigger action failed: {error}");
+                return false;
+            }
         }
         true
     }
@@ -4922,7 +4966,10 @@ impl Simulation {
         amount: A,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    ) -> crate::sim::tiberium::ReduceTiberiumOutcome {
+    ) -> Result<
+        crate::sim::tiberium::ReduceTiberiumOutcome,
+        crate::rules::overlay_types::TiberiumImageError,
+    > {
         let mut ctx = crate::sim::tiberium::ReduceTiberiumContext {
             overlay_grid: world_overlay_grid.as_mut(),
             ore_growth_state: &mut *world_ore_growth_state,
@@ -5082,74 +5129,44 @@ impl Simulation {
         &mut self,
         rules: &RuleSet,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    ) {
-        // Native TiberiumClass drivers run before the main live-object vector,
-        // growth first and spread second.
+        effects: FrameEffects<'_>,
+    ) -> Result<(), FrameAdvanceError> {
         let native_growth_ready = !rules.tiberium_types.is_empty()
             && self.ore_growth_state.native_tiberium_state().classes.len()
                 == rules.tiberium_types.len()
-            && self.overlay_grid.is_some()
-            && overlay_registry.is_some();
-        if native_growth_ready {
-            let live_objects = TiberiumPlacementObjectContext::new(
-                &self.substrate.entities,
-                &self.substrate.occupancy,
-                &self.substrate.raw_cell_occupation,
-                rules,
-                &self.interner,
-                self.terrain_objects.cell_index(),
-            );
-            if let (Some(grid), Some(registry)) = (self.overlay_grid.as_mut(), overlay_registry) {
-                let dirty_start = grid.pending_dirty_cells().len();
-                self.ore_growth_state.tick_native_growth_driver(
-                    grid,
-                    registry,
-                    &rules.tiberium_types,
-                    self.resolved_terrain.as_ref(),
-                    self.terrain_objects.spawning_cells(),
-                    Some(live_objects),
-                    &mut self.scenario_rng,
-                    self.session.binary_frame(),
-                    self.ore_growth_config.grows(),
-                    self.ore_growth_config.spreads(),
-                    self.ore_growth_config.tiberium_grows_flag(),
-                    Some(&mut self.dirty_cells),
-                );
-                let spread = self.ore_growth_state.tick_native_spread_driver(
-                    grid,
-                    registry,
-                    &rules.tiberium_types,
-                    self.resolved_terrain.as_ref(),
-                    self.terrain_objects.spawning_cells(),
-                    Some(live_objects),
-                    &mut self.scenario_rng,
-                    self.session.binary_frame(),
-                    self.ore_growth_config.grows(),
-                    self.ore_growth_config.spreads(),
-                    Some(&mut self.dirty_cells),
-                );
-                // Original Place487190 -> Overlay Mark5FC570 -> Recalc47D2B0
-                // publishes LandType before Logic55B4DC returns to live-object
-                // AI. Within the ore loops, a stamped cell is excluded by its
-                // overlay identity before admission reads its land; growth and
-                // source gates use density/slope. Their Recalcs can therefore
-                // publish as this batch without changing admission or RNG order.
-                // Native cell results: tools/spatial_oracle/ore_queue.json.
-                let marked = grid.pending_dirty_cells()[dirty_start..].to_vec();
-                self.publish_tiberium_cells(rules, registry, &marked);
-                // No identity allocator runs between these ordinary ore
-                // constructors. Their stock CellAnim branch is absent. Apply
-                // their ordered registry/ID effects before live-object AI;
-                // Scenario IDs and retirement order are preserved independently
-                // of the intervening Scenario RNG and queue mutations.
-                Self::publish_overlay_constructions(
-                    &mut self.native_unique_ids,
-                    &mut self.load_objects,
-                    &mut self.substrate,
-                    spread.into_overlay_constructions(),
-                );
-            }
+            && self.overlay_grid.is_some();
+        if native_growth_ready && let Some(registry) = overlay_registry {
+            let dirty_start = self
+                .overlay_grid
+                .as_ref()
+                .unwrap()
+                .pending_dirty_cells()
+                .len();
+            self.tick_native_growth_driver(rules, registry, effects)
+                .map_err(|error| {
+                    FrameAdvanceError::new(
+                        self.session.tick(),
+                        self.session.binary_frame(),
+                        0,
+                        error.to_string(),
+                    )
+                })?;
+            self.tick_native_spread_driver(rules, registry, effects)
+                .map_err(|error| {
+                    FrameAdvanceError::new(
+                        self.session.tick(),
+                        self.session.binary_frame(),
+                        0,
+                        error.to_string(),
+                    )
+                })?;
+            // Preserve the existing ordinary-ore Recalc batch. Structural and
+            // CellAnim Mark paths have already completed synchronously.
+            let marked =
+                self.overlay_grid.as_ref().unwrap().pending_dirty_cells()[dirty_start..].to_vec();
+            self.publish_tiberium_cells(rules, registry, &marked);
         }
+        Ok(())
     }
 
     /// Overlay Mark5FC570 ->Recalc47D2B0 completes before its Logic caller
@@ -5171,91 +5188,6 @@ impl Simulation {
             }
         }
         self.finish_terrain_navigation_changes(rules, &[]);
-    }
-
-    /// Run `body` against the live map's `CellClass::IncreaseTiberium @
-    /// 0x00487190` context (`crate::sim::tiberium::place_tiberium` on the
-    /// scenario RNG), then join the new overlays to their registries and
-    /// publish the placed cells. A world without terrain or an overlay grid
-    /// has no Cell to write: `body` does not run and nothing is drawn.
-    pub(crate) fn increase_tiberium_cells(
-        &mut self,
-        rules: &RuleSet,
-        registry: &crate::rules::overlay_types::OverlayTypeRegistry,
-        body: impl FnOnce(
-            &mut crate::sim::tiberium::PlaceTiberiumContext<'_>,
-        ) -> Vec<crate::sim::tiberium::TiberiumPlacement>,
-    ) {
-        let binary_frame = self.session.binary_frame();
-        let growth_enabled = self.ore_growth_config.grows();
-        let spread_enabled = self.ore_growth_config.spreads();
-        let Some(terrain) = self.resolved_terrain.as_ref() else {
-            return;
-        };
-        let live_objects = crate::sim::tiberium::TiberiumPlacementObjectContext::new(
-            &self.substrate.entities,
-            &self.substrate.occupancy,
-            &self.substrate.raw_cell_occupation,
-            rules,
-            &self.interner,
-            self.terrain_objects.cell_index(),
-        );
-        let admission = crate::sim::tiberium::NewTiberiumAdmission::runtime(terrain, live_objects);
-        let Some(grid) = self.overlay_grid.as_mut() else {
-            return;
-        };
-        let mut context = crate::sim::tiberium::PlaceTiberiumContext {
-            overlay_grid: grid,
-            ore_growth_state: &mut self.ore_growth_state,
-            overlay_registry: registry,
-            tiberium_types: &rules.tiberium_types,
-            resolved_terrain: Some(terrain),
-            source_object_cells: self.terrain_objects.spawning_cells(),
-            new_cell_admission: Some(admission),
-            live_objects: Some(admission.live_objects().object_view()),
-            rng: &mut self.scenario_rng,
-            binary_frame,
-            growth_enabled,
-            spread_enabled,
-            dirty_cells: Some(&mut self.dirty_cells),
-        };
-        let placements = body(&mut context);
-        drop(context);
-        let mut placed_cells = Vec::with_capacity(placements.len());
-        let mut receipts = Vec::new();
-        for placement in placements {
-            placed_cells.push(placement.cell());
-            receipts.extend(placement.into_overlay_construction());
-        }
-        // Place487190's overlay constructor joins the runtime registries and
-        // its Mark republishes the cell's land, as the ore drivers publish
-        // theirs.
-        Self::publish_overlay_constructions(
-            &mut self.native_unique_ids,
-            &mut self.load_objects,
-            &mut self.substrate,
-            receipts,
-        );
-        self.publish_tiberium_cells(rules, registry, &placed_cells);
-    }
-
-    pub(crate) fn publish_overlay_constructions(
-        native_unique_ids: &mut Option<NativeUniqueIdCursor>,
-        load_objects: &mut LoadObjectLifecycle,
-        substrate: &mut ObjectSubstrate,
-        receipts: impl IntoIterator<Item = OverlayConstructionReceipt>,
-    ) {
-        for receipt in receipts {
-            let stable_id = substrate.allocate_stable_id();
-            let handle = load_objects
-                .construct_overlay(stable_id, receipt.cell(), || {
-                    NativeUniqueIdCursor::assign_runtime(native_unique_ids)
-                })
-                .expect("runtime Overlay constructor must join its owned registries");
-            load_objects
-                .finish_cell_construction(handle, receipt, &mut substrate.pending_delete)
-                .expect("runtime Overlay constructor must finish its owned lifecycle");
-        }
     }
 
     /// `MapClass::In_Bounds @ 0x00568300` — the active diamond test against
@@ -8154,7 +8086,7 @@ impl Simulation {
     /// Start or stop diagnostic wall-clock measurement. A transition starts a
     /// fresh sample window; repeated requests preserve the accumulated profile.
     /// New and deserialized simulations start disabled with an empty profile.
-    /// The telemetry build and the in-game FPS panel turn it on.
+    /// The telemetry build and the in-game performance panel turn it on.
     pub fn set_frame_profiling(&mut self, enabled: bool) {
         if self.frame_profiling != enabled {
             self.frame_profile.reset();

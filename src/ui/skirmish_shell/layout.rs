@@ -957,12 +957,23 @@ pub fn random_map_setup_dropdown_rect(
     item_count: usize,
 ) -> RectPx {
     let face = combo_face_rect(layout.control_rects[row], layout.scale);
-    RectPx::new(
-        face.x,
-        face.y + face.h,
-        face.w,
-        DropdownMetrics::scaled(layout.scale).row_h * item_count as i32,
-    )
+    let top = face.y + face.h;
+    let mut bottom = top + DropdownMetrics::scaled(layout.scale).row_h * item_count as i32;
+    // VERA: a list longer than the original's four rows (Archipelago, the added
+    // theaters) can end inside a lower row's text; it then runs on to that
+    // text's bottom so the row is hidden whole, never cut. The original lists
+    // never end inside one, so they keep their height.
+    for (index, &control) in layout.control_rects.iter().enumerate().skip(row + 1) {
+        let text = if index + 1 == layout.control_rects.len() {
+            crate::ui::shell::trackbar::value_text_rect(control, layout.scale)
+        } else {
+            combo_text_rect(control, layout.scale)
+        };
+        if text.y < bottom && bottom < text.y + text.h {
+            bottom = text.y + text.h;
+        }
+    }
+    RectPx::new(face.x, top, face.w, bottom - top)
 }
 
 /// Which entry of an open dropdown `(x, y)` falls on.

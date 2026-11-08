@@ -333,15 +333,12 @@ pub struct AnimTypeRuntimeConfig {
     /// contained tiberium value at which a `HideIfNoOre=` anim still draws.
     #[cfg(feature = "phobos")]
     pub hide_if_no_ore_threshold: i32,
-    /// art.ini `IsAnimatedTiberium=`, `AnimTypeClass+0x360`, read only by
-    /// `Anims_Refresh_Tiberium_LightConverts @ 0x004261D0` after a save load
-    /// (`Post_Load_Game`, `0x006851B1`). That pass gives every live anim of
-    /// such a type standing on tiberium the tiberium's ColorScheme Convert
-    /// (`+0xD4`), however the anim was made.
-    /// RESIDUAL (dormant): not ported, so after a load such an anim keeps the
-    /// palette it was saved with. Only maps and mods reach it: retail's one
-    /// such type, BIGBLUE, is never spawned (its `CellAnim=` lines are
-    /// commented out). Nothing in gameplay reads the Convert.
+    /// Fixed ARTMD `IsAnimatedTiberium=`, AnimType+0x360: constructor427530
+    /// defaults false; ReadINI427D00 retains the prior bool on absent input.
+    /// AnimAI4243BC checks the shifted virtual cell's CellAnim identity and
+    /// marks a mismatch inactive. After user load, the separate refresh4261D0
+    /// uses every flagged Anim's stored Location to select the resource's
+    /// ColorScheme Convert, including inactive and attached entries.
     pub is_animated_tiberium: bool,
     pub tiberium_spread_radius: i32,
     /// The Type references (`TiberiumSpawnType=`, `Spawns=`, `Warhead=`,

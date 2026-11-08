@@ -491,7 +491,9 @@ pub(super) struct SurfaceLineGpu {
     work: Vec<([i32; 2], Operation)>,
     /// Derived solely from work's output points; clear on every upload,
     ///prepare and begin. Bounds cross-pixel dependencies, not display state.
-    written: std::collections::HashSet<[i32; 2]>,
+    /// Membership only: every operation of a frame with rays or antialiased
+    /// lines passes through it.
+    written: crate::util::lookup_hash::LookupSet<[i32; 2]>,
     operations: Vec<Operation>,
     instances: Vec<PixelInstance>,
     cover: SnapshotCover,
@@ -979,25 +981,55 @@ impl TerrainDrawRenderer {
         }
     }
 
-    /// Replay this range at its native phase: line stores consume the current
-    /// destination and perform their own ABuffer multiplication, reading the
-    /// A plane [`Self::bind_surface_line_a`] bound.
+    /// Every target pixel one prepared range reads or writes: the union of
+    /// its chunks' scissors, which hold each output pixel and the gate and
+    /// displaced-source pixels its snapshot covers. `None` when it draws no
+    /// pixel.
+    pub(crate) fn surface_line_footprint(&self, range: SurfaceLineBatch) -> Option<[u32; 4]> {
+        self.surface_lines.batches[range.start..range.end]
+            .iter()
+            .map(|chunk| chunk.scissor)
+            .filter(|&[_, _, width, height]| width != 0 && height != 0)
+            .reduce(super::packed::union)
+    }
+
+    /// Replay these ranges at their native phase: line stores consume the
+    /// current destination and perform their own ABuffer multiplication,
+    /// reading the A plane [`Self::bind_surface_line_a`] bound.
     /// Reuses the SAME snapshot and live depth as ordinary tactical drawing.
+    ///
+    /// Chunk k of every range shares the k-th snapshot/blend pass pair, so
+    /// each chunk still observes its own range's earlier chunks. Ranges drawn
+    /// together must have pairwise disjoint [`Self::surface_line_footprint`]s:
+    /// none may read another's output in the same pair.
     pub(crate) fn draw_surface_lines(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         color: &wgpu::TextureView,
-        batch: SurfaceLineBatch,
+        ranges: &[SurfaceLineBatch],
     ) {
         let Some(targets) = &self.targets else {
             return;
         };
-        assert!(batch.end <= self.surface_lines.active);
-        for batch in &self.surface_lines.batches[batch.start..batch.end] {
-            let [x, y, w, h] = batch.scissor;
-            if w == 0 || h == 0 {
+        let chunks = &self.surface_lines.batches;
+        let mut longest = 0;
+        for range in ranges {
+            assert!(range.end <= self.surface_lines.active);
+            longest = longest.max(range.end - range.start);
+        }
+        for chunk in 0..longest {
+            let drawn = || {
+                ranges
+                    .iter()
+                    .filter_map(move |range| chunks[range.start..range.end].get(chunk))
+                    .filter(|chunk| chunk.scissor[2] != 0 && chunk.scissor[3] != 0)
+            };
+            let Some([x, y, w, h]) = drawn()
+                .map(|chunk| chunk.scissor)
+                .reduce(super::packed::union)
+            else {
                 continue;
-            }
+            };
             let attachment = |view| {
                 Some(wgpu::RenderPassColorAttachment {
                     view,
@@ -1020,10 +1052,12 @@ impl TerrainDrawRenderer {
                 });
                 pass.set_pipeline(&self.snapshot_pipeline);
                 pass.set_bind_group(0, &targets.source, &[]);
-                // Only the tiles the blends read (`SnapshotCover`).
-                for &[x, y, w, h] in &batch.snapshot {
-                    pass.set_scissor_rect(x, y, w, h);
-                    pass.draw(0..3, 0..1);
+                // Only the tiles each chunk's blends read (`SnapshotCover`).
+                for chunk in drawn() {
+                    for &[x, y, w, h] in &chunk.snapshot {
+                        pass.set_scissor_rect(x, y, w, h);
+                        pass.draw(0..3, 0..1);
+                    }
                 }
             }
             {
@@ -1035,13 +1069,16 @@ impl TerrainDrawRenderer {
                     occlusion_query_set: None,
                     multiview_mask: None,
                 });
+                // Each touched-pixel quad lies inside its own chunk's scissor.
                 pass.set_scissor_rect(x, y, w, h);
                 pass.set_pipeline(&self.surface_lines.pipeline);
                 pass.set_bind_group(0, &targets.snapshot, &[]);
-                pass.set_bind_group(1, &batch.binding, &[]);
                 pass.set_bind_group(2, &self.surface_lines.a_binding, &[]);
-                pass.set_vertex_buffer(0, batch.instances.slice(..));
-                pass.draw(0..6, 0..batch.count);
+                for chunk in drawn() {
+                    pass.set_bind_group(1, &chunk.binding, &[]);
+                    pass.set_vertex_buffer(0, chunk.instances.slice(..));
+                    pass.draw(0..6, 0..chunk.count);
+                }
             }
             self.submission.note_closed_passes(encoder, 2);
         }

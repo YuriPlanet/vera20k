@@ -63,6 +63,7 @@ fn retail_riparius_and_vinifera_pay_on_separate_unload_gates() {
                     bounds.contains_geometry_packed(i32::from(entry.rx), i32::from(entry.ry))
                         && overlays
                             .tiberium_type_for_overlay(&rules.tiberium_types, entry.overlay_id)
+                            .unwrap()
                             == Some(kind)
                 })
                 .expect("stock map contains this native type inside LocalSize");

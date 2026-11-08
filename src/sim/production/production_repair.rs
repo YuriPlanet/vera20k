@@ -213,6 +213,9 @@ pub fn toggle_repair(
         RepairControl::Start => entity.repairing.on = true,
     }
     let owner = entity.owner();
+    // The building being repaired is already resolved here; carry its type
+    // out so the EVA line can name it without a second lookup.
+    let type_id = entity.type_ref();
     let position = entity.position;
     let sound = if entity.repairing.on && entity.health.current() == strength {
         rules.general.scold_sound.clone()
@@ -226,7 +229,8 @@ pub fn toggle_repair(
                 sim.substrate
                     .flash_building(id, 7, sim.session.binary_frame());
             }
-            sim.sound_events.emit(SimSoundEvent::Repairing { owner });
+            sim.sound_events
+                .emit(SimSoundEvent::Repairing { owner, type_id });
         }
         rules.general.generic_click_sound.clone()
     };

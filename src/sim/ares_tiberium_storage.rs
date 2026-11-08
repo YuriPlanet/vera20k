@@ -632,7 +632,12 @@ impl Simulation {
     /// `RandomRanged(256, 768)` leptons from its Location in a random
     /// direction (`MapClass::GetRandomCoordsNear @ 0x0049F420`, cell
     /// centred: one more draw), through `CellClass::IncreaseTiberium`.
-    pub(crate) fn ares_destroy_refinery_storage(&mut self, id: u64, rules: &RuleSet) {
+    pub(crate) fn ares_destroy_refinery_storage(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: crate::sim::world::FrameEffects<'_>,
+    ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -652,14 +657,13 @@ impl Simulation {
             return;
         }
         let grid = self.cell_grid();
-        self.increase_tiberium_cells(rules, rules.overlay_registry(), |context| {
-            let mut placements = Vec::new();
+        self.ares_increase_tiberium_cells(rules, |sim, placed| {
             for (slot, bales) in removed.into_iter().enumerate() {
                 for _ in 0..bales.max(0) {
-                    let distance = context.rng.next_range_i32_inclusive(256, 768);
+                    let distance = sim.scenario_rng.next_range_i32_inclusive(256, 768);
                     let (x, y) = crate::sim::combat::inviso_scatter::random_direction_coord(
                         grid,
-                        context.rng,
+                        &mut sim.scenario_rng,
                         location.x,
                         location.y,
                         distance,
@@ -673,15 +677,21 @@ impl Simulation {
                             .try_into()
                             .unwrap_or(u16::MAX),
                     );
-                    placements.extend(crate::sim::tiberium::place_tiberium(
-                        context,
-                        cell,
-                        TiberiumTypeId(slot as u8),
-                        1,
-                    ));
+                    placed.extend(
+                        crate::sim::tiberium::place_tiberium(
+                            sim,
+                            rules,
+                            rules.overlay_registry(),
+                            cell,
+                            TiberiumTypeId(slot as u8),
+                            1,
+                            effects,
+                        )?
+                        .map(|placement| placement.cell()),
+                    );
                 }
             }
-            placements
+            Ok(())
         });
     }
 

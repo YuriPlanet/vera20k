@@ -79,7 +79,7 @@ pub(super) struct ObjectAiOutcome {
     pub(super) destroyed_structure: bool,
     ownership_changed: bool,
     pub(super) landed: bool,
-    pub(super) fall_error: Option<super::FrameAdvanceError>,
+    pub(super) frame_error: Option<super::FrameAdvanceError>,
 }
 
 impl ObjectAiOutcome {
@@ -607,8 +607,17 @@ impl Simulation {
         match self.classify_object(id) {
             Some(ObjectKind::Entity) => {}
             Some(ObjectKind::Anim) => {
-                outcome.bridge_state_changed =
-                    self.visit_anim(id, rules, ctx.overlay_registry, ctx.effects);
+                match self.visit_anim(id, rules, ctx.overlay_registry, ctx.effects) {
+                    Ok(changed) => outcome.bridge_state_changed = changed,
+                    Err(error) => {
+                        outcome.frame_error = Some(super::FrameAdvanceError::new(
+                            self.session.tick(),
+                            self.session.binary_frame(),
+                            id,
+                            error.to_string(),
+                        ))
+                    }
+                }
                 return outcome;
             }
             Some(ObjectKind::Spotlight) => {
@@ -621,7 +630,17 @@ impl Simulation {
                 return outcome;
             }
             Some(ObjectKind::VoxelAnim) => {
-                outcome.bridge_state_changed = self.visit_voxel_anim(id, rules, ctx.effects);
+                match self.visit_voxel_anim(id, rules, ctx.effects) {
+                    Ok(changed) => outcome.bridge_state_changed = changed,
+                    Err(error) => {
+                        outcome.frame_error = Some(super::FrameAdvanceError::new(
+                            self.session.tick(),
+                            self.session.binary_frame(),
+                            id,
+                            error.to_string(),
+                        ))
+                    }
+                }
                 return outcome;
             }
             Some(ObjectKind::ParticleSystem) => {
@@ -638,12 +657,20 @@ impl Simulation {
                 // TerrainClass::AI @ 0x0071C730 calls ObjectClass::AI first
                 // (`0x0071C738`).
                 self.object_ai_sounds(id, rules, ctx.effects);
-                crate::sim::terrain_spawn::tick_terrain_object_ai(
+                if let Err(error) = crate::sim::terrain_spawn::tick_terrain_object_ai(
                     self,
                     id,
                     rules,
                     ctx.overlay_registry,
-                );
+                    ctx.effects,
+                ) {
+                    outcome.frame_error = Some(super::FrameAdvanceError::new(
+                        self.session.tick(),
+                        self.session.binary_frame(),
+                        id,
+                        error.to_string(),
+                    ));
+                }
                 return outcome;
             }
             Some(ObjectKind::Projectile) => return self.visit_logic_bullet(id, rules, ctx),
@@ -925,7 +952,18 @@ fn techno_ai_shell(
             if !mission_counter_step(sim, id, rules, ctx, outcome) {
                 return;
             }
-            outcome.bridge_state_changed |= dispatch_foot_mission(sim, id, rules, ctx);
+            match dispatch_foot_mission(sim, id, rules, ctx) {
+                Ok(changed) => outcome.bridge_state_changed |= changed,
+                Err(error) => {
+                    outcome.frame_error = Some(super::FrameAdvanceError::new(
+                        sim.session.tick(),
+                        sim.session.binary_frame(),
+                        id,
+                        error.to_string(),
+                    ));
+                    return;
+                }
+            }
             passive_acquire_step(sim, id, rules, ctx);
             if !techno_after_acquisition(sim, id, rules, ctx, outcome) {
                 return;
@@ -1231,6 +1269,10 @@ fn veterancy_promotion_step(
         return;
     };
     let owner = entity.owner();
+    // The promoted object's type is already interned on the entity; carry it
+    // out so the accessibility line can name the game's own object without a
+    // second lookup or a guessed translation. Transient fact only.
+    let type_id = entity.type_ref();
     let world = crate::sim::movement::ground_pose::object_location(entity, terrain).into();
     let sound = match promotion {
         crate::sim::combat::veterancy::Promotion::Elite => {
@@ -1244,6 +1286,7 @@ fn veterancy_promotion_step(
     sound_events.emit(super::SimSoundEvent::UnitPromoted {
         owner,
         sound_id,
+        type_id,
         world,
     });
 }
@@ -1604,7 +1647,7 @@ fn mission_counter_step(
             outcome.bridge_state_changed |= changed;
         }
         Err(error) => {
-            outcome.fall_error = Some(error);
+            outcome.frame_error = Some(error);
             return false;
         }
     }
@@ -2147,7 +2190,7 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let engineer = infantry && obj.engineer;
     let overpowers = target_building.is_some_and(|(_, target_obj)| target_obj.overpowerable)
         && target_scan::weapon_at_index(sim, rules, id, 1)
-            .and_then(|weapon| combat_weapon::warhead_of(rules, weapon))
+            .and_then(|weapon| rules.weapon_warhead(weapon))
             .is_some_and(|warhead| warhead.electric_assault);
     if engineer || overpowers || occupiable || entity.berserk.is_active() {
         return;
@@ -2180,7 +2223,15 @@ fn techno_after_acquisition(
 ) -> bool {
     outcome.bridge_state_changed |=
         sim.bomb_fuse_step(id, rules, ctx.overlay_registry, ctx.effects);
-    sim.slave_manager_ai(id, rules, ctx.overlay_registry, ctx.effects);
+    if let Err(error) = sim.slave_manager_ai(id, rules, ctx.overlay_registry, ctx.effects) {
+        outcome.frame_error = Some(super::FrameAdvanceError::new(
+            sim.session.tick(),
+            sim.session.binary_frame(),
+            id,
+            error.to_string(),
+        ));
+        return false;
+    }
     sim.capture_manager_update(id, rules, ctx.overlay_registry, ctx.effects);
     if !ai_alive(&sim.substrate, id) {
         return false;
@@ -2547,7 +2598,18 @@ fn unit_techno_bracket(
     // timer-gated, ending with the verified post-handler epilogue write
     // (start = current frame, delay = handler return). One committed-selector
     // match routes Harvest, Attack and the other represented Foot handlers.
-    outcome.bridge_state_changed |= dispatch_foot_mission(sim, id, rules, ctx);
+    match dispatch_foot_mission(sim, id, rules, ctx) {
+        Ok(changed) => outcome.bridge_state_changed |= changed,
+        Err(error) => {
+            outcome.frame_error = Some(super::FrameAdvanceError::new(
+                sim.session.tick(),
+                sim.session.binary_frame(),
+                id,
+                error.to_string(),
+            ));
+            return BracketReach::Dispatched;
+        }
+    }
     // Passive / opportunity target acquisition sits between mission dispatch
     // and the second IsAlive guard, before the object's own locomotion.
     passive_acquire_step(sim, id, rules, ctx);

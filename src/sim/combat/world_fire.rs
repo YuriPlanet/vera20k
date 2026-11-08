@@ -848,10 +848,8 @@ fn fireat_launch_source(
     fire: &super::fire_coord::FireCoordinate,
     weapon: &crate::rules::weapon_type::WeaponType,
 ) -> FireAtLaunchSource {
-    let dropping = weapon
-        .projectile
-        .as_deref()
-        .and_then(|id| rules.projectile(id))
+    let dropping = rules
+        .weapon_projectile(weapon)
         .is_some_and(|projectile| projectile.dropping);
     match object_get_coords(world, snap.stable_id).filter(|_| dropping) {
         Some(coord) => FireAtLaunchSource {
@@ -896,10 +894,8 @@ fn fireat_launch_aim(
         LaunchSpeedProjectile, fireat_launch_distance, weapon_launch_speed,
     };
     let speed_projectile = |weapon: &crate::rules::weapon_type::WeaponType| {
-        weapon
-            .projectile
-            .as_deref()
-            .and_then(|id| rules.projectile(id))
+        rules
+            .weapon_projectile(weapon)
             .map(|projectile| LaunchSpeedProjectile {
                 rot: projectile.rot,
                 floater: projectile.floater,
@@ -1122,10 +1118,10 @@ fn reveal_on_fire(
         // stable House order.
         FireDisclosurePath::Spawner => {
             clients = world.fog_viewers();
-            &clients
+            &clients[..]
         }
         FireDisclosurePath::Shot if admitted.is_empty() => return,
-        FireDisclosurePath::Shot => &admitted,
+        FireDisclosurePath::Shot => &admitted[..],
     };
     let context = crate::sim::world::UninitContext::new(rules, None);
     let config = world.sight_reveal_config(rules);
@@ -1333,6 +1329,12 @@ pub(crate) fn snapshot_get_rof(
 /// `0x006FF1AD..0x006FF1F5`) construct the weapon's AttachedParticleSystem
 /// alike (`0x0062DC50`): from the retained launch source toward the target,
 /// owned by the firer, with no House.
+/// `0x006FF190` pushes `[ebx+0x11C]`, where `ebx` is the `GetWeapon`
+/// (vtable `+0x3F8`) result's WeaponType: that is `AttachedParticleSystem=`
+/// (`+0x11C`, `0x0077290B`), the constructor's type argument, not the
+/// firer's TechnoClass Transporter. The constructor's fourth argument is the
+/// firer (`esi`), which VERA passes as the owner; vera20k#3838's Transporter
+/// entry for this site is a base-register misread.
 fn fireat_attached_system(
     world: &mut Simulation,
     rules: &RuleSet,
@@ -1678,10 +1680,7 @@ pub(super) fn emit_admitted_fire(
             tarcom,
         );
         let origin = launch_source.coord;
-        let projectile_type = weapon
-            .projectile
-            .as_deref()
-            .and_then(|projectile_id| rules.projectile(projectile_id));
+        let projectile_type = rules.weapon_projectile(weapon);
         // `TechnoClass::FireAt` step order, `0x006FE663`..`0x006FEA52`:
         // resolve the target delta, scatter it, recompute the facing from the
         // scattered delta, clamp the launch speed to half the straight-line
@@ -2021,10 +2020,17 @@ pub(super) fn emit_admitted_fire(
         building.passenger_role.occupants_mut().advance_fire_index();
     }
     // Techno6FF0B7..6FF15B: only a successfully launched shot arms recoil.
-    // Stock recoil buildings have their own Turret=yes. Building4527D0's
-    // upgrade-provided turret remains part of the separate upgrade mechanism.
+    // FireAt6FF0BB dispatches HasTurret; Building4527D0 includes upgrades,
+    // while recoil configuration and state still belong to the host.
     if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id) {
-        entity.fire_voxel_recoil(obj.has_turret);
+        let has_turret = if entity.category() == EntityCategory::Structure {
+            entity
+                .building_upgrades()
+                .has_turret(obj, rules, &world.interner)
+        } else {
+            obj.has_turret
+        };
+        entity.fire_voxel_recoil(has_turret);
     }
     // FireAt6FF15F..6FF1A7: a UseFireParticles weapon with no live +304
     // system builds its AttachedParticleSystem as the Spark arm below does.
@@ -2485,10 +2491,8 @@ fn fireat_estimate_debit(
     let marked = foot
         && crate::sim::movement::motion_query::is_moving(firer).unwrap_or(false)
         && !obj.jumpjet;
-    let inaccurate = weapon
-        .projectile
-        .as_deref()
-        .and_then(|id| rules.projectile(id))
+    let inaccurate = rules
+        .weapon_projectile(weapon)
         .is_some_and(|projectile| projectile.inaccurate);
     let Some(TargetKind::Entity(target_id)) = tarcom else {
         return;
@@ -3614,7 +3618,7 @@ pub(crate) fn estimated_damage_on(
             )
         })
         .then(|| NativeF64Bits::from_bits(rules.general.veteran_armor.to_bits()));
-    let warhead = combat_weapon::warhead_of(rules, weapon);
+    let warhead = rules.weapon_warhead(weapon);
     damage::estimate::estimated_damage(&damage::estimate::EstimateInputs {
         damage: weapon.damage,
         zeroed: weapon.is_sonic || weapon.use_fire_particles,

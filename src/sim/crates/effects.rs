@@ -445,7 +445,8 @@ pub(super) fn apply_tiberium_crate(
     registry: &crate::rules::overlay_types::OverlayTypeRegistry,
     cell: (i16, i16),
     base: DriveCoord,
-) {
+    frame_effects: FrameEffects<'_>,
+) -> Result<(), crate::sim::crates::RuntimeOverlayError> {
     // `0x00481EAD..0x00481ED1`: `RandomRanged(0, Tiberiums.Count - 1)` picks
     // the ore type, and a drawn 1 clamps it to 0 (`cmp edi,1`/`jne`/`xor
     // edi,edi` at `0x00481ECC..0x00481ED1`) — both paths fall into the same
@@ -457,7 +458,7 @@ pub(super) fn apply_tiberium_crate(
         // Unpinned defensive edge: with no registered ore type native would
         // draw `RandomRanged(0, -1)` and index an empty array; VERA leaves
         // the arm (and its RNG) alone instead.
-        return;
+        return Ok(());
     }
     let drawn = sim
         .scenario_rng
@@ -465,37 +466,37 @@ pub(super) fn apply_tiberium_crate(
     // Unpinned: past 256 ore types `u8::try_from` fails where native keeps
     // indexing the type array with the raw value; VERA drops the arm there.
     let Ok(type_index) = u8::try_from(if drawn == 1 { 0 } else { drawn }) else {
-        return;
+        return Ok(());
     };
     let type_id = crate::rules::tiberium_type::TiberiumTypeId(type_index);
     let (Ok(pickup_x), Ok(pickup_y)) = (u16::try_from(cell.0), u16::try_from(cell.1)) else {
-        return;
+        return Ok(());
     };
     // `CellClass::IncreaseTiberium @ 0x00487190` runs on the live map: the
     // shared placement owner already consumes the exact native draw order —
     // the twelve-image flat variant pick, the growth-queue priority draw and
     // the spread feeds — so the arm drives it with the scenario RNG and never
-    // draws around it (see `place_tiberium`). Native always increases
-    // tiberium through the map owner; a mapless fixture has no Cell to write
-    // and stops after its Draw1.
-    sim.increase_tiberium_cells(rules, registry, |context| {
-        let mut placements = Vec::new();
-        placements.extend(crate::sim::tiberium::place_tiberium(
-            context,
+    // draws around it (see `place_tiberium`).
+    let mut placed_cells = Vec::new();
+    let result = (|| {
+        if let Some(placement) = crate::sim::tiberium::place_tiberium(
+            sim,
+            rules,
+            registry,
             (pickup_x, pickup_y),
             type_id,
             1,
-        ));
-        // `0x00481EDD..0x00481F68`: the loop count, then per pass one
-        // `RandomRanged(0, 0x300)` distance and the one raw draw inside
-        // 0x49F420 (the snap-1 CellCentre mask applies after the 512-cell
-        // fallback).
-        let count = context.rng.next_range_i32_inclusive(10, 20);
+            frame_effects,
+        )? {
+            placed_cells.push(placement.cell());
+        }
+        //481EDD..481F68 keeps every distance/direction draw on refused cells.
+        let count = sim.scenario_rng.next_range_i32_inclusive(10, 20);
         for _ in 0..count.max(0) {
-            let distance = context.rng.next_range_i32_inclusive(0, 0x300);
+            let distance = sim.scenario_rng.next_range_i32_inclusive(0, 0x300);
             let (x, y) = crate::sim::combat::inviso_scatter::random_direction_coord(
                 cell_grid,
-                context.rng,
+                &mut sim.scenario_rng,
                 base.x,
                 base.y,
                 distance,
@@ -509,12 +510,24 @@ pub(super) fn apply_tiberium_crate(
                     .try_into()
                     .unwrap_or(u16::MAX),
             );
-            placements.extend(crate::sim::tiberium::place_tiberium(
-                context, target, type_id, 1,
-            ));
+            if let Some(placement) = crate::sim::tiberium::place_tiberium(
+                sim,
+                rules,
+                registry,
+                target,
+                type_id,
+                1,
+                frame_effects,
+            )? {
+                placed_cells.push(placement.cell());
+            }
         }
-        placements
-    });
+        Ok(())
+    })();
+    // Keep the existing batch publication even when malformed input stops a
+    // later selection. Completed constructor writes remain authoritative.
+    sim.publish_tiberium_cells(rules, registry, &placed_cells);
+    result
 }
 
 /// The Explosion arm `0x00482565..0x0048271E`: the picker first takes

@@ -6,9 +6,11 @@
 //! Live tactical Depth32Float remains the only Z authority. wgpu 27 requires
 //! full-size depth copies, so scissored MRT passes snapshot conservative rects
 //! into integer color and float depth scratch while live Z is not attached.
-//! Terrain edits use dependency waves. Read-only Bullet edits instead reduce
-//! the last admitted body and subsequent shadows in four passes, preserving
-//! exact original sequence with immutable Z. Ordinary draw families are fences.
+//! Terrain edits use dependency waves, in which an edit replays the earlier
+//! edits it overlaps per pixel where it can do so exactly. Read-only Bullet
+//! edits instead reduce the last admitted body and subsequent shadows in four
+//! passes, preserving exact original sequence with immutable Z. Ordinary draw
+//! families are fences.
 
 use super::batch::{
     BatchRenderer, BatchTexture, CameraUniform, SPRITE_INSTANCE_ATTRIBUTES, SpriteInstance,
@@ -26,9 +28,11 @@ mod submission;
 #[path = "terrain_surface_lines.rs"]
 mod surface_lines;
 pub(crate) use batching::TerrainBatchStats;
-use batching::{TerrainBatches, TerrainCommand};
+use batching::{TerrainBatches, TerrainCommand, WINDOW};
 pub(crate) use ion_blasts::IonBlastDraw;
-pub(crate) use packed::{PackedComposite, PackedCompositePiece, PackedSpriteKind, packed_wave_key};
+pub(crate) use packed::{
+    PackedComposite, PackedCompositePiece, PackedSpriteKind, packed_joins_waves,
+};
 use submission::PassSubmission;
 pub(crate) use surface_lines::SurfaceLineBatch;
 
@@ -50,6 +54,77 @@ pub(crate) struct DestinationEditCommand {
     pub atlas_slot: usize,
 }
 
+/// One read-write edit of a wave window, as terrain_edit.wgsl's `EditRecord`
+/// holds it.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct EditRecord {
+    quad: [f32; 4],
+    uv: [f32; 4],
+    rect: [u32; 4],
+    light: [u32; 4],
+    params: [u32; 4],
+    earlier: [u32; 4],
+}
+
+impl EditRecord {
+    fn new(instance: &SpriteInstance, command: &TerrainCommand) -> Self {
+        let [x, y] = instance.position;
+        let [width, height] = instance.size;
+        let [u, v] = instance.uv_origin;
+        let [uv_width, uv_height] = instance.uv_size;
+        Self {
+            quad: [x, y, width, height],
+            uv: [u, v, uv_width, uv_height],
+            rect: command.rect,
+            light: instance.palette_light.0,
+            params: [
+                instance.z_adjust.to_bits(),
+                instance.z_gradient,
+                instance.source_palette,
+                u32::from(command.draw.piece == TerrainPiece::Shadow),
+            ],
+            earlier: [command.earlier as u32, (command.earlier >> 32) as u32, 0, 0],
+        }
+    }
+}
+
+/// Whether read-write edit `later` can replay `earlier`, which it overlaps,
+/// from their wave's shared snapshot (terrain_edit.wgsl `replay_earlier`). It
+/// recomputes `earlier`'s pixels from its quad, so that quad must sit on
+/// whole pixels at zoom 1 with one texel per pixel: there every pixel centre
+/// lies half a texel and half a row inside the interpolated value, and the
+/// recomputed pixel equals the one `earlier`'s own fragment draws. Both share
+/// one atlas page, the one bound for `later`. A shadow replays only native
+/// palette bodies, whose stored word it can recompute exactly.
+fn replays<'a>(
+    camera: &CameraUniform,
+    instances: &[SpriteInstance],
+    atlas: &impl Fn(usize) -> Option<&'a BatchTexture>,
+    earlier: &DestinationEditCommand,
+    later: &DestinationEditCommand,
+) -> bool {
+    let instance = &instances[earlier.index as usize];
+    let whole = |value: f32| value.fract() == 0.0;
+    let texel_per_pixel = |page: &BatchTexture| {
+        let size = [page.width as f32, page.height as f32];
+        (0..2).all(|axis| {
+            let origin = instance.uv_origin[axis] * size[axis];
+            (instance.uv_size[axis] * size[axis] - instance.size[axis]).abs() < 1.0 / 64.0
+                && (origin - origin.round()).abs() < 1.0 / 64.0
+        })
+    };
+    earlier.atlas_slot == later.atlas_slot
+        && !(later.piece == TerrainPiece::Shadow
+            && earlier.piece == TerrainPiece::Body
+            && instance.palette_light.0[0] >> 24 == 0)
+        && camera.zoom == 1.0
+        && camera.camera_pos.into_iter().all(whole)
+        && instance.position.into_iter().all(whole)
+        && instance.size.into_iter().all(|v| whole(v) && v >= 1.0)
+        && atlas(earlier.atlas_slot).is_some_and(texel_per_pixel)
+}
+
 struct Targets {
     source_color: wgpu::Texture,
     source_depth: wgpu::TextureView,
@@ -66,6 +141,22 @@ struct Targets {
     /// WebGL2 last-body and shadow-count attachments replacing the atomics.
     read_only_targets: Option<[wgpu::TextureView; 2]>,
     read_only_rows: u32,
+    /// Depth-tested edits' shadow counts (`R8Unorm`) and their resolve
+    /// binding. Derived scratch: each interval clears it before counting.
+    shadow_counts: Option<(wgpu::TextureView, wgpu::BindGroup)>,
+}
+
+/// Read-write edits against the live depth test (`terrain_depth.wgsl`).
+/// Absent on WebGL2, which has no independent blend and keeps the
+/// snapshot-and-edit waves.
+struct DepthEditGpu {
+    body: wgpu::RenderPipeline,
+    shadow: wgpu::RenderPipeline,
+    /// The same pieces' negative-candidate pixels, depth compare Always.
+    body_wrapped: wgpu::RenderPipeline,
+    shadow_wrapped: wgpu::RenderPipeline,
+    resolve: wgpu::RenderPipeline,
+    counts_layout: wgpu::BindGroupLayout,
 }
 
 /// Derived destination scratch for another native surface. The surface owner
@@ -80,6 +171,10 @@ pub(crate) struct PackedSurface {
 
 pub(crate) struct TerrainDrawRenderer {
     snapshot_pipeline: wgpu::RenderPipeline,
+    /// The same snapshot into attachments 2 and 3 of the packed source pass,
+    /// beside its stencil (`packed::PackedSpriteGpu`). `None` on WebGL2,
+    /// which snapshots in a pass of its own.
+    packed_snapshot_pipeline: Option<wgpu::RenderPipeline>,
     body_pipeline: wgpu::RenderPipeline,
     shadow_pipeline: wgpu::RenderPipeline,
     read_only_snapshot_pipeline: wgpu::RenderPipeline,
@@ -101,6 +196,12 @@ pub(crate) struct TerrainDrawRenderer {
     camera: CameraUniform,
     batches: TerrainBatches,
     read_only_commands: Vec<TerrainCommand>,
+    /// This frame's read-write wave windows (terrain_edit.wgsl `edits`).
+    edit_records: super::uniform_windows::UniformWindows,
+    depth: Option<DepthEditGpu>,
+    /// One pending read-write interval; true where a piece may have
+    /// negative candidates and also draws its wrapped variant.
+    depth_commands: Vec<(TerrainCommand, bool)>,
     submission: PassSubmission,
     surface_lines: surface_lines::SurfaceLineGpu,
     ion_blasts: ion_blasts::IonBlastGpu,
@@ -221,6 +322,20 @@ impl TerrainDrawRenderer {
             target(wgpu::TextureFormat::R32Uint),
             target(wgpu::TextureFormat::R8Unorm),
         ];
+        let kept = |format| {
+            Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::empty(),
+            })
+        };
+        // The packed stencil words and candidates stay as its draws left them.
+        let packed_snapshot_targets = [
+            kept(wgpu::TextureFormat::R32Uint),
+            kept(wgpu::TextureFormat::R32Float),
+            target(wgpu::TextureFormat::R32Uint),
+            target(wgpu::TextureFormat::R32Float),
+        ];
         let snapshot_pipeline = |fragment, layout: &wgpu::PipelineLayout, targets| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("Terrain piece snapshot"),
@@ -250,12 +365,22 @@ impl TerrainDrawRenderer {
                 super::webgl::camera_source(device, edit_source(webgl)).into(),
             ),
         });
+        let edit_records = super::uniform_windows::UniformWindows::new(
+            device,
+            queue,
+            "Terrain read-write edit windows",
+            1,
+            wgpu::ShaderStages::FRAGMENT,
+            (WINDOW * std::mem::size_of::<EditRecord>()) as u64,
+            16,
+        );
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Terrain edit layout"),
             bind_group_layouts: &[
                 Some(batch.camera_bind_group_layout()),
                 Some(batch.texture_bind_group_layout()),
                 Some(&snapshot_layout),
+                Some(edit_records.layout()),
             ],
             immediate_size: 0,
         });
@@ -265,7 +390,7 @@ impl TerrainDrawRenderer {
                 layout: Some(&layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: Some("vs_main"),
+                    entry_point: Some("vs_ordinal"),
                     buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: std::mem::size_of::<SpriteInstance>() as u64,
                         step_mode: wgpu::VertexStepMode::Instance,
@@ -326,7 +451,7 @@ impl TerrainDrawRenderer {
                 layout: Some(layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: Some("vs_read_only"),
+                    entry_point: Some("vs_ordinal"),
                     buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: std::mem::size_of::<SpriteInstance>() as u64,
                         step_mode: wgpu::VertexStepMode::Instance,
@@ -403,17 +528,164 @@ impl TerrainDrawRenderer {
                     compilation_options: Default::default(),
                 }),
                 primitive: Default::default(),
-                depth_stencil: None,
+                // Words only: the live depth is attached (`LiveTail`), never
+                // tested or written.
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::Always),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
                 multisample: Default::default(),
                 multiview_mask: None,
                 cache: None,
             });
+        let depth = (!webgl).then(|| {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Terrain depth-tested edit layout"),
+                bind_group_layouts: &[
+                    Some(batch.camera_bind_group_layout()),
+                    Some(batch.texture_bind_group_layout()),
+                ],
+                immediate_size: 0,
+            });
+            let add = wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            };
+            // A body writes colour and resets its count; a shadow only adds
+            // 1/255 to the count. Both store Z through the live depth test.
+            let edit = |fragment, shadow: bool, depth_compare| {
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some(fragment),
+                    layout: Some(&layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: Some("vs_main"),
+                        buffers: &[Some(wgpu::VertexBufferLayout {
+                            array_stride: std::mem::size_of::<SpriteInstance>() as u64,
+                            step_mode: wgpu::VertexStepMode::Instance,
+                            attributes: &SPRITE_INSTANCE_ATTRIBUTES,
+                        })],
+                        compilation_options: Default::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: Some(fragment),
+                        targets: &[
+                            Some(wgpu::ColorTargetState {
+                                format,
+                                blend: None,
+                                write_mask: if shadow {
+                                    wgpu::ColorWrites::empty()
+                                } else {
+                                    wgpu::ColorWrites::ALL
+                                },
+                            }),
+                            Some(wgpu::ColorTargetState {
+                                format: wgpu::TextureFormat::R8Unorm,
+                                blend: shadow.then_some(wgpu::BlendState {
+                                    color: add,
+                                    alpha: add,
+                                }),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            }),
+                        ],
+                        compilation_options: Default::default(),
+                    }),
+                    primitive: Default::default(),
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: wgpu::TextureFormat::Depth32Float,
+                        depth_write_enabled: Some(true),
+                        depth_compare: Some(depth_compare),
+                        stencil: Default::default(),
+                        bias: Default::default(),
+                    }),
+                    multisample: Default::default(),
+                    multiview_mask: None,
+                    cache: None,
+                })
+            };
+            let counts_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Terrain depth-tested shadow counts"),
+                entries: &[entry(
+                    0,
+                    wgpu::TextureSampleType::Float { filterable: false },
+                )],
+            });
+            let resolve_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("Terrain depth-tested shadow halves"),
+                source: wgpu::ShaderSource::Wgsl(
+                    super::tactical_shader::source(include_str!("terrain_depth_resolve.wgsl"))
+                        .into(),
+                ),
+            });
+            let resolve_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Terrain depth-tested resolve layout"),
+                bind_group_layouts: &[Some(&snapshot_layout), Some(&counts_layout)],
+                immediate_size: 0,
+            });
+            let resolve = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("Terrain depth-tested shadow halves"),
+                layout: Some(&resolve_layout),
+                vertex: wgpu::VertexState {
+                    module: &resolve_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &resolve_shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[target(format)],
+                    compilation_options: Default::default(),
+                }),
+                primitive: Default::default(),
+                // Words only: the live depth is attached (`LiveTail`), never
+                // tested or written.
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(wgpu::CompareFunction::Always),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: Default::default(),
+                multiview_mask: None,
+                cache: None,
+            });
+            DepthEditGpu {
+                body: edit("fs_depth_body", false, wgpu::CompareFunction::Less),
+                shadow: edit("fs_depth_shadow", true, wgpu::CompareFunction::Less),
+                body_wrapped: edit(
+                    "fs_depth_body_wrapped",
+                    false,
+                    wgpu::CompareFunction::Always,
+                ),
+                shadow_wrapped: edit(
+                    "fs_depth_shadow_wrapped",
+                    true,
+                    wgpu::CompareFunction::Always,
+                ),
+                resolve,
+                counts_layout,
+            }
+        });
         Self {
             snapshot_pipeline: snapshot_pipeline(
                 "fs_main",
                 &snapshot_pipeline_layout,
                 &snapshot_targets[..2],
             ),
+            packed_snapshot_pipeline: (!webgl).then(|| {
+                snapshot_pipeline(
+                    "fs_packed_snapshot",
+                    &snapshot_pipeline_layout,
+                    &packed_snapshot_targets,
+                )
+            }),
             read_only_snapshot_pipeline: snapshot_pipeline(
                 "fs_read_only",
                 &read_only_snapshot_layout,
@@ -453,6 +725,9 @@ impl TerrainDrawRenderer {
             targets: None,
             batches: TerrainBatches::default(),
             read_only_commands: Vec::new(),
+            edit_records,
+            depth,
+            depth_commands: Vec::new(),
             submission: PassSubmission::new(device, queue),
             camera: CameraUniform {
                 screen_size: [1.0, 1.0],
@@ -489,6 +764,17 @@ impl TerrainDrawRenderer {
         self.submission.note_closed_passes(encoder, passes);
     }
 
+    /// Wall time of the bounded submissions made since the last `prepare`.
+    pub(crate) fn frame_submit_time(&self) -> crate::util::time::Duration {
+        self.submission.submit_time()
+    }
+
+    /// Mark the GPU's spans in the command buffers the bounded submissions
+    /// split off, so a split frame's GPU time adds up all of them.
+    pub(crate) fn set_gpu_timer(&mut self, timer: crate::render::gpu_timer::GpuTimer) {
+        self.submission.timer = timer;
+    }
+
     #[cfg(test)]
     pub(crate) fn submissions(&self) -> usize {
         self.submission.submissions()
@@ -511,6 +797,7 @@ impl TerrainDrawRenderer {
     ) {
         self.submission.reset_frame();
         self.packed.begin_frame();
+        self.edit_records.begin_frame();
         self.camera = camera;
         if self
             .targets
@@ -582,6 +869,18 @@ impl TerrainDrawRenderer {
             binding,
             resource: wgpu::BindingResource::TextureView(view),
         };
+        let shadow_counts = self.depth.as_ref().map(|gpu| {
+            let counts = scratch(wgpu::TextureFormat::R8Unorm);
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Terrain depth-tested shadow counts"),
+                layout: &gpu.counts_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&counts),
+                }],
+            });
+            (counts, group)
+        });
         let source = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Terrain live snapshot sources"),
             layout: &self.source_layout,
@@ -618,11 +917,11 @@ impl TerrainDrawRenderer {
                 read_only_resolve: Some(read_only_resolve),
                 read_only_targets: Some([bodies, shadows]),
                 read_only_rows: color.height(),
+                shadow_counts,
             };
         }
         let read_only_rows = color.height().min(
-            (device.limits().max_storage_buffer_binding_size / 8 / u64::from(color.width()))
-                as u32,
+            (device.limits().max_storage_buffer_binding_size / 8 / u64::from(color.width())) as u32,
         );
         assert!(
             read_only_rows > 0,
@@ -654,14 +953,31 @@ impl TerrainDrawRenderer {
             read_only_resolve: None,
             read_only_targets: None,
             read_only_rows,
+            shadow_counts,
         }
+    }
+
+    /// Whether read-write intervals needing two or more waves draw against
+    /// the live depth test.
+    #[cfg(test)]
+    pub(crate) fn depth_tested_edits(&self) -> bool {
+        self.depth.is_some()
+    }
+
+    /// Test hook: replays and strict waves only, as on WebGL2.
+    #[cfg(test)]
+    pub(crate) fn disable_depth_tested_edits(&mut self) {
+        self.depth = None;
     }
 
     /// Replay one contiguous destination-edit span across atlas pages. The
     /// caller fences every draw handled by another pipeline family.
-    /// ReadWrite overlaps retain dependency waves. A maximal ReadOnly interval
-    /// reduces admitted bodies/shadows against one immutable Z snapshot in four
-    /// passes; command sequence, never instance/atlas index, selects its order.
+    /// ReadWrite overlaps retain dependency waves, replaying each other inside
+    /// one where they can (`replays`); an interval that still needs two or
+    /// more waves draws against the live depth test where the adapter has it
+    /// (`draw_read_write`). A maximal ReadOnly interval reduces admitted
+    /// bodies/shadows against one immutable Z snapshot in four passes;
+    /// command sequence, never instance/atlas index, selects its order.
     pub(crate) fn draw_span<'a>(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -674,12 +990,36 @@ impl TerrainDrawRenderer {
         commands: impl IntoIterator<Item = DestinationEditCommand>,
         tactical: [u32; 4],
     ) -> TerrainBatchStats {
+        let (mut stats, tail) = self.draw_span_tail(
+            encoder, color, depth, batch, &atlas, buffer, instances, commands, tactical,
+        );
+        if let Some(tail) = tail {
+            stats.passes += self.flush_tail(encoder, color, depth, tail, batch, &atlas, buffer);
+        }
+        stats
+    }
+
+    /// [`Self::draw_span`], leaving the draws of its last pass, which only
+    /// write the live attachments, for the caller's next pass over them.
+    pub(crate) fn draw_span_tail<'a>(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        batch: &BatchRenderer,
+        atlas: &impl Fn(usize) -> Option<&'a BatchTexture>,
+        buffer: &wgpu::Buffer,
+        instances: &[SpriteInstance],
+        commands: impl IntoIterator<Item = DestinationEditCommand>,
+        tactical: [u32; 4],
+    ) -> (TerrainBatchStats, Option<LiveTail>) {
         let size = self.targets.as_ref().map_or([0, 0], |t| {
             [t.source_color.width(), t.source_color.height()]
         });
         self.batches.begin_span(size);
         self.read_only_commands.clear();
         let mut stats = TerrainBatchStats::default();
+        let mut tail = None;
         for draw in commands {
             assert!(
                 matches!(
@@ -700,44 +1040,230 @@ impl TerrainDrawRenderer {
             let command = TerrainCommand::new(draw, rect);
             if draw.render_z == RenderZPolicy::ReadOnly {
                 if self.batches.stats().pieces != 0 {
-                    stats.accumulate(
-                        self.draw_scheduled(encoder, color, depth, batch, &atlas, buffer),
-                    );
+                    stats.accumulate(self.draw_read_write(
+                        encoder, color, depth, batch, atlas, buffer, instances, &mut tail,
+                    ));
                     self.batches.begin_span(size);
                 }
                 self.read_only_commands.push(command);
                 if self.read_only_commands.len() == READ_ONLY_COMMAND_LIMIT {
-                    stats.accumulate(self.draw_read_only(encoder, color, batch, &atlas, buffer));
+                    stats.accumulate(
+                        self.draw_read_only(encoder, color, depth, batch, atlas, buffer, &mut tail),
+                    );
                     self.read_only_commands.clear();
                 }
                 continue;
             }
-            stats.accumulate(self.draw_read_only(encoder, color, batch, &atlas, buffer));
+            stats.accumulate(
+                self.draw_read_only(encoder, color, depth, batch, atlas, buffer, &mut tail),
+            );
             self.read_only_commands.clear();
-            if !self.batches.push(command) {
+            let mut wraps = false;
+            if self.depth.is_some() {
+                let low = candidate_range(instance, self.camera)[0];
+                // Above 65535 nothing is admitted; only negative rows wrap.
+                if low > 65535 {
+                    continue;
+                }
+                wraps = low < 0;
+            }
+            let camera = self.camera;
+            if self.batches.push_replaying(command, |earlier, later| {
+                replays(&camera, instances, atlas, earlier, later)
+            }) {
+                if self.depth.is_some() {
+                    self.depth_commands.push((command, wraps));
+                }
+            } else {
                 // Preserve the prior draw/validation behavior if the original
                 // scissor exceeds the prepared attachment; do not index a grid
                 // or let a malformed input weaken any overlap dependency.
-                stats.accumulate(self.draw_scheduled(encoder, color, depth, batch, &atlas, buffer));
-                self.draw_wave(
+                stats.accumulate(self.draw_read_write(
+                    encoder, color, depth, batch, atlas, buffer, instances, &mut tail,
+                ));
+                stats.passes += self.draw_wave(
                     encoder,
                     color,
                     depth,
                     batch,
-                    &atlas,
+                    atlas,
                     buffer,
-                    std::iter::once(&command),
+                    vec![command],
+                    |command| EditRecord::new(&instances[command.draw.index as usize], command),
+                    &mut tail,
                 );
-                self.submission.note_closed_passes(encoder, 2);
                 stats.pieces += 1;
                 stats.waves += 1;
-                stats.passes += 2;
                 self.batches.begin_span(size);
             }
         }
-        stats.accumulate(self.draw_scheduled(encoder, color, depth, batch, &atlas, buffer));
-        stats.accumulate(self.draw_read_only(encoder, color, batch, &atlas, buffer));
+        stats.accumulate(self.draw_read_write(
+            encoder, color, depth, batch, atlas, buffer, instances, &mut tail,
+        ));
+        stats.accumulate(
+            self.draw_read_only(encoder, color, depth, batch, atlas, buffer, &mut tail),
+        );
         self.read_only_commands.clear();
+        (stats, tail)
+    }
+
+    /// The pending read-write interval. One wave, its overlaps replayed
+    /// inside it, keeps its snapshot and edit (one pass and a tail); an
+    /// interval needing more waves draws in one pass against the live depth
+    /// test, plus a words pass when shadows halve.
+    fn draw_read_write<'texture>(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        batch: &BatchRenderer,
+        atlas: &impl Fn(usize) -> Option<&'texture BatchTexture>,
+        buffer: &wgpu::Buffer,
+        instances: &[SpriteInstance],
+        tail: &mut Option<LiveTail>,
+    ) -> TerrainBatchStats {
+        let stats = if self.batches.stats().waves > 1 && !self.depth_commands.is_empty() {
+            self.draw_depth_run(encoder, color, depth, batch, atlas, buffer, tail)
+        } else {
+            self.draw_scheduled(encoder, color, depth, batch, atlas, buffer, instances, tail)
+        };
+        self.depth_commands.clear();
+        stats
+    }
+
+    /// One maximal read-write interval in a single pass against the live
+    /// depth test, in command order, instead of a snapshot/edit wave per
+    /// overlap layer. Admission and the stored Z are the original leaves'
+    /// (`terrain_depth.wgsl`). Shadows count per pixel instead of halving;
+    /// a words snapshot of the result and the resolve tail then halve each
+    /// pixel once per shadow admitted after its last admitted body, which is
+    /// what the original sequence of body stores and halvings leaves.
+    fn draw_depth_run<'texture>(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        batch: &BatchRenderer,
+        atlas: &impl Fn(usize) -> Option<&'texture BatchTexture>,
+        buffer: &wgpu::Buffer,
+        tail: &mut Option<LiveTail>,
+    ) -> TerrainBatchStats {
+        if self.depth_commands.is_empty() {
+            return TerrainBatchStats::default();
+        }
+        let commands = std::mem::take(&mut self.depth_commands);
+        let mut passes = 0;
+        // The previous tail lands first; it also still reads the scratch.
+        if let Some(previous) = tail.take() {
+            passes += self.flush_tail(encoder, color, depth, previous, batch, atlas, buffer);
+        }
+        let gpu = self
+            .depth
+            .as_ref()
+            .expect("depth-tested edits have pipelines");
+        let targets = self
+            .targets
+            .as_ref()
+            .expect("prepare precedes destination drawing");
+        let (counts, _) = targets
+            .shadow_counts
+            .as_ref()
+            .expect("depth-tested edits have shadow counts");
+        let attachment = |view, load| {
+            Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })
+        };
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Terrain depth-tested edits"),
+                color_attachments: &[
+                    attachment(color, wgpu::LoadOp::Load),
+                    attachment(counts, wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT)),
+                ],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_bind_group(0, batch.camera_bind_group(), &[]);
+            pass.set_vertex_buffer(0, buffer.slice(..));
+            let mut bound_atlas = None;
+            for (command, wraps) in &commands {
+                let draw = command.draw;
+                if bound_atlas != Some(draw.atlas_slot) {
+                    let texture =
+                        atlas(draw.atlas_slot).expect("scheduled atlas remains available");
+                    pass.set_bind_group(1, &texture.bind_group, &[]);
+                    bound_atlas = Some(draw.atlas_slot);
+                }
+                let [x, y, width, height] = command.rect;
+                pass.set_scissor_rect(x, y, width, height);
+                let (pipeline, wrapped) = match draw.piece {
+                    TerrainPiece::Body => (&gpu.body, &gpu.body_wrapped),
+                    TerrainPiece::Shadow => (&gpu.shadow, &gpu.shadow_wrapped),
+                };
+                pass.set_pipeline(pipeline);
+                pass.draw(0..6, draw.index..draw.index + 1);
+                // The two variants admit disjoint rows of the same piece.
+                if *wraps {
+                    pass.set_pipeline(wrapped);
+                    pass.draw(0..6, draw.index..draw.index + 1);
+                }
+            }
+        }
+        self.submission.note_closed_passes(encoder, 1);
+        passes += 1;
+        let shadows: Vec<_> = commands
+            .iter()
+            .filter(|(command, _)| command.draw.piece == TerrainPiece::Shadow)
+            .map(|(command, _)| command.rect)
+            .collect();
+        if !shadows.is_empty() {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Terrain depth-tested shadow words"),
+                color_attachments: &[
+                    attachment(&targets.words, wgpu::LoadOp::Load),
+                    attachment(&targets.depth, wgpu::LoadOp::Load),
+                ],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.snapshot_pipeline);
+            pass.set_bind_group(0, &targets.source, &[]);
+            for &[x, y, width, height] in &shadows {
+                pass.set_scissor_rect(x, y, width, height);
+                pass.draw(0..3, 0..1);
+            }
+            drop(pass);
+            self.submission.note_closed_passes(encoder, 1);
+            passes += 1;
+            // Repeated clipped rectangles write the same immutable result.
+            *tail = Some(LiveTail(Tail::Shadows(shadows)));
+        }
+        let stats = TerrainBatchStats {
+            pieces: commands.len(),
+            waves: 1,
+            passes,
+            tile_dependencies: 0,
+        };
+        self.depth_commands = commands;
+        self.depth_commands.clear();
         stats
     }
 
@@ -749,12 +1275,27 @@ impl TerrainDrawRenderer {
         batch: &BatchRenderer,
         atlas: &impl Fn(usize) -> Option<&'a BatchTexture>,
         buffer: &wgpu::Buffer,
+        instances: &[SpriteInstance],
+        tail: &mut Option<LiveTail>,
     ) -> TerrainBatchStats {
-        for wave in self.batches.waves() {
-            self.draw_wave(encoder, color, depth, batch, atlas, buffer, wave);
-            self.submission.note_closed_passes(encoder, 2);
+        let batches = std::mem::take(&mut self.batches);
+        let mut stats = batches.stats();
+        stats.passes = 0;
+        for wave in batches.waves() {
+            stats.passes += self.draw_wave(
+                encoder,
+                color,
+                depth,
+                batch,
+                atlas,
+                buffer,
+                wave.copied().collect(),
+                |command| EditRecord::new(&instances[command.draw.index as usize], command),
+                tail,
+            );
         }
-        self.batches.stats()
+        self.batches = batches;
+        stats
     }
 
     /// Original read-only leaves do not alter admission for any later piece.
@@ -763,36 +1304,32 @@ impl TerrainDrawRenderer {
     /// snapshot when there was no body). No depth/ordering authority is added.
     /// Capacity bands reuse bounded scratch for large attachments; separate
     /// pixels are independent, so bands cannot reorder a pixel's operations.
+    /// Each band's final words are its tail; the next band's reset reuses the
+    /// scratch they read, so that tail lands first.
     fn draw_read_only<'texture>(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
         color: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
         batch: &BatchRenderer,
         atlas: &impl Fn(usize) -> Option<&'texture BatchTexture>,
         buffer: &wgpu::Buffer,
+        tail: &mut Option<LiveTail>,
     ) -> TerrainBatchStats {
-        let commands = &self.read_only_commands;
-        if commands.is_empty() {
+        if self.read_only_commands.is_empty() {
             return TerrainBatchStats::default();
         }
-        let targets = self
+        let commands = std::mem::take(&mut self.read_only_commands);
+        let height = self
             .targets
             .as_ref()
-            .expect("prepare precedes destination drawing");
-        let attachment = |view| {
-            Some(wgpu::RenderPassColorAttachment {
-                view,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-            })
-        };
+            .expect("prepare precedes destination drawing")
+            .source_color
+            .height();
+        let band_rows = self.targets.as_ref().map_or(1, |t| t.read_only_rows);
         let mut passes = 0;
-        for top in (0..targets.source_color.height()).step_by(targets.read_only_rows as usize) {
-            let bottom = (top + targets.read_only_rows).min(targets.source_color.height());
+        for top in (0..height).step_by(band_rows as usize) {
+            let bottom = (top + band_rows).min(height);
             let band_rect = |rect: [u32; 4]| {
                 let y = rect[1].max(top);
                 let end = (rect[1] + rect[3]).min(bottom);
@@ -804,6 +1341,24 @@ impl TerrainDrawRenderer {
             {
                 continue;
             }
+            if let Some(previous) = tail.take() {
+                passes += self.flush_tail(encoder, color, depth, previous, batch, atlas, buffer);
+            }
+            let targets = self
+                .targets
+                .as_ref()
+                .expect("prepare precedes destination drawing");
+            let attachment = |view| {
+                Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })
+            };
             {
                 let snapshot = [attachment(&targets.words), attachment(&targets.depth)];
                 let webgl_snapshot = targets.read_only_targets.as_ref().map(|[bodies, shadows]| {
@@ -829,7 +1384,7 @@ impl TerrainDrawRenderer {
                 if targets.read_only_targets.is_none() {
                     pass.set_bind_group(1, &targets.read_only, &[]);
                 }
-                for command in commands {
+                for command in &commands {
                     let Some([x, y, width, height]) = band_rect(command.rect) else {
                         continue;
                     };
@@ -884,44 +1439,23 @@ impl TerrainDrawRenderer {
                     pass.draw(vertex..vertex + 6, draw.index..draw.index + 1);
                 }
             }
-            {
-                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Read-only final ordered destination words"),
-                    color_attachments: &[attachment(color)],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-                pass.set_pipeline(&self.read_only_resolve_pipeline);
-                pass.set_bind_group(0, &targets.snapshot, &[]);
-                pass.set_bind_group(
-                    1,
-                    targets
-                        .read_only_resolve
-                        .as_ref()
-                        .unwrap_or(&targets.read_only),
-                    &[],
-                );
-                // Repeated clipped rectangles write the same immutable result.
-                // Pixels with no admitted operation discard, preserving live bytes.
-                for command in commands {
-                    let Some([x, y, width, height]) = band_rect(command.rect) else {
-                        continue;
-                    };
-                    pass.set_scissor_rect(x, y, width, height);
-                    pass.draw(0..3, 0..1);
-                }
-            }
-            self.submission.note_closed_passes(encoder, 4);
-            passes += 4;
+            self.submission.note_closed_passes(encoder, 3);
+            passes += 3;
+            // Repeated clipped rectangles write the same immutable result.
+            let rects = commands
+                .iter()
+                .filter_map(|command| band_rect(command.rect))
+                .collect();
+            *tail = Some(LiveTail(Tail::ReadOnly(rects)));
         }
-        TerrainBatchStats {
+        let stats = TerrainBatchStats {
             pieces: commands.len(),
             waves: 1,
             passes,
             tile_dependencies: 0,
-        }
+        };
+        self.read_only_commands = commands;
+        stats
     }
 
     /// Sequential validation reference shares the exact clip and pipelines
@@ -942,32 +1476,48 @@ impl TerrainDrawRenderer {
         let Some(rect) = piece_scissor(instance, self.camera, tactical) else {
             return;
         };
-        let command = TerrainCommand::new(draw, rect);
+        let atlas = |_| Some(atlas);
+        let mut tail = None;
+        let commands = vec![TerrainCommand::new(draw, rect)];
         self.draw_wave(
             encoder,
             color,
             depth,
             batch,
-            &|_| Some(atlas),
+            &atlas,
             buffer,
-            std::iter::once(&command),
+            commands,
+            |command| EditRecord::new(instance, command),
+            &mut tail,
         );
-        self.submission.note_closed_passes(encoder, 2);
+        if let Some(tail) = tail {
+            self.flush_tail(encoder, color, depth, tail, batch, &atlas, buffer);
+        }
     }
 
-    /// Every rectangle is freshly snapped before any member edits the live
-    /// attachments. Snapshot/edit use the identical cached absolute scissor;
-    /// clipping never resets the SHP row/gradient origin.
-    fn draw_wave<'a, 'texture>(
-        &self,
+    /// Snapshot one wave of `commands` and leave their edits as the tail:
+    /// every rectangle is freshly snapped before any member edits the live
+    /// attachments, and an earlier tail lands before the snapshot. Members
+    /// that overlap replay their earlier overlaps from `record`'s window
+    /// records ([`TerrainCommand::earlier`]); the rest are disjoint.
+    /// Snapshot and edit use the identical cached absolute scissor; clipping
+    /// never resets the SHP row/gradient origin. Returns the passes closed.
+    fn draw_wave<'texture>(
+        &mut self,
         encoder: &mut wgpu::CommandEncoder,
         color: &wgpu::TextureView,
         depth: &wgpu::TextureView,
         batch: &BatchRenderer,
         atlas: &impl Fn(usize) -> Option<&'texture BatchTexture>,
         buffer: &wgpu::Buffer,
-        commands: impl Iterator<Item = &'a TerrainCommand> + Clone,
-    ) {
+        commands: Vec<TerrainCommand>,
+        record: impl Fn(&TerrainCommand) -> EditRecord,
+        tail: &mut Option<LiveTail>,
+    ) -> usize {
+        let mut passes = 0;
+        if let Some(previous) = tail.take() {
+            passes += self.flush_tail(encoder, color, depth, previous, batch, atlas, buffer);
+        }
         let targets = self
             .targets
             .as_ref()
@@ -985,7 +1535,7 @@ impl TerrainDrawRenderer {
         };
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Terrain snapshot disjoint wave"),
+                label: Some("Terrain snapshot wave"),
                 color_attachments: &[attachment(&targets.words), attachment(&targets.depth)],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
@@ -994,52 +1544,204 @@ impl TerrainDrawRenderer {
             });
             pass.set_pipeline(&self.snapshot_pipeline);
             pass.set_bind_group(0, &targets.source, &[]);
-            for command in commands.clone() {
+            for command in &commands {
                 let [x, y, width, height] = command.rect;
                 pass.set_scissor_rect(x, y, width, height);
                 pass.draw(0..3, 0..1);
             }
         }
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Terrain native disjoint edits"),
-            color_attachments: &[attachment(color)],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: depth,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_bind_group(0, batch.camera_bind_group(), &[]);
-        pass.set_bind_group(2, &targets.snapshot, &[]);
-        pass.set_vertex_buffer(0, buffer.slice(..));
-        let mut bound_atlas = None;
-        for command in commands {
-            let draw = command.draw;
-            if bound_atlas != Some(draw.atlas_slot) {
-                let texture = atlas(draw.atlas_slot).expect("scheduled atlas remains available");
-                pass.set_bind_group(1, &texture.bind_group, &[]);
-                bound_atlas = Some(draw.atlas_slot);
+        self.submission.note_closed_passes(encoder, 1);
+        let windows = commands
+            .chunks(WINDOW)
+            .map(|window| {
+                // Where nothing replays, the shader reads only empty `earlier`s.
+                if window.iter().all(|command| command.earlier == 0) {
+                    return self.edit_records.zeros();
+                }
+                let records: Vec<_> = window.iter().map(&record).collect();
+                self.edit_records.write(bytemuck::cast_slice(&records))
+            })
+            .collect();
+        *tail = Some(LiveTail(Tail::Edits(commands, windows)));
+        passes + 1
+    }
+
+    /// Record `tail` into `pass`, which has the live colour and depth
+    /// attached: the tail's draws come first, as in a pass of their own.
+    pub(crate) fn record_tail<'texture>(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        tail: &LiveTail,
+        batch: &BatchRenderer,
+        atlas: &impl Fn(usize) -> Option<&'texture BatchTexture>,
+        buffer: &wgpu::Buffer,
+    ) {
+        let targets = self
+            .targets
+            .as_ref()
+            .expect("terrain prepare precedes drawing");
+        match &tail.0 {
+            Tail::Packed(resolve) => self.record_packed_resolve(pass, resolve),
+            Tail::Edits(commands, windows) => {
+                pass.set_bind_group(0, batch.camera_bind_group(), &[]);
+                pass.set_bind_group(2, &targets.snapshot, &[]);
+                pass.set_vertex_buffer(0, buffer.slice(..));
+                let mut bound_atlas = None;
+                for (window, (records, offset)) in commands.chunks(WINDOW).zip(windows) {
+                    pass.set_bind_group(3, records, &[*offset]);
+                    for (slot, command) in window.iter().enumerate() {
+                        let draw = command.draw;
+                        if bound_atlas != Some(draw.atlas_slot) {
+                            let texture =
+                                atlas(draw.atlas_slot).expect("scheduled atlas remains available");
+                            pass.set_bind_group(1, &texture.bind_group, &[]);
+                            bound_atlas = Some(draw.atlas_slot);
+                        }
+                        let [x, y, width, height] = command.rect;
+                        pass.set_scissor_rect(x, y, width, height);
+                        pass.set_pipeline(match (draw.piece, draw.render_z) {
+                            (TerrainPiece::Body, RenderZPolicy::ReadWrite) => &self.body_pipeline,
+                            (TerrainPiece::Shadow, RenderZPolicy::ReadWrite) => {
+                                &self.shadow_pipeline
+                            }
+                            #[cfg(test)]
+                            (TerrainPiece::Body, RenderZPolicy::ReadOnly) => {
+                                &self.reference_body_pipeline
+                            }
+                            #[cfg(test)]
+                            (TerrainPiece::Shadow, RenderZPolicy::ReadOnly) => {
+                                &self.reference_shadow_pipeline
+                            }
+                            _ => {
+                                unreachable!("destination depth policy validated before scheduling")
+                            }
+                        });
+                        // The vertex range carries the edit's window slot.
+                        let vertex = slot as u32 * 6;
+                        pass.draw(vertex..vertex + 6, draw.index..draw.index + 1);
+                    }
+                }
             }
-            let [x, y, width, height] = command.rect;
-            pass.set_scissor_rect(x, y, width, height);
-            pass.set_pipeline(match (draw.piece, draw.render_z) {
-                (TerrainPiece::Body, RenderZPolicy::ReadWrite) => &self.body_pipeline,
-                (TerrainPiece::Shadow, RenderZPolicy::ReadWrite) => &self.shadow_pipeline,
-                #[cfg(test)]
-                (TerrainPiece::Body, RenderZPolicy::ReadOnly) => &self.reference_body_pipeline,
-                #[cfg(test)]
-                (TerrainPiece::Shadow, RenderZPolicy::ReadOnly) => &self.reference_shadow_pipeline,
-                _ => unreachable!("destination depth policy validated before scheduling"),
-            });
-            pass.draw(0..6, draw.index..draw.index + 1);
+            Tail::Shadows(rects) => {
+                let gpu = self
+                    .depth
+                    .as_ref()
+                    .expect("depth-tested edits have pipelines");
+                let (_, counts) = targets
+                    .shadow_counts
+                    .as_ref()
+                    .expect("depth-tested edits have shadow counts");
+                pass.set_pipeline(&gpu.resolve);
+                pass.set_bind_group(0, &targets.snapshot, &[]);
+                pass.set_bind_group(1, counts, &[]);
+                // Pixels without a counted shadow discard, keeping live bytes.
+                for &[x, y, width, height] in rects {
+                    pass.set_scissor_rect(x, y, width, height);
+                    pass.draw(0..3, 0..1);
+                }
+            }
+            Tail::ReadOnly(rects) => {
+                pass.set_pipeline(&self.read_only_resolve_pipeline);
+                pass.set_bind_group(0, &targets.snapshot, &[]);
+                pass.set_bind_group(
+                    1,
+                    targets
+                        .read_only_resolve
+                        .as_ref()
+                        .unwrap_or(&targets.read_only),
+                    &[],
+                );
+                // Pixels with no admitted operation discard, preserving live bytes.
+                for &[x, y, width, height] in rects {
+                    pass.set_scissor_rect(x, y, width, height);
+                    pass.draw(0..3, 0..1);
+                }
+            }
         }
     }
+
+    /// Draw `tail` in a pass of its own. Returns the passes closed (one).
+    pub(crate) fn flush_tail<'texture>(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        tail: LiveTail,
+        batch: &BatchRenderer,
+        atlas: &impl Fn(usize) -> Option<&'texture BatchTexture>,
+        buffer: &wgpu::Buffer,
+    ) -> usize {
+        let label = match &tail.0 {
+            Tail::Packed(resolve) => return self.resolve_packed(encoder, color, depth, resolve),
+            Tail::Edits(..) => "Terrain native wave edits",
+            Tail::Shadows(_) => "Terrain depth-tested shadow halves",
+            Tail::ReadOnly(_) => "Read-only final ordered destination words",
+        };
+        self.live_pass(encoder, color, depth, label, |renderer, pass| {
+            renderer.record_tail(pass, &tail, batch, atlas, buffer);
+        })
+    }
+
+    /// Record `draws` in a pass of their own over the live colour and depth,
+    /// both loaded and stored. Returns the passes closed (one).
+    fn live_pass(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        label: &str,
+        draws: impl FnOnce(&Self, &mut wgpu::RenderPass<'_>),
+    ) -> usize {
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some(label),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            draws(self, &mut pass);
+        }
+        self.submission.note_closed_passes(encoder, 1);
+        1
+    }
+}
+
+/// The draws a destination edit leaves for the live colour and depth after
+/// its last read of them. The caller's next pass over those attachments
+/// records them first ([`TerrainDrawRenderer::record_tail`]); anything else
+/// that reads them comes after a pass of their own
+/// ([`TerrainDrawRenderer::flush_tail`]). Draws keep their order inside a
+/// pass, so either way the pixels are the same. VERA scheduling only.
+#[must_use = "a tail draws only when recorded or flushed"]
+pub(crate) struct LiveTail(Tail);
+
+enum Tail {
+    /// A packed transaction's resolve.
+    Packed(packed::PackedResolve),
+    /// One read-write wave's edits, after their snapshot, with the binding
+    /// and offset of each window's records.
+    Edits(Vec<TerrainCommand>, Vec<(wgpu::BindGroup, u32)>),
+    /// One depth-tested interval's shadow halves, per shadow rectangle.
+    Shadows(Vec<[u32; 4]>),
+    /// One read-only band's final words, per clipped rectangle.
+    ReadOnly(Vec<[u32; 4]>),
 }
 
 /// Snapshot module source. The WebGL2 fallback loads the scene through its
@@ -1144,7 +1846,7 @@ fn edit_source(webgl: bool) -> String {
     return vec4f(1.0 / 255.0);",
         )
     } else {
-        read_only.to_owned()
+        format!("{read_only}\n{}", include_str!("terrain_depth.wgsl"))
     };
     super::tactical_shader::sprite_source(&format!(
         "{vertex}\n{}\n{read_only}",
@@ -1177,6 +1879,26 @@ fn resolve_source(webgl: bool) -> String {
     let shadows = u32(round(textureLoad(read_only_shadows, vec2i(p), 0).r * 255.0));",
     );
     super::tactical_shader::source(&resolve)
+}
+
+/// Signed candidate envelope of a destination edit, as `terrain_source` in
+/// terrain_edit.wgsl walks its rows (WGSL `round` ties to even). Rows are
+/// monotone, so the two end rows bound it. A gradient word other than a
+/// plain entry is not mirrored here and claims the whole range.
+fn candidate_range(instance: &SpriteInstance, camera: CameraUniform) -> [i32; 2] {
+    use super::native_z::{ZGradient, sprite_row_z};
+    if instance.z_gradient > ZGradient::Vertical as u32 {
+        return [i32::MIN, i32::MAX];
+    }
+    let round = |value: f32| value.round_ties_even() as i32;
+    let height = round(instance.size[1]).max(1);
+    let screen_top =
+        round(instance.position[1]) - round(camera.camera_pos[1] + camera.native_z_origin_y);
+    let gradient = ZGradient::from_index(instance.z_gradient);
+    let z_adjust = round(instance.z_adjust);
+    let [first, last] =
+        [0, height - 1].map(|row| sprite_row_z(gradient, screen_top, height, z_adjust, row));
+    [first.min(last), first.max(last)]
 }
 
 fn piece_scissor(

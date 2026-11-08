@@ -65,7 +65,6 @@ pub(crate) use crate::app::types::*;
 
 use crate::app::AppState;
 use crate::app::input::commands::preferred_local_owner_name;
-use crate::render::batch::InstanceBufferPool;
 use crate::ui::sidebar::SidebarView;
 
 pub(crate) use build_instances::tactical_world_viewport;
@@ -96,9 +95,10 @@ impl GameRenderInstanceCounts {
     }
 }
 
-/// Wall-clock spans of one in-game render, in `render_game`'s phase order.
+/// Wall-clock spans of one in-game render, in `render_game`'s phase order,
+/// and of handing that frame to the driver.
 ///
-/// Sampled by the frame owner into the dashboard's meter and the FPS panel's;
+/// Sampled by the frame owner into the dashboard's meter and the performance panel's;
 /// readers only ever see a window's totals or means, never one frame's spans.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct RenderPhases {
@@ -114,14 +114,28 @@ pub(crate) struct RenderPhases {
     pub sidebar: Duration,
     /// Phase 6 — instance upload to the GPU buffer pool.
     pub upload: Duration,
-    /// Prep before phase 1 and everything after phase 6 (combat lights, terrain
-    /// prep, draw records) — the part no single phase owns.
+    /// Combat lights and spotlights: their draw records and instance upload.
+    pub lights: Duration,
+    /// Effect lines and rings (lasers, bolts, trails, beams, range circles,
+    /// target and airstrike lines) and ion blasts: the composites' Main
+    /// draws, line rasters and their uploads.
+    pub effects: Duration,
+    /// Phase 7 — recording the frame's render passes, without the
+    /// submissions made on the way (those are `handoff`).
+    pub draw_calls: Duration,
+    /// Encoding the recorded passes, submitting them and presenting: the
+    /// bounded mid-frame submissions, plus the frame owner's final one.
+    pub handoff: Duration,
+    /// Prep before phase 1 and between the lights and the effects (sidebar
+    /// surfaces, terrain targets) — the part no named span owns.
     pub other: Duration,
 }
 
 impl RenderPhases {
-    /// The seven spans in declaration order, for the meter and the wire.
-    pub(crate) fn spans(&self) -> [Duration; 7] {
+    pub(crate) const COUNT: usize = 11;
+
+    /// The spans in declaration order, for the meter and the wire.
+    pub(crate) fn spans(&self) -> [Duration; Self::COUNT] {
         [
             self.world,
             self.debug,
@@ -129,6 +143,10 @@ impl RenderPhases {
             self.ui,
             self.sidebar,
             self.upload,
+            self.lights,
+            self.effects,
+            self.draw_calls,
+            self.handoff,
             self.other,
         ]
     }
@@ -143,7 +161,7 @@ pub(crate) struct GameRenderOutput {
     pub instance_counts: GameRenderInstanceCounts,
     pub times: GameRenderTimes,
     pub particle_draws: Option<Vec<crate::app::presentation::instances::ParticleDrawObservation>>,
-    /// Phase spans of this render, for the dashboard's meter and the FPS panel.
+    /// Phase spans of this render, for the dashboard's meter and the performance panel.
     pub phases: Option<RenderPhases>,
     /// The frame of this render's software cursor sprite, for a zoomed
     /// match's window pass (`window_ui::draw_battlefield`).
@@ -160,13 +178,13 @@ pub(crate) struct GameRenderTimes {
 }
 
 /// Whether this render measures its phases: for an attached dashboard, or
-/// while the FPS panel shows its Most CPU row.
+/// while the performance panel shows its Most CPU row.
 fn render_phases_wanted(state: &AppState) -> bool {
     #[cfg(feature = "telemetry-dashboard")]
     if state.diag.telemetry_observer.active() {
         return true;
     }
-    state.renderer.fps_overlay.is_visible()
+    state.renderer.performance_overlay.is_visible()
 }
 
 /// Render one in-game frame: terrain, units, overlays, UI, sidebar.
@@ -179,7 +197,7 @@ pub(crate) fn render_game(
     times: GameRenderTimes,
     cadence: crate::app::presentation::tactical_composite::CompositeCadence,
 ) -> Result<GameRenderOutput> {
-    // Phase accounting for the dashboard's render breakdown and the FPS panel's
+    // Phase accounting for the dashboard's render breakdown and the performance panel's
     // Most CPU row. One clock read per phase boundary; the spans are handed
     // back on `GameRenderOutput` and never written into the world here.
     let render_started = render_phases_wanted(state).then(Instant::now);
@@ -410,7 +428,7 @@ pub(crate) fn render_game(
     let after_sidebar = render_started.map(|_| Instant::now());
 
     // Phase 6: Upload all instances to GPU buffer pool.
-    upload_to_gpu(state, &world, &debug, &ui, &sidebar);
+    upload_to_gpu(state, encoder, &world, &debug, &ui, &sidebar);
     let after_upload = render_started.map(|_| Instant::now());
     state
         .match_state
@@ -450,6 +468,7 @@ pub(crate) fn render_game(
         ],
         world_camera.zoom,
     );
+    let after_lights = render_started.map(|_| Instant::now());
     let composition_view = state.renderer.combat_light_renderer.composition_view();
     let (_, tactical_y, _, _) = crate::app::input::camera::tactical_viewport_px(state);
     // Shader row coordinates are unscaled world pixels; scissor uses target
@@ -488,6 +507,7 @@ pub(crate) fn render_game(
             .map_or(&state.renderer.depth_view, |zoom| zoom.depth_view()),
         state.renderer.batch_renderer.camera_uniform(),
     );
+    let effects_started = render_started.map(|_| Instant::now());
 
     // Tactical6D4673 -> LineTrail556D40 updates once per actual composite.
     // It reads committed Bullet coordinates even when no simulation tick ran.
@@ -773,6 +793,7 @@ pub(crate) fn render_game(
         &ion_blasts,
         world_camera.zoom,
     );
+    let after_effects = render_started.map(|_| Instant::now());
 
     // Phase 7: Dispatch draw calls in render order.
     draw_passes::dispatch_draw_passes(
@@ -796,9 +817,10 @@ pub(crate) fn render_game(
             software_cursor: ui.software_cursor_draw,
         },
     );
-    // Prep before phase 1 plus everything after phase 6 is the `other` row:
-    // combat lights and terrain prep are real work, just not a named phase.
     let finished = render_started.map(|_| Instant::now());
+    // The bounded submissions made while recording belong to the hand-off;
+    // the frame owner adds its final submission and present.
+    let submitted = state.renderer.terrain_draw_renderer.frame_submit_time();
     let phases = render_started.map(|render_started| RenderPhases {
         world: after_world.unwrap().duration_since(phase1_started.unwrap()),
         debug: after_debug.unwrap().duration_since(after_world.unwrap()),
@@ -806,8 +828,19 @@ pub(crate) fn render_game(
         ui: after_ui.unwrap().duration_since(after_shroud.unwrap()),
         sidebar: after_sidebar.unwrap().duration_since(after_ui.unwrap()),
         upload: after_upload.unwrap().duration_since(after_sidebar.unwrap()),
+        lights: after_lights.unwrap().duration_since(after_upload.unwrap()),
+        effects: after_effects
+            .unwrap()
+            .duration_since(effects_started.unwrap()),
+        draw_calls: finished
+            .unwrap()
+            .duration_since(after_effects.unwrap())
+            .saturating_sub(submitted),
+        handoff: submitted,
         other: phase1_started.unwrap().duration_since(render_started)
-            + finished.unwrap().duration_since(after_upload.unwrap()),
+            + effects_started
+                .unwrap()
+                .duration_since(after_lights.unwrap()),
     });
     Ok(GameRenderOutput {
         instance_counts: sidebar.emitted_instance_counts(),
@@ -844,6 +877,7 @@ pub(crate) fn tactical_surface_line_viewport(
 /// Buffer names here must match the keys used in `draw_passes::dispatch_draw_passes`.
 fn upload_to_gpu(
     state: &mut AppState,
+    encoder: &mut wgpu::CommandEncoder,
     world: &WorldInstances,
     debug: &DebugInstances,
     ui: &UiInstances,
@@ -923,173 +957,95 @@ fn upload_to_gpu(
         }
     };
 
-    let pool: &mut InstanceBufferPool = &mut state.renderer.instance_pool;
+    // Recorded ahead of every pass that draws them (`InstanceBufferPool::
+    // record_uploads`).
+    let renderer = &mut state.renderer;
+    let mut pool = renderer
+        .instance_pool
+        .record_uploads(&renderer.gpu.device, encoder);
 
     // Debug overlays
-    pool.upload(&state.renderer.gpu, "debug_pathgrid", &debug.pathgrid);
-    pool.upload(&state.renderer.gpu, "debug_cell_grid", &debug.cell_grid);
-    pool.upload(&state.renderer.gpu, "debug_path", &debug.path);
-    pool.upload(&state.renderer.gpu, "debug_foot_stroke", &debug.foot_stroke);
-    pool.upload(&state.renderer.gpu, "debug_foot_nodes", &debug.foot_nodes);
-    pool.upload(&state.renderer.gpu, "debug_foot_text", &debug.foot_text);
-    pool.upload(&state.renderer.gpu, "debug_heightmap", &debug.heightmap);
+    pool.upload("debug_pathgrid", &debug.pathgrid);
+    pool.upload("debug_cell_grid", &debug.cell_grid);
+    pool.upload("debug_path", &debug.path);
+    pool.upload("debug_foot_stroke", &debug.foot_stroke);
+    pool.upload("debug_foot_nodes", &debug.foot_nodes);
+    pool.upload("debug_foot_text", &debug.foot_text);
+    pool.upload("debug_heightmap", &debug.heightmap);
 
     // Terrain + overlays
-    pool.upload(&state.renderer.gpu, "terrain", &world.terrain.normal);
-    pool.upload(&state.renderer.gpu, "cell_body", &world.cell_bodies);
+    pool.upload("terrain", &world.terrain.normal);
+    pool.upload("cell_body", &world.cell_bodies);
     pool.upload(
-        &state.renderer.gpu,
         "building_status_text",
         &world.building_status_text.instances,
     );
-    pool.upload(
-        &state.renderer.gpu,
-        "fogged_objects",
-        &world.fogged_objects.instances,
-    );
+    pool.upload("fogged_objects", &world.fogged_objects.instances);
     for (layer, objects) in world.object_layers.iter().enumerate() {
-        pool.upload_page(
-            &state.renderer.gpu,
-            "object_layer",
-            layer,
-            &objects.instances,
-        );
-        pool.upload_page(
-            &state.renderer.gpu,
-            "object_extras",
-            layer,
-            &objects.extras_instances,
-        );
+        pool.upload_page("object_layer", layer, &objects.instances);
+        pool.upload_page("object_extras", layer, &objects.extras_instances);
     }
-    pool.upload(
-        &state.renderer.gpu,
-        "overlay_bridge_body_shadow",
-        &world.bridge_body_shadow,
-    );
+    pool.upload("overlay_bridge_body_shadow", &world.bridge_body_shadow);
     // Smudges: drawn inside the terrain layer, before the cell bodies,
     // matching the native per-cell tile-then-smudge dispatch.
-    pool.upload(&state.renderer.gpu, "smudge", &world.smudge);
+    pool.upload("smudge", &world.smudge);
 
     // Residual effects keep their existing uploads and pass ownership.
-    pool.upload(&state.renderer.gpu, "cell_sparkles", &world.cell_sparkles);
-    pool.upload(&state.renderer.gpu, "super_timer_fill", &super_timer_fill);
-    pool.upload(&state.renderer.gpu, "super_timer_text", &super_timer_text);
-    pool.upload(&state.renderer.gpu, "build_text_fill", &build_text_fill);
-    pool.upload(&state.renderer.gpu, "build_text_text", &build_text_text);
+    pool.upload("cell_sparkles", &world.cell_sparkles);
+    pool.upload("super_timer_fill", &super_timer_fill);
+    pool.upload("super_timer_text", &super_timer_text);
+    pool.upload("build_text_fill", &build_text_fill);
+    pool.upload("build_text_text", &build_text_text);
     #[cfg(feature = "ares")]
-    pool.upload(&state.renderer.gpu, "bounty_text", &bounty_text);
+    pool.upload("bounty_text", &bounty_text);
 
     // UI overlays
     for (house, beacons) in ui.beacons.iter().enumerate() {
-        pool.upload_page(&state.renderer.gpu, "beacons", house, beacons);
+        pool.upload_page("beacons", house, beacons);
     }
-    pool.upload(&state.renderer.gpu, "drag", &ui.drag);
-    pool.upload(&state.renderer.gpu, "software_cursor", &software_cursor);
-    pool.upload(&state.renderer.gpu, "placement", &ui.placement);
+    pool.upload("drag", &ui.drag);
+    pool.upload("software_cursor", &software_cursor);
+    pool.upload("placement", &ui.placement);
     #[cfg(feature = "phobos")]
-    pool.upload(&state.renderer.gpu, "placement_ghost", &ui.placement_ghost);
-    pool.upload(
-        &state.renderer.gpu,
-        "factory_rally_first",
-        &ui.factory_rally_first,
-    );
-    pool.upload(&state.renderer.gpu, "target_lines", &ui.target_line);
-    pool.upload(
-        &state.renderer.gpu,
-        "factory_rally_second",
-        &ui.factory_rally_second,
-    );
+    pool.upload("placement_ghost", &ui.placement_ghost);
+    pool.upload("factory_rally_first", &ui.factory_rally_first);
+    pool.upload("target_lines", &ui.target_line);
+    pool.upload("factory_rally_second", &ui.factory_rally_second);
 
     // Sidebar + minimap
-    pool.upload(&state.renderer.gpu, "minimap", &sidebar.minimap);
-    pool.upload(&state.renderer.gpu, "viewport_rect", &sidebar.viewport_rect);
-    pool.upload(
-        &state.renderer.gpu,
-        "radar_content_boundary",
-        &sidebar.content_boundary,
-    );
-    pool.upload(&state.renderer.gpu, "sidebar_chrome", &sidebar.chrome);
-    pool.upload(&state.renderer.gpu, "command_bar", &sidebar.command_bar);
-    pool.upload(&state.renderer.gpu, "radar_anim", &sidebar.radar_anim);
-    pool.upload(&state.renderer.gpu, "sidebar_cameo", &sidebar.cameo);
-    pool.upload(
-        &state.renderer.gpu,
-        "sidebar_cameo_hover",
-        &sidebar.cameo_hover,
-    );
-    pool.upload(
-        &state.renderer.gpu,
-        "sidebar_unavailable",
-        &sidebar.unavailable,
-    );
-    pool.upload(&state.renderer.gpu, "sidebar_flash", &sidebar.flash);
-    pool.upload(&state.renderer.gpu, "sidebar_gclock", &sidebar.gclock);
-    pool.upload(
-        &state.renderer.gpu,
-        "sidebar_queue_overlay",
-        &sidebar.queue_overlay,
-    );
-    pool.upload(
-        &state.renderer.gpu,
-        "sidebar_queue_text",
-        &sidebar.queue_text,
-    );
-    pool.upload(
-        &state.renderer.gpu,
-        "sidebar_label_overlay",
-        &sidebar.label_overlay,
-    );
-    pool.upload(
-        &state.renderer.gpu,
-        "sidebar_label_text",
-        &sidebar.label_text,
-    );
-    pool.upload(
-        &state.renderer.gpu,
-        "sidebar_cameo_overlay",
-        &sidebar.cameo_overlay,
-    );
-    pool.upload(&state.renderer.gpu, "sidebar_text", &sidebar.text);
+    pool.upload("minimap", &sidebar.minimap);
+    pool.upload("viewport_rect", &sidebar.viewport_rect);
+    pool.upload("radar_content_boundary", &sidebar.content_boundary);
+    pool.upload("sidebar_chrome", &sidebar.chrome);
+    pool.upload("command_bar", &sidebar.command_bar);
+    pool.upload("radar_anim", &sidebar.radar_anim);
+    pool.upload("sidebar_cameo", &sidebar.cameo);
+    pool.upload("sidebar_cameo_hover", &sidebar.cameo_hover);
+    pool.upload("sidebar_unavailable", &sidebar.unavailable);
+    pool.upload("sidebar_flash", &sidebar.flash);
+    pool.upload("sidebar_gclock", &sidebar.gclock);
+    pool.upload("sidebar_queue_overlay", &sidebar.queue_overlay);
+    pool.upload("sidebar_queue_text", &sidebar.queue_text);
+    pool.upload("sidebar_label_overlay", &sidebar.label_overlay);
+    pool.upload("sidebar_label_text", &sidebar.label_text);
+    pool.upload("sidebar_cameo_overlay", &sidebar.cameo_overlay);
+    pool.upload("sidebar_text", &sidebar.text);
     #[cfg(feature = "phobos")]
     {
-        pool.upload(
-            &state.renderer.gpu,
-            "sw_sidebar_chrome",
-            &sidebar.sw_sidebar_chrome,
-        );
-        pool.upload(
-            &state.renderer.gpu,
-            "sw_sidebar_cameo",
-            &sidebar.sw_sidebar_cameo,
-        );
-        pool.upload(
-            &state.renderer.gpu,
-            "sw_sidebar_gclock",
-            &sidebar.sw_sidebar_gclock,
-        );
-        pool.upload(
-            &state.renderer.gpu,
-            "sw_sidebar_hover",
-            &sidebar.sw_sidebar_hover,
-        );
-        pool.upload(
-            &state.renderer.gpu,
-            "sw_sidebar_overlay",
-            &sidebar.sw_sidebar_overlay,
-        );
-        pool.upload(
-            &state.renderer.gpu,
-            "sw_sidebar_text",
-            &sidebar.sw_sidebar_text,
-        );
+        pool.upload("sw_sidebar_chrome", &sidebar.sw_sidebar_chrome);
+        pool.upload("sw_sidebar_cameo", &sidebar.sw_sidebar_cameo);
+        pool.upload("sw_sidebar_gclock", &sidebar.sw_sidebar_gclock);
+        pool.upload("sw_sidebar_hover", &sidebar.sw_sidebar_hover);
+        pool.upload("sw_sidebar_overlay", &sidebar.sw_sidebar_overlay);
+        pool.upload("sw_sidebar_text", &sidebar.sw_sidebar_text);
     }
-    pool.upload(&state.renderer.gpu, "message_text", &message_text);
-    pool.upload(&state.renderer.gpu, "message_fill", &message_fill);
-    pool.upload(&state.renderer.gpu, "outcome_shape", &outcome_shape);
-    pool.upload(&state.renderer.gpu, "outcome_text", &outcome_text);
-    pool.upload(&state.renderer.gpu, "tooltip_fill", &tooltip_fill);
-    pool.upload(&state.renderer.gpu, "tooltip_border", &tooltip_border);
-    pool.upload(&state.renderer.gpu, "tooltip_text", &tooltip_text);
+    pool.upload("message_text", &message_text);
+    pool.upload("message_fill", &message_fill);
+    pool.upload("outcome_shape", &outcome_shape);
+    pool.upload("outcome_text", &outcome_text);
+    pool.upload("tooltip_fill", &tooltip_fill);
+    pool.upload("tooltip_border", &tooltip_border);
+    pool.upload("tooltip_text", &tooltip_text);
 }
 
 #[cfg(test)]

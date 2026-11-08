@@ -326,6 +326,8 @@ pub enum SnapshotError {
 /// Structural failures found before a deserialized simulation is admitted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SnapshotRestoreError {
+    #[error(transparent)]
+    Tiberium(#[from] crate::rules::overlay_types::TiberiumImageError),
     #[cfg(feature = "ares")]
     #[error("object {object_id} has invalid attached stats: {reason}")]
     InvalidAttachedStatsState {
@@ -1757,6 +1759,18 @@ fn restore_object_references(
 }
 
 impl Simulation {
+    /// BuildingLoad453ECF invokes NoInit43B680 after the saved global Frame
+    /// has loaded. Reconstruct its independent repair Stage at the player-file
+    /// boundary, preserving mission state, radio links and internal continuations.
+    pub fn reconstruct_building_repair_progress_after_player_load(&mut self) {
+        let frame = self.session.binary_frame() as i32;
+        for entity in self.substrate.entities.values_mut() {
+            entity
+                .mission_leaf
+                .reconstruct_building_repair_progress_after_player_load(frame);
+        }
+    }
+
     /// Validate and re-register a deserialized simulation before it can resume.
     ///
     /// Native load registers old identities and pointer slots, resolves them,
@@ -2404,7 +2418,7 @@ impl Simulation {
                 spreads,
                 current_frame,
                 native_rect,
-            ))
+            )?)
     }
 }
 
@@ -2587,6 +2601,7 @@ mod tests {
                  Spread=23\n\
                  SpreadPercentage=1\n",
             );
+            let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
             let rules = RuleSet::from_ini(&ini).expect("post-load tiberium fixture rules");
             let registry = OverlayTypeRegistry::from_ini(&ini, None);
             let ore_id = registry.id_for_name("ORE").expect("fixture ORE id");
@@ -2696,12 +2711,14 @@ mod tests {
                                 &rules.tiberium_types,
                                 overlay.cell(ore_cell.0, ore_cell.1).overlay_id.unwrap()
                             )
+                            .unwrap()
                             .unwrap(),
                         ore_cell.0,
                         ore_cell.1,
                         41,
                         &mut throwaway_rng,
                     )
+                    .unwrap()
                     .is_some()
             );
             assert!(
@@ -2712,6 +2729,7 @@ mod tests {
                                 &rules.tiberium_types,
                                 overlay.cell(ore_cell.0, ore_cell.1).overlay_id.unwrap()
                             )
+                            .unwrap()
                             .unwrap(),
                         overlay,
                         registry,
@@ -2725,6 +2743,7 @@ mod tests {
                         true,
                         &mut throwaway_rng,
                     )
+                    .unwrap()
                     .is_some()
             );
         }
@@ -2860,7 +2879,8 @@ mod tests {
                         true,
                         7,
                         (8, 8),
-                    );
+                    )
+                    .unwrap();
                 assert_eq!(fresh.growth_entries, 2);
             }
             assert_eq!(sim.ore_growth_state.native_rect(), (8, 8));
@@ -2931,6 +2951,7 @@ mod tests {
                 live_grid.as_ref(),
                 (8, 8),
             )
+            .unwrap()
             .expect("overlay grid present");
             sim.overlay_grid = live_grid;
 

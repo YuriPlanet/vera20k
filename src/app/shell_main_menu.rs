@@ -83,9 +83,9 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
     fn set_full_screen(&mut self, full_screen: bool) {
         App::set_full_screen(self, full_screen);
     }
-    fn set_fps_counter(&mut self, shown: bool) {
+    fn set_performance_stats(&mut self, shown: bool) {
         // Live state only; no profile stores it, so each launch starts hidden.
-        self.renderer.fps_overlay.set_visible(shown);
+        self.renderer.performance_overlay.set_visible(shown);
     }
     fn store_original_shape(&mut self, original_shape: bool) {
         self.persistence.options_profile.original_shape = original_shape;
@@ -122,6 +122,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
     fn store_shift_queue(&mut self, shift_queue: bool) {
         // The next cameo press reads it; Options' accept writes it out.
         self.persistence.options_profile.shift_queue = shift_queue;
+    }
+    fn store_detailed_eva_text(&mut self, enabled: bool) {
+        // Presentation only: the next EVA text line reads it.
+        self.persistence.options_profile.detailed_eva_text = enabled;
     }
     fn store_render_interpolation(&mut self, enabled: bool) {
         self.persistence.options_profile.render_interpolation = enabled;
@@ -167,13 +171,6 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
     fn store_hd_map_previews(&mut self, enabled: bool) {
         // The next setup screen picks its preview from it.
         self.persistence.options_profile.hd_map_previews = enabled;
-    }
-    fn store_original_font(&mut self, enabled: bool) {
-        // Every text path measures and draws in it from the next frame.
-        self.persistence.options_profile.original_font = enabled;
-        self.renderer
-            .bit_font
-            .set_mode(crate::app::persistence::options_profile::font_mode(enabled));
     }
     fn store_language(&mut self, tag: String) {
         // The open Options page reads its captions again once the events
@@ -1175,7 +1172,7 @@ impl App {
             &state.persistence.options_profile,
             labels,
             state.platform.window.fullscreen().is_some(),
-            state.renderer.fps_overlay.is_visible(),
+            state.renderer.performance_overlay.is_visible(),
             state.audio.launcher_audio_available,
             displays,
         );
@@ -1426,7 +1423,6 @@ impl App {
                 MainMenuShellAction::SinglePlayer
                 | MainMenuShellAction::MoviesAndCredits
                 | MainMenuShellAction::Options
-                | MainMenuShellAction::Language
                 | MainMenuShellAction::Network
                 | MainMenuShellAction::WwOnline
                 | MainMenuShellAction::ExitGame => {
@@ -2036,13 +2032,6 @@ impl App {
             }
             MainMenuShellAction::Options => {
                 Self::open_launcher_options_dialog(state);
-            }
-            // VERA's Language button: Options, at its Language list.
-            MainMenuShellAction::Language => {
-                Self::open_launcher_options_dialog(state);
-                if let Some(dialog) = state.frontend.options_dialog.as_mut() {
-                    dialog.open_language_list();
-                }
             }
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);

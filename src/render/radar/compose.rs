@@ -99,21 +99,16 @@ pub(super) struct SurfaceTextures {
 }
 
 impl SurfaceTextures {
+    /// `cells` ([`NativeRadarSurfaceGeometry::visibility_cells`]) and `words`
+    /// cover a generated surface of `width` by `height` pixels, row-major.
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        geometry: NativeRadarSurfaceGeometry,
+        (width, height): (i32, i32),
+        cells: &[u32],
         words: &[u16],
     ) -> Self {
-        let (width, height) = geometry.generated_size();
         let size = [width.max(1) as u32, height.max(1) as u32];
-        let cells: Vec<u32> = (0..height)
-            .flat_map(|y| (0..width).map(move |x| (x, y)))
-            .map(|pixel| {
-                let (rx, ry) = geometry.surface_pixel_to_visibility_cell(pixel);
-                u32::from(rx) | u32::from(ry) << 16
-            })
-            .collect();
         let textures = Self {
             words: input_texture(
                 device,
@@ -133,7 +128,7 @@ impl SurfaceTextures {
             &textures.cells,
             0,
             size[0],
-            bytemuck::cast_slice(&cells),
+            bytemuck::cast_slice(cells),
         );
         textures.write_words(queue, words);
         textures
@@ -470,7 +465,8 @@ impl RadarCompositor {
             SurfaceTextures::new(
                 device,
                 queue,
-                terrain.geometry(),
+                terrain.geometry().generated_size(),
+                terrain.pixel_cells(),
                 terrain.generated_rgb565(),
             )
         });

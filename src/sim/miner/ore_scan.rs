@@ -17,7 +17,7 @@
 
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::locomotor_type::MovementZone;
-use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::overlay_types::{OverlayTypeRegistry, TiberiumImageError};
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
 use crate::sim::movement::ground_pose;
@@ -105,13 +105,16 @@ fn tiberium_value(
     rules: &RuleSet,
     overlay_registry: Option<&OverlayTypeRegistry>,
     cell: (u16, u16),
-) -> i32 {
+) -> Result<i32, TiberiumImageError> {
     match (sim.overlay_grid.as_ref(), overlay_registry) {
-        (Some(grid), Some(registry)) => {
-            crate::sim::tiberium::tiberium_cell_view(grid, registry, &rules.tiberium_types, cell)
-                .map_or(0, |view| view.nominal_value)
-        }
-        _ => 0,
+        (Some(grid), Some(registry)) => Ok(crate::sim::tiberium::tiberium_cell_view(
+            grid,
+            registry,
+            &rules.tiberium_types,
+            cell,
+        )?
+        .map_or(0, |view| view.nominal_value)),
+        _ => Ok(0),
     }
 }
 
@@ -127,19 +130,19 @@ pub(crate) fn search_for_tiberium_and_move(
     id: u64,
     range: i32,
     frame_effects: FrameEffects<'_>,
-) -> bool {
+) -> Result<bool, TiberiumImageError> {
     let Some(entity) = sim.substrate.entities.get(id) else {
-        return false;
+        return Ok(false);
     };
     if entity.navigation.nav_com().is_some() {
-        return false;
+        return Ok(false);
     }
     let own = (entity.position.rx(), entity.position.ry());
-    let Some(cell) = scan_for_tiberium(sim, rules, overlay_registry, id, range) else {
-        return false;
+    let Some(cell) = scan_for_tiberium(sim, rules, overlay_registry, id, range)? else {
+        return Ok(false);
     };
     if cell == own {
-        return true;
+        return Ok(true);
     }
     super::miner_system::assign_miner_cell_destination(
         sim,
@@ -149,7 +152,7 @@ pub(crate) fn search_for_tiberium_and_move(
         overlay_registry,
         frame_effects,
     );
-    false
+    Ok(false)
 }
 
 /// `Scan_For_Tiberium(range)`, the `vt+0x338` virtual: FootClass's body for
@@ -164,8 +167,10 @@ pub(crate) fn scan_for_tiberium(
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     range: i32,
-) -> Option<(u16, u16)> {
-    let entity = sim.substrate.entities.get(id)?;
+) -> Result<Option<(u16, u16)>, TiberiumImageError> {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return Ok(None);
+    };
     if entity.category() == crate::map::entities::EntityCategory::Structure {
         return techno_scan_for_tiberium(sim, rules, overlay_registry, id, range);
     }
@@ -182,15 +187,22 @@ fn foot_scan_for_tiberium(
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     range: i32,
-) -> Option<(u16, u16)> {
-    let entity = sim.substrate.entities.get(id)?;
+) -> Result<Option<(u16, u16)>, TiberiumImageError> {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return Ok(None);
+    };
     let own = (entity.position.rx(), entity.position.ry());
     if cell_is_tiberium_land(sim, overlay_registry, own) {
-        return Some(own);
+        return Ok(Some(own));
     }
     best_in_rings(sim, own, range, |sim, candidate| {
-        let cell = is_cell_harvestable(sim, rules, overlay_registry, id, candidate)?;
-        Some((cell, tiberium_value(sim, rules, overlay_registry, cell)))
+        let Some(cell) = is_cell_harvestable(sim, rules, overlay_registry, id, candidate) else {
+            return Ok(None);
+        };
+        Ok(Some((
+            cell,
+            tiberium_value(sim, rules, overlay_registry, cell)?,
+        )))
     })
 }
 
@@ -205,19 +217,28 @@ fn techno_scan_for_tiberium(
     overlay_registry: Option<&OverlayTypeRegistry>,
     id: u64,
     range: i32,
-) -> Option<(u16, u16)> {
-    let (x, y, _, _) = crate::sim::combat::resolve_target_coords(
-        &crate::sim::combat::TargetKind::Entity(id),
-        sim,
-    )?;
+) -> Result<Option<(u16, u16)>, TiberiumImageError> {
+    let Some((x, y, _, _)) =
+        crate::sim::combat::resolve_target_coords(&crate::sim::combat::TargetKind::Entity(id), sim)
+    else {
+        return Ok(None);
+    };
     let own = (x, y);
     if cell_is_tiberium_land(sim, overlay_registry, own) {
-        return Some(own);
+        return Ok(Some(own));
     }
     best_in_rings(sim, own, range, |sim, (cx, cy)| {
-        let cell = (u16::try_from(cx).ok()?, u16::try_from(cy).ok()?);
-        cell_is_tiberium_land(sim, overlay_registry, cell)
-            .then(|| (cell, tiberium_value(sim, rules, overlay_registry, cell)))
+        let (Ok(cx), Ok(cy)) = (u16::try_from(cx), u16::try_from(cy)) else {
+            return Ok(None);
+        };
+        let cell = (cx, cy);
+        if !cell_is_tiberium_land(sim, overlay_registry, cell) {
+            return Ok(None);
+        }
+        Ok(Some((
+            cell,
+            tiberium_value(sim, rules, overlay_registry, cell)?,
+        )))
     })
 }
 
@@ -232,8 +253,11 @@ fn best_in_rings(
     sim: &mut Simulation,
     own: (u16, u16),
     range: i32,
-    mut value_at: impl FnMut(&mut Simulation, (i32, i32)) -> Option<((u16, u16), i32)>,
-) -> Option<(u16, u16)> {
+    mut value_at: impl FnMut(
+        &mut Simulation,
+        (i32, i32),
+    ) -> Result<Option<((u16, u16), i32)>, TiberiumImageError>,
+) -> Result<Option<(u16, u16)>, TiberiumImageError> {
     let (x, y) = (i32::from(own.0), i32::from(own.1));
     let mut best_value = -1;
     let mut best = None;
@@ -245,7 +269,7 @@ fn best_in_rings(
                 (x - r, y + i),
                 (x + r, y + i),
             ] {
-                let Some((cell, value)) = value_at(sim, candidate) else {
+                let Some((cell, value)) = value_at(sim, candidate)? else {
                     continue;
                 };
                 if value > best_value {
@@ -258,7 +282,7 @@ fn best_in_rings(
             break;
         }
     }
-    best
+    Ok(best)
 }
 
 /// The `MapClass::Can_Reach_Zone @ 0x0056D100` request Is_Cell_Harvestable

@@ -184,6 +184,8 @@ pub struct GpuContext {
     /// Exact identity returned by the adapter that backs this context.
     adapter_info: wgpu::AdapterInfo,
     capture_target: Option<CaptureTarget>,
+    /// The GPU time of each frame, while the Performance Stats panel shows.
+    pub(crate) timer: super::gpu_timer::GpuTimer,
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     web_present: Arc<web_present::WebPresent>,
 }
@@ -338,7 +340,7 @@ impl GpuContext {
         let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("RA2 Device"),
-                required_features: wgpu::Features::empty(),
+                required_features: super::gpu_timer::GpuTimer::features(&adapter),
                 required_limits,
                 ..Default::default()
             })
@@ -389,6 +391,19 @@ impl GpuContext {
                 downlevel.flags
             );
         }
+        // The packed sprite stencil and its destination snapshot share a pass
+        // with per-attachment write masks (terrain_packed.rs).
+        if !webgl
+            && !downlevel
+                .flags
+                .contains(wgpu::DownlevelFlags::INDEPENDENT_BLEND)
+        {
+            bail!(
+                "native sprite drawing requires per-attachment write masks, \
+                 adapter downlevel flags are {:?}",
+                downlevel.flags
+            );
+        }
         let surface_format: wgpu::TextureFormat = surface_caps
             .formats
             .iter()
@@ -424,6 +439,7 @@ impl GpuContext {
         // swapchain skip/recovery.
         // https://docs.rs/wgpu-hal/30.0.1/src/wgpu_hal/metal/surface.rs.html#347-371
         let capture_target = hidden_capture.then(|| CaptureTarget::new(&device, &config));
+        let timer = super::gpu_timer::GpuTimer::new(&device, &queue);
 
         log::info!(
             "GPU initialized: {}x{}, format={:?}",
@@ -442,6 +458,7 @@ impl GpuContext {
             surface_format,
             adapter_info,
             capture_target,
+            timer,
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             web_present,
         })

@@ -52,6 +52,22 @@ fn stored_bales(entity: &GameEntity) -> impl Iterator<Item = &CargoBale> {
         .chain(entity.slave.cargo())
 }
 
+/// [`crate::sim::tiberium::tiberium_cell_view`] for an Ares tiberium effect.
+/// A malformed native Image refuses the effect's read of this cell, as an
+/// optional action owner does ([`crate::sim::crates::RuntimeOverlayError`]).
+fn ares_cell_view(
+    grid: &crate::sim::overlay_grid::OverlayGrid,
+    registry: &OverlayTypeRegistry,
+    rules: &RuleSet,
+    cell: (u16, u16),
+) -> Option<crate::sim::tiberium::TiberiumCellView> {
+    crate::sim::tiberium::tiberium_cell_view(grid, registry, &rules.tiberium_types, cell)
+        .unwrap_or_else(|error| {
+            log::error!("Ares tiberium cell read refused: {error}");
+            None
+        })
+}
+
 /// `CellClass::GetNeighbourCell(direction)`: the adjacent cell, or the cell
 /// itself for a direction of 8 or more (`0x00481810`). Off the map it names
 /// no overlay cell.
@@ -96,12 +112,7 @@ impl Simulation {
         if rx >= grid.width() || ry >= grid.height() {
             return None;
         }
-        let view = crate::sim::tiberium::tiberium_cell_view(
-            grid,
-            rules.overlay_registry(),
-            &rules.tiberium_types,
-            (rx, ry),
-        )?;
+        let view = ares_cell_view(grid, rules.overlay_registry(), rules, (rx, ry))?;
         rules.tiberium_types.get(view.tiberium_type)
     }
 
@@ -370,7 +381,12 @@ impl Simulation {
     /// 9 (centre), 2, 7, 1, 4, 3, 0, 5, 6, until `min(Storage, 9)` scaled
     /// by its fill (`ftol(stored / Storage * max)`, else `max / 2`) is
     /// spent. 3.0 sums the stored amounts truncated to integers.
-    pub(crate) fn ares_spill_tiberium(&mut self, id: u64, rules: &RuleSet) {
+    pub(crate) fn ares_spill_tiberium(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -400,22 +416,27 @@ impl Simulation {
         let Some(center) = self.coords_cell(id) else {
             return;
         };
-        self.increase_tiberium_cells(rules, rules.overlay_registry(), |context| {
-            let mut placements = Vec::new();
+        self.ares_increase_tiberium_cells(rules, |sim, placed| {
             for direction in [9, 2, 7, 1, 4, 3, 0, 5, 6] {
-                let amount = context.rng.next_range_i32_inclusive(0, 2);
-                placements.extend(crate::sim::tiberium::place_tiberium(
-                    context,
-                    neighbour_cell(center, direction),
-                    TiberiumTypeId(0),
-                    amount as u8,
-                ));
+                let amount = sim.scenario_rng.next_range_i32_inclusive(0, 2);
+                placed.extend(
+                    crate::sim::tiberium::place_tiberium(
+                        sim,
+                        rules,
+                        rules.overlay_registry(),
+                        neighbour_cell(center, direction),
+                        TiberiumTypeId(0),
+                        amount as u8,
+                        effects,
+                    )?
+                    .map(|placement| placement.cell()),
+                );
                 value -= amount;
                 if value <= 0 {
                     break;
                 }
             }
-            placements
+            Ok(())
         });
     }
 
@@ -424,7 +445,12 @@ impl Simulation {
     /// `[General] TiberiumHealEnabled`) leaves `RandomRanged(0, 2)` Riparius
     /// on the four orthogonal neighbours (directions 0, 2, 4, 6) and the
     /// centre (8) of the cell of its GetCoords.
-    pub(crate) fn ares_tiberium_remains(&mut self, id: u64, rules: &RuleSet) {
+    pub(crate) fn ares_tiberium_remains(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -438,19 +464,49 @@ impl Simulation {
         let Some(center) = self.coords_cell(id) else {
             return;
         };
-        self.increase_tiberium_cells(rules, rules.overlay_registry(), |context| {
-            let mut placements = Vec::new();
+        self.ares_increase_tiberium_cells(rules, |sim, placed| {
             for direction in (0..10).step_by(2) {
-                let amount = context.rng.next_range_i32_inclusive(0, 2);
-                placements.extend(crate::sim::tiberium::place_tiberium(
-                    context,
-                    neighbour_cell(center, direction),
-                    TiberiumTypeId(0),
-                    amount as u8,
-                ));
+                let amount = sim.scenario_rng.next_range_i32_inclusive(0, 2);
+                placed.extend(
+                    crate::sim::tiberium::place_tiberium(
+                        sim,
+                        rules,
+                        rules.overlay_registry(),
+                        neighbour_cell(center, direction),
+                        TiberiumTypeId(0),
+                        amount as u8,
+                        effects,
+                    )?
+                    .map(|placement| placement.cell()),
+                );
             }
-            placements
+            Ok(())
         });
+    }
+
+    /// One Ares batch of `CellClass::IncreaseTiberium @ 0x00487190` calls
+    /// ([`crate::sim::tiberium::place_tiberium`] on the scenario RNG): `body`
+    /// records each placed cell, which then publish together, as the crate
+    /// arm's do. A world without terrain or an overlay grid has no Cell to
+    /// write: `body` does not run and nothing is drawn. A malformed Image
+    /// stops the batch; earlier placements remain and still publish.
+    pub(crate) fn ares_increase_tiberium_cells(
+        &mut self,
+        rules: &RuleSet,
+        body: impl FnOnce(
+            &mut Self,
+            &mut Vec<(u16, u16)>,
+        ) -> Result<(), crate::sim::crates::RuntimeOverlayError>,
+    ) {
+        if self.resolved_terrain.is_none() || self.overlay_grid.is_none() {
+            return;
+        }
+        let mut placed = Vec::new();
+        let result = body(self, &mut placed);
+        self.publish_tiberium_cells(rules, rules.overlay_registry(), &placed);
+        if let Err(error) = result {
+            log::error!("Ares tiberium placement stopped: {error}");
+        }
     }
 
     /// Ares 3.0 1004BD90 (hook 0x738749), in place of stock's dead sum
@@ -635,9 +691,11 @@ impl Simulation {
         if !self.overlay_chain_reacts(cell, Some(registry)) {
             return;
         }
-        let Some(view) = self.overlay_grid.as_ref().and_then(|grid| {
-            crate::sim::tiberium::tiberium_cell_view(grid, registry, &rules.tiberium_types, cell)
-        }) else {
+        let Some(view) = self
+            .overlay_grid
+            .as_ref()
+            .and_then(|grid| ares_cell_view(grid, registry, rules, cell))
+        else {
             return;
         };
         let density = view.overlay_data;
@@ -703,13 +761,8 @@ impl Simulation {
             for direction in 0..8 {
                 let neighbour = neighbour_cell(center, direction);
                 let dense = self.overlay_grid.as_ref().is_some_and(|grid| {
-                    crate::sim::tiberium::tiberium_cell_view(
-                        grid,
-                        registry,
-                        &rules.tiberium_types,
-                        neighbour,
-                    )
-                    .is_some_and(|view| view.overlay_data > 2)
+                    ares_cell_view(grid, registry, rules, neighbour)
+                        .is_some_and(|view| view.overlay_data > 2)
                 });
                 if !dense || self.scenario_rng.next_range_i32_inclusive(0, 99) >= 80 {
                     continue;
@@ -731,8 +784,9 @@ impl Simulation {
             }
         }
 
-        if was_full_grown && let Some(grid) = self.overlay_grid.as_ref() {
-            self.ore_growth_state.add_native_growth_queue_cell(
+        if was_full_grown
+            && let Some(grid) = self.overlay_grid.as_ref()
+            && let Err(error) = self.ore_growth_state.add_native_growth_queue_cell(
                 grid,
                 registry,
                 &rules.tiberium_types,
@@ -743,7 +797,9 @@ impl Simulation {
                 cell.1,
                 self.session.binary_frame(),
                 &mut self.scenario_rng,
-            );
+            )
+        {
+            log::error!("Ares chain reaction growth queue refused: {error}");
         }
     }
 }

@@ -77,8 +77,8 @@ pub struct StartsOutcome {
     /// Region-list indices in bucket order (ascending sort key), the order the
     /// map-type-0 tech coin flips walk.
     pub region_order: Vec<usize>,
-    /// How many waypoint slots a region could not fill because its selection
-    /// came up shorter than its quota.
+    /// How many waypoint slots no region filled: a selection shorter than its
+    /// quota, an empty one, or no region surviving the size threshold.
     ///
     /// Non-zero means the map is short of spawns: those slots stay `None` and
     /// no start is placed for them. Carried out to `GeneratedMap` so a release
@@ -90,9 +90,19 @@ pub struct StartsOutcome {
 
 pub fn run(ctx: &mut StartsCtx<'_>, args: &StartsArgs, zones: &ZoneField) -> StartsOutcome {
     // Survival threshold: max(genH * genW * 0.03, 400), truncated.
-    let area = TruncF64::from_f64(f64::from(args.gen_h))
+    let mut area = TruncF64::from_f64(f64::from(args.gen_h))
         .mul(TruncF64::from_f64(f64::from(args.gen_w)))
         .mul(TruncF64::from_f64(AREA_FRACTION));
+    // VERA extension: past the original's eight starts the 3% share is per
+    // eight players, so thirty players' islands (archipelago) are judged as
+    // eight players' are rather than all falling under it. 2..=8 unchanged.
+    if args.start_quota > crate::map::rmg::NATIVE_MAX_PLAYERS {
+        area = area
+            .mul(TruncF64::from_f64(f64::from(
+                crate::map::rmg::NATIVE_MAX_PLAYERS,
+            )))
+            .div(TruncF64::from_f64(f64::from(args.start_quota)));
+    }
     let floor = TruncF64::from_f64(MIN_REGION_CELLS);
     let threshold =
         X87Chop53::ftol_f64_low_masked(if area.lt(floor) { floor } else { area }.to_f64());
@@ -113,6 +123,13 @@ pub fn run(ctx: &mut StartsCtx<'_>, args: &StartsArgs, zones: &ZoneField) -> Sta
         place_region_starts(ctx, args, index, offset, &mut outcome);
         offset += ctx.regions.list[index].start_quota;
     }
+    // Every slot no region filled, including all of them when no region
+    // survives the threshold, so a map short of starts is always reported.
+    outcome.unfilled_start_slots = outcome
+        .waypoints
+        .iter()
+        .filter(|slot| slot.is_none())
+        .count();
 
     // The original ends by publishing start/extent preview metadata into the
     // scenario (packed cells plus isometric pixel mins/extents). Nothing in
@@ -309,8 +326,7 @@ fn place_region_starts(
             // contents follow the process's allocation history rather than the
             // seed, so even two generations in one session disagree. Neither is
             // reproducible, so stopping short is a deliberate divergence —
-            // counted and reported, never claimed as parity.
-            outcome.unfilled_start_slots += (quota - slot_index) as usize;
+            // counted by `run` and reported, never claimed as parity.
             break;
         };
         if let Some(way) = outcome.waypoints.get_mut(slot) {

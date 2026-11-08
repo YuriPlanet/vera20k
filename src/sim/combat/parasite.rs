@@ -42,12 +42,15 @@
 //! (`0x0062A40B`) Unlimbo finds the latch that Unlimbo set and adds nothing.
 //!
 //! RESIDUALS (each needs a mechanism VERA does not have yet):
-//! - The fog borders that follow the AttachTo refusal (`0x0062AA91`: from
-//!   the cached radius - 3 out to + 2) and PointerExpired (`0x0062A44B`:
-//!   - 3 out to + 3) are not refreshed. Trigger: a jump whose host is lost
-//!   in flight; a drone's victim dying. Effect: the shroud-edge frames of
-//!   that ring around the drone wait for its next reveal event. Frequency:
-//!   each such release. Risk: edge frames only.
+//! - The fog border that follows the AttachTo refusal (`0x0062AA91`: from
+//!   the cached radius - 3 out to + 2) is not refreshed. Trigger: a jump
+//!   whose host is lost in flight. Effect: the shroud-edge frames of that
+//!   ring around the drone wait for its next reveal event. Frequency: each
+//!   such refusal. Risk: edge frames only. PointerExpired's border
+//!   (`0x0062A44B`: - 3 out to + 3) is not refreshed either, but it changes
+//!   nothing: the drone's Unlimbo border (`0x006F6D61`, from its cell out
+//!   to the radius + 3) has just refreshed that disc, and the UpdateReveal
+//!   between (`0x0062A40B`) reveals nothing new.
 //! - GetReleaseCoords' PlaceInfantryInCell finding no spot writes the zero
 //!   coordinate (`0x0089E778`), which a Unit owner turns into map cell
 //!   (0,0)'s GetCoords (`0x0062AE09..0x0062AE3E`); that is no longer the
@@ -293,8 +296,7 @@ pub(crate) fn type_allocates_parasite(
 ) -> bool {
     category != EntityCategory::Structure
         && weapon_zero(rules, object, veterancy)
-            .and_then(|weapon| weapon.warhead.as_deref())
-            .and_then(|warhead| rules.warhead(warhead))
+            .and_then(|weapon| rules.weapon_warhead(weapon))
             .is_some_and(|warhead| warhead.parasite)
 }
 
@@ -539,7 +541,7 @@ impl Simulation {
         let Some(warhead_name) = weapon.warhead.as_deref() else {
             return;
         };
-        let Some(warhead) = rules.warhead(warhead_name) else {
+        let Some(warhead) = rules.weapon_warhead(weapon) else {
             return;
         };
         if !state.damage.expired(frame as i32) {
@@ -1241,10 +1243,8 @@ impl Simulation {
             firer,
             UninitContext::new(rules, registry).with_effects(effects),
         );
-        let parasite = weapon
-            .warhead
-            .as_deref()
-            .and_then(|name| rules.warhead(name))
+        let parasite = rules
+            .weapon_warhead(weapon)
             .is_some_and(|warhead| warhead.parasite);
         // 0x006FF809..0x006FF81F: lock a Foot target for 20 frames.
         if parasite

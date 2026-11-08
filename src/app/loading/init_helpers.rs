@@ -376,9 +376,14 @@ pub(crate) fn startup_crate_anim_remap_keys(
     .filter_map(|overlay_id| {
         let flags = overlay_registry.flags(overlay_id)?;
         let anim = flags.cell_anim.as_deref()?;
-        let tiberium = overlay_registry
-            .tiberium_type_for_overlay(&rules.tiberium_types, overlay_id)
-            .and_then(|type_id| rules.tiberium_types.get(type_id))?;
+        // This is speculative prefetch, not a reached Mark: an unused
+        // cold-null Image needs no palette. Actual CellAnim Mark is checked.
+        let Ok(Some(type_id)) =
+            overlay_registry.tiberium_type_for_overlay(&rules.tiberium_types, overlay_id)
+        else {
+            return None;
+        };
+        let tiberium = rules.tiberium_types.get(type_id)?;
         let color = u8::try_from(tiberium.color_scheme() / 2)
             .ok()
             .map(crate::rules::house_colors::HouseColorIndex)?;
@@ -912,6 +917,7 @@ mod tests {
              [OverlayTypes]\n0=STARTBOX\n[STARTBOX]\nTiberium=yes\nCellAnim=crate_spark\n\
              [CrateRules]\nCrateImg=STARTBOX\nWoodCrateImg=STARTBOX\nWaterCrateImg=STARTBOX\n",
         );
+        let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
         let rules = RuleSet::from_ini(&ini).expect("rules");
         let overlay_registry =
             crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
@@ -930,6 +936,7 @@ mod tests {
         assert_eq!(flags.cell_anim.as_deref(), Some("CRATE_SPARK"));
         let tiberium = overlay_registry
             .tiberium_type_for_overlay(&rules.tiberium_types, overlay_id)
+            .unwrap()
             .and_then(|type_id| rules.tiberium_types.get(type_id))
             .expect("tiberium authority for startup crate CellAnim");
         assert_eq!(tiberium.color_scheme(), 3);
@@ -1268,16 +1275,20 @@ mod tests {
              [Riparius]\nImage=4\n\
              [TIB01]\nTiberium=yes\n",
         );
+        let rulesmd = crate::rules::tiberium_type::with_tiberium_image_slots(&rulesmd);
 
         let (rules, merged_ini, _fixed_art_ini) = scenario_rules(rulesmd, langrule, &mode, &map);
         let registry = OverlayTypeRegistry::from_ini(&merged_ini, None);
 
         assert_eq!(rules.tiberium_types.types()[0].section, "Riparius");
-        assert_eq!(rules.tiberium_types.types()[0].image, 4);
-        assert_eq!(registry.len(), 2);
+        assert_eq!(
+            rules.tiberium_types.types()[0].image().base_overlay(),
+            Some(147)
+        );
+        assert_eq!(registry.len(), 149);
         assert_eq!(registry.id_for_name("TIB01"), Some(0));
         assert_eq!(registry.name(0), Some("TIB01"));
-        assert_eq!(registry.name(1), Some("GASAND"));
+        assert_eq!(registry.name(148), Some("GASAND"));
         assert!(registry.flags(0).is_some_and(|flags| flags.tiberium));
     }
 

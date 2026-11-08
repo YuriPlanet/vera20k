@@ -81,6 +81,20 @@ pub(crate) fn deploy_order_voice_event(
     })
 }
 
+/// Collect one VERA-only accessibility row on an arm whose EVA voice has
+/// already been admitted. `label` selects the VERA i18n template; `type_id`
+/// is the sim's resolved object type, never a lookup or a guess. A disabled
+/// switch passes `None`, so no row and no name lookup follows.
+fn collect_eva_object(
+    hud_text: &mut Option<&mut Vec<crate::app::input::messages::HudMessage>>,
+    label: &'static str,
+    type_id: crate::sim::intern::InternedId,
+) {
+    if let Some(messages) = hud_text.as_deref_mut() {
+        messages.push(crate::app::input::messages::HudMessage::EvaObjectLine { label, type_id });
+    }
+}
+
 /// Append each already-admitted event in producer order, including multi-cue
 /// events. Simulation owns feedback admission and its Main draws at damage
 /// time; this adapter never advances a random stream.
@@ -109,6 +123,10 @@ pub(crate) fn deploy_order_voice_event(
 /// SHAD transport with no `DeploysInto=`) have such a house; no map gives one
 /// an object by placement, TeamType, Change House (actions 14 and 36) or
 /// Create Building (125). Of these maps only ALL03 places crates (action 108).
+///
+/// `hud_text` collects VERA's optional detailed EVA text rows on the same
+/// arms that admit the voice, so text and voice share every gate; `None`
+/// (the switch off, tests, child bridges) builds no row.
 pub(super) fn dispatch_sim_sound_events(
     events: impl IntoIterator<Item = SimSoundEvent>,
     sim: &Simulation,
@@ -116,6 +134,7 @@ pub(super) fn dispatch_sim_sound_events(
     local_owner_name: Option<&str>,
     admit_radar: &mut dyn FnMut(crate::sim::radar::RadarEventRequest) -> bool,
     output: &mut SoundEventQueue,
+    mut hud_text: Option<&mut Vec<crate::app::input::messages::HudMessage>>,
 ) {
     // Convert sim sound events to app-layer sound events for playback.
     for sim_event in events {
@@ -236,6 +255,7 @@ pub(super) fn dispatch_sim_sound_events(
             SimSoundEvent::UnitPromoted {
                 owner,
                 sound_id,
+                type_id,
                 world,
                 #[cfg(feature = "ares")]
                 eva,
@@ -265,6 +285,8 @@ pub(super) fn dispatch_sim_sound_events(
                     event: "EVA_UnitPromoted".to_string(),
                     type_override: None,
                 });
+                #[cfg(not(feature = "ares"))]
+                collect_eva_object(&mut hud_text, "VERA:EvaUnitPromoted", type_id);
                 // Ares UpdateVeterancy10046D4B..10046D54 queues the type's
                 // EVA.*Promoted index instead; -1 queues nothing.
                 #[cfg(feature = "ares")]
@@ -273,6 +295,7 @@ pub(super) fn dispatch_sim_sound_events(
                         event: sim.interner().resolve(eva).to_string(),
                         type_override: None,
                     });
+                    collect_eva_object(&mut hud_text, "VERA:EvaUnitPromoted", type_id);
                 }
                 continue;
             }
@@ -366,11 +389,12 @@ pub(super) fn dispatch_sim_sound_events(
                 coordinate: [coordinate.x, coordinate.y, coordinate.z],
                 flags,
             },
-            SimSoundEvent::BuildingComplete { owner } => {
+            SimSoundEvent::BuildingComplete { owner, type_id } => {
                 // Only play EVA for the local player's production.
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
                 }
+                collect_eva_object(&mut hud_text, "VERA:EvaConstructionComplete", type_id);
                 // `StripClass::AI 0x006A8E2F`: `PlayEVA` with type -1.
                 GameSoundEvent::Eva {
                     event: "EVA_ConstructionComplete".to_string(),
@@ -517,7 +541,11 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
-            SimSoundEvent::UnitComplete { owner, radar } => {
+            SimSoundEvent::UnitComplete {
+                owner,
+                radar,
+                type_id,
+            } => {
                 // `HouseClass::Place_Production` inlines IsHumanPlayer
                 // (`0x004FB5C6..0x004FB5EB`).
                 if !sim.house_is_human_player(owner) {
@@ -528,6 +556,7 @@ pub(super) fn dispatch_sim_sound_events(
                 if !admit_radar(radar) {
                     continue;
                 }
+                collect_eva_object(&mut hud_text, "VERA:EvaUnitReady", type_id);
                 GameSoundEvent::Eva {
                     event: "EVA_UnitReady".to_string(),
                     type_override: None,
@@ -604,11 +633,12 @@ pub(super) fn dispatch_sim_sound_events(
                 };
                 GameSoundEvent::UiSound { sound_id }
             }
-            SimSoundEvent::StructureGarrisoned { owner } => {
+            SimSoundEvent::StructureGarrisoned { owner, type_id } => {
                 // `0x005229AE CALL 0x0050B6F0`: only for a human player.
                 if !sim.house_is_human_player(owner) {
                     continue;
                 }
+                collect_eva_object(&mut hud_text, "VERA:EvaStructureGarrisoned", type_id);
                 // `BuildingClass::AddGarrisonOccupant 0x005229C1`: type -1
                 // (stock entry QUEUE NORMAL).
                 GameSoundEvent::Eva {
@@ -616,12 +646,13 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
-            SimSoundEvent::StructureAbandoned { radar, .. } => {
+            SimSoundEvent::StructureAbandoned { radar, type_id, .. } => {
                 //458200's producer already ran House50B6F0. Native gates
                 //EVA on successful radar admission, before refreshing art.
                 if !admit_radar(radar) {
                     continue;
                 }
+                collect_eva_object(&mut hud_text, "VERA:EvaStructureAbandoned", type_id);
                 GameSoundEvent::Eva {
                     event: "EVA_StructureAbandoned".to_string(),
                     type_override: None,
@@ -755,6 +786,7 @@ pub(super) fn dispatch_sim_sound_events(
             SimSoundEvent::UnitLost {
                 owner,
                 radar,
+                type_id,
                 #[cfg(feature = "ares")]
                 eva,
                 #[cfg(feature = "ares")]
@@ -784,6 +816,7 @@ pub(super) fn dispatch_sim_sound_events(
                     }
                     sim.interner().resolve(eva).to_string()
                 };
+                collect_eva_object(&mut hud_text, "VERA:EvaUnitLost", type_id);
                 GameSoundEvent::Eva {
                     event,
                     type_override: None,
@@ -883,13 +916,14 @@ pub(super) fn dispatch_sim_sound_events(
                     type_override: None,
                 }
             }
-            SimSoundEvent::StructureSold { owner } => {
+            SimSoundEvent::StructureSold { owner, type_id } => {
                 // `BuildingClass::Mission_Selling 0x00449CC1 MOV AL,[EBP+0x41A]`
                 // (`0x0044AB22` on the upgrade path): only the local
                 // player's own building speaks; `EDX = -1`.
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
                 }
+                collect_eva_object(&mut hud_text, "VERA:EvaStructureSold", type_id);
                 GameSoundEvent::Eva {
                     event: eva_producers::EVA_STRUCTURE_SOLD.to_string(),
                     type_override: None,
@@ -907,12 +941,13 @@ pub(super) fn dispatch_sim_sound_events(
                 };
                 GameSoundEvent::UiSound { sound_id }
             }
-            SimSoundEvent::Repairing { owner } => {
+            SimSoundEvent::Repairing { owner, type_id } => {
                 // `BuildingClass::ToggleRepair 0x004470A4 CALL
                 // 0x0050B6F0` / depot MissionRepair44C4F3 local+41A.
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
                 }
+                collect_eva_object(&mut hud_text, "VERA:EvaRepairing", type_id);
                 GameSoundEvent::Eva {
                     event: eva_producers::EVA_REPAIRING.to_string(),
                     type_override: None,
@@ -1627,6 +1662,7 @@ mod tests {
                 Some("Americans"),
                 &mut |_| true,
                 &mut output,
+                None,
             );
             output.drain()
         };
@@ -1747,6 +1783,7 @@ mod tests {
                 Some("Americans"),
                 &mut |_| panic!("money refusal must not create a radar event"),
                 &mut output,
+                None,
             );
             let events = output.drain();
             let cues: Vec<_> = events
@@ -1815,6 +1852,7 @@ mod tests {
             None,
             &mut |_| panic!("original TAction21 does not create or gate on a radar event"),
             &mut output,
+            None,
         );
         let observed: Vec<_> = output
             .drain()
@@ -1889,6 +1927,7 @@ mod tests {
                 .as_str()
                 .unwrap();
             let owner = sim.intern(owner_name);
+            let type_id = sim.intern("GAPILL");
             let sound_name = format!("NativeSound{}", native_sound["sound"].as_i64().unwrap());
             let events = [
                 SimSoundEvent::VocCentered {
@@ -1896,6 +1935,7 @@ mod tests {
                 },
                 SimSoundEvent::StructureAbandoned {
                     owner,
+                    type_id,
                     radar: request,
                 },
             ];
@@ -1917,6 +1957,7 @@ mod tests {
                     Some(local_name),
                     &mut gate,
                     &mut output,
+                    None,
                 );
                 for emitted in output.drain() {
                     match emitted {
@@ -1981,6 +2022,7 @@ mod tests {
         let event = |owner| SimSoundEvent::UnitComplete {
             owner,
             radar: request,
+            type_id: local,
         };
         let mut admitted = Vec::new();
         let mut gate = |actual| {
@@ -1997,6 +2039,7 @@ mod tests {
             Some("LOCAL"),
             &mut gate,
             &mut output,
+            None,
         );
         assert_eq!(admitted.len(), suffix.len());
         let emitted = output.drain();
@@ -2043,6 +2086,7 @@ mod tests {
             Some("LOCAL"),
             &mut |_| true,
             &mut output,
+            None,
         );
         let emitted = output.drain();
         assert_eq!(emitted.len(), 1);
@@ -2081,6 +2125,7 @@ mod tests {
             Some("LOCAL"),
             &mut |_| true,
             &mut output,
+            None,
         );
         let emitted = output.drain();
         assert_eq!(emitted.len(), 1);
@@ -2118,6 +2163,7 @@ mod tests {
             Some("LOCAL"),
             &mut |_| panic!("planning add is not a radar event"),
             &mut output,
+            None,
         );
         assert!(matches!(output.drain().as_slice(),
             [GameSoundEvent::UiSound { sound_id }] if *sound_id == expected));
@@ -2128,6 +2174,7 @@ mod tests {
             None,
             &mut |_| panic!("planning add is not a radar event"),
             &mut output,
+            None,
         );
         assert!(output.drain().is_empty());
         rules.general.add_planning_mode_command_sound = None;
@@ -2138,6 +2185,7 @@ mod tests {
             Some("Local"),
             &mut |_| panic!("planning add is not a radar event"),
             &mut output,
+            None,
         );
         assert!(output.drain().is_empty());
     }
@@ -2154,11 +2202,13 @@ mod tests {
         sim.session_mut_for_test()
             .set_current_house_for_test(Some(local));
         let sound = sim.intern("Promotion");
+        let promoted_type = sim.intern("E1");
         #[cfg(feature = "ares")]
         let eva = sim.intern("EVA_UnitPromoted");
         let promotion = |owner| SimSoundEvent::UnitPromoted {
             owner,
             sound_id: Some(sound),
+            type_id: promoted_type,
             // The centre of cell (5, 7) at ground level.
             world: crate::sim::anim_class::AnimWorldCoord {
                 x: 5 * 256 + 128,
@@ -2190,6 +2240,7 @@ mod tests {
         let unit_lost = |owner, rx| SimSoundEvent::UnitLost {
             owner,
             radar: RadarEventRequest::new(RadarEventType::UnitLost, rx, 7),
+            type_id: promoted_type,
             #[cfg(feature = "ares")]
             eva: lost_eva,
             #[cfg(feature = "ares")]
@@ -2221,6 +2272,7 @@ mod tests {
             Some("LOCAL"),
             &mut admit_radar,
             &mut output,
+            None,
         );
         assert_eq!(
             admitted,
@@ -2271,12 +2323,16 @@ mod tests {
             owner,
             radar: RadarEventRequest::new(RadarEventType::UnitRepaired, rx, 7),
         };
+        let repair_type = sim.intern("GAPOWR");
         let mut admitted = Vec::new();
         let mut output = SoundEventQueue::new();
         dispatch_sim_sound_events(
             [
                 repaired(remote, 5),
-                SimSoundEvent::Repairing { owner: local },
+                SimSoundEvent::Repairing {
+                    owner: local,
+                    type_id: repair_type,
+                },
                 SimSoundEvent::HouseEva {
                     owner: local,
                     event: "EVA_InsufficientFunds",
@@ -2292,6 +2348,7 @@ mod tests {
                 request.rx != 99
             },
             &mut output,
+            None,
         );
         assert_eq!(
             admitted,
@@ -2323,6 +2380,7 @@ mod tests {
         let mut sim = Simulation::new();
         let player = sim.intern("Americans");
         let ally = sim.intern("Alliance");
+        let lost_type = sim.intern("E1");
         sim.houses_mut_for_test()
             .register(HouseState::new(player, 0, None, true, 0, 10));
         let mut house = HouseState::new(ally, 0, None, false, 0, 10);
@@ -2338,6 +2396,7 @@ mod tests {
                 [SimSoundEvent::UnitLost {
                     owner: ally,
                     radar,
+                    type_id: lost_type,
                     #[cfg(feature = "ares")]
                     eva: lost_eva,
                     #[cfg(feature = "ares")]
@@ -2351,6 +2410,7 @@ mod tests {
                     true
                 },
                 &mut output,
+                None,
             );
             let spoken: Vec<String> = output
                 .drain()
@@ -2404,6 +2464,7 @@ mod tests {
                     row["radar_accepted"].as_bool().unwrap()
                 },
                 &mut output,
+                None,
             );
             let expected = row["expected"]["events"].as_array().unwrap();
             let of_kind = |kind: &str| -> Vec<serde_json::Value> {
@@ -2458,6 +2519,7 @@ mod tests {
             Some("DifferentListener"),
             &mut |_| panic!("these cues have no radar gate"),
             &mut output,
+            None,
         );
         let events = output.drain();
         assert_eq!(
@@ -2570,6 +2632,7 @@ mod tests {
             Some("LOCAL"),
             &mut |_| true,
             &mut output,
+            None,
         );
         let emitted = output.drain();
         assert!(
@@ -2625,6 +2688,7 @@ mod tests {
                 true
             },
             &mut output,
+            None,
         );
         assert_eq!(admitted, [(21, 21), (40, 40)]);
         let emitted = output.drain();
@@ -2743,6 +2807,7 @@ mod tests {
                     Some("LOCAL"),
                     &mut |_| true,
                     &mut output,
+                    None,
                 );
                 let mut lines: Vec<String> = output
                     .drain()
@@ -2827,6 +2892,7 @@ mod tests {
                 Some("LOCAL"),
                 &mut |_| true,
                 &mut output,
+                None,
             );
             let emitted = output.drain();
             if cfg!(feature = "ares") && name == "SpyPlaneSpecial" {
@@ -2994,6 +3060,7 @@ mod tests {
                 Some("LOCAL"),
                 &mut |_| panic!("ForceShield sound has no radar admission"),
                 &mut output,
+                None,
             );
             output.drain()
         };
@@ -3173,6 +3240,7 @@ mod tests {
             Some("Local"),
             &mut |_| panic!("a refusal is not a radar event"),
             &mut output,
+            None,
         );
         assert!(output.drain().is_empty());
     }
@@ -3206,6 +3274,7 @@ mod tests {
             Some("Local"),
             &mut |_| panic!("a defeat is not a radar event"),
             &mut output,
+            None,
         );
         let evas: Vec<String> = output
             .drain()
@@ -3258,6 +3327,7 @@ mod tests {
                 Some("Americans"),
                 &mut |_| false,
                 &mut output,
+                None,
             );
             output.drain()
         }
@@ -3428,6 +3498,7 @@ mod tests {
                 Some("Americans"),
                 &mut |_| false,
                 &mut output,
+                None,
             );
             output.drain()
         };
@@ -3545,6 +3616,7 @@ mod tests {
                 Some("Americans"),
                 &mut |_| false,
                 &mut sounds,
+                None,
             );
             let voice_count = sounds
                 .drain()
@@ -3641,6 +3713,7 @@ mod tests {
                 local,
                 &mut |_| panic!("the storm's lines are not radar events"),
                 &mut output,
+                None,
             );
         }
         let played = output.drain();
@@ -3662,6 +3735,264 @@ mod tests {
             ),
             "the cue plays centred on every client, the EVA line with a local \
              player: {played:?}"
+        );
+    }
+
+    /// VERA's accessibility rows ride the very same gates as the EVA voice:
+    /// a remote owner's building and a refused radar event must not produce
+    /// text the player never heard.
+    #[test]
+    fn eva_text_facts_follow_the_voice_gates() {
+        use crate::sim::radar::{RadarEventRequest, RadarEventType};
+
+        let rules = dispatch_rules();
+        let mut sim = Simulation::new();
+        let local = sim.intern("Local");
+        let remote = sim.intern("Remote");
+        let building = sim.intern("GAPOWR");
+        let unit = sim.intern("HTNK");
+        #[cfg(feature = "ares")]
+        let promoted_eva = sim.intern("EVA_UnitPromoted");
+        sim.session_mut_for_test()
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
+        let radar = RadarEventRequest::new(RadarEventType::UnitReady, 15, 15);
+        let admitted_events = [
+            SimSoundEvent::BuildingComplete {
+                owner: remote,
+                type_id: building,
+            },
+            SimSoundEvent::BuildingComplete {
+                owner: local,
+                type_id: building,
+            },
+            SimSoundEvent::UnitComplete {
+                owner: local,
+                radar,
+                type_id: unit,
+            },
+            // A remote player's promotion is inaudible, so it must not post a
+            // row either. `sound_id: None` still plays the EVA voice natively.
+            SimSoundEvent::UnitPromoted {
+                owner: remote,
+                sound_id: None,
+                type_id: unit,
+                world: crate::sim::anim_class::AnimWorldCoord { x: 0, y: 0, z: 0 },
+                #[cfg(feature = "ares")]
+                eva: Some(promoted_eva),
+            },
+            SimSoundEvent::UnitPromoted {
+                owner: local,
+                sound_id: None,
+                type_id: unit,
+                world: crate::sim::anim_class::AnimWorldCoord { x: 0, y: 0, z: 0 },
+                #[cfg(feature = "ares")]
+                eva: Some(promoted_eva),
+            },
+        ];
+        let mut facts = Vec::new();
+        let mut output = SoundEventQueue::new();
+        let mut admit = |_| true;
+        dispatch_sim_sound_events(
+            admitted_events,
+            &sim,
+            &rules,
+            Some("Local"),
+            &mut admit,
+            &mut output,
+            Some(&mut facts),
+        );
+        assert_eq!(
+            facts,
+            vec![
+                HudMessage::EvaObjectLine {
+                    label: "VERA:EvaConstructionComplete",
+                    type_id: building
+                },
+                HudMessage::EvaObjectLine {
+                    label: "VERA:EvaUnitReady",
+                    type_id: unit
+                },
+                HudMessage::EvaObjectLine {
+                    label: "VERA:EvaUnitPromoted",
+                    type_id: unit
+                },
+            ]
+        );
+
+        // The kind-6 radar refusal suppresses both the voice and the row.
+        let mut refused_facts = Vec::new();
+        let mut refused_output = SoundEventQueue::new();
+        let mut refuse = |_| false;
+        dispatch_sim_sound_events(
+            [SimSoundEvent::UnitComplete {
+                owner: local,
+                radar,
+                type_id: unit,
+            }],
+            &sim,
+            &rules,
+            Some("Local"),
+            &mut refuse,
+            &mut refused_output,
+            Some(&mut refused_facts),
+        );
+        assert!(refused_facts.is_empty());
+        assert!(refused_output.drain().is_empty());
+    }
+
+    /// Every L2 object row names the sim's already-resolved type and appears
+    /// only on the arm that admitted its EVA voice. An event with no VERA
+    /// template keeps the native voice but posts no row.
+    #[test]
+    fn eva_object_rows_follow_each_voice_gate() {
+        use crate::sim::radar::{RadarEventRequest, RadarEventType};
+
+        let rules = dispatch_rules();
+        let mut sim = Simulation::new();
+        let local = sim.intern("Local");
+        let remote = sim.intern("Remote");
+        let building = sim.intern("GAPOWR");
+        let unit = sim.intern("E1");
+        #[cfg(feature = "ares")]
+        let lost_eva = sim.intern("EVA_UnitLost");
+        sim.session_mut_for_test()
+            .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::Skirmish);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(local));
+        let radar = RadarEventRequest::new(RadarEventType::UnitLost, 15, 15);
+        let events = [
+            SimSoundEvent::UnitLost {
+                owner: local,
+                radar,
+                type_id: unit,
+                #[cfg(feature = "ares")]
+                eva: lost_eva,
+                #[cfg(feature = "ares")]
+                radar_event: true,
+            },
+            SimSoundEvent::Repairing {
+                owner: local,
+                type_id: building,
+            },
+            SimSoundEvent::StructureSold {
+                owner: local,
+                type_id: building,
+            },
+            SimSoundEvent::StructureGarrisoned {
+                owner: local,
+                type_id: building,
+            },
+            SimSoundEvent::StructureAbandoned {
+                owner: local,
+                radar,
+                type_id: building,
+            },
+        ];
+        let row = |label, type_id| HudMessage::EvaObjectLine { label, type_id };
+        let mut facts = Vec::new();
+        let mut output = SoundEventQueue::new();
+        let mut admit = |_| true;
+        dispatch_sim_sound_events(
+            events,
+            &sim,
+            &rules,
+            Some("Local"),
+            &mut admit,
+            &mut output,
+            Some(&mut facts),
+        );
+        assert_eq!(
+            facts,
+            vec![
+                row("VERA:EvaUnitLost", unit),
+                row("VERA:EvaRepairing", building),
+                row("VERA:EvaStructureSold", building),
+                row("VERA:EvaStructureGarrisoned", building),
+                row("VERA:EvaStructureAbandoned", building),
+            ]
+        );
+        assert_eq!(
+            output.drain().len(),
+            5,
+            "each admitted row still plays its native voice"
+        );
+
+        // A refused owner or radar request yields neither voice nor row; an
+        // event with no VERA template keeps its voice but posts no row.
+        let mut refused = Vec::new();
+        let mut refused_output = SoundEventQueue::new();
+        let mut refuse = |_| false;
+        dispatch_sim_sound_events(
+            [
+                SimSoundEvent::UnitLost {
+                    owner: remote,
+                    radar,
+                    type_id: unit,
+                    #[cfg(feature = "ares")]
+                    eva: lost_eva,
+                    #[cfg(feature = "ares")]
+                    radar_event: true,
+                },
+                SimSoundEvent::UnitLost {
+                    owner: local,
+                    radar,
+                    type_id: unit,
+                    #[cfg(feature = "ares")]
+                    eva: lost_eva,
+                    #[cfg(feature = "ares")]
+                    radar_event: true,
+                },
+                SimSoundEvent::StructureAbandoned {
+                    owner: local,
+                    radar,
+                    type_id: building,
+                },
+            ],
+            &sim,
+            &rules,
+            Some("Local"),
+            &mut refuse,
+            &mut refused_output,
+            Some(&mut refused),
+        );
+        // Ares FootClass_Destroyed (10049080) speaks the local loss, and so
+        // posts its row, whatever the radar answers.
+        #[cfg(feature = "ares")]
+        let expected_refused = vec![row("VERA:EvaUnitLost", unit)];
+        #[cfg(not(feature = "ares"))]
+        let expected_refused = Vec::new();
+        assert_eq!(refused, expected_refused);
+        assert_eq!(
+            refused_output.drain().len(),
+            expected_refused.len(),
+            "a refused owner or radar request keeps neither voice nor row"
+        );
+
+        // An in-scope voice with no VERA row still speaks: `EVA_UnitRepaired`
+        // is deliberately outside this batch, so it must stay audible and
+        // post no text.
+        let mut plain = Vec::new();
+        let mut plain_output = SoundEventQueue::new();
+        let mut allow = |_| true;
+        dispatch_sim_sound_events(
+            [SimSoundEvent::UnitRepaired {
+                owner: local,
+                radar,
+            }],
+            &sim,
+            &rules,
+            Some("Local"),
+            &mut allow,
+            &mut plain_output,
+            Some(&mut plain),
+        );
+        assert!(plain.is_empty());
+        assert_eq!(
+            plain_output.drain().len(),
+            1,
+            "an out-of-scope EVA keeps its voice"
         );
     }
 }

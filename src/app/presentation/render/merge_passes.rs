@@ -1,7 +1,8 @@
 //! Replay each retained Display layer without sorting by texture or depth.
 //! Draws keep retained parent order wherever their pixels overlap; disjoint
 //! draws of one transaction family share a stage ([`super::object_stages`]),
-//! so Anim bodies and shadows do not split the ordinary pass per parent.
+//! so Anim bodies, shadows, lights, Sparks and status do not split the
+//! ordinary pass per parent.
 
 use crate::render::batch::BatchRenderer;
 use crate::render::overlay_atlas::OverlayAtlas;
@@ -9,7 +10,7 @@ use crate::render::palette_textures::PaletteSet;
 use crate::render::sprite_atlas::SpriteAtlas;
 use crate::render::terrain_draw::{
     DestinationEditCommand, PackedComposite, PackedCompositePiece, PackedSpriteKind,
-    TerrainBatchStats, TerrainDrawRenderer, packed_wave_key,
+    SurfaceLineBatch, TerrainBatchStats, TerrainDrawRenderer, packed_joins_waves,
 };
 use crate::render::unit_atlas::UnitAtlas;
 use crate::render::unit_pose_cache::VxlPoseFrameCache;
@@ -29,9 +30,18 @@ pub(super) enum ObjectDrawPhase {
 /// One planned draw. An ordinary item is one instance of `runs[run]`;
 /// adjacent instances of one run re-coalesce into a single range at replay.
 enum StageItem<'a> {
-    Ordinary { run: usize, index: u32 },
+    Ordinary {
+        run: usize,
+        index: u32,
+    },
     Packed(PackedComposite<'a>),
     Edit(DestinationEditCommand),
+    /// A record of this frame's prepared combat-light renderer.
+    Light(usize),
+    Lines(SurfaceLineBatch),
+    /// A status parent of `extras_runs` without a pulse marker: ordinary
+    /// stores from the extras instance buffer.
+    Status(usize),
 }
 
 /// Dispatch the already-lowered native Display sequence without re-sorting it.
@@ -39,8 +49,8 @@ enum StageItem<'a> {
 /// Every run is a contiguous slice of one flat instance buffer. Texture page,
 /// atlas family, and `SpriteInstance.depth` select only GPU state; none can
 /// change the retained Display parent order carried by `TacticalDrawPlan`
-/// for any pixel. Surface lines, combat lights and status runs are barriers:
-/// everything planned before them replays first.
+/// for any pixel. Only a status run with a pulse marker is a barrier:
+/// everything planned before it replays first.
 pub(super) fn draw_native_object_pass<'a>(
     encoder: &mut wgpu::CommandEncoder,
     phase: ObjectDrawPhase,
@@ -62,7 +72,7 @@ pub(super) fn draw_native_object_pass<'a>(
         &'a wgpu::Buffer,
         Option<&'a crate::render::batch::BatchTexture>,
     )>,
-    lights: Option<&crate::render::combat_light::CombatLightRenderer>,
+    lights: Option<&'a crate::render::combat_light::CombatLightRenderer>,
 ) -> TerrainBatchStats {
     let mut stats = TerrainBatchStats::default();
     assert_eq!(
@@ -128,6 +138,8 @@ pub(super) fn draw_native_object_pass<'a>(
         sprite_atlas,
         palette_set,
         zshape,
+        extras,
+        lights,
     };
     let mut stages =
         ObjectStages::new([camera.screen_size[0] as u32, camera.screen_size[1] as u32]);
@@ -136,35 +148,49 @@ pub(super) fn draw_native_object_pass<'a>(
         let run = &runs[cursor];
         match run.target {
             ObjectTexture::SurfaceLines(index) => {
-                stats.accumulate(replay.draw(encoder, terrain, stages.take()));
-                terrain.draw_surface_lines(encoder, color, ground.line_batches[index]);
+                let lines = ground.line_batches[index];
+                if let Some(rect) = terrain.surface_line_footprint(lines) {
+                    stages.push(StageKind::Lines, rect, StageItem::Lines(lines));
+                }
                 cursor += 1;
                 continue;
             }
             ObjectTexture::CombatLight(index) => {
-                stats.accumulate(replay.draw(encoder, terrain, stages.take()));
                 let lights = lights.expect("a System light has this frame's prepared renderer");
-                if lights.draw_record(encoder, tactical, ground.light_record_base + index) {
-                    terrain.note_external_passes(encoder, 1);
+                let record = ground.light_record_base + index;
+                if let Some(rect) = lights.footprint(record, tactical) {
+                    stages.push(StageKind::Light, rect, StageItem::Light(record));
                 }
                 cursor += 1;
                 continue;
             }
             ObjectTexture::Status(index) => {
-                stats.accumulate(replay.draw(encoder, terrain, stages.take()));
-                super::object_extras::draw_status_runs(
-                    encoder,
-                    color,
-                    depth,
+                let status = &ground.extras_runs[index];
+                if extras.is_none() {
+                    // Without an overlay or buffer no status store draws.
+                } else if super::object_extras::has_pulse_marker(status, &ground.extras_instances) {
+                    stats.accumulate(replay.draw(encoder, terrain, stages.take()));
+                    super::object_extras::draw_status_runs(
+                        encoder,
+                        color,
+                        depth,
+                        terrain,
+                        tactical,
+                        batch,
+                        extras.map(|(overlay, _, _)| overlay),
+                        extras.map(|(_, buffer, _)| buffer),
+                        &ground.extras_instances,
+                        extras.and_then(|(_, _, font)| font),
+                        &ground.extras_runs[index..index + 1],
+                    );
+                } else if let Some(rect) = super::object_extras::status_footprint(
                     terrain,
                     tactical,
-                    batch,
-                    extras.map(|(overlay, _, _)| overlay),
-                    extras.map(|(_, buffer, _)| buffer),
+                    status,
                     &ground.extras_instances,
-                    extras.and_then(|(_, _, font)| font),
-                    &ground.extras_runs[index..index + 1],
-                );
+                ) {
+                    stages.push(StageKind::Ordinary, rect, StageItem::Status(index));
+                }
                 cursor += 1;
                 continue;
             }
@@ -221,7 +247,8 @@ pub(super) fn draw_native_object_pass<'a>(
         }
         if let Some((piece, atlas_slot)) = destination_edit(run.target) {
             // ReadOnly edits reduce in sequence inside one interval; ReadWrite
-            // edits keep strict overlap waves (`TerrainDrawRenderer::draw_span`).
+            // edits keep their order inside one too: waves, replays, or the
+            // live depth test (`TerrainDrawRenderer::draw_span`).
             let kind = if run.render_z == RenderZPolicy::ReadOnly {
                 StageKind::EditReadOnly
             } else {
@@ -287,9 +314,11 @@ fn plan_packed<'a>(
     let Some(rect) = terrain.packed_footprint(&composite, tactical) else {
         return;
     };
-    let kind = packed_wave_key(&composite).map_or(StageKind::PackedAlone, |(selector, z)| {
-        StageKind::Packed(selector, z)
-    });
+    let kind = if packed_joins_waves(&composite) {
+        StageKind::Packed
+    } else {
+        StageKind::PackedAlone
+    };
     stages.push(kind, rect, StageItem::Packed(composite));
 }
 
@@ -308,6 +337,12 @@ struct StageReplay<'a> {
     sprite_atlas: Option<&'a SpriteAtlas>,
     palette_set: Option<&'a PaletteSet>,
     zshape: &'a wgpu::BindGroup,
+    extras: Option<(
+        &'a crate::render::selection_overlay::SelectionOverlay,
+        &'a wgpu::Buffer,
+        Option<&'a crate::render::batch::BatchTexture>,
+    )>,
+    lights: Option<&'a crate::render::combat_light::CombatLightRenderer>,
 }
 
 impl StageReplay<'_> {
@@ -318,33 +353,83 @@ impl StageReplay<'_> {
         stages: Vec<(StageKind, Vec<StageItem<'_>>)>,
     ) -> TerrainBatchStats {
         let mut stats = TerrainBatchStats::default();
+        let buffer = || {
+            self.buffer
+                .expect("a sprite run has an uploaded instance buffer")
+        };
+        let (overlay_atlas, sprite_atlas) = (self.overlay_atlas, self.sprite_atlas);
+        let atlas = |slot| {
+            if slot == 0 {
+                overlay_atlas.map(|atlas| &atlas.texture)
+            } else {
+                sprite_atlas
+                    .and_then(|atlas| atlas.page(slot - 1))
+                    .map(|page| &page.texture)
+            }
+        };
+        // A destination edit's last pass only draws into the live colour and
+        // depth, so the next ordinary pass records it first. The strict-order
+        // test reference keeps it in a pass of its own.
+        #[cfg(test)]
+        let joins = !super::object_stages::SERIAL.get();
+        #[cfg(not(test))]
+        let joins = true;
+        let mut tail = None;
         for (kind, items) in stages {
-            let buffer = self
-                .buffer
-                .expect("a sprite run has an uploaded instance buffer");
+            if !(joins && kind == StageKind::Ordinary)
+                && let Some(tail) = tail.take()
+            {
+                stats.passes += terrain.flush_tail(
+                    encoder,
+                    self.color,
+                    self.depth,
+                    tail,
+                    self.batch,
+                    &atlas,
+                    buffer(),
+                );
+            }
             match kind {
                 StageKind::Ordinary => {
                     let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
                         encoder, self.color, self.depth,
                     );
+                    if let Some(tail) = tail.take() {
+                        terrain.record_tail(&mut pass, &tail, self.batch, &atlas, buffer());
+                    }
                     let [x, y, width, height] = self.tactical;
                     pass.set_scissor_rect(x, y, width, height);
-                    let mut items = items
-                        .iter()
-                        .map(|item| match item {
-                            StageItem::Ordinary { run, index } => (*run, *index),
-                            _ => unreachable!("an ordinary stage holds ordinary draws"),
-                        })
-                        .peekable();
-                    while let Some((run, start)) = items.next() {
+                    let mut items = items.iter().peekable();
+                    while let Some(item) = items.next() {
+                        let &StageItem::Ordinary { run, index: start } = item else {
+                            let StageItem::Status(index) = *item else {
+                                unreachable!("an ordinary stage holds ordinary draws and status");
+                            };
+                            let (overlay, extras_buffer, font) =
+                                self.extras.expect("planned status has its overlay");
+                            super::object_extras::draw_status_run(
+                                &mut pass,
+                                self.batch,
+                                overlay,
+                                extras_buffer,
+                                font,
+                                &self.ground.extras_instances,
+                                &self.ground.extras_runs[index],
+                                1,
+                            );
+                            continue;
+                        };
                         let mut count = 1;
                         while items
-                            .next_if(|&(next_run, index)| next_run == run && index == start + count)
+                            .next_if(|next| {
+                                matches!(next, StageItem::Ordinary { run: next_run, index }
+                                    if *next_run == run && *index == start + count)
+                            })
                             .is_some()
                         {
                             count += 1;
                         }
-                        self.draw_ordinary(&mut pass, &self.runs[run], buffer, start, count);
+                        self.draw_ordinary(&mut pass, &self.runs[run], buffer(), start, count);
                     }
                     // Ordinary draws are submission boundaries as well as
                     // ordering fences. Many alternating Bullet/Anim parents must
@@ -353,7 +438,7 @@ impl StageReplay<'_> {
                     drop(pass);
                     terrain.note_external_passes(encoder, 1);
                 }
-                StageKind::Packed(..) | StageKind::PackedAlone => {
+                StageKind::Packed | StageKind::PackedAlone => {
                     let composites: Vec<_> = items
                         .into_iter()
                         .map(|item| match item {
@@ -361,43 +446,71 @@ impl StageReplay<'_> {
                             _ => unreachable!("a packed stage holds packed composites"),
                         })
                         .collect();
-                    stats.accumulate(terrain.draw_packed_span(
+                    let (span, span_tail) = terrain.draw_packed_span(
                         encoder,
                         self.color,
                         self.depth,
                         self.batch,
-                        buffer,
+                        buffer(),
                         &composites,
                         self.tactical,
-                    ));
+                    );
+                    stats.accumulate(span);
+                    tail = span_tail;
                 }
                 StageKind::EditReadOnly | StageKind::EditReadWrite => {
                     let commands = items.into_iter().map(|item| match item {
                         StageItem::Edit(command) => command,
                         _ => unreachable!("an edit stage holds destination edits"),
                     });
-                    let (overlay_atlas, sprite_atlas) = (self.overlay_atlas, self.sprite_atlas);
-                    stats.accumulate(terrain.draw_span(
+                    let (span, span_tail) = terrain.draw_span_tail(
                         encoder,
                         self.color,
                         self.depth,
                         self.batch,
-                        |slot| {
-                            if slot == 0 {
-                                overlay_atlas.map(|atlas| &atlas.texture)
-                            } else {
-                                sprite_atlas
-                                    .and_then(|atlas| atlas.page(slot - 1))
-                                    .map(|page| &page.texture)
-                            }
-                        },
-                        buffer,
+                        &atlas,
+                        buffer(),
                         &self.ground.instances,
                         commands,
                         self.tactical,
-                    ));
+                    );
+                    stats.accumulate(span);
+                    tail = span_tail;
+                }
+                StageKind::Light => {
+                    let records: Vec<_> = items
+                        .into_iter()
+                        .map(|item| match item {
+                            StageItem::Light(record) => record,
+                            _ => unreachable!("a light stage holds light records"),
+                        })
+                        .collect();
+                    let lights = self.lights.expect("a planned light has its renderer");
+                    let passes = lights.draw_records(encoder, self.tactical, &records);
+                    terrain.note_external_passes(encoder, passes);
+                }
+                StageKind::Lines => {
+                    let ranges: Vec<_> = items
+                        .into_iter()
+                        .map(|item| match item {
+                            StageItem::Lines(range) => range,
+                            _ => unreachable!("a line stage holds surface-line ranges"),
+                        })
+                        .collect();
+                    terrain.draw_surface_lines(encoder, self.color, &ranges);
                 }
             }
+        }
+        if let Some(tail) = tail {
+            stats.passes += terrain.flush_tail(
+                encoder,
+                self.color,
+                self.depth,
+                tail,
+                self.batch,
+                &atlas,
+                buffer(),
+            );
         }
         stats
     }

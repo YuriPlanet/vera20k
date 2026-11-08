@@ -125,7 +125,7 @@ fn selling_destroying_or_capturing_a_storage_building_moves_its_share() {
     assert_eq!(stored(&sim, spare), 20);
     assert_eq!(house_stored(&sim, owner), 30);
 
-    sim.ares_destroy_refinery_storage(refinery, &rules);
+    sim.ares_destroy_refinery_storage(refinery, &rules, crate::sim::world::FrameEffects::default());
     assert_eq!(stored(&sim, refinery), 0);
     assert_eq!(house_stored(&sim, owner), 20);
 

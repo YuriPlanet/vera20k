@@ -1967,7 +1967,9 @@ fn occupants_are_admitted_in_order_and_a_human_drops_its_seek() {
         .sound_events
         .iter()
         .filter_map(|event| match *event {
-            crate::sim::world::SimSoundEvent::StructureGarrisoned { owner } => Some((owner, None)),
+            crate::sim::world::SimSoundEvent::StructureGarrisoned { owner, .. } => {
+                Some((owner, None))
+            }
             crate::sim::world::SimSoundEvent::BuildingGarrisonedSfx { owner, world } => {
                 let (rx, ry, ..) = world.to_cell_sub_z();
                 Some((owner, Some((rx, ry))))

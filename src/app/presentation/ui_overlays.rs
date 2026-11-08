@@ -70,15 +70,18 @@ pub(crate) fn status_visibility(selected: bool, hovered: bool) -> (bool, bool) {
 ///
 /// The reveal gate is not optional: the strip's PIPS fills use the 600
 /// material, which reads no A, so the shroud plane that blacks out an
-/// unexplored enemy's body leaves its pips alone. `object_shown_to_local_owner`
-/// is the same gate screen selection uses; `fog_of_war` matches how the bodies'
-/// A is resolved.
+/// unexplored body leaves its pips alone. `render::shroud_buffer::cell_fill`
+/// blacks out unrevealed and hostile-gap-covered cells for every house alike,
+/// so the strip asks that same cell owner; under the `FogOfWar` game option
+/// it also needs current sight, as the bodies' fog does. With no local player
+/// the shroud plane is not built and every body shows, so every strip does.
+/// Neutral/Special (`MultiplayPassive=`) get no automatic strip; they are
+/// scenery, not one of the players' objects.
 fn health_strip_widened(
     sim: &crate::sim::world::Simulation,
     entity: &crate::sim::game_entity::GameEntity,
     mode: HealthBarMode,
     full: bool,
-    local_owner: Option<&str>,
     player: Option<crate::sim::intern::InternedId>,
     ignore_visibility: bool,
 ) -> bool {
@@ -87,17 +90,29 @@ fn health_strip_widened(
         HealthBarMode::Always => true,
         HealthBarMode::AlwaysExceptFull => !full,
     };
-    wanted
-        && (ignore_visibility
-            || crate::app::presentation::instances::object_shown_to_local_owner(
-                local_owner,
-                player,
-                sim.fog(),
-                sim.house_alliances().as_map(),
-                &entity.position,
-                sim.interner().resolve(entity.owner()),
-                sim.session().game_options().fog_of_war,
-            ))
+    if !wanted {
+        return false;
+    }
+    if ignore_visibility {
+        return true;
+    }
+    if sim
+        .houses()
+        .get(&entity.owner())
+        .is_some_and(|house| house.multiplay_passive())
+    {
+        return false;
+    }
+    let Some(viewer) = player else {
+        return true;
+    };
+    crate::app::presentation::instances::cell_shows_objects(
+        viewer,
+        sim.fog(),
+        entity.position.rx(),
+        entity.position.ry(),
+        sim.session().game_options().fog_of_war,
+    )
 }
 
 /// Health-bar admission shared by building pips, mobile pips and their extras.
@@ -1594,7 +1609,6 @@ pub(crate) fn techno_extras_for_parent(
         entity,
         health_bars,
         object.is_some_and(|object| entity.health.is_full(object.strength)),
-        local_owner,
         observer_id,
         viewport.ignore_visibility,
     );
@@ -2627,6 +2641,69 @@ mod tests {
         assert!(!draws(-40, false));
     }
 
+    /// One full-health tank on cell (20,20) and one viewer's fog plane. The
+    /// revealed case has `is_cell_revealed` without `is_cell_visible`, the
+    /// state `MapRevealProjection::Transient` leaves after a trigger reveal.
+    fn widened_strip(owner_name: &str, viewer_name: &str, revealed: bool, passive: bool) -> bool {
+        use crate::sim::{
+            combat::Health, game_entity::GameEntity, house_state::HouseState, world::Simulation,
+        };
+        use crate::ui::main_menu_dialogs::options::HealthBarMode::Always;
+        let mut sim = Simulation::new();
+        let viewer = sim.intern(viewer_name);
+        let owner = sim.intern(owner_name);
+        sim.houses_mut_for_test()
+            .get_or_register_for_test(owner, || {
+                let mut house = HouseState::new(owner, 0, None, false, 0, 10);
+                house.set_multiplay_passive_for_test(passive);
+                house
+            });
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
+        if revealed {
+            sim.fog_mut_for_test()
+                .reveal_cells_for_owner(viewer, [(20, 20)]);
+            assert!(sim.fog().is_cell_revealed(viewer, 20, 20));
+            assert!(!sim.fog().is_cell_visible(viewer, 20, 20));
+        }
+        let mut entity = GameEntity::new_at_frame_zero_for_test(
+            1,
+            20,
+            20,
+            4,
+            0,
+            owner,
+            Health::new(100),
+            sim.intern("MGTK"),
+            EntityCategory::Unit,
+            0,
+            5,
+            false,
+        );
+        entity.lifecycle.set_in_limbo_for_test(false);
+        sim.entities_mut_for_test().insert(entity);
+        let entity = sim.entities().get(1).unwrap();
+        let widened = health_strip_widened(&sim, entity, Always, true, Some(viewer), false);
+        health_strip_visibility(&sim, entity, None, Some(viewer), widened).1
+    }
+
+    #[test]
+    fn widened_strips_stay_off_shrouded_cells_for_every_house() {
+        // A pre-placed friendly tank on an unrevealed cell has no body on the
+        // A plane; its strip must not give the position away (#3901).
+        assert!(!widened_strip("Player", "Player", false, false));
+        assert!(!widened_strip("Enemy", "Player", false, false));
+        // Explored ground still draws, so this is not blanket suppression.
+        assert!(widened_strip("Enemy", "Player", true, false));
+        assert!(widened_strip("Player", "Player", true, false));
+    }
+
+    #[test]
+    fn passive_houses_have_no_automatic_widened_strips() {
+        assert!(!widened_strip("Neutral", "Player", true, true));
+        assert!(!widened_strip("Special", "Player", true, true));
+        assert!(widened_strip("Enemy", "Player", true, false));
+    }
+
     /// VERA `[VERA] HealthBars=` widens the hover arm, so each mode keeps the
     /// native strips and the native disguise test: an enemy Mirage worn as
     /// terrain on explored ground stays bare, a hovered full-health tank keeps
@@ -2667,15 +2744,7 @@ mod tests {
             sim.entities_mut_for_test().insert(entity);
             let entity = sim.entities().get(1).unwrap();
             let full = entity.health.is_full(100);
-            let widened = health_strip_widened(
-                &sim,
-                entity,
-                mode,
-                full,
-                Some("Player"),
-                Some(player),
-                false,
-            );
+            let widened = health_strip_widened(&sim, entity, mode, full, Some(player), false);
             health_strip_visibility(&sim, entity, hovered.then_some(1), Some(player), widened).1
         };
         // (mode, disguised, explored, hovered); every tank is at full health.

@@ -1,6 +1,6 @@
-//! The FPS panel's figures and the rows they read as. The figures close once a
-//! second, so the rows hold still long enough to read; `FpsOverlay` lays the
-//! rows out and draws them.
+//! The performance panel's figures and the rows they read as. The figures
+//! close once a second, so the rows hold still long enough to read;
+//! `PerformanceOverlay` lays the rows out and draws them.
 
 use crate::app::diagnostics::core_load::CoreLoadSampler;
 use crate::app::diagnostics::state::RenderTimingMeter;
@@ -57,13 +57,17 @@ const SIM_AREAS: [&str; PHASE_COUNT] = [
 ];
 
 /// The labels of the render's phases, in `RenderPhases::spans` order.
-const RENDER_AREAS: [&str; 7] = [
+const RENDER_AREAS: [&str; RenderPhases::COUNT] = [
     "VERA:CpuDrawWorld",
     "VERA:CpuDrawDebug",
     "VERA:CpuDrawShroud",
     "VERA:CpuDrawUI",
     "VERA:CpuDrawSidebar",
     "VERA:CpuGpuUpload",
+    "VERA:CpuDrawLights",
+    "VERA:CpuDrawEffects",
+    "VERA:CpuDrawCalls",
+    "VERA:CpuDriverHandoff",
     "VERA:CpuDrawOther",
 ];
 
@@ -85,6 +89,8 @@ pub(super) struct Shown {
     /// wall time.
     pub(super) areas: Vec<(&'static str, f32)>,
     pub(super) core_loads: Option<Vec<f32>>,
+    /// The GPU's mean time on each of VERA's frames, in milliseconds.
+    pub(super) gpu_ms: Option<f32>,
 }
 
 /// The open window. Reset while the panel is hidden, so showing it measures
@@ -116,6 +122,7 @@ impl PanelStats {
         frame_ms: f32,
         simulation: Option<SimulationReadout>,
         sample: Option<MatchSample>,
+        gpu_ms: Option<f32>,
     ) {
         let wall = self
             .window_start
@@ -132,6 +139,7 @@ impl PanelStats {
             units: sample.map(|sample| sample.units),
             areas: wall.map_or_else(Vec::new, |wall| most_cpu(wall, sim_spans.as_ref(), &render)),
             core_loads: self.cores.sample(),
+            gpu_ms,
         };
     }
 }
@@ -156,7 +164,7 @@ fn profile_delta(
 fn most_cpu(
     wall: Duration,
     sim: Option<&[u128; PHASE_COUNT]>,
-    render: &[Duration; 7],
+    render: &[Duration; RenderPhases::COUNT],
 ) -> Vec<(&'static str, f32)> {
     let wall_ns = wall.as_nanos().max(1) as f64;
     let sim = sim
@@ -206,22 +214,42 @@ pub(super) fn rows(shown: &Shown) -> Vec<Vec<Part>> {
             Part::Text(format!("   {average}"), GREEN),
         ]);
     }
+    // The GPU's busy share of the time between frames, under one bar like a
+    // core's, then its time per frame.
+    let frame_ms = Some(shown.frame_ms).filter(|ms| ms.is_finite() && *ms > 0.0);
+    if let Some((gpu_ms, frame_ms)) = shown.gpu_ms.zip(frame_ms) {
+        let load = (gpu_ms * 100.0 / frame_ms).min(100.0);
+        let percent = tr_fill(
+            "VERA:FpsPanelGpuLoad",
+            &[("percent", &format!("{load:.0}"))],
+        );
+        let time = tr_fill("VERA:FpsPanelFrameTime", &[("ms", &milliseconds(gpu_ms))]);
+        rows.push(vec![
+            Part::Text(format!("{}  ", tr("VERA:FpsPanelGpu")), GREEN),
+            Part::Bars(vec![load]),
+            Part::Text(format!("   {percent}{DOT}{time}"), GREEN),
+        ]);
+    }
     rows
+}
+
+/// `ms` with one decimal under 10 and none from there.
+fn milliseconds(ms: f32) -> String {
+    if ms < 10.0 {
+        format!("{ms:.1}")
+    } else {
+        format!("{ms:.0}")
+    }
 }
 
 fn first_row(shown: &Shown) -> String {
     let frame_ms = shown.frame_ms;
     let mut row = if frame_ms.is_finite() && frame_ms > 0.0 {
-        let ms = if frame_ms < 10.0 {
-            format!("{frame_ms:.1}")
-        } else {
-            format!("{frame_ms:.0}")
-        };
         let fps = format!("{:.0}", 1000.0 / frame_ms);
         format!(
             "{}{DOT}{}",
             tr_fill("VERA:FpsPanelFps", &[("fps", &fps)]),
-            tr_fill("VERA:FpsPanelFrameTime", &[("ms", &ms)])
+            tr_fill("VERA:FpsPanelFrameTime", &[("ms", &milliseconds(frame_ms))])
         )
     } else {
         tr_fill("VERA:FpsPanelFps", &[("fps", &"--")])
@@ -286,6 +314,7 @@ mod tests {
                 ("VERA:CpuVision", 11.0),
             ],
             core_loads: Some(vec![90.0, 10.0]),
+            gpu_ms: None,
         };
         let rows = rows(&shown);
         assert_eq!(
@@ -303,6 +332,26 @@ mod tests {
             ..Shown::default()
         });
         assert_eq!(shell, ["FPS 250  ·  4.0 ms"]);
+    }
+
+    #[test]
+    fn the_gpu_row_reads_the_gpus_share_of_the_time_between_frames() {
+        let gpu = |gpu_ms, frame_ms| {
+            rows(&Shown {
+                frame_ms,
+                gpu_ms: Some(gpu_ms),
+                ..Shown::default()
+            })
+            .pop()
+            .expect("a first row")
+        };
+        let row = gpu(5.0, 20.0);
+        assert_eq!(text(&row[0]), "GPU  ");
+        assert_eq!(row[1], Part::Bars(vec![25.0]));
+        assert_eq!(text(&row[2]), "   25%  ·  5.0 ms");
+        // A GPU-bound frame fills the bar, and no frame rate yet means no row.
+        assert_eq!(gpu(30.0, 20.0)[1], Part::Bars(vec![100.0]));
+        assert_eq!(gpu(5.0, f32::NAN).len(), 1);
     }
 
     fn rows_of(shown: Shown) -> Vec<String> {
@@ -338,13 +387,14 @@ mod tests {
         let mut sim = [0u128; PHASE_COUNT];
         sim[crate::sim::frame_profile::phase::OBJECTS] = 300_000_000;
         sim[crate::sim::frame_profile::phase::VISION] = 5_000_000;
-        let mut render = [Duration::ZERO; 7];
+        let mut render = [Duration::ZERO; RenderPhases::COUNT];
         render[0] = Duration::from_millis(200);
-        render[6] = Duration::from_millis(400);
+        render[9] = Duration::from_millis(400);
+        render[10] = Duration::from_millis(5);
         assert_eq!(
             most_cpu(Duration::from_secs(1), Some(&sim), &render),
             [
-                ("VERA:CpuDrawOther", 40.0),
+                ("VERA:CpuDriverHandoff", 40.0),
                 ("VERA:CpuObjects", 30.0),
                 ("VERA:CpuDrawWorld", 20.0)
             ]

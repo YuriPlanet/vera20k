@@ -421,7 +421,8 @@ impl Replay {
                         overlay_registry: Some(registry()),
                         ..Default::default()
                     },
-                );
+                )
+                .unwrap();
                 assert_eq!(
                     crate::sim::movement::approach_oracle_seam::finish_approach_returns(),
                     0,

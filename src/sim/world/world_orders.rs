@@ -1389,7 +1389,7 @@ impl Simulation {
     /// `BuildingClass::ChangeOwner @ 0x00448260` announce block
     /// (`0x004483C0..0x0044848F`), run before the owner swap because native
     /// reads `this->Owner` (the OLD owner) there. The engineer capture site
-    /// (`InfantryClass::PerCellProcess 0x00519A27 PUSH 1`) passes
+    /// (`InfantryClass::PerCellProcess 0x00519F79 PUSH 1`) passes
     /// announce=true. Native gates: the old or the new owner is the local
     /// player (`0x004483C6`/`0x004483D1 CALL 0x0050B6F0`) and the new
     /// owner's type is not `MultiplayPassive` (`0x004483E1 HouseType+0x1A6`).

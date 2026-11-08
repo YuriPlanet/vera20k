@@ -218,10 +218,21 @@ fn overlay_display_identity(
     }
 
     let slope = slope_type.unwrap_or(0);
-    overlay_registry
-        .tiberium_display_overlay_id(tiberium_types, live_overlay_id, rx, ry, slope)
-        .or_else(|| (slope == 0).then_some(live_overlay_id))
-        .map(|display| (display, overlay_data))
+    match overlay_registry.tiberium_display_overlay_id(
+        tiberium_types,
+        live_overlay_id,
+        rx,
+        ry,
+        slope,
+    ) {
+        Ok(display) => display.map(|display| (display, overlay_data)),
+        Err(error) => {
+            // Safe presentation refusal for native-invalid input. Do not
+            // substitute the live image and disguise a missing binding.
+            log::warn!("Cannot draw Tiberium at ({rx},{ry}): {error}");
+            None
+        }
+    }
 }
 
 /// Borrowed inputs to the one retained dynamic-effect traversal. App startup,
@@ -288,6 +299,16 @@ fn anim_draw_point(
     // image offsets or the parent Building's viewport/body visibility.
     let anim_coord = sim.anim_absolute_coord(id)?;
     let (mut center_x, mut center_y, rx, ry, _, mut lift_px) = anim_world_render_coords(anim_coord);
+    if let Some(building) = anim
+        .building_slot()
+        .and_then(|(id, _)| sim.entities().get(id))
+    {
+        let correction = crate::render::locomotor_visual::building_terrain_correction(i32::from(
+            building.position.z() as i8,
+        ));
+        center_y -= correction as f32;
+        lift_px += correction;
+    }
     let mut drawn_coord = [anim_coord.x, anim_coord.y, anim_coord.z];
     // Slot preparation uses the committed coordinate; retain that geometry.
     // Free Anims keep their existing sampled point for admission and drawing.
@@ -1001,9 +1022,15 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
         // 2, art only in frame 1). Collapsing to frame 0 here resurrected them
         // as phantom deck slabs. Frame selection lives in
         // `render::overlay_atlas::resolve_body_frame`.
-        let key = rubble_key.unwrap_or_else(|| OverlaySpriteKey {
-            name: name.to_owned(),
-            frame: i32::from(render_frame),
+        let key = rubble_key.unwrap_or_else(|| {
+            if overlay_flags.is_some_and(|flags| flags.tiberium) {
+                crate::render::overlay_atlas::tiberium_image_key(name, i32::from(render_frame))
+            } else {
+                OverlaySpriteKey {
+                    name: name.to_owned(),
+                    frame: i32::from(render_frame),
+                }
+            }
         });
         let Some(spr) = input.atlas.get(&key) else {
             continue;

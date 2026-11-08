@@ -196,7 +196,8 @@ fn campaign_scene(map_name: &str, remove_home: bool) -> HeadlessScenario {
         output.overlay_grid,
         &roster,
         None,
-    );
+    )
+    .unwrap();
     assert!(post.navigation_published && sim.path_grid().is_some());
     if remove_home {
         assert_eq!((map.header.width, map.header.height), (65, 120));

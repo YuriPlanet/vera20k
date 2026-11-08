@@ -77,6 +77,7 @@ fn scene(resource_name: &str, map_patch: &str) -> Option<(Simulation, RuleSet)> 
     );
     let view =
         crate::sim::tiberium::tiberium_cell_view(&grid, &overlays, &rules.tiberium_types, (16, 16))
+            .unwrap()
             .unwrap();
     assert_eq!(view.overlay_data, 11);
     crate::sim::runtime::initialize_native_tiberium_queues(
@@ -87,7 +88,8 @@ fn scene(resource_name: &str, map_patch: &str) -> Option<(Simulation, RuleSet)> 
         &overlays,
         Some(&grid),
         (32, 32),
-    );
+    )
+    .unwrap();
     sim.install_overlay_grid_for_load(grid);
     assert!(sim.rebuild_dynamic_navigation(&rules));
     sim.install_waypoints(&map.waypoints);

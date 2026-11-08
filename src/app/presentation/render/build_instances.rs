@@ -717,15 +717,23 @@ fn build_smudge_instances(state: &AppState, sw: f32, sh: f32) -> Vec<SpriteInsta
     // screen position back to footprint origin — render-side handles the
     // shift cancellation by skipping non-origin cells inside
     // build_visible_instances.
+    // Each visible smudge cell asks for its type's art: build and hash a
+    // type's name key once a frame.
+    let placements = std::cell::RefCell::new(vec![None; rules.smudge_types.len()]);
     let lookup = |type_id: u16, _frame: u8| -> Option<TilePlacement> {
-        let def = rules.smudge_types.get(type_id)?;
-        let entry = atlas.get(&crate::render::overlay_atlas::smudge_key(&def.name))?;
-        Some(TilePlacement {
-            uv_origin: entry.uv_origin,
-            uv_size: entry.uv_size,
-            pixel_size: entry.pixel_size,
-            draw_offset: [entry.offset_x, entry.offset_y],
-        })
+        *placements
+            .borrow_mut()
+            .get_mut(usize::from(type_id))?
+            .get_or_insert_with(|| {
+                let def = rules.smudge_types.get(type_id)?;
+                let entry = atlas.get(&crate::render::overlay_atlas::smudge_key(&def.name))?;
+                Some(TilePlacement {
+                    uv_origin: entry.uv_origin,
+                    uv_size: entry.uv_size,
+                    pixel_size: entry.pixel_size,
+                    draw_offset: [entry.offset_x, entry.offset_y],
+                })
+            })
     };
     crate::render::smudge::build_visible_instances(
         grid,
@@ -1236,6 +1244,7 @@ pub(super) fn build_sidebar_instances(state: &mut AppState) -> SidebarInstances 
                         tactical_center_cell,
                         tactical_w as i32,
                         tactical_h as i32,
+                        state.match_state.input.zoom_level,
                         minimap_rect.x,
                         minimap_rect.y,
                         minimap_rect.w,

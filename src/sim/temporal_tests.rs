@@ -1031,7 +1031,8 @@ fn a_warped_buildings_slot_anims_freeze() {
                 &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
-            );
+            )
+            .unwrap();
         }
         sim.anim(anim).unwrap().runtime().current_frame
     };

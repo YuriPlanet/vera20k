@@ -63,9 +63,11 @@ impl<'a> EntryReadContext<'a> {
 
     fn entry_cell(&self, cell: Cell) -> EntryCell {
         match (cell, self.facts) {
-            (Cell::Real(index), Some(facts)) => {
-                EntryCell::Kept(*facts.cell(index, || CellFacts::of(self.sim, index)))
-            }
+            (Cell::Real(index), Some(facts)) => facts.cell(
+                index,
+                || CellFacts::of(self.sim, index),
+                |&kept| EntryCell::Kept(kept),
+            ),
             _ => EntryCell::Live(cell),
         }
     }
@@ -73,11 +75,17 @@ impl<'a> EntryReadContext<'a> {
     /// Real cell `index`'s [`PlainCell`], read through the batch's `facts`.
     fn plain_cell(&self, facts: &EntryFacts, index: usize) -> PlainCell {
         facts.plain(index, || {
-            PlainCell::new(
-                facts.cell(index, || CellFacts::of(self.sim, index)),
-                self.terrain()
-                    .tube_for_native_cell(Cell::Real(index))
-                    .is_some(),
+            facts.cell(
+                index,
+                || CellFacts::of(self.sim, index),
+                |kept| {
+                    PlainCell::new(
+                        kept,
+                        self.terrain()
+                            .tube_for_native_cell(Cell::Real(index))
+                            .is_some(),
+                    )
+                },
             )
         })
     }
@@ -96,7 +104,7 @@ impl<'a> EntryReadContext<'a> {
         let (slot, entity) = self.sim.substrate.entities.get_in_slot(id)?;
         let read = || BlockerFacts::of(entity, self.sim.session.binary_frame());
         let facts = match self.facts {
-            Some(facts) => *facts.blocker(slot, read),
+            Some(facts) => facts.blocker(slot, read),
             None => read(),
         };
         Some((facts, entity))
@@ -231,11 +239,12 @@ struct PreludeReads<'a> {
 }
 
 impl PreludeReads<'_> {
-    fn kept(&self, cell: Cell) -> Option<&CellFacts> {
+    /// `see` of a real cell's kept facts, in a batch.
+    fn kept<R>(&self, cell: Cell, see: impl FnOnce(&CellFacts) -> R) -> Option<R> {
         let (Cell::Real(index), Some(facts)) = (cell, self.facts) else {
             return None;
         };
-        Some(facts.cell(index, || CellFacts::of(self.sim, index)))
+        Some(facts.cell(index, || CellFacts::of(self.sim, index), see))
     }
 }
 
@@ -250,15 +259,13 @@ impl PreludeCells for PreludeReads<'_> {
     }
 
     fn level_slope(&self, cell: Cell) -> (i32, u8) {
-        self.kept(cell).map_or_else(
-            || self.query.level_slope(cell),
-            |facts| (i32::from(facts.level), facts.slope),
-        )
+        self.kept(cell, |facts| (i32::from(facts.level), facts.slope))
+            .unwrap_or_else(|| self.query.level_slope(cell))
     }
 
     fn flags(&self, cell: Cell) -> u32 {
-        self.kept(cell)
-            .map_or_else(|| self.query.flags(cell), |facts| facts.flags)
+        self.kept(cell, |facts| facts.flags)
+            .unwrap_or_else(|| self.query.flags(cell))
     }
 }
 
@@ -715,43 +722,10 @@ struct EntryMover<'a> {
     /// The mover's SpeedType's land row in a [`PlainCell`]
     /// ([`PlainCell::speed_row`]).
     speed_row: Option<u32>,
-    /// Answers of `allied(mover owner, house)` already asked, and blocker
-    /// types already resolved by concrete class and name. Alliances and rules
-    /// are fixed for the receiver's lifetime. A search asks these for every blocker it
-    /// meets.
-    allies: InternedCache<bool>,
-    // Native blocker GetTechnoType; same-name classes cannot alias a slot.
-    types: [InternedCache<&'a ObjectType>; 4],
     /// The receiver's `weapon_damage_value`, which the Infantry branches
     /// compare with zero for each enemy blocker. The receiver is borrowed
     /// unchanged for the mover's lifetime, so one computation serves them all.
     damage: std::cell::OnceCell<i32>,
-}
-
-/// Facts already looked up, direct-mapped by interned index. A slot two
-/// names share keeps the last one, so the other is only looked up again.
-/// Slots hold their name's index plus one: a new cache is all zeros, cheap
-/// to build for a receiver that answers one query.
-struct InternedCache<T>([std::cell::Cell<(u32, Option<T>)>; 64]);
-
-impl<T: Copy> InternedCache<T> {
-    fn new() -> Self {
-        Self(std::array::from_fn(|_| std::cell::Cell::new((0, None))))
-    }
-
-    /// `id`'s kept fact, else `look_up`'s, kept when there is one.
-    fn get_or(&self, id: InternedId, look_up: impl FnOnce() -> Option<T>) -> Option<T> {
-        let tag = id.index().wrapping_add(1);
-        let slot = &self.0[id.index() as usize % self.0.len()];
-        if let (kept, Some(fact)) = slot.get()
-            && kept == tag
-        {
-            return Some(fact);
-        }
-        let fact = look_up()?;
-        slot.set((tag, Some(fact)));
-        Some(fact)
-    }
 }
 
 impl<'a> EntryMover<'a> {
@@ -768,8 +742,6 @@ impl<'a> EntryMover<'a> {
             weapon0,
             crusher,
             speed_row: PlainCell::speed_row(obj.speed_type),
-            allies: InternedCache::new(),
-            types: std::array::from_fn(|_| InternedCache::new()),
             damage: std::cell::OnceCell::new(),
         }
     }
@@ -786,28 +758,9 @@ impl<'a> EntryMover<'a> {
         })
     }
 
-    fn object_type(
-        &self,
-        live: &EntryReadContext<'a>,
-        entity: &GameEntity,
-    ) -> Option<&'a ObjectType> {
-        use crate::rules::object_type::ObjectCategory;
-        let category: ObjectCategory = entity.category().into();
-        let slot = match category {
-            ObjectCategory::Building => 0,
-            ObjectCategory::Infantry => 1,
-            ObjectCategory::Vehicle => 2,
-            ObjectCategory::Aircraft => 3,
-        };
-        self.types[slot].get_or(entity.type_ref(), || {
-            live.sim.entity_object_type(entity, live.rules)
-        })
-    }
-
+    /// The mover's House asked about `house` ([`allied`]).
     fn allied_with(&self, live: &EntryReadContext<'_>, house: InternedId) -> bool {
-        self.allies
-            .get_or(house, || Some(allied(live, self.e.owner(), house)))
-            == Some(true)
+        allied(live, self.e.owner(), house)
     }
 
     /// `house`'s own mask asked about the mover, as a closed gate's House
@@ -958,10 +911,11 @@ fn plain_entry(
         return None;
     }
     if to.overlay() {
-        let overlay = facts
-            .cell(target, || CellFacts::of(live.sim, target))
-            .overlay
-            .overlay_id?;
+        let overlay = facts.cell(
+            target,
+            || CellFacts::of(live.sim, target),
+            |kept| kept.overlay.overlay_id,
+        )?;
         let flags = live.registry?.flags(overlay)?;
         if flags.crate_type || flags.wall {
             return None;
@@ -1155,9 +1109,7 @@ fn full_foot_entry<'a>(
             let allied = live_overlay
                 .wall_owner
                 .is_some_and(|o| mover.allied_with(live, o));
-            let warhead = weapon0
-                .and_then(|w| w.warhead.as_deref())
-                .and_then(|name| live.rules.warhead(name));
+            let warhead = weapon0.and_then(|w| live.rules.weapon_warhead(w));
             if infantry {
                 //51C1BB..51C223: a wall at damage stage DamageLevels (+0x2A0)
                 //is no wall to Infantry. Otherwise the primary warhead needs
@@ -1246,8 +1198,7 @@ fn full_foot_entry<'a>(
                 let weapon = combat_weapon::weapon_for_index(obj, e.veterancy.rank(), selected)
                     .and_then(|record| record.weapon(live.rules));
                 if !weapon
-                    .and_then(|w| w.warhead.as_deref())
-                    .and_then(|name| live.rules.warhead(name))
+                    .and_then(|w| live.rules.weapon_warhead(w))
                     .is_some_and(|w| w.wood)
                 {
                     return Ok(7);
@@ -1269,8 +1220,10 @@ fn full_foot_entry<'a>(
         if victim_cell.is_some_and(|cell| cell == crate::sim::movement::coord_cell(b.position)) {
             return Ok(0);
         }
-        let bt = mover
-            .object_type(live, blocker)
+        // Native blocker GetTechnoType: its concrete class's type.
+        let bt = live
+            .sim
+            .entity_object_type(blocker, live.rules)
             .ok_or("repair list missing blocker type")?;
         if infantry && e.slave.owner() == Some(blocker_id) {
             let query = crate::sim::slave_deposit::SlaveDepositQuery {
@@ -1777,8 +1730,7 @@ fn unit_post_walk_tail(
     }
     if mover
         .weapon0
-        .and_then(|w| w.projectile.as_deref())
-        .and_then(|name| live.rules.projectile(name))
+        .and_then(|w| live.rules.weapon_projectile(w))
         .is_some_and(|p| p.ag)
     {
         5

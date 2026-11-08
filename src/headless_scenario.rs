@@ -123,6 +123,16 @@ impl HeadlessScenario {
             std::slice::from_ref(&slot),
             &runtime.resources.rules,
         );
+        // A launch commits its ally graph after building every house
+        // (`apply_skirmish_launch_alliances`). Committing the unchanged graph
+        // again does the same here: the ally matrix the load already built
+        // is rebuilt with this house's id, instead of answering every
+        // question about the house by name.
+        let alliances = runtime.simulation.house_alliances.as_map().clone();
+        runtime.simulation.install_house_alliances(
+            crate::sim::house_diplomacy::HouseAllianceAdmission::Admitted(alliances),
+            &runtime.resources.rules,
+        );
         runtime
             .simulation
             .interner
@@ -517,7 +527,8 @@ fn load_with_assets(
         overlay_grid,
         &house_roster,
         Some(&launch),
-    );
+    )
+    .map_err(|error| error.to_string())?;
     if !post_map.navigation_published {
         return Err("publish headless post-map navigation".to_string());
     }

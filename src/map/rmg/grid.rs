@@ -102,6 +102,14 @@ impl RmgGrid {
         self.width
     }
 
+    /// The edge of the "whole map" rects and packed cell ids the phases use:
+    /// the original's 512-cell array (`0x200`), which every native size fits.
+    /// VERA extension: a grid wider than that (Giant and up) uses its own
+    /// width, so those maps grow lakes, rivers and bridges past cell 512.
+    pub fn whole_extent(&self) -> i32 {
+        (self.width as i32).max(0x200)
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn diamond_bounds(&self) -> (i32, i32) {
         (self.diamond_min, self.diamond_max)
@@ -291,6 +299,14 @@ impl DiamondScan {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn whole_extent_is_native_until_the_grid_outgrows_it() {
+        // Very Large at 30 players (stride 481) keeps the original 0x200; a
+        // Colossal grid (1017) must reach its own far edge.
+        assert_eq!(RmgGrid::new(481, 0, 0).whole_extent(), 0x200);
+        assert_eq!(RmgGrid::new(1017, 0, 0).whole_extent(), 1017);
+    }
 
     #[test]
     fn step_masks_the_direction_like_the_original() {

@@ -5,6 +5,7 @@
 use std::cell::{Cell, RefCell};
 
 use super::sound_dispatch::dispatch_sim_sound_events;
+use crate::app::input::messages::HudMessage;
 use crate::app::input::planning_mode::PlanningInputState;
 use crate::app::presentation::building_anim::SoundPlaybackInputs;
 use crate::audio::events::SoundEventQueue;
@@ -64,6 +65,11 @@ pub(crate) struct FrameClientBoundary<'a> {
     /// exit router after the clip. Only sound delivery and the result's Vox
     /// wait read this; the simulation never sees it.
     defer_verdict_to_clip: bool,
+    /// Accessibility rows from the frame's synchronously delivered sound
+    /// prefix. Audio takes only the suffix, but HUD consumers inspect the
+    /// complete facts, so this sink is filled in the same pass that plays the
+    /// prefix and drained by the frame tail alongside the suffix rows.
+    eva_text: Option<&'a RefCell<Vec<HudMessage>>>,
 }
 
 impl<'a> FrameClientBoundary<'a> {
@@ -87,7 +93,16 @@ impl<'a> FrameClientBoundary<'a> {
             outcome_wait: None,
             scenario_pause: None,
             defer_verdict_to_clip: false,
+            eva_text: None,
         }
+    }
+
+    /// Collect the accessibility rows from the synchronously delivered sound
+    /// prefix. `None` keeps the boundary's native audio-only behaviour, which
+    /// is what every headless and test frame uses.
+    pub(crate) fn with_eva_text(mut self, sink: Option<&'a RefCell<Vec<HudMessage>>>) -> Self {
+        self.eva_text = sink;
+        self
     }
 
     /// Hold the result's EVA line for the losing commander's clip. See
@@ -389,6 +404,7 @@ impl SoundBoundary for FrameClientBoundary<'_> {
             return;
         }
         let mut output = self.output.borrow_mut();
+        let mut eva_text = self.eva_text.map(|sink| sink.borrow_mut());
         {
             let mut admit_radar = self.admit_radar.borrow_mut();
             dispatch_sim_sound_events(
@@ -403,8 +419,10 @@ impl SoundBoundary for FrameClientBoundary<'_> {
                 self.local_owner,
                 &mut |request| (*admit_radar)(request, sim.session().tick(), rules),
                 &mut output,
+                eva_text.as_deref_mut(),
             );
         }
+        drop(eva_text);
         drop(output);
         self.consume_queued_audio(sim);
         self.delivered.set(delivered + pending.len());

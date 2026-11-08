@@ -1528,8 +1528,9 @@ pub struct ObjectType {
     /// `TechnoType+0xD4C`, `SlaveReloadRate=`: frames a slave waits inside
     /// after paying its load. ReadInt at `0x00714E4A`; constructor 0.
     pub slave_reload_rate: i32,
-    /// Whether this infantry is a slave unit (Slaved=yes in rules.ini).
-    /// Slave units are bound to a master (Slave Miner) and have restricted AI.
+    /// `Slaved=` (TechnoType `+0xD3E`). gamemd reads the key, but no gameplay
+    /// code reads the field, natively or here: a slave's ties to its master
+    /// come from the master's `Enslaves=` and SlaveManager.
     pub slaved: bool,
     /// `Fearless=yes` on InfantryType. Suppresses fear/prone panic changes.
     pub fearless: bool,
@@ -2148,7 +2149,7 @@ pub struct ObjectType {
     pub elite_weapon_list: Vec<Option<String>>,
     /// Derived: the weapons `weapon_list`, `elite_weapon_list`,
     /// `occupy_weapon` and `elite_occupy_weapon` name, as the RuleSet that
-    /// built the type resolved them (`RuleSet::resolve_type_weapons`).
+    /// built the type resolved them (`RuleSet::resolve_handles`).
     resolved_weapons: crate::rules::ruleset::TypeWeapons,
     /// Retained WeaponStruct and transport-port coordinates, projected from
     /// the ordered type reader rather than reconstructed from the final Image.

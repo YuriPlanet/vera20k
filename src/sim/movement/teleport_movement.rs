@@ -439,7 +439,7 @@ impl TeleportRuntime {
         self.resolved = None;
     }
 
-    fn stop(&mut self) {
+    pub(super) fn stop(&mut self) {
         self.requested = false;
         if let Some(warp) = self.warp.as_mut() {
             warp.destination = None;
@@ -1335,9 +1335,11 @@ impl crate::sim::world::Simulation {
         }
 
         let runtime = entity.locomotor.as_mut()?.teleport_runtime_mut()?;
-        if phase_before == TeleportPhase::Relocate {
-            // The represented relocation's Stop/request retirement; full native
-            // Process scheduling and Chronosphere remain explicitly separate.
+        if phase_before == TeleportPhase::Relocate && reached {
+            // 0x007197BD: Stop_Moving retires the request of a warp already on
+            // its destination. A relocation's Stop (`0x00719725`) follows the
+            // arrival Per_Cell_Process, so the object turn makes it
+            // ([`super::locomotor::LocomotorState::teleport_process_stop`]).
             runtime.requested = false;
         }
         runtime.warp = (!finished).then_some(teleport);

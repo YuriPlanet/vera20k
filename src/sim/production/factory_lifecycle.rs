@@ -771,7 +771,7 @@ pub(super) fn publish_completion(
         .object_type_in_category(type_id, category.object_category(), rules)
         .is_some_and(|object| object.category == ObjectCategory::Building)
     {
-        sound_events.emit(SimSoundEvent::BuildingComplete { owner });
+        sound_events.emit(SimSoundEvent::BuildingComplete { owner, type_id });
     }
 }
 

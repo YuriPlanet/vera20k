@@ -86,9 +86,15 @@ pub(crate) fn observer_draw_context(
     local_owner_id: Option<InternedId>,
     rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> crate::render::draw_state::ObserverDrawContext {
-    let owner = sim.interner().resolve(entity.owner());
-    let allied = local_owner.is_some_and(|observer| {
-        crate::map::houses::is_allied_with(sim.house_alliances().as_map(), observer, owner)
+    // `HouseAlliances::is_allied` answers by the interned ally matrix as the
+    // names would. An observer without an id is asked about by name.
+    let alliances = sim.house_alliances();
+    let owner = entity.owner();
+    let owner_name = sim.interner().resolve(owner);
+    let observer = local_owner.map(|name| (local_owner_id, name));
+    let allied = observer.is_some_and(|observer| match observer {
+        (Some(id), _) => alliances.is_allied(sim.interner(), id, owner),
+        (None, name) => crate::map::houses::is_allied_with(alliances.as_map(), name, owner_name),
     });
     let object = rules.and_then(|r| sim.interner().object_type(entity.type_ref(), r));
     let disguise_cell = entity
@@ -109,8 +115,11 @@ pub(crate) fn observer_draw_context(
     crate::render::draw_state::ObserverDrawContext {
         owner_is_allied: allied,
         owner_is_mutually_allied: allied
-            && local_owner.is_some_and(|observer| {
-                crate::map::houses::is_allied_with(sim.house_alliances().as_map(), owner, observer)
+            && observer.is_some_and(|observer| match observer {
+                (Some(id), _) => alliances.is_allied(sim.interner(), owner, id),
+                (None, name) => {
+                    crate::map::houses::is_allied_with(alliances.as_map(), owner_name, name)
+                }
             }),
         observer_present: local_owner_id.is_some(),
         detects_cloak: local_owner_id
@@ -520,7 +529,10 @@ pub(crate) fn object_shown_to_local_owner(
 
 /// Does `viewer` see another house's objects on this cell? Explored (with
 /// `current_sight_only`, currently seen) and not covered by a hostile gap.
-fn cell_shows_objects(
+/// With `current_sight_only == false` this is the A plane's own admission
+/// (`render::shroud_buffer::cell_fill`), so overlays whose material reads no
+/// A can ask it instead of inventing a second fog interpretation.
+pub(crate) fn cell_shows_objects(
     viewer: InternedId,
     fog: &FogState,
     rx: u16,

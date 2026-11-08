@@ -875,7 +875,7 @@ fn a_completed_building_waits_in_its_factory_for_placement() {
             .collect::<Vec<_>>(),
         vec![gacnst]
     );
-    assert_eq!(sim.sound_events.iter().filter(|event| matches!(event, crate::sim::world::SimSoundEvent::BuildingComplete { owner } if *owner == americans)).count(), 1);
+    assert_eq!(sim.sound_events.iter().filter(|event| matches!(event, crate::sim::world::SimSoundEvent::BuildingComplete { owner, .. } if *owner == americans)).count(), 1);
     assert_eq!(sim.scenario_rng.logical_state(), rng);
 }
 
@@ -4041,7 +4041,7 @@ fn stock_infantry_fallback_unit_ready_uses_producer_getcoords() {
     let notifications: Vec<_> = sim.sound_events[event_start..]
         .iter()
         .filter_map(|event| match event {
-            SimSoundEvent::UnitComplete { owner, radar } => {
+            SimSoundEvent::UnitComplete { owner, radar, .. } => {
                 Some((*owner, radar.event_type, radar.rx, radar.ry))
             }
             _ => None,

@@ -111,26 +111,18 @@ pub(crate) fn current_cursor_feedback_kind(
     if state.match_state.match_presentation.in_game_menu.is_open() {
         return None;
     }
-    // A right-drag pan owns the cursor for as long as it owns the camera, and it
-    // is tested first because native gates the cursor write and the edge-scroll
-    // block inside the same `capture == 0` else-arm of
-    // `ScrollClass__UpdateMouseScrolling` 0x00692F30 — with the capture held,
-    // neither the action cursor nor the edge arrow is reached.
-    //
-    // DRIFT, pre-existing and recorded not fixed: `edge_scroll_cursor_state`
-    // never consults `captured`, so the edge arrow can still appear during a
-    // captured gesture the pan branch declines — a band-box drag pushed into the
-    // outer window pixel, or the part of a right drag before the threshold is
-    // crossed. Trigger: dragging into a screen border with a button held.
-    // Player effect: a scroll arrow gamemd never shows; the camera does not
-    // actually move, because the motion path IS capture-gated. Frequency:
-    // occasional, and transient — it clears on release. Downstream risk: none;
-    // the fix is a `captured` check in that one helper.
+    // `ScrollClass__UpdateMouseScrolling` 0x00692F30 writes the action cursor
+    // and the edge arrow only inside its `capture == 0` else-arm. With the
+    // capture held, a right-drag pan owns the cursor for as long as it owns the
+    // camera, and any other gesture keeps the band's arrow or the last cursor.
     if let Some(blocked) = crate::app::input::camera::right_drag_pan_cursor_state(state) {
         return Some(match blocked {
             Some(dir) => CursorFeedbackKind::PanBlocked(dir),
             None => CursorFeedbackKind::Pan,
         });
+    }
+    if let Some(kind) = state.match_state.input.captured_cursor() {
+        return kind;
     }
     // The active band is the outermost pixel of the whole window, including
     // the sidebar. It wins even when that pixel overlaps a sidebar/minimap hit.
@@ -2344,6 +2336,26 @@ mod tests {
             .tactical_mouse
             .record_physical_button(winit::event::MouseButton::Left, false);
         assert_eq!(input.sidebar_cursor(), None);
+    }
+
+    /// With the capture held, 0x00692F30 skips the action cursor and the edge
+    /// arrow: a pending band keeps the press-time cursor, and BandBox_MouseMove
+    /// sets the normal arrow as the band activates (0x004AC4DA).
+    #[test]
+    fn a_captured_press_keeps_its_cursor_until_the_band_shows_the_arrow() {
+        let mut input = crate::app::input::state::MatchInputState::new(Default::default());
+        input.note_shown_cursor(Some(CursorFeedbackKind::Move));
+        assert_eq!(input.captured_cursor(), None);
+        assert!(input.tactical_mouse.begin_left_press());
+        input.selection_state.begin_drag(100.0, 100.0);
+        input.selection_state.update_drag(104.0, 100.0);
+        assert_eq!(
+            input.captured_cursor(),
+            Some(Some(CursorFeedbackKind::Move))
+        );
+        input.selection_state.update_drag(105.0, 100.0);
+        assert!(input.selection_state.is_band_box_active());
+        assert_eq!(input.captured_cursor(), Some(None));
     }
 
     #[test]

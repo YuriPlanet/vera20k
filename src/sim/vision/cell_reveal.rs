@@ -117,6 +117,10 @@ pub(crate) enum MapRevealProjection {
     Fire,
     /// Map5673A0/5678E0 skipReveal: clear pending fog without mapping.
     FogProtect,
+    /// `MapClass::RevealArea @ 0x005678E0` entered for a source its house
+    /// gate rejects (`0x00567AB0..0x00567B12`): the call happens and returns
+    /// at `0x00567D88` before collecting or walking any cell.
+    Rejected,
 }
 
 /// Synchronous MapCell receiver arguments. The coordinate is read after both
@@ -159,6 +163,80 @@ impl EdgeCells {
             complete: true,
             ..Self::default()
         }
+    }
+}
+
+/// VERA-only: the cells whose cached ground frame may differ from the one
+/// [`OwnerVisibility::interior_edge_frame`] gives from the ground bits of the
+/// cell and its grid neighbours, one bit each, so a sight border
+/// ([`OwnerVisibility::refresh_ground_frames`]) recomputes only those of its
+/// interior cells. A change to a cell's ground bits or ground frame lists the
+/// cell in [`EdgeCells::changed`] ([`OwnerVisibility::list_edge_change`]),
+/// which marks it and its neighbours. A frame stored through a cell lookup
+/// without listing, whose neighbours may be the Dummy, marks its cell. The
+/// border clears what it stores. Empty until built, which counts every cell:
+/// a loaded or resized grid. Never saved or hashed.
+#[derive(Debug, Clone, Default)]
+pub(super) struct StaleFrames {
+    bits: Vec<u64>,
+}
+
+impl StaleFrames {
+    /// A grid of `len` cells that all hold their constructor state, whose -2
+    /// frames are the ones their bits give.
+    pub(super) fn current(len: usize) -> Self {
+        Self {
+            bits: vec![0; len.div_ceil(64)],
+        }
+    }
+
+    fn is_stale(&self, index: usize) -> bool {
+        self.bits
+            .get(index / 64)
+            .is_none_or(|word| word >> (index % 64) & 1 != 0)
+    }
+
+    fn mark(&mut self, index: usize) {
+        if let Some(word) = self.bits.get_mut(index / 64) {
+            *word |= 1 << (index % 64);
+        }
+    }
+
+    /// Whether any of the cells `first..=last` is stale.
+    fn any_within(&self, first: usize, last: usize) -> bool {
+        crate::util::bit_span::span_words(first, last)
+            .any(|(word, mask)| self.bits.get(word).is_none_or(|bits| bits & mask != 0))
+    }
+
+    /// Clear `index`, building the bits for `len` cells, all stale, first.
+    fn clear(&mut self, index: usize, len: usize) {
+        if self.bits.is_empty() {
+            self.bits = vec![u64::MAX; len.div_ceil(64)];
+        }
+        self.bits[index / 64] &= !(1 << (index % 64));
+    }
+}
+
+/// The smallest rectangle of cells that holds a list of cells, its corners
+/// included.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct CellBounds {
+    min: (u16, u16),
+    max: (u16, u16),
+}
+
+impl CellBounds {
+    /// The bounds of `cells`; `None` when there are none.
+    pub(super) fn of(cells: &[(u16, u16)]) -> Option<Self> {
+        let (&first, rest) = cells.split_first()?;
+        let start = Self {
+            min: first,
+            max: first,
+        };
+        Some(rest.iter().fold(start, |bounds, &(x, y)| Self {
+            min: (bounds.min.0.min(x), bounds.min.1.min(y)),
+            max: (bounds.max.0.max(x), bounds.max.1.max(y)),
+        }))
     }
 }
 
@@ -229,7 +307,21 @@ impl OwnerVisibility {
             if changed {
                 self.update_edge_input(VisibilityCell::Real(index));
             }
-            self.edge_cells.changed.push(index as u32);
+            self.list_edge_change(index);
+        }
+    }
+
+    /// List `index` for the next shroud-edge refresh ([`EdgeCells`]): its
+    /// ground bits or ground frame changed. Its frame and its neighbours' may
+    /// no longer be the ones their bits give ([`StaleFrames`]).
+    fn list_edge_change(&mut self, index: usize) {
+        self.edge_cells.changed.push(index as u32);
+        let width = usize::from(self.width);
+        let (x, y) = (index % width, index / width);
+        for ny in y.saturating_sub(1)..=(y + 1).min(usize::from(self.height) - 1) {
+            for nx in x.saturating_sub(1)..=(x + 1).min(width - 1) {
+                self.stale_frames.mark(ny * width + nx);
+            }
         }
     }
 
@@ -274,7 +366,7 @@ impl OwnerVisibility {
             return;
         }
         match key {
-            VisibilityCell::Real(index) => self.edge_cells.changed.push(index as u32),
+            VisibilityCell::Real(index) => self.list_edge_change(index),
             VisibilityCell::Dummy => self.edge_cells.dummy_changed = true,
         }
     }
@@ -626,10 +718,11 @@ impl OwnerVisibility {
     }
 
     /// Recompute and store each of `cells`' ground frame in turn
-    /// ([`FogState::refresh_sight_border`]).
+    /// ([`FogState::refresh_sight_border`]); `bounds` holds them all.
     pub(super) fn refresh_ground_frames(
         &mut self,
         cells: &[(u16, u16)],
+        bounds: CellBounds,
         native_cells: Option<&NativeCellQuery<'_>>,
     ) {
         // Original Map::567DA0 retains the resolved cell across Tactical::6D8700
@@ -639,15 +732,42 @@ impl OwnerVisibility {
         // fallback still computes the frame before resolving the store. Residual:
         // an off-map border with an off-map neighbour leaves the shared Dummy on
         // the border, visible only to a Dummy read before the next missing lookup.
+        //
+        // VERA-only: an interior cell whose frame is the one its bits give
+        // ([`StaleFrames`]) would store the same frame again, so it is skipped,
+        // and so is the whole border when every cell within its bounds is one.
+        if self.frames_current_within(bounds, native_cells) {
+            if cfg!(debug_assertions) {
+                for &cell in cells {
+                    let index = self
+                        .interior_index(cell, native_cells)
+                        .filter(|&index| !self.stale_frames.is_stale(index))
+                        .unwrap_or_else(|| panic!("{cell:?} is outside its border's bounds"));
+                    self.check_skipped_frame(cell, index);
+                }
+            }
+            return;
+        }
         for &cell in cells {
             let (key, frame) = match self.interior_index(cell, native_cells) {
-                Some(index) => (
-                    VisibilityCell::Real(index),
-                    self.interior_edge_frame(index, false),
-                ),
+                Some(index) if !self.stale_frames.is_stale(index) => {
+                    self.check_skipped_frame(cell, index);
+                    continue;
+                }
+                Some(index) => {
+                    self.stale_frames.clear(index, self.ground_flags.len());
+                    (
+                        VisibilityCell::Real(index),
+                        self.interior_edge_frame(index, false),
+                    )
+                }
                 None => {
                     let frame = self.map_cell_edge_frame(cell, false, native_cells);
-                    (self.visibility_cell(cell, native_cells), frame)
+                    let key = self.visibility_cell(cell, native_cells);
+                    if let VisibilityCell::Real(index) = key {
+                        self.stale_frames.mark(index);
+                    }
+                    (key, frame)
                 }
             };
             let cache = match key {
@@ -656,6 +776,50 @@ impl OwnerVisibility {
             };
             cache.frames[0] = frame;
         }
+    }
+
+    /// Whether every cell within `bounds` is interior under `native_cells`
+    /// ([`Self::interior_index`]) and holds the frame its bits give
+    /// ([`StaleFrames`]), checked row by row.
+    fn frames_current_within(
+        &self,
+        bounds: CellBounds,
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) -> bool {
+        let ((x0, y0), (x1, y1)) = (bounds.min, bounds.max);
+        if x0 == 0
+            || y0 == 0
+            || u32::from(x1) + 1 >= u32::from(self.width)
+            || u32::from(y1) + 1 >= u32::from(self.height)
+        {
+            return false;
+        }
+        let interior = match native_cells {
+            Some(cells) => match cells.terrain().interior_cells() {
+                Some(interior) => Some(interior),
+                None => return false,
+            },
+            None => None,
+        };
+        let width = usize::from(self.width);
+        (y0..=y1).all(|y| {
+            let row = usize::from(y) * width;
+            !self
+                .stale_frames
+                .any_within(row + usize::from(x0), row + usize::from(x1))
+                && interior.is_none_or(|interior| interior.contains_row(y, x0, x1))
+        })
+    }
+
+    /// Debug builds with live-read checks: `cell`, which a border skips,
+    /// holds the frame its bits give.
+    fn check_skipped_frame(&self, cell: (u16, u16), index: usize) {
+        debug_assert!(
+            !crate::util::debug_checks::live_read_check_enabled()
+                || self.map_cell_edge_cache[index].frames[0]
+                    == self.interior_edge_frame(index, false),
+            "{cell:?}'s ground frame is not the one its bits give"
+        );
     }
 
     fn map_cell_parts(&self, key: VisibilityCell) -> (u8, MapCellEdgeCache) {
@@ -1069,7 +1233,8 @@ impl FogState {
     /// through the sole Tactical6D8700 owner; changed frame-2 synchronously
     /// notifies. No counter, pending bit, fog channel or open-bit write. The
     /// stored frame is the one the ground bits give, so the cell is not
-    /// listed for the next refresh ([`EdgeCells`]).
+    /// listed for the next refresh ([`EdgeCells`]); it is marked for the next
+    /// sight border ([`StaleFrames`]).
     pub(crate) fn refresh_map_cell_ground_frame(
         &mut self,
         viewer: InternedId,
@@ -1084,6 +1249,9 @@ impl FogState {
             return None;
         }
         cache.frames[0] = frame;
+        if let VisibilityCell::Real(index) = key {
+            vis.stale_frames.mark(index);
+        }
         (frame == -2).then_some(MapCellNotification {
             cell,
             fresh: true,
@@ -1129,17 +1297,17 @@ impl FogState {
         let inputs = (origin, radius, inner);
         if self.border_geometry.inputs != Some(inputs) {
             self.border_geometry.cells = super::sight_border_cells(origin, radius, inner);
+            self.border_geometry.bounds = CellBounds::of(&self.border_geometry.cells);
             self.border_geometry.inputs = Some(inputs);
         }
-        let cells = &self.border_geometry.cells;
-        if cells.is_empty() {
+        let Some(bounds) = self.border_geometry.bounds else {
             return;
-        }
+        };
         self.by_owner.write(
             viewer,
             (self.width, self.height),
-            PlaneWrite::Border,
-            cells,
+            PlaneWrite::Border { bounds },
+            &self.border_geometry.cells,
             native_cells,
         );
     }

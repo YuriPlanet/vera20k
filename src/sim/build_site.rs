@@ -488,9 +488,15 @@ fn overlay_admits(
     if ty.laser_fence
         && (overlay_id == OVERLAY_LASER_FENCE
             || registry.is_some_and(|registry| {
-                registry
-                    .tiberium_type_for_overlay(&rules.tiberium_types, overlay_id)
-                    .is_some()
+                match registry.tiberium_type_for_overlay(&rules.tiberium_types, overlay_id) {
+                    Ok(class) => class.is_some(),
+                    Err(error) => {
+                        // Safe admission refusal: malformed resource state
+                        // must not become permission to stamp a building.
+                        log::warn!("Cannot admit LaserFence over overlay {overlay_id}: {error}");
+                        false
+                    }
+                }
             }))
     {
         return flags & (FLAG_HIGH_BRIDGE | FLAG_BRIDGE_BODY) == 0 && slope == 0;

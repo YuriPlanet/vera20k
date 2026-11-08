@@ -101,6 +101,41 @@ pub const STAGE_ORDER: &[Stage] = &[
 /// Interior-dimension lerp endpoints, indexed by `num_players - 2`.
 const DIM_MIN: [i32; 7] = [70, 70, 70, 80, 90, 100, 100];
 const DIM_MAX: [i32; 7] = [80, 80, 80, 90, 100, 110, 120];
+/// The original's `NumPlayers` ceiling; the endpoint tables cover 2..=8.
+pub const NATIVE_MAX_PLAYERS: i32 = 8;
+/// VERA extension: random maps seat up to thirty players, the network and
+/// Skirmish seat count (`skirmish_launch::NETWORK_PLAYER_SLOT_COUNT`).
+pub const MAX_PLAYERS: i32 = crate::skirmish_launch::NETWORK_PLAYER_SLOT_COUNT as i32;
+
+/// The original's largest Width/Height option ("Very Large").
+pub const NATIVE_MAX_SIZE_OPTION: i32 = 3;
+/// VERA extension: Width/Height options past "Very Large" pick these interior
+/// sizes outright (Huge, Giant, Enormous, Colossal). Colossal pads to a
+/// 504x512 map, inside the extended cell array's 1024 Size sum.
+pub const EXTENDED_SIZES: [i32; 4] = [160, 250, 350, 500];
+/// The largest Width/Height option.
+pub const MAX_SIZE_OPTION: i32 = NATIVE_MAX_SIZE_OPTION + EXTENDED_SIZES.len() as i32;
+
+/// Lerp endpoints for `players` (already clamped to 2..=MAX_PLAYERS).
+///
+/// 2..=8 read the original tables unchanged. Above eight (VERA extension) the
+/// eight-player endpoints grow with the square root of the player count, so
+/// each player keeps the eight-player map's area: 30 players get 193..232.
+/// Integer square roots keep it bit-identical on every platform.
+fn dimension_endpoints(players: i32) -> (i32, i32) {
+    if players <= NATIVE_MAX_PLAYERS {
+        let index = (players - 2) as usize;
+        return (DIM_MIN[index], DIM_MAX[index]);
+    }
+    let grow = |side: i32| {
+        let area = side as u32 * side as u32 * players as u32 / NATIVE_MAX_PLAYERS as u32;
+        area.isqrt() as i32
+    };
+    (
+        grow(DIM_MIN[DIM_MIN.len() - 1]),
+        grow(DIM_MAX[DIM_MAX.len() - 1]),
+    )
+}
 /// Single-precision one-third: the width/height option scale factor.
 const THIRD_F32_BITS: u32 = 0x3EAA_AAAB;
 /// Scale cap for non-island map types. With options clamped 0..3 the scale
@@ -153,8 +188,7 @@ impl MapGeometry {
 /// asymmetry (width re-narrowed, height kept wide) is preserved even though
 /// clamped options never reach it.
 pub fn generated_dimensions(options: &RmgOptions) -> (i32, i32) {
-    let players = options.num_players.clamp(2, 8);
-    let index = (players - 2) as usize;
+    let (dim_min, dim_max) = dimension_endpoints(options.num_players.clamp(2, MAX_PLAYERS));
 
     let third = x87::TruncF64::from_f64(f64::from(f32::from_bits(THIRD_F32_BITS)));
     let scale =
@@ -181,10 +215,15 @@ pub fn generated_dimensions(options: &RmgOptions) -> (i32, i32) {
         crate::util::native_x87::X87Chop53::ftol_f64_low_masked(low.add(high).to_f64())
     };
 
-    (
-        lerp(DIM_MIN[index], DIM_MAX[index], scale_w),
-        lerp(DIM_MIN[index], DIM_MAX[index], scale_h),
-    )
+    // VERA extension: an option past "Very Large" is an absolute size, never
+    // smaller than the player count's own "Very Large".
+    let axis = |option: i32, scale: x87::TruncF64| match usize::try_from(
+        option - NATIVE_MAX_SIZE_OPTION - 1,
+    ) {
+        Ok(level) => EXTENDED_SIZES[level.min(EXTENDED_SIZES.len() - 1)].max(dim_max),
+        Err(_) => lerp(dim_min, dim_max, scale),
+    };
+    (axis(options.width, scale_w), axis(options.height, scale_h))
 }
 
 /// Whether a selected map name refers to a random-map seed rather than a map
@@ -373,6 +412,47 @@ mod tests {
         assert_eq!(dims(8, 2), (113, 113));
         assert_eq!(dims(8, 3), (120, 120));
         assert_eq!(dims(5, 0), (80, 80), "endpoint table shifts at 5 players");
+    }
+
+    #[test]
+    fn dimensions_above_eight_players_keep_the_eight_player_area_each() {
+        let dims = |players: i32, size: i32| {
+            generated_dimensions(&RmgOptions {
+                num_players: players,
+                width: size,
+                height: size,
+                ..Default::default()
+            })
+        };
+        assert_eq!(dims(9, 0), (106, 106));
+        assert_eq!(dims(30, 0), (193, 193));
+        assert_eq!(dims(30, 3), (232, 232));
+        assert_eq!(dims(99, 3), (232, 232), "clamped to thirty players");
+    }
+
+    #[test]
+    fn size_options_past_very_large_pick_absolute_sizes_up_to_500() {
+        let dims = |players: i32, size: i32| {
+            generated_dimensions(&RmgOptions {
+                num_players: players,
+                width: size,
+                height: size,
+                ..Default::default()
+            })
+        };
+        assert_eq!(dims(2, 4), (160, 160));
+        assert_eq!(
+            dims(30, 4),
+            (232, 232),
+            "never below the players' Very Large"
+        );
+        assert_eq!(dims(8, 7), (500, 500));
+        let geometry = MapGeometry::from_options(&RmgOptions {
+            width: 7,
+            height: 7,
+            ..Default::default()
+        });
+        assert!(geometry.map_w + geometry.map_h <= 1024);
     }
 
     #[test]

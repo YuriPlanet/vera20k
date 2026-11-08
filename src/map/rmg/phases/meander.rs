@@ -35,9 +35,6 @@ use crate::util::native_x87::X87Chop53;
 use super::adjacency::border_cells_of;
 use super::blob::BlobCtx;
 
-/// The rect edge length that counts as "unclipped" when the heading is derived.
-const FULL_EXTENT: i32 = 0x200;
-
 /// Cost weights: a uniform random term, and how far off-heading the cell lies.
 const COST_RANDOM: f64 = 2.0;
 const COST_ANGLE: f64 = 1.5;
@@ -98,17 +95,18 @@ fn by_cost(nodes: &[Node]) -> impl Fn(&usize, &usize) -> bool + '_ {
 /// second and overwrites the `x` test's answer, so a rect clipped on both axes
 /// takes its heading from `y`. A rect covering the whole map leaves the heading
 /// at zero — which is the case the canyon uses.
-fn heading_from_rect(rect: [i32; 4]) -> f64 {
+/// `full` is the unclipped rect edge, [`RmgGrid::whole_extent`].
+fn heading_from_rect(rect: [i32; 4], full: i32) -> f64 {
     let mut heading = 0.0;
     if rect[0] == 0 {
-        if rect[2] != FULL_EXTENT {
+        if rect[2] != full {
             heading = PI;
         }
     } else {
         heading = 0.0;
     }
     if rect[1] == 0 {
-        if rect[3] != FULL_EXTENT {
+        if rect[3] != full {
             heading = HALF_PI;
         }
     } else {
@@ -208,7 +206,7 @@ fn step_budget(border_total: usize, step_density: f32, rng: &mut RmgRng) -> i32 
 /// that is the original's only failure, and its callers treat it as fatal.
 /// Running out of budget, of frontier, or of map is success.
 pub(crate) fn grow_meander_arm(ctx: &mut BlobCtx<'_>, args: &MeanderArgs) -> bool {
-    let mut heading = heading_from_rect(args.rect);
+    let mut heading = heading_from_rect(args.rect, ctx.grid.whole_extent());
     let mut alive = true;
 
     let pool = (args.pool_dims.0 * args.pool_dims.1 * 2).max(MIN_POOL) as usize;
@@ -523,16 +521,16 @@ mod tests {
         // The canyon's rect is unclipped on both axes, so neither test fires
         // and the heading stays at zero. Getting this wrong aims every canyon
         // in the wrong direction.
-        assert_eq!(heading_from_rect([0, 0, 0x200, 0x200]), 0.0);
+        assert_eq!(heading_from_rect([0, 0, 0x200, 0x200], 0x200), 0.0);
     }
 
     #[test]
     fn the_y_test_overwrites_the_x_test() {
         // Clipped on both axes: x alone would say pi, but y runs second.
-        assert_eq!(heading_from_rect([0, 0, 100, 100]), HALF_PI);
-        assert_eq!(heading_from_rect([5, 3, 100, 100]), THREE_HALF_PI);
+        assert_eq!(heading_from_rect([0, 0, 100, 100], 0x200), HALF_PI);
+        assert_eq!(heading_from_rect([5, 3, 100, 100], 0x200), THREE_HALF_PI);
         // Clipped on x only.
-        assert_eq!(heading_from_rect([0, 0, 100, 0x200]), PI);
+        assert_eq!(heading_from_rect([0, 0, 100, 0x200], 0x200), PI);
     }
 
     #[test]

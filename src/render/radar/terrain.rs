@@ -36,6 +36,10 @@ pub(super) struct NativeRadarTerrainSurface {
     overrides: BTreeMap<(u16, u16), [u8; 3]>,
     raw_rgb: Vec<[u8; 3]>,
     generated_rgb565: Vec<u16>,
+    /// The cell each generated pixel shows the shroud and fog of
+    /// ([`NativeRadarSurfaceGeometry::visibility_cells`]), built once: the
+    /// geometry never changes under a surface.
+    pixel_cells: Vec<u32>,
     /// Bumped whenever `generated_rgb565` is regenerated.
     revision: u64,
     /// VERA's optional HD terrain, bumping `hd_revision` whenever it changes.
@@ -61,6 +65,7 @@ impl NativeRadarTerrainSurface {
             overrides,
             raw_rgb: vec![[0; 3]; area(raw_size)],
             generated_rgb565: vec![0; area(generated_size)],
+            pixel_cells: geometry.visibility_cells(),
             revision: 0,
             hd: None,
             hd_revision: 0,
@@ -84,6 +89,24 @@ impl NativeRadarTerrainSurface {
     /// Changes whenever [`Self::generated_rgb565`] does.
     pub const fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// Each generated pixel's packed cell, row-major.
+    pub fn pixel_cells(&self) -> &[u32] {
+        &self.pixel_cells
+    }
+
+    /// [`NativeRadarSurfaceGeometry::surface_pixel_to_visibility_cell`],
+    /// from the table on the surface; a pixel off it, such as an edge
+    /// building's brush, is inverted directly.
+    pub fn visibility_cell(&self, (x, y): (i32, i32)) -> (u16, u16) {
+        let (width, height) = self.geometry.generated_size();
+        if (0..width).contains(&x) && (0..height).contains(&y) {
+            let packed = self.pixel_cells[(y * width + x) as usize];
+            (packed as u16, (packed >> 16) as u16)
+        } else {
+            self.geometry.surface_pixel_to_visibility_cell((x, y))
+        }
     }
 
     #[cfg(test)]

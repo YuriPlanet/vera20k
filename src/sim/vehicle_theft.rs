@@ -531,11 +531,10 @@ impl Simulation {
             return None;
         }
         if target.category() == EntityCategory::Unit
-            && self.session.harvester_immune()
-            && rules
-                .harvester_unit_types
-                .iter()
-                .any(|id| id.eq_ignore_ascii_case(&target_type.id))
+            && self
+                .session
+                .truce_harvester_types(rules, &self.interner)
+                .contains(&target.type_ref())
         {
             return None;
         }

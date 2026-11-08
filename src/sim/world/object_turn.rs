@@ -472,7 +472,16 @@ impl Simulation {
                 ctx.effects,
             )?;
             process.per_cell_ran = true;
-            // 0x00719725 Stop_Moving: the tick retired the request.
+            // 0x00719725: Process's own Stop_Moving, after the arrival
+            // Per_Cell_Process, which still read Is_Moving set.
+            if let Some(locomotor) = sim
+                .substrate
+                .entities
+                .get_mut(stable_id)
+                .and_then(|entity| entity.locomotor.as_mut())
+            {
+                locomotor.teleport_process_stop();
+            }
             // 0x0071972E CellClass::PickupCrate (`0x00481A00`) on the
             // destination cell for the linked Foot; its answer is not read.
             let cell = sim
@@ -780,9 +789,10 @@ impl Simulation {
                 .collect();
             self.fog.defer_plane_writes(kept);
         }
-        // The pass's sight walks ask each owner's viewers once until the ally
-        // graph changes (`vision::RevealViewers`).
-        self.reveal_viewers.begin();
+        // The pass's sight walks ask the client maps once, and each owner's
+        // viewers once until the ally graph changes (`vision::RevealViewers`).
+        let clients = self.fog_viewers();
+        self.reveal_viewers.begin(clients);
         let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
             #[cfg(feature = "debug-tools")]
             let debug_before = sim
@@ -834,7 +844,7 @@ impl Simulation {
             .get(stable_id)
             .is_some_and(|entity| entity.category() == EntityCategory::Structure);
         let mut ai = sim.object_ai_visit_one_with_effects(stable_id, rules, object_ctx);
-        if let Some(error) = ai.fall_error.take() {
+        if let Some(error) = ai.frame_error.take() {
             return Err(error);
         }
         outcome.bridge_state_changed |= ai.bridge_state_changed;

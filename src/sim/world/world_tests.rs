@@ -2502,6 +2502,7 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
          [Riparius]\nImage=1\nValue=25\n\
          [CR1]\nCrater=yes\nWidth=1\nHeight=1\n",
     );
+    let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
     let mut rules = RuleSet::from_ini(&ini).expect("bullet ore-order rules");
     rules.replace_art_registry_for_test(crate::rules::art_data::ArtRegistry::from_ini(
         &IniFile::from_str("[EXPLOSION]\nCrater=yes\nScorch=no\n"),
@@ -2610,6 +2611,7 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
          [Riparius]\nImage=1\nValue=25\n\
          [CR1]\nCrater=yes\nWidth=1\nHeight=1\n",
     );
+    let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
     let mut rules = RuleSet::from_ini(&ini).expect("missile ore-order rules");
     rules.replace_art_registry_for_test(crate::rules::art_data::ArtRegistry::from_ini(
         &IniFile::from_str("[EXPLOSION]\nCrater=yes\nScorch=no\nFrameWidth=100\nFrameHeight=100\n"),
@@ -9296,7 +9298,8 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
     // order once its AI reaches Delete.
     let first = first_id;
     let before = sim.substrate.voxel_anims.get(first).unwrap().world_coord();
-    sim.visit_voxel_anim(first, &rules, crate::sim::world::FrameEffects::default());
+    sim.visit_voxel_anim(first, &rules, crate::sim::world::FrameEffects::default())
+        .unwrap();
     sim.process_pending_delete_with(
         &rules,
         Some(rules.overlay_registry()),
@@ -9310,7 +9313,8 @@ fn gsi_05_14_death_debris_joins_the_live_order_the_hash_and_the_snapshot() {
         if !sim.substrate.voxel_anims.contains_key(first) {
             break;
         }
-        sim.visit_voxel_anim(first, &rules, crate::sim::world::FrameEffects::default());
+        sim.visit_voxel_anim(first, &rules, crate::sim::world::FrameEffects::default())
+            .unwrap();
         sim.process_pending_delete_with(
             &rules,
             Some(rules.overlay_registry()),

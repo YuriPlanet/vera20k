@@ -10,21 +10,20 @@
 use super::{
     CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP,
     CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL,
-    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, DEVELOPER_OPTIONS_LABEL,
-    DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FPS_COUNTER_HELP,
-    FPS_COUNTER_LABEL, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES,
-    HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP,
-    HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode,
-    LANGUAGE_HELP, LANGUAGE_LABEL, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton,
-    LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult,
-    LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_FONT_HELP,
-    ORIGINAL_FONT_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
-    PhysicalControlFrame, RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL,
-    RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL,
-    SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_SIDEBAR_HELP,
-    SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL,
-    WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL,
-    ZOOM_HELP, ZOOM_LABEL, Zoom,
+    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, DETAILED_EVA_TEXT_HELP, DETAILED_EVA_TEXT_LABEL, DEVELOPER_OPTIONS_LABEL,
+    DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FULL_SCREEN_HELP,
+    FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL,
+    HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
+    HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LANGUAGE_HELP, LANGUAGE_LABEL, LOCK_CURSOR_HELP,
+    LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
+    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
+    MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
+    PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame,
+    RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP,
+    RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
+    SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting,
+    SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
+    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
 
@@ -508,14 +507,14 @@ impl OptionsDialogState {
             LauncherCheckboxId::HdRadar => HD_RADAR_LABEL,
             LauncherCheckboxId::SmoothSidebar => SMOOTH_SIDEBAR_LABEL,
             LauncherCheckboxId::HdMapPreviews => HD_MAP_PREVIEWS_LABEL,
-            LauncherCheckboxId::OriginalFont => ORIGINAL_FONT_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
             LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
-            LauncherCheckboxId::FpsCounter => FPS_COUNTER_LABEL,
+            LauncherCheckboxId::PerformanceStats => PERFORMANCE_STATS_LABEL,
             LauncherCheckboxId::SkipIntro => SKIP_INTRO_LABEL,
             LauncherCheckboxId::CustomEndGameBanner => CUSTOM_END_GAME_BANNER_LABEL,
             LauncherCheckboxId::CustomEndGameScore => CUSTOM_END_GAME_SCORE_LABEL,
             LauncherCheckboxId::CustomEndGameMovie => CUSTOM_END_GAME_MOVIE_LABEL,
+            LauncherCheckboxId::DetailedEvaText => DETAILED_EVA_TEXT_LABEL,
         }))
     }
 
@@ -574,14 +573,14 @@ impl OptionsDialogState {
             LauncherCheckboxId::HdRadar => self.values.hd_radar,
             LauncherCheckboxId::SmoothSidebar => self.values.smooth_sidebar,
             LauncherCheckboxId::HdMapPreviews => self.values.hd_map_previews,
-            LauncherCheckboxId::OriginalFont => self.values.original_font,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
             LauncherCheckboxId::WolTestService => self.values.wol_test_service,
-            LauncherCheckboxId::FpsCounter => self.values.fps_counter,
+            LauncherCheckboxId::PerformanceStats => self.values.performance_stats,
             LauncherCheckboxId::SkipIntro => self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => self.values.custom_end_game_score,
             LauncherCheckboxId::CustomEndGameMovie => self.values.custom_end_game_movie,
+            LauncherCheckboxId::DetailedEvaText => self.values.detailed_eva_text,
         }
     }
 
@@ -815,12 +814,13 @@ impl OptionsDialogState {
                 LauncherCheckboxId::HdRadar => LauncherStatusHelp::Vera(HD_RADAR_HELP),
                 LauncherCheckboxId::SmoothSidebar => LauncherStatusHelp::Vera(SMOOTH_SIDEBAR_HELP),
                 LauncherCheckboxId::HdMapPreviews => LauncherStatusHelp::Vera(HD_MAP_PREVIEWS_HELP),
-                LauncherCheckboxId::OriginalFont => LauncherStatusHelp::Vera(ORIGINAL_FONT_HELP),
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Vera(SHIFT_QUEUE_HELP),
                 LauncherCheckboxId::WolTestService => {
                     LauncherStatusHelp::Vera(WOL_TEST_SERVICE_HELP)
                 }
-                LauncherCheckboxId::FpsCounter => LauncherStatusHelp::Vera(FPS_COUNTER_HELP),
+                LauncherCheckboxId::PerformanceStats => {
+                    LauncherStatusHelp::Vera(PERFORMANCE_STATS_HELP)
+                }
                 LauncherCheckboxId::SkipIntro => LauncherStatusHelp::Vera(SKIP_INTRO_HELP),
                 LauncherCheckboxId::CustomEndGameBanner => {
                     LauncherStatusHelp::Vera(CUSTOM_END_GAME_BANNER_HELP)
@@ -830,6 +830,9 @@ impl OptionsDialogState {
                 }
                 LauncherCheckboxId::CustomEndGameMovie => {
                     LauncherStatusHelp::Vera(CUSTOM_END_GAME_MOVIE_HELP)
+                }
+                LauncherCheckboxId::DetailedEvaText => {
+                    LauncherStatusHelp::Vera(DETAILED_EVA_TEXT_HELP)
                 }
             });
         }
@@ -1272,8 +1275,8 @@ mod tests {
         assert!(state.shell_popup(&page(Category::Audio)).is_none());
     }
 
-    /// The Language list offers each language by its own name and publishes
-    /// a new pick at once; the main menu's button opens it on its page.
+    /// The Language list on the Interface page offers each language by its
+    /// own name and publishes a new pick at once.
     #[test]
     fn the_language_list_publishes_a_new_pick_by_tag() {
         use crate::i18n::LanguageChoice;
@@ -1286,9 +1289,10 @@ mod tests {
             vec![choice("en", "English"), choice("zh-CN", "简体中文")],
             "en".to_owned(),
         );
-        state.open_language_list();
-        assert_eq!(state.category(), Category::Interface);
+        state.select_category(Category::Interface);
         let layout = page(Category::Interface);
+        let face = layout.combo_rect(LauncherComboId::Language).unwrap();
+        state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
         let popup = state.shell_popup(&layout).unwrap();
         assert_eq!(
             (popup.combo, popup.rows, popup.selected),
@@ -1298,18 +1302,20 @@ mod tests {
         // The language in use changes nothing; another publishes its tag.
         let first = popup.row_rect(0);
         state.shell_mouse_down(first.x + 10, first.y + 5, &layout);
-        assert_eq!(
-            state.drain_output().events,
-            [LauncherOptionsEvent::Cue(LauncherCue::ComboClose)]
+        let (open, close) = (
+            LauncherOptionsEvent::Cue(LauncherCue::ComboOpen),
+            LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
         );
-        state.open_language_list();
+        assert_eq!(state.drain_output().events, [open.clone(), close.clone()]);
+        state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
         let second = popup.row_rect(1);
         state.shell_mouse_down(second.x + 10, second.y + 5, &layout);
         assert_eq!(state.shell_language_label(), "简体中文");
         assert_eq!(
             state.drain_output().events,
             [
-                LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
+                open,
+                close,
                 LauncherOptionsEvent::LanguageSelected("zh-CN".to_owned()),
             ]
         );
@@ -1886,8 +1892,8 @@ mod tests {
         let layout = page(Category::Developer);
         for (id, event) in [
             (
-                LauncherCheckboxId::FpsCounter,
-                LauncherOptionsEvent::FpsCounterChanged(true),
+                LauncherCheckboxId::PerformanceStats,
+                LauncherOptionsEvent::PerformanceStatsChanged(true),
             ),
             (
                 LauncherCheckboxId::SkipIntro,
@@ -1905,9 +1911,9 @@ mod tests {
     }
 
     #[test]
-    fn fps_counter_box_follows_live_state() {
+    fn performance_stats_box_follows_live_state() {
         let mut state = state();
-        let id = LauncherCheckboxId::FpsCounter;
+        let id = LauncherCheckboxId::PerformanceStats;
         state.checkbox_mouse_down(
             id,
             PhysicalControlFrame {
@@ -1919,7 +1925,7 @@ mod tests {
         );
         assert!(state.shell_checkbox_checked(id));
         // Ctrl+Alt+F while the page is open moves the box with the readout.
-        state.sync_fps_counter(false);
+        state.sync_performance_stats(false);
         assert!(!state.shell_checkbox_checked(id));
     }
 }

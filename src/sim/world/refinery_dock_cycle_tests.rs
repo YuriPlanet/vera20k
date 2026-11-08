@@ -772,6 +772,7 @@ fn a_refinery_destroyed_mid_unload_hands_the_miner_to_harvest() {
          [Warheads]\n0=C4\n[C4]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
         super::refinery_dock_oracle_tests::RULES,
     ));
+    let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&ini);
     let art = IniFile::from_str(
         "[GAREFN]\nFoundation=4x3\nQueueingCell=4,1\n\
          [GAREFX]\nFoundation=4x3\nQueueingCell=4,1\n[GAOREP]\nFoundation=2x2\n",

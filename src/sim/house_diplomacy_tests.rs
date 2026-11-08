@@ -250,7 +250,8 @@ fn ally_writes_reach_the_remembered_reveal_viewers() {
         (direct.to_vec(), allied.to_vec())
     };
     let (alone, with_ally) = (vec![ids[1]], vec![ids[1], ids[2]]);
-    sim.reveal_viewers.begin();
+    let clients = sim.fog_viewers();
+    sim.reveal_viewers.begin(clients);
     assert_eq!(viewers(&mut sim), (alone.clone(), alone.clone()));
     sim.make_ally(ids[1], ids[2], &rules, None, FrameEffects::default(), false);
     assert_eq!(viewers(&mut sim), (with_ally.clone(), with_ally));
@@ -322,6 +323,30 @@ fn ally_matrix_answers_as_the_graph_through_ally_writes() {
     agree(&sim, &ids);
     assert!(!allied(&sim, first, second) && !allied(&sim, second, first));
     assert!(allied(&sim, first, late));
+}
+
+/// A house the headless scenario adds after the load gets a matrix row, as
+/// a launch's houses do, instead of every question about it going to the
+/// graph by name: the load has already built the matrix.
+#[test]
+fn a_house_added_after_the_load_gets_a_matrix_row() {
+    let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let mut scene = crate::headless_scenario::load(&retail, "XMP03T4.MAP", 0x1269)
+        .expect("physical AnyTown Battle scenario");
+    let has_row = |sim: &Simulation, id| {
+        let matrix = sim.house_alliances.matrix(&sim.interner);
+        matrix.is_some_and(|matrix| matrix.row(id).is_some())
+    };
+    let local = scene.sim().session.current_house().expect("local house");
+    assert!(has_row(scene.sim(), local));
+    assert!(
+        scene.sim().interner.get("Late").is_none(),
+        "a name the load never interned"
+    );
+    let late = scene.add_human_house("Late", crate::skirmish_launch::LaunchCountry::Yuri);
+    assert!(has_row(scene.sim(), late));
 }
 
 /// MakeEnemy adds the anger first (`0x004F9FDD`), while the house is still

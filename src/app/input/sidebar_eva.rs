@@ -255,6 +255,15 @@ pub(crate) fn is_structure_strip(category: ProductionCategory) -> bool {
     )
 }
 
+/// A plain `ABANDON` removes exactly the running build of the clicked cameo,
+/// so its own type names the `EVA_Canceled` accessibility row. `ABANDON_ALL`
+/// (Shift + right, and VERA's Shift cancel on the Suspend arm) removes an
+/// unknown set of queue entries of that category; naming the clicked type
+/// would describe only part of what the voice announced.
+pub(crate) fn cancel_names_clicked_type(order: Option<CameoOrder>) -> bool {
+    matches!(order, Some(CameoOrder::Abandon { all: false }))
+}
+
 /// How many PRODUCE events one click queues.
 ///
 /// This is VERA's own convenience, not native behavior. gamemd's

@@ -12,18 +12,17 @@
 use super::{TeamScriptAction, TeamTarget, TeamTypeHouse};
 use crate::map::entities::EntityCategory;
 use crate::rules::locomotor_type::MovementZone;
-use crate::rules::object_type::ObjectCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::tiberium_type::TiberiumTypeId;
 use crate::sim::components::DriveCoord;
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::intern::InternedId;
-use crate::sim::miner::{CargoBale, MinerKind, miner_kind_for_object};
+use crate::sim::miner::CargoBale;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
 use crate::sim::movement::teleport_movement::ChronoWarp;
-use crate::sim::tiberium::resource_type_for_tiberium_image;
+use crate::sim::tiberium::resource_type_for_tiberium_slot;
 use crate::sim::world::{FrameEffects, PlacementEvidence, Simulation, UninitContext};
 
 impl Simulation {
@@ -736,14 +735,14 @@ impl Simulation {
             .then(|| {
                 let slot = TiberiumTypeId(0);
                 let ty = rules.tiberium_types.get(slot)?;
-                CargoBale::of_type(slot, resource_type_for_tiberium_image(ty.image), rules)
+                CargoBale::of_type(slot, resource_type_for_tiberium_slot(ty.id), rules)
             })
             .flatten();
-        // CreateMembers65DE53..65DE80 fills literal Storage slot0 before
-        // veterancy/AddMember. Miner owns represented whole-bale storage;
-        // retain an explicit Rust representation boundary for other positive
-        // Storage types, oversized capacities or a missing slot descriptor.
-        // These refusals are not native admission rules.
+        // CreateMembers65DE53..65DE80 fills literal Storage slot0 of every
+        // member whose Type.Storage > 0 (miners, SLAV, WEEDGUY) before
+        // veterancy/AddMember. The whole-bale hold has no room for a capacity
+        // beyond u16 and no bale without a slot0 descriptor; these refusals
+        // are representation boundaries, not native admission rules.
         if metadata.full
             && entries.iter().any(|entry| {
                 entry.count > 0
@@ -754,18 +753,12 @@ impl Simulation {
                         )
                         .is_some_and(|object| {
                             object.storage > 0
-                                && (entry.member_type.category != ObjectCategory::Vehicle
-                                    || !matches!(
-                                        miner_kind_for_object(object),
-                                        Some(MinerKind::War | MinerKind::Chrono)
-                                    )
-                                    || u16::try_from(object.storage).is_err()
-                                    || full_cargo.is_none())
+                                && (u16::try_from(object.storage).is_err() || full_cargo.is_none())
                         })
             })
         {
             log::warn!(
-                "TeamType {} Full StorageClass fill exceeds the represented miner hold",
+                "TeamType {} Full StorageClass fill exceeds the represented hold",
                 self.interner.resolve(team_type)
             );
             return None;
@@ -844,15 +837,11 @@ impl Simulation {
                 // after the concrete ctor zeroes storage, before veterancy.
                 // Positive u16 capacities are exact in the native f32 slot.
                 if full_storage > 0 {
-                    entity
-                        .miner
-                        .as_mut()
-                        .expect("Full storage preflight admitted a miner")
-                        .add_bales(
-                            full_cargo.expect("Full storage preflight resolved slot0"),
-                            u16::try_from(full_storage)
-                                .expect("Full storage preflight bounded capacity"),
-                        );
+                    entity.add_storage_bales(
+                        full_cargo.expect("Full storage preflight resolved slot0"),
+                        u16::try_from(full_storage)
+                            .expect("Full storage preflight bounded capacity"),
+                    );
                 }
                 match metadata.veteran_level {
                     0 => entity.veterancy.set_rookie(),

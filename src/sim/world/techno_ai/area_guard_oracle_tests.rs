@@ -459,7 +459,8 @@ fn area_guard_events_commence_and_in_range_dispatch_match_original_histories() {
                     actor,
                     &rules,
                     crate::sim::world::ObjectAiCtx::default(),
-                );
+                )
+                .unwrap();
                 dispatch_count += 1;
             }
             assert_state(&mut f, row, &boundary["after"]);

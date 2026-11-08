@@ -1952,7 +1952,12 @@ fn forbidden_houses_leave_americans_one_airforce_command() {
     let americans = build_options_for_owner(&sim, &rules, "Americans");
     let airforce: Vec<_> = americans
         .iter()
-        .filter(|opt| opt.display_name == "Airforce Command")
+        .filter(|opt| {
+            rules
+                .object(sim.interner.resolve(opt.type_id))
+                .and_then(|obj| obj.name.as_deref())
+                == Some("Airforce Command")
+        })
         .collect();
 
     assert_eq!(
@@ -2866,7 +2871,8 @@ fn a_computer_barracks_sends_its_infantry_to_a_listed_post() {
                 product,
                 &rules,
                 crate::sim::world::ObjectAiCtx::default(),
-            );
+            )
+            .unwrap();
             let e1 = sim.substrate.entities.get(product).unwrap();
             assert_eq!(e1.navigation.nav_com(), Some(post), "{context}");
             assert_eq!(e1.navigation.nav_list(), [], "{context}");

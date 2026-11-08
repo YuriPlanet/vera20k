@@ -694,8 +694,8 @@ pub struct GameEntity {
     #[serde(default)]
     pub slave_manager: Option<crate::sim::slave_manager::SlaveManager>,
     /// The slave side of `SlaveManagerClass`: the master whose manager holds
-    /// this slave (`TechnoClass+0x2DC`) and its Storage (`+0x33C`), written
-    /// only by `sim::slave_manager`.
+    /// this slave (`TechnoClass+0x2DC`), and the Storage (`+0x33C`) of any
+    /// object without a `miner`, written only by `sim::slave_manager`.
     #[serde(default)]
     pub slave: crate::sim::slave_manager::SlaveLink,
     /// The Foot's MegaMission order, the attack-move (`FootClass +0x5C4..+0x5D1`),
@@ -1538,16 +1538,20 @@ impl GameEntity {
         &self.building_upgrades
     }
 
-    pub(crate) fn advance_building_upgrade_level(&mut self, capacity: i32) -> bool {
-        self.building_upgrades.power_up(capacity)
+    pub(crate) fn advance_building_upgrade_level(
+        &mut self,
+        capacity: i32,
+        wall_tower: bool,
+    ) -> bool {
+        self.building_upgrades.power_up(capacity, wall_tower)
     }
 
     pub(crate) fn commit_building_upgrade_type(&mut self, type_id: InternedId) {
         self.building_upgrades.commit_type(type_id);
     }
 
-    pub(crate) fn remove_building_upgrade_level(&mut self) -> Option<usize> {
-        self.building_upgrades.power_down()
+    pub(crate) fn remove_building_upgrade_level(&mut self, removed_turret: bool) -> Option<usize> {
+        self.building_upgrades.power_down(removed_turret)
     }
 
     #[cfg(any(test, feature = "test-support"))]

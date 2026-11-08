@@ -1900,11 +1900,7 @@ fn register_projectile_frames(
         return;
     };
     for weapon in rules.weapons_iter() {
-        let Some(projectile) = weapon
-            .projectile
-            .as_deref()
-            .and_then(|id| rules.projectile(id))
-        else {
+        let Some(projectile) = rules.weapon_projectile(weapon) else {
             continue;
         };
         if projectile.inviso || projectile.voxel {

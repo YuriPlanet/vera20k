@@ -43,7 +43,7 @@ fn native_automatic_guard_admission_stop_order_and_signed_caller_returns() {
                 expected
             );
         } else {
-            dispatch_foot_mission(&mut sim, id, &rules, Default::default());
+            dispatch_foot_mission(&mut sim, id, &rules, Default::default()).unwrap();
             assert_eq!(
                 sim.substrate
                     .entities
@@ -73,7 +73,7 @@ fn pending_deploy_survives_snapshot_and_paid_head_completion() {
         .find(|row| row["input"]["name"] == "Guard_moving_paid_head")
         .unwrap();
     let (mut sim, rules, id) = native_deploy_fixture(row);
-    dispatch_foot_mission(&mut sim, id, &rules, Default::default());
+    dispatch_foot_mission(&mut sim, id, &rules, Default::default()).unwrap();
     assert_native_deploy_state(&sim, id, row);
     let pending_hash = sim.state_hash();
     sim.substrate

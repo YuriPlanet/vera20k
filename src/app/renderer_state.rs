@@ -12,7 +12,8 @@ use crate::render::gpu::GpuContext;
 pub(crate) struct RendererState {
     pub(crate) gpu: GpuContext,
     pub(crate) batch_renderer: BatchRenderer,
-    pub(crate) fps_overlay: crate::app::diagnostics::fps_overlay::FpsOverlay,
+    pub(crate) performance_overlay:
+        crate::app::diagnostics::performance_overlay::PerformanceOverlay,
     pub(crate) terrain_draw_renderer: crate::render::terrain_draw::TerrainDrawRenderer,
     pub(crate) combat_light_renderer: crate::render::combat_light::CombatLightRenderer,
     /// Process GPU resources for the native final client-pixel shake copy.
@@ -39,8 +40,8 @@ pub(crate) struct RendererState {
     pub(super) status_screen_fill: crate::render::batch::BatchTexture,
     /// The status cards' button glow: #CE0000 core fading to black.
     pub(crate) status_card_glow: crate::render::batch::BatchTexture,
-    /// Every interface text's font: VERA's vector fonts, or GAME.FNT with the
-    /// Original Font option, which falls back to the vector fonts.
+    /// Every interface text's font: GAME.FNT, with the letters it lacks drawn
+    /// in its style and the bundled fonts behind them, drawn in whole pixels.
     pub(crate) bit_font: BitFont,
     /// A zoomed match's text and cursor at the window's own pixels.
     pub(crate) window_ui: crate::app::presentation::window_ui::WindowUi,

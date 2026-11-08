@@ -227,39 +227,30 @@ impl App {
         )));
     }
 
-    /// Note where the windowed window sits for the next launch, and whether it
-    /// is maximised. Full screen, maximised and minimised windows keep the last
-    /// ordinary placement, so leaving those states restores it. winit reports full screen until the
-    /// exit animation's last resize, so the animation's sizes are skipped too.
+    /// Note where the windowed window sits for the next launch, which opens it
+    /// there at gamemd's startup size. Full screen, maximised and minimised
+    /// windows keep the last ordinary corner. winit reports full screen until
+    /// the exit animation's last resize, so the animation's corners are
+    /// skipped too.
     fn remember_window_placement(state: &mut AppState) {
         let window = &state.platform.window;
         if state.platform.capture_client_size.is_some()
             || window.fullscreen().is_some()
             || window.is_minimized().unwrap_or(false)
+            || window.is_maximized()
         {
             return;
         }
-        let maximized = window.is_maximized();
-        if state.persistence.options_profile.window_maximized != maximized {
-            state.persistence.options_profile.window_maximized = maximized;
-            state.platform.window_placement_unsaved = true;
-        }
-        if maximized {
-            return;
-        }
-        let window = &state.platform.window;
         let Ok(corner) = window.outer_position() else {
             return;
         };
-        let size = window.inner_size().to_logical::<u32>(window.scale_factor());
+        let size = window.inner_size();
         if size.width == 0 || size.height == 0 {
             return;
         }
         let placement = crate::app::persistence::options_profile::WindowPlacement {
             x: corner.x,
             y: corner.y,
-            width: size.width,
-            height: size.height,
         };
         let profile = &mut state.persistence.options_profile;
         if profile.window_placement != Some(placement) {
@@ -1158,7 +1149,7 @@ impl ApplicationHandler for App {
                 }
                 // VERA's every-screen keys, as the Keyboard page's VERA section
                 // binds them: Lock Cursor to Window (Ctrl+Alt+L), Full Screen
-                // (Alt+Enter) and FPS Counter (Ctrl+Alt+F) by default. Scroll
+                // (Alt+Enter) and Performance Stats (Ctrl+Alt+F) by default. Scroll
                 // Lock and, on macOS, the system's Ctrl+Cmd+F stay fixed
                 // extras ahead of the bindings. All are consumed before retail
                 // key dispatch, but a key the Keyboard page is capturing goes

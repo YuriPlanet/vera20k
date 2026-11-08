@@ -138,6 +138,9 @@ pub struct UnitLostEvent {
     pub rx: u16,
     pub ry: u16,
     pub owner: InternedId,
+    /// The dead techno's interned type, for the optional detailed EVA text;
+    /// a transient fact, never a state input.
+    pub type_id: InternedId,
     /// Ares: the victim type's `EVA.Lost`, spoken whether or not the client
     /// admits the radar event.
     #[cfg(feature = "ares")]

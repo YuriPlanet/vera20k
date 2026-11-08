@@ -189,11 +189,8 @@ impl<'a> FireSubject<'a> {
     }
 
     fn weapon_facts(&self, weapon: &WeaponType, target_obj: Option<&ObjectType>) -> WeaponFacts {
-        let warhead = combat_weapon::warhead_of(self.rules, weapon);
-        let projectile = weapon
-            .projectile
-            .as_deref()
-            .and_then(|id| self.rules.projectile(id));
+        let warhead = self.rules.weapon_warhead(weapon);
+        let projectile = self.rules.weapon_projectile(weapon);
         let armor = target_obj.map(ObjectType::armor_id);
         WeaponFacts {
             damage: weapon.damage,
@@ -261,9 +258,13 @@ impl<'a> FireSubject<'a> {
             EntityCategory::Aircraft => FirerClass::Aircraft,
             EntityCategory::Structure => FirerClass::Building,
         };
+        // T9 (`0x006FC13F`) compares the target with the firer's `+0x11C`
+        // without testing `+0x82`; T32/T33 test `+0x82` themselves
+        // (`0x006FC57D`, `0x006FC5C7`). A garrison occupant or cargo rider
+        // stores no Transporter (vera20k#3838).
         let transport = firer
             .passenger_role
-            .inside_transport_id()
+            .transporter()
             .and_then(|id| self.world.substrate.entities.get(id));
         // U5 reads the `+0x418` tether latch (`radio::tether`) and
         // `RadioLinks[0]`.
@@ -293,7 +294,7 @@ impl<'a> FireSubject<'a> {
             transporter: match transport {
                 None => Transporter::None,
                 Some(transport) if transport.is_warped_out() => Transporter::WarpedOut,
-                Some(transport) if transport.passenger_role.is_inside_transport() => {
+                Some(transport) if transport.passenger_role.transporter().is_some() => {
                     Transporter::Nested
                 }
                 Some(_) => Transporter::Plain,
@@ -346,7 +347,7 @@ impl<'a> FireSubject<'a> {
                     },
                 );
                 combat_weapon::get_weapon(firer, obj, slot, entities, self.rules, interner)
-                    .and_then(|weapon| combat_weapon::warhead_of(self.rules, weapon))
+                    .and_then(|weapon| self.rules.weapon_warhead(weapon))
                     .is_some_and(|warhead| warhead.temporal)
             },
             owner_is_human: crate::sim::house_state::house_state_for_owner_id(
@@ -392,6 +393,10 @@ impl<'a> FireSubject<'a> {
                 .map_or(-1, |leaf| leaf.doing()),
             effective_mission: firer.mission.effective().raw(),
             delayed_fire_counter: firer.pending_building_fire.remaining_ticks(),
+            building_has_turret: class == FirerClass::Building
+                && firer
+                    .building_upgrades()
+                    .has_turret(obj, self.rules, &self.world.interner),
             #[cfg(feature = "ares")]
             prism_breaks_support: self
                 .world

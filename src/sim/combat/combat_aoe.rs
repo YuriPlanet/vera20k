@@ -165,7 +165,7 @@ pub fn techno_triggers_cell_inset(
     if !weapon.area_fire {
         return false;
     }
-    let Some(warhead) = super::combat_weapon::warhead_of(rules, weapon) else {
+    let Some(warhead) = rules.weapon_warhead(weapon) else {
         return false;
     };
 
@@ -497,6 +497,9 @@ pub(crate) struct AoECollector {
     spread_leptons: i64,
     exact_impact: AoEAirImpact,
     native_occupancy: bool,
+    /// [`crate::sim::scenario_session::ScenarioSession::truce_harvester_types`]:
+    /// the `HarvesterUnit=` types while ScenarioFlags bit 0x800 is set.
+    truce_harvesters: Vec<crate::sim::intern::InternedId>,
     pub result: AoEDamageResult,
 }
 
@@ -549,6 +552,7 @@ impl AoECollector {
         origin: AoEDamageOrigin,
         layer_context: &AoELayerContext<'_>,
         scenario_no_damage: bool,
+        truce_harvesters: Vec<crate::sim::intern::InternedId>,
     ) -> Option<Self> {
         // Apply_area_damage returns at entry for signed zero. Nothing downstream
         // observes CellSpread, wall routing, object lists, target detach, or RNG.
@@ -680,6 +684,7 @@ impl AoECollector {
             spread_leptons,
             exact_impact,
             native_occupancy: native_occupancy.is_some(),
+            truce_harvesters,
             result,
         })
     }
@@ -818,6 +823,7 @@ impl AoECollector {
                     self.origin.source_house,
                     self.ground_source_admitted,
                     self.origin.warhead_ref,
+                    &self.truce_harvesters,
                 );
             }
         }
@@ -884,6 +890,7 @@ impl AoECollector {
                 self.origin.source_house,
                 self.ground_source_admitted,
                 self.origin.warhead_ref,
+                &self.truce_harvesters,
             );
         }
 
@@ -999,6 +1006,7 @@ pub(crate) fn apply_aoe_damage_with_terrain_and_scenario<O: Into<AoEDamageOrigin
         origin.into(),
         &layer_context,
         scenario_no_damage,
+        Vec::new(),
     ) else {
         return AoEDamageResult::default();
     };
@@ -1223,6 +1231,7 @@ fn push_entity_aoe_damage(
     source_house: Option<crate::sim::intern::InternedId>,
     source_self_admitted: bool,
     warhead_ref: crate::sim::intern::InternedId,
+    truce_harvesters: &[crate::sim::intern::InternedId],
 ) {
     // Apply_area_damage's selected ground/deck list excludes the source object
     // unless its type opts into DamageSelf, the warhead is Rules.CrushWarhead,
@@ -1235,6 +1244,13 @@ fn push_entity_aoe_damage(
         return;
     };
     if entity.health.current() == 0 || entity.death.is_dying() {
+        return;
+    }
+    // `0x00489710..0x00489759`: while ScenarioFlags bit 0x800 (HarvesterImmune,
+    // the Harvester Truce) is set, a Unit whose type is in Rules'
+    // `HarvesterUnit=` list gets no record, so no weapon or splash damage. The
+    // airborne phase has no such skip.
+    if entity.category() == EntityCategory::Unit && truce_harvesters.contains(&entity.type_ref()) {
         return;
     }
 

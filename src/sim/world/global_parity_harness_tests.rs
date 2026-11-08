@@ -736,7 +736,7 @@ fn harness_ini() -> IniFile {
     // DO set both keys. Closing this half needs a projectile section plus a
     // wall overlay or a level step in the fixture terrain, and the same
     // re-baseline.
-    IniFile::from_str(
+    let ini = IniFile::from_str(
         "[InfantryTypes]\n0=E1\n\n\
          [VehicleTypes]\n0=MTNK\n1=HARV\n\n\
          [AircraftTypes]\n\n\
@@ -755,7 +755,8 @@ fn harness_ini() -> IniFile {
          [105mm]\nDamage=65\nROF=50\nRange=6\nWarhead=AP\n\n\
          [SA]\nVerses=100%,100%,100%,90%,70%,25%,100%,25%,25%,0%,0%\n\n\
          [AP]\nVerses=100%,100%,90%,75%,75%,75%,60%,30%,20%,0%,0%\n",
-    )
+    );
+    crate::rules::tiberium_type::with_tiberium_image_slots(&ini)
 }
 
 fn harness_rules() -> RuleSet {

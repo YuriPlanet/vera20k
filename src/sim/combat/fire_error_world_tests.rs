@@ -201,3 +201,70 @@ fn a_tethered_low_balloon_is_illegal_to_fire_at() {
         .set_for_test(Some(99));
     assert_eq!(error(&sim), FireError::Illegal, "tethered to its factory");
 }
+
+/// T9 (`0x006FC13F`) compares the target with the firer's `+0x11C` before
+/// any `+0x82` test; a garrison occupant or cargo rider has no Transporter,
+/// so its carrier is not T9's `Transporter::Target`. A rider whose
+/// Transporter is set is still refused. vera20k#3838.
+#[test]
+fn a_cargo_rider_is_not_bound_to_its_carrier_as_transporter() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=CARR\n\
+         [InfantryTypes]\n0=RIDER\n\
+         [BuildingTypes]\n[AircraftTypes]\n\
+         [CARR]\nStrength=300\nArmor=heavy\nPassengers=1\n\
+         [RIDER]\nStrength=100\nArmor=none\nPrimary=Gun\n\
+         [Gun]\nDamage=50\nROF=30\nRange=6\nWarhead=AP\nOmniFire=yes\n\
+         [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    ))
+    .expect("transporter fixture rules");
+    let mut sim = crate::sim::world::Simulation::new();
+    spawn(
+        &mut sim.substrate.entities,
+        1,
+        "CARR",
+        EntityCategory::Unit,
+        "Americans",
+        (10, 10),
+    );
+    let mut rider = GameEntity::test_default_of_category(
+        2,
+        "RIDER",
+        "Americans",
+        11,
+        10,
+        EntityCategory::Infantry,
+    );
+    rider.health.set_for_test(100);
+    rider.lifecycle.set_in_limbo_for_test(false);
+    sim.substrate.entities.insert(rider);
+    sim.interner = test_interner();
+    let error = |sim: &crate::sim::world::Simulation| {
+        crate::sim::combat::fire_error_world::FireSubject {
+            world: sim,
+            rules: &rules,
+            overlay_registry: None,
+            fog: None,
+            firer: sim.substrate.entities.get(2).unwrap(),
+            obj: rules.object("RIDER").unwrap(),
+            target: Some(crate::sim::combat::TargetKind::Entity(1)),
+            weapon_index: 0,
+        }
+        .fire_error(true)
+    };
+    use crate::sim::combat::fire_error::FireError;
+    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
+        crate::sim::passenger::PassengerRole::inside_for_test(1, false);
+    assert_ne!(
+        error(&sim),
+        FireError::Illegal,
+        "a garrison occupant or cargo rider stores no Transporter"
+    );
+    sim.substrate.entities.get_mut(2).unwrap().passenger_role =
+        crate::sim::passenger::PassengerRole::boarded_for_test(1, false);
+    assert_eq!(
+        error(&sim),
+        FireError::Illegal,
+        "a rider's Transporter is the target whatever +0x82 says"
+    );
+}

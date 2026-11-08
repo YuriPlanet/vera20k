@@ -771,7 +771,7 @@ impl App {
                 &state.renderer.batch_renderer,
                 &state.renderer.shell_surface_presenter,
                 &state.renderer.depth_view,
-                &state.renderer.fps_overlay,
+                &state.renderer.performance_overlay,
                 &state.renderer.bit_font,
                 Some(splash),
             )?;
@@ -955,6 +955,7 @@ impl App {
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("Frame"),
                 });
+        state.renderer.gpu.timer.begin_frame(&mut encoder);
         state.renderer.window_ui.begin_frame();
         let mut pending_main_menu_entry_token = None;
         let mut pending_main_menu_title_receipt = None;
@@ -1296,11 +1297,6 @@ impl App {
                         .copy_game_frame_to(&mut encoder, &output.texture);
                     render_output
                 };
-                if let Some(phases) = game_output.phases {
-                    #[cfg(feature = "telemetry-dashboard")]
-                    state.diag.render_timing.record(phases);
-                    state.renderer.fps_overlay.record_render_phases(phases);
-                }
                 game_render_output = Some(game_output);
             }
             GameScreen::MissionResult { title, detail } => {
@@ -1359,13 +1355,13 @@ impl App {
                 }
             }
         }
-        state.renderer.fps_overlay.encode(
+        state.renderer.performance_overlay.encode(
             &state.renderer.gpu,
             &state.renderer.batch_renderer,
             &mut encoder,
             &output.texture,
             &state.renderer.bit_font,
-            crate::app::diagnostics::fps_overlay::match_panel(state),
+            crate::app::diagnostics::performance_overlay::match_panel(state),
         );
         if state.frontend.screen == GameScreen::InGame {
             let status = state
@@ -1415,7 +1411,7 @@ impl App {
                         .map(crate::i18n::tr)
                 });
             if let Some(status) = status {
-                state.renderer.fps_overlay.encode_status(
+                state.renderer.performance_overlay.encode_status(
                     &state.renderer.gpu,
                     &state.renderer.batch_renderer,
                     &mut encoder,
@@ -1558,6 +1554,11 @@ impl App {
         } else {
             None
         };
+        let measured_phases = game_render_output
+            .as_ref()
+            .and_then(|output| output.phases)
+            .map(|phases| (phases, Instant::now()));
+        state.renderer.gpu.timer.end_frame(&mut encoder);
         let submission = state
             .renderer
             .gpu
@@ -1565,6 +1566,19 @@ impl App {
             .submit(std::iter::once(encoder.finish()));
         output.present(&state.renderer.gpu.queue);
         let presented_at = Instant::now();
+        if let Some((mut phases, handoff_started)) = measured_phases {
+            // Handing the frame to the driver: every bounded submission this
+            // frame (render_game's and any after it), then encoding the rest,
+            // submitting and presenting.
+            phases.handoff = state.renderer.terrain_draw_renderer.frame_submit_time()
+                + presented_at.duration_since(handoff_started);
+            #[cfg(feature = "telemetry-dashboard")]
+            state.diag.render_timing.record(phases);
+            state
+                .renderer
+                .performance_overlay
+                .record_render_phases(phases);
+        }
         let battlefield = state.frontend.screen == GameScreen::InGame;
         state
             .platform
