@@ -42,6 +42,7 @@ pub(crate) fn launcher_values_from_profile(
         vera_icon: profile.vera_icon,
         hd_radar: profile.hd_radar,
         smooth_sidebar: profile.smooth_sidebar,
+        smooth_online_menus: profile.smooth_online_menus,
         hd_map_previews: profile.hd_map_previews,
         shift_queue: profile.shift_queue,
         terrain_deformation: profile.terrain_deformation,
@@ -120,6 +121,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_hd_radar(&mut self, enabled: bool);
     /// Draw the sidebar's art from lightly smoothed xBR copies (`[VERA] SmoothSidebar=`).
     fn store_smooth_sidebar(&mut self, enabled: bool);
+    /// Smooth the online client's enlarged art (`[VERA] SmoothOnlineMenus=`).
+    fn store_smooth_online_menus(&mut self, enabled: bool);
     /// Show VERA's own map pictures in the setup screens (`[VERA] HdMapPreviews=`).
     fn store_hd_map_previews(&mut self, enabled: bool);
     /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
@@ -186,6 +189,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::HdRadarChanged(enabled) => operations.store_hd_radar(enabled),
         LauncherOptionsEvent::SmoothSidebarChanged(enabled) => {
             operations.store_smooth_sidebar(enabled);
+        }
+        LauncherOptionsEvent::SmoothOnlineMenusChanged(enabled) => {
+            operations.store_smooth_online_menus(enabled);
         }
         LauncherOptionsEvent::HdMapPreviewsChanged(enabled) => {
             operations.store_hd_map_previews(enabled);

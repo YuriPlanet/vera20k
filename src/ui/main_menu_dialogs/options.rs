@@ -81,6 +81,8 @@ pub(crate) const HD_RADAR_LABEL: &str = "VERA:HdRadar";
 pub(crate) const HD_RADAR_HELP: &str = "VERA:HdRadarHelp";
 pub(crate) const SMOOTH_SIDEBAR_LABEL: &str = "VERA:SmoothSidebar";
 pub(crate) const SMOOTH_SIDEBAR_HELP: &str = "VERA:SmoothSidebarHelp";
+pub(crate) const SMOOTH_ONLINE_MENUS_LABEL: &str = "VERA:SmoothOnlineMenus";
+pub(crate) const SMOOTH_ONLINE_MENUS_HELP: &str = "VERA:SmoothOnlineMenusHelp";
 /// The Interface page's HD Map Previews (`app::map_picture`). The browser
 /// build cannot start the hidden run that draws a map's picture.
 pub(crate) const HAS_HD_MAP_PREVIEWS: bool =
@@ -615,6 +617,10 @@ pub(crate) enum LauncherCheckboxId {
     /// at that multiple (`render::sidebar_smoothing`). Saved; a battle
     /// follows it at once.
     SmoothSidebar,
+    /// VERA's own box: the online client's enlarged art draws lightly
+    /// smoothed (`BatchRenderer::draw_chrome`). Saved; the next frame follows
+    /// it.
+    SmoothOnlineMenus,
     /// VERA's own box: the setup screens' map preview shows VERA's own
     /// drawing of the whole map (`app::map_picture`) instead of the
     /// map's `[PreviewPack]` picture. On by default; saved, and the next
@@ -693,6 +699,7 @@ pub(crate) enum LauncherOptionsEvent {
     VeraIconChanged(bool),
     HdRadarChanged(bool),
     SmoothSidebarChanged(bool),
+    SmoothOnlineMenusChanged(bool),
     HdMapPreviewsChanged(bool),
     PerformanceStatsChanged(bool),
     SkipIntroChanged(bool),
@@ -744,6 +751,7 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) vera_icon: bool,
     pub(crate) hd_radar: bool,
     pub(crate) smooth_sidebar: bool,
+    pub(crate) smooth_online_menus: bool,
     pub(crate) hd_map_previews: bool,
     pub(crate) shift_queue: bool,
     pub(crate) terrain_deformation: bool,
@@ -797,6 +805,7 @@ impl Default for LauncherOptionsValues {
             vera_icon: false,
             hd_radar: false,
             smooth_sidebar: false,
+            smooth_online_menus: false,
             hd_map_previews: true,
             shift_queue: false,
             terrain_deformation: false,
@@ -1202,6 +1211,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::VeraIcon => &mut self.values.vera_icon,
             LauncherCheckboxId::HdRadar => &mut self.values.hd_radar,
             LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
+            LauncherCheckboxId::SmoothOnlineMenus => &mut self.values.smooth_online_menus,
             LauncherCheckboxId::HdMapPreviews => &mut self.values.hd_map_previews,
             LauncherCheckboxId::PerformanceStats => &mut self.values.performance_stats,
             LauncherCheckboxId::SkipIntro => &mut self.values.skip_intro,
@@ -1254,6 +1264,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => self
                 .pending_events
                 .push(LauncherOptionsEvent::SmoothSidebarChanged(checked)),
+            LauncherCheckboxId::SmoothOnlineMenus => self
+                .pending_events
+                .push(LauncherOptionsEvent::SmoothOnlineMenusChanged(checked)),
             LauncherCheckboxId::HdMapPreviews => self
                 .pending_events
                 .push(LauncherOptionsEvent::HdMapPreviewsChanged(checked)),
@@ -1494,6 +1507,7 @@ impl Category {
                 Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
+                Setting::Checkbox(Check::SmoothOnlineMenus),
                 Setting::Checkbox(Check::DetailedEvaText),
             ],
             Self::Interface => &[
@@ -1505,6 +1519,7 @@ impl Category {
                 Setting::Checkbox(Check::VeraIcon),
                 Setting::Checkbox(Check::HdRadar),
                 Setting::Checkbox(Check::SmoothSidebar),
+                Setting::Checkbox(Check::SmoothOnlineMenus),
                 Setting::Checkbox(Check::HdMapPreviews),
                 Setting::Checkbox(Check::DetailedEvaText),
             ],
@@ -2193,6 +2208,7 @@ mod tests {
                 Check::VeraIcon,
                 Check::HdRadar,
                 Check::SmoothSidebar,
+                Check::SmoothOnlineMenus,
                 Check::HdMapPreviews,
                 Check::ShiftQueue,
                 Check::TerrainDeformation,

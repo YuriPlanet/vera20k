@@ -157,6 +157,10 @@ pub(crate) struct RetailOptionsProfile {
     /// copies at that multiple (`render::sidebar_smoothing`). Off by default;
     /// presentation only.
     pub(crate) smooth_sidebar: bool,
+    /// `[VERA] SmoothOnlineMenus=`: VERA's online client draws its enlarged
+    /// art through the smooth shader (`BatchRenderer::draw_chrome`). Off by
+    /// default; presentation only.
+    pub(crate) smooth_online_menus: bool,
     /// `[VERA] HdMapPreviews=`: the setup screens' map preview shows VERA's
     /// own drawing of the whole map (`app::map_picture`) in place of
     /// the map's `[PreviewPack]` picture. On by default; presentation only.
@@ -335,6 +339,7 @@ impl Default for RetailOptionsProfile {
             vera_icon: false,
             hd_radar: false,
             smooth_sidebar: false,
+            smooth_online_menus: false,
             hd_map_previews: true,
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
@@ -371,7 +376,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 29],
+    pub(crate) vera: [(&'static str, String); 30],
 }
 
 impl RetailOptionsLoad {
@@ -579,6 +584,8 @@ impl RetailOptionsProfile {
             self.vera_icon = vera.read_bool("VeraIcon", self.vera_icon);
             self.hd_radar = vera.read_bool("HdRadar", self.hd_radar);
             self.smooth_sidebar = vera.read_bool("SmoothSidebar", self.smooth_sidebar);
+            self.smooth_online_menus =
+                vera.read_bool("SmoothOnlineMenus", self.smooth_online_menus);
             self.hd_map_previews = vera.read_bool("HdMapPreviews", self.hd_map_previews);
             // A non-numeric value answers 0, which the clamp lifts to the
             // retail strength rather than to a negative boost.
@@ -774,6 +781,10 @@ impl RetailOptionsProfile {
                 (
                     "SmoothSidebar",
                     format_bool(self.smooth_sidebar).to_string(),
+                ),
+                (
+                    "SmoothOnlineMenus",
+                    format_bool(self.smooth_online_menus).to_string(),
                 ),
                 (
                     "HdMapPreviews",
@@ -1703,15 +1714,17 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let unset = load_snapshot(&startup, &unset).retained_profile;
         assert_eq!(unset.window_placement, None);
         // The lock starts off, its icon is the red star, the radar is native
-        // and the sidebar sharp, and map previews are VERA's own; all five
-        // round-trip.
+        // and the sidebar and online menus sharp, and map previews are VERA's
+        // own; all six round-trip.
         assert!(!unset.lock_cursor && !unset.vera_icon);
         assert!(!unset.hd_radar && !unset.smooth_sidebar && unset.hd_map_previews);
+        assert!(!unset.smooth_online_menus);
         let changed = RetailOptionsProfile {
             lock_cursor: true,
             vera_icon: true,
             hd_radar: true,
             smooth_sidebar: true,
+            smooth_online_menus: true,
             hd_map_previews: false,
             ..RetailOptionsProfile::default()
         }
@@ -1719,6 +1732,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         let changed = load_snapshot(&startup, &changed).retained_profile;
         assert!(changed.lock_cursor && changed.vera_icon);
         assert!(changed.hd_radar && changed.smooth_sidebar && !changed.hd_map_previews);
+        assert!(changed.smooth_online_menus);
     }
 
     #[test]

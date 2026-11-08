@@ -38,6 +38,8 @@ struct VertexOutput {
     @location(2) alpha: f32,
     @location(3) @interpolate(flat) fx_flags: u32,
     @location(4) fx_params: vec4f,
+    // The quad's UV rectangle, which only `fs_shell_smooth` reads.
+    @location(5) @interpolate(flat) source_rect: vec4f,
     @location(11) @interpolate(flat) palette_light: vec4u,
     @location(13) @interpolate(flat) source_palette: u32,
 };
@@ -74,6 +76,7 @@ fn vertex_impl(
     var output: VertexOutput;
     output.position = vec4f(clip_x, clip_y, instance.depth, 1.0);
     output.uv = instance.uv_origin + quad_uv[idx] * instance.uv_size;
+    output.source_rect = vec4f(instance.uv_origin, instance.uv_size);
     output.tint = instance.tint;
     output.alpha = instance.alpha;
     output.fx_flags = instance.fx_flags;
@@ -140,6 +143,11 @@ fn shade(input: VertexOutput, a: u32) -> vec4f {
     if (input.source_palette != 0u) {
         color = indexed_color(index, input.source_palette);
     }
+    return shade_color(input, color, index, a);
+}
+
+// What a source colour stores: the shared end of every colour path here.
+fn shade_color(input: VertexOutput, color: vec4f, index: u32, a: u32) -> vec4f {
     // Discard fully transparent pixels so they don't write to the depth buffer.
     // Without this, transparent regions of sprite quads would occlude objects behind them.
     if (color.a < 0.01) {
@@ -152,4 +160,208 @@ fn shade(input: VertexOutput, a: u32) -> vec4f {
         input.fx_flags,
         input.fx_params,
     );
+}
+
+// VERA's smooth online client (`[VERA] SmoothOnlineMenus=`, off by default),
+// for RGBA chrome pages. Nearest sampling at a fractional scale gives source
+// pixels uneven widths, and stair-steps on every curve. Here each enlarged
+// pixel is the box-filtered average of the source pixels under it, so its
+// pixels stay even at any scale, plus 40% of the rounding xBR gives corners.
+// A quad drawn at its own size stays exactly as it was. Text and the cursor
+// never come here.
+//
+// `smooth_corner` is one turn of the corner test in `render::xbr`: FFmpeg's
+// vf_xbr rule, with its colour distance and threshold. FFmpeg's blends fill
+// fixed sub-pixel slots for 2x, 3x and 4x; this draws the same corners as
+// lines through the source pixel, as Hyllian's xBR-lv2 shader does, so they
+// fit any scale. Presentation only.
+
+// Source pixels a screen pixel spans, at and above which a quad is not enlarged.
+const SMOOTH_NATIVE_FOOTPRINT: f32 = 0.995;
+// How far xBR moves a pixel, as `render::sidebar_smoothing`'s STRENGTH.
+const SMOOTH_STRENGTH: f32 = 0.4;
+// FFmpeg's `eq` threshold of 155, on these 0..1 channels.
+const SMOOTH_EQUAL: f32 = 0.6078;
+
+struct SmoothTexel {
+    // Premultiplied so that clear pixels add no colour. Square roots stand in
+    // for sRGB's curve: xBR and its mix work on stored bytes, not on light.
+    color: vec4f,
+    // FFmpeg's YUV, and alpha so a clear pixel differs from a black one.
+    yuva: vec4f,
+}
+
+struct SmoothCorner {
+    px: vec4f,
+    blend: f32,
+}
+
+// The texel `offset` from `cell`, kept inside the quad's source rectangle:
+// past it a piece's edge repeats, as `render::xbr` reads past a piece's edge.
+fn smooth_texel(cell: vec2f, offset: vec2f, bounds: vec4f) -> SmoothTexel {
+    let source = textureLoad(t_sprite, vec2i(clamp(cell + offset, bounds.xy, bounds.zw)), 0);
+    let rgb = sqrt(source.rgb) * source.a;
+    return SmoothTexel(
+        vec4f(rgb, source.a),
+        vec4f(
+            dot(rgb, vec3f(0.299, 0.587, 0.114)),
+            dot(rgb, vec3f(-0.169, -0.331, 0.5)),
+            dot(rgb, vec3f(0.5, -0.419, -0.081)),
+            source.a,
+        ),
+    );
+}
+
+fn smooth_df(a: SmoothTexel, b: SmoothTexel) -> f32 {
+    return dot(abs(a.yuva - b.yuva), vec4f(1.0));
+}
+
+fn smooth_eq(a: SmoothTexel, b: SmoothTexel) -> bool {
+    return smooth_df(a, b) < SMOOTH_EQUAL;
+}
+
+fn smooth_same(a: SmoothTexel, b: SmoothTexel) -> bool {
+    return all(a.yuva == b.yuva);
+}
+
+// One turn of the rule, named as in `render::xbr::corner`. `at` is the
+// fragment's place in the source pixel with the corner this turn rounds at
+// (1, 1); `pixel` is a screen pixel's size there.
+fn smooth_corner(
+    pe: SmoothTexel, pi: SmoothTexel, ph: SmoothTexel, pf: SmoothTexel,
+    pg: SmoothTexel, pc: SmoothTexel, pd: SmoothTexel, pb: SmoothTexel,
+    f4: SmoothTexel, i4: SmoothTexel, h5: SmoothTexel, i5: SmoothTexel,
+    at: vec2f, pixel: f32,
+) -> SmoothCorner {
+    var corner: SmoothCorner;
+    if smooth_same(pe, ph) || smooth_same(pe, pf) {
+        return corner;
+    }
+    let e = smooth_df(pe, pc) + smooth_df(pe, pg) + smooth_df(pi, h5) + smooth_df(pi, f4)
+        + 4.0 * smooth_df(ph, pf);
+    let i = smooth_df(ph, pd) + smooth_df(ph, i5) + smooth_df(pf, i4) + smooth_df(pf, pb)
+        + 4.0 * smooth_df(pe, pi);
+    if e > i {
+        return corner;
+    }
+    corner.px = select(ph.color, pf.color, smooth_df(pe, pf) <= smooth_df(pe, ph));
+    // Each edge is a line through the pixel, anti-aliased over a screen pixel;
+    // the unsure case rounds only the corner's tip.
+    let sum = at.x + at.y;
+    corner.blend = saturate((sum + pixel - 1.75) / (2.0 * pixel));
+    let sharp = e < i
+        && (!smooth_eq(pf, pb) && !smooth_eq(ph, pd)
+            || smooth_eq(pe, pi) && !smooth_eq(pf, i4) && !smooth_eq(ph, i5)
+            || smooth_eq(pe, pg)
+            || smooth_eq(pe, pc));
+    if sharp {
+        corner.blend = max(corner.blend, saturate((sum + pixel - 1.5) / (2.0 * pixel)));
+        let ke = smooth_df(pf, pg);
+        let ki = smooth_df(ph, pc);
+        if 2.0 * ke <= ki && !smooth_same(pe, pg) && !smooth_same(pd, pg) {
+            let line = at.y + 0.5 * at.x;
+            corner.blend = max(corner.blend, saturate((line + 0.5 * pixel - 1.0) / pixel));
+        }
+        if ke >= 2.0 * ki && !smooth_same(pe, pc) && !smooth_same(pb, pc) {
+            let line = at.y + 2.0 * at.x;
+            corner.blend = max(corner.blend, saturate((line + pixel - 2.0) / (2.0 * pixel)));
+        }
+    }
+    return corner;
+}
+
+// A premultiplied smooth colour as the linear straight alpha `shade_color` takes.
+fn smooth_store(color: vec4f) -> vec4f {
+    let rgb = saturate(color.rgb / max(color.a, 0.001));
+    return vec4f(rgb * rgb, saturate(color.a));
+}
+
+// The smoothed colour at `position` in source pixels. `rect` is the quad's
+// source rectangle in pixels and `scale` the screen pixels per source pixel.
+fn smooth_chrome(position: vec2f, rect: vec4f, scale: vec2f) -> vec4f {
+    let cell = floor(position);
+    let at = position - cell;
+    let first = floor(rect.xy + vec2f(0.001));
+    let bounds = vec4f(first, max(ceil(rect.xy + rect.zw - vec2f(0.001)) - vec2f(1.0), first));
+
+    let pa = smooth_texel(cell, vec2f(-1.0, -1.0), bounds);
+    let pb = smooth_texel(cell, vec2f(0.0, -1.0), bounds);
+    let pc = smooth_texel(cell, vec2f(1.0, -1.0), bounds);
+    let pd = smooth_texel(cell, vec2f(-1.0, 0.0), bounds);
+    let pe = smooth_texel(cell, vec2f(0.0, 0.0), bounds);
+    let pf = smooth_texel(cell, vec2f(1.0, 0.0), bounds);
+    let pg = smooth_texel(cell, vec2f(-1.0, 1.0), bounds);
+    let ph = smooth_texel(cell, vec2f(0.0, 1.0), bounds);
+    let pi = smooth_texel(cell, vec2f(1.0, 1.0), bounds);
+
+    // How much of the screen pixel lies over the source pixels before and
+    // after this one along each axis.
+    let before = saturate(vec2f(0.5) - at * scale);
+    let after = saturate((at - vec2f(1.0)) * scale + vec2f(0.5));
+    let middle = vec2f(1.0) - before - after;
+    let box_filtered = (pa.color * before.x + pb.color * middle.x + pc.color * after.x) * before.y
+        + (pd.color * before.x + pe.color * middle.x + pf.color * after.x) * middle.y
+        + (pg.color * before.x + ph.color * middle.x + pi.color * after.x) * after.y;
+
+    // A stretched bar's corners would smear along it, and a corner needs two
+    // differing neighbours that meet; most pixels have none.
+    let round_h = !smooth_same(pe, ph);
+    let round_f = !smooth_same(pe, pf);
+    let round_b = !smooth_same(pe, pb);
+    let round_d = !smooth_same(pe, pd);
+    if max(scale.x, scale.y) > 2.0 * min(scale.x, scale.y)
+        || !(round_h && round_f || round_f && round_b || round_b && round_d || round_d && round_h)
+    {
+        return smooth_store(box_filtered);
+    }
+
+    let a0 = smooth_texel(cell, vec2f(-2.0, -1.0), bounds);
+    let a1 = smooth_texel(cell, vec2f(-1.0, -2.0), bounds);
+    let b1 = smooth_texel(cell, vec2f(0.0, -2.0), bounds);
+    let c1 = smooth_texel(cell, vec2f(1.0, -2.0), bounds);
+    let c4 = smooth_texel(cell, vec2f(2.0, -1.0), bounds);
+    let d0 = smooth_texel(cell, vec2f(-2.0, 0.0), bounds);
+    let f4 = smooth_texel(cell, vec2f(2.0, 0.0), bounds);
+    let g0 = smooth_texel(cell, vec2f(-2.0, 1.0), bounds);
+    let g5 = smooth_texel(cell, vec2f(-1.0, 2.0), bounds);
+    let h5 = smooth_texel(cell, vec2f(0.0, 2.0), bounds);
+    let i4 = smooth_texel(cell, vec2f(2.0, 1.0), bounds);
+    let i5 = smooth_texel(cell, vec2f(1.0, 2.0), bounds);
+
+    let pixel = 2.0 / (scale.x + scale.y);
+    let bottom_right = smooth_corner(pe, pi, ph, pf, pg, pc, pd, pb, f4, i4, h5, i5, at, pixel);
+    let top_right = smooth_corner(pe, pc, pf, pb, pi, pa, ph, pd, b1, c1, f4, c4,
+        vec2f(1.0 - at.y, at.x), pixel);
+    let top_left = smooth_corner(pe, pa, pb, pd, pc, pg, pf, ph, d0, a0, b1, a1,
+        vec2f(1.0) - at, pixel);
+    let bottom_left = smooth_corner(pe, pg, pd, ph, pa, pi, pb, pf, h5, g5, d0, g0,
+        vec2f(at.y, 1.0 - at.x), pixel);
+
+    // Opposite corners combine; of the two diagonals, the one that moves this
+    // pixel most is the edge it lies on.
+    let falling = mix(mix(pe.color, bottom_right.px, bottom_right.blend), top_left.px, top_left.blend);
+    let rising = mix(mix(pe.color, top_right.px, top_right.blend), bottom_left.px, bottom_left.blend);
+    let rounded = select(
+        rising,
+        falling,
+        dot(abs(falling - pe.color), vec4f(1.0)) > dot(abs(rising - pe.color), vec4f(1.0)),
+    );
+    return smooth_store(box_filtered + SMOOTH_STRENGTH * (rounded - pe.color));
+}
+
+@fragment
+fn fs_shell_smooth(input: VertexOutput) -> @location(0) vec4f {
+    let dims = vec2f(textureDimensions(t_sprite));
+    let position = input.uv * dims;
+    let footprint = abs(vec2f(dpdx(position.x), dpdy(position.y)));
+    var color = textureLoad(t_sprite, vec2i(position), 0);
+    if any(footprint < vec2f(SMOOTH_NATIVE_FOOTPRINT)) {
+        color = smooth_chrome(
+            position,
+            input.source_rect * dims.xyxy,
+            vec2f(1.0) / clamp(footprint, vec2f(0.001), vec2f(1.0)),
+        );
+    }
+    let index: u32 = textureLoad(source_indices, source_texel(input.uv), 0).r;
+    return shade_color(input, color, index, tactical_a_at(input.position.xy));
 }

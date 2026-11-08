@@ -1170,6 +1170,7 @@ pub(crate) fn render_wol_page(
             text: &text,
             cursor: software_cursor(state, CURSOR_DEPTH),
             effects: None,
+            smooth_art: state.smooth_online_menus(),
         },
     );
     state.platform.window.request_redraw();
