@@ -841,6 +841,41 @@ mod tests {
         );
     }
 
+    /// Slot 9's name lives on the rules section, so no ART `building_anims`
+    /// row carries it. Without this root the SHP stays unbound and
+    /// `spawn_anim_at_world` refuses the constructor, which is exactly how the
+    /// turret went missing.
+    #[test]
+    fn a_rules_owned_shp_turret_is_a_tolerant_root() {
+        use crate::rules::art_data::ArtRegistry;
+        use crate::rules::ini_parser::IniFile;
+        use crate::rules::ruleset::RuleSet;
+
+        let mut rules = RuleSet::from_ini(&IniFile::from_str(
+            "[BuildingTypes]\n0=TOWER\n1=VOXELTOWER\n[Animations]\n0=TOWERTUR\n\
+             [TOWER]\nStrength=100\nTurret=yes\nTurretAnim=TOWERTUR\n\
+             [VOXELTOWER]\nStrength=100\nTurret=yes\nTurretAnim=VOXELTUR\n\
+             TurretAnimIsVoxel=yes\n",
+        ))
+        .expect("rules");
+        rules.install_art_data(ArtRegistry::from_ini(&IniFile::from_str("")));
+        let roots = super::tolerant_anim_class_roots(&rules);
+
+        assert!(
+            roots.iter().any(|root| root == "TOWERTUR"),
+            "the rules-owned turret name must bind its SHP: {roots:?}"
+        );
+        assert!(
+            !roots.iter().any(|root| root == "VOXELTUR"),
+            "a voxel turret draws a model, so it asks for no animation: {roots:?}"
+        );
+        assert_eq!(
+            roots.iter().filter(|root| *root == "TOWERTUR").count(),
+            1,
+            "a name reached twice must stay one root"
+        );
+    }
+
     use std::collections::HashSet;
     use std::path::PathBuf;
 

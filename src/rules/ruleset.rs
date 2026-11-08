@@ -4633,9 +4633,6 @@ impl TypeWeapons {
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "test-support"), derive(Clone))]
 pub struct RuleSet {
-    /// Ares `[MouseCursors]` named rows, projected once from the merged
-    /// RULES layer. Their order defines `CursorId::Custom` indices.
-    mouse_cursors: crate::rules::mouse_cursors::MouseCursorCatalog,
     /// All game objects in registry insertion order, indexed by `TypeHandle`.
     object_list: Vec<ObjectType>,
     /// Uppercase type ID → handle. Uppercase keys give O(1) case-insensitive
@@ -5077,12 +5074,6 @@ impl<'a> SoundReferenceSource<'a> {
 }
 
 impl RuleSet {
-    /// Ares `[MouseCursors]` named rows (`ModeI`, `ModeII`, ...) in RULES
-    /// order. `Cursor.Deploy=` resolves against this catalog.
-    pub fn mouse_cursors(&self) -> &crate::rules::mouse_cursors::MouseCursorCatalog {
-        &self.mouse_cursors
-    }
-
     /// Ares1003DB30/1003DB50. Both group labels and ordinary type IDs share
     /// one namespace; callers compare these keys case-insensitively.
     pub fn type_selection_key<'a>(&'a self, category: ObjectCategory, type_id: &'a str) -> &'a str {
@@ -7198,7 +7189,6 @@ impl RuleSet {
         );
 
         let mut rules = RuleSet {
-            mouse_cursors: crate::rules::mouse_cursors::MouseCursorCatalog::from_ini(ini),
             object_list,
             object_index,
             serial: next_rule_set_serial(),

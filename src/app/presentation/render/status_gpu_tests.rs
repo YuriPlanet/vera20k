@@ -2495,6 +2495,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             bomb_clock: None,
                             wrench: None,
                             rank: *rank,
+                            rank_insignia: None,
                             background: *background,
                             shield_background: None,
                             fills: fills.clone(),

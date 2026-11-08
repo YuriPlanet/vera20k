@@ -1664,6 +1664,12 @@ pub(crate) fn build_building_anim_instances(
             sim,
             local_owner_id,
             building,
+            // 0x00446580..0x004466D5: a building aims its body facing, and an
+            // SHP-turret animation's frame is that heading in 32 steps.
+            rules
+                .object(sim.interner().resolve(building.type_ref()))
+                .and_then(crate::rules::art_data::shp_turret_anim_config)
+                .map(|_| u16::from(building.body_facing_byte(sim.session().binary_frame())) >> 3),
             &slot_admitted,
             &|id| anim_colour_word(state, sim, cells.as_ref(), &shrouded, id),
             axis.origin_y,
@@ -1717,6 +1723,9 @@ fn emit_building_anims(
     sim: &crate::sim::world::Simulation,
     local_owner_id: Option<crate::sim::intern::InternedId>,
     building: &crate::sim::game_entity::GameEntity,
+    // `Some` for a `Turret=yes` type without `TurretAnimIsVoxel=`: the
+    // thirty-second step of its turret heading, which is the slot-9 frame.
+    turret_frame: Option<u16>,
     slot_admitted: &dyn Fn(u64) -> bool,
     anim_word: &dyn Fn(u64) -> u16,
     origin_y: f32,
@@ -1733,7 +1742,21 @@ fn emit_building_anims(
         Some(e) => e,
         None => return,
     };
-    for anim in &art_entry.building_anims {
+    // Slot 9's names are rules-owned, so a turret building's art entry carries
+    // no row for it: synthesize one from the type. A mod that does declare an
+    // art row for slot 9 loses to this one, as the native read never looks at
+    // art for that slot.
+    let turret_config = turret_frame.and_then(|_| {
+        rules
+            .and_then(|rules| rules.object(building_type))
+            .and_then(crate::rules::art_data::shp_turret_anim_config)
+    });
+    for anim in art_entry
+        .building_anims
+        .iter()
+        .filter(|anim| anim.native_slot != 9 || turret_config.is_none())
+        .chain(turret_config.iter())
+    {
         let Some(anim_id) = building.building_art.anim_slots()[usize::from(anim.native_slot)]
         else {
             continue;
@@ -1785,13 +1808,24 @@ fn emit_building_anims(
         let alpha = crate::rules::art_data::anim_translucency_source_alpha(flags);
         // Anim+AC is relative to this instance's current type Start. Replacement
         // copies only AC; its timer/loop state remains the new constructor's.
-        let Ok(frame) = u16::try_from(
-            instance
-                .runtime()
-                .current_frame
-                .wrapping_add(runtime_config.start),
-        ) else {
-            continue;
+        // Slot 9 draws the turret's heading, not the animation's own timer:
+        // `0x004466xx` takes the frame from the turret facing while the slot's
+        // clock keeps running behind it.
+        let frame = match (anim.native_slot, turret_frame) {
+            (9, Some(turret_frame)) => {
+                turret_frame.min(crate::rules::art_data::SHP_TURRET_FACING_FRAMES - 1)
+            }
+            _ => {
+                let Ok(frame) = u16::try_from(
+                    instance
+                        .runtime()
+                        .current_frame
+                        .wrapping_add(runtime_config.start),
+                ) else {
+                    continue;
+                };
+                frame
+            }
         };
         let context =
             crate::render::sprite_atlas::attached_anim_palette_context(Some(runtime_config));

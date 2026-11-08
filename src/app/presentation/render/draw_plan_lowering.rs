@@ -144,6 +144,10 @@ pub(crate) enum ObjectExtrasRun {
         bomb_clock: Option<u32>,
         wrench: Option<u32>,
         rank: Option<u32>,
+        /// Phobos custom insignia SHP owning `rank`'s UVs; `None` = PIPS.
+        /// The Extras pass binds this shape's texture for the rank draw, and
+        /// runs may only merge when it matches.
+        rank_insignia: Option<String>,
         background: Option<u32>,
         shield_background: Option<u32>,
         fills: std::ops::Range<u32>,
@@ -425,6 +429,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     bomb_clock,
                     wrench,
                     rank,
+                    rank_insignia: strip.rank_insignia,
                     background,
                     shield_background,
                     fills: start..end,
@@ -446,6 +451,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     bomb_clock,
                     wrench,
                     rank,
+                    rank_insignia,
                     fills,
                     ..
                 }) = &strip
@@ -458,6 +464,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         bomb_clock: *bomb_clock,
                         wrench: *wrench,
                         rank: *rank,
+                        rank_insignia: rank_insignia.clone(),
                         background: None,
                         shield_background: None,
                         fills: fills.start..fills.start,
@@ -515,6 +522,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 bomb_clock,
                 wrench,
                 rank,
+                rank_insignia,
                 background,
                 shield_background,
                 fills,
@@ -557,6 +565,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         bomb_clock,
                         wrench,
                         rank,
+                        rank_insignia,
                         background,
                         shield_background,
                         fills,

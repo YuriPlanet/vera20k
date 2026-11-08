@@ -39,6 +39,7 @@ use crate::map::basic::{BasicSection, BridgeDestroyabilityMode};
 use crate::map::houses::{self, HouseColorMap, HouseRoster};
 use crate::map::lighting::{self, CellLightGrid, LightingConfig};
 use crate::map::map_file::MapFile;
+use crate::rules::house_colors::HouseColorIndex;
 use crate::map::overlay::{OverlayEntry, TerrainObject};
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, scheduler_anim_roots};
 use crate::map::source::{
@@ -3480,6 +3481,11 @@ fn load_map_first_step(
                                             )
                                         })
                                         .unwrap_or_else(|| house_roster.color_map());
+                                    // Walls follow their placing House's ramp, so
+                                    // the overlay atlas bakes one body tile per
+                                    // colour this match can build with.
+                                    let wall_house_colors: Vec<HouseColorIndex> =
+                                        crate::map::houses::distinct_house_colors(&house_color_map);
                                     let bridge_destroyability_mode = skirmish_launch_session
                                         .map(|launch| {
                                             BridgeDestroyabilityMode::SkirmishOrMultiplayer {
@@ -3946,6 +3952,7 @@ fn load_map_first_step(
                                                                 overlay_iso_palette.as_ref(),
                                                                 unit_palette.as_ref(),
                                                                 overlay_tiberium_palette.as_ref(),
+                                                                &wall_house_colors,
                                                             );
 
                                                                     Ok(FreshMapLoadStep::Continue(

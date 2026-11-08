@@ -491,6 +491,7 @@ pub(super) fn test_audio() -> crate::app::audio_runtime::AppAudioRuntime {
         sfx_player: None,
         launcher_audio_available: true,
         theme_startup_suppressed: false,
+        last_theme_diag: None,
         master_groups: Default::default(),
         restore_muted: false,
     }

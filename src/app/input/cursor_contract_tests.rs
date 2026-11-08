@@ -596,6 +596,13 @@ fn native_infantry_weapon_suffix_controls_match_shared_action_owner() {
     .unwrap();
     for row in corpus["weapons"].as_array().unwrap() {
         let spec = &row["input"];
+        // The corpus is a retail trace. Phobos `AllowAirstrike` keeps the
+        // vanilla `CanC4` rule for a building but makes every other kind a
+        // valid target, so its vehicle row deliberately diverges.
+        #[cfg(feature = "phobos")]
+        if spec["mig"] == true && spec["building"] != true {
+            continue;
+        }
         let flag = |name: &str| if spec[name] == true { "yes" } else { "no" };
         let ini = format!(
             "[InfantryTypes]\n0=ACTOR\n[VehicleTypes]\n0=UNIT\n[BuildingTypes]\n0=BLD\n\

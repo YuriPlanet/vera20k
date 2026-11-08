@@ -217,6 +217,7 @@ impl Probe {
             rules,
             None,
             &[],
+            &[],
         )
         .expect("production preloads the physical low-bridge variants");
         let live_a = native.then(|| {
@@ -350,6 +351,7 @@ impl Probe {
                 viewer: None,
                 fog: None,
                 fog_of_war: false,
+                house_colors: None,
             },
             &mut bodies,
         );
@@ -446,10 +448,7 @@ impl Probe {
             );
             assert!(
                 self.atlas
-                    .get(&OverlaySpriteKey {
-                        name: name.clone(),
-                        frame: frame_index as i32
-                    })
+                    .get(&OverlaySpriteKey::new(name.clone(), frame_index as i32))
                     .is_none(),
                 "flank must not substitute populated body art"
             );
@@ -473,19 +472,13 @@ impl Probe {
             );
             assert!(
                 self.atlas
-                    .get(&OverlaySpriteKey {
-                        name: name.clone(),
-                        frame: 1
-                    })
+                    .get(&OverlaySpriteKey::new(name.clone(), 1))
                     .is_none()
             );
         } else {
             assert!(
                 self.atlas
-                    .get(&OverlaySpriteKey {
-                        name: name.clone(),
-                        frame: 1
-                    })
+                    .get(&OverlaySpriteKey::new(name.clone(), 1))
                     .is_some()
             );
         }
@@ -1175,6 +1168,7 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
             rules,
             None,
             &rubble_arts,
+            &[],
         )
         .expect("physical rubble body atlas");
         let shadow_atlas = build_bridge_atlas(
@@ -1212,6 +1206,7 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
                 viewer: None,
                 fog: None,
                 fog_of_war: false,
+                house_colors: None,
             },
             &mut bodies,
         );

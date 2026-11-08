@@ -1467,6 +1467,22 @@ fn sprite_palette_for_key(
     cell_palette_type_ids: &HashSet<String>,
     extra_palette_type_ids: Option<&HashSet<String>>,
 ) -> SpritePaletteChoice {
+    // art.ini `CustomPalette=` on an AnimType is an explicit palette override:
+    // the native draw hands that file's convert to `CC_Draw_Shape` and skips
+    // both the selected ColorScheme and the global ANIM.PAL. Only types whose
+    // palette actually loaded are registered, so a missing file keeps the
+    // ordinary arm below. Tiled and fogged draws select ANIM.PAL by their own
+    // literals and stay on them.
+    if matches!(
+        key.palette_context,
+        ShpPaletteContext::GlobalAnim
+            | ShpPaletteContext::AnimScheme
+            | ShpPaletteContext::SelectedScheme
+    ) && extra_palette_type_ids
+        .is_some_and(|ids| ids.contains(&key.type_id.to_ascii_uppercase()))
+    {
+        return SpritePaletteChoice::ExtraBuilding;
+    }
     match key.palette_context {
         ShpPaletteContext::BulletDefault => SpritePaletteChoice::Bullet,
         ShpPaletteContext::BulletAnim => SpritePaletteChoice::Anim,
@@ -2182,6 +2198,27 @@ pub(crate) fn prepare_sprite_atlas(
                     );
                 }
             }
+            // Slot 9 (an SHP turret) is rules-owned, so the art entry of a
+            // turret building normally lists no row for it. Register the SHP's
+            // thirty-two facing frames here anyway: the presentation picks the
+            // frame from the turret heading at draw time.
+            if let Some(turret) = rules
+                .and_then(|rules| rules.object(type_id))
+                .and_then(crate::rules::art_data::shp_turret_anim_config)
+            {
+                register_building_anim(
+                    &mut needed,
+                    &mut building_anim_counts,
+                    &mut shp_files,
+                    asset_manager,
+                    art_reg,
+                    &turret.anim_type,
+                    crate::rules::art_data::SHP_TURRET_FACING_FRAMES - 1,
+                    *house_color,
+                    theater_ext,
+                    theater_name,
+                );
+            }
             // BibShape: ground-level pad SHP (e.g., refinery dock GAREFNBB).
             // Use bib name directly as atlas key so render can look it up.
             if let Some(ref bib) = entry.bib_shape {
@@ -2598,8 +2635,8 @@ pub(crate) fn prepare_sprite_atlas(
     // palette owner as cell-drawer animations. Resolve the rules Image alias.
     // Refresh-local decoding cache; the existing atlas owns all resulting
     // rows and retires them with the scenario. No final-ART Palette reread.
-    let mut extra_palettes: HashMap<&str, Option<Palette>> = HashMap::new();
-    let mut extra_palette_names = HashMap::new();
+    let mut extra_palettes: HashMap<String, Option<Palette>> = HashMap::new();
+    let mut extra_palette_names: HashMap<String, String> = HashMap::new();
     let mut cell_palette_type_ids = cell_drawer_type_ids.clone();
     let mut extra_palette_type_ids = HashSet::new();
     let new_types: HashSet<&str> = new_keys.iter().map(|key| key.type_id.as_str()).collect();
@@ -2614,14 +2651,38 @@ pub(crate) fn prepare_sprite_atlas(
             cell_palette_type_ids.insert(type_id.to_ascii_uppercase());
         }
         if let Some(name) = object.and_then(|object| object.custom_palette_name()) {
-            let palette = extra_palettes.entry(name).or_insert_with(|| {
+            let palette = extra_palettes.entry(name.to_owned()).or_insert_with(|| {
                 rules?
                     .load_extra_building_palette(asset_manager, theater_ext, Some(name))
                     .map(|(_, palette)| palette)
             });
             if palette.is_some() {
                 extra_palette_type_ids.insert(type_id.to_ascii_uppercase());
-                extra_palette_names.insert(type_id.to_ascii_uppercase(), name);
+                extra_palette_names.insert(type_id.to_ascii_uppercase(), name.to_owned());
+            }
+        }
+        // AnimType `CustomPalette=` names a palette *file*, not a rules palette
+        // group, so the theater suffix a TechnoType request gets must not be
+        // appended: MO writes `markpal.pal` and `unittem.pal` verbatim. A
+        // missing file leaves the animation on its ordinary scheme instead of
+        // failing the atlas.
+        if let Some(name) = art
+            .and_then(|art| art.anim_runtime_config(base))
+            .and_then(|config| config.custom_palette.as_deref())
+        {
+            let palette = extra_palettes.entry(name.to_owned()).or_insert_with(|| {
+                let file = if name.to_ascii_lowercase().ends_with(".pal") {
+                    name.to_owned()
+                } else {
+                    format!("{name}.pal")
+                };
+                asset_manager
+                    .get_ref(&file)
+                    .and_then(|data| Palette::from_bytes(data).ok())
+            });
+            if palette.is_some() {
+                extra_palette_type_ids.insert(type_id.to_ascii_uppercase());
+                extra_palette_names.insert(type_id.to_ascii_uppercase(), name.to_owned());
             }
         }
     }
@@ -2631,7 +2692,7 @@ pub(crate) fn prepare_sprite_atlas(
         if let ShpPaletteContext::ExtraScheme(palette) = key.palette_context
             && let Some(name) = interner.map(|interner| interner.resolve(palette))
         {
-            extra_palettes.entry(name).or_insert_with(|| {
+            extra_palettes.entry(name.to_owned()).or_insert_with(|| {
                 rules?
                     .load_extra_building_palette(asset_manager, theater_ext, Some(name))
                     .map(|(_, palette)| palette)
@@ -2757,7 +2818,8 @@ pub(crate) fn prepare_sprite_atlas(
                     ShpPaletteContext::ExtraScheme(palette) => interner
                         .expect("custom animation palette was resolved through the interner")
                         .resolve(palette),
-                    _ => extra_palette_names[key.type_id.to_ascii_uppercase().as_str()],
+                    _ => extra_palette_names[key.type_id.to_ascii_uppercase().as_str()]
+                        .as_str(),
                 };
                 let palette = extra_palettes[name]
                     .as_ref()
@@ -2769,6 +2831,18 @@ pub(crate) fn prepare_sprite_atlas(
         // (0x0068C710), which writes the colour's ramp over indices 16..31.
         let house_remap = match key.palette_context {
             ShpPaletteContext::Legacy => palette_choice != SpritePaletteChoice::CellIso,
+            // An AnimType's `CustomPalette=` is a *plain* convert: gamemd builds
+            // no ColorScheme for it, so the SHP's 16..31 band keeps the custom
+            // file's own colours. `[MCVMARK]` depends on that — its green corner
+            // lights are indices 16 and 22 — while a TechnoType palette request
+            // (the `Legacy` arm above) is scheme-owned and does remap.
+            ShpPaletteContext::GlobalAnim
+            | ShpPaletteContext::AnimScheme
+            | ShpPaletteContext::SelectedScheme
+                if palette_choice == SpritePaletteChoice::ExtraBuilding =>
+            {
+                false
+            }
             _ => matches!(
                 palette_choice,
                 SpritePaletteChoice::Unit | SpritePaletteChoice::ExtraBuilding
@@ -4041,5 +4115,84 @@ impl SpriteAtlas {
         atlas_growth::write_texels(queue, &page, [0, 0], size, 1, indices);
         let atlas = Self::new(vec![SpriteAtlasPage { texture }], HashMap::new(), palettes);
         (atlas, row + 1)
+    }
+}
+
+#[cfg(test)]
+mod anim_custom_palette_tests {
+    use super::*;
+    use crate::rules::house_colors::NO_REMAP;
+
+    fn key(context: ShpPaletteContext, type_id: &str) -> ShpSpriteKey {
+        ShpSpriteKey {
+            palette_context: context,
+            type_id: type_id.to_owned(),
+            facing: 0,
+            frame: 0,
+            house_color: NO_REMAP,
+        }
+    }
+
+    /// `CustomPalette=` on an AnimType is an explicit convert: the native draw
+    /// hands that file to `CC_Draw_Shape` and never consults the ColorScheme or
+    /// the global ANIM.PAL. Falling back to ANIM.PAL is what drew MO's
+    /// `[MCVMARK]` (the "deploy me" badge over every starting MCV) cream
+    /// instead of black with green corner lights.
+    #[test]
+    fn anim_custom_palette_beats_the_scheme_and_the_global_anim_palette() {
+        let registered: HashSet<String> = HashSet::from(["MCVMARK".to_string()]);
+        let empty = HashSet::new();
+        for context in [
+            ShpPaletteContext::AnimScheme,
+            ShpPaletteContext::GlobalAnim,
+            ShpPaletteContext::SelectedScheme,
+        ] {
+            assert_eq!(
+                sprite_palette_for_key(
+                    &key(context, "MCVMARK"),
+                    None,
+                    &empty,
+                    &empty,
+                    Some(&registered),
+                ),
+                SpritePaletteChoice::ExtraBuilding,
+                "{context:?} must honour the animation's own CustomPalette"
+            );
+        }
+        // Only a palette that actually loaded registers; a missing file leaves
+        // the ordinary scheme in place rather than dropping the art.
+        assert_eq!(
+            sprite_palette_for_key(
+                &key(ShpPaletteContext::AnimScheme, "MCVMARK"),
+                None,
+                &empty,
+                &empty,
+                None,
+            ),
+            SpritePaletteChoice::Unit
+        );
+        // A sibling animation of the same theme is untouched.
+        assert_eq!(
+            sprite_palette_for_key(
+                &key(ShpPaletteContext::AnimScheme, "TWLT070"),
+                None,
+                &empty,
+                &empty,
+                Some(&registered),
+            ),
+            SpritePaletteChoice::Unit
+        );
+        // Tiled and fogged draws pick ANIM.PAL by their own literal, so the
+        // custom file must not capture them.
+        assert_eq!(
+            sprite_palette_for_key(
+                &key(ShpPaletteContext::AnimPalette, "MCVMARK"),
+                None,
+                &empty,
+                &empty,
+                Some(&registered),
+            ),
+            SpritePaletteChoice::Anim
+        );
     }
 }

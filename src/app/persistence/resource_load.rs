@@ -346,6 +346,9 @@ impl PreparedSavedGame {
             Some(&theater.unit_palette),
             Some(&theater.iso_palette),
         );
+        // Walls follow their placing House's ramp; one body tile per colour.
+        let wall_house_colors =
+            crate::map::houses::distinct_house_colors(map.house_colors());
         let overlays = crate::app::frontend::skirmish::build_overlay_presentation(
             &world.map_restore.occupied_overlays,
             map.terrain_objects(),
@@ -359,6 +362,7 @@ impl PreparedSavedGame {
             Some(&theater.iso_palette),
             Some(&theater.unit_palette),
             Some(&theater.tiberium_palette),
+            &wall_house_colors,
         );
         let mut presentation = init_helpers::finish_presentation_assets(
             gpu,

@@ -143,6 +143,7 @@ impl Probe {
                 rules,
                 None,
                 &[],
+                &[],
             )
             .unwrap();
             let shadow = with_shadows.then(|| {
@@ -305,6 +306,7 @@ impl Probe {
                         viewer: None,
                         fog: None,
                         fog_of_war: false,
+                house_colors: None,
                     },
                     &mut bodies,
                 );
@@ -1226,10 +1228,7 @@ fn retail_sloped_ore_rows_match_original_with_zero_tail_boundary() {
             .id_for_name(input["type"].as_str().unwrap())
             .unwrap();
         let display = row["display_overlay_id"].as_u64().unwrap() as u8;
-        let key = crate::render::overlay_atlas::tiberium_image_key(
-            registry.name(display).unwrap(),
-            i32::from(input["state"].as_u64().unwrap() as u8),
-        );
+        let key = crate::render::overlay_atlas::OverlaySpriteKey::new(registry.name(display).unwrap().to_owned(), i32::from(input["state"].as_u64().unwrap() as u8));
         for batch in &probe.batches {
             assert!(
                 batch.atlas.get(&key).is_some(),

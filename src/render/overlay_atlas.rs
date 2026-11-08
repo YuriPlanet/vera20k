@@ -25,6 +25,7 @@ use crate::render::overlay_assets::resolve_overlay_name_for_render;
 use crate::rules::art_data::{self, ArtRegistry};
 use crate::rules::crate_rules::CrateRules;
 use crate::rules::effect_asset_catalog::load_overlay_shape;
+use crate::rules::house_colors::{HouseColorIndex, HouseColorRamps, NO_REMAP};
 use crate::rules::overlay_types::{
     OverlayTypeFlags, OverlayTypeRegistry, is_bridge_overlay_index, is_high_bridge_index,
     native_mark_overlay_data,
@@ -107,45 +108,33 @@ const TIBERIUM_IMAGE_PREFIX: &str = "__tiberium::";
 /// the resource Convert (87F6B8) and the live resource draw offset. A selected
 /// sprite such as TRACKS01 may also be drawn ordinarily with another palette.
 pub fn tiberium_image_key(name: &str, frame: i32) -> OverlaySpriteKey {
-    OverlaySpriteKey {
-        name: format!("{TIBERIUM_IMAGE_PREFIX}{name}"),
-        frame,
-    }
+    OverlaySpriteKey::new(format!("{TIBERIUM_IMAGE_PREFIX}{name}"), frame)
 }
 
 fn overlay_body_key(name: String, frame: i32, tiberium: bool) -> OverlaySpriteKey {
     if tiberium {
         tiberium_image_key(&name, frame)
     } else {
-        OverlaySpriteKey { name, frame }
+        OverlaySpriteKey::new(name, frame)
     }
 }
 
 /// Source identity for Terrain DrawIt's body frame, apart from overlay keys:
 /// a TerrainType draws its own image even when an OverlayType shares its name.
 pub fn terrain_body_key(name: &str, frame: i32) -> OverlaySpriteKey {
-    OverlaySpriteKey {
-        name: format!("__terrain::{}", name.to_uppercase()),
-        frame,
-    }
+    OverlaySpriteKey::new(format!("__terrain::{}", name.to_uppercase()), frame)
 }
 
 /// Separate source identity for Terrain DrawIt's paired second-half stencil.
 pub fn terrain_shadow_key(name: &str, frame: i32) -> OverlaySpriteKey {
-    OverlaySpriteKey {
-        name: format!("__terrain_shadow::{}", name.to_uppercase()),
-        frame,
-    }
+    OverlaySpriteKey::new(format!("__terrain_shadow::{}", name.to_uppercase()), frame)
 }
 
 /// Separate source identity for a destroyed building's rubble frame, keyed by
 /// the SHP file its type's image resolved to
 /// ([`crate::rules::building_rubble::RubbleArt`]).
 pub fn rubble_key(shp: &str, frame: u16) -> OverlaySpriteKey {
-    OverlaySpriteKey {
-        name: rubble_image_name(shp),
-        frame: i32::from(frame as u8),
-    }
+    OverlaySpriteKey::new(rubble_image_name(shp), i32::from(frame as u8))
 }
 
 /// Shared image namespace for rubble body and Cell shadow atlases.
@@ -159,10 +148,7 @@ pub(crate) fn rubble_image_name(shp: &str) -> String {
 /// uses frame 0; the cell offset within W×H is a screen-position shift, not a
 /// frame index.
 pub fn smudge_key(name: &str) -> OverlaySpriteKey {
-    OverlaySpriteKey {
-        name: format!("{}{}", SMUDGE_KEY_PREFIX, name.to_uppercase()),
-        frame: 0,
-    }
+    OverlaySpriteKey::new(format!("{}{}", SMUDGE_KEY_PREFIX, name.to_uppercase()), 0)
 }
 
 /// Cache key: unique combination of overlay name and frame index.
@@ -173,6 +159,36 @@ pub struct OverlaySpriteKey {
     /// Terrain DrawIt71C208 retains the signed Stage dword. Ordinary overlay
     /// callers still supply their unchanged raw data byte (47F6A0).
     pub frame: i32,
+    /// House whose `[Colors]` ramp the SHP's `[16,32)` remap band resolves
+    /// through, or [`NO_REMAP`] for the raw palette.
+    ///
+    /// A wall cell is an owned object: `CellClass` keeps the placing House
+    /// (`wall_owner`, cleared by the isolated-neighbour cleanup), and the
+    /// native blit remaps the wall SHP's remap band to that House's ramp. Every
+    /// other overlay family (terrain, tiberium, bridges, crates, smudges,
+    /// rubble) never remaps, so they keep `NO_REMAP` and share one atlas tile.
+    pub house_color: HouseColorIndex,
+}
+
+impl OverlaySpriteKey {
+    /// A key drawn through the raw palette: no house remap.
+    pub fn new(name: impl Into<String>, frame: i32) -> Self {
+        Self {
+            name: name.into(),
+            frame,
+            house_color: NO_REMAP,
+        }
+    }
+
+    /// A wall body drawn in `house_color`'s ramp; [`NO_REMAP`] is the
+    /// unowned/map-authored variant that a wall cell falls back to.
+    pub fn wall(name: impl Into<String>, frame: i32, house_color: HouseColorIndex) -> Self {
+        Self {
+            name: name.into(),
+            frame,
+            house_color,
+        }
+    }
 }
 
 /// Atlas keys reachable when a map-pack low bridge mutates its live overlay
@@ -204,13 +220,7 @@ fn runtime_low_bridge_sprite_keys(
             continue;
         };
         for &frame in &frames {
-            keys.insert(overlay_body_key(
-                name.clone(),
-                i32::from(frame),
-                overlay_registry
-                    .flags(overlay_id)
-                    .is_some_and(|flags| flags.tiberium),
-            ));
+            keys.insert(OverlaySpriteKey::new(name.clone(), i32::from(frame)));
         }
     }
     keys
@@ -242,10 +252,7 @@ fn runtime_tiberium_sprite_keys(
             for frame in 0..ty.image().density_levels() {
                 keys.insert(tiberium_image_key(&name, frame));
                 if ordinary_placement {
-                    keys.insert(OverlaySpriteKey {
-                        name: name.clone(),
-                        frame,
-                    });
+                    keys.insert(OverlaySpriteKey::new(name.clone(), frame));
                 }
             }
         }
@@ -510,6 +517,9 @@ pub fn build_overlay_atlas(
     rules: &RuleSet,
     smudge_types: Option<&crate::rules::smudge_type::SmudgeTypeRegistry>,
     rubble_arts: &[crate::rules::building_rubble::RubbleArt],
+    // Every House colour this match can place a wall with; each gets its own
+    // wall body tiles.
+    wall_house_colors: &[HouseColorIndex],
 ) -> Option<OverlayAtlas> {
     build_overlay_atlas_on_device(
         &gpu.device,
@@ -528,6 +538,7 @@ pub fn build_overlay_atlas(
         rules,
         smudge_types,
         rubble_arts,
+        wall_house_colors,
     )
 }
 
@@ -550,6 +561,7 @@ pub(crate) fn build_overlay_atlas_on_device(
     rules: &RuleSet,
     smudge_types: Option<&crate::rules::smudge_type::SmudgeTypeRegistry>,
     rubble_arts: &[crate::rules::building_rubble::RubbleArt],
+    wall_house_colors: &[HouseColorIndex],
 ) -> Option<OverlayAtlas> {
     let tiberium_types = &rules.tiberium_types;
     let crate_rules = &rules.crate_rules;
@@ -618,11 +630,20 @@ pub(crate) fn build_overlay_atlas_on_device(
             let frame_count: u32 = wall_body_frame_count(flags.damage_levels);
             wall_frames_loaded += frame_count;
             for frame in 0..frame_count {
-                needed.insert(overlay_body_key(
-                    mapped_name.clone(),
-                    frame as i32,
-                    flags.tiberium,
-                ));
+                // One tile per House colour in the match: a wall segment's
+                // remap band follows `wall_owner`'s ramp, and the blit cannot
+                // recolour an RGBA page per instance. NO_REMAP stays for
+                // map-authored, unowned segments and for a colour this match
+                // never registered.
+                for house_color in
+                    std::iter::once(NO_REMAP).chain(wall_house_colors.iter().copied())
+                {
+                    needed.insert(OverlaySpriteKey::wall(
+                        mapped_name.clone(),
+                        frame as i32,
+                        house_color,
+                    ));
+                }
             }
         }
     }
@@ -702,6 +723,7 @@ pub(crate) fn build_overlay_atlas_on_device(
             theater_name,
             overlay_registry,
             &flags,
+            &rules.house_color_ramps,
         ) {
             Some(sprite) => rendered.push(sprite),
             None => {
@@ -853,7 +875,18 @@ fn render_overlay_sprite(
     theater_name: &str,
     overlay_registry: &OverlayTypeRegistry,
     flags: &OverlayTypeFlags,
+    ramps: &HouseColorRamps,
 ) -> Option<RenderedOverlay> {
+    // A wall body resolves its `[16,32)` remap band through the placing House's
+    // ramp (the native blit remaps on the fly; an RGBA page cannot). Every
+    // other family keeps the raw palette and passes `NO_REMAP`.
+    let house_palette;
+    let palette: &Palette = if key.house_color == NO_REMAP {
+        palette
+    } else {
+        house_palette = palette.with_house_colors(ramps.ramp(key.house_color));
+        &house_palette
+    };
     // Debug override: force all tiberium overlays to render using one chosen image
     // (e.g. TIB01/TIB02/TIB03) to quickly validate sprite selection issues.
     let forced_shape = flags
@@ -1523,20 +1556,67 @@ mod tests {
             super::render_overlay_sprite(
                 &assets,
                 &theater.iso_palette,
-                &OverlaySpriteKey {
-                    name: name.to_owned(),
-                    frame: 1,
-                },
+                &OverlaySpriteKey::new(name.to_owned(), 1),
                 theater.extension,
                 "SNOW",
                 registry,
                 registry.flags_by_name(name).unwrap(),
+                &crate::rules::house_colors::HouseColorRamps::default(),
             )
         };
         for (standing, destroyed) in [("LOBRDG26", "LOBRDG27"), ("LOBRDB26", "LOBRDB27")] {
             assert!(render(standing).is_some(), "{standing} draws frame 1");
             assert!(render(destroyed).is_none(), "{destroyed} draws nothing");
         }
+    }
+
+    /// A wall segment is an owned object: the native blit remaps the SHP's
+    /// `[16,32)` band through the placing House's ramp, and an RGBA page cannot
+    /// recolour per instance, so the atlas bakes one tile per colour. This
+    /// pins the difference the draw relies on: the same frame through the same
+    /// unit palette must differ between the raw and a ramped tile.
+    #[test]
+    fn wall_body_tile_follows_the_house_ramp() {
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let retail = crate::rules::retail_ini_fixture::retail_battle_rules()
+            .expect("retail Battle rules beside the archives");
+        let theater = crate::map::theater::load_theater(&mut assets, "SNOW").unwrap();
+        let registry = retail.rules.overlay_registry();
+        let flags = registry.flags_by_name("GAWALL").unwrap();
+        assert!(flags.wall);
+        let ramps = &retail.rules.house_color_ramps;
+        let render = |key: OverlaySpriteKey| {
+            super::render_overlay_sprite(
+                &assets,
+                &theater.unit_palette,
+                &key,
+                theater.extension,
+                "SNOW",
+                registry,
+                flags,
+                ramps,
+            )
+            .expect("GAWALL frame 0 draws")
+        };
+        let raw = render(OverlaySpriteKey::new("GAWALL".to_owned(), 0));
+        let ramped = render(OverlaySpriteKey::wall(
+            "GAWALL".to_owned(),
+            0,
+            crate::rules::house_colors::HouseColorIndex(2),
+        ));
+        assert_eq!(raw.rgba.len(), ramped.rgba.len());
+        let different = raw
+            .rgba
+            .chunks_exact(4)
+            .zip(ramped.rgba.chunks_exact(4))
+            .filter(|(a, b)| a[3] != 0 && a != b)
+            .count();
+        assert!(
+            different > 0,
+            "the wall body must carry remap-band pixels, or house colour can never show"
+        );
     }
 
     /// OverlayTypeClass::ReadINI5FE8BE retains ART[GAWALL]'s3 stages when
@@ -1569,14 +1649,12 @@ mod tests {
             super::render_overlay_sprite(
                 &assets,
                 &theater.unit_palette,
-                &OverlaySpriteKey {
-                    name: "GAWALL".to_owned(),
-                    frame,
-                },
+                &OverlaySpriteKey::new("GAWALL".to_owned(), frame),
                 theater.extension,
                 "SNOW",
                 registry,
                 flags,
+                &crate::rules::house_colors::HouseColorRamps::default(),
             )
         };
         assert!(render(0).is_some(), "standing frame remains drawable");
@@ -1722,20 +1800,11 @@ mod tests {
         };
 
         let keys = runtime_crate_sprite_keys(&registry, &rules);
-        assert!(keys.contains(&OverlaySpriteKey {
-            name: "FLAGGED".to_owned(),
-            frame: 0,
-        }));
-        assert!(keys.contains(&OverlaySpriteKey {
-            name: "PLAIN".to_owned(),
-            frame: 0,
-        }));
+        assert!(keys.contains(&OverlaySpriteKey::new("FLAGGED".to_owned(), 0)));
+        assert!(keys.contains(&OverlaySpriteKey::new("PLAIN".to_owned(), 0)));
         // `Land=Tiberium` stores one (`0x005FD0D9..0x005FD0E5`); a type with
         // no TiberiumClass keeps it.
-        assert!(keys.contains(&OverlaySpriteKey {
-            name: "LANDBOX".to_owned(),
-            frame: 1,
-        }));
+        assert!(keys.contains(&OverlaySpriteKey::new("LANDBOX".to_owned(), 1)));
         assert_eq!(keys.len(), 3);
 
         // A resource type on the Land-5 arm takes its germinated density
@@ -1781,10 +1850,7 @@ mod tests {
         for id in [0x5C, 0x4A, 0x4B, 0x4C, 0x4D] {
             let name = low_registry.name(id).unwrap().to_owned();
             for frame in 0..=2 {
-                assert!(low_keys.contains(&OverlaySpriteKey {
-                    name: name.clone(),
-                    frame,
-                }));
+                assert!(low_keys.contains(&OverlaySpriteKey::new(name.clone(), frame)));
             }
         }
 
@@ -1902,10 +1968,7 @@ mod tests {
             ("LOBRDB27", 7),
         ] {
             assert!(
-                keys.contains(&OverlaySpriteKey {
-                    name: name.to_string(),
-                    frame,
-                }),
+                keys.contains(&OverlaySpriteKey::new(name.to_string(), frame)),
                 "missing runtime atlas key {name}:{frame}"
             );
         }
@@ -1948,10 +2011,7 @@ mod tests {
         // PlaceTiberium487286 may select this unflagged flat slot. Its later
         // DrawOverlay takes the ordinary branch, independently of resource
         // cells that select the same SHP through their Image binding.
-        assert!(keys.contains(&OverlaySpriteKey {
-            name: "GEM01".into(),
-            frame: 11
-        }));
+        assert!(keys.contains(&OverlaySpriteKey::new("GEM01".to_owned(), 11)));
         assert_eq!(
             keys.len(),
             300,

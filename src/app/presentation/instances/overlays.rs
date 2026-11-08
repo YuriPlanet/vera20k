@@ -18,7 +18,8 @@ use crate::render::overlay_atlas::{CRATE_BODY_FRAME, OverlaySpriteKey};
 use crate::render::sprite_atlas::ShpSpriteKey;
 use crate::render::tactical_draw_plan::{RenderZPolicy, SpriteEncoding};
 use crate::rules::art_data::{AnimTypeRuntimeConfig, anim_translucency_source_alpha};
-use crate::rules::house_colors::HouseColorIndex;
+use crate::map::houses::HouseColorMap;
+use crate::rules::house_colors::{HouseColorIndex, NO_REMAP};
 use crate::rules::overlay_types::OverlayTypeFlags;
 use crate::rules::overlay_types::is_bridge_overlay_index;
 
@@ -881,6 +882,37 @@ struct CellOverlayInputs<'a> {
     viewer: Option<crate::sim::intern::InternedId>,
     fog: Option<&'a crate::sim::vision::FogState>,
     fog_of_war: bool,
+    /// Owner name → colour ramp. A wall body resolves its remap band through
+    /// the placing House (`CellClass` wall owner); the atlas baked one tile per
+    /// colour this match can build with.
+    house_colors: Option<&'a HouseColorMap>,
+}
+
+/// The ramp a wall body resolves through, or [`NO_REMAP`] for the raw palette.
+///
+/// Only `Wall=yes` identities remap: every other overlay family (terrain,
+/// tiberium, bridges, crates, ruble, smudge) is palette-fixed, so the shared
+/// NO_REMAP tile serves them. A wall cell with no owner — map-authored
+/// segments before the owner reconstruction, and cells the isolated-neighbour
+/// cleanup cleared — keeps the unremapped tile as well.
+fn wall_body_house_color(
+    flags: Option<&OverlayTypeFlags>,
+    live_cell: Option<&crate::sim::overlay_grid::OverlayCell>,
+    interner: Option<&crate::sim::intern::StringInterner>,
+    house_colors: Option<&HouseColorMap>,
+) -> HouseColorIndex {
+    if !flags.is_some_and(|flags| flags.wall) {
+        return NO_REMAP;
+    }
+    let Some(owner) = live_cell.and_then(|cell| cell.wall_owner) else {
+        return NO_REMAP;
+    };
+    let Some(name) = interner.map(|interner| interner.resolve(owner)) else {
+        return NO_REMAP;
+    };
+    house_colors
+        .and_then(|colors| colors.get(name).copied())
+        .unwrap_or(NO_REMAP)
 }
 
 /// Cell_ContentRendering @ 0x006D6D10 -> DrawOverlay_Body @ 0x0047F6A0 for
@@ -1022,17 +1054,27 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
         // 2, art only in frame 1). Collapsing to frame 0 here resurrected them
         // as phantom deck slabs. Frame selection lives in
         // `render::overlay_atlas::resolve_body_frame`.
+        // A wall body bakes one tile per House colour: `CellClass` keeps the
+        // placing House and the native blit remaps the SHP's remap band through
+        // its ramp. An unowned segment (map-authored before owner
+        // reconstruction, or cleared by the isolated-neighbour cleanup) keeps
+        // the NO_REMAP tile, and every other overlay family always uses it.
+        let wall_house_color = wall_body_house_color(
+            overlay_flags,
+            live_overlay_cell,
+            input.interner,
+            input.house_colors,
+        );
         let key = rubble_key.unwrap_or_else(|| {
-            if overlay_flags.is_some_and(|flags| flags.tiberium) {
-                crate::render::overlay_atlas::tiberium_image_key(name, i32::from(render_frame))
-            } else {
-                OverlaySpriteKey {
-                    name: name.to_owned(),
-                    frame: i32::from(render_frame),
-                }
-            }
+            OverlaySpriteKey::wall(name.to_owned(), i32::from(render_frame), wall_house_color)
         });
-        let Some(spr) = input.atlas.get(&key) else {
+        let remapped_fallback = (key.house_color != NO_REMAP)
+            .then(|| OverlaySpriteKey::new(key.name.clone(), key.frame));
+        let Some(spr) = input
+            .atlas
+            .get(&key)
+            .or_else(|| remapped_fallback.as_ref().and_then(|key| input.atlas.get(key)))
+        else {
             continue;
         };
         let depth_z: u8 = z;
@@ -1201,6 +1243,7 @@ pub(crate) fn build_overlay_instances(
         viewer,
         fog,
         fog_of_war,
+        house_colors: Some(&state.match_state.match_presentation.house_color_map),
     };
     build_cell_overlay_bodies(&input, bodies);
     if cfg!(debug_assertions) && window != crate::render::cell_window::CellWindow::Whole {

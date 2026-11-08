@@ -988,6 +988,11 @@ pub(crate) struct TechnoExtras {
     ///6F5253..5345: WRENCH/MOUSEPAL N1 prefix, before rank and Building lines.
     pub wrench: Option<SpriteInstance>,
     pub rank: Option<SpriteInstance>,
+    /// Phobos custom insignia: the normalized SHP file name whose atlas owns
+    /// `rank`'s UVs. `None` means the stock PIPS strip. The Extras draw pass
+    /// must bind that shape's own texture, not PIPS, or the UVs sample the
+    /// wrong atlas and the rank shows as coloured stripes.
+    pub rank_insignia: Option<String>,
     pub background: Option<SpriteInstance>,
     /// Phobos mobile shield PIPBRD/E00, before the shield and health fills.
     pub shield_background: Option<SpriteInstance>,
@@ -1236,6 +1241,10 @@ fn phobos_insignia_draw<'a>(
     &'a crate::render::selection_overlay::CenteredShapeStrip,
     usize,
     (f32, f32),
+    // true when a custom Phobos SHP was found instead of the stock PIPS strip.
+    bool,
+    // that custom SHP's normalized file name: its own atlas owns the UVs.
+    Option<String>,
 )> {
     let globals = rules.phobos_draw_globals();
     if globals.only_on_selected
@@ -1328,14 +1337,14 @@ fn phobos_insignia_draw<'a>(
         if let Some(found) = layer[rank]
             .iter()
             .rev()
-            .find_map(|name| overlay.insignia_shape(name))
+            .find_map(|name| overlay.insignia_shape(name).map(|shape| (shape, name.clone())))
         {
             shape = Some(found);
         }
     }
-    let (shape, custom) = match shape {
-        Some(shape) => (shape, true),
-        None => (overlay.pips()?, false),
+    let (shape, custom, insignia_name) = match shape {
+        Some((shape, name)) => (shape, true, Some(name)),
+        None => (overlay.pips()?, false, None),
     };
     let frame = usize::try_from(insignia.frame(rank, custom)?).ok()?;
     let (mut x, mut y) = (sx, sy);
@@ -1361,7 +1370,7 @@ fn phobos_insignia_draw<'a>(
     if globals.use_pixel_selection_bracket_delta {
         y += object.pixel_selection_bracket_delta as f32;
     }
-    Some((shape, frame, (x, y)))
+    Some((shape, frame, (x, y), custom, insignia_name))
 }
 
 /// DrawExtras' wrench test (`0x006F5253`): a repairing building. Ares
@@ -1517,11 +1526,19 @@ pub(crate) fn techno_extras_for_parent(
     let instance = |shape: &crate::render::selection_overlay::CenteredShapeStrip,
                     frame: usize,
                     point: (f32, f32),
-                    depth: f32| {
+                    depth: f32,
+                    custom: bool| {
         let mut instance = shape.instance(frame, point, depth)?;
-        // E00 rank/background reads tactical A; 600 fills bypass A. The renderer
-        // chooses those bindings; both use the same plain N53 Convert.
-        instance.palette_light = crate::render::palette_light::PaletteLight::plain(53, 1000);
+        if !custom {
+            // Stock PIPS.SHP is a native palette-index draw: E00 rank/background
+            // reads tactical A and the plain N53 Convert performs the lookup.
+            instance.palette_light = crate::render::palette_light::PaletteLight::plain(53, 1000);
+        }
+        // A Phobos custom insignia SHP has already been decoded to RGBA with
+        // palette.pal by CenteredShapeStrip::from_shp_on_device. Keep the
+        // default PaletteLight so the shader takes its precomposed-RGBA branch;
+        // applying the native Convert a second time re-quantizes the flag art
+        // through RGB565 and is what turns USFLAG* into coloured stripes.
         Some(instance)
     };
     //6F534E..5382: +C8's canonical observer-disguise query is distinct
@@ -1573,7 +1590,7 @@ pub(crate) fn techno_extras_for_parent(
             };
             //70AA20..AA4F: opaque PIPS E00, plain53/1000, A-consuming/no-Z.
             // Its -2 Z-adjust is unused by this leaf; do not inherit body FX.
-            strip.rank = instance(shape, frame, (sx + dx, sy + dy), 0.0006)
+            strip.rank = instance(shape, frame, (sx + dx, sy + dy), 0.0006, false)
                 .filter(|rank| viewport.contains(rank))
                 .map(|mut rank| {
                     rank.z_adjust = -2.0;
@@ -1584,7 +1601,7 @@ pub(crate) fn techno_extras_for_parent(
     #[cfg(feature = "phobos")]
     if character != 5
         && let Some(rules) = rules
-        && let Some((shape, frame, point)) = phobos_insignia_draw(
+        && let Some((shape, frame, point, custom, insignia_name)) = phobos_insignia_draw(
             sim,
             entity,
             rules,
@@ -1597,12 +1614,17 @@ pub(crate) fn techno_extras_for_parent(
             sy,
         )
     {
-        strip.rank = instance(shape, frame, point, 0.0006)
+        strip.rank = instance(shape, frame, point, 0.0006, custom)
             .filter(|rank| viewport.contains(rank))
             .map(|mut rank| {
                 rank.z_adjust = -2.0;
                 rank
             });
+        // Only a produced instance owns UVs; keep its atlas identity for the
+        // Extras draw pass, which otherwise binds the stock PIPS texture.
+        if strip.rank.is_some() {
+            strip.rank_insignia = insignia_name;
+        }
     }
     let widened = health_strip_widened(
         sim,
@@ -1697,6 +1719,7 @@ pub(crate) fn techno_extras_for_parent(
                 if index < filled { frame } else { 0 },
                 (start.0 - (index * 4) as f32, start.1 + (index * 2) as f32),
                 0.0006,
+                false,
             ));
         }
         if pip_zoom < 1.0 {
@@ -1716,6 +1739,7 @@ pub(crate) fn techno_extras_for_parent(
                     sy + ay as f32 - 1.0 + pip.offset_pixels[1] as f32,
                 ),
                 0.0006,
+                false,
             ));
         }
         strip.cull_health_to_viewport(viewport);
@@ -1734,6 +1758,7 @@ pub(crate) fn techno_extras_for_parent(
             background_frame,
             (sx + background_offset[0], sy + delta + background_offset[1]),
             0.0006,
+            false,
         );
     }
     let (Some(rules), Some(object), Some(shape)) = (rules, object, overlay.pips()) else {
@@ -1795,6 +1820,7 @@ pub(crate) fn techno_extras_for_parent(
                 sy + delta + pip_offset[1],
             ),
             0.0005,
+            false,
         ));
     }
     //709B0F/6F6A8E: nonbuilding scale starts at health anchor(-15,+10),
@@ -1810,6 +1836,7 @@ pub(crate) fn techno_extras_for_parent(
                 pip.frame,
                 (x, sy + pip.offset_pixels[1] as f32),
                 0.0004,
+                false,
             ));
         }
     }
@@ -1835,12 +1862,18 @@ pub(crate) fn techno_extras_for_parent(
             });
             let selector = u8::from(remainder <= 5 && entity.health.current() < object.strength);
             let (offset_x, offset_y) = self_heal_pip_offset(entity.category());
-            strip.self_heal = instance(shape, arm.frame(), (sx + offset_x, sy + offset_y), 0.0004)
-                .map(|mut instance| {
-                    instance.draw_state =
-                        crate::render::draw_state::DrawState::from_native_selector(0, selector);
-                    instance
-                });
+            strip.self_heal = instance(
+                shape,
+                arm.frame(),
+                (sx + offset_x, sy + offset_y),
+                0.0004,
+                false,
+            )
+            .map(|mut instance| {
+                instance.draw_state =
+                    crate::render::draw_state::DrawState::from_native_selector(0, selector);
+                instance
+            });
         }
     }
     // Only health is deferred to the final frame. PIPS2 scale and both

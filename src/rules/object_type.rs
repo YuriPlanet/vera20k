@@ -1642,10 +1642,6 @@ pub struct ObjectType {
     pub hover_attack: bool,
     /// Whether this unit stays airborne by default / doesn't land (BalloonHover=).
     pub balloon_hover: bool,
-    /// Ares `Cursor.Deploy=`: a named `[MouseCursors]` row shown instead of
-    /// the stock Deploy cursor. MO's two-mode vehicles use `ModeI`/`ModeII`.
-    /// Absent keeps the native Deploy cursor.
-    pub cursor_deploy: Option<String>,
     /// `TargetLaser=` (TechnoType+0xC90; the constructor stores 0 at
     /// `0x0071139B`, ReadINI `0x00714C8D..0x00714CA1` reads the key string at
     /// `0x00843898`). A human player's shot starts the firer's 15-frame laser
@@ -5288,9 +5284,6 @@ impl ObjectType {
             balloon_hover: section.read_bool("BalloonHover", false),
             target_laser: section.read_bool("TargetLaser", false),
             is_simple_deployer: section.read_bool("IsSimpleDeployer", false),
-            cursor_deploy: section
-                .read_name("Cursor.Deploy", 0x40)
-                .map(str::to_string),
             small_visceroid: category == ObjectCategory::Vehicle
                 && section.read_bool("SmallVisceroid", false),
             large_visceroid: category == ObjectCategory::Vehicle

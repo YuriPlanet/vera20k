@@ -528,19 +528,35 @@ impl SelectionOverlay {
             .iter()
             .map(|entry| {
                 let shape = entry.shape.as_deref()?;
-                let strip = CenteredShapeStrip::from_assets_on_device(
-                    device,
-                    queue,
-                    batch,
-                    assets,
-                    shape,
-                    entry.palette_name(),
-                );
+                let requested = entry.palette_name();
+                // Phobos keeps its SHPStruct when the named palette is absent;
+                // only the custom remap is lost. MO 3.3.6 names `interior.pal`
+                // for its health/shield/exp digits, a file no MO archive ships,
+                // so a strict two-asset read dropped the whole Shape and drew
+                // GAME.FNT digits instead. Resolve the palette with a fallback
+                // to the global palette before giving up on the glyphs.
+                let Some((palette_used, palette_bytes)) =
+                    digital_display_palette(requested, |name| assets.get(name))
+                else {
+                    log::warn!(
+                        "Phobos DigitalDisplay {}: cannot load {shape} / {requested}; using text",
+                        entry.name
+                    );
+                    return None;
+                };
+                if !palette_used.eq_ignore_ascii_case(requested) {
+                    log::info!(
+                        "Phobos DigitalDisplay {}: {requested} unavailable, using {palette_used} for {shape}",
+                        entry.name
+                    );
+                }
+                let shp = ShpFile::from_bytes(&assets.get(shape)?).ok()?;
+                let palette = Palette::from_bytes(&palette_bytes).ok()?;
+                let strip = CenteredShapeStrip::from_shp_on_device(device, queue, batch, &shp, &palette);
                 if strip.is_none() {
                     log::warn!(
-                        "Phobos DigitalDisplay {}: cannot load {shape} / {}; using text",
-                        entry.name,
-                        entry.palette_name()
+                        "Phobos DigitalDisplay {}: cannot decode {shape} / {palette_used}; using text",
+                        entry.name
                     );
                 }
                 strip
@@ -597,10 +613,19 @@ impl SelectionOverlay {
         }
     }
 
-    /// One custom insignia SHP by normalized file name, when loaded.
-    #[cfg(feature = "phobos")]
+    /// One custom insignia SHP by normalized file name, when loaded. The
+    /// stock build has no custom catalog, so the Extras pass falls back to
+    /// the PIPS strip without a second cfg-gated draw path.
     pub(crate) fn insignia_shape(&self, name: &str) -> Option<&CenteredShapeStrip> {
-        self.insignia_shapes.get(name)
+        #[cfg(feature = "phobos")]
+        {
+            self.insignia_shapes.get(name)
+        }
+        #[cfg(not(feature = "phobos"))]
+        {
+            let _ = name;
+            None
+        }
     }
 
     /// The Crazy Ivan bomb clock art (BOMBCURS.SHP), when the assets have it.
@@ -789,4 +814,49 @@ fn generate_diamond_cell(color: [u8; 4]) -> Vec<u8> {
         }
     }
     rgba
+}
+
+/// Resolve a Phobos `Palette=` file through the VFS. A missing named palette
+/// falls back to the global `palette.pal`: Phobos retains the SHPStruct and
+/// loses only the custom remap, so the digits must still be drawn from
+/// `Shape=`. Returns the name that actually produced the bytes.
+#[cfg(feature = "phobos")]
+fn digital_display_palette(
+    requested: &str,
+    mut get: impl FnMut(&str) -> Option<Vec<u8>>,
+) -> Option<(String, Vec<u8>)> {
+    if let Some(bytes) = get(requested) {
+        return Some((requested.to_owned(), bytes));
+    }
+    if requested.eq_ignore_ascii_case("palette.pal") {
+        return None;
+    }
+    get("palette.pal").map(|bytes| ("palette.pal".to_owned(), bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn missing_digital_display_palette_keeps_the_shape_with_the_global_palette() {
+        let get = |name: &str| match name {
+            "isodes.pal" => Some(vec![1; 768]),
+            "palette.pal" => Some(vec![2; 768]),
+            _ => None,
+        };
+        // MO 3.3.6 names `interior.pal`, which no archive ships. The digits
+        // must not fall back to GAME.FNT just because the remap is missing.
+        let (name, bytes) = digital_display_palette("interior.pal", get).unwrap();
+        assert_eq!(name, "palette.pal");
+        assert_eq!(bytes[0], 2);
+        // A present named palette keeps its own remap.
+        let (name, bytes) = digital_display_palette("isodes.pal", get).unwrap();
+        assert_eq!(name, "isodes.pal");
+        assert_eq!(bytes[0], 1);
+        // With no global palette either, this is a genuine load failure.
+        assert!(digital_display_palette("interior.pal", |_| None).is_none());
+        assert!(digital_display_palette("palette.pal", |_| None).is_none());
+    }
 }

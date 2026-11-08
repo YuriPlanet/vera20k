@@ -229,6 +229,7 @@ fn retail_crater11_matches_original_cell_raster() {
             &rules,
             Some(&rules.smudge_types),
             &[],
+            &[],
         )
         .expect("ordinary stock resource catalog includes smudge art");
         for row in packet["rows"].as_array().unwrap() {
@@ -532,6 +533,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
         &scene.runtime.resources.overlay_registry,
         rules,
         Some(&rules.smudge_types),
+        &[],
         &[],
     )
     .unwrap();

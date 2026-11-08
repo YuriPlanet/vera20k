@@ -57,6 +57,7 @@ fn retail_mirage_catalog_loads_without_placed_terrain() {
         &retail.rules,
         None,
         &[],
+        &[],
     )
     .expect("registered terrain disguises bind without any placed Terrain object");
     for name in names {
