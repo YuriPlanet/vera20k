@@ -369,6 +369,7 @@ impl MinimapRenderer {
         center_cell: (u16, u16),
         tactical_width: i32,
         tactical_height: i32,
+        world_zoom: f32,
         rect_x: f32,
         rect_y: f32,
         rect_w: f32,
@@ -381,7 +382,13 @@ impl MinimapRenderer {
             // configured. Mapless renderer fixtures have no native geometry.
             return Vec::new();
         };
-        let rect = native_viewport_rect(surface, center_cell, tactical_width, tactical_height);
+        let rect = native_viewport_rect(
+            surface,
+            center_cell,
+            tactical_width,
+            tactical_height,
+            world_zoom,
+        );
         let transition = self.viewport_state.update(rect);
         let _native_old_border_visits = transition.dirty_previous_border;
         native_viewport_outline_instances(
