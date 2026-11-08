@@ -599,7 +599,10 @@ pub(crate) fn place_production_with_overlays(
     // `0x004FB2CC..0x004FB314`: BuildingSlam follows every successful
     // Unlimbo, before the yard's FirstContact BREAK, whatever the release.
     sim.sound_events
-        .emit(crate::sim::world::SimSoundEvent::BuildingPlaced { owner: owner_id });
+        .emit(crate::sim::world::SimSoundEvent::BuildingPlaced {
+            owner: owner_id,
+            building_type: type_interned,
+        });
     sim.lifecycle_outputs
         .emit(crate::sim::world::LifecycleOutput::BuildingPlacementSucceeded { owner: owner_id });
     crate::sim::radio::transmit_to_contact(

@@ -3198,6 +3198,21 @@ impl ObjectType {
         self.lost_eva = eva;
     }
 
+    /// Ares TechnoTypeExt `EnemyUIName`, the CSF label a non-allied player
+    /// reads for a building of this type (BuildingClass_GetUIName, Ares.dll
+    /// 10015DA0, hook 0x459ED0).
+    #[cfg(feature = "ares")]
+    pub fn enemy_ui_name(&self) -> Option<&str> {
+        self.techno_combat.presentation().enemy_ui_name()
+    }
+
+    /// Ares BuildingTypeExt `SlamSound`: `None` keeps `[AudioVisual]
+    /// BuildingSlam`, `Some(None)` silences it.
+    #[cfg(feature = "ares")]
+    pub fn slam_sound(&self) -> Option<Option<&str>> {
+        self.building_type_ext.slam_sound()
+    }
+
     /// Ares TechnoTypeExt `EVA.Lost` (`rules::ares_techno_type`).
     #[cfg(feature = "ares")]
     pub(crate) fn bind_unit_lost_eva(&mut self, eva: Option<String>) {
@@ -3674,6 +3689,12 @@ impl ObjectType {
     /// GetCurrentWeapon70E1A0's resolved range; Option already represents the
     /// null WeaponStruct/WeaponType test70E240. No General.GapRadius fallback.
     pub fn building_sensor_range(&self, gap_supercharged: bool, weapon_range: Option<i32>) -> i32 {
+        // Ares BuildingClass_GetRangeOfRadial_Radius (10048E60, hook
+        // 0x4566B0) answers a set RadialIndicatorRadius at the entry.
+        #[cfg(feature = "ares")]
+        if let Some(radius) = self.techno_combat.presentation().radial_indicator_radius() {
+            return radius;
+        }
         if self.psychic_detection_radius > 0 {
             self.psychic_detection_radius
         } else if self.gap_generator {

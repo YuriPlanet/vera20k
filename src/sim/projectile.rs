@@ -3200,12 +3200,14 @@ fn bridge_surface_z(
         .then(|| floor.wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS))
 }
 
-/// YR `BulletClass_GetAnimFrame` @ 0x00468000.
+/// YR `BulletClass_GetAnimFrame` @ 0x00468000; `frame` is the frame counter
+/// (`Unsorted::CurrentFrame`).
 pub fn projectile_shp_frame(
     projectile: &Projectile,
     projectile_type: &crate::rules::projectile_type::ProjectileType,
-) -> u8 {
-    projectile_shp_frame_with_velocity(projectile, projectile_type, projectile.velocity)
+    frame: u32,
+) -> u16 {
+    projectile_shp_frame_with_velocity(projectile, projectile_type, projectile.velocity, frame)
 }
 
 /// Read-only directional frame selection, also used with client-sampled
@@ -3214,9 +3216,10 @@ pub fn projectile_shp_frame_with_velocity(
     projectile: &Projectile,
     projectile_type: &crate::rules::projectile_type::ProjectileType,
     velocity: ProjectileVelocity,
-) -> u8 {
+    frame: u32,
+) -> u16 {
     if projectile.visual.anim_low != 0 || projectile.visual.anim_high != 0 {
-        return projectile.visual.runtime_frame;
+        return u16::from(projectile.visual.runtime_frame);
     }
     // 46800C..468014 uses the retained inverse ART Rotates byte. The
     // animation override above wins even when the shape does not rotate.
@@ -3232,7 +3235,18 @@ pub fn projectile_shp_frame_with_velocity(
     // word conversion (FSUB pi/2, FMUL, ftol).
     let word = facing16_from_angle(atan(X::neg(d(velocity.y)), d(velocity.x)));
     // 46805D: the 32-step bucket of the angle word indexes the 0x007F4890 table.
-    DRAGON_FRAME_TABLE[usize::from(step32_from_facing16(word))] as u8
+    let facing = DRAGON_FRAME_TABLE[usize::from(step32_from_facing16(word))];
+    // Ares BulletClass_GetAnimFrame (1001A840, hook 0x468000) replaces the
+    // body: an AnimLength above one gives each facing that many frames.
+    #[cfg(feature = "ares")]
+    let facing = projectile_type.bullet_type_ext.rotating_frame(
+        facing,
+        frame as i32,
+        projectile_type.anim_rate,
+    );
+    #[cfg(not(feature = "ares"))]
+    let _ = frame;
+    facing as u16
 }
 
 // YR BulletClass::AI linkage: this is the bounded ordinary-flight rung; exact trajectory kernels remain separate.
@@ -3786,7 +3800,7 @@ mod tests {
             ini.section("P").unwrap(),
             ini.section("P"),
         );
-        assert_eq!(projectile_shp_frame(store.get(id).unwrap(), &kind), 20);
+        assert_eq!(projectile_shp_frame(store.get(id).unwrap(), &kind, 0), 20);
 
         let projectile = store.projectiles.get_mut(&id).unwrap();
         projectile.visual = ProjectileVisualState {
@@ -3799,6 +3813,26 @@ mod tests {
         projectile.visual.advance();
         assert_eq!(projectile.visual.runtime_frame, 2);
         assert_eq!(projectile.visual.runtime_countdown, 3);
+    }
+
+    /// Ares BulletClass_GetAnimFrame (1001A840, hook 0x468000): with
+    /// `AnimLength=3` facing 20 owns frames 60..62, stepped every `AnimRate`
+    /// frames of the frame counter.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_anim_length_steps_each_facing_through_its_frames() {
+        let mut store = ProjectileStore::new();
+        let id = store.spawn(1, spawn(ProjectileTarget::Cell { rx: 0, ry: 0 }));
+        let ini = crate::rules::ini_parser::IniFile::from_str(
+            "[P]\nImage=P\nRotates=yes\nAnimRate=2\nAnimLength=3\n",
+        );
+        let kind = crate::rules::projectile_type::ProjectileType::from_ini_section(
+            "P",
+            ini.section("P").unwrap(),
+            ini.section("P"),
+        );
+        let frame = |counter| projectile_shp_frame(store.get(id).unwrap(), &kind, counter);
+        assert_eq!([frame(0), frame(3), frame(5), frame(6)], [60, 61, 62, 60]);
     }
 
     #[test]
@@ -3835,7 +3869,7 @@ mod tests {
             projectile.visual.anim_low = input["anim_low"].as_u64().unwrap_or(0) as u8;
             projectile.visual.anim_high = input["anim_high"].as_u64().unwrap_or(0) as u8;
             projectile.visual.runtime_frame = input["runtime_frame"].as_u64().unwrap_or(0) as u8;
-            let frame = projectile_shp_frame(projectile, &kind);
+            let frame = projectile_shp_frame(projectile, &kind, 0);
             for draw in row["draws"].as_array().unwrap() {
                 assert_eq!(u64::from(frame), draw["frame"].as_u64().unwrap(), "{input}");
             }

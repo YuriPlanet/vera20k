@@ -575,13 +575,31 @@ pub(super) fn dispatch_sim_sound_events(
                 };
                 GameSoundEvent::UiSound { sound_id }
             }
-            SimSoundEvent::BuildingPlaced { owner } => {
+            SimSoundEvent::BuildingPlaced {
+                owner,
+                building_type,
+            } => {
                 // `0x004FB2CC..0x004FB314`: BuildingSlam through `0x00750920`
                 // (pan `0x2000`, volume `1.0f`) for the player's house.
                 if !owner_is_local(sim.interner(), owner, local_owner_name) {
                     continue;
                 }
-                let Some(sound_id) = rules.general.building_slam.clone() else {
+                let sound_id = rules.general.building_slam.as_deref();
+                // Ares HouseClass_UnitFromFactory_BuildingSlam (10010290, hook
+                // 0x4FB2FD): the placed type's SlamSound, else BuildingSlam.
+                #[cfg(feature = "ares")]
+                let sound_id = sim
+                    .interner()
+                    .object_type_in_category(
+                        building_type,
+                        crate::rules::object_type::ObjectCategory::Building,
+                        rules,
+                    )
+                    .and_then(|object| object.slam_sound())
+                    .unwrap_or(sound_id);
+                #[cfg(not(feature = "ares"))]
+                let _ = building_type;
+                let Some(sound_id) = sound_id.map(str::to_owned) else {
                     continue;
                 };
                 GameSoundEvent::UiSound { sound_id }
@@ -1982,11 +2000,18 @@ mod tests {
         let mut sim = Simulation::new();
         let local = sim.intern("Local");
         let remote = sim.intern("Remote");
+        let building_type = sim.intern("GAPOWR");
         let mut output = SoundEventQueue::new();
         dispatch_sim_sound_events(
             [
-                SimSoundEvent::BuildingPlaced { owner: remote },
-                SimSoundEvent::BuildingPlaced { owner: local },
+                SimSoundEvent::BuildingPlaced {
+                    owner: remote,
+                    building_type,
+                },
+                SimSoundEvent::BuildingPlaced {
+                    owner: local,
+                    building_type,
+                },
             ],
             &sim,
             &rules,
@@ -1999,6 +2024,44 @@ mod tests {
         assert!(matches!(
             &emitted[0],
             GameSoundEvent::UiSound { sound_id } if sound_id == "PlaceBuilding"
+        ));
+    }
+
+    /// Ares HouseClass_UnitFromFactory_BuildingSlam (10010290, hook
+    /// 0x4FB2FD): the placed type's `SlamSound` replaces BuildingSlam, and
+    /// `none` silences it.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_slam_sound_replaces_the_building_slam() {
+        use crate::rules::ini_parser::IniFile;
+        let ini = IniFile::from_str(
+            "[BuildingTypes]\n0=LOUD\n1=QUIET\n[LOUD]\nSlamSound=Slam\n[QUIET]\nSlamSound=none\n",
+        );
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+        let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=Slam\n",
+        ));
+        rules.bind_type_sound_references(&ini, &sounds);
+        let mut sim = Simulation::new();
+        let local = sim.intern("Local");
+        let [loud, quiet] = ["LOUD", "QUIET"].map(|name| sim.intern(name));
+        let mut output = SoundEventQueue::new();
+        dispatch_sim_sound_events(
+            [loud, quiet].map(|building_type| SimSoundEvent::BuildingPlaced {
+                owner: local,
+                building_type,
+            }),
+            &sim,
+            &rules,
+            Some("LOCAL"),
+            &mut |_| true,
+            &mut output,
+        );
+        let emitted = output.drain();
+        assert_eq!(emitted.len(), 1);
+        assert!(matches!(
+            &emitted[0],
+            GameSoundEvent::UiSound { sound_id } if sound_id == "Slam"
         ));
     }
 

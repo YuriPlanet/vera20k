@@ -1341,6 +1341,36 @@ fn phobos_insignia_draw<'a>(
     Some((shape, frame, (x, y)))
 }
 
+/// DrawExtras' wrench test (`0x006F5253`): a repairing building. Ares
+/// TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C) draws none over
+/// a building warping out (+0x270, +0x271) and shows it to a player not
+/// allied with the owner only while the building is uncloaked and
+/// `[General] EnemyWrench=` holds; an observer (no viewer) sees it. The
+/// power-off marker the hook also draws is not ported.
+fn repair_wrench_admitted(
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: Option<&RuleSet>,
+    local_owner: Option<&str>,
+) -> bool {
+    let repairing = entity.category() == EntityCategory::Structure && entity.repairing.is_on();
+    #[cfg(feature = "ares")]
+    let repairing = repairing
+        && !entity.is_warped_out()
+        && !entity.is_warping_in()
+        && (local_owner
+            .and_then(|name| sim.interner().get(name))
+            .is_none_or(|viewer| {
+                sim.house_alliances()
+                    .is_allied(sim.interner(), viewer, entity.owner())
+            })
+            || (entity.cloak.as_ref().is_none_or(|cloak| cloak.state() == 0)
+                && rules.is_none_or(RuleSet::ares_enemy_wrench)));
+    #[cfg(not(feature = "ares"))]
+    let _ = (sim, rules, local_owner);
+    repairing
+}
+
 /// One Techno DrawExtras6F5190 parent: clock, wrench, rank, then health6F64A0.
 /// Rank70A990 precedes the selected/hovered health gate at6F5388. It uses
 /// the shared cloak/disguise and raw Veterancy owners, with opaque status art.
@@ -1382,7 +1412,7 @@ pub(crate) fn techno_extras_for_parent(
             || local_owner
                 .and_then(|name| sim.interner().get(name))
                 .is_some_and(|viewer| sim.bomb_seen_by(entity.stable_id(), viewer)));
-    let repairing = entity.category() == EntityCategory::Structure && entity.repairing.is_on();
+    let repairing = repair_wrench_admitted(sim, entity, rules, local_owner);
     if (bomb_visible || repairing)
         && (viewport.ignore_visibility
             || local_owner
@@ -2208,6 +2238,35 @@ mod mind_control_pip_tests;
 
 #[cfg(test)]
 mod tests {
+    /// Ares TechnoClass_DrawExtras_PowerOff (10049FE0, hook 0x6F526C): the
+    /// owner sees its repairing building's wrench, an enemy only with
+    /// `EnemyWrench=yes` (the default).
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_enemy_wrench_gates_the_enemys_repair_wrench() {
+        use crate::rules::ruleset::RuleSet;
+        let shown = |general: &str| {
+            let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
+                "[General]\n{general}[BuildingTypes]\n0=POWR\n[POWR]\nStrength=750\n"
+            )))
+            .unwrap();
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+            let id = sim
+                .spawn_object("POWR", "Americans", 8, 8, 0, &rules)
+                .unwrap();
+            crate::sim::arena_fixture::install_status_repair(
+                sim.entities_mut_for_test().get_mut(id).unwrap(),
+                true,
+            );
+            let entity = sim.entities().get(id).unwrap();
+            ["Americans", "Russians"].map(|viewer| {
+                super::repair_wrench_admitted(&sim, entity, Some(&rules), Some(viewer))
+            })
+        };
+        assert_eq!(shown(""), [true, true]);
+        assert_eq!(shown("EnemyWrench=no\n"), [true, false]);
+    }
+
     /// Phobos `DrawShieldBar_Pip`: the shield type's own frames first, then the
     /// global `[AudioVisual] Pips.Shield*` triplet, then the native 16/5.
     #[cfg(feature = "phobos")]

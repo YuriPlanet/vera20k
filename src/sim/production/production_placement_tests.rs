@@ -2253,11 +2253,9 @@ fn gsi_04_07_command_places_authoritative_owned_wall_without_entity() {
         .sound_events
         .iter()
         .filter_map(|event| match event {
-            crate::sim::world::SimSoundEvent::BuildingPlaced { owner: event_owner }
-                if *event_owner == owner =>
-            {
-                Some("BuildingSlam")
-            }
+            crate::sim::world::SimSoundEvent::BuildingPlaced {
+                owner: event_owner, ..
+            } if *event_owner == owner => Some("BuildingSlam"),
             crate::sim::world::SimSoundEvent::VocAt { sound_id, .. }
                 if sound_id == "FixtureWallCreated" =>
             {
@@ -4480,7 +4478,7 @@ fn building_placed_owners(sim: &Simulation) -> Vec<crate::sim::intern::InternedI
     sim.sound_events
         .iter()
         .filter_map(|event| match event {
-            crate::sim::world::SimSoundEvent::BuildingPlaced { owner } => Some(*owner),
+            crate::sim::world::SimSoundEvent::BuildingPlaced { owner, .. } => Some(*owner),
             _ => None,
         })
         .collect()

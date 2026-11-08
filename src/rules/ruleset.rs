@@ -1202,6 +1202,13 @@ pub struct GeneralRules {
     /// VocFindIndex7514D0, retaining the current index on a miss (ctor -1).
     pub airstrike_abort_sound: Option<String>,
     pub airstrike_attack_voice: Option<String>,
+    /// `[AudioVisual] GateDown`/`GateUp` (Rules+0x408/+0x404, ReadString128
+    /// then VocFindIndex, constructor -1): the sounds Mission_Open plays as a
+    /// gate opens (`0x0044E550`) and closes (`0x0044E61E`). Only the Ares
+    /// gate-sound hooks read them; default builds leave the stock sound a
+    /// residual (`sim::gate_runtime`).
+    #[cfg(feature = "ares")]
+    gate_sounds: [Option<String>; 2],
     /// `ConditionRedSparkingProbability=` ([General]) — per-tick probability that
     /// the `AI_Update` damage-Spark particle system spawns while health is below
     /// ConditionRed. Default **0.02** (verified `RulesClass__Constructor`; stock INI
@@ -2817,6 +2824,8 @@ impl Default for GeneralRules {
             berserk_color: 0,
             airstrike_abort_sound: None,
             airstrike_attack_voice: None,
+            #[cfg(feature = "ares")]
+            gate_sounds: [None, None],
             condition_red_sparking_probability: 0.02,
             condition_yellow_sparking_probability: 0.01,
             condition_red_spark_threshold: unit_draw_threshold(0.02),
@@ -3635,6 +3644,12 @@ impl GeneralRules {
         native_minutes_to_frames(self.placement_delay)
     }
 
+    /// `[AudioVisual] GateUp` (`up`) or `GateDown`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn gate_sound(&self, up: bool) -> Option<&str> {
+        self.gate_sounds[usize::from(up)].as_deref()
+    }
+
     pub fn infantry_death_anim(&self, inf_death: i32) -> Option<&str> {
         usize::try_from(inf_death)
             .ok()
@@ -4047,6 +4062,8 @@ impl GeneralRules {
                 .read_double("IdleActionFrequency", defaults.idle_action_frequency),
             airstrike_abort_sound: None,
             airstrike_attack_voice: None,
+            #[cfg(feature = "ares")]
+            gate_sounds: [None, None],
             building_garrisoned_sound: audio_visual
                 .read_name("BuildingGarrisonedSound", 0x80)
                 .map(str::to_owned),
@@ -5061,6 +5078,13 @@ impl RuleSet {
     #[cfg(feature = "ares")]
     pub(crate) fn ares_general(&self) -> &crate::rules::native_processing::AresGeneralRules {
         self.ares_global_controls.general()
+    }
+
+    /// RulesExt `[General] EnemyWrench` (constructor true): a player not
+    /// allied with a repairing building's owner sees its wrench.
+    #[cfg(feature = "ares")]
+    pub fn ares_enemy_wrench(&self) -> bool {
+        self.ares_global_controls.general().enemy_wrench()
     }
 
     /// RulesExt `[CrateRules] RandomCrateMoney` (constructor 900).
@@ -6222,6 +6246,13 @@ impl RuleSet {
         self.general.airstrike_attack_voice = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "AirstrikeAttackVoice", None));
+        #[cfg(feature = "ares")]
+        {
+            self.general.gate_sounds = ["GateDown", "GateUp"].map(|key| {
+                ini.section("AudioVisual")
+                    .and_then(|section| sounds.read_rules_reference(section, key, None))
+            });
+        }
         self.general.leave_bio_reactor_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "LeaveBioReactorSound", None));

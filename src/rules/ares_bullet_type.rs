@@ -82,6 +82,22 @@ impl BulletTypeExtRules {
         ext
     }
 
+    /// A rotating projectile's frame for the 32-step table frame `facing`
+    /// (BulletClass_GetAnimFrame, Ares.dll 1001A840, hook 0x468000): with
+    /// `AnimLength` above one, `facing * AnimLength + (frame / AnimRate) %
+    /// AnimLength`, else `facing`. `AnimRate=0` divides by zero in the DLL
+    /// (an integer fault); VERA keeps each facing's first frame instead.
+    pub(crate) fn rotating_frame(&self, facing: i32, frame: i32, anim_rate: i32) -> i32 {
+        let length = self.anim_length;
+        if length < 2 {
+            return facing;
+        }
+        let step = frame
+            .checked_div(anim_rate)
+            .map_or(0, |ticks| ticks % length);
+        step.wrapping_add(length.wrapping_mul(facing))
+    }
+
     /// FireAt's launch-scatter magnitude bounds for `RandomRanged`
     /// (`TechnoClass_Fire_BallisticScatter1 @ 10019930`, hook `0x6FE709`,
     /// for the flak arm; `...Scatter2 @ 10019980`, hook `0x6FE7FE`, for the

@@ -2453,6 +2453,15 @@ pub fn starting_unit_budget(
     if unit_count <= 0 {
         return 0;
     }
+    // Ares MPGameModeClass_CreateStartingUnits_UnitCost (1001EE10, hook
+    // 0x5D6D9A): a set [General] StartInMultiplayerUnitCost is the price of
+    // one unit, `UnitCount * cost` in unsigned arithmetic. Unset, Ares
+    // averages the same types as the loop below (StartInMultiplayer.Types
+    // aside, which VERA does not read).
+    #[cfg(feature = "ares")]
+    if let Some(cost) = rules.ares_general().start_in_multiplayer_unit_cost() {
+        return (unit_count as u32).wrapping_mul(cost as u32) as i32;
+    }
     // GenerateStartingUnits5D6D80:5D6DAF..5D6DCB ORs actual Country+B4
     // bits from non-passive Countries. Observer filtering is later; neither
     // ParentCountry nor production's Required/ForbiddenHouses enters this
@@ -3345,6 +3354,28 @@ mod tests {
                 row["name"],
             );
         }
+    }
+
+    /// Ares MPGameModeClass_CreateStartingUnits_UnitCost (1001EE10, hook
+    /// 0x5D6D9A): a set StartInMultiplayerUnitCost prices each unit, so
+    /// the budget is UnitCount times it, whatever the eligible types cost.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_start_in_multiplayer_unit_cost_prices_each_starting_unit() {
+        let ini = |general: &str| {
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                &format!(
+                    "[General]\n{general}[Countries]\n0=Americans\n[Americans]\nSide=GDI\n\
+                     [VehicleTypes]\n0=MTNK\n[MTNK]\nOwner=Americans\nCost=700\nTechLevel=1\n"
+                ),
+            ))
+            .unwrap()
+        };
+        let americans = [crate::rules::ruleset::CountryIdx(0)];
+        assert_eq!(starting_unit_budget(&ini(""), americans, 10, 3), 2100);
+        let priced = ini("StartInMultiplayerUnitCost=250\n");
+        assert_eq!(starting_unit_budget(&priced, americans, 10, 3), 750);
+        assert_eq!(starting_unit_budget(&priced, americans, 10, 0), 0);
     }
 
     #[test]

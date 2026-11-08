@@ -1006,3 +1006,50 @@ fn a_computer_team_chronoshifts_onto_the_enemy_power_plant() {
         );
     }
 }
+
+/// Ares TeamClass_GatherAtFriendlyBase_Distance (1003A2A0, hook 0x6EFB69):
+/// action 54 regroups its argument plus `AIFriendlyDistance` (else
+/// `AISafeDistance`) cells from the base towards the enemy's, and action 53
+/// (1003A270, hook 0x6EF8A1) gathers its argument plus `AISafeDistance`
+/// from the enemy's base: each lands where the same total distance alone
+/// does, and not where `AISafeDistance` alone does.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_gather_actions_add_their_argument_to_the_distance() {
+    let target = |general: &str, script: &str| {
+        let (mut sim, rules, team_id, _, _) = team_fixture(
+            &format!(
+                "[General]\n{general}\
+                 [InfantryTypes]\n0=E1\n[E1]\nStrength=100\nSpeed=4\n\
+                 Locomotor={{4A582744-9839-11D1-B709-00A024DDAFD1}}\n\
+                 [BuildingTypes]\n0=PLANTA\n1=PLANTB\n\
+                 [PLANTA]\nStrength=750\nPower=100\nFoundation=2x2\n\
+                 [PLANTB]\nStrength=750\nPower=200\nFoundation=2x2\n"
+            ),
+            "E1",
+            [("PLANTA", 18, 8), ("PLANTB", 18, 13)],
+            script,
+        );
+        for _ in 0..300 {
+            sim.advance_tick(&[], Some(&rules), None, None, 67);
+            if let Some(target) = sim
+                .team_script_vm
+                .team(team_id)
+                .and_then(|team| team.mission_target_for_test())
+            {
+                return target;
+            }
+        }
+        panic!("{script} assigns no mission target");
+    };
+    let regroup = target("AISafeDistance=4\nAIFriendlyDistance=3\n", "0=54,2");
+    assert_eq!(regroup, target("AISafeDistance=5\n", "0=54,0"));
+    assert_ne!(regroup, target("AISafeDistance=4\n", "0=54,0"));
+    assert_eq!(
+        target("AISafeDistance=4\n", "0=54,1"),
+        target("AISafeDistance=5\n", "0=54,0")
+    );
+    let gather = target("AISafeDistance=3\nAIFriendlyDistance=9\n", "0=53,2");
+    assert_eq!(gather, target("AISafeDistance=5\n", "0=53,0"));
+    assert_ne!(gather, target("AISafeDistance=3\n", "0=53,0"));
+}

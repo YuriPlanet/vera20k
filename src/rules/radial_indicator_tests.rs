@@ -41,6 +41,28 @@ fn ares_gap_radius_keeps_the_whole_int() {
     assert_eq!(object.building_sensor_range(false, None), 128);
 }
 
+/// Ares BuildingClass_GetRangeOfRadial_Radius (10048E60, hook 0x4566B0):
+/// a set RadialIndicatorRadius answers GetSensorRange ahead of the
+/// psychic, gap and weapon arms.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_radial_indicator_radius_answers_the_sensor_range() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=GAP\n1=PSY\n\
+         [GAP]\nGapGenerator=yes\nGapRadiusInCells=10\nRadialIndicatorRadius=3\n\
+         [PSY]\nPsychicDetectionRadius=9\n",
+    ))
+    .unwrap();
+    let range = |name: &str| {
+        rules
+            .object(name)
+            .unwrap()
+            .building_sensor_range(true, Some(0x800))
+    };
+    assert_eq!(range("GAP"), 3);
+    assert_eq!(range("PSY"), 9);
+}
+
 #[test]
 fn constructors_and_each_admitted_radial_reader_history_match_original() {
     let native = crate::test_fixture::json("tools/procedural_drawing_oracle/radial_indicator.json");

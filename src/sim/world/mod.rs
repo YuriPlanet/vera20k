@@ -713,8 +713,12 @@ pub enum SimSoundEvent {
     /// The PLACE event's Unlimbo succeeded (`HouseClass @ 0x004FB0E0`,
     /// `0x004FB236`; a wall's Unlimbo also returns 1 at `0x00440865`):
     /// `[AudioVisual] BuildingSlam=` centred at full volume when the house is
-    /// the local player's (`0x004FB2CC..0x004FB314`).
-    BuildingPlaced { owner: InternedId },
+    /// the local player's (`0x004FB2CC..0x004FB314`). `building_type` is the
+    /// placed building's type, whose Ares `SlamSound` replaces the cue.
+    BuildingPlaced {
+        owner: InternedId,
+        building_type: InternedId,
+    },
     /// A chrono teleport happened — play the resolved warp sound at this position.
     /// Sim emits two of these per warp: one at the departure Location with the
     /// unit's `ChronoOutSound=` (`0x0071960A..0x0071962C`, Chronosphere state
@@ -2843,7 +2847,9 @@ impl Simulation {
                     // damages the wall.
                     if flags.wall
                         && (!crate::rules::ARES_ENABLED
-                            || rules.warhead(warhead_name).is_some_and(|warhead| warhead.wall))
+                            || rules
+                                .warhead(warhead_name)
+                                .is_some_and(|warhead| warhead.wall))
                     {
                         let _wall = {
                             let mut host = SimulationWallRuntimeHost {
