@@ -8,6 +8,13 @@
 //! The surviving aircraft then drops a NavCom or Target that names the
 //! shared dummy cell (`0x00414FDF..0x00415046`), before Ready/Commence.
 //! A Spy Plane's next Overfly visit can then choose another exit cell.
+//!
+//! Not ported, dormant: the step just before (`0x00414EF6..0x00414F47`)
+//! plays the type's art `Trailer=` anim (TechnoType `+0xE00`) at the
+//! aircraft every `SpawnDelay=` (`+0xE04`) frames. No retail aircraft image
+//! sets `Trailer=`: artmd has it only on YURBLANK, DREDMISS, SUBT, MISLCHEM,
+//! MISLMLTI, NKMSLUP and NKMSLDN, and V3ROCKET, DMISL and BSUBMISL set
+//! `SpawnDelay=` alone.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
