@@ -252,6 +252,9 @@ pub(crate) enum ShellExitThen {
     /// commits and writes (Main Menu `0x5CB`; state 0x12 recreates `0xE2`) or
     /// commits and runs the Keyboard page (`0x5CE`).
     Options(crate::ui::main_menu_dialogs::options::LauncherParentResult),
+    /// VERA's Esc menu chose Options: the page it asked over slides out and
+    /// `0xD5` runs, as for the Main Menu's own Options.
+    ShellMenuOptions(ShellSlideKind),
     /// Keyboard `0xA3` Back or Cancel: `0x005FBEF0` tears it down with its
     /// slide, then the bindings save or reload and a new `0xD5` is built.
     KeyboardClose(crate::app::input::keyboard::KeyboardExit),
@@ -350,6 +353,7 @@ impl ShellExitThen {
             Self::CampaignBack | Self::CampaignStart(_) => ShellSlideKind::Campaign,
             Self::LoadSavedGameBack => ShellSlideKind::LoadSavedGame,
             Self::Options(_) => ShellSlideKind::Options,
+            Self::ShellMenuOptions(page) => *page,
             Self::KeyboardClose(_) => ShellSlideKind::Keyboard,
             Self::LanBack | Self::LanCreate { .. } | Self::LanJoinAccepted(_) => {
                 ShellSlideKind::LanLobby
@@ -871,13 +875,20 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     // `0x0052DDAB`); state 0x12 builds a new `0xE2` when it closes. Its
     // Keyboard page `0xA3` runs after `0xD5` is destroyed (`0x0055FD06`) and
     // slides like it. The Exit confirmation (state 6) and the quit after it
-    // (state 7) run without a family dialog.
+    // (state 7) run without a family dialog. VERA's Esc menu asks over the
+    // showing dialog, which stays the target.
     if let Some(dialog) = state.frontend.keyboard_dialog.as_ref() {
         return (dialog.parent == crate::ui::shell::keyboard::KeyboardParent::Launcher)
             .then_some(ShellSlideKind::Keyboard)
             .filter(|kind| crate::ui::shell::slide::is_slide_eligible(kind.dialog_id()));
     }
-    if state.frontend.shell_message_box.is_some() || state.frontend.quit_cascade.is_some() {
+    if state
+        .frontend
+        .shell_message_box
+        .as_ref()
+        .is_some_and(|message_box| !message_box.keeps_page())
+        || state.frontend.quit_cascade.is_some()
+    {
         return None;
     }
     // Only the native page slides; the assetless fallback does not.
