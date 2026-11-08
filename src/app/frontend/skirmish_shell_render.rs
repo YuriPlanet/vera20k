@@ -2083,6 +2083,7 @@ pub(crate) use chrome::type3_button_frames;
 mod keyboard;
 mod lan_lobby;
 mod wol_buddy;
+mod wol_chat_translation;
 mod wol_lobby;
 mod wol_login;
 mod wol_my_info;
@@ -2092,6 +2093,7 @@ mod wol_persona;
 mod wol_quick_match;
 pub(crate) use lan_lobby::render_lan_lobby;
 pub(crate) use wol_buddy::paint_wol_buddy_children;
+pub(crate) use wol_chat_translation::paint_wol_chat_translation_children;
 pub(crate) use wol_lobby::{
     WolLobbyPaint, paint_wol_card_countries, paint_wol_lobby_children, paint_wol_lobby_popup,
     paint_wol_player_card,

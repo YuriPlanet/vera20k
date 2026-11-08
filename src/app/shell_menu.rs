@@ -84,7 +84,7 @@ impl App {
                     open
                 })
             }
-            ScreenPage::Wol => Self::close_wol_login_list(state),
+            ScreenPage::Wol => Self::close_wol_open_list(state),
             _ => false,
         }
     }

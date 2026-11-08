@@ -7,7 +7,6 @@
 //! Retail's controls and VERA's own share one dialog, sorted into the
 //! [`Category`] pages its right-hand column picks between.
 
-use crate::ui::chat_translation::ChatLanguage;
 use crate::ui::shell::trackbar::{
     TrackbarHold, TrackbarPress, trackbar_position_from_x, trackbar_press,
 };
@@ -136,12 +135,6 @@ pub(crate) const DISPLAY_AUTO_LABEL: &str = "VERA:DisplayAuto";
 /// own name for itself, so they need no translation.
 pub(crate) const LANGUAGE_LABEL: &str = "VERA:Language";
 pub(crate) const LANGUAGE_HELP: &str = "VERA:LanguageHelp";
-/// The Interface page's Chat Translation list. After its off row, the rows
-/// are each language's own name for itself.
-pub(crate) const CHAT_TRANSLATION_LABEL: &str = "VERA:ChatTranslation";
-pub(crate) const CHAT_TRANSLATION_HELP: &str = "VERA:ChatTranslationHelp";
-/// The Chat Translation list's first row: no translation.
-pub(crate) const CHAT_TRANSLATION_NONE_LABEL: &str = "VERA:ChatTranslationNone";
 /// The Developer page's Check for Updates: the desktop updater
 /// (`app::updater`) checks once the dialog has slid out. The browser build
 /// has no updater.
@@ -452,9 +445,6 @@ pub(crate) enum LauncherComboId {
     HealthBars,
     /// The `[VERA] Language=` list: VERA's interface language.
     Language,
-    /// The `[VERA] TranslateChat=` list: the language received online chat
-    /// is translated into, or off.
-    ChatTranslation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -692,9 +682,6 @@ pub(crate) enum LauncherOptionsEvent {
     DisplaySelected(DisplayTarget),
     /// The Language list's pick, a language tag, applied at once.
     LanguageSelected(String),
-    /// The Chat Translation list's pick, applied at once: a language, or
-    /// `None` for off.
-    ChatTranslationSelected(Option<ChatLanguage>),
     FullScreenChanged(bool),
     OriginalShapeChanged(bool),
     YrOriginalStyleChanged(bool),
@@ -786,9 +773,6 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) sidebar: SidebarSize,
     /// The Health Bars list's choice; like Sidebar, it applies at once.
     pub(crate) health_bars: HealthBarMode,
-    /// The Chat Translation list's choice, `None` for off; like Sidebar, it
-    /// applies at once.
-    pub(crate) translate_chat: Option<ChatLanguage>,
     /// VERA's team-colour strength as the slider's position,
     /// [`crate::rules::house_colors::STRENGTH_MIN`] less than the level the
     /// profile stores. Position 0 is gamemd's own bands.
@@ -831,7 +815,6 @@ impl Default for LauncherOptionsValues {
             detailed_eva_text: false,
             sidebar: SidebarSize::Normal,
             health_bars: HealthBarMode::Vanilla,
-            translate_chat: None,
             house_color_position: 0,
             score_position: 4,
             sound_position: 7,
@@ -1373,14 +1356,6 @@ impl OptionsDialogState {
             .push(LauncherOptionsEvent::HealthBarModeSelected(mode));
     }
 
-    /// The Chat Translation list publishes its pick at once, like Sidebar.
-    pub(crate) fn select_chat_translation(&mut self, language: Option<ChatLanguage>) {
-        self.values.translate_chat = language;
-        self.open_combo = None;
-        self.pending_events
-            .push(LauncherOptionsEvent::ChatTranslationSelected(language));
-    }
-
     /// The Display list publishes its pick at once too: the window moves to
     /// that screen straight away. Picking the screen already chosen, or one the
     /// window layer did not list, changes nothing.
@@ -1517,7 +1492,6 @@ impl Category {
             ],
             Self::Interface if !HAS_HD_MAP_PREVIEWS => &[
                 Setting::List(List::Language),
-                Setting::List(List::ChatTranslation),
                 Setting::List(List::Sidebar),
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::Tooltips),
@@ -1529,7 +1503,6 @@ impl Category {
             ],
             Self::Interface => &[
                 Setting::List(List::Language),
-                Setting::List(List::ChatTranslation),
                 Setting::List(List::Sidebar),
                 Setting::List(List::HealthBars),
                 Setting::Checkbox(Check::Tooltips),
@@ -2195,7 +2168,6 @@ mod tests {
             List::Display,
             List::HealthBars,
             List::Language,
-            List::ChatTranslation,
         ]
         .map(Setting::List)
         .into_iter()

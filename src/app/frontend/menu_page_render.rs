@@ -221,6 +221,7 @@ pub(crate) fn active_page_title_text(
         ShellSlideKind::WolLobby => crate::ui::wol_shell::WOL_LOBBY_TITLE_KEY,
         ShellSlideKind::WolOptions => crate::ui::wol_options::PAGE.title_key,
         ShellSlideKind::WolSoundOptions => crate::ui::shell::sound::SHELL_SOUND_PAGE.title_key,
+        ShellSlideKind::WolChatTranslation => crate::ui::wol_chat_translation::PAGE.title_key,
         ShellSlideKind::WolAutoLoginQuery => crate::ui::wol_persona::AUTO_LOGIN_PAGE.title_key,
         ShellSlideKind::WolLocale => crate::ui::wol_persona::LOCALE_PAGE.title_key,
         ShellSlideKind::WolMyInformation => crate::ui::wol_my_info::PAGE.title_key,
