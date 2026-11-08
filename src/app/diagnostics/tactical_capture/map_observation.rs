@@ -3843,6 +3843,19 @@ impl TacticalCaptureSession {
                     command_bar.map(|(receipt, _)| receipt),
                 )
             };
+            if scheduled.gesture.is_quickload() {
+                // The key queues the ordinary two-phase loader. This sealed
+                // gesture must finish its loading frame and restoration before
+                // recording the rewound clock, without advancing simulation.
+                ensure!(
+                    crate::app::persistence::commands::pump_saved_game_load(state) == Some(true),
+                    "literal quickload did not present its loading frame"
+                );
+                ensure!(
+                    crate::app::persistence::commands::pump_saved_game_load(state) == Some(false),
+                    "literal quickload did not finish its queued restoration"
+                );
+            }
             let neutral_input_restored = crate::app::input::camera::camera_input_idle(state)
                 && state.match_state.input.hotkey_modifiers.is_empty()
                 && !state.match_state.input.selection_state.is_band_box_active()
