@@ -305,6 +305,13 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
             insert(name);
         }
     }
+    // AircraftAI414ED0..414F42 constructs this retained fixed-ART AnimType
+    // through ordinary Anim421EA0, including dynamically allocated aliases.
+    for object in rules.all_objects() {
+        if let Some(name) = object.aircraft_trailer().animation() {
+            insert(name);
+        }
+    }
     for name in rules.general.infantry_death_anims.iter().flatten() {
         insert(name);
     }

@@ -5,6 +5,7 @@
 //! ruleset converts this processed output into gameplay definitions. Failed passes
 //! preserve already-constructed registry state rather than rolling back.
 
+use crate::rules::aircraft_trailer::AircraftTrailer;
 use crate::rules::ares_armor::{AresWarheadVerses, ArmorCatalog};
 use crate::rules::ares_prerequisites::GenericPrerequisites;
 use crate::rules::armor::ArmorId;
@@ -1132,8 +1133,34 @@ impl ProcessedRulesLayers {
                 "invalid retained Country parent",
             ));
         }
+        let animations = families
+            .get(&RulesTypeFamily::Animation)
+            .map_or(&[][..], Vec::as_slice);
+        let animation_keys: HashSet<_> = (0..animations.len())
+            .map(|index| {
+                anim_type_runtime_key(
+                    animations
+                        .iter()
+                        .map(|member| member.native_stored_id.as_str()),
+                    index,
+                )
+                .expect("existing AnimType slot")
+                .to_ascii_uppercase()
+            })
+            .collect();
         for (&family, members) in &registry.families {
             for member in members {
+                if (family != RulesTypeFamily::Aircraft
+                    && member.aircraft_trailer != AircraftTrailer::default())
+                    || member
+                        .aircraft_trailer
+                        .animation()
+                        .is_some_and(|name| !animation_keys.contains(&name.to_ascii_uppercase()))
+                {
+                    return Err(RulesError::InvalidSavedState(
+                        "Aircraft trailer is outside its type family or AnimType registry",
+                    ));
+                }
                 if (family == RulesTypeFamily::Infantry) != member.infantry_sequence_bank.is_some()
                     || member
                         .infantry_sequence_bank
@@ -1884,6 +1911,11 @@ impl ProcessedRulesLayers {
                     )
                 })
             })
+    }
+
+    /// AircraftType+E00/+E04 retained by each admitted fixed-ART read.
+    pub(crate) fn aircraft_trailer_states(&self) -> impl Iterator<Item = (&str, &AircraftTrailer)> {
+        self.member_states(RulesTypeFamily::Aircraft, |member| &member.aircraft_trailer)
     }
 
     /// TechnoRead712170 and ReadTypeData679A10 visit each concrete object
@@ -5178,6 +5210,9 @@ struct ProcessedType {
     /// ObjectTypeCtor5F713A starts +1F0 at -1. Each successful inherited
     /// ObjectTypeRead5F938B..5F93D5 retains a fixed Voc binding on bad input.
     object_crush_sound: Option<String>,
+    /// AircraftTypeRead41CCEF..41CD4E. Mandatory saved history: final Rules
+    /// text cannot recover an empty ART read's previously bound AnimType.
+    aircraft_trailer: AircraftTrailer,
     /// OverlayCtor5FE265 starts at1; OverlayRead5FE8A6..5FE8C3 retains
     /// the full signed dword through each fixed-ART Image-section read.
     overlay_damage_levels: i32,
@@ -5928,6 +5963,7 @@ impl ProcessedType {
             body: IniSection::new(native_stored_id.clone()),
             object_image: ObjectImageState::new(&native_stored_id),
             object_crush_sound: None,
+            aircraft_trailer: AircraftTrailer::default(),
             overlay_damage_levels: 1,
             overlay_explodes: false,
             overlay_cell_anim: None,
@@ -8951,15 +8987,20 @@ impl RulesPassProcessor {
                         }
                     }
                     RulesTypeFamily::Aircraft => {
-                        // Trailer's ART section is +1F8 (0x0041CCB5). Only
-                        // the allocation is kept: VERA ports no reader of the
-                        // aircraft's Trailer pointer.
-                        let _ = self.resolve_fixed_art_reference(
+                        // AircraftTypeRead41CCEF..41CD4E uses current Rules
+                        // Image+1F8, not ART Image's visual redirect. The Anim
+                        // sweep already ran; allocation here must not read ART.
+                        let animation = self.resolve_fixed_art_reference(
                             fixed_art,
                             &image,
                             "Trailer",
                             RulesTypeFamily::Animation,
                         );
+                        let trailer = &mut self.family_mut(family)[index].aircraft_trailer;
+                        let spawn_delay = fixed_art
+                            .section_or_empty(&image)
+                            .read_int("SpawnDelay", trailer.spawn_delay());
+                        trailer.apply_read(animation, spawn_delay);
                     }
                     RulesTypeFamily::Vehicle => {
                         let member = &mut self.families.get_mut(&family).unwrap()[index];

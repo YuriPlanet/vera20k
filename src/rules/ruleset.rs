@@ -5835,6 +5835,15 @@ impl RuleSet {
                 references.apply_to(object);
             }
         }
+        for (name, trailer) in processed.aircraft_trailer_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == ObjectCategory::Aircraft && object.id == name)
+            {
+                object.project_aircraft_trailer(trailer);
+            }
+        }
         for (category, name, shadow_index) in processed.voxel_shadow_states() {
             if let Some(object) = rules
                 .object_list
@@ -9139,6 +9148,17 @@ impl RuleSet {
         // RulesClass Type pointers and lists. RulesClass also keeps the crate
         // and rocket blocks across Process calls, their scalars across
         // Full_Init's reset.
+        // AircraftTypeSave41CE90/Load41CE20 retain this pair independently
+        // of final source text. Native ComputeCRC41CDB0 omits it; this is
+        // VERA's complete simulation configuration identity, not that CRC.
+        b"aircraft-trailer-v1".hash(&mut hasher);
+        Self::by_upper_id(
+            self.object_list
+                .iter()
+                .filter(|object| object.category == ObjectCategory::Aircraft)
+                .map(|object| (&object.id, object.aircraft_trailer())),
+        )
+        .hash(&mut hasher);
         b"retained-type-references-v3".hash(&mut hasher);
         self.object_list
             .iter()
