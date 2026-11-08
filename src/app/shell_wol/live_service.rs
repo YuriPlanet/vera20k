@@ -494,11 +494,12 @@ impl StartPreparation {
 const MAX_PENDING_TRANSLATIONS: usize = 4;
 const TRANSLATION_PAUSE: Duration = Duration::from_secs(60);
 
-/// Received chat lines waiting for `POST /v1/translate`, by request id.
+/// Received chat lines waiting for `POST /v1/translate`, by request id: where
+/// each one shows, and its text.
 #[derive(Default)]
 struct Translations {
     next: u64,
-    pending: BTreeMap<u64, super::translation::TranslatedLine>,
+    pending: BTreeMap<u64, (super::translation::TranslatedLine, String)>,
     paused_until: Option<Instant>,
 }
 
@@ -521,11 +522,13 @@ impl Translations {
         let id = self.next;
         self.next = self.next.wrapping_add(1);
         let target = target.tag();
-        if requests
-            .send(http::Request::Translate { id, text, target })
-            .is_ok()
-        {
-            self.pending.insert(id, line);
+        let request = http::Request::Translate {
+            id,
+            text: text.clone(),
+            target,
+        };
+        if requests.send(request).is_ok() {
+            self.pending.insert(id, (line, text));
         }
     }
 
@@ -535,8 +538,9 @@ impl Translations {
         outcome: Result<String, http::TranslateFailure>,
         now: Instant,
     ) -> Option<(super::translation::TranslatedLine, String)> {
-        let line = self.pending.remove(&id)?;
+        let (line, original) = self.pending.remove(&id)?;
         match outcome {
+            Ok(text) if crate::ui::chat_translation::only_repeats(&original, &text) => None,
             Ok(text) => Some((line, text)),
             Err(failure) => {
                 if failure == http::TranslateFailure::Unavailable {
@@ -4118,6 +4122,33 @@ mod completion_tests {
         assert_eq!(input.try_iter().count(), 0);
         ask("G", now + TRANSLATION_PAUSE);
         assert_eq!(input.try_iter().count(), 1);
+    }
+
+    #[test]
+    fn a_reply_that_only_repeats_its_line_shows_nothing() {
+        use super::super::translation::TranslatedLine;
+        use crate::ui::chat_translation::ChatLanguage;
+        let (requests, _input) = mpsc::channel();
+        let mut translations = Translations::default();
+        let now = Instant::now();
+        for (id, (original, reply, shown)) in [
+            ("gg", "gg", false),
+            ("GG!", "gg", false),
+            ("2v2 go", "2V2, go.", false),
+            ("gg wp", "gg 打得好", true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let text: Vec<u16> = original.encode_utf16().collect();
+            let line = TranslatedLine::Match {
+                name: "A".into(),
+                color: 0,
+            };
+            translations.request(&requests, &text, ChatLanguage::SimplifiedChinese, line, now);
+            let reply = translations.reply(id as u64, Ok(reply.into()), now);
+            assert_eq!(reply.is_some(), shown, "{original}");
+        }
     }
 
     fn setup_session() -> crate::app::match_runtime::session::MatchSession {

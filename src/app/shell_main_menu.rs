@@ -179,6 +179,13 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
             self.persistence.options_profile.language = Some(tag);
         }
     }
+    fn store_chat_translation(
+        &mut self,
+        language: Option<crate::ui::chat_translation::ChatLanguage>,
+    ) {
+        // The next received online line reads it; Options' accept writes it.
+        self.persistence.options_profile.translate_chat = language;
+    }
     fn store_mouse_wheel_zoom(&mut self, enabled: bool) {
         self.persistence.options_profile.mouse_wheel_zoom = enabled;
         if !enabled {

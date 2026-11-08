@@ -219,8 +219,10 @@ pub(crate) struct RetailOptionsProfile {
     /// simulation never reads it, and the profile writer round-trips the value.
     pub(crate) health_bars: crate::ui::main_menu_dialogs::options::HealthBarMode,
     /// `[VERA] TranslateChat=`: the language received online chat is
-    /// translated into, or `None`, the default, for off. Only the `/translate`
-    /// chat command changes it ([`Self::commit_chat_translation`]).
+    /// translated into, or `None`, the default, for off. The Options list
+    /// changes it and Options' accept writes it with the rest; the
+    /// `/translate` chat command writes it alone
+    /// ([`Self::commit_chat_translation`]).
     pub(crate) translate_chat: Option<crate::ui::chat_translation::ChatLanguage>,
     /// `[VERA] Language=`: the tag of the interface language the player chose
     /// ([`crate::i18n`]); `None`, the default, follows the system's languages.
@@ -361,7 +363,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 27],
+    pub(crate) vera: [(&'static str, String); 28],
 }
 
 impl RetailOptionsLoad {
@@ -768,6 +770,7 @@ impl RetailOptionsProfile {
                     format_bool(self.hd_map_previews).to_string(),
                 ),
                 ("Language", self.language.clone().unwrap_or_default()),
+                ("TranslateChat", self.translate_chat_value().to_owned()),
                 (
                     "DetailedEvaText",
                     format_bool(self.detailed_eva_text).to_string(),
@@ -893,8 +896,16 @@ impl RetailOptionsProfile {
     }
 
     fn transform_chat_translation(&self, input: &[u8]) -> Vec<u8> {
-        let tag = self.translate_chat.map_or("off", |language| language.tag());
-        set_ini_values(input, VERA_SECTION, &[("TranslateChat", tag)])
+        set_ini_values(
+            input,
+            VERA_SECTION,
+            &[("TranslateChat", self.translate_chat_value())],
+        )
+    }
+
+    /// The `[VERA] TranslateChat=` value: the language's tag, or `off`.
+    fn translate_chat_value(&self) -> &'static str {
+        self.translate_chat.map_or("off", |language| language.tag())
     }
 
     fn transform_wol_preferences(&self, input: &[u8]) -> Vec<u8> {
@@ -1585,6 +1596,31 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert!(
             written.contains("SkipIntro=yes") && !written.contains("SkipStartupLogo"),
             "{written}"
+        );
+    }
+
+    #[test]
+    fn options_accept_writes_the_chat_translation_language() {
+        use crate::ui::chat_translation::ChatLanguage;
+        let startup = RetailStartupOptions::default();
+        let profile = RetailOptionsProfile {
+            translate_chat: Some(ChatLanguage::Japanese),
+            ..RetailOptionsProfile::default()
+        };
+        // A language picked in Options replaces one /translate saved.
+        let accepted = profile.transform_settings(b"[VERA]\r\nTranslateChat=zh-Hans\r\n");
+        assert_eq!(
+            load_snapshot(&startup, &accepted)
+                .retained_profile
+                .translate_chat,
+            Some(ChatLanguage::Japanese)
+        );
+        let off = RetailOptionsProfile::default().transform_settings(&accepted);
+        assert_eq!(
+            load_snapshot(&startup, &off)
+                .retained_profile
+                .translate_chat,
+            None
         );
     }
 

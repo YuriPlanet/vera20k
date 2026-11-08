@@ -7,6 +7,7 @@
 
 use super::audio::{AudioVolume, AudioVolumeOperations, apply_volume};
 use crate::app::persistence::options_profile::RetailOptionsProfile;
+use crate::ui::chat_translation::ChatLanguage;
 use crate::ui::main_menu_dialogs::options::{
     DisplayTarget, HealthBarMode, LauncherCue, LauncherOptionsEvent, LauncherOptionsLabels,
     LauncherOptionsPacked, LauncherOptionsValues, LauncherParentResult, OptionsDialogState,
@@ -52,6 +53,7 @@ pub(crate) fn launcher_values_from_profile(
         detailed_eva_text: profile.detailed_eva_text,
         sidebar: profile.sidebar,
         health_bars: profile.health_bars,
+        translate_chat: profile.translate_chat,
         // The slider's position is the stored level less the retail strength,
         // so gamemd's own bands sit at the left end.
         house_color_position: profile
@@ -121,6 +123,9 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_hd_map_previews(&mut self, enabled: bool);
     /// Switch VERA's interface to the language `tag` names (`[VERA] Language=`).
     fn store_language(&mut self, tag: String);
+    /// The language received online chat is translated into, or `None` for
+    /// off (`[VERA] TranslateChat=`).
+    fn store_chat_translation(&mut self, language: Option<ChatLanguage>);
     fn store_shift_queue(&mut self, shift_queue: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
     fn set_performance_stats(&mut self, shown: bool);
@@ -151,6 +156,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::HealthBarModeSelected(mode) => operations.store_health_bars(mode),
         LauncherOptionsEvent::DisplaySelected(display) => operations.set_display(display),
         LauncherOptionsEvent::LanguageSelected(tag) => operations.store_language(tag),
+        LauncherOptionsEvent::ChatTranslationSelected(language) => {
+            operations.store_chat_translation(language);
+        }
         LauncherOptionsEvent::FullScreenChanged(full_screen) => {
             operations.set_full_screen(full_screen);
         }

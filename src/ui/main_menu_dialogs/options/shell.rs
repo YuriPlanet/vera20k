@@ -8,12 +8,14 @@
 //! one column at the places retail's first band uses.
 
 use super::{
+    CHAT_TRANSLATION_HELP, CHAT_TRANSLATION_LABEL, CHAT_TRANSLATION_NONE_LABEL,
     CHECK_FOR_UPDATES_HELP, CHECK_FOR_UPDATES_LABEL, CONTROLS_LABEL, CUSTOM_END_GAME_BANNER_HELP,
     CUSTOM_END_GAME_BANNER_LABEL, CUSTOM_END_GAME_MOVIE_HELP, CUSTOM_END_GAME_MOVIE_LABEL,
-    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, DETAILED_EVA_TEXT_HELP, DETAILED_EVA_TEXT_LABEL, DEVELOPER_OPTIONS_LABEL,
-    DISPLAY_AUTO_LABEL, DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FULL_SCREEN_HELP,
-    FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL,
-    HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
+    CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, ChatLanguage,
+    DETAILED_EVA_TEXT_HELP, DETAILED_EVA_TEXT_LABEL, DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL,
+    DISPLAY_HELP, DISPLAY_LABEL, DisplayTarget, FULL_SCREEN_HELP, FULL_SCREEN_LABEL,
+    HAS_CHECK_FOR_UPDATES, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP,
+    HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
     HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LANGUAGE_HELP, LANGUAGE_LABEL, LOCK_CURSOR_HELP,
     LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
     LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
@@ -666,6 +668,36 @@ impl OptionsDialogState {
             .collect()
     }
 
+    /// The Chat Translation list's rows, top to bottom: off, then each
+    /// language.
+    fn chat_translation_choices() -> Vec<Option<ChatLanguage>> {
+        std::iter::once(None)
+            .chain(ChatLanguage::all().map(Some))
+            .collect()
+    }
+
+    /// A Chat Translation row's text: [`CHAT_TRANSLATION_NONE_LABEL`] or the
+    /// language's own name.
+    fn chat_translation_label(language: Option<ChatLanguage>) -> String {
+        language.map_or_else(
+            || tr(CHAT_TRANSLATION_NONE_LABEL),
+            |language| language.name().to_owned(),
+        )
+    }
+
+    /// The Chat Translation face's text.
+    pub(crate) fn shell_chat_translation_label(&self) -> String {
+        Self::chat_translation_label(self.values.translate_chat)
+    }
+
+    /// The Chat Translation popup's rows, top to bottom.
+    pub(crate) fn shell_chat_translation_rows(&self) -> Vec<String> {
+        Self::chat_translation_choices()
+            .into_iter()
+            .map(Self::chat_translation_label)
+            .collect()
+    }
+
     pub(crate) fn shell_popup(&self, layout: &LauncherOptionsLayout) -> Option<LauncherComboPopup> {
         let combo = self.open_combo?;
         // The list box hangs under the painted face; its rows use this
@@ -706,6 +738,13 @@ impl OptionsDialogState {
                     .iter()
                     .position(|choice| choice.tag == self.language);
                 (self.languages.len(), selected)
+            }
+            LauncherComboId::ChatTranslation => {
+                let choices = Self::chat_translation_choices();
+                let selected = choices
+                    .iter()
+                    .position(|language| *language == self.values.translate_chat);
+                (choices.len(), selected)
             }
         };
         let metrics = DropdownMetrics::scaled(layout.scale);
@@ -847,6 +886,7 @@ impl OptionsDialogState {
                     LauncherComboId::Display => DISPLAY_HELP,
                     LauncherComboId::HealthBars => HEALTH_BARS_HELP,
                     LauncherComboId::Language => LANGUAGE_HELP,
+                    LauncherComboId::ChatTranslation => CHAT_TRANSLATION_HELP,
                 })
             })
     }
@@ -891,6 +931,12 @@ impl OptionsDialogState {
                 LauncherComboId::Language => {
                     match row.and_then(|row| self.languages.get(row)).cloned() {
                         Some(choice) => self.select_language(&choice.tag),
+                        None => self.open_combo = None,
+                    }
+                }
+                LauncherComboId::ChatTranslation => {
+                    match row.and_then(|row| Self::chat_translation_choices().get(row).copied()) {
+                        Some(language) => self.select_chat_translation(language),
                         None => self.open_combo = None,
                     }
                 }
@@ -977,6 +1023,7 @@ fn list_caption(id: LauncherComboId) -> String {
         LauncherComboId::Display => DISPLAY_LABEL,
         LauncherComboId::HealthBars => HEALTH_BARS_LABEL,
         LauncherComboId::Language => LANGUAGE_LABEL,
+        LauncherComboId::ChatTranslation => CHAT_TRANSLATION_LABEL,
     })
 }
 
@@ -1317,6 +1364,52 @@ mod tests {
                 open,
                 close,
                 LauncherOptionsEvent::LanguageSelected("zh-CN".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn chat_translation_list_picks_a_language_or_off() {
+        let mut state = state();
+        state.select_category(Category::Interface);
+        let layout = page(Category::Interface);
+        let face = layout.combo_rect(LauncherComboId::ChatTranslation).unwrap();
+        assert_eq!(
+            state.shell_chat_translation_label(),
+            tr(CHAT_TRANSLATION_NONE_LABEL)
+        );
+        state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
+        let popup = state.shell_popup(&layout).unwrap();
+        assert_eq!(
+            (popup.combo, popup.rows, popup.selected),
+            (LauncherComboId::ChatTranslation, 10, 0),
+            "off, then the nine languages"
+        );
+        assert!(popup.rect.y + popup.rect.h <= layout.status_help.y);
+        state.drain_output();
+        // Japanese, the fourth language: the pick publishes at once.
+        let japanese = popup.row_rect(4);
+        state.shell_mouse_down(japanese.x + 10, japanese.y + 5, &layout);
+        assert_eq!(state.shell_chat_translation_label(), "日本語");
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
+                LauncherOptionsEvent::ChatTranslationSelected(Some(ChatLanguage::Japanese)),
+            ]
+        );
+        // The list opens on that pick, and its first row turns translation off.
+        state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
+        let popup = state.shell_popup(&layout).unwrap();
+        assert_eq!(popup.selected, 4);
+        state.drain_output();
+        let off = popup.row_rect(0);
+        state.shell_mouse_down(off.x + 10, off.y + 5, &layout);
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::ComboClose),
+                LauncherOptionsEvent::ChatTranslationSelected(None),
             ]
         );
     }

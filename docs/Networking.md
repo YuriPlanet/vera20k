@@ -30,9 +30,11 @@ seed/preview data and verify build, rules and effective-map agreement before sta
 
 Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`) in an
 online chat edit turns on chat translation, saved as `[VERA] TranslateChat=`;
-`/translate off` stops it. Received lobby, room and match chat written in the other
+`/translate off` stops it. The Options Interface page's Chat Translation list picks
+the same languages or Off. Received lobby, room and match chat written in the other
 script (Latin versus CJK) is sent to the lobby's translation service. The original
-stays; its translation follows as a line from the same sender marked `»`.
+stays; its translation follows as a line from the same sender marked `»`, unless it
+only repeats the original.
 
 The app services reliable messages and intermediate progress while loading, and
 continues servicing transport during frame waits. Gameplay uses the same
