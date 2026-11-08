@@ -1018,7 +1018,7 @@ impl ApplicationHandler for App {
                 if !active {
                     // Give the arrow back at once: a backgrounded window may
                     // draw no frame that would.
-                    crate::app::input::cursor::set_os_cursor_visible(state, true);
+                    crate::app::input::hardware_cursor::give_back_arrow(state);
                     // `release_in_game_pointer_state` also drops a touch stream
                     // that ended without an `Ended`, so no phantom finger turns
                     // the next tap into a two-finger pan.

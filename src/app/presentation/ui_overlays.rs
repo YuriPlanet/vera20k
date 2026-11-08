@@ -2199,6 +2199,9 @@ pub(crate) fn build_software_cursor_instances(
     let Some(frame) = sequence.frames.get(index) else {
         return (Vec::new(), None);
     };
+    if crate::app::input::hardware_cursor::takes_cursor(state, id, index) {
+        return (Vec::new(), None);
+    }
     // Cursor rendering: the hotspot pixel must sit exactly at the OS cursor position.
     // Scroll cursors use edge-aligned hotspots, so cursor_x/y represents the hotspot
     // location — subtract the hotspot offset to find the top-left of the sprite.

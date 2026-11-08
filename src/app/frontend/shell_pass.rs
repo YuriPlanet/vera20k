@@ -52,6 +52,13 @@ pub(crate) fn software_cursor(
         .as_ref()?;
     let sequence = cursor.get(crate::app::types::CursorId::Default)?;
     let frame = crate::app::input::cursor::current_software_cursor_frame(sequence)?;
+    if crate::app::input::hardware_cursor::takes_cursor(
+        state,
+        crate::app::types::CursorId::Default,
+        0,
+    ) {
+        return None;
+    }
     let texture = &sequence.frames.first()?.texture;
     let scale = crate::app::frontend::shell_layout::menu_cursor_scale(state);
     Some((
