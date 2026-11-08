@@ -596,8 +596,9 @@ password. Every request below is a `POST` with a JSON body; a refusal's
 - `/v1/accounts/forget` `{name,sign_in_token}` returns 200 and drops that remembered
   sign-in.
 - `/v1/accounts/delete` `{name,password}` returns 200, deletes the account with its
-  email, remembered sign-ins and ranked games, signs out its player and mails the owner;
-  anyone may then take the name. A wrong password counts as at `/v1/sessions` (403
+  email, remembered sign-ins, ratings and standings, signs out its player and mails the
+  owner; anyone may then take the name. Records of its ranked games stay 90 days for
+  disputes, and no profile names it. A wrong password counts as at `/v1/sessions` (403
   `wrong_password`, the lock), and a name without an account returns 404 `no_account`.
 
 At `/v1/sessions` an account's name needs its `password` or a `sign_in_token`, never
@@ -691,7 +692,8 @@ after it. An ended season keeps its final standings.
 indexes the ten badges, lowest first, and is `null` before the player's first ranked game;
 `rank` is `null` when they are unranked in the running season, and `ranked` is how many
 players it ranks. `games` holds their 20 newest rated games, each
-`{ended,season,sides,size,map,mode,teams,won,os,change}`, their own team first in `teams`; `trend`
+`{ended,season,sides,size,map,mode,teams,won,os,change}`, their own team first in `teams`,
+where `null` stands for a player whose account has since been deleted; `trend`
 their OS after each of their 200 newest rated games, oldest first, each `{ended,season,os}`;
 and `seasons` their final standing in each ended season they played, newest first, each
 `{season,rank,total,os,badge,wins,losses,disconnects}`. A name without an account answers
