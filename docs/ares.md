@@ -170,8 +170,8 @@ Supported extensions:
   (`Nuke.*`, `NukeFlash.Duration`, `PreImpactAnim`), Psychic Dominator
   (`Dominator.*`) and Genetic Mutator (`Mutate.*`), with `Light.*`. Building
   chronoshift, the SpyPlane and the Lightning Storm (`Lightning.*`,
-  `LightningRod.Modifier`) follow in parts 2 and 3; EMPulse and DropPod
-  remain separate.
+  `LightningRod.Modifier`) and EMPulse with the stock EMP cannon mission
+  follow in parts 2 to 4; the DropPod launch remains outside it.
 - [Prism forwarding](ares-prism-forwarding.md): `PrismForwarding.*` networks
   with support weapons, chain and network limits, damage bonus, charge delay,
   allied feeds and support breaking. Radiation-beam and electric-bolt support
@@ -190,6 +190,25 @@ Supported extensions:
   BulletTypeExt `SubjectToBuildings`, `SolidLevel`, `SubjectToTrenches` and
   `BallisticScatter.*`, inviso impacts and shrapnel weapons. Airburst splits,
   parachuted bullets and `AnimLength` remain outside this chain.
+- [Firestorm walls](ares-firestorm.md): the Firewall superweapon (`Type=Firestorm`),
+  `Firestorm.Wall` sections with their animations, burning, passability, bullet
+  interception and sale gate, the `Firestorm*` globals and trigger actions 92/93.
+  The zone rebuild after a toggle, trenches and the FirewallToggle event remain
+  outside this chain.
+- [Mouse cursors](ares-cursors.md): the `[MouseCursors]` list with the nine Ares
+  cursors, every `Cursor.*` key of techno, weapon, building and superweapon types,
+  and the action overrides on the tactical map and the radar.
+- [Gameplay bugfixes](ares-bugfixes.md): the Misc/Bugfixes hooks, each listed as
+  ported, presentation, equivalent or not applicable, including the Find-only
+  type-list readers (a list name no registry holds is dropped).
+- [Anim and particle extensions](ares-anim-particles.md): `Damage.Delay`, the anim
+  `Weapon`, `SpawnsParticle.Range*` and gas `DamageRange`. Ares' own particle-system
+  simulation remains outside this chain.
+- [Remaining Techno hooks](ares-techno-hooks.md) and
+  [Building, House, Infantry and SWType hooks](ares-building-house-hooks.md): per-hook
+  dispositions, including healers, gap and spotlight hooks, rank immunities, the
+  AI base plan and unit-chooser fixes, power-toggle and EMP power, and infantry
+  death-anim owners.
 - [INI Include and inheritance](ini-directives.md). The read-only `asset ini-expand` probe works
   in every build.
 - [Extended authored House ally lists](../tools/input_oracle/ares_allies_reader.md).
@@ -229,7 +248,9 @@ the merged pull requests that carried each chain:
   Ivan bombs and abductors, the building and techno type keys, and the
   Chronosphere, Nuke, Dominator, Genetic Mutator, SpyPlane and Lightning
   Storm superweapon types with building chronoshift, prism forwarding,
-  trigger events and actions, tiberium and harvesters, and the line of fire.
+  trigger events and actions, tiberium and harvesters, the line of fire, EMPulse,
+  firestorm walls, mouse cursors, the Misc/Bugfixes hooks, anim and particle
+  extensions, and the remaining Techno, Building, House and Infantry hooks.
 
 ## Original project and authors
 
