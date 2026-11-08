@@ -1423,7 +1423,7 @@ impl Simulation {
         1u8.hash(hasher);
         let mut entries: Vec<_> = grid
             .iter_occupied()
-            .map(|(rx, ry, c)| (rx, ry, c.type_id, c.footprint_origin, c.frame_offset))
+            .map(|(rx, ry, c)| (rx, ry, c.type_id, c.frame_offset))
             .collect();
         entries.sort();
         entries.len().hash(hasher);
@@ -4347,7 +4347,6 @@ mod smudge_hash_tests {
                 3,
                 SmudgeCell {
                     type_id: Some(0),
-                    footprint_origin: Some((2, 3)),
                     frame_offset: 0,
                 },
             );

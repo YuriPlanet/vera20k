@@ -658,6 +658,14 @@ fn uninit_clears_aircraft_bridge_occupation() {
 #[test]
 fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
     let mut sim = Simulation::with_seed(1);
+    let rules =
+        crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+            "[SmudgeTypes]\n0=EMPTY\n1=TWO\n2=ONE\n3=DISTANT\n[TWO]\nWidth=2\nHeight=2\n",
+        ))
+        .unwrap();
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
+        16,
+    ));
     let stable_id = 41;
     insert_reservation_building(
         &mut sim,
@@ -676,7 +684,6 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
             ry,
             crate::sim::smudge_grid::SmudgeCell {
                 type_id: Some(1),
-                footprint_origin: Some((4, 5)),
                 frame_offset,
             },
         );
@@ -686,7 +693,6 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
         6,
         crate::sim::smudge_grid::SmudgeCell {
             type_id: Some(2),
-            footprint_origin: Some((7, 6)),
             frame_offset: 0,
         },
     );
@@ -695,7 +701,6 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
         9,
         crate::sim::smudge_grid::SmudgeCell {
             type_id: Some(3),
-            footprint_origin: Some((9, 9)),
             frame_offset: 0,
         },
     );
@@ -703,7 +708,11 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
     sim.smudge_grid = Some(grid);
 
     assert!(matches!(
-        sim.try_reveal_entity(stable_id, request(5, 5, PlacementEvidence::MarkSucceeded)),
+        sim.try_reveal_entity_with_context(
+            stable_id,
+            request(5, 5, PlacementEvidence::MarkSucceeded),
+            super::UninitContext::with_rules(&rules),
+        ),
         RevealOutcome::Revealed { .. }
     ));
 
@@ -717,8 +726,107 @@ fn gsi_04_11_structure_mark_clears_full_smudge_footprints_and_refinery_hole() {
     );
     let expected = vec![(4, 5), (5, 5), (4, 6), (5, 6), (7, 6)];
     assert_eq!(sim.dirty_cells.tactical_for_test(), expected);
-    assert_eq!(sim.dirty_cells.radar(), expected);
-    assert_eq!(sim.dirty_cells.radar_generation(), 5);
+    assert!(sim.dirty_cells.radar().is_empty());
+    assert_eq!(sim.dirty_cells.radar_generation(), 0);
+    assert_eq!(grid.cell(5, 5).frame_offset, 1);
+    assert_eq!(grid.cell(5, 6).frame_offset, 3);
+}
+
+/// SmudgePlace6B6080 truncates data to a byte; BuildingMark43F81B decodes
+/// that saved byte with current Width, even when it names a later origin.
+#[test]
+fn wrapped_smudge_data_survives_load_and_controls_building_clear() {
+    use crate::map::map_file::MapSmudgeEntry;
+    use crate::rules::native_processing::{ProcessedRulesLayers, RulesLayerKind, RulesLayerStack};
+    use crate::sim::overlay_grid::OverlayGrid;
+    use crate::sim::smudge_grid::SmudgeGrid;
+
+    let Some((root, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let mut layers = RulesLayerStack::new(root);
+    layers.push(
+        RulesLayerKind::GameMode,
+        crate::rules::ini_parser::IniFile::from_str("[CRATER11]\nWidth=257\nHeight=3\n"),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        crate::rules::ini_parser::IniFile::from_str("[CRATER11]\nHeight=2\n"),
+    );
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let saved_rules = save_codec::serialize(&processed).unwrap();
+    let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).unwrap();
+    let terrain = crate::map::resolved_terrain::test_grid(
+        300,
+        20,
+        crate::map::resolved_terrain::test_smudge_cell,
+    );
+    let overlay = OverlayGrid::new(300, 20);
+    let mut grid = SmudgeGrid::from_map_entries(
+        &[
+            MapSmudgeEntry {
+                type_name: "CRATER11".into(),
+                rx: 1,
+                ry: 10,
+            },
+            MapSmudgeEntry {
+                type_name: "CRATER01".into(),
+                rx: 258,
+                ry: 11,
+            },
+        ],
+        &rules.smudge_types,
+        &terrain,
+        &overlay,
+        300,
+        20,
+    );
+    let wide = rules.smudge_types.find_by_name("CRATER11").unwrap();
+    assert_eq!(grid.cell(257, 10).type_id, Some(wide));
+    assert_eq!(grid.cell(257, 10).frame_offset, 0);
+    assert_eq!(grid.cell(256, 10).frame_offset, 255);
+    let _ = grid.drain_dirty();
+    let mut live = Simulation::with_seed(17);
+    live.install_resolved_terrain_for_new_map(terrain.clone());
+    live.overlay_grid = Some(overlay);
+    live.smudge_grid = Some(grid);
+    let bytes = GameSnapshot::save(&live, 0, rules.simulation_config_hash(), "wide-smudge", 0);
+    let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+    let saved_rules: ProcessedRulesLayers = save_codec::deserialize(&saved_rules).unwrap();
+    let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&saved_rules).unwrap();
+    let definition = rules.smudge_types.get(wide).unwrap();
+    assert_eq!((definition.width, definition.height), (257, 2));
+    restored.restore_after_snapshot_load().unwrap();
+    restored.rebuild_caches_after_load(terrain, Default::default(), &rules);
+    restored
+        .restore_map_authority_after_snapshot_load(&rules, &rules.overlay_registry(), None)
+        .unwrap();
+
+    // A one-cell Building lands on the later data0. Its decoded rectangle
+    // clears an unrelated mark ahead, while the original data0 remains.
+    insert_reservation_building(&mut restored, 41, "Americans", 257, 10, &"1x1".into(), 0);
+    let rng = restored.scenario_rng.native_state_hex();
+    assert!(matches!(
+        restored.try_reveal_entity_with_context(
+            41,
+            request(257, 10, PlacementEvidence::MarkSucceeded),
+            super::UninitContext::with_rules(&rules),
+        ),
+        RevealOutcome::Revealed { .. }
+    ));
+    let grid = restored.smudge_grid.as_ref().unwrap();
+    assert_eq!(grid.cell(1, 10).type_id, Some(wide));
+    assert_eq!(grid.cell(256, 10).frame_offset, 255);
+    assert!(grid.cell(257, 10).type_id.is_none());
+    assert!(grid.cell(258, 11).type_id.is_none());
+    assert!(restored.dirty_cells.radar().is_empty());
+    assert!(
+        restored
+            .dirty_cells
+            .tactical_for_test()
+            .contains(&(258, 11))
+    );
+    assert_eq!(restored.scenario_rng.native_state_hex(), rng);
 }
 
 fn gsi_04_16_edge_gate_rules() -> crate::rules::ruleset::RuleSet {
@@ -8293,7 +8401,6 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
             0,
             crate::sim::smudge_grid::SmudgeCell {
                 type_id: Some(9),
-                footprint_origin: Some((0, 0)),
                 frame_offset,
             },
         );

@@ -1594,6 +1594,16 @@ mod slot_tests {
         assert_eq!(sim.anim(replaced).unwrap().world_coord().x, 768);
         assert_eq!(sim.anim(replaced).unwrap().world_coord().y, 1024);
         assert_eq!(sim.anim(replaced).unwrap().runtime().frame_timer, timer);
+        // SetHeight5F5FA0 re-enters BuildingMark43F738 without Unlimbo.
+        // Move the retained slot after PlaceDown without restarting it.
+        let old_z = sim.anim(replaced).unwrap().world_coord().z;
+        sim.set_object_height(id, 96, &rules, None, FrameEffects::default());
+        assert_eq!(sim.anim(replaced).unwrap().world_coord().z, old_z + 96);
+        assert_eq!(
+            sim.entities().get(id).unwrap().building_art.anim_slots[3],
+            Some(replaced)
+        );
+        assert_eq!(sim.anim(replaced).unwrap().runtime().frame_timer, timer);
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "", 0);
         let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
