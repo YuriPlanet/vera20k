@@ -521,7 +521,9 @@ pub fn run_pipeline(
     }
 }
 
-#[cfg(test)]
+// A stock oracle: Ares' bridge end hooks (0x58FBDD..0x5900F7) skip the end
+// coins and shift every later draw.
+#[cfg(all(test, not(feature = "ares")))]
 mod tests {
     use super::*;
     use crate::map::rmg::options::RmgOptions;

@@ -1931,9 +1931,14 @@ mod tests {
             .entities
             .iter()
             .flat_map(|entity| {
-                tech_footprints[&entity.type_id]
-                    .iter()
-                    .map(move |&(dx, dy)| {
+                // An Ares build's unvalidated decks (hook 0x58FA51) can add
+                // a one-cell CABHUT, which is no tech building.
+                tech_footprints
+                    .get(&entity.type_id)
+                    .cloned()
+                    .unwrap_or_else(|| vec![(0, 0)])
+                    .into_iter()
+                    .map(move |(dx, dy)| {
                         (
                             entity.cell_x.wrapping_add_signed(dx),
                             entity.cell_y.wrapping_add_signed(dy),

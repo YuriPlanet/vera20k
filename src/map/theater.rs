@@ -1058,10 +1058,8 @@ pub(crate) fn resolve_rmg_tile_keys(
     general: Option<&IniSection>,
     slope_set_pieces: Option<u16>,
 ) -> RmgTileKeys {
-    let resolve = |key: &str| {
-        let ordinal = general.map_or(-1, |section| section.read_int(key, -1));
-        resolve_tileset_start(lookup, ordinal)
-    };
+    let read = |key: &str| general.map_or(-1, |section| section.read_int(key, -1));
+    let resolve = |key: &str| resolve_tileset_start(lookup, read(key));
     RmgTileKeys {
         clear_tile: resolve("ClearTile"),
         ramp_base: resolve("RampBase"),
@@ -1083,8 +1081,20 @@ pub(crate) fn resolve_rmg_tile_keys(
         misc_pave_tile: resolve("MiscPaveTile"),
         paved_roads: resolve("PavedRoads"),
         paved_road_ends: resolve("PavedRoadEnds"),
-        medians: resolve("Medians"),
+        medians: resolve_tileset_start(lookup, medians_ordinal(read("Medians"))),
     }
+}
+
+/// The `[General] Medians=` ordinal ReadTheater545150 keeps. Ares' MediansFix
+/// (Ares.dll 1006A920, hook 0x545904 right after the ReadInt) turns the
+/// missing-key -1 into 71: SNOWMD.INI, the one shipped theater without the
+/// key, holds its "Paved road bits" medians there.
+fn medians_ordinal(read: i32) -> i32 {
+    #[cfg(feature = "ares")]
+    if read == -1 {
+        return 71;
+    }
+    read
 }
 
 fn resolve_cliff_ranges(
