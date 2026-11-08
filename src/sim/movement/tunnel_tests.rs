@@ -113,6 +113,44 @@ fn long_trip_digs_travels_underground_and_surfaces() {
     assert!(entity.lifecycle.cell_marked());
 }
 
+/// A destination that stops allowing burrowing while the digger travels:
+/// ProcessDigging's own cell refuses it (Tunnel Can_Enter_Cell `0x0072A090`),
+/// and its nearby-cell search keeps only burrowable cells (FNPC `0x0056DE5F`),
+/// so it surfaces next to the destination instead of re-targeting it.
+#[test]
+fn blocked_destination_surfaces_on_a_burrowable_neighbour() {
+    let (mut sim, rules) = fixture();
+    order(&mut sim, &rules, (30, 10));
+    let mut frame = 0;
+    while tunnel_state(&sim) != Some(TunnelState::Digging) {
+        frame += 1;
+        sim.session.set_binary_frame_for_test(frame);
+        sim.process_tunnel_locomotor(DIGGER, &rules, None, FrameEffects::default());
+        assert!(frame < 500, "the digger reaches its underground state");
+    }
+    // A slope refuses burrowing (CellClass `0x00486FF0`).
+    sim.resolved_terrain
+        .as_mut()
+        .unwrap()
+        .cell_mut_for_test(30, 10)
+        .unwrap()
+        .slope_type = 1;
+    while tunnel_state(&sim) != Some(TunnelState::Idle) {
+        frame += 1;
+        sim.session.set_binary_frame_for_test(frame);
+        sim.process_tunnel_locomotor(DIGGER, &rules, None, FrameEffects::default());
+        assert!(frame < 3000, "the digger surfaces");
+    }
+    let entity = sim.substrate.entities.get(DIGGER).unwrap();
+    let location = super::ground_pose::object_location(entity, sim.resolved_terrain.as_ref());
+    let cell = (location.x / 256, location.y / 256);
+    assert_ne!(cell, (30, 10));
+    assert!(
+        (cell.0 - 30).abs() <= 1 && (cell.1 - 10).abs() <= 1,
+        "{cell:?}"
+    );
+}
+
 /// A short trip with a cheap ground route drives: the Unit setter's Tunnel
 /// arm (`0x007427C0..0x00742C14`) puts a Drive over the Tunnel.
 #[test]

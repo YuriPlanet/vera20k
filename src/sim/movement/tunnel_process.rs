@@ -22,13 +22,6 @@
 //!   the ground). The Foot setter reaches this Move_To only for a Unit; an
 //!   Infantry Tunnel owner (InfantryType `0x005247D0`) has no represented
 //!   setter arm.
-//! - The two nearby-cell searches (Stop_Moving `0x00728CB6..0x00728D5A`,
-//!   ProcessDigging `0x007296A6..0x0072975D`) pass Find_Nearby_Passable_Cell
-//!   its eleventh argument (the burrowing-obstacle test, CellClass
-//!   `0x00486FF0` per candidate) set; VERA's search has no such gate, so a
-//!   candidate under a building, a terrain object, a slope or a bridge can
-//!   win. Trigger: a Tunnel owner stopped far from its destination or
-//!   surfacing in a blocked cell. Mod-only.
 //!
 //! ## Dependency rules
 //! - Part of sim/ — sim/ NEVER depends on render/, ui/, audio/, net/.
@@ -44,7 +37,8 @@ use crate::util::fixed_math::SimFixed;
 
 use super::ground_pose::{ground_surface_z_at, object_location};
 use super::tunnel_movement::{
-    self, DigEffects, NULL_COORD, TUNNEL_DEPTH_Z, TUNNEL_SURFACE_EFFECT_HEIGHT, TunnelRuntime, TunnelState,
+    self, DigEffects, NULL_COORD, TUNNEL_DEPTH_Z, TUNNEL_SURFACE_EFFECT_HEIGHT, TunnelRuntime,
+    TunnelState,
 };
 
 /// The AnimClass constructor's draw flags the dig anim passes (`0x600`).
@@ -323,7 +317,8 @@ impl Simulation {
     /// Find_Nearby_Passable_Cell as Stop_Moving and ProcessDigging push it:
     /// Track; the zone `GetZoneID(seed, Normal, no bridge)` gives, or any
     /// zone; `movement_zone`; not bridge-aware; 1x1; no overlay or height
-    /// gate; bridge cells allowed; no target cell; no occupancy check.
+    /// gate; the burrow test; bridge cells allowed; no target cell; no
+    /// occupancy check.
     fn tunnel_nearby_cell(
         &self,
         seed: (i32, i32),
@@ -359,7 +354,10 @@ impl Simulation {
                 check_height: false,
                 check_occupancy: false,
                 target_cell: None,
-                options: NearbySearchOptions::default(),
+                options: NearbySearchOptions {
+                    reject_any_overlay: false,
+                    require_burrowable: true,
+                },
             },
         )
     }
@@ -724,32 +722,6 @@ impl Simulation {
             && self.terrain_objects.members_at((x, y)).next().is_none()
     }
 
-    /// `FootClass::ShouldBeOnBridge @ 0x004DDC40` with false: the Foot's
-    /// navigation coordinate (vt+0x4C) against its Location, none in a Tube.
-    fn tunnel_should_be_on_bridge(&self, id: u64) -> Result<bool, String> {
-        let actor = self
-            .substrate
-            .entities
-            .get(id)
-            .ok_or("retired Tunnel owner")?;
-        let terrain = self.resolved_terrain.as_ref().ok_or("no map cells")?;
-        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-        let current = super::ground_pose::position_world_coord(&actor.position);
-        let in_tube = actor.low_bridge_tube_state.is_some();
-        let navigation = if in_tube {
-            current
-        } else {
-            self.foot_navigation_coordinate(id)?
-        };
-        super::ground_pose::navigation_should_be_on_bridge(
-            &cells,
-            navigation,
-            current,
-            actor.on_bridge(),
-            in_tube,
-        )
-    }
-
     /// `UnitClass::AStarAttempt @ 0x00746000`, whether a Tunnel Unit digs to
     /// `to` rather than driving there: an owner below the ground, a cell its
     /// zone does not reach (`MapClass::Can_Reach_Zone @ 0x0056D100`,
@@ -813,8 +785,16 @@ impl Simulation {
             return true;
         }
         let to_bridge = terrain.native_cell_flags(terrain.native_cell_identity(to)) & 0x100 != 0;
-        self.estimate_zone_cost(id, from, to, false, to_bridge, rules)
-            .map_or(true, |cost| cost > 15)
+        self.estimate_zone_cost_in_query(
+            id,
+            crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(from),
+            crate::sim::pathfinding::zone_map::ZoneQueryCell::Copied(to),
+            false,
+            to_bridge,
+            Some(crate::rules::locomotor_type::MovementZone::Normal),
+            rules,
+        )
+        .map_or(true, |cost| cost > 15)
     }
 
     /// The Unit setter's Tunnel arm (`0x007427C0..0x00742C14`), after its
@@ -847,13 +827,14 @@ impl Simulation {
         {
             return;
         }
-        let Ok(destination) = super::navcom::nav_target_coordinate(
-            requested,
-            Some(id),
-            self,
-            self.resolved_terrain.as_ref(),
-            Some((rules, &self.interner)),
-        ) else {
+        // The destination's own coordinate (vt+0x48, `0x007428B0`).
+        let cells = self
+            .resolved_terrain
+            .as_ref()
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        let Some(destination) =
+            super::ground_pose::target_get_coords(requested.into(), self, cells.as_ref())
+        else {
             return;
         };
         let Some(location) = self.tunnel_location(id) else {
@@ -862,7 +843,7 @@ impl Simulation {
         let from = ((location.x / 256) as i16, (location.y / 256) as i16);
         let to = ((destination.x / 256) as i16, (destination.y / 256) as i16);
         // vt+0xBC, ShouldBeOnBridge(false) (`0x004DDC40`).
-        let on_bridge = self.tunnel_should_be_on_bridge(id).unwrap_or(false);
+        let on_bridge = self.foot_should_be_on_bridge(id).unwrap_or(false);
         let to_bridge = self.resolved_terrain.as_ref().is_some_and(|terrain| {
             terrain.native_cell_flags(terrain.native_cell_identity(to)) & 0x100 != 0
         });

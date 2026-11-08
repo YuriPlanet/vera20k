@@ -174,6 +174,12 @@ impl NearbyFootprint {
 pub struct NearbySearchOptions {
     /// Reject any candidate cell that carries an overlay (ore, gems, walls).
     pub reject_any_overlay: bool,
+    /// FNPC's burrowing argument: each candidate must pass CellClass's
+    /// burrow test (`0x00486FF0`, called at `0x0056DE5F` after the height
+    /// gate and before the bridge filter). Only
+    /// [`Simulation::nearby_passable_cell`](crate::sim::world::Simulation::nearby_passable_cell)
+    /// supplies the test ([`NearbyQuery::burrowable`]).
+    pub require_burrowable: bool,
 }
 
 /// FNPC query — mirrors the engine `Find_Nearby_Passable_Cell` caller args.
@@ -214,6 +220,9 @@ pub struct NearbyQuery<'a> {
     /// check's later corner test. Absent bounds reject every candidate: there is
     /// no rectangular substitute.
     pub playfield_bounds: Option<crate::sim::cell_rect::PlayfieldBounds>,
+    /// The burrow test the caller asked for
+    /// ([`NearbySearchOptions::require_burrowable`]), or `None`.
+    pub burrowable: Option<&'a dyn Fn((i16, i16)) -> bool>,
 }
 
 /// A surviving FNPC candidate. `direct` (kept for tests) records only the
@@ -612,6 +621,12 @@ fn candidate_passes(
         return false;
     }
 
+    if let Some(burrowable) = q.burrowable
+        && !burrowable((cx as i16, cy as i16))
+    {
+        return false;
+    }
+
     //56DE6C bridge filter follows height; final occupancy56DE9D is last.
     if !q.allow_bridge_cells && candidate_is_bridge_cell(q, cx, cy) {
         return false;
@@ -749,6 +764,7 @@ impl NearbyArgs {
             target_cell: None,
             options: NearbySearchOptions {
                 reject_any_overlay: false,
+                require_burrowable: false,
             },
         }
     }
@@ -872,6 +888,7 @@ impl crate::sim::world::Simulation {
         {
             return answer;
         }
+        let burrowable = |cell| self.cell_allows_burrowing(cell);
         let (width, height) = self.map_size_diamond()?;
         find_nearby_passable_cell_with_options(
             seed,
@@ -892,6 +909,10 @@ impl crate::sim::world::Simulation {
                 entities: Some(&self.substrate.entities),
                 zone_grid: self.zone_grid.as_ref(),
                 playfield_bounds: self.playfield_bounds(),
+                burrowable: args
+                    .options
+                    .require_burrowable
+                    .then_some(&burrowable as &dyn Fn((i16, i16)) -> bool),
             },
             args.options,
             // The frame counter is committed late, so during an advance it
@@ -1108,6 +1129,7 @@ mod tests {
             entities: None,
             zone_grid: None,
             playfield_bounds: Some(covering_bounds()),
+            burrowable: None,
         }
     }
 
@@ -1685,6 +1707,7 @@ mod tests {
         );
         let rejecting = NearbySearchOptions {
             reject_any_overlay: true,
+            require_burrowable: false,
         };
         let found = find_nearby_passable_cell_with_options((2, 2), &q, rejecting, 0)
             .expect("clear ground exists on the next ring");

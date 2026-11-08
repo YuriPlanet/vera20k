@@ -288,6 +288,7 @@ fn find_nearby_pre_fill_start_rect(
         entities: None,
         zone_grid: None,
         playfield_bounds: Some(playfield_bounds),
+        burrowable: None,
     };
     find_nearby_passable_cell((i32::from(seed_rx), i32::from(seed_ry)), &query, 0)
 }
@@ -341,6 +342,7 @@ pub fn find_nearby_start_rect(
         entities: None,
         zone_grid: None,
         playfield_bounds: Some(bounds),
+        burrowable: None,
     };
     find_nearby_passable_cell(
         (i32::from(seed_rx), i32::from(seed_ry)),

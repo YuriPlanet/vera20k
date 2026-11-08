@@ -1550,11 +1550,6 @@ impl ResolvedTerrainGrid {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub fn test_set_burrow_denied_tiles(&mut self, denied: Vec<bool>) {
-        self.burrow_denied_tiles = denied.into();
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
     pub fn test_set_high_bridge_set_starts(
         &mut self,
         bridge_set_start: Option<u16>,

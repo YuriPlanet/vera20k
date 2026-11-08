@@ -1340,6 +1340,7 @@ impl Simulation {
             ZoneQueryCell::Copied(goal),
             start_bridge,
             goal_bridge,
+            None,
             rules,
         )
     }
@@ -1349,6 +1350,13 @@ impl Simulation {
     /// read: the second lookup and the bridge helpers may restamp Dummy,
     /// including before the original arguments are reread for distances.
     /// The bridge booleans are copied inputs, not live Cell flag queries.
+    /// `movement_zone` is the native override argument: `None` is its -1,
+    /// which reads the mover type's `MovementZone=` (Find_Path, Approach,
+    /// Patrol); UnitClass::AStarAttempt passes Normal (0, `0x007460B6`).
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the native EstimateZoneCost arguments"
+    )]
     pub(crate) fn estimate_zone_cost_in_query(
         &self,
         id: u64,
@@ -1356,6 +1364,7 @@ impl Simulation {
         goal: ZoneQueryCell,
         start_bridge: bool,
         goal_bridge: bool,
+        movement_zone: Option<MovementZone>,
         rules: &RuleSet,
     ) -> Result<i32, String> {
         use crate::sim::cell_rect::get_cellclass_fallback;
@@ -1402,7 +1411,7 @@ impl Simulation {
             self.playfield_bounds(),
         )?;
         let hierarchy = zones
-            .hierarchy_for(object.movement_zone)
+            .hierarchy_for(movement_zone.unwrap_or(object.movement_zone))
             .ok_or("EstimateZoneCost requires the native movement row")?;
         let start_zone = zones
             .hierarchy_zone_at_native(0, start_projection)

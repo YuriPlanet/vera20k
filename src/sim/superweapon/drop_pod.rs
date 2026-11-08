@@ -197,6 +197,7 @@ pub(super) fn launch(
                     target_cell: None,
                     options: NearbySearchOptions {
                         reject_any_overlay: false,
+                        require_burrowable: false,
                     },
                 },
             )

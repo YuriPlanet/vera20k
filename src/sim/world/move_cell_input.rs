@@ -1288,6 +1288,7 @@ impl ClickMap<'_> {
                 entities: None,
                 zone_grid: Some(self.zones),
                 playfield_bounds: Some(self.bounds),
+                burrowable: None,
             },
             self.frame,
         )

@@ -231,6 +231,7 @@ fn resolve_rally_cell_click(
             entities: None,
             zone_grid: Some(zones),
             playfield_bounds: Some(bounds),
+            burrowable: None,
         },
         frame,
     )

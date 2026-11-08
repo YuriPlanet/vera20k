@@ -626,6 +626,9 @@ impl Simulation {
     /// answers 7 for a cell that refuses burrowing
     /// ([`Simulation::cell_allows_burrowing`]), and the Unit receiver returns
     /// that 7 at once (`0x0073F3B3..0x0073F3CD`); Infantry's does not ask.
+    /// Every arm the Unit receiver leaves by before that call answers 7 too,
+    /// except direction 8's (`0x0073F218`), which never reaches it, so the
+    /// seed may be asked first for any other direction.
     /// Native48-call proof: tools/spatial_oracle/foot_locomotor_entry.*;
     /// bounded factory/depot modes: basic-factory-exit-geometry-research.
     ///
@@ -651,6 +654,7 @@ impl Simulation {
             return Ok(self.aircraft_can_enter(id, cell));
         }
         if mode == crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor
+            && args.direction != 8
             && mover.category() == EntityCategory::Unit
             && mover
                 .locomotor
