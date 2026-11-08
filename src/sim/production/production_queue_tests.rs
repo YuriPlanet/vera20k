@@ -226,6 +226,9 @@ fn busy_factory_exit_player_uses_house_order_without_moving_primary() {
     assert!(!sim.object_placement_scope_active());
 }
 
+/// Stock type match; Ares admits NAWEAP
+/// ([`ares_busy_factory_exit_takes_another_type_that_can_build_the_product`]).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
     let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
@@ -274,6 +277,29 @@ fn busy_factory_exit_skips_attached_different_type_and_non_guard_buildings() {
     );
     assert!(sim.production.factories().building_factory(5).is_none());
     assert!(sim.production.is_primary_factory(1));
+}
+
+/// Ares 3.0 BuildingClass_KickOutUnit_FindAlternateKickout (100415E0, hook
+/// 0x4444E2): a guarding NAWEAP, another type with GAWEAP's `Factory=` and
+/// `Naval=` that MTNK can be built at, takes the busy factory's product.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_busy_factory_exit_takes_another_type_that_can_build_the_product() {
+    let Some((mut sim, rules, owner)) = busy_factory_exit_world() else {
+        return;
+    };
+    spawn_structure(&mut sim, &rules, 4, "Americans", "NAWEAP", 20, 20);
+    busy_factory_exit_mission(&mut sim, 4, crate::sim::mission::MissionType::Guard);
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .base_projection_mut()
+        .replace_buildings_for_test(vec![1, 4, 3, 2]);
+    let product = busy_factory_exit_product(&mut sim, &rules, owner, false);
+    assert!(dispatch_production_changes_for_tests(
+        &mut sim, &rules, None
+    ));
+    assert_busy_factory_exit_receiver(&sim, &rules, product, 4);
 }
 
 #[test]
@@ -512,6 +538,9 @@ fn busy_factory_exit_without_an_alternate_refunds_player_product_and_promotes_qu
     assert!(sim.production.factories().building_factory(1).is_none());
 }
 
+/// Stock gamemd rows; Ares 100415E0 (hook 0x4444E2) admits other factory
+/// types they hold as refused candidates.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng() {
     use crate::map::resolved_terrain::ResolvedTerrainGrid;

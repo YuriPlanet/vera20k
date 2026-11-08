@@ -259,6 +259,19 @@ impl Simulation {
         let Some(kind) = admitted else {
             return Ok(LocomotorProcess::default());
         };
+        // Ares TechnoExt::CreateWithDroppod (10044030) installs the DropPod
+        // locomotor over the Foot's own: its Process (`0x004B5B70`) is the
+        // one this call makes until the pod lands.
+        #[cfg(feature = "ares")]
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.ares_drop_pod().is_some())
+        {
+            self.process_drop_pod_locomotor(stable_id, rules, overlay_registry, ctx.effects);
+            return Ok(LocomotorProcess::admitted());
+        }
         match kind {
             LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Walk => self
                 .process_ground_locomotor_one(stable_id, rules, overlay_registry, ctx.effects)

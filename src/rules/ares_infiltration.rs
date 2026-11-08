@@ -5,9 +5,8 @@
 //! reached reads; `ObjectType` projects them. `sim::spy_infiltration` and
 //! the infantry infiltration owners consume them.
 //!
-//! `SpyEffect.StolenTechIndex` (Ares `+0xBC`) and `Cursor.Spy` (`+0x240`)
-//! are not read here: the first needs Ares' stolen-tech prerequisites, the
-//! second Ares' cursor type table (`[MouseCursors]`); neither is ported.
+//! `Cursor.Spy` (`+0x240`) is not read here: it belongs to Ares' cursor
+//! type table (`[MouseCursors]`, `rules::ares_mouse_cursor`).
 
 use crate::{
     rules::{ini_parser::IniSection, object_type::ObjectType},
@@ -52,6 +51,9 @@ pub(crate) struct InfiltrationTypeRules {
     pub(crate) super_weapon_permanent: bool,
     /// `SpyEffect.SuperWeapon` (`+0xB8`), a `[SuperWeaponTypes]` entry.
     pub(crate) super_weapon: Option<String>,
+    /// `SpyEffect.StolenTechIndex` (`+0xBC`, a 32-bit set, constructor 0):
+    /// the StolenTech bits the spy's house gains.
+    pub(crate) stolen_tech: u32,
     /// `SpyEffect.StolenMoneyAmount` (`+0xC0`).
     pub(crate) stolen_money_amount: i32,
     /// `SpyEffect.StolenMoneyPercentage` (`+0xC4`), a float in 3.0.
@@ -83,6 +85,7 @@ impl Default for InfiltrationTypeRules {
             undo_reverse_engineer: false,
             super_weapon_permanent: false,
             super_weapon: None,
+            stolen_tech: 0,
             stolen_money_amount: 0,
             stolen_money_percentage: NativeF32Bits::POSITIVE_ZERO,
             power_outage_duration: 0,
@@ -140,6 +143,18 @@ impl InfiltrationTypeRules {
             "SpyEffect.SuperWeaponPermanent",
             self.super_weapon_permanent,
         );
+        // 1000DD40, after SuperWeaponPermanent: ValueableVector<int> into an
+        // empty temporary; a nonempty result replaces the set with the bits
+        // of its indexes below 32 (unsigned compare: negatives are skipped
+        // silently, larger ones logged).
+        if let Some(indexes) = section.read_ares_int_list("SpyEffect.StolenTechIndex")
+            && !indexes.is_empty()
+        {
+            self.stolen_tech = indexes
+                .into_iter()
+                .filter_map(|index| u32::try_from(index).ok().filter(|&index| index < 32))
+                .fold(0, |bits, index| bits | 1 << index);
+        }
         // 1000DD40+0x271, after the Degrade keys.
         self.immune_to_saboteurs =
             section.read_ares_nullable_bool("ImmuneToSaboteurs", self.immune_to_saboteurs);

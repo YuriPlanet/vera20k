@@ -11,8 +11,10 @@ use crate::sim::projectile::{
 };
 
 const RULES: &str = "[Countries]\n0=Americans\n1=Russians\n\
-     [BuildingTypes]\n0=FSWALL\n\
+     [BuildingTypes]\n0=FSWALL\n1=TRENCHA\n2=TRENCHB\n\
      [FSWALL]\nStrength=500\nFirestorm.Wall=yes\nGuardRange=4\nTurret=no\nSight=0\n\
+     [TRENCHA]\nStrength=300\nIsTrench=Sand\nGuardRange=4\nSight=0\n\
+     [TRENCHB]\nStrength=300\nIsTrench=sand\nGuardRange=4\nSight=0\n\
      [InfantryTypes]\n0=E1\n1=CYBORG\n\
      [E1]\nStrength=125\nSight=0\n[CYBORG]\nStrength=125\nSight=0\nIgnoresFirestorm=yes\n\
      [Animations]\n0=FSACT\n1=FSBURN\n\
@@ -23,7 +25,8 @@ const RULES: &str = "[Countries]\n0=Americans\n1=Russians\n\
 
 fn arena() -> (Simulation, RuleSet) {
     let art = IniFile::from_str(
-        "[FSWALL]\nFoundation=1x1\n[FSACT]\nImage=FSACT\nRate=900\n\
+        "[FSWALL]\nFoundation=1x1\n[TRENCHA]\nFoundation=1x1\n[TRENCHB]\nFoundation=1x1\n\
+         [FSACT]\nImage=FSACT\nRate=900\n\
          [FSBURN]\nImage=FSBURN\nRate=900\n",
     );
     let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
@@ -333,5 +336,101 @@ fn a_placed_section_fills_the_gap_to_a_linked_section() {
         sim.substrate.entities.len(),
         before,
         "another House's section"
+    );
+}
+
+/// buildLines (`100113D0`) links an `IsTrench` type to a trench of its own
+/// kind (`sameTrench`): the kind names compare case-sensitively, and a
+/// firestorm section is no trench.
+#[test]
+fn a_placed_trench_fills_the_gap_only_to_its_own_kind() {
+    let (mut sim, rules) = arena();
+    let owner = house(&sim, "Americans");
+    let count = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .values()
+            .filter(|entity| sim.interner.resolve(entity.type_ref()) == "TRENCHA")
+            .count()
+    };
+    sim.spawn_object("TRENCHA", "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    let placed = sim
+        .spawn_object("TRENCHA", "Americans", 13, 10, 0, &rules)
+        .unwrap();
+    sim.ares_build_lines(
+        placed,
+        (13, 10),
+        owner,
+        &rules,
+        None,
+        FrameEffects::default(),
+    );
+    assert_eq!(count(&sim), 4);
+
+    sim.spawn_object("TRENCHB", "Americans", 10, 20, 0, &rules)
+        .unwrap();
+    sim.spawn_object("FSWALL", "Americans", 16, 20, 0, &rules)
+        .unwrap();
+    let unlinked = sim
+        .spawn_object("TRENCHA", "Americans", 13, 20, 0, &rules)
+        .unwrap();
+    sim.ares_build_lines(
+        unlinked,
+        (13, 20),
+        owner,
+        &rules,
+        None,
+        FrameEffects::default(),
+    );
+    assert_eq!(
+        count(&sim),
+        5,
+        "another trench kind and a firestorm section"
+    );
+}
+
+/// SetFirestormState's closing Update_Pathfinding_2 (`0x00586990`) recalcs
+/// each section's cell, and RecalcZoneType's building arm (Ares
+/// `10014B70`, hook `0x483D94`) makes it Impassable while the House's
+/// firestorm is up; the retained zone class follows. Dropping the
+/// firestorm gives the cell back its ground class.
+#[test]
+fn a_powered_section_cell_takes_the_impassable_zone_class() {
+    use crate::map::resolved_terrain::zone_class;
+    let (mut sim, rules) = arena();
+    let _west = sim
+        .spawn_object("FSWALL", "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    let class = |sim: &Simulation, cell: (u16, u16)| {
+        let terrain = sim.resolved_terrain.as_ref().unwrap();
+        let cached = terrain.cell(cell.0, cell.1).unwrap().zone_type;
+        let retained = sim
+            .zone_grid
+            .as_ref()
+            .unwrap()
+            .base_movement_class_at(cell.0, cell.1)
+            .unwrap();
+        (cached, retained)
+    };
+    assert_eq!(
+        class(&sim, (10, 10)),
+        (zone_class::GROUND, zone_class::GROUND)
+    );
+
+    firestorm(&mut sim, &rules, "Americans", true);
+    assert_eq!(
+        class(&sim, (10, 10)),
+        (zone_class::IMPASSABLE, zone_class::IMPASSABLE)
+    );
+    assert_eq!(
+        class(&sim, (11, 10)),
+        (zone_class::GROUND, zone_class::GROUND)
+    );
+
+    firestorm(&mut sim, &rules, "Americans", false);
+    assert_eq!(
+        class(&sim, (10, 10)),
+        (zone_class::GROUND, zone_class::GROUND)
     );
 }

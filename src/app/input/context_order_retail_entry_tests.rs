@@ -1073,7 +1073,10 @@ fn a_deployed_gis_alt_over_the_ifv_skips_the_row() {
 /// `Dock=` list (only GAAIRC and AMRADR) and answers NoEnter (0x1F). The
 /// cursor is NoEnter; Aircraft ClickedAction (`0x00417BD0`) passes 0x1F to
 /// Foot ClickedAction (`0x004D74E0`), whose default orders nothing, so the
-/// click orders nothing and no longer selects the depot.
+/// click orders nothing and no longer selects the depot. Ares drops the
+/// `UnitRepair=` gate (hook `0x417E16`), so there the jet keeps Select
+/// (`sim::world::passenger_entry_tests`).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn a_players_jet_over_the_players_service_depot_gets_no_enter() {
     let Some((retail, registry)) = retail() else {

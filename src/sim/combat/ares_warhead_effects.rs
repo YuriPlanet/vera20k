@@ -15,11 +15,10 @@
 //! applyPermaMC's capture writes the owner, `+0x2C4`, the queued mission and
 //! the ring (`+0x2C8`); FreeUnit's own effects stay with the capture manager.
 //!
-//! RESIDUAL: the victims are the ground cell lists of the shared
-//! getCellSpreadItems port (`ares_effect_ground_targets`); its in-air
-//! FootClass pass (Ares.dll 10076660) and the half distance of a flying
-//! aircraft are not ported, so an airborne object is never curtained by a
-//! warhead (as for EMP and AttachEffect).
+//! The victims come from the shared getCellSpreadItems port
+//! (`ares_cell_spread_items`, Ares.dll 10076660) with includeInAir, as for
+//! EMP and AttachEffect: the cell lists plus the airborne FootClass objects,
+//! a flying aircraft at half its distance.
 
 use crate::rules::{
     overlay_types::OverlayTypeRegistry, ruleset::RuleSet, warhead_type::WarheadType,
@@ -67,7 +66,7 @@ impl Simulation {
             return;
         }
         let warhead_ref = self.interner.intern(&warhead.id);
-        for target in self.ares_effect_ground_targets(coordinate, warhead.cell_spread_f64, rules) {
+        for target in self.ares_cell_spread_items(coordinate, warhead.cell_spread_f64, rules) {
             let Some(victim) = self.substrate.entities.get(target) else {
                 continue;
             };

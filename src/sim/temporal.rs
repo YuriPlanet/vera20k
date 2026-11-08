@@ -844,6 +844,15 @@ impl Simulation {
             return;
         };
         if category == EntityCategory::Structure {
+            // Ares 3.0 100177B0 (hook 0x71A995): an erased last tunnel
+            // entrance kills its owner's network, credited to the eraser
+            // (`sim::ares_tunnel`).
+            #[cfg(feature = "ares")]
+            self.ares_kill_tunnel_feet_if_last(
+                target,
+                Some(head),
+                UninitContext::new(rules, registry).with_effects(effects),
+            );
             // Temporal71A9A0..71A9A7: only positive true Occupants count
             // calls KillOccupants(NULL), ahead of Cargo disposal/bunker release.
             if self
@@ -908,23 +917,8 @@ impl Simulation {
         }
         if category == EntityCategory::Structure {
             // 0x0071AA3A vtable +0x3B8: `BuildingClass::Death_Announcement @
-            // 0x0044D760`. A current player's building (`0x0050B6F0`) pushes
-            // the Cell of its +4C coordinate (`0x00447E90`, no requester)
-            // onto the Spacebar ring (`0x00660B80`); no EVA, no radar event.
-            if let Some(entity) = self.substrate.entities.get(target)
-                && self.house_is_human_player(entity.owner())
-                && let Ok(coord) = self.navigation_target_coordinate(
-                    crate::sim::components::NavTargetRef::Object { id: target },
-                    None,
-                    rules,
-                )
-            {
-                self.publish_trigger_effects(vec![
-                    crate::sim::trigger_runtime::TriggerEffect::RecentEventCell {
-                        cell: ((coord.x / 256) as i16, (coord.y / 256) as i16),
-                    },
-                ]);
-            }
+            // 0x0044D760`, the warp's owner as its Killer.
+            self.building_death_announcement(target, true, unit_lost_suppressed, rules);
         } else if !unit_lost_suppressed
             && let Some(entity) = self.substrate.entities.get(target)
             && let Some(object) = self.object_type(entity.type_ref(), rules)

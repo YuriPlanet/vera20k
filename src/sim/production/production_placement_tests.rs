@@ -1482,6 +1482,47 @@ fn ares_non_harvester_free_unit_is_born_guarding_the_area() {
     assert_eq!(tank.mission.current().known(), Some(MissionType::AreaGuard));
 }
 
+/// Ares 3.0 BuildingClass_Place_SkipFreeUnits (10036860, hook 0x446AAF): a
+/// refinery opened again, as ChronoWarp puts one back with +6E4 clear,
+/// delivers no second FreeUnit.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_free_unit_comes_from_the_first_opening_only() {
+    let mut sim = placement_sim();
+    let rules = stock_refinery_completion_rules();
+    let mut grid = PathGrid::new(64, 64);
+    spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 14, 20);
+    let refinery_id = ready_and_place(&mut sim, &rules, "Americans", "GAREFN", 20, 20);
+    block_building_foundation(&mut grid, &rules, "GAREFN", 20, 20);
+    install_refinery_test_terrain(&mut sim);
+    set_ticks_until_completion(&mut sim, refinery_id, 1);
+    sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
+    assert_eq!(unit_ids(&sim, "Americans", "CMIN").len(), 1);
+    sim.substrate
+        .entities
+        .get_mut(refinery_id)
+        .unwrap()
+        .building_art
+        .clear_actually_placed();
+    sim.grand_opening(
+        refinery_id,
+        false,
+        false,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert!(
+        sim.substrate
+            .entities
+            .get(refinery_id)
+            .unwrap()
+            .building_art
+            .actually_placed()
+    );
+    assert_eq!(unit_ids(&sim, "Americans", "CMIN").len(), 1);
+}
+
 #[test]
 fn stock_4x3_refinery_free_unit_is_refused_its_footprint_and_placed_by_the_nearby_search() {
     // The primary cell is `(bx + W/2, by + H/2 + 1)`, which for a 4x3 refinery at

@@ -378,6 +378,24 @@ pub(crate) fn tick_terrain_object_ai(
     else {
         return;
     };
+    tick_terrain_animation(sim, stable_id, cell, rules, overlay_registry);
+    // Ares 3.0 TerrainClass_Update_ForestFire (1004F530, hook 0x71C7C2)
+    // follows the IsAnimated draw. VERA runs it after the whole stage step:
+    // the order differs only for an animated flammable non-spawner tree
+    // whose stage reaches its midpoint the same frame (none in retail).
+    #[cfg(feature = "ares")]
+    sim.ares_spread_forest_fire(stable_id, rules);
+}
+
+/// TerrainClass::AI71C730's IsAnimated draw, stage step and ore emission
+/// for an animated terrain object.
+fn tick_terrain_animation(
+    sim: &mut crate::sim::world::Simulation,
+    stable_id: u64,
+    cell: (u16, u16),
+    rules: &crate::rules::ruleset::RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+) {
     let Some((spawner, spawning_cells, cell_index)) =
         sim.terrain_objects.animation_with_indexes_mut(stable_id)
     else {

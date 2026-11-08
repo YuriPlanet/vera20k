@@ -619,6 +619,18 @@ pub(crate) fn collect_area(
             .append(&mut cliff_effects.cell_target_detaches);
     }
     for &(dx, dy) in cell_spread::area_damage_cells(warhead.cell_spread_f64).iter() {
+        // Ares 3.0 DamageArea_ChainReaction (10051000, hook 0x48964F): the
+        // cell's CellChainReact precedes its Reduce_Tiberium (the prelude).
+        #[cfg(feature = "ares")]
+        world.ares_area_damage_chain_reaction(
+            cell,
+            (dx, dy),
+            warhead,
+            affects_tiberium,
+            rules,
+            overlay_registry,
+            effects,
+        );
         let (spread_cell, detached_cell) = {
             let mut prelude = crate::sim::world::simulation_area_damage_cell_prelude(
                 rules,
@@ -1184,7 +1196,22 @@ pub(crate) fn commit_terrain(
     if let Some(writeback) = event.damage_writeback {
         writeback.write(world, rules, packet);
     }
+    // Ares 3.0 TerrainClass_ReceiveDamage_ForestFire (1004F4E0, hook
+    // 0x71B99E): after ObjectClass::ReceiveDamage, a positive `Sparky=` hit
+    // on a tree not yet burning calls Catch_Fire (vt+0x178), lethal or not.
+    #[cfg(feature = "ares")]
+    let ignites = !matches!(receive, TerrainAreaReceiveResult::Ignored)
+        && packet > 0
+        && warhead.sparky
+        && world
+            .terrain_objects
+            .get(event.stable_id)
+            .is_some_and(|terrain| !terrain.on_fire());
     let TerrainAreaReceiveResult::Lethal(lethal) = receive else {
+        #[cfg(feature = "ares")]
+        if ignites {
+            world.terrain_catch_fire(event.stable_id, rules);
+        }
         return (effects, under_attack_events);
     };
 
@@ -1194,6 +1221,26 @@ pub(crate) fn commit_terrain(
     let uninit_context =
         crate::sim::world::UninitContext::new(rules, overlay_registry).with_effects(run.effects());
     world.notify_pointer_expired(lethal.stable_id, uninit_context);
+    #[cfg(feature = "ares")]
+    {
+        if ignites {
+            world.terrain_catch_fire(lethal.stable_id, rules);
+        }
+        // Take_Damage71BAE0: the lethal arm of a burning ordinary tree
+        // clears its owned anims' loops (ClearLoopsForOwner 0x00422B80)
+        // instead of starting the crumble.
+        if !lethal.spawns_tiberium
+            && world
+                .terrain_objects
+                .get(lethal.stable_id)
+                .is_some_and(|terrain| terrain.on_fire())
+        {
+            world
+                .substrate
+                .anims
+                .clear_loops_for_terrain_owner(lethal.stable_id);
+        }
+    }
 
     if lethal.spawns_tiberium
         && let Some(c4_warhead) = rules.warhead(&rules.bridge_warheads.c4_name)
@@ -1226,8 +1273,18 @@ pub(crate) fn commit_terrain(
         );
         effects.append(nested);
         under_attack_events.append(&mut pings);
-        // The following CellChainReaction request71BAD5 calls489270,
-        // whose complete active-YR body is RET; there is no queued effect.
+        // The following CellChainReaction request (71BAD5) on the terrain's
+        // cell calls 489270, whose active-YR body is RET. Ares 3.0 fills it
+        // with CellChainReact (10050DD0).
+        #[cfg(feature = "ares")]
+        if let Some(terrain_cell) = world
+            .terrain_objects
+            .objects()
+            .get(&lethal.stable_id)
+            .map(|terrain| terrain.cell())
+        {
+            world.ares_cell_chain_react(terrain_cell, rules, overlay_registry, run.effects());
+        }
     }
 
     world.terrain_lethal_uninit(lethal, &mut run.finalizing_terrain, uninit_context);
@@ -2047,13 +2104,11 @@ pub(crate) fn commit_entities(
             .get(target_id)
             .is_some_and(|target| target.category() != EntityCategory::Structure)
         {
-            Simulation::team_took_damage(
-                &world.interner,
-                &world.substrate,
-                &mut world.team_script_vm,
+            world.team_took_damage(
                 target_id,
                 (attacker_id != RAD_NO_ATTACKER).then_some(attacker_id),
                 rules,
+                overlay_registry,
             );
         }
         // FootClass::ReceiveDamage's own tail, then the concrete Foot
@@ -2677,25 +2732,26 @@ fn finish_concrete_death(
         entity.animation.is_some(),
     );
     let mut concrete_smudge_plans = Vec::new();
+    // Ares TechnoClass_ReceiveDamage_SuppressUnitLost (1004B020, hook
+    // 0x702050) marks the victim of a `UnitLost.Suppress=yes` kill;
+    // FootClass_Destroyed (10049080) and BuildingClass_Destroyed_UnitLost
+    // (10013F10) then stay silent.
+    #[cfg(feature = "ares")]
+    let unit_lost_suppressed = damage_events
+        .iter()
+        .rfind(|event| event.target_id == dead_id)
+        .and_then(|event| rules.warhead(world.interner.resolve(event.warhead_ref)))
+        .and_then(WarheadType::ares_combat)
+        .is_some_and(|combat| combat.unit_lost_suppress());
+    #[cfg(not(feature = "ares"))]
+    let unit_lost_suppressed = false;
     if let Some(obj) = world.interner.object_type(type_id, rules) {
         // `TechnoClass::Death_Announcement @ 0x004D98C0` runs at the
         // Aircraft/Infantry/Unit `ReceiveDamage` kill sites (vtable
-        // `+0x3B8`; `BuildingClass` has none) and skips `Spawned=`
-        // types at `0x004D98DD`. Its owner gate (`0x0050B6F0`) and
-        // the `CreateRadarEvent(7)` dedupe (`0x004D98FE`) need the
-        // house table and radar queue, which the world owns.
-        // Ares TechnoClass_ReceiveDamage_SuppressUnitLost (1004B020, hook
-        // 0x702050) marks the victim of a `UnitLost.Suppress=yes` kill;
-        // FootClass_Destroyed (10049080) then stays silent.
-        #[cfg(feature = "ares")]
-        let unit_lost_suppressed = damage_events
-            .iter()
-            .rfind(|event| event.target_id == dead_id)
-            .and_then(|event| rules.warhead(world.interner.resolve(event.warhead_ref)))
-            .and_then(WarheadType::ares_combat)
-            .is_some_and(|combat| combat.unit_lost_suppress());
-        #[cfg(not(feature = "ares"))]
-        let unit_lost_suppressed = false;
+        // `+0x3B8`; stock `BuildingClass::ReceiveDamage` makes no such call)
+        // and skips `Spawned=` types at `0x004D98DD`. Its owner gate
+        // (`0x0050B6F0`) and the `CreateRadarEvent(7)` dedupe (`0x004D98FE`)
+        // need the house table and radar queue, which the world owns.
         if !unit_lost_suppressed
             && let Some(event) = death_announcement_event(obj, category, rx, ry, owner)
         {
@@ -3042,6 +3098,19 @@ fn finish_concrete_death(
                     // foundation leave the rubble.
                     #[cfg(feature = "ares")]
                     world.ares_kick_out_of_rubble(dead_id, rules, overlay_registry, frame_effects);
+                }
+                // Ares 3.0 10014520 (hook 0x44266B): after DestructionEffects
+                // the building runs Destroyed(Attacker) (vt+0x3B8, Death_
+                // Announcement 0x0044D760), which stock ReceiveDamage skips.
+                #[cfg(feature = "ares")]
+                {
+                    let attacker = killing_attacker(world, damage_events, dead_id);
+                    world.building_death_announcement(
+                        dead_id,
+                        attacker.is_some(),
+                        unit_lost_suppressed,
+                        rules,
+                    );
                 }
             }
         }
@@ -4284,11 +4353,11 @@ pub(crate) fn commit_projectile_detonations_inline(
             crate::sim::projectile::ProjectileDetonationReason::DeathWeapon
                 | crate::sim::projectile::ProjectileDetonationReason::AttachEffectShot
         );
-        // Phobos `BulletClass_Explodes_AirburstCheck1/2` make `Splits` take
-        // the airburst arm: one detonation and no outer cluster draws.
-        let phobos_splits = cfg!(feature = "phobos") && projectile_type.is_some_and(|p| p.splits());
+        // Phobos `BulletClass_Explodes_AirburstCheck1/2` and Ares
+        // BulletClass_Fire_SplitsB (1001A810, hook 0x468FFA) make `Splits`
+        // take the airburst arm: one detonation and no outer cluster draws.
         let (clusters, cluster_draws) = match projectile_type {
-            Some(projectile) if !projectile.airburst && !phobos_splits && !single_detonation => {
+            Some(projectile) if !projectile.airburst_arm() && !single_detonation => {
                 (projectile.cluster.max(0), true)
             }
             _ => (1, false),

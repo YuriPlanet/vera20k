@@ -21,47 +21,15 @@
 //!   consumes state without becoming a gameplay authority.
 
 // --- Core types: entity storage, components, commands, RNG, interning ---
+#[cfg(feature = "ares")]
+pub(crate) mod abduction; // Ares Abductor= weapons (conductAbduction 10054A80)
 pub(crate) mod ai_base_building;
 pub(crate) mod ai_base_defense;
 pub(crate) mod ai_base_site;
 pub mod ammo;
 pub mod anim_class;
-pub mod attach_effect;
-pub(crate) mod object_fall;
 #[cfg(any(test, feature = "test-support"))]
 pub mod arena_fixture;
-pub(crate) mod build_site;
-pub mod building_art;
-#[cfg(feature = "ares")]
-pub mod bounty;
-pub(crate) mod building_upgrades;
-pub(crate) mod building_power;
-pub(crate) mod building_entry;
-pub mod building_construction;
-pub(crate) mod base_plan;
-pub(crate) mod base_plan_generation;
-pub mod bomb;
-#[cfg(feature = "ares")]
-pub(crate) mod abduction; // Ares Abductor= weapons (conductAbduction 10054A80)
-pub(crate) mod c4_plant;
-pub mod campaign_carry_over; // the record 0x008A38E0 one campaign mission hands to the next start
-pub mod capture_manager;
-pub mod cloak_disguise;
-pub mod command;
-pub mod command_queue;
-pub mod components;
-#[cfg(any(test, feature = "test-support"))]
-pub mod health_ratio_fixture;
-pub mod crates; // scenario-start crate placement (Post_Map_Init step 3)
-pub mod credit_income; // oil-derrick ProduceCash + Floating Disc money drain (object-loop money)
-pub(crate) mod conversion_health;
-pub(crate) mod crew_survival; // building SpawnSurvivors and vehicle crew escape
-#[cfg(feature = "ares")]
-pub(crate) mod vehicle_theft;
-#[cfg(feature = "ares")]
-pub(crate) mod powered_by; // Ares PoweredBy= power sources (PoweredUnitClass 1006A6F0)
-#[cfg(feature = "ares")]
-pub(crate) mod radar_jammer; // Ares RadarJamRadius= jammers (JammerClass 10068500)
 #[cfg(feature = "ares")]
 pub(crate) mod ares_degrade; // Ares low-power degrading (DamageDelay 100247A0)
 #[cfg(feature = "ares")]
@@ -69,38 +37,80 @@ pub(crate) mod ares_firestorm; // Ares firestorm walls (UpdateFirewall 10013280)
 #[cfg(feature = "ares")]
 pub(crate) mod ares_garrison; // Ares urban combat and raidable garrisons
 #[cfg(feature = "ares")]
+pub(crate) mod ares_make_stuff_up; // Ares CanMakeStuffUp (100677B0, 100680F0)
+#[cfg(feature = "ares")]
 pub(crate) mod ares_rubble; // Ares advanced rubble (SwitchRubble 1000F2B0)
 #[cfg(feature = "ares")]
 pub(crate) mod ares_tiberium; // Ares tiberium damage and heal (10049280, 10014BA0)
 #[cfg(feature = "ares")]
+pub(crate) mod ares_tiberium_storage; // Ares refinery storage (GiveTiberium 10024290)
+#[cfg(feature = "ares")]
 pub(crate) mod ares_toggle_power; // Ares computer power balancing (100228A0)
 #[cfg(feature = "ares")]
-pub(crate) mod ares_veterancy; // Ares UpdateVeterancy 10046AF0 and academies
-pub mod economy; // per-house wallet/storage/statistics value-type (production+economy substrate)
+pub(crate) mod ares_transports; // Ares InitialPayload (10043C10), Hospital eviction (10012920)
 #[cfg(feature = "ares")]
-pub(crate) mod factory_owners;
-pub mod frame_profile;
-#[cfg(feature = "telemetry")]
-pub mod telemetry;
+pub(crate) mod ares_tunnel; // Ares building tunnels (TunnelTypes.cpp, 100097D0)
+#[cfg(feature = "ares")]
+pub(crate) mod ares_veterancy; // Ares UpdateVeterancy 10046AF0 and academies
+pub mod attach_effect;
+pub(crate) mod base_plan;
+pub(crate) mod base_plan_generation;
+pub mod bomb;
+#[cfg(feature = "ares")]
+pub mod bounty;
+pub(crate) mod build_site;
+pub mod building_art;
+pub mod building_construction;
+pub(crate) mod building_entry;
+pub(crate) mod building_power;
+pub(crate) mod building_upgrades;
+pub(crate) mod c4_plant;
+pub mod campaign_carry_over; // the record 0x008A38E0 one campaign mission hands to the next start
+pub mod capture_manager;
 #[cfg(feature = "debug-tools")]
 pub mod cheats;
+pub mod cloak_disguise;
+pub mod command;
+pub mod command_queue;
+pub mod components;
+pub(crate) mod conversion_health;
+pub mod crates; // scenario-start crate placement (Post_Map_Init step 3)
+pub mod credit_income; // oil-derrick ProduceCash + Floating Disc money drain (object-loop money)
+pub(crate) mod crew_survival; // building SpawnSurvivors and vehicle crew escape
 #[cfg(feature = "debug-tools")]
 pub mod debug_event_log;
 pub mod dirty_cells;
+pub mod economy; // per-house wallet/storage/statistics value-type (production+economy substrate)
 pub mod entity_store;
 pub(crate) mod estimated_health;
+#[cfg(feature = "ares")]
+pub(crate) mod factory_owners;
 pub(crate) mod flashing;
+pub mod frame_profile;
 pub mod game_entity;
+#[cfg(any(test, feature = "test-support"))]
+pub mod health_ratio_fixture;
 pub(crate) mod house_threat;
 pub(crate) mod hunter_seeker;
 pub mod intern;
 pub(crate) mod kamikaze; // missiles out of their launcher's control (0x00ABC5F8)
 pub(crate) mod lifecycle_request;
-pub(crate) mod locomotor_lift; // the Magnetron's IsLocomotor= lift (ImbueLocomotor 0x00710000)
-pub(crate) mod powered_unit; // Robot Tanks offline without a PowersUnit= building (Deactivate 0x0070FC90)
 pub mod light_sources;
+pub(crate) mod locomotor_lift; // the Magnetron's IsLocomotor= lift (ImbueLocomotor 0x00710000)
 pub mod multiplayer_checksum;
 pub mod native_identity;
+pub(crate) mod object_fall;
+#[cfg(feature = "ares")]
+pub(crate) mod powered_by; // Ares PoweredBy= power sources (PoweredUnitClass 1006A6F0)
+pub(crate) mod powered_unit; // Robot Tanks offline without a PowersUnit= building (Deactivate 0x0070FC90)
+#[cfg(feature = "ares")]
+pub(crate) mod radar_jammer; // Ares RadarJamRadius= jammers (JammerClass 10068500)
+#[cfg(feature = "ares")]
+pub(crate) mod reverse_engineering; // Ares grinder reverse engineering (10022360)
+#[cfg(feature = "telemetry")]
+pub mod telemetry;
+#[cfg(feature = "ares")]
+pub(crate) mod vehicle_theft;
 // A wasm build has no threads (the browser package, the headless WASI run)
 // unless the browser package opts into its Web Worker pool.
 #[cfg_attr(
@@ -114,9 +124,9 @@ mod parallel_web_tests;
 pub mod rng;
 pub mod scenario_bootstrap;
 pub mod scenario_post_map;
-pub(crate) mod secret_lab;
 pub mod scenario_session; // app->sim launch descriptor (per-match seed pipeline)
 pub mod score;
+pub(crate) mod secret_lab;
 pub mod sensor_lifecycle;
 pub mod spy_infiltration; // BuildingClass::Infiltrate (a spy's effects on the building it enters)
 pub(crate) mod stage;
@@ -147,8 +157,8 @@ pub mod radio; // RadioMessage / RadioResponse / RadioPayload
 //     special locomotors, drive tracks, turret rotation ---
 pub mod movement;
 pub mod pathfinding; // A* search, zone connectivity, terrain speed, path smoothing
-pub mod psychic_detection;
 pub mod projectile; // serialized BulletClass-style flight state and detonation handoff
+pub mod psychic_detection;
 pub mod wave; // serialized WaveClass-style display registrations and lifetime
 
 // --- Docking: repair depots and airfield landing pads ---
@@ -201,9 +211,9 @@ pub mod radiation;
 
 // --- Phobos Shields: per-object shield points, absorption and recovery ---
 #[cfg(feature = "phobos")]
-pub mod shield;
-#[cfg(feature = "phobos")]
 pub mod digital_display;
+#[cfg(feature = "phobos")]
+pub mod shield;
 
 // --- Passengers, transport, slaves ---
 pub mod parity_digest;
@@ -214,12 +224,14 @@ pub mod spawn_manager;
 pub mod transport_unload;
 
 // --- Economy, map resources ---
+/// Native ripple table shared by IonBlast forces and presentation.
+pub mod ion_blast_ripple;
 pub mod ore_growth;
 pub(crate) mod ore_twinkle;
 pub mod radar;
 pub mod rocking;
-/// Native ripple table shared by IonBlast forces and presentation.
-pub mod ion_blast_ripple;
+#[cfg(feature = "ares")]
+pub(crate) mod terrain_fire; // Ares terrain fire (Catch_Fire 0x71C5B0, 1004F530)
 pub mod terrain_object;
 pub mod terrain_spawn;
 pub mod tiberium;
@@ -229,9 +241,9 @@ pub mod tiberium_germinate;
 pub mod game_options;
 pub mod house_diplomacy; // ally graph: install, MakeAlly/MakeEnemy, Computer_Paranoid
 pub mod house_state;
-pub mod houses;
 pub(crate) mod house_strategy;
 pub mod house_tracking;
+pub mod houses;
 
 // --- Trigger runtime (map trigger evaluation during gameplay) ---
 pub mod team_script_vm;

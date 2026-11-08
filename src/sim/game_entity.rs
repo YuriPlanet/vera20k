@@ -154,8 +154,15 @@ pub struct GameEntity {
     /// failure never refunds the draw.
     techno_ctor_random_word: u16,
     /// Building+6F4, constructor43B9B5 null; startup68C1B5 assigns a type
-    /// pointer and Load453FB0 swizzles it. Capture never rerolls the reward.
+    /// pointer and Load453FB0 swizzles it. Stock capture never rerolls the
+    /// reward; Ares's Place roll also writes it (`sim::secret_lab`).
     secret_lab_fallback: Option<(crate::rules::object_type::ObjectCategory, InternedId)>,
+    /// Ares BuildingExt+0x50 `SecretLab_Placed` (constructor false): the
+    /// lab's UpdateSecretLab (10013700) has rolled its boon
+    /// (`sim::secret_lab`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_secret_lab_placed: bool,
     /// gamemd.exe TechnoClass::Constructor @0x006F2B40 stores -1 at6F2D0F.
     /// One signed +214 owner for scenario recruitment and, outside network
     /// games, local control groups (`local_control_group` holds a network
@@ -580,6 +587,12 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     ares_chronoshifting: bool,
+    /// The DropPod locomotor an Ares DropPod launch gives a Foot
+    /// (TechnoExt::CreateWithDroppod `10044030`), piggybacking the Foot's
+    /// own locomotor until it lands (`superweapon::drop_pod`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_drop_pod: Option<crate::sim::superweapon::drop_pod::DropPodFlight>,
     /// Ares TechnoExt::SuperWeapon (+0xA0), the Super attached to this
     /// Techno: SW_HunterSeeker::Activate's launch source on its seeker and
     /// SW_EMPulse::Activate's firing Super on each cannon. The entity owns
@@ -879,6 +892,13 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) ares_raid: crate::sim::ares_garrison::RaidState,
+    /// The Ares TechnoExt `PayloadCreated` (`+0x9E`), an
+    /// [`InitialPayloadState`] that `sim::ares_transports` owns.
+    ///
+    /// [`InitialPayloadState`]: crate::sim::ares_transports::InitialPayloadState
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_initial_payload: crate::sim::ares_transports::InitialPayloadState,
     /// A building's HasBeenCaptured byte (`BuildingClass+0x6E3`), a
     /// [`HasBeenCaptured`] that `crew_survival` owns.
     ///
@@ -1079,6 +1099,34 @@ impl GameEntity {
     #[cfg(feature = "ares")]
     pub(crate) fn end_ares_chronoshift(&mut self) {
         self.ares_chronoshifting = false;
+    }
+
+    /// The DropPod locomotor carrying this Foot, if any.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_drop_pod(&self) -> Option<crate::sim::superweapon::drop_pod::DropPodFlight> {
+        self.ares_drop_pod
+    }
+
+    /// LocomotionClass::ChangeLocomotorTo(DropPod) (`10044083..100440FA`):
+    /// a fresh DropPod locomotor piggybacks the Foot's own.
+    #[cfg(feature = "ares")]
+    pub(crate) fn begin_ares_drop_pod(&mut self) {
+        self.ares_drop_pod = Some(Default::default());
+    }
+
+    /// The DropPod locomotor's own fields, for its Move_To.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_drop_pod_mut(
+        &mut self,
+    ) -> Option<&mut crate::sim::superweapon::drop_pod::DropPodFlight> {
+        self.ares_drop_pod.as_mut()
+    }
+
+    /// The landed pod's End_Piggyback (`0x004B5CEE`): the Foot's own
+    /// locomotor is current again.
+    #[cfg(feature = "ares")]
+    pub(crate) fn end_ares_drop_pod(&mut self) {
+        self.ares_drop_pod = None;
     }
 
     #[cfg(feature = "ares")]
@@ -1732,6 +1780,17 @@ impl GameEntity {
         self.secret_lab_fallback = Some(production);
     }
 
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_secret_lab_placed(&self) -> bool {
+        self.ares_secret_lab_placed
+    }
+
+    /// UpdateSecretLab's roll (10013700) sets BuildingExt+0x50.
+    #[cfg(feature = "ares")]
+    pub(in crate::sim) fn mark_ares_secret_lab_placed(&mut self) {
+        self.ares_secret_lab_placed = true;
+    }
+
     /// One rules-to-model binding for construction and live type changes.
     pub(crate) fn object_uses_voxel(
         type_id: &str,
@@ -2122,6 +2181,8 @@ impl GameEntity {
             phobos_stat_multipliers: Default::default(),
             techno_ctor_random_word,
             secret_lab_fallback: None,
+            #[cfg(feature = "ares")]
+            ares_secret_lab_placed: false,
             object_group: -1,
             local_control_group: None,
             stage: crate::sim::stage::StageClass::constructed(construction_frame as i32),
@@ -2212,6 +2273,8 @@ impl GameEntity {
             unit_delivery_no_base: false,
             #[cfg(feature = "ares")]
             ares_chronoshifting: false,
+            #[cfg(feature = "ares")]
+            ares_drop_pod: None,
             ares_super_weapon: None,
             ares_super_target: None,
             tesla_charge: Default::default(),
@@ -2290,6 +2353,8 @@ impl GameEntity {
             display_production_to: Default::default(),
             #[cfg(feature = "ares")]
             ares_raid: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_initial_payload: Default::default(),
             has_been_captured: Default::default(),
             no_survivor: Default::default(),
             nominal_survivor: false,
@@ -2492,6 +2557,13 @@ impl GameEntity {
     #[cfg(feature = "ares")]
     pub(crate) fn mark_parachuted_bomb(&mut self) {
         self.fall.mark_bomb();
+    }
+
+    /// CanMakeStuffUp drops a high paradropped infantryman as a bomb with
+    /// FallRate 0 (Ares 3.0 100680F0, hook 0x55AFB3).
+    #[cfg(feature = "ares")]
+    pub(crate) fn drop_parachute_as_bomb(&mut self) {
+        self.fall.drop_parachute_as_bomb();
     }
 
     pub(crate) fn finish_fall(&mut self) {

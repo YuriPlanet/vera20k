@@ -545,6 +545,29 @@ pub(crate) fn airburst_launch_velocity(speed: i32, rng: &mut SimRng) -> Projecti
     ])
 }
 
+/// Ares BulletClass_DetonateAt_Splits (`1001A090`, hook `0x469EBA`) after
+/// each child's constructor: one Scenario `RandomRanged(0, 31)` as a 5-bit
+/// DirStruct (raw `n << 11`, signed), its radians `(raw - 0x3FFF) *
+/// -(2π / 65535)`, the game's sine and cosine (YRpp `Math::sin`/`cos`), then
+/// `(cos, sin) * Speed * cos(1.5π * 1.00001)` (the literal
+/// `-2.44921270764e-16`) and `-Speed`, which `MoveTo` takes.
+pub(crate) fn ares_airburst_launch_velocity(speed: i32, rng: &mut SimRng) -> ProjectileVelocity {
+    const TURN: NativeF64Bits = NativeF64Bits::from_bits(0xbf19_2214_7658_a371);
+    const ALMOST_DOWN: NativeF64Bits = NativeF64Bits::from_bits(0xbcb1_a5ff_ffff_da55);
+    let draw = rng.next_range_i32_inclusive(0, 31);
+    let raw = i32::from((draw << 11) as u16 as i16);
+    let radians = round(X::mul(X::load_i32(raw - 0x3fff), d(TURN)));
+    let trig = TrigTable::embedded();
+    let sine = round(trig.sin_from_table(radians));
+    let cosine = round(trig.cos_from_table(radians));
+    let flat = round(X::mul(X::load_i32(speed), d(ALMOST_DOWN)));
+    ProjectileVelocity::from_native([
+        store(X::mul(flat, cosine)),
+        store(X::mul(flat, sine)),
+        store(X::load_i32(speed.wrapping_neg())),
+    ])
+}
+
 /// `BulletClass::SpawnShrapnel`'s child launch velocity. Both branches turn
 /// the zeroed velocity's seed (100, 0, 0) toward the target, divide out its
 /// existing pitch and apply the fixed pitch `0x3FE921648732995C`. A child

@@ -631,6 +631,11 @@ impl Simulation {
         // map-read continuation. This is independent of Rust stable handles.
         self.native_unique_ids.hash(hasher);
         self.hash_type_tech_levels(hasher);
+        #[cfg(feature = "ares")]
+        if let Some(made_up) = self.ares_made_up_rules.as_ref() {
+            b"ares-made-up-rules-v1".hash(hasher);
+            made_up.hash(hasher);
+        }
         let mut voxel_damage = self.voxel_type_damage_identity_entries().peekable();
         if voxel_damage.peek().is_some() {
             b"voxel-type-damage-v1".hash(hasher);
@@ -1117,6 +1122,9 @@ impl Simulation {
             house.economy().spent_credits().hash(hasher);
             // The score feeds the terminal Scenario draw.
             house.economy().score().hash(hasher);
+            // Ares builds' tiberium stores, once any holds tiberium.
+            #[cfg(feature = "ares")]
+            house.economy().ares_storage().hash_retained(hasher);
             // House504080/503040 preserves the kill, loss and built totals
             // through native load. The retained-ship chain needs both its
             // initial and terminal loss. Preserve zero streams.
@@ -1464,6 +1472,8 @@ impl Simulation {
         self.ares_chrono_warps.hash_state(hasher);
         #[cfg(feature = "ares")]
         self.ares_firestorm.hash_state(hasher);
+        #[cfg(feature = "ares")]
+        self.ares_tunnels.hash_state(hasher);
         for (owner, weapons) in self.super_weapons.iter() {
             owner.hash(hasher);
             for (type_id, inst) in weapons {
@@ -1648,6 +1658,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     // All three drive future wallet writes, so a divergence here
     // desyncs credits; every object carries them.
     entity.produce_cash.timer().hash(hasher);
+    entity.produce_cash.hash_ares_upgrade_timers(hasher);
     entity.drain.target().hash(hasher);
     entity.drain.draining_me().hash(hasher);
     // ParasiteClass (Foot+69C) of dogs and drones, the victim's
@@ -1691,6 +1702,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     if let Some(production) = entity.secret_lab_fallback() {
         b"building-secret-production-v382".hash(hasher);
         production.hash(hasher);
+    }
+    // Ares BuildingExt+0x50: only GenerateOnCapture rolls a placed lab again.
+    #[cfg(feature = "ares")]
+    if entity.ares_secret_lab_placed() {
+        b"ares-secret-lab-placed-v1".hash(hasher);
     }
     if entity.object_group() != -1 {
         // gamemd.exe TechnoClass::ComputeCRC70C270 reads +214 at70C280.
@@ -1875,6 +1891,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     if entity.building_online.ares_toggled_off() {
         b"ares-building-toggled-off-v1".hash(hasher);
     }
+    #[cfg(feature = "ares")]
+    if entity.building_art.free_units_done() {
+        b"ares-building-free-units-done-v1".hash(hasher);
+    }
     if entity.building_has_engineer.is_set() {
         b"building-has-engineer-v1".hash(hasher);
     }
@@ -1899,6 +1919,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     if let Some(target) = entity.ares_super_target() {
         b"ares-super-target-v1".hash(hasher);
         target.hash(hasher);
+    }
+    #[cfg(feature = "ares")]
+    if let Some(pod) = entity.ares_drop_pod() {
+        b"ares-drop-pod-v1".hash(hasher);
+        pod.hash(hasher);
     }
     // Building+662 and Techno+1C8 (`sim::powered_unit`), folded only
     // while set.
@@ -2252,6 +2277,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     entity.display_production_to.hash_state(hasher);
     #[cfg(feature = "ares")]
     entity.ares_raid.hash_state(hasher);
+    #[cfg(feature = "ares")]
+    entity
+        .ares_initial_payload
+        .hash_state(entity.category(), hasher);
     entity.bunker.occupant().hash(hasher);
     // Reciprocal link + install machine are authoritative lifecycle state.
     entity.bunker.link().hash(hasher);

@@ -66,6 +66,14 @@ impl ObjectFallState {
         self.dropped_as_bomb = true;
     }
 
+    /// Ares 3.0 LogicClass_Update_1000 (100680F0, hook 0x55AFB3) under
+    /// CanMakeStuffUp: FallRate +2C becomes 0 and +8F rises.
+    #[cfg(feature = "ares")]
+    pub(crate) fn drop_parachute_as_bomb(&mut self) {
+        self.rate = 0;
+        self.dropped_as_bomb = true;
+    }
+
     /// Paradrop5F5965 and FlamingGuy425BFC write +8D without resetting the
     /// retained rate or attached-Anim flag.
     pub(crate) fn begin_fall(&mut self) {

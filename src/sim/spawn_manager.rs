@@ -264,6 +264,21 @@ impl SpawnManagerState {
         self.update_timer.resume(frame);
     }
 
+    /// Ares EMPulse::updateSpawnManager (10063070) on the manager's two
+    /// timers, the SpawnTimer (`+0x5C`) then the UpdateTimer (`+0x50`):
+    /// `held` pauses each at its time left (0 at least), otherwise each
+    /// resumes from its -1 start.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_hold_timers(&mut self, held: bool, frame: i32) {
+        for timer in [&mut self.spawn_timer, &mut self.update_timer] {
+            if held {
+                timer.pause(frame);
+            } else {
+                timer.resume(frame);
+            }
+        }
+    }
+
     /// The interned `Spawns=` child type.
     pub fn spawn_type(&self) -> InternedId {
         self.spawn_type

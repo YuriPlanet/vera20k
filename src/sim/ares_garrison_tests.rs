@@ -162,3 +162,94 @@ fn a_shot_passes_through_to_an_occupant() {
     assert_eq!(health(&sim, gi), 85);
     assert_eq!(health(&sim, bunker), 1000);
 }
+
+/// Trench traversal (#666): `canTraverseTo` (`10011690`) admits only a
+/// trench of the same kind whose Location lies within 256 leptons, with
+/// room; the TrenchRedirectClick event (0x60, `1006A170`) round-trips its
+/// Cell and source, and its handler (`1006A540`) runs `doTraverseTo`
+/// (`100130E0`): the source's heads move while the target has room, and an
+/// emptied raided trench goes back to its house (evalRaidStatus).
+#[test]
+fn trench_redirect_moves_heads_into_a_neighbour_and_returns_a_raided_trench() {
+    let text = RULES.replace("0=BNK\n", "0=BNK\n1=TRN\n2=TRX\n")
+        + "[TRN]\nStrength=500\nTechLevel=1\nCanBeOccupied=yes\nMaxNumberOccupants=2\n\
+           IsTrench=Sand\nBunker.Raidable=yes\n\
+           [TRX]\nStrength=500\nTechLevel=1\nCanBeOccupied=yes\nMaxNumberOccupants=2\n\
+           IsTrench=Wood\n";
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(&text),
+        &IniFile::from_str("[TRN]\nFoundation=1x1\n[TRX]\nFoundation=1x1\n"),
+    )
+    .expect("trench rules");
+    let (mut sim, _grid) = arena(&rules);
+    let raided = spawn(&mut sim, &rules, "TRN", "Russians", 10, 10);
+    let east = spawn(&mut sim, &rules, "TRN", "Americans", 11, 10);
+    let south = spawn(&mut sim, &rules, "TRN", "Americans", 10, 11);
+    let diagonal = spawn(&mut sim, &rules, "TRN", "Americans", 11, 11);
+    let other_kind = spawn(&mut sim, &rules, "TRX", "Americans", 9, 10);
+    let gis = [(14, 10), (14, 12), (14, 14)]
+        .map(|(rx, ry)| spawn(&mut sim, &rules, "GI", "Americans", rx, ry));
+    for (gi, building) in [(gis[0], raided), (gis[1], raided), (gis[2], east)] {
+        assert!(crate::sim::passenger::add_garrison_occupant(
+            &mut sim,
+            &rules,
+            gi,
+            building,
+            None,
+            FrameEffects::default(),
+        ));
+    }
+    assert_eq!(owner(&sim, raided), "Americans", "raided");
+    assert!(
+        !sim.ares_can_traverse_to(raided, diagonal, &rules),
+        "362 leptons"
+    );
+    assert!(
+        !sim.ares_can_traverse_to(raided, other_kind, &rules),
+        "another kind"
+    );
+    assert!(
+        !sim.ares_can_traverse_to(south, raided, &rules),
+        "nobody to move"
+    );
+
+    let redirect = |sim: &mut Simulation, target| {
+        let cell = sim.object_coords_cell(target).unwrap();
+        let record = sim
+            .encode_ares_trench_redirect_record(raided, cell)
+            .unwrap();
+        let envelope = sim.decode_native_command_record(&record, 0).unwrap();
+        let sender = sim.interner.resolve(envelope.owner).to_owned();
+        sim.apply_command(&sender, &envelope.payload, Some(&rules))
+    };
+    // One free slot east: only the head moves.
+    assert!(redirect(&mut sim, east));
+    let occupants = |sim: &Simulation, id| {
+        sim.substrate
+            .entities
+            .get(id)
+            .unwrap()
+            .passenger_role
+            .occupants()
+            .ids()
+            .to_vec()
+    };
+    assert_eq!(occupants(&sim, east), [gis[2], gis[0]]);
+    assert_eq!(occupants(&sim, raided), [gis[1]]);
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(gis[0])
+            .unwrap()
+            .passenger_role
+            .inside_transport_id(),
+        Some(east)
+    );
+    assert!(!redirect(&mut sim, east), "full");
+    assert_eq!(owner(&sim, raided), "Americans");
+    // The last occupant leaves south; the empty trench is returned.
+    assert!(redirect(&mut sim, south));
+    assert_eq!(occupants(&sim, south), [gis[1]]);
+    assert!(occupants(&sim, raided).is_empty());
+    assert_eq!(owner(&sim, raided), "Russians", "returned when empty");
+}

@@ -193,6 +193,16 @@ impl Simulation {
             .is_some_and(is_firewall_type)
     }
 
+    /// The building's type is linkable (`IsLinkable 1000D770`): a
+    /// `Firestorm.Wall` section or an `IsTrench` trench.
+    fn ares_is_linkable(&self, id: u64, rules: &RuleSet) -> bool {
+        self.substrate
+            .entities
+            .get(id)
+            .and_then(|entity| self.object_type(entity.type_ref(), rules))
+            .is_some_and(|object| object.building_type_ext().is_linkable())
+    }
+
     /// [`is_active_firestorm_wall`] over this world.
     pub(crate) fn ares_is_active_firestorm_wall(
         &self,
@@ -214,15 +224,9 @@ impl Simulation {
     /// RespondToTrenchRedirectClick): nothing when `house` already is
     /// `active`; otherwise the flag changes and each of the House's
     /// `Firestorm.Wall` buildings (House+0x68, in order) updates its frame,
-    /// anim and victims (`UpdateFirewall(true)`).
-    ///
-    /// RESIDUAL: the closing `MapClass::Update_Pathfinding_1/2` over those
-    /// cells (the zone rebuild that sees a powered section as blocked,
-    /// RecalcZoneType `0x00483D9E`) is not ported. VERA's path grid already
-    /// blocks every marked building cell, so a powered wall is routed around
-    /// as natively; an unpowered one, which native zones and Can_Enter_Cell
-    /// treat as open ground, is routed around too, as the `IsPassable`
-    /// buildings are (`docs/ares-building-types.md`).
+    /// anim and victims (`UpdateFirewall(true)`), and its Cell (vt+0x1B8) is
+    /// collected for the closing `MapClass::Update_Pathfinding_1/2`
+    /// ([`Self::ares_firestorm_update_pathfinding`]).
     pub(crate) fn ares_set_firestorm_state(
         &mut self,
         house: InternedId,
@@ -241,9 +245,92 @@ impl Simulation {
         else {
             return;
         };
+        let mut cells = Vec::new();
         for id in buildings {
             if self.ares_is_firewall(id, rules) {
                 self.ares_update_firewall(id, true, rules, registry, effects);
+                cells.extend(self.object_coords_cell(id));
+            }
+        }
+        self.ares_firestorm_update_pathfinding(&cells, rules);
+    }
+
+    /// SetFirestormState's tail (`10022590`): `Update_Pathfinding_1`
+    /// (RebuildZoneConnectivity `0x0056C510`, from the retained classes,
+    /// before any of these cells changed) and `Update_Pathfinding_2`
+    /// (`0x00586990`) over the sections' `cells`, whose Recalc (`0x0047D2B0`)
+    /// reaches RecalcZoneType's building arm: a `Firestorm.Wall` section of
+    /// a House whose firestorm is up makes its cell Impassable (`0x00483D9E`,
+    /// Ares 10014B70, hook 0x483D94), any other leaves the terrain class.
+    /// The path grid keeps blocking every building cell either way.
+    ///
+    /// RESIDUAL: VERA's other Recalc writers (an overlay change, the
+    /// playfield resize) take the terrain inputs alone, so a later Recalc
+    /// of a powered section's cell there drops the Impassable class; a
+    /// section placed or removed while the firestorm is up keeps its
+    /// cell's class until the next toggle.
+    pub(crate) fn ares_firestorm_update_pathfinding(
+        &mut self,
+        cells: &[(u16, u16)],
+        rules: &RuleSet,
+    ) {
+        {
+            let (Some(zones), Some(path), Some(terrain)) = (
+                self.zone_grid.as_mut(),
+                self.path_grid.as_deref(),
+                self.resolved_terrain.as_ref(),
+            ) else {
+                return;
+            };
+            let records = self
+                .bridge_state
+                .as_ref()
+                .map_or(&[][..], |bridges| bridges.endpoint_records());
+            zones.rebuild_base_connectivity_preserving_hierarchy(path, terrain, records);
+        }
+        let cells: Vec<(i16, i16)> = cells.iter().map(|&(x, y)| (x as i16, y as i16)).collect();
+        let mut batch = FirestormZoneBatch { sim: self, rules };
+        if let Err(error) =
+            crate::sim::pathfinding::zone_incremental::recalculate_zone_batch(&mut batch, &cells)
+        {
+            log::warn!("firestorm zone batch fell back to a rebuild: {error}");
+            let _ = self.rebuild_dynamic_navigation(rules);
+        }
+    }
+
+    /// RecalcZoneType's building arm for the cell at `(rx, ry)` (its
+    /// building, CellClass::GetBuilding): a `Firestorm.Wall` section whose
+    /// House's firestorm (HouseClass+0x1FA) is up.
+    fn ares_firestorm_cell_impassable(&self, rx: u16, ry: u16, rules: &RuleSet) -> bool {
+        self.ares_cell_building(i32::from(rx), i32::from(ry))
+            .and_then(|id| self.substrate.entities.get(id))
+            .is_some_and(|section| {
+                self.ares_firestorm.is_active(section.owner())
+                    && self
+                        .object_type(section.type_ref(), rules)
+                        .is_some_and(is_firewall_type)
+            })
+    }
+
+    /// A restored world rebuilds its navigation from the terrain template,
+    /// whose classes know no buildings: give every powered section's cell
+    /// back the Impassable class its last Recalc gave it, before that
+    /// rebuild.
+    pub(crate) fn ares_firestorm_restore_zone_classes(&mut self, rules: &RuleSet) {
+        if !self.ares_firestorm.any_active() {
+            return;
+        }
+        let cells: Vec<(u16, u16)> = self
+            .substrate
+            .entities
+            .iter_sorted()
+            .filter(|(_, entity)| entity.category() == EntityCategory::Structure)
+            .filter_map(|(id, _)| self.object_coords_cell(id))
+            .filter(|&(rx, ry)| self.ares_firestorm_cell_impassable(rx, ry, rules))
+            .collect();
+        if let Some(terrain) = self.resolved_terrain.as_mut() {
+            for cell in cells {
+                terrain.recalc_zone_type_with_buildings_at(cell, true);
             }
         }
     }
@@ -265,8 +352,8 @@ impl Simulation {
     ///
     /// The frame change's `CellClass::Setup(-1)` and `UpdatePlacement(2)`
     /// redraw: VERA derives the cell attributes from terrain (the zone
-    /// residual is on [`Self::ares_set_firestorm_state`]) and redraws every
-    /// frame.
+    /// class follows in [`Self::ares_firestorm_update_pathfinding`]) and
+    /// redraws every frame.
     pub(crate) fn ares_update_firewall(
         &mut self,
         id: u64,
@@ -773,8 +860,9 @@ impl Simulation {
     /// House) and the ready byte (`+0x6DD`). 3.0 checks neither the Put nor
     /// the cell: a refused section stays constructed in limbo.
     ///
-    /// RESIDUAL: `IsTrench` trench lines (`IsLinkable`'s other arm,
-    /// `canLinkTo`'s `sameTrench`) are not ported.
+    /// An `IsTrench` type links the same way to a trench of its kind
+    /// (`IsLinkable`'s other arm and `canLinkTo`'s `sameTrench`, BuildingExt
+    /// `+0x84`, both inlined here).
     pub(crate) fn ares_build_lines(
         &mut self,
         id: u64,
@@ -791,7 +879,7 @@ impl Simulation {
         else {
             return;
         };
-        if !is_firewall_type(object) {
+        if !object.building_type_ext().is_linkable() {
             return;
         }
         let max_distance = object.guard_range.map_or(0, |range| range.to_num::<i32>());
@@ -887,15 +975,23 @@ impl Simulation {
                 MovementLayer::Ground,
             ) {
                 // canLinkTo (inlined): the same or an allied House, both
-                // `Firestorm.Wall`.
+                // `Firestorm.Wall` or trenches of one kind.
                 let linked = self.substrate.entities.get(other).is_some_and(|other| {
-                    other.owner() == building_owner
+                    (other.owner() == building_owner
                         || self.house_alliances.is_allied(
                             &self.interner,
                             building_owner,
                             other.owner(),
-                        )
-                }) && self.ares_is_firewall(other, rules);
+                        ))
+                        && self
+                            .object_type(other.type_ref(), rules)
+                            .is_some_and(|other| {
+                                let (this, other) =
+                                    (object.building_type_ext(), other.building_type_ext());
+                                (this.firestorm_wall && other.firestorm_wall)
+                                    || this.same_trench(other)
+                            })
+                });
                 return if linked { distance - 1 } else { 0 };
             }
             if !crate::sim::build_site::is_clear_to_build(
@@ -920,9 +1016,10 @@ impl Simulation {
     /// stock `FirestormWall=`) and tests the linkable endpoint (sub_6D59D0
     /// `10015170`, hook `0x6D5A5C`): the PLACE markers of the active
     /// placement. North, east, south and west, up to `GuardRange / 256`
-    /// cells: a `Firestorm.Wall` building of a human House ends the look and
-    /// marks the cells before it; a cell that is not clear to build for the
-    /// placing House, or reaching the range, marks none.
+    /// cells: a linkable building (a `Firestorm.Wall` section or a trench of
+    /// any kind) of a human House ends the look and marks the cells before
+    /// it; a cell that is not clear to build for the placing House, or
+    /// reaching the range, marks none.
     pub(crate) fn ares_firestorm_placement_shadow(
         &self,
         object: &ObjectType,
@@ -956,7 +1053,7 @@ impl Simulation {
                     NativeCellIdentity::Dummy => None,
                 };
                 if let Some(building) = building
-                    && self.ares_is_firewall(building, rules)
+                    && self.ares_is_linkable(building, rules)
                     && self
                         .substrate
                         .entities
@@ -1024,6 +1121,88 @@ impl Simulation {
                 None
             }
         }
+    }
+}
+
+/// The ordered callbacks of `0x00586990` for SetFirestormState's batch
+/// ([`Simulation::ares_firestorm_update_pathfinding`]): the shared batch
+/// order, the fine-zone clear and the hierarchy patch around each cell
+/// (`0x00584550`), with Recalc's class from the building arm.
+struct FirestormZoneBatch<'a> {
+    sim: &'a mut Simulation,
+    rules: &'a RuleSet,
+}
+
+impl crate::sim::pathfinding::zone_incremental::ZoneBatchHost for FirestormZoneBatch<'_> {
+    type Error = String;
+
+    fn admitted(&mut self, coord: (i16, i16)) -> Result<bool, String> {
+        let terrain = self
+            .sim
+            .resolved_terrain
+            .as_ref()
+            .ok_or("firestorm zone batch has no terrain")?;
+        Ok(crate::sim::cell_rect::cell_is_in_playfield_height_aware(
+            (i32::from(coord.0), i32::from(coord.1)),
+            self.sim.playfield_bounds(),
+            Some(terrain),
+        ))
+    }
+
+    fn clear_fine_zone(&mut self, coord: (i16, i16)) -> Result<(), String> {
+        let zones = self
+            .sim
+            .zone_grid
+            .as_mut()
+            .ok_or("firestorm zone batch has no zones")?;
+        let (base, hierarchy) = zones.base_and_hierarchy_mut();
+        hierarchy.levels_mut()[0]
+            .set_native_zone_at(coord, base.native_bridge_source_size(), 0)
+            .ok_or_else(|| "firestorm zone batch coordinate has no native zone storage".into())
+    }
+
+    fn recalc_at(&mut self, (x, y): (i16, i16)) -> Result<(), String> {
+        let (Ok(rx), Ok(ry)) = (u16::try_from(x), u16::try_from(y)) else {
+            return Ok(());
+        };
+        let impassable = self.sim.ares_firestorm_cell_impassable(rx, ry, self.rules);
+        if let Some(terrain) = self.sim.resolved_terrain.as_mut() {
+            terrain.recalc_zone_type_with_buildings_at((rx, ry), impassable);
+        }
+        self.sim.publish_recalculated_cells(self.rules, &[(rx, ry)]);
+        Ok(())
+    }
+
+    fn fine_zone(
+        &self,
+        coord: (i16, i16),
+    ) -> Result<crate::sim::pathfinding::zone_map::ZoneId, String> {
+        self.sim
+            .zone_grid
+            .as_ref()
+            .and_then(|zones| zones.hierarchy_zone_at_native(0, (coord.0 as u16, coord.1 as u16)))
+            .ok_or_else(|| "firestorm zone batch has no native fine-zone storage".into())
+    }
+
+    fn patch_hierarchy(&mut self, coord: (i16, i16)) -> Result<(), String> {
+        let bounds = self.sim.playfield_bounds();
+        let sim = &mut *self.sim;
+        let terrain = sim
+            .resolved_terrain
+            .as_ref()
+            .ok_or("firestorm zone batch has no terrain")?;
+        let records = sim
+            .bridge_state
+            .as_ref()
+            .map_or(&[][..], |bridges| bridges.endpoint_records());
+        let zones = sim
+            .zone_grid
+            .as_mut()
+            .ok_or("firestorm zone batch has no zones")?;
+        crate::sim::pathfinding::zone_incremental::repair_zone_hierarchy_around_cell(
+            zones, coord, bounds, terrain, records,
+        );
+        Ok(())
     }
 }
 

@@ -2490,6 +2490,71 @@ impl Simulation {
         kept.unwrap_or(fallback).then(|| state.synced())
     }
 
+    /// The AI half of a construction yard's arrival for a house no human
+    /// controls: `HouseClass::RefreshBuildOptionsAfterDeploy @ 0x00505180`
+    /// (Computer_Paranoid in a nonzero game mode, `0x005051AF`, then Recalc
+    /// for an empty plan, `0x005051C5..0x005051D1`), then node zero and the
+    /// BasePlan center (`+0x5750`) take `cell` and Production,
+    /// AITriggersActive and AutoBaseBuilding are set. `UnitClass::Deploy`
+    /// (`0x007398D9..0x00739919`) runs it with the yard's origin after its
+    /// primary center write; Ares 3.0 MPGameMode_SpawnBaseUnit_BuildConst
+    /// (1001F0B0, hook 0x5D7048) with the house's base cell, before the yard
+    /// exists. Native indexes Recalc's vectors unchecked; a plan VERA cannot
+    /// preflight stays empty.
+    pub(crate) fn refresh_ai_base_after_deploy(
+        &mut self,
+        owner_id: InternedId,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        let Some(house) = self.houses.get(&owner_id) else {
+            return;
+        };
+        if self.session.game_mode_nonzero() && !house.is_controlled_by_human(true) {
+            self.computer_paranoid(rules, registry, frame_effects);
+        }
+        let house = &self.houses[&owner_id];
+        if house.base_plan().nodes().is_empty() {
+            let country_name = house
+                .country()
+                .map(|country| self.interner.resolve(country).to_owned());
+            let (side_index, difficulty, tech_level) =
+                (house.side_index(), house.difficulty(), house.tech_level());
+            match country_name {
+                Some(country_name)
+                    if preflight_recalc(rules, &country_name, side_index, difficulty).is_ok() =>
+                {
+                    recalc_base_plan(
+                        self.houses
+                            .get_mut(&owner_id)
+                            .expect("refreshed owner remains registered")
+                            .base_plan_mut(),
+                        rules,
+                        &self.type_tech_levels,
+                        &country_name,
+                        side_index,
+                        difficulty,
+                        tech_level,
+                        self.session.game_options().super_weapons,
+                        &mut self.scenario_rng,
+                    );
+                }
+                _ => log::warn!("AI base Recalc skipped: unusable country or difficulty tables"),
+            }
+        }
+        let house = self
+            .houses
+            .get_mut(&owner_id)
+            .expect("refreshed owner remains registered");
+        house
+            .base_plan_mut()
+            .anchor_first_node(pack_base_plan_cell(i32::from(cell.0), i32::from(cell.1)));
+        house.anchor_base_plan(cell);
+        house.enable_ai_deploy_latches();
+    }
+
     pub(crate) fn deploy_mcv(
         &mut self,
         stable_id: u64,
@@ -2681,12 +2746,11 @@ impl Simulation {
                     country_name,
                     house.side_index(),
                     house.difficulty(),
-                    house.tech_level(),
                     house.base_plan().nodes().is_empty(),
                 )
             })
         });
-        if let Some((country_name, side_index, difficulty, _, true)) = &recalc_context {
+        if let Some((country_name, side_index, difficulty, true)) = &recalc_context {
             let Some(country_name) = country_name.as_deref() else {
                 // Controlled unavailable Rust prerequisite; no native
                 // constructor/placement transaction has started here.
@@ -2874,44 +2938,19 @@ impl Simulation {
         );
         self.add_unit_sensor_after_unlimbo(new_sid, rules, registry);
         self.mission_spawned_entities = true;
-        if let Some((country_name, side_index, difficulty, tech_level, _)) = recalc_context {
+        if recalc_context.is_some() {
             // The new Building's committed north-west anchor is the native
             // `+0x9C/+0xA0` source. This bounded write order is load-bearing:
-            // primary center, Computer_Paranoid, optional Recalc, node zero,
-            // BasePlan center, the three independent House AI activation
-            // latches, then MoveGroundForcesToBase (`0x00739926`). The block
-            // ends before the slave transfer and UnInit below.
+            // primary center, then the shared AI half (Computer_Paranoid,
+            // optional Recalc, node zero, BasePlan center, the three
+            // independent House AI activation latches), then
+            // MoveGroundForcesToBase (`0x00739926`). The block ends before the
+            // slave transfer and UnInit below.
             self.houses
                 .get_mut(&owner_id)
                 .expect("qualifying deploy owner remains registered")
                 .set_base_center((rx, ry));
-            // `0x00505180` turns the computers paranoid for a house no human
-            // controls (`0x005051AF`) before its Recalc.
-            self.computer_paranoid(rules, registry, frame_effects);
-            let house = self
-                .houses
-                .get_mut(&owner_id)
-                .expect("qualifying deploy owner remains registered");
-            if house.base_plan().nodes().is_empty() {
-                recalc_base_plan(
-                    house.base_plan_mut(),
-                    rules,
-                    &self.type_tech_levels,
-                    country_name
-                        .as_deref()
-                        .expect("empty qualifying plan was preflighted with a country"),
-                    side_index,
-                    difficulty,
-                    tech_level,
-                    self.session.game_options().super_weapons,
-                    &mut self.scenario_rng,
-                );
-            }
-            house
-                .base_plan_mut()
-                .anchor_first_node(pack_base_plan_cell(i32::from(rx), i32::from(ry)));
-            house.anchor_base_plan((rx, ry));
-            house.enable_ai_deploy_latches();
+            self.refresh_ai_base_after_deploy(owner_id, (rx, ry), rules, registry, frame_effects);
             // Phobos `[General] GatherWhenMCVDeploy=` skips the native
             // regroup (hook at `0x739920`) while keeping every earlier write.
             #[cfg(feature = "phobos")]

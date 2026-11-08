@@ -29,8 +29,6 @@ use crate::sim::world::Simulation;
 
 use super::{TeamRules, TeamScriptState, TeamTarget, script_action_at};
 use crate::sim::intern::StringInterner;
-use crate::sim::team_script_vm::TeamScriptVm;
-use crate::sim::world::ObjectSubstrate;
 
 /// Script actions 53 and 54 relax the stray distance (`Rules+0x1720`
 /// instead of `+0x171C`) for Regroup and Coordinate_Move.
@@ -126,6 +124,17 @@ pub(super) fn center_of(
         }
     }
     (count != 0).then(|| ([sum[0] / count, sum[1] / count], closest))
+}
+
+/// Whether `entity`'s `GetWeapon(0)` (vt+0x3F8) holds a WeaponType.
+fn first_weapon_armed(interner: &StringInterner, entity: &GameEntity, rules: &RuleSet) -> bool {
+    interner
+        .object_type(entity.type_ref(), rules)
+        .and_then(|object| {
+            crate::sim::combat::combat_weapon::weapon_for_index(object, entity.veterancy.rank(), 0)
+                .and_then(|record| record.weapon_id)
+        })
+        .is_some()
 }
 
 impl TeamScriptState {
@@ -675,23 +684,25 @@ impl Simulation {
     /// `Suicide=`, a forming team loses its centre and reforms; a formed one
     /// does too for an `Annoyance=` TeamType, unless `source` is a member,
     /// the head is an aircraft or unarmed (`GetWeapon(0)`), or `source` is
-    /// the team's move target. Nothing after those writes has an effect
-    /// (`0x006EB432..0x006EB477` ends in a discarded `WhatAmI`).
+    /// the team's move target. Nothing after those writes has an effect in
+    /// stock gamemd (`0x006EB432..0x006EB477` ends in a discarded `WhatAmI`);
+    /// Ares replaces that tail ([`Self::ares_team_retaliate`]).
     pub(crate) fn team_took_damage(
-        interner: &StringInterner,
-        substrate: &ObjectSubstrate,
-        team_script_vm: &mut TeamScriptVm,
+        &mut self,
         member: u64,
         source: Option<u64>,
         rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
     ) {
+        #[cfg(not(feature = "ares"))]
+        let _ = registry;
         let Some(source) = source else {
             return;
         };
-        let Some(team_id) = team_script_vm.member_team.get(&member).copied() else {
+        let Some(team_id) = self.team_script_vm.member_team.get(&member).copied() else {
             return;
         };
-        let vm = &*team_script_vm;
+        let vm = &self.team_script_vm;
         let Some(team) = vm.teams.get(&team_id) else {
             return;
         };
@@ -699,30 +710,20 @@ impl Simulation {
         if definition.is_some_and(|definition| definition.suicide) {
             return;
         }
-        if team.formed {
+        let formed = team.formed;
+        if formed {
             if team.members.iter().any(|member| member.id == source) {
                 return;
             }
             let Some(head) = team
                 .members
                 .first()
-                .and_then(|head| substrate.entities.get(head.id))
+                .and_then(|head| self.substrate.entities.get(head.id))
             else {
                 return;
             };
-            let armed = interner
-                .object_type(head.type_ref(), rules)
-                .and_then(|object| {
-                    crate::sim::combat::combat_weapon::weapon_for_index(
-                        object,
-                        head.veterancy.rank(),
-                        0,
-                    )
-                    .and_then(|record| record.weapon_id)
-                })
-                .is_some();
             if head.category() == EntityCategory::Aircraft
-                || !armed
+                || !first_weapon_armed(&self.interner, head, rules)
                 || team.focus == Some(TeamTarget::Object(source))
             {
                 return;
@@ -732,12 +733,93 @@ impl Simulation {
                 .and_then(|id| vm.team_type_ini.get(&id))
                 .is_some_and(|metadata| metadata.annoyance);
             if !annoyance {
+                #[cfg(feature = "ares")]
+                self.ares_team_retaliate(team_id, source, rules, registry);
                 return;
             }
         }
-        if let Some(team) = team_script_vm.teams.get_mut(&team_id) {
+        if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
             team.zone = None;
             team.reforming = true;
+        }
+        #[cfg(feature = "ares")]
+        if formed {
+            self.ares_team_retaliate(team_id, source, rules, registry);
+        }
+    }
+
+    /// Ares TeamClass_AttackedBy_Retaliate (1003A180, hook 0x6EB432), the
+    /// formed team's tail under `[General] TeamRetaliate=yes`. An armed
+    /// Techno focus (`+0x40`, `GetWeapon(0)`) is kept unless the team has a
+    /// centre (`+0x34`) that the focus is close enough to attack:
+    /// IsCloseEnoughToAttackCoords (vt+0x3B0, `0x006F7930`) is CanFireAt of
+    /// the cell at the centre's GetCoords with the weapon SelectWeapon picks
+    /// against that cell. Otherwise an attacker that is no Aircraft, of no
+    /// House the team's owner is allied with (IsAlliedWith, inlined) and, for
+    /// a Foot, neither in limbo nor `ConsideredAircraft=` becomes the focus.
+    #[cfg(feature = "ares")]
+    fn ares_team_retaliate(
+        &mut self,
+        team_id: u64,
+        attacker: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
+        if !rules.ares_general().team_retaliate() {
+            return;
+        }
+        let Some(team) = self.team_script_vm.teams.get(&team_id) else {
+            return;
+        };
+        let (focus, zone, owner) = (team.focus, team.zone, team.owner);
+        if let Some(TeamTarget::Object(focus)) = focus
+            && self
+                .substrate
+                .entities
+                .get(focus)
+                .is_some_and(|entity| first_weapon_armed(&self.interner, entity, rules))
+        {
+            let Some(zone) = zone else {
+                return;
+            };
+            let cells = self
+                .resolved_terrain
+                .as_ref()
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            let Some(centre) = crate::sim::movement::ground_pose::target_get_coords(
+                zone.target_kind(),
+                self,
+                cells.as_ref(),
+            ) else {
+                return;
+            };
+            let (x, y) = crate::sim::movement::coord_cell(centre);
+            let cell = crate::sim::combat::TargetKind::Cell(x as u16, y as u16);
+            if !self.techno_can_fire_at_target(focus, cell, rules, registry) {
+                return;
+            }
+        }
+        let Some(attacker_entity) = self.substrate.entities.get(attacker) else {
+            return;
+        };
+        if attacker_entity.category() == EntityCategory::Aircraft
+            || crate::sim::combat::combat_weapon::is_ally_by_object(
+                Some(&self.house_alliances),
+                &self.interner,
+                owner,
+                attacker_entity.owner(),
+            )
+            || (attacker_entity.category().is_foot()
+                && (attacker_entity.lifecycle.in_limbo()
+                    || self
+                        .interner
+                        .object_type(attacker_entity.type_ref(), rules)
+                        .is_some_and(|object| object.considered_aircraft)))
+        {
+            return;
+        }
+        if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+            team.focus = Some(TeamTarget::Object(attacker));
         }
     }
 
@@ -891,5 +973,46 @@ mod tests {
         let owner = sim.interner.intern("Americans");
         crate::sim::vision::reveal_radius(&mut sim.fog, owner, 12, 12, 2);
         assert!(!sim.team_member_refuses_cell(hornet, centre, &rules, Some(&registry)));
+    }
+
+    /// Ares TeamClass_AttackedBy_Retaliate (1003A180, hook 0x6EB432): with
+    /// `[General] TeamRetaliate=yes` a formed team without a focus takes an
+    /// enemy attacker as its focus; with the stock tail it keeps none.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_team_retaliate_focuses_an_enemy_attacker() {
+        for retaliate in [false, true] {
+            let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
+                "[General]\nTeamRetaliate={}\n\
+                 [Countries]\n0=Americans\n1=Russians\n\
+                 [VehicleTypes]\n0=TANK\n[WeaponTypes]\n0=GUN\n[Warheads]\n0=WH\n\
+                 [WH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+                 [GUN]\nDamage=10\nRange=5\nROF=20\nWarhead=WH\n\
+                 [TANK]\nStrength=300\nArmor=none\nSpeed=6\nPrimary=GUN\n",
+                if retaliate { "yes" } else { "no" }
+            ));
+            let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).expect("rules");
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+            sim.intern_rule_type_ids(&rules);
+            sim.resolve_type_handles(&rules);
+            let member = sim
+                .spawn_object("TANK", "Russians", 10, 10, 0, &rules)
+                .expect("member");
+            let attacker = sim
+                .spawn_object("TANK", "Americans", 14, 10, 0, &rules)
+                .expect("attacker");
+            let team =
+                crate::sim::team_script_vm::join_team_for_test(&mut sim, &[member], false, false);
+            let state = sim.team_script_vm.teams.get_mut(&team).expect("team");
+            state.formed = true;
+            state.focus = None;
+            sim.team_took_damage(member, Some(attacker), &rules, None);
+            let focus = sim.team_script_vm.teams.get(&team).expect("team").focus;
+            assert_eq!(
+                focus == Some(TeamTarget::Object(attacker)),
+                retaliate,
+                "{focus:?}"
+            );
+        }
     }
 }

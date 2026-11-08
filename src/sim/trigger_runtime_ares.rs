@@ -112,12 +112,22 @@ impl Simulation {
                         dx * dx + dy * dy <= 25
                     })
             }
-            // The House has reverse engineered the type: HouseExt's
-            // ReverseEngineered list, which nothing fills in VERA (Ares
-            // reverse engineering is not ported), so it never holds it.
-            78 => false,
+            // The House has reverse engineered the type (case 0x4E): the
+            // event's type (Find 10007EA0) in that House's HouseExt
+            // ReverseEngineered list (`sim::reverse_engineering`). Native
+            // reads a missing House through a null pointer; VERA answers
+            // false.
+            78 => condition
+                .type_name
+                .as_deref()
+                .and_then(|name| rules.ares_find_techno_type(name))
+                .zip(incoming_house.and_then(|house| self.houses.get(&house)))
+                .is_some_and(|(object, house)| {
+                    house.has_ares_reverse_engineered(object.category, &object.id)
+                }),
             // Something (79) or the named type (80, the source's type) was
-            // reverse engineered; nothing raises them in VERA.
+            // reverse engineered: the grinder raises both on its Tag
+            // (`sim::reverse_engineering`).
             79 => raised,
             80 => {
                 raised

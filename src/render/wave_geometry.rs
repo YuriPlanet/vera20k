@@ -24,13 +24,16 @@ pub(crate) enum WaveClipPath {
 pub(crate) enum WavePolygon {
     Magnetic([[i32; 2]; 4]),
     Sonic([[i32; 2]; 6]),
+    /// The TS Laser/BigLaser (types 1 and 2): Draw_NonMagnetic's Sonic
+    /// polygon, filled by `Draw_Laser @ 0x007609E0` without displacement.
+    Laser([[i32; 2]; 6]),
 }
 
 impl WavePolygon {
     pub(crate) fn points(&self) -> &[[i32; 2]] {
         match self {
             Self::Magnetic(points) => points,
-            Self::Sonic(points) => points,
+            Self::Sonic(points) | Self::Laser(points) => points,
         }
     }
 }
@@ -43,6 +46,8 @@ pub(crate) struct WaveDraw {
     pub polygon: WavePolygon,
     pub source_point: [i32; 2],
     pub source_z: i32,
+    /// nLifetime, which Sonic and MagBeam add to their sine index; a laser's
+    /// nLaserIntensity (+0x1D0), its pixel strength.
     pub phase: i32,
     pub direction: u8,
     pub clip_path: WaveClipPath,
@@ -60,6 +65,16 @@ pub(crate) struct WaveColor {
 }
 
 impl WaveColor {
+    /// `Draw_Laser @ 0x007609E0`'s stock blend, red + (nLaserIntensity * 64
+    /// >> 8) and blue + (nLaserIntensity * 96 >> 8) clamped at 255, is
+    /// ModifyWaveColor with Intensity 0,0,0 and Color 64,0,96, which is also
+    /// GetWaveColorData 10055270's default for a weapon that is neither
+    /// Sonic nor MagBeam.
+    pub(crate) const STOCK_LASER: Self = Self {
+        intensity: [0; 3],
+        color: [64, 0, 96],
+    };
+
     /// ModifyWaveColor 10055920's per-channel terms for pixel intensity
     /// `strength`: `channel + added + ((channel * scale) >> 16)`, with
     /// `added = (Color * strength) >> 8` and `scale = Intensity * strength`
@@ -356,16 +371,22 @@ impl WaveDraw {
         if size[0] <= 1 || size[1] <= 0 || pitch_words < size[0] {
             return Err(WaveRasterError::Surface { size, pitch_words });
         }
-        let forward = match self.direction {
-            2..=5 => true,
-            0 | 1 | 6 | 7 => false,
-            other => return Err(WaveRasterError::Direction(other)),
+        // Draw_Laser always walks rows down and spans right; its pixels
+        // read only themselves, so no direction orders them.
+        let forward = match (self.polygon, self.direction) {
+            (WavePolygon::Laser(_), _) | (_, 2..=5) => true,
+            (_, 0 | 1 | 6 | 7) => false,
+            (_, other) => return Err(WaveRasterError::Direction(other)),
         };
         let spans = polygon_spans(self.polygon.points());
         if spans.rows.is_empty() {
             return Ok(());
         }
+        // Draw_Laser's contiguous-Z rows and spans clip at the bounds
+        // themselves; its ring-wrapped branch insets 2 like the others.
+        let laser = matches!(self.polygon, WavePolygon::Laser(_));
         let inset = match self.clip_path {
+            WaveClipPath::Fast if laser => 0,
             WaveClipPath::Fast => 3,
             #[cfg(test)]
             WaveClipPath::Fallback => 2,
@@ -435,6 +456,21 @@ impl WaveDraw {
         candidate_z: u16,
     ) -> Result<WavePixel, WaveRasterError> {
         let [x, y] = point;
+        // Draw_Laser's per-pixel blend reads and writes the destination word
+        // itself, with nLaserIntensity as its strength.
+        if let WavePolygon::Laser(_) = self.polygon {
+            if x < 0 || y < 0 || x >= size[0] || y >= size[1] {
+                return Err(WaveRasterError::Destination([x, y]));
+            }
+            return Ok(WavePixel {
+                point,
+                source: point,
+                candidate_z,
+                brightness: self.phase,
+                distance_index: 0,
+                sine_index: 0,
+            });
+        }
         let steps = [
             pitch_words.wrapping_neg(),
             1_i32.wrapping_sub(pitch_words),
@@ -469,14 +505,14 @@ impl WaveDraw {
         let sine_index = i32::from(distance).wrapping_add(self.phase);
         let sine = match self.polygon {
             WavePolygon::Magnetic(_) => tables.magnetic_sine(sine_index),
-            WavePolygon::Sonic(_) => usize::try_from(sine_index)
+            WavePolygon::Sonic(_) | WavePolygon::Laser(_) => usize::try_from(sine_index)
                 .ok()
                 .and_then(|i| tables.sonic.get(i).copied()),
         }
         .ok_or(WaveRasterError::SineIndex(sine_index))?;
         let magnitude = match self.polygon {
             WavePolygon::Magnetic(_) => i32::from(sine).abs().min(9),
-            WavePolygon::Sonic(_) => i32::from(sine).abs(),
+            WavePolygon::Sonic(_) | WavePolygon::Laser(_) => i32::from(sine).abs(),
         } as usize;
         let multiple = match magnitude {
             0..=1 => 0,

@@ -746,3 +746,34 @@ fn ares_simple_deployer_faces_deploy_dir_before_its_animation() {
     assert!(entity.deploy_anim().is_none(), "no animation while turning");
     assert_eq!(entity.mission_leaf.as_unit().unwrap().deployed(), 0);
 }
+
+/// Ares 3.0 UnitClass_Mi_Unload_SimpleDeployer (1004C070, hook 0x73DE90):
+/// a simple deployer without a DeployingAnim deploys at once on its Unload
+/// visit, then converts in place to its `Convert.Deploy` type and is no
+/// longer deployed; the Unload queues Guard as usual.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_simple_deployer_converts_to_its_convert_deploy_type() {
+    let ini = IniFile::from_str(
+        "[InfantryTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+         [VehicleTypes]\n0=SDEP\n1=SDEP2\n\
+         [SDEP]\nStrength=300\nSpeed=6\nIsSimpleDeployer=yes\nConvert.Deploy=SDEP2\n\
+         Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+         [SDEP2]\nStrength=300\nSpeed=6\n\
+         Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+         [Unload]\nRate=0.016\n[Guard]\nRate=0.1\n[Clear]\nBuildable=yes\n",
+    );
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::from_str("")).unwrap();
+    let mut sim = Simulation::with_seed(0);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let id = sim
+        .spawn_object("SDEP", "Russians", 10, 10, 64, &rules)
+        .unwrap();
+    assert_eq!(
+        sim.unit_simple_mission_unload(id, &rules, FrameEffects::default()),
+        Ok(450)
+    );
+    let entity = sim.substrate.entities.get(id).unwrap();
+    assert_eq!(sim.interner.resolve(entity.type_ref()), "SDEP2");
+    assert_eq!(entity.mission_leaf.as_unit().unwrap().deployed(), 0);
+}

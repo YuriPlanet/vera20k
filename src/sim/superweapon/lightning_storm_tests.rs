@@ -1099,9 +1099,14 @@ fn a_strikes_explosion_precedes_its_area_damage_on_ore() {
             .is_none(),
         "the explosion's crater met dense ore"
     );
-    // The bolt's type is the only draw.
+    // The bolt's type is the only stock draw.
     let mut expected = SimRng::new(1);
     let _ = expected.next_u32();
+    // Ares 3.0 CellChainReact (10050DD0, hook 0x48964F): the area damage's
+    // spread walk rolls RandomRanged(0, 99) for the ChainReaction ore the
+    // crater left; with Power 0 a reaction deals nothing.
+    #[cfg(feature = "ares")]
+    let _ = expected.next_range_i32_inclusive(0, 99);
     assert_eq!(sim.scenario_rng.state(), expected.state());
 }
 

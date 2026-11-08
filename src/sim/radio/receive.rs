@@ -262,15 +262,36 @@ pub(crate) fn can_load(
         return CanLoad::Answer(RadioResponse::None);
     }
     let absorbs = building_type.absorbs_passengers();
+    // Ares 3.0 100174E0 (hook 0x43C326) skips the contact-capacity gate for
+    // a `Tunnel=` building as for an absorber.
+    #[cfg(feature = "ares")]
+    let tunnel = sim.ares_tunnel_type(building_id, rules);
+    #[cfg(not(feature = "ares"))]
+    let tunnel: Option<usize> = None;
     if matches!(
         building.mission.effective().known(),
         Some(MissionType::Construction | MissionType::Selling)
     ) || building.in_construction_bstate()
-        || (!payload.ignore_dock_capacity && !absorbs && !building.radio_contacts.has_free_or(from))
+        || (!payload.ignore_dock_capacity
+            && !absorbs
+            && tunnel.is_none()
+            && !building.radio_contacts.has_free_or(from))
         || (unit_type.movement_zone != crate::rules::locomotor_type::MovementZone::Amphibious
             && building_type.naval != unit_type.naval)
         || unit_type.balloon_hover
         || !building.building_online()
+    {
+        return CanLoad::Answer(RadioResponse::Negatory);
+    }
+    // Ares 3.0 100174E0 (hook 0x43C326), past the power test and before the
+    // class arms: a sender of a type the building type's
+    // `Passengers.Allowed`/`.Disallowed` refuses (IsPassengerAllowed
+    // 1003DD60) is answered NEGATORY by every building.
+    #[cfg(feature = "ares")]
+    if !building_type
+        .techno_combat()
+        .movement()
+        .passenger_allowed(unit_type.category, &unit_type.id)
     {
         return CanLoad::Answer(RadioResponse::Negatory);
     }
@@ -280,7 +301,30 @@ pub(crate) fn can_load(
     // free passenger slot (+0x114 against +0x5E0) and the sender's Size=
     // within SizeLimit= it answers ROGER; otherwise the later arms decide.
     // Both values are native doubles; preserve their binary64 comparison.
-    if absorbs {
+    //
+    // Ares 3.0 100174E0 (hook 0x43C326) takes a `Tunnel=` building (also an
+    // absorber) down its own arm instead: a sender controlling something,
+    // or mind-controlled while it holds a capture manager, is refused; with
+    // room in the building owner's network (`sim::ares_tunnel`) and the
+    // sender's Size= within SizeLimit= it answers ROGER; otherwise the later
+    // arms decide (`0x0043C4F8`).
+    #[cfg(feature = "ares")]
+    if let Some(tunnel) = tunnel {
+        if let Some(manager) = unit.capture_manager.as_ref()
+            && (manager.has_any() || unit.mind_control.is_mind_controlled())
+        {
+            return CanLoad::Answer(RadioResponse::Negatory);
+        }
+        if sim.ares_tunnel_has_room(building.owner(), tunnel, rules)
+            && crate::sim::passenger::PassengerCargo::size_within_limit(
+                unit_type.size,
+                building_type.size_limit,
+            )
+        {
+            return CanLoad::Answer(RadioResponse::Roger);
+        }
+    }
+    if absorbs && tunnel.is_none() {
         let class_refused = match unit.category() {
             EntityCategory::Unit => !building_type.unit_absorb,
             EntityCategory::Infantry => !building_type.infantry_absorb,
@@ -753,8 +797,13 @@ fn building_dock_now(
     let Some(object) = sim.object_type(building.type_ref(), rules) else {
         return RadioResponse::None;
     };
-    // 0x0043C710..0x0043C72C: UnitAbsorb/InfantryAbsorb answer ROGER.
-    if object.absorbs_passengers() {
+    // 0x0043C710..0x0043C72C: UnitAbsorb/InfantryAbsorb answer ROGER, and
+    // with Ares 3.0 a `Tunnel=` building too (100176B0, hook 0x43C716).
+    #[cfg(feature = "ares")]
+    let tunnel = sim.ares_tunnel_type(building_id, rules).is_some();
+    #[cfg(not(feature = "ares"))]
+    let tunnel = false;
+    if object.absorbs_passengers() || tunnel {
         return RadioResponse::Roger;
     }
     // 0x0043C732..0x0043C785: the repair and reload docks and Bunker queue
@@ -1115,11 +1164,21 @@ pub(crate) fn unit_can_enter_radio(
     {
         return RadioResponse::None;
     }
-    if transport_has_room(transport, transport_type, passenger_type) {
-        RadioResponse::Roger
-    } else {
-        RadioResponse::Negatory
+    if !transport_has_room(transport, transport_type, passenger_type) {
+        return RadioResponse::Negatory;
     }
+    // Ares 3.0 1004C270 (hook 0x73769E), at the ROGER: a passenger of a type
+    // `Passengers.Allowed`/`.Disallowed` refuses (IsPassengerAllowed
+    // 1003DD60) takes the no-room answer (`0x0073780F`).
+    #[cfg(feature = "ares")]
+    if !transport_type
+        .techno_combat()
+        .movement()
+        .passenger_allowed(passenger_type.category, &passenger_type.id)
+    {
+        return RadioResponse::Negatory;
+    }
+    RadioResponse::Roger
 }
 
 /// A Unit transport's room for a sender, as its DOCKING and CAN_LOAD arms

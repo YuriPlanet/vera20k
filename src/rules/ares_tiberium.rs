@@ -268,16 +268,14 @@ impl TiberiumTechnoRules {
     }
 
     /// `TiberiumTransmogrify`, else `[General] TiberiumTransmogrify`: the
-    /// visceroid chance of a tiberium death. RESIDUAL consumer: the spawn
-    /// (`SpawnVisceroid @ 100468B0`, `sim::ares_tiberium`).
-    #[allow(dead_code)]
+    /// visceroid chance of a tiberium death (`10049280`, `sim::ares_tiberium`).
     pub(crate) fn tiberium_transmogrify(&self, rules_chance: i32) -> i32 {
         self.tiberium_transmogrify.unwrap_or(rules_chance)
     }
 
-    /// `Refinery.UseStorage`. RESIDUAL consumer: the building storage hooks
-    /// (`docs/ares-tiberium.md`).
-    #[allow(dead_code)]
+    /// `Refinery.UseStorage`: the refinery's raw deposits go to its House's
+    /// silos (`TechnoExt::DepositTiberium @ 10044230`,
+    /// `sim::ares_tiberium_storage`).
     pub(crate) fn refinery_use_storage(&self) -> bool {
         self.refinery_use_storage
     }

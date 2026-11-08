@@ -21,8 +21,10 @@
 //! - `SolidHeight` and `SolidLevel` (`+0x8`, `+0xC`) and RulesExt
 //!   `AlliedSolidTransparency`: the building on a `SubjectToBuildings=`
 //!   shot's line of fire (`sim::combat::line_of_fire`).
-//! - `Firestorm.Wall` (`+0x5D`): a firestorm wall section
-//!   (`sim::ares_firestorm`).
+//! - `Firestorm.Wall` (`+0x5D`): a firestorm wall section, and `IsTrench`
+//!   (`+0x84`): a trench line (`sim::ares_firestorm`).
+//! - `Tunnel` (`+0x244`) and RulesExt `[TunnelTypes]`
+//!   ([`BuildingGlobalRules`]): the building tunnels (`sim::ares_tunnel`).
 
 use crate::rules::ares_warhead::HouseSelector;
 use crate::rules::foundation::Foundation;
@@ -87,6 +89,10 @@ pub(crate) struct BuildingTypeExtRules {
     /// `MassSelectable` (`+0x22C`, Nullable<bool>): whether a band box may
     /// select the building, else the stock IsUndeployable answer.
     mass_selectable: Option<bool>,
+    /// `Fake` (`+0x5F`, Valueable<bool>, false): DrawExtraInfo 10015F10
+    /// (hook 0x70AA60) labels the selected building `TXT_FAKE`.
+    #[serde(default)]
+    fake: bool,
     /// `UC.PassThrough` (`+0x68`): how often a shot passes through the
     /// building to one of its occupants (Valueable<double> `1000EB00`).
     pub(crate) uc_pass_through: NativeF64Bits,
@@ -170,6 +176,18 @@ pub(crate) struct BuildingTypeExtRules {
     /// `IsLinkable` test of placement line building (`1000D770`).
     #[serde(default)]
     pub(crate) firestorm_wall: bool,
+    /// `IsTrench` (`+0x84`, int, ctor -1): the index of its name in the
+    /// process-wide trench kind list (`trenchKinds`, appended in first-read
+    /// order, `1000C640`); two types are the same trench kind exactly when
+    /// their names are byte-equal, so the name stands for the index.
+    #[serde(default)]
+    pub(crate) is_trench: Option<String>,
+    /// `Tunnel` (`+0x244`, int, ctor -1): the index of its name in
+    /// `[TunnelTypes]` ([`BuildingGlobalRules::tunnel_index`]), `None` for
+    /// -1; resolved when the key is read, so an unlisted name stays -1
+    /// (`sim::ares_tunnel`).
+    #[serde(default)]
+    pub(crate) tunnel: Option<usize>,
     /// `GateDownSound` (`+0x128`), `GateUpSound` (`+0x130`) and `SlamSound`
     /// (`+0x238`), NullableIdx<VocClass> bound against the fixed sound
     /// catalog with the type's other sounds; `Some(None)` is a silence.
@@ -181,11 +199,17 @@ pub(crate) struct BuildingTypeExtRules {
     residual: ResidualBuildingTypeRules,
 }
 
-/// `SecretLab.GenerateOnCapture` (`+0x5C`, false), `ReverseEngineersVictims`
-/// (`+0x124`, false), `ProduceCashDisplay` (`+0x22E`, false), `UnitSell`
-/// (`+0x22F`, Nullable<bool>) and `AIInnerBase` (`+0x233`, Nullable<bool>).
+/// `SecretLab.PossibleBoons` (`+0x4C`, NullableVector<TechnoTypeClass*>,
+/// unset), `SecretLab.GenerateOnCapture` (`+0x5C`, false),
+/// `ReverseEngineersVictims` (`+0x124`, false), `ProduceCashDisplay`
+/// (`+0x22E`, false), `UnitSell` (`+0x22F`, Nullable<bool>) and `AIInnerBase`
+/// (`+0x233`, Nullable<bool>), each consumed through its
+/// [`BuildingTypeExtRules`] accessor.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ResidualBuildingTypeRules {
+    /// `None` while unset or reset by `<default>` (HasValue `+0x58` false).
+    #[serde(default)]
+    secret_lab_possible_boons: Option<Vec<crate::rules::superweapon_type::TechnoTypeReference>>,
     secret_lab_generate_on_capture: bool,
     reverse_engineers_victims: bool,
     produce_cash_display: bool,
@@ -208,6 +232,7 @@ impl Default for BuildingTypeExtRules {
             rubble_intact: RubbleSwitch::new(-1),
             engineer_repairable: None,
             mass_selectable: None,
+            fake: false,
             uc_pass_through: NativeF64Bits::POSITIVE_ZERO,
             uc_fatal_rate: NativeF64Bits::POSITIVE_ZERO,
             uc_damage_multiplier: NativeF64Bits::ONE,
@@ -232,6 +257,8 @@ impl Default for BuildingTypeExtRules {
             lightning_rod: false,
             lightning_rod_modifier: NativeF64Bits::ONE,
             firestorm_wall: false,
+            is_trench: None,
+            tunnel: None,
             sounds: [None, None, None],
             residual: Default::default(),
         }
@@ -249,6 +276,14 @@ pub(crate) struct BuildingTypeExtReferences {
     pub(crate) rubble_anims: [Option<Option<String>>; 2],
     /// `CanBeOccupiedBy` (`1000ED90`).
     pub(crate) allowed_occupiers: Option<Vec<String>>,
+    /// `Tunnel`: `Some` when the key is set, holding its `[TunnelTypes]`
+    /// index (`None` for an unlisted name, -1).
+    pub(crate) tunnel: Option<Option<usize>>,
+    /// `SecretLab.PossibleBoons` (NullableVector<TechnoTypeClass*> reader
+    /// `1000EA30`): `Some` when the key is set, holding the new value
+    /// (`None` for `<default>`).
+    pub(crate) possible_boons:
+        Option<Option<Vec<crate::rules::superweapon_type::TechnoTypeReference>>>,
 }
 
 impl BuildingTypeExtRules {
@@ -282,7 +317,9 @@ impl BuildingTypeExtRules {
         self.solid_height = art.read_ares_int("SolidHeight", self.solid_height);
         self.solid_height = section.read_ares_int("SolidHeight", self.solid_height);
         self.solid_level = section.read_ares_int("SolidLevel", self.solid_level);
-        // After SecretLab.PossibleBoons (`rules::secret_lab`).
+        if let Some(boons) = references.possible_boons {
+            self.residual.secret_lab_possible_boons = boons;
+        }
         self.residual.secret_lab_generate_on_capture = section.read_ares_bool(
             "SecretLab.GenerateOnCapture",
             self.residual.secret_lab_generate_on_capture,
@@ -293,6 +330,12 @@ impl BuildingTypeExtRules {
         self.uc_damage_multiplier =
             section.read_ares_double_bits("UC.DamageMultiplier", self.uc_damage_multiplier);
         self.bunker_raidable = section.read_ares_bool("Bunker.Raidable", self.bunker_raidable);
+        // INI_EX::ReadString (`10007860`, 2048 bytes): a nonempty value is a
+        // trench kind, compared case-sensitively (1000DD40 after
+        // Bunker.Raidable); an empty one keeps the current kind.
+        if let Some(kind) = section.read_name("IsTrench", 0x800) {
+            self.is_trench = Some(kind.to_owned());
+        }
         self.lightning_rod = section.read_bool("LightningRod", self.lightning_rod);
         self.lightning_rod_modifier =
             section.read_ares_double_bits("LightningRod.Modifier", self.lightning_rod_modifier);
@@ -352,6 +395,8 @@ impl BuildingTypeExtRules {
         self.buildup_time =
             section.read_ares_nullable_double_bits("BuildupTime", self.buildup_time);
         self.sell_time = section.read_ares_nullable_double_bits("SellTime", self.sell_time);
+        // 1000DD40 reads it between SellTime and MassSelectable.
+        self.fake = section.read_ares_bool("Fake", self.fake);
         self.mass_selectable =
             section.read_ares_nullable_bool("MassSelectable", self.mass_selectable);
         let residual = &mut self.residual;
@@ -363,6 +408,11 @@ impl BuildingTypeExtRules {
         self.residual.ai_inner_base =
             section.read_ares_nullable_bool("AIInnerBase", self.residual.ai_inner_base);
         self.ai_base_normal = section.read_ares_nullable_bool("AIBaseNormal", self.ai_base_normal);
+        // 1000DD40's last read, after Cursor.Spy: INI_EX::ReadString, then
+        // the inlined Enumerable::FindIndex; a missing key keeps the index.
+        if let Some(tunnel) = references.tunnel {
+            self.tunnel = tunnel;
+        }
     }
 
     /// The gate and slam sounds (NullableIdx<VocClass> 1000E9D0, unknown
@@ -480,6 +530,61 @@ impl BuildingTypeExtRules {
         (self.dock_unload_facing << 11) as u16
     }
 
+    /// `AIInnerBase.Get(CloakGenerator)`: HouseClass_FindPlaceToBuild_Evaluate
+    /// (Ares.dll 10023860, hook 0x506306) picks FindBaseBuildingSite's
+    /// inner-base key with it (`sim::ai_base_site`).
+    pub(crate) fn ai_inner_base(&self, cloak_generator: bool) -> bool {
+        self.residual.ai_inner_base.unwrap_or(cloak_generator)
+    }
+
+    /// `SecretLab.PossibleBoons`, when set: the boons a lab of this type rolls
+    /// from in place of the Rules secret lists (BuildingExt::ExtData::
+    /// UpdateSecretLab, Ares.dll 10013700; `sim::secret_lab`).
+    pub(crate) fn secret_lab_possible_boons(
+        &self,
+    ) -> Option<&[crate::rules::superweapon_type::TechnoTypeReference]> {
+        self.residual.secret_lab_possible_boons.as_deref()
+    }
+
+    /// `SecretLab.GenerateOnCapture`: a lab of this type rolls its boon again
+    /// on every capture (UpdateSecretLab, Ares.dll 10013700).
+    pub(crate) fn secret_lab_generate_on_capture(&self) -> bool {
+        self.residual.secret_lab_generate_on_capture
+    }
+
+    /// `ReverseEngineersVictims`: a victim ground here is reverse engineered
+    /// for the grinder's owner (BuildingExt::ExtData::ReverseEngineer, Ares.dll
+    /// 10012E00; `sim::reverse_engineering`).
+    pub(crate) fn reverse_engineers_victims(&self) -> bool {
+        self.residual.reverse_engineers_victims
+    }
+
+    /// `UnitSell.Get(UnitRepair)`: a unit docked here can be sold
+    /// (FootClass_CanBeSold_SellUnit, Ares.dll 10048FD0, hook 0x4D9EBD).
+    pub(crate) fn unit_sell(&self, unit_repair: bool) -> bool {
+        self.residual.unit_sell.unwrap_or(unit_repair)
+    }
+
+    /// `ProduceCashDisplay`: produced cash joins the building's floating
+    /// money display (BuildingExt::ExtData::AddProduceCashDisplay, Ares.dll
+    /// 100117C0).
+    pub(crate) fn produce_cash_display(&self) -> bool {
+        self.residual.produce_cash_display
+    }
+
+    /// `BuildingTypeExt::ExtData::IsLinkable @ 1000D770`: a firestorm wall
+    /// or a trench, which placement links into lines
+    /// (`sim::ares_firestorm`).
+    pub(crate) fn is_linkable(&self) -> bool {
+        self.firestorm_wall || self.is_trench.is_some()
+    }
+
+    /// `BuildingExt::ExtData::sameTrench` (inlined in buildLines
+    /// `100113D0`): this type is a trench of `other`'s kind.
+    pub(crate) fn same_trench(&self, other: &Self) -> bool {
+        self.is_trench.is_some() && self.is_trench == other.is_trench
+    }
+
     /// `EngineerRepairable.Get(Repairable)`.
     pub(crate) fn engineer_repairable(&self, repairable: bool) -> bool {
         self.engineer_repairable.unwrap_or(repairable)
@@ -490,6 +595,11 @@ impl BuildingTypeExtRules {
     /// (`0x00465D40`) answer.
     pub(crate) fn mass_selectable(&self, vanilla: bool) -> bool {
         self.mass_selectable.unwrap_or(vanilla)
+    }
+
+    /// `Fake`.
+    pub(crate) fn fake(&self) -> bool {
+        self.fake
     }
 
     /// `BuildingTypeExt::ExtData::CanBeOccupiedBy`: any InfantryType while
@@ -546,6 +656,21 @@ pub(crate) struct BuildingGlobalRules {
     /// through.
     #[serde(default)]
     pub(crate) allied_solid_transparency: bool,
+    /// Ares 3.0 `[TunnelTypes]` (TunnelTypeClass::Array, `0x100C18EC`), in
+    /// first-read order, read by `RulesExt::LoadBeforeTypeData @ 1002AEF0`.
+    #[serde(default)]
+    tunnel_types: Vec<TunnelType>,
+}
+
+/// One `[TunnelTypes]` entry (TunnelTypeClass, constructor `10008FA0`):
+/// `Passengers` (`+0x20`, 0) caps each House's network of this type
+/// (TunnelData::MaxCap, at least -1, `10008F50`; compared unsigned, so -1
+/// sets no cap) and `MaxSize` (`+0x28`, 0.0), which no 3.0 function reads.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+struct TunnelType {
+    name: String,
+    passengers: i32,
+    max_size: NativeF64Bits,
 }
 
 impl Default for BuildingGlobalRules {
@@ -562,6 +687,7 @@ impl Default for BuildingGlobalRules {
             toggle_power_delay: 45,
             toggle_power_iq: -1,
             allied_solid_transparency: false,
+            tunnel_types: Vec::new(),
         }
     }
 }
@@ -586,6 +712,50 @@ impl BuildingGlobalRules {
             self.allied_solid_transparency =
                 section.read_ares_bool("AlliedSolidTransparency", self.allied_solid_transparency);
         }
+        self.read_tunnel_types(pass);
+    }
+
+    /// `RulesExt::LoadBeforeTypeData @ 1002AEF0`'s inlined `[TunnelTypes]`
+    /// block, after `[MouseCursors]` and before any type body: each key's
+    /// value (ReadString into 0x20 bytes, `100094A0`) names a tunnel type,
+    /// appended when no entry has that name (`_strcmpi`); then every entry
+    /// of the list reads `Passengers` (ReadInteger) and `MaxSize`
+    /// (ReadDouble) from its own section when the pass has one (`10009340`).
+    fn read_tunnel_types(&mut self, pass: &crate::rules::ini_parser::IniFile) {
+        let list = pass.section_or_empty("TunnelTypes");
+        for key in list.keys() {
+            if let Some(name) = list.read_name(key, 0x20)
+                && self.tunnel_index(name).is_none()
+            {
+                self.tunnel_types.push(TunnelType {
+                    name: name.to_owned(),
+                    passengers: 0,
+                    max_size: NativeF64Bits::POSITIVE_ZERO,
+                });
+            }
+        }
+        for tunnel in &mut self.tunnel_types {
+            if let Some(section) = pass.section(&tunnel.name) {
+                tunnel.passengers = section.read_int("Passengers", tunnel.passengers);
+                tunnel.max_size = section.read_double_bits("MaxSize", tunnel.max_size);
+            }
+        }
+    }
+
+    /// `Enumerable<TunnelTypeClass>::FindIndex` (inlined in `1000DD40`): the
+    /// position of the entry named `name`, compared with `_strcmpi`.
+    pub(crate) fn tunnel_index(&self, name: &str) -> Option<usize> {
+        self.tunnel_types
+            .iter()
+            .position(|tunnel| tunnel.name.eq_ignore_ascii_case(name))
+    }
+
+    /// The MaxCap of every House's network of tunnel type `index`:
+    /// `Passengers`, at least -1 (`TunnelData::TunnelData @ 10008F50`).
+    pub(crate) fn tunnel_max_cap(&self, index: usize) -> Option<i32> {
+        self.tunnel_types
+            .get(index)
+            .map(|tunnel| tunnel.passengers.max(-1))
     }
 
     /// `1002A800`'s `[General]` engineer reads, ahead of `HSBuilding`, and
@@ -680,6 +850,8 @@ mod tests {
                 rubble_types: [Some(Some("RUBBLE".into())), None],
                 rubble_anims: [None, Some(Some("FIRE".into()))],
                 allowed_occupiers: None,
+                tunnel: None,
+                possible_boons: None,
             },
         );
         assert_eq!(
@@ -721,6 +893,21 @@ mod tests {
         rules.read_pass(ini.section("B").unwrap(), art, Default::default());
         let two = NativeF64Bits::from_bits(2.0f64.to_bits());
         assert_eq!(rules.buildup_and_sell_time(general), (half, two));
+    }
+
+    /// `Fake` (`+0x5F`, after `SellTime`) is a Valueable<bool> that keeps
+    /// its value on an absent key.
+    #[test]
+    fn fake_reads_as_a_valueable_bool() {
+        let art = IniFile::empty();
+        let art = art.section_or_empty("B");
+        let mut rules = BuildingTypeExtRules::default();
+        let ini = IniFile::from_str("[B]\nFake=yes\n");
+        rules.read_pass(ini.section("B").unwrap(), art, Default::default());
+        assert!(rules.fake());
+        let ini = IniFile::from_str("[B]\nStrength=1\n");
+        rules.read_pass(ini.section("B").unwrap(), art, Default::default());
+        assert!(rules.fake());
     }
 
     /// `Message.Capture`/`Message.Lost` keep 31 bytes of their CSF label

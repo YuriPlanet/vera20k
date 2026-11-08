@@ -29,6 +29,12 @@ const fn initial_map_regrowth_timer() -> CdTimer {
     CdTimer::started(0, 0)
 }
 
+/// `ScenarioClass::Set_Defaults @ 0x00683610` stores true.
+#[cfg(feature = "ares")]
+const fn tiberium_death_to_visceroid_default() -> bool {
+    true
+}
+
 /// One map-authored global lighting profile in the native integer scales.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ScenarioLightProfileUnits {
@@ -914,6 +920,13 @@ pub struct ScenarioSession {
     train_crate: bool,
     #[serde(default)]
     truck_crate: bool,
+    /// Scenario+0x34B3, map `[Basic] TiberiumDeathToVisceroid`
+    /// (`BasicSection`): `Set_Defaults @ 0x00683610` stores true and a map
+    /// key replaces it. Ares' tiberium death visceroid (`TechnoExt::
+    /// SpawnVisceroid @ 100468B0`) is its only reader.
+    #[cfg(feature = "ares")]
+    #[serde(default = "tiberium_death_to_visceroid_default")]
+    tiberium_death_to_visceroid: bool,
     /// Scenario+34A8. Execute87 stores the literal low byte at6DDBE1;
     /// Basic's bool reader normalizes only when it actually reads a value.
     /// Retain the byte even though no ice-growth simulation leaf is ported.
@@ -1853,6 +1866,10 @@ impl ScenarioSession {
         if s.truck_crate {
             b"scenario-truck-crate-v1".hash(hasher);
         }
+        #[cfg(feature = "ares")]
+        if !s.tiberium_death_to_visceroid {
+            b"scenario-no-tiberium-death-to-visceroid-v1".hash(hasher);
+        }
         if s.vein_growth != 1 {
             b"scenario-vein-growth".hash(hasher);
             s.vein_growth.hash(hasher);
@@ -1988,6 +2005,20 @@ impl ScenarioSession {
         self.truck_crate
     }
 
+    /// Scenario+0x34B3 (`TiberiumDeathToVisceroid`).
+    #[cfg(feature = "ares")]
+    pub(crate) const fn tiberium_death_to_visceroid(&self) -> bool {
+        self.tiberium_death_to_visceroid
+    }
+
+    /// `ScenarioClass::Read_INI_Basic @ 0x00689E90`: the map's
+    /// `TiberiumDeathToVisceroid`, else the fresh `Set_Defaults` true.
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_map_tiberium_death_to_visceroid(&mut self, map_value: Option<bool>) {
+        self.tiberium_death_to_visceroid =
+            map_value.unwrap_or(tiberium_death_to_visceroid_default());
+    }
+
     /// Retained native Scenario+34A8; not a claim of an active ice grower.
     pub const fn ice_growth_enabled(&self) -> bool {
         self.ice_growth != 0
@@ -2049,6 +2080,8 @@ impl ScenarioSession {
             ignore_global_ai_triggers: desc.ignore_global_ai_triggers,
             train_crate: desc.train_crate,
             truck_crate: desc.truck_crate,
+            #[cfg(feature = "ares")]
+            tiberium_death_to_visceroid: tiberium_death_to_visceroid_default(),
             ice_growth: u8::from(desc.ice_growth_enabled.unwrap_or(true)),
             vein_growth: u8::from(desc.vein_growth_enabled.unwrap_or(true)),
             tiberium_grows_flag: desc.tiberium_grows_flag,

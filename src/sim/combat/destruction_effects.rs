@@ -704,6 +704,14 @@ impl Simulation {
             }
         }
 
+        // 10. Ares 3.0 BuildingClass_Destroy_Refinery (10023DA0, hook
+        // 0x441B30) replaces the stock spill to 0x441C0C: the store leaves
+        // the building and House, spilling with TiberiumSpill
+        // (`sim::ares_tiberium_storage`). The stock spill has no store to
+        // read in default builds.
+        #[cfg(feature = "ares")]
+        self.ares_destroy_refinery_storage(building_id, rules);
+
         // 12. `0x00441C3D..0x00441CA9`: the fuse (`+0x528`) restarts at the
         // frame, 0 long for an `Explodes=` type (TechnoType `+0xD15`) or a
         // building whose Get_Mission (vt+0x184, current else queued) is

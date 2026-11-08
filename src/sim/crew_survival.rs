@@ -423,6 +423,15 @@ impl Simulation {
         let chance_max = if c4_source.is_some() { 1 } else { 2 } + if captured { 6 } else { 0 };
         let mut count = self.building_survivor_count(rules, building_id);
 
+        // Ares 3.0 10017350 (hook 0x442DF2), ahead of Phase A: the last
+        // entrance of a tunnel kills its owner's network, credited to the C4
+        // planter (`sim::ares_tunnel`).
+        #[cfg(feature = "ares")]
+        self.ares_kill_tunnel_feet_if_last(
+            building_id,
+            c4_source,
+            crate::sim::world::UninitContext::new(rules, registry).with_effects(effects),
+        );
         // Phase A (0x00442DF2..0x00443011): every absorbed passenger advances
         // the foundation cursor that Phase B then continues from.
         let cursor = self.eject_absorbed_passengers(

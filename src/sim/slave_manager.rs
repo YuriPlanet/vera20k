@@ -268,6 +268,22 @@ impl SlaveManager {
         self.ai_timer
     }
 
+    /// SlaveManagerClass::SuspendWork as Ares inlines it (EnableEMPEffect2
+    /// 10062980, the driver change 100458F3..10045953): the AI timer's start
+    /// becomes -1 and keeps its duration, a duration of 0 raised to 1.
+    #[cfg(feature = "ares")]
+    pub(crate) fn suspend_work(&mut self) {
+        let duration = self.ai_timer.duration();
+        self.ai_timer = CdTimer::from_raw(-1, if duration == 0 { 1 } else { duration });
+    }
+
+    /// SlaveManagerClass::ResumeWork as Ares inlines it (DisableEMPEffect2
+    /// 10062650, the driver change): a -1 start becomes `now`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn resume_work(&mut self, now: i32) {
+        self.ai_timer.resume(now);
+    }
+
     /// The slaves the nodes hold, in node order.
     pub(crate) fn slaves(&self) -> impl Iterator<Item = u64> + '_ {
         self.nodes.iter().filter_map(|node| node.slave)
@@ -1784,10 +1800,9 @@ impl Simulation {
             node.timer.start(now, manager.regen_rate);
         }
         if passive {
-            let duration = manager.ai_timer.duration();
-            manager.ai_timer = CdTimer::from_raw(-1, if duration == 0 { 1 } else { duration });
+            manager.suspend_work();
         } else {
-            manager.ai_timer.resume(now);
+            manager.resume_work(now);
         }
         if let Some(entity) = self.substrate.entities.get_mut(master)
             && entity.slave_manager.is_none()

@@ -49,6 +49,163 @@ pub(crate) struct AresTechnoTypeRules {
     presentation: PresentationTypeRules,
     #[serde(default)]
     residual: ResidualTypeRules,
+    #[serde(default)]
+    secret_lab_houses: SecretLabHouseRules,
+    #[serde(default)]
+    prerequisites: AresPrerequisiteRules,
+}
+
+/// TechnoTypeExt `PrerequisiteLists` (+0x40) past list 0,
+/// `PrerequisiteNegatives` (+0x4C), `PrerequisiteTheaters` (+0x64,
+/// constructor 0xFFFFFFFF) and `RequiredStolenTech` (+0x128, constructor
+/// 0), read by `LoadFromINIFile @ 1003DFB0`. List 0 is the type's
+/// `Prerequisite=` itself (`ObjectType::prerequisite`): installed Ares
+/// parses that key into it again (`0x1003E0B7`) through the same
+/// Parse100085F0 the stock read already used under Ares, and no stock reader
+/// of TechnoType+0x648 is left once CanBuild (hook 0x4F7870), the planner
+/// check (hook 0x505360) and the power plant choice (hook 0x4FE782) are
+/// replaced, so one field holds both. `RequirementsMet @ 10021FF0`,
+/// `PrerequisitesMet @ 10021CA0` and `PrerequisitesListed @ 10021C50`
+/// consume these.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresPrerequisiteRules {
+    /// Lists 1.. of +0x40 (`Prerequisite.List1=` on).
+    extra_lists: Vec<Vec<crate::rules::prerequisite::Prerequisite>>,
+    negatives: Vec<crate::rules::prerequisite::Prerequisite>,
+    theaters: u32,
+    stolen_techs: u32,
+}
+
+impl Default for AresPrerequisiteRules {
+    fn default() -> Self {
+        Self {
+            extra_lists: Vec::new(),
+            negatives: Vec::new(),
+            theaters: u32::MAX,
+            stolen_techs: 0,
+        }
+    }
+}
+
+impl AresPrerequisiteRules {
+    /// The prerequisite block of one reached `1003DFB0` pass, after the
+    /// `Survivor.*` reads (`0x1003E093..0x1003E0F1`, then `.Negative` and
+    /// `.RequiredTheaters`). `list0` is the type's
+    /// `Prerequisite=` list and `parse(key, prior)` Prereqs::Parse100085F0
+    /// of `key` (2048-byte ReadString, comma tokens, BuildingType before
+    /// generic group, unknown tokens skipped; a missing or empty key keeps
+    /// `prior`).
+    pub(crate) fn read_pass(
+        &mut self,
+        section: &IniSection,
+        list0: &mut Vec<crate::rules::prerequisite::Prerequisite>,
+        mut parse: impl FnMut(
+            &str,
+            &[crate::rules::prerequisite::Prerequisite],
+        ) -> Vec<crate::rules::prerequisite::Prerequisite>,
+    ) {
+        // `INIClass::ReadInteger("Prerequisite.Lists", size - 1)`, at least
+        // 0, plus one: the vector grows with empty lists or is truncated.
+        // Initialize (1003DEC0) sized it to one at the first read.
+        let current = i32::try_from(self.extra_lists.len()).unwrap_or(i32::MAX);
+        let extra = section.read_int("Prerequisite.Lists", current).max(0);
+        self.extra_lists
+            .resize(usize::try_from(extra).unwrap_or(0), Vec::new());
+        // `Prerequisite` (list 0) and `PrerequisiteOverride` come next; the
+        // stock read already parsed both through Parse100085F0.
+        // `Prerequisite.List%u` for every list, 0 included (`0x1003E0F1`).
+        *list0 = parse("Prerequisite.List0", list0.as_slice());
+        for (index, list) in self.extra_lists.iter_mut().enumerate() {
+            let key = format!("Prerequisite.List{}", index + 1);
+            *list = parse(key.as_str(), list.as_slice());
+        }
+        self.negatives = parse("Prerequisite.Negative", self.negatives.as_slice());
+        // INI_EX::ReadString (2048) then strtok(","): a nonempty value
+        // replaces the mask with the bits of the names FindTheater48DBE0
+        // knows; an unknown name is only logged.
+        if let Some(tokens) = section.read_list("Prerequisite.RequiredTheaters", 0x800) {
+            self.theaters = 0;
+            for token in tokens {
+                let index =
+                    crate::rules::object_image::ImageTheater::from_name(token).native_index();
+                if index >= 0 {
+                    self.theaters |= 1 << index;
+                }
+            }
+        }
+        // Read later in 1003DFB0 (after CameoPalette), with no reader
+        // between them that depends on it: a nonempty value clears
+        // the set, then each token's `atoi` below 32 (unsigned compare, so
+        // negatives are skipped silently) sets its bit.
+        if let Some(tokens) = section.read_list("Prerequisite.StolenTechs", 0x800) {
+            self.stolen_techs = 0;
+            for token in tokens {
+                let index = crate::rules::ini_value::crt_atoi(token) as u32;
+                if index < 32 {
+                    self.stolen_techs |= 1 << index;
+                }
+            }
+        }
+    }
+
+    /// Lists 1.. of the type's prerequisite lists; list 0 is
+    /// `ObjectType::prerequisite`.
+    pub(crate) fn extra_lists(&self) -> &[Vec<crate::rules::prerequisite::Prerequisite>] {
+        &self.extra_lists
+    }
+
+    /// `Prerequisite.Negative`: any of them owned forbids the type.
+    pub(crate) fn negatives(&self) -> &[crate::rules::prerequisite::Prerequisite] {
+        &self.negatives
+    }
+
+    /// Every parsed entry, for the saved-state registry check.
+    pub(crate) fn entries(
+        &self,
+    ) -> impl Iterator<Item = &crate::rules::prerequisite::Prerequisite> {
+        self.extra_lists.iter().flatten().chain(&self.negatives)
+    }
+
+    /// RequirementsMet's theater test (`10021FF0`): the scenario's theater
+    /// bit (`1 << (Theater & 31)`, so an unknown theater tests bit 31).
+    pub(crate) fn admits_theater(&self, theater: &str) -> bool {
+        let index = crate::rules::object_image::ImageTheater::from_name(theater).native_index();
+        self.theaters & (1u32 << (index as u32 & 31)) != 0
+    }
+
+    /// `Prerequisite.StolenTechs`: the HouseExt StolenTech bits the type
+    /// needs, all of them.
+    pub(crate) fn required_stolen_techs(&self) -> u32 {
+        self.stolen_techs
+    }
+}
+
+/// TechnoTypeExt `SecretLab.RequiredHouses` (+0x6C, constructor 0xFFFFFFFF)
+/// and `SecretLab.ForbiddenHouses` (+0x70, 0), each read through
+/// `INIClass::ReadHouseTypesList @ 0x004750D0` (Ares 0x800 buffer, 1005BED0)
+/// with the current mask as its default. As for the stock house lists
+/// (`object_type::HouseMasks`), the tokens of the last pass that set a key
+/// are kept and masked against the Country registry when asked.
+#[derive(Debug, Clone, Default, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SecretLabHouseRules {
+    required: Option<Vec<String>>,
+    forbidden: Option<Vec<String>>,
+}
+
+impl SecretLabHouseRules {
+    /// UpdateSecretLab's AddToOptions filter (lambda Ares.dll 10011340): the
+    /// owner's Country bit (`1 << ArrayIndex`) is required and not forbidden.
+    pub(crate) fn admit(&self, rules: &crate::rules::ruleset::RuleSet, house_bit: u32) -> bool {
+        let required = self
+            .required
+            .as_deref()
+            .map_or(u32::MAX, |tokens| rules.house_type_mask(tokens));
+        let forbidden = self
+            .forbidden
+            .as_deref()
+            .map_or(0, |tokens| rules.house_type_mask(tokens));
+        required & house_bit != 0 && forbidden & house_bit == 0
+    }
 }
 
 /// A Find-only `Valueable<TechnoTypeClass*>` read (1003FA40 over
@@ -101,17 +258,38 @@ impl PresentationTypeRules {
     }
 }
 
+/// TechnoTypeExt `HunterSeeker.AscentSpeed`, `.DescentSpeed` and
+/// `.EmergeSpeed` (+0x3C4/+0x3CC/+0x3D4, Nullable<int>), each falling back
+/// to `[General] HunterSeekerAscentSpeed` .. (RulesExt +0x84/+0x88/+0x8C).
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HunterSeekerClimb {
+    pub ascent: i32,
+    pub descent: i32,
+    pub emerge: i32,
+}
+
 /// TechnoTypeExt keys whose consumer mechanisms VERA does not have yet
 /// (docs/ares-techno-types.md, "Not covered"). They are read in the DLL's
 /// order with the constructor's defaults (1003C710, Initialize 1003DEC0)
 /// and nothing consumes them.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ResidualTypeRules {
-    /// `InitialPayload.Nums` (+0x110, ValueableVector<int>, empty).
+    /// `InitialPayload.Types` (+0x104, ValueableVector<TechnoTypeClass*>
+    /// 1000EDD0, Find only) and `InitialPayload.Nums` (+0x110,
+    /// ValueableVector<int> 1000ED00), empty; consumed by
+    /// `sim::ares_transports` (CreateInitialPayload 10043C10).
+    #[serde(default)]
+    initial_payload_types: Vec<crate::rules::superweapon_type::TechnoTypeReference>,
     initial_payload_nums: Vec<i32>,
-    /// `CanBeReversed` (+0x270, true) and `ReversedAs` (+0x274, null).
+    /// `CanBeReversed` (+0x270, true) and `ReversedAs` (+0x274, null),
+    /// consumed by `sim::reverse_engineering`.
     can_be_reversed: bool,
     reversed_as: Option<crate::rules::superweapon_type::TechnoTypeReference>,
+    /// `Unsellable` (+0x644, Nullable<bool>, unset), consumed by the unit
+    /// sale at a depot (`production::foot_can_be_sold`).
+    #[serde(default)]
+    unsellable: Option<bool>,
     /// `Carryall.Allowed` (+0x2F8, Nullable<bool>) and `Carryall.SizeLimit`
     /// (+0x2FC, Nullable<int>), unset.
     carryall_allowed: Option<bool>,
@@ -120,6 +298,10 @@ pub(crate) struct ResidualTypeRules {
     /// non-building with `FindIndex("EVA_UnitLost")`, a building keeps -1;
     /// bound against the fixed EVA catalog (`RuleSet::bind_type_eva_references`).
     unit_lost_eva: Option<String>,
+    /// Whether that binding ran; rules read without the catalog (fixtures)
+    /// leave the consumers to take the Initialize seed themselves.
+    #[serde(default)]
+    unit_lost_eva_bound: bool,
     /// `HunterSeeker.DetonateProximity`, `.DescendProximity`, `.AscentSpeed`,
     /// `.DescentSpeed` and `.EmergeSpeed` (+0x3B4..+0x3D4, Nullable<int>,
     /// unset; else the RulesExt values).
@@ -135,7 +317,8 @@ pub(crate) struct ResidualTypeRules {
     /// only): `Some(None)` is an explicit none.
     dig_anims: [Option<Option<String>>; 2],
     /// `FakeOf` (+0x600) and `Convert.Deploy` (+0x60C), Find-only
-    /// Valueable<TechnoTypeClass*>, null.
+    /// Valueable<TechnoTypeClass*>, null; `Convert.Deploy` is consumed by
+    /// the simple deployer's Unload (`sim::unit_simple_deploy`).
     fake_of: Option<crate::rules::superweapon_type::TechnoTypeReference>,
     convert_deploy: Option<crate::rules::superweapon_type::TechnoTypeReference>,
 }
@@ -143,12 +326,15 @@ pub(crate) struct ResidualTypeRules {
 impl Default for ResidualTypeRules {
     fn default() -> Self {
         Self {
+            initial_payload_types: Vec::new(),
             initial_payload_nums: Vec::new(),
             can_be_reversed: true,
             reversed_as: None,
+            unsellable: None,
             carryall_allowed: None,
             carryall_size_limit: None,
             unit_lost_eva: None,
+            unit_lost_eva_bound: false,
             hunter_seeker: [None; 5],
             assaulter_level: 0,
             no_self_guard_area: false,
@@ -161,13 +347,19 @@ impl Default for ResidualTypeRules {
 }
 
 /// TechnoTypeExt+0x27C `PassengerTurret` (false), +0x325 `CrashSpin`
-/// (true), +0x328 `AirRate` (0), +0x4C5 `NoManualUnload` and +0x4C7
-/// `NoManualEnter` (false), +0x604 `DeployDir` (Nullable, unset).
+/// (true), +0x328 `AirRate` (0), +0x4AC/+0x4B8 `Passengers.Allowed`/
+/// `.Disallowed` (ValueableVector<TechnoTypeClass*> 1000EDD0, Find only,
+/// empty), +0x4C5 `NoManualUnload` and +0x4C7 `NoManualEnter` (false),
+/// +0x604 `DeployDir` (Nullable, unset).
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) struct MovementTypeRules {
     passenger_turret: bool,
     crash_spin: bool,
     air_rate: i32,
+    #[serde(default)]
+    passengers_allowed: Vec<crate::rules::superweapon_type::TechnoTypeReference>,
+    #[serde(default)]
+    passengers_disallowed: Vec<crate::rules::superweapon_type::TechnoTypeReference>,
     no_manual_unload: bool,
     no_manual_enter: bool,
     #[serde(default)]
@@ -180,6 +372,8 @@ impl Default for MovementTypeRules {
             passenger_turret: false,
             crash_spin: true,
             air_rate: 0,
+            passengers_allowed: Vec::new(),
+            passengers_disallowed: Vec::new(),
             no_manual_unload: false,
             no_manual_enter: false,
             deploy_dir: None,
@@ -205,6 +399,28 @@ impl MovementTypeRules {
     /// 0 keeps the stock cadence.
     pub(crate) fn air_rate(&self) -> i32 {
         self.air_rate
+    }
+
+    /// `TechnoTypeExt::ExtData::IsPassengerAllowed @ 1003DD60`: a passenger
+    /// of this type (`category`, `type_id`) may board a carrier of this
+    /// type when `Passengers.Allowed` is empty or lists it and
+    /// `Passengers.Disallowed` does not. Consulted by the carriers' CAN_LOAD
+    /// (Unit `1004C270`, hook `0x73769E`; Building `100174E0`, hook
+    /// `0x43C326`; Aircraft `10048D10`, hook `0x41949F`, whose hold VERA
+    /// does not represent).
+    #[cfg(feature = "ares")]
+    pub(crate) fn passenger_allowed(
+        &self,
+        category: crate::rules::object_type::ObjectCategory,
+        type_id: &str,
+    ) -> bool {
+        let listed = |list: &[crate::rules::superweapon_type::TechnoTypeReference]| {
+            list.iter().any(|listed| {
+                listed.category == category && listed.id.eq_ignore_ascii_case(type_id)
+            })
+        };
+        (self.passengers_allowed.is_empty() || listed(&self.passengers_allowed))
+            && !listed(&self.passengers_disallowed)
     }
 
     /// `NoManualUnload`: a player cannot unload this transport
@@ -643,8 +859,10 @@ impl CustomMissileRules {
 impl AresTechnoTypeRules {
     /// One reached `LoadFromINIFile` pass. `type_name` is the type's ID,
     /// `aircraft` whether it is an AircraftType, and `resolve` the Find-only
-    /// pointer read of a key (called in read order); `find` answers
-    /// `Initialize`'s fixed-name `AnimTypeClass::Find`.
+    /// pointer read of a key (called in read order), `resolve_techno` and
+    /// `resolve_techno_list` the TechnoType pointer and list reads (the
+    /// list's `None` keeps the field); `find` answers `Initialize`'s
+    /// fixed-name `AnimTypeClass::Find`.
     pub(crate) fn read_pass(
         &mut self,
         section: &IniSection,
@@ -652,6 +870,11 @@ impl AresTechnoTypeRules {
         aircraft: bool,
         mut resolve: impl FnMut(&str, TypeRef) -> Resolved,
         mut resolve_techno: impl FnMut(&str) -> ResolvedTechno,
+        mut resolve_techno_list: impl FnMut(
+            &str,
+        ) -> Option<
+            Vec<crate::rules::superweapon_type::TechnoTypeReference>,
+        >,
         find: impl Fn(&str) -> Option<String>,
     ) {
         if !self.initialized {
@@ -670,6 +893,22 @@ impl AresTechnoTypeRules {
                 self.damage.smoke_anim = find("SGRYSMK1");
             }
         }
+        // After Prerequisite.RequiredTheaters: ReadHouseTypesList keeps the
+        // default for an absent or empty value; any other value replaces it.
+        for (key, list) in [
+            (
+                "SecretLab.RequiredHouses",
+                &mut self.secret_lab_houses.required,
+            ),
+            (
+                "SecretLab.ForbiddenHouses",
+                &mut self.secret_lab_houses.forbidden,
+            ),
+        ] {
+            if let Some(tokens) = section.read_list(key, 0x800) {
+                *list = Some(tokens.into_iter().map(str::to_owned).collect());
+            }
+        }
         // After SecretLab.*.
         let roles = &mut self.roles;
         roles.is_desolator = section.read_ares_bool("IsDesolator", roles.is_desolator);
@@ -678,9 +917,13 @@ impl AresTechnoTypeRules {
         roles.is_cow = section.read_ares_bool("IsCow", roles.is_cow);
         // After the Spotlight.* keys.
         roles.is_bomb = section.read_ares_bool("IsBomb", roles.is_bomb);
-        // After Operator (ValueableVector<int> 1000ED00), then after the
-        // Chronoshift.* and CameoPCX keys the reverse-engineering pair.
+        // After Operator, InitialPayload.Types (1000EDD0) and .Nums
+        // (ValueableVector<int> 1000ED00), then after the Chronoshift.* and
+        // CameoPCX keys the reverse-engineering pair.
         let residual = &mut self.residual;
+        if let Some(types) = resolve_techno_list("InitialPayload.Types") {
+            residual.initial_payload_types = types;
+        }
         if let Some(nums) = section.read_ares_int_list("InitialPayload.Nums") {
             residual.initial_payload_nums = nums;
         }
@@ -808,8 +1051,15 @@ impl AresTechnoTypeRules {
             section.read_ares_nullable_double_bits(key, value)
         });
         heal.combat_delay = section.read_ares_int("SelfHealing.CombatDelay", heal.combat_delay);
-        // After the Passengers.* filters.
+        // Then the Passengers.* filters (1000EDD0; `None` keeps the list),
+        // before Passengers.BySize.
         let movement = &mut self.movement;
+        if let Some(types) = resolve_techno_list("Passengers.Allowed") {
+            movement.passengers_allowed = types;
+        }
+        if let Some(types) = resolve_techno_list("Passengers.Disallowed") {
+            movement.passengers_disallowed = types;
+        }
         movement.no_manual_unload =
             section.read_ares_bool("NoManualUnload", movement.no_manual_unload);
         movement.no_manual_enter =
@@ -864,6 +1114,9 @@ impl AresTechnoTypeRules {
         if let Some(convert_deploy) = resolve_techno("Convert.Deploy") {
             self.residual.convert_deploy = convert_deploy;
         }
+        // After Harvester.KickDelay, then KeepAlive (`sim::house_tracking`).
+        self.residual.unsellable =
+            section.read_ares_nullable_bool("Unsellable", self.residual.unsellable);
         // Last, after Unsellable and KeepAlive.
         self.presentation.radial_indicator_radius = section.read_ares_nullable_int(
             "RadialIndicatorRadius",
@@ -892,6 +1145,18 @@ impl AresTechnoTypeRules {
     #[cfg(feature = "ares")]
     pub(crate) fn bind_unit_lost_eva(&mut self, eva: Option<String>) {
         self.residual.unit_lost_eva = eva;
+        self.residual.unit_lost_eva_bound = true;
+    }
+
+    /// `EVA.Lost`, the line FootClass_Destroyed (Ares.dll 10049080, hook
+    /// 0x4D98C0) and BuildingClass_Destroyed_UnitLost (10013F10, hook
+    /// 0x44D760) play: `Some(None)` is the silent -1, `None` rules never
+    /// bound against the EVA catalog.
+    #[cfg(feature = "ares")]
+    pub(crate) fn unit_lost_eva(&self) -> Option<Option<&str>> {
+        self.residual
+            .unit_lost_eva_bound
+            .then(|| self.residual.unit_lost_eva.as_deref())
     }
 
     #[cfg(feature = "ares")]
@@ -932,14 +1197,108 @@ impl AresTechnoTypeRules {
         &self.roles
     }
 
+    /// `SecretLab.RequiredHouses` and `SecretLab.ForbiddenHouses`.
+    pub(crate) fn secret_lab_houses(&self) -> &SecretLabHouseRules {
+        &self.secret_lab_houses
+    }
+
+    /// `Prerequisite.List#`, `.Negative`, `.RequiredTheaters` and
+    /// `.StolenTechs`.
+    pub(crate) fn prerequisites(&self) -> &AresPrerequisiteRules {
+        &self.prerequisites
+    }
+
+    /// The Rules processor's handle for [`AresPrerequisiteRules::read_pass`],
+    /// which needs the type's list 0 and the registry's Parse100085F0.
+    pub(crate) fn prerequisites_mut(&mut self) -> &mut AresPrerequisiteRules {
+        &mut self.prerequisites
+    }
+
     pub(crate) fn tiberium(&self) -> &crate::rules::ares_tiberium::TiberiumTechnoRules {
         &self.tiberium
+    }
+
+    /// `CanBeReversed` and `ReversedAs`: whether a victim of this type is
+    /// reverse engineered at all, and as which type (the type itself when
+    /// unset), HouseExt::ExtData::ReverseEngineer (Ares.dll 10022360).
+    pub(crate) fn reverse_engineering(
+        &self,
+    ) -> (
+        bool,
+        Option<&crate::rules::superweapon_type::TechnoTypeReference>,
+    ) {
+        (
+            self.residual.can_be_reversed,
+            self.residual.reversed_as.as_ref(),
+        )
+    }
+
+    /// `Unsellable.Get(UnitsUnsellable)`: a unit of this type cannot be sold
+    /// on a depot (FootClass_CanBeSold_SellUnit, Ares.dll 10048FD0, hook
+    /// 0x4D9EBD).
+    pub(crate) fn unsellable(&self, units_unsellable: bool) -> bool {
+        self.residual.unsellable.unwrap_or(units_unsellable)
+    }
+
+    /// `HunterSeeker.AscentSpeed`, `.DescentSpeed` and `.EmergeSpeed`,
+    /// each `.Get(RulesExt)` (the Fly height step's hooks 0x4CDE64 and
+    /// 0x4CDF54, Ares.dll 1004D930 and 1004DA20).
+    #[cfg(feature = "ares")]
+    pub(crate) fn hunter_seeker_climb(
+        &self,
+        general: &crate::rules::native_processing::AresGeneralRules,
+    ) -> HunterSeekerClimb {
+        let [_, _, ascent, descent, emerge] = general.hunter_seeker_speeds();
+        let own = &self.residual.hunter_seeker;
+        HunterSeekerClimb {
+            ascent: own[2].unwrap_or(ascent),
+            descent: own[3].unwrap_or(descent),
+            emerge: own[4].unwrap_or(emerge),
+        }
+    }
+
+    /// `HunterSeeker.DetonateProximity` and `.DescendProximity`, each
+    /// `.Get(RulesExt)` (Horizontal_Step's hook 0x4CF3D0, Ares.dll 1004DC30).
+    #[cfg(feature = "ares")]
+    pub(crate) fn hunter_seeker_proximities(
+        &self,
+        general: &crate::rules::native_processing::AresGeneralRules,
+    ) -> (i32, i32) {
+        let [detonate, descend, ..] = general.hunter_seeker_speeds();
+        let own = &self.residual.hunter_seeker;
+        (own[0].unwrap_or(detonate), own[1].unwrap_or(descend))
     }
 
     /// `Gattling.Cycle`: a charge at the cap restarts the stages
     /// (TechnoClass_UpdateGattling_Cycle, Ares.dll 1004B6C0, hook 0x70DEBA).
     pub(crate) fn gattling_cyclic(&self) -> bool {
         self.gattling_cyclic
+    }
+
+    /// `InitialPayload.Types` and `InitialPayload.Nums`: the passengers or
+    /// occupants an object of this type is created with
+    /// (TechnoExt::ExtData::CreateInitialPayload, Ares.dll 10043C10).
+    #[cfg(feature = "ares")]
+    pub(crate) fn initial_payload(
+        &self,
+    ) -> (
+        &[crate::rules::superweapon_type::TechnoTypeReference],
+        &[i32],
+    ) {
+        (
+            &self.residual.initial_payload_types,
+            &self.residual.initial_payload_nums,
+        )
+    }
+
+    /// `Convert.Deploy`: the type a deployed simple deployer converts to
+    /// (UnitClass_Mi_Unload_SimpleDeployer, Ares.dll 1004C070, hook
+    /// 0x73DE90).
+    #[cfg(feature = "ares")]
+    pub(crate) fn convert_deploy(
+        &self,
+    ) -> Option<&crate::rules::superweapon_type::TechnoTypeReference> {
+        self.residual.convert_deploy.as_ref()
     }
 }
 
@@ -1077,7 +1436,8 @@ mod tests {
         use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
         let ini = IniFile::from_str(
             "[InfantryTypes]\n0=E1\n1=E2\n[BuildingTypes]\n0=POWR\n[Animations]\n0=DIG\n\
-             [E1]\nInitialPayload.Nums=1,x,3\nCanBeReversed=no\nReversedAs=E2\n\
+             [E1]\nInitialPayload.Types=E2,Missing,E1\nInitialPayload.Nums=1,x,3\n\
+             CanBeReversed=no\nReversedAs=E2\n\
              Carryall.Allowed=yes\nCarryall.SizeLimit=2\nHunterSeeker.AscentSpeed=7\n\
              HunterSeeker.EmergeSpeed=bad\nAssaulter.Level=2\nNoSelfGuardArea=yes\n\
              EnemyUIName=NAME:0123456789012345678901234567890123\nDigIn=DIG\nDigOut=none\n\
@@ -1099,6 +1459,13 @@ mod tests {
         let e1 = ext("E1");
         let residual = &e1.residual;
         assert_eq!(residual.initial_payload_nums, [1, 3]);
+        // 1000EDD0 drops the name no TechnoType holds.
+        let payload: Vec<_> = residual
+            .initial_payload_types
+            .iter()
+            .map(|reference| reference.id.as_str())
+            .collect();
+        assert_eq!(payload, ["E2", "E1"]);
         assert!(!residual.can_be_reversed);
         assert_eq!(id(&residual.reversed_as).as_deref(), Some("E2"));
         assert_eq!(
@@ -1124,6 +1491,7 @@ mod tests {
         let e2 = ext("E2");
         let residual = &e2.residual;
         assert!(residual.can_be_reversed && residual.initial_payload_nums.is_empty());
+        assert!(residual.initial_payload_types.is_empty());
         assert_eq!(residual.reversed_as, None);
         assert_eq!(residual.hunter_seeker, [None; 5]);
         assert_eq!(

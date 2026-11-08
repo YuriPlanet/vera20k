@@ -133,11 +133,19 @@ pub struct UnderAttackEvent {
 /// 0x00416613`, infantry `0x005180F4`, `UnitClass 0x00737DC9/0x00737E39/
 /// 0x00737E68`, all vtable slot `+0x3B8`) and its type is not `Spawned=`.
 /// The world applies the owner-is-human gate and the radar type-7 dedupe.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct UnitLostEvent {
     pub rx: u16,
     pub ry: u16,
     pub owner: InternedId,
+    /// Ares: the victim type's `EVA.Lost`, spoken whether or not the client
+    /// admits the radar event.
+    #[cfg(feature = "ares")]
+    pub eva: String,
+    /// Ares: a Foot creates the radar event (FootClass_Destroyed 10049080);
+    /// a building does not (BuildingClass_Destroyed_UnitLost 10013F10).
+    #[cfg(feature = "ares")]
+    pub radar_event: bool,
 }
 
 /// One ordered accumulator for weapon emission and recursive receiver effects.

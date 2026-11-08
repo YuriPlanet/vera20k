@@ -368,6 +368,11 @@ pub(crate) enum CursorFeedbackKind {
     /// Sell cursor mode active (sidebar dollar). `true` = an own building is
     /// under the cursor (sell), `false` = no eligible target (no-sell).
     SellMode(bool),
+    /// Ares 3.0 DisplayClass_ChooseAction_CanSell (10057E70, hook 0x6929FC):
+    /// sell mode over the player's own Unit or Aircraft that can be sold
+    /// (`production::foot_can_be_sold`) answers action 0xD, SellUnit.
+    #[cfg(feature = "ares")]
+    SellUnit,
     /// Superweapon targeting reticle — shown while a charged SW is armed
     /// and the cursor is over the tactical map. Payload is the per-SW
     /// CursorId resolved from the `Action=` INI string.

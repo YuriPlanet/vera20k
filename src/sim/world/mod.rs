@@ -700,7 +700,8 @@ pub enum SimSoundEvent {
         kind: crate::sim::house_state::HouseOutcomeKind,
     },
     /// Global `[AudioVisual] SellSound=` for a successful wall-sale event.
-    /// The EventClass receiver can differ from the wall owner.
+    /// The EventClass receiver can differ from the wall owner. A unit's sale
+    /// (`FootClass::On_Sold @ 0x004D9F70`) plays the same cue for its owner.
     WallSold { receiver: InternedId },
     /// A deploy command failed target placement validation.
     /// App layer gates this to the local human player and plays
@@ -832,6 +833,15 @@ pub enum SimSoundEvent {
     UnitLost {
         owner: InternedId,
         radar: RadarEventRequest,
+        /// Ares FootClass_Destroyed (10049080, hook 0x4D98C0) and
+        /// BuildingClass_Destroyed_UnitLost (10013F10, hook 0x44D760): the
+        /// victim type's `EVA.Lost`, spoken whether or not `radar` is
+        /// admitted.
+        #[cfg(feature = "ares")]
+        eva: InternedId,
+        /// Ares: a Foot creates the radar event; a building creates none.
+        #[cfg(feature = "ares")]
+        radar_event: bool,
     },
     /// A `PlayEVA` line native speaks only for the player's house: the
     /// `HouseClass::Update` advice (`EVA_InsufficientFunds` `0x004F8BA0`,
@@ -1399,6 +1409,12 @@ pub struct Simulation {
     #[cfg(feature = "phobos")]
     #[serde(skip, default)]
     pub(crate) reflected_warhead: Option<crate::sim::intern::InternedId>,
+    /// Ares CanMakeStuffUp's RulesClass writes (100677B0, hook 0x687C16),
+    /// drawn once at scenario start; saved and hashed. See
+    /// `sim::ares_make_stuff_up`.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_made_up_rules: Option<crate::sim::ares_make_stuff_up::AresMadeUpRules>,
     /// Scenario RNG — gamemd `Scenario->Random` (Scen+0x218). Drives in-object-tick
     /// sim draws: scatter, sub-cell placement, smudge/destruction, particles,
     /// wall/overlay damage, bridge collapse/destruction presentation, ore growth/spread, TIBTRE,
@@ -1715,6 +1731,11 @@ pub struct Simulation {
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) ares_firestorm: crate::sim::ares_firestorm::FirestormHouses,
+    /// Every House's Ares tunnel networks (HouseExt+0x64); owned by
+    /// `sim::ares_tunnel`, saved and hashed.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_tunnels: crate::sim::ares_tunnel::AresTunnels,
     /// IonBlastClass's vector (`0x00AA0118`), owned by `ion_blast`. Native
     /// saves no blast; Rust retains pending damaging effects for match restore.
     #[serde(
@@ -2482,7 +2503,9 @@ impl Simulation {
         event: &SimFireEvent,
         wave_type: u8,
     ) -> Option<crate::sim::wave::Wave> {
-        debug_assert!(matches!(wave_type, 0 | 3));
+        // Only Ares (TechnoClass_Fire_OtherWaves 10056E60) creates the TS
+        // laser types 1 and 2.
+        debug_assert!(matches!(wave_type, 0 | 3) || (cfg!(feature = "ares") && wave_type < 3));
         let target = match event.target {
             // FireAt aims at the target's vt+0xA4 (`0x006FE1EE`), including
             // a Building's TargetCoordOffset. Wave AI later reads +58 instead.
@@ -2834,9 +2857,14 @@ impl Simulation {
                         .and_then(|index| order.get(index + 1).copied());
                 }
 
-                // ChainReaction's Wave-tail callee is a bare RET. Wall damage
-                // follows receivers and reloads raw AmbientDamage, ignoring
-                // the shared mutable occupant value.
+                // ChainReaction's Wave-tail callee (75F44A..75F45F) is a bare
+                // RET; Ares 3.0 fills it with CellChainReact (10050DD0). Wall
+                // damage follows receivers and reloads raw AmbientDamage,
+                // ignoring the shared mutable occupant value.
+                #[cfg(feature = "ares")]
+                if self.overlay_chain_reacts((rx, ry), overlay_registry) {
+                    self.ares_cell_chain_react((rx, ry), rules, overlay_registry, frame_effects);
+                }
                 if let (Some(grid), Some(registry)) = (self.overlay_grid.as_mut(), overlay_registry)
                     && let Some(overlay_id) = grid.cell(rx, ry).overlay_id
                     && let Some(flags) = registry.flags(overlay_id)
@@ -3346,9 +3374,15 @@ impl Simulation {
             if !self.owner_is_human(event.owner) {
                 continue;
             }
+            #[cfg(feature = "ares")]
+            let eva = self.interner.intern(&event.eva);
             self.sound_events.emit(SimSoundEvent::UnitLost {
                 owner: event.owner,
                 radar: RadarEventRequest::new(RadarEventType::UnitLost, event.rx, event.ry),
+                #[cfg(feature = "ares")]
+                eva,
+                #[cfg(feature = "ares")]
+                radar_event: event.radar_event,
             });
         }
     }
@@ -4551,6 +4585,8 @@ impl Simulation {
             buildup_bypass: false,
             #[cfg(feature = "phobos")]
             reflected_warhead: None,
+            #[cfg(feature = "ares")]
+            ares_made_up_rules: None,
             scenario_rng: SimRng::new(seed),
             main_rng: MainRng::new(seed),
             mapgen_rng: SimRng::new(0),
@@ -4631,6 +4667,8 @@ impl Simulation {
             ares_chrono_warps: Default::default(),
             #[cfg(feature = "ares")]
             ares_firestorm: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_tunnels: Default::default(),
             ion_blasts: Vec::new(),
             alpha_shapes: Default::default(),
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
@@ -6117,6 +6155,10 @@ impl Simulation {
                     .add_building_drain(drain);
             }
         }
+        // Ares builds: the building's store joins the House's (`0x00502B83`,
+        // `sim::ares_tiberium_storage`).
+        #[cfg(feature = "ares")]
+        self.ares_storage_added_to_game(stable_id, rules);
     }
 
     /// `HouseClass::Removed_From_Game @ 0x005025F0` for an object on its
@@ -6149,6 +6191,12 @@ impl Simulation {
         {
             let factors = house.cost_factors();
             house.tracking_mut().removed_from_game(entity, &factors);
+        }
+        // Ares builds: the building's store leaves the House's
+        // (`0x00502801..0x00502821`, `sim::ares_tiberium_storage`).
+        #[cfg(feature = "ares")]
+        if structure {
+            self.ares_storage_removed_from_game(stable_id, owner);
         }
         if structure {
             Self::invalidate_house_power(&self.houses, &mut self.power_states, owner, false);
@@ -6498,9 +6546,16 @@ impl Simulation {
         // `BuildingClass::ChangeOwner` first (`0x00448277..0x0044828E`): a
         // building changing hands loses its bomb unless it is
         // `CanBeOccupied=`.
-        // Ares hook448277 (100163B0) takes the building out of its Prism
-        // network unless it is a `ToAllies` supporter whose network stays
-        // allied, and then forgets its radar jammers.
+        // Ares hook448277 (100163B0) first kicks out a Hospital's or
+        // Armory's first passenger (BuildingExt::KickOutHospitalArmory
+        // 10012920), with the old owner still in place.
+        #[cfg(feature = "ares")]
+        if category == EntityCategory::Structure {
+            self.ares_kick_out_hospital_armory(stable_id, rules, registry, effects);
+        }
+        // It then takes the building out of its Prism network unless it is
+        // a `ToAllies` supporter whose network stays allied, and then
+        // forgets its radar jammers.
         #[cfg(feature = "ares")]
         if category == EntityCategory::Structure
             && self.ares_prism_change_owner(stable_id, new_owner, rules)

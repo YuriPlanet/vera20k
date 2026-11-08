@@ -131,6 +131,14 @@ fn native_bounce_ground_deck_contacts_match_original_update() {
     .unwrap();
     assert_eq!(cases.as_array().unwrap().len(), 48);
     let rules = fixture_rules();
+    let native_case = |name: &str| {
+        cases
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == name)
+            .unwrap()
+    };
     let mut issues = Vec::new();
     macro_rules! check_eq {
         ($actual:expr,$expected:expr,$($message:tt)*) => {{
@@ -168,9 +176,18 @@ fn native_bounce_ground_deck_contacts_match_original_update() {
             events: Default::default(),
         };
         let outcome = state.update(&terrain).unwrap();
+        // Ares 3.0 CellClass_AttachesToNeighbourOverlay 10015740 (hook
+        // 0x480534) answers the any-wall query by `Wall=`, which the retail
+        // GASAND has: the sandbag cell then takes the update the native wall
+        // case (same cell, GAWALL) records.
+        let expected = if cfg!(feature = "ares") && case["name"] == "sandbag" {
+            native_case("wall")
+        } else {
+            case
+        };
         check_eq!(
             serde_json::Value::Array(terrain.events.into_inner()),
-            case["events"],
+            expected["events"],
             "{} lookup order",
             case["name"]
         );
@@ -181,7 +198,7 @@ fn native_bounce_ground_deck_contacts_match_original_update() {
         };
         check_eq!(
             native_outcome,
-            case["outcome"].as_u64().unwrap(),
+            expected["outcome"].as_u64().unwrap(),
             "{} outcome",
             case["name"]
         );
@@ -191,19 +208,19 @@ fn native_bounce_ground_deck_contacts_match_original_update() {
         ] {
             for i in 0..3 {
                 let actual = values[i].bits();
-                let expected = case[key][i].as_u64().unwrap() as u32;
+                let native_bits = expected[key][i].as_u64().unwrap() as u32;
                 if key == "velocity_bits" {
                     // Existing flat reflection collapses identity matrices and
                     // loses native signed zero. Physics-bit parity is excluded;
                     // require exact finite numeric equality, no tolerance.
                     check_eq!(
                         f32::from_bits(actual),
-                        f32::from_bits(expected),
+                        f32::from_bits(native_bits),
                         "{} {key}[{i}] (signed zero excluded)",
                         case["name"]
                     );
                 } else {
-                    check_eq!(actual, expected, "{} {key}[{i}]", case["name"]);
+                    check_eq!(actual, native_bits, "{} {key}[{i}]", case["name"]);
                 }
             }
         }
@@ -215,8 +232,8 @@ fn native_bounce_ground_deck_contacts_match_original_update() {
         check_eq!(
             actual,
             (
-                case["dummy_coord"][0].as_i64().unwrap() as i32,
-                case["dummy_coord"][1].as_i64().unwrap() as i32
+                expected["dummy_coord"][0].as_i64().unwrap() as i32,
+                expected["dummy_coord"][1].as_i64().unwrap() as i32
             ),
             "{} dummy",
             case["name"]
@@ -225,9 +242,32 @@ fn native_bounce_ground_deck_contacts_match_original_update() {
     assert!(issues.is_empty(), "{}", issues.join("\n"));
 }
 
+/// The oracle's overlay indices in the retail `[OverlayTypes]` declaration
+/// order: GASAND 0, GAWALL 2, NAWALL 26 and GAFWLL 243 are `Wall=yes`,
+/// BRIDGEB1 237 is not. The stock any-wall query tests the raw indices; the
+/// Ares one (hook 0x480534) reads these flags.
+fn fixture_overlay_types() -> String {
+    let name = |index: usize| match index {
+        0 => "GASAND".to_owned(),
+        2 => "GAWALL".to_owned(),
+        26 => "NAWALL".to_owned(),
+        237 => "BRIDGEB1".to_owned(),
+        243 => "GAFWLL".to_owned(),
+        _ => format!("OVERLAY{index}"),
+    };
+    let mut text = String::from("[OverlayTypes]\n");
+    for index in 0..=243 {
+        text.push_str(&format!("{index}={}\n", name(index)));
+    }
+    for wall in ["GASAND", "GAWALL", "NAWALL", "GAFWLL"] {
+        text.push_str(&format!("[{wall}]\nWall=yes\n"));
+    }
+    text
+}
+
 fn fixture_rules() -> RuleSet {
-    RuleSet::from_ini_with_fixed_art_for_test(&crate::rules::ini_parser::IniFile::from_str(
-        "[BuildingTypes]\n0=building\n1=undeploy\n2=large_undeploy\n[VehicleTypes]\n0=nonbuilding\n[building]\nName=Building\n[undeploy]\nUndeploysInto=nonbuilding\n[large_undeploy]\nUndeploysInto=nonbuilding\n[nonbuilding]\nSpeed=5\n[VoxelAnims]\n0=TIRE\n[TIRE]\nElasticity=0.8\nMinZVel=28\nMaxZVel=32\nMaxXYVel=10\nDuration=150\n"), &crate::rules::ini_parser::IniFile::from_str("[building]\nFoundation=1x1\n[undeploy]\nFoundation=1x1\n[large_undeploy]\nFoundation=2x2\n")).unwrap()
+    RuleSet::from_ini_with_fixed_art_for_test(&crate::rules::ini_parser::IniFile::from_str(&format!(
+        "{}[BuildingTypes]\n0=building\n1=undeploy\n2=large_undeploy\n[VehicleTypes]\n0=nonbuilding\n[building]\nName=Building\n[undeploy]\nUndeploysInto=nonbuilding\n[large_undeploy]\nUndeploysInto=nonbuilding\n[nonbuilding]\nSpeed=5\n[VoxelAnims]\n0=TIRE\n[TIRE]\nElasticity=0.8\nMinZVel=28\nMaxZVel=32\nMaxXYVel=10\nDuration=150\n", fixture_overlay_types())), &crate::rules::ini_parser::IniFile::from_str("[building]\nFoundation=1x1\n[undeploy]\nFoundation=1x1\n[large_undeploy]\nFoundation=2x2\n")).unwrap()
 }
 struct RecordingTerrain<'a> {
     inner: ResolvedBounceTerrain<'a>,

@@ -1397,7 +1397,7 @@ fn sample_weapon_wave_draw(
     };
     let points: &mut [[i32; 2]] = match &mut draw.polygon {
         WavePolygon::Magnetic(points) => points,
-        WavePolygon::Sonic(points) => points,
+        WavePolygon::Sonic(points) | WavePolygon::Laser(points) => points,
     };
     for (i, p) in points.iter_mut().enumerate() {
         *p = sample(i as u8, *p);
@@ -1631,7 +1631,7 @@ mod tests {
             let mut current = old;
             let points: &mut [[i32; 2]] = match &mut current.polygon {
                 WavePolygon::Magnetic(points) => points,
-                WavePolygon::Sonic(points) => points,
+                WavePolygon::Sonic(points) | WavePolygon::Laser(points) => points,
             };
             for point in points {
                 point[0] += 12;

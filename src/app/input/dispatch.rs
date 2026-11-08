@@ -1146,6 +1146,8 @@ pub(crate) fn push_local_eva(state: &mut AppState, event: &str) {
 /// gamemd reads the modifier for the right button only (`0x006AAD66`), so an
 /// unshifted or right-button press is byte-for-byte the ported decision. The
 /// sound and the EVA line are spoken once per click regardless of the repeat.
+/// An `ares` build repeats on Shift without the option, five copies
+/// ([`sidebar_eva::produce_copies`]).
 fn sidebar_cameo_press(
     state: &mut AppState,
     type_id: &str,
@@ -1275,13 +1277,15 @@ fn sidebar_cameo_press(
         Some(sidebar_eva::CameoOrder::Produce) => {
             // The copies carry the current tick, so they execute in one frame in
             // issue order; the sound and EVA above were spoken once. Shift
-            // repeats only while the Options page's Shift-Click Batch Queue
-            // (`[VERA] ShiftQueue=`) is ticked, `[VERA] ShiftQueueCount=` times.
+            // repeats while the Options page's Shift-Click Batch Queue
+            // (`[VERA] ShiftQueue=`) is ticked, `[VERA] ShiftQueueCount=` times,
+            // and in an `ares` build always (Ares.dll 10064520, hook 0x6AB773).
             let profile = &state.persistence.options_profile;
-            let repeat = sidebar_eva::shift_queue_repeat_with_queue(
+            let repeat = sidebar_eva::produce_copies(
                 category,
                 own_for_repeat,
-                shift && profile.shift_queue,
+                shift,
+                profile.shift_queue,
                 profile.shift_queue_count,
                 building_production_queue,
             );

@@ -77,6 +77,10 @@ pub enum SuperWeaponKind {
     /// that raises its owner's firestorm while it drains
     /// (`sim::ares_firestorm`).
     Firestorm,
+    /// Ares `Type=DropPod` (SW_DropPod): drops random
+    /// `DropPod.Types` units around the cell in drop pods
+    /// (`sim::superweapon::drop_pod`).
+    DropPod,
     /// Constructor Type=-1: no recognized name has replaced it. Launch's
     /// unsigned guard6CC3AC returns without a case; ordinary ClickFire still
     /// consumes readiness or its one-time grant. This is not an extension.
@@ -177,6 +181,7 @@ impl SuperWeaponKind {
                 | Self::SonarPulse
                 | Self::EMPulse
                 | Self::Firestorm
+                | Self::DropPod
         )
     }
 
@@ -202,6 +207,7 @@ impl SuperWeaponKind {
             Self::SonarPulse => 0x105,
             Self::EMPulse => 0x106,
             Self::Firestorm => 0x107,
+            Self::DropPod => 0x108,
             Self::GenericWarhead => -1,
             Self::NoEffect => -1,
         }
@@ -239,6 +245,9 @@ impl SuperWeaponKind {
             // SW_Firewall::GetTypeString 1006D7E0.
             #[cfg(feature = "ares")]
             "firestorm" => Some(Self::Firestorm),
+            // SW_DropPod::GetTypeString 1006D7C0.
+            #[cfg(feature = "ares")]
+            "droppod" => Some(Self::DropPod),
             _ => None,
         }
     }
@@ -891,6 +900,10 @@ impl SuperWeaponType {
                 #[cfg(feature = "ares")]
                 SuperWeaponKind::EMPulse => (!section.read_ares_bool("EMPulse.TargetSelf", false))
                     .then(|| "Attack".to_string()),
+                // SW_DropPod::Initialize100710F0: the custom action with the
+                // ParaDrop cursor (SW_Cursor); VERA names that cursor by action.
+                #[cfg(feature = "ares")]
+                SuperWeaponKind::DropPod => Some("ParaDrop".to_string()),
                 #[cfg(feature = "ares")]
                 SuperWeaponKind::UnitDelivery => Some(
                     section
@@ -1262,6 +1275,97 @@ pub(crate) struct AresDropPodGlobalRules {
     pub(crate) types: Vec<TechnoTypeReference>,
     pub(crate) minimum: i32,
     pub(crate) maximum: i32,
+    /// The stock RulesClass keys of the DropPod locomotor.
+    #[serde(default)]
+    pub(crate) locomotor: DropPodLocomotorRules,
+}
+
+/// The stock RulesClass keys the DropPod locomotor reads, kept only in an
+/// Ares build: no stock path installs that locomotor (its CLSID's one
+/// installer `0x004DB8A0` has no references), so only SW_DropPod reaches
+/// them. ReadGeneral (`0x0066D530`) reads `DropPod=` (+0x108, an AnimType
+/// list), `DropPodWeapon=` (+0x5A4), `DropPodHeight=` (+0x5A8, constructor
+/// 1500), `DropPodSpeed=` (+0x5AC, constructor 40) and `DropPodAngle=`
+/// (+0x5B0, constructor pi/2, clamped into [pi/8, 3pi/8] after every read);
+/// ReadAudioVisual (`0x006691E0`) reads `DropPodPuff=` (+0x4C) and
+/// `AtmosphereEntry=` (+0x354). Each read keeps the current value when the
+/// key is absent; the pointers are the processor's FindOrAllocate (None:
+/// null, also after a `none` value).
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DropPodLocomotorRules {
+    pub(crate) anims: Vec<String>,
+    pub(crate) weapon: Option<String>,
+    pub(crate) height: i32,
+    pub(crate) speed: i32,
+    pub(crate) angle: crate::util::native_x87::NativeF64Bits,
+    pub(crate) puff: Option<String>,
+    pub(crate) atmosphere_entry: Option<String>,
+}
+
+#[cfg(feature = "ares")]
+impl Default for DropPodLocomotorRules {
+    /// RulesClass constructor (`0x00665650`): null pointers, an empty list,
+    /// 1500, 40 and pi/2 (`0x3FF921FB54442D18`).
+    fn default() -> Self {
+        Self {
+            anims: Vec::new(),
+            weapon: None,
+            height: 1500,
+            speed: 40,
+            angle: crate::util::native_x87::NativeF64Bits::from_bits(0x3FF9_21FB_5444_2D18),
+            puff: None,
+            atmosphere_entry: None,
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl DropPodLocomotorRules {
+    /// 3pi/8 and pi/8, ReadGeneral's DropPodAngle bounds.
+    const ANGLE_MAX: f64 = 1.1780972450961724;
+    const ANGLE_MIN: f64 = 0.39269908169872414;
+
+    /// ReadGeneral's scalar reads: ReadInt for Height and Speed, ReadDouble
+    /// for Angle, then `if (3pi/8 <= a) a = 3pi/8; if (a <= pi/8) a = pi/8`.
+    pub(crate) fn read_general(&mut self, general: &IniSection) {
+        self.height = general.read_int("DropPodHeight", self.height);
+        self.speed = general.read_int("DropPodSpeed", self.speed);
+        let mut angle = f64::from_bits(general.read_double_bits("DropPodAngle", self.angle).bits());
+        if Self::ANGLE_MAX <= angle {
+            angle = Self::ANGLE_MAX;
+        }
+        if angle <= Self::ANGLE_MIN {
+            angle = Self::ANGLE_MIN;
+        }
+        self.angle = crate::util::native_x87::NativeF64Bits::from_bits(angle.to_bits());
+    }
+
+    /// `DropPod=`: an empty read keeps the list.
+    pub(crate) fn read_anims(&mut self, resolved: Option<Vec<String>>) {
+        if let Some(anims) = resolved {
+            self.anims = anims;
+        }
+    }
+
+    /// `DropPodWeapon=`: an empty read keeps the pointer.
+    pub(crate) fn read_weapon(&mut self, resolved: Option<Option<String>>) {
+        if let Some(weapon) = resolved {
+            self.weapon = weapon;
+        }
+    }
+
+    /// ReadAudioVisual's `DropPodPuff=` and `AtmosphereEntry=`.
+    pub(crate) fn read_audio_visual(&mut self, key: &str, resolved: Option<Option<String>>) {
+        let Some(resolved) = resolved else {
+            return;
+        };
+        match key {
+            "DropPodPuff" => self.puff = resolved,
+            "AtmosphereEntry" => self.atmosphere_entry = resolved,
+            _ => {}
+        }
+    }
 }
 
 #[cfg(feature = "ares")]
@@ -2035,10 +2139,8 @@ impl AresSuperWeaponLaunch {
         &self.emp_pulse
     }
 
-    /// SW_DropPod's fields. RESIDUAL consumer: SW_DropPod::Activate
-    /// (10070E40), which needs the DropPod locomotor
-    /// (`docs/ares-superweapon-types.md`, part 4).
-    #[allow(dead_code)]
+    /// SW_DropPod's fields, read by its Activate (10070E40,
+    /// `sim::superweapon::drop_pod`).
     pub(crate) fn drop_pod(&self) -> &AresDropPodRules {
         &self.drop_pod
     }
@@ -2591,5 +2693,19 @@ Type=BogusType
         assert_eq!(stock.money_amount, 0);
         assert!(stock.generic_warhead.is_none());
         assert!(stock.unit_delivery.is_none());
+    }
+
+    /// Without the capability `Type=DropPod` names no Type: the stock reader
+    /// keeps the constructor's -1, so nothing drops (Ares SW_DropPod
+    /// `1006D7C0` is absent).
+    #[cfg(not(feature = "ares"))]
+    #[test]
+    fn default_build_reads_type_drop_pod_as_no_type() {
+        let ini = crate::rules::ini_parser::IniFile::from_str(
+            "[Drop]\nType=DropPod\nDropPod.Types=MTNK\n",
+        );
+        let sw = SuperWeaponType::from_ini_section("Drop", ini.section("Drop").unwrap());
+        assert_eq!(sw.kind, SuperWeaponKind::NoEffect);
+        assert!(!sw.kind.is_extension());
     }
 }

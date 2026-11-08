@@ -13,11 +13,15 @@
 //!   scatter magnitude (`10019930`, `10019980`).
 //! - The stock ObjectType `IgnoresFirestorm=`, which only the Ares firestorm
 //!   walls read of a projectile (`sim::ares_firestorm`).
+//! - `Splits`, `RetargetSelf`, `RetargetAccuracy`, `AirburstSpread` and
+//!   `AroundTarget` (`+0x1C`..`+0x30`): the airburst and split children of
+//!   BulletClass_DetonateAt_Splits (`1001A090`, `sim::combat::airburst`).
 //!
 //! ## Dependency rules
 //! - Part of rules/ — no dependencies on sim/, render/, ui/, audio/, etc.
 
 use crate::rules::ini_parser::IniSection;
+use crate::util::native_x87::NativeF64Bits;
 
 /// The BulletTypeExt fields VERA consumes. The constructor
 /// (`BulletTypeExt::ExtMap.FindOrAllocate @ 100192C0`) clears
@@ -47,6 +51,19 @@ pub(crate) struct BulletTypeExtRules {
     /// `AnimRate` (BulletClass_GetAnimFrame, Ares.dll 1001A840, hook
     /// 0x468000).
     pub(crate) anim_length: i32,
+    /// `Splits` (`+0x1C`, Valueable<bool>, false): split children target
+    /// nearby Technos instead of each cell around the burst.
+    pub(crate) splits: bool,
+    /// `RetargetSelf` (`+0x1D`, Valueable<bool>, true): the firer may be a
+    /// split target.
+    pub(crate) retarget_self: bool,
+    /// `RetargetAccuracy` (`+0x20`, Valueable<double>, 0.0).
+    pub(crate) retarget_accuracy: NativeF64Bits,
+    /// `AirburstSpread` (`+0x28`, Valueable<double>, 1.5): the radius in
+    /// cells of a non-split airburst.
+    pub(crate) airburst_spread: NativeF64Bits,
+    /// `AroundTarget` (`+0x30`, Nullable<bool>; unset takes `Splits`).
+    pub(crate) around_target: Option<bool>,
 }
 
 impl Default for BulletTypeExtRules {
@@ -59,6 +76,11 @@ impl Default for BulletTypeExtRules {
             ballistic_scatter_max: None,
             ignores_firestorm: false,
             anim_length: 0,
+            splits: false,
+            retarget_self: true,
+            retarget_accuracy: NativeF64Bits::from_bits(0.0_f64.to_bits()),
+            airburst_spread: NativeF64Bits::from_bits(1.5_f64.to_bits()),
+            around_target: None,
         }
     }
 }
@@ -78,6 +100,12 @@ impl BulletTypeExtRules {
         ext.ballistic_scatter_max =
             section.read_ares_nullable_leptons("BallisticScatter.Max", ext.ballistic_scatter_max);
         ext.anim_length = section.read_ares_int("AnimLength", ext.anim_length);
+        ext.airburst_spread = section.read_ares_double_bits("AirburstSpread", ext.airburst_spread);
+        ext.retarget_accuracy =
+            section.read_ares_double_bits("RetargetAccuracy", ext.retarget_accuracy);
+        ext.splits = section.read_ares_bool("Splits", ext.splits);
+        ext.retarget_self = section.read_ares_bool("RetargetSelf", ext.retarget_self);
+        ext.around_target = section.read_ares_nullable_bool("AroundTarget", ext.around_target);
         ext.ignores_firestorm = section.read_bool("IgnoresFirestorm", ext.ignores_firestorm);
         ext
     }
@@ -135,5 +163,23 @@ mod tests {
         );
         assert_eq!(ext("MIN").launch_scatter_bounds(false, 0x101), (256, 0x101));
         assert_eq!(ext("BOTH").launch_scatter_bounds(true, 0x101), (128, 640));
+    }
+
+    /// 100193C0's split keys over the constructor's Splits=false,
+    /// RetargetSelf=true, RetargetAccuracy=0.0, AirburstSpread=1.5 and an
+    /// unset AroundTarget; an invalid value keeps the current one.
+    #[test]
+    fn split_keys_read_over_the_constructor_defaults() {
+        let ini = IniFile::from_str(
+            "[SET]\nSplits=yes\nRetargetSelf=no\nRetargetAccuracy=0.25\n\
+             AirburstSpread=2.5\nAroundTarget=no\n[BAD]\nSplits=maybe\nAroundTarget=x\n",
+        );
+        let set = BulletTypeExtRules::from_section(ini.section("SET").unwrap());
+        assert!(set.splits && !set.retarget_self);
+        assert_eq!(f64::from_bits(set.retarget_accuracy.bits()), 0.25);
+        assert_eq!(f64::from_bits(set.airburst_spread.bits()), 2.5);
+        assert_eq!(set.around_target, Some(false));
+        let bad = BulletTypeExtRules::from_section(ini.section("BAD").unwrap());
+        assert_eq!(bad, BulletTypeExtRules::default());
     }
 }

@@ -186,7 +186,7 @@ impl Simulation {
             .get(target)
             .and_then(|entity| self.interner.object_type(entity.type_ref(), rules))
             .map_or(1.0, |object| object.size);
-        let boarded = self.ares_abduct_into_hold(target, owner, size, rider, context);
+        let boarded = self.ares_abduct_into_hold(target, owner, size, rider, true, context);
         log::info!("ABDUCT {target} into {owner}: {boarded}");
         // The trigger events after AddPassenger and Undiscover: 72 (abducted
         // by House, source the abductor) and 71 on the abductee, then 74

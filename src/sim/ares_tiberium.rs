@@ -12,15 +12,20 @@
 //!   harvester blast of `UnitClass::Death_Explosion @ 0x00738680`
 //!   (`1004BD90`, hook `0x738749`).
 //!
-//! Retail sets none of TiberiumDamageEnabled, TiberiumHealEnabled,
-//! TiberiumSpill, TiberiumRemains or TiberiumExplosive, so all stay dormant
-//! there.
+//! - Chain reactions: Ares' `CellChainReact @ 10050DD0` fills the stock RET
+//!   of `CellChainReaction__Request @ 0x00489270`. Its callers are
+//!   Apply_area_damage's cell spread (Ares hook `0x48964F`, `10051000`),
+//!   the SpawnsTiberium terrain death (`0x0071BACD`) and the wave cell tail
+//!   (`0x0075F44A..0x0075F45F`).
 //!
-//! RESIDUAL: a Foot the tiberium kills becomes a neutral `[General]
-//! SmallVisceroid` (`TechnoExt::SpawnVisceroid @ 100468B0`) only on a map
-//! whose `[Basic] TiberiumDeathToVisceroid` (Scenario+0x34B3) is set, with
-//! one `RandomRanged(0, 99) < TiberiumTransmogrify` draw. VERA does not read
-//! that map flag, so it takes the unset arm: no draw and no visceroid.
+//! Retail sets none of TiberiumDamageEnabled, TiberiumHealEnabled,
+//! TiberiumSpill, TiberiumRemains or TiberiumExplosive, and no tiberium
+//! overlay has `ChainReaction=yes`, so all stay dormant there.
+//!
+//! - Visceroid: a Foot the tiberium damage kills may become a neutral
+//!   `[General] SmallVisceroid` (`TechnoExt::SpawnVisceroid @ 100468B0`,
+//!   called from `10049280`) on a map whose `[Basic]
+//!   TiberiumDeathToVisceroid` (Scenario+0x34B3, default true) holds.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ares_tiberium::HealStepKind;
@@ -30,9 +35,10 @@ use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
 use crate::rules::tiberium_type::{TiberiumType, TiberiumTypeId};
 use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
+use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::miner::CargoBale;
-use crate::sim::world::{FrameEffects, Simulation};
+use crate::sim::world::{FrameEffects, PlacementEvidence, Simulation};
 use crate::util::native_x87::MaskedX87Chop53 as X87;
 
 /// The bales of a techno's Storage (`TechnoClass+0x33C`): a harvester's
@@ -114,9 +120,12 @@ impl Simulation {
     /// takes that tiberium's `Damage` with its `Warhead` (TiberiumExt
     /// getters) unless it is `TiberiumProof` (default: everything but
     /// infantry) or holds the TIBERIUM_PROOF ability. The ReceiveDamage has
-    /// no attacker, distance 0 and both flags false. Returns whether the
-    /// call killed it, in which case Per_Cell_Process returns at once
-    /// (`0x4D8F29`).
+    /// no attacker, distance 0 and both flags false. When it kills the Foot,
+    /// a set `[General] SmallVisceroid` may take its place at the GetCoords
+    /// taken before the damage ([`Self::ares_spawn_visceroid`], chance
+    /// `TiberiumTransmogrify`, else `[General] TiberiumTransmogrify`).
+    /// Returns whether the call killed it, in which case Per_Cell_Process
+    /// returns at once (`0x4D8F29`).
     pub(crate) fn ares_foot_tiberium_damage(
         &mut self,
         id: u64,
@@ -162,6 +171,14 @@ impl Simulation {
         if damage == 0 {
             return false;
         }
+        let transmogrify = object
+            .techno_combat()
+            .tiberium()
+            .tiberium_transmogrify(rules.general.tiberium_transmogrify);
+        let coord = crate::sim::movement::ground_pose::object_get_coords(
+            entity,
+            self.resolved_terrain.as_ref(),
+        );
         let warhead_ref = self.interner.intern(&warhead.id);
         let receiver = EntityDamageEvent::direct_receiver(
             id,
@@ -176,10 +193,92 @@ impl Simulation {
             },
         );
         self.commit_direct_damage_receiver(rules, registry, receiver, effects);
-        self.substrate
+        let killed = self
+            .substrate
             .entities
             .get(id)
-            .is_none_or(|entity| !entity.lifecycle.object_alive())
+            .is_none_or(|entity| !entity.lifecycle.object_alive());
+        // 3.0 skips the visceroid when SmallVisceroid is null.
+        if killed && let Some(visceroid) = rules.general.small_visceroid.as_deref() {
+            self.ares_spawn_visceroid(
+                coord,
+                visceroid,
+                transmogrify,
+                false,
+                rules,
+                registry,
+                effects,
+            );
+        }
+        killed
+    }
+
+    /// Ares 3.0 `TechnoExt::SpawnVisceroid @ 100468B0`. Unless
+    /// `ignore_map_flag`, it needs the map's `TiberiumDeathToVisceroid`
+    /// (Scenario+0x34B3). It then draws `RandomRanged(0, 99)` from the
+    /// Scenario RNG; when the cell of `coord` holds no unit (OccupationFlags
+    /// bit 0x20) and the draw is below `chance`, the House of the `Neutral`
+    /// country (`HouseClass::FindNeutral`: `HouseTypeClass::FindIndexOfName
+    /// @ 0x005117D0`, `FindByCountryIndex @ 0x00502D30`) creates `visceroid`
+    /// and Puts it at `coord` facing 0 with `IKnowWhatImDoing` raised.
+    /// Returns whether it created the object.
+    ///
+    /// RESIDUAL: 3.0 keeps (leaks) an object whose Put fails and still
+    /// returns true; VERA deletes it. A coordinate off the map creates none.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn ares_spawn_visceroid(
+        &mut self,
+        coord: DriveCoord,
+        visceroid: &str,
+        chance: i32,
+        ignore_map_flag: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        if !ignore_map_flag && !self.session.tiberium_death_to_visceroid() {
+            return false;
+        }
+        let roll = self.scenario_rng.next_range_i32_inclusive(0, 99);
+        let (Ok(rx), Ok(ry)) = (u16::try_from(coord.x / 256), u16::try_from(coord.y / 256)) else {
+            return false;
+        };
+        let unit_in_cell = self.substrate.raw_cell_occupation.ground_bits(rx, ry)
+            & crate::sim::occupancy::VEHICLE_OCCUPATION_BIT
+            != 0;
+        if unit_in_cell || roll >= chance {
+            return false;
+        }
+        let Some(owner) = rules
+            .country_index_of_name("Neutral")
+            .and_then(|country| self.house_by_country_index(country, rules))
+        else {
+            return false;
+        };
+        let owner = self.interner.resolve(owner).to_owned();
+        let level =
+            u8::try_from(coord.z / crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS).unwrap_or(0);
+        let Some(created) = self
+            .construct_object_limbo_at_height(visceroid, &owner, rx, ry, 0, level, rules, effects)
+        else {
+            return false;
+        };
+        let placed = self.with_object_placement_scope(|sim| {
+            sim.reveal_constructed_object_at_coord_with_overlay_context(
+                created,
+                coord,
+                0,
+                PlacementEvidence::FootEntryAdmitted,
+                rules,
+                registry,
+                effects,
+            )
+            .is_some()
+        });
+        if !placed {
+            self.discard_constructed_limbo(created, rules, effects);
+        }
+        true
     }
 
     /// Ares 3.0 10014BA0 (hook 0x4DA53E), the tiberium arm: a live
@@ -429,6 +528,221 @@ impl Simulation {
                 0,
                 0x2600,
                 -15,
+            );
+        }
+    }
+}
+
+impl Simulation {
+    /// Ares 3.0 DamageArea_ChainReaction (10051000, hook 0x48964F): in
+    /// Apply_area_damage's cell spread walk, a cell whose `ChainReaction=yes`
+    /// overlay the blast may reduce (a Tiberium overlay needs a `Tiberium=yes`
+    /// warhead, and the call must affect tiberium) chain-reacts before its
+    /// Reduce_Tiberium. The spread cell is the impact cell plus `(dx, dy)`
+    /// through the same `MapClass::GetCellAt` lookup the walk uses; the
+    /// shared Dummy has no overlay. A non-tiberium overlay passes the hook
+    /// but CellChainReact ignores it.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn ares_area_damage_chain_reaction(
+        &mut self,
+        impact: (u16, u16),
+        offset: (i16, i16),
+        warhead: &crate::rules::warhead_type::WarheadType,
+        affects_tiberium: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        if !affects_tiberium || !warhead.tiberium {
+            return;
+        }
+        let requested = (
+            (impact.0 as i16).wrapping_add(offset.0),
+            (impact.1 as i16).wrapping_add(offset.1),
+        );
+        let cell = match self.resolved_terrain.as_ref() {
+            Some(terrain) => {
+                let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                match cells.lookup(requested) {
+                    real @ crate::map::cell_index::NativeCellIdentity::Real(_) => {
+                        let coord = cells.coord(real);
+                        (coord.0 as u16, coord.1 as u16)
+                    }
+                    crate::map::cell_index::NativeCellIdentity::Dummy => return,
+                }
+            }
+            None => (requested.0 as u16, requested.1 as u16),
+        };
+        self.ares_cell_chain_react(cell, rules, registry, effects);
+    }
+
+    /// `CellClass::GetCoords` (`0x00486840`) of the cell `MapClass::GetCellAt`
+    /// returns for `cell`.
+    fn cell_get_coords(&self, cell: (u16, u16)) -> DriveCoord {
+        let cells = self
+            .resolved_terrain
+            .as_ref()
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        crate::sim::movement::navcom::target_cell_coord(cell.0, cell.1, cells.as_ref())
+    }
+
+    /// Whether `cell`'s overlay is `ChainReaction=yes` (the stock gate of the
+    /// wave cell tail, `0x0075F44A`).
+    pub(crate) fn overlay_chain_reacts(
+        &self,
+        cell: (u16, u16),
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> bool {
+        self.overlay_grid
+            .as_ref()
+            .zip(registry)
+            .and_then(|(grid, registry)| {
+                grid.cell(cell.0, cell.1)
+                    .overlay_id
+                    .and_then(|id| registry.flags(id))
+            })
+            .is_some_and(|flags| flags.chain_reaction)
+    }
+
+    /// Ares 3.0 CellChainReact (10050DD0, the body of `0x00489270`): a cell
+    /// holding tiberium under a `ChainReaction=yes` overlay at density
+    /// (Powerup) 2 or more reacts when `RandomRanged(0, 99) < 5 * density`.
+    /// It then loses `density / 2`, which times the mineral's `Power` is the
+    /// damage. The mineral's ExplosionWarhead (else C4Warhead) picks a
+    /// damage anim for `4 * damage` on the cell's LandType, built at the
+    /// cell's GetCoords (delay 0, loop 1, flags 0x600, zAdjust 0), and deals
+    /// Apply_area_damage there (no source or house, tiberium untouched).
+    /// With an `INVISO` AnimType, each neighbour in directions 0..7 holding
+    /// tiberium above density 2 gets an `INVISO` anim with 80% chance
+    /// (`RandomRanged(0, 99) < 80`), delayed `RandomRanged(15, 120)`
+    /// frames; INVISO's anim damage carries the reaction on. A cell that was
+    /// full grown (11) re-registers for growth (`AddToGrowthQueue @
+    /// 0x007235A0`).
+    ///
+    /// RESIDUAL: an explicit `ExplosionWarhead=none` hands the native anim
+    /// selector and Apply_area_damage a null warhead (a crash); VERA builds no
+    /// anim and deals no damage then.
+    pub(crate) fn ares_cell_chain_react(
+        &mut self,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(registry) = registry else {
+            return;
+        };
+        if !self.overlay_chain_reacts(cell, Some(registry)) {
+            return;
+        }
+        let Some(view) = self.overlay_grid.as_ref().and_then(|grid| {
+            crate::sim::tiberium::tiberium_cell_view(grid, registry, &rules.tiberium_types, cell)
+        }) else {
+            return;
+        };
+        let density = view.overlay_data;
+        let Some(tiberium) = rules.tiberium_types.get(view.tiberium_type) else {
+            return;
+        };
+        if density < 2
+            || self.scenario_rng.next_range_i32_inclusive(0, 99) >= 5 * i32::from(density)
+        {
+            return;
+        }
+        let was_full_grown = density >= 11;
+        let delta = density / 2;
+        let damage = tiberium.power.wrapping_mul(i32::from(delta));
+        if let Some(grid) = self.overlay_grid.as_mut() {
+            grid.set_overlay_data(cell.0, cell.1, density - delta);
+        }
+        self.dirty_cells.mark_tactical_once(cell);
+
+        let coord = self.cell_get_coords(cell);
+        let impact = crate::sim::projectile::ProjectileCoord::new(coord.x, coord.y, coord.z);
+        let anim_coord = crate::sim::anim_class::AnimWorldCoord {
+            x: coord.x,
+            y: coord.y,
+            z: coord.z,
+        };
+        let c4 = Some(rules.bridge_warheads.c4_name.as_str());
+        if let Some(warhead) = tiberium
+            .ares()
+            .explosion_warhead(c4)
+            .and_then(|name| rules.warhead(name))
+        {
+            let land = crate::sim::combat::detonation_anim::land_at(self, impact);
+            if let Some(anim) = crate::sim::combat::detonation_anim::select(
+                self,
+                rules,
+                warhead,
+                damage.wrapping_mul(4),
+                land,
+                impact,
+                false,
+            ) {
+                let anim = self.interner.resolve(anim).to_owned();
+                self.spawn_named_anim(rules, &anim, anim_coord, 0, 0x600, 0);
+            }
+            let warhead_ref = self.interner.intern(&warhead.id);
+            crate::sim::combat::world_receiver::apply_area_damage(
+                self,
+                rules,
+                Some(registry),
+                impact,
+                damage,
+                warhead,
+                false,
+                (RAD_NO_ATTACKER, None, warhead_ref),
+                effects,
+            );
+        }
+
+        // `AnimTypeClass::Find("INVISO")`: no AnimType, no loop and no draws.
+        if rules.art().anim_runtime_config("INVISO").is_some() {
+            let center = (i32::from(cell.0), i32::from(cell.1));
+            for direction in 0..8 {
+                let neighbour = neighbour_cell(center, direction);
+                let dense = self.overlay_grid.as_ref().is_some_and(|grid| {
+                    crate::sim::tiberium::tiberium_cell_view(
+                        grid,
+                        registry,
+                        &rules.tiberium_types,
+                        neighbour,
+                    )
+                    .is_some_and(|view| view.overlay_data > 2)
+                });
+                if !dense || self.scenario_rng.next_range_i32_inclusive(0, 99) >= 80 {
+                    continue;
+                }
+                let delay = self.scenario_rng.next_range_i32_inclusive(15, 120) as u16;
+                let at = self.cell_get_coords(neighbour);
+                self.spawn_named_anim(
+                    rules,
+                    "INVISO",
+                    crate::sim::anim_class::AnimWorldCoord {
+                        x: at.x,
+                        y: at.y,
+                        z: at.z,
+                    },
+                    delay,
+                    0x600,
+                    0,
+                );
+            }
+        }
+
+        if was_full_grown && let Some(grid) = self.overlay_grid.as_ref() {
+            self.ore_growth_state.add_native_growth_queue_cell(
+                grid,
+                registry,
+                &rules.tiberium_types,
+                self.resolved_terrain.as_ref(),
+                self.ore_growth_config.grows(),
+                view.tiberium_type,
+                cell.0,
+                cell.1,
+                self.session.binary_frame(),
+                &mut self.scenario_rng,
             );
         }
     }

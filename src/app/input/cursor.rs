@@ -244,6 +244,14 @@ pub(crate) fn current_cursor_feedback_kind(
             state.match_state.input.cursor_x,
             state.match_state.input.cursor_y,
         );
+        // Ares 3.0 10057E70 (hook 0x6929FC): an own sellable Unit or
+        // Aircraft answers SellUnit.
+        #[cfg(feature = "ares")]
+        if !repair
+            && crate::app::input::commands::own_sellable_unit_under_point(state, wx, wy).is_some()
+        {
+            return Some(CursorFeedbackKind::SellUnit);
+        }
         let valid = if repair {
             crate::app::input::commands::own_repairable_building_under_point(state, wx, wy)
                 .is_some()
@@ -834,6 +842,15 @@ pub(super) fn capability_cursor_for_hover(
 ) -> CursorFeedbackKind {
     use super::context_order::OrderModifier;
     use crate::map::entities::EntityCategory;
+    // Ares 3.0 100171B0 (hook 0x44725F): Building What_Action answers Enter
+    // before Techno What_Action when the building's occupants may traverse
+    // into the hovered one (canTraverseTo 10011690).
+    #[cfg(feature = "ares")]
+    if let (Some(best_id), Some(rules)) = (best_id, rules)
+        && sim.ares_can_traverse_to(best_id, hover.stable_id, rules)
+    {
+        return CursorFeedbackKind::Enter;
+    }
     // Techno's key rungs ([`super::context_order::object_key_action`]):
     // Shift answers ToggleSelect before every class row.
     let key_action = rules.and_then(|rules| {
@@ -1707,6 +1724,9 @@ pub(crate) fn cursor_id_for_feedback(kind: CursorFeedbackKind) -> Option<CursorI
         } else {
             CursorId::NoSell
         }),
+        // Action 0xD, the SellUnit row.
+        #[cfg(feature = "ares")]
+        CursorFeedbackKind::SellUnit => Some(CursorId::SellUnit),
         CursorFeedbackKind::SuperWeaponTarget(id) => Some(id),
         // Row 0x4E: mouse.sha frames 435..449 at rate 4.
         CursorFeedbackKind::PlaceBeacon => Some(CursorId::Beacon),

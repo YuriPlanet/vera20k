@@ -406,3 +406,36 @@ fn reveal_production_marks_the_building_until_the_spy_owns_it() {
     );
     assert!(!shows(&sim));
 }
+
+/// `SpyEffect.StolenTechIndex` (`10012000`, after the power outage arm): the
+/// spy's house gains the bits, which a `Prerequisite.StolenTechs=` type
+/// needs (RequirementsMet `10021FF0`), and its tech tree is rechecked.
+#[test]
+fn stolen_tech_index_feeds_prerequisite_stolen_techs() {
+    use crate::sim::production::{RequirementStatus, requirements_met};
+    let (mut sim, rules, _owner, spy) = fixture(
+        "[BuildingTypes]\n0=B\n[VehicleTypes]\n0=Q\n\
+         [B]\nStrength=800\nSpyEffect.Custom=yes\nSpyEffect.StolenTechIndex=2,5\n\
+         [Q]\nTechLevel=1\nPrerequisite.StolenTechs=5\n",
+    );
+    let building = sim.spawn_object("B", "H0", 37, 52, 0, &rules).unwrap();
+    let product = rules.object("Q").unwrap();
+    let status = |sim: &Simulation| requirements_met(sim, &rules, spy, &sim.houses[&spy], product);
+    assert_eq!(status(&sim), RequirementStatus::Incomplete);
+    sim.take_sound_events_for_test();
+    for house in sim.houses.values_mut() {
+        house.take_tech_recheck();
+    }
+
+    sim.infiltrate_building(building, spy, &rules);
+
+    assert_eq!(
+        effects(&mut sim),
+        [InfiltrationEffect::Ares(AresInfiltrationArms {
+            tech_stolen: true,
+            ..Default::default()
+        })]
+    );
+    assert!(sim.houses[&spy].tech_recheck_pending());
+    assert_eq!(status(&sim), RequirementStatus::Complete);
+}

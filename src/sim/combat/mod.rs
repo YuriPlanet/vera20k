@@ -25,12 +25,10 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 pub mod aim_coord;
+mod airburst;
 #[cfg(feature = "ares")]
 mod ares_warhead_effects;
 mod attack_target;
-mod airburst;
-#[cfg(feature = "phobos")]
-mod phobos_airburst;
 pub(crate) mod base_defense_response;
 pub mod burst;
 pub(crate) mod cell_spread;
@@ -57,6 +55,8 @@ pub mod laser;
 pub mod line_of_fire;
 mod object_health;
 pub(crate) mod parasite;
+#[cfg(feature = "phobos")]
+mod phobos_airburst;
 mod projectile_delivery;
 pub mod radiation_beam;
 pub(crate) mod railgun;
@@ -108,9 +108,9 @@ mod combat_turret_facing_tests;
 #[cfg(test)]
 mod electric_bolt_tests;
 #[cfg(test)]
-mod fireat_launch_tests;
-#[cfg(test)]
 mod fire_particles_tests;
+#[cfg(test)]
+mod fireat_launch_tests;
 #[cfg(test)]
 mod garrison_oracle_tests;
 #[cfg(test)]
@@ -137,9 +137,9 @@ mod radiation_beam_tests;
 #[cfg(test)]
 mod railgun_tests;
 #[cfg(test)]
-mod shrapnel_chain_tests;
-#[cfg(test)]
 mod screen_shake_tests;
+#[cfg(test)]
+mod shrapnel_chain_tests;
 #[cfg(test)]
 mod unit_damage_response_tests;
 #[cfg(test)]
@@ -158,14 +158,16 @@ pub use in_range::can_fire_at_target;
 pub use in_range::{MaplessTarget, can_fire_at_target_in_query, mapless_in_range};
 pub use object_health::{Health, health_category};
 pub(crate) use projectile_delivery::{FiredBullet, admit_fired_bullet, admit_techno_fired_bullet};
-pub use receiver_call::{DamageWriteback, TerrainDamageEvent};
 pub(crate) use receiver_call::{
     BaseDefenseResponseCallSite, EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags,
     receiver_divisors, wave_post_object_damage,
 };
+pub use receiver_call::{DamageWriteback, TerrainDamageEvent};
 pub(crate) use receiver_health::BerserkState;
 pub(crate) use record_kill::{KillCallback, KillRecord, KillSource};
 pub use techno_death::FatalLifecycleStage;
+#[cfg(feature = "ares")]
+pub(crate) use techno_death::ares_building_lost_event;
 pub(crate) use techno_death::{
     death_announcement_event, death_arm_explodes, death_weapon_detonation, select_death_sound,
 };
@@ -410,7 +412,11 @@ pub(crate) fn health_in_threshold(health: i32, strength: i32, above: f64, below:
         return true;
     }
     let ratio = f64::from(health) / f64::from(strength);
-    (if ratio > 0.0 { ratio > above } else { ratio >= above }) && ratio <= below
+    (if ratio > 0.0 {
+        ratio > above
+    } else {
+        ratio >= above
+    }) && ratio <= below
 }
 
 /// `EnumFunctions::CanTargetHouse` (`EnumFunctions.cpp:5..16`): `All` always

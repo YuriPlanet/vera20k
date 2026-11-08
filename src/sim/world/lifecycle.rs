@@ -1441,6 +1441,28 @@ impl Simulation {
         // skips the building's own construction below.
         #[cfg(feature = "ares")]
         self.construct_spotlight(stable_id, context.rules());
+        // Ares 3.0 FootClass_Put_InitialPayload (100491B0, hook 0x4D718C):
+        // FootClass::Unlimbo, once TechnoClass::Unlimbo has answered true
+        // (the dead arm too), makes a Unit's or Aircraft's InitialPayload.
+        #[cfg(feature = "ares")]
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| {
+                matches!(
+                    entity.category(),
+                    EntityCategory::Unit | EntityCategory::Aircraft
+                )
+            })
+        {
+            self.create_ares_initial_payload(
+                stable_id,
+                context.rules(),
+                context.registry(),
+                context.effects(),
+            );
+        }
         // FootClass::Unlimbo @ 0x004D7170 dispatches active Drive/Ship
         // Force_Slope at 0x004D71A9 only after TechnoClass placement succeeds.
         // This precedes display/Logic exposure and must not run on either
@@ -7070,6 +7092,12 @@ impl Simulation {
         // this destruction until CellClass::CleanFog486BF0 reveals it.
         self.fog.forget_fogged_live_object(stable_id);
         self.drop_object_custom_sound(stable_id);
+        // Ares TunnelData::InvalidatePointer (100091E0): a Foot leaving play
+        // inside a tunnel drops out of its network.
+        #[cfg(feature = "ares")]
+        if kind == Some(ObjectKind::Entity) {
+            self.ares_tunnels.forget(stable_id);
+        }
         let removed = match kind {
             Some(ObjectKind::Entity) => {
                 let entity = self.substrate.entities.remove(stable_id);

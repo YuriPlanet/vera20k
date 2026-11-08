@@ -1,5 +1,6 @@
-//! Ares tiberium damage (10049280, hook 0x4D85E4) and heal (10014BA0, hook
-//! 0x4DA53E) through their production owners.
+//! Ares tiberium damage (10049280, hook 0x4D85E4) with its visceroid
+//! (100468B0) and heal (10014BA0, hook 0x4DA53E) through their production
+//! owners.
 
 use super::*;
 use crate::rules::ini_parser::IniFile;
@@ -7,7 +8,7 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::miner::{CargoBale, ResourceType};
 use crate::sim::movement::PerCellReason;
 use crate::sim::tiberium::test_support::{
-    flat_terrain, place_tiberium_on_map, tiberium_rules_text,
+    TEST_GRID_SIZE, flat_terrain, place_tiberium_on_map, tiberium_rules_text,
 };
 
 /// Ore on (5, 5) whose Riparius carries `riparius` keys, and `objects`
@@ -231,4 +232,189 @@ fn tiberium_explosive_harvester_blasts_bales_times_power() {
     assert_eq!(visits[0]["damage"], 40);
     assert_eq!(visits[0]["warhead"], "TIBWH");
     assert_eq!(visits[0]["affects_tiberium"], false);
+}
+
+/// Ore on (5, 5) that kills a Strength-100 `E1` standing on it, with
+/// `[General] SmallVisceroid=VISC`, a 100% `TiberiumTransmogrify` and a
+/// registered Neutral house.
+fn visceroid_scene() -> (Simulation, RuleSet, u64) {
+    let tiberium = tiberium_rules_text().replacen(
+        "[Riparius]\n",
+        "[Riparius]\nDamage=150\nWarhead=TIBWH\n",
+        1,
+    );
+    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+        "[General]\nTiberiumDamageEnabled=yes\nTiberiumTransmogrify=100\n\
+         SmallVisceroid=VISC\n[Countries]\n0=Americans\n1=Neutral\n\
+         [Americans]\n[Neutral]\n\
+         [InfantryTypes]\n0=E1\n[VehicleTypes]\n0=VISC\n\
+         [E1]\nStrength=100\n[VISC]\nStrength=200\nSmallVisceroid=yes\n\
+         [Warheads]\n0=TIBWH\n[TIBWH]\nCellSpread=1\n\
+         Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+         {tiberium}\n"
+    )))
+    .unwrap();
+    let mut sim = Simulation::new();
+    sim.resolved_terrain = Some(flat_terrain(TEST_GRID_SIZE, TEST_GRID_SIZE));
+    place_tiberium_on_map(&mut sim, (5, 5), ResourceType::Ore, 6);
+    for (house, country) in [("A", "Americans"), ("Neutral", "Neutral")] {
+        let name = sim.interner.intern(house);
+        let country = sim.interner.intern(country);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                name,
+                0,
+                Some(country),
+                false,
+                0,
+                10,
+            ));
+    }
+    let id = sim.substrate.allocate_stable_id();
+    let mut entity =
+        GameEntity::test_default_of_category(id, "E1", "A", 5, 5, EntityCategory::Infantry);
+    entity.set_type_ref_for_test(sim.interner.intern("E1"));
+    entity.set_owner_for_test(sim.interner.intern("A"));
+    entity.lifecycle.set_object_alive_for_test(true);
+    sim.substrate.entities.insert(entity);
+    (sim, rules, id)
+}
+
+fn visceroids(sim: &Simulation) -> Vec<(String, u16, u16)> {
+    let visc = sim.interner.get("VISC");
+    sim.substrate
+        .entities
+        .values()
+        .filter(|entity| Some(entity.type_ref()) == visc)
+        .map(|entity| {
+            (
+                sim.interner.resolve(entity.owner()).to_owned(),
+                entity.position.rx(),
+                entity.position.ry(),
+            )
+        })
+        .collect()
+}
+
+/// Ares 10049280 -> SpawnVisceroid 100468B0: infantry the ore kills
+/// becomes the Neutral house's SmallVisceroid in its cell on a map that
+/// keeps the fresh `TiberiumDeathToVisceroid=yes`.
+#[test]
+fn tiberium_death_spawns_a_neutral_small_visceroid() {
+    let (mut sim, rules, id) = visceroid_scene();
+    let killed = sim.ares_foot_tiberium_damage(
+        id,
+        &rules,
+        Some(rules.overlay_registry()),
+        FrameEffects::default(),
+    );
+    assert!(killed);
+    assert_eq!(visceroids(&sim), [("Neutral".to_owned(), 5, 5)]);
+}
+
+/// SpawnVisceroid 100468B0: a map with `TiberiumDeathToVisceroid=no`
+/// draws nothing and creates nothing; with the flag, a unit in the cell
+/// (occupation bit 0x20) still costs the `RandomRanged(0, 99)` draw but
+/// blocks the visceroid.
+#[test]
+fn visceroid_needs_the_map_flag_and_a_cell_without_a_unit() {
+    let (mut sim, rules, _) = visceroid_scene();
+    let coord = DriveCoord {
+        x: 5 * 256 + 128,
+        y: 5 * 256 + 128,
+        z: 0,
+    };
+    let registry = Some(rules.overlay_registry());
+    sim.session
+        .read_map_tiberium_death_to_visceroid(Some(false));
+    let before = sim.rng_state();
+    assert!(!sim.ares_spawn_visceroid(
+        coord,
+        "VISC",
+        100,
+        false,
+        &rules,
+        registry,
+        FrameEffects::default()
+    ));
+    assert_eq!(sim.rng_state(), before, "no draw without the map flag");
+
+    sim.session.read_map_tiberium_death_to_visceroid(None);
+    sim.substrate.raw_cell_occupation.mark_ground(
+        5,
+        5,
+        crate::sim::occupancy::VEHICLE_OCCUPATION_BIT,
+    );
+    assert!(!sim.ares_spawn_visceroid(
+        coord,
+        "VISC",
+        100,
+        false,
+        &rules,
+        registry,
+        FrameEffects::default()
+    ));
+    assert_ne!(sim.rng_state(), before, "RandomRanged(0, 99)");
+    assert!(visceroids(&sim).is_empty());
+}
+
+/// Ares CellChainReact (10050DD0) from Apply_area_damage's spread walk
+/// (hook 0x48964F): a `Tiberium=yes` blast over a `ChainReaction=yes` ore
+/// cell at density 20 always reacts (`RandomRanged(0, 99) < 100`). The cell
+/// loses half its density, and `Power * 10` goes off as a nested blast with
+/// the mineral's ExplosionWarhead that leaves tiberium alone. A cell without
+/// `ChainReaction=yes` keeps its ore.
+#[test]
+fn chain_reacting_ore_halves_and_blasts_power_times_the_loss() {
+    for chain_reaction in [true, false] {
+        let mut tiberium = tiberium_rules_text().replacen(
+            "[Riparius]\n",
+            "[Riparius]\nPower=4\nExplosionWarhead=TIBWH\n",
+            1,
+        );
+        if chain_reaction {
+            tiberium = tiberium.replace(
+                "Tiberium=yes\nLand=Tiberium\n",
+                "Tiberium=yes\nLand=Tiberium\nChainReaction=yes\n",
+            );
+        }
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[Warheads]\n0=TIBWH\n[TIBWH]\nCellSpread=1\nTiberium=yes\n\
+             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n{tiberium}"
+        )))
+        .unwrap();
+        let mut sim = Simulation::new();
+        sim.resolved_terrain = Some(flat_terrain(TEST_GRID_SIZE, TEST_GRID_SIZE));
+        place_tiberium_on_map(&mut sim, (5, 5), ResourceType::Ore, 6);
+        sim.overlay_grid
+            .as_mut()
+            .unwrap()
+            .set_overlay_data(5, 5, 20);
+        let warhead = rules.warhead("TIBWH").unwrap();
+        let warhead_ref = sim.interner.intern("TIBWH");
+        let (_, visits) = crate::sim::combat::receiver_fixture::trace_area_visits(|| {
+            crate::sim::combat::world_receiver::apply_area_damage(
+                &mut sim,
+                &rules,
+                Some(rules.overlay_registry()),
+                crate::sim::projectile::ProjectileCoord::new(5 * 256 + 128, 5 * 256 + 128, 0),
+                5,
+                warhead,
+                true,
+                (RAD_NO_ATTACKER, None, warhead_ref),
+                FrameEffects::default(),
+            )
+        });
+        let density = sim.overlay_grid.as_ref().unwrap().cell(5, 5).overlay_data;
+        if chain_reaction {
+            assert_eq!(density, 10);
+            assert_eq!(visits.len(), 2);
+            assert_eq!(visits[1]["damage"], 40);
+            assert_eq!(visits[1]["warhead"], "TIBWH");
+            assert_eq!(visits[1]["affects_tiberium"], false);
+        } else {
+            assert_eq!(density, 20);
+            assert_eq!(visits.len(), 1);
+        }
+    }
 }

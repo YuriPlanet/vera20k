@@ -174,6 +174,12 @@ const POINTERS: &[(&str, PublishPointer)] = &[
     ("EMPulseWarhead", |rules, id| {
         rules.general.empulse_warhead = named(id);
     }),
+    // ReadGeneral's SmallVisceroid (ReadString returning at `0x0066E6B0`,
+    // UnitType FindOrAllocate); Ares' tiberium death visceroid reads it.
+    #[cfg(feature = "ares")]
+    ("SmallVisceroid", |rules, id| {
+        rules.general.small_visceroid = named(id);
+    }),
     // ReadGeneral (`0x0066D530`), AnimTypes through `0x00428B80` unless
     // noted: OreTwinkle +1870 (`0x0066788E`, `0x0066D67B..0x0066D6A2`),
     // BarrelParticle +74, a ParticleSystemType through `0x00644890`

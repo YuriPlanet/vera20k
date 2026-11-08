@@ -82,7 +82,8 @@ fn fs_main(input: Output) -> @location(0) vec4f {
             continue;
         }
         //Ares ModifyWaveColor 10055920 (hooks 75EE57/7601FB) for Wave0/3: the
-        //same strict Z and displaced read, then each channel becomes
+        //same strict Z and displaced read (Draw_Laser 7609E0's source is the
+        //pixel itself, hooks 760BC2/760DE2), then each channel becomes
         //ch + added + ((ch * scale) >> 16), clamped to 0..255. The CPU folds
         //the pixel intensity into added (rgb, a_sample, gate_y) and scale
         //(strength, destination_weight, gate_x).

@@ -2071,6 +2071,13 @@ pub struct GeneralRules {
     /// Ares' tiberium damage (`10049280`).
     #[cfg(feature = "ares")]
     pub tiberium_transmogrify: i32,
+    /// `[General] SmallVisceroid=`, a UnitType pointer the RulesClass
+    /// constructor nulls (`0x00665650`); ReadGeneral's ReadString (returning
+    /// at `0x0066E6B0`) keeps it on an empty read, else UnitType
+    /// FindOrAllocate. Published by `RulesTypeReferences`. Ares' tiberium
+    /// death spawns it (`10049280` -> `TechnoExt::SpawnVisceroid @ 100468B0`).
+    #[cfg(feature = "ares")]
+    pub small_visceroid: Option<String>,
 
     // -- Movement delay timers --
     /// Retained [AI] PathDelay double, in minutes (Rules+1760).
@@ -3024,6 +3031,8 @@ impl Default for GeneralRules {
             tiberium_heal_minutes: f64::from_bits(0x3F91_1111_1111_1111),
             #[cfg(feature = "ares")]
             tiberium_transmogrify: 0,
+            #[cfg(feature = "ares")]
+            small_visceroid: None,
             // PathDelay=.01 min = 0.6 sec = 9 ticks at 15 Hz.
             path_delay: 0.016,
             // BlockagePathDelay=60 frames (directly in frames, not minutes).
@@ -4358,6 +4367,9 @@ impl GeneralRules {
             #[cfg(feature = "ares")]
             tiberium_transmogrify: general
                 .read_int("TiberiumTransmogrify", defaults.tiberium_transmogrify),
+            // The ordered Process owner publishes it (`RulesTypeReferences`).
+            #[cfg(feature = "ares")]
+            small_visceroid: None,
             path_delay,
             blockage_path_delay_ticks,
             // ReadGeneral670235..670267 uses the same475D70 signed vector
@@ -5192,6 +5204,19 @@ impl RuleSet {
     #[cfg(feature = "ares")]
     pub(crate) fn hunter_seeker_buildings(&self) -> &[String] {
         self.ares_global_controls.hunter_seeker_buildings()
+    }
+
+    /// Ares RulesExt's DropPod globals with the stock locomotor keys, used by
+    /// SW_DropPod::Activate (10070E40) and the DropPod locomotor.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_drop_pod(&self) -> &crate::rules::superweapon_type::AresDropPodGlobalRules {
+        self.ares_global_controls.drop_pod()
+    }
+
+    /// `TreeFire=` and `TreeFlammability=`, read by the Ares terrain fire.
+    #[cfg(feature = "ares")]
+    pub(crate) fn forest_fire(&self) -> &crate::rules::terrain_object_type::ForestFireRules {
+        self.ares_global_controls.forest_fire()
     }
 
     /// RulesExt+14A indexed by native House difficulty0/1/2 (hardest first).
@@ -10164,6 +10189,26 @@ impl RuleSet {
     pub(crate) fn country_degrades(&self, id: &str) -> Option<bool> {
         self.country_rules(id)
             .and_then(|country| country.veteran_types.degrades_override())
+    }
+
+    /// CountryExt+1C0 `StartInMultiplayer.Types=` of the country itself
+    /// (MPGameMode_SpawnStartingUnits_Types 1001F220 reads House+34's ext);
+    /// `None` when unset.
+    #[cfg(feature = "ares")]
+    pub(crate) fn country_start_in_multiplayer_types(
+        &self,
+        id: &str,
+    ) -> Option<&[crate::rules::superweapon_type::TechnoTypeReference]> {
+        self.country_rules(id)
+            .and_then(|country| country.veteran_types.start_in_multiplayer_types())
+    }
+
+    /// The country's `StartInMultiplayer.WithConst=` (CountryExt+1D0), which
+    /// MPGameMode_SpawnBaseUnit_BuildConst (1001F0B0) tests.
+    #[cfg(feature = "ares")]
+    pub(crate) fn country_start_in_multiplayer_with_const(&self, id: &str) -> bool {
+        self.country_rules(id)
+            .is_some_and(|country| country.veteran_types.start_in_multiplayer_with_const())
     }
 
     /// Victim CountryExt+1D1 gate in Ares bounty payout10043279..10043289.

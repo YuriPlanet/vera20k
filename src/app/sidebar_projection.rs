@@ -22,7 +22,7 @@ use crate::sim::superweapon::SuperWeaponView;
 use crate::sim::world::{LifecycleOutput, Simulation, TickLane};
 use crate::ui::sidebar::cameo_order::{
     Cameo, CameoId, CameoKey, CameoRequestState, CameoStrips, pending_production_affordability,
-    pending_production_prediction_rate, pending_production_smoothed_stage,
+    pending_production_prediction_rate, pending_production_smoothed_stage, strip_rejects_entry,
 };
 use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
 use crate::ui::sidebar::{ArmedSidebarEntry, SidebarChromeLayoutSpec, SidebarTab, SidebarView};
@@ -1444,7 +1444,9 @@ pub(crate) fn prepare_saved_order(
                 "saved sidebar strip {index} has an invalid request state"
             ));
         }
-        if identities.len() > 76 {
+        // AddCameo admits one entry past 75 (cameo_order.rs); an Ares strip is
+        // unbounded (Ares.dll 1002C160, hook 0x6A63B7).
+        if strip_rejects_entry(identities.len().saturating_sub(1)) {
             return Err(format!(
                 "saved sidebar strip {index} exceeds native admission capacity"
             ));

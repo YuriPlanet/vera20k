@@ -526,6 +526,38 @@ fn exit_land(
         //identical BuildingType, another receiver, effective Guard5 and
         //Building+524 NULL. It calls the first eligible receiver once;
         //its return does not trigger a search for another receiver.
+        // Ares 3.0 BuildingClass_KickOutUnit_FindAlternateKickout (100415E0,
+        // hook 0x4444E2) replaces the type match: the receiver's type has
+        // the producer's `Factory=` and `Naval=` and the product
+        // `CanBeBuiltAt` it.
+        #[cfg(feature = "ares")]
+        let (producer_object, product_object) = {
+            let producer = sim.object_type(producer_type, rules);
+            let product = sim
+                .substrate
+                .entities
+                .get(stable_id)
+                .and_then(|entity| sim.object_type(entity.type_ref(), rules));
+            let (Some(producer), Some(product)) = (producer, product) else {
+                return BuildingExit::Failed;
+            };
+            (producer, product)
+        };
+        let admits_type = |candidate: &crate::sim::game_entity::GameEntity| {
+            #[cfg(feature = "ares")]
+            {
+                sim.object_type(candidate.type_ref(), rules)
+                    .is_some_and(|object| {
+                        object.factory_type() == producer_object.factory_type()
+                            && object.naval == producer_object.naval
+                            && super::can_build::ares_can_be_built_at(rules, product_object, object)
+                    })
+            }
+            #[cfg(not(feature = "ares"))]
+            {
+                candidate.type_ref() == producer_type
+            }
+        };
         let Some(house) = sim.houses.get(&producer_owner) else {
             return BuildingExit::Failed;
         };
@@ -536,7 +568,7 @@ fn exit_land(
             .copied()
             .find(|&id| {
                 sim.substrate.entities.get(id).is_some_and(|candidate| {
-                    candidate.type_ref() == producer_type
+                    admits_type(candidate)
                         && id != producer_id
                         && candidate.mission.effective().known()
                             == Some(crate::sim::mission::MissionType::Guard)

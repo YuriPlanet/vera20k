@@ -305,6 +305,52 @@ pub(crate) fn shift_queue_repeat_with_queue(
     }
 }
 
+/// Copies of the PRODUCE event Ares 3.0 queues for a Shift press:
+/// `((modifier & 1) << 2) | 1`.
+#[cfg(feature = "ares")]
+pub(crate) const ARES_SHIFT_PRODUCE_COPIES: u32 = 5;
+
+/// How many PRODUCE events a left press on a build cameo queues, from the
+/// press's Shift state and the player's `[VERA] ShiftQueue=` options.
+///
+/// In a default build Shift repeats only when the player ticked Shift-Click
+/// Batch Queue (`vera_shift_queue`), `vera_count` times. An `ares` build also
+/// queues copies without the option: Ares 3.0
+/// `SelectClass_ProcessInput_ProduceUnsuspended` (Ares.dll 10064520, hook
+/// 0x6AB773) replaces the single insertion of `SelectClass::Action` 0x006AAD00's
+/// fresh/append PRODUCE event (the one after `CheckBuildLimit`) with a loop of
+/// [`ARES_SHIFT_PRODUCE_COPIES`] copies when the key modifier's Shift bit is
+/// set. The resume of a held build (0x006AB4E8) and the placement arms are other
+/// events and keep their single copy, as in [`shift_queue_repeat_with_queue`].
+/// The player's own count, when the option is on, replaces Ares' five.
+pub(crate) fn produce_copies(
+    category: ProductionCategory,
+    own: Option<BuildQueueState>,
+    shift: bool,
+    vera_shift_queue: bool,
+    vera_count: u32,
+    building_production_queue: bool,
+) -> u32 {
+    #[cfg(feature = "ares")]
+    let (shift_repeats, count) = (
+        shift,
+        if vera_shift_queue {
+            vera_count
+        } else {
+            ARES_SHIFT_PRODUCE_COPIES
+        },
+    );
+    #[cfg(not(feature = "ares"))]
+    let (shift_repeats, count) = (shift && vera_shift_queue, vera_count);
+    shift_queue_repeat_with_queue(
+        category,
+        own,
+        shift_repeats,
+        count,
+        building_production_queue,
+    )
+}
+
 /// `0x006AB484..0x006AB498` / `0x006AB6A1..0x006AB6C9`: infantry trains,
 /// everything else builds.
 pub(crate) fn start_line_for(category: ProductionCategory) -> &'static str {
@@ -357,6 +403,31 @@ mod tests {
             assert_eq!(right.eva, Some(EVA_ON_HOLD));
             assert!(!right.clear_building_placement);
         }
+    }
+
+    /// Without the Options tick a default build never repeats; an `ares` build
+    /// queues Ares' five on Shift (Ares.dll 10064520), in the same arms only.
+    #[test]
+    fn shift_queues_without_the_option_only_in_an_ares_build() {
+        let copies = |category, own, shift| produce_copies(category, own, shift, false, 8, false);
+        let expected = if cfg!(feature = "ares") { 5 } else { 1 };
+        assert_eq!(copies(ProductionCategory::Infantry, None, true), expected);
+        assert_eq!(copies(ProductionCategory::Infantry, None, false), 1);
+        // A held build resumes and a structure strip never appends.
+        assert_eq!(
+            copies(
+                ProductionCategory::Vehicle,
+                Some(BuildQueueState::Paused),
+                true
+            ),
+            1
+        );
+        assert_eq!(copies(ProductionCategory::Building, None, true), 1);
+        // The ticked option keeps the player's own count in every build.
+        assert_eq!(
+            produce_copies(ProductionCategory::Vehicle, None, true, true, 8, false),
+            8
+        );
     }
 
     /// VERA's Shift repeat is an app convenience layered after the native

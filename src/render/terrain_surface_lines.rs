@@ -131,26 +131,34 @@ fn raster_draw(
                         source_y: source[1],
                         ..Default::default()
                     };
+                    // Mode 11 carries ModifyWaveColor's folded terms:
+                    // added R/G/B in rgb/a_sample/gate_y, scales in
+                    // strength/destination_weight/gate_x.
+                    let modify = |color: crate::render::wave_geometry::WaveColor| {
+                        let (added, scale) = color.terms(pixel.brightness);
+                        Operation {
+                            mode: 11,
+                            rgb: added[0] as u32,
+                            a_sample: added[1] as u32,
+                            gate_y: added[2],
+                            strength: scale[0],
+                            destination_weight: scale[1],
+                            gate_x: scale[2],
+                            ..operation
+                        }
+                    };
+                    let laser = matches!(wave.polygon, WavePolygon::Laser(_));
                     let operation = match wave.blend {
+                        // Draw_Laser 7609E0's stock blend, which Ares
+                        // WaveClass_Draw2/Draw3 (10057000/10057040, hooks
+                        // 0x760BC2/0x760DE2) keep for disabled colours.
+                        WaveBlend::Native | WaveBlend::AresDisabled if laser => {
+                            modify(crate::render::wave_geometry::WaveColor::STOCK_LASER)
+                        }
                         WaveBlend::Native => operation,
                         WaveBlend::AresDisabled if sonic => operation,
                         WaveBlend::AresDisabled => return,
-                        // Mode 11 carries ModifyWaveColor's folded terms:
-                        // added R/G/B in rgb/a_sample/gate_y, scales in
-                        // strength/destination_weight/gate_x.
-                        WaveBlend::Ares(color) => {
-                            let (added, scale) = color.terms(pixel.brightness);
-                            Operation {
-                                mode: 11,
-                                rgb: added[0] as u32,
-                                a_sample: added[1] as u32,
-                                gate_y: added[2],
-                                strength: scale[0],
-                                destination_weight: scale[1],
-                                gate_x: scale[2],
-                                ..operation
-                            }
-                        }
+                        WaveBlend::Ares(color) => modify(color),
                     };
                     emit(&[(pixel.point, operation)]);
                 },

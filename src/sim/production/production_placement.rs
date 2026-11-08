@@ -137,9 +137,10 @@ pub fn placement_preview_for_owner_with_overlays(
         reason = Some(BuildingPlacementError::BlockedTerrain);
     }
     // Ares sub_6D5030 (10015140, hook 0x6D5455): a non-LaserFencePost
-    // linkable type draws the firestorm shadow in place of the wall's.
+    // linkable type (a firestorm wall or a trench, IsLinkable 1000D770)
+    // draws the firestorm shadow in place of the wall's.
     #[cfg(feature = "ares")]
-    let firestorm_shadow = (!obj.laser_fence_post && obj.building_type_ext().firestorm_wall)
+    let firestorm_shadow = (!obj.laser_fence_post && obj.building_type_ext().is_linkable())
         .then(|| owner_id.zip(native_cells.as_ref()))
         .flatten()
         .map(|(owner_id, query)| {

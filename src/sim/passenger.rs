@@ -394,6 +394,12 @@ impl BuildingOccupants {
         self.ids.clear();
         self.reset_fire_index();
     }
+    /// Ares 3.0 doTraverseTo (`100130E0`): `Occupants.RemoveItem(0)`, the
+    /// head shifted out without changing +69C.
+    #[cfg(feature = "ares")]
+    pub(crate) fn remove_head(&mut self) -> Option<u64> {
+        (!self.ids.is_empty()).then(|| self.ids.remove(0))
+    }
     /// BuildingPointerExpired44EAC0..44EB02 removes the first matching
     /// vector entry by shifting, without changing +69C. Its caller owns
     /// the ScenarioInit(A8E7AC) gate; ordinary Cargo expiry is separate.
@@ -445,6 +451,19 @@ impl Simulation {
         head_first: &[(u64, f64)],
         context: UninitContext<'_>,
     ) -> bool {
+        self.add_passenger_voiced(carrier, head_first, true, context)
+    }
+
+    /// [`Self::add_passenger_with_context`] under VocClass::VoicesEnabled
+    /// `voices`: while it is clear, VocClass::PlayGlobal (`0x00750920`)
+    /// plays nothing, so the entry sound is skipped.
+    fn add_passenger_voiced(
+        &mut self,
+        carrier: u64,
+        head_first: &[(u64, f64)],
+        voices: bool,
+        context: UninitContext<'_>,
+    ) -> bool {
         if !self.add_cargo_passenger_chain(carrier, head_first, context) {
             return false;
         }
@@ -452,7 +471,8 @@ impl Simulation {
             return true;
         };
         let rules = context.rules();
-        if let Some(transport) = self.substrate.entities.get(carrier)
+        if voices
+            && let Some(transport) = self.substrate.entities.get(carrier)
             && let Some(sound_id) = self
                 .entity_object_type(transport, rules)
                 .and_then(|object| object.enter_transport_sound.clone())
@@ -496,7 +516,9 @@ impl Simulation {
     /// abductee's Transporter (`+0x11C`) is the abductor, an allied rider of
     /// an `OpenTopped=` abductor is marked (EnteredOpenTopped `0x00710470`,
     /// keeping its AI in the logic order), then AddPassenger (vt+0x394).
-    /// Answers whether the hold took it.
+    /// CreateInitialPayload's Foot arm (10043C10, `sim::ares_transports`)
+    /// takes the same steps with VocClass::VoicesEnabled cleared around
+    /// AddPassenger (`voices` false). Answers whether the hold took it.
     #[cfg(feature = "ares")]
     pub(crate) fn ares_abduct_into_hold(
         &mut self,
@@ -504,6 +526,7 @@ impl Simulation {
         carrier: u64,
         size: f64,
         rider: bool,
+        voices: bool,
         context: UninitContext<'_>,
     ) -> bool {
         if let Some(entity) = self.substrate.entities.get_mut(passenger) {
@@ -516,7 +539,7 @@ impl Simulation {
         if rider {
             let _ = self.register_open_topped_passenger(passenger);
         }
-        self.add_passenger_with_context(carrier, &[(passenger, size)], context)
+        self.add_passenger_voiced(carrier, &[(passenger, size)], voices, context)
     }
 
     /// Transporter and SetInOpenTransport710470 belong to the arrival

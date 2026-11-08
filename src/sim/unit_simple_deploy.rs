@@ -42,6 +42,41 @@ impl Simulation {
             .ok_or("simple deploy receiver retired")?
             .is_fully_deployed();
         self.update_unit_simple_deploy(id, !deployed, rules, effects)?;
+        // Ares 3.0 UnitClass_Mi_Unload_SimpleDeployer (1004C070, hook
+        // 0x73DE90), past the updater: a deployed (6E0) unit whose type has
+        // `Convert.Deploy` converts in place (TechnoExt::ConvertToType
+        // 10043650) and, converted, is no longer deployed; then the Unload
+        // waits (return 1 at 0x73E5B1) while the locomotor is moving.
+        #[cfg(feature = "ares")]
+        {
+            let entity = self
+                .substrate
+                .entities
+                .get(id)
+                .ok_or("simple deploy receiver retired")?;
+            if entity.is_fully_deployed()
+                && let Some(target) = self
+                    .entity_object_type(entity, rules)
+                    .and_then(|object| object.techno_combat().convert_deploy())
+                    .cloned()
+                && self.convert_techno_type(id, &target, rules, effects)
+                && let Some(entity) = self.substrate.entities.get_mut(id)
+            {
+                entity.mission_leaf.set_unit_deployed(0);
+            }
+            let entity = self
+                .substrate
+                .entities
+                .get(id)
+                .ok_or("simple deploy receiver retired")?;
+            if crate::sim::movement::motion_query::is_moving_now(
+                entity,
+                crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses),
+                self.session.binary_frame(),
+            ) {
+                return Ok(1);
+            }
+        }
         let entity = self
             .substrate
             .entities

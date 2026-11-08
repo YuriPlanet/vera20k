@@ -555,17 +555,6 @@ impl Simulation {
         let Some(&head) = members.first() else {
             return false;
         };
-        let plane_type = crate::sim::superweapon::paradrop::PDPLANE;
-        if rules
-            .object_in_category(ObjectCategory::Aircraft, plane_type)
-            .is_none()
-        {
-            // Native FindIndex(-1) would dereference before the Aircraft
-            // array. A missing literal type is outside a valid retail rules
-            // closure; retain explicit diagnostics instead of a fake plane.
-            log::warn!("Droppod reinforcement requires native aircraft type {plane_type}");
-            return false;
-        }
         //65DBD0 reads the returned head's live owner, not a copied TeamType
         // Country or current player. The carrier itself never joins the Team.
         let Some(owner) = self
@@ -576,6 +565,21 @@ impl Simulation {
         else {
             return false;
         };
+        // Ares 3.0 TeamTypeClass_CreateInstance_Plane (1003A340, hook
+        // 0x65DBB3): that owner's GetParadropPlane replaces the PDPLANE
+        // literal.
+        let plane_type =
+            crate::sim::superweapon::paradrop::house_paradrop_plane(self, rules, owner);
+        if rules
+            .object_in_category(ObjectCategory::Aircraft, plane_type)
+            .is_none()
+        {
+            // Native FindIndex(-1) would dereference before the Aircraft
+            // array. A missing literal type is outside a valid retail rules
+            // closure; retain explicit diagnostics instead of a fake plane.
+            log::warn!("Droppod reinforcement requires native aircraft type {plane_type}");
+            return false;
+        }
         let owner_name = self.interner.resolve(owner).to_string();
         let plane = self.with_object_placement_scope(|sim| {
             sim.construct_object_limbo_at_height(

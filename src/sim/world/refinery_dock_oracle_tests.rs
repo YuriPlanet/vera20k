@@ -65,6 +65,9 @@ fn corpus() -> &'static Value {
 
 /// Native income rows supply raw Rules/cargo priors; the surrounding world,
 /// House, typed country/resource readers, construction and dispatch stay real.
+// Ares replaces the stock payment (DepositTiberium 10044230, hooks
+// 0x73E4A2/0x522D75): no score (`sim::ares_tiberium_storage` tests).
+#[cfg(not(feature = "ares"))]
 fn income_scene(row: &Value) -> Scene {
     use crate::util::native_x87::NativeF32Bits;
     let input = &row["input"];
@@ -144,6 +147,9 @@ fn income_scene(row: &Value) -> Scene {
     scene
 }
 
+// Ares replaces the stock payment (DepositTiberium 10044230, hooks
+// 0x73E4A2/0x522D75): no score (`sim::ares_tiberium_storage` tests).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn native_income_controls_reach_unit_and_slave_payment_callers() {
     let native = crate::test_fixture::json("tools/spatial_oracle/refinery_income.json");
@@ -215,6 +221,9 @@ fn native_income_controls_reach_unit_and_slave_payment_callers() {
     }
 }
 
+// Ares replaces the stock payment (DepositTiberium 10044230, hooks
+// 0x73E4A2/0x522D75): no score (`sim::ares_tiberium_storage` tests).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn virtual_purifier_wrap_and_saved_payment_use_native_inputs() {
     let native = crate::test_fixture::json("tools/spatial_oracle/refinery_income.json");
@@ -839,6 +848,10 @@ fn compare_unload(s: &Scene, row: &Value, context: &str) {
         expected["balance"].as_i64().unwrap(),
         "{context}: balance"
     );
+    // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no score.
+    #[cfg(feature = "ares")]
+    let _ = score;
+    #[cfg(not(feature = "ares"))]
     assert_eq!(
         score,
         expected["score"].as_i64().unwrap(),

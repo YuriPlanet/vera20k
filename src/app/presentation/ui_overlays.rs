@@ -705,9 +705,10 @@ pub(crate) fn build_building_status_render_instances(
         // (`sim::spy_infiltration::DisplayProductionTo`); its DrawExtraInfo
         // 10015F10 (hook 0x0070AA60) puts the Power arm first, shows a
         // `Storage=` building's money to a house not allied to its owner,
-        // and PRIMARY only to an allied one.
-        // RESIDUAL: Ares' observer arms and `Fake=` text (`TXT_FAKE`) are
-        // not ported; an observer sees what the house it watches sees.
+        // and PRIMARY only to an allied one. A `Fake=` type's TXT_FAKE
+        // (10015F10's first test, `TypeExt+0x5F`) replaces all three.
+        // RESIDUAL: Ares' observer arms are not ported; an observer sees
+        // what the house it watches sees.
         #[cfg(feature = "ares")]
         let text = {
             let revealed =
@@ -715,7 +716,9 @@ pub(crate) fn build_building_status_render_instances(
             if !(allied || revealed) {
                 continue;
             }
-            if object.power > 0 {
+            if object.ares_fake() {
+                BuildingStatusText::Fake
+            } else if object.power > 0 {
                 BuildingStatusText::Power
             } else if object.storage > 0 && !allied {
                 BuildingStatusText::Money
@@ -771,6 +774,8 @@ pub(crate) fn build_building_status_render_instances(
                     ],
                 ))
             }
+            #[cfg(feature = "ares")]
+            BuildingStatusText::Fake => csf.text("TXT_FAKE"),
             // Ares 10015F10: the owner's Available_Money (IHouse +0x18).
             #[cfg(feature = "ares")]
             BuildingStatusText::Money => Cow::Owned(format_csf(
@@ -810,6 +815,9 @@ enum BuildingStatusText {
     /// Ares' money arm (`TXT_MONEY_FORMAT_1`).
     #[cfg(feature = "ares")]
     Money,
+    /// Ares' `Fake=` arm (`TXT_FAKE`).
+    #[cfg(feature = "ares")]
+    Fake,
 }
 
 /// AppState supplies current resources and the existing tactical viewport;

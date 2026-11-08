@@ -358,13 +358,19 @@ pub(crate) fn read_phobos_gravity(section: &IniSection) -> Option<NativeF64Bits>
 impl ProjectileType {
     /// Phobos `Splits=`: the Phobos emitter replaces the native tail and the
     /// parent's outer cluster loop, exactly as `BulletClass::Explodes`'s
-    /// airburst checks do with `Airburst || Splits`. False without the feature.
+    /// airburst checks do with `Airburst || Splits`. Without Phobos, Ares'
+    /// `Splits=` does the same (`HasSplitBehavior`, BulletClass_Fire_SplitsA/B
+    /// `1001A7E0`/`1001A810`, hooks `0x468EB9`/`0x468FFA`). False in stock.
     pub const fn splits(&self) -> bool {
         #[cfg(feature = "phobos")]
         {
             self.phobos_airburst.splits
         }
-        #[cfg(not(feature = "phobos"))]
+        #[cfg(all(feature = "ares", not(feature = "phobos")))]
+        {
+            self.bullet_type_ext.splits
+        }
+        #[cfg(not(any(feature = "phobos", feature = "ares")))]
         {
             false
         }
@@ -382,8 +388,8 @@ impl ProjectileType {
         None
     }
 
-    /// `Airburst=` or, in a Phobos build, `Splits=`: the BulletClass impact
-    /// and detonation arms Phobos' `BulletClass::Explodes` hooks select.
+    /// `Airburst=` or, in a Phobos or Ares build, `Splits=`: the BulletClass
+    /// impact and detonation arms the `BulletClass::Explodes` hooks select.
     pub const fn airburst_arm(&self) -> bool {
         self.airburst || self.splits()
     }

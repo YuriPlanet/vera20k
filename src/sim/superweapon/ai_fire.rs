@@ -115,7 +115,8 @@ impl AiFireArm {
             | SuperWeaponKind::Battery
             | SuperWeaponKind::SonarPulse
             | SuperWeaponKind::EMPulse
-            | SuperWeaponKind::Firestorm => Self::None,
+            | SuperWeaponKind::Firestorm
+            | SuperWeaponKind::DropPod => Self::None,
         }
     }
 }
@@ -423,6 +424,32 @@ fn extension_target(
                 .is_ok()
                 .then_some(cell)
         }
+        // PickTarget10038640's case 0x13 (Ares `Mode::DropPod`): a Scenario
+        // RandomRanged(1, 4) zone, House501AC0's random cell in it, and the
+        // nearby Foot cell there (FNPC 0x56DC20: no zone, Normal, 1x1,
+        // bridges allowed, no target). The empty cell or a refused CanFireAt
+        // (vt+4, not manual) is no target.
+        M::DropPod => {
+            let zone = sim.scenario_rng.next_range_i32_inclusive(1, 4);
+            let seed = sim.house_random_cell_in_zone(owner, zone)?;
+            let cell = sim
+                .nearby_passable_cell(
+                    seed,
+                    NearbyArgs::plain(
+                        PassabilityArgs {
+                            speed_type: SpeedType::Foot,
+                            required_zone_id: None,
+                            movement_zone: MovementZone::Normal,
+                            bridge_aware_zone: false,
+                        },
+                        NearbyFootprint::SINGLE,
+                    ),
+                )
+                .filter(|&cell| cell != (0, 0))?;
+            super::targeting::check_with_data(sim, rules, owner, sw, cell, true, &data)
+                .is_ok()
+                .then_some(cell)
+        }
         // These distinct3.0 selectors are still pending native ports. Do not
         // silently replace a parsed mode with Offensive or another behavior.
         M::Stealth
@@ -430,7 +457,6 @@ fn extension_target(
         | M::Base
         | M::MultiMissile
         | M::EnemyBase
-        | M::DropPod
         | M::LightningRandom => None,
     }
 }

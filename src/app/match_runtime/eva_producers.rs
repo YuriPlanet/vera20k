@@ -103,8 +103,9 @@
 //!   (`0x004D9F81..0x004D9FB0`), and the only retail unit sale (#2710) is a
 //!   computer-owned useless harvester sold at a Service Depot
 //!   (`MissionRepairAndProduce 0x0044C4BC..0x0044C4DB`, owner not
-//!   `IsControlledByHuman 0x0050B730`), which is therefore silent. VERA has
-//!   no unit sale.
+//!   `IsControlledByHuman 0x0050B730`), which is therefore silent. With
+//!   Ares the player's SellUnit click reaches it: `production::foot_on_sold`
+//!   emits the line as a `HouseEva`.
 //! - `SuperClass::AI_Charging 0x006CC179` (`*Ready` on a superweapon granted
 //!   already charged, `SuperClass::Grant 0x006CB560` `+0x6E`): the
 //!   building-complete grant passes 0.
@@ -203,7 +204,8 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
         | SuperWeaponKind::Battery
         | SuperWeaponKind::SonarPulse
         | SuperWeaponKind::EMPulse
-        | SuperWeaponKind::Firestorm => return None,
+        | SuperWeaponKind::Firestorm
+        | SuperWeaponKind::DropPod => return None,
         SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => "EVA_ReinforcementsReady",
         SuperWeaponKind::PsychicDominator => "EVA_PsychicDominatorReady",
         SuperWeaponKind::SpyPlane => "EVA_SpyPlaneReady",
@@ -380,6 +382,14 @@ pub(crate) fn infiltration_eva_events(
                 }
                 if infiltrator {
                     lines.extend([EVA_BUILDING_INFILTRATED, EVA_ENEMY_BASE_POWERED_DOWN]);
+                }
+            }
+            if arms.tech_stolen {
+                if owner {
+                    lines.push(EVA_TECHNOLOGY_STOLEN);
+                }
+                if infiltrator {
+                    lines.extend([EVA_BUILDING_INFILTRATED, EVA_NEW_TECHNOLOGY_ACQUIRED]);
                 }
             }
             if arms.undo_reverse_engineer {
@@ -1041,5 +1051,31 @@ mod tests {
             ]
         );
         assert!(infiltration_eva_events(effect, false, true, false).is_empty());
+    }
+
+    /// The StolenTech arm (`10012000`) plays the owner's
+    /// `EVA_TechnologyStolen` and the spy's two lines, after the outage's.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_stolen_tech_lines_follow_the_power_outage() {
+        use crate::sim::spy_infiltration::{AresInfiltrationArms, InfiltrationEffect};
+        let effect = InfiltrationEffect::Ares(AresInfiltrationArms {
+            power_outage: true,
+            tech_stolen: true,
+            ..Default::default()
+        });
+        assert_eq!(
+            infiltration_eva_events(effect, true, true, false),
+            ["EVA_PowerSabotaged", "EVA_TechnologyStolen"]
+        );
+        assert_eq!(
+            infiltration_eva_events(effect, true, false, true),
+            [
+                "EVA_BuildingInfiltrated",
+                "EVA_EnemyBasePoweredDown",
+                "EVA_BuildingInfiltrated",
+                "EVA_NewTechnologyAcquired"
+            ]
+        );
     }
 }

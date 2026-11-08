@@ -61,6 +61,11 @@ pub struct BuildingArt {
     stuff_enabled: bool,
     /// Building+6E4: OnConstructionComplete's one-time allocation guard.
     actually_placed: bool,
+    /// Ares BuildingExt `FreeUnits_Done` (`+0xC`): a Place has reached the
+    /// free-unit block (BuildingClass_Place_SkipFreeUnits, `10036860`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    free_units_done: bool,
     /// Derived draw cache from UpdateAnimation, before this object's Techno
     /// tint updates. Never read by simulation decisions or the world hash.
     #[serde(default)]
@@ -153,6 +158,20 @@ impl BuildingArt {
         self.actually_placed
     }
 
+    /// Ares 3.0 BuildingClass_Place_SkipFreeUnits (10036860, hook 0x446AAF):
+    /// whether this Place runs the free-unit block, which only the first
+    /// Place to reach it does.
+    #[cfg(feature = "ares")]
+    fn take_free_units(&mut self) -> bool {
+        !std::mem::replace(&mut self.free_units_done, true)
+    }
+
+    /// Whether a Place has reached the free-unit block (hashed).
+    #[cfg(feature = "ares")]
+    pub(crate) fn free_units_done(&self) -> bool {
+        self.free_units_done
+    }
+
     /// Ares ChronoWarpStateMachine::Update (`10070230`) drops +6E4 when it
     /// removes a chronoshifted building, so its next Place opens it again.
     #[cfg(feature = "ares")]
@@ -242,6 +261,8 @@ impl Default for BuildingArt {
             storage: BuildingStorage::default(),
             stuff_enabled: true,
             actually_placed: false,
+            #[cfg(feature = "ares")]
+            free_units_done: false,
             tint_sample: None,
         }
     }
@@ -337,10 +358,14 @@ impl Simulation {
                 trace.push((id, captured));
             }
         });
-        // Ares445F80 entry hook100100B0 ->100449D0 precedes the vanilla
-        // ActuallyPlaced early return, including repeated and capture calls.
+        // Ares445F80 entry hook100100B0 ->10013700 (a SecretLab type's roll)
+        // ->100449D0 precedes the vanilla ActuallyPlaced early return,
+        // including repeated and capture calls.
         #[cfg(feature = "ares")]
-        self.grant_factory_plans(id, rules);
+        {
+            self.ares_update_secret_lab(id, rules);
+            self.grant_factory_plans(id, rules);
+        }
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -467,12 +492,28 @@ impl Simulation {
             entity.building_art.actually_placed = true;
         }
         self.announce_super_weapon_building_complete(id, rules);
-        if !captured && !scenario_initialization {
+        // 446AAF: Ares marks the block run on its first reach, whatever the
+        // capture and ScenarioInit arguments, and skips it afterwards (a
+        // building ChronoWarp put back opens again with +6E4 clear).
+        #[cfg(feature = "ares")]
+        let free_units = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .is_some_and(|entity| entity.building_art.take_free_units());
+        #[cfg(not(feature = "ares"))]
+        let free_units = true;
+        if free_units && !captured && !scenario_initialization {
             if crate::sim::production::spawn_building_free_unit(self, id, rules, registry, effects)
             {
                 self.note_mission_spawned_entities();
             }
         }
+        // Ares 3.0 BuildingClass_Place_InitialPayload (10048EB0, hook
+        // 0x446EE2), where every reached opening resumes past the free unit:
+        // the building's InitialPayload, once.
+        #[cfg(feature = "ares")]
+        self.create_ares_initial_payload(id, rules, registry, effects);
     }
     fn building_anim_config(
         &self,

@@ -1,4 +1,4 @@
-//! Ordinary ground-victim and independent powered-building Ares EMP.
+//! Ares EMP for ground and Fly/Jumpjet victims and independent powered buildings.
 //! The Techno+504 counter and held Anim have one private owner; the existing powered-unit owner keeps +1C8.
 //! Installed Bullet46920B ->100536E0/10062320 and AI6FAF0D ->10053DF0.
 //! Evidence/transport bounds: tools/rules_oracle/ares_emp.{py,json,meta.json};
@@ -204,8 +204,9 @@ mod receiver {
     }
     impl Simulation {
         /// Installed Bullet46920B calls this pre-effect even when Damage=0.
-        /// The bounded producer collects the ground CellClass lists. Airborne
-        /// victims and their half-distance collector remain a later mechanism.
+        /// The victims are getCellSpreadItems' (ground lists and the in-air
+        /// FootClass pass); the airborne ones are mostly Fly/Jumpjet movers,
+        /// which [`Self::deliver_ares_emp`] takes like the ground ones.
         pub(crate) fn apply_ares_emp_detonation(
             &mut self,
             impact: crate::sim::projectile::ProjectileCoord,
@@ -217,20 +218,30 @@ mod receiver {
             if !warhead.ares_rules().is_some_and(|emp| emp.duration() != 0) {
                 return;
             }
-            for target in self.ares_effect_ground_targets(impact, warhead.cell_spread_f64, rules) {
+            for target in self.ares_cell_spread_items(impact, warhead.cell_spread_f64, rules) {
                 let result = self.deliver_ares_emp(target, source, warhead, rules, effects);
                 if result == EmpDelivery::Unsupported {
                     log::debug!("Ares EMP victim {target} requires a later dependency chain");
                 }
             }
         }
-        pub(crate) fn ares_effect_ground_targets(
+        /// Helpers::Alex::getCellSpreadItems (Ares.dll 10076660) with
+        /// includeInAir, as all three callers (applyIronCurtain 10052890,
+        /// applyAttachedEffect 10052700, CreateEMPulse 10062240) pass it: the
+        /// Technos on the cells [`Self::ares_cell_spread_technos`] walks, then
+        /// every FootClass::Array object (`0x8B3DC4`) whose Location lies
+        /// within `spread * 256` of the impact and whose GetHeight (vt+0x1C8)
+        /// is above 0, as one set in UniqueID order. The final pass drops an
+        /// InvisibleInGame Building and any object whose GetCoords (vt+0x48)
+        /// lies beyond `spread * 256`; an Aircraft whose IsInAir (vt+0x54)
+        /// holds counts half its distance.
+        pub(crate) fn ares_cell_spread_items(
             &self,
             impact: crate::sim::projectile::ProjectileCoord,
             spread: f64,
             rules: &RuleSet,
         ) -> Vec<u64> {
-            use crate::sim::movement::ground_pose;
+            use crate::sim::movement::{air_movement, ground_pose};
             let range = X87::fistp_i32_masked(X87::add(
                 X87::load_f64(NativeF64Bits::from_bits(spread.to_bits())),
                 X87::load_f64(NativeF64Bits::from_bits(0.99f64.to_bits())),
@@ -244,30 +255,55 @@ mod receiver {
                 y: impact.y,
                 z: impact.z,
             });
-            let mut candidates = Vec::new();
-            self.ares_cell_spread_technos(center, range, |occupant| {
-                let Some(entity) = self.substrate.entities.get(occupant) else {
-                    return;
-                };
+            let terrain = self.resolved_terrain.as_ref();
+            let keep = |occupant: u64| -> Option<(i32, u64)> {
+                let entity = self.substrate.entities.get(occupant)?;
                 if entity.category() == EntityCategory::Structure
                     && self
                         .interner
                         .object_type(entity.type_ref(), rules)
                         .is_some_and(|kind| kind.invisible_in_game)
                 {
-                    return;
+                    return None;
                 }
-                let Some(coord) = ground_pose::target_get_coords(
+                let coord = ground_pose::target_get_coords(
                     crate::sim::combat::TargetKind::Entity(occupant),
                     self,
                     cells.as_ref(),
-                ) else {
-                    return;
+                )?;
+                // `dist * 0.5 <= spread * 256` is `dist <= 2 * spread * 256`
+                // exactly: both scale by a power of two.
+                let reach = if entity.category() == EntityCategory::Aircraft
+                    && air_movement::is_high_flying(entity, terrain, Some((rules, &self.interner)))
+                {
+                    spread * 2.0
+                } else {
+                    spread
                 };
-                if emp_ground_in_range(impact, [coord.x, coord.y, coord.z], spread) {
-                    candidates.push((entity.native_unique_id(), occupant));
-                }
+                emp_ground_in_range(impact, [coord.x, coord.y, coord.z], reach)
+                    .then(|| (entity.native_unique_id(), occupant))
+            };
+            let mut candidates = Vec::new();
+            self.ares_cell_spread_technos(center, range, |occupant| {
+                candidates.extend(keep(occupant));
             });
+            // The includeInAir pass: the whole FootClass array, limbo and dead
+            // rows too (each caller rejects those itself).
+            let entities = &self.substrate.entities;
+            for index in 0..entities.foot_registry_len() {
+                let Some(foot) = entities.foot_registry_at(index) else {
+                    continue;
+                };
+                let Some(entity) = entities.get(foot) else {
+                    continue;
+                };
+                let location = ground_pose::object_location(entity, terrain);
+                if emp_ground_in_range(impact, [location.x, location.y, location.z], spread)
+                    && air_movement::current_fly_height(entity, terrain) > 0
+                {
+                    candidates.extend(keep(foot));
+                }
+            }
             // Native set comparator10035BA8/100765BA uses signed Abstract+10,
             // including equality: two references to the same UID deliver once.
             candidates.sort_by_key(|(uid, _)| *uid);
@@ -327,8 +363,10 @@ mod receiver {
             });
         }
         /// One actual10062320 delivery. Supported victims are human
-        /// Drive/Walk and ordinary AI Drive, with no Team/managers/harvester/positive death threshold.
-        /// Their distinct detach/AI/aircraft/building paths remain explicit residuals.
+        /// Drive/Walk, AI Drive and every Fly/Jumpjet mover (Aircraft
+        /// included), in or out of a team, with or without spawn, slave or
+        /// capture managers; harvesters and the AI Walk path remain explicit
+        /// residuals.
         fn deliver_ares_emp(
             &mut self,
             target: u64,
@@ -380,7 +418,8 @@ mod receiver {
             }
             let default_immune = match victim.category() {
                 EntityCategory::Infantry => !object.cyborg,
-                EntityCategory::Unit => object.organic,
+                // IsTypeEMPProne: every other Foot type is prone unless Organic.
+                EntityCategory::Unit | EntityCategory::Aircraft => object.organic,
                 EntityCategory::Structure if ordinary_building(object) => {
                     // Installed10062DC0..10062E32: invisible is ineligible;
                     // ordinary powered Buildings need a positive native drain.
@@ -424,13 +463,18 @@ mod receiver {
             }
             // Restrict the new producer by actual dependency support, not a
             // fabricated immunity. An unsupported victim is observable to tests.
+            // Fly and Jumpjet movers need no recovery mission of their own:
+            // a flying Aircraft crashes (enableEMPEffect10062B40) and the inlined
+            // Threshold in-air arm of10062320 destroys the others.
+            let mover = victim.locomotor.as_ref().map(|loco| loco.active_kind());
             if (victim.category() != EntityCategory::Structure
-                && (!matches!(
-                    victim.locomotor.as_ref().map(|loco| loco.active_kind()),
-                    Some(LocomotorKind::Drive | LocomotorKind::Walk)
-                ) || (!self.owner_is_human(victim.owner())
-                    && victim.locomotor.as_ref().map(|loco| loco.active_kind())
-                        != Some(LocomotorKind::Drive))))
+                && !match mover {
+                    Some(LocomotorKind::Drive | LocomotorKind::Fly | LocomotorKind::Jumpjet) => {
+                        true
+                    }
+                    Some(LocomotorKind::Walk) => self.owner_is_human(victim.owner()),
+                    _ => false,
+                })
                 || (victim.category() == EntityCategory::Structure
                     && (victim.prism_support_count.count() != 0
                         || victim
@@ -444,13 +488,7 @@ mod receiver {
                             })))
                 || victim.is_harvester()
                 || victim.is_falling_down()
-                || victim.spawn_manager.is_some()
-                || victim.slave_manager.is_some()
-                || victim.capture_manager.is_some()
                 || victim.mind_control.controller().is_some()
-                || victim.temporal.warp_target().is_some()
-                || self.team_script_vm.team_for_member(target).is_some()
-                || kind.threshold() > 0
             {
                 return EmpDelivery::Unsupported;
             }
@@ -458,6 +496,7 @@ mod receiver {
                 return EmpDelivery::Rejected;
             }
             let delta = duration_delta(settings.duration(), kind.modifier());
+            let threshold = kind.threshold();
             let old = victim.emp.remaining;
             let remaining = capped_duration(old, delta, settings.cap());
             //10062625 first activation may select Type/General fallback;
@@ -498,17 +537,7 @@ mod receiver {
                     self.dispatch_object_tag_event(target, 64, Some(target), None, context);
                 }
             } else if old <= 0 && remaining > 0 {
-                let selected = self
-                    .substrate
-                    .entities
-                    .get(target)
-                    .is_some_and(|entity| entity.selection.is_selected());
-                self.enable_ares_emp(target, rules, effects);
-                if selected {
-                    if let Some(entity) = self.substrate.entities.get_mut(target) {
-                        entity.selection.select();
-                    }
-                }
+                let died = self.enable_ares_emp(target, source, rules, effects);
                 // 100624C5..10062509 checks Alive before63 and again before
                 //62. The generic raise has no source; retain the current Tag
                 //rather than a pre-callback attachment. Neither check skips
@@ -532,7 +561,29 @@ mod receiver {
                         self.dispatch_object_tag_event(target, 62, Some(target), None, context);
                     }
                 }
+                // LAB_100625EF: a crashing Aircraft goes through TechnoExt::Destroy
+                // (10044300) with the firer as killer, after both events.
+                if died {
+                    self.ares_techno_destroy(
+                        target,
+                        source,
+                        rules,
+                        effects.overlay_registry(),
+                        effects,
+                    );
+                    return EmpDelivery::Applied;
+                }
             } else if old == remaining {
+                return EmpDelivery::Applied;
+            }
+            if remaining > 0 && self.ares_emp_threshold_exceeded(target, threshold, rules) {
+                self.ares_techno_destroy(
+                    target,
+                    source,
+                    rules,
+                    effects.overlay_registry(),
+                    effects,
+                );
                 return EmpDelivery::Applied;
             }
             if first_activation || settings.sparkles().is_some() {
@@ -540,12 +591,61 @@ mod receiver {
             }
             EmpDelivery::Applied
         }
-        fn enable_ares_emp(&mut self, target: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
-            let building = self
-                .substrate
-                .entities
-                .get(target)
-                .is_some_and(|entity| entity.category() == EntityCategory::Structure);
+        /// TechnoTypeExt+13C EMP.Threshold, inlined in10062320 after a
+        /// delivery leaves the counter positive: the live counter above
+        /// |Threshold| destroys a positive-Threshold victim, and a negative
+        /// one only while IsInAir (vt+0x54) without a Parachute (+0x88), not
+        /// crashing, and, for a Foot, neither held (+0x6AD) nor dropped
+        /// (+0x6AE) by a Magnetron.
+        fn ares_emp_threshold_exceeded(
+            &self,
+            target: u64,
+            threshold: i32,
+            rules: &RuleSet,
+        ) -> bool {
+            let Some(entity) = self.substrate.entities.get(target) else {
+                return false;
+            };
+            // Signed compare of the wrapped absolute value, as native.
+            if threshold == 0 || threshold.wrapping_abs() >= entity.emp.remaining {
+                return false;
+            }
+            threshold > 0
+                || (crate::sim::movement::air_movement::is_high_flying(
+                    entity,
+                    self.resolved_terrain.as_ref(),
+                    Some((rules, &self.interner)),
+                ) && entity.parachute_animation().is_none()
+                    && !entity.crash.is_crashing()
+                    && (!entity.category().is_foot()
+                        || (!entity.lift.may_end() && !entity.lift.swap_active())))
+        }
+        /// Installed enableEMPEffect10062B40. True when a flying Aircraft
+        /// must crash instead (its first branch, before any other write).
+        fn enable_ares_emp(
+            &mut self,
+            target: u64,
+            source: Option<u64>,
+            rules: &RuleSet,
+            effects: FrameEffects<'_>,
+        ) -> bool {
+            let Some(entity) = self.substrate.entities.get(target) else {
+                return false;
+            };
+            let category = entity.category();
+            let building = category == EntityCategory::Structure;
+            // GetHeight (vt+0x1C8) above 0 crashes it unless a Magnetron
+            // holds (+0x6AD) or dropped (+0x6AE) it.
+            if category == EntityCategory::Aircraft
+                && crate::sim::movement::air_movement::current_fly_height(
+                    entity,
+                    self.resolved_terrain.as_ref(),
+                ) > 0
+                && !entity.lift.may_end()
+                && !entity.lift.swap_active()
+            {
+                return true;
+            }
             if building {
                 //10062B58..98: House dirty, then DisableStuff452480. Online660
                 // is independent and must stay unchanged during EMP.
@@ -559,6 +659,26 @@ mod receiver {
             if let Some(entity) = self.substrate.entities.get_mut(target) {
                 entity.emp.last_mission = entity.mission.current().raw();
             }
+            // After LastMission (TechnoExt+14): a Temporal warper lets go, a Magnetron
+            // releases its held object, and a Foot leaves its team
+            // (LiberateMember(this, -1, false)), all before Deactivate.
+            Self::temporal_release_if_warping(
+                &mut self.substrate,
+                &mut self.houses,
+                &mut self.power_states,
+                target,
+            );
+            if self
+                .substrate
+                .entities
+                .get(target)
+                .is_some_and(|entity| entity.lift.target().is_some())
+            {
+                self.release_locomotor(target, true, rules, effects.overlay_registry(), effects);
+            }
+            if category.is_foot() {
+                self.leave_team(target, false, rules, effects);
+            }
             if self
                 .substrate
                 .entities
@@ -567,6 +687,11 @@ mod receiver {
             {
                 //10062C26..57 saves only a Building's Focus across the shared
                 //Deactivate -> ResetOrdersToGuard, which normally clears it.
+                let selected = self
+                    .substrate
+                    .entities
+                    .get(target)
+                    .is_some_and(|entity| entity.selection.is_selected());
                 let focus = building.then(|| {
                     self.substrate
                         .entities
@@ -575,6 +700,11 @@ mod receiver {
                         .archive_target()
                 });
                 self.techno_deactivate(target, rules, effects);
+                // A selected victim is selected again with the selection
+                // voice off (g_SelectionVoice_Enable cleared around vt+0x14C).
+                if selected && let Some(entity) = self.substrate.entities.get_mut(target) {
+                    entity.selection.select();
+                }
                 if let Some(focus) = focus {
                     self.substrate
                         .entities
@@ -583,6 +713,26 @@ mod receiver {
                         .set_archive_target(focus);
                 }
             }
+            // After Deactivate: CaptureManager FreeAll, updateSpawnManager
+            //(10063070) with the firer, then the inlined SuspendWork.
+            if self
+                .substrate
+                .entities
+                .get(target)
+                .is_some_and(|entity| entity.capture_manager.is_some())
+            {
+                self.free_all_captures(target, rules, effects.overlay_registry(), effects);
+            }
+            self.ares_update_spawn_manager(target, source, rules, effects);
+            if let Some(manager) = self
+                .substrate
+                .entities
+                .get_mut(target)
+                .and_then(|entity| entity.slave_manager.as_mut())
+            {
+                manager.suspend_work();
+            }
+            false
         }
         fn disable_ares_emp(&mut self, target: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
             let building = self
@@ -626,6 +776,18 @@ mod receiver {
                         .unwrap()
                         .set_archive_target(focus);
                 }
+            }
+            // LAB_1006288A: updateSpawnManager (10063070, NULL Source)
+            // resumes the spawn timers, then the inlined ResumeWork.
+            self.ares_update_spawn_manager(target, None, rules, effects);
+            let frame = self.session.binary_frame() as i32;
+            if let Some(manager) = self
+                .substrate
+                .entities
+                .get_mut(target)
+                .and_then(|entity| entity.slave_manager.as_mut())
+            {
+                manager.resume_work(frame);
             }
             self.retire_ares_emp_sparkle(target);
             self.recover_ares_emp_ai_mission(target, rules);
@@ -1448,7 +1610,7 @@ mod receiver {
                     z: int(&f["impact"][2]),
                 };
                 let actual: Vec<_> = sim
-                    .ares_effect_ground_targets(impact, f["spread"].as_f64().unwrap(), &rules)
+                    .ares_cell_spread_items(impact, f["spread"].as_f64().unwrap(), &rules)
                     .iter()
                     .map(|id| sim.entities().get(*id).unwrap().native_unique_id())
                     .collect();
@@ -2420,8 +2582,7 @@ mod receiver {
                         );
                     }
                 }
-                let ids =
-                    sim.ares_effect_ground_targets(impact, f["spread"].as_f64().unwrap(), &rules);
+                let ids = sim.ares_cell_spread_items(impact, f["spread"].as_f64().unwrap(), &rules);
                 let uids: Vec<_> = ids
                     .iter()
                     .map(|id| sim.substrate.entities.get(*id).unwrap().native_unique_id())
@@ -2774,6 +2935,174 @@ mod receiver {
                 sim.substrate.entities.get(target).unwrap().emp_sparkle(),
                 None
             );
+        }
+
+        /// Fly/Jumpjet fixtures for the airborne delivery: a Fly Aircraft and
+        /// a Jumpjet Unit (its `extra` keys appended), both prone by default.
+        /// TechnoExt::Destroy10044300 hits with RulesClass::C4Warhead, which
+        /// the Rules constructor leaves null, so the fixture names retail's.
+        fn air_rules(extra: &str) -> RuleSet {
+            let ini = IniFile::from_str(&format!(
+                "[VehicleTypes]\n0=TANK\n1=JJ\n[AircraftTypes]\n0=JET\n\
+                 [Warheads]\n0=EMPWH\n1=Super\n[CombatDamage]\nC4Warhead=Super\n\
+                 [Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+                 [TANK]\nStrength=400\nArmor=heavy\nSpeed=6\n\
+                 Locomotor={{4A582741-9839-11d1-B709-00A024DDAFD1}}\nMovementZone=Normal\n\
+                 [JET]\nStrength=200\nArmor=light\nSpeed=12\n\
+                 Locomotor={{4A582746-9839-11d1-B709-00A024DDAFD1}}\nMovementZone=Fly\n\
+                 [JJ]\nStrength=200\nArmor=light\nSpeed=6\nJumpJet=yes\n\
+                 Locomotor={{92612C46-F71F-11d1-AC9F-006008055BB5}}\nMovementZone=Fly\n{extra}\
+                 [EMPWH]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
+                 EMP.Duration=2\nEMP.Cap=2\n"
+            ));
+            let layers = crate::rules::native_processing::RulesLayerStack::new(ini);
+            let processed = layers
+                .process_with_fixed_art(&IniFile::from_str(""))
+                .unwrap();
+            RuleSet::from_processed_rules(&processed).unwrap()
+        }
+        fn raise(sim: &mut Simulation, id: u64, height: i32) {
+            let ground = crate::sim::movement::ground_pose::object_location(
+                sim.substrate.entities.get(id).unwrap(),
+                sim.resolved_terrain.as_ref(),
+            )
+            .z;
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .position
+                .set_exact_z_leptons_for_test(Some(ground + height));
+        }
+        fn destroyed(sim: &Simulation, id: u64) -> bool {
+            sim.substrate
+                .entities
+                .get(id)
+                .is_none_or(|entity| entity.health.current() == 0)
+        }
+
+        /// Installed enableEMPEffect10062B40 crashes an Aircraft whose
+        /// GetHeight is above 0 (before any write) and delivery
+        /// destroys it through TechnoExt::Destroy10044300 after the events
+        /// (LAB_100625EF). A Jumpjet Unit in the air is deactivated, and the
+        /// default EMP.Threshold=-1 in-air arm of10062320 then
+        /// destroys it once the counter exceeds 1; Threshold=0 keeps it.
+        #[test]
+        fn ares_emp_flying_aircraft_crash_and_airborne_jumpjet_threshold() {
+            for (extra, jumpjet_dies) in [("", true), ("EMP.Threshold=0\n", false)] {
+                let rules = air_rules(extra);
+                let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+                sim.intern_rule_type_ids(&rules);
+                sim.resolve_type_handles(&rules);
+                let jet = sim
+                    .spawn_object_at_height("JET", "Americans", 10, 10, 0, 0, &rules)
+                    .unwrap();
+                let jumpjet = sim
+                    .spawn_object_at_height("JJ", "Americans", 14, 10, 0, 0, &rules)
+                    .unwrap();
+                let source = sim
+                    .spawn_object_at_height("TANK", "Russians", 20, 10, 0, 0, &rules)
+                    .unwrap();
+                for id in [jet, jumpjet] {
+                    raise(&mut sim, id, 600);
+                }
+                let wh = rules.warhead("EMPWH").unwrap();
+                assert_eq!(
+                    sim.deliver_ares_emp(jet, Some(source), wh, &rules, FrameEffects::empty()),
+                    EmpDelivery::Applied
+                );
+                assert!(destroyed(&sim, jet), "{extra}");
+                assert_eq!(
+                    sim.deliver_ares_emp(jumpjet, Some(source), wh, &rules, FrameEffects::empty()),
+                    EmpDelivery::Applied
+                );
+                assert_eq!(destroyed(&sim, jumpjet), jumpjet_dies, "{extra}");
+                if !jumpjet_dies {
+                    let victim = sim.substrate.entities.get(jumpjet).unwrap();
+                    assert_eq!(victim.emp_remaining(), 2);
+                    assert!(victim.deactivated.is_offline());
+                }
+            }
+        }
+
+        /// enableEMPEffect10062B40 runs updateSpawnManager10063070 with the
+        /// firer: a rocket node (`+0x14`) in flight is destroyed, an
+        /// ordinary child is not, and both manager timers pause; the
+        /// natural expiry's DisableEMPEffect100627F0 resumes them.
+        #[test]
+        fn ares_emp_spawner_loses_flying_rockets_and_holds_timers_until_expiry() {
+            use crate::sim::spawn_manager::{SpawnManagerState, SpawnSlot, SpawnSlotState};
+            use crate::sim::timer::CdTimer;
+            let rules = air_rules("");
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 17);
+            sim.intern_rule_type_ids(&rules);
+            sim.resolve_type_handles(&rules);
+            let spawner = sim
+                .spawn_object_at_height("TANK", "Americans", 10, 10, 0, 0, &rules)
+                .unwrap();
+            let rocket = sim
+                .spawn_object_at_height("TANK", "Americans", 16, 16, 0, 0, &rules)
+                .unwrap();
+            let child = sim
+                .spawn_object_at_height("TANK", "Americans", 18, 16, 0, 0, &rules)
+                .unwrap();
+            let source = sim
+                .spawn_object_at_height("TANK", "Russians", 12, 10, 0, 0, &rules)
+                .unwrap();
+            sim.session.set_binary_frame_for_test(100);
+            let spawn_type = sim.interner.intern("TANK");
+            let mut manager = SpawnManagerState::for_test(
+                spawn_type,
+                vec![
+                    SpawnSlot::for_test(
+                        Some(rocket),
+                        SpawnSlotState::InFlight,
+                        CdTimer::default(),
+                        true,
+                    ),
+                    SpawnSlot::for_test(
+                        Some(child),
+                        SpawnSlotState::InFlight,
+                        CdTimer::default(),
+                        false,
+                    ),
+                ],
+            );
+            manager.set_update_timer_for_test(CdTimer::started(90, 30));
+            sim.substrate
+                .entities
+                .get_mut(spawner)
+                .unwrap()
+                .spawn_manager = Some(manager);
+            let wh = rules.warhead("EMPWH").unwrap();
+            assert_eq!(
+                sim.deliver_ares_emp(spawner, Some(source), wh, &rules, FrameEffects::empty()),
+                EmpDelivery::Applied
+            );
+            assert!(destroyed(&sim, rocket));
+            assert!(!destroyed(&sim, child));
+            let timer = |sim: &Simulation| {
+                let manager = sim
+                    .substrate
+                    .entities
+                    .get(spawner)
+                    .unwrap()
+                    .spawn_manager
+                    .as_ref()
+                    .unwrap();
+                let update = manager.update_timer();
+                (update.start_frame(), update.duration())
+            };
+            assert_eq!(timer(&sim), (-1, 20));
+            sim.session.set_binary_frame_for_test(105);
+            sim.tick_ares_emp(spawner, &rules, FrameEffects::empty());
+            assert_eq!(timer(&sim), (-1, 20));
+            sim.tick_ares_emp(spawner, &rules, FrameEffects::empty());
+            assert_eq!(
+                sim.substrate.entities.get(spawner).unwrap().emp_remaining(),
+                0
+            );
+            assert_eq!(timer(&sim), (105, 20));
         }
     }
 }

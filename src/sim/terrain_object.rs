@@ -68,6 +68,12 @@ pub struct TerrainObjectState {
     /// Immutable type projection used to maintain cell admission after unlink.
     spawns_tiberium: bool,
     lifecycle: TerrainObjectLifecycle,
+    /// `TerrainClass+0xCC` IsOnFire (constructor false). Only the Ares
+    /// terrain fire sets it (`sim::terrain_fire`); stock YR never calls
+    /// `Catch_Fire @ 0x0071C5B0`.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    on_fire: bool,
 }
 
 impl std::hash::Hash for TerrainObjectState {
@@ -82,6 +88,10 @@ impl std::hash::Hash for TerrainObjectState {
         self.occupation_bits.hash(state);
         self.spawns_tiberium.hash(state);
         self.lifecycle.hash(state);
+        #[cfg(feature = "ares")]
+        if self.on_fire {
+            b"ares-terrain-on-fire-v1".hash(state);
+        }
     }
 }
 
@@ -136,6 +146,8 @@ impl TerrainObjectState {
             occupation_bits: terrain_type.raw_occupation_bits(snow_theater),
             spawns_tiberium: terrain_type.spawns_tiberium,
             lifecycle,
+            #[cfg(feature = "ares")]
+            on_fire: false,
         }
     }
 
@@ -235,6 +247,8 @@ impl TerrainObjectState {
             occupation_bits: 0,
             spawns_tiberium: false,
             lifecycle: TerrainObjectLifecycle::Live,
+            #[cfg(feature = "ares")]
+            on_fire: false,
         }
     }
 
@@ -358,8 +372,14 @@ impl TerrainObjectState {
         terrain_type: &TerrainObjectType,
         game_mode: crate::sim::scenario_session::ScenarioGameMode,
     ) -> bool {
+        // Ares 3.0 ObjectClass_Put_IsFlammable (1004F470, hook 0x5F4FF9):
+        // an `IsFlammable=` type joins too, so a burning tree can spread.
+        #[cfg(feature = "ares")]
+        let needs_update = terrain_type.spawns_tiberium || terrain_type.is_flammable;
+        #[cfg(not(feature = "ares"))]
+        let needs_update = terrain_type.spawns_tiberium;
         terrain_type.is_logic()
-            && terrain_type.spawns_tiberium
+            && needs_update
             && (game_mode.is_single_player() || self.native_unique_id != Some(-2))
     }
 
@@ -432,6 +452,12 @@ impl TerrainObjectState {
     /// Alive, as ObjectCtor5F3930 does before its first Unlimbo.
     pub(crate) fn object_alive(&self) -> bool {
         self.lifecycle != TerrainObjectLifecycle::Destroyed
+    }
+
+    /// `TerrainClass+0xCC` IsOnFire.
+    #[cfg(feature = "ares")]
+    pub(crate) const fn on_fire(&self) -> bool {
+        self.on_fire
     }
 }
 
@@ -624,6 +650,17 @@ impl TerrainObjectStore {
     /// and Save71CF30 address Stage/rate/timer on the instance, never its cell.
     pub fn animations(&self) -> &BTreeMap<u64, TerrainAnimationState> {
         &self.animations
+    }
+
+    /// Write `TerrainClass+0xCC` IsOnFire, the Ares terrain fire's one
+    /// writer (`sim::terrain_fire`). False for an object not stored.
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_on_fire(&mut self, stable_id: u64, on_fire: bool) -> bool {
+        let Some(terrain) = self.objects.get_mut(&stable_id) else {
+            return false;
+        };
+        terrain.on_fire = on_fire;
+        true
     }
 
     /// Cells whose first Terrain has `SpawnsTiberium=yes`. This is a

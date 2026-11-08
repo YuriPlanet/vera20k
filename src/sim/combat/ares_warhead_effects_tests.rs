@@ -322,9 +322,9 @@ fn inf_death_table_anim_takes_its_make_infantry_owner() {
             "[InfantryTypes]\n0=TROOP\n[TROOP]\nStrength=100\nArmor=none\nSpeed=4\n\
              [Animations]\n0=FLAME\n[General]\nFlamingInfantry=FLAME\n",
         );
-        let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(
-            &format!("[FLAME]\nRate=900\n{owner_kind}"),
-        ));
+        let mut art = crate::rules::art_data::ArtRegistry::from_ini(&IniFile::from_str(&format!(
+            "[FLAME]\nRate=900\n{owner_kind}"
+        )));
         art.bind_anim_frame_count_for_test("FLAME", 20);
         rules.replace_art_registry_for_test(art);
         let (mut sim, firer, _) = scene(&rules);
@@ -356,7 +356,11 @@ fn inf_death_table_anim_takes_its_make_infantry_owner() {
             panic!("one FlamingInfantry anim: {}", anims.len());
         };
         let victim = sim.interner.get("Russians").unwrap();
-        assert_eq!(anim.owner_house(), expect_victim.then_some(victim), "{owner_kind}");
+        assert_eq!(
+            anim.owner_house(),
+            expect_victim.then_some(victim),
+            "{owner_kind}"
+        );
     }
 }
 
@@ -406,4 +410,36 @@ fn rad_immune_rank_ability_refuses_radiation_damage() {
         shoot(&mut sim, &rules, firer, target, 30);
         assert_eq!(health(&sim, target) < 1000, damaged, "{experience}");
     }
+}
+
+/// Helpers::Alex::getCellSpreadItems (Ares.dll 10076660) with includeInAir,
+/// the victim collector of applyIronCurtain, applyAttachedEffect and
+/// CreateEMPulse: a FootClass object on no cell list within CellSpread of the
+/// impact is collected while it is above the ground (GetHeight > 0), not at
+/// ground height.
+#[test]
+fn cell_spread_items_collect_airborne_foot_objects() {
+    let rules = rules("IronCurtain.Duration=100\n", "", "");
+    let (mut sim, _, flying) = scene(&rules);
+    let grounded = sim
+        .spawn_object("TARGET", "Russians", 23, 21, 0, &rules)
+        .expect("grounded");
+    let ground = object_get_coords(sim.entities().get(flying).unwrap(), sim.resolved_terrain());
+    for id in [flying, grounded] {
+        let position = &sim.entities().get(id).unwrap().position;
+        let (rx, ry) = (position.rx(), position.ry());
+        sim.substrate.occupancy.remove(rx, ry, id);
+    }
+    sim.substrate
+        .entities
+        .get_mut(flying)
+        .unwrap()
+        .position
+        .set_exact_z_leptons_for_test(Some(ground.z + 100));
+    // 137 leptons from both: halfway between the cells, 50 up.
+    let impact = ProjectileCoord::new(ground.x, ground.y + 128, ground.z + 50);
+    assert_eq!(
+        sim.ares_cell_spread_items(impact, 1.0, &rules),
+        vec![flying]
+    );
 }

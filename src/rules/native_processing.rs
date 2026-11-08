@@ -3552,12 +3552,12 @@ fn read_ares_type_ref(
 /// fallback; any other value replaces the vector with its comma-strtok tokens,
 /// skipping names that do not resolve.
 #[cfg(any(feature = "ares", feature = "phobos"))]
-pub(crate) fn read_nullable_type_vector(
+pub(crate) fn read_nullable_type_vector<T: Clone>(
     section: &IniSection,
     key: &str,
-    current: Option<&Vec<String>>,
-    resolve: impl Fn(&str) -> Option<String>,
-) -> Option<Vec<String>> {
+    current: Option<&Vec<T>>,
+    resolve: impl Fn(&str) -> Option<T>,
+) -> Option<Vec<T>> {
     let Some(value) = section.read_name(key, 0x800) else {
         return current.cloned();
     };
@@ -3660,11 +3660,19 @@ struct AresCountryState {
     #[serde(default = "default_gives_bounty")]
     gives_bounty: bool,
     /// CountryExt+1D0 `StartInMultiplayer.WithConst` (the pair's low byte,
-    /// false), read right before GivesBounty. Its consumer, the starting
-    /// construction yard (MPGameMode_SpawnBaseUnit_BuildConst 1001F0B0,
-    /// hook 0x5D7048), is not ported; nothing reads it.
+    /// false), read right before GivesBounty. The house starts with a
+    /// construction yard instead of its base unit
+    /// (MPGameMode_SpawnBaseUnit_BuildConst 1001F0B0, hook 0x5D7048,
+    /// `sim::scenario_bootstrap`).
     #[serde(default)]
     start_in_multiplayer_with_const: bool,
+    /// CountryExt+1C0 `StartInMultiplayer.Types`
+    /// (NullableVector<TechnoTypeClass*>, unset; HasValue +0x1CC), read
+    /// right before WithConst. The starting units' candidates and budget
+    /// (`sim::scenario_bootstrap`) take it in place of the
+    /// AllowedToStartInMultiplayer scan. Not copied from the parent.
+    #[serde(default)]
+    start_in_multiplayer_types: Option<Vec<crate::rules::superweapon_type::TechnoTypeReference>>,
 }
 
 #[cfg(feature = "ares")]
@@ -3692,6 +3700,7 @@ impl Default for AresCountryState {
             can_be_driven: None,
             gives_bounty: default_gives_bounty(),
             start_in_multiplayer_with_const: false,
+            start_in_multiplayer_types: None,
         }
     }
 }
@@ -3714,13 +3723,34 @@ impl Hash for AresCountryState {
             value.hash(state);
         }
         self.gives_bounty.hash(state);
+        if self.start_in_multiplayer_with_const {
+            b"ares-country-start-with-const-v1".hash(state);
+        }
+        if let Some(types) = &self.start_in_multiplayer_types {
+            b"ares-country-start-types-v1".hash(state);
+            types.hash(state);
+        }
     }
 }
 
 impl CountryVeterancyState {
+    /// The country's own `StartInMultiplayer.Types=`; `None` when unset.
+    #[cfg(feature = "ares")]
+    pub(crate) fn start_in_multiplayer_types(
+        &self,
+    ) -> Option<&[crate::rules::superweapon_type::TechnoTypeReference]> {
+        self.ares.start_in_multiplayer_types.as_deref()
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn gives_bounty(&self) -> bool {
         self.ares.gives_bounty
+    }
+
+    /// The country's own `StartInMultiplayer.WithConst=`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn start_in_multiplayer_with_const(&self) -> bool {
+        self.ares.start_in_multiplayer_with_const
     }
 
     #[cfg(feature = "ares")]
@@ -3832,6 +3862,8 @@ pub(crate) struct AresGlobalControls {
     firestorm: crate::rules::ares_firestorm::FirestormGlobalRules,
     #[serde(default)]
     general: AresGeneralRules,
+    #[serde(default)]
+    forest_fire: crate::rules::terrain_object_type::ForestFireRules,
 }
 
 /// RulesExt keys of LoadBeforeTypeData (1002AB60) and LoadAfterTypeData
@@ -3844,23 +3876,25 @@ pub(crate) struct AresGeneralRules {
     /// +0x8 `[AudioVisual] InfantryElectrocuted` (Valueable<AnimTypeClass*>,
     /// Find only, null), read first by LoadAfterTypeData.
     infantry_electrocuted: Option<String>,
-    /// +0x28 `CanMakeStuffUp` (false). Residual.
+    /// +0x28 `CanMakeStuffUp` (false): `sim::ares_make_stuff_up`.
     can_make_stuff_up: bool,
     /// +0x49 `EnemyWrench` (true).
     enemy_wrench: bool,
     /// +0x4C `TeamRetaliate` (false): a computer team takes its attacker
     /// as its focus (TeamClass_AttackedBy_Retaliate 1003A180, hook
-    /// 0x6EB432). Residual.
+    /// 0x6EB432).
     team_retaliate: bool,
     /// +0x7C..+0x8C `HunterSeekerDetonateProximity`, `DescendProximity`,
     /// `AscentSpeed`, `DescentSpeed`, `EmergeSpeed` (Valueable<int>, 0).
-    /// Residual.
+    /// The speeds feed the HunterSeeker Fly height step; the proximities
+    /// are residual.
     hunter_seeker: [i32; 5],
     /// +0xB0 `Message.SilosNeeded` (Valueable<CSFText>, empty). Residual.
     message_silos_needed: String,
     /// +0x112 `[AudioVisual] DiskLaserAnimEnabled` (false).
     disk_laser_anim_enabled: bool,
-    /// +0x13D `UnitsUnsellable` (false). Residual.
+    /// +0x13D `UnitsUnsellable` (false): the default of TechnoType
+    /// `Unsellable` for a unit's sale on a depot.
     units_unsellable: bool,
     /// +0x150 `StartInMultiplayerUnitCost` (Nullable<int>, unset).
     start_in_multiplayer_unit_cost: Option<i32>,
@@ -3945,6 +3979,19 @@ impl AresGeneralRules {
         self.infantry_electrocuted.as_deref()
     }
 
+    /// `CanMakeStuffUp`: the scenario-start Rules draws (Ares.dll 100677B0,
+    /// hook 0x687C16) and the 90-frame infantry pass (100680F0, hook
+    /// 0x55AFB3), `sim::ares_make_stuff_up`.
+    pub(crate) fn can_make_stuff_up(&self) -> bool {
+        self.can_make_stuff_up
+    }
+
+    /// `TeamRetaliate`: a formed team takes its attacker as its focus
+    /// (TeamClass_AttackedBy_Retaliate, Ares.dll 1003A180, hook 0x6EB432).
+    pub(crate) fn team_retaliate(&self) -> bool {
+        self.team_retaliate
+    }
+
     /// `EnemyWrench`: a player not allied with a repairing building's owner
     /// sees its wrench while it is uncloaked (TechnoClass_DrawExtras_PowerOff,
     /// Ares.dll 10049FE0, hook 0x6F526C).
@@ -3957,6 +4004,19 @@ impl AresGeneralRules {
     /// 0x4A76ED).
     pub(crate) fn disk_laser_anim_enabled(&self) -> bool {
         self.disk_laser_anim_enabled
+    }
+
+    /// `UnitsUnsellable`: TechnoType `Unsellable`'s default when a unit on a
+    /// depot asks whether it can be sold (FootClass_CanBeSold_SellUnit,
+    /// Ares.dll 10048FD0, hook 0x4D9EBD).
+    pub(crate) fn units_unsellable(&self) -> bool {
+        self.units_unsellable
+    }
+
+    /// `HunterSeekerDetonateProximity`, `DescendProximity`, `AscentSpeed`,
+    /// `DescentSpeed` and `EmergeSpeed`, in that order.
+    pub(crate) fn hunter_seeker_speeds(&self) -> [i32; 5] {
+        self.hunter_seeker
     }
 
     /// `StartInMultiplayerUnitCost`: the price of one starting unit
@@ -3996,6 +4056,7 @@ impl Default for AresGlobalControls {
             drop_pod: Default::default(),
             firestorm: Default::default(),
             general: Default::default(),
+            forest_fire: Default::default(),
         }
     }
 }
@@ -4022,9 +4083,14 @@ impl AresGlobalControls {
         &self.general
     }
 
-    /// RESIDUAL consumer: SW_DropPod::Activate (10070E40) and the DropPod
-    /// locomotor hooks (`docs/ares-superweapon-types.md`, part 4).
-    #[allow(dead_code)]
+    /// The stock `TreeFire=` and `TreeFlammability=` reads, for the Ares
+    /// terrain fire (`sim::terrain_fire`).
+    pub(crate) fn forest_fire(&self) -> &crate::rules::terrain_object_type::ForestFireRules {
+        &self.forest_fire
+    }
+
+    /// Read by SW_DropPod::Activate (10070E40) and the DropPod locomotor
+    /// (`sim::superweapon::drop_pod`).
     pub(crate) fn drop_pod(&self) -> &crate::rules::superweapon_type::AresDropPodGlobalRules {
         &self.drop_pod
     }
@@ -4548,10 +4614,15 @@ impl NativeRulesRegistryState {
             }
         };
         if self.families.values().flatten().any(|member| {
+            #[cfg(feature = "ares")]
+            let ares_entries = member.techno_combat.prerequisites().entries();
+            #[cfg(not(feature = "ares"))]
+            let ares_entries = std::iter::empty();
             member
                 .prerequisite
                 .iter()
                 .chain(&member.prerequisite_override)
+                .chain(ares_entries)
                 .any(|entry| !valid_entry(entry))
         }) {
             return Err(RulesError::InvalidSavedState(
@@ -7023,6 +7094,13 @@ impl RulesPassProcessor {
         // current Rules+580 as default, no clamp. Ctor665D92 stores1.
         self.rules_maximum_cheer_rate =
             section.read_int("MaximumCheerRate", self.rules_maximum_cheer_rate);
+        // ReadGeneral66EC08: ReadDouble with the current Rules+588 as default.
+        #[cfg(feature = "ares")]
+        {
+            let forest_fire = &mut self.ares_global_controls.forest_fire;
+            forest_fire.tree_flammability =
+                section.read_double_bits("TreeFlammability", forest_fire.tree_flammability);
+        }
         // General66EC37/66EC57 read current RulesClass values as defaults.
         // Both survive empty/missing later passes and destructive Type resets.
         self.rules_missile_rot_var =
@@ -7085,6 +7163,13 @@ impl RulesPassProcessor {
             "AttackCursorOnDisguise",
             self.rules_attack_cursor_on_disguise,
         );
+        // ReadGeneral's DropPodHeight, DropPodSpeed and DropPodAngle, which
+        // only the Ares DropPod launch reaches (`DropPodLocomotorRules`).
+        #[cfg(feature = "ares")]
+        self.ares_global_controls
+            .drop_pod
+            .locomotor
+            .read_general(section);
 
         // Ares 3.0 Buf_General (1005BB00, hook 0x66D55E) reads these lists
         // at ReadGeneral's start through ParseList (1005B340 and its other
@@ -7215,6 +7300,15 @@ impl RulesPassProcessor {
                 }
             } else {
                 let resolved = self.resolve_scalar_from(section, key, family, 0x80);
+                // ReadGeneral's DropPodWeapon (Rules+0x5A4), for the Ares
+                // DropPod locomotor (`DropPodLocomotorRules`).
+                #[cfg(feature = "ares")]
+                if key == "DropPodWeapon" {
+                    self.ares_global_controls
+                        .drop_pod
+                        .locomotor
+                        .read_weapon(resolved.clone());
+                }
                 self.rules_type_references.read_pointer(key, resolved);
             }
         }
@@ -7223,6 +7317,16 @@ impl RulesPassProcessor {
     /// Store one `[General]` type list's read: `None` (absent key) keeps the
     /// retained vector, a present read replaces it.
     fn store_general_list(&mut self, key: &str, resolved: Option<Vec<String>>) {
+        // ReadGeneral's DropPod= (Rules+0x108), the landed pod's anims, for
+        // the Ares DropPod locomotor (`DropPodLocomotorRules`).
+        #[cfg(feature = "ares")]
+        if key == "DropPod" {
+            self.ares_global_controls
+                .drop_pod
+                .locomotor
+                .read_anims(resolved);
+            return;
+        }
         let lists = &mut self.general_type_lists;
         let slot = match key {
             "MetallicDebris" => &mut lists.metallic_debris,
@@ -7669,9 +7773,23 @@ impl RulesPassProcessor {
                 .buildings = resolved;
         }
         if let Some(section) = pass.section(&id) {
+            // `StartInMultiplayer.Types` (NullableVector<TechnoTypeClass*>
+            // reader 1000EA30 over Find 10007EA0, unknown names skipped)
+            // precedes WithConst.
+            let types = read_nullable_type_vector(
+                section,
+                "StartInMultiplayer.Types",
+                self.families[&RulesTypeFamily::Country][index]
+                    .country_veterancy
+                    .ares
+                    .start_in_multiplayer_types
+                    .as_ref(),
+                |name| self.find_existing_techno_type(name),
+            );
             let current = &mut self.family_mut(RulesTypeFamily::Country)[index]
                 .country_veterancy
                 .ares;
+            current.start_in_multiplayer_types = types;
             current.start_in_multiplayer_with_const = section.read_ares_bool(
                 "StartInMultiplayer.WithConst",
                 current.start_in_multiplayer_with_const,
@@ -8395,6 +8513,23 @@ impl RulesPassProcessor {
                         })
                         .collect::<Vec<_>>();
                     self.family_mut(family)[index].crew.read_pass(&raw, &pilots);
+                    // 1003E093..1003E0F1 and on: the prerequisite lists after
+                    // the Survivor reads. List 0 is the type's own `Prerequisite`.
+                    let member = &mut self.family_mut(family)[index];
+                    let mut list0 = std::mem::take(&mut member.prerequisite);
+                    let mut prerequisites =
+                        std::mem::take(member.techno_combat.prerequisites_mut());
+                    prerequisites.read_pass(&raw, &mut list0, |key, prior| {
+                        parse_prerequisites(
+                            raw.read_list(key, 0x800),
+                            prior,
+                            |name| self.building_index(name),
+                            self.ares_prerequisites.as_ref(),
+                        )
+                    });
+                    let member = &mut self.family_mut(family)[index];
+                    member.prerequisite = list0;
+                    *member.techno_combat.prerequisites_mut() = prerequisites;
                     // TypeExt ReadINI1003EADC..1003EAED, NullableBool1000E9B0.
                     let member = &mut self.family_mut(family)[index];
                     // Ares1003EC3C..1003EC7C reads 2048 then strncpy_s with
@@ -8431,6 +8566,7 @@ impl RulesPassProcessor {
                             self.resolve_existing_type_from(&raw, key, family)
                         },
                         |key| self.resolve_existing_techno_type_from(&raw, key),
+                        |key| self.resolve_existing_techno_type_list_from(&raw, key),
                         |name| {
                             self.find_existing(RulesTypeFamily::Animation, name)
                                 .map(|index| {
@@ -8624,6 +8760,23 @@ impl RulesPassProcessor {
                                 RulesTypeFamily::Infantry,
                                 2048,
                             );
+                            // 1000DD40 Tunnel (INI_EX::ReadString, 2048):
+                            // its index in this pass's [TunnelTypes] list.
+                            let tunnel = raw
+                                .read_name("Tunnel", 0x800)
+                                .map(|name| self.ares_global_controls.building.tunnel_index(name));
+                            // 1000DD40 SecretLab.PossibleBoons: the
+                            // NullableVector<TechnoTypeClass*> reader 1000EA30
+                            // over Find 10007EA0, unknown names skipped.
+                            let possible_boons =
+                                raw.read_name("SecretLab.PossibleBoons", 0x800).map(|_| {
+                                    read_nullable_type_vector(
+                                        &raw,
+                                        "SecretLab.PossibleBoons",
+                                        None,
+                                        |name| self.find_existing_techno_type(name),
+                                    )
+                                });
                             // DockUnloadCell/DockUnloadFacing come from the
                             // type's Image= art section.
                             self.family_mut(family)[index].building_type_ext.read_pass(
@@ -8633,6 +8786,8 @@ impl RulesPassProcessor {
                                     rubble_types,
                                     rubble_anims,
                                     allowed_occupiers,
+                                    tunnel,
+                                    possible_boons,
                                 },
                             );
                             // 1000DD40: Academy.Types/Academy.Ignore through
@@ -10196,10 +10351,27 @@ impl RulesPassProcessor {
             section.read_color_rgb("ChronoBeamColor", self.rules_chrono_beam_color, None);
         self.rules_color_add_selectors.read_pass(section);
         for key in ["DropPodPuff", "VeinAttack", "Dig", "AtmosphereEntry"] {
-            let _ = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
+            let resolved = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
+            // DropPodPuff (Rules+0x4C) and AtmosphereEntry (+0x354), for the
+            // Ares DropPod locomotor (`DropPodLocomotorRules`).
+            #[cfg(feature = "ares")]
+            self.ares_global_controls
+                .drop_pod
+                .locomotor
+                .read_audio_visual(key, resolved);
+            #[cfg(not(feature = "ares"))]
+            let _ = resolved;
         }
         for key in ["TreeFire", "OnFire"] {
-            self.allocate_list_from(section, key, RulesTypeFamily::Animation, 0x80);
+            let resolved = self.resolve_list_from(section, key, RulesTypeFamily::Animation, 0x80);
+            #[cfg(feature = "ares")]
+            if key == "TreeFire"
+                && let Some(tree_fire) = resolved
+            {
+                self.ares_global_controls.forest_fire.tree_fire = tree_fire;
+            }
+            #[cfg(not(feature = "ares"))]
+            let _ = resolved;
         }
         let _ = self.resolve_scalar_from(section, "Smoke", RulesTypeFamily::Animation, 0x80);
         let _ = self.resolve_scalar_from(section, "Smoke", RulesTypeFamily::Animation, 0x80);

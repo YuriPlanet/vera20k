@@ -49,6 +49,10 @@ mod chronosphere_lunar_retail_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod chronosphere_tests;
 #[cfg(feature = "ares")]
+pub(crate) mod drop_pod;
+#[cfg(all(test, feature = "ares"))]
+mod drop_pod_tests;
+#[cfg(feature = "ares")]
 mod emp_pulse;
 #[cfg(all(test, feature = "ares"))]
 mod emp_pulse_tests;

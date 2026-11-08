@@ -56,7 +56,10 @@
 //!   `Full=` admits Foot team members, not Buildings (`0x0065DE7B`). Native
 //!   saved games can retain nonempty stores; their sale payout remains open.
 //! - A unit's sale on a repair depot (the SELL event's unit arm,
-//!   `0x004C6F5A..0x004C6F96`) is its own mechanism.
+//!   `0x004C6F5A..0x004C6F96`, `foot_can_be_sold`, [`foot_on_sold`]) runs
+//!   only with Ares, whose SellUnit cursor reaches it; stock DetermineAction
+//!   answers NoSell for every Foot, so default builds keep the receiver
+//!   building-only.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -81,6 +84,10 @@ mod captured_building_sale_tests;
 #[cfg(test)]
 #[path = "building_sale_trigger_tests.rs"]
 mod building_sale_trigger_tests;
+
+#[cfg(all(test, feature = "ares"))]
+#[path = "unit_sale_tests.rs"]
+mod unit_sale_tests;
 
 /// `TechnoTypeClass::GetRefund @ 0x00711F60` (type vtable `+0xB8`) for a live
 /// house (`RET 8`), in its x87 order under the chop control word:
@@ -159,9 +166,9 @@ pub fn techno_refund(sim: &Simulation, rules: &RuleSet, id: u64) -> Option<i32> 
 /// `RepairTick` response. The depot checks the contacted Techno+3D0 latch at
 /// `0x0044C4BC` and the contact's current House through
 /// `HouseClass::IsControlledByHuman @ 0x0050B730`; only an AI owner reaches
-/// GetRefund (`0x0070ADA0`), Add_Credits (`0x004F9950`), Foot Stun
-/// (`0x004D5660`), Limbo (`0x007440B0`) and Foot UnInit (`0x004DE5D0`).
-/// The human branch's EVA/presentation work is not part of this gate.
+/// [`foot_on_sold`]. Its human-player lines cannot speak here: in mode 0
+/// `IsHumanPlayer` is this same predicate, and otherwise only the player's
+/// own house, which is controlled by a human.
 pub(crate) fn sell_useless_repair_contact(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -184,12 +191,45 @@ pub(crate) fn sell_useless_repair_contact(
     {
         return false;
     }
+    foot_on_sold(sim, rules, id, context)
+}
+
+/// `FootClass::On_Sold @ 0x004D9F70` (vt+0x1A0) with a nonzero control, as
+/// the depot's computer sale ([`sell_useless_repair_contact`]) and, with
+/// Ares, the SELL event's unit arm (`EventClass::Execute 0x004C6F5A..
+/// 0x004C6F96`) call it: for the owner's player (`IsHumanPlayer @
+/// 0x0050B6F0`, `0x004D9F81..0x004D9FB0`) `EVA_UnitSold` and the global
+/// `[AudioVisual] SellSound=`, then GetRefund (`0x0070ADA0`) to the owner
+/// (Add_Credits `0x004F9950`), Foot Stun (`0x004D5660`), Limbo
+/// (`0x007440B0`) and Foot UnInit (`0x004DE5D0`). Answers whether the
+/// sale ran (false when the object, its type or its house is gone).
+pub(crate) fn foot_on_sold(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    context: UninitContext<'_>,
+) -> bool {
     // Ares FootClass_Sell_Detonate (hook 0x4D9F7B), On_Sold's first step.
     // RESIDUAL: a blast that destroys the unit ends the sale here; native
     // runs the rest of On_Sold on the destroyed unit.
     #[cfg(feature = "ares")]
     if !sim.bomb_detonate_on_sell(id, rules, context.registry(), context.effects()) {
         return true;
+    }
+    let Some(owner) = sim.substrate.entities.get(id).map(|entity| entity.owner()) else {
+        return false;
+    };
+    if sim.house_is_human_player(owner) {
+        sim.sound_events.emit(SimSoundEvent::HouseEva {
+            owner,
+            event: "EVA_UnitSold",
+        });
+        if rules.general.sell_sound.is_some() {
+            // VocClass::PlayGlobal(SellSound) for that player: the same
+            // global cue a wall sale plays.
+            sim.sound_events
+                .emit(SimSoundEvent::WallSold { receiver: owner });
+        }
     }
     let Some(refund) = techno_refund(sim, rules, id) else {
         return false;
@@ -199,6 +239,70 @@ pub(crate) fn sell_useless_repair_contact(
     sim.techno_limbo_with_context(id, context);
     sim.uninit_with_context(id, context);
     true
+}
+
+/// `FootClass::CanBeSold @ 0x004D9E70` (vt+0x98), which the sell cursor asks
+/// of the player's object (`DisplayClass::DetermineAction 0x006929F2`): a
+/// Unit or Aircraft whose first radio contact is a Building that sells units
+/// and which stands within 0x80 leptons of it (Sqrt_Approx, ftol), else
+/// `ObjectClass::CanBeSold @ 0x005F42C0`, false. Ares 3.0 replaces the stock
+/// `UnitRepair=` test with `UnitSell.Get(UnitRepair)` and the type's
+/// `Unsellable.Get([General] UnitsUnsellable)` (FootClass_CanBeSold_SellUnit
+/// 10048FD0, hook 0x4D9EBD), and measures to the building's dock coordinate
+/// for this object (GetDockCoords vt+0xA8) in place of its centre
+/// (FootClass_CanBeSold_Dock 1005CA30, hook 0x4D9EE1). Only Ares asks it:
+/// stock DetermineAction answers NoSell for every Foot (`0x00692AFE`).
+#[cfg(feature = "ares")]
+pub fn foot_can_be_sold(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return false;
+    };
+    if !matches!(
+        entity.category(),
+        EntityCategory::Unit | EntityCategory::Aircraft
+    ) {
+        return false;
+    }
+    let Some(depot_id) = entity.radio_contacts.slot(0) else {
+        return false;
+    };
+    let Some(depot) = sim
+        .substrate
+        .entities
+        .get(depot_id)
+        .filter(|depot| depot.category() == EntityCategory::Structure)
+    else {
+        return false;
+    };
+    let (Some(object), Some(depot_type)) = (
+        sim.object_type(entity.type_ref(), rules),
+        sim.object_type(depot.type_ref(), rules),
+    ) else {
+        return false;
+    };
+    if !depot_type
+        .building_type_ext()
+        .unit_sell(depot_type.unit_repair)
+        || object
+            .techno_combat()
+            .unsellable(rules.ares_general().units_unsellable())
+    {
+        return false;
+    }
+    let terrain = sim.resolved_terrain.as_ref();
+    let Some(dock) = crate::sim::movement::building_dock_coordinate(
+        &sim.substrate.entities,
+        depot_id,
+        Some(id),
+        terrain,
+        rules,
+        &sim.interner,
+    ) else {
+        return false;
+    };
+    let at = crate::sim::movement::ground_pose::object_get_coords(entity, terrain);
+    crate::util::native_x87::distance_3d_leptons([at.x, at.y, at.z], [dock.x, dock.y, dock.z])
+        < 0x80
 }
 
 /// Who orders a sale; `BuildingClass::Sell_Back @ 0x00447110` reads its
@@ -332,8 +436,12 @@ pub(crate) fn sell_back(
     else {
         return false;
     };
-    // Ares BuildingClass_Sell_PrismForward (10016970, hook 0x447113) takes
-    // the building out of its Prism network on every order.
+    // Ares BuildingClass_Sell_PrismForward (10016970, hook 0x447113) first
+    // kicks out a Hospital's or Armory's first passenger
+    // (BuildingExt::KickOutHospitalArmory 10012920), then takes the
+    // building out of its Prism network, on every order.
+    #[cfg(feature = "ares")]
+    sim.ares_kick_out_hospital_armory(id, rules, registry, frame_effects);
     #[cfg(feature = "ares")]
     sim.substrate.ares_prism_remove_from_network(id, true);
     if !buildup {
@@ -724,6 +832,11 @@ fn sale_survivors(
     // Both read NoSurvivor (`0x0044A4CA`, How_Many_Survivors), clear on a
     // building alive to sell.
     let count = sim.building_survivor_count(rules, id);
+    // Ares 3.0 100173E0 (hook 0x44A37F), before the absorbed passengers: a
+    // sold last tunnel entrance puts its owner's network out
+    // (`sim::ares_tunnel`).
+    #[cfg(feature = "ares")]
+    sim.ares_sell_tunnel(id, rules, registry, frame_effects);
     let passengers =
         sim.eject_absorbed_passengers(rules, registry, id, None, &cells, frame_effects);
     let garrison = crate::sim::passenger::garrison_eject::sell_building_occupants(
@@ -842,6 +955,10 @@ pub(crate) fn sell_complete(
     // Detach/HouseAbandon and post-Limbo queue callback must observe this
     // phase, before UnInit's earlier PointerExpired/Alive cleanup.
     sim.techno_limbo_with_context(id, context);
+    // Ares builds: the store payout `0x0044A232..0x0044A285` through Ares'
+    // GiveTiberium (`10024290`, `sim::ares_tiberium_storage`).
+    #[cfg(feature = "ares")]
+    sim.ares_sale_storage_payout(id, rules);
     sim.uninit_with_context(id, context);
     false
 }

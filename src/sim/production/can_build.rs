@@ -110,6 +110,73 @@ pub(crate) fn can_build(
         return CanBuild::No;
     };
     let controlled_by_human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
+    let status = requirements_met(sim, rules, owner, house, obj);
+    let bypass_prerequisites = status == RequirementStatus::Overridden;
+    #[cfg(not(feature = "ares"))]
+    if bypass_prerequisites {
+        return build_limit(sim, rules, owner, obj, count_in_production);
+    }
+    // Ares qualification4 skips ordinary requirements/prerequisites, but its
+    // outer CanBuild10021BA1 still asks the real factory and build-limit owners.
+    // Ares PrereqValidate10021B00 refuses every answer below Complete, its
+    // Unbuildable included.
+    if status < RequirementStatus::Complete {
+        return CanBuild::No;
+    }
+    if !crate::rules::ARES_ENABLED && !controlled_by_human {
+        return CanBuild::Yes;
+    }
+    if !bypass_prerequisites && controlled_by_human && !owns_prerequisites(sim, rules, house, obj) {
+        return CanBuild::No;
+    }
+    #[cfg(feature = "ares")]
+    match query_factory(sim, rules, owner, obj, true, true, false, true) {
+        FactorySearch::Missing | FactorySearch::BuildLimitRefused => return CanBuild::No,
+        FactorySearch::Offline => return CanBuild::AtLimit,
+        FactorySearch::Online(_) | FactorySearch::Primary(_) => {}
+    }
+    build_limit(sim, rules, owner, obj, count_in_production)
+}
+
+/// `HouseClass::CanBuild`'s qualification ahead of the prerequisites
+/// (`0x004F7889..0x004F7BE5`, in the order [`can_build`] lists), which with
+/// `ares` is `HouseExt::ExtData::RequirementsMet @ 10021FF0`: the status
+/// Ares's CanBuild (`10021B00`) and UpdateSecretLab's boon pick
+/// (`sim::secret_lab`) ask. The variants keep Ares's order, which
+/// PrereqValidate compares (`< Complete` refuses).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum RequirementStatus {
+    /// 0: `Prerequisite.RequiredTheaters` without the scenario's theater
+    /// (Ares only). `TechnoType+0xC98`, its other source, only the
+    /// constructor writes (0, `0x007113CC`).
+    #[cfg(feature = "ares")]
+    Unbuildable,
+    /// 1: an owned `Prerequisite.Negative` entry (Ares), `RequiredHouses=`,
+    /// `ForbiddenHouses=` or the disabled shell.
+    Forbidden,
+    /// 2: `Prerequisite.StolenTechs` (Ares), `TechLevel=-1`, stolen tech,
+    /// FactoryOwners or the tech level.
+    Incomplete,
+    /// 3.
+    Complete,
+    /// 4: reverse engineered, an on-map `PrerequisiteOverride=` or a lab
+    /// grant; the prerequisites are skipped.
+    Overridden,
+}
+
+/// [`RequirementStatus`] of `obj` for `house` (owned by `owner`).
+pub(crate) fn requirements_met(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    house: &HouseState,
+    obj: &ObjectType,
+) -> RequirementStatus {
+    #[cfg(feature = "debug-tools")]
+    let trainer = sim.debug_flags_for(owner);
+    #[cfg(not(feature = "debug-tools"))]
+    let _ = owner;
+    let controlled_by_human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
     let override_on_map = obj.prerequisite_override.iter().any(|&entry| {
         if crate::rules::ARES_ENABLED {
             // Ares3.0 qualification10021FF0 calls
@@ -127,97 +194,124 @@ pub(crate) fn can_build(
     // House4F78E4..4F7925 scans House+110 and calls459840. This
     // shortcut precedes all ordinary tech/country/prerequisite gates, for
     // humans and AI alike, and still asks the common build-limit owner.
-    let bypass_prerequisites =
-        override_on_map || crate::sim::secret_lab::house_grants(sim, rules, house, obj);
-    #[cfg(not(feature = "ares"))]
-    if bypass_prerequisites {
-        return build_limit(sim, rules, owner, obj, count_in_production);
-    }
-    // Ares qualification4 skips ordinary requirements/prerequisites, but its
-    // outer CanBuild10021BA1 still asks the real factory and build-limit owners.
-    if !bypass_prerequisites {
-        // `0x004F7976..0x004F79E2`: each `RequiresStolen*Tech=` needs the
-        // house's stolen-tech byte, which a spy's BuildTech infiltration sets.
-        let type_tech_level = sim.object_tech_level(obj);
-        // Installed qualification100220FE calls10020AD0, the same session-
-        //aware human predicate; only its human arm rejects TechLevel=-1.
-        if (type_tech_level == -1 && (!crate::rules::ARES_ENABLED || controlled_by_human))
-            || !house.has_stolen_tech_for(obj)
+    // Ares 3.0 RequirementsMet (10021FF0) opens with its own gates, in order:
+    // the theater mask (Unbuildable), HouseOwnsAny100081E0 of the
+    // Prerequisite.Negative list (Forbidden), the house's ReverseEngineered
+    // list (`sim::reverse_engineering`, Overridden) and the HouseExt
+    // StolenTech bits (+0x40) Prerequisite.StolenTechs needs (Incomplete).
+    #[cfg(feature = "ares")]
+    {
+        let prerequisites = obj.techno_combat().prerequisites();
+        if !prerequisites.admits_theater(sim.session.theater()) {
+            return RequirementStatus::Unbuildable;
+        }
+        if prerequisites
+            .negatives()
+            .iter()
+            .any(|&entry| prerequisite_on_map(sim, rules, house, entry))
         {
-            return CanBuild::No;
+            return RequirementStatus::Forbidden;
         }
-        let house_bit = crate::sim::ai_buildable::house_country_bit(
-            rules,
-            sim.interner.resolve(house.house_type_id()),
-        );
-        let required = obj.required_houses_mask(rules);
-        if required != u32::MAX && required & house_bit == 0 {
-            return CanBuild::No;
+        if house.has_ares_reverse_engineered(obj.category, &obj.id) {
+            return RequirementStatus::Overridden;
         }
-        // CanBuild4F7A7D treats raw-1 as its skip sentinel, even when a
-        // nonempty authored list actually resolved to all32 Country bits.
-        let forbidden = obj.forbidden_houses_mask(rules);
-        if forbidden != u32::MAX && forbidden & house_bit != 0 {
-            return CanBuild::No;
-        }
-        #[cfg(feature = "ares")]
-        if !crate::sim::factory_owners::qualifies(sim, rules, house, obj) {
-            return CanBuild::No;
-        }
-        // Ares disabled-shell predicate10021A00..10021A6A bypasses this
-        // skirmish-shell restriction in mode0, before inspecting the Type.
-        if (!crate::rules::ARES_ENABLED || sim.session.game_mode_nonzero())
-            && !sim.session.game_options().super_weapons
-            && obj.category == ObjectCategory::Building
-            && let Some(super_weapon) = obj.super_weapon.as_deref()
-            && !rules.is_build_tech(&obj.id)
-            && rules
-                .super_weapon(super_weapon)
-                .is_some_and(|super_weapon| super_weapon.disableable_from_shell)
-        {
-            return CanBuild::No;
-        }
-        #[cfg(feature = "debug-tools")]
-        let exceeds_tech_level = type_tech_level > house.tech_level() && !trainer.tech_boost;
-        #[cfg(not(feature = "debug-tools"))]
-        let exceeds_tech_level = type_tech_level > house.tech_level();
-        if exceeds_tech_level {
-            return CanBuild::No;
+        if !house.has_ares_stolen_techs(prerequisites.required_stolen_techs()) {
+            return RequirementStatus::Incomplete;
         }
     }
-    if !crate::rules::ARES_ENABLED && !controlled_by_human {
-        return CanBuild::Yes;
+    if override_on_map || crate::sim::secret_lab::house_grants(sim, rules, house, obj) {
+        return RequirementStatus::Overridden;
     }
-    if !bypass_prerequisites && controlled_by_human && !owns_prerequisites(sim, rules, house, obj) {
-        return CanBuild::No;
+    // `0x004F7976..0x004F79E2`: each `RequiresStolen*Tech=` needs the
+    // house's stolen-tech byte, which a spy's BuildTech infiltration sets.
+    let type_tech_level = sim.object_tech_level(obj);
+    // Installed qualification100220FE calls10020AD0, the same session-
+    //aware human predicate; only its human arm rejects TechLevel=-1.
+    if (type_tech_level == -1 && (!crate::rules::ARES_ENABLED || controlled_by_human))
+        || !house.has_stolen_tech_for(obj)
+    {
+        return RequirementStatus::Incomplete;
+    }
+    let house_bit = crate::sim::ai_buildable::house_country_bit(
+        rules,
+        sim.interner.resolve(house.house_type_id()),
+    );
+    let required = obj.required_houses_mask(rules);
+    if required != u32::MAX && required & house_bit == 0 {
+        return RequirementStatus::Forbidden;
+    }
+    // CanBuild4F7A7D treats raw-1 as its skip sentinel, even when a
+    // nonempty authored list actually resolved to all32 Country bits.
+    let forbidden = obj.forbidden_houses_mask(rules);
+    if forbidden != u32::MAX && forbidden & house_bit != 0 {
+        return RequirementStatus::Forbidden;
     }
     #[cfg(feature = "ares")]
-    match query_factory(sim, rules, owner, obj, true, true, false, true) {
-        FactorySearch::Missing | FactorySearch::BuildLimitRefused => return CanBuild::No,
-        FactorySearch::Offline => return CanBuild::AtLimit,
-        FactorySearch::Online(_) | FactorySearch::Primary(_) => {}
+    if !crate::sim::factory_owners::qualifies(sim, rules, house, obj) {
+        return RequirementStatus::Incomplete;
     }
-    build_limit(sim, rules, owner, obj, count_in_production)
+    // Ares disabled-shell predicate10021A00..10021A6A bypasses this
+    // skirmish-shell restriction in mode0, before inspecting the Type.
+    if (!crate::rules::ARES_ENABLED || sim.session.game_mode_nonzero())
+        && !sim.session.game_options().super_weapons
+        && obj.category == ObjectCategory::Building
+        && let Some(super_weapon) = obj.super_weapon.as_deref()
+        && !rules.is_build_tech(&obj.id)
+        && rules
+            .super_weapon(super_weapon)
+            .is_some_and(|super_weapon| super_weapon.disableable_from_shell)
+    {
+        return RequirementStatus::Forbidden;
+    }
+    #[cfg(feature = "debug-tools")]
+    let exceeds_tech_level = type_tech_level > house.tech_level() && !trainer.tech_boost;
+    #[cfg(not(feature = "debug-tools"))]
+    let exceeds_tech_level = type_tech_level > house.tech_level();
+    if exceeds_tech_level {
+        return RequirementStatus::Incomplete;
+    }
+    RequirementStatus::Complete
 }
 
 /// Whether `house` has every `Prerequisite=` entry of `obj` on the map
 /// ([`prerequisite_on_map`]; an empty list is met): CanBuild's human arm, and
 /// with `ares` the power plant filter `0x10021CA0` of `sim::ai_base_building`.
 /// That filter asks HouseOwnsAll `0x10008110` of each of the type's
-/// prerequisite lists (TechnoTypeExt `+0x40`) and is met by any one. Ares
-/// reads list 0 from `Prerequisite=` (`0x1003E0B7`); VERA reads no
-/// `Prerequisite.Lists=`/`Prerequisite.List#=` (`0x1003E093`, `0x1003E0F1`),
-/// so a type that adds lists is judged by list 0 alone. No retail INI sets
-/// either key.
+/// prerequisite lists (TechnoTypeExt `+0x40`,
+/// `ObjectType::ares_prerequisite_lists`) and is met by any one; the same
+/// `PrerequisitesMet @ 10021CA0` is CanBuild's human arm under Ares
+/// (PrereqValidate10021B00).
 pub(crate) fn owns_prerequisites(
     sim: &Simulation,
     rules: &RuleSet,
     house: &HouseState,
     obj: &ObjectType,
 ) -> bool {
-    obj.prerequisite
-        .iter()
-        .all(|&entry| prerequisite_on_map(sim, rules, house, entry))
+    #[cfg(feature = "ares")]
+    let mut lists = obj.ares_prerequisite_lists();
+    #[cfg(not(feature = "ares"))]
+    let mut lists = std::iter::once(obj.prerequisite.as_slice());
+    lists.any(|list| {
+        list.iter()
+            .all(|&entry| prerequisite_on_map(sim, rules, house, entry))
+    })
+}
+
+/// Ares `TechnoTypeExt::ExtData::CanBeBuiltAt @ 1003D9A0`: an explicit
+/// `BuiltAt=` list names `factory`'s type; an empty one admits any factory
+/// type that is not `Factory.ExplicitOnly=`. No country aliases.
+#[cfg(feature = "ares")]
+pub(crate) fn ares_can_be_built_at(
+    rules: &RuleSet,
+    product: &ObjectType,
+    factory: &ObjectType,
+) -> bool {
+    if product.built_at().is_empty() {
+        return !factory.factory_explicit_only();
+    }
+    rules
+        .type_array_index(ObjectCategory::Building, &factory.id)
+        .is_some_and(|index| product.built_at().contains(&index))
 }
 
 /// One `Prerequisite=` entry of CanBuild's human arm
@@ -797,18 +891,8 @@ fn query_factory(
         {
             #[cfg(feature = "ares")]
             {
-                //10020E65 ->1003D9A0: an explicit BuiltAt list overrides the
-                // candidate Type's ExplicitOnly default; no country aliases.
-                if !obj.built_at().is_empty() {
-                    let Some(index) =
-                        rules.type_array_index(ObjectCategory::Building, &building_type.id)
-                    else {
-                        continue;
-                    };
-                    if !obj.built_at().contains(&index) {
-                        continue;
-                    }
-                } else if building_type.factory_explicit_only() {
+                //10020E65 ->1003D9A0.
+                if !ares_can_be_built_at(rules, obj, building_type) {
                     continue;
                 }
                 //10020E73..10020E92 preserves offline availability separately

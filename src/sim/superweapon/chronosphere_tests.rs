@@ -1031,6 +1031,93 @@ fn retail_chrono_warp_onto_the_iron_curtain_kills_the_warper() {
     assert!(!dead(&sim, curtained));
 }
 
+/// Ares 3.0 TeleportLocomotionClass_Unwarp_PreventSelfCrush (10037BC0, hook
+/// 0x7187DA): a warper that came under the Iron Curtain during its warp is
+/// not crushed by its own curtain on the landing cell.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_iron_curtained_warper_survives_its_own_landing() {
+    let Some((rules, mut sim, americans)) = retail_world() else {
+        return;
+    };
+    let tank = spawn(&mut sim, &rules, "MTNK", "Americans", SOURCE);
+    charge_chronosphere(&mut sim, americans);
+    click(&mut sim, &rules, americans, "ChronoSphereSpecial", SOURCE);
+    click(&mut sim, &rules, americans, "ChronoWarpSpecial", TARGET);
+    let frame = sim.session.binary_frame();
+    crate::sim::superweapon::invulnerability::apply_invulnerability(
+        sim.substrate.entities.get_mut(tank).unwrap(),
+        frame,
+        10_000,
+        crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
+    );
+    for _ in 0..62 {
+        step(&mut sim, &rules);
+    }
+    assert!(!dead(&sim, tank));
+    assert_eq!(cell(&sim, tank), TARGET);
+}
+
+/// Ares 3.0 TeleportLocomotionClass_Unwarp_SinkJumpJets (10037BE0, hook
+/// 0x7188F2): a Robot Tank offline for want of power does not float on a
+/// water landing, though its AmphibiousDestroyer zone floats it otherwise
+/// (SinkOrSwim, 0x718871).
+#[cfg(feature = "ares")]
+#[test]
+fn ares_chrono_warp_sinks_an_offline_robot_tank_on_water() {
+    use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    // Land at SOURCE, open water around TARGET.
+    let (rules, mut sim, americans) =
+        world_with_cells(rules, 64, ("robot sink", Vec::new()), |x, y| {
+            let mut cell = test_terrain_cell(x, y);
+            if (35..=45).contains(&x) && (35..=45).contains(&y) {
+                cell.land_type = LandType::Water.as_index();
+                cell.base_land_type = cell.land_type;
+                cell.speed_costs = SpeedCostProfile {
+                    float: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    winged: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    // Retail `[Water]` admits Hover and Amphibious too.
+                    hover: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    amphibious: Some(crate::util::native_x87::NativeF32Bits::ONE),
+                    ..Default::default()
+                };
+                cell.base_speed_costs = cell.speed_costs;
+                cell.zone_type = 4;
+                cell.ground_walk_blocked = true;
+                cell.base_ground_walk_blocked = true;
+                cell.base_build_blocked = true;
+            }
+            cell
+        });
+    let robot = spawn(&mut sim, &rules, "ROBO", "Americans", SOURCE);
+    sim.substrate
+        .entities
+        .get_mut(robot)
+        .unwrap()
+        .deactivated
+        .set_for_test(true);
+    charge_chronosphere(&mut sim, americans);
+    click(&mut sim, &rules, americans, "ChronoSphereSpecial", SOURCE);
+    click(&mut sim, &rules, americans, "ChronoWarpSpecial", TARGET);
+    let mut sank = false;
+    for _ in 0..80 {
+        step(&mut sim, &rules);
+        if sim
+            .substrate
+            .entities
+            .get(robot)
+            .is_none_or(|actor| actor.sinking.is_active())
+        {
+            sank = true;
+            break;
+        }
+    }
+    assert!(sank, "the offline Robot Tank sinks on its water landing");
+}
+
 /// A building on the destination blocks it: the warp lands on a nearby
 /// cell instead, keeping its offset from the cell (Update_Position's
 /// blocked arm `0x007184FA..0x00718658`), and waits out `[General]

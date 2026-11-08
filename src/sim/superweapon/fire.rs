@@ -740,6 +740,23 @@ fn launch(
             }
             return activated;
         }
+        // SW_DropPod::Activate (10070E40) refuses only an empty type list.
+        #[cfg(feature = "ares")]
+        SuperWeaponKind::DropPod => {
+            let activated = super::drop_pod::launch(
+                sim,
+                rules,
+                owner,
+                sw,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
+            if activated {
+                super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            }
+            return activated;
+        }
         #[cfg(feature = "ares")]
         SuperWeaponKind::UnitDelivery => {
             let activated = super::unit_delivery::launch(
@@ -765,7 +782,8 @@ fn launch(
         | SuperWeaponKind::Battery
         | SuperWeaponKind::SonarPulse
         | SuperWeaponKind::EMPulse
-        | SuperWeaponKind::Firestorm => {}
+        | SuperWeaponKind::Firestorm
+        | SuperWeaponKind::DropPod => {}
         SuperWeaponKind::MultiMissile => {
             super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
         }

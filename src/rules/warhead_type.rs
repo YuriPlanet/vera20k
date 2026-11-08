@@ -94,6 +94,12 @@ pub struct WarheadType {
     /// `WarheadTypeClass+0x147` (ReadINI `0x0075d556`, key string
     /// `0x00847e00`).
     pub wood: bool,
+    /// `Sparky=` (`WarheadTypeClass+0x14A`, constructor false at
+    /// `0x0075CF77`): Ares 3.0's TerrainClass_ReceiveDamage_ForestFire
+    /// (1004F4E0, hook 0x71B99E) sets a flammable tree it hurts alight
+    /// (`sim::terrain_fire`). Stock data sets it on no warhead.
+    #[cfg(feature = "ares")]
+    pub sparky: bool,
     /// `Fire=` -> `WarheadTypeClass+0x14C` (ReadINI `0x0075d5f2`, key string
     /// `0x00836f04`) over the constructor's 0 (`0x0075cf83`). Techno
     /// What_Action on a Cell keeps a Fire warhead off a destroyable cliff
@@ -637,6 +643,8 @@ impl WarheadType {
             delay_kill_at_max_f64,
             wall: section.read_bool("Wall", false),
             wood: section.read_bool("Wood", false),
+            #[cfg(feature = "ares")]
+            sparky: section.read_bool("Sparky", false),
             fire: section.read_bool("Fire", false),
             penetrates_bunker: section.read_bool("PenetratesBunker", false),
             affects_allies: section.read_bool("AffectsAllies", true),

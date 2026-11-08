@@ -399,6 +399,7 @@ fn wave_pixels_reach_retained_display_and_shared_gpu_with_immutable_z_and_a() {
                         intensity: match wave.polygon {
                             WavePolygon::Sonic(_) => [0, 256, 256],
                             WavePolygon::Magnetic(_) => [128, 0, 1024],
+                            WavePolygon::Laser(_) => unreachable!("stock rows hold no laser"),
                         },
                         color: [0; 3],
                     },

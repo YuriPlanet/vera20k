@@ -1341,9 +1341,14 @@ fn full_foot_entry<'a>(
                     continue;
                 }
                 //73F5EF/73F628 have distinct type/mission pairs. +1D4 is
-                //the live warp latch.
+                //the live warp latch. Ares 3.0 100177F0 (hook 0x73F606)
+                //sends a `Tunnel=` building down the UnitAbsorb path.
+                #[cfg(feature = "ares")]
+                let absorber = bt.unit_absorb || bt.building_type_ext().tunnel.is_some();
+                #[cfg(not(feature = "ares"))]
+                let absorber = bt.unit_absorb;
                 if object_target_is(e, blocker_id)
-                    && ((mission == Some(MissionType::Enter) && bt.unit_absorb)
+                    && ((mission == Some(MissionType::Enter) && absorber)
                         || (mission == Some(MissionType::Eaten) && bt.grinding))
                     && !b.warped_out
                 {

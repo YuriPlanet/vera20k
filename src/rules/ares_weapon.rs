@@ -209,7 +209,7 @@ pub struct AresWeaponVisuals {
     /// `none`; `None` falls back to `[CombatDamage] DefaultSparkSystem`.
     pub(crate) bolt_particle_system: Option<Option<String>>,
     /// `Wave.IsLaser` (+0x39) and `Wave.IsBigLaser` (+0x3A): the weapon
-    /// fires a TS laser wave. VERA creates no laser waves; read only.
+    /// fires a TS laser wave ([`Self::laser_wave_type`]).
     wave_is_laser: [bool; 2],
     /// `Wave.IsHouseColor` (+0x38).
     pub(crate) wave_is_house_color: bool,
@@ -287,6 +287,17 @@ impl AresWeaponVisuals {
         }
         visuals.laser_thickness = section.read_ares_int("LaserThickness", visuals.laser_thickness);
         visuals
+    }
+
+    /// TechnoClass_Fire_OtherWaves (Ares.dll 10056E60, hook 0x6FF5F5)'s
+    /// laser pick: `Wave.IsBigLaser` makes WaveClass type 2 (BigLaser), else
+    /// `Wave.IsLaser` type 1 (Laser).
+    pub(crate) fn laser_wave_type(&self) -> Option<u8> {
+        match self.wave_is_laser {
+            [_, true] => Some(2),
+            [true, false] => Some(1),
+            [false, false] => None,
+        }
     }
 
     /// `IsWaveReversedAgainst` (Ares.dll 100553F0, called by
@@ -448,15 +459,19 @@ mod tests {
     }
 
     /// 10055520's reads of `Wave.IsLaser`/`Wave.IsBigLaser` (Valueable<bool>,
-    /// false) and `IvanBomb.CanDetonateTimeBomb`/`DeathBomb` (Nullable<bool>,
-    /// unset), which nothing consumes.
+    /// false; BigLaser wins the wave type) and
+    /// `IvanBomb.CanDetonateTimeBomb`/`DeathBomb` (Nullable<bool>, unset),
+    /// which nothing consumes.
     #[test]
     fn laser_wave_and_detonation_keys_read_over_constructor_defaults() {
         let visuals = read("[W]\nWave.IsLaser=yes\nWave.IsBigLaser=x\n", false);
         assert_eq!(visuals.wave_is_laser, [true, false]);
+        assert_eq!(visuals.laser_wave_type(), Some(1));
+        let big = read("[W]\nWave.IsLaser=yes\nWave.IsBigLaser=yes\n", false);
+        assert_eq!(big.laser_wave_type(), Some(2));
         assert_eq!(visuals.laser_thickness, -1);
         assert_eq!(read("[W]\nLaserThickness=6\n", false).laser_thickness, 6);
-        assert_eq!(read("[W]\nDamage=1\n", false).wave_is_laser, [false; 2]);
+        assert_eq!(read("[W]\nDamage=1\n", false).laser_wave_type(), None);
         let file = IniFile::from_str(
             "[W]\nIvanBomb.CanDetonateTimeBomb=no\nIvanBomb.CanDetonateDeathBomb=bad\n",
         );

@@ -23,6 +23,7 @@ const STEP_F32: NativeF32Bits = NativeF32Bits::from_bits(0x3d4c_cccd);
 const SNAP_FADE_F64: NativeF64Bits = NativeF64Bits::from_bits(0x3fef_5c28_f5c2_8f5c);
 const AUTO_DECAY_F64: NativeF64Bits = NativeF64Bits::from_bits(0x3fb9_9999_9999_999a);
 const ENDPOINT_Z_ADJUST: i32 = 50;
+const LASER_ENDPOINT_FACTOR_F32: NativeF32Bits = NativeF32Bits::from_bits(0x3f86_6666);
 const CONSTRUCTOR_MIN_XY_DISTANCE: i32 = 240;
 const MAX_TRACKING_DISTANCE_LEPTONS: i32 = 2172;
 
@@ -444,8 +445,10 @@ impl Wave {
 
     /// Native761640/762F60 six-point geometry. Pixel75EDF0 reads its retained
     /// source origin as well; both use this one projection/camera frame.
+    /// Draw_NonMagnetic builds the same polygon for the TS laser types 1 and
+    /// 2, which `Draw_Laser @ 0x007609E0` fills.
     pub fn sonic_draw_geometry(&self, camera: [i32; 2]) -> Option<SonicWaveGeometry> {
-        if self.wave_type != 0 {
+        if !matches!(self.wave_type, 0..=2) {
             return None;
         }
         let [a, b, c, d] = [
@@ -481,10 +484,20 @@ impl Wave {
         // `WaveClass::Constructor @ 0x0075E950` builds the initial quad and
         // stores +0x1CC before Logic registration invokes the lifecycle once.
         // Later lifecycle refreshes must never overwrite this selector.
-        if matches!(self.wave_type, 0 | 3) {
+        if self.wave_type <= 3 {
             let geometry = wave_geometry(self.wave_type, self.source, self.target);
             self.apply_geometry(geometry);
             self.direction_octant = geometry.direction_octant;
+        }
+        // The constructor's type 1/2 block after Unlimbo: the TS laser types
+        // (1 Laser, 2 BigLaser; only Ares creates them) start fully drawn,
+        // dFront 1.0, with nLaserIntensity 160 (`Self::new`'s value) before
+        // the Update_Wave below. Ares WaveClass_Update (100571A0) never calls
+        // Update_Wave for them again, so these are the cells their whole
+        // life damages.
+        if matches!(self.wave_type, 1 | 2) {
+            self.fade_in = NativeF64Bits::ONE;
+            self.intensity = Self::DEFAULT_LASER_INTENSITY;
         }
         self.update_geometry_and_cells(context, terrain)
     }
@@ -960,22 +973,60 @@ fn draw_point(coord: ProjectileCoord, camera: [i32; 2]) -> [i32; 2] {
     ]
 }
 
+/// Draw_NonMagnetic 0x761640's endpoint factor for the TS laser types 1 and 2
+/// (binary32 1.05 at 0x7F6BB8/0x7F6BBC; Sonic's and MagBeam's entries are
+/// 1.0): each endpoint moves past the other, `ftol(other * (1 - f) + own * f)`
+/// per axis, the target first.
+fn laser_endpoints(
+    source: ProjectileCoord,
+    target: ProjectileCoord,
+) -> (ProjectileCoord, ProjectileCoord) {
+    let factor = load_f32(LASER_ENDPOINT_FACTOR_F32);
+    let rest = X87Chop53::sub(load_f64(NativeF64Bits::ONE), factor);
+    let push = |other: ProjectileCoord, own: ProjectileCoord| {
+        let axis = |other: i32, own: i32| {
+            x87_ftol_i32(X87Chop53::add(
+                X87Chop53::mul(X87Chop53::load_i32(other), rest),
+                X87Chop53::mul(X87Chop53::load_i32(own), factor),
+            ))
+        };
+        ProjectileCoord::new(
+            axis(other.x, own.x),
+            axis(other.y, own.y),
+            axis(other.z, own.z),
+        )
+    };
+    let target_moved = push(source, target);
+    (push(target, source), target_moved)
+}
+
 /// Shared arithmetic in Draw_NonMagnetic761640 and Draw_Magnetic762070.
-/// Both active types use endpoint factor 1.0. Type3 has zero longitudinal
-/// offsets, half-width50 and a 3D Z divisor; Sonic has ±30/100 and an XY divisor.
+/// Sonic and Magnetron use endpoint factor 1.0 and raise the target's Z by 50;
+/// the TS lasers move both endpoints ([`laser_endpoints`]) and keep their Z.
+/// Type3 has zero longitudinal offsets, half-width50 and a 3D Z divisor; the
+/// others an XY divisor and their row of Draw_NonMagnetic's corner table
+/// (0x00B45DA8, 0x30 bytes per type): Sonic ±30/100, Laser ±34/44, BigLaser
+/// ±27/34.
 fn wave_geometry(
     wave_type: u8,
-    source: ProjectileCoord,
+    raw_source: ProjectileCoord,
     raw_target: ProjectileCoord,
 ) -> WaveGeometry {
-    debug_assert!(matches!(wave_type, 0 | 3));
+    debug_assert!(wave_type <= 3);
     let (trig, acos) = (TrigTable::embedded(), AcosTable::retail());
     // Both helpers store firstarg at+B4 and secondarg(+50Z) at+C0.
-    let target = ProjectileCoord::new(
-        raw_target.x,
-        raw_target.y,
-        raw_target.z.wrapping_add(ENDPOINT_Z_ADJUST),
-    );
+    let (source, target) = if matches!(wave_type, 1 | 2) {
+        laser_endpoints(raw_source, raw_target)
+    } else {
+        (
+            raw_source,
+            ProjectileCoord::new(
+                raw_target.x,
+                raw_target.y,
+                raw_target.z.wrapping_add(ENDPOINT_Z_ADJUST),
+            ),
+        )
+    };
     let first_dx = X87Chop53::load_i32(target.x.wrapping_sub(source.x));
     let first_dy = X87Chop53::load_i32(target.y.wrapping_sub(source.y));
     let first_squared = X87Chop53::add(
@@ -985,7 +1036,12 @@ fn wave_geometry(
     let sqrt_bits =
         sqrt_approx_f32(first_squared).expect("Wave horizontal squared length is finite");
     let horizontal = x87_ftol_i32(load_f32(sqrt_bits));
-    let (longitudinal, half_width) = if wave_type == 3 { (0, 50) } else { (30, 100) };
+    let (longitudinal, half_width) = match wave_type {
+        1 => (34, 44),
+        2 => (27, 34),
+        3 => (0, 50),
+        _ => (30, 100),
+    };
     let local_x = [
         horizontal.wrapping_sub(longitudinal),
         horizontal.wrapping_sub(longitudinal),
@@ -1121,3 +1177,49 @@ mod magnetic_tests;
 #[cfg(test)]
 #[path = "wave_native_tests.rs"]
 mod native_tests;
+
+#[cfg(test)]
+mod laser_tests {
+    use super::*;
+
+    /// `WaveClass::Constructor @ 0x0075E950` for the TS laser types 1 and 2:
+    /// Draw_NonMagnetic (0x761640) moves both endpoints past each other by
+    /// the binary32 1.05 at 0x7F6BB8/0x7F6BBC, without Sonic's +50 Z, and
+    /// takes the type's row of the corner table at 0x00B45DA8 (Laser 34 along
+    /// and 44 across, BigLaser 27 and 34); the wave starts fully drawn with
+    /// nLaserIntensity 160.
+    #[test]
+    fn laser_wave_constructor_extends_its_beam_and_takes_its_type_size() {
+        let source = ProjectileCoord::new(1000, 1000, 0);
+        let target = ProjectileCoord::new(2000, 1000, 0);
+        for (wave_type, along, across) in [(1, 34, 44), (2, 27, 34)] {
+            let mut wave = Wave::new(wave_type, source, target);
+            assert!(!wave.initialize(WaveUpdateContext::default(), None));
+            assert!(
+                wave.source().x < source.x && wave.target().x > target.x,
+                "type {wave_type}"
+            );
+            assert_eq!(
+                [wave.source().z, wave.target().z],
+                [0, 0],
+                "type {wave_type}"
+            );
+            assert_eq!(
+                (wave.fade_in(), wave.intensity()),
+                (NativeF64Bits::ONE, 160),
+                "type {wave_type}"
+            );
+            let edges = wave.edge_geometry();
+            // The trig tables can leave the beam's angle a hair off zero.
+            let near = |value: i32, expected: i32| (value - expected).abs() <= 1;
+            assert!(
+                near(edges.target_a.x - wave.source().x, along),
+                "type {wave_type}: {edges:?}"
+            );
+            assert!(
+                near(edges.firer_b.y - edges.firer_a.y, 2 * across),
+                "type {wave_type}: {edges:?}"
+            );
+        }
+    }
+}

@@ -897,7 +897,10 @@ impl Simulation {
                 .cell_objects((cx as u16, cy as u16), MovementLayer::Ground)
                 .next();
             while let Some(member) = next {
+                // Ares 3.0 TeleportLocomotionClass_Unwarp_PreventSelfCrush
+                // (10037BC0, hook 0x7187DA) skips the warper itself.
                 if let CellObjectMember::Entity(other) = member
+                    && !(crate::rules::ARES_ENABLED && other == id)
                     && self.substrate.entities.get(other).is_some_and(|entity| {
                         crate::sim::superweapon::invulnerability::is_invulnerable(
                             entity.invulnerability.as_ref(),
@@ -933,6 +936,29 @@ impl Simulation {
             })
         }) else {
             return;
+        };
+        // Ares 3.0 TeleportLocomotionClass_Unwarp_SinkJumpJets (10037BE0,
+        // hook 0x7188F2): on a water tile (`0x004865D0`) a Unit offline for
+        // want of power (`+0x1C8`) does not float, and a `SpeedType=Hover`
+        // `JumpJet=` Unit goes straight to `0x00718A66`, whose water-tile,
+        // non-infantry arm sinks it with no kill booked.
+        #[cfg(feature = "ares")]
+        let hover = {
+            let unit = (water_tile && category == EntityCategory::Unit)
+                .then(|| {
+                    let entity = self.substrate.entities.get(id)?;
+                    let object = self.object_type(entity.type_ref(), rules)?;
+                    Some((
+                        entity.deactivated.is_offline(),
+                        object.speed_type == SpeedType::Hover && object.jumpjet,
+                    ))
+                })
+                .flatten();
+            if unit.is_some_and(|(_, jumpjet)| jumpjet) {
+                self.chrono_warp_sink(id, rules, registry, effects);
+                return;
+            }
+            hover && !unit.is_some_and(|(offline, _)| offline)
         };
         let road = land == LandType::Road.as_index() as i32;
         let bridge = flags & CELL_FLAG_BRIDGE != 0;

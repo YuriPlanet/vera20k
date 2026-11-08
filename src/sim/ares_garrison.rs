@@ -16,8 +16,18 @@
 //!   `BulletClass_Detonate @ 100536E0`, hook `0x0046920B`; see
 //!   `combat::world_receiver`).
 //!
-//! RESIDUAL: the occupant's TechnoExt `GarrisonedIn` (`10017240` writes
-//! it) is not kept; only Ares trenches read it.
+//! - A selected trench's occupants move into a neighbouring trench of the
+//!   same `IsTrench=` kind (#666): the Enter cursor and click over it
+//!   (`100171B0`, hook `0x44725F`; `10016F60`, hook `0x443414`) raise the
+//!   TrenchRedirectClick event (0x60, `1006A170`), whose handler
+//!   (Networking_RespondToEvent `1006A540`) moves them
+//!   (`BuildingExt::ExtData::canTraverseTo @ 10011690`,
+//!   `doTraverseTo @ 100130E0`).
+//!
+//! RESIDUAL: the occupant's TechnoExt `GarrisonedIn` (`10017240` and
+//! doTraverseTo write it) is not kept; nothing in 3.0 reads it. VERA's
+//! occupant carrier link (`PassengerRole::set_inside_transport`) follows
+//! the occupant instead.
 
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
@@ -120,6 +130,149 @@ impl Simulation {
         if let Some(building) = self.substrate.entities.get_mut(building_id) {
             building.ares_raid.owner_before_raid = None;
         }
+    }
+}
+
+impl Simulation {
+    /// `BuildingExt::ExtData::canTraverseTo @ 10011690`: the occupants of
+    /// `source_id` may move into `target_id` when it is another building
+    /// whose type is `CanBeOccupied=` (`+0x157B`) with fewer occupants than
+    /// `MaxNumberOccupants=` (`+0x1580`), the source holds any, both types
+    /// are trenches of one kind (sameTrench), and their Locations lie at
+    /// most 256 leptons apart (a straight neighbour for 1x1 pieces). Ares
+    /// tests no owner.
+    pub fn ares_can_traverse_to(&self, source_id: u64, target_id: u64, rules: &RuleSet) -> bool {
+        if source_id == target_id {
+            return false;
+        }
+        let entities = &self.substrate.entities;
+        let (Some(source), Some(target)) = (entities.get(source_id), entities.get(target_id))
+        else {
+            return false;
+        };
+        let structure = crate::map::entities::EntityCategory::Structure;
+        if source.category() != structure || target.category() != structure {
+            return false;
+        }
+        let (Some(source_type), Some(target_type)) = (
+            self.object_type(source.type_ref(), rules),
+            self.object_type(target.type_ref(), rules),
+        ) else {
+            return false;
+        };
+        if i64::from(target.passenger_role.occupants().count())
+            >= i64::from(target_type.max_number_occupants)
+            || source.passenger_role.occupants().is_empty()
+            || !target_type.can_be_occupied
+            || !source_type
+                .building_type_ext()
+                .same_trench(target_type.building_type_ext())
+        {
+            return false;
+        }
+        // CoordStruct::DistanceFrom (sqrt of the squared sum) <= 256.0: the
+        // integer square compares the same.
+        let terrain = self.resolved_terrain.as_ref();
+        let from = crate::sim::movement::ground_pose::object_location(source, terrain);
+        let to = crate::sim::movement::ground_pose::object_location(target, terrain);
+        let [dx, dy, dz] = [to.x - from.x, to.y - from.y, to.z - from.z].map(i64::from);
+        dx * dx + dy * dy + dz * dz <= 256 * 256
+    }
+
+    /// `BuildingExt::ExtData::doTraverseTo @ 100130E0`, past
+    /// [`Self::ares_can_traverse_to`]: `min(free slots, occupants)` heads of
+    /// `source_id`'s occupants move, in order, to the end of `target_id`'s;
+    /// the source's firing index restarts at 0 once it reaches the count,
+    /// and an emptied raided source goes back to its house (evalRaidStatus
+    /// `100136C0`, inlined). Nothing is announced or refreshed: native
+    /// leaves the cell threat (`0x0070F6E0`) and the target's raid state as
+    /// they were.
+    pub(crate) fn ares_do_traverse_to(
+        &mut self,
+        source_id: u64,
+        target_id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(target) = self.substrate.entities.get(target_id) else {
+            return;
+        };
+        let Some(max) = self
+            .object_type(target.type_ref(), rules)
+            .map(|object| i64::from(object.max_number_occupants))
+        else {
+            return;
+        };
+        let free = max - i64::from(target.passenger_role.occupants().count());
+        let held = self.substrate.entities.get(source_id).map_or(0, |source| {
+            i64::from(source.passenger_role.occupants().count())
+        });
+        if free >= 0 {
+            for _ in 0..free.min(held) {
+                let Some(occupant) = self
+                    .substrate
+                    .entities
+                    .get_mut(source_id)
+                    .and_then(|source| source.passenger_role.occupants_mut().remove_head())
+                else {
+                    break;
+                };
+                if let Some(target) = self.substrate.entities.get_mut(target_id) {
+                    target.passenger_role.occupants_mut().add(occupant);
+                }
+                if let Some(occupant) = self.substrate.entities.get_mut(occupant) {
+                    occupant
+                        .passenger_role
+                        .set_inside_transport(target_id, false);
+                }
+            }
+        }
+        if let Some(source) = self.substrate.entities.get_mut(source_id) {
+            let occupants = source.passenger_role.occupants_mut();
+            if occupants.fire_index() >= occupants.count() {
+                occupants.reset_fire_index();
+            }
+        }
+        self.ares_eval_raid_status(source_id, rules, registry, effects);
+    }
+
+    /// The TrenchRedirectClick (0x60) arm of Networking_RespondToEvent
+    /// (`1006A540`): the event's Cell (`TargetClass::As_Cell`) and source
+    /// Building (`As_Building`), then the building on that Cell
+    /// (`CellClass::GetBuilding`); canTraverseTo is asked again before
+    /// doTraverseTo. The event's House is not consulted. Answers whether
+    /// the occupants moved.
+    pub(crate) fn ares_respond_to_trench_redirect(
+        &mut self,
+        event: &crate::sim::command::AresTrenchRedirectRecord,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        use crate::sim::command::MegaMissionTarget;
+        let (MegaMissionTarget::Cell { x, y }, MegaMissionTarget::Object { id }) =
+            (event.target, event.source)
+        else {
+            return false;
+        };
+        let (Ok(rx), Ok(ry), Ok(source_id)) =
+            (u16::try_from(x), u16::try_from(y), u64::try_from(id))
+        else {
+            return false;
+        };
+        let Some(target_id) = self.substrate.occupancy.first_building_on_layer(
+            rx,
+            ry,
+            crate::sim::movement::locomotor::MovementLayer::Ground,
+        ) else {
+            return false;
+        };
+        if !self.ares_can_traverse_to(source_id, target_id, rules) {
+            return false;
+        }
+        self.ares_do_traverse_to(source_id, target_id, rules, registry, effects);
+        true
     }
 }
 

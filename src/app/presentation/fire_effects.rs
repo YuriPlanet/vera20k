@@ -66,7 +66,7 @@ pub(crate) fn ares_wave_blend(
     }
 }
 
-/// Native type0/3 geometry is owned by WaveClass, including projected fade
+/// Native type0..3 geometry is owned by WaveClass, including projected fade
 /// and the type3 Unit endpoint reversal. Rendering translates it once and supplies the
 /// current packed destination; it never rebuilds a quad from world endpoints.
 /// `blend` answers each wave's pixel colouring.
@@ -86,6 +86,14 @@ pub(crate) fn build_weapon_wave_draws(
                     let geometry = wave.sonic_draw_geometry(camera)?;
                     (WavePolygon::Sonic(geometry.polygon), geometry.source_point)
                 }
+                // DrawIt75F9F0's Draw_Laser arm for the TS laser types. Its
+                // detail-level-2 gate always passes: Ares
+                // WaveClass_Draw_NodLaser_Details (10057120, hook 0x7609E3)
+                // reads the level as 2, and only Ares creates lasers.
+                1 | 2 => {
+                    let geometry = wave.sonic_draw_geometry(camera)?;
+                    (WavePolygon::Laser(geometry.polygon), geometry.source_point)
+                }
                 3 => {
                     let geometry = wave.magnetic_draw_geometry(camera)?;
                     (
@@ -104,7 +112,10 @@ pub(crate) fn build_weapon_wave_draws(
                     polygon,
                     source_point,
                     source_z: wave.source().z,
-                    phase: wave.lifetime(),
+                    phase: match polygon {
+                        WavePolygon::Laser(_) => wave.intensity(),
+                        _ => wave.lifetime(),
+                    },
                     direction: u8::try_from(wave.direction_octant()).ok()?,
                     // VERA's existing scene Z is contiguous. Native ring
                     // fallback can differ by one clipping-edge pixel; C32's

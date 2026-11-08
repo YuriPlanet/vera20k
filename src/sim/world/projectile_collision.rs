@@ -333,6 +333,7 @@ impl ProjectileCollisionWorld<'_> {
                         crate::sim::cell_kernel::wall_connection_step(
                             self.overlay(&cell).0.map_or(-1, i32::from),
                             -1,
+                            self.overlay_registry,
                         ),
                         crate::sim::cell_kernel::WallConnectionStep::Return(true)
                     );
@@ -490,14 +491,8 @@ impl ProjectileCollisionWorld<'_> {
     }
 
     fn inside_map(&self, candidate: ProjectileCoord) -> bool {
-        if let Some((width, height)) = self.map_size {
-            let x = i32::from((candidate.x / 256) as i16);
-            let y = i32::from((candidate.y / 256) as i16);
-            let sum = x.wrapping_add(y);
-            width < sum
-                && x.wrapping_sub(y) < width
-                && y.wrapping_sub(x) < width
-                && sum <= width.wrapping_add(height.wrapping_mul(2))
+        if let Some(map_size) = self.map_size {
+            map_size_contains(map_size, candidate.x, candidate.y)
         } else {
             self.terrain.is_none() || matches!(self.cell(candidate), CellRef::Real(_))
         }
@@ -732,6 +727,28 @@ impl ProjectileCollisionWorld<'_> {
                 .is_some_and(|target| target.is_in_air(self.terrain)),
             _ => false,
         }
+    }
+}
+
+/// `MapClass::CoordinatesLegal @ 0x00568350`: the lepton coordinate's cell
+/// (signed words) lies in the map's Size diamond.
+fn map_size_contains((width, height): (i32, i32), x: i32, y: i32) -> bool {
+    let x = i32::from((x / 256) as i16);
+    let y = i32::from((y / 256) as i16);
+    let sum = x.wrapping_add(y);
+    width < sum
+        && x.wrapping_sub(y) < width
+        && y.wrapping_sub(x) < width
+        && sum <= width.wrapping_add(height.wrapping_mul(2))
+}
+
+impl Simulation {
+    /// `MapClass::CoordinatesLegal @ 0x00568350` for a lepton coordinate; a
+    /// world without a map Size admits every coordinate.
+    #[cfg(feature = "ares")]
+    pub(crate) fn map_coordinates_legal(&self, x: i32, y: i32) -> bool {
+        self.map_size_diamond()
+            .is_none_or(|map_size| map_size_contains(map_size, x, y))
     }
 }
 

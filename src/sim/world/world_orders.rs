@@ -560,7 +560,8 @@ impl Simulation {
     /// contact (`0x0065ADF0`), an empty building `+0x118` and CAN_LOAD (0xF)
     /// and answers Enter on ROGER. Retail lists only GAAIRC and AMRADR, which
     /// are not `UnitRepair=`, so every retail aircraft answers NoEnter here,
-    /// as this row does for a listed type too.
+    /// as this row does for a listed type too. Ares builds port the whole
+    /// row in its own form (hook `0x417E16`, below).
     pub fn entry_click_action(
         &self,
         actor_id: u64,
@@ -604,11 +605,47 @@ impl Simulation {
             }
             EntityCategory::Aircraft => {
                 let target_obj = self.object_type(target.type_ref(), rules)?;
-                (select
-                    && self.house_is_human_player(actor.owner())
-                    && target.category() == EntityCategory::Structure
-                    && target_obj.unit_repair)
-                    .then_some(EntryClickAction::NoEnter)
+                if !select
+                    || !self.house_is_human_player(actor.owner())
+                    || target.category() != EntityCategory::Structure
+                {
+                    return None;
+                }
+                // Ares 3.0 AircraftClass_GetActionOnObject_Dock 1004C8B0
+                // (hook 0x417E16) drops the `UnitRepair=` gate: a building
+                // whose type the aircraft's `Dock=` lists (Type+0x3EC) takes
+                // the row's dock arm at 0x417E4B, any other keeps Select
+                // (0x417E7D). The arm answers Enter when the building has a
+                // free or own contact slot (0x0065ADF0), no first passenger
+                // (+0x118, TechnoClass Passengers.FirstPassenger, which
+                // BuildingClass::Receive_Radio 0x0043C2D0 also tests) and its
+                // CAN_LOAD (vt+0x278(0xF)) is ROGER, else NoEnter.
+                #[cfg(feature = "ares")]
+                let action = {
+                    let docks =
+                        self.object_type(actor.type_ref(), rules)
+                            .is_some_and(|actor_obj| {
+                                actor_obj
+                                    .dock
+                                    .iter()
+                                    .any(|dock| dock.eq_ignore_ascii_case(&target_obj.id))
+                            });
+                    docks.then(|| {
+                        if target.radio_contacts.has_free_or(actor_id)
+                            && target.passenger_role.passenger_count() == 0
+                            && crate::sim::radio::receive::can_load_query(
+                                self, target_id, actor_id, rules,
+                            ) == crate::sim::radio::RadioResponse::Roger
+                        {
+                            EntryClickAction::Enter
+                        } else {
+                            EntryClickAction::NoEnter
+                        }
+                    })
+                };
+                #[cfg(not(feature = "ares"))]
+                let action = target_obj.unit_repair.then_some(EntryClickAction::NoEnter);
+                action
             }
             _ => None,
         }
@@ -648,6 +685,12 @@ impl Simulation {
             EntityCategory::Unit => false,
             _ => return None,
         };
+        // Ares 3.0 Infantry 100176E0 (hook 0x51ED8E) also lets him enter a
+        // `Tunnel=` building, whatever its Passengers= (`sim::ares_tunnel`).
+        #[cfg(feature = "ares")]
+        let tunnel = infantry && self.ares_tunnel_type(target_id, rules).is_some();
+        #[cfg(not(feature = "ares"))]
+        let tunnel = false;
         if !combat::combat_weapon::is_ally_by_object(
             Some(&self.house_alliances),
             &self.interner,
@@ -657,7 +700,7 @@ impl Simulation {
             || target.is_warped_out()
             || target.is_warping_in()
             || (!infantry && actor_id == target_id)
-            || self.object_type(target.type_ref(), rules)?.passengers <= 0
+            || (self.object_type(target.type_ref(), rules)?.passengers <= 0 && !tunnel)
         {
             return None;
         }
@@ -665,11 +708,12 @@ impl Simulation {
         // (hook 0x51ED8E) refuse a `NoManualEnter` transport at the same
         // Passengers test (0x74037A, 0x51EE3B).
         #[cfg(feature = "ares")]
-        if self
-            .object_type(target.type_ref(), rules)?
-            .techno_combat()
-            .movement()
-            .no_manual_enter()
+        if !tunnel
+            && self
+                .object_type(target.type_ref(), rules)?
+                .techno_combat()
+                .movement()
+                .no_manual_enter()
         {
             return None;
         }

@@ -92,6 +92,8 @@ pub struct AresInfiltrationArms {
     pub radar_reset: Option<bool>,
     /// `SpyEffect.PowerOutageDuration`.
     pub power_outage: bool,
+    /// `SpyEffect.StolenTechIndex`.
+    pub tech_stolen: bool,
     /// `SpyEffect.UndoReverseEngineer`.
     pub undo_reverse_engineer: bool,
     /// `SpyEffect.ResetSuperweapons` reset at least one Super.
@@ -304,10 +306,12 @@ impl Simulation {
     ///   a house with an active Spy Satellite alone.
     /// - `PowerOutageDuration` above zero: `CreatePowerOutage @ 0x0050BC90`
     ///   for that many frames.
+    /// - `StolenTechIndex` nonempty: its bits join the spy's house's
+    ///   StolenTech, then that house's House+1FC
+    ///   ([`crate::sim::house_state::HouseState::steal_ares_tech`]).
     /// - `UndoReverseEngineer`: the owner's HouseExt `ReverseEngineered`
-    ///   list (`+0x34`) is emptied and House+1FC set. Nothing writes that
-    ///   list in VERA (Ares reverse engineering is not ported), so only the
-    ///   recheck remains.
+    ///   list (`+0x34`, `sim::reverse_engineering`) is emptied and House+1FC
+    ///   set.
     /// - `ResetSuperweapons`: `SuperClass::Reset @ 0x006CE0B0` of each
     ///   Super of the type and of its three upgrade slots
     ///   (`GetSuperWeapons @ 1000D700`) the owner has available
@@ -359,9 +363,15 @@ impl Simulation {
                 .start_blackout(frame, spy.power_outage_duration);
             arms.power_outage = true;
         }
+        if spy.stolen_tech != 0 {
+            if let Some(house) = self.houses.get_mut(&infiltrator) {
+                house.steal_ares_tech(spy.stolen_tech);
+            }
+            arms.tech_stolen = true;
+        }
         if spy.undo_reverse_engineer {
             if let Some(house) = self.houses.get_mut(&owner) {
-                house.request_tech_recheck();
+                house.undo_ares_reverse_engineering();
             }
             arms.undo_reverse_engineer = true;
         }

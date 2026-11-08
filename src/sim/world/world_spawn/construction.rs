@@ -120,6 +120,14 @@ impl Simulation {
         // inside the A8E7AC scope, which skips it.
         #[cfg(feature = "ares")]
         self.apply_ares_academy(&mut ge, obj, rules);
+        // Ares TechnoClass_Init_1 (1004A530, hook 0x6F407D): an object
+        // constructed inside the A8E7AC scope after frame 0 (a conversion
+        // or deploy product) never makes an InitialPayload. A map's authored
+        // objects are constructed at frame 0 (`sim::ares_transports`).
+        #[cfg(feature = "ares")]
+        if self.object_placement_scope_active() && self.session.binary_frame() != 0 {
+            ge.ares_initial_payload.mark_created();
+        }
         Ok(Some(ge))
     }
 

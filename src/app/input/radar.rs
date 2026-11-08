@@ -123,7 +123,7 @@ impl RadarAction {
             | Kind::PlaceBeacon
             | Kind::SuperWeaponTarget(_) => return None,
             #[cfg(feature = "ares")]
-            Kind::AresAction(_) => return None,
+            Kind::AresAction(_) | Kind::SellUnit => return None,
         })
     }
 

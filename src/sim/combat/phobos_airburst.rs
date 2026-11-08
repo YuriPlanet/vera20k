@@ -1010,8 +1010,7 @@ fn allowed_splits_target(
         targeting.can_target,
         Some(techno_content),
         world.cell_has_bridge_head(cell),
-    )
-        || !super::crit::techno_eligible(entity.category(), targeting.can_target)
+    ) || !super::crit::techno_eligible(entity.category(), targeting.can_target)
         || !super::health_in_threshold(
             entity.health.current(),
             object.strength,

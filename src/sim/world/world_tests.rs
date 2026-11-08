@@ -2584,6 +2584,11 @@ fn gsi_04_11_bullet_ore_reduction_precedes_outer_crater_anim_start() {
         "the outer crater must observe the already-cleared overlay cell"
     );
     let mut expected_rng = crate::sim::rng::SimRng::new(1);
+    // Ares 3.0 CellChainReact (10050DD0, hook 0x48964F): the spread walk
+    // rolls RandomRanged(0, 99) for the ChainReaction ore before its
+    // reduction; with Power 0 a reaction deals nothing and the ore clears.
+    #[cfg(feature = "ares")]
+    let _ = expected_rng.next_range_i32_inclusive(0, 99);
     let _ = expected_rng.next_range_u32(1);
     assert_eq!(sim.scenario_rng.state(), expected_rng.state());
 }
@@ -2643,7 +2648,12 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
     missile.locomotor = Some(locomotor);
     sim.substrate.entities.insert(missile);
     sim.reveal(1);
-    let before_rng = sim.scenario_rng.state();
+    let mut expected_rng = sim.scenario_rng.clone();
+    // Ares 3.0 CellChainReact (10050DD0, hook 0x48964F): the ChainReaction
+    // ore's RandomRanged(0, 99) roll in the spread walk; with Power 0 a
+    // reaction deals nothing and the ore still clears.
+    #[cfg(feature = "ares")]
+    let _ = expected_rng.next_range_i32_inclusive(0, 99);
 
     sim.process_rocket(
         1,
@@ -2669,7 +2679,7 @@ fn gsi_04_11_missile_outer_anim_precedes_per_cell_ore_reduction() {
             .is_none(),
         "RocketLocomotion starts its crater Anim before the later ore sweep"
     );
-    assert_eq!(sim.scenario_rng.state(), before_rng);
+    assert_eq!(sim.scenario_rng.state(), expected_rng.state());
     assert_eq!(sim.combat_light_requests.len(), 1);
 }
 
@@ -3599,6 +3609,78 @@ fn ares_wave_damage_uses_the_fired_weapon_and_its_ambient_damage() {
             }
         }
         assert_eq!(health(&sim), 100 - ambient, "AmbientDamage={ambient}");
+    }
+}
+
+/// Ares TechnoClass_Fire_OtherWaves (Ares.dll 10056E60, hook 0x6FF5F5) and
+/// WaveClass_Update (100571A0, hook 0x760F50): a `Wave.IsLaser` or
+/// `Wave.IsBigLaser` shot creates a TS laser wave of type 1 or 2, whose
+/// AmbientDamage strikes the cells under the beam on each of its 22 updates
+/// (nLaserIntensity 160, less 6 each, leaves below 32), and then it leaves.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_laser_wave_damages_its_cells_on_each_update_until_it_fades() {
+    for (key, wave_type) in [("Wave.IsLaser", 1), ("Wave.IsBigLaser", 2)] {
+        let Some(patched) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+            &IniFile::from_str(&format!(
+                "[MTNK]\nPrimary=LaserWave\n\
+                     [LaserWave]\nDamage=0\nAmbientDamage=3\nROF=200\nRange=6\n\
+                     Projectile=InvisibleLow\nSpeed=100\nWarhead=RailShot2\n{key}=yes\n",
+            )),
+        ) else {
+            return;
+        };
+        let rules = &patched.rules;
+        let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x1A5E_0001);
+        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        let owner = sim.interner.intern("Americans");
+        sim.session.set_current_house_for_test(Some(owner));
+        sim.intern_rule_type_ids(rules);
+        sim.resolve_type_handles(rules);
+        let source = sim
+            .spawn_object("MTNK", "Americans", 16, 16, 64, rules)
+            .unwrap();
+        let target = sim
+            .spawn_object("SMCV", "Russians", 20, 16, 192, rules)
+            .unwrap();
+        let on_line = sim
+            .spawn_object("SMCV", "Russians", 18, 16, 192, rules)
+            .unwrap();
+        sim.fog.mark_visible_for_owner(owner, 20, 16);
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::Attack {
+                attacker_id: source,
+                target_id: target
+            },
+            Some(rules),
+        ));
+        let grid = sim.path_grid_snapshot().unwrap();
+        let health = |sim: &Simulation| {
+            sim.substrate
+                .entities
+                .get(on_line)
+                .unwrap()
+                .health
+                .current()
+        };
+        let mut wave_id = None;
+        let mut damaged_updates = 0;
+        for _ in 0..96 {
+            let before = health(&sim);
+            sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+            if health(&sim) != before {
+                assert_eq!(before - health(&sim), 3, "{key}: one AmbientDamage");
+                damaged_updates += 1;
+            }
+            if let Some(id) = sim.active_wave_id(source) {
+                assert_eq!(*wave_id.get_or_insert(id), id, "{key}: one shot");
+                assert_eq!(sim.waves.get(id).unwrap().wave_type(), wave_type, "{key}");
+            }
+        }
+        let id = wave_id.expect("the laser-wave shot creates its wave");
+        assert_eq!(damaged_updates, 22, "{key}");
+        assert!(sim.waves.get(id).is_none(), "{key}: the faded wave leaves");
     }
 }
 

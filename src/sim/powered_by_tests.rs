@@ -115,3 +115,50 @@ fn ares_deactivated_units_spark_only_without_power() {
     });
     assert_eq!(draws_over_a_cycle(&mut sim), (1, true));
 }
+
+/// EnableEMPEffect2 (10062980) takes a Foot out of its team, selects a
+/// selected victim again after Deactivate, and suspends its slave manager's
+/// AI timer (start -1, duration kept); DisableEMPEffect2 (10062650) resumes
+/// that timer when the power returns.
+#[test]
+fn ares_powered_by_power_loss_updates_team_selection_and_slaves() {
+    let (mut sim, rules, pwr, drone) = scene();
+    visit(&mut sim, &rules, drone, 15);
+    crate::sim::team_script_vm::join_team_for_test(&mut sim, &[drone], false, false);
+    let slave_type = sim.interner.intern("DRONE");
+    let entity = sim.substrate.entities.get_mut(drone).unwrap();
+    entity.selection.set_selected_for_test(true);
+    entity.slave_manager = Some(crate::sim::slave_manager::SlaveManager::new(
+        slave_type,
+        std::iter::empty(),
+        10,
+        10,
+        30,
+    ));
+    sim.substrate
+        .entities
+        .get_mut(pwr)
+        .unwrap()
+        .set_building_online_for_test(false);
+    visit(&mut sim, &rules, drone, 30);
+    let entity = sim.substrate.entities.get(drone).unwrap();
+    assert!(entity.deactivated.is_offline());
+    assert!(
+        entity.selection.is_selected(),
+        "reselected after Deactivate"
+    );
+    assert!(sim.team_script_vm.team_for_member(drone).is_none());
+    let timer = entity.slave_manager.as_ref().unwrap().ai_timer();
+    assert_eq!((timer.start_frame(), timer.duration()), (-1, 10));
+
+    sim.substrate
+        .entities
+        .get_mut(pwr)
+        .unwrap()
+        .set_building_online_for_test(true);
+    visit(&mut sim, &rules, drone, 45);
+    let entity = sim.substrate.entities.get(drone).unwrap();
+    assert!(!entity.deactivated.is_offline());
+    let timer = entity.slave_manager.as_ref().unwrap().ai_timer();
+    assert_eq!((timer.start_frame(), timer.duration()), (45, 10));
+}

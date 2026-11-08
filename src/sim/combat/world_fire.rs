@@ -2231,6 +2231,19 @@ pub(super) fn emit_admitted_fire(
     {
         world.commit_fired_wave(rules, &event, 3, selected.index, overlay_registry);
     }
+    // Ares 3.0 TechnoClass_Fire_OtherWaves (10056E60, hook 0x6FF5F5): a
+    // weapon past the four earlier effects and without IsMagBeam creates a TS
+    // laser wave (type 2 for `Wave.IsBigLaser`, else 1 for `Wave.IsLaser`)
+    // through CreateWave, whatever wave the firer links already; the new wave
+    // replaces the link (Techno+0x324).
+    #[cfg(feature = "ares")]
+    if fire_at_effect(weapon) == FireAtEffect::None
+        && let Some(wave_type) = weapon.ares_visuals.laser_wave_type()
+        && callbacks_enabled(world)
+        && let Some(event) = out.fire_events.last().cloned()
+    {
+        world.commit_fired_wave(rules, &event, wave_type, selected.index, overlay_registry);
+    }
     // FireAt6FF65A: shared DecreaseAmmo70D670 (+390) debits only signed>0.
     // Aircraft's override is RET41B900; release/dock retain their own writes.
     if let Some(entity) = world.substrate.entities.get_mut(snap.stable_id)

@@ -2318,6 +2318,10 @@ impl Simulation {
                 .map_err(|error| SnapshotRestoreError::InvalidSavedCellLand(error.to_string()))?;
         }
 
+        // Ares 3.0 10014B70 (hook 0x483D94): a powered firestorm section's
+        // Impassable class is a Recalc product the template lacks.
+        #[cfg(feature = "ares")]
+        self.ares_firestorm_restore_zone_classes(rules);
         if !self.rebuild_dynamic_navigation(rules) {
             return Err(SnapshotRestoreError::NavigationAuthorityPublicationFailed);
         }

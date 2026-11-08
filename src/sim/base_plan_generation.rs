@@ -364,12 +364,15 @@ fn move_eligible_seed<'a>(
 /// `+0x900`, `RADAR` BuildRadar `+0xA34`, `TECH` BuildTech `+0x91C`, `PROC`
 /// BuildRefinery `+0x8E4`; jump table `0x0050548C`). Recalc passes the types
 /// it has planned; the base defense choice the house's own building types.
+/// Ares 3.0 replaces the body (hook 0x505360 -> 10024520) with
+/// `PrerequisitesListed @ 10021C50`: any one of the type's prerequisite lists
+/// (`ObjectType::ares_prerequisite_lists`) fully among `present`.
 pub(crate) fn prerequisites_satisfied(
     candidate: &ObjectType,
     present: &[&ObjectType],
     rules: &RuleSet,
 ) -> bool {
-    candidate.prerequisite.iter().all(|entry| {
+    let listed = |entry: &Prerequisite| {
         #[cfg(feature = "ares")]
         if let Some(group) = rules.ares_prerequisite_group(*entry) {
             // Ares3.0 hook505360 -> ListContainsAll10008370 inspects only
@@ -403,7 +406,12 @@ pub(crate) fn prerequisites_satisfied(
             }
             Prerequisite::GenericGroup(_) => false,
         }
-    })
+    };
+    #[cfg(feature = "ares")]
+    let mut lists = candidate.ares_prerequisite_lists();
+    #[cfg(not(feature = "ares"))]
+    let mut lists = std::iter::once(candidate.prerequisite.as_slice());
+    lists.any(|list| list.iter().all(&listed))
 }
 
 #[cfg(all(test, feature = "ares"))]

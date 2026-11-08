@@ -16,12 +16,13 @@
 //! Sleep/Hunt/Enter/Harmless missions go through the shared QueueMission
 //! owner. Timers: LastScan only.
 //!
-//! RESIDUALS (both effect bodies): TeamClass::LiberateMember, the spawn and
-//! slave manager updates and the silent reselection of a selected victim.
-//! Trigger: a PoweredBy object in a team, with spawns or slaves, or selected
-//! when its power goes. Effect: it stays a team member, its spawns and slaves
-//! keep working, and it is left unselected. Frequency: mod-dependent; no
-//! retail type sets PoweredBy.
+//! Both effect bodies also update the managers: EnableEMPEffect2 takes a
+//! Foot out of its team (TeamClass::LiberateMember 0x006EA870), reselects a
+//! selected victim silently, and calls updateSpawnManager (10063070) and
+//! SlaveManagerClass::SuspendWork; DisableEMPEffect2 calls updateSpawnManager
+//! and ResumeWork. updateSpawnManager keys on the EMP counter, not on the
+//! deactivation: without an EMP it resumes the spawn timers, so a PoweredBy
+//! spawner keeps launching while unpowered, as in Ares.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::ruleset::RuleSet;
@@ -83,23 +84,39 @@ impl Simulation {
         if self.ares_powered_by_update(id, rules, effects) {
             return true;
         }
-        // TechnoExt::Destroy: ReceiveDamage(Health, 0, C4Warhead, NULL,
-        // ignore defenses, no passenger escape prevention, NULL House).
+        self.ares_techno_destroy(id, None, rules, overlay_registry, effects);
+        false
+    }
+
+    /// TechnoExt::Destroy (10044300) with no House or warhead:
+    /// ReceiveDamage(Health, 0, C4Warhead, killer, ignore defenses, no
+    /// passenger escape prevention, the killer's House or NULL).
+    pub(crate) fn ares_techno_destroy(
+        &mut self,
+        id: u64,
+        killer: Option<u64>,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
         let Some(health) = self
             .substrate
             .entities
             .get(id)
             .map(|entity| entity.health.current())
         else {
-            return false;
+            return;
         };
+        let killer_house = killer
+            .and_then(|killer| self.substrate.entities.get(killer))
+            .map(|killer| killer.owner());
         let c4 = self.interner.intern(&rules.bridge_warheads.c4_name);
         let event = crate::sim::combat::EntityDamageEvent::direct_receiver(
             id,
             health,
             0,
-            crate::sim::combat::RAD_NO_ATTACKER,
-            None,
+            killer.unwrap_or(crate::sim::combat::RAD_NO_ATTACKER),
+            killer_house,
             c4,
             crate::sim::combat::ReceiverCallFlags {
                 ignore_defenses: true,
@@ -107,7 +124,62 @@ impl Simulation {
             },
         );
         self.commit_direct_damage_receiver(rules, overlay_registry, event, effects);
-        false
+    }
+
+    /// Ares EMPulse::updateSpawnManager 10063070, which both PoweredBy
+    /// effect bodies call with a NULL Source and the EMP's enableEMPEffect
+    /// (10062B40, `sim::game_entity::emp`) with its firer: while the spawner
+    /// is under EMP (Techno+0x504 above 0) each rocket node (`+0x14` set)
+    /// with a Unit in states 1..4 is destroyed (TechnoExt::Destroy, the
+    /// Source as killer when it is a Techno), then the SpawnTimer (`+0x5C`)
+    /// and the UpdateTimer (`+0x50`) pause; otherwise both resume from a -1
+    /// start.
+    pub(crate) fn ares_update_spawn_manager(
+        &mut self,
+        id: u64,
+        source: Option<u64>,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        use crate::sim::spawn_manager::SpawnSlotState;
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(manager) = entity.spawn_manager.as_ref() else {
+            return;
+        };
+        let under_emp = entity.emp_remaining() > 0;
+        let rockets: Vec<u64> = if under_emp {
+            manager
+                .slots()
+                .iter()
+                .filter(|slot| {
+                    slot.is_missile_spawn()
+                        && matches!(
+                            slot.state(),
+                            SpawnSlotState::KamikazeWait
+                                | SpawnSlotState::InFlight
+                                | SpawnSlotState::Attacking
+                                | SpawnSlotState::ComingHome
+                        )
+                })
+                .filter_map(|slot| slot.spawn())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        for rocket in rockets {
+            self.ares_techno_destroy(rocket, source, rules, effects.overlay_registry(), effects);
+        }
+        let frame = self.session.binary_frame() as i32;
+        if let Some(manager) = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .and_then(|entity| entity.spawn_manager.as_mut())
+        {
+            manager.ares_hold_timers(under_emp, frame);
+        }
     }
 
     /// PoweredUnitClass::Update1006A6F0. True keeps the object alive.
@@ -328,6 +400,15 @@ impl Simulation {
         {
             self.release_locomotor(id, true, rules, None, effects);
         }
+        // A Foot in a team leaves it (LiberateMember(this, -1, false)).
+        if category.is_foot() {
+            self.leave_team(id, false, rules, effects);
+        }
+        let selected = self
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.selection.is_selected());
         // A Building's Focus survives the shared Deactivate's Guard reset.
         let focus = (category == EntityCategory::Structure).then(|| {
             self.substrate
@@ -337,6 +418,11 @@ impl Simulation {
                 .archive_target()
         });
         self.techno_deactivate(id, rules, effects);
+        // Deactivate deselects; a selected victim is selected again with
+        // the move feedback off (no voice).
+        if selected && let Some(entity) = self.substrate.entities.get_mut(id) {
+            entity.selection.select();
+        }
         if let Some(focus) = focus
             && let Some(entity) = self.substrate.entities.get_mut(id)
         {
@@ -358,6 +444,15 @@ impl Simulation {
             .is_some_and(|entity| entity.capture_manager.is_some())
         {
             self.free_all_captures(id, rules, None, effects);
+        }
+        self.ares_update_spawn_manager(id, None, rules, effects);
+        if let Some(manager) = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .and_then(|entity| entity.slave_manager.as_mut())
+        {
+            manager.suspend_work();
         }
         false
     }
@@ -408,6 +503,16 @@ impl Simulation {
             && let Some(entity) = self.substrate.entities.get_mut(id)
         {
             entity.set_archive_target(focus);
+        }
+        self.ares_update_spawn_manager(id, None, rules, effects);
+        let frame = self.session.binary_frame() as i32;
+        if let Some(manager) = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .and_then(|entity| entity.slave_manager.as_mut())
+        {
+            manager.resume_work(frame);
         }
         let Some(entity) = self.substrate.entities.get(id) else {
             return;

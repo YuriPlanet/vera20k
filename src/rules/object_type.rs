@@ -2904,6 +2904,23 @@ impl ObjectType {
         &self.techno_combat
     }
 
+    /// Ares TechnoTypeExt `PrerequisiteLists` (+0x40): `Prerequisite=`
+    /// (list 0, also `Prerequisite.List0=`), then `Prerequisite.List1=` on.
+    /// A human needs any one of them on the map (`PrerequisitesMet @
+    /// 10021CA0`); the planner any one among its types (`10021C50`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_prerequisite_lists(
+        &self,
+    ) -> impl Iterator<Item = &[crate::rules::prerequisite::Prerequisite]> {
+        std::iter::once(self.prerequisite.as_slice()).chain(
+            self.techno_combat
+                .prerequisites()
+                .extra_lists()
+                .iter()
+                .map(Vec::as_slice),
+        )
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn bind_techno_combat_rules(
         &mut self,
@@ -3135,6 +3152,13 @@ impl ObjectType {
         &self.building_type_ext
     }
 
+    /// BuildingTypeExt `Fake=`, which DrawExtraInfo (Ares 10015F10, hook
+    /// 0x70AA60) labels `TXT_FAKE` in place of its other texts.
+    #[cfg(feature = "ares")]
+    pub fn ares_fake(&self) -> bool {
+        self.building_type_ext.fake()
+    }
+
     /// BuildingTypeExt `Firestorm.Wall` (`sim::ares_firestorm`), for the
     /// client's health bar (hook `0x6F64CB`).
     #[cfg(feature = "ares")]
@@ -3217,6 +3241,14 @@ impl ObjectType {
     #[cfg(feature = "ares")]
     pub(crate) fn bind_unit_lost_eva(&mut self, eva: Option<String>) {
         self.techno_combat.bind_unit_lost_eva(eva);
+    }
+
+    /// Ares TechnoTypeExt `EVA.Lost`: `Some(None)` is the silent -1, `None`
+    /// rules read without the EVA catalog, where Initialize's seed applies
+    /// (`EVA_UnitLost` for a non-building, -1 for a building).
+    #[cfg(feature = "ares")]
+    pub(crate) fn unit_lost_eva(&self) -> Option<Option<&str>> {
+        self.techno_combat.unit_lost_eva()
     }
 
     /// Ares BuildingTypeExt Academy.* (`rules::ares_veterancy`).
@@ -3808,6 +3840,20 @@ impl ObjectType {
     /// callers own allocation/fill bounds. Uses the live bound base weapon0,
     /// not a capture manager's retained admission capacity or elite weapon.
     pub fn pip_max(&self, rules: &crate::rules::ruleset::RuleSet) -> i32 {
+        // Ares 3.0 BuildingTypeClass_GetMaxPips 10010150 (hook 0x45ECE0): a
+        // building on a custom foundation answers its `Foundation.X` width
+        // for every PipScale. (VERA lacks the stock BuildingType override
+        // 0x0045ECE0 itself, which sizes Tiberium and Power pips by the
+        // foundation width; buildings take the TechnoType answer below.)
+        #[cfg(feature = "ares")]
+        if self.category == ObjectCategory::Building
+            && matches!(
+                self.foundation,
+                crate::rules::foundation::Foundation::Custom(_)
+            )
+        {
+            return i32::from(self.foundation.dimensions().0);
+        }
         match self.pip_scale {
             PipScale::None => 0,
             PipScale::Ammo => self.ammo,
@@ -4268,6 +4314,9 @@ impl ObjectType {
     ///
     /// gamemd-derived: `BuildingClass` vtable `+0x80` resolves through
     /// `0x00457620` to `BuildingTypeClass__Is1x1WithUndeploy @ 0x00465D40`.
+    /// Ares 3.0 BuildingTypeClass_IsUndeployable 100101D0 (hook 0x465D4A)
+    /// tests a custom foundation's own width and height, which
+    /// `Foundation::dimensions` already answers.
     pub fn is_1x1_with_undeploy(&self) -> bool {
         self.undeploys_into.is_some() && self.foundation.dimensions() == (1, 1)
     }

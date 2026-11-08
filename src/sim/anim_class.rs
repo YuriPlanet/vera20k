@@ -24,7 +24,8 @@
 //! +0x178 (0x007F53A4) with no virtual call found. `Take_Damage @ 0x0071B920`
 //! uninits a terrain object on a lethal hit, and `Finish_Fire_Death @
 //! 0x0071C6B0` (from AnimClass 0x00422955/0x00424BB0) returns while IsOnFire is
-//! clear.
+//! clear. Ares 3.0 makes trees burn (`sim::terrain_fire`); its fire anims
+//! are owned by the tree (`AnimObject::owner_terrain`).
 
 use crate::sim::world::FrameEffects;
 use std::collections::BTreeMap;
@@ -440,6 +441,14 @@ pub struct AnimObject {
     /// rides its missile this way.
     #[serde(default)]
     attached_bullet: Option<u64>,
+    /// `AnimClass+0xCC` when it names a `TerrainClass`: a tree's fire, which
+    /// only the Ares terrain fire attaches (`sim::terrain_fire`). VERA keeps
+    /// a terrain owner apart from `owner_entity` and its stored coordinate
+    /// absolute: a terrain object never moves, so native's owner-relative
+    /// form adds the same constant back on every read.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    owner_terrain: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -747,6 +756,8 @@ impl AnimObject {
             flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
+            #[cfg(feature = "ares")]
+            owner_terrain: None,
         }
     }
 
@@ -767,7 +778,12 @@ impl AnimObject {
     /// the pointer-expiry listener index (`ExpiryListeners`); a field that
     /// callback compares must be named here too.
     pub(crate) fn expiry_names(&self) -> [Option<u64>; 2] {
-        [self.owner_entity, self.attached_bullet]
+        // An anim names at most one owner at `+0xCC`.
+        #[cfg(feature = "ares")]
+        let owner = self.owner_entity.or(self.owner_terrain);
+        #[cfg(not(feature = "ares"))]
+        let owner = self.owner_entity;
+        [owner, self.attached_bullet]
     }
 
     /// Preserve the former field order; the new damage-fire reverse index is
@@ -817,6 +833,11 @@ impl AnimObject {
         if let Some(state) = &self.flaming_guy {
             b"anim-flaming-guy-v1".hash(hasher);
             state.hash(hasher);
+        }
+        #[cfg(feature = "ares")]
+        if let Some(terrain) = self.owner_terrain {
+            b"anim-owner-terrain-v1".hash(hasher);
+            terrain.hash(hasher);
         }
     }
 }
@@ -994,6 +1015,59 @@ impl AnimStore {
         uncount_owner(&mut self.owner_counts, replaced);
         count_owner(&mut self.owner_counts, owner);
         Some(replaced)
+    }
+
+    /// Write `id`'s terrain owner (`+0xCC` naming a TerrainClass), returning
+    /// the one it replaced, or `None` when `id` is not stored.
+    #[cfg(feature = "ares")]
+    pub(crate) fn set_owner_terrain(
+        &mut self,
+        id: AnimId,
+        owner: Option<u64>,
+    ) -> Option<Option<u64>> {
+        let stored = self.anims.len();
+        let anim = self.anims.get_mut(&id)?;
+        self.touched.note(id, stored);
+        Some(std::mem::replace(&mut anim.owner_terrain, owner))
+    }
+
+    /// Whether a stored anim other than `id` names the terrain object
+    /// `owner`: the Anim array scan of SetOwnerObject424B79..424BB6 for a
+    /// terrain owner. Only burning trees own anims, so it walks the store.
+    #[cfg(feature = "ares")]
+    pub(crate) fn another_owned_by_terrain(&self, id: AnimId, owner: u64) -> bool {
+        self.anims
+            .iter()
+            .any(|(&other, anim)| other != id && anim.owner_terrain == Some(owner))
+    }
+
+    /// Ares terrain fire: the anims a terrain object owns, in array order.
+    #[cfg(feature = "ares")]
+    pub(crate) fn owned_by_terrain(&self, owner: u64) -> Vec<AnimId> {
+        self.anims
+            .iter()
+            .filter(|(_, anim)| anim.owner_terrain == Some(owner))
+            .map(|(&id, _)| id)
+            .collect()
+    }
+
+    /// `AnimClass::ClearLoopsForOwner @ 0x00422B80`: every anim naming
+    /// `owner` at `+0xCC` ends after its current loop (`+0x195 = 0`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn clear_loops_for_terrain_owner(&mut self, owner: u64) {
+        let stored = self.anims.len();
+        for (&id, anim) in self.anims.iter_mut() {
+            if anim.owner_terrain == Some(owner) {
+                anim.end_loops();
+                self.touched.note(id, stored);
+            }
+        }
+    }
+
+    /// The terrain object an anim is attached to (`+0xCC`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn owner_terrain(&self, id: AnimId) -> Option<u64> {
+        self.anims.get(&id).and_then(|anim| anim.owner_terrain)
     }
 
     /// Install a fixture's owner (`+0xCC`) on a stored anim.
@@ -1812,6 +1886,8 @@ impl Simulation {
             flaming_guy: None,
             owner_house: None,
             attached_bullet: None,
+            #[cfg(feature = "ares")]
+            owner_terrain: None,
         };
         // The insert must run in every build profile: wrapped in
         // `debug_assert!` it was compiled out of release binaries and no
@@ -2739,6 +2815,28 @@ impl Simulation {
             return false;
         };
         let marked = anim.display.marked_on_map;
+        // A terrain owner (Ares terrain fire): the same detach, whose
+        // last-anim callback is TerrainClass vt+0x17C, Finish_Fire_Death
+        // (`0x00424BB0`). Its stored coordinate is already absolute.
+        #[cfg(feature = "ares")]
+        let owner_terrain = anim.owner_terrain;
+        #[cfg(feature = "ares")]
+        if let Some(terrain) = owner_terrain {
+            if marked {
+                self.substrate.display.remove(id);
+            }
+            let last = !self.substrate.anims.another_owned_by_terrain(id, terrain);
+            if last {
+                self.terrain_finish_fire_death(terrain);
+            }
+            self.substrate.anims.set_owner_terrain(id, None);
+            if marked {
+                self.submit_anim_display(id, rules);
+            }
+        }
+        let Some(anim) = self.anim(id) else {
+            return false;
+        };
         if anim.owner_entity.is_some() {
             if marked {
                 self.substrate.display.remove(id);
@@ -2756,6 +2854,16 @@ impl Simulation {
             let Some(owner_coord) = self.anim_owner_coords(owner_id) else {
                 return false;
             };
+            #[cfg(feature = "ares")]
+            if !self.substrate.entities.contains(owner_id) {
+                // A terrain owner: attach without the coordinate conversion
+                // (see `AnimObject::owner_terrain`) or the Object+84 flag,
+                // which no terrain reader asks.
+                self.substrate.display.remove(id);
+                self.substrate.anims.set_owner_terrain(id, Some(owner_id));
+                self.submit_anim_display(id, rules);
+                return true;
+            }
             self.substrate.display.remove(id);
             self.substrate
                 .entities
@@ -2799,7 +2907,11 @@ impl Simulation {
         use crate::rules::art_data::AnimLayer;
         use crate::sim::world::display_layers::DisplayLayer;
         let anim = self.substrate.anims.get(id)?;
-        if anim.owner_entity.is_some() {
+        #[cfg(feature = "ares")]
+        let attached = anim.owner_entity.is_some() || anim.owner_terrain.is_some();
+        #[cfg(not(feature = "ares"))]
+        let attached = anim.owner_entity.is_some();
+        if attached {
             return Some(DisplayLayer::GROUND);
         }
         let config = rules
@@ -2842,6 +2954,17 @@ impl Simulation {
     }
 
     pub(crate) fn anim_owner_coords(&self, owner_id: u64) -> Option<AnimWorldCoord> {
+        // A terrain owner's centre is its GetCoords (Terrain VT+48 ->
+        // Object5F65A0), for the Ares terrain fire.
+        #[cfg(feature = "ares")]
+        if !self.substrate.entities.contains(owner_id) {
+            let centre = self.terrain_objects.get(owner_id)?.world_coord();
+            return Some(AnimWorldCoord {
+                x: centre.x,
+                y: centre.y,
+                z: centre.z,
+            });
+        }
         Some(anim_owner_world_coords(
             self.substrate.entities.get(owner_id)?,
             self.resolved_terrain.as_ref(),
@@ -2852,6 +2975,12 @@ impl Simulation {
     /// other owner references, not Building damage-fire slots. Those clear
     /// only when this Anim broadcasts its own pointer expiry (44EA45).
     pub(crate) fn detach_anim_from_owner(&mut self, id: AnimId, rules: &RuleSet) -> Option<u64> {
+        // A terrain owner's +60 is the Object base, which keeps no anim.
+        #[cfg(feature = "ares")]
+        if let Some(terrain) = self.substrate.anims.owner_terrain(id) {
+            self.set_anim_owner_object(id, None, rules);
+            return Some(terrain);
+        }
         let owner = self.anim(id)?.owner_entity?;
         if let Some(entity) = self.substrate.entities.get_mut(owner) {
             entity.attached_anim_expired(id);
@@ -2879,7 +3008,13 @@ impl Simulation {
         rules: &RuleSet,
     ) -> bool {
         let mut changed = false;
-        if self.anim(id).and_then(|anim| anim.owner_entity) == Some(expired_id) {
+        #[cfg(feature = "ares")]
+        let owner = self
+            .anim(id)
+            .and_then(|anim| anim.owner_entity.or(anim.owner_terrain));
+        #[cfg(not(feature = "ares"))]
+        let owner = self.anim(id).and_then(|anim| anim.owner_entity);
+        if owner == Some(expired_id) {
             self.lifecycle_outputs
                 .emit(LifecycleOutput::DisplayRemove { stable_id: id });
             self.substrate.display.remove(id);
@@ -4021,6 +4156,10 @@ impl crate::sim::world::ObjectSubstrate {
     /// submission (422961 / 425190). Callers own the distinct +60 and +84
     /// effects: PointerExpired clears CC without releasing the retained flag.
     pub(crate) fn release_anim_owner_reference(&mut self, id: AnimId) -> Option<u64> {
+        #[cfg(feature = "ares")]
+        if let Some(Some(terrain)) = self.anims.set_owner_terrain(id, None) {
+            return Some(terrain);
+        }
         self.anims.set_owner_entity(id, None)?
     }
     pub(crate) fn set_anim_frame_and_z_adjust(&mut self, id: AnimId, frame: i32, z_adjust: i32) {

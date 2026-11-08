@@ -3603,6 +3603,14 @@ fn self_action(
             transport_id: target.stable_id,
         });
     }
+    // Ares 3.0 100173A0 (hook 0x44731C): a tunnel entrance with its
+    // owner's network loaded offers the unload action.
+    #[cfg(feature = "ares")]
+    if sim.ares_tunnel_offers_unload(target.stable_id, rules) {
+        return Some(Command::UnloadPassengers {
+            transport_id: target.stable_id,
+        });
+    }
     if let Some(command) = super::transport_orders::unload_command(entity, obj, Some(local_owner)) {
         return Some(command);
     }
@@ -4714,7 +4722,10 @@ fn building_object_release(
     force_move_key: bool,
 ) -> LeftRelease {
     if cursor_owner(sim, rules, current_objects, target_id).is_some_and(|best| {
-        receivers.contains(&best) && building_moves_over_object(sim, rules, best, force_move_key)
+        receivers.contains(&best)
+            && (building_moves_over_object(sim, rules, best, force_move_key)
+                // Ares 3.0 100171B0 (hook 0x44725F): the trench Enter.
+                || ares_trench_enter(sim, rules, best, target_id))
     }) {
         return LeftRelease::Dispatch;
     }
@@ -4766,6 +4777,17 @@ fn building_object_orders(
         else {
             continue;
         };
+        // Ares 3.0 10016F60 (hook 0x443414): a building whose action over
+        // the building is the trench Enter (100171B0, hook 0x44725F) raises
+        // TrenchRedirectClick (0x60, RaiseTrenchRedirectClick 1006A170)
+        // with that building's Cell, and sends nothing else.
+        #[cfg(feature = "ares")]
+        if ares_trench_enter(sim, rules, id, target) {
+            if let Some(record) = sim.encode_ares_trench_redirect_record(id, cell) {
+                orders.push(Command::SynchronizedRecord { record });
+            }
+            continue;
+        }
         if !building_moves_over_object(sim, rules, id, force_move_key) {
             continue;
         }
@@ -4804,6 +4826,27 @@ fn building_object_orders(
         }
     }
     (orders, announce)
+}
+
+/// Ares 3.0 BuildingClass_GetActionOnObject_TargetABuilding (`100171B0`,
+/// hook `0x44725F`): the building `id` answers Enter over the building
+/// `target` when its occupants may traverse there (canTraverseTo
+/// `10011690`). Default builds have no such action.
+fn ares_trench_enter(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    id: u64,
+    target: u64,
+) -> bool {
+    #[cfg(feature = "ares")]
+    {
+        sim.ares_can_traverse_to(id, target, rules)
+    }
+    #[cfg(not(feature = "ares"))]
+    {
+        let _ = (sim, rules, id, target);
+        false
+    }
 }
 
 fn selected_rally_producer_ids(

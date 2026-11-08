@@ -63,6 +63,10 @@ pub use self::production_repair::{RepairControl, repair_step_cost, toggle_repair
 pub(crate) use self::production_repair::{engineer_repair, update_repair_and_power};
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use self::production_sell::begin_selling;
+#[cfg(feature = "ares")]
+pub use self::production_sell::foot_can_be_sold;
+#[cfg(feature = "ares")]
+pub(crate) use self::production_sell::foot_on_sold;
 pub(crate) use self::production_sell::sell_back;
 #[cfg(any(test, feature = "test-support"))]
 pub use self::production_sell::sell_building_now_for_test;
@@ -92,6 +96,8 @@ pub(crate) use self::can_build::owns_prerequisites;
 pub(crate) use self::can_build::{
     CanBuild, can_build, initialize_factory_primary, toggle_factory_primary,
 };
+#[cfg(feature = "ares")]
+pub(crate) use self::can_build::{RequirementStatus, requirements_met};
 pub use self::can_build::{can_select_factory_primary, find_factory, object_find_factory};
 pub(crate) use self::factory_ai::{
     AiPlacementTimer, detach_all as detach_building_factory, factory_ai,

@@ -854,6 +854,23 @@ pub struct HouseState {
     #[cfg(feature = "ares")]
     #[serde(default)]
     ares_academies: Vec<u64>,
+    /// Ares HouseExt `+0x34` ReverseEngineered: the TechnoTypes this house
+    /// reverse engineered at a `ReverseEngineersVictims=` grinder, in the
+    /// order `HouseExt::ExtData::ReverseEngineer` (`10022360`) appended them
+    /// (AresMap find-or-insert `10020250`). RequirementsMet (`10021FF0`)
+    /// answers Overridden for a listed type and trigger event 78 reads it;
+    /// `SpyEffect.UndoReverseEngineer` (`10012000`) empties it.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_reverse_engineered: Vec<crate::rules::superweapon_type::TechnoTypeReference>,
+    /// Ares HouseExt `+0x40` StolenTech (constructor 0): the bits of every
+    /// `SpyEffect.StolenTechIndex=` building this house's spies entered
+    /// (`BuildingExt::ExtData::InfiltratedBy @ 10012000`), which
+    /// `Prerequisite.StolenTechs=` asks (RequirementsMet `10021FF0`).
+    /// Nothing clears it.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_stolen_tech: u32,
     /// Ares HouseExt `+0x14` SWLastIndex (constructor -1): the
     /// `[SuperWeaponTypes]` index of the last Super a new-type handler
     /// launched that was neither PostClick nor `SW.AutoFire` (common Launch
@@ -2343,6 +2360,71 @@ impl HouseState {
             std::hash::Hash::hash(b"ares-house-academies-v1", hasher);
             std::hash::Hash::hash(&self.ares_academies, hasher);
         }
+        // The technology a house took at its grinders, folded while it has any.
+        #[cfg(feature = "ares")]
+        if !self.ares_reverse_engineered.is_empty() {
+            std::hash::Hash::hash(b"ares-house-reverse-engineered-v1", hasher);
+            std::hash::Hash::hash(&self.ares_reverse_engineered, hasher);
+        }
+        // The technology bits its spies stole, folded once it has any.
+        #[cfg(feature = "ares")]
+        if self.ares_stolen_tech != 0 {
+            std::hash::Hash::hash(b"ares-house-stolen-tech-v1", hasher);
+            std::hash::Hash::hash(&self.ares_stolen_tech, hasher);
+        }
+    }
+
+    /// The StolenTech arm of Ares' infiltration (`10012000`): OR the
+    /// building type's `SpyEffect.StolenTechIndex` bits into HouseExt
+    /// `+0x40`, then set House+1FC.
+    #[cfg(feature = "ares")]
+    pub(crate) fn steal_ares_tech(&mut self, bits: u32) {
+        self.ares_stolen_tech |= bits;
+        self.request_tech_recheck();
+    }
+
+    /// Whether this house holds every StolenTech bit of `required`
+    /// (`Prerequisite.StolenTechs`); an empty set is met (`10021FF0`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn has_ares_stolen_techs(&self, required: u32) -> bool {
+        self.ares_stolen_tech & required == required
+    }
+
+    /// The list half of `HouseExt::ExtData::ReverseEngineer` (`10022360`):
+    /// append `reversed` unless it is listed (AresMap find-or-insert
+    /// `10020250`). Answers whether it was appended.
+    #[cfg(feature = "ares")]
+    pub(crate) fn record_ares_reverse_engineered(
+        &mut self,
+        reversed: &crate::rules::superweapon_type::TechnoTypeReference,
+    ) -> bool {
+        if self.ares_reverse_engineered.contains(reversed) {
+            return false;
+        }
+        self.ares_reverse_engineered.push(reversed.clone());
+        true
+    }
+
+    /// Whether this house reverse engineered the type `id` of `category`
+    /// (HouseExt `+0x34`), as RequirementsMet (`10021FF0`) and trigger event
+    /// 78 ask. Both sides hold the Rules registry's stored IDs.
+    #[cfg(feature = "ares")]
+    pub(crate) fn has_ares_reverse_engineered(
+        &self,
+        category: crate::rules::object_type::ObjectCategory,
+        id: &str,
+    ) -> bool {
+        self.ares_reverse_engineered
+            .iter()
+            .any(|kind| kind.category == category && kind.id == id)
+    }
+
+    /// `SpyEffect.UndoReverseEngineer` (`BuildingExt::ExtData::InfiltratedBy
+    /// @ 10012000`): empty the list, then set House+1FC.
+    #[cfg(feature = "ares")]
+    pub(crate) fn undo_ares_reverse_engineering(&mut self) {
+        self.ares_reverse_engineered.clear();
+        self.request_tech_recheck();
     }
 
     /// `HouseExt::ExtData::UpdateAcademy` (`10022760`): append an academy
@@ -2904,6 +2986,10 @@ impl HouseState {
             spy_gains: SpyGains::default(),
             #[cfg(feature = "ares")]
             ares_academies: Vec::new(),
+            #[cfg(feature = "ares")]
+            ares_reverse_engineered: Vec::new(),
+            #[cfg(feature = "ares")]
+            ares_stolen_tech: 0,
             #[cfg(feature = "ares")]
             ares_last_super: no_super_index(),
             powered_unit_centers: 0,

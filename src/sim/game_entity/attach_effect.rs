@@ -554,7 +554,7 @@ mod receiver {
                 );
                 return;
             }
-            let targets = self.ares_effect_ground_targets(impact, warhead.cell_spread_f64, rules);
+            let targets = self.ares_cell_spread_items(impact, warhead.cell_spread_f64, rules);
             for target in targets {
                 let Some(victim) = self.substrate.entities.get(target) else {
                     continue;
