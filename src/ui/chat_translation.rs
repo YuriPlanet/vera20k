@@ -1,8 +1,9 @@
 //! VERA's opt-in chat translation; gamemd has none. A player picks the
-//! language received chat is translated into with `/translate` in a WOL chat
-//! edit, saved as `[VERA] TranslateChat=`. Lines that need it go to the lobby's
-//! `POST /v1/translate` (`docs/lobby-protocol.md`) and the reply is shown
-//! under the original, which always stays visible.
+//! language received chat is translated into on the Options Interface page or
+//! with `/translate` in a WOL chat edit, saved as `[VERA] TranslateChat=`.
+//! Lines that need it go to the lobby's `POST /v1/translate`
+//! (`docs/lobby-protocol.md`) and the reply is shown under the original, which
+//! always stays visible.
 
 /// A language received chat can be translated into. GAME.FNT draws Latin-1,
 /// CJK, kana and Hangul, so only these are offered.
@@ -37,7 +38,24 @@ pub(crate) fn usage() -> String {
     crate::i18n::tr("VERA:TranslateUsage")
 }
 
+/// Whether a reply only repeats the line it translates: the model leaves `gg`
+/// and `2v2` as they are, and `» gg` under `gg` tells the reader nothing. Case,
+/// spaces and punctuation don't count.
+pub(crate) fn only_repeats(original: &str, translated: &str) -> bool {
+    fn letters(text: &str) -> impl Iterator<Item = char> {
+        text.chars()
+            .filter(|ch| ch.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+    }
+    letters(original).eq(letters(translated))
+}
+
 impl ChatLanguage {
+    /// Every language, in the order the Options list shows them.
+    pub(crate) fn all() -> impl Iterator<Item = Self> {
+        LANGUAGES.into_iter().map(|(language, ..)| language)
+    }
+
     fn entry(self) -> (ChatLanguage, &'static str, &'static str) {
         LANGUAGES
             .into_iter()
