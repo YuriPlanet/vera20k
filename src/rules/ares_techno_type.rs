@@ -45,6 +45,119 @@ pub(crate) struct AresTechnoTypeRules {
     /// The tiberium and harvester keys (`rules::ares_tiberium`).
     #[serde(default)]
     tiberium: crate::rules::ares_tiberium::TiberiumTechnoRules,
+    #[serde(default)]
+    presentation: PresentationTypeRules,
+    #[serde(default)]
+    residual: ResidualTypeRules,
+}
+
+/// A Find-only `Valueable<TechnoTypeClass*>` read (1003FA40 over
+/// TechnoTypeClass::Find 10007EA0): `None` keeps the field, `Some(None)` is
+/// a blank `none`, `Some(Some(type))` a found type.
+pub(crate) type ResolvedTechno =
+    Option<Option<crate::rules::superweapon_type::TechnoTypeReference>>;
+
+/// TechnoTypeExt+0x1BC/+0x1C4 `VoiceAirstrikeAttack`/`VoiceAirstrikeAbort`
+/// (NullableIdx<VocClass>, unset), +0x4CC `EnemyUIName` (Nullable<CSFText>,
+/// unset) and +0x648 `RadialIndicatorRadius` (Nullable<int>, unset).
+#[derive(Debug, Clone, Default, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct PresentationTypeRules {
+    /// Bound against the fixed sound catalog with the type's other sounds
+    /// (`ObjectType::bind_scalar_sound_references`); `Some(None)` is an
+    /// explicit silence.
+    airstrike_voices: [Option<Option<String>>; 2],
+    /// The CSF label (at most 31 bytes, `detail::read<CSFText>` 10076510).
+    enemy_ui_name: Option<String>,
+    radial_indicator_radius: Option<i32>,
+}
+
+impl PresentationTypeRules {
+    /// The voice an airstrike plays as it starts (`abort` false,
+    /// AirstrikeClass_Fire_AirstrikeAttackVoice, Ares.dll 10048D60, hook
+    /// 0x41D940) or is called off (`abort` true, AirstrikeClass_PointerGot
+    /// Invalid_AirstrikeAbortSound 10048DE0, hook 0x41D5AE): `None` keeps
+    /// the caller's value, `Some(None)` silences it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn airstrike_voice(&self, abort: bool) -> Option<Option<&str>> {
+        self.airstrike_voices[usize::from(abort)]
+            .as_ref()
+            .map(|voice| voice.as_deref())
+    }
+
+    /// `EnemyUIName`, the CSF label a non-allied player reads for a building
+    /// of this type (BuildingClass_GetUIName, Ares.dll 10015DA0, hook
+    /// 0x459ED0).
+    #[cfg(feature = "ares")]
+    pub(crate) fn enemy_ui_name(&self) -> Option<&str> {
+        self.enemy_ui_name.as_deref()
+    }
+
+    /// `RadialIndicatorRadius`: a building's radial indicator range in cells
+    /// in place of GetSensorRange's own answer (BuildingClass_GetRangeOf
+    /// Radial_Radius, Ares.dll 10048E60, hook 0x4566B0).
+    #[cfg(feature = "ares")]
+    pub(crate) fn radial_indicator_radius(&self) -> Option<i32> {
+        self.radial_indicator_radius
+    }
+}
+
+/// TechnoTypeExt keys whose consumer mechanisms VERA does not have yet
+/// (docs/ares-techno-types.md, "Not covered"). They are read in the DLL's
+/// order with the constructor's defaults (1003C710, Initialize 1003DEC0)
+/// and nothing consumes them.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ResidualTypeRules {
+    /// `InitialPayload.Nums` (+0x110, ValueableVector<int>, empty).
+    initial_payload_nums: Vec<i32>,
+    /// `CanBeReversed` (+0x270, true) and `ReversedAs` (+0x274, null).
+    can_be_reversed: bool,
+    reversed_as: Option<crate::rules::superweapon_type::TechnoTypeReference>,
+    /// `Carryall.Allowed` (+0x2F8, Nullable<bool>) and `Carryall.SizeLimit`
+    /// (+0x2FC, Nullable<int>), unset.
+    carryall_allowed: Option<bool>,
+    carryall_size_limit: Option<i32>,
+    /// `EVA.Lost` (+0x394, ValueableIdx<VoxClass>): Initialize seeds a
+    /// non-building with `FindIndex("EVA_UnitLost")`, a building keeps -1;
+    /// bound against the fixed EVA catalog (`RuleSet::bind_type_eva_references`).
+    unit_lost_eva: Option<String>,
+    /// `HunterSeeker.DetonateProximity`, `.DescendProximity`, `.AscentSpeed`,
+    /// `.DescentSpeed` and `.EmergeSpeed` (+0x3B4..+0x3D4, Nullable<int>,
+    /// unset; else the RulesExt values).
+    hunter_seeker: [Option<i32>; 5],
+    /// `Assaulter.Level` (+0x42C, Valueable<int>, 0).
+    assaulter_level: i32,
+    /// `NoSelfGuardArea` (+0x4C8, false).
+    no_self_guard_area: bool,
+    /// `DigInSound`/`DigOutSound` (+0x550/+0x558, NullableIdx<VocClass>),
+    /// bound with the type's other sounds.
+    dig_sounds: [Option<Option<String>>; 2],
+    /// `DigIn`/`DigOut` (+0x560/+0x568, Nullable<AnimTypeClass*>, Find
+    /// only): `Some(None)` is an explicit none.
+    dig_anims: [Option<Option<String>>; 2],
+    /// `FakeOf` (+0x600) and `Convert.Deploy` (+0x60C), Find-only
+    /// Valueable<TechnoTypeClass*>, null.
+    fake_of: Option<crate::rules::superweapon_type::TechnoTypeReference>,
+    convert_deploy: Option<crate::rules::superweapon_type::TechnoTypeReference>,
+}
+
+impl Default for ResidualTypeRules {
+    fn default() -> Self {
+        Self {
+            initial_payload_nums: Vec::new(),
+            can_be_reversed: true,
+            reversed_as: None,
+            carryall_allowed: None,
+            carryall_size_limit: None,
+            unit_lost_eva: None,
+            hunter_seeker: [None; 5],
+            assaulter_level: 0,
+            no_self_guard_area: false,
+            dig_sounds: [None, None],
+            dig_anims: [None, None],
+            fake_of: None,
+            convert_deploy: None,
+        }
+    }
 }
 
 /// TechnoTypeExt+0x27C `PassengerTurret` (false), +0x325 `CrashSpin`
@@ -538,6 +651,7 @@ impl AresTechnoTypeRules {
         type_name: &str,
         aircraft: bool,
         mut resolve: impl FnMut(&str, TypeRef) -> Resolved,
+        mut resolve_techno: impl FnMut(&str) -> ResolvedTechno,
         find: impl Fn(&str) -> Option<String>,
     ) {
         if !self.initialized {
@@ -564,9 +678,26 @@ impl AresTechnoTypeRules {
         roles.is_cow = section.read_ares_bool("IsCow", roles.is_cow);
         // After the Spotlight.* keys.
         roles.is_bomb = section.read_ares_bool("IsBomb", roles.is_bomb);
+        // After Operator (ValueableVector<int> 1000ED00), then after the
+        // Chronoshift.* and CameoPCX keys the reverse-engineering pair.
+        let residual = &mut self.residual;
+        if let Some(nums) = section.read_ares_int_list("InitialPayload.Nums") {
+            residual.initial_payload_nums = nums;
+        }
+        residual.can_be_reversed =
+            section.read_ares_bool("CanBeReversed", residual.can_be_reversed);
+        if let Some(reversed_as) = resolve_techno("ReversedAs") {
+            residual.reversed_as = reversed_as;
+        }
         // #1208, read after RadarJamRadius.
         self.movement.passenger_turret =
             section.read_ares_bool("PassengerTurret", self.movement.passenger_turret);
+        // After ClonedAs, before ImmuneToAbduction and FactoryOwners.
+        let residual = &mut self.residual;
+        residual.carryall_allowed =
+            section.read_ares_nullable_bool("Carryall.Allowed", residual.carryall_allowed);
+        residual.carryall_size_limit =
+            section.read_ares_nullable_int("Carryall.SizeLimit", residual.carryall_size_limit);
         self.gattling_cyclic = section.read_ares_bool("Gattling.Cycle", self.gattling_cyclic);
         // 1003DFB0: "#245 custom missiles", after Gattling.Cycle.
         if let Some(missile) = self.missile.as_deref_mut() {
@@ -616,6 +747,21 @@ impl AresTechnoTypeRules {
             section.read_ares_nullable_int("Smoke.ChanceRed", damage.smoke_chance_red);
         damage.smoke_chance_dead =
             section.read_ares_nullable_int("Smoke.ChanceDead", damage.smoke_chance_dead);
+        // Then the hunter-seeker overrides, before HunterSeeker.Ignore
+        // (`rules::superweapon_influence`).
+        for (slot, key) in [
+            "HunterSeeker.DetonateProximity",
+            "HunterSeeker.DescendProximity",
+            "HunterSeeker.AscentSpeed",
+            "HunterSeeker.DescentSpeed",
+            "HunterSeeker.EmergeSpeed",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            self.residual.hunter_seeker[slot] =
+                section.read_ares_nullable_int(key, self.residual.hunter_seeker[slot]);
+        }
         // After HunterSeeker.*: CivilianEnemy, then DamageSparks; after the
         // particle-system lists, the berserk, Assaulter and crush blocks.
         let combat = &mut self.combat;
@@ -626,6 +772,10 @@ impl AresTechnoTypeRules {
             .read_ares_nullable_double_bits("Berserk.ROFMultiplier", combat.berserk_rof_multiplier);
         combat.immune_to_berserk =
             section.read_ares_nullable_bool("ImmuneToBerserk", combat.immune_to_berserk);
+        // After DesignatorRange/InhibitorRange.
+        self.residual.assaulter_level =
+            section.read_ares_int("Assaulter.Level", self.residual.assaulter_level);
+        let combat = &mut self.combat;
         combat.omni_crusher_aggressive =
             section.read_ares_bool("OmniCrusher.Aggressive", combat.omni_crusher_aggressive);
         combat.crush_damage =
@@ -664,6 +814,22 @@ impl AresTechnoTypeRules {
             section.read_ares_bool("NoManualUnload", movement.no_manual_unload);
         movement.no_manual_enter =
             section.read_ares_bool("NoManualEnter", movement.no_manual_enter);
+        self.residual.no_self_guard_area =
+            section.read_ares_bool("NoSelfGuardArea", self.residual.no_self_guard_area);
+        // Nullable<CSFText> 1003F6B0: a nonempty value sets the label.
+        self.presentation.enemy_ui_name = section.read_string_with(
+            "EnemyUIName",
+            2048,
+            self.presentation.enemy_ui_name.take(),
+            |_, label| Some(crate::rules::ini_value::truncate_native_bytes(label, 31).to_owned()),
+        );
+        // After the Bounty.*, Promote.* and FactoryPlant keys: the tunnel
+        // anims (DigInSound/DigOutSound bind with the other sounds).
+        for (slot, key) in ["DigIn", "DigOut"].into_iter().enumerate() {
+            if let Some(anim) = resolve(key, TypeRef::Animation) {
+                self.residual.dig_anims[slot] = Some(anim);
+            }
+        }
         // After DigOut.
         let fall = &mut self.fall_rate;
         for (arm, prefix) in ["FallRate.Parachute", "FallRate.NoParachute"]
@@ -678,6 +844,10 @@ impl AresTechnoTypeRules {
         {
             fall.caps[arm] = section.read_ares_nullable_int(key, fall.caps[arm]);
         }
+        // After the BuildTime.* keys.
+        if let Some(fake_of) = resolve_techno("FakeOf") {
+            self.residual.fake_of = fake_of;
+        }
         // After FakeOf: an invalid or out-of-range facing keeps the value.
         self.movement.deploy_dir = section.read_string_with(
             "DeployDir",
@@ -690,6 +860,43 @@ impl AresTechnoTypeRules {
                     .or(current)
             },
         );
+        // Then Convert.Deploy, ahead of Convert.Water/Land/Script.
+        if let Some(convert_deploy) = resolve_techno("Convert.Deploy") {
+            self.residual.convert_deploy = convert_deploy;
+        }
+        // Last, after Unsellable and KeepAlive.
+        self.presentation.radial_indicator_radius = section.read_ares_nullable_int(
+            "RadialIndicatorRadius",
+            self.presentation.radial_indicator_radius,
+        );
+    }
+
+    /// The type's sounds in TechnoTypeExt (NullableIdx<VocClass> 1000E9D0
+    /// against the fixed catalog, unknown names retain): the airstrike
+    /// voices, read after VoiceIFVRepair, and the tunnel sounds, after
+    /// FactoryPlant.Multiplier.
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_sound_references(
+        &mut self,
+        section: Option<&IniSection>,
+        sounds: &crate::rules::sound_ini::SoundRegistry,
+    ) {
+        let read = |key| section.and_then(|section| sounds.read_ares_reference(section, key));
+        self.presentation.airstrike_voices =
+            ["VoiceAirstrikeAttack", "VoiceAirstrikeAbort"].map(read);
+        self.residual.dig_sounds = ["DigInSound", "DigOutSound"].map(read);
+    }
+
+    /// `EVA.Lost` (ValueableIdx<VoxClass>), read after SensorArray.Warn
+    /// from the type's Initialize seed.
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_unit_lost_eva(&mut self, eva: Option<String>) {
+        self.residual.unit_lost_eva = eva;
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn presentation(&self) -> &PresentationTypeRules {
+        &self.presentation
     }
 
     /// The AircraftType's missile fields; `None` for other types.
@@ -857,5 +1064,77 @@ mod tests {
             .self_healing()
             .clone();
         assert_eq!(heal.amount_and_max(2), (1, NativeF64Bits::ONE));
+    }
+
+    /// 1003DFB0's reads of the keys without a consumer and of the
+    /// presentation keys, with the 1003C710 defaults on a type that sets
+    /// none: pointers are Find only (an unknown name keeps null), the CSF
+    /// label keeps 31 bytes, and the sounds and `EVA.Lost` bind against the
+    /// fixed catalogs, a building keeping its unset `EVA.Lost`.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn residual_and_presentation_keys_read_with_constructor_defaults() {
+        use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
+        let ini = IniFile::from_str(
+            "[InfantryTypes]\n0=E1\n1=E2\n[BuildingTypes]\n0=POWR\n[Animations]\n0=DIG\n\
+             [E1]\nInitialPayload.Nums=1,x,3\nCanBeReversed=no\nReversedAs=E2\n\
+             Carryall.Allowed=yes\nCarryall.SizeLimit=2\nHunterSeeker.AscentSpeed=7\n\
+             HunterSeeker.EmergeSpeed=bad\nAssaulter.Level=2\nNoSelfGuardArea=yes\n\
+             EnemyUIName=NAME:0123456789012345678901234567890123\nDigIn=DIG\nDigOut=none\n\
+             FakeOf=E2\nConvert.Deploy=Missing\nRadialIndicatorRadius=5\n\
+             VoiceAirstrikeAttack=Hit\nVoiceAirstrikeAbort=none\nDigInSound=Missing\n\
+             EVA.Lost=none\n[E2]\nStrength=1\n[POWR]\nStrength=1\n",
+        );
+        let mut rules = RuleSet::from_ini(&ini).unwrap();
+        let sounds = SoundRegistry::from_ini(&IniFile::from_str("[SoundList]\n0=Hit\n"));
+        rules.bind_type_sound_references(&ini, &sounds);
+        let eva = EvaRegistry::from_ini(&IniFile::from_str(
+            "[DialogList]\n0=EVA_UnitLost\n[EVA_UnitLost]\nAllied=LOST\n",
+        ));
+        rules.bind_type_eva_references(&ini, &eva);
+        let ext = |name: &str| rules.object(name).unwrap().techno_combat().clone();
+        let id = |reference: &Option<crate::rules::superweapon_type::TechnoTypeReference>| {
+            reference.as_ref().map(|reference| reference.id.clone())
+        };
+        let e1 = ext("E1");
+        let residual = &e1.residual;
+        assert_eq!(residual.initial_payload_nums, [1, 3]);
+        assert!(!residual.can_be_reversed);
+        assert_eq!(id(&residual.reversed_as).as_deref(), Some("E2"));
+        assert_eq!(
+            (residual.carryall_allowed, residual.carryall_size_limit),
+            (Some(true), Some(2))
+        );
+        assert_eq!(residual.hunter_seeker, [None, None, Some(7), None, None]);
+        assert_eq!(residual.assaulter_level, 2);
+        assert!(residual.no_self_guard_area);
+        assert_eq!(residual.dig_anims, [Some(Some("DIG".into())), Some(None)]);
+        assert_eq!(residual.dig_sounds, [None, None]);
+        assert_eq!(id(&residual.fake_of).as_deref(), Some("E2"));
+        assert_eq!(residual.convert_deploy, None);
+        assert_eq!(residual.unit_lost_eva, None);
+        let presentation = e1.presentation();
+        assert_eq!(
+            presentation.enemy_ui_name(),
+            Some("NAME:01234567890123456789012345")
+        );
+        assert_eq!(presentation.radial_indicator_radius(), Some(5));
+        assert_eq!(presentation.airstrike_voice(false), Some(Some("Hit")));
+        assert_eq!(presentation.airstrike_voice(true), Some(None));
+        let e2 = ext("E2");
+        let residual = &e2.residual;
+        assert!(residual.can_be_reversed && residual.initial_payload_nums.is_empty());
+        assert_eq!(residual.reversed_as, None);
+        assert_eq!(residual.hunter_seeker, [None; 5]);
+        assert_eq!(
+            (residual.assaulter_level, residual.no_self_guard_area),
+            (0, false)
+        );
+        assert_eq!(residual.dig_anims, [None, None]);
+        assert_eq!(residual.unit_lost_eva.as_deref(), Some("EVA_UnitLost"));
+        assert_eq!(e2.presentation().enemy_ui_name(), None);
+        assert_eq!(e2.presentation().radial_indicator_radius(), None);
+        assert_eq!(e2.presentation().airstrike_voice(false), None);
+        assert_eq!(ext("POWR").residual.unit_lost_eva, None);
     }
 }

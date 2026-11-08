@@ -170,6 +170,27 @@ pub(crate) struct BuildingTypeExtRules {
     /// `IsLinkable` test of placement line building (`1000D770`).
     #[serde(default)]
     pub(crate) firestorm_wall: bool,
+    /// `GateDownSound` (`+0x128`), `GateUpSound` (`+0x130`) and `SlamSound`
+    /// (`+0x238`), NullableIdx<VocClass> bound against the fixed sound
+    /// catalog with the type's other sounds; `Some(None)` is a silence.
+    #[serde(default)]
+    sounds: [Option<Option<String>>; 3],
+    /// Keys whose consumers VERA lacks (docs/ares-building-types.md, "Not
+    /// covered"), read and consumed by nothing.
+    #[serde(default)]
+    residual: ResidualBuildingTypeRules,
+}
+
+/// `SecretLab.GenerateOnCapture` (`+0x5C`, false), `ReverseEngineersVictims`
+/// (`+0x124`, false), `ProduceCashDisplay` (`+0x22E`, false), `UnitSell`
+/// (`+0x22F`, Nullable<bool>) and `AIInnerBase` (`+0x233`, Nullable<bool>).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct ResidualBuildingTypeRules {
+    secret_lab_generate_on_capture: bool,
+    reverse_engineers_victims: bool,
+    produce_cash_display: bool,
+    unit_sell: Option<bool>,
+    ai_inner_base: Option<bool>,
 }
 
 fn default_lightning_rod_modifier() -> NativeF64Bits {
@@ -211,6 +232,8 @@ impl Default for BuildingTypeExtRules {
             lightning_rod: false,
             lightning_rod_modifier: NativeF64Bits::ONE,
             firestorm_wall: false,
+            sounds: [None, None, None],
+            residual: Default::default(),
         }
     }
 }
@@ -259,6 +282,11 @@ impl BuildingTypeExtRules {
         self.solid_height = art.read_ares_int("SolidHeight", self.solid_height);
         self.solid_height = section.read_ares_int("SolidHeight", self.solid_height);
         self.solid_level = section.read_ares_int("SolidLevel", self.solid_level);
+        // After SecretLab.PossibleBoons (`rules::secret_lab`).
+        self.residual.secret_lab_generate_on_capture = section.read_ares_bool(
+            "SecretLab.GenerateOnCapture",
+            self.residual.secret_lab_generate_on_capture,
+        );
         self.uc_pass_through =
             section.read_ares_double_bits("UC.PassThrough", self.uc_pass_through);
         self.uc_fatal_rate = section.read_ares_double_bits("UC.FatalRate", self.uc_fatal_rate);
@@ -303,6 +331,10 @@ impl BuildingTypeExtRules {
             self.allowed_occupiers = occupiers;
         }
         self.returnable = section.read_ares_nullable_bool("Returnable", self.returnable);
+        self.residual.reverse_engineers_victims = section.read_ares_bool(
+            "ReverseEngineersVictims",
+            self.residual.reverse_engineers_victims,
+        );
         self.message_capture =
             section.read_ares_csf_label("Message.Capture", &self.message_capture);
         self.message_lost = section.read_ares_csf_label("Message.Lost", &self.message_lost);
@@ -322,9 +354,46 @@ impl BuildingTypeExtRules {
         self.sell_time = section.read_ares_nullable_double_bits("SellTime", self.sell_time);
         self.mass_selectable =
             section.read_ares_nullable_bool("MassSelectable", self.mass_selectable);
+        let residual = &mut self.residual;
+        residual.produce_cash_display =
+            section.read_ares_bool("ProduceCashDisplay", residual.produce_cash_display);
+        residual.unit_sell = section.read_ares_nullable_bool("UnitSell", residual.unit_sell);
         self.engineer_repairable =
             section.read_ares_nullable_bool("EngineerRepairable", self.engineer_repairable);
+        self.residual.ai_inner_base =
+            section.read_ares_nullable_bool("AIInnerBase", self.residual.ai_inner_base);
         self.ai_base_normal = section.read_ares_nullable_bool("AIBaseNormal", self.ai_base_normal);
+    }
+
+    /// The gate and slam sounds (NullableIdx<VocClass> 1000E9D0, unknown
+    /// names retain): GateDownSound and GateUpSound after
+    /// Factory.ExplicitOnly, SlamSound after AIBaseNormal.
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_sound_references(
+        &mut self,
+        section: Option<&IniSection>,
+        sounds: &crate::rules::sound_ini::SoundRegistry,
+    ) {
+        let read = |key| section.and_then(|section| sounds.read_ares_reference(section, key));
+        self.sounds = ["GateDownSound", "GateUpSound", "SlamSound"].map(read);
+    }
+
+    /// `GateUpSound` (`up`, BuildingClass_Mi_Open_GateUp, Ares.dll
+    /// 100156B0, hook 0x44E61E) or `GateDownSound` (BuildingClass_Mi_Open_
+    /// GateDown 10015670, hook 0x44E550): `None` keeps `[AudioVisual]
+    /// GateUp`/`GateDown`, `Some(None)` silences it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn gate_sound(&self, up: bool) -> Option<Option<&str>> {
+        self.sounds[usize::from(up)]
+            .as_ref()
+            .map(|sound| sound.as_deref())
+    }
+
+    /// `SlamSound` (HouseClass_UnitFromFactory_BuildingSlam, Ares.dll
+    /// 10010290, hook 0x4FB2FD): `None` keeps `[AudioVisual] BuildingSlam`.
+    #[cfg(feature = "ares")]
+    pub(crate) fn slam_sound(&self) -> Option<Option<&str>> {
+        self.sounds[2].as_ref().map(|sound| sound.as_deref())
     }
 
     /// The tower's `PrismForwarding.*` keys.
@@ -745,5 +814,54 @@ mod tests {
             assert_eq!(rules.dock_unload_cell, cell, "{text:?}");
             assert_eq!(rules.dock_unload_direction(), direction);
         }
+    }
+
+    /// 1000DD40's reads of the keys without a consumer, over the 1000CAE0
+    /// defaults, and the gate and slam sounds bound against the fixed
+    /// catalog: a Building only, unknown names unset, `none` silent.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn residual_keys_and_gate_and_slam_sounds_read_with_constructor_defaults() {
+        let mut rules = BuildingTypeExtRules::default();
+        assert_eq!(rules.residual, ResidualBuildingTypeRules::default());
+        let ini = IniFile::from_str(
+            "[B]\nSecretLab.GenerateOnCapture=yes\nReverseEngineersVictims=yes\n\
+             ProduceCashDisplay=yes\nUnitSell=no\nAIInnerBase=yes\n",
+        );
+        rules.read_pass(
+            ini.section("B").unwrap(),
+            ini.section_or_empty("ART"),
+            Default::default(),
+        );
+        let residual = &rules.residual;
+        assert!(residual.secret_lab_generate_on_capture && residual.reverse_engineers_victims);
+        assert!(residual.produce_cash_display);
+        assert_eq!(
+            (residual.unit_sell, residual.ai_inner_base),
+            (Some(false), Some(true))
+        );
+
+        let ini = IniFile::from_str(
+            "[BuildingTypes]\n0=GATE\n1=PLAIN\n[InfantryTypes]\n0=E1\n\
+             [GATE]\nGateDownSound=Open\nGateUpSound=none\nSlamSound=Missing\n\
+             [PLAIN]\nStrength=1\n[E1]\nSlamSound=Open\n",
+        );
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+        let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n0=Open\n",
+        ));
+        rules.bind_type_sound_references(&ini, &sounds);
+        let gate = rules.object("GATE").unwrap().building_type_ext();
+        assert_eq!(gate.gate_sound(false), Some(Some("Open")));
+        assert_eq!(gate.gate_sound(true), Some(None));
+        assert_eq!(gate.slam_sound(), None);
+        let plain = rules.object("PLAIN").unwrap().building_type_ext();
+        assert_eq!((plain.gate_sound(false), plain.slam_sound()), (None, None));
+        let e1 = rules.object("E1").unwrap().building_type_ext();
+        assert_eq!(
+            e1.slam_sound(),
+            None,
+            "only a BuildingType has the extension"
+        );
     }
 }

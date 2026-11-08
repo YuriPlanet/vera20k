@@ -5056,6 +5056,13 @@ impl RuleSet {
         self.ares_global_controls.chrono_infantry_crush()
     }
 
+    /// RulesExt `[General]`/`[AudioVisual]` keys of the team, starting-unit,
+    /// wrench, disk-laser and electric-death hooks.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_general(&self) -> &crate::rules::native_processing::AresGeneralRules {
+        self.ares_global_controls.general()
+    }
+
     /// RulesExt `[CrateRules] RandomCrateMoney` (constructor 900).
     #[cfg(feature = "ares")]
     pub(crate) fn ares_random_crate_money(&self) -> i32 {
@@ -6074,6 +6081,36 @@ impl RuleSet {
             }
         }
         processed.rules_type_references().apply_to(&mut rules);
+        // Ares 3.0 InfantryClass_ReceiveDamage_ElectricDeath (1002C930, hook
+        // 0x518744) replaces the InfDeath=5 anim, AnimTypes[1]: the RulesExt
+        // InfantryElectrocuted, else Find("ELECTRO") over the live registry,
+        // else AnimTypes[1]. The first death caches it; no later read
+        // changes the registry, so it is resolved here.
+        #[cfg(feature = "ares")]
+        {
+            let anims = processed
+                .anim_type_art_read_states()
+                .map(|(id, _)| id)
+                .collect::<Vec<_>>();
+            let key = |index| {
+                crate::rules::native_processing::anim_type_runtime_key(anims.iter().copied(), index)
+                    .map(|key| key.into_owned())
+            };
+            let electric = rules
+                .ares_general()
+                .infantry_electrocuted()
+                .map(str::to_owned)
+                .or_else(|| {
+                    anims
+                        .iter()
+                        .position(|id| id.eq_ignore_ascii_case("ELECTRO"))
+                        .and_then(key)
+                })
+                .or_else(|| key(1));
+            if electric.is_some() {
+                rules.general.infantry_death_anims[5] = electric;
+            }
+        }
         rules.project_house_masks();
         rules.rebuild_animation_sequences();
         rules.resolve_type_weapons();
@@ -6497,6 +6534,14 @@ impl RuleSet {
                 eva.read_rules_reference(section, "EVA.VeteranPromoted", "EVA_UnitPromoted"),
                 eva.read_rules_reference(section, "EVA.ElitePromoted", "EVA_UnitPromoted"),
             ]);
+            // EVA.Lost, read before those; Initialize1003DEC0 seeds
+            // FindIndex("EVA_UnitLost") for every type but a building.
+            let building = object.category == crate::rules::object_type::ObjectCategory::Building;
+            object.bind_unit_lost_eva(eva.read_rules_reference(
+                section,
+                "EVA.Lost",
+                if building { "" } else { "EVA_UnitLost" },
+            ));
             // BuildingTypeExt LoadFromINIFile 1000DD40 reads LostEvaEvent;
             // the Initialize of 1000DCF0 seeds FindIndex("EVA_TechBuildingLost").
             if object.category == crate::rules::object_type::ObjectCategory::Building {

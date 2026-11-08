@@ -82,6 +82,13 @@ pub struct ArtEntry {
     pub(crate) cameo_pcx: Option<String>,
     #[cfg(feature = "ares")]
     pub(crate) alt_cameo_pcx: Option<String>,
+    /// Ares TechnoTypeExt+0x11C `CameoPalette` (CustomPalette, read from
+    /// ImageFile by 1003DFB0 after InitialPayload.Nums): the palette file a
+    /// nonempty read names, `~~~` standing for the theater extension.
+    /// StripClass_Draw_Main (Ares.dll 1005E390, hook 0x6A9A2A) draws the SHP
+    /// cameo with it when it loads, else CAMEO.PAL.
+    #[cfg(feature = "ares")]
+    pub(crate) cameo_palette: Option<String>,
     /// Replace 2nd char of filename with theater-specific letter.
     pub new_theater: bool,
     /// Use theater file extension (e.g., `.tem`) instead of `.shp`.
@@ -354,6 +361,14 @@ pub struct AnimTypeRuntimeConfig {
     /// AnimTypeExt::SetMakeInfOwner (1000A5F0) gives the anim.
     #[cfg(feature = "ares")]
     pub(crate) ares_make_infantry_owner: crate::rules::ares_warhead::HouseSelector,
+    /// Ares AnimTypeExt+0xC `CustomPalette` (CustomPalette, Temperate
+    /// mode): the palette file a nonempty read names, `~~~` standing for
+    /// the theater extension (`CustomPalette::LoadFromINI`, 1000A4B0 after
+    /// MakeInfantryOwner). AnimClass_Draw_SetPalette (Ares.dll 1000ACE0,
+    /// hook 0x4232CE) draws the anim with it when it loads; the anim atlas
+    /// has no per-type palette, so nothing reads it yet.
+    #[cfg(feature = "ares")]
+    pub(crate) ares_custom_palette: Option<String>,
     /// Phobos `CreateUnit=` + `CreateUnit.Owner` (default `Victim`) +
     /// `CreateUnit.RemapAnim` (default no): `Some` when the animation names a
     /// unit type, which overrides the owner kind and permits remap.
@@ -795,6 +810,8 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         #[cfg(feature = "ares")]
         ares_make_infantry_owner: crate::rules::ares_warhead::HouseSelector::Invoker
             .read(section, "MakeInfantryOwner"),
+        #[cfg(feature = "ares")]
+        ares_custom_palette: section.read_name("CustomPalette", 2048).map(str::to_owned),
         // `CreateUnit` is a `Nullable<TechnoTypeClass*>`: `none` clears it and
         // an authored name is a presence signal here. A name no factory
         // resolves is treated as present (the type itself is not modeled).
@@ -1120,6 +1137,8 @@ impl ArtRegistry {
             let cameo_pcx = section.read_ares_pcx_filename("CameoPCX");
             #[cfg(feature = "ares")]
             let alt_cameo_pcx = section.read_ares_pcx_filename("AltCameoPCX");
+            #[cfg(feature = "ares")]
+            let cameo_palette = section.read_name("CameoPalette", 2048).map(str::to_owned);
             let new_theater: bool = section.read_bool("NewTheater", false);
             let theater: bool = section.read_bool("Theater", false);
             let scorch: bool = section.read_bool("Scorch", false);
@@ -1301,6 +1320,8 @@ impl ArtRegistry {
                     cameo_pcx,
                     #[cfg(feature = "ares")]
                     alt_cameo_pcx,
+                    #[cfg(feature = "ares")]
+                    cameo_palette,
                     new_theater,
                     theater,
                     scorch,
@@ -1994,6 +2015,15 @@ impl ArtRegistry {
             entry.and_then(|entry| entry.cameo_pcx.as_deref()),
             entry.and_then(|entry| entry.alt_cameo_pcx.as_deref()),
         ]
+    }
+
+    /// The type's Ares `CameoPalette`, from the same ImageFile section as its
+    /// PCX cameos.
+    #[cfg(feature = "ares")]
+    pub fn resolve_declared_cameo_palette(&self, type_id: &str, rules_image: &str) -> Option<&str> {
+        let resolved = self.resolve_object_art(type_id, rules_image);
+        self.get(&resolved.base_art_id)
+            .and_then(|entry| entry.cameo_palette.as_deref())
     }
 
     /// Resolve the declared palette id for an asset, if any.

@@ -3659,6 +3659,12 @@ struct AresCountryState {
     /// Parent copy1001BDC0..1001C0D6 stops before these appended flags.
     #[serde(default = "default_gives_bounty")]
     gives_bounty: bool,
+    /// CountryExt+1D0 `StartInMultiplayer.WithConst` (the pair's low byte,
+    /// false), read right before GivesBounty. Its consumer, the starting
+    /// construction yard (MPGameMode_SpawnBaseUnit_BuildConst 1001F0B0,
+    /// hook 0x5D7048), is not ported; nothing reads it.
+    #[serde(default)]
+    start_in_multiplayer_with_const: bool,
 }
 
 #[cfg(feature = "ares")]
@@ -3685,6 +3691,7 @@ impl Default for AresCountryState {
             degrades: None,
             can_be_driven: None,
             gives_bounty: default_gives_bounty(),
+            start_in_multiplayer_with_const: false,
         }
     }
 }
@@ -3823,6 +3830,152 @@ pub(crate) struct AresGlobalControls {
     drop_pod: crate::rules::superweapon_type::AresDropPodGlobalRules,
     #[serde(default)]
     firestorm: crate::rules::ares_firestorm::FirestormGlobalRules,
+    #[serde(default)]
+    general: AresGeneralRules,
+}
+
+/// RulesExt keys of LoadBeforeTypeData (1002AB60) and LoadAfterTypeData
+/// (1002A800) whose consumers read them here; defaults are the constructor
+/// 1002A360's. The ones marked residual have no consumer in VERA
+/// (docs/ares-techno-hooks.md).
+#[cfg(feature = "ares")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct AresGeneralRules {
+    /// +0x8 `[AudioVisual] InfantryElectrocuted` (Valueable<AnimTypeClass*>,
+    /// Find only, null), read first by LoadAfterTypeData.
+    infantry_electrocuted: Option<String>,
+    /// +0x28 `CanMakeStuffUp` (false). Residual.
+    can_make_stuff_up: bool,
+    /// +0x49 `EnemyWrench` (true).
+    enemy_wrench: bool,
+    /// +0x4C `TeamRetaliate` (false).
+    team_retaliate: bool,
+    /// +0x7C..+0x8C `HunterSeekerDetonateProximity`, `DescendProximity`,
+    /// `AscentSpeed`, `DescentSpeed`, `EmergeSpeed` (Valueable<int>, 0).
+    /// Residual.
+    hunter_seeker: [i32; 5],
+    /// +0xB0 `Message.SilosNeeded` (Valueable<CSFText>, empty). Residual.
+    message_silos_needed: String,
+    /// +0x112 `[AudioVisual] DiskLaserAnimEnabled` (false).
+    disk_laser_anim_enabled: bool,
+    /// +0x13D `UnitsUnsellable` (false). Residual.
+    units_unsellable: bool,
+    /// +0x150 `StartInMultiplayerUnitCost` (Nullable<int>, unset).
+    start_in_multiplayer_unit_cost: Option<i32>,
+    /// +0x158 `AIFriendlyDistance` (Nullable<int>, unset).
+    ai_friendly_distance: Option<i32>,
+}
+
+#[cfg(feature = "ares")]
+impl Default for AresGeneralRules {
+    fn default() -> Self {
+        Self {
+            infantry_electrocuted: None,
+            can_make_stuff_up: false,
+            enemy_wrench: true,
+            team_retaliate: false,
+            hunter_seeker: [0; 5],
+            message_silos_needed: String::new(),
+            disk_laser_anim_enabled: false,
+            units_unsellable: false,
+            start_in_multiplayer_unit_cost: None,
+            ai_friendly_distance: None,
+        }
+    }
+}
+
+#[cfg(feature = "ares")]
+impl AresGeneralRules {
+    /// 1002AB60's reads of these keys, in its order.
+    fn read_before_type_data(&mut self, pass: &IniFile) {
+        if let Some(general) = pass.section("General") {
+            self.can_make_stuff_up =
+                general.read_ares_bool("CanMakeStuffUp", self.can_make_stuff_up);
+            self.team_retaliate = general.read_ares_bool("TeamRetaliate", self.team_retaliate);
+            self.message_silos_needed =
+                general.read_ares_csf_label("Message.SilosNeeded", &self.message_silos_needed);
+        }
+        if let Some(audio_visual) = pass.section("AudioVisual") {
+            self.disk_laser_anim_enabled =
+                audio_visual.read_ares_bool("DiskLaserAnimEnabled", self.disk_laser_anim_enabled);
+        }
+        if let Some(general) = pass.section("General") {
+            self.units_unsellable =
+                general.read_ares_bool("UnitsUnsellable", self.units_unsellable);
+            self.start_in_multiplayer_unit_cost = general.read_ares_nullable_int(
+                "StartInMultiplayerUnitCost",
+                self.start_in_multiplayer_unit_cost,
+            );
+            self.ai_friendly_distance =
+                general.read_ares_nullable_int("AIFriendlyDistance", self.ai_friendly_distance);
+        }
+    }
+
+    /// 1002A800's reads of these keys: InfantryElectrocuted first (its
+    /// Find-only lookup `electrocuted`), then after EngineerAlwaysCaptureTech
+    /// EnemyWrench, and after HSBuilding the hunter-seeker values.
+    fn read_after_type_data(&mut self, pass: &IniFile, electrocuted: Option<Option<String>>) {
+        if let Some(anim) = electrocuted {
+            self.infantry_electrocuted = anim;
+        }
+        let Some(general) = pass.section("General") else {
+            return;
+        };
+        self.enemy_wrench = general.read_ares_bool("EnemyWrench", self.enemy_wrench);
+        for (slot, key) in [
+            "HunterSeekerDetonateProximity",
+            "HunterSeekerDescendProximity",
+            "HunterSeekerAscentSpeed",
+            "HunterSeekerDescentSpeed",
+            "HunterSeekerEmergeSpeed",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            self.hunter_seeker[slot] = general.read_ares_int(key, self.hunter_seeker[slot]);
+        }
+    }
+
+    /// `InfantryElectrocuted`; InfantryClass_ReceiveDamage_ElectricDeath
+    /// (Ares.dll 1002C930, hook 0x518744) falls back to `ELECTRO`, then to
+    /// the second AnimType.
+    pub(crate) fn infantry_electrocuted(&self) -> Option<&str> {
+        self.infantry_electrocuted.as_deref()
+    }
+
+    /// `EnemyWrench`: a player not allied with a repairing building's owner
+    /// sees its wrench while it is uncloaked (TechnoClass_DrawExtras_PowerOff,
+    /// Ares.dll 10049FE0, hook 0x6F526C).
+    pub(crate) fn enemy_wrench(&self) -> bool {
+        self.enemy_wrench
+    }
+
+    /// `TeamRetaliate`: a computer team takes its attacker as its focus
+    /// (TeamClass_AttackedBy_Retaliate, Ares.dll 1003A180, hook 0x6EB432).
+    pub(crate) fn team_retaliate(&self) -> bool {
+        self.team_retaliate
+    }
+
+    /// `DiskLaserAnimEnabled`: a disk laser's hit plays the warhead's damage
+    /// animation (DiskLaserClass_Update_Anim, Ares.dll 1004CFF0, hook
+    /// 0x4A76ED).
+    pub(crate) fn disk_laser_anim_enabled(&self) -> bool {
+        self.disk_laser_anim_enabled
+    }
+
+    /// `StartInMultiplayerUnitCost`: the price of one starting unit
+    /// (MPGameModeClass_CreateStartingUnits_UnitCost, Ares.dll 1001EE10,
+    /// hook 0x5D6D9A).
+    pub(crate) fn start_in_multiplayer_unit_cost(&self) -> Option<i32> {
+        self.start_in_multiplayer_unit_cost
+    }
+
+    /// `AIFriendlyDistance`, else `AISafeDistance`: the cells a team regroups
+    /// from its base (TeamClass_GatherAtFriendlyBase_Distance, Ares.dll
+    /// 1003A2A0, hook 0x6EFB69).
+    pub(crate) fn ai_friendly_distance(&self, ai_safe_distance: i32) -> i32 {
+        self.ai_friendly_distance.unwrap_or(ai_safe_distance)
+    }
 }
 
 #[cfg(feature = "ares")]
@@ -3846,6 +3999,7 @@ impl Default for AresGlobalControls {
             tiberium: Default::default(),
             drop_pod: Default::default(),
             firestorm: Default::default(),
+            general: Default::default(),
         }
     }
 }
@@ -3866,6 +4020,10 @@ impl AresGlobalControls {
 
     pub(crate) fn firestorm(&self) -> &crate::rules::ares_firestorm::FirestormGlobalRules {
         &self.firestorm
+    }
+
+    pub(crate) fn general(&self) -> &AresGeneralRules {
+        &self.general
     }
 
     /// RESIDUAL consumer: SW_DropPod::Activate (10070E40) and the DropPod
@@ -3971,6 +4129,8 @@ impl AresGlobalControls {
         self.techno_combat.read_before_type_data(pass);
         //1002AB60 also reads ReturnStructures and Degrade.* in General.
         self.building.read_before_type_data(pass);
+        //1002AB60 also reads CanMakeStuffUp .. AIFriendlyDistance.
+        self.general.read_before_type_data(pass);
         if let Some(mission) = pass
             .section("CombatDamage")
             .and_then(|section| section.read_name("EMPAIRecoverMission", 2048))
@@ -6147,6 +6307,21 @@ impl RulesPassProcessor {
         // ->1002A800 reads EngineerDamage and EngineerAlwaysCaptureTech,
         // then HSBuilding at1002A8DD with the BuildingType
         // pointer-vector reader10010850, which finds and never allocates.
+        // 1002A800 reads InfantryElectrocuted first (Find only), then
+        // EnemyWrench and, after HSBuilding, the hunter-seeker values.
+        #[cfg(feature = "ares")]
+        {
+            let electrocuted = pass.section("AudioVisual").and_then(|section| {
+                self.resolve_existing_type_from(
+                    section,
+                    "InfantryElectrocuted",
+                    RulesTypeFamily::Animation,
+                )
+            });
+            self.ares_global_controls
+                .general
+                .read_after_type_data(pass, electrocuted);
+        }
         #[cfg(feature = "ares")]
         self.ares_global_controls
             .building
@@ -7501,6 +7676,10 @@ impl RulesPassProcessor {
             let current = &mut self.family_mut(RulesTypeFamily::Country)[index]
                 .country_veterancy
                 .ares;
+            current.start_in_multiplayer_with_const = section.read_ares_bool(
+                "StartInMultiplayer.WithConst",
+                current.start_in_multiplayer_with_const,
+            );
             current.gives_bounty = section.read_ares_bool("GivesBounty", current.gives_bounty);
         }
         self.family_mut(RulesTypeFamily::Country)[index]
@@ -8255,6 +8434,7 @@ impl RulesPassProcessor {
                             };
                             self.resolve_existing_type_from(&raw, key, family)
                         },
+                        |key| self.resolve_existing_techno_type_from(&raw, key),
                         |name| {
                             self.find_existing(RulesTypeFamily::Animation, name)
                                 .map(|index| {

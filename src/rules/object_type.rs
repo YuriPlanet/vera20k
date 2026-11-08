@@ -3198,6 +3198,12 @@ impl ObjectType {
         self.lost_eva = eva;
     }
 
+    /// Ares TechnoTypeExt `EVA.Lost` (`rules::ares_techno_type`).
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_unit_lost_eva(&mut self, eva: Option<String>) {
+        self.techno_combat.bind_unit_lost_eva(eva);
+    }
+
     /// Ares BuildingTypeExt Academy.* (`rules::ares_veterancy`).
     #[cfg(feature = "ares")]
     pub(crate) fn academy(&self) -> &crate::rules::ares_veterancy::AcademyTypeRules {
@@ -4007,6 +4013,13 @@ impl ObjectType {
             self.vehicle_thief_sounds[slot] = section
                 .and_then(|section| sounds.read_ares_reference(section, key))
                 .flatten();
+        }
+        #[cfg(feature = "ares")]
+        self.techno_combat.bind_sound_references(section, sounds);
+        #[cfg(feature = "ares")]
+        if self.category == ObjectCategory::Building {
+            self.building_type_ext
+                .bind_sound_references(section, sounds);
         }
     }
 

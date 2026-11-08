@@ -21,7 +21,8 @@ use crate::util::native_x87::NativeF64Bits;
 /// 100548B0). `PlantBomb` (Ares.dll 10055AE0) remembers the planting weapon
 /// on its bomb (`WeaponTypeExt::BombExt`), and every bomb hook reads these
 /// settings through it. The two `IvanBomb.CanDetonate*` keys gate the
-/// player's Detonate action, which VERA does not represent; they are not read.
+/// player's Detonate action, which VERA does not represent; they are read
+/// and consumed by nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AresIvanBomb {
     /// `IvanBomb.DeathBomb` (+0x68): a bomb planted on a victim the planter's
@@ -56,6 +57,10 @@ pub struct AresIvanBomb {
     /// order. Native keeps the last one that loads; the app, which owns the
     /// art, picks it, else BOMBCURS.SHP.
     pub(crate) image: Vec<String>,
+    /// `IvanBomb.CanDetonateTimeBomb` (+0xA4) and `.CanDetonateDeathBomb`
+    /// (+0xA6), Nullable<bool> over Rules `CanDetonateTimeBomb`/
+    /// `CanDetonateDeathBomb` (`TechnoExt::CanDetonateAttachedBomb`).
+    can_detonate: [Option<bool>; 2],
     /// `IvanBomb.DetonateOnSell` (+0xA8, yes): a bomb on a sold object goes
     /// off (`WeaponTypeExt::OnSell` 10055A80).
     pub(crate) detonate_on_sell: bool,
@@ -76,6 +81,7 @@ impl AresIvanBomb {
         attach_sound: None,
         warhead: None,
         image: Vec::new(),
+        can_detonate: [None, None],
         detonate_on_sell: true,
     };
 
@@ -110,6 +116,15 @@ impl AresIvanBomb {
                 images.push(file);
                 images
             });
+        for (slot, key) in [
+            "IvanBomb.CanDetonateTimeBomb",
+            "IvanBomb.CanDetonateDeathBomb",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            bomb.can_detonate[slot] = section.read_ares_nullable_bool(key, bomb.can_detonate[slot]);
+        }
         bomb.detonate_on_sell =
             section.read_ares_bool("IvanBomb.DetonateOnSell", bomb.detonate_on_sell);
         bomb
@@ -193,6 +208,9 @@ pub struct AresWeaponVisuals {
     /// `Bolt.ParticleSystem` (+0x30, nullable): `Some(None)` is an explicit
     /// `none`; `None` falls back to `[CombatDamage] DefaultSparkSystem`.
     pub(crate) bolt_particle_system: Option<Option<String>>,
+    /// `Wave.IsLaser` (+0x39) and `Wave.IsBigLaser` (+0x3A): the weapon
+    /// fires a TS laser wave. VERA creates no laser waves; read only.
+    wave_is_laser: [bool; 2],
     /// `Wave.IsHouseColor` (+0x38).
     pub(crate) wave_is_house_color: bool,
     /// `Wave.Intensity` (+0x3C) and `Wave.Color` (+0x4C), three ints each.
@@ -214,6 +232,7 @@ impl AresWeaponVisuals {
             beam_is_house_color: false,
             bolt_colors: [None; 3],
             bolt_particle_system: None,
+            wave_is_laser: [false; 2],
             wave_is_house_color: false,
             wave_intensity: None,
             wave_color: None,
@@ -234,6 +253,9 @@ impl AresWeaponVisuals {
         visuals.beam_is_house_color =
             section.read_ares_bool("Beam.IsHouseColor", visuals.beam_is_house_color);
         visuals.beam_color = section.read_ares_nullable_color("Beam.Color", visuals.beam_color);
+        for (slot, key) in ["Wave.IsLaser", "Wave.IsBigLaser"].into_iter().enumerate() {
+            visuals.wave_is_laser[slot] = section.read_ares_bool(key, visuals.wave_is_laser[slot]);
+        }
         visuals.wave_is_house_color =
             section.read_ares_bool("Wave.IsHouseColor", visuals.wave_is_house_color);
         visuals.wave_intensity =
@@ -417,5 +439,21 @@ mod tests {
         );
         visuals.wave_intensity = Some([0; 3]);
         assert_eq!(visuals.wave_color_data(false, true, None), None);
+    }
+
+    /// 10055520's reads of `Wave.IsLaser`/`Wave.IsBigLaser` (Valueable<bool>,
+    /// false) and `IvanBomb.CanDetonateTimeBomb`/`DeathBomb` (Nullable<bool>,
+    /// unset), which nothing consumes.
+    #[test]
+    fn laser_wave_and_detonation_keys_read_over_constructor_defaults() {
+        let visuals = read("[W]\nWave.IsLaser=yes\nWave.IsBigLaser=x\n", false);
+        assert_eq!(visuals.wave_is_laser, [true, false]);
+        assert_eq!(read("[W]\nDamage=1\n", false).wave_is_laser, [false; 2]);
+        let file = IniFile::from_str(
+            "[W]\nIvanBomb.CanDetonateTimeBomb=no\nIvanBomb.CanDetonateDeathBomb=bad\n",
+        );
+        let bomb = AresIvanBomb::read(file.section("W").unwrap());
+        assert_eq!(bomb.can_detonate, [Some(false), None]);
+        assert_eq!(AresIvanBomb::CONSTRUCTED.can_detonate, [None, None]);
     }
 }

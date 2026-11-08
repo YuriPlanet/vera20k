@@ -42,6 +42,11 @@ pub(crate) struct BulletTypeExtRules {
     /// firestorm checks of a shot read it (`10024C00`, `1001A940`,
     /// `1001AC90`).
     pub(crate) ignores_firestorm: bool,
+    /// `AnimLength` (`+0x44`, Valueable<int>, 0): above one, each of a
+    /// rotating projectile's 32 facings owns this many frames, which play at
+    /// `AnimRate` (BulletClass_GetAnimFrame, Ares.dll 1001A840, hook
+    /// 0x468000).
+    pub(crate) anim_length: i32,
 }
 
 impl Default for BulletTypeExtRules {
@@ -53,6 +58,7 @@ impl Default for BulletTypeExtRules {
             ballistic_scatter_min: None,
             ballistic_scatter_max: None,
             ignores_firestorm: false,
+            anim_length: 0,
         }
     }
 }
@@ -71,6 +77,7 @@ impl BulletTypeExtRules {
             section.read_ares_nullable_leptons("BallisticScatter.Min", ext.ballistic_scatter_min);
         ext.ballistic_scatter_max =
             section.read_ares_nullable_leptons("BallisticScatter.Max", ext.ballistic_scatter_max);
+        ext.anim_length = section.read_ares_int("AnimLength", ext.anim_length);
         ext.ignores_firestorm = section.read_bool("IgnoresFirestorm", ext.ignores_firestorm);
         ext
     }

@@ -4186,3 +4186,96 @@ fn ares_palette_requests_use_retained_names_and_resolve_each_loaded_group() {
         "first"
     );
 }
+
+/// RulesExt LoadBeforeTypeData (1002AB60) and LoadAfterTypeData (1002A800)
+/// over the 1002A360 defaults and two passes: invalid values keep the
+/// earlier read, the CSF label is kept, and InfantryElectrocuted is a
+/// Find-only pointer an unknown later name does not clear.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_general_rules_read_before_and_after_type_data() {
+    use crate::rules::ruleset::RuleSet;
+    let defaults = AresGeneralRules::default();
+    assert!(defaults.enemy_wrench() && !defaults.team_retaliate());
+    assert!(!defaults.can_make_stuff_up && !defaults.units_unsellable);
+    assert_eq!(defaults.ai_friendly_distance(8), 8);
+    assert_eq!(defaults.start_in_multiplayer_unit_cost(), None);
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[Animations]\n0=ZAP\n\
+         [General]\nCanMakeStuffUp=yes\nTeamRetaliate=yes\nMessage.SilosNeeded=MSG:Silos\n\
+         UnitsUnsellable=yes\nStartInMultiplayerUnitCost=250\nAIFriendlyDistance=3\n\
+         EnemyWrench=no\nHunterSeekerDetonateProximity=1\nHunterSeekerEmergeSpeed=5\n\
+         [AudioVisual]\nDiskLaserAnimEnabled=yes\nInfantryElectrocuted=zap\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str(
+            "[General]\nAIFriendlyDistance=bad\nTeamRetaliate=no\nHunterSeekerAscentSpeed=4\n\
+             [AudioVisual]\nInfantryElectrocuted=Missing\n",
+        ),
+    );
+    let rules = RuleSet::from_rules_layers(&layers).unwrap();
+    let general = rules.ares_general();
+    assert!(general.can_make_stuff_up && general.units_unsellable);
+    assert!(!general.team_retaliate() && !general.enemy_wrench());
+    assert_eq!(general.message_silos_needed, "MSG:Silos");
+    assert!(general.disk_laser_anim_enabled());
+    assert_eq!(general.start_in_multiplayer_unit_cost(), Some(250));
+    assert_eq!(general.ai_friendly_distance(8), 3);
+    assert_eq!(general.hunter_seeker, [1, 0, 4, 0, 5]);
+    assert_eq!(general.infantry_electrocuted(), Some("ZAP"));
+}
+
+/// The InfDeath=5 anim under Ares (InfantryClass_ReceiveDamage_ElectricDeath
+/// 1002C930, hook 0x518744): InfantryElectrocuted, else the registered
+/// `ELECTRO`, else the second AnimType.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_electric_death_takes_infantry_electrocuted_then_electro() {
+    use crate::rules::ruleset::RuleSet;
+    let death = |ini: &str| {
+        RuleSet::from_ini(&IniFile::from_str(ini))
+            .unwrap()
+            .general
+            .infantry_death_anim(5)
+            .map(str::to_owned)
+    };
+    let anims = "[Animations]\n0=FIRST\n1=SECOND\n2=ELECTRO\n3=ZAP\n";
+    assert_eq!(death(anims).as_deref(), Some("ELECTRO"));
+    assert_eq!(
+        death(&format!("{anims}[AudioVisual]\nInfantryElectrocuted=ZAP\n")).as_deref(),
+        Some("ZAP")
+    );
+    assert_eq!(
+        death("[Animations]\n0=FIRST\n1=SECOND\n").as_deref(),
+        Some("SECOND")
+    );
+}
+
+/// HouseTypeExt LoadFromINIFile (1001C5D0) reads
+/// `StartInMultiplayer.WithConst` (Valueable<bool>, constructor false) right
+/// before GivesBounty; the parent copy (1001BDC0) does not copy it.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_country_reads_start_in_multiplayer_with_const() {
+    let processed = RulesLayerStack::new(IniFile::from_str(
+        "[Countries]\n0=PARENT\n1=CHILD\n2=PLAIN\n\
+         [PARENT]\nStartInMultiplayer.WithConst=yes\n\
+         [CHILD]\nParentCountry=PARENT\n[PLAIN]\nStartInMultiplayer.WithConst=bad\n",
+    ))
+    .process()
+    .unwrap();
+    let (_, trace) = processed.into_ini_and_native_type_construction_trace();
+    let state = trace.into_registry_state_discarding_events();
+    let with_const = |name: &str| {
+        state.families[&RulesTypeFamily::Country]
+            .iter()
+            .find(|member| member.native_stored_id.eq_ignore_ascii_case(name))
+            .unwrap()
+            .country_veterancy
+            .ares
+            .start_in_multiplayer_with_const
+    };
+    assert!(with_const("PARENT"));
+    assert!(!with_const("CHILD") && !with_const("PLAIN"));
+}
