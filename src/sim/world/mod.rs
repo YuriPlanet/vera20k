@@ -87,6 +87,8 @@ mod aircraft_move;
 pub(crate) use aircraft_move::tests::fixture as aircraft_search_fixture;
 mod building_working_sound;
 pub use building_working_sound::working_sound_building;
+#[cfg(test)]
+mod civilian_evacuation_tests;
 pub(crate) mod damage_consequences;
 pub mod display_layers;
 mod display_registry;

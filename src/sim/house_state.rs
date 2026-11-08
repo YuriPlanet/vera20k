@@ -623,6 +623,11 @@ pub struct HouseState {
     /// the shared+298 timer; Update4F87F3 clears this before Blowup_All.
     #[serde(default)]
     to_die: bool,
+    /// House+1F9: Constructor4F54A0 clears this at4F5734. Fly's
+    /// PlayfieldLatch4CD510 sets it for each qualifying evacuated passenger's
+    /// owner; TEvent::HasOccurred71E940 event18 reads it. Original gamemd.exe.
+    #[serde(default)]
+    civilians_evacuated: bool,
     /// Victory flag.
     has_won: bool,
     /// Defeat flag. Note: Flag_To_Lose clears HasWon first.
@@ -1530,6 +1535,16 @@ impl HouseState {
 
     pub const fn map_is_clear(&self) -> bool {
         self.map_is_clear
+    }
+
+    pub const fn civilians_evacuated(&self) -> bool {
+        self.civilians_evacuated
+    }
+
+    /// Fly::PlayfieldLatch4CD589..4CD58F only sets the passenger House's
+    /// retained byte. It is not reset by later deaths or further evacuations.
+    pub(crate) fn mark_civilians_evacuated(&mut self) {
+        self.civilians_evacuated = true;
     }
 
     pub const fn spy_sat_active(&self) -> bool {
@@ -2709,6 +2724,7 @@ impl HouseState {
             country_speed_mults: CountrySpeedMults::default(),
             is_defeated: false,
             to_die: false,
+            civilians_evacuated: false,
             has_won: false,
             has_lost: false,
             allow_win_tags: 0,

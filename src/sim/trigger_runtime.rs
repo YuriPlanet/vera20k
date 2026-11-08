@@ -2042,6 +2042,17 @@ impl Simulation {
                     })
                 })
             }
+            18 => {
+                // HasOccurred71E940, arm71EF8E: null incoming House is
+                // true, otherwise read its retained CiviliansEvacuated+1F9.
+                // No raised-kind/value gate, persistence or timer write.
+                // Source: original gamemd.exe instructions.
+                incoming_house.is_none_or(|owner| {
+                    self.houses
+                        .get(&owner)
+                        .is_some_and(|house| house.civilians_evacuated())
+                })
+            }
             19..=22 => {
                 // Steam gamemd: HasOccurred71EFEB..71F03D reads incoming
                 // House+26C/+274/+270/+278, not a Country or built count.

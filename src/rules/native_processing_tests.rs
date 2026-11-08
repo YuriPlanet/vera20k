@@ -4,6 +4,129 @@ use super::*;
 use crate::util::save_codec;
 
 #[test]
+fn civilian_type_reads_preserve_physical_layers_save_and_reset() {
+    // InfantryType5237A1/52455F: own-ID bool, false only at construction.
+    let root = |civilian: &str| {
+        IniFile::from_str(&format!(
+            "[InfantryTypes]\n0=PROBE\n1=ALIAS\n2=COLD\n[AircraftTypes]\n0=PROBE\n\
+             [PROBE]\nImage=ALIAS\nCivilian={civilian}\n[ALIAS]\nCivilian=no\n",
+        ))
+    };
+    let mut layers = RulesLayerStack::new(root("yes"));
+    layers.push(
+        RulesLayerKind::LangRule,
+        IniFile::from_str("[PROBE]\nCivilian=?\n"),
+    );
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str("[InfantryTypes]\n3=LATE\n[LATE]\nStrength=50\n"),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[PROBE]\ncivilian=no\nCivilian=\n"),
+    );
+    let processed = layers.process().unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    for object in rules.all_objects() {
+        assert_eq!(
+            object.civilian,
+            object.category == ObjectCategory::Infantry && object.id == "PROBE",
+            "{} {:?}",
+            object.id,
+            object.category
+        );
+    }
+    let saved: ProcessedRulesLayers =
+        save_codec::deserialize(&save_codec::serialize(&processed).unwrap()).unwrap();
+    let (_, trace) = saved.into_ini_and_native_type_construction_trace();
+    let state = trace.into_registry_state_discarding_events();
+    let resumed = save_codec::deserialize(&save_codec::serialize(&state).unwrap()).unwrap();
+    let next = RulesLayerStack::new(IniFile::from_str(
+        "[InfantryTypes]\n0=PROBE\n[PROBE]\nName=Retained\n",
+    ));
+    let retained = RuleSet::from_processed_rules(
+        &next
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), resumed)
+            .unwrap(),
+    )
+    .unwrap();
+    let reset = RuleSet::from_processed_rules(
+        &next
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), state.destructive_reset())
+            .unwrap(),
+    )
+    .unwrap();
+    let is_civilian = |rules: &RuleSet| {
+        rules
+            .object_in_category(ObjectCategory::Infantry, "PROBE")
+            .unwrap()
+            .civilian
+    };
+    assert!(is_civilian(&retained));
+    assert!(!is_civilian(&reset));
+    let mut control = RulesLayerStack::new(root("no"));
+    for (kind, ini) in layers.iter_passes().skip(1) {
+        control.push(kind, ini.clone());
+    }
+    let (_, trace) = control
+        .process()
+        .unwrap()
+        .into_ini_and_native_type_construction_trace();
+    let control = RuleSet::from_processed_rules(
+        &next
+            .process_with_fixed_art_and_registry_state(
+                &IniFile::empty(),
+                trace.into_registry_state_discarding_events(),
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(!is_civilian(&control));
+    assert_eq!(retained.source_ini_hash(), control.source_ini_hash());
+    assert_ne!(
+        retained.simulation_config_hash(),
+        control.simulation_config_hash()
+    );
+
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+        return;
+    };
+    let mut actual: Vec<_> = retail
+        .all_objects()
+        .filter(|object| object.civilian)
+        .map(|object| object.id.as_str())
+        .collect();
+    actual.sort_unstable();
+    let mut expected = [
+        "COW", "CIV1", "CIV2", "CIV3", "CIVA", "CIVB", "CIVC", "CIVBBP", "CIVBFM", "CIVBF",
+        "CIVBTM", "CIVSFM", "CIVSF", "CIVSTM", "CLNT", "ARND", "STLN", "EINS", "MUMY", "WWLF",
+        "RMNV", "PRES", "CTECH",
+    ];
+    expected.sort_unstable();
+    assert_eq!(actual, expected);
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map = IniFile::from_bytes(assets.get_ref("ALL02UMD.MAP").unwrap()).unwrap();
+    let early = assets
+        .get_ref("ALL02UMD.INI")
+        .map(IniFile::from_bytes)
+        .transpose()
+        .unwrap();
+    let mut owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+    let campaign = owner
+        .load_scenario(
+            crate::rules::process_owner::NativeScenarioRulesPrefix::Campaign(early.as_ref()),
+            &map,
+        )
+        .unwrap();
+    for name in ["CLNT", "ARND", "STLN"] {
+        assert!(!campaign.rules().object(name).unwrap().civilian, "{name}");
+    }
+    assert!(campaign.rules().object("CIV1").unwrap().civilian);
+}
+
+#[test]
 fn powerup_animation_lookup_does_not_bind_later_type_allocations() {
     let root =
         IniFile::from_str("[General]\nDropZoneAnim=LATE\n[Powerups]\nMoney=20,LATE,yes,2000\n");

@@ -1504,6 +1504,17 @@ impl ProcessedRulesLayers {
             .map(|member| (member.native_stored_id.as_str(), member.infantry_pips))
     }
 
+    /// InfantryType+EC1 after every admitted own-ID ReadINI52455F call.
+    pub(crate) fn infantry_civilian_states(&self) -> impl Iterator<Item = (&str, bool)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Infantry)
+            .into_iter()
+            .flatten()
+            .map(|member| (member.native_stored_id.as_str(), member.infantry_civilian))
+    }
+
     /// Each InfantryType's fixed-ART reads after every reached pass.
     pub(crate) fn infantry_art_states(&self) -> impl Iterator<Item = (&str, InfantryArt)> {
         self.native_type_construction_trace
@@ -4664,6 +4675,10 @@ struct ProcessedType {
     /// Missing type sections skip the whole reader; missing keys do not.
     #[serde(default)]
     infantry_pips: InfantryPips,
+    /// InfantryTypeCtor5237A1 clears+EC1; ReadINI52454A..524564 uses
+    /// the current byte as Civilian's default on each reached own-ID body.
+    #[serde(default)]
+    infantry_civilian: bool,
     #[serde(default)]
     infantry_infiltration: InfantryInfiltration,
     /// Infantry ctor `0x00523788`/`0x005236D7..0x005236F9` and the fixed-ART
@@ -5244,6 +5259,7 @@ impl ProcessedType {
             is_gattling: false,
             gattling_stages: Default::default(),
             infantry_pips: InfantryPips::default(),
+            infantry_civilian: false,
             infantry_infiltration: InfantryInfiltration::default(),
             infantry_art: InfantryArt::default(),
             infantry_sequence_bank: None,
@@ -7373,6 +7389,7 @@ impl RulesPassProcessor {
                 if family == RulesTypeFamily::Infantry {
                     let member = &mut self.families.get_mut(&family).unwrap()[index];
                     member.infantry_pips.apply_pass(&raw);
+                    member.infantry_civilian = raw.read_bool("Civilian", member.infantry_civilian);
                     member.infantry_infiltration.apply_pass(&raw);
                 }
                 // ObjectType ReadINI (`0x005F92F8..0x005F933B`) reads Image

@@ -44,6 +44,20 @@ impl Simulation {
             .object_type_in_category(entity.type_ref(), entity.category().into(), rules)
     }
 
+    /// Eligibility helper FUN_00413CD0: only an actual InfantryType's Civilian+EC1 and
+    /// the instance's clear nominal-survivor+6D9 qualify. Neither health nor
+    /// limbo adds a gate. Shared by Fly evacuation and Aircraft DOCK_NOW;
+    /// source: original gamemd.exe instructions.
+    pub(crate) fn is_evacuation_civilian(&self, id: u64, rules: &RuleSet) -> bool {
+        self.substrate.entities.get(id).is_some_and(|entity| {
+            entity.category() == EntityCategory::Infantry
+                && !entity.is_nominal_survivor()
+                && self
+                    .entity_object_type(entity, rules)
+                    .is_some_and(|object| object.civilian)
+        })
+    }
+
     pub(super) fn construct_runtime_techno(
         &mut self,
         type_id: &str,
