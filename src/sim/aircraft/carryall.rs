@@ -40,6 +40,9 @@
 //! `0x0073C73A`) and `TechnoClass_DrawSHP`'s (`0x00706481`, `0x00706559`)
 //! read IsOnCarryall too. Trigger: any tote. Effect: the vehicle vanishes
 //! while carried and reappears where it is set down.
+//!
+//! Ares 3.0 gates both Tote rungs with `Carryall.Allowed`/`Carryall.SizeLimit`
+//! ([`Simulation::ares_carryall_can_lift`]).
 
 use crate::rules::ruleset::RuleSet;
 use crate::sim::components::NavTargetRef;
@@ -76,6 +79,9 @@ pub enum CarryallTote {
     Tote,
     /// 0: the arrow, and a click that orders nothing.
     Nothing,
+    /// Ares: the base action, without its cell rung.
+    #[cfg(feature = "ares")]
+    Kept,
 }
 
 /// What a `Mission_Move_Carryall @ 0x00416D50` visit reads and does, each
@@ -90,7 +96,7 @@ pub(crate) trait CarryallMoveHost {
     /// State 0's tote rung (`0x00416DD3..0x00416E31`): the NavCom as a Techno
     /// (`As_Techno @ 0x0040DD70`) while the hold is empty (`+0x118`), the
     /// owner allied with it and its house allied with this Carryall
-    /// (`0x004F9A90` both ways), and a Unit.
+    /// (`0x004F9A90` both ways), and a Unit. Ares adds CarryallCanLift.
     fn tote_target(&mut self) -> Option<u64>;
     /// `Contact_With_Whom(0)` (`0x0065AD30`).
     fn contact(&mut self) -> Option<u64>;
@@ -264,6 +270,11 @@ impl Simulation {
     /// `0x00417E7D..0x00417EF3`) for a Unit whose cell (vt+0x1B8, a real
     /// one) has a `WeaponsFactory=` first Building (`+0x16BD`): one still
     /// leaving its factory.
+    ///
+    /// Ares 3.0 AircraftClass_GetActionOnObject_CanTote (10048A60, hook
+    /// 0x417D75) keeps the base action when CarryallCanLift refuses
+    /// ([`Self::ares_carryall_can_lift`]), past the base action's cell rung
+    /// (0x417DF6, [`CarryallTote::Kept`]).
     pub fn carryall_tote_action(
         &self,
         aircraft: u64,
@@ -280,6 +291,10 @@ impl Simulation {
         {
             return None;
         }
+        #[cfg(feature = "ares")]
+        if !self.ares_carryall_can_lift(aircraft, target, rules) {
+            return Some(CarryallTote::Kept);
+        }
         let factory = self
             .substrate
             .occupancy
@@ -294,6 +309,47 @@ impl Simulation {
         } else {
             CarryallTote::Tote
         })
+    }
+
+    /// Ares 3.0 `TechnoTypeExt::ExtData::CarryallCanLift @ 1003D9E0`, of
+    /// `aircraft`'s type for the Unit `target`: no parasite eating it
+    /// (`+0x694`); its type's `Carryall.Allowed` (+0x2F8) when set, else
+    /// neither `Organic=` (`+0xD97`) nor `NonVehicle=` (`+0xE1B`); and with
+    /// the Carryall's `Carryall.SizeLimit` (+0x2FC) set and not negative, the
+    /// target's `Size=` (`+0x380`, a double) not above it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_carryall_can_lift(
+        &self,
+        aircraft: u64,
+        target: u64,
+        rules: &RuleSet,
+    ) -> bool {
+        let (Some(carrier), Some(unit)) = (
+            self.substrate.entities.get(aircraft),
+            self.substrate.entities.get(target),
+        ) else {
+            return false;
+        };
+        let (Some(carrier_type), Some(unit_type)) = (
+            self.entity_object_type(carrier, rules),
+            self.entity_object_type(unit, rules),
+        ) else {
+            return false;
+        };
+        if unit.parasite.eater().is_some() {
+            return false;
+        }
+        let liftable = unit_type
+            .techno_combat()
+            .carryall_allowed()
+            .unwrap_or(!unit_type.organic && !unit_type.non_vehicle);
+        if !liftable {
+            return false;
+        }
+        match carrier_type.techno_combat().carryall_size_limit() {
+            Some(limit) if limit >= 0 => f64::from(limit) >= unit_type.size,
+            _ => true,
+        }
     }
 
     /// Both `HouseClass::Is_Ally_ByObject @ 0x004F9A90` tests a tote makes:
@@ -328,6 +384,14 @@ impl Simulation {
         {
             return None;
         }
+        // Ares 3.0 AircraftClass_Mi_MoveCarryall_CanTote (10048B00, hook
+        // 0x416E37): a Unit it cannot lift is flown to without the radio
+        // exchange (0x416EC9).
+        #[cfg(feature = "ares")]
+        if !self.ares_carryall_can_lift(aircraft, target, rules) {
+            return None;
+        }
+        #[cfg(not(feature = "ares"))]
         let _ = rules;
         Some(target)
     }
@@ -465,6 +529,16 @@ impl Simulation {
         }
         let requested = carrier.position.at_location_with_level(coord);
         let frame = self.session.binary_frame();
+        // Ares 3.0 AircraftClass_Carryall_Unload_Facing (10048920, hook
+        // 0x416C3A) Unlimbos the cargo facing the Carryall's turret (its
+        // vt+0x2A8, SecondaryFacing's current value, `0x0041C1E0`) to the
+        // nearest 1/256 turn, where stock gamemd passes 0.
+        #[cfg(feature = "ares")]
+        let facing = carrier
+            .barrel_facing
+            .map_or(0, |turret| (((turret.current(frame) >> 7) + 1) >> 1) as u8);
+        #[cfg(not(feature = "ares"))]
+        let facing = 0;
         let mut dropped = None;
         let _ = depart_cargo_head(
             self,
@@ -503,21 +577,58 @@ impl Simulation {
                     cargo,
                     position,
                     placement,
-                    Some(0),
+                    Some(facing),
                     effects,
                 )?;
+                // 10048920's success arm: the rates the AI copy brought from
+                // the Carryall go back to the cargo type's `ROT=` and
+                // `TurretROT=` (else `ROT=`).
+                #[cfg(feature = "ares")]
+                if let Some(entity) = sim.substrate.entities.get_mut(cargo) {
+                    entity.body_facing.set_rot(object.turret_rot);
+                    if let Some(turret) = entity.barrel_facing.as_mut() {
+                        turret.set_rot(object.secondary_turn_rate());
+                    }
+                }
                 dropped = Some(cargo);
                 Ok(())
             },
             effects,
         );
         let Some(cargo) = dropped else {
+            // Ares 3.0 AircraftClass_Carryall_Unload_DestroyCargo (100488C0,
+            // hook 0x416C4D) destroys a cargo the ground refused, and the
+            // Carryall, each with `C4Warhead=` for its Health.
+            #[cfg(feature = "ares")]
+            self.ares_destroy_refused_carryall(aircraft, rules, registry, effects);
             return;
         };
         if let Some(entity) = self.substrate.entities.get_mut(cargo) {
             entity.on_carryall.set(false);
         }
         self.refresh_object_sight(cargo, rules, 0, effects);
+        // Ares 3.0 AircraftClass_Carryall_Unload_UpdateCargo (10048A10, hook
+        // 0x416C94): the cargo's UpdatePosition(2) (vt+0x18C, its arrival
+        // Per_Cell_Process), then a Deactivated one powers its locomotor off.
+        #[cfg(feature = "ares")]
+        {
+            if let Err(cause) = self.per_cell_process(
+                cargo,
+                crate::sim::movement::PerCellReason::Arrival,
+                rules,
+                registry,
+                effects,
+            ) {
+                log::warn!("Carryall cargo {cargo} arrival: {cause:?}");
+            }
+            if let Some(entity) = self.substrate.entities.get_mut(cargo)
+                && entity.deactivated.is_offline()
+                && let Some(locomotor) = entity.locomotor.as_mut()
+                && locomotor.is_powered()
+            {
+                locomotor.power_off();
+            }
+        }
         self.refresh_object_sight_border(
             cargo,
             UninitContext::new(rules, registry).with_effects(effects),
@@ -545,10 +656,75 @@ impl Simulation {
                 effects,
             );
         }
+        // Ares 3.0 AircraftClass_Carryall_Unload_Guard (100489D0, hook
+        // 0x416CF4): the cargo's Transporter (`+0x11C`) cleared, Guard queued
+        // to start (vt+0x1E8(5, 1)) and its team takes it again.
+        #[cfg(feature = "ares")]
+        {
+            if let Some(entity) = self.substrate.entities.get_mut(cargo) {
+                entity.passenger_role.clear_transporter();
+            }
+            let _ = self.mission_queue_exact(
+                cargo,
+                crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
+                1,
+                self.session.binary_frame(),
+                &crate::sim::mission::authority::LiveReadyInputProvider { rules },
+            );
+            if let Some((team, _)) = self.team_script_vm.team_for_member(cargo) {
+                self.team_add_member(team, cargo, false, rules, registry, effects);
+            }
+        }
         let destination = nearby
             .filter(|&cell| cell != (0, 0))
             .map(|(rx, ry)| NavTargetRef::cell(rx as u16, ry as u16));
         self.assign_aircraft_destination(aircraft, destination, rules, effects);
+    }
+
+    /// The refusal arm of Ares 3.0 `AircraftClass_Carryall_Unload_DestroyCargo
+    /// @ 100488C0` (hook 0x416C4D): `ReceiveDamage(Health, 0, C4Warhead=,
+    /// NULL, 1, 1, NULL)` on the cargo and then on the Carryall.
+    ///
+    /// RESIDUAL: VERA damages the Carryall alone and lets its death kill the
+    /// cargo, which the departure put back in the hold (KillPassengers), so
+    /// the cargo dies without its own receiver: no kill credit to nobody, no
+    /// death animation or survivors. The damage receiver is not established
+    /// for a Limbo victim. Trigger: an Ares Carryall dropping its cargo where
+    /// the cargo cannot stand (a deep-water cell, a building).
+    #[cfg(feature = "ares")]
+    fn ares_destroy_refused_carryall(
+        &mut self,
+        aircraft: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        let Some(health) = self
+            .substrate
+            .entities
+            .get(aircraft)
+            .map(|entity| entity.health.current())
+        else {
+            return;
+        };
+        let warhead = self.interner.intern(&rules.bridge_warheads.c4_name);
+        self.commit_direct_damage_receiver(
+            rules,
+            registry,
+            crate::sim::combat::EntityDamageEvent::direct_receiver(
+                aircraft,
+                health,
+                0,
+                crate::sim::combat::RAD_NO_ATTACKER,
+                None,
+                warhead,
+                crate::sim::combat::ReceiverCallFlags {
+                    ignore_defenses: true,
+                    arg6: true,
+                },
+            ),
+            effects,
+        );
     }
 }
 

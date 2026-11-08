@@ -1301,6 +1301,12 @@ pub(crate) fn mission_unload(
                 // cargo (IsOnCarryall `+0x424`).
                 if let Some(pax) = ejected.and_then(|pax| sim.substrate.entities.get_mut(pax)) {
                     pax.on_carryall.set(false);
+                    // Ares 3.0 AircraftClass_Mi_Unload_Blocked (10048B30,
+                    // hook 0x415544) clears Transporter (`+0x11C`) too. Its
+                    // refusal arm re-adds the passenger and enters idle mode,
+                    // as VERA's escape below does in every build.
+                    #[cfg(feature = "ares")]
+                    pax.passenger_role.clear_transporter();
                 }
                 // `0x0041556A..0x00415587`: a passenger that kept a team joins
                 // the aircraft's (`TeamClass::Add_Member(passenger, 0)`).

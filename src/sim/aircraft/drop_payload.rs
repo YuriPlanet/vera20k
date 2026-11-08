@@ -479,6 +479,14 @@ fn land_tail(
     landing: DriveCoord,
     effects: FrameEffects<'_>,
 ) {
+    // Ares 3.0 AircraftClass_Paradrop_Carryall (10048B80, hook 0x415DF6):
+    // the paradropped passenger's Transporter (`+0x11C`) and IsOnCarryall
+    // (`+0x424`) are cleared.
+    #[cfg(feature = "ares")]
+    if let Some(entity) = sim.substrate.entities.get_mut(passenger) {
+        entity.passenger_role.clear_transporter();
+        entity.on_carryall.set(false);
+    }
     let Some(plane_entity) = sim.substrate.entities.get(plane) else {
         return;
     };

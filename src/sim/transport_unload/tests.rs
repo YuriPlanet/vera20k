@@ -1442,7 +1442,8 @@ fn rifleman_boards_a_landed_nighthawk() {
 /// aircraft's removal clears it (PointerExpired `0x007078D5`). Dormant in
 /// retail: no `[AircraftTypes]` entry has `Passengers=` (the fixture's SHAD
 /// is retail's jumpjet `[VehicleTypes]` entry, whose Unit Mission_Unload
-/// clears the field at `0x0073DBD1`).
+/// clears the field at `0x0073DBD1`). Ares 3.0 clears it as the soldier
+/// leaves (AircraftClass_Mi_Unload_Blocked 10048B30, hook 0x415544).
 #[test]
 fn aircraft_unload_keeps_the_transporter_until_the_aircraft_goes() {
     use crate::sim::passenger::{BoardingArm, board_passenger};
@@ -1478,6 +1479,10 @@ fn aircraft_unload_keeps_the_transporter_until_the_aircraft_goes() {
         fx.tick();
     }
     assert!(fx.revealed(soldier), "the soldier left the aircraft");
+    if cfg!(feature = "ares") {
+        assert_eq!(transporter(&fx), None, "Ares clears it on the way out");
+        return;
+    }
     assert_eq!(transporter(&fx), Some(shad), "the aircraft unload keeps it");
     // UnInit's Limbo announcement finds the aircraft still alive; its class
     // destructor (`0x00414125`) announces the removal on the next tick.

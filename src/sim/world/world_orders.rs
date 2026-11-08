@@ -623,6 +623,8 @@ impl Simulation {
                     return match tote {
                         CarryallTote::Tote => Some(EntryClickAction::Tote),
                         CarryallTote::Nothing => Some(EntryClickAction::Nothing),
+                        #[cfg(feature = "ares")]
+                        CarryallTote::Kept => None,
                     };
                 }
                 let target_obj = self.object_type(target.type_ref(), rules)?;

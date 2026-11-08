@@ -291,7 +291,8 @@ pub(crate) struct ResidualTypeRules {
     #[serde(default)]
     unsellable: Option<bool>,
     /// `Carryall.Allowed` (+0x2F8, Nullable<bool>) and `Carryall.SizeLimit`
-    /// (+0x2FC, Nullable<int>), unset.
+    /// (+0x2FC, Nullable<int>), unset; consumed by
+    /// `Simulation::ares_carryall_can_lift`.
     carryall_allowed: Option<bool>,
     carryall_size_limit: Option<i32>,
     /// `EVA.Lost` (+0x394, ValueableIdx<VoxClass>): Initialize seeds a
@@ -1231,6 +1232,20 @@ impl AresTechnoTypeRules {
             self.residual.can_be_reversed,
             self.residual.reversed_as.as_ref(),
         )
+    }
+
+    /// `Carryall.Allowed` (+0x2F8): whether a Carryall may lift a Unit of
+    /// this type, when set.
+    #[cfg(feature = "ares")]
+    pub(crate) fn carryall_allowed(&self) -> Option<bool> {
+        self.residual.carryall_allowed
+    }
+
+    /// `Carryall.SizeLimit` (+0x2FC): the largest `Size=` this Carryall
+    /// lifts, when set.
+    #[cfg(feature = "ares")]
+    pub(crate) fn carryall_size_limit(&self) -> Option<i32> {
+        self.residual.carryall_size_limit
     }
 
     /// `Unsellable.Get(UnitsUnsellable)`: a unit of this type cannot be sold

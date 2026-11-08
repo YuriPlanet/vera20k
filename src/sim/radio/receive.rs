@@ -1656,6 +1656,13 @@ fn aircraft_docking(
 /// ROGER below it. Unlike the Unit's (`0x0073758A`) it reads neither `Size=`
 /// nor `SizeLimit=`, the building under the aircraft nor the sender's
 /// controllers.
+///
+/// Ares 3.0: a transport whose driver was killed answers 0 first
+/// (AircraftClass_ReceivedRadioCommand_QueryEnterAsPassenger_KillDriver
+/// 10048CF0, hook 0x41946B -> 0x4190DD), and below `Passengers=` a sender of
+/// a type `Passengers.Allowed`/`.Disallowed` refuses is NEGATORY
+/// (AircraftClass_ReceivedRadioCommand_SpecificPassengers 10048D10, hook
+/// 0x41949F; IsPassengerAllowed 1003DD60).
 pub(crate) fn aircraft_can_load(
     sim: &Simulation,
     aircraft: u64,
@@ -1666,6 +1673,10 @@ pub(crate) fn aircraft_can_load(
         return RadioResponse::None;
     };
     if aircraft_radio_silent(entity) {
+        return RadioResponse::None;
+    }
+    #[cfg(feature = "ares")]
+    if entity.driver_killed() {
         return RadioResponse::None;
     }
     let Some(object) = sim.entity_object_type(entity, rules) else {
@@ -1685,6 +1696,15 @@ pub(crate) fn aircraft_can_load(
         return RadioResponse::None;
     }
     if entity.passenger_role.passenger_count() as i32 >= object.passengers {
+        return RadioResponse::Negatory;
+    }
+    #[cfg(feature = "ares")]
+    if let Some(from_type) = sim.entity_object_type(from, rules)
+        && !object
+            .techno_combat()
+            .movement()
+            .passenger_allowed(from_type.category, &from_type.id)
+    {
         return RadioResponse::Negatory;
     }
     RadioResponse::Roger
@@ -3595,6 +3615,67 @@ mod tests {
             .set_passengers_for_test(vec![90, 91]);
         assert_eq!(
             super::can_load_query(&sim, 1, 2, &rules),
+            RadioResponse::Negatory
+        );
+    }
+
+    /// Ares 3.0 10048D10 (hook 0x41949F): below `Passengers=`, a sender of a
+    /// type the aircraft's `Passengers.Disallowed` lists is NEGATORY.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_aircraft_transport_refuses_a_disallowed_passenger() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::passenger::{PassengerCargo, PassengerRole};
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[AircraftTypes]\n0=SHAD\n[SHAD]\nStrength=200\nPassengers=2\n\
+             Passengers.Disallowed=E2\n\
+             [InfantryTypes]\n0=E1\n1=E2\n[E1]\nStrength=100\n[E2]\nStrength=100\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::with_seed(31);
+        let own = sim.intern("Americans");
+        let plane_type = sim.intern("SHAD");
+        let mut plane = GameEntity::new_at_frame_zero_for_test(
+            1,
+            10,
+            10,
+            128,
+            128,
+            own,
+            Health::new(200),
+            plane_type,
+            EntityCategory::Aircraft,
+            0,
+            5,
+            false,
+        );
+        plane.passenger_role = PassengerRole::transport(PassengerCargo::new(2, 0.0));
+        sim.substrate.entities.insert(plane);
+        for (id, name) in [(2, "E1"), (3, "E2")] {
+            let gi_type = sim.intern(name);
+            sim.substrate
+                .entities
+                .insert(GameEntity::new_at_frame_zero_for_test(
+                    id,
+                    11,
+                    10,
+                    128,
+                    128,
+                    own,
+                    Health::new(100),
+                    gi_type,
+                    EntityCategory::Infantry,
+                    0,
+                    5,
+                    false,
+                ));
+        }
+        assert_eq!(
+            super::can_load_query(&sim, 1, 2, &rules),
+            RadioResponse::Roger
+        );
+        assert_eq!(
+            super::can_load_query(&sim, 1, 3, &rules),
             RadioResponse::Negatory
         );
     }
