@@ -25,6 +25,13 @@ pub(crate) trait PickSource: Copy {
     fn type_invisible(&self, _entity: &crate::sim::game_entity::GameEntity) -> bool {
         false
     }
+    /// A Building whose type has `InvisibleInGame=` (Type+0x1701).
+    /// `AppendVisibleBuildingSelectables @ 0x006D9CE0` never registers one
+    /// (0x006D9D5E..0x006D9D6C), so neither the point pick's anchor pass nor
+    /// the band scan meets it.
+    fn invisible_in_game_building(&self, _entity: &crate::sim::game_entity::GameEntity) -> bool {
+        false
+    }
     fn screen_position(&self, entity: &crate::sim::game_entity::GameEntity) -> (f32, f32) {
         crate::render::locomotor_visual::screen_position(entity)
     }
@@ -120,6 +127,13 @@ impl PickSource for PresentedWorld<'_> {
         self.rules
             .and_then(|rules| self.sim.object_type(entity.type_ref(), rules))
             .is_some_and(|object| object.invisible)
+    }
+    fn invisible_in_game_building(&self, entity: &crate::sim::game_entity::GameEntity) -> bool {
+        entity.category() == EntityCategory::Structure
+            && self
+                .rules
+                .and_then(|rules| self.sim.object_type(entity.type_ref(), rules))
+                .is_some_and(|object| object.invisible_in_game)
     }
     fn entities(&self) -> &EntityStore {
         self.sim.entities()
@@ -517,10 +531,10 @@ pub(crate) fn band_rect_contains_drawn_object(
         if entity.category() == EntityCategory::Structure {
             // Bulk-registered, shroud or no shroud, frozen in fog or not:
             // AppendVisibleBuildingSelectables 0x006D9CE0 tests only +0x90,
-            // +0x74 and Type+0x1701 (the last not ported here). Translucent
-            // fog leaves that alone; a frozen building's FoggedObject still
-            // draws in both fog modes.
-            return true;
+            // +0x74 and InvisibleInGame (Type+0x1701, 0x006D9D5E..0x006D9D6C).
+            // Translucent fog leaves that alone; a frozen building's
+            // FoggedObject still draws in both fog modes.
+            return !source.invisible_in_game_building(entity);
         }
         let owner_str = interner.map_or("", |i| i.resolve(entity.owner()));
         !source.conceals(entity)
@@ -1284,7 +1298,9 @@ pub(crate) fn pick_entity_at_point<'a>(
 /// a Terrain object. The bridge-deck list (`+0xE8`) is never read. An
 /// unadmitted head picks nothing; the pick never looks behind it. An object
 /// VERA's translucent fog leaves undrawn ([`PickSource::conceals`]) is not
-/// admitted either.
+/// admitted either. An InvisibleInGame building is never registered
+/// ([`PickSource::invisible_in_game_building`]): only the cell fallback can
+/// reach one, and the TypeInvisible gate below then refuses it.
 ///
 /// Residual: the anchor pass scores only entities. Native also scores a
 /// registered Terrain object whose type has `IsVeinhole=` (`+0x2B4`);
@@ -1325,7 +1341,10 @@ pub(crate) fn pick_object_at_point<'a>(
         let Some(entity) = entities.get(stable_id) else {
             continue;
         };
-        if !pick_admits_object(entity, fog, player) || source.conceals(entity) {
+        if !pick_admits_object(entity, fog, player)
+            || source.conceals(entity)
+            || source.invisible_in_game_building(entity)
+        {
             continue;
         }
         // Native6DA380 tests lifecycle/cloak after the clicked Cell gate;
