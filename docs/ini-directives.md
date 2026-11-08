@@ -46,13 +46,16 @@ Strength=250
   (case-insensitive `_stricmp`) and clears the record only when the outermost
   read returns; Phobos keeps `SavedIncludes`. A missing listed file is skipped
   by Ares and fatal under Phobos (`Debug::FatalErrorAndExit`).
+- Natively each included file loads into the INI that lists it, through
+  `LoadFromStraw`'s merge arm. An Ares build does the same, with Ares's parser
+  hooks ([Ares INI syntax](ares-ini-syntax.md)); other builds compose with
+  `IniFile::merge`.
 - Residual: nested lists are expanded depth-first per document. Natively each
-  included file merges into the same INI, so its list joins one shared include
-  section: Ares walks it with one index shared by every nesting level, and
-  Phobos re-walks it skipping saved names. A parent's remaining entries are
-  therefore read before a child's own list, and a child entry that reuses a
-  parent's key name resolves through the shared section. Matching that needs
-  the native same-INI `ReadCCFile` merge, which `IniFile::merge` does not model.
+  included file's list joins one shared include section: Ares walks it with
+  one index shared by every nesting level, and Phobos re-walks it skipping
+  saved names. A parent's remaining entries are therefore read before a
+  child's own list, and a child entry that reuses a parent's key name resolves
+  through the shared section. VERA reads each file's own list instead.
 - Inheritance runs after the complete Include expansion. `$Inherits=A,B` copies
   only missing keys: child-authored values win, then the first supplying parent.
   Parent section names remain case-sensitive. Directive keys are not inherited.

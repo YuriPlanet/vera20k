@@ -719,6 +719,11 @@ fn general_helpers_match_original_reader_and_signed_repair_keys() {
             .as_str()
             .or_else(|| case["file"].as_str())
             .unwrap();
+        // Ares's `INIClass_Parse_Override` (`0x5260D9`) keeps only the later
+        // of two equal keys; this control records the vanilla reader.
+        if cfg!(feature = "ares") && matches!(name, "duplicate_key" | "duplicate_key_reversed") {
+            continue;
+        }
         let text = case["input_text"]
             .as_str()
             .or_else(|| case["general_text"].as_str())

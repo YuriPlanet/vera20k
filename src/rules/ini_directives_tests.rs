@@ -17,7 +17,7 @@ fn expand(root: &str, files: &[(&str, &str)]) -> ExpandedIni {
                 .iter()
                 .find(|(key, _)| *key == name)
                 .filter(|(_, body)| !body.is_empty())
-                .map(|(_, body)| IniFile::from_str(body)))
+                .map(|(_, body)| body.as_bytes().to_vec()))
         },
         DirectiveOptions::default(),
     )
@@ -37,7 +37,7 @@ fn ini_directives_total_reference_budget_rejects_before_loading_an_oversized_lis
         "root.ini",
         |_| {
             loads += 1;
-            Ok(Some(IniFile::from_str("[Unit]\nValue=child\n")))
+            Ok(Some("[Unit]\nValue=child\n".as_bytes().to_vec()))
         },
         DirectiveOptions::default(),
     )
@@ -181,7 +181,7 @@ fn ini_directives_include_list_keeps_stored_entry_order() {
         "root.ini",
         |name| {
             reads.push(name.to_owned());
-            Ok(Some(IniFile::from_str("[Unit]\nValue=yes\n")))
+            Ok(Some("[Unit]\nValue=yes\n".as_bytes().to_vec()))
         },
         DirectiveOptions::default(),
     )
@@ -220,9 +220,15 @@ fn ini_directives_ares_reads_a_shared_child_once_per_root_load() {
         "root.ini",
         |name| {
             reads.push(name.to_owned());
-            Ok(Some(IniFile::from_str(
-                files.iter().find(|(key, _)| *key == name).unwrap().1,
-            )))
+            Ok(Some(
+                files
+                    .iter()
+                    .find(|(key, _)| *key == name)
+                    .unwrap()
+                    .1
+                    .as_bytes()
+                    .to_vec(),
+            ))
         },
         DirectiveOptions::default(),
     )
@@ -255,9 +261,15 @@ fn ini_directives_phobos_includes_each_physical_file_once() {
         "root.ini",
         |name| {
             reads.push(name.to_owned());
-            Ok(Some(IniFile::from_str(
-                files.iter().find(|(key, _)| *key == name).unwrap().1,
-            )))
+            Ok(Some(
+                files
+                    .iter()
+                    .find(|(key, _)| *key == name)
+                    .unwrap()
+                    .1
+                    .as_bytes()
+                    .to_vec(),
+            ))
         },
         DirectiveOptions::default(),
     )
@@ -352,7 +364,7 @@ fn ini_directives_strict_errors_do_not_poison_a_fresh_retry() {
     let error = process_directives(
         root.clone(),
         "root.ini",
-        |_| Ok(Some(IniFile::from_str("[#include]\n0=child.ini\n"))),
+        |_| Ok(Some("[#include]\n0=child.ini\n".as_bytes().to_vec())),
         options,
     )
     .err()
@@ -362,7 +374,7 @@ fn ini_directives_strict_errors_do_not_poison_a_fresh_retry() {
     let result = process_directives(
         root,
         "root.ini",
-        |_| Ok(Some(IniFile::from_str("[Unit]\nValue=repaired\n"))),
+        |_| Ok(Some("[Unit]\nValue=repaired\n".as_bytes().to_vec())),
         options,
     )
     .unwrap();
@@ -384,9 +396,7 @@ fn ini_directives_default_and_custom_depth_stop_before_next_read() {
                 reads += 1;
                 assert!(reads <= limit);
                 let next = name.trim_end_matches(".ini").parse::<usize>().unwrap() + 1;
-                Ok(Some(IniFile::from_str(&format!(
-                    "[#include]\n0={next}.ini\n"
-                ))))
+                Ok(Some(format!("[#include]\n0={next}.ini\n").into_bytes()))
             },
             DirectiveOptions {
                 max_depth: limit,
@@ -418,7 +428,7 @@ fn ini_directives_missing_empty_and_io_failures_are_distinct_and_continue() {
                         Err("original IO reason".into())
                     }
                 } else {
-                    Ok(Some(IniFile::from_str("[Unit]\nValue=good\n")))
+                    Ok(Some("[Unit]\nValue=good\n".as_bytes().to_vec()))
                 }
             },
             DirectiveOptions::default(),
