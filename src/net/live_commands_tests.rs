@@ -13,6 +13,11 @@ use std::cell::{Cell, RefCell};
 use std::net::{Ipv4Addr, UdpSocket};
 use std::time::{Duration, Instant};
 
+/// Stall guard for the two long real-UDP exchanges. They take seconds alone, but a
+/// debug build sharing a small CI machine with the rest of the suite runs many times
+/// slower, and only the wall clock bounds their loops.
+const LONG_EXCHANGE_LIMIT: Duration = Duration::from_secs(120);
+
 fn transport() -> LanUdpTransport {
     LanUdpTransport::bind(
         UdpBindConfig {
@@ -2625,7 +2630,7 @@ fn three_udp_clients_recover_a_retained_frontier_across_a_timing_shrink() {
             link.release();
         }
         assert!(
-            started.elapsed() < Duration::from_secs(20),
+            started.elapsed() < LONG_EXCHANGE_LIMIT,
             "heterogeneous exchange stalled: frames={:?}, local={:?}, waits={:?}, sending={:?}, peers={:?}, held={}, lost={:?}, retry={}, pressure={}, frontier={}",
             worlds.each_ref().map(|sim| sim.session().binary_frame()),
             worlds
@@ -2942,7 +2947,7 @@ fn real_udp_mass_order_survives_backpressure_and_executes_one_shared_frame() {
                 }
             }
             assert!(
-                started.elapsed() < Duration::from_secs(20),
+                started.elapsed() < LONG_EXCHANGE_LIMIT,
                 "mass UDP exchange stalled: frames={:?}, local={:?}, waits={:?}, peers={:?}, queued={:?}",
                 [a.session().binary_frame(), b.session().binary_frame()],
                 [
