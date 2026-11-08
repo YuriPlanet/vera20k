@@ -1,6 +1,7 @@
-// Shadow halves after a depth-tested read-write interval (terrain_depth.wgsl).
-// Bodies already stored their colour and every admitted piece its Z; per
-// pixel, the shadows admitted after its last admitted body remain counted.
+// Shadow halves after a depth-tested interval (terrain_depth.wgsl).
+// Bodies already stored their colour and, outside read-only intervals, every
+// admitted piece its Z; per pixel, the shadows admitted after its last admitted
+// body remain counted.
 // Shadow496250 halves the packed word once per shadow, in sequence, so the
 // result is that many halvings of the word the interval left.
 @group(0) @binding(0) var old_words: texture_2d<u32>;

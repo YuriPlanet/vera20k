@@ -13,8 +13,8 @@
 //! included). So every draw goes to the earliest stage after every earlier
 //! draw it overlaps. Same-kind draws that already compose in sequence inside
 //! one transaction (ordinary draws in one render pass, read-only edits in one
-//! reduction interval, read-write edits in one interval, combat lights in one
-//! replayed pass) may share a stage even when they overlap; their order inside
+//! interval, read-write edits in one interval, combat lights in one replayed
+//! pass) may share a stage even when they overlap; their order inside
 //! the stage stays parent order.
 //! Stages replay in index order.
 //! Footprints are tested on a tile grid: a false overlap only costs a stage.
@@ -30,7 +30,7 @@ pub(super) enum StageKind {
     Packed,
     /// A packed composite with displaced reads, replayed alone.
     PackedAlone,
-    /// One read-only reduction interval; overlapping edits reduce in order.
+    /// One read-only interval; overlapping edits keep their order inside it.
     EditReadOnly,
     /// One read-write interval; overlapping edits keep their order inside it
     /// (waves, replays or the live depth test, `TerrainDrawRenderer::draw_span`).

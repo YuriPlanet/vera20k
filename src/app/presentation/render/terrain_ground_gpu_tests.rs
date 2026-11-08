@@ -746,7 +746,11 @@ fn offscreen_ordinary_units_neither_fence_nor_split_destination_edits() {
                     crate::render::terrain_draw::TerrainBatchStats {
                         pieces: 2,
                         waves: 1,
-                        passes: if read_only { 4 } else { 2 },
+                        passes: match (read_only, crate::render::gpu::webgl_fallback(&gpu.device)) {
+                            (false, _) => 2,
+                            (true, false) => 3,
+                            (true, true) => 4,
+                        },
                         tile_dependencies: if read_only { 0 } else { 2 }
                     }
                 );
