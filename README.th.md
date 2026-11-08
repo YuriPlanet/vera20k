@@ -135,6 +135,8 @@ Command & Conquer และ Red Alert เป็นเครื่องหมา
 ภาพหน้าจอและไอคอนแอป (ดาวแดงของ Red Alert 2) แสดงงานภาพจากเกมที่เป็นของ Electronic Arts
 VERA20K ไม่มีความเกี่ยวข้องกับ Electronic Arts และไม่ได้รับการรับรองจาก Electronic Arts
 
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 **โปรดอ่าน[ประกาศทางกฎหมาย](LEGAL.md)ก่อนแชร์ ขาย หรือ fork VERA20K**
 
 ## เอกสาร

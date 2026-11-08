@@ -136,6 +136,8 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 Command & Conquer 和 Red Alert 是 Electronic Arts Inc. 的商标，截图和应用图标（《红色警戒2》的红星）中的游戏美术资源归 Electronic Arts 所有。
 VERA20K 与 Electronic Arts 无隶属关系，也未获其认可。
 
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 **在分享、出售或复刻（fork）VERA20K 之前，请先阅读[法律声明](LEGAL.md)。**
 
 ## 文档

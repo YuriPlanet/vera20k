@@ -9,12 +9,16 @@ lang: zh-CN
 [English](../) · **简体中文**
 
 VERA20K 用 Rust 独立重写游戏行为，不加载 `Ares.dll`、`Phobos.dll` 或
-NPatch 补丁，不导入它们的源码，也不重新分发其二进制。下面按扩展列出已支持
-的实现及其原作者；技术细节和原生地址见对应的英文文档。
+NPatch 补丁，也不重新分发其二进制。除可选的 Ares 支持外，不导入它们的源码：
+Ares 支持的部分代码译自 Ares 源码（包括从 Ares 3.0 DLL 还原的源码），并保留
+Ares 的版权声明和[许可证](https://github.com/YuriPlanet/vera20k/blob/main/LICENSES/Ares.txt)。
+下面按扩展列出已支持的实现及其原作者；技术细节和原生地址见对应的英文文档。
 
 ## Ares
 
 技术细节：[Ares 扩展支持](../ares.md)
+
+This product includes software developed by the Ares Contributors.
 
 Ares 由 **pd** 于 2007 年发起，现由
 [The Ares Contributors](https://ares-developers.github.io/Ares-docs/credits.html)

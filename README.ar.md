@@ -144,6 +144,8 @@ Command & Conquer وRed Alert علامتين تجاريتين لشركة Electro
 وأيقونة التطبيق، أي النجمة الحمراء من Red Alert 2، رسومات من اللعبة تملكها Electronic Arts.
 لا يتبع VERA20K شركة Electronic Arts ولا يحظى بتأييدها.
 
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 **اقرأ [الإشعار القانوني](LEGAL.md) قبل أن تشارك VERA20K أو تبيعه أو تنشئ نسخة متفرعة منه.**
 
 ## التوثيق
