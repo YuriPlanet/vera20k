@@ -314,8 +314,36 @@ struct PooledBuffer {
     capacity: usize,
     /// The bytes last uploaded, so a repeated stream is not uploaded again.
     contents: Vec<u8>,
+    /// The camera those bytes' positions were uploaded for.
+    camera: [f32; 2],
     /// Advances when what the stream draws changes.
     generation: u64,
+}
+
+/// Whether `new`, drawn with `camera`, shows what the instance bytes `old`
+/// showed drawn with `old_camera`: nothing but their positions differs, and
+/// those by the camera's move. Float arithmetic only ever says no.
+fn followed_camera(
+    old: &[u8],
+    old_camera: [f32; 2],
+    new: &[SpriteInstance],
+    camera: [f32; 2],
+) -> bool {
+    old.len() == std::mem::size_of_val(new)
+        && old
+            .chunks_exact(std::mem::size_of::<SpriteInstance>())
+            .zip(new)
+            .all(|(old, new)| {
+                let old: SpriteInstance = bytemuck::pod_read_unaligned(old);
+                let moved = SpriteInstance {
+                    position: [
+                        old.position[0] - old_camera[0] + camera[0],
+                        old.position[1] - old_camera[1] + camera[1],
+                    ],
+                    ..old
+                };
+                bytemuck::bytes_of(&moved) == bytemuck::bytes_of(new)
+            })
 }
 
 /// Pool of named GPU instance buffers that persist across frames.
@@ -373,6 +401,24 @@ impl RecordedUploads<'_> {
         self.upload_page(key, 0, instances);
     }
 
+    /// Upload a stream whose positions are in the frame of a camera that
+    /// scrolls with them: one that only followed `camera` keeps its
+    /// generation, since it draws the same picture.
+    pub(crate) fn upload_following(
+        &mut self,
+        key: &'static str,
+        instances: &[SpriteInstance],
+        camera: [f32; 2],
+    ) {
+        self.pool.upload_keyed(
+            self.device,
+            UploadPath::Recorded(self.encoder),
+            (key, 0),
+            instances,
+            camera,
+        );
+    }
+
     /// One page of a stream split per atlas page, read with
     /// [`InstanceBufferPool::get_page`].
     pub(crate) fn upload_page(
@@ -386,6 +432,7 @@ impl RecordedUploads<'_> {
             UploadPath::Recorded(self.encoder),
             (key, page),
             instances,
+            [0.0; 2],
         );
     }
 }
@@ -458,6 +505,7 @@ impl InstanceBufferPool {
             UploadPath::Queue(&gpu.queue),
             (key, page),
             instances,
+            [0.0; 2],
         );
     }
 
@@ -468,7 +516,13 @@ impl InstanceBufferPool {
         key: &'static str,
         instances: &[SpriteInstance],
     ) {
-        self.upload_keyed(device, UploadPath::Queue(queue), (key, 0), instances);
+        self.upload_keyed(
+            device,
+            UploadPath::Queue(queue),
+            (key, 0),
+            instances,
+            [0.0; 2],
+        );
     }
 
     fn upload_keyed(
@@ -477,6 +531,7 @@ impl InstanceBufferPool {
         path: UploadPath<'_>,
         key: (&'static str, usize),
         instances: &[SpriteInstance],
+        camera: [f32; 2],
     ) {
         let needed: usize = instances.len();
         let previous_count = self.counts.insert(key, needed as u32);
@@ -495,19 +550,27 @@ impl InstanceBufferPool {
                 buffer: Self::alloc_buffer(device, key.0, cap),
                 capacity: cap,
                 contents: Vec::new(),
+                camera,
                 generation: 0,
             }
         });
         let byte_data: &[u8] = bytemuck::cast_slice(instances);
-        if entry.contents == byte_data {
-            if previous_count != Some(needed as u32) {
-                entry.generation += 1;
-            }
+        let unchanged = entry.contents == byte_data;
+        let same_picture = previous_count == Some(needed as u32)
+            && if camera == entry.camera {
+                unchanged
+            } else {
+                followed_camera(&entry.contents, entry.camera, instances, camera)
+            };
+        if !same_picture {
+            entry.generation += 1;
+        }
+        entry.camera = camera;
+        if unchanged {
             return;
         }
         entry.contents.clear();
         entry.contents.extend_from_slice(byte_data);
-        entry.generation += 1;
 
         // Grow if the current buffer is too small.
         if needed > entry.capacity {
@@ -2449,4 +2512,27 @@ fn camera_group(
             },
         ],
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stream_only_following_its_camera_shows_the_same_picture() {
+        let quad = |x, y, alpha| SpriteInstance {
+            position: [x, y],
+            alpha,
+            ..Default::default()
+        };
+        let old = [quad(110.0, 20.0, 1.0)];
+        let old_bytes = bytemuck::cast_slice(&old);
+        let followed =
+            |new: &[SpriteInstance]| followed_camera(old_bytes, [100.0, 0.0], new, [125.0, -3.0]);
+        assert!(followed(&[quad(135.0, 17.0, 1.0)]));
+        // It stayed where it was, so the camera's move shifted it on screen.
+        assert!(!followed(&[quad(110.0, 20.0, 1.0)]));
+        assert!(!followed(&[quad(135.0, 17.0, 0.5)]));
+        assert!(!followed(&[]));
+    }
 }

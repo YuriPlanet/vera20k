@@ -62,7 +62,7 @@ pub(crate) struct SidebarSurface {
 }
 
 /// Every instance stream the sidebar's surfaces draw (`draw_passes`).
-pub(crate) const SIDEBAR_STREAMS: [&str; 17] = [
+pub(crate) const SIDEBAR_STREAMS: [&str; 16] = [
     "sidebar_chrome",
     "sidebar_cameo",
     "sidebar_cameo_hover",
@@ -77,10 +77,13 @@ pub(crate) const SIDEBAR_STREAMS: [&str; 17] = [
     "sidebar_text",
     "radar_anim",
     "minimap",
-    "viewport_rect",
     "radar_content_boundary",
     "command_bar",
 ];
+
+/// The stream of the radar's viewport outline, the one that moves with the
+/// camera on the sidebar.
+pub(crate) const VIEWPORT_OUTLINE: &str = "viewport_rect";
 
 /// Every input of the sidebar's draw besides its frame and camera. Equal
 /// inputs draw equal pixels, so the surfaces already hold them.
@@ -92,6 +95,10 @@ pub(crate) struct SidebarPicture {
     pub(crate) textures: Vec<Option<wgpu::BindGroup>>,
     /// The generations of the minimap's and the housing's pictures.
     pub(crate) radar: [u64; 2],
+    /// The generation of the [`VIEWPORT_OUTLINE`], and whether it lies
+    /// wholly on the minimap's quad.
+    pub(crate) outline: u64,
+    pub(crate) outline_on_minimap: bool,
     pub(crate) text_in_surface: bool,
 }
 
@@ -100,8 +107,9 @@ pub(crate) struct SidebarPicture {
 pub(crate) enum SidebarRedraw {
     /// They already hold the picture.
     Nothing,
-    /// Only the minimap's composition changed. It is opaque, so only the
-    /// pixels of its quad change, whatever the surface held there.
+    /// Only the minimap's composition, or an outline that stays on it,
+    /// changed. The quad is opaque, so only its pixels change, whatever the
+    /// surface held there.
     Minimap,
     Whole,
 }
@@ -183,11 +191,20 @@ impl SidebarSurface {
     /// What this frame must draw for `picture`, recording it as the one the
     /// surfaces will hold.
     pub(crate) fn redraw_for(&mut self, picture: SidebarPicture) -> SidebarRedraw {
-        let inputs = (picture, self.frame, self.column_camera);
+        // Scrolling moves the streams and their camera together.
+        let camera = CameraUniform {
+            camera_pos: [0.0; 2],
+            ..self.column_camera
+        };
+        let inputs = (picture, self.frame, camera);
         let redraw = match self.drawn.as_mut() {
             Some(drawn) if *drawn == inputs => SidebarRedraw::Nothing,
             Some(drawn) => {
                 drawn.0.radar[0] = inputs.0.radar[0];
+                // The quad repaints an outline that was and stays on it.
+                if drawn.0.outline_on_minimap && inputs.0.outline_on_minimap {
+                    drawn.0.outline = inputs.0.outline;
+                }
                 if *drawn == inputs {
                     SidebarRedraw::Minimap
                 } else {
@@ -219,6 +236,22 @@ impl SidebarSurface {
             (top.floor() as u32).min(height),
         );
         (right > left && bottom > top).then_some([left, top, right - left, bottom - top])
+    }
+
+    /// Whether all of `quads` lie within the column pixels `area`.
+    pub(crate) fn quads_within(
+        &self,
+        area: [u32; 4],
+        quads: &[crate::render::batch::SpriteInstance],
+    ) -> bool {
+        quads.iter().all(|quad| {
+            self.column_area(quad).is_some_and(|[x, y, width, height]| {
+                x >= area[0]
+                    && y >= area[1]
+                    && x + width <= area[0] + area[2]
+                    && y + height <= area[1] + area[3]
+            })
+        })
     }
 
     fn place(&self, queue: &wgpu::Queue) {
@@ -1330,24 +1363,40 @@ mod tests {
         let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, SRGB);
         let frame = SidebarFrame::native(400, 300);
         let mut surface = SidebarSurface::new(&gpu.device, &gpu.queue, SRGB, &batch, frame);
-        let picture = |stream, minimap, housing| SidebarPicture {
+        let picture = |stream, minimap, housing, outline, outline_on_minimap| SidebarPicture {
             streams: vec![stream],
             textures: Vec::new(),
             radar: [minimap, housing],
+            outline,
+            outline_on_minimap,
             text_in_surface: true,
         };
-        for (stream, minimap, housing, redraw) in [
-            (1, 1, 1, SidebarRedraw::Whole),
-            (1, 1, 1, SidebarRedraw::Nothing),
-            (1, 2, 1, SidebarRedraw::Minimap),
-            (1, 2, 2, SidebarRedraw::Whole),
-            (2, 3, 2, SidebarRedraw::Whole),
+        surface.write_cameras(&gpu.queue, batch.ui_camera_uniform());
+        for (stream, minimap, housing, outline, on_minimap, redraw) in [
+            (1, 1, 1, 1, true, SidebarRedraw::Whole),
+            (1, 1, 1, 1, true, SidebarRedraw::Nothing),
+            (1, 2, 1, 1, true, SidebarRedraw::Minimap),
+            (1, 2, 1, 2, true, SidebarRedraw::Minimap),
+            (1, 2, 1, 3, false, SidebarRedraw::Whole),
+            (1, 2, 1, 4, false, SidebarRedraw::Whole),
+            (1, 2, 2, 4, false, SidebarRedraw::Whole),
+            (2, 3, 2, 4, false, SidebarRedraw::Whole),
         ] {
             assert_eq!(
-                surface.redraw_for(picture(stream, minimap, housing)),
+                surface.redraw_for(picture(stream, minimap, housing, outline, on_minimap)),
                 redraw
             );
         }
+        // The camera's own scroll moves nothing on the surface.
+        let scrolled = CameraUniform {
+            camera_pos: [50.0, 25.0],
+            ..batch.ui_camera_uniform()
+        };
+        surface.write_cameras(&gpu.queue, scrolled);
+        assert_eq!(
+            surface.redraw_for(picture(2, 3, 2, 4, false)),
+            SidebarRedraw::Nothing
+        );
 
         let origin = surface.column_camera.camera_pos;
         let quad = |x, y| crate::render::batch::SpriteInstance {

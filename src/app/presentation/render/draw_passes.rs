@@ -10,7 +10,7 @@ use crate::app::AppState;
 use crate::app::presentation::instances::{CellBodyAtlas, CellBodyDraw};
 use crate::app::presentation::sidebar_render::{begin_main_load_pass, begin_main_pass};
 use crate::app::presentation::sidebar_surface::{
-    SIDEBAR_STREAMS, SidebarPart, SidebarPicture, SidebarRedraw,
+    SIDEBAR_STREAMS, SidebarPart, SidebarPicture, SidebarRedraw, TEXT_LAYERS, VIEWPORT_OUTLINE,
 };
 use crate::app::presentation::ui_overlays::software_cursor_texture;
 use crate::render::batch::{BatchRenderer, BatchTexture, InstanceBufferPool, SpriteInstance};
@@ -20,7 +20,7 @@ use crate::render::tactical_draw_plan::RenderZPolicy;
 use crate::render::tile_atlas::TileAtlas;
 
 use super::merge_passes;
-use super::terrain_picture::{TERRAIN_STREAMS, TerrainInputs, TerrainStep};
+use super::terrain_picture::{GroundFrame, TERRAIN_STREAMS, TerrainInputs, TerrainStep};
 
 /// One isolated pass for the Phobos placement preview artwork. The texture is
 /// owned by a `RefCell` cache, so the pass must end inside this call and the
@@ -48,6 +48,10 @@ fn draw_placement_ghost_pass(
 /// depth values that match the uploaded GPU buffers.
 pub(super) struct DrawPassData<'a> {
     pub cell_body_draws: &'a [CellBodyDraw],
+    /// The ground's instances, as uploaded to the `terrain` and `smudge`
+    /// streams.
+    pub terrain: &'a [SpriteInstance],
+    pub smudge: &'a [SpriteInstance],
     pub bridge_shadows: &'a [SpriteInstance],
     pub object_layers: &'a [super::draw_plan_lowering::ObjectLayerPass; 5],
     pub fogged_objects: &'a super::draw_plan_lowering::ObjectLayerPass,
@@ -61,6 +65,8 @@ pub(super) struct DrawPassData<'a> {
     pub sidebar_gclock: &'a [SpriteInstance],
     /// The quad that shows the minimap's composition, if any.
     pub minimap: &'a [SpriteInstance],
+    /// The radar's viewport outline over it.
+    pub viewport_rect: &'a [SpriteInstance],
     /// `SidebarInstances::smooth_chrome` and `smooth_command_bar`.
     pub smooth_chrome: bool,
     pub smooth_command_bar: bool,
@@ -119,9 +125,15 @@ fn draw_sidebar_surface(
     let minimap = presentation.minimap.as_ref();
     let radar_anim = presentation.radar_anim.as_ref();
     let darken = chrome.and_then(|atlas| atlas.darken.as_ref());
+    let outline_on_minimap = data
+        .minimap
+        .first()
+        .and_then(|quad| surface.column_area(quad))
+        .is_some_and(|area| surface.quads_within(area, data.viewport_rect));
     let redraw = surface.redraw_for(SidebarPicture {
         streams: SIDEBAR_STREAMS
             .iter()
+            .filter(|stream| text_in_surface || !TEXT_LAYERS.contains(stream))
             .map(|stream| pool.generation(stream))
             .collect(),
         textures: [
@@ -150,6 +162,8 @@ fn draw_sidebar_surface(
             minimap.map_or(0, |m| m.picture_generation()),
             radar_anim.map_or(0, |ra| ra.picture_generation()),
         ],
+        outline: pool.generation(VIEWPORT_OUTLINE),
+        outline_on_minimap,
         text_in_surface,
     });
     let surface = &*surface;
@@ -381,6 +395,11 @@ pub(super) fn dispatch_draw_passes(
         .world_zoom_pass
         .as_ref()
         .map_or([x, y, w, h], |zoom| zoom.world_clip([x, y, w, h]));
+    let ground = GroundFrame {
+        terrain: data.terrain,
+        smudge: data.smudge,
+        a_plane: state.match_state.match_presentation.shroud_buffer.as_ref(),
+    };
     let terrain_step = {
         let presentation = &state.match_state.match_presentation;
         let batch = &state.renderer.batch_renderer;
@@ -412,17 +431,33 @@ pub(super) fn dispatch_draw_passes(
         state
             .renderer
             .terrain_picture
-            .step(&state.renderer.gpu.device, inputs)
+            .step(&state.renderer.gpu.device, inputs, ground)
     };
-    let mut pass = if terrain_step == TerrainStep::Restore {
-        state.renderer.terrain_picture.restore(encoder);
-        begin_main_load_pass(encoder, view, &world_depth)
-    } else {
-        begin_main_pass(encoder, view, &world_depth)
+    let mut pass = match terrain_step {
+        TerrainStep::Restore => {
+            state.renderer.terrain_picture.restore(encoder);
+            begin_main_load_pass(encoder, view, &world_depth)
+        }
+        TerrainStep::Shift(shift) => {
+            // The clear leaves the strips as a full draw would start them.
+            drop(begin_main_pass(encoder, view, &world_depth));
+            state.renderer.terrain_picture.shift(
+                &state.renderer.gpu.queue,
+                encoder,
+                &world_depth,
+                shift,
+            );
+            begin_main_load_pass(encoder, view, &world_depth)
+        }
+        TerrainStep::Draw { .. } => begin_main_pass(encoder, view, &world_depth),
     };
     pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
 
-    if terrain_step != TerrainStep::Restore {
+    for [x, y, width, height] in terrain_step.ground_areas([tac_x, tac_y, tac_w, tac_h]) {
+        if width == 0 || height == 0 {
+            continue;
+        }
+        pass.set_scissor_rect(x, y, width, height);
         // --- Step 1: Terrain (Z-depth pipeline for per-pixel depth from TMP Z-data) ---
         draw_pooled_zdepth(
             &mut pass,
@@ -445,6 +480,21 @@ pub(super) fn dispatch_draw_passes(
             state.match_state.match_presentation.overlay_atlas.as_ref(),
             "smudge",
         );
+    }
+    if terrain_step != TerrainStep::Restore {
+        pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+        if let TerrainStep::Draw {
+            keep_ground: true, ..
+        } = terrain_step
+        {
+            drop(pass);
+            state
+                .renderer
+                .terrain_picture
+                .keep_ground(&state.renderer.gpu.device, encoder, ground);
+            pass = begin_main_load_pass(encoder, view, &world_depth);
+            pass.set_scissor_rect(tac_x, tac_y, tac_w, tac_h);
+        }
 
         // --- Step 2: The cell body sweep (SHP depth read + write) ---
         // High bridges, walls and ordinary overlays are 0x4E00 CC_Draw_Shape
@@ -463,7 +513,10 @@ pub(super) fn dispatch_draw_passes(
             data.cell_body_draws,
         );
     }
-    if terrain_step == TerrainStep::DrawAndKeep {
+    if let TerrainStep::Draw {
+        keep_whole: true, ..
+    } = terrain_step
+    {
         drop(pass);
         state
             .renderer
