@@ -832,9 +832,6 @@ pub(crate) fn render_multiplayer_setup(
         overlay,
         ShellFrameCursor::Visible,
     )?;
-    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-        ui.statics.commit_presented();
-    }
     state.platform.window.request_redraw();
     Ok(())
 }
