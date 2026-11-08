@@ -125,6 +125,8 @@ de estas opciones:
 Los ajustes de sonido, gráficos y controles se guardan en `VERA.INI`. Las reglas de juego
 provienen de los ajustes del lobby, los mods o los mapas.
 
+La [guía de modding](docs/modding.md) explica cómo crear mods propios.
+
 ## Apoya el proyecto
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Apoya a VERA20K con PayPal" height="23"></a>
