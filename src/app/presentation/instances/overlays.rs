@@ -1066,7 +1066,11 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
             input.house_colors,
         );
         let key = rubble_key.unwrap_or_else(|| {
-            OverlaySpriteKey::wall(name.to_owned(), i32::from(render_frame), wall_house_color)
+            if overlay_flags.is_some_and(|flags| flags.tiberium) {
+                crate::render::overlay_atlas::tiberium_image_key(name, i32::from(render_frame))
+            } else {
+                OverlaySpriteKey::wall(name.to_owned(), i32::from(render_frame), wall_house_color)
+            }
         });
         let remapped_fallback = (key.house_color != NO_REMAP)
             .then(|| OverlaySpriteKey::new(key.name.clone(), key.frame));
