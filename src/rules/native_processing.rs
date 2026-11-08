@@ -3848,7 +3848,9 @@ pub(crate) struct AresGeneralRules {
     can_make_stuff_up: bool,
     /// +0x49 `EnemyWrench` (true).
     enemy_wrench: bool,
-    /// +0x4C `TeamRetaliate` (false).
+    /// +0x4C `TeamRetaliate` (false): a computer team takes its attacker
+    /// as its focus (TeamClass_AttackedBy_Retaliate 1003A180, hook
+    /// 0x6EB432). Residual.
     team_retaliate: bool,
     /// +0x7C..+0x8C `HunterSeekerDetonateProximity`, `DescendProximity`,
     /// `AscentSpeed`, `DescentSpeed`, `EmergeSpeed` (Valueable<int>, 0).
@@ -3948,12 +3950,6 @@ impl AresGeneralRules {
     /// Ares.dll 10049FE0, hook 0x6F526C).
     pub(crate) fn enemy_wrench(&self) -> bool {
         self.enemy_wrench
-    }
-
-    /// `TeamRetaliate`: a computer team takes its attacker as its focus
-    /// (TeamClass_AttackedBy_Retaliate, Ares.dll 1003A180, hook 0x6EB432).
-    pub(crate) fn team_retaliate(&self) -> bool {
-        self.team_retaliate
     }
 
     /// `DiskLaserAnimEnabled`: a disk laser's hit plays the warhead's damage

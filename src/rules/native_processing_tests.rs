@@ -4196,7 +4196,7 @@ fn ares_palette_requests_use_retained_names_and_resolve_each_loaded_group() {
 fn ares_general_rules_read_before_and_after_type_data() {
     use crate::rules::ruleset::RuleSet;
     let defaults = AresGeneralRules::default();
-    assert!(defaults.enemy_wrench() && !defaults.team_retaliate());
+    assert!(defaults.enemy_wrench() && !defaults.team_retaliate);
     assert!(!defaults.can_make_stuff_up && !defaults.units_unsellable);
     assert_eq!(defaults.ai_friendly_distance(8), 8);
     assert_eq!(defaults.start_in_multiplayer_unit_cost(), None);
@@ -4217,7 +4217,7 @@ fn ares_general_rules_read_before_and_after_type_data() {
     let rules = RuleSet::from_rules_layers(&layers).unwrap();
     let general = rules.ares_general();
     assert!(general.can_make_stuff_up && general.units_unsellable);
-    assert!(!general.team_retaliate() && !general.enemy_wrench());
+    assert!(!general.team_retaliate && !general.enemy_wrench());
     assert_eq!(general.message_silos_needed, "MSG:Silos");
     assert!(general.disk_laser_anim_enabled());
     assert_eq!(general.start_in_multiplayer_unit_cost(), Some(250));
