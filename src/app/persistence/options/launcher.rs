@@ -108,6 +108,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     /// Move the window to the picked screen, or hand it back to the system.
     fn set_display(&mut self, display: DisplayTarget);
     fn set_full_screen(&mut self, full_screen: bool);
+    /// Put the window back as a launch opens it.
+    fn restore_launch_window(&mut self);
     fn store_original_shape(&mut self, original_shape: bool);
     fn store_yr_original_style(&mut self, yr_original_style: bool);
     fn store_render_interpolation(&mut self, enabled: bool);
@@ -164,6 +166,7 @@ pub(crate) fn dispatch_launcher_preview_event(
         LauncherOptionsEvent::FullScreenChanged(full_screen) => {
             operations.set_full_screen(full_screen);
         }
+        LauncherOptionsEvent::SetWindowSizeRequested => operations.restore_launch_window(),
         LauncherOptionsEvent::OriginalShapeChanged(original_shape) => {
             operations.store_original_shape(original_shape);
         }

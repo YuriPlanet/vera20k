@@ -398,7 +398,7 @@ fn rects_intersect(a: RectPx, b: RectPx) -> bool {
         && a.y + a.h > b.y
 }
 
-fn text_covered_by_overlay(rect: RectPx, overlays: &[RectPx]) -> bool {
+pub(super) fn text_covered_by_overlay(rect: RectPx, overlays: &[RectPx]) -> bool {
     overlays
         .iter()
         .any(|overlay| rects_intersect(rect, *overlay))

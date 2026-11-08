@@ -1,6 +1,7 @@
 //! VERA's Esc menu: Esc on a front-end page asks, over that page, for Options,
 //! Exit Game or Cancel, and offers Full Screen, Performance Stats and Language
-//! from the Options page, which take effect at once.
+//! from the Options page and a Set Window Size button, all of which take
+//! effect at once.
 //!
 //! gamemd has no such dialog: most of its shell dialogs ignore IDCANCEL, and
 //! Skirmish and the network rooms take it as Back. The menu is made of retail

@@ -13,14 +13,15 @@ use super::{
     CUSTOM_END_GAME_SCORE_HELP, CUSTOM_END_GAME_SCORE_LABEL, Category, DETAILED_EVA_TEXT_HELP,
     DETAILED_EVA_TEXT_LABEL, DEVELOPER_OPTIONS_LABEL, DISPLAY_AUTO_LABEL, DISPLAY_HELP,
     DISPLAY_LABEL, DisplayTarget, FULL_SCREEN_HELP, FULL_SCREEN_LABEL, HAS_CHECK_FOR_UPDATES,
-    HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP, HD_RADAR_LABEL, HEALTH_BARS_HELP,
-    HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP, HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode,
-    LANGUAGE_HELP, LANGUAGE_LABEL, LOCK_CURSOR_HELP, LOCK_CURSOR_LABEL, LauncherButton,
-    LauncherCheckboxId, LauncherComboId, LauncherCue, LauncherOptionsEvent, LauncherParentResult,
-    LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP, MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP,
-    ORIGINAL_SHAPE_LABEL, OptionsDialogState, PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL,
-    PhysicalControlFrame, RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL,
-    RIGHT_CLICK_ORDERS_HELP, RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL,
+    HAS_SET_WINDOW_SIZE, HD_MAP_PREVIEWS_HELP, HD_MAP_PREVIEWS_LABEL, HD_RADAR_HELP,
+    HD_RADAR_LABEL, HEALTH_BARS_HELP, HEALTH_BARS_LABEL, HOUSE_COLOR_STRENGTH_HELP,
+    HOUSE_COLOR_STRENGTH_LABEL, HealthBarMode, LANGUAGE_HELP, LANGUAGE_LABEL, LOCK_CURSOR_HELP,
+    LOCK_CURSOR_LABEL, LauncherButton, LauncherCheckboxId, LauncherComboId, LauncherCue,
+    LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, MOUSE_WHEEL_ZOOM_HELP,
+    MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
+    PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame,
+    RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP,
+    RIGHT_CLICK_ORDERS_LABEL, SET_WINDOW_SIZE_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL,
     SHOW_STRING_KEYS_HELP, SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP,
     SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP,
     SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize, TERRAIN_DEFORMATION_HELP,
@@ -158,6 +159,10 @@ const BOX_W: i32 = 160;
 const ESC_MENU_X: i32 = 40;
 const ESC_MENU_Y: i32 = 40;
 const ESC_MENU_LIST_Y: i32 = ESC_MENU_Y + 2 * BOX_PITCH + 3;
+/// Set Window Size's row is shaped like a list's: a caption, then the button
+/// where a list's face would be.
+const ESC_MENU_SIZE_Y: i32 = ESC_MENU_LIST_Y + LIST_PITCH;
+const ESC_MENU_BUTTON_Y: i32 = ESC_MENU_SIZE_Y + 10;
 
 /// A caption the page paints, by what it names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -173,6 +178,8 @@ pub(crate) enum PageLabel {
     Step(LauncherTrackbarId),
     /// Static `GUI:Blank` at the status line's template place.
     Blank,
+    /// The Esc menu's caption over its button that holds the size to set.
+    SetWindowSize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -328,23 +335,36 @@ impl LauncherOptionsLayout {
 
     /// VERA's Esc menu (`app::shell_menu`): a few of the pages' settings where
     /// its `0x121` box would have its text, on that box's own mapping
-    /// (`message_box_layout_on`). The list comes last because it opens over
-    /// what lies below it.
+    /// (`message_box_layout_on`). The list comes after the boxes because it
+    /// opens over what lies below it: the Set Window Size row, its button the
+    /// size of the Developer page's Check for Updates.
     pub(crate) fn esc_menu(width: i32, height: i32, scale: ShellScale) -> Self {
         let dialog = message_box_base(ModalKind::ThreeButton, width, height, scale).dialog;
         let px = |rect: RectPx| scale.scale_rect(rect.translate(dialog.x, dialog.y));
         let dlu = |x, y, w, h| px(dlu_rect(x, y, w, h));
         let caption = dlu_rect(ESC_MENU_X, ESC_MENU_LIST_Y, 0, 0);
         let nothing = RectPx::new(0, 0, 0, 0);
+        let mut labels = vec![(
+            dlu(ESC_MENU_X, ESC_MENU_LIST_Y, 120, 10),
+            PageLabel::List(LauncherComboId::Language),
+        )];
+        let mut buttons = Vec::new();
+        if HAS_SET_WINDOW_SIZE {
+            labels.push((
+                dlu(ESC_MENU_X, ESC_MENU_SIZE_Y, 120, 10),
+                PageLabel::SetWindowSize,
+            ));
+            buttons.push((
+                LauncherButton::SetWindowSize,
+                dlu(ESC_MENU_X, ESC_MENU_BUTTON_Y, 83, 15),
+            ));
+        }
         Self {
             category: Category::ALL[0],
             title: nothing,
             warning: nothing,
             status_help: nothing,
-            labels: vec![(
-                dlu(ESC_MENU_X, ESC_MENU_LIST_Y, 120, 10),
-                PageLabel::List(LauncherComboId::Language),
-            )],
+            labels,
             combos: vec![(
                 LauncherComboId::Language,
                 px(RectPx::new(caption.x, caption.y + 16, 180, COMBO_FACE_H)),
@@ -360,7 +380,7 @@ impl LauncherOptionsLayout {
                     dlu(ESC_MENU_X, ESC_MENU_Y + BOX_PITCH, BOX_W, 10),
                 ),
             ],
-            buttons: Vec::new(),
+            buttons,
             scale,
             screen: (width.max(0) as u32, height.max(0) as u32),
             battle_frame: (width.max(0) as u32, height.max(0) as u32),
@@ -502,6 +522,7 @@ impl OptionsDialogState {
                 PageLabel::Slider(id) => (self.slider_caption(id), Left),
                 PageLabel::Step(id) => (Cow::Borrowed(self.slider_step(id)), Right),
                 PageLabel::Blank => (Cow::Borrowed(self.labels.blank.as_str()), Left),
+                PageLabel::SetWindowSize => (Cow::Owned(tr(SET_WINDOW_SIZE_LABEL)), Left),
             };
             LauncherShellLabel {
                 rect,
@@ -592,6 +613,10 @@ impl OptionsDialogState {
             LauncherButton::Exit(LauncherParentResult::Terminal) => Cow::Borrowed(""),
             LauncherButton::Category(category) => self.shell_category_label(category),
             LauncherButton::CheckForUpdates => Cow::Owned(tr(CHECK_FOR_UPDATES_LABEL)),
+            LauncherButton::SetWindowSize => {
+                let (width, height) = self.launch_window_size;
+                Cow::Owned(format!("{width}x{height}"))
+            }
         }
     }
 
@@ -821,6 +846,8 @@ impl OptionsDialogState {
                 LauncherButton::CheckForUpdates => {
                     return Some(LauncherStatusHelp::Vera(CHECK_FOR_UPDATES_HELP));
                 }
+                // The Esc menu has no status line.
+                LauncherButton::SetWindowSize => return None,
                 LauncherButton::Exit(LauncherParentResult::Keyboard) => KEYBOARD_BUTTON,
                 LauncherButton::Exit(
                     LauncherParentResult::Back | LauncherParentResult::Terminal,
@@ -1039,6 +1066,9 @@ impl OptionsDialogState {
                 LauncherButton::Exit(result) => self.request_result(result),
                 LauncherButton::Category(category) => self.select_category(category),
                 LauncherButton::CheckForUpdates => self.request_update_check(),
+                LauncherButton::SetWindowSize => self
+                    .pending_events
+                    .push(LauncherOptionsEvent::SetWindowSizeRequested),
             }
         }
     }
@@ -1419,7 +1449,8 @@ mod tests {
             state.shell_mouse_down(face.x + 10, face.y + 5, &layout);
             let list = state.shell_popup(&layout).unwrap().rect;
             let boxes = layout.checkboxes.iter().map(|(_, rect)| *rect);
-            for rect in boxes.chain([face, list]) {
+            let buttons = layout.buttons.iter().map(|(_, rect)| *rect);
+            for rect in boxes.chain(buttons).chain([face, list]) {
                 assert!(
                     rect.x >= message_box.dialog.x && rect.x + rect.w <= message_box.ok.x,
                     "{w}x{h}: {rect:?}"
@@ -1439,6 +1470,46 @@ mod tests {
                 ]
             );
         }
+    }
+
+    /// Like the page's other buttons, Set Window Size acts on the release over
+    /// it, and a press dragged off it does nothing.
+    #[test]
+    fn esc_menu_set_window_size_asks_on_release_over_the_button() {
+        if !HAS_SET_WINDOW_SIZE {
+            return;
+        }
+        let mut state = state();
+        let layout = LauncherOptionsLayout::esc_menu(800, 600, ShellScale::RETAIL);
+        let rect = button(&layout, LauncherButton::SetWindowSize);
+        let (x, y) = (rect.x + 2, rect.y + 2);
+        state.shell_mouse_down(x, y, &layout);
+        assert_eq!(
+            state.drain_output().events,
+            [LauncherOptionsEvent::Cue(LauncherCue::MainButton)]
+        );
+        state.shell_mouse_up(x, y - 100, &layout);
+        assert!(state.drain_output().events.is_empty());
+        state.shell_mouse_down(x, y, &layout);
+        state.shell_mouse_up(x, y, &layout);
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::MainButton),
+                LauncherOptionsEvent::SetWindowSizeRequested,
+            ]
+        );
+    }
+
+    /// The button names the size it sets, the one this launch opened at.
+    #[test]
+    fn esc_menu_set_window_size_names_the_launch_size() {
+        let mut state = state();
+        state.set_launch_window_size((640, 480));
+        assert_eq!(
+            state.shell_button_label(LauncherButton::SetWindowSize),
+            "640x480"
+        );
     }
 
     #[test]

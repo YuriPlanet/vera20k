@@ -142,6 +142,14 @@ pub(crate) const HAS_CHECK_FOR_UPDATES: bool =
     !cfg!(all(target_arch = "wasm32", target_os = "unknown"));
 pub(crate) const CHECK_FOR_UPDATES_LABEL: &str = "VERA:CheckForUpdates";
 pub(crate) const CHECK_FOR_UPDATES_HELP: &str = "VERA:CheckForUpdatesHelp";
+/// The Esc menu's Set Window Size button. A browser tab's canvas takes its size
+/// from the page and an Android window fills the screen, so those builds have
+/// none.
+pub(crate) const HAS_SET_WINDOW_SIZE: bool = !cfg!(any(
+    all(target_arch = "wasm32", target_os = "unknown"),
+    target_os = "android"
+));
+pub(crate) const SET_WINDOW_SIZE_LABEL: &str = "VERA:SetWindowSize";
 
 /// A button of the dialog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,6 +160,16 @@ pub(crate) enum LauncherButton {
     Category(Category),
     /// Check for Updates on the Developer page.
     CheckForUpdates,
+    /// The Esc menu's Set Window Size: the window goes back to how a launch opens it.
+    SetWindowSize,
+}
+
+impl LauncherButton {
+    /// Whether it sits among the page's own controls, rather than being one
+    /// of the right-hand column's.
+    pub(crate) const fn on_page(self) -> bool {
+        matches!(self, Self::CheckForUpdates | Self::SetWindowSize)
+    }
 }
 
 /// VERA's battle zoom: the Options combo that took the place of gamemd's
@@ -683,6 +701,8 @@ pub(crate) enum LauncherOptionsEvent {
     /// The Language list's pick, a language tag, applied at once.
     LanguageSelected(String),
     FullScreenChanged(bool),
+    /// The Esc menu's Set Window Size button, applied to the window at once.
+    SetWindowSizeRequested,
     OriginalShapeChanged(bool),
     YrOriginalStyleChanged(bool),
     ShiftQueueChanged(bool),
@@ -900,6 +920,10 @@ pub(crate) struct OptionsDialogState {
     /// use. Set by [`Self::set_languages`]; empty until then.
     languages: Vec<crate::i18n::LanguageChoice>,
     language: String,
+    /// The size this launch opened the window at, which the Esc menu's Set
+    /// Window Size button names. Set by [`Self::set_launch_window_size`]; zero
+    /// until then.
+    launch_window_size: (u32, u32),
     /// The list that is open, if any.
     open_combo: Option<LauncherComboId>,
     launcher_audio_available: bool,
@@ -976,6 +1000,7 @@ impl OptionsDialogState {
             display,
             languages: Vec::new(),
             language: String::new(),
+            launch_window_size: (0, 0),
             open_combo: None,
             launcher_audio_available,
             capture: None,
@@ -995,6 +1020,11 @@ impl OptionsDialogState {
     ) {
         self.languages = languages;
         self.language = language;
+    }
+
+    /// The size this launch opened the window at, width then height.
+    pub(crate) fn set_launch_window_size(&mut self, size: (u32, u32)) {
+        self.launch_window_size = size;
     }
 
     /// After a language change: the retail captions read from the string
