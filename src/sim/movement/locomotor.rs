@@ -208,7 +208,8 @@ impl LocomotorState {
             | LocomotorKind::Walk
             | LocomotorKind::Hover
             | LocomotorKind::Ship
-            | LocomotorKind::Teleport => MovementLayer::Ground,
+            | LocomotorKind::Teleport
+            | LocomotorKind::Tunnel => MovementLayer::Ground,
             LocomotorKind::Fly | LocomotorKind::Jumpjet | LocomotorKind::Rocket => {
                 MovementLayer::Air
             }
@@ -392,6 +393,24 @@ impl LocomotorState {
     pub(crate) fn hover_runtime_mut(&mut self) -> Option<&mut super::hover::HoverRuntime> {
         match (self.kind, &mut self.runtime_payload) {
             (LocomotorKind::Hover, LocomotorRuntimePayload::Hover(runtime)) => Some(runtime),
+            _ => None,
+        }
+    }
+
+    /// The active Tunnel object's state.
+    pub fn tunnel_runtime(&self) -> Option<&super::tunnel_movement::TunnelRuntime> {
+        match (self.kind, &self.runtime_payload) {
+            (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
+            _ => None,
+        }
+    }
+
+    /// The active Tunnel object's state, lent to `world::tunnel_process`.
+    pub(crate) fn tunnel_runtime_mut(
+        &mut self,
+    ) -> Option<&mut super::tunnel_movement::TunnelRuntime> {
+        match (self.kind, &mut self.runtime_payload) {
+            (LocomotorKind::Tunnel, LocomotorRuntimePayload::Tunnel(runtime)) => Some(runtime),
             _ => None,
         }
     }
@@ -777,8 +796,17 @@ impl LocomotorState {
         self.runtime_payload = payload;
     }
 
-    /// The Foot's layer, cached on the active object.
+    /// The Foot's layer, cached on the active object. An active Tunnel
+    /// answers from its State instead (`In_Which_Layer @ 0x0072A1A0`):
+    /// underground while it travels below the cells, else the cached ground
+    /// layer.
     pub(crate) fn layer(&self) -> MovementLayer {
+        if self
+            .tunnel_runtime()
+            .is_some_and(super::tunnel_movement::TunnelRuntime::underground)
+        {
+            return MovementLayer::Underground;
+        }
         self.layer
     }
 

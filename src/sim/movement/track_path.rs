@@ -95,6 +95,16 @@ fn teleport_unit(entity: &GameEntity) -> bool {
             .is_some_and(|loco| loco.active_kind() == LocomotorKind::Teleport)
 }
 
+/// A Unit on a Tunnel locomotor: the Unit setter's Foot tail reaches Tunnel
+/// Move_To (`0x00728AF0`).
+fn tunnel_unit(entity: &GameEntity) -> bool {
+    entity.category() == EntityCategory::Unit
+        && entity
+            .locomotor
+            .as_ref()
+            .is_some_and(|loco| loco.active_kind() == LocomotorKind::Tunnel)
+}
+
 /// A Unit on a Jumpjet locomotor: its null destination reaches the Jumpjet's
 /// `Stop_Moving` through the same Unit setter. The Foot tail then calls
 /// `JumpjetLocomotionClass::Move_To` (`0x0054B1C0`) or `Stop_Moving` (`0x0054B4D0`).
@@ -773,15 +783,18 @@ impl Simulation {
     /// - The Foot tail (0x4D94B0) writes NavCom and calls the active
     ///   locomotor's Move_To — Drive/Ship ([`set_destination_internal_coord`]),
     ///   Teleport ([`teleport_move_to`]), Jumpjet
-    ///   ([`Self::jumpjet_move_to`]), Hover ([`hover_move_to`]) or Walk
-    ///   ([`set_walk_destination_coord`]) — unless Foot+0x6AC skips it once.
-    /// - RESIDUALS, both dormant on retail data: the `MovementZone=Subterannean`
+    ///   ([`Self::jumpjet_move_to`]), Hover ([`hover_move_to`]), Walk
+    ///   ([`set_walk_destination_coord`]) or Tunnel
+    ///   ([`Self::tunnel_move_to`]) — unless Foot+0x6AC skips it once.
+    /// - A surfacing Tunnel queues the destination and holds its own Cell
+    ///   (`0x007422F7`), and the Tunnel arm ([`Self::unit_tunnel_arm`]) may
+    ///   put a Drive over the Tunnel for a short trip.
+    /// - RESIDUAL, dormant on retail data: the `MovementZone=Subterannean`
     ///   arm (`0x00742097..0x007422D7`, TechnoType `+0xD2C`, which
     ///   TechnoTypeClass::ReadINI sets at `0x0071608A`), whose planner
-    ///   `0x007447B0` fills the NavQueue and heads for its first post, and the
-    ///   Tunnel-locomotor arm (`0x007427C0..0x00742C14`, CLSID `0x007E9A50`),
-    ///   which tries a ground path (`0x00746000`) before digging. No retail
-    ///   rules, mode or map file names that zone or that locomotor.
+    ///   `0x007447B0` fills the NavQueue and heads for its first post. No
+    ///   retail rules, mode or map file names that zone. A mod Tunnel unit with
+    ///   that zone takes the ordinary arm instead.
     ///
     /// Returns false for a receiver without a represented Move_To or a
     /// refused destination. Foot4D9628 calls the destination's +4C coordinate
@@ -810,7 +823,8 @@ impl Simulation {
             || hover
             || jumpjet
             || walk_unit(actor)
-            || teleport_unit(actor))
+            || teleport_unit(actor)
+            || tunnel_unit(actor))
             || !super::can_accept_destination(actor)
         {
             return false;
@@ -1063,6 +1077,26 @@ impl Simulation {
         {
             unit.navigation.clear_nav_queue();
         }
+        // 0x007422F7..0x00742395: after that clear, a locomotor that is
+        // surfacing (vt+0x98, Tunnel `0x0072A1E0`) queues the destination at
+        // the NavQueue's front and takes the Cell under its Location instead.
+        if clear_queue
+            && let Some(requested) = destination
+            && let Some(unit) = self.substrate.entities.get_mut(id)
+            && unit
+                .locomotor
+                .as_ref()
+                .and_then(|loco| loco.tunnel_runtime())
+                .is_some_and(super::tunnel_movement::TunnelRuntime::is_surfacing)
+        {
+            unit.navigation.push_nav_queue_front(requested);
+            let location =
+                super::ground_pose::object_location(unit, self.resolved_terrain.as_ref());
+            destination = Some(NavTargetRef::Cell {
+                rx: (location.x / 256) as u16,
+                ry: (location.y / 256) as u16,
+            });
+        }
         // Native runs this UnitRepair/Bunker tail (`0x00742C14..0x00742D3F`) after
         // the Teleporter arm (`0x007423CD..0x00742C14`), which VERA runs
         // below. The order changes nothing the arm decides: its one
@@ -1167,6 +1201,7 @@ impl Simulation {
             _ => None,
         };
         let skip_move_to = teleporter && self.unit_teleporter_arm(id, requested_cell, rules);
+        self.unit_tunnel_arm(id, requested, rules);
         // UnitClass::Set_Destination 0x00741970: successful UnitRepair/Bunker
         // docking jumps from 0x00742C8E/0x00742D08 to Foot's setter at
         // 0x00742D09 and returns before the WeaponsFactory arm (0x00742D46).
@@ -1253,6 +1288,18 @@ impl Simulation {
                     let coord = coord.expect("accepted Move_To captures target +4C");
                     super::navcom::set_destination_internal_coord(
                         actor, requested, coord, terrain, frame,
+                    );
+                    true
+                }
+                Some(LocomotorKind::Tunnel) => {
+                    super::navcom::publish_nav_com(actor, requested);
+                    let coord = coord.expect("accepted Move_To captures target +4C");
+                    self.tunnel_move_to(
+                        id,
+                        coord,
+                        rules,
+                        frame_effects.overlay_registry(),
+                        frame_effects,
                     );
                     true
                 }

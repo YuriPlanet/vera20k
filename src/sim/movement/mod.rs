@@ -114,6 +114,10 @@ mod track_host;
 mod track_path;
 pub(crate) use track_path::SetterForceReassign;
 pub mod track_process;
+pub mod tunnel_movement;
+mod tunnel_process;
+#[cfg(test)]
+mod tunnel_tests;
 mod track_speed;
 pub(crate) mod track_turn;
 mod walk_admission;

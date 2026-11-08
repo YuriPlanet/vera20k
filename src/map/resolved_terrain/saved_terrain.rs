@@ -296,6 +296,7 @@ impl SavedTerrainTemplate {
             deformation_catalog: None,
             deformation_enabled: false,
             bridge_recalc_catalog: None,
+            burrow_denied_tiles: Default::default(),
             allocation_caches: Default::default(),
         })
     }
@@ -401,6 +402,11 @@ impl ResolvedTerrainGrid {
         self.dummy_accepts_smudge =
             theater.is_some_and(|td| current_tile_permissions(&td.lookup, 0xffff).0);
         self.high_bridge_rim_tiles = theater.map(|td| td.high_bridge_rim_tiles);
+        self.burrow_denied_tiles = theater.map_or_else(Arc::default, |td| {
+            (0..td.lookup.len())
+                .map(|tile| !td.lookup.allows_burrowing(tile as u16))
+                .collect()
+        });
         self.bridge_set_start = theater.and_then(|td| {
             td.bridge_set
                 .and_then(|set| td.lookup.bounds().get(usize::from(set)))

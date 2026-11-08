@@ -10384,6 +10384,10 @@ impl RulesPassProcessor {
         self.rules_color_add_selectors.read_pass(section);
         for key in ["DropPodPuff", "VeinAttack", "Dig", "AtmosphereEntry"] {
             let resolved = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
+            if key == "Dig" {
+                self.rules_type_references
+                    .read_pointer(key, resolved.clone());
+            }
             // DropPodPuff (Rules+0x4C) and AtmosphereEntry (+0x354), for the
             // Ares DropPod locomotor (`DropPodLocomotorRules`).
             #[cfg(feature = "ares")]

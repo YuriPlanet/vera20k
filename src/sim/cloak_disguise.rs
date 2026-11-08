@@ -170,6 +170,12 @@ pub struct VisualCharacterQuery {
 }
 
 impl VisualCharacterQuery {
+    /// The call's first argument: the sensor queries pass true, the screen's
+    /// draw false.
+    pub(crate) const fn forced(&self) -> bool {
+        self.force_sensor
+    }
+
     /// Screen `(0, NULL)` call; alliances must be true in both directions.
     pub const fn screen(
         graphical_client: bool,

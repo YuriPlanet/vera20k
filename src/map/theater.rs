@@ -344,6 +344,10 @@ pub struct TilesetLookup {
     /// Per-tileset AllowTiberium= flag — parsed from `[TileSetNNNN] AllowTiberium=`.
     /// Default `false`. Tiberium/ore only places on opt-in in-range tile types.
     allow_tiberium_flags: Vec<bool>,
+    /// Per-tileset `AllowBurrowing=`: ReadBool at `0x00546177` over the
+    /// default true, stored on each tile type of the set. CellClass's burrow
+    /// test (`0x00486FF0`) refuses a cell whose tile type clears it.
+    allow_burrowing_flags: Vec<bool>,
     /// Per-tileset IsometricTileTypeClass+0x2E1 (`ShadowCaster` with a
     /// nonzero `ShadowTiles`); see [`TilesetLookup::casts_tile_shadow`].
     shadow_caster_flags: Vec<bool>,
@@ -475,6 +479,16 @@ impl TilesetLookup {
             .unwrap_or(false)
     }
 
+    /// Whether a tile_id's tile type allows burrowing (`AllowBurrowing=`,
+    /// default true). Out-of-range tile ids allow it, as CellClass
+    /// `0x00486FF0` skips the test for an index outside the tile array.
+    pub fn allows_burrowing(&self, tile_id: u16) -> bool {
+        self.tileset_index(tile_id)
+            .and_then(|idx| self.allow_burrowing_flags.get(usize::from(idx)))
+            .copied()
+            .unwrap_or(true)
+    }
+
     /// IsometricTileTypeClass+0x2E1, the gate of the tile-shadow draw
     /// (CellClass::DrawTileShadow `0x004802A0`) and of the shadow-cell offsets
     /// RecalcAttributes applies (GetShadowCellOffsets `0x00547C80`, called at
@@ -548,6 +562,7 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
     let mut set_names: Vec<String> = Vec::new();
     let mut morphable_flags: Vec<bool> = Vec::new();
     let mut allow_tiberium_flags: Vec<bool> = Vec::new();
+    let mut allow_burrowing_flags: Vec<bool> = Vec::new();
     let mut shadow_caster_flags: Vec<bool> = Vec::new();
     let mut tile_anims: Vec<Option<TileAnimAttachment>> = Vec::new();
     let mut legacy_tile_index_exceptions = Vec::new();
@@ -602,6 +617,7 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
         morphable_flags.push(morphable);
         let allow_tiberium: bool = section.read_bool("AllowTiberium", false);
         allow_tiberium_flags.push(allow_tiberium);
+        allow_burrowing_flags.push(section.read_bool("AllowBurrowing", true));
         // ReadBool `0x00546204` (default false); only a set ShadowCaster reads
         // ShadowTiles (ReadInt `0x00546248`, default 0). Each tile stores
         // +0x2E1 only when both are nonzero (`0x005464A6`, `0x00546AF8`). The
@@ -690,6 +706,7 @@ fn parse_tileset_sections(ini: &IniFile, extension: &str) -> Result<TilesetLooku
         set_names,
         morphable_flags,
         allow_tiberium_flags,
+        allow_burrowing_flags,
         shadow_caster_flags,
         tile_anims,
         legacy_tile_index_exceptions,

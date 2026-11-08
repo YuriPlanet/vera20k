@@ -77,8 +77,11 @@ pub(super) fn navigation_coordinate(
             // see tools/spatial_oracle/foot_bridge_layer.{json,md}.
             Ok(head_or_current(stored_head(entity), current))
         }
-        // Fly/Rocket/Teleport share +18/55ACA0: copy linked Object+9C.
-        LocomotorKind::Teleport | LocomotorKind::Fly | LocomotorKind::Rocket => Ok(current),
+        // Fly/Rocket/Teleport/Tunnel share +18/55ACA0: copy linked Object+9C.
+        LocomotorKind::Teleport
+        | LocomotorKind::Fly
+        | LocomotorKind::Rocket
+        | LocomotorKind::Tunnel => Ok(current),
         LocomotorKind::Jumpjet => {
             let state = loco
                 .jumpjet_runtime()

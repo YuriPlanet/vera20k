@@ -622,8 +622,10 @@ impl Simulation {
     /// preferred/scan cells and0 for offered/table cells; Object5F4F3C's
     /// ordinary Unlimbo gate uses0. Foot4D9C10 forwards1 to the installed
     /// locomotor's +1C, whose eight active retail receivers are all the
-    /// side-effect-free constant-zero55ABF0 leaf. The class owner already
-    /// seeds its result0, so both modes have identical numeric behavior.
+    /// side-effect-free constant-zero55ABF0 leaf. Tunnel's (`0x0072A090`)
+    /// answers 7 for a cell that refuses burrowing
+    /// ([`Simulation::cell_allows_burrowing`]), and the Unit receiver returns
+    /// that 7 at once (`0x0073F3B3..0x0073F3CD`); Infantry's does not ask.
     /// Native48-call proof: tools/spatial_oracle/foot_locomotor_entry.*;
     /// bounded factory/depot modes: basic-factory-exit-geometry-research.
     ///
@@ -636,7 +638,7 @@ impl Simulation {
         id: u64,
         cell: (i16, i16),
         args: crate::sim::movement::infantry_entry::InfantryEntryArgs,
-        _mode: crate::sim::movement::infantry_entry::EntryQueryMode,
+        mode: crate::sim::movement::infantry_entry::EntryQueryMode,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> Result<u8, String> {
@@ -647,6 +649,16 @@ impl Simulation {
             .ok_or("Can_Enter_Cell of a retired mover")?;
         if mover.category() == EntityCategory::Aircraft {
             return Ok(self.aircraft_can_enter(id, cell));
+        }
+        if mode == crate::sim::movement::infantry_entry::EntryQueryMode::CheckLocomotor
+            && mover.category() == EntityCategory::Unit
+            && mover
+                .locomotor
+                .as_ref()
+                .is_some_and(|locomotor| locomotor.tunnel_runtime().is_some())
+            && !self.cell_allows_burrowing(cell)
+        {
+            return Ok(7);
         }
         let terrain = self
             .resolved_terrain

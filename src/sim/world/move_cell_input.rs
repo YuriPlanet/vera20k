@@ -1368,9 +1368,9 @@ fn grounded_coordinate(cells: &NativeCellQuery<'_>, x: i32, y: i32) -> Result<Dr
 /// tools/spatial_oracle/walk_move_admission (Infantry and Unit/Drive
 /// receivers, original input action supplied).
 ///
-/// FNPC's tenth argument (`0x004DE3DB..0x004DE3F9`: 1 for a Type+D2C mover
-/// at or above the ground, else 0) is not passed: no retail type is
-/// Subterranean.
+/// FNPC's burrowing-obstacle argument (`0x004DE3DB..0x004DE3F9`: 1 for a
+/// Type+D2C mover below the ground, `GetHeight < 0`, else 0) is not passed:
+/// no retail type is Subterranean.
 fn resolve_foot_cell_click(
     map: &ClickMap<'_>,
     click: &FootCellClick,

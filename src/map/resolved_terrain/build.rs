@@ -276,6 +276,7 @@ impl ResolvedTerrainGrid {
                 deformation_catalog: None,
                 deformation_enabled: false,
                 bridge_recalc_catalog: None,
+                burrow_denied_tiles: Default::default(),
                 allocation_caches: Default::default(),
             };
             grid.bind_asset_catalogs(
@@ -985,6 +986,7 @@ impl ResolvedTerrainGrid {
             deformation_catalog: None,
             deformation_enabled: false,
             bridge_recalc_catalog: None,
+            burrow_denied_tiles: Default::default(),
             allocation_caches: Default::default(),
         };
         grid.bind_asset_catalogs(

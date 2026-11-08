@@ -856,6 +856,10 @@ pub struct ResolvedTerrainGrid {
     /// Immutable pristine/policy inputs, shared by derived clones and snapshot
     /// templates. Mutable terrain, bounds and overlays remain separate owners.
     bridge_recalc_catalog: Option<Arc<BridgeRecalcCatalog>>,
+    /// The theater's tile types that refuse burrowing (`AllowBurrowing=no`),
+    /// by tile id; bound with the other theater catalogs. Empty allows every
+    /// tile.
+    burrow_denied_tiles: Arc<[bool]>,
     /// Derived from the allocation; see [`Self::allocated_cell_order`] and
     /// [`Self::interior_cells`].
     allocation_caches: allocated_order::AllocationCaches,
@@ -1152,6 +1156,7 @@ impl ResolvedTerrainGrid {
             deformation_catalog: None,
             deformation_enabled: false,
             bridge_recalc_catalog: None,
+            burrow_denied_tiles: Arc::default(),
             allocation_caches: Default::default(),
         }
     }
@@ -1531,6 +1536,22 @@ impl ResolvedTerrainGrid {
                 let offset = u32::from(tile_id).checked_sub(u32::from(start))?;
                 (offset < 16).then_some(offset as usize)
             })
+    }
+
+    /// Whether the tile type at `index` refuses burrowing: the
+    /// `AllowBurrowing=` read of CellClass `0x00486FF0`, skipped for an
+    /// index outside the tile array.
+    pub fn tile_denies_burrowing(&self, index: i32) -> bool {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| self.burrow_denied_tiles.get(index))
+            .copied()
+            .unwrap_or(false)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn test_set_burrow_denied_tiles(&mut self, denied: Vec<bool>) {
+        self.burrow_denied_tiles = denied.into();
     }
 
     #[cfg(any(test, feature = "test-support"))]
