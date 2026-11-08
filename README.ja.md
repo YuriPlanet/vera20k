@@ -46,7 +46,7 @@ CnCNet クライアントから YR のシングルプレイ用スカーミッシ
 - **[ゲームプレイと戦闘](https://github.com/YuriPlanet/vera20k/issues/3830)**：ユニットの挙動、ダメージ、スカーミッシュの安定性。
 - **[パフォーマンス](https://github.com/YuriPlanet/vera20k/issues/3831)**：大規模な戦闘や古いハードウェアでのフレームレートと応答性。
 - **[マルチプレイ](https://github.com/YuriPlanet/vera20k/issues/3832)**：オンライン対戦への参加、開始、継続と、協力プレイの安定性。
-- **[UI とオーディオ](https://github.com/YuriPlanet/vera20k/issues/3833)**：メニュー、テキスト、翻訳、サウンド。
+- **[UI とオーディオ](https://github.com/YuriPlanet/vera20k/issues/3833)**：メニュー、テキスト、[翻訳](src/i18n/README.md)、サウンド。
 - **[キャンペーン](https://github.com/YuriPlanet/vera20k/issues/3834)**：ミッションは起動できますが、最後まで遊べるようにするにはまだ作業が必要です。目標、トリガー、スクリプトによる場面転換、セーブ／ロード、次のミッションへの移行。
 - **[MOD 互換性](https://github.com/YuriPlanet/vera20k/issues/3835)**：Ares と Phobos の機能。オリジナルのゲームの既定の動作は変えません。
 - **[テスト](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity)**：VERA20K をオリジナルと並べてプレイし、挙動が違う点を報告する。
