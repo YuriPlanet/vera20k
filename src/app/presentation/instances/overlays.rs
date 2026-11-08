@@ -149,7 +149,7 @@ fn ordinary_overlay_z(
     };
     Some(OverlayBodyDepth {
         render_z: RenderZPolicy::ReadWrite,
-        z_adjust: native_z::ground_anchored_z_adjust(i32::from(level), class_term) as f32,
+        z_adjust: native_z::ground_anchored_z_adjust(i32::from(level as i8), class_term) as f32,
         gradient,
         shape,
     })
@@ -218,10 +218,21 @@ fn overlay_display_identity(
     }
 
     let slope = slope_type.unwrap_or(0);
-    overlay_registry
-        .tiberium_display_overlay_id(tiberium_types, live_overlay_id, rx, ry, slope)
-        .or_else(|| (slope == 0).then_some(live_overlay_id))
-        .map(|display| (display, overlay_data))
+    match overlay_registry.tiberium_display_overlay_id(
+        tiberium_types,
+        live_overlay_id,
+        rx,
+        ry,
+        slope,
+    ) {
+        Ok(display) => display.map(|display| (display, overlay_data)),
+        Err(error) => {
+            // Safe presentation refusal for native-invalid input. Do not
+            // substitute the live image and disguise a missing binding.
+            log::warn!("Cannot draw Tiberium at ({rx},{ry}): {error}");
+            None
+        }
+    }
 }
 
 /// Borrowed inputs to the one retained dynamic-effect traversal. App startup,
@@ -1011,9 +1022,15 @@ fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<sup
         // 2, art only in frame 1). Collapsing to frame 0 here resurrected them
         // as phantom deck slabs. Frame selection lives in
         // `render::overlay_atlas::resolve_body_frame`.
-        let key = rubble_key.unwrap_or_else(|| OverlaySpriteKey {
-            name: name.to_owned(),
-            frame: i32::from(render_frame),
+        let key = rubble_key.unwrap_or_else(|| {
+            if overlay_flags.is_some_and(|flags| flags.tiberium) {
+                crate::render::overlay_atlas::tiberium_image_key(name, i32::from(render_frame))
+            } else {
+                OverlaySpriteKey {
+                    name: name.to_owned(),
+                    frame: i32::from(render_frame),
+                }
+            }
         });
         let Some(spr) = input.atlas.get(&key) else {
             continue;
@@ -1407,7 +1424,7 @@ fn sample_weapon_wave_draw(
     };
     let points: &mut [[i32; 2]] = match &mut draw.polygon {
         WavePolygon::Magnetic(points) => points,
-        WavePolygon::Sonic(points) => points,
+        WavePolygon::Sonic(points) | WavePolygon::Laser(points) => points,
     };
     for (i, p) in points.iter_mut().enumerate() {
         *p = sample(i as u8, *p);
@@ -1447,9 +1464,28 @@ pub(crate) fn build_weapon_wave_instances(
     ]
     .map(|value| value.floor() as i32);
     let cache = &state.match_state.match_presentation.interpolation;
-    for (id, draw) in
-        crate::app::presentation::fire_effects::build_weapon_wave_draws(sim, observer, [0, 0])
-    {
+    #[cfg(feature = "ares")]
+    let blend = {
+        let rules = &state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .expect("the wave owner's runtime")
+            .resources
+            .rules;
+        let colors = &state.match_state.match_presentation.house_color_map;
+        move |wave: &crate::sim::wave::Wave| {
+            crate::app::presentation::fire_effects::ares_wave_blend(sim, rules, colors, wave)
+        }
+    };
+    #[cfg(not(feature = "ares"))]
+    let blend = |_: &crate::sim::wave::Wave| crate::render::wave_geometry::WaveBlend::Native;
+    for (id, draw) in crate::app::presentation::fire_effects::build_weapon_wave_draws(
+        sim,
+        observer,
+        [0, 0],
+        blend,
+    ) {
         let draw = sample_weapon_wave_draw(draw, id, cache, sim.session().binary_frame(), camera);
         use crate::app::presentation::render::draw_plan_lowering::{
             ObjectBodyDraw, PlannedObjectInstance,
@@ -1563,6 +1599,7 @@ mod tests {
             phase: 3,
             direction: 0,
             clip_path: WaveClipPath::Fast,
+            blend: crate::render::wave_geometry::WaveBlend::Native,
         };
         let current = WaveDraw {
             polygon: WavePolygon::Magnetic([[0, -5], [-3, 3], [-2, 6], [5, 10]]),
@@ -1611,6 +1648,7 @@ mod tests {
                 phase: 3,
                 direction: 2,
                 clip_path: WaveClipPath::Fast,
+                blend: crate::render::wave_geometry::WaveBlend::Native,
             };
             let mut sim = Simulation::new();
             sim.session_mut_for_test().set_binary_frame_for_test(1);
@@ -1620,7 +1658,7 @@ mod tests {
             let mut current = old;
             let points: &mut [[i32; 2]] = match &mut current.polygon {
                 WavePolygon::Magnetic(points) => points,
-                WavePolygon::Sonic(points) => points,
+                WavePolygon::Sonic(points) | WavePolygon::Laser(points) => points,
             };
             for point in points {
                 point[0] += 12;
@@ -1803,14 +1841,19 @@ mod tests {
             (3, ZGradient::Vertical, -2),
             (4, ZGradient::Flat, -2),
         ] {
-            for level in [0, 1, 4, 14] {
+            // Raw 0xFF is Level -1, on the floor of a terrain-deformation
+            // crater.
+            for level in [0u8, 1, 4, 14, 0xFF] {
                 let depth = ordinary_overlay_z(id, registry.flags(id), 0, level).unwrap();
                 assert_eq!(depth.render_z, RenderZPolicy::ReadWrite);
                 assert_eq!(
                     depth.gradient, gradient,
                     "ordinary overlays have no BUILDNGZ"
                 );
-                assert_eq!(depth.z_adjust as i32, class_term - i32::from(level) * 15);
+                assert_eq!(
+                    depth.z_adjust as i32,
+                    class_term - i32::from(level as i8) * 15
+                );
             }
         }
     }

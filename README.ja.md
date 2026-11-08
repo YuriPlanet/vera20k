@@ -46,7 +46,7 @@ CnCNet クライアントから YR のシングルプレイ用スカーミッシ
 - **[ゲームプレイと戦闘](https://github.com/YuriPlanet/vera20k/issues/3830)**：ユニットの挙動、ダメージ、スカーミッシュの安定性。
 - **[パフォーマンス](https://github.com/YuriPlanet/vera20k/issues/3831)**：大規模な戦闘や古いハードウェアでのフレームレートと応答性。
 - **[マルチプレイ](https://github.com/YuriPlanet/vera20k/issues/3832)**：オンライン対戦への参加、開始、継続と、協力プレイの安定性。
-- **[UI とオーディオ](https://github.com/YuriPlanet/vera20k/issues/3833)**：メニュー、テキスト、翻訳、サウンド。
+- **[UI とオーディオ](https://github.com/YuriPlanet/vera20k/issues/3833)**：メニュー、テキスト、[翻訳](src/i18n/README.md)、サウンド。
 - **[キャンペーン](https://github.com/YuriPlanet/vera20k/issues/3834)**：ミッションは起動できますが、最後まで遊べるようにするにはまだ作業が必要です。目標、トリガー、スクリプトによる場面転換、セーブ／ロード、次のミッションへの移行。
 - **[MOD 互換性](https://github.com/YuriPlanet/vera20k/issues/3835)**：Ares と Phobos の機能。オリジナルのゲームの既定の動作は変えません。
 - **[テスト](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity)**：VERA20K をオリジナルと並べてプレイし、挙動が違う点を報告する。
@@ -102,6 +102,8 @@ VERA20K は、既定ではオリジナルのゲームと同じようにプレイ
 
 サウンド、グラフィック、操作の設定は `VERA.INI` に保存されます。ゲームプレイのルールは、ロビーの設定、MOD、マップによって決まります。
 
+自分で MOD を作る方法は [MOD 制作ガイド](docs/modding.md)で説明しています。
+
 ## プロジェクトの支援
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="PayPal で VERA20K を支援" height="23"></a>
@@ -118,11 +120,14 @@ OpenRA、XCC Mixer、ModEnc wiki、Project Perfect Mod、EA が GPL で公開し
 
 本プロジェクトは[追加条項](LEGAL.md#additional-terms)付きの [GPLv3](LICENSE-GPL) でライセンスされています。このリポジトリにゲームファイルは含まれていません。Command & Conquer および Red Alert は Electronic Arts Inc. の商標です。スクリーンショットとアプリアイコン（Red Alert 2 の赤い星）には、Electronic Arts が所有するゲームアートが含まれています。VERA20K は Electronic Arts と提携関係になく、同社の承認を受けたものでもありません。
 
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 **VERA20K を共有、販売、またはフォークする前に、[法的通知](LEGAL.md)をお読みください。**
 
 ## ドキュメント
 
 - [WebAssembly プレビュー](docs/wasm.md)：ブラウザーで動作する、オプトインのシングルプレイ用ビルド。
+- [MOD 制作ガイド](docs/modding.md)：MOD でできることとできないこと、VERA20K とオリジナル版の違い。
 - [INI プロファイル](docs/ini-roots.md)：ルール、アート、AI の各ファイルの選択。
 - [Ares](docs/ares.md)、[Phobos](docs/phobos.md)、[NPatch](docs/npatch.md)：拡張機能への対応状況と制限事項。
 - [エンジンの概要](docs/index.md)：コード構成とエンジン全体の仕組み。

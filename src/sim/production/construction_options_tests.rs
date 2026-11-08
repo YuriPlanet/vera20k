@@ -89,6 +89,26 @@ fn cameo_draw_state_darkens_where_draw_does_not_decide_retention() {
     );
 }
 
+/// Ares 3.0 BuildingClass_UpdateConstructionOptions_ExcludeDisabled
+/// (10053D80, hook 0x4456E5): a factory under EMP attempts no cameo.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_factory_under_emp_attempts_no_construction_option() {
+    let (mut sim, rules, owner, yard) = draw_state_world();
+    sim.discover_techno(
+        yard,
+        owner,
+        crate::sim::world::UninitContext::new(&rules, None),
+    );
+    assert!(!initial_construction_options(&sim, &rules).is_empty());
+    sim.substrate
+        .entities
+        .get_mut(yard)
+        .unwrap()
+        .set_emp_remaining_for_test(3);
+    assert!(initial_construction_options(&sim, &rules).is_empty());
+}
+
 #[test]
 fn house_pass_carries_stored_building_order_before_recalculation() {
     // House4F9280 scans House+6C; startup684C58 instead scans the global

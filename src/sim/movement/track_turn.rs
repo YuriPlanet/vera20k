@@ -249,7 +249,13 @@ impl Simulation {
         }
         // 4B09AB..4B0A68: an in-playfield (+3D5), non-Enter mover whose
         // destination fails the zone precheck clears its head, then stops or
-        // takes the next waypoint; either way the tail follows.
+        // takes the next waypoint. The NULL setter and a false idle entry go
+        // on to the tail; a true one returns false without it (4B0A57).
+        // RESIDUAL: VERA runs the tail after a true idle entry too. Its rest
+        // write needs empty class coordinates, which the taken waypoint
+        // fills, and FootClass::AI ignores Process's result (4DA877), so the
+        // one extra effect is the tail's Wake anim for a moving Drive unit on
+        // a water cell off a bridge, every 10th frame (4B078C..4B0823).
         if entity.in_playfield() && mission != Some(MissionType::Enter) && moving {
             let destination = super::track_path::track_destination_or_null(entity);
             // Unrepresented precheck inputs (no zone topology or bounds in a

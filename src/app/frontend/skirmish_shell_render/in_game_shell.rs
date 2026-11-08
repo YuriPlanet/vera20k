@@ -370,6 +370,9 @@ pub(super) struct ShellFrameOverlay {
     pub texts: Vec<crate::render::shell_text::ShellTextDraw>,
     /// VERA's enlarged map preview, over everything but the cursor.
     pub zoom: Option<super::preview::ZoomDraws>,
+    /// The page's chrome goes through VERA's online client's smoothing
+    /// ([`crate::render::batch::BatchRenderer::draw_chrome`]).
+    pub smooth_art: bool,
 }
 
 /// Shared shell compositor. Only the parent art atlas differs between launcher
@@ -534,7 +537,13 @@ pub(super) fn render_shell_frame(
     if let (Some((buffer, count)), Some(background_texture)) =
         (&background_buffer, background_texture)
     {
-        batch.draw_with_buffer_passthrough(&mut pass, background_texture, buffer, *count);
+        batch.draw_chrome(
+            &mut pass,
+            background_texture,
+            buffer,
+            *count,
+            overlay.smooth_art,
+        );
     }
     if let (Some((buffer, count)), Some(preview)) = (
         &preview_buffer,
@@ -543,7 +552,13 @@ pub(super) fn render_shell_frame(
         batch.draw_with_buffer_passthrough(&mut pass, &preview.texture, buffer, *count);
     }
     if let (Some((buffer, count)), Some(control_atlas)) = (&control_buffer, control_atlas) {
-        batch.draw_with_buffer_passthrough(&mut pass, &control_atlas.texture, buffer, *count);
+        batch.draw_chrome(
+            &mut pass,
+            &control_atlas.texture,
+            buffer,
+            *count,
+            overlay.smooth_art,
+        );
     }
     for (draw, buffer) in texts.iter().zip(&text_buffers) {
         if let Some((buffer, count)) = buffer.as_ref().filter(|_| window_raster.is_none()) {
@@ -567,7 +582,13 @@ pub(super) fn render_shell_frame(
     if let (Some((buffer, count)), Some(atlas), None) =
         (&overlay_buffer, control_atlas, window_raster)
     {
-        batch.draw_with_buffer_passthrough(&mut pass, &atlas.texture, buffer, *count);
+        batch.draw_chrome(
+            &mut pass,
+            &atlas.texture,
+            buffer,
+            *count,
+            overlay.smooth_art,
+        );
     }
     if let (Some((buffer, count)), Some(atlas)) = (
         &progress_buffer,

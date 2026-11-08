@@ -20,28 +20,6 @@ use std::hash::Hash;
 )]
 pub(crate) struct LoadOverlayHandle(u64);
 
-/// Ordered constructor effect emitted by a synchronous cell mutation. Cell
-/// state is already published; the shared registry/identity owner must consume
-/// this effect before any later gameplay constructor or object turn.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct OverlayConstructionReceipt {
-    cell: (u16, u16),
-    terrain_refusal: bool,
-}
-
-impl OverlayConstructionReceipt {
-    pub(crate) fn new(cell: (u16, u16), terrain_refusal: bool) -> Self {
-        Self {
-            cell,
-            terrain_refusal,
-        }
-    }
-
-    pub(crate) fn cell(self) -> (u16, u16) {
-        self.cell
-    }
-}
-
 impl LoadOverlayHandle {
     pub(crate) const fn from_stable_id(stable_id: u64) -> Self {
         Self(stable_id)
@@ -218,25 +196,6 @@ impl LoadObjectLifecycle {
         self.record(LoadObjectLifecycleEvent::AssignNativeId(handle, native_id));
         self.try_join(LoadObjectRegistryKind::Overlay, handle)?;
         Ok(handle)
-    }
-
-    /// Apply the terminal path of an ordinary constructor whose Cell effects
-    /// were published by its caller. Original5FC380 checks Terrain after the
-    /// ID assignment;5FC570's ordinary Mark ends in5F65F0. This reuses the same
-    /// transitions as authored loading and runtime bridges, including refused
-    /// live-limbo survivors and the admitted725C70 deferred drain.
-    pub(crate) fn finish_cell_construction(
-        &mut self,
-        handle: LoadOverlayHandle,
-        receipt: OverlayConstructionReceipt,
-        queue: &mut DeferredDeleteQueue,
-    ) -> Result<(), LoadOverlayLifecycleError> {
-        if receipt.terrain_refusal {
-            self.finish_unrevealed_survivor(handle)
-        } else {
-            self.begin_mark(handle, None)?;
-            self.finish_common(handle, queue)
-        }
     }
 
     /// Direct-base Unlimbo followed by the virtual Mark base prefix. The one

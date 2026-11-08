@@ -18,7 +18,7 @@ use super::super::zone_map::{ZONE_INVALID, ZoneGrid, ZoneId};
 use super::super::{SearchEntryCandidate, SearchEntryQuery, SearchFootEntry};
 use super::PathSearchFailure;
 use super::native_path_entry::live_mode_one;
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::MovementZone;
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::util::direction::DIRECTION_DELTAS;
@@ -169,8 +169,11 @@ fn flood_fill_reachable_zones(
     let unmarked = visited[..side]
         .iter()
         .any(|row| row[..side].contains(&false));
-    if live_mode_one(terrain, inputs.bounds, (probe.0 as u16, probe.1 as u16))
-        && inputs.zone_at(level, probe)? == zone
+    if live_mode_one(
+        &NativeCellQuery::canonical(terrain),
+        inputs.bounds,
+        (probe.0 as u16, probe.1 as u16),
+    ) && inputs.zone_at(level, probe)? == zone
         && unmarked
     {
         return Ok(ZoneFlood::Split);

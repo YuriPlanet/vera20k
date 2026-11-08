@@ -17,6 +17,11 @@ pub struct ElectricBoltBirth {
     pub z_adjust: i32,
     pub phase: i32,
     pub alternate_color: bool,
+    /// Ares `Bolt.Color1..3` of the weapon that made the bolt
+    /// (EBolt_Draw_Colors, Ares.dll 100561F0, hook 0x4C1F33): each set colour
+    /// replaces the palette colour of the first outer, second outer and
+    /// centre strand. Always `None` in default builds.
+    pub colors: [Option<[u8; 3]>; 3],
     /// The firer [`fired`] names for `EBolt::SetOwner @ 0x004C2BD0`
     /// (bolt `+0x20`/`+0x24`); the app keeps it only while the Unit holds
     /// no other bolt (`+0x6DC`).
@@ -154,7 +159,19 @@ pub(crate) fn create(
     let Some(to) = super::fire_coord::effect_target_coordinate(world, rules, target) else {
         return;
     };
-    emit(world, rules, from, to, z_adjust, weapon, owner);
+    // Ares TechnoClass_FireEBolt (Ares.dll 10056350, hook 0x6FD469) creates
+    // this body's bolt through CreateBolt, which registers the weapon's
+    // WeaponTypeExt for the bolt hooks.
+    emit(
+        world,
+        rules,
+        from,
+        to,
+        z_adjust,
+        weapon,
+        owner,
+        cfg!(feature = "ares"),
+    );
 }
 
 /// Phobos `BulletExt::SimulatedFiringElectricBolt`: explicit endpoints and no
@@ -169,9 +186,11 @@ pub(crate) fn create_effect(
     weapon: &crate::rules::weapon_type::WeaponType,
     owner: Option<ElectricBoltOwner>,
 ) {
-    emit(world, rules, from, to, 0, weapon, owner);
+    emit(world, rules, from, to, 0, weapon, owner, false);
 }
 
+/// `ares_ext` is whether the bolt carries the weapon's Ares WeaponTypeExt.
+#[allow(clippy::too_many_arguments)]
 fn emit(
     world: &mut crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -180,8 +199,17 @@ fn emit(
     z_adjust: i32,
     weapon: &crate::rules::weapon_type::WeaponType,
     owner: Option<ElectricBoltOwner>,
+    ares_ext: bool,
 ) {
     let alternate_color = weapon.is_alternate_color;
+    #[cfg(feature = "ares")]
+    let visuals = ares_ext.then_some(&weapon.ares_visuals);
+    #[cfg(not(feature = "ares"))]
+    let _ = ares_ext;
+    #[cfg(feature = "ares")]
+    let colors = visuals.map_or([None; 3], |visuals| visuals.bolt_colors);
+    #[cfg(not(feature = "ares"))]
+    let colors = [None; 3];
     // Init4C2AA3 draws from process Main, before constructing SparkSys. The
     // shared RNG owns every rejection retry. EBolt itself allocates no ID.
     let phase = world.main_rng.next_range_i32_inclusive(0, 256);
@@ -195,6 +223,7 @@ fn emit(
                 z_adjust,
                 phase,
                 alternate_color,
+                colors,
                 owner,
             },
         ));
@@ -204,12 +233,18 @@ fn emit(
     // registration. A preceding Inviso Bullet can remove itself
     // and compact this entry behind the advancing cursor, deferring its AI
     // to the next pass (electric_bolt.json's live scheduling controls).
-    if let Some(system_type) = rules
-        .combat_damage
-        .default_spark_system
-        .as_deref()
-        .and_then(|name| rules.ps_type_id_by_name(name))
-    {
+    let default_system = || rules.combat_damage.default_spark_system.as_deref();
+    // Ares EBolt_Fire_Particles (Ares.dll 100562C0, hook 0x4C2AFF): a bolt
+    // with WeaponTypeExt spawns Bolt.ParticleSystem instead, with the same
+    // arguments; an explicit `none` spawns nothing.
+    #[cfg(feature = "ares")]
+    let system = match visuals.and_then(|visuals| visuals.bolt_particle_system.as_ref()) {
+        Some(system) => system.as_deref(),
+        None => default_system(),
+    };
+    #[cfg(not(feature = "ares"))]
+    let system = default_system();
+    if let Some(system_type) = system.and_then(|name| rules.ps_type_id_by_name(name)) {
         world.spawn_particle_system(
             system_type,
             glam::IVec3::new(to.x, to.y, to.z),

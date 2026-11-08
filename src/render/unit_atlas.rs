@@ -16,6 +16,7 @@
 //!   render/vxl_raster (software rendering).
 //! - Reads from sim/ via EntityStore iteration (GameEntity fields).
 
+use crate::util::lookup_hash::LookupMap;
 use crate::util::time::Instant;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -188,8 +189,9 @@ pub(crate) struct UnitAtlasPageStatistics {
 pub struct UnitAtlas {
     /// Lossless texture pages containing all unit sprites.
     pub pages: Vec<UnitAtlasPage>,
-    /// Lookup: (type_id, facing, frame) → UV rectangle + offset data.
-    entries: HashMap<UnitSpriteKey, UnitSpriteEntry>,
+    /// Lookup: (type_id, facing, frame) → UV rectangle + offset data. Every
+    /// drawn unit piece looks its sprite up here.
+    entries: LookupMap<UnitSpriteKey, UnitSpriteEntry>,
     /// HVA frame counts per (type_id, layer, turret_index). Missing entries have 1 frame.
     /// A draw takes its HVA frame as `Foot+0x538` modulo the model's count.
     pub frame_counts: BTreeMap<(String, VxlLayer, i32), u32>,
@@ -416,7 +418,7 @@ impl UnitAtlas {
         self.page(page).map(|atlas_page| &atlas_page.texture)
     }
 
-    fn new(pages: Vec<UnitAtlasPage>, entries: HashMap<UnitSpriteKey, UnitSpriteEntry>) -> Self {
+    fn new(pages: Vec<UnitAtlasPage>, entries: LookupMap<UnitSpriteKey, UnitSpriteEntry>) -> Self {
         Self {
             pages,
             entries,
@@ -2207,7 +2209,8 @@ fn pack_sprites_on_device(
     }
 
     let mut pages = Vec::with_capacity(plan.page_heights.len());
-    let mut entries = HashMap::with_capacity(plan.placements.len());
+    let mut entries =
+        LookupMap::with_capacity_and_hasher(plan.placements.len(), Default::default());
     for (page_index, &page_height) in plan.page_heights.iter().enumerate() {
         let mut pixels = vec![0u8; (plan.page_width * page_height) as usize];
         for placement in plan
@@ -2273,10 +2276,10 @@ mod tests;
 #[cfg(test)]
 impl UnitAtlas {
     pub(crate) fn from_test_pages(pages: Vec<UnitAtlasPage>) -> Self {
-        Self::new(pages, HashMap::new())
+        Self::new(pages, LookupMap::default())
     }
 
     pub(crate) fn from_test_entries(entries: HashMap<UnitSpriteKey, UnitSpriteEntry>) -> Self {
-        Self::new(Vec::new(), entries)
+        Self::new(Vec::new(), entries.into_iter().collect())
     }
 }

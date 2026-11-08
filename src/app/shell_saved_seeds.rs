@@ -218,7 +218,8 @@ impl App {
                         // values, couples height to width, and stamps the default.
                         options.height = options.width;
                         options.description = default.into();
-                        modal.options = options.clone();
+                        modal.adopt_saved_seed(options);
+                        let options = modal.options.clone();
                         modal.begin_generate();
                         Self::close_saved_seed_browser(state);
                         if !Self::start_random_map_generation(state, &options, false)

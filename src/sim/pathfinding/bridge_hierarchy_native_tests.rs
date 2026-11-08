@@ -382,6 +382,7 @@ fn bridge_hierarchy_native_flood_last_neighbor_query_order_and_flag() {
                 width: 16,
                 height: 16,
                 native_scan_offset: None,
+                signed_levels: false,
             },
             &mut graph,
             HierarchyBlock {

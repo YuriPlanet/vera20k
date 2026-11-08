@@ -172,7 +172,13 @@ pub(crate) fn minimap_overlay_datum(
         && overlay_registry
             .zip(rules)
             .and_then(|(registry, rules)| {
-                registry.tiberium_type_for_overlay(&rules.tiberium_types, overlay_id)
+                match registry.tiberium_type_for_overlay(&rules.tiberium_types, overlay_id) {
+                    Ok(class) => class,
+                    Err(error) => {
+                        log::warn!("Cannot classify radar Tiberium at ({rx},{ry}): {error}");
+                        None
+                    }
+                }
             })
             .is_some();
     MinimapOverlayDatum {

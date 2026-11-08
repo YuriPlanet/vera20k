@@ -1483,6 +1483,49 @@ fn a_gunner_transport_on_its_suicide_weapon_explodes() {
     }
 }
 
+/// `InfantryClass::ReceiveDamage`'s result-4 arm
+/// (`0x00518093..0x005180E2`): a dying rider whose Transporter (`+0x11C`)
+/// is a Unit whose type has `Gunner=yes` (`GetType()->+0x805`) calls that
+/// Unit's RemoveGunner (vtable `+0x4D8`, `0x007464E0`), which hands the
+/// Temporal back and selects gunner mode 0. The test installs the `+0x11C`
+/// relation directly: retail reaches it only in an `OpenTopped=` `Gunner=`
+/// Unit, and its only `OpenTopped=` Unit, BFRT, has no `Gunner=`.
+#[test]
+fn a_dying_gunner_rider_resets_its_transports_weapon_mode() {
+    let rules = rules();
+    let mut sim = sim_on_arena(0x3838, &rules);
+    let transport = spawn(&mut sim, &rules, "GUNV", "Americans", 10, 10);
+    let rider = spawn(&mut sim, &rules, "E1", "Americans", 11, 10);
+    sim.substrate
+        .entities
+        .get_mut(transport)
+        .unwrap()
+        .set_gunner_selection_for_test(3, -1);
+    sim.substrate
+        .entities
+        .get_mut(rider)
+        .unwrap()
+        .passenger_role = PassengerRole::boarded_for_test(transport, false);
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(transport)
+            .unwrap()
+            .current_weapon_number(),
+        3
+    );
+    kill(&mut sim, &rules, rider, ORDINARY);
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(transport)
+            .unwrap()
+            .current_weapon_number(),
+        0,
+        "the dying gunner's transport returns to mode 0"
+    );
+}
+
 /// Retail `rulesmd.ini`: the stock IFV's death arm holds for exactly the
 /// passengers whose IFVMode slot is a `Suicide=` weapon.
 #[test]

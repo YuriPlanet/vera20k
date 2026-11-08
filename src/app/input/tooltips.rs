@@ -327,7 +327,16 @@ fn tactical_world_tip_text_sampled(
                     crate::assets::csf_file::type_ui_name(disguise.ui_name.as_deref(), csf)
                 });
         }
-        // BuildingClass::GetUIName @459ED0 returns actual Type+60.
+        // BuildingClass::GetUIName @459ED0 returns actual Type+60. Ares
+        // BuildingClass_GetUIName (10015DA0, hook 0x459ED0) shows a player
+        // its owner does not count as an ally the type's EnemyUIName, unless
+        // the building's DisplayProductionTo holds that player.
+        #[cfg(feature = "ares")]
+        EntityCategory::Structure
+            if let Some(label) = ares_enemy_ui_name(sim, entity, object, viewer) =>
+        {
+            return crate::assets::csf_file::type_ui_name(Some(label), csf);
+        }
         EntityCategory::Structure | EntityCategory::Infantry => {}
         // Aircraft41C1D0 returns its actual Type+60 directly, without a
         // disguise, dock or flight-state name branch. Keep the same picker
@@ -364,6 +373,29 @@ fn tactical_world_tip_text_sampled(
         }
     }
     crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf)
+}
+
+/// Ares BuildingClass_GetUIName (10015DA0, hook 0x459ED0): the type's
+/// `EnemyUIName` for a `viewer` the building's owner does not count as an
+/// ally, unless its DisplayProductionTo holds the viewer; `None` keeps the
+/// type's own name.
+#[cfg(feature = "ares")]
+fn ares_enemy_ui_name<'r>(
+    sim: &crate::sim::world::Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &'r crate::rules::object_type::ObjectType,
+    viewer: crate::sim::intern::InternedId,
+) -> Option<&'r str> {
+    object.enemy_ui_name().filter(|_| {
+        entity.owner() != viewer
+            && !crate::sim::combat::combat_weapon::is_ally_by_object(
+                Some(sim.house_alliances()),
+                sim.interner(),
+                entity.owner(),
+                viewer,
+            )
+            && !entity.shows_production_to(viewer)
+    })
 }
 
 /// `UnitClass::GetUIName @ 0x00746B20`'s turret formatter
@@ -950,6 +982,37 @@ mod tests {
 
     /// Retail English `TXT_MONEY_FORMAT_2`.
     const RETAIL_MONEY_FORMAT_2: &str = "%s $%d";
+
+    /// Ares BuildingClass_GetUIName (10015DA0, hook 0x459ED0): the owner
+    /// reads the type's name, a player it does not count as an ally the
+    /// type's `EnemyUIName`.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_enemy_ui_name_shows_to_a_non_allied_player() {
+        use crate::rules::ruleset::RuleSet;
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+            "[BuildingTypes]\n0=POWR\n1=PLAIN\n[POWR]\nStrength=1\nEnemyUIName=NAME:Fake\n\
+             [PLAIN]\nStrength=1\n",
+        ))
+        .unwrap();
+        let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 7);
+        let [powr, plain] = [("POWR", 6), ("PLAIN", 10)].map(|(name, x)| {
+            sim.spawn_object(name, "Americans", x, 6, 0, &rules)
+                .unwrap()
+        });
+        let viewer = |name| sim.interner().get(name).unwrap();
+        let label = |id, name| {
+            let entity = sim.entities().get(id).unwrap();
+            let object = sim
+                .interner()
+                .object_type(entity.type_ref(), &rules)
+                .unwrap();
+            ares_enemy_ui_name(&sim, entity, object, viewer(name))
+        };
+        assert_eq!(label(powr, "Americans"), None);
+        assert_eq!(label(powr, "Russians"), Some("NAME:Fake"));
+        assert_eq!(label(plain, "Russians"), None);
+    }
 
     #[test]
     fn hidden_dynamic_provider_clears_power_tip_and_retains_its_timer() {

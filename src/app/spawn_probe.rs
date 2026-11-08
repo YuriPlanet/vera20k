@@ -443,16 +443,23 @@ fn ensure_file(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The player's VERARULES.INI as startup reads it, without creating the
-/// starter file (an absent file is the inactive starter).
+/// The player's VERARULES.INI and Options switches as startup reads them,
+/// without creating the starter file (an absent file is the inactive starter).
 pub(crate) fn existing_personal_rules(
     settings_dir: &Path,
 ) -> Result<crate::rules::personal_rules::PersonalRules> {
-    match crate::app::persistence::rules_profile::load_existing(settings_dir)? {
+    let mut rules = match crate::app::persistence::rules_profile::load_existing(settings_dir)? {
         Some(bytes) => crate::rules::personal_rules::PersonalRules::from_bytes(&bytes)
-            .context("Could not read VERARULES.INI"),
-        None => Ok(Default::default()),
-    }
+            .context("Could not read VERARULES.INI")?,
+        None => Default::default(),
+    };
+    let profile = crate::app::persistence::options_profile::RetailOptionsLoad::from_settings(
+        settings_dir,
+        &Default::default(),
+    )
+    .retained_profile;
+    rules.set_terrain_deformation(profile.terrain_deformation);
+    Ok(rules)
 }
 
 #[cfg(test)]

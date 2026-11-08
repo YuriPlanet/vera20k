@@ -106,8 +106,8 @@ fn ares_refusal_view_obeys_native_readiness_money_and_constraint_priority() {
         .is_ready = false;
     assert_eq!(
         view(&sim).ares_refusal,
-        None,
-        "unready returns before warnings"
+        Some(AresCameoRefusal::NotReady),
+        "unready plays EVA.Impatient before the money and constraint warnings"
     );
     // Ares AutoFire10038373 returns native Fire_SW's1 after finding a
     // target, even when the previously queued click is no longer ready.

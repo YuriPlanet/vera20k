@@ -19,6 +19,7 @@
 
 pub(crate) mod buddies;
 pub(crate) mod buddy;
+pub(crate) mod chat_translation;
 mod live_service;
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
 pub(crate) use live_service::lobby_base_url;
@@ -158,6 +159,8 @@ pub(crate) enum WolPage {
     /// WOL Options `0x2BC` (and its Sound Options `0xD6`) over the hidden
     /// lobby.
     Options(Box<options::WolOptionsPage>),
+    /// VERA's Chat Translation page, over the hidden lobby.
+    ChatTranslation(Box<crate::ui::wol_chat_translation::WolChatTranslationPage>),
     /// The auto-login query `0x112` after a dialog login.
     AutoLoginQuery(Box<crate::ui::wol_persona::WolAutoLoginQuery>),
     /// The locale page `0xFE` during the connect.
@@ -757,6 +760,10 @@ impl App {
             options::cursor_moved(state);
             return;
         }
+        if chat_translation::page_open(state) {
+            chat_translation::cursor_moved(state);
+            return;
+        }
         if persona::page_open(state) {
             persona::cursor_moved(state);
             return;
@@ -816,6 +823,10 @@ impl App {
             options::mouse(state, true);
             return;
         }
+        if chat_translation::page_open(state) {
+            chat_translation::mouse(state, true);
+            return;
+        }
         if persona::page_open(state) {
             persona::mouse(state, true);
             return;
@@ -872,6 +883,10 @@ impl App {
             options::mouse(state, false);
             return;
         }
+        if chat_translation::page_open(state) {
+            chat_translation::mouse(state, false);
+            return;
+        }
         if persona::page_open(state) {
             persona::mouse(state, false);
             return;
@@ -917,6 +932,48 @@ impl App {
             // No `Community` URL in the registry: nothing happens.
             Some(WolWelcomeAction::Community) | None => {}
         }
+    }
+
+    /// VERA's Esc menu (`app::shell_menu`): the boxes, popups and player card
+    /// over a page keep Esc.
+    pub(super) fn wol_leaves_escape(state: &AppState) -> bool {
+        if Self::wol_quick_match_verify(state) || page::open(state) {
+            return false;
+        }
+        let Some(visit) = state.frontend.wol.as_ref() else {
+            return false;
+        };
+        !visit.waiting()
+            && match &visit.page {
+                WolPage::Login(login) => login.account.is_none(),
+                WolPage::Lobby => visit.lobby().is_some_and(|lobby| {
+                    lobby.interactive() && lobby.ui.popup.is_none() && lobby.ui.card.is_none()
+                }),
+                WolPage::Buddy(dialog) => dialog.ui.add.is_none(),
+                _ => true,
+            }
+    }
+
+    /// Esc closes the login page's open name list or the Chat Translation
+    /// page's open language list.
+    pub(super) fn close_wol_open_list(state: &mut AppState) -> bool {
+        if chat_translation::close_list(state) {
+            return true;
+        }
+        let Some(login) = state
+            .frontend
+            .wol
+            .as_mut()
+            .and_then(|visit| match &mut visit.page {
+                WolPage::Login(login) => Some(login),
+                _ => None,
+            })
+        else {
+            return false;
+        };
+        let open = login.popup.control.is_some();
+        login.popup.close();
+        open
     }
 
     /// Keys while a WOL page shows. `0x10E` ignores IDOK/IDCANCEL

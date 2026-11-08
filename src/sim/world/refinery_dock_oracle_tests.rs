@@ -65,6 +65,9 @@ fn corpus() -> &'static Value {
 
 /// Native income rows supply raw Rules/cargo priors; the surrounding world,
 /// House, typed country/resource readers, construction and dispatch stay real.
+// Ares replaces the stock payment (DepositTiberium 10044230, hooks
+// 0x73E4A2/0x522D75): no score (`sim::ares_tiberium_storage` tests).
+#[cfg(not(feature = "ares"))]
 fn income_scene(row: &Value) -> Scene {
     use crate::util::native_x87::NativeF32Bits;
     let input = &row["input"];
@@ -98,7 +101,7 @@ fn income_scene(row: &Value) -> Scene {
             land.section_name()
         ));
     }
-    let mut ini = IniFile::from_str(&text);
+    let mut ini = crate::rules::tiberium_type::with_tiberium_image_slots(&IniFile::from_str(&text));
     for (slot, name) in ["Riparius", "Cruentus", "Vinifera", "Aboreus"]
         .iter()
         .enumerate()
@@ -144,6 +147,9 @@ fn income_scene(row: &Value) -> Scene {
     scene
 }
 
+// Ares replaces the stock payment (DepositTiberium 10044230, hooks
+// 0x73E4A2/0x522D75): no score (`sim::ares_tiberium_storage` tests).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn native_income_controls_reach_unit_and_slave_payment_callers() {
     let native = crate::test_fixture::json("tools/spatial_oracle/refinery_income.json");
@@ -215,6 +221,9 @@ fn native_income_controls_reach_unit_and_slave_payment_callers() {
     }
 }
 
+// Ares replaces the stock payment (DepositTiberium 10044230, hooks
+// 0x73E4A2/0x522D75): no score (`sim::ares_tiberium_storage` tests).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn virtual_purifier_wrap_and_saved_payment_use_native_inputs() {
     let native = crate::test_fixture::json("tools/spatial_oracle/refinery_income.json");
@@ -406,7 +415,7 @@ pub(super) fn scene(input: &Value) -> Scene {
             "[Countries]\n0=Americans\n[Americans]\nIncomeMult={mult}\n"
         ));
     }
-    let ini = IniFile::from_str(&text);
+    let ini = crate::rules::tiberium_type::with_tiberium_image_slots(&IniFile::from_str(&text));
     let art = IniFile::from_str(
         "[GAREFN]\nFoundation=4x3\nQueueingCell=4,1\n[GAREFX]\nFoundation=4x3\nQueueingCell=4,1\n[GAOREP]\nFoundation=2x2\n",
     );
@@ -653,8 +662,8 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
                                 CargoBale {
                                     tiberium_type,
                                     resource_type:
-                                        crate::sim::tiberium::resource_type_for_tiberium_image(
-                                            ty.image,
+                                        crate::sim::tiberium::resource_type_for_tiberium_slot(
+                                            ty.id,
                                         ),
                                     value: ty.value as u16,
                                 },
@@ -839,6 +848,10 @@ fn compare_unload(s: &Scene, row: &Value, context: &str) {
         expected["balance"].as_i64().unwrap(),
         "{context}: balance"
     );
+    // Ares' DepositTiberium (10044230, hook 0x73E4A2) adds no score.
+    #[cfg(feature = "ares")]
+    let _ = score;
+    #[cfg(not(feature = "ares"))]
     assert_eq!(
         score,
         expected["score"].as_i64().unwrap(),
@@ -1032,7 +1045,8 @@ fn mission_harvest_states_two_and_three_match_the_original_dispatch() {
                 overlay_registry: Some(crate::sim::tiberium::test_support::overlay_registry()),
                 ..Default::default()
             },
-        );
+        )
+        .unwrap();
         let entity = s.sim.substrate.entities.get(s.miner).unwrap();
         let timer = entity.mission.dispatch_timer();
         let delay = timer.delay();
@@ -1067,6 +1081,15 @@ fn mission_unload_matches_the_original_harvester_branch() {
     for row in corpus["mission_unload"].as_array().unwrap() {
         let input = &row["input"];
         let context = input["name"].as_str().unwrap().to_string();
+        // Ares hook 0x0073DF66 replaces the East window these two rows
+        // probe (`ares_mission_unload_faces_the_dock_exactly`).
+        #[cfg(feature = "ares")]
+        if matches!(
+            context.as_str(),
+            "unload_window_low_edge" | "unload_facing_west_latch"
+        ) {
+            continue;
+        }
         let mut s = scene(input);
         radio::take_transmit_log();
         let mut stream = s.sim.scenario_rng.clone();
@@ -1080,6 +1103,36 @@ fn mission_unload_matches_the_original_harvester_branch() {
         compare_delay(&s, row, delay, &mut stream, &context);
         compare_state(&s, row, &context);
         compare_unload(&s, row, &context);
+    }
+}
+
+/// Ares 3.0 `10014910` (hook `0x0073DF66`): Mission_Unload compares the hull
+/// with the dock's DockUnloadFacing exactly (east for this refinery), so the
+/// stock window's low edge turns and waits as the outside row does, and a
+/// mid-swing turret counts as facing it, so the latched west row arms the
+/// unload as the first pass does.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_mission_unload_faces_the_dock_exactly() {
+    let rows = corpus()["mission_unload"].as_array().unwrap();
+    for (name, waits) in [
+        ("unload_window_low_edge", true),
+        ("unload_facing_west_latch", false),
+    ] {
+        let row = rows
+            .iter()
+            .find(|row| row["input"]["name"] == name)
+            .unwrap();
+        let mut s = scene(&row["input"]);
+        let delay = crate::sim::miner::mission_unload(
+            &mut s.sim,
+            &s.rules,
+            s.miner,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let miner = s.sim.substrate.entities.get(s.miner).unwrap();
+        let unloading = miner.miner.as_ref().unwrap().unload_active();
+        assert_eq!((delay == 5, unloading), (waits, !waits), "{name}");
     }
 }
 

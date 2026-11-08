@@ -44,7 +44,8 @@ fn run_mission(sim: &mut Simulation, rules: &RuleSet, hunter: u64) -> Option<Tar
         hunter,
         rules,
         ObjectAiCtx::default(),
-    );
+    )
+    .unwrap();
     let actor = sim.substrate.entities.get(hunter).unwrap();
     assert!(actor.mission.dispatch_timer().delay() > 0, "Hunt ran");
     actor.attack_target.target()

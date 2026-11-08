@@ -589,6 +589,14 @@ impl Simulation {
     /// that owner. This is an input producer, never an event-execution gate.
     pub fn area_guard_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
         let actor = self.substrate.entities.get(id)?;
+        // Ares 3.0 GuardCommandClass_Execute (1005CAF0, hook 0x730DB0): only
+        // the player's own controllable actor, the miner arm included.
+        #[cfg(feature = "ares")]
+        if Some(actor.owner()) != self.session.current_house()
+            || !self.techno_player_controllable(id, rules)
+        {
+            return None;
+        }
         if actor.category() == EntityCategory::Structure {
             return None;
         }
@@ -786,6 +794,27 @@ impl Simulation {
             y,
         }
         .encode()
+        .ok()
+    }
+
+    /// Ares 3.0 RaiseTrenchRedirectClick (`1006A170`, from the Enter click
+    /// of `10016F60`, hook `0x443414`): the TrenchRedirectClick event (0x60)
+    /// naming the clicked building's `cell` and the selected trench
+    /// `source_id`, stamped with the source building's House.
+    #[cfg(feature = "ares")]
+    pub fn encode_ares_trench_redirect_record(
+        &self,
+        source_id: u64,
+        (x, y): (u16, u16),
+    ) -> Option<CommandRecord> {
+        let owner = self.substrate.entities.get(source_id)?.owner();
+        let house_id = self.command_sender(owner)?;
+        crate::sim::command::AresTrenchRedirectRecord::encode_cell(
+            house_id,
+            self.session.binary_frame() as i32,
+            (i16::try_from(x).ok()?, i16::try_from(y).ok()?),
+            i32::try_from(source_id).ok()?,
+        )
         .ok()
     }
 
@@ -1002,6 +1031,20 @@ impl Simulation {
                     execute_tick,
                     Command::CycleProducerFocus {
                         category: event.category,
+                    },
+                )
+            });
+        }
+        // Ares 3.0 TrenchRedirectClick (0x60) stays raw until its handler.
+        #[cfg(feature = "ares")]
+        if crate::sim::command::AresTrenchRedirectRecord::decode(record).is_some() {
+            let owner = self.command_sender_owner(record.house_id())?;
+            return self.houses.contains_key(&owner).then(|| {
+                CommandEnvelope::new(
+                    owner,
+                    execute_tick,
+                    Command::SynchronizedRecord {
+                        record: record.clone(),
                     },
                 )
             });
@@ -1687,6 +1730,13 @@ impl Simulation {
             // EventClass::Execute @ 0x004C6CB0, SELL arm 0x004C6F20:
             // PlanningDetach precedes the target's alive/owner refusal.
             | Command::SellBuilding { entity_id } => Some(*entity_id),
+            // The VERA-only bunker-eject record is Event9 DEPLOY on the
+            // bunker's occupant: 0x004C76CA detaches that Unit's planning.
+            Command::EjectBunker { bunker_id } => self
+                .substrate
+                .entities
+                .get(*bunker_id)
+                .and_then(|bunker| bunker.bunker.occupant()),
             _ => cmd.megamission_actor(),
         };
         if !planned && let Some(actor) = ordinary_actor {
@@ -1766,6 +1816,15 @@ impl Simulation {
                         }
                     };
                     return self.execute_archive_event(entity_id, target);
+                }
+                #[cfg(feature = "ares")]
+                if let Some(event) = crate::sim::command::AresTrenchRedirectRecord::decode(record) {
+                    return self.ares_respond_to_trench_redirect(
+                        &event,
+                        rules,
+                        overlay_registry,
+                        frame_effects,
+                    );
                 }
                 self.apply_production_record(record, rules, overlay_registry, frame_effects)
             }
@@ -2210,8 +2269,8 @@ impl Simulation {
             // and current Owner+30 must match the signed event House
             // (4C6F2D..4C6F48). A building takes SellBack(-1) at4C6FA2;
             // CanSell belongs to input admission, not this receiver.
-            // Depot Unit/Aircraft sales at4C6F5A..4C6F96 remain a separate
-            // unimplemented service lifecycle; this order handles buildings.
+            // Depot Unit/Aircraft sales at4C6F5A..4C6F96 run only with Ares
+            // (below); default builds handle buildings alone.
             Command::SellBuilding { entity_id } => {
                 let Some(entity) = self.substrate.entities.get(*entity_id) else {
                     return false;
@@ -2220,6 +2279,40 @@ impl Simulation {
                     || !self.entity_owned_by_id(command_owner, *entity_id)
                 {
                     return false;
+                }
+                // 4C6F5A..4C6F96: a Unit or Aircraft with a Building in the
+                // cell of its coordinate takes On_Sold(-1). Ares makes the
+                // player's SellUnit click send it (hook 0x6929FC); default
+                // builds keep the building-only receiver.
+                #[cfg(feature = "ares")]
+                if matches!(
+                    entity.category(),
+                    crate::map::entities::EntityCategory::Unit
+                        | crate::map::entities::EntityCategory::Aircraft
+                ) {
+                    let at = crate::sim::movement::ground_pose::object_get_coords(
+                        entity,
+                        self.resolved_terrain.as_ref(),
+                    );
+                    let on_building = u16::try_from(at.x.div_euclid(256))
+                        .ok()
+                        .zip(u16::try_from(at.y.div_euclid(256)).ok())
+                        .and_then(|(rx, ry)| {
+                            self.substrate.occupancy.first_building_on_layer(
+                                rx,
+                                ry,
+                                crate::sim::movement::locomotor::MovementLayer::Ground,
+                            )
+                        })
+                        .is_some();
+                    return on_building
+                        && production::foot_on_sold(
+                            self,
+                            rules,
+                            *entity_id,
+                            crate::sim::world::UninitContext::new(rules, overlay_registry)
+                                .with_effects(frame_effects),
+                        );
                 }
                 production::sell_back(
                     self,
@@ -2475,6 +2568,11 @@ impl Simulation {
                     .filter(|t| t.category() == crate::map::entities::EntityCategory::Structure)
                     .and_then(|t| self.interner.object_type(t.type_ref(), rules))
                     .is_some_and(|object| object.gap_generator);
+                // Ares 3.0 100173A0 (hook 0x44731C): a tunnel entrance
+                // unloads its owner's network (`sim::ares_tunnel`).
+                #[cfg(feature = "ares")]
+                let has_passengers =
+                    has_passengers || self.ares_tunnel_offers_unload(*transport_id, rules);
                 if !has_passengers && !gap_generator {
                     return false;
                 }
@@ -2768,25 +2866,27 @@ impl Simulation {
                     Some(*selection),
                 )
             }
+            // VERA-only opcode 0x31: keep the record decodable for old
+            // recordings, but never release the tank here. Native
+            // `BuildingClass::EmptyBunker @ 0x004595C0` has one caller, the
+            // linked Unit's `Mission_Unload @ 0x0073D66D`, whose DEPLOY
+            // receiver (`Event9` `0x004C76BC..0x004C7812`) owns the radio
+            // Break, null destination/target, Unload queue and the actor's
+            // alive/limbo admission. The release then happens in that Unit's
+            // Logic update, not during command execution (#3675).
             Command::EjectBunker { bunker_id } => {
                 if !self.entity_owned_by_id(command_owner, *bunker_id) {
                     return false;
                 }
-                let has_occupant = self
+                let Some(unit_id) = self
                     .substrate
                     .entities
                     .get(*bunker_id)
-                    .is_some_and(|b| b.bunker.occupant().is_some());
-                if !has_occupant {
+                    .and_then(|b| b.bunker.occupant())
+                else {
                     return false;
-                }
-                crate::sim::docking::bunker_link::release_normal(
-                    self,
-                    *bunker_id,
-                    rules,
-                    frame_effects,
-                );
-                true
+                };
+                crate::sim::deploy::issue_order(self, unit_id, rules, frame_effects)
             }
         }
     }
@@ -2840,6 +2940,15 @@ impl Simulation {
         }
         let target = self.resolve_event_token(target);
         if let Some(object) = self.substrate.entities.get_mut(entity_id) {
+            // Ares 3.0 Networking_RespondToEvent_Selling (1005CE40, hook
+            // 0x4C6DDB): an object on Selling (0x13) that has no archive
+            // yet keeps none.
+            #[cfg(feature = "ares")]
+            if object.mission.current().known() == Some(crate::sim::mission::MissionType::Selling)
+                && object.archive_target().is_none()
+            {
+                return true;
+            }
             object.set_archive_target(target);
         }
         true
@@ -3185,9 +3294,21 @@ impl Simulation {
             | Command::SetBuildingOnLine { entity_id, .. }
             | Command::ArchiveObject { entity_id, .. } => foreign(*entity_id),
             Command::SetRally { producer_ids, .. } => producer_ids.iter().any(|&id| foreign(id)),
-            Command::SynchronizedRecord { record } => ArchiveRecord::decode(record)
-                .and_then(|event| u64::try_from(event.entity_id).ok())
-                .is_some_and(foreign),
+            Command::SynchronizedRecord { record } => {
+                let actor = ArchiveRecord::decode(record)
+                    .and_then(|event| u64::try_from(event.entity_id).ok());
+                // The Ares trench event's source building
+                // (`1006A540` trusts it as the other receivers do).
+                #[cfg(feature = "ares")]
+                let actor = actor.or_else(|| {
+                    let event = crate::sim::command::AresTrenchRedirectRecord::decode(record)?;
+                    match event.source {
+                        MegaMissionTarget::Object { id } => u64::try_from(id).ok(),
+                        _ => None,
+                    }
+                });
+                actor.is_some_and(foreign)
+            }
             Command::PlanningRecord { record } => {
                 super::planning::planning_record_actor(record).is_some_and(foreign)
             }
@@ -3219,13 +3340,11 @@ impl Simulation {
     ///
     /// Residuals on this gate, recorded not fixed:
     ///
-    /// * **EjectBunker is ungated.** `Simulation::command_uses_megamission`
-    ///   enumerates which VERA commands are MEGAMISSION-shaped — it is what
-    ///   splits due commands into the non-MEGAMISSION pass and the staged
-    ///   batch, mirroring opcode 0x04 in `net::lockstep`. Checked against it,
-    ///   `EjectBunker` carries only the ownership test. Trigger: issuing it to
-    ///   a dying or limboed bunker. Player effect: the order runs where retail
-    ///   abandons it. Frequency: low per order.
+    /// * Event9 DEPLOY orders (`deploy::issue_order`,
+    ///   `0x004C76BC..0x004C7812`) carry their own alive/limbo/tether gate
+    ///   rather than this one. `Command::EjectBunker` shares that route
+    ///   (#3675): the bunker-eject residual about an ungated command-time
+    ///   release is gone with it.
     /// * Aircraft reservation teardown remains a legacy command policy.
     /// * **The manager abandon** at 0x004C73E1-0x004C73EA calls 0x006B0C80 on
     ///   `[actor+0x2D8]`, the SlaveManagerClass (not a spawn manager), whenever
@@ -3235,8 +3354,9 @@ impl Simulation {
     ///   through `Simulation::reset_slave_manager`; the other orders outside
     ///   the funnel do not yet.
     /// * **`TeamClass__Remove_Member`** runs in the MEGAMISSION funnel
-    ///   and in its shared prefix; EjectBunker and the dormant aircraft Unload
-    ///   arm bypass that prefix and keep a team member in its team.
+    ///   and in its shared prefix; the Event9 DEPLOY route and the dormant
+    ///   aircraft Unload arm bypass that prefix and keep a team member in
+    ///   its team.
     pub(crate) fn order_actor_admits(&self, stable_id: u64) -> bool {
         self.substrate.entities.get(stable_id).is_some_and(|e| {
             e.lifecycle.object_alive() && e.health.current() > 0 && !e.lifecycle.in_limbo()
@@ -4450,6 +4570,156 @@ mod tests {
         }
     }
 
+    /// A compact installed bunker: the VERA-only eject record names the
+    /// building, so both the occupant's link and its radio contact must be
+    /// real production state.
+    fn installed_bunker_fixture() -> (Simulation, RuleSet) {
+        let rules = bunker_rules();
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        spawn_bunker_struct(&mut sim, 2, "Americans", 10, 10);
+        spawn_bunkerable(&mut sim, 1, "Americans", "TANK", 10, 10);
+        crate::sim::docking::bunker_link::install_bunker_link(&mut sim, 2, 1, &rules);
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.radio_contacts.set_slot(0, 2);
+        unit.navigation
+            .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(2)));
+        (sim, rules)
+    }
+
+    /// `UnitClass::Mission_Unload @ 0x0073D630` is the only caller of
+    /// `BuildingClass::EmptyBunker @ 0x004595C0` (`0x0073D66D`). Opcode 0x31
+    /// must therefore publish Event9's DEPLOY order, not release the tank
+    /// while the command executes (#3675).
+    #[test]
+    fn eject_bunker_record_queues_unload_instead_of_releasing_at_command_time() {
+        let (mut sim, rules) = installed_bunker_fixture();
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::EjectBunker { bunker_id: 2 },
+            Some(&rules),
+        ));
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            Some(1),
+            "EmptyBunker belongs to the Unload mission's Logic update"
+        );
+        assert_eq!(
+            sim.substrate.entities.get(1).unwrap().bunker.link(),
+            crate::sim::docking::bunker_link::BunkerLink::Installed(2)
+        );
+        let unit = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(unit.mission.queued().known(), Some(MissionType::Unload));
+        // Event9 `0x004C77E4` breaks contact 0 before the null destination
+        // (`0x004C77F8`) and null target (`0x004C7804`) setters.
+        assert_eq!(unit.radio_contacts.slot(0), None);
+        assert!(unit.navigation.nav_com().is_none());
+        assert!(unit.attack_target.target().is_none());
+    }
+
+    /// Event9 detaches the deployed object's planning (`0x004C76CA`), so the
+    /// eject record detaches the occupant's path, not the bunker's.
+    #[test]
+    fn eject_bunker_record_detaches_the_occupants_planning() {
+        let (mut sim, rules) = installed_bunker_fixture();
+        sim.start_empty_planning_path_for_test(1);
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::EjectBunker { bunker_id: 2 },
+            Some(&rules),
+        ));
+        assert!(!sim.has_planning_path_for_test(1));
+    }
+
+    /// The command-time release only checked ownership and an occupant.
+    /// Event9's admission (`0x004C76BC`) refuses a limboed actor, so a dead
+    /// or limboed tank keeps its bunker and gets no Unload mission.
+    #[test]
+    fn eject_bunker_record_refuses_a_limboed_occupant() {
+        let (mut sim, rules) = installed_bunker_fixture();
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .lifecycle
+            .set_in_limbo_for_test(true);
+        assert!(!sim.apply_command(
+            "Americans",
+            &Command::EjectBunker { bunker_id: 2 },
+            Some(&rules),
+        ));
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            Some(1)
+        );
+        assert_ne!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .mission
+                .queued()
+                .known(),
+            Some(MissionType::Unload)
+        );
+    }
+
+    /// Drive the record through real frames: `Mission_Unload @ 0x0073D630`
+    /// promotes, its head calls `EmptyBunker @ 0x004595C0`, and only then do
+    /// the links clear. Without the fix the very first command execution
+    /// would already have released the tank.
+    #[test]
+    fn eject_bunker_record_releases_on_the_unload_logic_visit() {
+        let (mut sim, rules) = installed_bunker_fixture();
+        // `unit_unload_empties_bunker` looks the building up in the Unit's
+        // cell (`Look_up_building_in_cell @ 0x0047C520`).
+        for (rx, ry) in
+            crate::sim::occupancy::entity_occupancy_cells(sim.substrate.entities.get(2).unwrap())
+        {
+            sim.substrate.occupancy.add(
+                rx,
+                ry,
+                2,
+                crate::sim::movement::locomotor::MovementLayer::Ground,
+                None,
+                crate::sim::occupancy::CellListInsertion::AppendBuilding,
+            );
+        }
+        assert!(sim.register_live_object(1));
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::EjectBunker { bunker_id: 2 },
+            Some(&rules),
+        ));
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            Some(1)
+        );
+        for _ in 0..16 {
+            sim.advance_tick(&[], Some(&rules), None, None, 33);
+            if sim
+                .substrate
+                .entities
+                .get(2)
+                .unwrap()
+                .bunker
+                .occupant()
+                .is_none()
+            {
+                break;
+            }
+        }
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            None,
+            "the Unload Logic visit must empty the bunker"
+        );
+        assert_eq!(
+            sim.substrate.entities.get(1).unwrap().bunker.link(),
+            crate::sim::docking::bunker_link::BunkerLink::None
+        );
+    }
+
     #[test]
     fn bunker_full_lifecycle_enter_install_then_eject() {
         use crate::sim::docking::bunker_install::{BunkerState, update_bunker};
@@ -4633,13 +4903,38 @@ mod tests {
             "one walls-up event on install"
         );
 
-        // 3) Eject: Force starts without teleporting, links clear, walls lower.
+        // 3) Eject: opcode 0x31 publishes the Unload mission. Its Logic
+        // visit owns `EmptyBunker @ 0x004595C0` (`0x0073D66D`), so the
+        // release, Force, links and walls happen there, not at command time.
         sim.bunker_wall_events.clear();
         assert!(sim.apply_command(
             "Americans",
             &Command::EjectBunker { bunker_id: 2 },
             Some(&rules),
         ));
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(1)
+                .unwrap()
+                .mission
+                .queued()
+                .known(),
+            Some(MissionType::Unload)
+        );
+        assert_eq!(
+            sim.substrate.entities.get(2).unwrap().bunker.occupant(),
+            Some(1),
+            "no command-time release"
+        );
+        assert!(
+            crate::sim::docking::bunker_link::unit_unload_empties_bunker(
+                &mut sim,
+                1,
+                &rules,
+                FrameEffects::default(),
+            )
+        );
         assert_eq!(
             sim.substrate.entities.get(2).unwrap().bunker.occupant(),
             None

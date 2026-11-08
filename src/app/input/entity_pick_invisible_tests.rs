@@ -31,13 +31,17 @@ fn view<'a>(
     }
 }
 
+/// `AppendVisibleBuildingSelectables @ 0x006D9CE0` never registers an
+/// InvisibleInGame building (0x006D9D5E..0x006D9D6C): a click on a lamp's
+/// anchor finds the object sharing it, and a band holding only the lamp has
+/// caught nothing.
 #[test]
-fn invisible_lamp_refuses_hover_and_click_without_picking_the_object_behind() {
+fn an_invisible_lamp_is_never_registered_for_the_click_or_the_band() {
     let (mut sim, rules) = fixture();
     let lamp = sim
         .spawn_object("LAMP", "Neutral", 10, 10, 0, &rules)
         .unwrap();
-    let behind = sim
+    let beside = sim
         .spawn_object("VISIBLE", "Neutral", 10, 10, 0, &rules)
         .unwrap();
     let interpolation = RenderInterpolation::new(false);
@@ -45,30 +49,24 @@ fn invisible_lamp_refuses_hover_and_click_without_picking_the_object_behind() {
     let (x, y) = source.screen_position(sim.entities().get(lamp).unwrap());
     assert!(rules.object("LAMP").unwrap().invisible);
     assert_eq!(
-        pick_entity_at_point(&sim, &[lamp, behind], None, None, x, y, None, None),
-        Some(lamp)
+        pick_entity_at_point(source, &[lamp, beside], None, None, x, y, None, None),
+        Some(beside)
     );
-    assert_eq!(
-        pick_entity_at_point(source, &[lamp, behind], None, None, x, y, None, None),
-        None
-    );
-    assert_eq!(hover_object_at_point(source, x, y, "Player", true), None);
-    let mutation = compute_click_selection_snapshot_with_playfield(
-        source,
-        &[lamp, behind],
-        &[behind],
-        None,
-        Some("Player"),
-        x,
-        y,
-        false,
-        Some(&rules),
-        Some(sim.interner()),
-        false,
-        None,
-    )
-    .unwrap();
-    assert!(mutation.clear && mutation.select.is_empty());
+    let band = |order: &[u64]| {
+        band_rect_contains_drawn_object(
+            source,
+            order,
+            None,
+            None,
+            x - 1.,
+            y - 1.,
+            x + 1.,
+            y + 1.,
+            Some(sim.interner()),
+        )
+    };
+    assert!(!band(&[lamp]));
+    assert!(band(&[lamp, beside]));
 }
 
 #[test]

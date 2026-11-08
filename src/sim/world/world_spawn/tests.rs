@@ -3479,3 +3479,25 @@ fn structures_field_11_sets_the_building_lights_behaviour() {
         .collect();
     assert_eq!(drawn, [false, true]);
 }
+
+/// Ares 3.0 UnitClass_CTOR_TurretROT (1004BC40, hook 0x735584): the
+/// turret's controller turns at `TurretROT=`, the body at `ROT=`.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_turret_rot_sets_the_secondary_rate() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\nTurret=yes\nROT=5\nTurretROT=2\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::with_seed(0);
+    install_constructor_test_playfield(&mut sim);
+    install_constructor_flat_terrain(&mut sim);
+    install_american_house(&mut sim);
+    let id = sim
+        .spawn_object_at_height("MTNK", "Americans", 6, 5, 64, 0, &rules)
+        .unwrap();
+    let entity = sim.substrate.entities.get(id).unwrap();
+    let rate = |rot| crate::sim::movement::FacingClass::new(0, rot).rot_per_frame();
+    assert_eq!(entity.barrel_facing.unwrap().rot_per_frame(), rate(2));
+    assert_eq!(entity.body_facing.rot_per_frame(), rate(5));
+}

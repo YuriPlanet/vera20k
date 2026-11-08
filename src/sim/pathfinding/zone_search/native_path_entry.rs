@@ -1,14 +1,15 @@
-// Active42C927..42CB22 entry order and583180/5835D0 projection.
+// Active42C927..42CB22 entry order and583180/5833F0/5835D0 projection.
 // Evidence: PHASE3_TUBE_HIERARCHY_20260910.md; bounded native prefix oracle.
 use std::collections::BTreeSet;
 
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::cell_index::NativeCellIdentity;
+use crate::map::resolved_terrain::{NativeCellQuery, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::MovementZone;
 use crate::sim::cell_rect::{
-    CellRef, PlayfieldBounds, cell_is_in_playfield_height_aware, get_cellclass_fallback,
+    CellRef, PlayfieldBounds, cell_is_in_playfield_height_aware_in_query, native_cell_ref,
 };
 use crate::sim::pathfinding::zone_build;
-use crate::sim::pathfinding::zone_map::ZoneGrid;
+use crate::sim::pathfinding::zone_map::{ZoneGrid, ZoneQueryCell};
 
 pub(super) struct NativePathEntry {
     pub(super) raw_equal: Option<bool>,
@@ -18,51 +19,28 @@ pub(super) struct NativePathEntry {
     pub(super) endpoints_in_playfield: bool,
 }
 
-// Projection also reads real Cell.Flags800, outside the narrower1180
-// shared stamp facade. The retained dummy authority now includes400/800 from
-// fresh-load gap restamping and the associated SetBridgeDirection writers.
-fn live_cell_flags(cell: &CellRef<'_>) -> u32 {
-    match cell {
-        CellRef::Real(cell) => cell.bridge_facts.raw_flags,
-        CellRef::Dummy { cell } => cell.retained_bridge_flags(),
-    }
+fn packed_coord((x, y): (i16, i16)) -> (u16, u16) {
+    (x as u16, y as u16)
 }
 
-fn live_cell_coord(cell: &CellRef<'_>) -> (u16, u16) {
-    match cell {
-        CellRef::Real(cell) => (cell.rx, cell.ry),
-        CellRef::Dummy { cell } => {
-            let c = cell.snapshot().coord;
-            (c.0 as u16, c.1 as u16)
-        }
-    }
+fn live_cell_coord(cells: &NativeCellQuery<'_>, cell: NativeCellIdentity) -> (u16, u16) {
+    packed_coord(cells.coord(cell))
 }
 
-fn live_cell_step<'a>(
-    terrain: &'a ResolvedTerrainGrid,
-    cell: &CellRef<'_>,
-    direction: usize,
-) -> CellRef<'a> {
-    let c = live_cell_coord(cell);
-    let d = crate::util::direction::DIRECTION_DELTAS[direction];
-    get_cellclass_fallback(
-        Some(terrain),
-        i32::from((c.0 as i16).wrapping_add(d.0 as i16)),
-        i32::from((c.1 as i16).wrapping_add(d.1 as i16)),
+fn live_cell_state(cells: &NativeCellQuery<'_>, cell: NativeCellIdentity) -> ((u16, u16), bool) {
+    (
+        live_cell_coord(cells, cell),
+        cell == NativeCellIdentity::Dummy,
     )
 }
 
-fn live_cell_state(cell: &CellRef<'_>) -> ((u16, u16), bool) {
-    (live_cell_coord(cell), matches!(cell, CellRef::Dummy { .. }))
-}
-
-fn live_high_nonrock(terrain: &ResolvedTerrainGrid, cell: &CellRef<'_>) -> bool {
-    match cell {
+fn live_high_nonrock(cells: &NativeCellQuery<'_>, cell: NativeCellIdentity) -> bool {
+    match native_cell_ref(cells, cell) {
         CellRef::Real(cell) => {
-            terrain.high_bridge_tile_offset(cell).is_some()
+            cells.terrain().high_bridge_tile_offset(cell).is_some()
                 && cell.land_type != crate::rules::terrain_rules::LandType::Rock.as_index()
         }
-        // Constructor65535 is outside all hash-bound retail high sets.
+        // Constructor65535 is outside all retail high bridge sets.
         CellRef::Dummy { .. } => false,
     }
 }
@@ -70,32 +48,36 @@ fn live_high_nonrock(terrain: &ResolvedTerrainGrid, cell: &CellRef<'_>) -> bool 
 /// `MapClass::Is_Cell_In_Playfield(c, 1)` (`0x00578460`) for one path
 /// search. A fixture without bounds admits every cell.
 pub(super) fn live_mode_one(
-    terrain: &ResolvedTerrainGrid,
+    cells: &NativeCellQuery<'_>,
     bounds: Option<PlayfieldBounds>,
     c: (u16, u16),
 ) -> bool {
     bounds.is_none_or(|b| {
-        cell_is_in_playfield_height_aware(
+        cell_is_in_playfield_height_aware_in_query(
             (i32::from(c.0 as i16), i32::from(c.1 as i16)),
             Some(b),
-            Some(terrain),
+            Some(cells.terrain()),
+            Some(cells),
         )
     })
 }
 
-fn live_no_record_projection(
-    terrain: &ResolvedTerrainGrid,
-    original: &CellRef<'_>,
+/// Original `MapClass::FindClosestBridgeExit @ 0x005835D0`. Its two
+/// CellStruct pointers are independent: either can be a copied coordinate or
+/// a retained CellClass+24 that follows this query's Dummy writes. A successful
+/// `(0,0)` means neither exit was admitted; callers apply their own fallback.
+pub(crate) fn closest_bridge_exit(
+    cells: &NativeCellQuery<'_>,
+    at: ZoneQueryCell,
+    reference: ZoneQueryCell,
     bounds: Option<PlayfieldBounds>,
 ) -> Result<(u16, u16), &'static str> {
-    let c = live_cell_coord(original);
-    let mut positive =
-        get_cellclass_fallback(Some(terrain), i32::from(c.0 as i16), i32::from(c.1 as i16));
-    if live_cell_flags(&positive) & 0x100 == 0 {
-        return Ok(live_cell_coord(&positive));
+    let mut positive = cells.lookup(at.coord(cells));
+    if cells.flags(positive) & 0x100 == 0 {
+        return Ok(live_cell_coord(cells, positive));
     }
-    let mut negative = positive.clone();
-    let (pd, nd) = if live_cell_flags(&positive) & 0x800 != 0 {
+    let mut negative = positive;
+    let (pd, nd) = if cells.flags(positive) & 0x800 != 0 {
         (2, 6)
     } else {
         (4, 0)
@@ -104,58 +86,132 @@ fn live_no_record_projection(
     let mut nc = (0, 0);
     let mut visited = BTreeSet::new();
     loop {
-        if !visited.insert((live_cell_state(&positive), live_cell_state(&negative))) {
+        if !visited.insert((
+            live_cell_state(cells, positive),
+            live_cell_state(cells, negative),
+        )) {
             return Err("cyclic5835D0 walk");
         }
-        if live_cell_flags(&positive) & 0x100 != 0 {
-            positive = live_cell_step(terrain, &positive, pd);
-            if live_cell_flags(&positive) & 0x100 == 0 && live_high_nonrock(terrain, &positive) {
-                pc = live_cell_coord(&positive);
+        if cells.flags(positive) & 0x100 != 0 {
+            positive = cells.neighbor(positive, pd);
+            if cells.flags(positive) & 0x100 == 0 && live_high_nonrock(cells, positive) {
+                pc = live_cell_coord(cells, positive);
             }
         }
-        if live_cell_flags(&negative) & 0x100 != 0 {
-            negative = live_cell_step(terrain, &negative, nd);
-            if live_cell_flags(&negative) & 0x100 == 0 && live_high_nonrock(terrain, &negative) {
-                nc = live_cell_coord(&negative);
+        if cells.flags(negative) & 0x100 != 0 {
+            negative = cells.neighbor(negative, nd);
+            if cells.flags(negative) & 0x100 == 0 && live_high_nonrock(cells, negative) {
+                nc = live_cell_coord(cells, negative);
             }
         }
-        if live_cell_flags(&positive) & 0x100 == 0 && live_cell_flags(&negative) & 0x100 == 0 {
+        if cells.flags(positive) & 0x100 == 0 && cells.flags(negative) & 0x100 == 0 {
             break;
         }
     }
     // Both probes run even for sentinel(0,0). Their dummy writes can change
     // the original retained reference before distance calculation.
-    let positive_inside = live_mode_one(terrain, bounds, pc);
-    let negative_inside = live_mode_one(terrain, bounds, nc);
+    let positive_inside = live_mode_one(cells, bounds, pc);
+    let negative_inside = live_mode_one(cells, bounds, nc);
     let mut selected = if positive_inside { pc } else { (0, 0) };
-    if negative_inside
-        && (selected == (0, 0)
-            || zone_build::native_packed_cell_distance(live_cell_coord(original), pc)
-                > zone_build::native_packed_cell_distance(live_cell_coord(original), nc))
-    {
-        selected = nc;
+    if negative_inside {
+        let negative_is_closer = selected == (0, 0) || {
+            //58376C reads the reference only after both membership probes.
+            let reference = packed_coord(reference.coord(cells));
+            let negative_distance = zone_build::native_packed_cell_distance(nc, reference);
+            let positive_distance = zone_build::native_packed_cell_distance(pc, reference);
+            negative_distance < positive_distance
+        };
+        if negative_is_closer {
+            selected = nc;
+        }
     }
-    if selected == (0, 0) {
-        Err("583180 record[-1] after sentinel fallback")
-    } else {
-        Ok(selected)
-    }
+    Ok(selected)
 }
 
-pub(crate) fn live_hierarchy_projection(
-    terrain: &ResolvedTerrainGrid,
+// Both inactive-record branches (583180 and5833F0) walk the same east/south
+// axis with Cell481810, then select B only for a nonrock high bridge exit.
+fn inactive_record_endpoint(
+    cells: &NativeCellQuery<'_>,
+    record: &crate::sim::bridge_state::BridgeEndpointRecord,
+    mut current: NativeCellIdentity,
+) -> Option<(u16, u16)> {
+    let direction = if record.endpoint_a.0 == record.endpoint_b.0 {
+        4
+    } else {
+        2
+    };
+    let mut visited = BTreeSet::new();
+    while cells.flags(current) & 0x100 != 0 {
+        if !visited.insert(live_cell_state(cells, current)) {
+            return None;
+        }
+        current = cells.neighbor(current, direction);
+    }
+    Some(if live_high_nonrock(cells, current) {
+        record.endpoint_b
+    } else {
+        record.endpoint_a
+    })
+}
+
+/// Original `MapClass::ResolveBridgeEndpointTowardCell @ 0x005833F0`.
+/// Searches at tolerance one without a structural/enabled gate, and measures
+/// unshifted endpoints from the independent reference. A tie selects B.
+pub(crate) fn resolve_bridge_endpoint(
+    cells: &NativeCellQuery<'_>,
     records: &[crate::sim::bridge_state::BridgeEndpointRecord],
-    original: &CellRef<'_>,
+    at: ZoneQueryCell,
+    reference: ZoneQueryCell,
+    bounds: Option<PlayfieldBounds>,
+) -> Result<(u16, u16), &'static str> {
+    let c = packed_coord(at.coord(cells));
+    let Some(record) = zone_build::find_high_bridge_record(records, 0, c, 1) else {
+        let exit = closest_bridge_exit(cells, at, reference, bounds)?;
+        //5835BC re-reads *at after5835D0; a retained Dummy may have changed.
+        return Ok(if exit == (0, 0) {
+            packed_coord(at.coord(cells))
+        } else {
+            exit
+        });
+    };
+    if record.active {
+        let reference = packed_coord(reference.coord(cells));
+        return Ok(
+            if zone_build::native_packed_cell_distance(reference, record.endpoint_a)
+                < zone_build::native_packed_cell_distance(reference, record.endpoint_b)
+            {
+                record.endpoint_a
+            } else {
+                record.endpoint_b
+            },
+        );
+    }
+    let current = cells.lookup(at.coord(cells));
+    inactive_record_endpoint(cells, record, current).ok_or("cyclic5833F0 inactive walk")
+}
+
+/// Original `MapClass::ResolvePathCoord_BridgeAware @ 0x00583180`.
+pub(crate) fn live_hierarchy_projection(
+    cells: &NativeCellQuery<'_>,
+    records: &[crate::sim::bridge_state::BridgeEndpointRecord],
+    original: NativeCellIdentity,
     enabled: bool,
     bounds: Option<PlayfieldBounds>,
 ) -> Result<(u16, u16), &'static str> {
-    let c = live_cell_coord(original);
-    let flags = live_cell_flags(original);
+    let c = live_cell_coord(cells, original);
+    let flags = cells.flags(original);
     if !enabled || flags & 0x100 == 0 {
         return Ok(c);
     }
     let Some(record) = zone_build::find_high_bridge_record(records, 0, c, 2) else {
-        return live_no_record_projection(terrain, original, bounds);
+        let at = ZoneQueryCell::Retained(original);
+        let exit = closest_bridge_exit(cells, at, at, bounds)?;
+        return if exit == (0, 0) {
+            //5831F8 would index record[-1], unlike5833F0's input fallback.
+            Err("583180 record[-1] after sentinel fallback")
+        } else {
+            Ok(exit)
+        };
     };
     let offset = if flags & 0x800 != 0 {
         (0, c.1.wrapping_sub(record.endpoint_a.1))
@@ -176,24 +232,9 @@ pub(crate) fn live_hierarchy_projection(
             },
         );
     }
-    let direction = if record.endpoint_a.0 == record.endpoint_b.0 {
-        4
-    } else {
-        2
-    };
-    let mut current = original.clone();
-    let mut visited = BTreeSet::new();
-    while live_cell_flags(&current) & 0x100 != 0 {
-        if !visited.insert(live_cell_state(&current)) {
-            return Err("cyclic583180 inactive walk");
-        }
-        current = live_cell_step(terrain, &current, direction);
-    }
-    Ok(project(if live_high_nonrock(terrain, &current) {
-        record.endpoint_b
-    } else {
-        record.endpoint_a
-    }))
+    let endpoint =
+        inactive_record_endpoint(cells, record, original).ok_or("cyclic583180 inactive walk")?;
+    Ok(project(endpoint))
 }
 
 pub(super) fn prepare_native_path_entry(
@@ -215,33 +256,30 @@ pub(super) fn prepare_native_path_entry(
             endpoints_in_playfield: allow_hierarchy && bounds.is_none(),
         };
     };
-    let lookup = |c: (u16, u16)| {
-        get_cellclass_fallback(Some(terrain), i32::from(c.0 as i16), i32::from(c.1 as i16))
-    };
+    let cells = NativeCellQuery::canonical(terrain);
+    let lookup = |c: (u16, u16)| cells.lookup((c.0 as i16, c.1 as i16));
     let source_cell = lookup(start); //42C938 retained identity
     let goal_cell = lookup(goal); //42C94B retained identity
     let source_zone =
         zones.and_then(|z| z.get_zone_id_native(terrain, start, movement, start_bridge));
-    let query_goal_bridge = live_cell_flags(&lookup(goal)) & 0x100 != 0; //42C9B7
+    let query_goal_bridge = cells.flags(lookup(goal)) & 0x100 != 0; //42C9B7
     let goal_zone =
         zones.and_then(|z| z.get_zone_id_native(terrain, goal, movement, query_goal_bridge));
     let records = zones.map_or(&[][..], ZoneGrid::bridge_records);
-    let projection = |cell: &CellRef<'_>, enabled| {
-        live_hierarchy_projection(terrain, records, cell, enabled, bounds).unwrap_or_else(
-            |reason| {
-                // Explicit unsupported process-memory/termination domain: keep
-                // the current retained coordinate, not a claimed native result.
-                log::warn!("unresolved native path entry projection: {reason}");
-                live_cell_coord(cell)
-            },
-        )
+    let projection = |cell: NativeCellIdentity, enabled| {
+        live_hierarchy_projection(&cells, records, cell, enabled, bounds).unwrap_or_else(|reason| {
+            // Explicit unsupported process-memory/termination domain: keep
+            // the current retained coordinate, not a claimed native result.
+            log::warn!("unresolved native path entry projection: {reason}");
+            live_cell_coord(&cells, cell)
+        })
     };
-    let hierarchy_start = projection(&source_cell, start_bridge);
-    let goal_bridge = live_cell_flags(&goal_cell) & 0x100 != 0; //42CA05 after source projection
-    let hierarchy_goal = projection(&goal_cell, goal_bridge);
+    let hierarchy_start = projection(source_cell, start_bridge);
+    let goal_bridge = cells.flags(goal_cell) & 0x100 != 0; //42CA05 after source projection
+    let hierarchy_goal = projection(goal_cell, goal_bridge);
     let endpoints_in_playfield = allow_hierarchy
-        && live_mode_one(terrain, bounds, hierarchy_start)
-        && live_mode_one(terrain, bounds, hierarchy_goal);
+        && live_mode_one(&cells, bounds, hierarchy_start)
+        && live_mode_one(&cells, bounds, hierarchy_goal);
     NativePathEntry {
         raw_equal: source_zone.zip(goal_zone).map(|(a, b)| a == b),
         goal_bridge,

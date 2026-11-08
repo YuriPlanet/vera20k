@@ -1447,6 +1447,26 @@ enum FrameResume {
     OutcomeWait,
 }
 
+/// House+56F9, the House colour an Ares `Beam.IsHouseColor` birth keeps
+/// (TechnoClass_FireRadBeam1, Ares.dll 10056010), through the shared
+/// colour-map lookup the other House+56F9 readers use.
+#[cfg(feature = "ares")]
+fn house_rgb(
+    runtime: Option<&crate::sim::runtime::SimRuntime>,
+    colors: &crate::map::houses::HouseColorMap,
+    owner: crate::sim::intern::InternedId,
+) -> [u8; 3] {
+    let Some(runtime) = runtime else {
+        return [0; 3];
+    };
+    let name = runtime.simulation.interner().resolve(owner);
+    let index = colors
+        .get(name)
+        .copied()
+        .unwrap_or(crate::rules::house_colors::NO_REMAP);
+    crate::render::palette_light::house_color_rgb(&runtime.resources.rules.house_color_ramps, index)
+}
+
 /// House+56FC, the laser color a `LaserColor::House` or `Beam.IsHouseColor`
 /// birth resolves through.
 fn house_laser_rgb(
@@ -1939,6 +1959,19 @@ fn advance_one_simulation_frame(
                 sim.interner(),
                 local_owner_name.as_deref(),
             );
+            #[cfg(feature = "ares")]
+            hud_messages.extend(super::sound_dispatch::ares_superweapon_messages(
+                &frame_sound_events,
+                sim,
+                &resources.rules,
+                local_owner_name.as_deref(),
+            ));
+            #[cfg(feature = "ares")]
+            hud_messages.extend(super::sound_dispatch::ares_tech_capture_messages(
+                &frame_sound_events,
+                sim,
+                local_owner_name.as_deref(),
+            ));
             assert!(
                 sound_events_delivered <= frame_sound_events.len(),
                 "frame delivered more sound facts than it produced"
@@ -2175,7 +2208,13 @@ fn advance_one_simulation_frame(
                     let colors = &presentation.house_color_map;
                     presentation
                         .radiation_beams
-                        .create(birth, |owner| house_laser_rgb(runtime, colors, owner));
+                        .create(birth, |owner, kind| match kind {
+                            #[cfg(feature = "ares")]
+                            crate::sim::combat::radiation_beam::BeamHouseColor::House => {
+                                house_rgb(runtime, colors, owner)
+                            }
+                            _ => house_laser_rgb(runtime, colors, owner),
+                        });
                 }
                 LifecycleOutput::LineTrailConstructed { stable_id, style } => {
                     let presentation = &mut state.match_state.match_presentation;
@@ -2373,6 +2412,15 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
             }
             // Consumed by the frame's existing bridge/terrain refresh.
             TriggerEffect::BridgeStateChanged => {}
+            #[cfg(feature = "ares")]
+            TriggerEffect::EvaVoice { index } => {
+                if let (Some(sfx), Some(catalog)) = (
+                    state.audio.sfx_player.as_mut(),
+                    state.process_assets.audio_catalog(),
+                ) {
+                    sfx.set_trigger_eva_voice(*index, catalog.eva());
+                }
+            }
             TriggerEffect::HomeCamera { coord } => {
                 crate::app::input::camera::apply_home_camera(state, *coord);
             }

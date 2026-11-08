@@ -221,6 +221,8 @@ fn resolve_rally_cell_click(
             footprint: NearbyFootprint::SINGLE,
             allow_bridge_cells: true,
             check_height: false,
+            require_burrowable: false,
+            burrowing_contents: None,
             check_occupancy: false,
             radius_cap: map_owned_radius_cap(size.0, size.1),
             target_cell: None,

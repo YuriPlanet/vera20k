@@ -175,6 +175,17 @@ impl PerformanceOverlay {
         self.visible
     }
 
+    /// Whether the shown panel has new figures for the next draw.
+    pub(crate) fn readings_due(&self, now: Instant) -> bool {
+        self.visible
+            && self
+                .frame
+                .lock()
+                .expect("performance overlay frame lock")
+                .stats
+                .due(now)
+    }
+
     /// The Options page's Performance Stats box.
     pub(crate) fn set_visible(&mut self, visible: bool) {
         self.visible = visible;

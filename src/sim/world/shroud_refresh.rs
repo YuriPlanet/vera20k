@@ -152,6 +152,9 @@ impl SightHeights {
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Default)]
 struct RevealCalls {
+    /// `MapClass::RevealArea` entries, including the ones its house gate
+    /// rejects before any cell.
+    map_calls: usize,
     walks: Vec<Vec<(u16, u16)>>,
     border_scans: Vec<((u16, u16, i32), i32)>,
     /// Actual567DA0 receiver calls, in order.
@@ -881,6 +884,17 @@ impl Simulation {
         projection: vision::MapRevealProjection,
         notification_viewer: Option<crate::sim::intern::InternedId>,
     ) -> Option<(u16, u16, i32)> {
+        #[cfg(any(test, feature = "test-support"))]
+        REVEAL_CALLS.with_borrow_mut(|trace| {
+            if let Some(trace) = trace {
+                trace.map_calls += 1;
+            }
+        });
+        // `0x00567AB0..0x00567B12` rejects the source's House and returns at
+        // `0x00567D88`: the call happens but nothing is collected or walked.
+        if projection == vision::MapRevealProjection::Rejected {
+            return None;
+        }
         // Original5678E0 resolves/substitutes its House once at567AB4..567B12,
         // before the loop (backedge567D82→567B2A). Map5673A0 shares this gate
         // at567570..5675D0. Its admitted House is passed through4A9D88/8D
@@ -2313,18 +2327,38 @@ impl Simulation {
             return;
         }
         let clients = self.fog_viewers();
-        let viewers = self.reveal_viewers.direct(
+        let projected = self.reveal_viewers.direct(
             self.house_alliances.as_map(),
             entity.owner(),
             &config,
             &self.interner,
             &clients,
         );
-        let viewers: Vec<_> = viewers
+        let viewers: Vec<_> = projected
             .iter()
             .copied()
             .filter(|viewer| only_viewer.is_none_or(|only| *viewer == only))
             .collect();
+        if projected.is_empty() {
+            // `0x005678E0`'s house gate (`0x00567AB0..0x00567B12`) still
+            // receives the call and returns at `0x00567D88`; every client
+            // map runs its own instance, so each is called once.
+            let radius = geometry.radius.clamp(0, i32::from(vision::MAX_SIGHT_RANGE)) as u16;
+            for _client in clients.iter() {
+                let _ = self.reveal_area(
+                    &[],
+                    (geometry.origin.0, geometry.origin.1),
+                    geometry.origin.2,
+                    radius,
+                    None,
+                    false,
+                    &config,
+                    context,
+                    vision::MapRevealProjection::Rejected,
+                    None,
+                );
+            }
+        }
         let heights = self.sight_height_grid(&config);
         for &viewer in viewers.iter() {
             let border_origin = self.reveal_area(

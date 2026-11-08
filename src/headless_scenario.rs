@@ -527,7 +527,8 @@ fn load_with_assets(
         overlay_grid,
         &house_roster,
         Some(&launch),
-    );
+    )
+    .map_err(|error| error.to_string())?;
     if !post_map.navigation_published {
         return Err("publish headless post-map navigation".to_string());
     }

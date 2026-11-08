@@ -220,7 +220,12 @@ fn factory_country_binding_uses_current_registry_and_retained_extension_admissio
         Some(AresFactoryOwners::default())
     );
     let pass = IniFile::from_str("[CONTROL]\nFactoryOwners=LATE\nBuiltAt=LATE_FACTORY\n");
-    reader.process_techno_family(RulesTypeFamily::Building, &pass, &IniFile::empty(), &crate::rules::sound_ini::SoundRegistry::default());
+    reader.process_techno_family(
+        RulesTypeFamily::Building,
+        &pass,
+        &IniFile::empty(),
+        &crate::rules::sound_ini::SoundRegistry::default(),
+    );
     let late = reader.find_or_construct(RulesTypeFamily::Country, "LATE");
     let late_factory = reader.find_or_construct(RulesTypeFamily::Building, "LATE_FACTORY");
     reader.process_techno_family(
@@ -246,7 +251,12 @@ fn factory_country_binding_uses_current_registry_and_retained_extension_admissio
             .built_at
             .is_empty()
     );
-    reader.process_techno_family(RulesTypeFamily::Building, &pass, &IniFile::empty(), &crate::rules::sound_ini::SoundRegistry::default());
+    reader.process_techno_family(
+        RulesTypeFamily::Building,
+        &pass,
+        &IniFile::empty(),
+        &crate::rules::sound_ini::SoundRegistry::default(),
+    );
     assert_eq!(
         reader.families[&RulesTypeFamily::Building][index]
             .factory_owners

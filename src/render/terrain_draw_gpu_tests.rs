@@ -2209,3 +2209,56 @@ pub(crate) fn assert_native_color_and_depth(
         );
     }
 }
+
+/// A frame's instance uploads are copies recorded ahead of its passes, out of
+/// staging chunks the pool reuses once a submission has copied out of them.
+#[test]
+#[ignore = "requires a GPU; draws instances the pool's recorded uploads wrote"]
+fn recorded_uploads_reach_the_passes_after_them_frame_after_frame() {
+    use crate::render::batch::InstanceBufferPool;
+    let gpu = Gpu::new();
+    let size = [16, 4];
+    let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+    batch.write_camera(&gpu.queue, camera(size));
+    let atlas =
+        batch.create_texture_on_device(&gpu.device, &gpu.queue, &[255; 4], 1, 1, Some(&[1]));
+    let color = gpu.target(size, format);
+    let cv = color.create_view(&Default::default());
+    let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+    let dv = depth.create_view(&Default::default());
+    let mut pool = InstanceBufferPool::new();
+    // The left half; the right half from more instances than the pool's first
+    // buffer holds; the left half again, from a reused chunk.
+    for (left, count) in [(0, 1), (8, 65), (0, 1)] {
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        let instance = sprite([left as f32, 0.0], [8.0, 4.0], 0.0);
+        pool.record_uploads(&gpu.device, &mut encoder)
+            .upload("recorded", &vec![instance; count]);
+        clear(
+            &mut encoder,
+            &cv,
+            &dv,
+            65535,
+            wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+        );
+        {
+            let mut pass = crate::app::presentation::sidebar_render::begin_main_load_pass(
+                &mut encoder,
+                &cv,
+                &dv,
+            );
+            let (buffer, drawn) = pool.get("recorded").unwrap();
+            assert_eq!(drawn, count as u32);
+            batch.draw_with_buffer_no_depth(&mut pass, &atlas, buffer, drawn);
+        }
+        let read = gpu.read(&mut encoder, &color);
+        let output = gpu.finish(encoder, &[read], size).remove(0);
+        let painted: Vec<bool> = output.as_chunks::<4>().0[..16]
+            .iter()
+            .map(|pixel| *pixel != [0, 0, 0, 255])
+            .collect();
+        let expected: Vec<bool> = (0..16).map(|x| (left..left + 8).contains(&x)).collect();
+        assert_eq!(painted, expected, "instances drawn from x {left}");
+    }
+}

@@ -42,12 +42,15 @@
 //! (`0x0062A40B`) Unlimbo finds the latch that Unlimbo set and adds nothing.
 //!
 //! RESIDUALS (each needs a mechanism VERA does not have yet):
-//! - The fog borders that follow the AttachTo refusal (`0x0062AA91`: from
-//!   the cached radius - 3 out to + 2) and PointerExpired (`0x0062A44B`:
-//!   - 3 out to + 3) are not refreshed. Trigger: a jump whose host is lost
-//!   in flight; a drone's victim dying. Effect: the shroud-edge frames of
-//!   that ring around the drone wait for its next reveal event. Frequency:
-//!   each such release. Risk: edge frames only.
+//! - The fog border that follows the AttachTo refusal (`0x0062AA91`: from
+//!   the cached radius - 3 out to + 2) is not refreshed. Trigger: a jump
+//!   whose host is lost in flight. Effect: the shroud-edge frames of that
+//!   ring around the drone wait for its next reveal event. Frequency: each
+//!   such refusal. Risk: edge frames only. PointerExpired's border
+//!   (`0x0062A44B`: - 3 out to + 3) is not refreshed either, but it changes
+//!   nothing: the drone's Unlimbo border (`0x006F6D61`, from its cell out
+//!   to the radius + 3) has just refreshed that disc, and the UpdateReveal
+//!   between (`0x0062A40B`) reveals nothing new.
 //! - GetReleaseCoords' PlaceInfantryInCell finding no spot writes the zero
 //!   coordinate (`0x0089E778`), which a Unit owner turns into map cell
 //!   (0,0)'s GetCoords (`0x0062AE09..0x0062AE3E`); that is no longer the
@@ -828,6 +831,41 @@ impl Simulation {
             .get(victim)
             .map_or(0, |v| v.body_facing_current(frame));
         let coords = self.parasite_release_coords(owner, victim, rules);
+        // Ares 3.0 ParasiteClass_PointerGotInvalid (1005CF20, hook
+        // 0x62A2F8): a non-naval Unit or an Infantry owner whose victim is
+        // at least two levels up (GetHeight 208) drops from the victim's
+        // Location as a bomb (+0x8D, +0x8F).
+        #[cfg(feature = "ares")]
+        let coords = {
+            let terrain = self.resolved_terrain.as_ref();
+            let falls =
+                self.substrate
+                    .entities
+                    .get(owner)
+                    .is_some_and(|eater| match eater.category() {
+                        EntityCategory::Unit => self
+                            .object_type(eater.type_ref(), rules)
+                            .is_some_and(|object| !object.naval),
+                        EntityCategory::Infantry => true,
+                        _ => false,
+                    });
+            let drop = self
+                .substrate
+                .entities
+                .get(victim)
+                .filter(|victim| {
+                    falls
+                        && crate::sim::movement::air_movement::current_fly_height(victim, terrain)
+                            >= 2 * crate::util::lepton::LEPTONS_PER_LEVEL as i32
+                })
+                .map(|victim| ground_pose::object_location(victim, terrain));
+            if drop.is_some()
+                && let Some(eater) = self.substrate.entities.get_mut(owner)
+            {
+                eater.begin_bomb_fall();
+            }
+            drop.or(coords)
+        };
         // 0x0062A2F8..0x0062A379: the 0xA8E7AC bracket around Unlimbo.
         let placed = coords.is_some_and(|coords| {
             self.with_object_placement_scope(|sim| {
@@ -1247,14 +1285,23 @@ impl Simulation {
     }
 
     /// FootClass::PointerExpired `0x004D998C..0x004D99CD`, after the Techno
-    /// body, for one listener.
+    /// body, for one listener. `removed` is the expiry's control: UnInit
+    /// rather than a cloak's Detach_All(false).
+    ///
+    /// Ares FootClass_PointerGotInvalid_Parasite10048280 (hook4D99AA)
+    /// forwards the real control instead of stock's constant true, and
+    /// ParasiteClass_PointerGotInvalid_Cloak100482D0 (hook62A283) releases
+    /// the victim only when it was removed; the victim clears its own link
+    /// only then too. A victim that cloaks keeps its parasite.
     pub(crate) fn foot_parasite_pointer_expired(
         &mut self,
         listener: u64,
         expired: u64,
+        removed: bool,
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
+        let removed = !crate::rules::ARES_ENABLED || removed;
         let Some(eater) = self
             .substrate
             .entities
@@ -1286,11 +1333,13 @@ impl Simulation {
             .get(listener)
             .and_then(|l| l.parasite.eater)
             && eater_health(self, eater) > 0
+            && removed
         {
             self.parasite_pointer_expired(eater, expired, rules, effects);
         }
         // 0x004D99C9: the victim itself expiring clears its own link.
         if expired == listener
+            && removed
             && let Some(entity) = self.substrate.entities.get_mut(listener)
         {
             entity.parasite.eater = None;

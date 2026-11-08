@@ -62,6 +62,12 @@ impl RulesTypeReferences {
         }
     }
 
+    /// A kept pointer's current stored ID, `None` while it is null.
+    #[cfg(feature = "ares")]
+    pub(crate) fn pointer(&self, key: &str) -> Option<&str> {
+        self.pointers.get(key).map(String::as_str)
+    }
+
     pub(crate) fn list(&self, key: &str) -> &[String] {
         self.lists.get(key).map_or(&[], Vec::as_slice)
     }
@@ -167,6 +173,12 @@ const POINTERS: &[(&str, PublishPointer)] = &[
     // names resolve through FindOrAllocate `0x0075E3B0` (call `0x00669145`).
     ("EMPulseWarhead", |rules, id| {
         rules.general.empulse_warhead = named(id);
+    }),
+    // ReadGeneral's SmallVisceroid (ReadString returning at `0x0066E6B0`,
+    // UnitType FindOrAllocate); Ares' tiberium death visceroid reads it.
+    #[cfg(feature = "ares")]
+    ("SmallVisceroid", |rules, id| {
+        rules.general.small_visceroid = named(id);
     }),
     // ReadGeneral (`0x0066D530`), AnimTypes through `0x00428B80` unless
     // noted: OreTwinkle +1870 (`0x0066788E`, `0x0066D67B..0x0066D6A2`),
@@ -330,6 +342,12 @@ pub(crate) const DEFAULT_PARTICLE_SYSTEMS: [(&str, PublishPointer); 9] = [
 /// The kept lists. Each Rules offset is the constructor's empty vector and the
 /// read's store; the empty read keeps the vector at the address given.
 const LISTS: &[(&str, PublishList)] = &[
+    // RulesCtor666568..66659E starts +B74 empty. ReadAudioVisual66B0E4..
+    //66B1CF retains the ordered Anim pointers; Save6750B5/Load677050 keep
+    // this vector. Full Type reset uses the shared expired-pointer policy.
+    ("OnFire", |rules, ids| {
+        rules.general.on_fire = ids.to_vec();
+    }),
     // RulesCtor6656C0..6656E4; ReadGeneral66D6E2..66D7B1.
     ("BarrelDebris", |rules, ids| {
         rules.general.barrel_debris = ids.to_vec();

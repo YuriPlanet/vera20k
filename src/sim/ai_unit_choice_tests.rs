@@ -8,8 +8,11 @@
 //! qualify (`TeamScriptState::wants_members`) rests on instruction reading.
 
 use super::*;
-use crate::sim::ai_team_creation::tests::{Draws, dword, events, flag, index, native_draws, rows};
+#[cfg(not(feature = "ares"))]
+use crate::sim::ai_team_creation::tests::{Draws, events, index};
+use crate::sim::ai_team_creation::tests::{dword, flag, native_draws, rows};
 use crate::sim::house_state::HouseState;
+#[cfg(not(feature = "ares"))]
 use serde_json::Value;
 
 /// HouseChooseInfantry4FEEE0 counts Foot4DA230's free objects without an HP
@@ -51,6 +54,12 @@ fn retail_infantry_choice_waits_for_the_retained_corpse_to_finish() {
             .unwrap()
             .is_empty()
     );
+    // Installed Ares CanBuild10024090 (hook 0x4F7870) -> PrereqValidate10021B00
+    // asks HasFactory for computer houses too, where stock 0x004F7B5C answers
+    // them 1 before any factory; the replacement GI needs a real barracks.
+    #[cfg(feature = "ares")]
+    sim.spawn_object("GAPILE", "Americans", 20, 20, 0, &rules)
+        .unwrap();
     // Physical AIMD: Allied Base Guard - Refine needs three E1 and three GGI.
     let team_type = sim.interner.get("06175EFC-G").unwrap();
     sim.create_team(team_type, Some(owner), &rules).unwrap();
@@ -174,6 +183,10 @@ fn a_class_no_team_needs_still_draws_once() {
     sim.create_team(team_type, Some(owner), &rules)
         .expect("no Max= limit");
     let mut expected = sim.scenario_rng.clone();
+    // Ares 100216A0 draws `RandomRanged(0, 99)` instead.
+    #[cfg(feature = "ares")]
+    expected.next_range_i32_inclusive(0, 99);
+    #[cfg(not(feature = "ares"))]
     expected.next_range_i32_inclusive(0, 0x7FFF_FFFE);
 
     choose(&mut sim, &rules, owner, UnitChoiceKind::Aircraft);
@@ -191,6 +204,9 @@ fn a_class_no_team_needs_still_draws_once() {
     );
 }
 
+// Ares 100216A0 (hooks 0x4FEA60, 0x4FEEE0, 0x4FF210) draws
+// `RandomRanged(0, 99)` first (`ares_the_choice_draws_a_percent`).
+#[cfg(not(feature = "ares"))]
 #[test]
 fn the_choosers_match_the_original() {
     for (number, row) in rows("choosers").iter().enumerate() {
@@ -263,6 +279,7 @@ fn the_choosers_match_the_original() {
 /// The executed gate (`0x004FEE59..0x004FEE89`) at the boundary draws of
 /// each `FillEarliestTeamProbability`, the stock 100 among them: the earliest
 /// team's type exactly when the native compare falls through.
+#[cfg(not(feature = "ares"))]
 #[test]
 fn the_fill_earliest_gate_takes_the_native_draws() {
     let corpus = crate::test_fixture::json("tools/unit_draw_oracle.json");
@@ -316,6 +333,14 @@ fn the_harvester_branch_matches_the_original() {
             human: house.is_controlled_by_human(dword(&row["game_mode"]) != 0),
             tech_level: house.tech_level(),
         };
+        // Ares 10023410 compares the TechLevels signed.
+        #[cfg(feature = "ares")]
+        if let Some((_, harvester_tech)) = facts.harvester
+            && ((harvester_tech as u32) <= (facts.tech_level as u32))
+                != (harvester_tech <= facts.tech_level)
+        {
+            continue;
+        }
         let decision = harvester_decision(&facts);
         assert_eq!(
             decision.unwrap_or(-1),
@@ -329,6 +354,51 @@ fn the_harvester_branch_matches_the_original() {
             "harvester row {number}: draws"
         );
     }
+}
+
+/// Ares 100216A0: the first draw is `RandomRanged(0, 99)`, below
+/// `FillEarliestTeamProbability` the earliest team's type (4), else a second
+/// draw among the most needed (7); and 10023410 admits a harvester with a
+/// negative TechLevel, which gamemd's unsigned compare refuses.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_the_choice_draws_a_percent() {
+    let candidates = [
+        Candidate {
+            index: 4,
+            need: 1,
+            earliest: 10,
+        },
+        Candidate {
+            index: 7,
+            need: 2,
+            earliest: 20,
+        },
+    ];
+    for (roll, choice) in [(49, 4), (50, 7)] {
+        let mut asked = Vec::new();
+        let mut draws = [roll, 0].into_iter();
+        let picked = pick(&candidates, 50, |low, high| {
+            asked.push((low, high));
+            draws.next().unwrap()
+        });
+        assert_eq!(picked, Some(choice), "draw {roll}");
+        assert_eq!(asked[0], (0, 99));
+    }
+    let facts = HarvesterFacts {
+        harvester: Some((7, -1)),
+        refinery: Some(None),
+        gatherers: 0,
+        destinations: 1,
+        harvesters_per_refinery: 2,
+        slave_miners: 0,
+        current_iq: 5,
+        iq_harvester: 0,
+        no_ore: false,
+        human: false,
+        tech_level: 10,
+    };
+    assert_eq!(harvester_decision(&facts), Some(7));
 }
 
 /// A state saved before the NPSE naval slot existed keeps its land channel and

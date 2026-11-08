@@ -136,7 +136,7 @@ pub struct CargoBale {
     /// Native StorageClass slot. Grouping and payment use this identity;
     /// multiple types can have the same ore/gem presentation classification.
     pub tiberium_type: crate::rules::tiberium_type::TiberiumTypeId,
-    /// Presentation only, derived from the harvested type's Image.
+    /// Presentation only: native Storage slot 1 is gems; the other slots are ore.
     pub resource_type: ResourceType,
     pub value: u16,
 }
@@ -154,7 +154,7 @@ pub(crate) fn add_amount(hold: &mut Vec<CargoBale>, bale: CargoBale, amount: u16
 impl CargoBale {
     /// Unit Harvest_Ore_Tick73D450 and Infantry Harvest522E70 preserve the
     /// Cell's native Tiberium index when storing the reduction. Value comes
-    /// from that TiberiumClass, not the many-to-one Image classification.
+    /// from that TiberiumClass; Image does not change Storage slot identity.
     /// Native executions: spatial_oracle/harvest_field.json ore_tick rows.
     fn from_reduction(
         reduction: crate::sim::tiberium::ReduceTiberiumOutcome,

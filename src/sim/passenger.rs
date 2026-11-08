@@ -85,7 +85,6 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::houses::Houses;
 use crate::sim::intern::{InternedId, StringInterner};
-use crate::sim::power_system::PowerStates;
 use crate::sim::rng::SimRng;
 use crate::sim::scenario_session::ScenarioSession;
 use crate::sim::world::ObjectSubstrate;
@@ -394,6 +393,12 @@ impl BuildingOccupants {
         self.ids.clear();
         self.reset_fire_index();
     }
+    /// Ares 3.0 doTraverseTo (`100130E0`): `Occupants.RemoveItem(0)`, the
+    /// head shifted out without changing +69C.
+    #[cfg(feature = "ares")]
+    pub(crate) fn remove_head(&mut self) -> Option<u64> {
+        (!self.ids.is_empty()).then(|| self.ids.remove(0))
+    }
     /// BuildingPointerExpired44EAC0..44EB02 removes the first matching
     /// vector entry by shifting, without changing +69C. Its caller owns
     /// the ScenarioInit(A8E7AC) gate; ordinary Cargo expiry is separate.
@@ -445,6 +450,19 @@ impl Simulation {
         head_first: &[(u64, f64)],
         context: UninitContext<'_>,
     ) -> bool {
+        self.add_passenger_voiced(carrier, head_first, true, context)
+    }
+
+    /// [`Self::add_passenger_with_context`] under VocClass::VoicesEnabled
+    /// `voices`: while it is clear, VocClass::PlayGlobal (`0x00750920`)
+    /// plays nothing, so the entry sound is skipped.
+    fn add_passenger_voiced(
+        &mut self,
+        carrier: u64,
+        head_first: &[(u64, f64)],
+        voices: bool,
+        context: UninitContext<'_>,
+    ) -> bool {
         if !self.add_cargo_passenger_chain(carrier, head_first, context) {
             return false;
         }
@@ -452,7 +470,8 @@ impl Simulation {
             return true;
         };
         let rules = context.rules();
-        if let Some(transport) = self.substrate.entities.get(carrier)
+        if voices
+            && let Some(transport) = self.substrate.entities.get(carrier)
             && let Some(sound_id) = self
                 .entity_object_type(transport, rules)
                 .and_then(|object| object.enter_transport_sound.clone())
@@ -490,6 +509,36 @@ impl Simulation {
             );
         }
         true
+    }
+
+    /// Ares conductAbduction's tail (10054A80), after its Limbo: the
+    /// abductee's Transporter (`+0x11C`) is the abductor, an allied rider of
+    /// an `OpenTopped=` abductor is marked (EnteredOpenTopped `0x00710470`,
+    /// keeping its AI in the logic order), then AddPassenger (vt+0x394).
+    /// CreateInitialPayload's Foot arm (10043C10, `sim::ares_transports`)
+    /// takes the same steps with VocClass::VoicesEnabled cleared around
+    /// AddPassenger (`voices` false). Answers whether the hold took it.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_abduct_into_hold(
+        &mut self,
+        passenger: u64,
+        carrier: u64,
+        size: f64,
+        rider: bool,
+        voices: bool,
+        context: UninitContext<'_>,
+    ) -> bool {
+        if let Some(entity) = self.substrate.entities.get_mut(passenger) {
+            entity.passenger_role.set_carrier_link(CarrierLink {
+                transport_id: carrier,
+                open_topped: rider,
+            });
+            entity.passenger_role.transporter = Some(carrier);
+        }
+        if rider {
+            let _ = self.register_open_topped_passenger(passenger);
+        }
+        self.add_passenger_voiced(carrier, &[(passenger, size)], voices, context)
     }
 
     /// Transporter and SetInOpenTransport710470 belong to the arrival
@@ -771,12 +820,14 @@ impl PassengerRole {
     }
 
     /// The `OpenTopped=` transport this entity rides in, if any, from the
-    /// carrier relation. It stands in for gamemd's `+0x82` and Transporter
-    /// (`+0x11C`, [`Self::transporter`]) reads, which can differ for cargo
-    /// that `CargoClass::AddPassenger` loaded (vera20k#3838). Read by weapon
-    /// selection, the fire coordinate, InRange, GetFireError, FireAt's damage
-    /// and muzzle anim, kill credit, navigation and the Temporal
-    /// warp-distance check.
+    /// carrier relation. This stands in for the `TechnoClass+0x82`
+    /// InOpenToppedTransport gate that native readers test before their
+    /// `+0x11C` read (for example GetFireError `0x006FC57D`, RecordKill
+    /// `0x00702E9D`, GetFLH `0x00523259`); the `+0x11C` value itself is
+    /// [`Self::transporter`], which can differ once a garrison or cargo
+    /// relation is involved (vera20k#3838). Read by weapon selection, the
+    /// fire coordinate, InRange, GetFireError, FireAt's damage and muzzle
+    /// anim, kill credit, navigation and the Temporal warp-distance check.
     pub fn open_transport_id(&self) -> Option<u64> {
         self.inside_transport()
             .and_then(|(id, open)| open.then_some(id))
@@ -928,25 +979,44 @@ pub fn can_dock_occupier_garrison(
     if building.is_warped_out() {
         return false;
     }
-    if !passenger_obj.occupier {
-        return false;
-    }
-    let same_owner = passenger.owner() == building.owner();
-    if !same_owner && !owner_is_multiplay_passive(building.owner(), &sim.houses) {
-        return false;
-    }
-    if occupants.count() as u32 == building_obj.max_number_occupants {
-        return false;
-    }
-    if is_at_or_below_red_hp(
+    let passive = owner_is_multiplay_passive(building.owner(), &sim.houses);
+    let red_health = is_at_or_below_red_hp(
         building.health.current(),
         building_obj.strength,
         rules.general.condition_red,
-    ) {
-        return false;
+    );
+    // Ares 3.0 10017060 (hook 0x457D58) replaces the occupier arm.
+    #[cfg(feature = "ares")]
+    {
+        crate::sim::ares_garrison::occupier_admitted(
+            sim,
+            passenger,
+            building,
+            passenger_obj,
+            building_obj,
+            occupants.count(),
+            passive,
+            red_health,
+        )
     }
-    // `0x00457D98`: `TechnoClass::IsMindControlled`.
-    !passenger.mind_control.is_mind_controlled()
+    #[cfg(not(feature = "ares"))]
+    {
+        if !passenger_obj.occupier {
+            return false;
+        }
+        let same_owner = passenger.owner() == building.owner();
+        if !same_owner && !passive {
+            return false;
+        }
+        if occupants.count() as u32 == building_obj.max_number_occupants {
+            return false;
+        }
+        if red_health {
+            return false;
+        }
+        // `0x00457D98`: `TechnoClass::IsMindControlled`.
+        !passenger.mind_control.is_mind_controlled()
+    }
 }
 
 /// [`can_dock_occupier_garrison`] by id, as `CanBeOccupiedBy`'s callers that
@@ -1328,6 +1398,10 @@ pub fn add_garrison_occupant(
         // Admission and Limbo keep the occupant's TarCom and passive flag.
         pax.passenger_role.set_inside_transport(building_id, false);
     }
+    // Ares 3.0 10017240 (hook 0x52297F): an occupier of another house
+    // raids the building (sim::ares_garrison).
+    #[cfg(feature = "ares")]
+    sim.ares_occupier_entered(building_id, owner, rules, registry, effects);
     sim.refresh_spatial_threat(building_id, rules, None);
     if count == 1 {
         let type_id = sim
@@ -1463,65 +1537,63 @@ impl Simulation {
                         .is_some_and(|kind| kind.gunner)
             })
         {
-            remove_gunner(
+            self.remove_gunner(rules, transport_id, passenger);
+        }
+    }
+
+    /// `UnitClass` vtable `+0x4D8` (`0x007464E0`): the virtual RemoveGunner
+    /// dispatch. `FootClass::RemovePassenger @ 0x004DE670` calls it when the
+    /// last cargo member leaves; `InfantryClass::ReceiveDamage`'s result-4 arm
+    /// (`0x00518093..0x005180E2`) calls it for a dying rider whose
+    /// `Transporter` (`+0x11C`) is a `Gunner=` Unit. Temporal ownership moves
+    /// to `pax_id` first; mode0 selection always follows, even with no
+    /// passenger or temporal.
+    pub(crate) fn remove_gunner(
+        &mut self,
+        rules: &RuleSet,
+        transport_id: u64,
+        pax_id: Option<u64>,
+    ) {
+        let Some(transport) = self.substrate.entities.get(transport_id) else {
+            return;
+        };
+        let Some(object) = self.interner.object_type(transport.type_ref(), rules) else {
+            return;
+        };
+        // Aircraft/Foot bind this virtual slot to the 4DE760 stub.
+        if transport.category() != EntityCategory::Unit || !object.gunner {
+            return;
+        }
+        // 746502..746528 samples the IFV before transfer/LetGo. The receiving
+        // passenger's current burst/rank/House are read after LetGo below.
+        let donor_rearming = transport
+            .rearm_timer
+            .remaining(self.session.binary_frame() as i32)
+            != 0;
+        if let Some(pax_id) = pax_id
+            && Self::temporal_remove_gunner(
+                &mut self.substrate,
+                &mut self.houses,
+                &mut self.power_states,
+                transport_id,
+                pax_id,
+            )
+            && donor_rearming
+        {
+            rearm_transferred_gunner(
                 &self.interner,
                 &self.session,
                 &mut self.scenario_rng,
                 &mut self.substrate,
-                &mut self.houses,
-                &mut self.power_states,
+                &self.houses,
                 rules,
-                transport_id,
-                passenger,
+                pax_id,
+                0,
             );
         }
-    }
-}
-
-fn remove_gunner(
-    interner: &StringInterner,
-    session: &ScenarioSession,
-    scenario_rng: &mut SimRng,
-    substrate: &mut ObjectSubstrate,
-    houses: &mut Houses,
-    power_states: &mut PowerStates,
-    rules: &RuleSet,
-    transport_id: u64,
-    pax_id: Option<u64>,
-) {
-    let Some(transport) = substrate.entities.get(transport_id) else {
-        return;
-    };
-    let Some(object) = interner.object_type(transport.type_ref(), rules) else {
-        return;
-    };
-    // Aircraft/Foot bind this virtual slot to the 4DE760 stub.
-    if transport.category() != crate::map::entities::EntityCategory::Unit || !object.gunner {
-        return;
-    }
-    // 746502..746528 samples the IFV before transfer/LetGo. The receiving
-    // passenger's current burst/rank/House are read after LetGo below.
-    let donor_rearming = transport
-        .rearm_timer
-        .remaining(session.binary_frame() as i32)
-        != 0;
-    if let Some(pax_id) = pax_id
-        && Simulation::temporal_remove_gunner(substrate, houses, power_states, transport_id, pax_id)
-        && donor_rearming
-    {
-        rearm_transferred_gunner(
-            interner,
-            session,
-            scenario_rng,
-            substrate,
-            &*houses,
-            rules,
-            pax_id,
-            0,
-        );
-    }
-    if let Some(transport) = substrate.entities.get_mut(transport_id) {
-        transport.set_gunner_weapon(0, object);
+        if let Some(transport) = self.substrate.entities.get_mut(transport_id) {
+            transport.set_gunner_weapon(0, object);
+        }
     }
 }
 

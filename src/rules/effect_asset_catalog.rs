@@ -305,6 +305,13 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
             insert(name);
         }
     }
+    // AircraftAI414ED0..414F42 constructs this retained fixed-ART AnimType
+    // through ordinary Anim421EA0, including dynamically allocated aliases.
+    for object in rules.all_objects() {
+        if let Some(name) = object.aircraft_trailer().animation() {
+            insert(name);
+        }
+    }
     for name in rules.general.infantry_death_anims.iter().flatten() {
         insert(name);
     }
@@ -326,6 +333,12 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     // General list. The completion owner must find bound physical shapes
     // even when no warhead or other producer names these corpse animations.
     for name in &rules.general.dead_bodies {
+        insert(name);
+    }
+    // BuildingReceiveDamage442832..4428F4 constructs an OnFire Anim before
+    // attaching it. Keep each resolved slot key, including unread late AV
+    // allocations, in the ordinary AnimClass asset-binding closure.
+    for name in &rules.general.on_fire {
         insert(name);
     }
     for name in &rules.general.metallic_debris {
@@ -1036,7 +1049,9 @@ mod anim_class_root_tests {
     #[test]
     fn bridge_roots_preserve_literal_factory_tokens_and_unread_types() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nMetallicDebris=ONE, FX, none, ,D,ONE\n\
+            // FX is registered: Ares reads BridgeExplosions Find-only
+            // (Buf_General 1005BB00, hook 0x66D55E).
+            "[Animations]\n0=FX\n[General]\nMetallicDebris=ONE, FX, none, ,D,ONE\n\
              BridgeExplosions=FX, FX,none,<none>\n",
         ))
         .unwrap();
@@ -1053,7 +1068,9 @@ mod anim_class_root_tests {
     #[test]
     fn roots_cover_teleport_superweapon_and_lightning_producers() {
         let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nBehind=MYBEHIND\nWarpOut=MYWARP\nIronCurtainInvokeAnim=MYIRON\n\
+            // The weather anims are registered for Ares's Find-only lists.
+            "[Animations]\n0=MYCLOUD1\n1=MYCLOUD2\n2=MYBOLT\n\
+             [General]\nBehind=MYBEHIND\nWarpOut=MYWARP\nIronCurtainInvokeAnim=MYIRON\n\
              ForceShieldInvokeAnim=MYSHIELD\nIonBlast=MYRING\n\
              DominatorFirstAnim=MYHEAD\nDominatorSecondAnim=MYLOC\n\
              WeatherConClouds=MYCLOUD1,MYCLOUD2\nWeatherConBolts=MYBOLT\n\

@@ -6,7 +6,7 @@
 //! native neighbor order, density table/modulo, and signed value arithmetic.
 //! Depends on map overlay types, rules, and util direction; never on sim/.
 
-use crate::rules::overlay_types::OverlayTypeRegistry;
+use crate::rules::overlay_types::{OverlayTypeRegistry, TiberiumImageError};
 use crate::rules::tiberium_type::TiberiumTypeRegistry;
 use crate::util::direction::DIRECTION_DELTAS;
 
@@ -31,27 +31,26 @@ pub(crate) fn terrain_unlimbo_overlay_fields(
 /// TiberiumClass, otherwise `TiberiumClass+0xB8 (Value) * (OverlayData + 1)`
 /// in native signed 32-bit arithmetic.
 ///
-/// A resolved class index whose TiberiumClass slot is absent dereferences null
-/// natively; VERA returns zero for that malformed registry state.
+/// A reached invalid native Image is a failure, distinct from no resource.
 pub(crate) fn tiberium_value(
     overlay_id: Option<u8>,
     overlay_data: u8,
     overlay_registry: &OverlayTypeRegistry,
     tiberium_types: &TiberiumTypeRegistry,
-) -> i32 {
+) -> Result<i32, TiberiumImageError> {
     let Some(overlay_id) = overlay_id else {
-        return 0;
+        return Ok(0);
     };
-    let Some(type_id) = overlay_registry.tiberium_type_for_overlay(tiberium_types, overlay_id)
+    let Some(type_id) = overlay_registry.tiberium_type_for_overlay(tiberium_types, overlay_id)?
     else {
-        return 0;
+        return Ok(0);
     };
-    let Some(tiberium) = tiberium_types.get(type_id) else {
-        return 0;
-    };
-    tiberium
+    let tiberium = tiberium_types
+        .get(type_id)
+        .ok_or(TiberiumImageError::MissingType(type_id))?;
+    Ok(tiberium
         .value
-        .wrapping_mul(i32::from(overlay_data).wrapping_add(1))
+        .wrapping_mul(i32::from(overlay_data).wrapping_add(1)))
 }
 
 /// `g_OreDensityByNeighborCount @ 0x0081CD28` (twelve dwords, low bytes):
@@ -94,15 +93,17 @@ pub(crate) fn spread_cell_germinate_without_randomization(
     receiver_overlay_id: Option<u8>,
     cell: (i16, i16),
     mut read_neighbor_fields: impl FnMut((i16, i16)) -> (Option<u8>, u8),
-) -> Option<GerminatedCell> {
-    let overlay_id = receiver_overlay_id?;
-    let type_id = overlay_registry.tiberium_type_for_overlay(tiberium_types, overlay_id)?;
-    let tiberium_type = tiberium_types.get(type_id)?;
-    // VERA-internal: the native `IDIV` faults on a zero MaxDensity; no retail
-    // TiberiumType sets it to zero.
-    if tiberium_type.max_density == 0 {
-        return None;
-    }
+) -> Result<Option<GerminatedCell>, TiberiumImageError> {
+    let Some(overlay_id) = receiver_overlay_id else {
+        return Ok(None);
+    };
+    let Some(type_id) = overlay_registry.tiberium_type_for_overlay(tiberium_types, overlay_id)?
+    else {
+        return Ok(None);
+    };
+    let tiberium_type = tiberium_types
+        .get(type_id)
+        .ok_or(TiberiumImageError::MissingType(type_id))?;
     let mut matching: i32 = 0;
     for (dx, dy) in DIRECTION_DELTAS {
         let neighbor = (
@@ -110,17 +111,29 @@ pub(crate) fn spread_cell_germinate_without_randomization(
             cell.1.wrapping_add(dy as i16),
         );
         let (neighbor_id, _) = read_neighbor_fields(neighbor);
-        if neighbor_id.and_then(|id| overlay_registry.tiberium_type_for_overlay(tiberium_types, id))
-            == Some(type_id)
-        {
+        let neighbor_type = match neighbor_id {
+            Some(id) => overlay_registry.tiberium_type_for_overlay(tiberium_types, id)?,
+            None => None,
+        };
+        if neighbor_type == Some(type_id) {
             matching += 1;
         }
     }
+    // 4819CA divides only after the eight lookups, including their dummy
+    // stamps. Keep the fault boundary there when retained counts are zero.
+    let divisor = tiberium_type.image().density_levels();
+    if divisor == 0 {
+        return Err(TiberiumImageError::InvalidDivisor {
+            tiberium: type_id,
+            field: "density",
+            value: divisor,
+        });
+    }
     // At most eight neighbours, so the remainder never leaves the table.
-    let index = matching % i32::from(tiberium_type.max_density);
+    let index = matching % divisor;
     let density = ORE_DENSITY_BY_NEIGHBOR_COUNT[index as usize];
-    Some(GerminatedCell {
+    Ok(Some(GerminatedCell {
         density,
-        value: tiberium_value(Some(overlay_id), density, overlay_registry, tiberium_types),
-    })
+        value: tiberium_type.value.wrapping_mul(i32::from(density) + 1),
+    }))
 }

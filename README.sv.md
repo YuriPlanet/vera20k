@@ -54,7 +54,7 @@ i färdplanen, med pågående arbete och nästa steg:
 - **[Spelmekanik och strid](https://github.com/YuriPlanet/vera20k/issues/3830):** enheternas beteende, skada och pålitliga skirmish-matcher.
 - **[Prestanda](https://github.com/YuriPlanet/vera20k/issues/3831):** bildfrekvens och respons i stora slag och på äldre hårdvara.
 - **[Flerspelarläge](https://github.com/YuriPlanet/vera20k/issues/3832):** att gå med i, starta och hålla igång onlinematcher, och pålitligt samarbetsspel.
-- **[Gränssnitt och ljud](https://github.com/YuriPlanet/vera20k/issues/3833):** menyer, text, översättningar och ljud.
+- **[Gränssnitt och ljud](https://github.com/YuriPlanet/vera20k/issues/3833):** menyer, text, [översättningar](src/i18n/README.md) och ljud.
 - **[Kampanjer](https://github.com/YuriPlanet/vera20k/issues/3834):** uppdragen startar, men att spela dem till slutet kräver mer arbete: mål, triggers, skriptade övergångar, spara/ladda och övergången till nästa uppdrag.
 - **[Moddkompatibilitet](https://github.com/YuriPlanet/vera20k/issues/3835):** funktioner från Ares och Phobos, utan att ändra originalspelets standardbeteende.
 - **[Testning](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** spela VERA20K sida vid sida med originalet och rapportera det som spelar annorlunda.
@@ -121,6 +121,8 @@ moddar som Ares, måste vara avstängd tills den slås på med något av följan
 Inställningar för ljud, grafik och kontroller sparas i `VERA.INI`. Spelreglerna kommer från
 lobbyinställningar, moddar eller kartor.
 
+[Moddningsguiden](docs/modding.md) förklarar hur man gör egna moddar.
+
 ## Stöd projektet
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="Stöd VERA20K via PayPal" height="23"></a>
@@ -145,11 +147,14 @@ Conquer och Red Alert är varumärken som tillhör Electronic Arts Inc., och sk�
 appikonen, Red Alert 2:s röda stjärna, visar spelgrafik som ägs av Electronic Arts. VERA20K har
 ingen koppling till och stöds inte av Electronic Arts.
 
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 **Läs [den juridiska informationen](LEGAL.md) innan du delar, säljer eller forkar VERA20K.**
 
 ## Dokumentation
 
 - [WebAssembly-förhandsversion](docs/wasm.md): ett valfritt enspelarbygge som körs i webbläsaren.
+- [Moddningsguide](docs/modding.md): vad moddar kan och inte kan göra och hur VERA20K skiljer sig från originalspelet.
 - [INI-profiler](docs/ini-roots.md): välja regel-, grafik- och AI-filer.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) och [NPatch](docs/npatch.md): stöd för tilläggen och deras begränsningar.
 - [Motoröversikt](docs/index.md): kodens upplägg och hur motorns delar hänger ihop.

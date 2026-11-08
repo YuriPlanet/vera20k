@@ -154,8 +154,15 @@ pub struct GameEntity {
     /// failure never refunds the draw.
     techno_ctor_random_word: u16,
     /// Building+6F4, constructor43B9B5 null; startup68C1B5 assigns a type
-    /// pointer and Load453FB0 swizzles it. Capture never rerolls the reward.
+    /// pointer and Load453FB0 swizzles it. Stock capture never rerolls the
+    /// reward; Ares's Place roll also writes it (`sim::secret_lab`).
     secret_lab_fallback: Option<(crate::rules::object_type::ObjectCategory, InternedId)>,
+    /// Ares BuildingExt+0x50 `SecretLab_Placed` (constructor false): the
+    /// lab's UpdateSecretLab (10013700) has rolled its boon
+    /// (`sim::secret_lab`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_secret_lab_placed: bool,
     /// gamemd.exe TechnoClass::Constructor @0x006F2B40 stores -1 at6F2D0F.
     /// One signed +214 owner for scenario recruitment and, outside network
     /// games, local control groups (`local_control_group` holds a network
@@ -206,10 +213,11 @@ pub struct GameEntity {
     /// pitches the barrel voxel by it (`0x0073BB77..0x0073BBAC`); nothing in
     /// a unit's simulation reads it.
     ///
-    /// The building writers (the constructor's `Set`s at `0x0043BA5E` and
-    /// `0x0043BACB`, Sell's `Set_Current` at `0x0044A08C`, Mission_Missile's
-    /// `Set`s at `0x0044CEE2` and `0x0044CF7A`, an MCV deploy's `Set_Current`
-    /// at `0x00739827`) and their readers are not ported.
+    /// Mission_Missile's EMP cannon `Set`s (`0x0044CE1D`, `0x0044CEE2`,
+    /// `0x0044CF7A`) and their reader are [`Self::set_barrel_elevation`]'s.
+    /// The other building writers (the constructor's `Set`s at `0x0043BA5E`
+    /// and `0x0043BACB`, Sell's `Set_Current` at `0x0044A08C`, an MCV
+    /// deploy's `Set_Current` at `0x00739827`) are not ported.
     barrel_elevation: crate::sim::movement::FacingClass,
     /// The body-animation counter (`FootClass+0x538`), a
     /// [`BodyFrameCounter`] that `sim::animation` owns.
@@ -244,6 +252,13 @@ pub struct GameEntity {
     /// transferred by10045B54. Capture preserves this Country identity.
     #[cfg(feature = "ares")]
     original_factory_country: Option<crate::rules::ruleset::CountryIdx>,
+    /// Ares3.0 TechnoExt+8 `idxSlot_Wave`: the weapon index (a BYTE) of the
+    /// last wave this object fired. CreateWave 10055160 writes it before the
+    /// WaveClass constructor; WaveClass_Update_Beam 10057290 reads it for the
+    /// owner's range test and GetFLH.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_wave_weapon_slot: u8,
     /// The object's health (`ObjectClass+0x6C`), a [`Health`] that
     /// `combat::object_health` owns.
     pub health: Health,
@@ -443,6 +458,13 @@ pub struct GameEntity {
     /// [`PrismSupport`]: crate::sim::world::PrismSupport
     #[serde(default)]
     pub prism_support_count: crate::sim::world::PrismSupport,
+    /// A building's Ares Prism network (BuildingExt `+0x10`), an
+    /// [`AresPrismForwarding`] that `techno_ai::building_missions` owns.
+    ///
+    /// [`AresPrismForwarding`]: crate::sim::world::AresPrismForwarding
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_prism: crate::sim::world::AresPrismForwarding,
     /// The current weapon and turret (`TechnoClass+0x138`, `+0x124`) and the
     /// charge turret's saved rearm (`+0x2F8`), a [`TurretSelection`] that
     /// `game_entity::gunner` owns.
@@ -559,9 +581,29 @@ pub struct GameEntity {
     /// Per-instance Deliver.BaseNormal override, not a mutation of its type.
     #[serde(default)]
     unit_delivery_no_base: bool,
-    /// Ares launch source; the entity owns its lifetime and save state.
+    /// An Ares chronoshifted building (BeingWarpedOut `+0x270` with
+    /// BuildingExt `AboutToChronoshift`), from the ChronoWarp's arm until
+    /// ChronoWarpStateMachine puts it back (`superweapon::chronosphere`).
+    #[cfg(feature = "ares")]
     #[serde(default)]
-    hunter_seeker_origin: Option<crate::sim::hunter_seeker::HunterSeekerOrigin>,
+    ares_chronoshifting: bool,
+    /// The DropPod locomotor an Ares DropPod launch gives a Foot
+    /// (TechnoExt::CreateWithDroppod `10044030`), piggybacking the Foot's
+    /// own locomotor until it lands (`superweapon::drop_pod`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    ares_drop_pod: Option<crate::sim::superweapon::drop_pod::DropPodFlight>,
+    /// Ares TechnoExt::SuperWeapon (+0xA0), the Super attached to this
+    /// Techno: SW_HunterSeeker::Activate's launch source on its seeker and
+    /// SW_EMPulse::Activate's firing Super on each cannon. The entity owns
+    /// its lifetime and save state.
+    #[serde(default)]
+    ares_super_weapon: Option<crate::sim::hunter_seeker::AttachedSuper>,
+    /// Ares TechnoExt::SuperTarget (+0xA4): the cell SW_EMPulse::Activate
+    /// (10071200) aims its cannon at, `TryGetCellAt`'s null for a cell off
+    /// the grid. Only written with [`Self::ares_super_weapon`].
+    #[serde(default)]
+    ares_super_target: Option<(u16, u16)>,
     /// Building+66C charger pointers and +661 weapon latch, owned by
     /// `sim::tesla_charging` independently of House power accounting.
     #[serde(default)]
@@ -587,6 +629,33 @@ pub struct GameEntity {
     /// [`PoweredCenter`]: crate::sim::powered_unit::PoweredCenter
     #[serde(default)]
     pub(crate) building_powered_center: crate::sim::powered_unit::PoweredCenter,
+    /// Ares TechnoExt+1C PoweredUnitClass of a `PoweredBy=` type, owned by
+    /// `sim::powered_by`.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) powered_by: Option<crate::sim::powered_by::PoweredBySource>,
+    /// Ares TechnoExt+18 JammerClass and BuildingExt+40 RegisteredJammers,
+    /// owned by `sim::radar_jammer`.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) radar_jam: crate::sim::radar_jammer::RadarJamState,
+    /// Ares BuildingExt+4C SensorArrayActiveCounter, owned by
+    /// `sim::sensor_lifecycle`.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) sensor_array_counter: crate::sim::sensor_lifecycle::SensorArrayCounter,
+    /// A firestorm wall section's FirestormWallFrame (Building+0x61C),
+    /// owned by `sim::ares_firestorm`.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_firestorm_wall: crate::sim::ares_firestorm::FirestormWallFrame,
+    /// Ares TechnoExt+0x44 SonarTimer (constructor stopped): while it runs,
+    /// CloakDisallowed (10043A40) keeps the object from cloaking.
+    /// SW_SonarPulse::Activate100753A0 and the warhead `Sonar.Duration`
+    /// aftermath (1004AB50, `vehicle_theft::driver_kill`) extend it.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) sonar_timer: crate::sim::timer::CdTimer,
     /// HasEngineer (`BuildingClass+0x6CC`), a [`HasEngineer`] that
     /// `sim::building_art` owns.
     ///
@@ -782,6 +851,20 @@ pub struct GameEntity {
     #[cfg(feature = "ares")]
     #[serde(default)]
     pub(crate) bounty_display: crate::sim::bounty::BountyDisplayState,
+    /// Ares TechnoExt+50 DisableWeaponTimer (allocator 10042CA0: StartTime
+    /// -1, TimeLeft 0). The ReceiveDamage aftermath starts it with
+    /// `DisableWeapons.Duration` (`vehicle_theft::driver_kill`); GetFireError
+    /// answers Rearm while it runs (`combat::fire_error_world`).
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_disable_weapons: crate::sim::timer::CdTimer,
+    /// Ares TechnoExt+0x5C SelfHealingCombatTimer (StartTime -1, TimeLeft
+    /// 0). The ReceiveDamage aftermath starts it with the type's
+    /// `SelfHealing.CombatDelay` (`vehicle_theft::driver_kill`); while it
+    /// runs, GetSelfHealAmount (10044E80, `combat::veterancy`) heals nothing.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_self_heal_combat: crate::sim::timer::CdTimer,
     /// Shared Building C4/PostMortem detonation latch: the marker `+0x6DF`
     /// with its C4Timer (`+0x528`) and C4AppliedBy (`+0x540`). The C4 plant
     /// (`sim::c4_plant`) owns one producer; qualifying delayed-death receiver
@@ -794,6 +877,28 @@ pub struct GameEntity {
     /// [`C4Detonation`]: crate::sim::c4_plant::C4Detonation
     #[serde(default)]
     pub(crate) pending_c4_detonation: crate::sim::c4_plant::C4Detonation,
+    /// A building's DisplayProductionTo (`BuildingClass+0x210`), which only
+    /// Ares writes: a [`DisplayProductionTo`] that `sim::spy_infiltration`
+    /// owns.
+    ///
+    /// [`DisplayProductionTo`]: crate::sim::spy_infiltration::DisplayProductionTo
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) display_production_to: crate::sim::spy_infiltration::DisplayProductionTo,
+    /// A building's Ares `OwnerBeforeRaid` (BuildingExt `+0x8`), a
+    /// [`RaidState`] that `sim::ares_garrison` owns.
+    ///
+    /// [`RaidState`]: crate::sim::ares_garrison::RaidState
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_raid: crate::sim::ares_garrison::RaidState,
+    /// The Ares TechnoExt `PayloadCreated` (`+0x9E`), an
+    /// [`InitialPayloadState`] that `sim::ares_transports` owns.
+    ///
+    /// [`InitialPayloadState`]: crate::sim::ares_transports::InitialPayloadState
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    pub(crate) ares_initial_payload: crate::sim::ares_transports::InitialPayloadState,
     /// A building's HasBeenCaptured byte (`BuildingClass+0x6E3`), a
     /// [`HasBeenCaptured`] that `crew_survival` owns.
     ///
@@ -913,7 +1018,7 @@ pub struct GameEntity {
     pub(crate) produce_cash: crate::sim::credit_income::ProduceCash,
     /// The Floating Disc drain link pair ([`credit_income`](crate::sim::credit_income)).
     #[serde(default)]
-    pub(crate) drain: crate::sim::credit_income::Drain,
+    pub drain: crate::sim::credit_income::Drain,
     /// The parasite fields: the ParasiteClass a dog or drone owns, the eater
     /// attached to a victim, paralysis ([`parasite`](crate::sim::combat::parasite)).
     #[serde(default)]
@@ -972,23 +1077,88 @@ impl GameEntity {
         self.nominal_survivor = true;
     }
 
+    /// Whether an Ares ChronoWarp holds this building warped out.
+    pub(crate) fn ares_chronoshifting(&self) -> bool {
+        #[cfg(feature = "ares")]
+        {
+            self.ares_chronoshifting
+        }
+        #[cfg(not(feature = "ares"))]
+        {
+            false
+        }
+    }
+
+    /// The ChronoWarp's Building arm (Ares 3.0 `1006F4D0`) warps it out.
+    #[cfg(feature = "ares")]
+    pub(crate) fn begin_ares_chronoshift(&mut self) {
+        self.ares_chronoshifting = true;
+    }
+
+    /// ChronoWarpStateMachine::Update (Ares 3.0 `10070230`) puts it back.
+    #[cfg(feature = "ares")]
+    pub(crate) fn end_ares_chronoshift(&mut self) {
+        self.ares_chronoshifting = false;
+    }
+
+    /// The DropPod locomotor carrying this Foot, if any.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_drop_pod(&self) -> Option<crate::sim::superweapon::drop_pod::DropPodFlight> {
+        self.ares_drop_pod
+    }
+
+    /// LocomotionClass::ChangeLocomotorTo(DropPod) (`10044083..100440FA`):
+    /// a fresh DropPod locomotor piggybacks the Foot's own.
+    #[cfg(feature = "ares")]
+    pub(crate) fn begin_ares_drop_pod(&mut self) {
+        self.ares_drop_pod = Some(Default::default());
+    }
+
+    /// The DropPod locomotor's own fields, for its Move_To.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_drop_pod_mut(
+        &mut self,
+    ) -> Option<&mut crate::sim::superweapon::drop_pod::DropPodFlight> {
+        self.ares_drop_pod.as_mut()
+    }
+
+    /// The landed pod's End_Piggyback (`0x004B5CEE`): the Foot's own
+    /// locomotor is current again.
+    #[cfg(feature = "ares")]
+    pub(crate) fn end_ares_drop_pod(&mut self) {
+        self.ares_drop_pod = None;
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn set_unit_delivery_base_normal(&mut self, base_normal: bool) {
         self.unit_delivery_no_base = self.category() == EntityCategory::Structure && !base_normal;
     }
 
-    pub(crate) fn hunter_seeker_origin(
-        &self,
-    ) -> Option<crate::sim::hunter_seeker::HunterSeekerOrigin> {
-        self.hunter_seeker_origin
+    pub(crate) fn ares_super_weapon(&self) -> Option<crate::sim::hunter_seeker::AttachedSuper> {
+        self.ares_super_weapon
     }
 
     #[cfg(feature = "ares")]
-    pub(crate) fn set_hunter_seeker_origin(
+    pub(crate) fn set_ares_super_weapon(
         &mut self,
-        origin: crate::sim::hunter_seeker::HunterSeekerOrigin,
+        origin: crate::sim::hunter_seeker::AttachedSuper,
     ) {
-        self.hunter_seeker_origin = Some(origin);
+        self.ares_super_weapon = Some(origin);
+    }
+
+    pub(crate) fn ares_super_target(&self) -> Option<(u16, u16)> {
+        self.ares_super_target
+    }
+
+    /// SW_EMPulse::Activate's two stores (10071245..1007126C).
+    #[cfg(feature = "ares")]
+    pub(crate) fn attach_ares_super_target(
+        &mut self,
+        origin: crate::sim::hunter_seeker::AttachedSuper,
+        target: Option<(u16, u16)>,
+    ) {
+        self.ares_super_weapon = Some(origin);
+        self.ares_super_target = target;
     }
 
     /// Saved extension effects must be admitted by the build that resumes them.
@@ -999,8 +1169,8 @@ impl GameEntity {
             return Err("delivery base overrides require a build with the ares feature");
         }
         #[cfg(not(feature = "ares"))]
-        if self.hunter_seeker_origin.is_some() {
-            return Err("hunter seeker launch sources require a build with the ares feature");
+        if self.ares_super_weapon.is_some() || self.ares_super_target.is_some() {
+            return Err("attached superweapons require a build with the ares feature");
         }
         Ok(())
     }
@@ -1067,6 +1237,13 @@ impl GameEntity {
     /// The authoritative Techno reload clock, preserved verbatim in saves.
     pub const fn ammo_reload_timer(&self) -> crate::sim::timer::CdTimer {
         self.ammo_reload_timer
+    }
+
+    /// Ares BuildingClass_FireLaser (10016490) starts this clock (YRpp's
+    /// `ReloadTimer`, Techno+1FC) with a Prism support beam's downtime.
+    #[cfg(feature = "ares")]
+    pub(crate) fn start_prism_support_downtime(&mut self, now: i32, duration: i32) {
+        self.ammo_reload_timer.start(now, duration);
     }
 
     /// Techno ReceiveDamage701ADB..701B62, after the early immunity gates
@@ -1158,7 +1335,14 @@ impl GameEntity {
             && self.ammo().is_some_and(|ammo| ammo.current() < object.ammo)
             && self.ammo_reload_timer.remaining(now) == 0
         {
-            self.ammo_mut().unwrap().reload_round();
+            let ammo = self.ammo_mut().unwrap();
+            #[cfg(feature = "ares")]
+            ammo.reload_rounds(
+                object.techno_combat().ammo().reload_amount(ammo.current()),
+                object.ammo,
+            );
+            #[cfg(not(feature = "ares"))]
+            ammo.reload_round();
             // Foot/Unit Mark(2)4D3780 returns immediately, before any
             // callback or spatial write. No redraw event is synthesized.
             self.start_reloading_ammo(object, now);
@@ -1466,7 +1650,7 @@ impl GameEntity {
     /// 0x00443C60` reads `+0x218` for the object leaving it. The shared
     /// Building destination setter (`0x00455D50`) can also replace this
     /// archive; Stop reaches its null arm and removes the rally.
-    pub(crate) fn rally_cell(&self) -> Option<(u16, u16)> {
+    pub fn rally_cell(&self) -> Option<(u16, u16)> {
         match self.archive_target() {
             Some(crate::sim::combat::TargetKind::Cell(rx, ry)) => Some((rx, ry)),
             _ => None,
@@ -1541,6 +1725,17 @@ impl GameEntity {
         self.original_factory_country
     }
 
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_wave_weapon_slot(&self) -> u8 {
+        self.ares_wave_weapon_slot
+    }
+
+    /// CreateWave 10055160's write, by the wave's own creator only.
+    #[cfg(feature = "ares")]
+    pub(crate) fn record_ares_wave_weapon_slot(&mut self, slot: u8) {
+        self.ares_wave_weapon_slot = slot;
+    }
+
     /// InitManagers1004A776 and the conversion10045B54 use the same retained
     /// identity; ordinary ownership changes never call this writer.
     #[cfg(feature = "ares")]
@@ -1587,6 +1782,17 @@ impl GameEntity {
         production: (crate::rules::object_type::ObjectCategory, InternedId),
     ) {
         self.secret_lab_fallback = Some(production);
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares_secret_lab_placed(&self) -> bool {
+        self.ares_secret_lab_placed
+    }
+
+    /// UpdateSecretLab's roll (10013700) sets BuildingExt+0x50.
+    #[cfg(feature = "ares")]
+    pub(in crate::sim) fn mark_ares_secret_lab_placed(&mut self) {
+        self.ares_secret_lab_placed = true;
     }
 
     /// One rules-to-model binding for construction and live type changes.
@@ -1787,6 +1993,12 @@ impl GameEntity {
         &self.barrel_elevation
     }
 
+    /// `FacingClass::Set_Desired @ 0x004C9220` on the barrel (`+0x370`), as
+    /// an EMP cannon's Missile mission aims it.
+    pub(crate) fn set_barrel_elevation(&mut self, desired: u16, frame: u32) {
+        self.barrel_elevation.set(desired, frame);
+    }
+
     /// Install a fixture's barrel elevation.
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_barrel_elevation_for_test(&mut self, facing: crate::sim::movement::FacingClass) {
@@ -1892,6 +2104,13 @@ impl GameEntity {
     }
 
     /// Ares TechnoExt+9C. Gameplay and drawing read the same driver state.
+    /// Whether `house` spied this building's production (Ares
+    /// DisplayProductionTo, `sim::spy_infiltration`).
+    #[cfg(feature = "ares")]
+    pub fn shows_production_to(&self, house: InternedId) -> bool {
+        self.display_production_to.contains(house)
+    }
+
     #[cfg(feature = "ares")]
     pub fn driver_killed(&self) -> bool {
         self.vehicle_driver.killed()
@@ -1966,6 +2185,8 @@ impl GameEntity {
             phobos_stat_multipliers: Default::default(),
             techno_ctor_random_word,
             secret_lab_fallback: None,
+            #[cfg(feature = "ares")]
+            ares_secret_lab_placed: false,
             object_group: -1,
             local_control_group: None,
             stage: crate::sim::stage::StageClass::constructed(construction_frame as i32),
@@ -1986,6 +2207,8 @@ impl GameEntity {
             initial_owner: owner,
             #[cfg(feature = "ares")]
             original_factory_country: None,
+            #[cfg(feature = "ares")]
+            ares_wave_weapon_slot: 0,
             health,
             estimated_health: crate::sim::estimated_health::EstimatedHealth::from_raw(
                 health.current(),
@@ -2028,6 +2251,8 @@ impl GameEntity {
             attack_target: TarCom::default(),
             pending_building_fire: Default::default(),
             prism_support_count: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_prism: Default::default(),
             turret_selection: gunner::TurretSelection::constructed(),
             radio_contacts: Contacts::default(),
             tether: crate::sim::radio::Tether::default(),
@@ -2050,12 +2275,27 @@ impl GameEntity {
             building_art: Default::default(),
             building_online: Default::default(),
             unit_delivery_no_base: false,
-            hunter_seeker_origin: None,
+            #[cfg(feature = "ares")]
+            ares_chronoshifting: false,
+            #[cfg(feature = "ares")]
+            ares_drop_pod: None,
+            ares_super_weapon: None,
+            ares_super_target: None,
             tesla_charge: Default::default(),
             tesla_charger: Default::default(),
             building_last_operational: Default::default(),
             building_loss_index: 0,
             building_powered_center: Default::default(),
+            #[cfg(feature = "ares")]
+            powered_by: None,
+            #[cfg(feature = "ares")]
+            radar_jam: Default::default(),
+            #[cfg(feature = "ares")]
+            sensor_array_counter: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_firestorm_wall: Default::default(),
+            #[cfg(feature = "ares")]
+            sonar_timer: Default::default(),
             building_has_engineer: Default::default(),
             building_light: Default::default(),
             damage_fires: Default::default(),
@@ -2108,7 +2348,17 @@ impl GameEntity {
             vehicle_driver: Default::default(),
             #[cfg(feature = "ares")]
             bounty_display: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_disable_weapons: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_self_heal_combat: Default::default(),
             pending_c4_detonation: Default::default(),
+            #[cfg(feature = "ares")]
+            display_production_to: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_raid: Default::default(),
+            #[cfg(feature = "ares")]
+            ares_initial_payload: Default::default(),
             has_been_captured: Default::default(),
             no_survivor: Default::default(),
             nominal_survivor: false,
@@ -2306,6 +2556,20 @@ impl GameEntity {
         self.fall.begin_bomb();
     }
 
+    /// An `IsBomb` Foot's paradrop lands as a bomb (Ares 3.0 10047C60, hook
+    /// 0x5F5ADD).
+    #[cfg(feature = "ares")]
+    pub(crate) fn mark_parachuted_bomb(&mut self) {
+        self.fall.mark_bomb();
+    }
+
+    /// CanMakeStuffUp drops a high paradropped infantryman as a bomb with
+    /// FallRate 0 (Ares 3.0 100680F0, hook 0x55AFB3).
+    #[cfg(feature = "ares")]
+    pub(crate) fn drop_parachute_as_bomb(&mut self) {
+        self.fall.drop_parachute_as_bomb();
+    }
+
     pub(crate) fn finish_fall(&mut self) {
         self.fall.finish();
     }
@@ -2315,8 +2579,23 @@ impl GameEntity {
         self.fall.observe_falling_edge()
     }
 
-    /// ObjectAI5F3FBC..3FFA updates even the grounding frame's rate.
-    pub(crate) fn advance_fall_rate(&mut self, parachute_cap: i32, free_fall_cap: i32) {
+    /// ObjectAI5F3FBC..3FFA updates even the grounding frame's rate. Ares
+    /// steps a Techno by its type's `FallRate.*` (10049BA0, hook 0x5F3FB2).
+    pub(crate) fn advance_fall_rate(
+        &mut self,
+        parachute_cap: i32,
+        free_fall_cap: i32,
+        object: Option<&crate::rules::object_type::ObjectType>,
+    ) {
+        #[cfg(feature = "ares")]
+        if let Some(object) = object {
+            self.fall.advance_techno_rate(
+                object.techno_combat().fall_rate(),
+                [parachute_cap, free_fall_cap],
+            );
+            return;
+        }
+        let _ = object;
         self.fall.advance_rate(parachute_cap, free_fall_cap);
     }
 
@@ -2593,6 +2872,34 @@ impl GameEntity {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Ares ReloadAmount/EmptyReloadAmount (Ares.dll 10047A70, hook
+    /// 0x6FB05B): Reload adds `EmptyReloadAmount` to an empty count, else
+    /// `ReloadAmount`, capped by `Ammo=`; a negative amount stops at zero.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_reload_adds_the_type_amounts() {
+        let rules =
+            crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[VehicleTypes]\n0=MTNK\n1=DRAIN\n[MTNK]\nAmmo=5\nReload=10\nReloadAmount=2\n\
+             EmptyReloadAmount=4\n[DRAIN]\nAmmo=5\nReload=10\nReloadAmount=-3\n",
+            ))
+            .unwrap();
+        let reload = |name: &str, from: i32| {
+            let object = rules.object(name).unwrap();
+            let mut entity = GameEntity::test_default(1, name, "Americans", 10, 20);
+            let mut ammo = TechnoAmmo::new(5);
+            ammo.set_current_for_test(from);
+            entity.install_ammo_for_test(Some(ammo));
+            entity.reload_techno_ammo(object, 0);
+            entity.ammo().unwrap().current()
+        };
+        assert_eq!(
+            (reload("MTNK", 0), reload("MTNK", 1), reload("MTNK", 4)),
+            (4, 3, 5)
+        );
+        assert_eq!((reload("DRAIN", 4), reload("DRAIN", 2)), (1, 0));
+    }
 
     fn native_cloak_fixture() -> &'static serde_json::Value {
         crate::test_fixture::json("tools/procedural_drawing_oracle/translucent_blitter_a.json")

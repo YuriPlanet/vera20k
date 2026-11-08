@@ -26,6 +26,9 @@ pub struct SavedTerrainTemplate {
     native_tube_indices: Vec<NativeTubeCellIndex>,
     tube_native_ids: Vec<Option<i32>>,
     tile_animations: Vec<TerrainTileAnimation>,
+    /// Tile Save549D70/Load549C80 preserve the +0x305 flags in the saved
+    /// type bodies. Keep that history when resident TMP assets are rebound.
+    tile_burrowing_permissions: Option<Vec<bool>>,
 }
 
 /// A baseline-only fixture cannot certify the live Cell+EC value. This wire
@@ -87,6 +90,8 @@ pub enum SavedTerrainError {
     AnimationCell { index: usize, cell: (u16, u16) },
     #[error("saved terrain resident assets: {0}")]
     Assets(String),
+    #[error("saved terrain has {count} tile permissions, beyond the physical tile registry limit")]
+    TilePermissions { count: usize },
 }
 
 impl SavedTerrainTemplate {
@@ -217,6 +222,13 @@ impl SavedTerrainTemplate {
                 found: self.tube_native_ids.len(),
             });
         }
+        if let Some(permissions) = &self.tile_burrowing_permissions
+            && permissions.len() > usize::from(u16::MAX)
+        {
+            return Err(SavedTerrainError::TilePermissions {
+                count: permissions.len(),
+            });
+        }
         for (index, cell) in self.cells.iter().enumerate() {
             let expected = (
                 (index % usize::from(self.width)) as u16,
@@ -287,12 +299,15 @@ impl SavedTerrainTemplate {
             clear_tile_id: 0,
             water_tiles: crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
             tile_registry_len: None,
+            tile_burrowing_permissions: self.tile_burrowing_permissions,
             dummy_accepts_smudge: false,
             bridge_set_start: None,
             high_bridge_rim_tiles: None,
             wood_bridge_set_start: None,
             tile_animations: self.tile_animations,
             destroyable_cliff_catalog: None,
+            deformation_catalog: None,
+            deformation_enabled: false,
             bridge_recalc_catalog: None,
             allocation_caches: Default::default(),
         })
@@ -312,6 +327,7 @@ impl ResolvedTerrainGrid {
             native_tube_indices: self.native_tube_indices.clone(),
             tube_native_ids: self.tube_native_ids.clone(),
             tile_animations: self.tile_animations.clone(),
+            tile_burrowing_permissions: self.tile_burrowing_permissions.clone(),
         };
         saved.validate()?;
         Ok(saved)
@@ -396,6 +412,18 @@ impl ResolvedTerrainGrid {
             crate::map::rmg::tiles::TileIds::resolve,
         );
         self.tile_registry_len = theater.map(|td| td.lookup.len());
+        // Fresh grids project the admitted theater once. TileType Save549D70
+        // already supplied a restored grid's flags; resident rebinding must
+        // not replace those gameplay values with today's theater INI.
+        if self.tile_burrowing_permissions.is_none()
+            && let Some(theater) = theater
+        {
+            self.tile_burrowing_permissions = Some(
+                (0..theater.lookup.len())
+                    .map(|tile| theater.lookup.allows_burrowing(tile as u16))
+                    .collect(),
+            );
+        }
         self.dummy_accepts_smudge =
             theater.is_some_and(|td| current_tile_permissions(&td.lookup, 0xffff).0);
         self.high_bridge_rim_tiles = theater.map(|td| td.high_bridge_rim_tiles);
@@ -412,11 +440,14 @@ impl ResolvedTerrainGrid {
         if self.cells.is_empty() {
             self.native_tmp_draw_heights.clear();
             self.destroyable_cliff_catalog = None;
+            self.deformation_catalog = None;
             self.bridge_recalc_catalog = None;
             return;
         }
         self.native_tmp_draw_heights = load_native_tmp_draw_heights(theater, assets);
         self.destroyable_cliff_catalog = build_destroyable_cliff_catalog(theater, assets, rules);
+        self.deformation_catalog =
+            super::deformation::build_deformation_catalog(theater, assets, rules);
         self.bridge_recalc_catalog = match (theater, assets, rules) {
             (Some(theater), Some(assets), Some(rules)) => {
                 Some(Arc::new(BridgeRecalcCatalog::for_runtime_terrain(

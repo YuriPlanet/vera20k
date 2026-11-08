@@ -163,6 +163,11 @@ pub fn building_voxel_names(
     })
 }
 
+/// Ares ObjectTypeClass_Load3DArt_Turrets/_Barrels (10042220, 10042090;
+/// hooks 0x5F865F, 0x5F887B), UnloadTurretArt (100423B0, hook 0x5F8084) and
+/// the UnitClass_DrawVXL_Turrets/_Barrels1..3 reads (10042650, 100425D0,
+/// 10042610, 10042630; hooks 0x73BD15, 0x73B90E, 0x73BCCD, 0x73BD6A) lift the
+/// eighteen-slot bound on these voxels; this enumeration never had one.
 /// Layers and gun indices the model can draw. Body and shadow storage stay
 /// independent of the selected gun, while every indexed gun has its own HVA.
 /// Missing optional barrels never create atlas work. A missing indexed turret

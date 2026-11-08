@@ -46,6 +46,7 @@ pub(crate) fn render_multiplayer_setup(
         crate::app::frontend::preview_zoom::close(state);
         let (progress_meter, texts) =
             crate::app::loading::pump::transfer_progress_draws(state, completed, total)?;
+        let smooth_art = state.smooth_online_menus();
         let layout = crate::app::input::multiplayer_setup::layout(state);
         let atlas = state
             .frontend
@@ -76,6 +77,7 @@ pub(crate) fn render_multiplayer_setup(
             ShellFrameOverlay {
                 progress_meter,
                 texts,
+                smooth_art,
                 ..Default::default()
             },
             ShellFrameCursor::Hidden,
@@ -203,7 +205,10 @@ pub(crate) fn render_multiplayer_setup(
     }
     let mut controls = Vec::new();
     let mut texts = Vec::new();
-    let mut overlay = ShellFrameOverlay::default();
+    let mut overlay = ShellFrameOverlay {
+        smooth_art: state.smooth_online_menus(),
+        ..Default::default()
+    };
     let text = |value: &str, rect: RectPx, align: ShellAlign, rgb: [f32; 3], depth: f32| {
         shell_text::draw_in_rect_scaled(
             font,
@@ -832,9 +837,6 @@ pub(crate) fn render_multiplayer_setup(
         overlay,
         ShellFrameCursor::Visible,
     )?;
-    if let Some(ui) = state.frontend.multiplayer_setup.as_mut() {
-        ui.statics.commit_presented();
-    }
     state.platform.window.request_redraw();
     Ok(())
 }

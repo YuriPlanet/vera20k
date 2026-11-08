@@ -332,6 +332,12 @@ impl PreparedLoad {
         simulation.intern_rule_type_ids(rules);
         simulation.resolve_type_handles(rules);
         simulation.rebuild_lighting_sources_after_load(rules);
+        // Post_Load_Game6851AC/6851B1 reselects lighting, then refreshes the
+        // flagged Anim conversions from the incoming stored Locations.
+        simulation.reinitialize_lighting_after_user_load();
+        simulation
+            .refresh_animated_tiberium_after_load(rules, overlay_registry)
+            .map_err(SnapshotRestoreError::from)?;
 
         // A render cache can retain an outgoing ID until its next sweep. Only
         // restored entity identities may re-enter the new presentation owner;
@@ -945,6 +951,7 @@ mod tests {
         in_game_menu: crate::ui::pause_menu::InGameMenuState,
     }
 
+    mod animated_tiberium_restore_tests;
     mod building_repair_restore_tests;
     mod cloak_restore_tests;
     mod factory_restore_tests;

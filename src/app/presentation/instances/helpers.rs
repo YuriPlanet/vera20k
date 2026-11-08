@@ -86,9 +86,15 @@ pub(crate) fn observer_draw_context(
     local_owner_id: Option<InternedId>,
     rules: Option<&crate::rules::ruleset::RuleSet>,
 ) -> crate::render::draw_state::ObserverDrawContext {
-    let owner = sim.interner().resolve(entity.owner());
-    let allied = local_owner.is_some_and(|observer| {
-        crate::map::houses::is_allied_with(sim.house_alliances().as_map(), observer, owner)
+    // `HouseAlliances::is_allied` answers by the interned ally matrix as the
+    // names would. An observer without an id is asked about by name.
+    let alliances = sim.house_alliances();
+    let owner = entity.owner();
+    let owner_name = sim.interner().resolve(owner);
+    let observer = local_owner.map(|name| (local_owner_id, name));
+    let allied = observer.is_some_and(|observer| match observer {
+        (Some(id), _) => alliances.is_allied(sim.interner(), id, owner),
+        (None, name) => crate::map::houses::is_allied_with(alliances.as_map(), name, owner_name),
     });
     let object = rules.and_then(|r| sim.interner().object_type(entity.type_ref(), r));
     let disguise_cell = entity
@@ -109,15 +115,22 @@ pub(crate) fn observer_draw_context(
     crate::render::draw_state::ObserverDrawContext {
         owner_is_allied: allied,
         owner_is_mutually_allied: allied
-            && local_owner.is_some_and(|observer| {
-                crate::map::houses::is_allied_with(sim.house_alliances().as_map(), owner, observer)
+            && observer.is_some_and(|observer| match observer {
+                (Some(id), _) => alliances.is_allied(sim.interner(), owner, id),
+                (None, name) => {
+                    crate::map::houses::is_allied_with(alliances.as_map(), owner_name, name)
+                }
             }),
         observer_present: local_owner_id.is_some(),
         detects_cloak: local_owner_id
             .is_some_and(|observer| sim.fog().senses_object_for_house(observer, entity)),
         cloaking_stages: rules.map_or_else(
             || crate::rules::ruleset::GeneralRules::default().cloaking_stages,
-            |r| r.general.cloaking_stages,
+            |r| {
+                object.map_or(r.general.cloaking_stages, |object| {
+                    object.cloaking_stages(r.general.cloaking_stages)
+                })
+            },
         ),
         invisible: object.is_some_and(|obj| {
             obj.invisible
@@ -424,7 +437,7 @@ pub(crate) fn compute_sprite_depth_params(
     screen_y: f32,
     z: u8,
 ) -> f32 {
-    let iso_row: f32 = screen_y + z as f32 * terrain::HEIGHT_STEP;
+    let iso_row: f32 = screen_y + f32::from(z as i8) * terrain::HEIGHT_STEP;
     native_z::depth_for_row(iso_row, origin_y, world_height)
 }
 
@@ -732,6 +745,16 @@ mod tests {
     use crate::render::locomotor_visual::screen_position;
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::locomotor::LocomotorState;
+
+    #[test]
+    fn a_level_below_zero_keeps_its_ground_row() {
+        // Raw 0xFF is Level -1 on a terrain-deformation crater floor: drawn a
+        // level lower, on the same ground row as Level 0 a level higher.
+        assert_eq!(
+            compute_sprite_depth_params(0.0, 1000.0, 115.0, 0xFF),
+            compute_sprite_depth_params(0.0, 1000.0, 100.0, 0)
+        );
+    }
 
     /// Stock YR sets one global `FlightLevel=1500` for every aircraft.
     const STOCK_FLIGHT_LEVEL_LEPTONS: i32 = 1500;

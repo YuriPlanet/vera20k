@@ -101,6 +101,7 @@ impl<'a> SimulationAuthoredLoadHost<'a> {
 impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
     type Handle = LoadOverlayHandle;
     type Error = SimulationAuthoredLoadError;
+    type CellAnim = crate::sim::overlay_mark_host::OverlayCellAnimHandle;
 
     fn try_construct_overlay(
         &mut self,
@@ -234,7 +235,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
         _handle: Self::Handle,
         request: OverlayCellAnim<'_>,
         terrain: &ResolvedTerrainGrid,
-    ) -> Result<(), Self::Error> {
+    ) -> Result<Self::CellAnim, Self::Error> {
         self.rules.bind_authored_load_anim(
             request.anim,
             self.assets,
@@ -245,13 +246,21 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
         let native_unique_id = self.next_native_id()?;
         // The common constructor publishes the original cell's light read
         // into the same ordered initialization timeline as later buildings.
-        self.sim.construct_overlay_cell_anim(
+        Ok(self.sim.construct_overlay_cell_anim(
             self.rules,
             request,
             ground,
             AnimConstructorInput::AssignedIdentity(native_unique_id),
-        )?;
-        Ok(())
+            super::FrameEffects::default(),
+        )?)
+    }
+
+    fn tint_cell_anim(
+        &mut self,
+        anim: Self::CellAnim,
+        tiberium: crate::rules::tiberium_type::TiberiumTypeId,
+    ) {
+        self.sim.tint_overlay_cell_anim(self.rules, anim, tiberium);
     }
 
     fn finish_common(&mut self, handle: Self::Handle) -> Result<(), Self::Error> {

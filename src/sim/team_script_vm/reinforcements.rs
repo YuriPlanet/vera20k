@@ -22,7 +22,7 @@ use crate::sim::miner::CargoBale;
 use crate::sim::mission::MissionType;
 use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
 use crate::sim::movement::teleport_movement::ChronoWarp;
-use crate::sim::tiberium::resource_type_for_tiberium_image;
+use crate::sim::tiberium::resource_type_for_tiberium_slot;
 use crate::sim::world::{FrameEffects, PlacementEvidence, Simulation, UninitContext};
 
 impl Simulation {
@@ -39,6 +39,28 @@ impl Simulation {
                 rules,
             ),
         }
+    }
+
+    /// Ares 3.0 TeamTypeClass_ValidateHouse (1005D170, hooks 0x65D8FB and
+    /// 0x65EC4A), at the entry of both reinforcement owners: the TeamType's
+    /// House (GetHouse) must exist, and unless the TeamType names a Country
+    /// (`+0xC4`) or this is a campaign, must not be defeated.
+    #[cfg(feature = "ares")]
+    fn ares_reinforcement_house_valid(&self, team_type: InternedId, rules: &RuleSet) -> bool {
+        let Some(house) = self.team_type_house(team_type, rules) else {
+            return false;
+        };
+        let country = self
+            .team_script_vm
+            .team_type_ini
+            .get(&team_type)
+            .is_some_and(|metadata| matches!(metadata.house, Some(TeamTypeHouse::Country(_))));
+        country
+            || !self.session.game_mode_nonzero()
+            || !self
+                .houses
+                .get(&house)
+                .is_some_and(|state| state.is_defeated())
     }
 
     fn team_initial_zone(&self, team_type: InternedId) -> Option<TeamTarget> {
@@ -100,6 +122,10 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> (bool, Option<(i16, i16)>) {
+        #[cfg(feature = "ares")]
+        if !self.ares_reinforcement_house_valid(team_type, rules) {
+            return (false, None);
+        }
         let Some(definition) = self.team_script_vm.team_types.get(&team_type).copied() else {
             return (false, None);
         };
@@ -279,6 +305,10 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> (bool, Option<(i16, i16)>) {
+        #[cfg(feature = "ares")]
+        if !self.ares_reinforcement_house_valid(team_type, rules) {
+            return (false, None);
+        }
         let Some(definition) = self.team_script_vm.team_types.get(&team_type).copied() else {
             return (false, None);
         };
@@ -524,17 +554,6 @@ impl Simulation {
         let Some(&head) = members.first() else {
             return false;
         };
-        let plane_type = crate::sim::superweapon::paradrop::PDPLANE;
-        if rules
-            .object_in_category(ObjectCategory::Aircraft, plane_type)
-            .is_none()
-        {
-            // Native FindIndex(-1) would dereference before the Aircraft
-            // array. A missing literal type is outside a valid retail rules
-            // closure; retain explicit diagnostics instead of a fake plane.
-            log::warn!("Droppod reinforcement requires native aircraft type {plane_type}");
-            return false;
-        }
         //65DBD0 reads the returned head's live owner, not a copied TeamType
         // Country or current player. The carrier itself never joins the Team.
         let Some(owner) = self
@@ -545,6 +564,21 @@ impl Simulation {
         else {
             return false;
         };
+        // Ares 3.0 TeamTypeClass_CreateInstance_Plane (1003A340, hook
+        // 0x65DBB3): that owner's GetParadropPlane replaces the PDPLANE
+        // literal.
+        let plane_type =
+            crate::sim::superweapon::paradrop::house_paradrop_plane(self, rules, owner);
+        if rules
+            .object_in_category(ObjectCategory::Aircraft, plane_type)
+            .is_none()
+        {
+            // Native FindIndex(-1) would dereference before the Aircraft
+            // array. A missing literal type is outside a valid retail rules
+            // closure; retain explicit diagnostics instead of a fake plane.
+            log::warn!("Droppod reinforcement requires native aircraft type {plane_type}");
+            return false;
+        }
         let owner_name = self.interner.resolve(owner).to_string();
         let plane = self.with_object_placement_scope(|sim| {
             sim.construct_object_limbo_at_height(
@@ -701,7 +735,7 @@ impl Simulation {
             .then(|| {
                 let slot = TiberiumTypeId(0);
                 let ty = rules.tiberium_types.get(slot)?;
-                CargoBale::of_type(slot, resource_type_for_tiberium_image(ty.image), rules)
+                CargoBale::of_type(slot, resource_type_for_tiberium_slot(ty.id), rules)
             })
             .flatten();
         // CreateMembers65DE53..65DE80 fills literal Storage slot0 of every

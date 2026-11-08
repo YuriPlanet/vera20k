@@ -44,7 +44,7 @@ pub struct TileUV {
 /// Created once at map load time. The batch renderer uses `get_uv()` to
 /// look up per-tile UV coordinates when building sprite instances.
 pub struct TileAtlas {
-    /// The GPU texture containing all packed tiles.
+    /// The GPU texture containing all packed tiles, as encoded colour.
     pub texture: BatchTexture,
     /// Parallel R8 depth atlas — same UV layout as color, one byte per pixel.
     /// Contains per-pixel Z-depth from TMP files for occlusion (cliffs, ramps).
@@ -83,7 +83,7 @@ pub fn build_atlas(
     if tiles.is_empty() {
         let rgba: Vec<u8> = vec![0u8; 4];
         let texture: BatchTexture =
-            batch.create_texture_on_device(device, queue, &rgba, 1, 1, None);
+            batch.create_encoded_texture_on_device(device, queue, &rgba, 1, 1);
         let depth_texture_view = create_r8_texture(device, queue, &[0u8], 1, 1);
         let zdepth_bind_group =
             batch.create_zdepth_bind_group_on_device(device, &texture.view, &depth_texture_view);
@@ -157,7 +157,7 @@ pub fn build_atlas(
     );
 
     let texture: BatchTexture =
-        batch.create_texture_on_device(device, queue, &rgba, atlas_width, atlas_height, None);
+        batch.create_encoded_texture_on_device(device, queue, &rgba, atlas_width, atlas_height);
     let depth_texture_view =
         create_r8_texture(device, queue, &depth_buf, atlas_width, atlas_height);
     let zdepth_bind_group =

@@ -586,6 +586,12 @@ impl SimRng {
     /// the cursor a variable amount and desyncs every later consumer that tick.
     /// Returns 0 for `n == 0` (the original would divide-by-zero here; callers
     /// guard with `.max(1)`, so this branch never fires on stock systems).
+    ///
+    /// RESIDUAL: Gas drift (`0x0062BDD3..0x0062BE05`) and the Spark burst
+    /// size (`0x0062E8C2..0x0062E8CC`) take the absolute value first
+    /// (`CDQ; XOR; SUB; CDQ; IDIV`). That differs only for a raw `i32::MIN`,
+    /// whose `NEG` overflows and leaves the remainder negative; this method
+    /// returns its positive twin there. One raw draw in 2^32.
     pub fn next_raw_abs_modulo(&mut self, n: u32) -> u32 {
         if n == 0 {
             return 0;

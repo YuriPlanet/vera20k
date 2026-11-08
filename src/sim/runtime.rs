@@ -856,6 +856,8 @@ pub fn spawn_terrain_tile_animations(
 #[derive(Debug, thiserror::Error)]
 pub enum ScenarioPopulationError {
     #[error(transparent)]
+    Tiberium(#[from] crate::rules::overlay_types::TiberiumImageError),
+    #[error(transparent)]
     GeneratedTechno(#[from] crate::sim::world::GeneratedTechnoInitError),
     #[error(transparent)]
     Terrain(#[from] crate::sim::terrain_spawn::TerrainConstructionError),
@@ -948,7 +950,11 @@ where
             );
         }
     }
-    sim.install_resolved_terrain_for_new_map(resolved_terrain.clone());
+    let mut terrain = resolved_terrain.clone();
+    // VERA terrain deformation follows the scenario's rules before any zone
+    // is built from this grid.
+    terrain.set_terrain_deformation(rules.combat_damage.terrain_deformation);
+    sim.install_resolved_terrain_for_new_map(terrain);
     // Active `CellClass` overlay identity exists before the Techno map
     // sections are read. Install the already-resolved grid now so every
     // UnitClass virtual Unlimbo sees ore, walls, and structural bridges.
@@ -1022,7 +1028,7 @@ where
         if let Some(grid) = live_grid {
             sim.install_overlay_grid_for_load(grid);
         }
-        if let Some(stats) = stats {
+        if let Some(stats) = stats? {
             log::info!(
                 "Initialized authored native tiberium queues before Technos: {} growth, {} spread",
                 stats.growth_entries,
@@ -1100,7 +1106,10 @@ pub fn initialize_native_tiberium_queues(
     overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
     overlay_grid: Option<&crate::sim::overlay_grid::OverlayGrid>,
     native_rect: (u16, u16),
-) -> Option<crate::sim::ore_growth::NativeTiberiumRebuildStats> {
+) -> Result<
+    Option<crate::sim::ore_growth::NativeTiberiumRebuildStats>,
+    crate::rules::overlay_types::TiberiumImageError,
+> {
     sim.ore_growth_config
         .reload_for_scenario(basic, special_flags, &sim.session);
     let (width, height) = overlay_grid
@@ -1134,9 +1143,9 @@ pub fn initialize_native_tiberium_queues(
             0,
             sim.session.binary_frame(),
         );
-        return None;
+        return Ok(None);
     };
-    Some(
+    Ok(Some(
         sim.ore_growth_state
             .rebuild_native_tiberium_queues_from_overlays(
                 overlay_grid,
@@ -1148,8 +1157,8 @@ pub fn initialize_native_tiberium_queues(
                 sim.ore_growth_config.spreads(),
                 sim.session.binary_frame(),
                 native_rect,
-            ),
-    )
+            )?,
+    ))
 }
 
 #[derive(Debug)]
@@ -1160,6 +1169,10 @@ pub struct AuthoredScenarioLoadOutput {
 
 #[derive(Debug, thiserror::Error)]
 pub enum AuthoredScenarioLoadError {
+    #[error(transparent)]
+    RuntimeOverlay(#[from] crate::sim::crates::RuntimeOverlayError),
+    #[error(transparent)]
+    Tiberium(#[from] crate::rules::overlay_types::TiberiumImageError),
     #[error(transparent)]
     NativeIdentity(#[from] crate::sim::native_identity::NativeMapTubeConstructionError),
     #[error(transparent)]
@@ -1344,7 +1357,7 @@ where
                     current.state(),
                     overlay_registry,
                     &tiberium_types,
-                ));
+                )?);
             let finalized = crate::map::authored_overlay::recalc_final_authored_overlay_cell(
                 &mut terrain,
                 &mut recalc,
@@ -1417,13 +1430,21 @@ pub fn finalize_constructed_scenario(
     overlay_grid: crate::sim::overlay_grid::OverlayGrid,
     house_roster: &crate::map::houses::HouseRoster,
     skirmish_session: Option<&crate::sim::scenario_bootstrap::MatchLaunchDescriptor>,
-) -> crate::sim::scenario_post_map::ScenarioPostMapOutput {
+) -> Result<
+    crate::sim::scenario_post_map::ScenarioPostMapOutput,
+    crate::sim::crates::RuntimeOverlayError,
+> {
     // Population and starting-unit Unlimbo mutate the live Cell+122 bytes.
     // The loader argument is a presentation/materialization view taken before
     // those events; never replace their retained history with that older copy.
     // Every production caller installs the live grid first, so the argument
     // is only the fallback for callers that never populated one.
     let mut overlay_grid = sim.take_overlay_grid_for_load().unwrap_or(overlay_grid);
+    // Read_INI_Basic @ 0x00689E90 reads TiberiumDeathToVisceroid over the
+    // fresh Set_Defaults true (0x00683610); Ares' visceroid reads it.
+    #[cfg(feature = "ares")]
+    sim.session
+        .read_map_tiberium_death_to_visceroid(map_data.basic.tiberium_death_to_visceroid);
     // Attach the TIBTRE ore-spawner animation index to the terrain objects
     // constructed ahead of the map entities. Its authoritative raw SHP count
     // is rules-owned; presentation atlases retain only body-frame ranges.
@@ -1512,14 +1533,14 @@ pub fn finalize_constructed_scenario(
             house_roster,
             skirmish_session,
             campaign_map,
-        });
+        })?;
     sim.initialize_fog_of_war(crate::sim::world::UninitContext::new(
         rules,
         Some(overlay_registry),
     ));
     // Fresh source changes and Anim intensity reads transfer together to the
     // lighting owner. Discarding this prefix loses pre-building CellAnim light.
-    output
+    Ok(output)
 }
 #[test]
 fn finalization_keeps_live_neighbor_counts_instead_of_the_loader_copy() {
@@ -1554,7 +1575,7 @@ fn finalization_keeps_live_neighbor_counts_instead_of_the_loader_copy() {
         .unwrap()
         .retained_neighbor_counts()
         .to_vec();
-    finalize_constructed_scenario(&mut sim, &map, &rules, &registry, stale, &roster, None);
+    finalize_constructed_scenario(&mut sim, &map, &rules, &registry, stale, &roster, None).unwrap();
     assert_eq!(
         sim.overlay_grid
             .as_ref()

@@ -372,6 +372,11 @@ impl MatchInputState {
         self.last_cursor_window = Some(point);
     }
 
+    /// The OS pointer's last position in window pixels, while one is known.
+    pub(crate) fn pointer_in_window(&self) -> Option<(f32, f32)> {
+        self.last_cursor_window
+    }
+
     /// Begin a fresh physical pointer history after focus or client entry changes.
     pub(crate) fn reset_window_cursor_motion(&mut self) {
         self.last_cursor_window = None;
@@ -416,6 +421,26 @@ impl MatchInputState {
         } else {
             None
         }
+    }
+
+    /// The cursor while a tactical button holds the capture byte (`+0x555A`),
+    /// or `None` without it. `ScrollClass::UpdateMouseScrolling` 0x00692F30
+    /// then hands the frame to `BandBox_MouseMove` 0x004AC380 (left held) or
+    /// `RightDragPan` 0x00693440 (right held) and returns
+    /// (0x00692F85..0x00692FDB) before the action cursor
+    /// (0x00692FFC..0x0069302F) and the edge-scroll block. The band sets the
+    /// normal arrow as it activates (`SetCursor(0, 0)` at 0x004AC4DA); the pan
+    /// writes only its own cursor, which the caller asks first. Otherwise
+    /// nothing writes one and the last cursor stays.
+    pub(crate) fn captured_cursor(&self) -> Option<Option<crate::app::types::CursorFeedbackKind>> {
+        if !self.tactical_mouse.captured {
+            return None;
+        }
+        Some(if self.selection_state.is_band_box_active() {
+            None
+        } else {
+            self.shown_cursor.get()
+        })
     }
 
     /// Construct the match input owner with the ordinary startup defaults.
