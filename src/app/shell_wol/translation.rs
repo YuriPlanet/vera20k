@@ -52,7 +52,7 @@ pub(crate) fn command(state: &mut AppState, line: &[u16]) -> bool {
 }
 
 /// A line another player wrote reached the screen. With a language chosen
-/// and the line in the other script, ask the online service to translate it.
+/// and the line in another script, ask the online service to translate it.
 pub(crate) fn received(state: &mut AppState, text: &[u16], line: TranslatedLine) {
     let Some(target) = state.persistence.options_profile.translate_chat else {
         return;

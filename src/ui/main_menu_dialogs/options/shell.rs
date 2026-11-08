@@ -1388,8 +1388,8 @@ mod tests {
         let popup = state.shell_popup(&layout).unwrap();
         assert_eq!(
             (popup.combo, popup.rows, popup.selected),
-            (LauncherComboId::ChatTranslation, 10, 0),
-            "off, then the nine languages"
+            (LauncherComboId::ChatTranslation, 15, 0),
+            "off, then the fourteen languages"
         );
         assert!(popup.rect.y + popup.rect.h <= layout.status_help.y);
         state.drain_output();
