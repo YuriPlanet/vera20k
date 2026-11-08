@@ -1953,6 +1953,7 @@ impl ApplicationHandler for App {
                     .then(|| crate::app::map_picture::poll(state))
                     .flatten(),
                 Self::poll_campaign(state),
+                Self::poll_language_files(state),
                 Self::campaign_score_animation_deadline(state),
                 // Captures replay sealed input; they never check or ask.
                 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]

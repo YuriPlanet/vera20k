@@ -131,6 +131,11 @@ pub(crate) struct RetailOptionsProfile {
     /// it. Off by default, so new profiles start like gamemd. A profile from
     /// before the rename keeps its `SkipStartupLogo=` choice.
     pub(crate) skip_intro: bool,
+    /// `[VERA] ShowStringKeys=`: the Developer page's String Keys box. On, it
+    /// arms Ctrl+Alt+K, which switches every label between its text and its
+    /// own string-table key. Off by default; a start with it on shows the
+    /// texts until the hotkey asks for keys.
+    pub(crate) show_string_keys: bool,
     /// `[VERA] RenderInterpolation=`: client-only motion smoothing. Off by
     /// default, so new profiles draw the original tick-stepped motion; it never
     /// changes the simulation rate or saves.
@@ -332,6 +337,7 @@ impl Default for RetailOptionsProfile {
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
             yr_original_style: false,
             skip_intro: false,
+            show_string_keys: false,
             render_interpolation: false,
             mouse_wheel_zoom: false,
             right_click_orders: false,
@@ -376,7 +382,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 30],
+    pub(crate) vera: [(&'static str, String); 31],
 }
 
 impl RetailOptionsLoad {
@@ -576,6 +582,7 @@ impl RetailOptionsProfile {
             // logo; the writer drops it.
             let legacy_skip = vera.read_bool("SkipStartupLogo", self.skip_intro);
             self.skip_intro = vera.read_bool("SkipIntro", legacy_skip);
+            self.show_string_keys = vera.read_bool("ShowStringKeys", self.show_string_keys);
             self.render_interpolation =
                 vera.read_bool("RenderInterpolation", self.render_interpolation);
             self.mouse_wheel_zoom = vera.read_bool("MouseWheelZoom", self.mouse_wheel_zoom);
@@ -799,6 +806,10 @@ impl RetailOptionsProfile {
                 (
                     "TerrainDeformation",
                     format_bool(self.terrain_deformation).to_string(),
+                ),
+                (
+                    "ShowStringKeys",
+                    format_bool(self.show_string_keys).to_string(),
                 ),
             ],
         }
@@ -1585,6 +1596,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
             sidebar: SidebarSize::ExtraLarge,
             yr_original_style: true,
             skip_intro: true,
+            show_string_keys: true,
             shift_queue: true,
             shift_queue_count: 7,
             wol_test_service: true,
@@ -1607,6 +1619,7 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
         assert_eq!(reread.retained_profile.sidebar, SidebarSize::ExtraLarge);
         assert!(reread.retained_profile.yr_original_style);
         assert!(reread.retained_profile.skip_intro);
+        assert!(reread.retained_profile.show_string_keys);
         assert!(reread.retained_profile.shift_queue);
         assert!(reread.retained_profile.wol_test_service);
         assert!(reread.retained_profile.solo_skirmish);

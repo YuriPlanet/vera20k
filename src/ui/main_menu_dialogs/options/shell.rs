@@ -22,12 +22,12 @@ use super::{
     MOUSE_WHEEL_ZOOM_LABEL, ORIGINAL_SHAPE_HELP, ORIGINAL_SHAPE_LABEL, OptionsDialogState,
     PERFORMANCE_STATS_HELP, PERFORMANCE_STATS_LABEL, PhysicalControlFrame,
     RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP,
-    RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
-    SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL,
-    SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting, SidebarSize, TERRAIN_DEFORMATION_HELP,
-    TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP, VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP,
-    WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL,
-    Zoom,
+    RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SHOW_STRING_KEYS_HELP,
+    SHOW_STRING_KEYS_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SKIP_INTRO_HELP, SKIP_INTRO_LABEL,
+    SMOOTH_ONLINE_MENUS_HELP, SMOOTH_ONLINE_MENUS_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL,
+    Setting, SidebarSize, TERRAIN_DEFORMATION_HELP, TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP,
+    VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP,
+    YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
 
@@ -516,6 +516,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::TerrainDeformation => TERRAIN_DEFORMATION_LABEL,
             LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
             LauncherCheckboxId::PerformanceStats => PERFORMANCE_STATS_LABEL,
+            LauncherCheckboxId::ShowStringKeys => SHOW_STRING_KEYS_LABEL,
             LauncherCheckboxId::SkipIntro => SKIP_INTRO_LABEL,
             LauncherCheckboxId::CustomEndGameBanner => CUSTOM_END_GAME_BANNER_LABEL,
             LauncherCheckboxId::CustomEndGameScore => CUSTOM_END_GAME_SCORE_LABEL,
@@ -584,6 +585,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::TerrainDeformation => self.values.terrain_deformation,
             LauncherCheckboxId::WolTestService => self.values.wol_test_service,
             LauncherCheckboxId::PerformanceStats => self.values.performance_stats,
+            LauncherCheckboxId::ShowStringKeys => self.values.show_string_keys,
             LauncherCheckboxId::SkipIntro => self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => self.values.custom_end_game_score,
@@ -871,6 +873,9 @@ impl OptionsDialogState {
                 }
                 LauncherCheckboxId::PerformanceStats => {
                     LauncherStatusHelp::Vera(PERFORMANCE_STATS_HELP)
+                }
+                LauncherCheckboxId::ShowStringKeys => {
+                    LauncherStatusHelp::Vera(SHOW_STRING_KEYS_HELP)
                 }
                 LauncherCheckboxId::SkipIntro => LauncherStatusHelp::Vera(SKIP_INTRO_HELP),
                 LauncherCheckboxId::CustomEndGameBanner => {
@@ -1993,12 +1998,16 @@ mod tests {
                 "{category:?}"
             );
         }
-        // The Developer page holds FPS and Skip Startup Logo only.
+        // The Developer page holds FPS, String Keys and Skip Startup Logo only.
         let layout = page(Category::Developer);
         for (id, event) in [
             (
                 LauncherCheckboxId::PerformanceStats,
                 LauncherOptionsEvent::PerformanceStatsChanged(true),
+            ),
+            (
+                LauncherCheckboxId::ShowStringKeys,
+                LauncherOptionsEvent::ShowStringKeysChanged(true),
             ),
             (
                 LauncherCheckboxId::SkipIntro,
