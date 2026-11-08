@@ -1468,8 +1468,23 @@ impl App {
             Self::play_skirmish_shell_ui_sound(state, cue);
             return true;
         }
-        if let Some(control) = crate::ui::skirmish_shell::random_map_setup_control_at(&layout, x, y)
-        {
+        if let Some(control) = crate::ui::skirmish_shell::random_map_setup_control_at_view(
+            &layout,
+            x,
+            y,
+            modal.extended,
+            modal.advanced,
+        ) {
+            // VERA: an Advanced slider acts on press, like the Players one.
+            if let crate::ui::skirmish_shell::RandomMapSetupControl::Advanced(field) = control {
+                let rect = layout.advanced_control_rects[field.row()];
+                if modal.is_enabled(control)
+                    && modal.press_advanced(field, x, y, rect, layout.scale)
+                {
+                    Self::play_skirmish_shell_generic_click_sound(state);
+                }
+                return true;
+            }
             // The players slider is not a button: it acts on press, not on
             // release, so it never arms a pressed control.
             if control == crate::ui::skirmish_shell::RandomMapSetupControl::Players0x3eb {
@@ -1505,16 +1520,28 @@ impl App {
             .skirmish_shell_state
             .random_map_setup_modal
             .as_ref()
-            .is_some_and(|modal| modal.open_combo.is_some() || modal.players_hold.is_some());
+            .is_some_and(|modal| {
+                modal.open_combo.is_some()
+                    || modal.players_hold.is_some()
+                    || modal.advanced_hold.is_some()
+            });
+        let (extended, advanced) = state
+            .frontend
+            .skirmish_shell_state
+            .random_map_setup_modal
+            .as_ref()
+            .map_or((false, false), |modal| (modal.extended, modal.advanced));
         if !mouse_held {
-            let help = crate::ui::skirmish_shell::random_map_setup_control_at(&layout, x, y)
-                .map(|control| {
-                    Self::localized_status_help_text(
-                        state,
-                        crate::ui::skirmish_shell::status_help_key_for_random_map_setup(control),
-                    )
-                })
-                .unwrap_or_default();
+            let help = crate::ui::skirmish_shell::random_map_setup_control_at_view(
+                &layout, x, y, extended, advanced,
+            )
+            .map(|control| {
+                Self::localized_status_help_text(
+                    state,
+                    crate::ui::skirmish_shell::status_help_key_for_random_map_setup(control),
+                )
+            })
+            .unwrap_or_default();
             if let Some(setup) = state
                 .frontend
                 .skirmish_shell_state
@@ -1535,6 +1562,14 @@ impl App {
         else {
             return;
         };
+        if let Some(hold) = modal.advanced_hold {
+            let rect = layout.advanced_control_rects[hold.id.row()];
+            if modal.drag_advanced(x, rect, layout.scale) {
+                Self::play_skirmish_shell_generic_click_sound(state);
+            }
+            state.platform.window.request_redraw();
+            return;
+        }
         if modal.players_hold.is_none() {
             return;
         }
@@ -1558,7 +1593,7 @@ impl App {
         };
         // The release goes to a slider holding the mouse; freeing it lets the
         // dialog's hit test run again.
-        if modal.players_hold.take().is_some() {
+        if modal.players_hold.take().is_some() | modal.advanced_hold.take().is_some() {
             Self::handle_random_map_setup_mouse_move(state);
             return true;
         }
@@ -1586,7 +1621,13 @@ impl App {
             return false;
         };
         let pressed = modal.pressed_control.take();
-        let released = crate::ui::skirmish_shell::random_map_setup_control_at(&layout, x, y);
+        let released = crate::ui::skirmish_shell::random_map_setup_control_at_view(
+            &layout,
+            x,
+            y,
+            modal.extended,
+            modal.advanced,
+        );
         if pressed.is_none() || pressed != released {
             return layout.dialog.contains(x, y) || pressed.is_some();
         }
@@ -1606,6 +1647,11 @@ impl App {
             Control::Randomize0x621 => {
                 modal.randomize_options(&settings, &mut main, &description);
             }
+            Control::AdvancedToggle => {
+                modal.toggle_advanced();
+            }
+            // The sliders act on press and never arm a release.
+            Control::Advanced(_) => {}
             Control::Generate0x620 => {
                 modal.reroll_derived_for_generate(&settings, &mut main);
                 modal.begin_generate();

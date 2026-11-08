@@ -38,8 +38,7 @@ pub use opponent_scroll::{
 pub use choose_map::{
     ChooseMapContext, ChooseMapListPress, ChooseMapModalState, ChooseMapPrompt,
     ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
-    ONLINE_MAPS_ROW,
-    SEARCH_MAX_CHARS, ai_rows_beyond_limit_occupied,
+    ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, ai_rows_beyond_limit_occupied,
 };
 pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{
@@ -54,8 +53,8 @@ pub use player_name::{
     set_status_help_text, update_player_name_scroll_for_caret,
 };
 pub use random_map_setup::{
-    AcceptOutcome, MainRngRanged, PLAYERS_RANGE, RandomMapSetupModalState, SETUP_COMBO_ROWS,
-    SetupCombo, SetupComboItem, setup_combo_items,
+    ADVANCED_RANGE, AcceptOutcome, MainRngRanged, PLAYERS_RANGE, RandomMapSetupModalState,
+    SETUP_COMBO_ROWS, SetupCombo, SetupComboItem, setup_combo_items,
 };
 pub use saved_seed_browser::{
     SAVED_SEED_DESCRIPTION_MAX_UNITS, SavedSeedBrowserRow, SavedSeedBrowserState,

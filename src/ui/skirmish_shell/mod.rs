@@ -15,7 +15,7 @@ pub use layout::{
     CHOOSE_MAP_MODAL_H, CHOOSE_MAP_MODAL_W, CHOOSE_MAP_TITLE_KEY, COMBO_ARROW_RESERVE_W,
     COMBO_DROPDOWN_ROW_H, COMBO_DROPDOWN_SCROLLBAR_BUTTON_H, COMBO_DROPDOWN_SCROLLBAR_MIN_THUMB_H,
     COMBO_DROPDOWN_SCROLLBAR_W, COMBO_FACE_H, COMBO_TEXT_LEFT_INSET, ChooseMapModalButton,
-    ChooseMapModalLayout, ColorComboId, DropdownMetrics, RANDOM_MAP_TITLE_KEY, RIGHT_PANEL_WIDTH,
+    AdvancedField, ChooseMapModalLayout, ColorComboId, DropdownMetrics, RANDOM_MAP_TITLE_KEY, RIGHT_PANEL_WIDTH,
     RandomMapSetupControl, RandomMapSetupLayout, RectPx, SavedSeedControl, SavedSeedLayout,
     SavedSeedMode, ShellControlId, SkirmishCheckboxId, SkirmishCheckboxRect,
     SkirmishColumnLabelRects, SkirmishRightPanelTextRects, SkirmishRowRects, SkirmishShellLayout,
@@ -26,7 +26,8 @@ pub use layout::{
     compute_random_map_setup_layout, compute_responsive_choose_map_modal_layout,
     compute_responsive_layout, compute_responsive_random_map_setup_layout,
     compute_responsive_saved_seed_layout, compute_saved_seed_layout, player_name_edit_client_rect,
-    player_name_edit_text_rect, random_map_setup_control_at, random_map_setup_dropdown_rect,
+    player_name_edit_text_rect, random_map_setup_control_at, random_map_setup_control_at_view,
+    random_map_setup_dropdown_rect,
     random_map_setup_dropdown_row_at, saved_seed_control_at,
 };
 pub(crate) use state::CountryMenuCatalog;
@@ -37,7 +38,8 @@ pub use state::{
     ONLINE_MAPS_ROW, SEARCH_MAX_CHARS,
     DropdownScrollDragState, DropdownScrollbarPart, DropdownScrollbarPressState, MainRngRanged,
     OpenComboDropdown, OwnerDrawButton, PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT,
-    PLAYER_NAME_EDIT_LIMIT_BYTES, PLAYERS_RANGE, PlayerNameEditState, RandomMapSetupModalState,
+    PLAYER_NAME_EDIT_LIMIT_BYTES, PLAYERS_RANGE, ADVANCED_RANGE, PlayerNameEditState,
+    RandomMapSetupModalState,
     SAVED_SEED_DESCRIPTION_MAX_UNITS, SETUP_COMBO_ROWS, SavedSeedBrowserRow, SavedSeedBrowserState,
     SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
     SetupCombo, SetupComboItem, SkirmishAiRowType, SkirmishComboId, SkirmishComboItem,
