@@ -331,7 +331,7 @@ impl ChatLanguage {
             | Self::Swedish => code < 0x100,
             Self::Turkish => code < 0x100 || matches!(ch, 'Ğ' | 'ğ' | 'İ' | 'ı' | 'Ş' | 'ş'),
             Self::SimplifiedChinese | Self::TraditionalChinese | Self::Japanese | Self::Korean => {
-                crate::render::text_engine::fonts::is_cjk_sized(code)
+                crate::i18n::is_cjk_sized(code)
             }
             Self::Russian => matches!(code, 0x0400..=0x052F),
             Self::Arabic => crate::i18n::is_right_to_left_letter(ch),
