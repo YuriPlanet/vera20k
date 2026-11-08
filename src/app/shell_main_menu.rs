@@ -45,19 +45,13 @@ impl AppState {
         if !crate::i18n::select(tag) {
             return false;
         }
-        if let Some(csf) = self.process_assets.csf.as_mut() {
-            crate::i18n::apply(csf);
-            crate::map::scenario_sources::relabel_records(
-                &mut self.frontend.scenario_catalog.records_mut(),
-                csf,
-            );
-        }
+        self.refresh_string_key_labels();
         self.renderer.bit_font.set_locale(tag);
         true
     }
 
-    /// Re-resolve the loaded string table and the map titles after the String
-    /// Keys box or its hotkey changed what labels answer.
+    /// Re-resolve the loaded string table and the map titles after a new
+    /// language, the String Keys box or its hotkey changed what labels answer.
     pub(crate) fn refresh_string_key_labels(&mut self) {
         if let Some(csf) = self.process_assets.csf.as_mut() {
             crate::i18n::apply(csf);
@@ -215,6 +209,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
     fn store_smooth_sidebar(&mut self, enabled: bool) {
         // A battle's next frame sizes the sidebar and scales its art from it.
         self.persistence.options_profile.smooth_sidebar = enabled;
+    }
+    fn store_smooth_online_menus(&mut self, enabled: bool) {
+        // The online client's next frame draws its art by it.
+        self.persistence.options_profile.smooth_online_menus = enabled;
     }
     fn store_hd_map_previews(&mut self, enabled: bool) {
         // The next setup screen picks its preview from it.
@@ -1234,6 +1232,17 @@ impl App {
             state.platform.window.request_redraw();
             return;
         }
+        let mut dialog = Self::launcher_options_from_state(state);
+        if let Some(category) = state.frontend.options_reopen_at.take() {
+            dialog.select_category(category);
+        }
+        state.frontend.options_dialog = Some(dialog);
+    }
+
+    /// The Options values as they stand now.
+    pub(super) fn launcher_options_from_state(
+        state: &AppState,
+    ) -> crate::ui::main_menu_dialogs::OptionsDialogState {
         use crate::app::persistence::options::launcher::launcher_dialog_from_profile;
 
         let labels = Self::launcher_options_labels(state);
@@ -1252,24 +1261,27 @@ impl App {
             displays,
         );
         dialog.set_languages(crate::i18n::choices(), crate::i18n::selected_language());
-        if let Some(category) = state.frontend.options_reopen_at.take() {
-            dialog.select_category(category);
-        }
-        state.frontend.options_dialog = Some(dialog);
+        dialog
     }
 
     /// The Options captions the string table names, in the language in use.
     fn launcher_options_labels(
         state: &AppState,
     ) -> crate::ui::main_menu_dialogs::options::LauncherOptionsLabels {
-        crate::ui::main_menu_dialogs::options::LauncherOptionsLabels::resolve(&|key| {
-            state
-                .process_assets
-                .csf
-                .as_ref()
-                .and_then(|csf| csf.get(key))
-                .map(str::to_owned)
-        })
+        let mut labels =
+            crate::ui::main_menu_dialogs::options::LauncherOptionsLabels::resolve(&|key| {
+                state
+                    .process_assets
+                    .csf
+                    .as_ref()
+                    .and_then(|csf| csf.get(key))
+                    .map(str::to_owned)
+            });
+        // VERA's Esc menu opens Options over a page: the button returns there.
+        if state.frontend.shell_route != crate::app::shell_route::ShellRoute::MainMenu {
+            labels.main_menu = Self::csf_label(state, "GUI:Back", "Back");
+        }
+        labels
     }
 
     pub(crate) fn play_launcher_options_cue(
@@ -1553,6 +1565,9 @@ impl App {
         if crate::app::updater::notes::pointer_button(state, true) {
             return;
         }
+        if Self::shell_menu_pointer(state, Some(true)) {
+            return;
+        }
         state.frontend.shell_controller.on_pointer_down(x, y, &feed);
         // The message box (`0x005D3490`, proc `0x005D36A0`) subclasses its
         // owner-draw OK/Cancel to `0x00612B70`, which plays
@@ -1572,6 +1587,7 @@ impl App {
         }
         #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         crate::app::updater::notes::pointer_button(state, false);
+        Self::shell_menu_pointer(state, Some(false));
         let activated = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
         if let Some(result) =
             activated.and_then(crate::ui::shell::modal::ModalResult::from_message_box_control)
@@ -1591,6 +1607,10 @@ impl App {
             return;
         };
         match message_box.purpose {
+            ShellMessageBoxPurpose::ShellMenu(_) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_shell_menu(state, result);
+            }
             // OK -> quit (result 0). The screen fade-to-black is sub-step 4b-ii-b.
             ShellMessageBoxPurpose::ExitGame
                 if result == crate::ui::shell::modal::ModalResult::MessageBox(0) =>
@@ -1645,6 +1665,28 @@ impl App {
     pub(super) fn confirm_quit(state: &mut AppState) {
         let mut operations = AppStateConfirmedQuitOperations { state };
         dispatch_shell_controller_confirmed_quit(&mut operations);
+    }
+
+    /// What ending the program from any shell page saves first.
+    pub(super) fn prepare_shell_terminal_exit(state: &mut AppState) {
+        // Active YR treats a terminated launcher Options pump as an
+        // always-apply final result: Apply -> destroy -> one write.
+        // Complete that transaction before unrelated shell teardown.
+        crate::app::input::keyboard::prepare_terminal_exit(state);
+        Self::close_launcher_options_terminal(state);
+        if Self::native_skirmish_shell_active(state) {
+            // A terminal exit has no Start/Back transaction, so pack the
+            // page's current controls into the durable record first. The
+            // pack spends no `Scenario` draw: Random markers keep the
+            // value already cached behind them.
+            state.frontend.multiplayer_shell_runtime.pack_durable_state(
+                &state.frontend.skirmish_shell_state,
+                state.frontend.scenario_catalog.shell_maps(),
+                &state.frontend.skirmish_modes,
+            );
+            Self::teardown_skirmish_shell_for_start(state);
+            state.frontend.multiplayer_shell_runtime.persist_snapshot();
+        }
     }
 
     /// Bind the shared controller to the active menu page for one pointer
@@ -1838,6 +1880,7 @@ impl App {
             ShellExitThen::CampaignStart(side) => Self::commit_campaign_start(state, side),
             ShellExitThen::LoadSavedGameBack => Self::commit_load_saved_game_back(state),
             ShellExitThen::Options(result) => Self::commit_launcher_options_result(state, result),
+            ShellExitThen::ShellMenuOptions(_) => Self::open_launcher_options_dialog(state),
             ShellExitThen::KeyboardClose(exit) => {
                 crate::app::input::keyboard::commit_close(state, exit)
             }
@@ -2146,13 +2189,22 @@ impl App {
         // teardown pops back to it with focus restored. (ensure_active would
         // reset_to-clobber the stack — the prior "0x120 over 0xE2" comment
         // described behavior that never happened.)
+        state.frontend.shell_message_box = Some(message_box);
+        Self::raise_shell_message_box(state);
+        state.platform.window.request_redraw();
+    }
+
+    /// Put the open box on top of the controller. A page under the box still
+    /// runs, and its network events can reset the controller to itself.
+    pub(super) fn raise_shell_message_box(state: &mut AppState) {
+        let Some(message_box) = state.frontend.shell_message_box.as_ref() else {
+            return;
+        };
         let dialog =
             crate::ui::shell::descriptor::DialogId(message_box.labels.kind().template_id(false));
         if state.frontend.shell_controller.top_id() != Some(dialog) {
             state.frontend.shell_controller.push(dialog, true);
         }
-        state.frontend.shell_message_box = Some(message_box);
-        state.platform.window.request_redraw();
     }
 
     /// Whether any main-menu modal dialog is currently open. Used to route

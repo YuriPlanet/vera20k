@@ -73,6 +73,18 @@ fn message_box_layout_for_screen(
     crate::ui::shell::modal::message_box_layout_on(kind, size.0 as i32, size.1 as i32, scale)
 }
 
+/// The settings in VERA's Esc menu, on its message box's mapping.
+pub(crate) fn shell_menu_settings_layout(
+    state: &AppState,
+) -> crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout {
+    let size = shell_screen_size(state);
+    crate::ui::main_menu_dialogs::options::shell::LauncherOptionsLayout::esc_menu(
+        size.0 as i32,
+        size.1 as i32,
+        shell_scale_for_screen(size),
+    )
+}
+
 pub(crate) fn shell_scale_for_screen(size: (u32, u32)) -> crate::ui::shell::geom::ShellScale {
     crate::ui::shell::geom::ShellScale::for_window(size.0 as i32, size.1 as i32)
 }
