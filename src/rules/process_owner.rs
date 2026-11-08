@@ -2288,4 +2288,104 @@ mod tests {
                 .ends_with(&RulesError::LangRuleDigestRejected.to_string())
         );
     }
+
+    #[test]
+    fn sparky_on_fire_preserves_factory_slots_through_reread_save_and_reset() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut owner = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+        let retail = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
+            .unwrap()
+            .into_parts()
+            .0;
+        assert!(retail.warheads_iter().all(|warhead| !warhead.sparky));
+        assert!(retail.general.on_fire.is_empty());
+
+        // Continue the same live Rules object through actual Process passes.
+        let reread = |owner: &mut NativeRulesProcessOwner, input: &str| {
+            let state = owner.registry.take().unwrap().into_registry_state();
+            let processed = RulesLayerStack::new(IniFile::from_str(input))
+                .process_with_fixed_art_and_registry_state_recovering(
+                    &owner.sources.fixed_art,
+                    state,
+                    RulesProcessContext::Ordinary,
+                    &owner.sources.fixed_eva,
+                    &owner.sources.fixed_sounds,
+                )
+                .unwrap();
+            let rules = owner.project_saved_scenario_rules(&processed).unwrap();
+            owner.install_saved_scenario_rules(processed);
+            rules
+        };
+        let first = reread(
+            &mut owner,
+            "[Fire]\nSparky=yes\n[AudioVisual]\nOnFire=ONFIRE_FIRST\n",
+        );
+        assert!(first.warhead("Fire").unwrap().sparky);
+        assert_eq!(first.general.on_fire, ["ONFIRE_FIRST"]);
+
+        // Repeated >24-byte names allocate distinct slots. Comma tokens keep
+        // leading spaces, so ` none` is a type while exact `none` is null.
+        let replaced = reread(
+            &mut owner,
+            "[Fire]\nSparky=invalid\n[AudioVisual]\n\
+             OnFire=ABCDEFGHIJKLMNOPQRSTUVWXA,ABCDEFGHIJKLMNOPQRSTUVWXA, none,none,ONFIRE_FIRST,ONFIRE_FIRST\n",
+        );
+        assert!(replaced.warhead("Fire").unwrap().sparky);
+        let names = &replaced.general.on_fire;
+        assert_eq!(names.len(), 5);
+        assert_eq!(names[0], "ABCDEFGHIJKLMNOPQRSTUVWX");
+        assert_ne!(
+            names[0], names[1],
+            "equal stored IDs keep distinct pointers"
+        );
+        assert_eq!(&names[2..], [" none", "ONFIRE_FIRST", "ONFIRE_FIRST"]);
+        let roots = crate::rules::effect_asset_catalog::anim_class_roots(&replaced);
+        for name in names {
+            assert!(roots.contains(&name.to_ascii_uppercase()));
+        }
+        let retained = reread(&mut owner, "[Fire]\nSparky=\n[AudioVisual]\nOnFire=\n");
+        assert!(retained.warhead("Fire").unwrap().sparky);
+        assert_eq!(retained.general.on_fire, *names);
+        // The same pass first sweeps the late AV-allocated Anim bodies;
+        // retaining this list does not retain the complete prior Rules hash.
+
+        let bytes =
+            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+        let cleared = reread(&mut owner, "[AudioVisual]\nOnFire=none,<none>\n");
+        assert!(cleared.general.on_fire.is_empty());
+        assert_ne!(
+            cleared.simulation_config_hash(),
+            retained.simulation_config_hash()
+        );
+        let no_sparks = reread(&mut owner, "[Fire]\nSparky=no\n");
+        assert!(!no_sparks.warhead("Fire").unwrap().sparky);
+        assert_ne!(
+            no_sparks.simulation_config_hash(),
+            cleared.simulation_config_hash()
+        );
+
+        owner.install_saved_scenario_rules(crate::util::save_codec::deserialize(&bytes).unwrap());
+        let restored = owner
+            .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+            .unwrap();
+        assert!(restored.warhead("Fire").unwrap().sparky);
+        assert_eq!(restored.general.on_fire, *names);
+        assert_eq!(
+            restored.simulation_config_hash(),
+            retained.simulation_config_hash()
+        );
+        let reset = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::empty(),
+            )
+            .unwrap()
+            .into_parts()
+            .0;
+        assert!(!reset.warhead("Fire").unwrap().sparky);
+        assert!(reset.general.on_fire.is_empty());
+    }
 }

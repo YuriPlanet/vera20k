@@ -1749,6 +1749,10 @@ pub struct GeneralRules {
     /// Fire/smoke anim types spawned on buildings below ConditionYellow health.
     /// Parsed from DamageFireTypes= in [General]. Default: FIRE01,FIRE02,FIRE03.
     pub damage_fire_types: Vec<AnimRef>,
+    /// ReadAudioVisual66B0E4..66B1CF retains the ordered OnFire Anim pointers
+    /// for BuildingReceiveDamage442785. RulesCtor666568..66659E starts empty;
+    /// these runtime keys preserve distinct Anim slots with equal stored IDs.
+    pub on_fire: Vec<String>,
     /// Particle system spawned by exploding barrels.
     /// Parsed from `BarrelParticle=` in `[General]` (NOT `[AudioVisual]`,
     /// despite the proximity to other AudioVisual keys).
@@ -2941,6 +2945,7 @@ impl Default for GeneralRules {
             spy_power_blackout: 0,
             spy_money_steal_percent: NativeF32Bits::from_bits(0x3F00_0000),
             damage_fire_types: vec![],
+            on_fire: Vec::new(),
             barrel_particle: None,
             barrel_explode: None,
             barrel_debris: Vec::new(),
@@ -4254,6 +4259,7 @@ impl GeneralRules {
             spy_money_steal_percent: general
                 .read_double_to_float("SpyMoneyStealPercent", defaults.spy_money_steal_percent),
             damage_fire_types: defaults.damage_fire_types.clone(),
+            on_fire: defaults.on_fire.clone(),
             barrel_particle: defaults.barrel_particle.clone(),
             barrel_explode: defaults.barrel_explode.clone(),
             barrel_debris: defaults.barrel_debris.clone(),
@@ -5442,12 +5448,13 @@ impl RuleSet {
         rules.combat_damage.tiberium_explosion_damage = processed.tiberium_explosion_damage();
         rules.combat_damage.death_weapon =
             processed.combat_damage_death_weapon().map(str::to_owned);
-        for (name, conventional, em_effect, anim_list, debris_types, verses, ares_verses) in
+        for (name, conventional, em_effect, sparky, anim_list, debris_types, verses, ares_verses) in
             processed.warhead_read_states()
         {
             if let Some(warhead) = rules.warhead_mut(name) {
                 warhead.conventional = conventional;
                 warhead.em_effect = em_effect;
+                warhead.sparky = sparky;
                 warhead.anim_list = anim_list.to_vec();
                 warhead.debris_types = debris_types.to_vec();
                 warhead.verses_f64 = verses.map(|value| f64::from_bits(value.bits()));
@@ -9583,6 +9590,7 @@ impl RuleSet {
             .map(|anim| &anim.name)
             .collect::<Vec<_>>()
             .hash(&mut hasher);
+        general.on_fire.hash(&mut hasher);
         (
             &general.dead_bodies,
             &general.base_unit_types,
@@ -9655,6 +9663,7 @@ impl RuleSet {
                 (
                     wh.conventional,
                     wh.em_effect,
+                    wh.sparky,
                     &wh.anim_list,
                     wh.verses_f64.map(f64::to_bits),
                 ),
