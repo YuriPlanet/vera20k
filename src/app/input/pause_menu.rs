@@ -31,7 +31,9 @@ impl InternetPauseControls {
         Self {
             positions: [
                 InternetSlider::Connection.range().set_up(3 - latency_fudge),
-                InternetSlider::Speed.range().set_up(6 - game_speed),
+                InternetSlider::Speed.range().set_up(
+                    crate::ui::shell::game_speed::SpeedContext::Network.visual_position(game_speed),
+                ),
             ],
             ..Self::default()
         }
@@ -545,7 +547,8 @@ pub(crate) fn internet_resume(
             log::info!("Ignoring latency change to avoid congestion");
         }
     }
-    let speed = 6 - controls.positions[InternetSlider::Speed as usize];
+    let speed = crate::ui::shell::game_speed::SpeedContext::Network
+        .stored_speed(controls.positions[InternetSlider::Speed as usize]);
     if speed != game_speed {
         if limiters.speed.remaining(now_bucket) == 0 {
             limiters.speed =
@@ -697,10 +700,10 @@ mod tests {
     fn a_changed_position_updates_the_right_static() {
         let mut controls = InternetPauseControls::open(1, 3);
         assert!(!controls.set(InternetSlider::Speed, 3));
-        assert!(controls.set(InternetSlider::Speed, 6));
+        assert!(controls.set(InternetSlider::Speed, 7));
         assert_eq!(
             controls.value_caption(InternetSlider::Speed).0,
-            "TXT_FASTEST"
+            "VERA:GameSpeed90"
         );
         assert!(controls.set(InternetSlider::Connection, 0));
         assert_eq!(

@@ -34,6 +34,9 @@ const GAME_SPEED_BUCKET_MS: u32 = 16;
 /// Convert the stored speed byte to a UI/debug rate readout. Gameplay frame
 /// admission uses the native 16 ms bucket comparison directly.
 pub(crate) fn tps_for_game_speed(stored_speed: u32) -> u32 {
+    if stored_speed == u32::from(crate::sim::game_options::GAME_SPEED_90_TPS) {
+        return 90;
+    }
     if stored_speed == 0 {
         return 60;
     }

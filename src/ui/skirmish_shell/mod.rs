@@ -54,7 +54,7 @@ pub use state::{
     combo_dropdown_scroll_thumb_rect, combo_dropdown_scrollbar_rect,
     combo_dropdown_visible_row_count, combo_enabled, combo_items, combo_rect, country_choices,
     dismiss_validation_modal, drain_pending_ui_sounds, focus_player_name_edit,
-    game_speed_from_visual_position, game_speed_visual_position, handle_option_mouse_down,
+    handle_option_mouse_down,
     handle_option_mouse_move, handle_option_mouse_up, handle_option_mouse_wheel,
     handle_player_name_backspace, handle_player_name_delete, handle_player_name_end,
     handle_player_name_home, handle_player_name_left, handle_player_name_right,

@@ -13,7 +13,7 @@ use crate::ui::shell::in_game_options::{
     build_in_game_options_descriptor, control, control_shown, speed_value_label_key,
 };
 use crate::ui::shell::in_game_options_state::{
-    InGameOptionsState, plain_trackbar_thumb_left, speed_slider_pos,
+    InGameOptionsState, plain_trackbar_thumb_left, slider_max, speed_slider_pos,
 };
 use crate::ui::shell::layout::{InGameOptionsAnchor, layout_pass_in_game_options};
 
@@ -39,17 +39,13 @@ pub(crate) fn build_in_game_options_instances(
         let rect = l.rect;
         match c.kind {
             ControlKind::Trackbar => {
-                let pos = match c.id {
-                    control::GAME_SPEED => speed_slider_pos(state.game_speed),
-                    control::SCROLL_RATE => speed_slider_pos(state.scroll_rate),
-                    _ => continue,
-                };
+                let pos = state.slider_position(c.id);
                 paint_control(
                     &mut out,
                     chrome,
                     ControlPaint::Trackbar {
                         rect,
-                        thumb_left: plain_trackbar_thumb_left(pos, rect),
+                        thumb_left: plain_trackbar_thumb_left(pos, rect, slider_max(c.id)),
                         plaque: false,
                         disabled: false,
                     },
@@ -143,7 +139,7 @@ fn in_game_options_static_draws(
         // The two value labels (0x671/0x672) show their slider-position CSF key
         // from the open; every other static keeps its template caption key.
         let key = match c.id {
-            control::GAME_SPEED_VALUE => speed_value_label_key(speed_slider_pos(state.game_speed)),
+            control::GAME_SPEED_VALUE => state.speed_context.label_key(state.game_speed as i32),
             control::SCROLL_RATE_VALUE => {
                 speed_value_label_key(speed_slider_pos(state.scroll_rate))
             }
@@ -194,6 +190,9 @@ fn in_game_options_static_draws(
 /// label stays visible as retail's `MISSING:'<key>'`; English literals exist
 /// only for assetless operation where no CSF table is available.
 fn resolve_static_text(csf: Option<&CsfFile>, key: &str) -> String {
+    if key.starts_with("VERA:") {
+        return crate::i18n::tr(key);
+    }
     match csf {
         Some(table) => table.text(key).into_owned(),
         None => options_static_fallback(key).to_string(),
@@ -404,13 +403,13 @@ mod tests {
         // game_speed=3 -> pos 3 -> TXT_MEDIUM; scroll_rate=0 -> pos 6 -> TXT_FASTEST
         // (English words via the no-CSF fallback).
         let state = InGameOptionsState {
-            game_speed: 3,
+            game_speed: 8,
             scroll_rate: 0,
             ..Default::default()
         };
         let draws = in_game_options_static_draws(None, 800, 600, test_anchor(), &state);
         let find = |id: u16| draws.iter().find(|d| d.id == id).unwrap();
-        assert_eq!(find(control::GAME_SPEED_VALUE).text, "Medium");
+        assert_eq!(find(control::GAME_SPEED_VALUE).text, "90 ticks/s");
         assert_eq!(find(control::SCROLL_RATE_VALUE).text, "Fastest");
     }
 

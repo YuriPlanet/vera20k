@@ -962,9 +962,22 @@ fn push_trackbar(
         scale,
     );
     if bar.id != DIFFICULTY {
+        let value = match bar.id {
+            SPEED => {
+                let context = crate::ui::shell::game_speed::SpeedContext::Network;
+                context.value_text(context.stored_speed(bar.value))
+            }
+            CREDITS => state
+                .frontend
+                .skirmish_shell_state
+                .trackbar_bounds
+                .credits_from_visual_position(bar.value)
+                .to_string(),
+            _ => bar.range.stepped(bar.value).to_string(),
+        };
         texts.push(shell_text::draw_in_rect_scaled(
             &state.renderer.bit_font,
-            &bar.range.stepped(bar.value).to_string(),
+            &value,
             rect_to_text_rect(crate::ui::shell::trackbar::value_text_rect(rect, scale)),
             if view.enabled(bar.id) {
                 SHELL_LABEL_TEXT_RGB

@@ -710,15 +710,28 @@ impl LocalFramePacer {
 
     /// Read the same interval used by `should_admit`, for diagnostics.
     pub(crate) fn budget_ms(&self, game_speed: u8, network_fps: Option<(u16, u32)>) -> Option<f32> {
-        pacing_timer(game_speed, network_fps).map(|timer| timer.length_ms() as f32)
+        pacing_timer(game_speed, network_fps).map(PacingTimer::length_ms)
     }
 
     /// Read-only presentation phase of the existing bucket-paced frame.
     /// Use the pacer's bucket origin, not the end of a potentially expensive
     /// simulation/render preparation, to avoid restarting visual time late.
-    pub(crate) fn interpolation_elapsed_ms(&self, now_ms: u64) -> Option<u32> {
+    pub(crate) fn interpolation_elapsed_ms(
+        &self,
+        now_ms: u64,
+        game_speed: u8,
+        network_fps: Option<(u16, u32)>,
+    ) -> Option<u32> {
         self.last_frame_start_ms.map(|ms| {
-            (now_ms as u32).wrapping_sub((ms >> FRAME_BUCKET_SHIFT) << FRAME_BUCKET_SHIFT)
+            let start = if matches!(
+                pacing_timer(game_speed, network_fps),
+                Some(PacingTimer::NinetyHz { .. })
+            ) {
+                ms
+            } else {
+                (ms >> FRAME_BUCKET_SHIFT) << FRAME_BUCKET_SHIFT
+            };
+            (now_ms as u32).wrapping_sub(start)
         })
     }
 
@@ -737,7 +750,7 @@ impl LocalFramePacer {
         // retains its distinct 16ms bucket clock (55E2B4).
         pacing_timer(game_speed, network_fps)
             .zip(self.last_frame_start_ms)
-            .is_none_or(|(timer, start)| timer.elapsed(now_ms, start) >= timer.length as i32)
+            .is_none_or(|(timer, start)| timer.elapsed(now_ms, start) >= timer.length(start) as i32)
     }
 
     /// Start to record for a frame `should_admit` admitted at `now_ms`.
@@ -767,7 +780,7 @@ impl LocalFramePacer {
         else {
             return now_ms;
         };
-        let late = i64::from(timer.elapsed(now_ms, start)) - i64::from(timer.length);
+        let late = i64::from(timer.elapsed(now_ms, start)) - i64::from(timer.length(start));
         if !(0..i64::from(timer.cadence_window())).contains(&late) {
             return now_ms;
         }
@@ -796,8 +809,7 @@ impl LocalFramePacer {
     #[cfg(test)]
     fn next_deadline_ms(&self, game_speed: u8) -> Option<u64> {
         let timer = pacing_timer(game_speed, None)?;
-        let start_bucket = self.last_frame_start_ms? >> FRAME_BUCKET_SHIFT;
-        Some((u64::from(start_bucket) + u64::from(timer.length)) * FRAME_BUCKET_MS)
+        Some(u64::from(timer.due_ms(self.last_frame_start_ms?)))
     }
 }
 
@@ -805,59 +817,80 @@ impl LocalFramePacer {
 /// milliseconds (`0x0055D55E`, plus the lag delay), offline GameSpeed arms
 /// 16 ms buckets (`0x0055D7BC`). GameSpeed 0 never waits.
 #[derive(Debug, Clone, Copy)]
-struct PacingTimer {
-    buckets: bool,
-    length: u32,
+enum PacingTimer {
+    Buckets(u32),
+    Milliseconds(u32),
+    /// VERA's extra preset uses alternating 11/12 ms deadlines. A fixed
+    /// 11 ms interval would run at 90.9 ticks/s instead of the requested 90.
+    NinetyHz {
+        delay: u32,
+    },
 }
 
 impl PacingTimer {
     /// Signed wrapping time since `start` in the timer's unit, as
     /// Main__ThrottleFrame subtracts it (`0x0055E1DB`, `0x0055E2C8`).
     fn elapsed(self, now_ms: u64, start: u32) -> i32 {
-        if self.buckets {
+        if matches!(self, Self::Buckets(_)) {
             frame_bucket(now_ms).wrapping_sub(start >> FRAME_BUCKET_SHIFT) as i32
         } else {
             (now_ms as u32).wrapping_sub(start) as i32
         }
     }
 
+    fn length(self, start: u32) -> u32 {
+        match self {
+            Self::Buckets(length) | Self::Milliseconds(length) => length,
+            Self::NinetyHz { delay } => {
+                let phase = u64::from(start) * 90 % 1000;
+                ((1000 - phase).div_ceil(90) as u32).saturating_add(delay)
+            }
+        }
+    }
+
     fn due_ms(self, start: u32) -> u32 {
-        if self.buckets {
-            ((start >> FRAME_BUCKET_SHIFT).wrapping_add(self.length)) << FRAME_BUCKET_SHIFT
+        if matches!(self, Self::Buckets(_)) {
+            ((start >> FRAME_BUCKET_SHIFT).wrapping_add(self.length(start))) << FRAME_BUCKET_SHIFT
         } else {
-            start.wrapping_add(self.length)
+            start.wrapping_add(self.length(start))
         }
     }
 
     /// Lateness, in the timer's unit, that still keeps the due time.
     fn cadence_window(self) -> u32 {
-        let slack = if self.buckets {
+        let slack = if matches!(self, Self::Buckets(_)) {
             CADENCE_SLACK_BUCKETS
         } else {
             CADENCE_SLACK_BUCKETS << FRAME_BUCKET_SHIFT
         };
-        self.length.max(slack)
+        self.length(0).max(slack)
     }
 
-    fn length_ms(self) -> u32 {
-        if self.buckets {
-            self.length << FRAME_BUCKET_SHIFT
-        } else {
-            self.length
+    fn length_ms(self) -> f32 {
+        match self {
+            Self::Buckets(length) => (length << FRAME_BUCKET_SHIFT) as f32,
+            Self::Milliseconds(length) => length as f32,
+            Self::NinetyHz { delay } => 1000.0 / 90.0 + delay as f32,
         }
     }
 }
 
 fn pacing_timer(game_speed: u8, network_fps: Option<(u16, u32)>) -> Option<PacingTimer> {
     if let Some((fps, delay)) = network_fps {
-        return Some(PacingTimer {
-            buckets: false,
-            length: network_interval_ms(fps).saturating_add(delay),
+        return Some(if fps == 90 {
+            PacingTimer::NinetyHz { delay }
+        } else {
+            PacingTimer::Milliseconds(network_interval_ms(fps).saturating_add(delay))
         });
     }
-    (game_speed != 0).then(|| PacingTimer {
-        buckets: true,
-        length: u32::from(game_speed.clamp(MIN_TIMED_GAME_SPEED, MAX_TIMED_GAME_SPEED)),
+    (game_speed != 0).then(|| {
+        if game_speed == crate::sim::game_options::GAME_SPEED_90_TPS {
+            PacingTimer::NinetyHz { delay: 0 }
+        } else {
+            PacingTimer::Buckets(u32::from(
+                game_speed.clamp(MIN_TIMED_GAME_SPEED, MAX_TIMED_GAME_SPEED),
+            ))
+        }
     })
 }
 
@@ -1351,6 +1384,23 @@ mod tests {
     }
 
     #[test]
+    fn ninety_ticks_keeps_its_rate_offline_and_on_lan_at_sixty_hz_refresh() {
+        let speed = crate::sim::game_options::GAME_SPEED_90_TPS;
+        assert_eq!(frames_at_refresh(60, 3_000, speed, None), 271);
+        assert_eq!(frames_at_refresh(60, 3_000, speed, Some((90, 0))), 271);
+        let mut pacer = LocalFramePacer::new();
+        pacer.record_admitted_frame(1_000);
+        assert!(!pacer.should_admit(1_011, speed, None, false));
+        assert!(pacer.should_admit(1_012, speed, None, false));
+        assert_eq!(pacer.admitted_frame_start_ms(1_017, speed, None), 1_012);
+        assert!(!pacer.should_admit(1_012, speed, None, true));
+        pacer.record_admitted_frame(1_012);
+        assert_eq!(pacer.interpolation_elapsed_ms(1_017, speed, None), Some(5));
+        pacer.record_admitted_frame(u64::from(u32::MAX - 7));
+        assert!(pacer.should_admit(8, speed, None, false));
+    }
+
+    #[test]
     fn a_frame_late_by_a_whole_interval_restarts_from_now() {
         let mut pacer = LocalFramePacer::new();
         pacer.record_admitted_frame(1_000);
@@ -1377,12 +1427,12 @@ mod tests {
     #[test]
     fn render_interpolation_phase_uses_pacing_bucket_and_wraps_with_uptime() {
         let mut pacer = LocalFramePacer::new();
-        assert_eq!(pacer.interpolation_elapsed_ms(0), None);
+        assert_eq!(pacer.interpolation_elapsed_ms(0, 1, None), None);
         pacer.record_admitted_frame(31);
-        assert_eq!(pacer.interpolation_elapsed_ms(31), Some(15));
-        assert_eq!(pacer.interpolation_elapsed_ms(47), Some(31));
+        assert_eq!(pacer.interpolation_elapsed_ms(31, 1, None), Some(15));
+        assert_eq!(pacer.interpolation_elapsed_ms(47, 1, None), Some(31));
         pacer.record_admitted_frame(u64::from(u32::MAX - 7));
-        assert_eq!(pacer.interpolation_elapsed_ms(8), Some(24));
+        assert_eq!(pacer.interpolation_elapsed_ms(8, 1, None), Some(24));
     }
     #[test]
     fn wall_clock_process_probe() {

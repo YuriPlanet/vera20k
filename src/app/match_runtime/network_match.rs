@@ -42,15 +42,16 @@ pub(crate) fn frame_budget(state: &AppState) -> Option<(u16, u32)> {
 /// One game frame's length in milliseconds, as the pacer admits frames;
 /// `None` with no match or at unlimited speed.
 pub(crate) fn game_frame_ms(state: &AppState) -> Option<f32> {
-    let speed = state
-        .match_state
-        .sim_runtime
-        .as_ref()?
-        .simulation
-        .session()
-        .game_options()
-        .game_speed
-        .clamp(0, 6) as u8;
+    let speed = crate::sim::game_options::clamp_game_speed(
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()?
+            .simulation
+            .session()
+            .game_options()
+            .game_speed,
+    );
     state
         .platform
         .frame_pacer

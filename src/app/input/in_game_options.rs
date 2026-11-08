@@ -19,8 +19,8 @@ use crate::app::AppState;
 use crate::ui::shell::descriptor::ControlKind;
 use crate::ui::shell::in_game_options::{build_in_game_options_descriptor, control, control_shown};
 use crate::ui::shell::in_game_options_state::{
-    InGameOptionsState, OPTIONS_SPEED_MAX, OPTIONS_SPEED_MIN, plain_trackbar_thumb_left,
-    speed_from_slider_pos, speed_slider_pos, trackbar_pos_from_mouse_x,
+    InGameOptionsState, OPTIONS_SPEED_MIN, plain_trackbar_thumb_left, slider_max,
+    speed_from_slider_pos, trackbar_pos_from_mouse_x,
 };
 use crate::ui::shell::layout::{LaidOutControl, layout_pass_in_game_options};
 use crate::ui::shell::trackbar::admits_press_y;
@@ -62,7 +62,7 @@ pub(crate) fn in_game_options_hit(
                 let pos = trackbar_pos_from_mouse_x(
                     cx,
                     OPTIONS_SPEED_MIN as i32,
-                    OPTIONS_SPEED_MAX as i32,
+                    slider_max(c.id) as i32,
                     l.rect,
                 );
                 return OptionsHit::Slider(c.id, pos);
@@ -98,7 +98,17 @@ pub(crate) fn on_open(state: &mut AppState) {
                 .is_some_and(|runtime| runtime.simulation.local_player_defeated()),
             state.frontend.campaign_speed_control,
         );
+    let speed_context = if matches!(
+        state.match_state.session_mode(),
+        crate::app::match_runtime::session::SessionMode::Lan
+            | crate::app::match_runtime::session::SessionMode::Wol
+    ) {
+        crate::ui::shell::game_speed::SpeedContext::Network
+    } else {
+        crate::ui::shell::game_speed::SpeedContext::Offline
+    };
     let options = &mut state.match_state.match_presentation.in_game_options;
+    options.speed_context = speed_context;
     options.sound_enabled = state.audio.launcher_audio_available;
     options.on_open(game_speed_hidden);
 }
@@ -245,8 +255,7 @@ pub(crate) fn in_game_options_drag(state: &mut AppState) {
     let Some(rect) = laid.iter().find(|l| l.id == id).map(|l| l.rect) else {
         return;
     };
-    let pos =
-        trackbar_pos_from_mouse_x(x, OPTIONS_SPEED_MIN as i32, OPTIONS_SPEED_MAX as i32, rect);
+    let pos = trackbar_pos_from_mouse_x(x, OPTIONS_SPEED_MIN as i32, slider_max(id) as i32, rect);
     if store_slider_value(
         &mut state.match_state.match_presentation.in_game_options,
         id,
@@ -260,24 +269,27 @@ pub(crate) fn in_game_options_drag(state: &mut AppState) {
 /// Native 61E518..61E594: thumb press starts drag without changing the position;
 /// a rail press jumps once without enabling drag. Returns a changed notification.
 fn begin_slider_press(opts: &mut InGameOptionsState, id: u16, rect: RectPx, cx: i32) -> bool {
-    let internal = match id {
-        control::GAME_SPEED => opts.game_speed,
-        control::SCROLL_RATE => opts.scroll_rate,
-        _ => return false,
-    };
-    let left = rect.x + plain_trackbar_thumb_left(speed_slider_pos(internal), rect);
+    if !matches!(id, control::GAME_SPEED | control::SCROLL_RATE) {
+        return false;
+    }
+    let left = rect.x + plain_trackbar_thumb_left(opts.slider_position(id), rect, slider_max(id));
     if (left..left + 12).contains(&cx) {
         opts.dragging_slider = Some(id);
         return false;
     }
-    let pos = trackbar_pos_from_mouse_x(cx, 0, OPTIONS_SPEED_MAX as i32, rect);
+    let pos = trackbar_pos_from_mouse_x(cx, 0, slider_max(id) as i32, rect);
     store_slider_value(opts, id, pos)
 }
 
-/// Store a slider's new internal value from a slider position (`6 - pos`). Render
+/// Store a slider's internal value through its speed/scroll mapping. Render
 /// reads the stored value to draw the thumb + value label; no effect applies here.
 fn store_slider_value(opts: &mut InGameOptionsState, id: u16, pos: i32) -> bool {
-    let value = speed_from_slider_pos(pos.max(0) as u32);
+    let value = if id == control::GAME_SPEED {
+        opts.speed_context
+            .stored_speed(pos.clamp(0, slider_max(id) as i32)) as u32
+    } else {
+        speed_from_slider_pos(pos.max(0) as u32)
+    };
     let stored = match id {
         control::GAME_SPEED => &mut opts.game_speed,
         control::SCROLL_RATE => &mut opts.scroll_rate,
@@ -333,7 +345,7 @@ mod tests {
         let gs = rect_of(control::GAME_SPEED);
         assert_eq!(
             in_game_options_hit(&laid, (gs.x + gs.w - 1, gs.y + gs.h / 2), false),
-            OptionsHit::Slider(control::GAME_SPEED, 6)
+            OptionsHit::Slider(control::GAME_SPEED, 7)
         );
 
         // TargetLines icon center -> Checkbox(TARGET_LINES).
@@ -401,8 +413,10 @@ mod tests {
     #[test]
     fn store_slider_value_inverts_position() {
         let mut opts = InGameOptionsState::default();
-        // Far-right slider position 6 -> fastest internal 0.
+        // The added notch keeps its new value; the far right remains Unlimited.
         store_slider_value(&mut opts, control::GAME_SPEED, 6);
+        assert_eq!(opts.game_speed, 8);
+        store_slider_value(&mut opts, control::GAME_SPEED, 7);
         assert_eq!(opts.game_speed, 0);
         // Far-left position 0 -> slowest internal 6.
         store_slider_value(&mut opts, control::SCROLL_RATE, 0);
@@ -417,7 +431,7 @@ mod tests {
             .find(|l| l.id == control::GAME_SPEED)
             .unwrap()
             .rect;
-        let thumb = rect.x + plain_trackbar_thumb_left(3, rect);
+        let thumb = rect.x + plain_trackbar_thumb_left(3, rect, slider_max(control::GAME_SPEED));
         assert!(!begin_slider_press(
             &mut opts,
             control::GAME_SPEED,
@@ -428,7 +442,7 @@ mod tests {
         assert_eq!(opts.game_speed, 3);
         assert!(!store_slider_value(&mut opts, control::GAME_SPEED, 3));
         assert!(store_slider_value(&mut opts, control::GAME_SPEED, 6));
-        assert_eq!(opts.game_speed, 0);
+        assert_eq!(opts.game_speed, 8);
     }
 
     #[test]

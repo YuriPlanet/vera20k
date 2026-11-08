@@ -265,7 +265,7 @@ impl InternetSlider {
     pub const fn range(self) -> TrackbarRange {
         match self {
             Self::Connection => TrackbarRange::new(0, 3, 1),
-            Self::Speed => TrackbarRange::new(0, 6, 1),
+            Self::Speed => TrackbarRange::new(0, super::game_speed::MAX_POSITION, 1),
         }
     }
 
@@ -300,7 +300,8 @@ impl InternetSlider {
             (Self::Speed, 3) => ("TXT_MEDIUM", "Medium"),
             (Self::Speed, 4) => ("TXT_FAST", "Fast"),
             (Self::Speed, 5) => ("TXT_FASTER", "Faster"),
-            (Self::Speed, _) => ("TXT_FASTEST", "Fastest"),
+            (Self::Speed, 6) => ("VERA:GameSpeed60", "60 ticks/s"),
+            (Self::Speed, _) => ("VERA:GameSpeed90", "90 ticks/s"),
         }
     }
 }

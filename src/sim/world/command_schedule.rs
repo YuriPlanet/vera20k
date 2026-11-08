@@ -488,7 +488,7 @@ impl Simulation {
     pub fn projected_in_game_options_speed(&self) -> Option<u8> {
         let mut projected = u8::try_from(self.session.game_options().game_speed)
             .ok()
-            .filter(|speed| *speed <= crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED);
+            .filter(|speed| crate::sim::game_options::is_selectable_game_speed(*speed));
         let execute_tick = self.session.tick().saturating_add(1);
         let queued: Vec<_> = self
             .queued_command_entries()
@@ -514,7 +514,7 @@ impl Simulation {
                         | (true, Command::LiveGameSpeed { speed }) => speed,
                         _ => continue,
                     };
-                    if *speed <= crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED {
+                    if crate::sim::game_options::is_selectable_game_speed(*speed) {
                         projected = Some(*speed);
                     }
                 }

@@ -72,7 +72,7 @@ pub(super) const CONTROL_SOURCE: u8 = u8::MAX;
 pub(super) const RATE_BATCH: u64 = u64::MAX;
 pub(super) const DESYNC_BATCH: u64 = u64::MAX - 1;
 // Game Speed's frame rates, fastest first: the rates a certificate may name.
-const FRAME_RATES: [u16; 7] = [60, 45, 30, 20, 15, 12, 10];
+const FRAME_RATES: [u16; 8] = [90, 60, 45, 30, 20, 15, 12, 10];
 // A player's report counts this long; a silent client slows nobody.
 const PACE_REPORT_MS: u64 = 3_000;
 // The share of each second a reporter's simulation may take at a rate it
@@ -250,7 +250,7 @@ pub fn paced_rates(tick_hz: u16) -> &'static [u16] {
 }
 
 /// Frames the relay seals at once at `rate`, about fifteen turns a second:
-/// 4 at 60 Hz, 3 at 45, 2 at 30 and 20, 1 at 15 and below. A turn's frames
+/// 6 at 90 Hz, 4 at 60, 3 at 45, 2 at 30 and 20, 1 at 15 and below. A turn's frames
 /// reach the players together when its last frame is due.
 pub fn turn_frames(rate: u16) -> u32 {
     u32::from(rate).div_ceil(15).max(1)
@@ -2512,6 +2512,53 @@ mod tests {
             ordering(&server).pace.rate,
             45,
             "the host switched pacing off"
+        );
+    }
+
+    /// The extra preset keeps the same fifteen-turn cadence and may slow
+    /// only within the two rows below its certified ceiling.
+    #[test]
+    fn ninety_hz_certificate_starts_a_six_frame_clock_and_bounded_pacing() {
+        let key = SecretKey::new([73; 32]);
+        let mut server = RelayServer::new(key.clone(), 2);
+        let (mut first, mut second) = (client(&key, 0), client(&key, 1));
+        let certificate = OrderingCertificate {
+            room: [5; 16],
+            sources_mask: 3,
+            tick_hz: 90,
+            expires: 1400,
+            pacing: CertificatePacing::On,
+        };
+        let signed = certificate.sign(&key).unwrap();
+        assert_eq!(OrderingCertificate::parse(&signed).unwrap(), certificate);
+        for peer in [&mut first, &mut second] {
+            connect(&mut server, peer, 0);
+            configure(&mut server, peer, &signed, 0);
+        }
+        let start = ordering(&server).starts_at.unwrap();
+        server.advance_clock(start + 66, unix(start + 66));
+        assert_eq!(ordering(&server).head, 0);
+        server.advance_clock(start + 67, unix(start + 67));
+        assert_eq!(ordering(&server).head, 6);
+        assert_eq!(paced_rates(90), &[90, 60, 45]);
+        assert_eq!(paced_rates(60), &[60, 45, 30]);
+        tick_report(
+            &mut server,
+            &mut first,
+            OrderPace::Behind,
+            45,
+            Some(15_000),
+            1000,
+        );
+        server.advance_clock(1000, unix(1000));
+        assert_eq!(ordering(&server).pace.rate, 45);
+        assert!(
+            OrderingCertificate {
+                tick_hz: 91,
+                ..certificate
+            }
+            .sign(&key)
+            .is_err()
         );
     }
 

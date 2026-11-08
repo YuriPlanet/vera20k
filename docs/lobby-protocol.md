@@ -230,7 +230,9 @@ relay pacing off; other bits zero), then HMAC-SHA256 over the first35 bytes with
 domain `VERA20k relay ordering certificate v2\0`. Every grant of one match carries
 the same version and flags; clients reject a renewal whose pacing differs. The signed
 mask includes all human sources (including observers); AI has no source. FPS
-follows launch speed `[60,45,30,20,15,12,10]`. The certificate lasts24 hours;
+follows launch speed `[60,45,30,20,15,12,10]` for stored settings 0–6;
+VERA's setting 8 selects 90 FPS. Setting 7 is not a selectable setup speed.
+The certificate lasts24 hours;
 every UDP control still needs a live authenticated short-lived ticket. The relay
 binds the first matching startup agreement to this roster/clock and starts once
 every remaining signed source is ready. A source that never becomes ready leaves
