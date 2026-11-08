@@ -107,6 +107,9 @@ pub(crate) struct ShellComposition<'a> {
     pub(crate) text: &'a [ShellTextDraw],
     pub(crate) cursor: Option<(&'a BatchTexture, SpriteInstance)>,
     pub(crate) effects: Option<SurfaceEffects>,
+    /// `draws` go through VERA's online client's smoothing
+    /// ([`crate::render::batch::BatchRenderer::draw_chrome`]).
+    pub(crate) smooth_art: bool,
 }
 
 /// Encode `composition` into the shell source surface and present it to
@@ -160,6 +163,7 @@ fn encode_composition(
         text,
         cursor,
         effects,
+        smooth_art,
     } = composition;
     let gpu = &state.renderer.gpu;
     let batch = &state.renderer.batch_renderer;
@@ -209,7 +213,7 @@ fn encode_composition(
     });
     for (draw, buffer) in draws.iter().zip(&buffers) {
         if let Some((buffer, count)) = buffer.as_ref() {
-            batch.draw_with_buffer_passthrough(&mut pass, draw.texture, buffer, *count);
+            batch.draw_chrome(&mut pass, draw.texture, buffer, *count, smooth_art);
         }
     }
     for (draw, buffer) in text.iter().zip(&text_buffers) {

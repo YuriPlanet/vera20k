@@ -492,6 +492,7 @@ pub(crate) fn render_menu_page(
             text: &text,
             cursor: software_cursor(state, CURSOR_DEPTH),
             effects: None,
+            smooth_art: false,
         },
     );
 

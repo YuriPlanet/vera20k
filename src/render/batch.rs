@@ -551,6 +551,8 @@ pub struct BatchRenderer {
     /// depth write OFF. Overlays draw unconditionally over terrain because
     /// tiles without Z-data skip Z-testing entirely.
     overlay_passthrough_pipeline: wgpu::RenderPipeline,
+    /// The same direct store through VERA's smooth client (`fs_shell_smooth`).
+    smooth_chrome_pipeline: wgpu::RenderPipeline,
     surface_store_pipeline: wgpu::RenderPipeline,
     /// Depth-only pipeline: colour target fully masked, depth write ON, Less
     /// compare. Stamps a sprite's opaque silhouette so a later depth-testing
@@ -857,6 +859,8 @@ impl BatchRenderer {
         };
         let overlay_passthrough_pipeline =
             passthrough("Batch Pipeline (Overlay Passthrough)", "fs_main");
+        let smooth_chrome_pipeline =
+            passthrough("Batch Pipeline (Smooth Chrome)", "fs_shell_smooth");
         // DSurface4C0750's A-gated dashed stores: the same direct store,
         // bound with the live A source.
         let surface_store_pipeline = passthrough(
@@ -1287,6 +1291,7 @@ impl BatchRenderer {
             default_zshape_bind_group,
             zdepth_pipeline,
             overlay_passthrough_pipeline,
+            smooth_chrome_pipeline,
             surface_store_pipeline,
             #[cfg(test)]
             depth_stamp_pipeline,
@@ -2078,6 +2083,32 @@ impl BatchRenderer {
         count: u32,
     ) {
         self.draw_with_buffer_passthrough_range(render_pass, texture, buffer, 0, count);
+    }
+
+    /// A chrome page's direct store. With `smooth`, an enlarged quad draws
+    /// box-filtered with a little of xBR's rounding (`fs_shell_smooth`), for
+    /// VERA's online client; a quad at its own size draws as it would without
+    /// it. Only for RGBA pages.
+    pub(crate) fn draw_chrome<'a>(
+        &'a self,
+        render_pass: &mut wgpu::RenderPass<'a>,
+        texture: &'a BatchTexture,
+        buffer: &'a wgpu::Buffer,
+        count: u32,
+        smooth: bool,
+    ) {
+        if !smooth {
+            self.draw_with_buffer_passthrough(render_pass, texture, buffer, count);
+            return;
+        }
+        if count == 0 {
+            return;
+        }
+        render_pass.set_pipeline(&self.smooth_chrome_pipeline);
+        render_pass.set_bind_group(0, &self.surface_camera_bind_group, &[]);
+        render_pass.set_bind_group(1, &texture.bind_group, &[]);
+        render_pass.set_vertex_buffer(0, buffer.slice(..));
+        render_pass.draw(0..6, 0..count);
     }
 
     /// A contiguous direct-store range, bypassing both A and Z. Health pips
