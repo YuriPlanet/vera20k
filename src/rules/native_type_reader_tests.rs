@@ -998,6 +998,10 @@ fn retail_published_references_are_pinned() {
     let Some((rulesmd, artmd)) = retail_rules_and_art() else {
         return;
     };
+    let Some(soundmd) = retail_ini("soundmd.ini") else {
+        return;
+    };
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&soundmd);
     let modes = [
         None,
         Some("MPBattleMD.ini"),
@@ -1013,6 +1017,10 @@ fn retail_published_references_are_pinned() {
     let publish = |processed: &ProcessedRulesLayers| {
         let mut rules = RuleSet::from_processed_rules(processed).unwrap();
         rules.install_art_data(art_registry(&artmd));
+        assert_eq!(
+            rules.crate_rules.heal_crate_sound.as_deref(),
+            Some("HealCrate")
+        );
         published_references(&rules, processed)
     };
     let mut digest = FNV1A64_OFFSET_BASIS;
@@ -1026,7 +1034,15 @@ fn retail_published_references_are_pinned() {
             };
             layers.push(RulesLayerKind::GameMode, mode_ini);
         }
-        let processed = layers.process_with_fixed_art(&artmd).unwrap();
+        let processed = layers
+            .process_with_fixed_art_and_registry_state_recovering(
+                &artmd,
+                NativeRulesRegistryState::default(),
+                RulesProcessContext::Ordinary,
+                &crate::rules::sound_ini::EvaRegistry::default(),
+                &sounds,
+            )
+            .unwrap();
         let published = publish(&processed);
         let processed = match live.take() {
             None => processed,
@@ -1040,7 +1056,7 @@ fn retail_published_references_are_pinned() {
                             skip_root_color_add_and_mode: false,
                         },
                         &crate::rules::sound_ini::EvaRegistry::default(),
-                        &crate::rules::sound_ini::SoundRegistry::default(),
+                        &sounds,
                     )
                     .unwrap();
                 assert_eq!(publish(&reset), published, "{mode:?} after a reset");
@@ -1189,7 +1205,13 @@ fn published_references(rules: &RuleSet, processed: &ProcessedRulesLayers) -> Ve
             &general.mutate_explosion_warhead,
         )
     ));
-    lines.push(format!("CrateRules {:?}", rules.crate_rules));
+    // The original reference digest used folded Voc IDs. Keep that
+    // case-insensitive identity while the real catalog supplies its binding.
+    let mut crates = rules.crate_rules.clone();
+    crates.heal_crate_sound = crates
+        .heal_crate_sound
+        .map(|name| name.to_ascii_uppercase());
+    lines.push(format!("CrateRules {crates:?}"));
     lines.push(format!("Rockets {:?}", rules.missile_spawn));
     lines.push(format!(
         "General {:?}",

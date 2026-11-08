@@ -216,6 +216,7 @@ fn frame_boundary_consumes_each_prefix_once_and_preserves_later_facts() {
     let before_main = sim.rng_views().main.native_state_hex();
     let repaired = |owner, rx| SimSoundEvent::UnitRepaired {
         owner,
+        owner_admitted: false,
         radar: RadarEventRequest::new(RadarEventType::UnitRepaired, rx, 7),
     };
     let mut facts = vec![repaired(remote, 1), repaired(local, 2), repaired(local, 99)];

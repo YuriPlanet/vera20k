@@ -5,3 +5,5 @@ pub mod building_dock;
 pub mod bunker_install;
 pub mod bunker_link;
 mod hospital;
+#[cfg(test)]
+mod hospital_tests;

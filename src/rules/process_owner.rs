@@ -1625,6 +1625,127 @@ mod tests {
     }
 
     #[test]
+    fn heal_crate_binding_survives_unknown_layers_preview_and_saved_rules() {
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut retail = crate::rules::retail_ini_fixture::retail_rules_owner(&assets);
+        let stock = retail
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
+            .unwrap();
+        assert!(
+            stock
+                .rules
+                .crate_rules
+                .heal_crate_sound
+                .as_deref()
+                .is_some_and(|sound| sound.eq_ignore_ascii_case("HealCrate"))
+        );
+        let rejected = retail
+            .load_scenario(
+                NativeScenarioRulesPrefix::Campaign(None),
+                &IniFile::from_str("[CrateRules]\nHealCrateSound=Unknown\n"),
+            )
+            .unwrap();
+        assert!(
+            rejected
+                .rules
+                .crate_rules
+                .heal_crate_sound
+                .as_deref()
+                .is_some_and(|sound| sound.eq_ignore_ascii_case("HealCrate")),
+            "an unknown later name must retain the valid retail binding"
+        );
+
+        // Preserve the real catalog and all other retail Rules/ART. The
+        // authored root's failed lookup must keep the process's prior Voc.
+        let mut root = retail.sources.selected_rules_root.clone();
+        root.merge(&IniFile::from_str("[CrateRules]\nHealCrateSound=Unknown\n"));
+        let make_owner = || {
+            NativeRulesProcessOwner::from_cold_start_sources(
+                root.clone(),
+                None,
+                retail.sources.fixed_art.clone(),
+                retail.sources.fixed_sounds.clone(),
+                retail.sources.fixed_eva.clone(),
+            )
+            .unwrap()
+        };
+        let mut owner = make_owner();
+        let never_bound = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
+            .unwrap();
+        assert_eq!(never_bound.rules.crate_rules.heal_crate_sound, None);
+        let initial = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::Campaign(None),
+                &IniFile::from_str("[CrateRules]\nHealCrateSound=HealCrate\n"),
+            )
+            .unwrap();
+        assert_eq!(
+            initial.rules.crate_rules.heal_crate_sound.as_deref(),
+            Some("HealCrate")
+        );
+        let mode = IniFile::from_str("[CrateRules]\nHealCrateSound=CrateMoney\n");
+        owner
+            .prepare_random_map_preview(Some(&mode), "TEMPERATE", true)
+            .unwrap();
+        let changed = IniFile::from_str("[CrateRules]\nHealCrateSound=HealCrate\n");
+        owner
+            .prepare_random_map_preview(Some(&changed), "TEMPERATE", false)
+            .unwrap();
+        assert_eq!(
+            owner
+                .prepared_random_map_rules()
+                .unwrap()
+                .crate_rules()
+                .heal_crate_sound
+                .as_deref(),
+            Some("CrateMoney")
+        );
+        let prospective = owner
+            .random_map_preview_projection(None, "TEMPERATE")
+            .unwrap();
+        assert_eq!(
+            prospective.crate_rules().heal_crate_sound.as_deref(),
+            Some("CrateMoney")
+        );
+        // Cancel followed by Full_Init retains the same scalar; the next
+        // root pass still cannot resolve Unknown and must not erase it.
+        let loaded = owner
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
+            .unwrap();
+        assert_eq!(
+            loaded.rules.crate_rules.heal_crate_sound.as_deref(),
+            Some("CrateMoney")
+        );
+        let hash = loaded.rules.simulation_config_hash();
+        let bytes =
+            crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+        owner.install_saved_scenario_rules(crate::util::save_codec::deserialize(&bytes).unwrap());
+        let restored = owner
+            .project_saved_scenario_rules(owner.saved_scenario_rules().unwrap())
+            .unwrap();
+        assert_eq!(
+            restored.crate_rules.heal_crate_sound.as_deref(),
+            Some("CrateMoney")
+        );
+        assert_eq!(restored.simulation_config_hash(), hash);
+        let mut other = make_owner();
+        other
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &changed)
+            .unwrap();
+        let other = other
+            .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
+            .unwrap();
+        assert_ne!(
+            other.rules.simulation_config_hash(),
+            hash,
+            "effective bindings enter the existing hash"
+        );
+    }
+
+    #[test]
     fn rmg_land_reads_obey_cache_and_preserve_untouched_rows() {
         use crate::rules::terrain_rules::{LandType, test_speed_percent};
         let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
