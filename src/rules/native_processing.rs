@@ -2760,6 +2760,12 @@ impl ProcessedRulesLayers {
             .psychic_reveal()
     }
 
+    /// ReadAudioVisual66B673..66B74E: current Unit, Infantry, Aircraft
+    /// extra body light, in signed milliunits, retained with RulesClass.
+    pub(crate) fn class_extra_lights(&self) -> [i32; 3] {
+        self.native_registry_state().rules_class_extra_lights
+    }
+
     /// ReadAudioVisual6693AC/6693F6/66AA93 fixed Voc bindings. RulesClass
     /// keeps these scalars through type reset, RMG and Save674730/Load675210.
     pub(crate) fn ui_sounds(&self) -> [Option<&str>; 3] {
@@ -4345,6 +4351,10 @@ pub(crate) struct NativeRulesRegistryState {
     rules_shroud_rate: NativeF64Bits,
     #[serde(default = "crate::rules::ruleset::default_fog_rate")]
     rules_fog_rate: NativeF64Bits,
+    /// Unit/Infantry/Aircraft at +17D4/+17D8/+17DC. Constructor665650
+    /// stores zero at667703..66770F; ReadAudioVisual66B673..66B74E updates
+    /// them even when an admitted section omits their keys.
+    rules_class_extra_lights: [i32; 3],
     // Ctor665946/66594C/6659AC=-1; fixed Voc IDs represented by canonical names.
     rules_global_sounds: GlobalSoundReferences,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
@@ -4458,6 +4468,11 @@ impl Default for NativeRulesRegistryState {
             rules_shroud_grow: general.shroud_grow,
             rules_shroud_rate: general.shroud_rate,
             rules_fog_rate: general.fog_rate,
+            rules_class_extra_lights: [
+                general.extra_unit_light,
+                general.extra_infantry_light,
+                general.extra_aircraft_light,
+            ],
             rules_global_sounds: GlobalSoundReferences::default(),
             rules_difficulty_rows: general.difficulty_rows,
             rules_land: Default::default(),
@@ -4531,6 +4546,7 @@ impl NativeRulesRegistryState {
             rules_powerups: self.rules_powerups.clone(),
             rules_land: self.rules_land.clone(),
             rules_global_sounds: self.rules_global_sounds.clone(),
+            rules_class_extra_lights: self.rules_class_extra_lights,
             ..Self::default()
         }
     }
@@ -4915,6 +4931,7 @@ impl NativeRulesRegistryState {
             rules_shroud_grow: self.rules_shroud_grow,
             rules_shroud_rate: self.rules_shroud_rate,
             rules_fog_rate: self.rules_fog_rate,
+            rules_class_extra_lights: self.rules_class_extra_lights,
             rules_global_sounds: self.rules_global_sounds,
             rules_difficulty_rows: self.rules_difficulty_rows,
             rules_land: self.rules_land,
@@ -6236,6 +6253,9 @@ struct RulesPassProcessor {
     rules_shroud_grow: bool,
     rules_shroud_rate: NativeF64Bits,
     rules_fog_rate: NativeF64Bits,
+    /// Same retained RulesClass triple as NativeRulesRegistryState; this
+    /// processor receives and returns its sole ownership with each pass.
+    rules_class_extra_lights: [i32; 3],
     // Ctor665946/66594C/6659AC=-1; fixed Voc IDs represented by canonical names.
     rules_global_sounds: GlobalSoundReferences,
     rules_difficulty_rows: [crate::rules::ruleset::DifficultyRules; 3],
@@ -6328,6 +6348,7 @@ impl RulesPassProcessor {
             rules_shroud_grow: registry_state.rules_shroud_grow,
             rules_shroud_rate: registry_state.rules_shroud_rate,
             rules_fog_rate: registry_state.rules_fog_rate,
+            rules_class_extra_lights: registry_state.rules_class_extra_lights,
             rules_global_sounds: registry_state.rules_global_sounds,
             rules_difficulty_rows: registry_state.rules_difficulty_rows,
             rules_land: registry_state.rules_land,
@@ -10410,6 +10431,8 @@ impl RulesPassProcessor {
     }
 
     fn allocate_audio_visual_references(&mut self, pass: &IniFile, fixed_sounds: &SoundRegistry) {
+        use crate::util::native_x87::MaskedX87Chop53 as X87;
+
         let Some(section) = pass.section("AudioVisual") else {
             return;
         };
@@ -10438,6 +10461,21 @@ impl RulesPassProcessor {
             section.read_double_bits("AmbientChangeRate", self.rules_ambient_change_rate);
         self.rules_ambient_change_step =
             section.read_double_bits("AmbientChangeStep", self.rules_ambient_change_step);
+        // Original ReadAudioVisual66B673..66B74E divides each current
+        // signed integer by1000 BEFORE widening the ReadDouble default.
+        // Every reached section performs this conversion, even if a key
+        // is omitted. Math_ftol7C5F00 stores the low32 bits after *1000;
+        // unlike the Building light reader, there is no added0.1 bias.
+        for (key, current) in ["ExtraUnitLight", "ExtraInfantryLight", "ExtraAircraftLight"]
+            .into_iter()
+            .zip(&mut self.rules_class_extra_lights)
+        {
+            let value = section.read_double(key, f64::from(*current / 1000));
+            *current = X87::ftol_i32_low_masked(X87::mul(
+                X87::load_f64(NativeF64Bits::from_bits(value.to_bits())),
+                X87::load_i32(1000),
+            ));
+        }
         // AudioVisual66B77D..66B7A7, after Gravity, retains the RGB default.
         self.rules_line_trail_override = section.read_color_rgb(
             "LineTrailColorOverride",
@@ -10664,6 +10702,7 @@ impl RulesPassProcessor {
                     rules_shroud_grow: self.rules_shroud_grow,
                     rules_shroud_rate: self.rules_shroud_rate,
                     rules_fog_rate: self.rules_fog_rate,
+                    rules_class_extra_lights: self.rules_class_extra_lights,
                     rules_global_sounds: self.rules_global_sounds,
                     rules_difficulty_rows: self.rules_difficulty_rows,
                     rules_land: self.rules_land,
