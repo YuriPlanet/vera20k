@@ -120,6 +120,10 @@ pub mod telemetry;
 #[cfg(feature = "telemetry-dashboard")]
 pub(crate) mod telemetry_capture;
 #[cfg(feature = "telemetry-dashboard")]
+#[cfg(feature = "telemetry-dashboard")]
+pub(crate) mod telemetry_audio;
+pub(crate) mod telemetry_map_view;
+#[cfg(feature = "telemetry-dashboard")]
 pub(crate) mod telemetry_server;
 pub(crate) mod types;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]

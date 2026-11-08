@@ -153,6 +153,7 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
             .and_then(|owner| sim.ready_outcome_for_owner(owner))
             .map(|outcome| outcome.kind),
         build_stamp: BUILD_STAMP.to_owned(),
+        held: state.match_state.spectate_hold,
     });
     snapshot.debug = Some(capture_debug(state, &runtime.simulation));
     snapshot.process = Some(capture_process(state));
@@ -265,9 +266,36 @@ fn unit_atlas_bytes(state: &AppState) -> u64 {
         .unwrap_or(0)
 }
 
+/// Release a pre-match hold when the dashboard presses "start".
+///
+/// The request is a latch on the server, so this is the only place it is
+/// consumed. A start that arrives with no hold (the usual auto-starting
+/// match) is dropped rather than acted on: the dashboard's button must never
+/// change a match that is already running.
+fn service_match_start(state: &mut AppState) {
+    let requested = state
+        .diag
+        .telemetry_server
+        .as_ref()
+        .is_some_and(crate::app::telemetry_server::TelemetryServer::take_match_start);
+    if !requested {
+        return;
+    }
+    if !state.match_state.spectate_hold {
+        log::info!("Dashboard start ignored: the match is not held");
+        return;
+    }
+    state.match_state.spectate_hold = false;
+    // The held span must not buy a catch-up frame or a burst of ticks.
+    state.platform.frame_pacer.reset_for_immediate_frame();
+    state.platform.window.request_redraw();
+    log::info!("Spectator start: the held match is running from tick zero");
+}
+
 /// Render-loop cadence also publishes paused worlds. No snapshot work or
 /// process queries occur without an authenticated subscriber.
 pub fn publish_if_due(state: &mut AppState) {
+    service_match_start(state);
     synchronize_observer(state);
     if !state.diag.telemetry_observer.active() {
         return;

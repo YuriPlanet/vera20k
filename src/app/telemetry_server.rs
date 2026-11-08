@@ -35,6 +35,35 @@ const MAX_CONTROL_BATCH: usize = 8;
 const MAX_CONTROLS_PER_SECOND: usize = 128;
 const POLL: Duration = Duration::from_millis(50);
 const IO_DEADLINE: Duration = Duration::from_secs(2);
+/// Largest binary frame the app may publish. The picture stream shares the
+/// snapshot's ceiling; its own header + RGBA tile is bounded by the producer.
+const MAX_SCREEN_FRAME: usize = 8 * 1024 * 1024;
+/// A picture stream keeps at most the newest tiles per client. Dropping a
+/// tile never drops the JSON snapshots, which have their own queue.
+/// Whole-map frames are complete pictures (~5 MB each), not small scan tiles;
+/// keep the per-client backlog short so a slow viewer cannot retain dozens of
+/// megabytes of stale frames.
+const SCREEN_QUEUE_DEPTH: usize = 3;
+/// Audio blocks are small (40 ms of stereo PCM16, ~7.7 KB), so a deeper queue
+/// costs little and rides out a socket write that waits on a slow client
+/// without the listener hearing a gap.
+const AUDIO_QUEUE_DEPTH: usize = 12;
+/// Largest audio block the app may publish.
+const MAX_AUDIO_FRAME: usize = 64 * 1024;
+/// Subscription requests only change which frames this socket receives. They
+/// never reach the match state, so both dashboard-only and debug builds admit
+/// them; any other client data frame is still rejected at the header.
+const SCREEN_ON: &[u8] = b"vera-screen.on";
+const SCREEN_OFF: &[u8] = b"vera-screen.off";
+const AUDIO_ON: &[u8] = b"vera-audio.on";
+const AUDIO_OFF: &[u8] = b"vera-audio.off";
+/// Release the pre-match hold a `RA2_QUICKPLAY_HOLD=1` launch takes. It only
+/// ever clears a hold this process set, so a match that already runs is
+/// untouched.
+const MATCH_START: &[u8] = b"vera-match.start";
+/// A subscribed socket must drain its picture queue faster than the HTTP
+/// accept poll, or a 60 Hz producer would stall behind a 50 ms read.
+const WRITER_POLL: Duration = Duration::from_millis(2);
 
 pub const ENV_ADDR: &str = "VERA_TELEMETRY_ADDR";
 pub const ENV_WEB_ROOT: &str = "VERA_TELEMETRY_WEB";
@@ -51,8 +80,18 @@ pub fn websocket_accept_key(client_key: &str) -> String {
 }
 
 pub fn encode_text_frame(payload: &str) -> Vec<u8> {
+    encode_ws_frame(0x1, payload.as_bytes())
+}
+
+/// RFC 6455 binary frame. The dashboard picture stream uses these for live
+/// map tiles; JSON snapshots stay on the text opcode.
+pub fn encode_binary_frame(payload: &[u8]) -> Vec<u8> {
+    encode_ws_frame(0x2, payload)
+}
+
+fn encode_ws_frame(opcode: u8, payload: &[u8]) -> Vec<u8> {
     let mut frame = Vec::with_capacity(payload.len() + 10);
-    frame.push(0x81);
+    frame.push(0x80 | opcode);
     match payload.len() {
         len @ 0..=125 => frame.push(len as u8),
         len @ 126..=65535 => {
@@ -64,7 +103,7 @@ pub fn encode_text_frame(payload: &str) -> Vec<u8> {
             frame.extend_from_slice(&(len as u64).to_be_bytes());
         }
     }
-    frame.extend_from_slice(payload.as_bytes());
+    frame.extend_from_slice(payload);
     frame
 }
 
@@ -152,6 +191,17 @@ impl Admission {
 struct Client {
     id: u64,
     sender: SyncSender<Arc<[u8]>>,
+    /// Toggled by this socket's own writer on a subscription request. The
+    /// publisher reads it to decide whether to spend a frame on the picture.
+    screen: Arc<AtomicBool>,
+    /// Tiles have their own queue: a burst of picture frames can never push a
+    /// JSON snapshot out of `sender`.
+    screen_sender: SyncSender<Arc<[u8]>>,
+    /// Toggled by this socket's own writer on a subscription request. Audio is
+    /// much smaller than a picture but must never delay one, so it has its own
+    /// queue as well.
+    audio: Arc<AtomicBool>,
+    audio_sender: SyncSender<Arc<[u8]>>,
 }
 
 struct Shared {
@@ -160,6 +210,9 @@ struct Shared {
     /// Connections accepted since the server started. A publisher compares it
     /// with the value it last saw to know a client attached meanwhile.
     attached: AtomicU64,
+    /// Set by a dashboard that pressed "start"; the app swaps it back to false
+    /// when it releases the pre-match hold.
+    match_start: AtomicBool,
     admission: Admission,
     web_root: PathBuf,
     #[cfg(feature = "debug-tools")]
@@ -196,6 +249,77 @@ impl Shared {
     }
 }
 
+/// The picture fan-out, detached from the server handle so a producer thread
+/// can keep publishing while the app keeps its frame. Same back-pressure as
+/// [`TelemetryServer::publish_binary`]: a full queue drops a picture.
+#[derive(Clone)]
+pub struct PictureSink {
+    shared: Arc<Shared>,
+}
+
+impl PictureSink {
+    pub fn publish_binary(&self, payload: &[u8]) {
+        publish_binary_to(&self.shared, payload);
+    }
+}
+
+fn publish_binary_to(shared: &Shared, payload: &[u8]) {
+    if payload.len() > MAX_SCREEN_FRAME || shared.stopped() {
+        return;
+    }
+    let frame: Arc<[u8]> = encode_binary_frame(payload).into();
+    shared.clients().retain(|client| {
+        if !client.screen.load(Ordering::Acquire) {
+            return true;
+        }
+        !matches!(
+            client.screen_sender.try_send(Arc::clone(&frame)),
+            Err(TrySendError::Disconnected(_))
+        )
+    });
+}
+
+/// The audio fan-out. Small frames and a shallower cadence than pictures, but
+/// the same rule: a full queue drops the block rather than delaying the mix.
+#[derive(Clone)]
+pub struct AudioSink {
+    shared: Arc<Shared>,
+}
+
+impl AudioSink {
+    pub fn publish(&self, payload: &[u8]) {
+        publish_audio_to(&self.shared, payload);
+    }
+
+    /// Whether any attached dashboard wants the live audio stream.
+    pub fn wanted(&self) -> bool {
+        has_audio_clients(&self.shared)
+    }
+}
+
+fn publish_audio_to(shared: &Shared, payload: &[u8]) {
+    if payload.len() > MAX_AUDIO_FRAME || shared.stopped() {
+        return;
+    }
+    let frame: Arc<[u8]> = encode_binary_frame(payload).into();
+    shared.clients().retain(|client| {
+        if !client.audio.load(Ordering::Acquire) {
+            return true;
+        }
+        !matches!(
+            client.audio_sender.try_send(Arc::clone(&frame)),
+            Err(TrySendError::Disconnected(_))
+        )
+    });
+}
+
+fn has_audio_clients(shared: &Shared) -> bool {
+    shared
+        .clients()
+        .iter()
+        .any(|client| client.audio.load(Ordering::Acquire))
+}
+
 pub struct TelemetryServer {
     addr: SocketAddr,
     shared: Arc<Shared>,
@@ -227,6 +351,7 @@ impl TelemetryServer {
             clients: Mutex::new(Vec::new()),
             stop: AtomicBool::new(false),
             attached: AtomicU64::new(0),
+            match_start: AtomicBool::new(false),
             admission: Admission {
                 authority: addr.to_string(),
                 localhost: format!("localhost:{}", addr.port()),
@@ -268,6 +393,52 @@ impl TelemetryServer {
                 Ok(()) | Err(TrySendError::Full(_)) => true,
                 Err(TrySendError::Disconnected(_)) => false,
             });
+    }
+
+    /// Publish one live-map picture tile to subscribed sockets only. A full
+    /// queue drops the tile, never the client and never a JSON snapshot.
+    pub fn publish_binary(&self, payload: &[u8]) {
+        publish_binary_to(&self.shared, payload);
+    }
+
+    /// A clone of the publish path usable from another thread. The whole-map
+    /// stream encodes and pushes its pictures on a worker so a 1080p frame's
+    /// swizzle and 8 MB copy never sit in the presentation thread's budget.
+    pub fn picture_sink(&self) -> PictureSink {
+        PictureSink {
+            shared: Arc::clone(&self.shared),
+        }
+    }
+
+    /// A clone of the audio publish path, for the pump thread that drains the
+    /// shared mixer's PCM ring.
+    pub fn audio_sink(&self) -> AudioSink {
+        AudioSink {
+            shared: Arc::clone(&self.shared),
+        }
+    }
+
+    /// Whether any attached dashboard currently wants live audio. The pump
+    /// stops draining the mixer's ring when nothing listens, so an idle
+    /// dashboard costs nothing.
+    pub fn has_audio_clients(&self) -> bool {
+        has_audio_clients(&self.shared)
+    }
+
+    /// Take a pending "start the match" request. The app calls this once per
+    /// frame; `true` means a dashboard pressed the button since the last call.
+    pub fn take_match_start(&self) -> bool {
+        self.shared.match_start.swap(false, Ordering::AcqRel)
+    }
+
+    /// Whether any attached dashboard currently wants live map pictures. The
+    /// app gates the extra render pass on this, so an idle dashboard costs
+    /// nothing beyond the JSON snapshots.
+    pub fn has_screen_clients(&self) -> bool {
+        self.shared
+            .clients()
+            .iter()
+            .any(|client| client.screen.load(Ordering::Acquire))
     }
 
     pub fn has_clients(&self) -> bool {
@@ -566,7 +737,18 @@ fn serve_connection(stream: &mut TcpStream, shared: &Shared, id: u64) -> io::Res
         websocket_accept_key(key)
     );
     let (sender, receiver) = mpsc::sync_channel(CLIENT_QUEUE_DEPTH);
-    shared.clients().push(Client { id, sender });
+    let (screen_sender, screen_receiver) = mpsc::sync_channel(SCREEN_QUEUE_DEPTH);
+    let (audio_sender, audio_receiver) = mpsc::sync_channel(AUDIO_QUEUE_DEPTH);
+    let screen = Arc::new(AtomicBool::new(false));
+    let audio = Arc::new(AtomicBool::new(false));
+    shared.clients().push(Client {
+        id,
+        sender,
+        screen: Arc::clone(&screen),
+        screen_sender,
+        audio: Arc::clone(&audio),
+        audio_sender,
+    });
     // Only an admitted dashboard counts: static asset requests also reach the
     // accept loop, and they do not read snapshots.
     shared.attached.fetch_add(1, Ordering::AcqRel);
@@ -576,7 +758,16 @@ fn serve_connection(stream: &mut TcpStream, shared: &Shared, id: u64) -> io::Res
         &shared.stop,
         Instant::now() + IO_DEADLINE,
     )?;
-    writer_loop(stream, receiver, shared, tail)
+    writer_loop(
+        stream,
+        receiver,
+        screen_receiver,
+        screen,
+        audio_receiver,
+        audio,
+        shared,
+        tail,
+    )
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -584,6 +775,13 @@ enum ControlFrame {
     Ping(Vec<u8>),
     Pong,
     Close(Vec<u8>),
+    /// Subscribe or unsubscribe this socket from the live map picture stream.
+    Screen(bool),
+    /// Subscribe or unsubscribe this socket from the live game audio stream.
+    Audio(bool),
+    /// Ask the app to release the pre-match hold, so a recording starts on
+    /// frame zero instead of wherever the match happened to be.
+    MatchStart,
     #[cfg(feature = "debug-tools")]
     Command(Vec<u8>),
 }
@@ -610,6 +808,12 @@ fn parse_client_frame_with_debug(
         #[cfg(feature = "debug-tools")]
         if opcode == 1 && _allow_debug {
             return parse_debug_frame(bytes);
+        }
+        // The picture subscription is transport-only: it changes what this
+        // socket receives, not the match. Admit it in every dashboard build,
+        // but only as one of two exact, short, final, masked text frames.
+        if opcode == 1 {
+            return parse_screen_frame(bytes);
         }
         return Err(1008);
     }
@@ -653,6 +857,39 @@ fn parse_client_frame_with_debug(
     Ok(Some((frame, end)))
 }
 
+/// The only client data a read-only dashboard may send: the transport
+/// subscriptions. Anything else is a protocol error, so this doubles as the
+/// admission test that no game command can reach a `telemetry-dashboard` build.
+fn parse_screen_frame(bytes: &[u8]) -> Result<Option<(ControlFrame, usize)>, u16> {
+    // Any client data that is not an exact subscription frame keeps the old
+    // policy result: rejected at the header, without waiting for a long body.
+    if bytes[0] & 0x80 == 0 || bytes[1] & 0x80 == 0 {
+        return Err(1008);
+    }
+    let len = usize::from(bytes[1] & 127);
+    if len > 125 {
+        return Err(1008);
+    }
+    let end = 6 + len;
+    if bytes.len() < end {
+        return Ok(None);
+    }
+    let payload: Vec<u8> = bytes[6..end]
+        .iter()
+        .enumerate()
+        .map(|(i, byte)| byte ^ bytes[2 + i % 4])
+        .collect();
+    let frame = match payload.as_slice() {
+        SCREEN_ON => ControlFrame::Screen(true),
+        SCREEN_OFF => ControlFrame::Screen(false),
+        AUDIO_ON => ControlFrame::Audio(true),
+        AUDIO_OFF => ControlFrame::Audio(false),
+        MATCH_START => ControlFrame::MatchStart,
+        _ => return Err(1008),
+    };
+    Ok(Some((frame, end)))
+}
+
 #[cfg(feature = "debug-tools")]
 fn parse_debug_frame(bytes: &[u8]) -> Result<Option<(ControlFrame, usize)>, u16> {
     if bytes[0] & 0x80 == 0 {
@@ -688,6 +925,25 @@ fn parse_debug_frame(bytes: &[u8]) -> Result<Option<(ControlFrame, usize)>, u16>
     if std::str::from_utf8(&payload).is_err() {
         return Err(1007);
     }
+    // The transport subscription is not a trainer command: keep it out of the
+    // command inbox so a debug build behaves like a read-only one here.
+    if payload.as_slice() == SCREEN_ON {
+        return Ok(Some((ControlFrame::Screen(true), end)));
+    }
+    if payload.as_slice() == SCREEN_OFF {
+        return Ok(Some((ControlFrame::Screen(false), end)));
+    }
+    if payload.as_slice() == AUDIO_ON {
+        return Ok(Some((ControlFrame::Audio(true), end)));
+    }
+    if payload.as_slice() == AUDIO_OFF {
+        return Ok(Some((ControlFrame::Audio(false), end)));
+    }
+    // Same rule for the start latch: a debug build must not turn the
+    // dashboard's start button into a trainer request and close the socket.
+    if payload.as_slice() == MATCH_START {
+        return Ok(Some((ControlFrame::MatchStart, end)));
+    }
     Ok(Some((ControlFrame::Command(payload), end)))
 }
 
@@ -703,9 +959,19 @@ fn write_control(
     write_until(stream, &bytes, &shared.stop, Instant::now() + IO_DEADLINE)
 }
 
+/// How long a socket may wait for client data between sends. Any live stream
+/// has to drain far faster than the accept poll.
+fn poll_timeout(screen: bool, audio: bool) -> Duration {
+    if screen || audio { WRITER_POLL } else { POLL }
+}
+
 fn writer_loop(
     stream: &mut TcpStream,
     receiver: mpsc::Receiver<Arc<[u8]>>,
+    screen_receiver: mpsc::Receiver<Arc<[u8]>>,
+    screen: Arc<AtomicBool>,
+    audio_receiver: mpsc::Receiver<Arc<[u8]>>,
+    audio: Arc<AtomicBool>,
     shared: &Shared,
     mut inbound: Vec<u8>,
 ) -> io::Result<()> {
@@ -742,6 +1008,35 @@ fn writer_loop(
                 ControlFrame::Ping(payload) => write_control(stream, shared, 10, &payload)?,
                 ControlFrame::Pong => (),
                 ControlFrame::Close(payload) => return write_control(stream, shared, 8, &payload),
+                ControlFrame::Screen(on) => {
+                    screen.store(on, Ordering::Release);
+                    // A subscribed socket cannot wait behind the 50 ms accept
+                    // poll; a 60 Hz picture producer needs a shorter read.
+                    stream.set_read_timeout(Some(poll_timeout(on, audio.load(Ordering::Acquire))))?;
+                    if !on {
+                        // Tiles already queued must not arrive after unsubscribe.
+                        while screen_receiver.try_recv().is_ok() {}
+                    }
+                }
+                ControlFrame::Audio(on) => {
+                    audio.store(on, Ordering::Release);
+                    // Audio arrives 25 times a second, far ahead of the accept
+                    // poll; without this the listener hears stutter.
+                    stream.set_read_timeout(Some(poll_timeout(
+                        screen.load(Ordering::Acquire),
+                        on,
+                    )))?;
+                    if !on {
+                        // Blocks queued before unsubscribe must not play later.
+                        while audio_receiver.try_recv().is_ok() {}
+                    }
+                }
+                ControlFrame::MatchStart => {
+                    // A latch, not a state: the app clears it on its next
+                    // frame, so two dashboards clicking at once are one start.
+                    shared.match_start.store(true, Ordering::Release);
+                    log::info!("Dashboard asked for the held match to start");
+                }
                 #[cfg(feature = "debug-tools")]
                 ControlFrame::Command(payload) => {
                     commands += 1;
@@ -755,6 +1050,28 @@ fn writer_loop(
             Ok(frame) => write_until(stream, &frame, &shared.stop, Instant::now() + IO_DEADLINE)?,
             Err(TryRecvError::Disconnected) => return Ok(()),
             Err(TryRecvError::Empty) => (),
+        }
+        // Audio first: a block is ~7 KB and goes stale in 40 ms, while a whole
+        // picture is megabytes and can wait a few milliseconds behind it.
+        if audio.load(Ordering::Acquire) {
+            match audio_receiver.try_recv() {
+                Ok(frame) => {
+                    write_until(stream, &frame, &shared.stop, Instant::now() + IO_DEADLINE)?;
+                }
+                Err(TryRecvError::Disconnected) => return Ok(()),
+                Err(TryRecvError::Empty) => (),
+            }
+        }
+        // Snapshots and tiles have separate queues, so a burst of tiles never
+        // starves the JSON stream that drives every other dashboard panel.
+        if screen.load(Ordering::Acquire) {
+            match screen_receiver.try_recv() {
+                Ok(frame) => {
+                    write_until(stream, &frame, &shared.stop, Instant::now() + IO_DEADLINE)?;
+                }
+                Err(TryRecvError::Disconnected) => return Ok(()),
+                Err(TryRecvError::Empty) => (),
+            }
         }
         if processed == MAX_CONTROL_BATCH {
             continue;

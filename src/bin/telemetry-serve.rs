@@ -457,6 +457,8 @@ fn main() -> Result<(), String> {
                     .map(|outcome| outcome.kind),
                 // Mirrors the app's `BUILD_STAMP`; the crate path is private.
                 build_stamp: concat!("VERA20K ", env!("CARGO_PKG_VERSION")).to_owned(),
+                // The demo server owns no waiting match.
+                held: false,
             });
             snapshot.profile = runtime.simulation.frame_profile().report();
             // A client that attached since the last publish needs the elevation

@@ -100,6 +100,9 @@ impl App {
         }
         state.match_state.scenario_restart_requested = false;
         state.match_state.debug_pause = false;
+        // The pre-match hold belongs to the match that took it; the next one
+        // must not inherit it.
+        state.match_state.spectate_hold = false;
         state.match_state.match_presentation.in_game_menu =
             crate::ui::pause_menu::InGameMenuState::Closed;
         // A match's 0xCF ends with the game: its pump 0x00623120 stops the
@@ -279,11 +282,19 @@ impl App {
         // `g_ApplicationActive` (0x00A8ED80) edge — never with a setting — so
         // the audio gate rides on every activation edge, and a window the
         // player minimises goes silent.
+        //
+        // The shared tapped output silences its speaker itself and leaves the
+        // mix running, because the dashboard streams that mix and must not go
+        // quiet with the window. Only the untapped fallback sink still needs
+        // the players' own gate.
+        let keep_mixing = crate::audio::tap_output::device_output_live();
+        crate::audio::tap_output::set_window_active(active);
+        let audible = active || keep_mixing;
         if let Some(player) = state.audio.music_player.as_mut() {
-            player.set_focus_output_active(active);
+            player.set_focus_output_active(audible);
         }
         if let Some(player) = state.audio.sfx_player.as_mut() {
-            player.set_focus_output_active(active);
+            player.set_focus_output_active(audible);
         }
         if state.platform.pause_on_focus_loss
             && active
@@ -300,8 +311,10 @@ impl App {
             state.platform.window.request_redraw();
         }
         log::info!(
-            "Window {}",
-            if active { "activated" } else { "deactivated" }
+            "Window {} (speaker {}, mix {} for the dashboard)",
+            if active { "activated" } else { "deactivated" },
+            if active { "on" } else { "off" },
+            if keep_mixing { "live" } else { "gated" }
         );
     }
 

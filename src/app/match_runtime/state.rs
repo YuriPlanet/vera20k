@@ -90,6 +90,13 @@ pub(crate) struct MatchState {
     /// The debug pause (`J` hotkey): the simulation is frozen
     /// without an in-scenario modal. Every modal transition ends it.
     pub(crate) debug_pause: bool,
+    /// The pre-match hold a `RA2_QUICKPLAY_HOLD=1` launch takes: the match is
+    /// loaded and rendered at tick zero, but the world does not advance until
+    /// a dashboard asks it to. It is a pause for the same reasons the debug
+    /// pause is — the credit clock, the audio pump and the simulation all read
+    /// [`MatchState::paused`] — but it is not a modal and nothing but the start
+    /// request (or leaving the match) clears it.
+    pub(crate) spectate_hold: bool,
     /// Effective simulation ticks per second — controls game speed.
     /// Default follows retail/YR skirmish stored game speed 1.
     pub(crate) sim_speed_tps: u32,
@@ -131,6 +138,7 @@ impl MatchState {
     pub(crate) fn local_paused(&self) -> bool {
         self.match_presentation.in_game_menu.is_open()
             || self.debug_pause
+            || self.spectate_hold
             || self
                 .match_presentation
                 .radar_anim

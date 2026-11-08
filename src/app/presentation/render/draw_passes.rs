@@ -1096,24 +1096,31 @@ pub(super) fn dispatch_draw_passes(
     // before this pass (`draw_sidebar_surface`), goes to the right-hand
     // column and the bar's to the strip left of it, scaled by the Sidebar
     // size. The copies scissor themselves.
-    if let Some(surface) = state.renderer.sidebar_surface.as_ref() {
-        surface.composite(&mut pass);
-    }
-    // The column's text, where its copy would resample it, over the copy
-    // within the column (`sidebar_surface::column_text`).
-    if let crate::app::presentation::sidebar_surface::ColumnText::Frame(_) =
-        crate::app::presentation::sidebar_surface::column_text(state)
-    {
-        let (x, y, width, height) = state.sidebar_frame().column();
-        pass.set_scissor_rect(x, y, width, height);
-        for key in crate::app::presentation::sidebar_surface::TEXT_LAYERS {
-            draw_pooled_ui_passthrough(
-                &mut pass,
-                &state.renderer.batch_renderer,
-                pool,
-                Some(state.renderer.bit_font.atlas()),
-                key,
-            );
+    // A whole-map picture is battlefield only. The sidebar is anchored to
+    // window coordinates, which land in the middle of the spectator's
+    // dedicated whole-map target instead of outside it; skip both its blit
+    // and its frame-pixel text. Normal matches never set `map_picture`, so
+    // their sidebar is unchanged.
+    if !state.platform.capture_presentation.map_picture {
+        if let Some(surface) = state.renderer.sidebar_surface.as_ref() {
+            surface.composite(&mut pass);
+        }
+        // The column's text, where its copy would resample it, over the copy
+        // within the column (`sidebar_surface::column_text`).
+        if let crate::app::presentation::sidebar_surface::ColumnText::Frame(_) =
+            crate::app::presentation::sidebar_surface::column_text(state)
+        {
+            let (x, y, width, height) = state.sidebar_frame().column();
+            pass.set_scissor_rect(x, y, width, height);
+            for key in crate::app::presentation::sidebar_surface::TEXT_LAYERS {
+                draw_pooled_ui_passthrough(
+                    &mut pass,
+                    &state.renderer.batch_renderer,
+                    pool,
+                    Some(state.renderer.bit_font.atlas()),
+                    key,
+                );
+            }
         }
     }
     pass.set_scissor_rect(0, 0, state.render_width(), state.render_height());

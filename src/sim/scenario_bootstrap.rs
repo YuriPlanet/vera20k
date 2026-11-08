@@ -1352,6 +1352,14 @@ pub fn initialize_skirmish_launch_houses(
         .collect();
     sim.session
         .install_multiplayer_house_identity(session.mode.class, observers);
+    // An observer owns no starting forces. Without MultiplayPassive the
+    // native defeat gate would declare that empty House defeated on its first
+    // frame and end the match; that gate already skips passive Houses. This
+    // is the same marker the headless AI-vs-AI benchmark gives its local
+    // house. Matches without an observer are unchanged.
+    for observer in sim.session.observer_houses().to_vec() {
+        sim.make_house_multiplay_passive(observer);
+    }
     // 688109..10F sets player-control only for the local source node;
     // remote human Houses remain human without acquiring local control.
     for slot in &slots {
@@ -4035,6 +4043,26 @@ mod tests {
                 assert_eq!(house.base_plan_center(), (43, 47));
             }
         }
+    }
+
+    #[test]
+    fn observer_house_is_multiplay_passive_so_the_defeat_gate_skips_it() {
+        // An observer gets no starting forces. The native defeat gate skips
+        // MultiplayPassive houses, so an empty observer must carry that flag
+        // or it is declared defeated on the first frame and ends the match.
+        let rules = RuleSet::from_ini(&IniFile::from_str(CONTROLLED_STOCK_COUNTRIES)).unwrap();
+        let mut session = one_player_battle_launch("observer.map").session().clone();
+        session.humans[0].set_observer(true);
+        session.rebuild_house_roster();
+        let launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
+        let mut sim = Simulation::new();
+        initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &launch);
+        let observers = sim.session.observer_houses();
+        assert_eq!(observers.len(), 1, "the observer House must be registered");
+        assert!(
+            sim.houses[&observers[0]].multiplay_passive(),
+            "an empty observer House must be skipped by the defeat gate"
+        );
     }
 
     #[test]

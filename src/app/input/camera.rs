@@ -1684,6 +1684,12 @@ pub(crate) fn tactical_viewport_px(state: &AppState) -> (u32, u32, u32, u32) {
 /// the sidebar column and the bottom strip, at the Sidebar size
 /// (`ui::sidebar::SidebarFrame::tactical_size`).
 pub(crate) fn tactical_viewport_size(state: &AppState) -> (u32, u32) {
+    // The spectator's whole-map frame has no sidebar: the tactical viewport
+    // is the entire dedicated render target, so the scissor covers the map.
+    #[cfg(feature = "telemetry-dashboard")]
+    if let Some(size) = state.diag.map_view.view_size {
+        return size;
+    }
     state.sidebar_frame().tactical_size()
 }
 
@@ -1968,10 +1974,19 @@ fn constrain_zoom_to_texture(state: &mut AppState, sw: f32, sh: f32) {
     // VERA-only zoom: the complete logical view must fit the one A source.
     // A truncated texture would make its missing edge appear fully revealed.
     // Native1x is unaffected: the render target itself already fits this limit.
-    let minimum_zoom = minimum_view_zoom(
-        [sw, sh],
-        state.renderer.gpu.device.limits().max_texture_dimension_2d,
-    );
+    let texture_limit = state.renderer.gpu.device.limits().max_texture_dimension_2d;
+    // The wheel-zoom pass clamps its own source target to `texture_limit`, so
+    // a spectator can zoom out past the player-facing MIN_ZOOM to frame a
+    // large map in one render. A too-small zoom only reduces coverage; it
+    // never leaves a target or a camera uniform at an invalid size.
+    #[cfg(feature = "telemetry-dashboard")]
+    let minimum_zoom = if state.diag.map_view.active {
+        (sw.max(sh) / texture_limit as f32).max(0.02)
+    } else {
+        minimum_view_zoom([sw, sh], texture_limit)
+    };
+    #[cfg(not(feature = "telemetry-dashboard"))]
+    let minimum_zoom = minimum_view_zoom([sw, sh], texture_limit);
     let input = &mut state.match_state.input;
     input.zoom_level = input.zoom_level.clamp(minimum_zoom, MAX_ZOOM);
     input.zoom_target = input.zoom_target.clamp(minimum_zoom, MAX_ZOOM);

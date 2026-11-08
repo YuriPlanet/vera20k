@@ -744,6 +744,10 @@ impl App {
         state.platform.frame_pacer.clear_render_continuation();
         #[cfg(feature = "telemetry-dashboard")]
         crate::app::telemetry_capture::synchronize_observer(state);
+        // Checked on every screen, so a match ending or a world replacement
+        // restores the player's camera even when no in-game frame follows.
+        #[cfg(feature = "telemetry-dashboard")]
+        crate::app::telemetry_map_view::sync(state);
         if let Some(session) = hidden_run.as_deref_mut() {
             session.drive_before_render(state)?;
         }
@@ -1244,6 +1248,11 @@ impl App {
                 );
             }
             GameScreen::InGame => {
+                // A subscribed whole-map viewer turns this frame into a
+                // spectator frame: the camera goes to the next scan tile and
+                // the shroud is lifted, before any world instance is built.
+                #[cfg(feature = "telemetry-dashboard")]
+                crate::app::telemetry_map_view::sync(state);
                 //53B460 copies the already-composed surface, before this
                 //frame's world replaces it. The effect owns the retained copy.
                 let chrono_tactical = crate::app::input::camera::tactical_viewport_px(state);
@@ -1303,9 +1312,25 @@ impl App {
                     render_output
                 } else {
                     let render_output = render::render_game(state, &mut encoder, times, cadence)?;
-                    state
-                        .renderer
-                        .copy_game_frame_to(&mut encoder, &output.texture);
+                    // In spectator mode the composed battlefield is read back
+                    // for the dashboard instead of being shown in the window.
+                    #[cfg(feature = "telemetry-dashboard")]
+                    let spectator = crate::app::telemetry_map_view::capture(state, &mut encoder)?;
+                    #[cfg(not(feature = "telemetry-dashboard"))]
+                    let spectator = false;
+                    if spectator {
+                        #[cfg(feature = "telemetry-dashboard")]
+                        crate::app::telemetry_map_view::draw_notice(
+                            state,
+                            &mut encoder,
+                            &view,
+                            &output.texture,
+                        );
+                    } else {
+                        state
+                            .renderer
+                            .copy_game_frame_to(&mut encoder, &output.texture);
+                    }
                     render_output
                 };
                 game_render_output = Some(game_output);
@@ -1771,6 +1796,11 @@ impl App {
         )?;
         #[cfg(feature = "telemetry-dashboard")]
         crate::app::telemetry_capture::publish_if_due(state);
+        // Pump the spectator's completed GPU readback and publish its tile.
+        // Poll never waits; a frame that is still in flight simply publishes
+        // nothing this pass.
+        #[cfg(feature = "telemetry-dashboard")]
+        crate::app::telemetry_map_view::poll_and_publish(state);
 
         Ok(FrameRenderOutcome::Presented)
     }

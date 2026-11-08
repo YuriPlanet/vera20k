@@ -644,6 +644,11 @@ pub struct SessionContext {
     pub local_outcome: Option<crate::sim::house_state::HouseOutcomeKind>,
     /// The running binary's version stamp, from `CARGO_PKG_VERSION`.
     pub build_stamp: String,
+    /// The match is loaded and rendered but waiting for a dashboard's start
+    /// request, so the tick stays where it loaded. The console shows its
+    /// start button only while this is true; a match already running reports
+    /// `false` and the button stays out of the way.
+    pub held: bool,
 }
 
 /// One dashboard sample: the whole wire payload per snapshot.

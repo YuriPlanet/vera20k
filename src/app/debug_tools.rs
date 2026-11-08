@@ -144,7 +144,18 @@ pub(crate) fn service(state: &mut crate::app::AppState) {
         apply(state, command);
     }
     if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
-        state.match_state.sandbox_full_visibility = runtime.simulation.debug_reveal_map();
+        // The trainer's reveal flag owns the shroud for the player's window.
+        // A subscribed whole-map viewer lifts the shroud for its own picture
+        // (`telemetry_map_view::start`), and this frame runs after that setup:
+        // writing the trainer value here would put the shroud back and publish
+        // a black picture. Leave the flag alone while the viewer is active.
+        #[cfg(feature = "telemetry-dashboard")]
+        let spectator = state.diag.map_view.active;
+        #[cfg(not(feature = "telemetry-dashboard"))]
+        let spectator = false;
+        if !spectator {
+            state.match_state.sandbox_full_visibility = runtime.simulation.debug_reveal_map();
+        }
     }
 }
 

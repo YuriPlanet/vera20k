@@ -236,6 +236,115 @@ fn all_data_including_old_commands_is_closed_by_policy() {
     assert_eq!(parse_client_frame(&[0x81, 0xff]), Err(1008));
 }
 
+fn assert_no_frame(stream: &mut TcpStream) {
+    stream
+        .set_read_timeout(Some(Duration::from_millis(150)))
+        .unwrap();
+    let mut byte = [0];
+    let result = stream.read(&mut byte);
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    assert!(
+        matches!(result, Err(ref error) if matches!(
+            error.kind(),
+            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+        )),
+        "unexpected dashboard frame: {result:?}"
+    );
+}
+
+fn wait_until(mut predicate: impl FnMut() -> bool) {
+    for _ in 0..200 {
+        if predicate() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("dashboard worker did not apply the subscription in time");
+}
+
+#[test]
+fn binary_frames_and_screen_subscription_keep_the_read_only_boundary() {
+    assert_eq!(encode_binary_frame(b"hi"), [0x82, 2, b'h', b'i']);
+    for len in [126, 65535, 65536] {
+        let encoded = encode_binary_frame(&vec![0xAB; len]);
+        let header = if len > 65535 { 10 } else { 4 };
+        assert_eq!(encoded.len(), len + header);
+        assert_eq!(encoded[1], if len > 65535 { 127 } else { 126 });
+    }
+    let on = masked(1, SCREEN_ON);
+    assert_eq!(
+        parse_client_frame(&on),
+        Ok(Some((ControlFrame::Screen(true), on.len())))
+    );
+    let off = masked(1, SCREEN_OFF);
+    assert_eq!(
+        parse_client_frame(&off),
+        Ok(Some((ControlFrame::Screen(false), off.len())))
+    );
+    assert_eq!(
+        parse_client_frame(&masked(1, b"vera-screen.maybe")),
+        Err(1008)
+    );
+    assert_eq!(parse_client_frame(&masked(2, SCREEN_ON)), Err(1008));
+    let start = masked(1, MATCH_START);
+    assert_eq!(
+        parse_client_frame(&start),
+        Ok(Some((ControlFrame::MatchStart, start.len())))
+    );
+}
+
+#[cfg(feature = "debug-tools")]
+#[test]
+fn a_debug_build_routes_the_start_button_to_the_start_latch() {
+    // A debug build parses every client text frame as a trainer request first.
+    // The start latch is transport, not a trainer command: losing it there
+    // turned the button into a rejected command and closed the socket.
+    let start = masked(1, MATCH_START);
+    assert_eq!(
+        parse_client_frame_with_debug(&start, true),
+        Ok(Some((ControlFrame::MatchStart, start.len())))
+    );
+}
+
+#[test]
+fn the_start_button_latches_once_and_subscribes_to_nothing() {
+    let fixture = Fixture::new();
+    let mut stream = websocket(&fixture.server);
+    assert!(!fixture.server.take_match_start());
+    stream.write_all(&masked(1, MATCH_START)).unwrap();
+    // The app takes the latch on its next frame; taking it twice yields one
+    // start, so two dashboards clicking at once cannot double-start.
+    wait_until(|| fixture.server.take_match_start());
+    assert!(!fixture.server.take_match_start());
+    // Starting a match is not a subscription: it changes no stream.
+    assert!(!fixture.server.has_screen_clients());
+    assert!(!fixture.server.has_audio_clients());
+}
+
+#[test]
+fn picture_stream_is_gated_by_subscription_and_never_crowds_out_snapshots() {
+    let fixture = Fixture::new();
+    let mut stream = websocket(&fixture.server);
+    fixture.server.publish_binary(b"unsolicited");
+    assert_no_frame(&mut stream);
+
+    stream.write_all(&masked(1, SCREEN_ON)).unwrap();
+    wait_until(|| fixture.server.has_screen_clients());
+    fixture.server.publish_binary(b"tile-pixels");
+    assert_eq!(frame(&mut stream), (2, b"tile-pixels".to_vec()));
+
+    // Snapshots keep their own queue and opcode while pictures are flowing.
+    fixture.server.publish("{\"version\":1}".into());
+    assert_eq!(frame(&mut stream), (1, b"{\"version\":1}".to_vec()));
+
+    stream.write_all(&masked(1, SCREEN_OFF)).unwrap();
+    wait_until(|| !fixture.server.has_screen_clients());
+    fixture.server.publish_binary(b"after-unsubscribe");
+    assert_no_frame(&mut stream);
+}
+
 #[test]
 fn controls_validate_mask_bits_lengths_codes_and_utf8() {
     let ping = masked(9, b"hello");

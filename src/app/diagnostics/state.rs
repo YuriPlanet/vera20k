@@ -154,6 +154,15 @@ pub(crate) struct DiagnosticsState {
     pub(crate) process_stats: crate::app::process_stats::ProcessStatsSampler,
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_server: Option<crate::app::telemetry_server::TelemetryServer>,
+    /// Drains the shared audio mixer into subscribed dashboards. Lives as long
+    /// as the app so a dashboard tab only has to ask once.
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) audio_pump: Option<crate::app::telemetry_audio::AudioPump>,
+    /// Whole-map spectator stream. Presentation-only: it owns the tactical
+    /// camera while a dashboard viewer is subscribed, and restores the
+    /// player's view when that viewer leaves.
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) map_view: crate::app::telemetry_map_view::MapViewSession,
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_last_publish: Option<Instant>,
     /// The server attach count the last publish answered; a change means a new
@@ -208,6 +217,10 @@ impl DiagnosticsState {
             process_stats: Default::default(),
             #[cfg(feature = "telemetry-dashboard")]
             telemetry_server: None,
+            #[cfg(feature = "telemetry-dashboard")]
+            audio_pump: None,
+            #[cfg(feature = "telemetry-dashboard")]
+            map_view: Default::default(),
             #[cfg(feature = "telemetry-dashboard")]
             telemetry_last_publish: None,
             #[cfg(feature = "telemetry-dashboard")]

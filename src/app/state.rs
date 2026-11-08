@@ -88,6 +88,13 @@ impl AppState {
     /// rendering and pending tactical installation use the optional zoom pass.
     /// Loading artwork explicitly uses GPU/window dimensions in loading::pump.
     fn render_dimensions(&self) -> (u32, u32) {
+        // The whole-map spectator gives the match its own render resolution:
+        // one picture of the entire map instead of a window-sized battlefield.
+        // Only InGame reads this; frontend layout keeps the window below.
+        #[cfg(feature = "telemetry-dashboard")]
+        if let Some(size) = self.diag.map_view.view_size {
+            return size;
+        }
         platform::render_dimensions(
             &self.frontend.screen,
             (

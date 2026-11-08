@@ -43,8 +43,76 @@ import {
 /** Chart window: the ring keeps the last N samples. */
 const CHART_WINDOW = 240;
 
-/** The four views the header tabs pick between. */
-type AppView = "wall" | "detail" | "report" | "logs";
+/** The header tabs pick between the data walls and the live whole-map picture. */
+type AppView = "wall" | "detail" | "report" | "logs" | "screen";
+
+/** Live whole-map picture frames: "VMAP" + full size + tile rect + RGBA.
+ *  The engine sends one tile per binary WebSocket frame; the canvas keeps the
+ *  full picture's intrinsic size and CSS scales it into the stage. */
+const SCREEN_MAGIC = 0x50414d56;
+const SCREEN_HEADER_BYTES = 28;
+/** Transport-only subscription requests. They never reach the match state. */
+const SCREEN_ON = "vera-screen.on";
+const SCREEN_OFF = "vera-screen.off";
+
+/** Live game audio blocks: "AMAG" + sample rate + channels + frames +
+ *  sequence + PCM16LE. Small (40 ms ≈ 7.7 KB), so the listener hears the
+ *  match without waiting behind a multi-megabyte picture frame. */
+const AUDIO_MAGIC = 0x47414d41;
+const AUDIO_HEADER_BYTES = 16;
+const AUDIO_ON = "vera-audio.on";
+const AUDIO_OFF = "vera-audio.off";
+/** Release a `RA2_QUICKPLAY_HOLD=1` match. A match that is not held ignores
+ *  it, so the button that sends it is also the plain "record" button. */
+const MATCH_START = "vera-match.start";
+/** Playback lead over the audio clock. Absorbs a block that arrives late
+ *  without letting sound drift away from the picture. */
+const AUDIO_LEAD_SECONDS = 0.12;
+/** Default and ceiling of the live-audio gain. */
+const AUDIO_DEFAULT_VOLUME = 0.8;
+let screenCtx: CanvasRenderingContext2D | null = null;
+/** Tiles land in an offscreen buffer; the visible canvas is composited from
+ *  it at most once per animation frame (60 Hz), so a map scan never shows a
+ *  half-updated, row-by-row picture. */
+let screenBack: HTMLCanvasElement | null = null;
+let screenBackCtx: CanvasRenderingContext2D | null = null;
+let screenDirty = false;
+let screenFullW = 0;
+let screenFullH = 0;
+let screenTiles = 0;
+let screenTilesHz = 0;
+let screenSubscribed = false;
+/** Repeats the idempotent subscription while the view is open. */
+let screenSubscribeTimer: number | null = null;
+
+/** Live audio. The context is created on the click that opens the view, which
+ *  is the user gesture browsers require before sound may start. */
+let audioCtx: AudioContext | null = null;
+/** Splits the mix before the volume control, so a recording keeps the level
+ *  the engine produced even when the viewer has turned the speakers down. */
+let audioMaster: GainNode | null = null;
+let audioGain: GainNode | null = null;
+/** Recording taps the same mix the speakers get, so a capture carries exactly
+ *  what the viewer heard. */
+let audioCapture: MediaStreamAudioDestinationNode | null = null;
+/** Where the next block starts on the audio clock. */
+let audioCursor = 0;
+let audioSubscribed = false;
+/** Repeats the idempotent audio subscription while the view is open. */
+let audioSubscribeTimer: number | null = null;
+let audioLevel = AUDIO_DEFAULT_VOLUME;
+
+/** One whole match, recorded from the visible canvas plus the live mix. */
+let recorder: MediaRecorder | null = null;
+let recordedChunks: BlobPart[] = [];
+let recordStartedAt = 0;
+let recordTimer: number | null = null;
+/** When this page last asked for the start, so a snapshot published before
+ *  the request cannot re-arm the button and undo the click. */
+let startRequestedAt = 0;
+/** The engine reports a loaded-but-waiting match; the bar says so instead of
+ *  leaving a still picture with no explanation. */
+let matchHeld = false;
 
 let map3d: Map3D | null = null;
 /** Latest snapshot, kept so a language switch can re-render every panel. */
@@ -220,6 +288,16 @@ function updateHeader(snapshot: TelemetrySnapshot): void {
   document.getElementById("mapsize")!.textContent =
     `${snapshot.map_width}x${snapshot.map_height}`;
   const session = snapshot.session;
+  const wasHeld = matchHeld;
+  matchHeld = session?.held === true;
+  if (wasHeld && !matchHeld && recordArmed) {
+    // The held match just started, so this frame is the match's first: open
+    // the file here rather than minutes earlier on a frozen picture.
+    recordArmed = false;
+    startRecording();
+  }
+  updateStartButton(session ? session.held : null);
+  updateScreenMeta();
   const meta = document.getElementById("session-meta");
   if (meta) meta.hidden = session === null;
   const reading = document.getElementById("session");
@@ -2503,6 +2581,390 @@ function renderDetail(snapshot: TelemetrySnapshot): void {
 }
 
 
+// ------------------------------------------------- live whole-map picture
+
+/** The picture stream is opt-in per socket. Entering the view subscribes;
+ *  leaving, disconnecting or closing the page unsubscribes, so the engine
+ *  stops its extra render pass as soon as nobody is watching. */
+function setScreenSubscription(on: boolean): void {
+  if (screenSubscribed === on) return;
+  screenSubscribed = on;
+  if (screenSubscribeTimer !== null) {
+    window.clearInterval(screenSubscribeTimer);
+    screenSubscribeTimer = null;
+  }
+  if (on) {
+    // Inside the click that opened the view, so the browser may start audio.
+    ensureAudio();
+    setAudioSubscription(true);
+    if (socket?.readyState === WebSocket.OPEN) socket.send(SCREEN_ON);
+    // The first control frame can be lost in the upgrade/handshake read race:
+    // the server keeps no subscription state beyond the live socket and never
+    // acknowledges it. Repeating the idempotent "on" once a second makes the
+    // view self-healing, and also re-arms the subscription after a reconnect.
+    // One frame a second is far below the server's control-frame limit.
+    screenSubscribeTimer = window.setInterval(() => {
+      if (socket?.readyState === WebSocket.OPEN) socket.send(SCREEN_ON);
+    }, 1000);
+    // A fresh view may be attached to a match that is still held at tick zero.
+    updateStartButton(matchHeld);
+  } else {
+    // A capture needs both live streams; leaving the view would record a frozen
+    // canvas and a silent track, so finish and save the file here.
+    if (recordArmed) {
+      recordArmed = false;
+      updateRecordUi();
+    }
+    if (recorder) stopRecording();
+    setAudioSubscription(false);
+    if (socket?.readyState === WebSocket.OPEN) socket.send(SCREEN_OFF);
+    resetScreenPicture();
+  }
+}
+
+function resetScreenPicture(): void {
+  screenCtx = null;
+  screenFullW = 0;
+  screenFullH = 0;
+  screenTiles = 0;
+  screenTilesHz = 0;
+  screenDirty = false;
+  if (screenBack && screenBackCtx) {
+    screenBackCtx.fillStyle = "#000";
+    screenBackCtx.fillRect(0, 0, screenBack.width, screenBack.height);
+  }
+  const empty = document.getElementById("screen-empty");
+  if (empty) empty.hidden = false;
+  const meta = document.getElementById("screen-meta");
+  if (meta) meta.textContent = t("screen.waiting");
+}
+
+// ------------------------------------------------------- live game audio
+
+/** Open (or resume) the audio context. Reached from the click that opens the
+ *  view, which is the gesture browsers require before sound may start. */
+function ensureAudio(): AudioContext {
+  if (!audioCtx) {
+    audioCtx = new AudioContext();
+    audioMaster = audioCtx.createGain();
+    audioMaster.gain.value = 1;
+    audioGain = audioCtx.createGain();
+    audioGain.gain.value = audioLevel;
+    audioMaster.connect(audioGain);
+    audioGain.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === "suspended") void audioCtx.resume();
+  return audioCtx;
+}
+
+/** Audio follows the picture view: the engine only mixes for a listener that
+ *  asked. The idempotent request repeats once a second for the same reason the
+ *  picture subscription does — the first control frame can be lost in the
+ *  upgrade read race. */
+function setAudioSubscription(on: boolean): void {
+  if (audioSubscribed === on) return;
+  audioSubscribed = on;
+  if (audioSubscribeTimer !== null) {
+    window.clearInterval(audioSubscribeTimer);
+    audioSubscribeTimer = null;
+  }
+  if (!socket || socket.readyState !== WebSocket.OPEN) return;
+  if (on) {
+    socket.send(AUDIO_ON);
+    audioSubscribeTimer = window.setInterval(() => {
+      if (socket?.readyState === WebSocket.OPEN) socket.send(AUDIO_ON);
+    }, 1000);
+  } else {
+    socket.send(AUDIO_OFF);
+    audioCursor = 0;
+  }
+}
+
+function setAudioLevel(level: number): void {
+  audioLevel = Math.min(1, Math.max(0, level));
+  if (audioGain) audioGain.gain.value = audioLevel;
+}
+
+/** One `AMAG` block. Blocks are scheduled back to back on the audio clock; a
+ *  late block restarts the cursor just ahead of now, which leaves a gap rather
+ *  than drifting the sound away from the picture. */
+function queueAudioBlock(bytes: ArrayBuffer): void {
+  if (bytes.byteLength <= AUDIO_HEADER_BYTES) return;
+  const view = new DataView(bytes);
+  if (view.getUint32(0, true) !== AUDIO_MAGIC) return;
+  const rate = view.getUint32(4, true);
+  const channels = view.getUint16(8, true);
+  const frames = view.getUint16(10, true);
+  if (rate < 8000 || rate > 192000 || channels < 1 || channels > 2 || frames === 0) return;
+  if (AUDIO_HEADER_BYTES + frames * channels * 2 > bytes.byteLength) return;
+  const ctx = ensureAudio();
+  const pcm = new Int16Array(bytes, AUDIO_HEADER_BYTES, frames * channels);
+  const buffer = ctx.createBuffer(channels, frames, rate);
+  for (let channel = 0; channel < channels; channel += 1) {
+    const data = buffer.getChannelData(channel);
+    for (let frame = 0; frame < frames; frame += 1) {
+      data[frame] = pcm[frame * channels + channel] / 32768;
+    }
+  }
+  if (!audioMaster) return;
+  const node = ctx.createBufferSource();
+  node.buffer = buffer;
+  node.connect(audioMaster);
+  const now = ctx.currentTime;
+  if (audioCursor < now + 0.01) audioCursor = now + AUDIO_LEAD_SECONDS;
+  node.start(audioCursor);
+  audioCursor += frames / rate;
+}
+
+// ------------------------------------------------------ whole-match capture
+
+function recordButton(): HTMLButtonElement | null {
+  return document.getElementById("screen-record") as HTMLButtonElement | null;
+}
+
+/** The container the browser will actually write. VP9 first, then VP8, then
+ *  whatever the implementation prefers. */
+function recordMimeType(): string {
+  const candidates = [
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm",
+  ];
+  for (const candidate of candidates) {
+    if (MediaRecorder.isTypeSupported(candidate)) return candidate;
+  }
+  return "";
+}
+
+/** Record the match the way it is being watched: the composited canvas plus
+ *  the same mix the speakers get, so the file needs no post-processing. */
+function startRecording(): void {
+  if (recorder) return;
+  const canvas = document.getElementById("screen-canvas") as HTMLCanvasElement | null;
+  if (!canvas || typeof canvas.captureStream !== "function") return;
+  const ctx = ensureAudio();
+  if (!audioCapture) {
+    audioCapture = ctx.createMediaStreamDestination();
+    // Before the volume control: muting the speakers must not mute the file.
+    if (audioMaster) audioMaster.connect(audioCapture);
+  }
+  const stream = canvas.captureStream(30);
+  for (const track of audioCapture.stream.getAudioTracks()) stream.addTrack(track);
+  const mimeType = recordMimeType();
+  try {
+    recorder = new MediaRecorder(stream, {
+      ...(mimeType ? { mimeType } : {}),
+      videoBitsPerSecond: 12_000_000,
+      audioBitsPerSecond: 128_000,
+    });
+  } catch {
+    recorder = null;
+    return;
+  }
+  recordedChunks = [];
+  recorder.ondataavailable = (event: BlobEvent) => {
+    if (event.data.size > 0) recordedChunks.push(event.data);
+  };
+  recorder.onstop = () => {
+    const type = recorder?.mimeType || "video/webm";
+    const blob = new Blob(recordedChunks, { type });
+    recordedChunks = [];
+    recorder = null;
+    saveRecording(blob);
+    updateRecordUi();
+  };
+  // A timeslice keeps the chunks small, so a long match never holds the whole
+  // recording in one blob while it runs.
+  recorder.start(2000);
+  recordStartedAt = Date.now();
+  if (recordTimer !== null) window.clearInterval(recordTimer);
+  recordTimer = window.setInterval(updateRecordUi, 1000);
+  updateRecordUi();
+}
+
+/** A record request made while the match is still held. The file has to open
+ *  on the match's first frame, so the recorder waits for the start instead of
+ *  filming a frozen picture. */
+let recordArmed = false;
+
+function stopRecording(): void {
+  if (recorder && recorder.state !== "inactive") recorder.stop();
+}
+
+/** One button, three states: idle, armed (waiting for a held match), and
+ *  recording. Pressing it while armed cancels; pressing it while held arms
+ *  it, so the match's start opens the file. */
+function toggleRecording(): void {
+  if (recordArmed) {
+    recordArmed = false;
+    updateRecordUi();
+    return;
+  }
+  if (recorder) {
+    stopRecording();
+    return;
+  }
+  if (matchHeld) {
+    recordArmed = true;
+    updateRecordUi();
+    return;
+  }
+  startRecording();
+}
+
+/** Ask the engine to release its pre-match hold. Recording is a separate
+ *  button on purpose: a file that starts with the match is one click, and so
+ *  is a file that starts mid-match, without a combined action deciding for
+ *  the operator. A match that is already running ignores the request and
+ *  this is simply a no-op. */
+function startMatch(): void {
+  startRequestedAt = Date.now();
+  // An armed request opens the file on this click, before the engine is even
+  // asked: no snapshot round trip stands between frame zero and the file.
+  if (recordArmed && !recorder) {
+    recordArmed = false;
+    startRecording();
+  }
+  if (socket?.readyState === WebSocket.OPEN) socket.send(MATCH_START);
+  updateStartButton(matchHeld);
+}
+
+/** The start button follows the engine's own hold flag, so it appears
+ *  exactly while a match is loaded and waiting and disappears the moment the
+ *  world runs — including matches started from the game's own menu. */
+function updateStartButton(held: boolean | null): void {
+  const button = document.getElementById("screen-start") as HTMLButtonElement | null;
+  if (!button) return;
+  const pending = Date.now() - startRequestedAt < 2000;
+  button.hidden = held === false || pending;
+}
+
+function saveRecording(blob: Blob): void {
+  const stamp = new Date(recordStartedAt || Date.now())
+    .toISOString()
+    .replace(/[:.]/g, "-")
+    .slice(0, 19);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `vera-spectate-${stamp}.webm`;
+  link.click();
+  // The download owns the blob once the click returns.
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function updateRecordUi(): void {
+  const button = recordButton();
+  if (!button) return;
+  button.classList.toggle("recording", recorder !== null);
+  button.classList.toggle("armed", recordArmed && recorder === null);
+  if (recordArmed && recorder === null) {
+    if (recordTimer !== null) {
+      window.clearInterval(recordTimer);
+      recordTimer = null;
+    }
+    button.textContent = t("screen.armed");
+    return;
+  }
+  if (recorder === null) {
+    if (recordTimer !== null) {
+      window.clearInterval(recordTimer);
+      recordTimer = null;
+    }
+    button.textContent = t("screen.record");
+    return;
+  }
+  const seconds = Math.floor((Date.now() - recordStartedAt) / 1000);
+  const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const ss = String(seconds % 60).padStart(2, "0");
+  button.textContent = t("screen.recording", { time: `${mm}:${ss}` });
+}
+
+function updateScreenMeta(): void {
+  const meta = document.getElementById("screen-meta");
+  if (!meta) return;
+  // A held match has a picture but no passing time; the size reading would
+  // look like a frozen stream instead of a waiting one.
+  if (matchHeld) {
+    meta.textContent = t("screen.held");
+    return;
+  }
+  if (screenFullW === 0) return;
+  meta.textContent = t("screen.live", {
+    w: String(screenFullW),
+    h: String(screenFullH),
+    n: String(screenTilesHz),
+  });
+}
+
+/** The offscreen buffer that holds the whole picture at its intrinsic size. */
+function ensureScreenBack(w: number, h: number): CanvasRenderingContext2D | null {
+  if (!screenBack) {
+    screenBack = document.createElement("canvas");
+    screenBackCtx = screenBack.getContext("2d", { alpha: false });
+  }
+  if (screenBack.width !== w || screenBack.height !== h) {
+    screenBack.width = w;
+    screenBack.height = h;
+    screenBackCtx = screenBack.getContext("2d", { alpha: false });
+  }
+  return screenBackCtx;
+}
+
+/** Composite the whole picture once per animation frame. rAF is already
+ *  capped at the display refresh rate, so a stream faster than the display
+ *  still produces at most one paint per refresh. */
+function screenPresentLoop(): void {
+  if (screenDirty && screenCtx && screenBack) {
+    screenCtx.drawImage(screenBack, 0, 0);
+    screenDirty = false;
+  }
+  window.requestAnimationFrame(screenPresentLoop);
+}
+
+/** One binary frame is one complete, coherent picture of the whole map. Its
+ *  header carries the full picture size and a rectangle (the engine sends the
+ *  whole canvas as one rectangle); the rest is tight RGBA pixels. */
+function drawScreenTile(buffer: ArrayBuffer): void {
+  if (buffer.byteLength < SCREEN_HEADER_BYTES) return;
+  const head = new DataView(buffer);
+  if (head.getUint32(0, true) !== SCREEN_MAGIC) return;
+  const fullW = head.getUint32(4, true);
+  const fullH = head.getUint32(8, true);
+  const x = head.getUint32(12, true);
+  const y = head.getUint32(16, true);
+  const w = head.getUint32(20, true);
+  const h = head.getUint32(24, true);
+  // Bounds are checked before any allocation: a malformed or truncated frame
+  // must not resize the canvas or throw from ImageData.
+  if (!fullW || !fullH || !w || !h || fullW > 16384 || fullH > 16384) return;
+  const pixels = w * h * 4;
+  if (x + w > fullW || y + h > fullH) return;
+  if (buffer.byteLength !== SCREEN_HEADER_BYTES + pixels) return;
+  const canvas = document.getElementById("screen-canvas") as HTMLCanvasElement | null;
+  if (!canvas) return;
+  if (canvas.width !== fullW || canvas.height !== fullH) {
+    canvas.width = fullW;
+    canvas.height = fullH;
+    screenCtx = canvas.getContext("2d", { alpha: false });
+    screenFullW = fullW;
+    screenFullH = fullH;
+  }
+  if (!screenCtx) screenCtx = canvas.getContext("2d", { alpha: false });
+  const backCtx = ensureScreenBack(fullW, fullH);
+  if (!backCtx || !screenCtx) return;
+  const image = new ImageData(
+    new Uint8ClampedArray(buffer, SCREEN_HEADER_BYTES, pixels),
+    w,
+    h,
+  );
+  backCtx.putImageData(image, x, y);
+  screenDirty = true;
+  const empty = document.getElementById("screen-empty");
+  if (empty) empty.hidden = true;
+  screenTiles += 1;
+}
+
 /** Header tabs: show one view, hide the others. A switch into the detail view
  *  redraws immediately because its canvases were zero-sized while hidden. */
 function setupViews(): void {
@@ -2513,6 +2975,9 @@ function setupViews(): void {
     document.getElementById("view-detail")?.classList.toggle("on", view === "detail");
     document.getElementById("view-report")?.classList.toggle("on", view === "report");
     document.getElementById("view-logs")?.classList.toggle("on", view === "logs");
+    document.getElementById("view-screen")?.classList.toggle("on", view === "screen");
+    // The engine only renders the extra whole-map pass while a viewer is here.
+    setScreenSubscription(view === "screen");
     if (view === "detail" && lastSnapshot) renderDetail(lastSnapshot);
     if (view === "report") renderReport();
     if (view === "logs") rebuildLogView();
@@ -2521,6 +2986,35 @@ function setupViews(): void {
   document.getElementById("view-detail")?.addEventListener("click", () => show("detail"));
   document.getElementById("view-report")?.addEventListener("click", () => show("report"));
   document.getElementById("view-logs")?.addEventListener("click", () => show("logs"));
+  document.getElementById("view-screen")?.addEventListener("click", () => show("screen"));
+  document.getElementById("screen-back")?.addEventListener("click", () => show("wall"));
+  document.getElementById("screen-record")?.addEventListener("click", toggleRecording);
+  document.getElementById("screen-start")?.addEventListener("click", startMatch);
+  document.getElementById("screen-audio-on")?.addEventListener("change", (event) => {
+    const enabled = (event.target as HTMLInputElement).checked;
+    setAudioLevel(enabled ? AUDIO_DEFAULT_VOLUME : 0);
+    const slider = document.getElementById("screen-volume") as HTMLInputElement | null;
+    if (slider) slider.value = String(Math.round((enabled ? AUDIO_DEFAULT_VOLUME : 0) * 100));
+    if (enabled) ensureAudio();
+    // Unsubscribing is what hands the game's own speakers back: the engine
+    // mutes them only while a dashboard plays the mix.
+    setAudioSubscription(enabled);
+  });
+  document.getElementById("screen-volume")?.addEventListener("input", (event) => {
+    const value = Number((event.target as HTMLInputElement).value);
+    setAudioLevel(value / 100);
+    const toggle = document.getElementById("screen-audio-on") as HTMLInputElement | null;
+    if (toggle) toggle.checked = value > 0;
+  });
+  document.getElementById("screen-full")?.addEventListener("click", () => {
+    const stage = document.getElementById("screen-stage");
+    if (!stage) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+    } else {
+      void stage.requestFullscreen().catch(() => {});
+    }
+  });
   document.getElementById("log-pause")?.addEventListener("click", toggleLogPause);
   document.getElementById("log-clear")?.addEventListener("click", clearLogs);
   document.getElementById("log-follow")?.addEventListener("change", (event) => {
@@ -3246,6 +3740,9 @@ function connect(): void {
     return;
   }
   socket = next;
+  // Picture tiles arrive as binary frames; JSON snapshots keep arriving as
+  // strings on the same socket.
+  next.binaryType = "arraybuffer";
   let terminalFailure = false;
   connectionTimer = window.setTimeout(() => {
     connectionTimer = null;
@@ -3260,6 +3757,10 @@ function connect(): void {
       next.close(1002, "Unexpected protocol");
       return;
     }
+    // A reconnect must re-arm the subscription: the server keeps no state
+    // beyond a single socket.
+    if (screenSubscribed) next.send(SCREEN_ON);
+    if (audioSubscribed) next.send(AUDIO_ON);
     setStatus(true);
   };
   next.onclose = (event) => {
@@ -3267,6 +3768,7 @@ function connect(): void {
     clearConnectionTimer();
     socket = null;
     updateDebugTools(null, false);
+    resetScreenPicture();
     if (disposed) return;
     if (terminalFailure || event.code === 1008 || event.code === 1002) {
       setStatus(false, "status.sessionRejected");
@@ -3278,7 +3780,21 @@ function connect(): void {
     if (socket === next && !disposed) next.close();
   };
   next.onmessage = (event) => {
-    if (disposed || socket !== next || typeof event.data !== "string") return;
+    if (disposed || socket !== next) return;
+    if (event.data instanceof ArrayBuffer) {
+      // Both streams are binary and small enough to tell apart by magic: the
+      // picture is megabytes, the audio a few kilobytes, so test audio first.
+      if (
+        event.data.byteLength >= AUDIO_HEADER_BYTES &&
+        new DataView(event.data).getUint32(0, true) === AUDIO_MAGIC
+      ) {
+        queueAudioBlock(event.data);
+        return;
+      }
+      if (currentView === "screen") drawScreenTile(event.data);
+      return;
+    }
+    if (typeof event.data !== "string") return;
     let snapshot: TelemetrySnapshot;
     try {
       snapshot = JSON.parse(event.data) as TelemetrySnapshot;
@@ -3342,6 +3858,7 @@ function connect(): void {
 // ------------------------------------------------------------ bootstrap
 
 applyStaticTranslations();
+window.requestAnimationFrame(screenPresentLoop);
 syncSwitcher();
 renderStatus();
 setupViews();
@@ -3367,6 +3884,9 @@ onLocaleChange(() => {
   if (currentView === "detail" && lastSnapshot) renderDetailCards(lastSnapshot);
   renderHouseModal();
   if (currentView === "report") renderReportSoon();
+  // Static translation just rewrote the picture's status label; put the live
+  // size and tile rate back if a picture is already on screen.
+  if (currentView === "screen") updateScreenMeta();
   if (!lastSnapshot) return;
   updateTerrain(lastSnapshot.debug);
   updatePopulation(lastSnapshot);
@@ -3384,6 +3904,9 @@ window.addEventListener("resize", () => {
 const statusTimer = window.setInterval(() => {
   snapHz = snapTicks;
   snapTicks = 0;
+  screenTilesHz = screenTiles;
+  screenTiles = 0;
+  if (currentView === "screen") updateScreenMeta();
   renderStatus();
   // A second without a snapshot is the same evidence the pill uses: the stream
   // is not carrying this match any more, so nothing the chips say is current.
@@ -3398,6 +3921,8 @@ window.addEventListener("pagehide", () => {
   updateDebugTools(null, false);
   sessionToken = null;
   window.clearInterval(statusTimer);
+  if (screenSubscribeTimer !== null) window.clearInterval(screenSubscribeTimer);
+  screenSubscribeTimer = null;
   if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
   reconnectTimer = null;
   clearConnectionTimer();

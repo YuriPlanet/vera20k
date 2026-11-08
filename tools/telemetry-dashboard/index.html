@@ -53,6 +53,10 @@
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M2 8h12M2 12.5h8"/></svg>
       <span data-i18n="nav.logs">logs</span>
     </button>
+    <button id="view-screen" class="nav-item" data-view="screen">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 3.5 8 1.5l6.5 2v9L8 14.5l-6.5-2z"/><path d="M1.5 3.5 8 5.5l6.5-2M8 5.5v9"/></svg>
+      <span data-i18n="nav.screen">whole map</span>
+    </button>
   </nav>
 
   <button id="debug-tools-open" class="switch" type="button" hidden data-i18n="tools.open">Offline debug tools</button>
@@ -290,6 +294,29 @@
   </section>
 </main>
 
+<!-- Live whole-map picture. The engine streams tiles of its real tactical
+     render (shroud and sidebar removed) over the same authenticated socket.
+     The canvas keeps the picture's intrinsic size; CSS scales it to fit. -->
+<main id="screen" class="screen">
+  <div class="screen-bar">
+    <span class="screen-label" data-i18n="nav.screen">whole map</span>
+    <span id="screen-meta" class="screen-meta" data-i18n="screen.waiting">waiting for picture…</span>
+    <span class="screen-spacer"></span>
+    <label class="screen-toggle" title="live game audio; the game's own speakers stay muted while this page plays it (start the game with VERA_SPECTATE_LOCAL_AUDIO=1 to keep both)">
+      <input id="screen-audio-on" type="checkbox" checked>
+      <span data-i18n="screen.audio">sound</span>
+    </label>
+    <input id="screen-volume" class="screen-volume" type="range" min="0" max="100" value="80" aria-label="live audio volume">
+    <button id="screen-start" class="panel-btn screen-record" type="button" data-i18n="screen.start" title="the match is loaded but paused; this releases it. recording stays a separate button" hidden>start match</button>
+    <button id="screen-record" class="panel-btn screen-record" type="button" data-i18n="screen.record" title="while the match is held at tick zero this arms the file and opens it on the first frame; pressing again cancels">record match</button>
+    <button id="screen-back" class="panel-btn" type="button" data-i18n="screen.back">back to console</button>
+    <button id="screen-full" class="panel-btn" type="button" data-i18n="screen.full">browser full screen</button>
+  </div>
+  <div class="screen-stage" id="screen-stage">
+    <canvas id="screen-canvas" width="1" height="1" aria-label="live whole-map game picture"></canvas>
+    <div id="screen-empty" class="screen-empty" data-i18n="screen.empty">Open this page to receive a live whole-map picture. The engine pushes it tile by tile, with no shroud and no sidebar.</div>
+  </div>
+</main>
 
 
 <div id="shot-modal" class="shot-modal" hidden>

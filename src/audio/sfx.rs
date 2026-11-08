@@ -32,11 +32,9 @@ use std::sync::Arc;
 
 use rodio::Player;
 use rodio::buffer::SamplesBuffer;
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-use rodio::{DeviceSinkBuilder, MixerDeviceSink};
 
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-type SfxOutput = MixerDeviceSink;
+type SfxOutput = crate::audio::tap_output::SharedOutput;
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 type SfxOutput = crate::audio::web_output::WebAudioSink;
 
@@ -1331,7 +1329,10 @@ const MAX_COORDINATE_REQUESTS: usize = 200;
 /// device ever rendered them. DirectSound starts a secondary buffer as it is
 /// played, so native ticks are audible. A period below the pump interval lets
 /// each cue reach the device first. Clamped to the device's supported range.
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(all(
+    test,
+    not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))
+))]
 fn sfx_buffer_frames(sample_rate: u32, supported: &rodio::cpal::SupportedBufferSize) -> u32 {
     let target = (sample_rate / 100).max(1).next_power_of_two();
     match *supported {
@@ -1340,34 +1341,14 @@ fn sfx_buffer_frames(sample_rate: u32, supported: &rodio::cpal::SupportedBufferS
     }
 }
 
-/// Open the default output with [`sfx_buffer_frames`], falling back to
-/// rodio's own default sink when the device refuses that period.
+/// Join the shared output. It already runs the 512-frame period
+/// [`sfx_buffer_frames`] derives, so short cues still reach the device before
+/// the arbiter stops them, and both players mix into the one source the
+/// dashboard taps.
 #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
-fn open_sfx_sink() -> Result<SfxOutput, rodio::DeviceSinkError> {
-    use rodio::cpal::traits::{DeviceTrait, HostTrait};
-
-    let low_latency = rodio::cpal::default_host()
-        .default_output_device()
-        .and_then(|device| {
-            let config = device.default_output_config().ok()?;
-            let frames = sfx_buffer_frames(config.sample_rate(), config.buffer_size());
-            DeviceSinkBuilder::from_device(device)
-                .ok()?
-                .with_buffer_size(rodio::cpal::BufferSize::Fixed(frames))
-                .open_stream()
-                .inspect(|_| {
-                    log::info!(
-                        "SFX output buffer: {frames} frames at {} Hz",
-                        config.sample_rate()
-                    );
-                })
-                .map_err(|e| log::warn!("SFX low-latency output unavailable ({e}); using default"))
-                .ok()
-        });
-    match low_latency {
-        Some(sink) => Ok(sink),
-        None => DeviceSinkBuilder::open_default_sink(),
-    }
+fn open_sfx_sink() -> Result<SfxOutput, String> {
+    crate::audio::tap_output::SharedOutput::open()
+        .ok_or_else(|| "no audio output device".to_owned())
 }
 
 /// The browser keeps short blocks with a deeper queue; see

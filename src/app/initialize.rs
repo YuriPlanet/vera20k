@@ -1137,6 +1137,7 @@ impl App {
                 configured_input_delay_ticks: input_delay_ticks,
                 sandbox_full_visibility: false,
                 debug_pause: false,
+                spectate_hold: quickplay_hold_requested(),
                 // KD-3: unify the two game-speed sources. `in_game_options.game_speed`
                 // (in the presentation owner) is the single source of truth; seed it
                 // from the skirmish-setup speed (internal 1) and derive
@@ -1349,23 +1350,113 @@ impl App {
     }
 }
 
+/// `RA2_QUICKPLAY_HOLD`: load the quickplay match, render it at tick zero,
+/// and let nothing advance until a dashboard asks for the start
+/// (`vera-match.start`).
+///
+/// The point is the recording. A dashboard that attaches to a running match
+/// cannot record what already happened, and the first seconds of a match are
+/// exactly the ones an opening build order lives in. Held at tick zero, the
+/// first frame of the file is the first frame of the match. Only the quickplay
+/// shortcut is held; a match launched from the menus keeps its own pacing,
+/// because there is no dashboard-driven flow behind it.
+///
+/// A telemetry launch waits by default — the dashboard is the only thing that
+/// can start such a match, and nobody wants to miss its opening while the page
+/// loads. Setting the variable decides explicitly: `0` starts the match the
+/// moment it loads, which is the old behaviour and handy for a plain quickplay
+/// run. A launch with no telemetry address never waits.
+fn quickplay_hold_requested() -> bool {
+    let explicit = std::env::var("RA2_QUICKPLAY_HOLD").ok();
+    let requested = match explicit.as_deref() {
+        Some(value) => matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "on" | "true" | "yes"
+        ),
+        None => std::env::var_os("VERA_TELEMETRY_ADDR").is_some(),
+    };
+    if !requested {
+        return false;
+    }
+    if std::env::var_os("RA2_QUICKPLAY").is_none() {
+        log::warn!("RA2_QUICKPLAY_HOLD needs RA2_QUICKPLAY; the match starts as usual");
+        return false;
+    }
+    if explicit.is_none() {
+        log::info!(
+            "Quickplay hold defaults on for a telemetry launch: the match loads and waits for \
+             the dashboard's start (RA2_QUICKPLAY_HOLD=0 starts it immediately)"
+        );
+    } else {
+        log::info!("RA2_QUICKPLAY_HOLD: the match loads and waits for the dashboard's start");
+    }
+    true
+}
+
 /// `RA2_QUICKPLAY=<map>`: VERA-internal authored-map sandbox using the legacy
 /// Battle loader, with one local house and no generated opponents or forces.
 /// The mode is the roster's Battle row, as the skirmish shell would select it;
 /// without one the shortcut does not launch. Map pictures load their map with
 /// it too (`map_picture::session`).
+///
+/// `RA2_QUICKPLAY_AI_COUNT=N` turns the shortcut into an AI-only match: N
+/// computer houses build and fight, while the single local slot is a
+/// non-playing observer (no base, no starting forces). The fixture path
+/// (count 0) keeps its no-bases, no-forces semantics unchanged.
 pub(crate) fn quickplay_launch_session(
     selected_map: String,
     modes: &[crate::skirmish_modes::SkirmishGameMode],
 ) -> Option<crate::skirmish_launch::SkirmishLaunchSession> {
     use crate::skirmish_launch::{
-        BATTLE_MODE_ID, LaunchCountry, LaunchStartPosition, LaunchTeam, SkirmishLaunchMode,
-        SkirmishLaunchOptions, SkirmishLaunchSession, SkirmishLocalSlot,
+        AiDifficulty, BATTLE_MODE_ID, LaunchCountry, LaunchStartPosition, LaunchTeam,
+        SkirmishLaunchMode, SkirmishLaunchOptions, SkirmishLaunchSession, SkirmishLocalSlot,
     };
     let Some(battle) = crate::skirmish_modes::mode_by_id(modes, BATTLE_MODE_ID) else {
         log::warn!("RA2_QUICKPLAY needs the MPModesMD.ini Battle row; not launching");
         return None;
     };
+    let ai_count = std::env::var("RA2_QUICKPLAY_AI_COUNT")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0)
+        .min(crate::skirmish_launch::SKIRMISH_AI_SLOT_COUNT);
+    if ai_count > 0 {
+        // Retail's hardest row is `[Difficult]`; the dashboard calls it
+        // "brutal"/"冷酷". `AiDifficulty::Hard` is its VERA representation.
+        let difficulty = match std::env::var("RA2_QUICKPLAY_AI_DIFFICULTY").as_deref() {
+            Ok("easy") => AiDifficulty::Easy,
+            Ok("normal") => AiDifficulty::Normal,
+            _ => AiDifficulty::Hard,
+        };
+        let countries = [
+            LaunchCountry::Russia,
+            LaunchCountry::Yuri,
+            LaunchCountry::Iraq,
+            LaunchCountry::Korea,
+            LaunchCountry::France,
+            LaunchCountry::Cuba,
+            LaunchCountry::GreatBritain,
+        ];
+        let roster: Vec<(LaunchCountry, AiDifficulty)> = (0..ai_count)
+            .map(|index| (countries[index % countries.len()], difficulty))
+            .collect();
+        // `battle_session` already fills the AI slots and the default options
+        // (bases on, starting units), which the fixture path turns off.
+        let mut session = crate::headless_scenario::battle_session(&selected_map, &roster);
+        session.mode = SkirmishLaunchMode::from_game_mode(battle);
+        // No human takes part: the one local slot is a non-playing observer.
+        // The scenario bootstrap skips observers when handing out bases and
+        // starting forces, so only the computer houses fight. The slot must
+        // stay because `local_player()` is indexed by most of the app.
+        session.humans[0].name = "Observer".to_string();
+        session.humans[0].role =
+            crate::skirmish_launch::LaunchHumanRole::from_observer(true);
+        session.rebuild_house_roster();
+        log::info!(
+            "RA2_QUICKPLAY: {ai_count} {difficulty:?} AI opponents on {selected_map}, local slot is an observer"
+        );
+        return Some(session);
+    }
     Some(SkirmishLaunchSession {
         mode: SkirmishLaunchMode::from_game_mode(battle),
         selected_map_file: Some(selected_map),
@@ -1788,6 +1879,15 @@ mod tests {
     }
 }
 
+/// Leave this run's dashboard URL where the machine's user can find it again.
+/// Loopback-only, and the credential is regenerated on every launch.
+#[cfg(feature = "telemetry-dashboard")]
+fn write_dashboard_url(url: &str) -> std::io::Result<()> {
+    let directory = std::path::Path::new("logs");
+    std::fs::create_dir_all(directory)?;
+    std::fs::write(directory.join("dashboard-url.txt"), format!("{url}\n"))
+}
+
 /// The credential is printed only to the local terminal, outside captured logs.
 #[cfg(feature = "telemetry-dashboard")]
 fn attach_dashboard(state: &mut crate::app::AppState) {
@@ -1798,7 +1898,16 @@ fn attach_dashboard(state: &mut crate::app::AppState) {
             let description = "Telemetry dashboard (offline debug tools enabled)";
             #[cfg(not(feature = "debug-tools"))]
             let description = "Read-only telemetry dashboard";
-            eprintln!("{description}: {}", server.bootstrap_url());
+            let url = server.bootstrap_url();
+            eprintln!("{description}: {url}");
+            // A double-clicked launch, or a console that scrolled away, leaves
+            // no terminal to read the credential from. Keep the same URL in the
+            // log directory; it is loopback-only and regenerated every run.
+            if let Err(error) = write_dashboard_url(&url) {
+                log::warn!("Dashboard URL file unavailable: {error}");
+            }
+            state.diag.audio_pump =
+                Some(crate::app::telemetry_audio::AudioPump::spawn(server.audio_sink()));
             Some(server)
         }
         Some(Err(error)) => {

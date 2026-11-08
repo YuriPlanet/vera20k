@@ -67,15 +67,20 @@ pub(crate) fn webgl_fallback(device: &wgpu::Device) -> bool {
 pub struct GpuFrame {
     pub texture: wgpu::Texture,
     surface: Option<wgpu::SurfaceTexture>,
+    /// The context's live-frame counter while this frame owes the surface a
+    /// present; `None` for a frame that has already settled or never held one.
+    live: Option<Arc<AtomicUsize>>,
     #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
     web_present: Option<Arc<web_present::WebPresent>>,
 }
 
 impl GpuFrame {
-    fn from_surface(surface: wgpu::SurfaceTexture) -> Self {
+    fn from_surface(surface: wgpu::SurfaceTexture, live: Arc<AtomicUsize>) -> Self {
+        live.fetch_add(1, Ordering::Relaxed);
         Self {
             texture: surface.texture.clone(),
             surface: Some(surface),
+            live: Some(live),
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             web_present: None,
         }
@@ -83,14 +88,29 @@ impl GpuFrame {
 
     /// Hand the acquired surface texture to the queue. wgpu 30 moved
     /// presentation off `SurfaceTexture`, so the caller passes its queue.
-    pub fn present(self, queue: &wgpu::Queue) {
-        if let Some(surface) = self.surface {
+    pub fn present(mut self, queue: &wgpu::Queue) {
+        if let Some(surface) = self.surface.take() {
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             if let Some(presenter) = self.web_present {
                 presenter.present(&surface);
             }
             queue.present(surface);
         }
+        self.settle();
+    }
+
+    fn settle(&mut self) {
+        if let Some(live) = self.live.take() {
+            live.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+}
+
+impl Drop for GpuFrame {
+    fn drop(&mut self) {
+        // A frame dropped without presenting releases its surface texture, so
+        // the next configure sees an empty swapchain; count it as gone.
+        self.settle();
     }
 }
 
@@ -127,6 +147,7 @@ impl CaptureTarget {
         GpuFrame {
             texture: self.texture.clone(),
             surface: None,
+            live: None,
             #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
             web_present: None,
         }
@@ -539,9 +560,17 @@ impl GpuContext {
             .get_mut()
             .unwrap_or_else(PoisonError::into_inner)
         {
-            surface.configure(&self.device, &self.config);
+            configure_surface(&self.device, surface, &self.config, "resize");
         }
         if let Some(target) = &mut self.capture_target {
+            target.resize(&self.device, &self.config);
+        }
+        if let Some(target) = self
+            .offscreen_frame
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_mut()
+        {
             target.resize(&self.device, &self.config);
         }
         #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
@@ -570,26 +599,61 @@ impl GpuContext {
         if let Some(target) = &self.capture_target {
             return Ok(Some(target.frame()));
         }
+        // A minimised window has no surface to acquire, but the whole-map
+        // viewer reads its picture from the frame this pass draws. Draw it
+        // offscreen so a hidden match keeps streaming to the dashboard.
+        let no_window = self.window.is_minimized().unwrap_or(false)
+            || !self.window.is_visible().unwrap_or(true);
+        if no_window {
+            let mut slot = self
+                .offscreen_frame
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            let target = slot.get_or_insert_with(|| CaptureTarget::new(&self.device, &self.config));
+            return Ok(Some(target.frame()));
+        }
         acquire_with_recovery(|recovery| {
-            if let Some(recovery) = recovery {
-                log::warn!(
-                    "Surface texture: {recovery:?}; recovering the surface at {}x{}",
-                    self.config.width,
-                    self.config.height
-                );
-                if recovery == SurfaceRecovery::Recreate {
+            match recovery {
+                None => {}
+                Some(SurfaceRecovery::Stale) => {
+                    log::debug!(
+                        "Surface texture: stale swapchain; reconfiguring at {}x{}",
+                        self.config.width,
+                        self.config.height
+                    );
+                    configure_surface(&self.device, surface, &self.config, "stale");
+                }
+                Some(SurfaceRecovery::Lost) => {
+                    log::warn!(
+                        "Surface texture: lost; recreating it at {}x{}",
+                        self.config.width,
+                        self.config.height
+                    );
                     *surface = self
                         .instance
                         .create_surface(self.window.clone())
                         .context("recreate lost wgpu surface")?;
+                    configure_surface(&self.device, surface, &self.config, "recreated");
                 }
-                surface.configure(&self.device, &self.config);
+                Some(SurfaceRecovery::Unconfigured) => {
+                    // wgpu takes the surface's presentation state down with a
+                    // failed `configure`, and every later acquisition answers
+                    // `Validation`. Ask for it back before drawing. A frame the
+                    // app still holds is the one cause this retry cannot fix.
+                    log::warn!(
+                        "Surface gave no frame (validation); reconfiguring it at {}x{} ({} frame(s) held)",
+                        self.config.width,
+                        self.config.height,
+                        self.live_frames.load(Ordering::Relaxed)
+                    );
+                    configure_surface(&self.device, surface, &self.config, "recovery");
+                }
             }
             Ok(surface.get_current_texture())
         })
         .map(|frame| {
             frame.map(|surface| {
-                let frame = GpuFrame::from_surface(surface);
+                let frame = GpuFrame::from_surface(surface, Arc::clone(&self.live_frames));
                 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
                 let frame = GpuFrame {
                     texture: self.web_present.texture.clone(),
@@ -746,17 +810,38 @@ mod tests {
     fn stale_swapchain_reconfigures_once_and_skips_if_still_stale() {
         let (outcome, requests) = acquire_over(vec![Outdated, Outdated]);
         assert!(outcome.unwrap().is_none());
-        assert_eq!(requests, [None, Some(SurfaceRecovery::Reconfigure)]);
+        assert_eq!(requests, [None, Some(SurfaceRecovery::Stale)]);
     }
 
     #[test]
-    fn lost_surface_recreates_once_and_validation_stays_an_error() {
+    fn lost_surface_recreates_once_and_gives_up_if_still_lost() {
         let (outcome, requests) = acquire_over(vec![Lost, Lost]);
         assert!(outcome.unwrap_err().to_string().contains("still lost"));
-        assert_eq!(requests, [None, Some(SurfaceRecovery::Recreate)]);
-        let (outcome, requests) = acquire_over(vec![Validation]);
+        assert_eq!(requests, [None, Some(SurfaceRecovery::Lost)]);
+    }
+
+    /// A surface whose `configure` failed answers `Validation` to every later
+    /// acquisition. That is recoverable — one more configure restores it — so
+    /// the acquisition recovers and asks again instead of failing the frame.
+    #[test]
+    fn validation_failure_reconfigures_and_tries_again() {
+        let (outcome, requests) = acquire_over(vec![Validation, Timeout]);
+        assert!(outcome.unwrap().is_none());
+        assert_eq!(requests, [None, Some(SurfaceRecovery::Unconfigured)]);
+    }
+
+    #[test]
+    fn repeated_validation_failures_exhaust_the_attempts() {
+        let (outcome, requests) = acquire_over(vec![Validation, Validation, Validation]);
         assert!(outcome.unwrap_err().to_string().contains("validation"));
-        assert_eq!(requests, [None]);
+        assert_eq!(
+            requests,
+            [
+                None,
+                Some(SurfaceRecovery::Unconfigured),
+                Some(SurfaceRecovery::Unconfigured)
+            ]
+        );
     }
 
     #[test]

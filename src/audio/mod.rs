@@ -13,6 +13,9 @@ pub mod events;
 pub mod movie_stream;
 pub mod music;
 pub mod sfx;
+/// Native output that both players share and the dashboard taps.
+#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+pub mod tap_output;
 pub(crate) mod theme;
 pub mod voice_queue;
 pub mod vox;

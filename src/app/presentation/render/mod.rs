@@ -897,24 +897,43 @@ fn upload_to_gpu(
     // tooltip (O10). Prepare once: nonsilent TextLabel72A4A0 advances its
     // raw-wall reveal and requests typing audio once per successful paint.
     // Keep the row's existing opaque black background behind its glyphs.
-    let (message_fill, message_text) = crate::app::input::messages::build_message_instances(state);
-    let (outcome_shape, outcome_text) = crate::app::presentation::outcome_banner::instances(state);
+    let (mut message_fill, mut message_text) =
+        crate::app::input::messages::build_message_instances(state);
+    let (mut outcome_shape, mut outcome_text) =
+        crate::app::presentation::outcome_banner::instances(state);
 
     // A4 in-game tooltip: built before the pool borrow (it reads &AppState);
     // fill (darken texture) + text (GAME.FNT atlas), drawn after the chat
     // overlay and before the software cursor (O10).
-    let (tooltip_fill, tooltip_border, tooltip_text) =
+    let (mut tooltip_fill, mut tooltip_border, mut tooltip_text) =
         crate::app::input::tooltips::build_tooltip_instances(state);
 
     // TacticalClass::Draw's timer lines, which follow the PixelFX sparkles;
     // built before the pool borrow (they step the Supers' blinks).
-    let (super_timer_fill, super_timer_text) =
+    let (mut super_timer_fill, mut super_timer_text) =
         crate::app::presentation::super_timers::build_super_timer_instances(state);
 
     // GScreenClass_DrawText's Phobos build description, the tactical view's
     // top-right identity box; empty outside Phobos builds.
-    let (build_text_fill, build_text_text) =
+    let (mut build_text_fill, mut build_text_text) =
         crate::app::presentation::build_text::build_instances(state);
+    // A whole-map picture (`map_picture`) draws the battlefield alone. These
+    // layers are anchored to the screen, not the world: every scan tile would
+    // otherwise repeat the same banner, message row and cursor at its own
+    // centre. Normal matches never set this flag, so their UI is unchanged.
+    if state.platform.capture_presentation.map_picture {
+        message_fill.clear();
+        message_text.clear();
+        outcome_shape.clear();
+        outcome_text.clear();
+        tooltip_fill.clear();
+        tooltip_border.clear();
+        tooltip_text.clear();
+        super_timer_fill.clear();
+        super_timer_text.clear();
+        build_text_fill.clear();
+        build_text_text.clear();
+    }
     state.renderer.bit_font.set_raster(frame_raster);
     let [message_fill, tooltip_fill, tooltip_border, super_timer_fill, build_text_fill] = [
         message_fill,
@@ -929,13 +948,17 @@ fn upload_to_gpu(
     });
     // The software cursor follows them into the window, last.
     let software_cursor: std::borrow::Cow<'_, [crate::render::batch::SpriteInstance]> =
-        match crate::app::presentation::window_ui::zoom_raster(state) {
-            Some(raster) => ui
-                .software_cursor
-                .iter()
-                .map(|quad| raster.quad(*quad))
-                .collect(),
-            None => ui.software_cursor.as_slice().into(),
+        if state.platform.capture_presentation.map_picture {
+            Vec::new().into()
+        } else {
+            match crate::app::presentation::window_ui::zoom_raster(state) {
+                Some(raster) => ui
+                    .software_cursor
+                    .iter()
+                    .map(|quad| raster.quad(*quad))
+                    .collect(),
+                None => ui.software_cursor.as_slice().into(),
+            }
         };
 
     #[cfg(feature = "ares")]

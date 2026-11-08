@@ -14,6 +14,25 @@ use super::{
 };
 use crate::ui::pause_menu::InGameMenuState;
 
+/// Report a failed frame, at most once a second.
+///
+/// A surface that lost its configuration fails every redraw, so an unthrottled
+/// error line buries the one failure that explains the rest and everything
+/// logged before it. The first failure of a run always gets through.
+fn log_render_error(err: &anyhow::Error) {
+    const REPEAT_WINDOW: std::time::Duration = std::time::Duration::from_secs(1);
+    static LAST: std::sync::Mutex<Option<Instant>> = std::sync::Mutex::new(None);
+    let mut last = LAST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let now = Instant::now();
+    if last.is_some_and(|previous| now.duration_since(previous) < REPEAT_WINDOW) {
+        return;
+    }
+    *last = Some(now);
+    log::error!("Render: {err:#}");
+}
+
 /// Active YR's launcher parent ignores IDCANCEL. Taking only an immutable
 /// reference makes the no-close/no-replacement guarantee explicit at the
 /// keyboard routing seam.
@@ -1879,7 +1898,7 @@ impl ApplicationHandler for App {
                     }
                     Ok(_) => {}
                     Err(err) => {
-                        log::error!("Render: {:#}", err);
+                        log_render_error(&err);
                         if state
                             .match_state
                             .match_diagnostics
@@ -2122,7 +2141,34 @@ impl ApplicationHandler for App {
                     event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
                 }
             } else if state.platform.window_hidden {
-                if Self::match_runs_while_hidden(state) {
+                // A subscribed whole-map viewer reads its picture from the
+                // frame this loop draws, not from the window. Draw it although
+                // nobody sees the window, so a minimised match keeps
+                // streaming; the GPU context renders that frame offscreen
+                // because a minimised window has no surface to acquire.
+                #[cfg(feature = "telemetry-dashboard")]
+                let spectator_draws = {
+                    crate::app::telemetry_map_view::sync(state);
+                    crate::app::telemetry_map_view::wants_frames_while_hidden(state)
+                };
+                #[cfg(not(feature = "telemetry-dashboard"))]
+                let spectator_draws = false;
+                if spectator_draws {
+                    match Self::render_frame(state, event_loop, None, None, FramePass::Draw) {
+                        Ok(FrameRenderOutcome::Deferred) => {
+                            event_loop.set_control_flow(ControlFlow::Poll);
+                            state.platform.window.request_redraw();
+                        }
+                        outcome => {
+                            if let Err(err) = outcome {
+                                log::error!("Spectator render: {err:#}");
+                            }
+                            event_loop.set_control_flow(ControlFlow::WaitUntil(
+                                Instant::now() + std::time::Duration::from_millis(8),
+                            ));
+                        }
+                    }
+                } else if Self::match_runs_while_hidden(state) {
                     // Minimised or fully covered, but the match is not frozen:
                     // keep the world and the audio service advancing without
                     // drawing frames no one can see. The service is not the
@@ -2162,7 +2208,7 @@ impl ApplicationHandler for App {
                     }
                     outcome => {
                         if let Err(err) = outcome {
-                            log::error!("Render: {err:#}");
+                            log_render_error(&err);
                         }
                         if state.platform.redraw_gate.next_pass()
                             == crate::app::match_runtime::redraw_gate::NextPass::Draw

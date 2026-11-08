@@ -382,6 +382,8 @@ export interface SessionContext {
   local_outcome: "Victory" | "Defeat" | null;
   /** The running binary's version stamp. */
   build_stamp: string;
+  /** Loaded but waiting for this console to release the start. */
+  held: boolean;
 }
 
 export interface TelemetrySnapshot {

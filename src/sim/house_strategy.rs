@@ -291,6 +291,16 @@ fn pick_enemy(
             1,
             session.game_mode_nonzero(),
         );
+        // The seed is the only place a house's first enemy appears, and a
+        // spectator match has no human to be angry at: without this line a
+        // dashboard showing two idle armies gives no clue whom they picked.
+        if let Some(enemy) = houses.get(&owner).and_then(|house| house.enemy_house()) {
+            log::info!(
+                "Enemy seed: {} takes {} as its enemy",
+                interner.resolve(owner),
+                interner.resolve(enemy)
+            );
+        }
     }
 }
 

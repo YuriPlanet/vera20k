@@ -42,6 +42,75 @@ $game = python -m tools.cargo_run --resolve vera20k --profile fast
 & $game
 ```
 
+## Whole-map spectator view
+
+The fifth header tab, **whole map**, opens a full-screen live picture of the
+entire battlefield. It is a spectator mode, not a second camera: while a viewer
+is subscribed, the tactical camera is fixed at the map's corner, shroud and fog
+are lifted, and the sidebar is not drawn. The game window shows only a one-line
+notice — it does not draw the player's view. The simulation keeps ticking at
+its normal rate, so this suits watching an AI match; a human cannot play while
+it is on. Closing the tab restores the camera, zoom and visibility the player
+had before.
+
+The whole map is rendered **in one frame** into a fixed **1920x1080** target,
+then cropped to the map's visible area. A 4560x2295 map is about 2:1, so it is
+fitted with a uniform zoom; the frame is cut to the `LocalSize` rectangle, which
+is what retail lets the camera reach, so the picture has no black band top or
+bottom (1920x797 for that map). The production wheel-zoom path renders the world
+at native scale into an enlarged source and resamples it into that picture;
+keeping this standard path matters, because voxel turrets, surface lines and the
+Z-depth passes all assume one world pixel per source texel. Every streamed frame
+is one complete, coherent picture as a single binary WebSocket frame — there is
+no tile scan and no progressive refresh, so moving units are continuous rather
+than a slideshow.
+
+The picture is captured asynchronously (two readbacks in flight), swizzled and
+published on a worker thread, so a 6 MB frame never sits in the render loop's
+budget. Measured at 1920x797 with two Hard AI: **59.7 pictures/s, 366 MB/s, 0
+malformed frames, render loop 59.4 fps**. `VERA_SPECTATOR_FPS` (1..=240, default
+90) caps the rate without a rebuild, but the simulation tick (60/s) is the real
+ceiling — a higher cap only repeats the same tick. Screen-fixed UI (message rows,
+outcome banners, tooltips, timer lines, the software cursor and the sidebar blit)
+is suppressed for these frames: it is anchored to the window, not the world.
+
+### Live audio
+
+The engine's music and SFX players share one mixer, and its samples are both
+played and copied into a lock-free PCM ring. A pump thread publishes **40 ms
+blocks of 48 kHz stereo PCM16** (~188 KiB/s) to subscribed dashboards, so the
+viewer hears exactly what the machine outputs: no second soundtrack, no
+re-encoding. The stream is separate from the picture stream — audio blocks are
+tens of kilobytes and take priority over a megabyte-sized frame — and blocks are
+dropped rather than queued when a viewer falls behind, which keeps the sound
+current instead of late. Audio follows the tab: opening **whole map** subscribes,
+leaving unsubscribes, and the toolbar has a mute checkbox and a volume slider.
+The context is created from the click that opens the view, which is the gesture
+browsers require before audio may start.
+
+The tap is an addition, not a requirement: if the device refuses the shared
+output, both players fall back to their own rodio sinks and the picture stream is
+unaffected. `tap_output` keeps the same 512-frame period the SFX path used, so
+short `CreditTicks` cues still reach the device before the arbiter stops them.
+
+### Recording a match
+
+The **record match** button captures the visible canvas (30 fps) plus the same
+mix the speakers get, and saves one `.webm` when stopped — VP9/Opus, falling back
+to VP8. It is a whole-match recording in the sense that matters: start it when
+the match starts, stop it when the match ends, and the file needs no
+post-processing. MediaRecorder runs in the page, so no video encoder ships with
+the engine; the cost is that the tab must stay open for the whole capture.
+
+The engine does none of this work when no viewer is attached. The mode starts
+only during an in-game match without an Options zoom pass. It changes
+presentation state only: it does not pause, step, or mutate the world.
+
+Collecting world
+instances for the entire map in a single frame raises `render.world_ms` from
+~1 ms to ~4.7 ms, which the asynchronous readback and the picture worker keep off
+the loop's critical path.
+
 ## Offline trainer and event hooks
 
 Use the same current `main` checkout, with the explicit extra feature:
@@ -108,7 +177,7 @@ This fixture animates artificial entities. Its timing is not a gameplay benchmar
 
 | Variable | Value | Effect |
 | --- | --- | --- |
-| `RA2_DIR` | retail install path | Where the engine reads `.mix` files. `config.toml` `[paths] ra2_dir` is the alternative; `RA2_DIR` wins when set. |
+| `RA2_DIR` | retail install path | Used by the tool binaries, headless benchmarks and tests. The game itself reads `config.toml` `[paths] ra2_dir` from its working directory (or beside the executable), not this variable. |
 | `RA2_QUICKPLAY` | map name or path (`.map`/`.mpr`/`.mmx`), or a `.sed` seed | Load straight into that map through the authored-map sandbox: one local house, no generated opponents and no starting forces. |
 | `RA2_DEBUG_SPAWN_UNITS` | `TYPE[:COUNT],...`, or `1` | Spawn units at load on the nearest free cells. A bare type is one unit; `=1` keeps the default list `HTNK,MTNK,E1`. |
 | `RA2_DEBUG_SPAWN_MARCH` | `1` or `rx,ry` | Order every spawned object to attack-move across the map (`1`) or to one cell. |
@@ -164,7 +233,10 @@ new hooks. CPU share is normalized to all logical cores. The GPU memory field
 counts the engine's palette-index atlas pages, not total driver allocation.
 PNG and HTML exports are generated locally in the browser. No external services
 are used. The dashboard-only feature includes no trainer, remote pause/step
-controls or gameplay mutations.
+controls or gameplay mutations. The whole-map picture is a presentation-only
+spectator stream: it shows the whole visible map without shroud or sidebar,
+not the player's current viewport, and it advances one tile per rendered
+frame.
 
 The full original contribution from
 [PR #2083](https://github.com/YuriPlanet/vera20k/pull/2083) is preserved unchanged

@@ -25,6 +25,8 @@ pub enum FrameReadbackError {
     BufferSizeOverflow { width: u32, height: u32 },
     #[error("frame readback map callback was dropped: {0}")]
     MapCallbackDropped(#[from] std::sync::mpsc::RecvError),
+    #[error("frame readback map callback was lost before it reported")]
+    MapCallbackLost,
     #[error("frame readback mapped range failed: {0}")]
     MapRange(#[from] wgpu::MapRangeError),
     #[error("frame readback map failed: {0}")]
@@ -189,6 +191,81 @@ impl PendingTextureReadback {
             self.buffer.unmap();
             Ok(tight)
         }
+    }
+
+    /// Start the map without waiting for the GPU. **Call only after the encoder
+    /// carrying this copy has been submitted**: wgpu rejects a submit whose
+    /// command buffer targets an already-mapped buffer. The live whole-map
+    /// stream uses this so a readback never stalls the presentation thread;
+    /// the frame loop pumps the device and polls
+    /// [`AsyncTextureReadback::try_finish`].
+    pub fn begin(self) -> AsyncTextureReadback {
+        let (sender, result) = std::sync::mpsc::channel();
+        let slice = self.buffer.slice(..);
+        slice.map_async(wgpu::MapMode::Read, move |outcome| {
+            let _ = sender.send(outcome);
+        });
+        AsyncTextureReadback {
+            buffer: Some(self.buffer),
+            width: self.width,
+            height: self.height,
+            tight_bytes_per_row: self.tight_bytes_per_row,
+            padded_bytes_per_row: self.padded_bytes_per_row,
+            result,
+            done: false,
+        }
+    }
+}
+
+/// A mapped readback whose completion can be polled from the frame loop.
+pub struct AsyncTextureReadback {
+    buffer: Option<wgpu::Buffer>,
+    width: u32,
+    height: u32,
+    tight_bytes_per_row: u32,
+    padded_bytes_per_row: u32,
+    result: std::sync::mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>,
+    done: bool,
+}
+
+impl AsyncTextureReadback {
+    /// `None` while the GPU copy is still in flight, then exactly one result.
+    pub fn try_finish(&mut self) -> Option<Result<Vec<u8>, FrameReadbackError>> {
+        if self.done {
+            return None;
+        }
+        let outcome = match self.result.try_recv() {
+            Ok(outcome) => outcome,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return None,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.done = true;
+                return Some(Err(FrameReadbackError::MapCallbackLost));
+            }
+        };
+        self.done = true;
+        if let Err(error) = outcome {
+            return Some(Err(FrameReadbackError::MapFailed(error)));
+        }
+        let Some(buffer) = self.buffer.take() else {
+            return Some(Err(FrameReadbackError::MapCallbackLost));
+        };
+        // Always unmap, including on a short or failed range: a buffer left
+        // mapped makes a later queue submit fail validation.
+        let outcome = (|| {
+            let slice = buffer.slice(..);
+            let mapped = slice.get_mapped_range()?;
+            let tight = strip_row_padding(
+                &mapped,
+                self.width,
+                self.height,
+                self.tight_bytes_per_row,
+                self.padded_bytes_per_row,
+            )?;
+            drop(mapped);
+            Ok::<Vec<u8>, FrameReadbackError>(tight)
+        })();
+        buffer.unmap();
+        Some(outcome)
     }
 }
 

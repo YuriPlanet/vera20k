@@ -734,7 +734,99 @@
   body[data-view="wall"] main:not(#wall),
   body[data-view="detail"] main:not(#detail),
   body[data-view="report"] main:not(#report),
-  body[data-view="logs"] main:not(#logs) { display: none; }
+  body[data-view="logs"] main:not(#logs),
+  body[data-view="screen"] main:not(#screen) { display: none; }
+
+  /* ================================================= live whole-map picture
+     One canvas and a slim toolbar. `main` already owns the flex:1 row below
+     the header, so the stage fills the viewport without a height guess. The
+     picture keeps its intrinsic size and is scaled by the browser, so a tile
+     update never resizes or reflows anything. */
+  main.screen {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow: hidden;
+    padding: 8px 12px 12px;
+  }
+  .screen-bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 6px 10px;
+    border: 1px solid var(--glass-edge);
+    border-radius: 8px;
+    background: var(--glass-base);
+  }
+  .screen-label { font-weight: 500; }
+  .screen-meta { color: var(--muted, #8ea3c8); font-variant-numeric: tabular-nums; }
+  .screen-spacer { flex: 1; }
+  /* Live audio: the mix the engine is playing, not a separate soundtrack. */
+  .screen-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: #b9d4f2;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    user-select: none;
+  }
+  .screen-toggle input { accent-color: #6ea8ff; cursor: pointer; }
+  .screen-volume {
+    width: 84px;
+    height: 16px;
+    accent-color: #6ea8ff;
+    cursor: pointer;
+  }
+  /* A running capture must be impossible to miss: it writes a file to disk. */
+  .screen-record.recording {
+    color: #ffd9d9;
+    border-color: rgba(255, 110, 110, 0.65);
+    background: rgba(190, 40, 40, 0.28);
+    font-variant-numeric: tabular-nums;
+  }
+  /* Armed: nothing is being written yet, but the next start will open a file.
+     A dashed border says "pending" without competing with a live capture. */
+  .screen-record.armed {
+    color: #ffe7bd;
+    border-color: rgba(255, 183, 77, 0.6);
+    border-style: dashed;
+    background: rgba(150, 95, 20, 0.22);
+  }
+  .screen-stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 1px solid var(--glass-edge);
+    border-radius: 10px;
+    background: #02060f;
+  }
+  #screen-canvas {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    background: #000;
+  }
+  .screen-empty {
+    position: absolute;
+    inset: auto 0 0;
+    padding: 10px 14px;
+    color: var(--muted, #8ea3c8);
+    background: rgba(2, 6, 15, 0.86);
+    text-align: center;
+    line-height: 1.5;
+  }
+  #screen-stage:fullscreen { border: 0; border-radius: 0; background: #000; }
+  #screen-stage:fullscreen #screen-canvas { max-width: 100vw; max-height: 100vh; }
 
   /* ===================================================== player detail wall */
   main.detail {

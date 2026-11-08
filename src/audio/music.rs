@@ -7,7 +7,10 @@
 use std::num::NonZero;
 use std::time::Duration;
 
-#[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+#[cfg(any(
+    test,
+    all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")
+))]
 use rodio::{DeviceSinkBuilder, MixerDeviceSink};
 use rodio::{Player, Source};
 
@@ -57,7 +60,7 @@ const STEREO: NonZero<u16> = NonZero::new(2).unwrap();
     test,
     all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")
 )))]
-type MusicOutput = MixerDeviceSink;
+type MusicOutput = crate::audio::tap_output::SharedOutput;
 /// Shares the SFX player's browser output; see [`crate::audio::web_output`].
 #[cfg(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown"))]
 type MusicOutput = crate::audio::web_output::WebAudioSink;
@@ -144,7 +147,18 @@ impl MusicPlayer {
     /// Create a physical music output. Theme construction never depends on
     /// this succeeding.
     pub fn new() -> Option<Self> {
-        #[cfg(not(all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")))]
+        #[cfg(not(any(
+            test,
+            all(feature = "wasm", target_arch = "wasm32", target_os = "unknown")
+        )))]
+        let device = match crate::audio::tap_output::SharedOutput::open() {
+            Some(output) => output,
+            None => {
+                log::error!("Failed to initialize music audio: no shared output");
+                return None;
+            }
+        };
+        #[cfg(test)]
         let device = DeviceSinkBuilder::open_default_sink()
             .map_err(|error| log::error!("Failed to initialize music audio: {error}"))
             .ok()?;
