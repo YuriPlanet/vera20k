@@ -5,6 +5,7 @@
 //! hills corner engine (`RandomMapGenerator::CreateHills @ 0x005A35F0`) over
 //! a window of the live map. See `docs/terrain-deformation.md`.
 
+use crate::map::bridge_pavement::DAMAGED_PAVEMENT;
 use crate::map::corner_heights::{self, CornerCells, CornerGrid, FinalCell};
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::rules::ruleset::RuleSet;
@@ -97,6 +98,11 @@ impl CornerCells for LiveCornerCells<'_> {
         // The RMG's protected flag has no live counterpart; the border outside
         // the playfield keeps the shape the map gave it.
         !cell.outside_playfield
+            // The RMG runs before bridges exist. Only a high bridge's anchors
+            // hold an overlay; its other cells carry deck and repair flags a
+            // stamp would clear.
+            && !cell.has_bridge_deck
+            && cell.bridge_facts.raw_flags & !DAMAGED_PAVEMENT == 0
             && self
                 .overlays
                 .is_none_or(|grid| grid.cell(coord.0, coord.1).overlay_id.is_none())
@@ -276,10 +282,12 @@ impl Simulation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::map::bridge_facts::{BRIDGE_FLAG_STRUCTURAL, BridgeCellFacts};
     use crate::map::resolved_terrain::{test_clear_cell, test_grid, test_smudge_cell};
     use crate::rules::ini_parser::IniFile;
     use crate::rules::terrain_rules::LandType;
     use crate::sim::occupancy::CellListInsertion;
+    use crate::sim::snapshot::GameSnapshot;
 
     const RAMP_BASE: u16 = 600;
 
@@ -451,6 +459,66 @@ mod tests {
         assert_eq!(level_slope(&sim, 2, 5), (-1, 0));
         // The road beside the water keeps its ground, as a shore cell would.
         assert_eq!(level_slope(&sim, 8, 5), (0, 0));
+    }
+
+    #[test]
+    fn a_crater_leaves_a_high_bridge_lane_that_holds_no_overlay() {
+        let mut sim = sim_of(
+            12,
+            |rx, ry| ResolvedTerrainCell {
+                has_bridge_deck: (rx, ry) == (5, 5),
+                bridge_facts: BridgeCellFacts {
+                    raw_flags: if (rx, ry) == (5, 5) {
+                        BRIDGE_FLAG_STRUCTURAL
+                    } else {
+                        0
+                    },
+                    ..Default::default()
+                },
+                ..test_smudge_cell(rx, ry)
+            },
+            (0, 0),
+        );
+        let rules = rules(true, "DeformRadius=3\n");
+        assert!(sim.deform_terrain((5, 5), &rules, rules.warhead("CRATERWH").unwrap()));
+        assert_eq!(level_slope(&sim, 5, 5), (0, 0));
+        let lane = sim.resolved_terrain.as_ref().unwrap().cell(5, 5).unwrap();
+        assert!(lane.has_bridge_deck);
+        assert_eq!(lane.bridge_facts.raw_flags, BRIDGE_FLAG_STRUCTURAL);
+        assert_eq!(level_slope(&sim, 5, 2), (-1, 0));
+    }
+
+    #[test]
+    fn a_crater_survives_a_save_and_load_and_the_switch_follows_the_rules() {
+        let rules = rules(true, "DeformDepth=2\n");
+        let warhead = rules.warhead("CRATERWH").expect("crater warhead");
+        let mut sim = flat_sim((0, 0));
+        // The map's own terrain, as a load rebuilds from it: switched off, as
+        // every new grid starts.
+        let mut pristine = sim.resolved_terrain.clone().expect("terrain");
+        pristine.set_terrain_deformation(false);
+        // Scenario start's capture, which a load checks against the grid.
+        sim.real_cell_bridge_flags_0x1180 = pristine.capture_real_cell_bridge_flags_0x1180();
+        assert!(sim.deform_terrain((5, 5), &rules, warhead));
+
+        let bytes = GameSnapshot::save(&sim, 0, 0, "crater", 0);
+        let mut restored = GameSnapshot::load(&bytes).expect("load").sim;
+        restored.restore_after_snapshot_load().expect("restore");
+        restored.rebuild_caches_after_load(pristine, Default::default(), &rules);
+        restored
+            .restore_map_authority_after_snapshot_load(&rules, rules.overlay_registry(), None)
+            .expect("map authority");
+
+        assert_eq!(level_slope(&restored, 5, 5), (-2, 0));
+        assert_eq!(level_slope(&restored, 5, 3), level_slope(&sim, 5, 3));
+        assert_eq!(restored.dynamic_terrain_cells, sim.dynamic_terrain_cells);
+        assert!(
+            restored
+                .resolved_terrain
+                .as_ref()
+                .expect("restored terrain")
+                .terrain_deformation()
+        );
     }
 
     #[test]

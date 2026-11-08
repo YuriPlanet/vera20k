@@ -1549,6 +1549,10 @@ impl crate::map::terrain::TacticalCellLookup for ResolvedTerrainGrid {
         self.level_span().max
     }
 
+    fn min_cell_level(&self) -> i8 {
+        self.level_span().min
+    }
+
     fn cell_level(&self, rx: u16, ry: u16) -> Option<u8> {
         // Original6D6753 reads the current candidate, not a load-time level.
         self.cell(rx, ry).map(|cell| cell.level)
