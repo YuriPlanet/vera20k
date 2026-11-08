@@ -1074,7 +1074,8 @@ impl ApplicationHandler for App {
                 state.platform.window.request_redraw();
             }
             WindowEvent::CursorLeft { .. } => {
-                // macOS's cursor lock: the pointer goes straight back in.
+                // macOS's cursor lock, or the strip beside a camera housing:
+                // the pointer goes straight back in.
                 if crate::app::input::cursor::hold_pointer_in_window(state) {
                     state.platform.window.request_redraw();
                     return;

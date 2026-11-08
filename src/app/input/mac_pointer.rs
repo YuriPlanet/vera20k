@@ -113,6 +113,12 @@ impl ViewPointer {
         (0.0..self.width).contains(&self.x) && (0.0..self.height).contains(&self.y)
     }
 
+    /// Whether the pointer stands in the `strip` points directly above the
+    /// client area.
+    pub(crate) fn in_strip_above(self, strip: f64) -> bool {
+        (0.0..self.width).contains(&self.x) && (-strip..0.0).contains(&self.y)
+    }
+
     /// The closest point of the client area, one point in from its far edges.
     pub(crate) fn nearest_inside(self) -> (f64, f64) {
         (
@@ -138,18 +144,51 @@ pub(crate) fn pointer_in_view(window: &Window) -> Option<ViewPointer> {
     })
 }
 
+/// How far the window's screen reaches above its client area while the window
+/// is full screen, in logical points. On a screen with a camera housing macOS
+/// keeps a full-screen window below the housing and leaves the strip beside it
+/// black. On any other screen the window reaches the top and this is zero.
+pub(crate) fn strip_above_full_screen(window: &Window) -> f64 {
+    let (Some(_), Some(screen), Ok(corner)) = (
+        window.fullscreen(),
+        window.current_monitor(),
+        window.inner_position(),
+    ) else {
+        return 0.0;
+    };
+    f64::from(corner.y - screen.position().y) / window.scale_factor()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_pointer_past_an_edge_comes_back_on_that_edge() {
-        let at = |x, y| ViewPointer {
+    fn at(x: f64, y: f64) -> ViewPointer {
+        ViewPointer {
             x,
             y,
             width: 800.0,
             height: 600.0,
-        };
+        }
+    }
+
+    /// A pointer past the screen's top or beside the window has reached
+    /// another screen, which stays open to it.
+    #[test]
+    fn only_the_strip_above_the_client_area_counts() {
+        assert!(at(400.0, -1.0).in_strip_above(37.0));
+        assert!(
+            at(400.0, -37.0).in_strip_above(37.0),
+            "the screen's top row"
+        );
+        assert!(!at(400.0, -37.5).in_strip_above(37.0), "a screen above");
+        assert!(!at(800.0, -5.0).in_strip_above(37.0), "a screen beside");
+        assert!(!at(400.0, 0.0).in_strip_above(37.0), "the client area");
+        assert!(!at(400.0, -1.0).in_strip_above(0.0), "no camera housing");
+    }
+
+    #[test]
+    fn a_pointer_past_an_edge_comes_back_on_that_edge() {
         assert!(at(0.0, 0.0).inside());
         assert!(!at(800.0, 10.0).inside());
         assert_eq!(at(-40.0, 300.0).nearest_inside(), (0.0, 300.0));
