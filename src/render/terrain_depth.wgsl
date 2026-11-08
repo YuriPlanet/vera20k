@@ -44,14 +44,21 @@ fn fs_depth_shadow_wrapped(input: VertexOutput) -> DepthTestedOutput { return de
 
 // A read-only body stores its packed word. A native palette body's colour is
 // already one (`resolve_palette`); only a compatibility body needs packing.
-fn read_only_body(input: VertexOutput, wrapped: bool) -> DepthTestedOutput {
-    var output = depth_tested(input, false, wrapped);
+fn packed_body(input: VertexOutput, body: DepthTestedOutput) -> DepthTestedOutput {
+    var output = body;
     if input.palette_light.x >> 24u == 0u {
         output.color = vec4f(retail_linear(body_word(output.color.rgb)), 1.0);
     }
     return output;
 }
+// The entry points call `depth_tested` themselves. One more call level around
+// its discard and `own_pixel`'s makes optimizing FXC stop with an internal
+// error, so the DirectX 12 pipeline never builds.
 @fragment
-fn fs_depth_read_only_body(input: VertexOutput) -> DepthTestedOutput { return read_only_body(input, false); }
+fn fs_depth_read_only_body(input: VertexOutput) -> DepthTestedOutput {
+    return packed_body(input, depth_tested(input, false, false));
+}
 @fragment
-fn fs_depth_read_only_body_wrapped(input: VertexOutput) -> DepthTestedOutput { return read_only_body(input, true); }
+fn fs_depth_read_only_body_wrapped(input: VertexOutput) -> DepthTestedOutput {
+    return packed_body(input, depth_tested(input, false, true));
+}
