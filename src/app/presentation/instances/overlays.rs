@@ -149,7 +149,7 @@ fn ordinary_overlay_z(
     };
     Some(OverlayBodyDepth {
         render_z: RenderZPolicy::ReadWrite,
-        z_adjust: native_z::ground_anchored_z_adjust(i32::from(level), class_term) as f32,
+        z_adjust: native_z::ground_anchored_z_adjust(i32::from(level as i8), class_term) as f32,
         gradient,
         shape,
     })
@@ -1841,14 +1841,19 @@ mod tests {
             (3, ZGradient::Vertical, -2),
             (4, ZGradient::Flat, -2),
         ] {
-            for level in [0, 1, 4, 14] {
+            // Raw 0xFF is Level -1, on the floor of a terrain-deformation
+            // crater.
+            for level in [0u8, 1, 4, 14, 0xFF] {
                 let depth = ordinary_overlay_z(id, registry.flags(id), 0, level).unwrap();
                 assert_eq!(depth.render_z, RenderZPolicy::ReadWrite);
                 assert_eq!(
                     depth.gradient, gradient,
                     "ordinary overlays have no BUILDNGZ"
                 );
-                assert_eq!(depth.z_adjust as i32, class_term - i32::from(level) * 15);
+                assert_eq!(
+                    depth.z_adjust as i32,
+                    class_term - i32::from(level as i8) * 15
+                );
             }
         }
     }

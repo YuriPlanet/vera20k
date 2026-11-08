@@ -40,6 +40,7 @@ mod network_commands;
 mod object_entry;
 mod queued_command;
 mod sinking;
+mod terrain_deformation;
 mod time_warp;
 mod trigger_chrono;
 mod type_tech_levels;
@@ -7277,6 +7278,8 @@ impl Simulation {
             self.terrain_objects
                 .project_cell_occupation(&mut resolved_terrain, cell);
         }
+        // VERA terrain deformation follows the saved rules, as on a new map.
+        resolved_terrain.set_terrain_deformation(rules.combat_damage.terrain_deformation);
         self.resolved_terrain = Some(resolved_terrain);
         self.terrain_speed_config = terrain_speed_config;
         self.resolve_rule_animation_lists(rules);

@@ -24,8 +24,9 @@ use super::{
     RENDER_INTERPOLATION_HELP, RENDER_INTERPOLATION_LABEL, RIGHT_CLICK_ORDERS_HELP,
     RIGHT_CLICK_ORDERS_LABEL, SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL,
     SKIP_INTRO_HELP, SKIP_INTRO_LABEL, SMOOTH_SIDEBAR_HELP, SMOOTH_SIDEBAR_LABEL, Setting,
-    SidebarSize, VERA_ICON_HELP, VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL,
-    YR_ORIGINAL_STYLE_HELP, YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    SidebarSize, TERRAIN_DEFORMATION_HELP, TERRAIN_DEFORMATION_LABEL, VERA_ICON_HELP,
+    VERA_ICON_LABEL, WOL_TEST_SERVICE_HELP, WOL_TEST_SERVICE_LABEL, YR_ORIGINAL_STYLE_HELP,
+    YR_ORIGINAL_STYLE_LABEL, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use std::borrow::Cow;
 
@@ -510,6 +511,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => SMOOTH_SIDEBAR_LABEL,
             LauncherCheckboxId::HdMapPreviews => HD_MAP_PREVIEWS_LABEL,
             LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
+            LauncherCheckboxId::TerrainDeformation => TERRAIN_DEFORMATION_LABEL,
             LauncherCheckboxId::WolTestService => WOL_TEST_SERVICE_LABEL,
             LauncherCheckboxId::PerformanceStats => PERFORMANCE_STATS_LABEL,
             LauncherCheckboxId::SkipIntro => SKIP_INTRO_LABEL,
@@ -576,6 +578,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => self.values.smooth_sidebar,
             LauncherCheckboxId::HdMapPreviews => self.values.hd_map_previews,
             LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
+            LauncherCheckboxId::TerrainDeformation => self.values.terrain_deformation,
             LauncherCheckboxId::WolTestService => self.values.wol_test_service,
             LauncherCheckboxId::PerformanceStats => self.values.performance_stats,
             LauncherCheckboxId::SkipIntro => self.values.skip_intro,
@@ -854,6 +857,9 @@ impl OptionsDialogState {
                 LauncherCheckboxId::SmoothSidebar => LauncherStatusHelp::Vera(SMOOTH_SIDEBAR_HELP),
                 LauncherCheckboxId::HdMapPreviews => LauncherStatusHelp::Vera(HD_MAP_PREVIEWS_HELP),
                 LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Vera(SHIFT_QUEUE_HELP),
+                LauncherCheckboxId::TerrainDeformation => {
+                    LauncherStatusHelp::Vera(TERRAIN_DEFORMATION_HELP)
+                }
                 LauncherCheckboxId::WolTestService => {
                     LauncherStatusHelp::Vera(WOL_TEST_SERVICE_HELP)
                 }

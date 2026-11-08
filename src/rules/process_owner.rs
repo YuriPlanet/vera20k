@@ -22,6 +22,7 @@ mod planning_rules_tests;
 #[path = "object_image_tests.rs"]
 mod object_image_tests;
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::rules::error::RulesError;
@@ -119,6 +120,7 @@ struct NativeRulesSourceSnapshot {
     /// The same immutable EVAMD catalog used by process playback.
     fixed_eva: Arc<EvaRegistry>,
     /// VERA source customization frozen with this process's selected INIs.
+    /// Only its Options switches change later, and only scenario roots read them.
     personal_rules: PersonalRules,
 }
 
@@ -669,9 +671,23 @@ impl NativeRulesProcessOwner {
         &self.sources.selected_rules_root
     }
 
-    /// Include VERA's extra source and precedence policy in network admission.
+    /// Include VERA's extra source, precedence policy and Options switches in
+    /// network admission.
     pub fn personal_rules_compatibility_crc(&self) -> Option<u32> {
         self.sources.personal_rules.compatibility_crc()
+    }
+
+    /// The Options page's Terrain Deformation box, read by the next scenario.
+    pub fn set_terrain_deformation(&mut self, on: bool) {
+        self.sources.personal_rules.set_terrain_deformation(on);
+    }
+
+    /// The root every scenario's Rules start from: the selected root with the
+    /// Options switches applied.
+    fn scenario_root(&self) -> Cow<'_, IniFile> {
+        self.sources
+            .personal_rules
+            .scenario_root(&self.sources.selected_rules_root)
     }
 
     /// Fixed ART snapshot, unaffected by mode/map Rules passes.
@@ -707,10 +723,11 @@ impl NativeRulesProcessOwner {
 
     /// Multiplayer agreement follows the frozen process sources, including
     /// LANGRULE. Reopening those files would hash different state from the
-    /// sources Full_Init686B20 actually consumes.
+    /// sources Full_Init686B20 actually consumes. The root is digested as
+    /// scenarios read it, with the Options switches applied.
     pub fn multiplayer_source_digests(&self) -> [Option<String>; 3] {
         [
-            Some(self.sources.selected_rules_root.multiplayer_digest()),
+            Some(self.scenario_root().multiplayer_digest()),
             self.sources
                 .langrule
                 .as_ref()
@@ -1244,7 +1261,7 @@ impl NativeRulesProcessOwner {
     }
 
     fn startup_layers(&self, langrule: Option<&IniFile>) -> RulesLayerStack {
-        let mut layers = RulesLayerStack::new(self.sources.selected_rules_root.clone());
+        let mut layers = RulesLayerStack::new(self.scenario_root().into_owned());
         if let Some(langrule) = langrule {
             layers.push(RulesLayerKind::LangRule, langrule.clone());
         }

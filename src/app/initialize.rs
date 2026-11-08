@@ -383,6 +383,7 @@ impl App {
         );
         let profile_screen = options_load.startup_shell_screen;
         let mut options_profile = options_load.retained_profile;
+        personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         // Before the first CSF load below, which layers this language over it.
         crate::i18n::init(
             game_config

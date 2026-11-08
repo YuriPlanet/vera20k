@@ -44,6 +44,7 @@ pub(crate) fn launcher_values_from_profile(
         smooth_sidebar: profile.smooth_sidebar,
         hd_map_previews: profile.hd_map_previews,
         shift_queue: profile.shift_queue,
+        terrain_deformation: profile.terrain_deformation,
         wol_test_service: profile.wol_test_service,
         performance_stats: false,
         skip_intro: profile.skip_intro,
@@ -127,6 +128,9 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     /// off (`[VERA] TranslateChat=`).
     fn store_chat_translation(&mut self, language: Option<ChatLanguage>);
     fn store_shift_queue(&mut self, shift_queue: bool);
+    /// Let explosions dent the ground from the next game on
+    /// (`[VERA] TerrainDeformation=`).
+    fn store_terrain_deformation(&mut self, enabled: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
     fn set_performance_stats(&mut self, shown: bool);
     fn store_skip_intro(&mut self, skip: bool);
@@ -188,6 +192,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
             operations.store_shift_queue(shift_queue);
+        }
+        LauncherOptionsEvent::TerrainDeformationChanged(enabled) => {
+            operations.store_terrain_deformation(enabled);
         }
         LauncherOptionsEvent::WolTestServiceChanged(wol_test_service) => {
             operations.store_wol_test_service(wol_test_service);
@@ -407,6 +414,7 @@ mod tests {
             render_interpolation: false,
             mouse_wheel_zoom: true,
             shift_queue: true,
+            terrain_deformation: true,
             wol_test_service: true,
             ..RetailOptionsProfile::default()
         });
@@ -418,6 +426,7 @@ mod tests {
         assert!(!booleans.render_interpolation);
         assert!(booleans.mouse_wheel_zoom);
         assert!(booleans.shift_queue);
+        assert!(booleans.terrain_deformation);
         assert!(booleans.wol_test_service);
     }
 }

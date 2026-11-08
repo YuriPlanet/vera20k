@@ -176,6 +176,13 @@ pub(crate) struct RetailOptionsProfile {
     /// mobile strip while [`Self::shift_queue`] is on. VERA's own convenience;
     /// gamemd never reads this section. Clamped by [`SHIFT_QUEUE_COUNT_RANGE`].
     pub(crate) shift_queue_count: u32,
+    /// `[VERA] TerrainDeformation=`: the Options page's Terrain Deformation
+    /// box. Explosions dent open ground as in Tiberian Sun and a nuke leaves a
+    /// crater (`docs/terrain-deformation.md`). Unlike the presentation boxes it
+    /// changes the rules each new game reads, so online peers must agree on it
+    /// ([`crate::rules::personal_rules::PersonalRules::set_terrain_deformation`]).
+    /// Off by default.
+    pub(crate) terrain_deformation: bool,
     /// `[VERA] WolTestService=`: Internet answers from VERA's stand-in WOL
     /// service instead of showing `TXT_APIMISSING`: the Options page's
     /// developer box. Off by default; no real service exists yet.
@@ -332,6 +339,7 @@ impl Default for RetailOptionsProfile {
             house_color_strength: crate::rules::house_colors::STRENGTH_RETAIL,
             shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
+            terrain_deformation: false,
             wol_test_service: false,
             solo_skirmish: false,
             commander_feedback: true,
@@ -363,7 +371,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 28],
+    pub(crate) vera: [(&'static str, String); 29],
 }
 
 impl RetailOptionsLoad {
@@ -583,6 +591,8 @@ impl RetailOptionsProfile {
             self.shift_queue_count = clamp_shift_queue_count(
                 vera.read_int("ShiftQueueCount", self.shift_queue_count as i32),
             );
+            self.terrain_deformation =
+                vera.read_bool("TerrainDeformation", self.terrain_deformation);
             self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
             self.solo_skirmish = vera.read_bool("SoloSkirmish", self.solo_skirmish);
             self.commander_feedback = vera.read_bool("CommanderFeedback", self.commander_feedback);
@@ -774,6 +784,10 @@ impl RetailOptionsProfile {
                 (
                     "DetailedEvaText",
                     format_bool(self.detailed_eva_text).to_string(),
+                ),
+                (
+                    "TerrainDeformation",
+                    format_bool(self.terrain_deformation).to_string(),
                 ),
             ],
         }
@@ -2400,5 +2414,17 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
                 .detailed_eva_text
         );
         assert!(String::from_utf8_lossy(&written).contains("Unowned=keep"));
+    }
+
+    #[test]
+    fn terrain_deformation_defaults_off_and_round_trips_through_the_vera_section() {
+        let startup = RetailStartupOptions::default();
+        let read = |bytes: &[u8]| load_snapshot(&startup, bytes).retained_profile;
+        assert!(!read(b"").terrain_deformation);
+        let mut profile = read(b"[VERA]\nTerrainDeformation=yes\n");
+        assert!(profile.terrain_deformation);
+        assert!(read(&profile.transform_settings(b"")).terrain_deformation);
+        profile.terrain_deformation = false;
+        assert!(!read(&profile.transform_settings(b"")).terrain_deformation);
     }
 }

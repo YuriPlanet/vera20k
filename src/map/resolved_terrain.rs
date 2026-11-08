@@ -55,6 +55,7 @@ mod bridge_flags;
 mod build;
 mod cell_recalc;
 mod cliffs;
+mod deformation;
 mod mutation;
 mod native_cell;
 mod pavement;
@@ -845,6 +846,13 @@ pub struct ResolvedTerrainGrid {
     /// Immutable active-theater sparse TMP authority used only by the two
     /// verified destroyable-cliff callers.
     destroyable_cliff_catalog: Option<DestroyableCliffCatalog>,
+    /// Immutable active-theater clear and ramp stamps for terrain
+    /// deformation.
+    deformation_catalog: Option<deformation::DeformationCatalog>,
+    /// Whether the scenario's rules switched terrain deformation on
+    /// (`[CombatDamage] TerrainDeformation=`); see
+    /// [`Self::set_terrain_deformation`].
+    deformation_enabled: bool,
     /// Immutable pristine/policy inputs, shared by derived clones and snapshot
     /// templates. Mutable terrain, bounds and overlays remain separate owners.
     bridge_recalc_catalog: Option<Arc<BridgeRecalcCatalog>>,
@@ -1141,6 +1149,8 @@ impl ResolvedTerrainGrid {
             wood_bridge_set_start: None,
             tile_animations: Vec::new(),
             destroyable_cliff_catalog: None,
+            deformation_catalog: None,
+            deformation_enabled: false,
             bridge_recalc_catalog: None,
             allocation_caches: Default::default(),
         }
@@ -1445,6 +1455,14 @@ impl ResolvedTerrainGrid {
         self.level_span
     }
 
+    /// Tiles terrain deformation may write at runtime, for the atlas
+    /// pre-load; empty without the theater's tiles.
+    pub fn deformation_atlas_tiles(&self) -> Vec<u16> {
+        self.deformation_catalog
+            .as_ref()
+            .map_or_else(Vec::new, deformation::DeformationCatalog::tile_ids)
+    }
+
     /// Epoch of mutable cell access; see the field note.
     pub fn mutation_epoch(&self) -> u64 {
         self.mutation_epoch
@@ -1529,6 +1547,10 @@ impl ResolvedTerrainGrid {
 impl crate::map::terrain::TacticalCellLookup for ResolvedTerrainGrid {
     fn max_cell_level(&self) -> i8 {
         self.level_span().max
+    }
+
+    fn min_cell_level(&self) -> i8 {
+        self.level_span().min
     }
 
     fn cell_level(&self, rx: u16, ry: u16) -> Option<u8> {

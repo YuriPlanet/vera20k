@@ -205,12 +205,19 @@ pub(crate) fn cells_by_distance_from(cells: &[(u16, u16)], anchor: (u16, u16)) -
 }
 
 /// Build a texture atlas from pre-loaded theater data and the terrain grid.
+/// `terrain_deformation` is the scenario rules' `[CombatDamage]
+/// TerrainDeformation=`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "theater inputs, the grid, the GPU pair and the deformation switch"
+)]
 pub(crate) fn build_tile_atlas(
     asset_manager: &AssetManager,
     lookup: &theater::TilesetLookup,
     palette: &Palette,
     _ext: &str,
     grid: &TerrainGrid,
+    terrain_deformation: bool,
     gpu: &GpuContext,
     batch: &BatchRenderer,
 ) -> Option<TileAtlas> {
@@ -234,6 +241,22 @@ pub(crate) fn build_tile_atlas(
         theater::inject_bridge_middle_tiles(&mut needed, table, lookup, asset_manager);
         log::info!(
             "Atlas pre-load: injected {} bridge middle TileKeys",
+            needed.len() - before,
+        );
+    }
+    // Terrain deformation stamps clear and ramp tiles, and its LAT and slope
+    // fixups pick neighbours' tiles, that the map may never use.
+    if terrain_deformation && !grid.deformation_tiles.is_empty() {
+        let before = needed.len();
+        for &tile_id in &grid.deformation_tiles {
+            if let Err(error) =
+                theater::inject_template_tiles(&mut needed, tile_id, lookup, asset_manager)
+            {
+                log::debug!("Deformation tile_id {tile_id} not pre-loaded: {error}");
+            }
+        }
+        log::info!(
+            "Atlas pre-load: injected {} terrain deformation TileKeys",
             needed.len() - before,
         );
     }

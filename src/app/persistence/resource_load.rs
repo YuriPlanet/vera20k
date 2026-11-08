@@ -329,6 +329,7 @@ impl PreparedSavedGame {
             &theater.iso_palette,
             theater.extension,
             &terrain_grid,
+            rules.combat_damage.terrain_deformation,
             gpu,
             batch,
         );

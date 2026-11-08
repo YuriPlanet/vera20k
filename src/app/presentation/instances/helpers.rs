@@ -437,7 +437,7 @@ pub(crate) fn compute_sprite_depth_params(
     screen_y: f32,
     z: u8,
 ) -> f32 {
-    let iso_row: f32 = screen_y + z as f32 * terrain::HEIGHT_STEP;
+    let iso_row: f32 = screen_y + f32::from(z as i8) * terrain::HEIGHT_STEP;
     native_z::depth_for_row(iso_row, origin_y, world_height)
 }
 
@@ -745,6 +745,16 @@ mod tests {
     use crate::render::locomotor_visual::screen_position;
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::movement::locomotor::LocomotorState;
+
+    #[test]
+    fn a_level_below_zero_keeps_its_ground_row() {
+        // Raw 0xFF is Level -1 on a terrain-deformation crater floor: drawn a
+        // level lower, on the same ground row as Level 0 a level higher.
+        assert_eq!(
+            compute_sprite_depth_params(0.0, 1000.0, 115.0, 0xFF),
+            compute_sprite_depth_params(0.0, 1000.0, 100.0, 0)
+        );
+    }
 
     /// Stock YR sets one global `FlightLevel=1500` for every aircraft.
     const STOCK_FLIGHT_LEVEL_LEPTONS: i32 = 1500;
