@@ -13,7 +13,7 @@ on purpose are in [ares-skipped-hooks.md](ares-skipped-hooks.md).
 - INI keys: the restored Ares source reads 684 distinct keys. The engine reads every
   gameplay key among them. The keys still unread are UI and front-end keys (uimd.ini
   `[UISettings]`, campaign `HoverSound`, the movie list, `SW.TimerVisibility`,
-  `DebugKeysEnabled`, `DirectX.Force`, the random-map `GenerateUrbanAreas`) and the
+  `DebugKeysEnabled`, `DirectX.Force`) and the
   presentation keys `DamageSmokeParticleSystems` / `DamageSparksParticleSystems`. Ares
   3.0 itself never loads `[RadiationTypes]` or `AttachEffect.Damage`/`.DamageDelay`
   (no reader in the DLL; see [ares-radiation.md](ares-radiation.md) and
@@ -90,8 +90,12 @@ Stock gaps found in passing, with no Ares dependency:
   (`[Colors] Count` above 8). Ares' defaults match the engine. See
   [ares-sidebar-ui-hooks.md](ares-sidebar-ui-hooks.md).
 - The CSF loader hooks (Misc/CSFLoader.cpp) are deferred: CSF loading is handled separately.
-- The random map generator (Misc/RMG.cpp) and DLL plumbing (Checksum, Savegame,
-  CopyProtection, Debug, Swizzle, Ares.cpp), most of which does not apply to the engine.
+- DLL plumbing (Checksum, Savegame, CopyProtection, Debug, Swizzle, Ares.cpp), most
+  of which does not apply to the engine.
+- Overlay radar colours (OverlayTypeClass_GetRadarColor, `1006ACC0`, hook `0x5FED00`):
+  Ares returns the OverlayType's `RadarColor` field where VERA reads the SHP frame
+  header colour for the map preview. The rest of `Misc/RMG.cpp` is in
+  [ares-rmg.md](ares-rmg.md).
 
 ## How to continue
 
@@ -168,27 +172,6 @@ unit art.
 
 | Hook | Ares.dll | Name | Source |
 |---|---|---|---|
-| `0x545904` | `1006A920` | IsometricTileTypeClass_CreateFromINIList_MediansFix | `Misc/RMG.cpp` |
-| `0x58FA51` | `1006ADB0` | RMG_PlaceWEBridge | `Misc/RMG.cpp` |
-| `0x58FBDD` | `1006AD50` | RMG_FixPavedRoadEnd_Bridges_East | `Misc/RMG.cpp` |
-| `0x58FCC6` | `1006AD80` | RMG_FixPavedRoadEnd_Bridges_West | `Misc/RMG.cpp` |
-| `0x58FE7B` | `1006AD90` | RMG_PlaceNSBridge | `Misc/RMG.cpp` |
-| `0x59000E` | `1006AD60` | RMG_FixPavedRoadEnd_Bridges_North | `Misc/RMG.cpp` |
-| `0x5900F7` | `1006AD70` | RMG_FixPavedRoadEnd_Bridges_South | `Misc/RMG.cpp` |
-| `0x596C81` | `1006A940` | MapSeedClass_DialogFunc_GetData | `Misc/RMG.cpp` |
-| `0x596FFE` | `1006ACF0` | RMG_EnableArchipelago | `Misc/RMG.cpp` |
-| `0x5970EA` | `1006AD10` | RMG_EnableDesert | `Misc/RMG.cpp` |
-| `0x5971EA` | `1006A980` | MapSeedClass_DialogFunc_SetData | `Misc/RMG.cpp` |
-| `0x5982D5` | `1006ABF0` | MapSeedClass_LoadFromINI | `Misc/RMG.cpp` |
-| `0x598FB8` | `1006ABD0` | MapSeedClass_Generate_UrbanAreas | `Misc/RMG.cpp` |
-| `0x5A5C6A` | `1006AA90` | MapSeedClass_Generate_PlacePavedRoads_RoadEndNE | `Misc/RMG.cpp` |
-| `0x5A5D6F` | `1006AAC0` | MapSeedClass_Generate_PlacePavedRoads_RoadEndSW | `Misc/RMG.cpp` |
-| `0x5A5F6A` | `1006AAA0` | MapSeedClass_Generate_PlacePavedRoads_RoadEndNW | `Misc/RMG.cpp` |
-| `0x5A6464` | `1006AAB0` | MapSeedClass_Generate_PlacePavedRoads_RoadEndSE | `Misc/RMG.cpp` |
-| `0x5A65CA` | `1006ABA0` | MapSeedClass_Generate_PlaceUrbanStructures_Start | `Misc/RMG.cpp` |
-| `0x5A6619` | `1006AB70` | MapSeedClass_Generate_PlaceUrbanStructures_Loop | `Misc/RMG.cpp` |
-| `0x5A66B0` | `1006AB90` | MapSeedClass_Generate_PlaceUrbanStructures_SanityCheck | `Misc/RMG.cpp` |
-| `0x5A6998` | `1006AAD0` | MapSeedClass_Generate_PlaceUrbanFoots | `Misc/RMG.cpp` |
 | `0x420A71` | `100475A0` | AlphaShapeClass_CTOR_Anims | `Ext/Techno/Hooks.Alpha.cpp` |
 | `0x420F75` | `10047470` | AlphaLightClass_UpdateScreen_ShouldDraw | `Ext/Techno/Hooks.Alpha.cpp` |
 | `0x4210AC` | `10047440` | AlphaLightClass_UpdateScreen_Header | `Ext/Techno/Hooks.Alpha.cpp` |

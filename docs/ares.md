@@ -247,6 +247,10 @@ Supported extensions:
   loader hooks are deferred.
 - [Radiation types](ares-radiation.md): Ares 3.0 never loads `[RadiationTypes]`;
   its snow-theater hook is the only live radiation hook.
+- [Random-map generator](ares-rmg.md): Archipelago and Desert in the dialog, the
+  Urban Areas box and Surprise Me, `GenerateUrbanAreas` and the `[Urban]` lists,
+  urban areas with roads, buildings, foots and plazas, and the bridge, road-end
+  and `Medians` fixes.
 - [Hooks skipped on purpose](ares-skipped-hooks.md) and
   [remaining work](ares-remaining.md).
 - [INI Include and inheritance](ini-directives.md). The read-only `asset ini-expand` probe works

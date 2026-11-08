@@ -512,6 +512,19 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         layout.scale,
     );
 
+    // Ares' Urban Areas box (control 5000 of Ares' dialog 261), drawn as the
+    // shell's own checkbox.
+    #[cfg(feature = "ares")]
+    paint_control(
+        out,
+        &chrome,
+        ControlPaint::Checkbox {
+            checked: modal.options.urban_areas,
+            rect: layout.urban_areas,
+        },
+        layout.scale,
+    );
+
     // Surprise Me and Generate are owner-draw type 3 for this dialog, so they
     // take the MNBTTN modal button art rather than the generic PCX slices --
     // the same art the message-box modals use. Native size, centred on the

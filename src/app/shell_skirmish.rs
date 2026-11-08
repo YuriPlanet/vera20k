@@ -1140,6 +1140,18 @@ impl App {
         };
         modal.hide();
         let previous = modal.cancel_selection();
+        #[cfg(feature = "ares")]
+        {
+            let settings = state
+                .process_assets
+                .manager()
+                .map(crate::map::rmg::RmgSettings::load)
+                .unwrap_or_default();
+            state
+                .frontend
+                .multiplayer_shell_runtime
+                .read_generate_urban_areas_once(&settings);
+        }
         let options = state
             .frontend
             .multiplayer_shell_runtime

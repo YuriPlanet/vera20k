@@ -93,7 +93,7 @@ fn start_production_worker(
         prepared.settings,
         prepared.resolved_inputs,
         prepared.blocks,
-        prepared.tech_types,
+        super::shell_random_map::RandomMapObjects::tech(prepared.tech_types),
         shared_cell_dummy.clone(),
         decision,
     )
@@ -444,6 +444,7 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         Some("MPBattleMD.ini"),
         crate::app::match_runtime::session::SessionMode::Skirmish,
         false,
+        None,
         &mut SilentProgress,
     )
     .expect("direct .SED launch regeneration");

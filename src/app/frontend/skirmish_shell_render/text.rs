@@ -916,6 +916,20 @@ pub(super) fn push_random_map_setup_modal_text_draws(
         );
     }
 
+    // Ares' Urban Areas box takes its caption beside the icon, like the
+    // `0x102` checkboxes.
+    #[cfg(feature = "ares")]
+    push_text_draw(
+        out,
+        state,
+        &localized_label(state, "GUI:UrbanAreas", "Urban Areas"),
+        rect_to_text_rect(checkbox_text_rect(layout.urban_areas, scale)),
+        SHELL_LABEL_TEXT_RGB,
+        ShellAlign::V_CENTER,
+        SHELL_DROPDOWN_TEXT_DEPTH - 0.00008,
+        scale.factor(),
+    );
+
     for (key, fallback, rect, control) in [
         (
             "GUI:SurpriseMe",

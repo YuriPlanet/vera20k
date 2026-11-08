@@ -31,6 +31,8 @@ pub mod starts;
 pub mod tech_buildings;
 pub mod tiberium;
 pub mod trees;
+#[cfg(feature = "ares")]
+pub mod urban;
 pub mod water;
 pub mod water_finalize;
 pub mod zones;

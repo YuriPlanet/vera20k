@@ -1170,6 +1170,7 @@ impl LanCapture {
             mode_file.as_deref(),
             SessionMode::Lan,
             the_team_enabled,
+            None,
             &mut Silent,
         )?;
         let map = initial.map_data();

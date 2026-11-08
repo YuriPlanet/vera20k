@@ -30,6 +30,8 @@ use super::phases::starts::{StartsArgs, StartsCtx};
 use super::phases::tech_buildings::{TechArgs, TechCtx, TechType};
 use super::phases::tiberium::{TiberiumArgs, TiberiumCtx};
 use super::phases::trees::{TreeArgs, TreeCtx};
+#[cfg(feature = "ares")]
+use super::phases::urban;
 use super::phases::water::{PlayableRect, WaterArgs};
 use super::phases::zones::{self, ZoneKind, ZoneParams};
 use super::phases::{
@@ -99,6 +101,13 @@ pub struct PipelineInputs<'a> {
     /// generation's very first draw. Only the river carver reads the value;
     /// the draw that produces it is stream-relevant to every map type.
     pub bridge_enabled: bool,
+    /// `UrbanPresence` option (`MapSeed+0x60`), read by the Ares urban pass.
+    #[cfg(feature = "ares")]
+    pub urban_presence: i32,
+    /// The Ares urban pass (hook 0x598FB8), present when `RMG::UrbanAreas`
+    /// is set.
+    #[cfg(feature = "ares")]
+    pub urban: Option<&'a super::phases::urban::UrbanInputs<'a>>,
 }
 
 /// Watches the grid between stages, for callers that draw the map as it builds.
@@ -127,6 +136,9 @@ pub struct PipelineOutput {
     pub(crate) construction_trace: RmgConstructionTrace,
     /// Start slots no region could fill. See `StartsOutcome`.
     pub unfilled_start_slots: usize,
+    /// Ares urban buildings and foots, emitted after `structures`.
+    #[cfg(feature = "ares")]
+    pub urban: Vec<super::phases::urban::UrbanObject>,
 }
 
 /// Run the whole deterministic pipeline in place over `grid`/`scratch`, drawing
@@ -281,6 +293,12 @@ pub fn run_pipeline(
     observe(Stage::GreenSpread, grid, &waypoints, &terrain);
     lat_fixup::run(grid, inputs.ids);
     observe(Stage::RecalcAfterTerrain, grid, &waypoints, &terrain);
+    // This recalc's land types are the ones the urban building gate reads:
+    // no full recalc runs again before the urban pass.
+    #[cfg(feature = "ares")]
+    let urban_rock = inputs
+        .urban
+        .map(|_| trees::RecalcRock::snapshot(grid, inputs.blocks, inputs.cliff_back_impassability));
 
     // ---- Starts (needs the zone field) ------------------------------------
     let (outcome, start_tech_placements) = {
@@ -423,6 +441,45 @@ pub fn run_pipeline(
     // ---- Region reset + second recalc -------------------------------------
     scratch.reset_region_ids();
     observe(Stage::RegionReset, grid, &waypoints, &terrain);
+
+    // ---- Ares urban areas (hook 0x598FB8, before the recalc) ----------------
+    #[cfg(feature = "ares")]
+    let mut urban = Vec::new();
+    #[cfg(feature = "ares")]
+    if let (Some(urban_inputs), Some(recalc_rock)) = (inputs.urban, urban_rock.as_ref()) {
+        let playfield = PlayfieldBounds::from_normalized_local_size(
+            map_w,
+            local_rect[0],
+            local_rect[1],
+            local_rect[2],
+            local_rect[3],
+        );
+        let mut ctx = urban::UrbanCtx {
+            grid: &mut *grid,
+            scratch: &mut *scratch,
+            ids: inputs.ids,
+            blocks: inputs.blocks,
+            rng: &mut *rng,
+            gauss: &mut *gauss,
+            playfield: &playfield,
+            recalc_rock,
+            inputs: urban_inputs,
+        };
+        let args = urban::UrbanArgs {
+            urban_presence: inputs.urban_presence,
+            map_w,
+            map_h,
+            stride: stride as i32,
+        };
+        let mut output = urban::UrbanOutput {
+            objects: &mut urban,
+            trace: &mut construction_trace,
+            entity_base: structures.len() + tech_placements.len(),
+        };
+        urban::run(&mut ctx, &args, &mut output);
+    }
+    #[cfg(feature = "ares")]
+    observe(Stage::UrbanAreas, grid, &waypoints, &terrain);
     lat_fixup::run(grid, inputs.ids);
     observe(Stage::RecalcAfterTiberium, grid, &waypoints, &terrain);
     // This recalc (Generate 0x00598960, just before CreateHills) is the last
@@ -518,6 +575,8 @@ pub fn run_pipeline(
         structures,
         construction_trace,
         unfilled_start_slots,
+        #[cfg(feature = "ares")]
+        urban,
     }
 }
 

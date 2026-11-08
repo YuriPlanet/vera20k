@@ -202,6 +202,10 @@ pub(crate) struct MultiplayerShellRuntime {
     /// Process-persistent native MapSeed options. The setup dialog edits a
     /// working copy, but closing it does not reconstruct this global record.
     random_map_options: crate::map::rmg::RmgOptions,
+    /// Ares MapSeedClass_LoadFromINI's latch (Ares.dll DAT_100c2151): the
+    /// first RMGMD.INI read sets the urban switch, later ones leave it.
+    #[cfg(feature = "ares")]
+    urban_areas_read: bool,
     ini_path: Option<PathBuf>,
     /// VERA's per-map Skirmish setups, by `SkirmishSetups.ini` section; read
     /// once at startup like the profile.
@@ -924,6 +928,8 @@ impl MultiplayerShellRuntime {
             taunt_clock: Default::default(),
             scenario_rng,
             random_map_options: crate::map::rmg::RmgOptions::default(),
+            #[cfg(feature = "ares")]
+            urban_areas_read: false,
             ini_path,
             saved_setups,
             last_setup,
@@ -1606,6 +1612,21 @@ impl MultiplayerShellRuntime {
         self.random_map_options.clone()
     }
 
+    /// `RandomMapSetupDialog::Run @ 0x00595BC0` reads RMGMD.INI before the
+    /// dialog opens; Ares' MapSeedClass_LoadFromINI (Ares.dll 1006ABF0, hook
+    /// 0x5982D5) takes `[General] GenerateUrbanAreas=` into the urban switch
+    /// on the process's first read only.
+    #[cfg(feature = "ares")]
+    pub(crate) fn read_generate_urban_areas_once(
+        &mut self,
+        settings: &crate::map::rmg::RmgSettings,
+    ) {
+        if !self.urban_areas_read {
+            self.random_map_options.urban_areas = settings.generate_urban_areas;
+            self.urban_areas_read = true;
+        }
+    }
+
     /// Persist the dialog's working record back into the process MapSeed owner.
     pub(crate) fn remember_random_map_options(&mut self, options: &crate::map::rmg::RmgOptions) {
         self.random_map_options = options.clone();
@@ -2153,6 +2174,8 @@ mod tests {
             taunt_clock: Default::default(),
             scenario_rng,
             random_map_options: crate::map::rmg::RmgOptions::default(),
+            #[cfg(feature = "ares")]
+            urban_areas_read: false,
             ini_path: None,
             saved_setups: HashMap::new(),
             last_setup: None,
@@ -2184,6 +2207,8 @@ mod tests {
             taunt_clock: Default::default(),
             scenario_rng: SimRng::new(u64::from(seed)),
             random_map_options: crate::map::rmg::RmgOptions::default(),
+            #[cfg(feature = "ares")]
+            urban_areas_read: false,
             ini_path: None,
             saved_setups: HashMap::new(),
             last_setup: None,

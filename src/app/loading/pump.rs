@@ -435,6 +435,7 @@ impl LoadingRequest {
                 .map(|launch| launch.mode.override_file.as_str()),
             self.startup().session_mode(),
             self.the_team_enabled,
+            self.startup().match_seed(),
             progress,
         )?;
         if let LoadingStartup::Network(_) = self.startup() {

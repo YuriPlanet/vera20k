@@ -6,7 +6,11 @@
 
 use crate::map::rmg::options::RmgOptions;
 use crate::map::rmg::preview::PreviewImage;
-use crate::map::rmg::randomize::{RandomRanged, derive_from_map_type, randomize};
+#[cfg(not(feature = "ares"))]
+use crate::map::rmg::randomize::randomize;
+#[cfg(feature = "ares")]
+use crate::map::rmg::randomize::randomize_from_combos;
+use crate::map::rmg::randomize::{RandomRanged, derive_from_map_type};
 use crate::map::rmg::settings::RmgSettings;
 use crate::ui::shell::combobox::ComboPress;
 use crate::ui::shell::geom::{RectPx, ShellScale};
@@ -25,6 +29,11 @@ pub struct MainRngRanged(pub crate::sim::rng::MainRngDraws);
 impl RandomRanged for MainRngRanged {
     fn ranged(&mut self, min: i32, max: i32) -> i32 {
         self.0.ranged(min, max)
+    }
+
+    #[cfg(feature = "ares")]
+    fn next_u32(&mut self) -> u32 {
+        self.0.next_u32()
     }
 }
 
@@ -105,13 +114,28 @@ const fn item(key: &'static str, fallback: &'static str, value: i32) -> SetupCom
 /// is absent, though the generator builds it and the string table names it.
 /// VERA lists it last in an offline Skirmish dialog, as it does the larger
 /// sizes, so the original four keep their rows; network dialogs keep four.
+#[cfg(not(feature = "ares"))]
 const NATIVE_MAP_TYPE_ITEMS: usize = 4;
+#[cfg(not(feature = "ares"))]
 const MAP_TYPE_ITEMS: [SetupComboItem; 5] = [
     item("TXT_MAP_CONTINENT", "Continent", 1),
     item("TXT_MAP_TEAM_CONTINENTS", "Team Continents", 2),
     item("TXT_MAP_INLAND", "Inland", 3),
     item("TXT_MAP_MOUNTAINOUS", "Mountainous", 4),
     item("TXT_MAP_ARCHIPELAGO", "Archipelago", 0),
+];
+/// Ares' RMG_EnableArchipelago (Ares.dll 1006ACF0, hook 0x596FFE -> 0x597008)
+/// starts the fill at the table's first label with item data 0, so every
+/// dialog lists archipelago first.
+#[cfg(feature = "ares")]
+const NATIVE_MAP_TYPE_ITEMS: usize = 5;
+#[cfg(feature = "ares")]
+const MAP_TYPE_ITEMS: [SetupComboItem; 5] = [
+    item("TXT_MAP_ARCHIPELAGO", "Archipelago", 0),
+    item("TXT_MAP_CONTINENT", "Continent", 1),
+    item("TXT_MAP_TEAM_CONTINENTS", "Team Continents", 2),
+    item("TXT_MAP_INLAND", "Inland", 3),
+    item("TXT_MAP_MOUNTAINOUS", "Mountainous", 4),
 ];
 
 const TIME_ITEMS: [SetupComboItem; 4] = [
@@ -127,12 +151,26 @@ const TIME_ITEMS: [SetupComboItem; 4] = [
 /// the string table names. LUNAR is not offered: it authors no water, shore,
 /// cliff or road tiles for the generator to place. Like the larger sizes,
 /// the added theaters are offered only in an offline Skirmish dialog.
+#[cfg(not(feature = "ares"))]
 const NATIVE_THEATER_ITEMS: usize = 2;
+#[cfg(not(feature = "ares"))]
 const THEATER_ITEMS: [SetupComboItem; 4] = [
     item("Name:Temperate", "Temperate", 0),
     item("Name:Snow", "Snow", 1),
     item("Name:Urban", "Urban", 2),
     item("TXT_BIOME_DESERT", "Desert", 3),
+];
+/// Ares' RMG_EnableDesert (Ares.dll 1006AD10, hook 0x5970EA) adds
+/// `Name:Desert` with item data 3 after the two native entries, in every
+/// dialog; the offline Skirmish dialog adds URBAN after it.
+#[cfg(feature = "ares")]
+const NATIVE_THEATER_ITEMS: usize = 3;
+#[cfg(feature = "ares")]
+const THEATER_ITEMS: [SetupComboItem; 4] = [
+    item("Name:Temperate", "Temperate", 0),
+    item("Name:Snow", "Snow", 1),
+    item("Name:Desert", "Desert", 3),
+    item("Name:Urban", "Urban", 2),
 ];
 
 /// The original's four sizes, then VERA's larger ones (`rmg::EXTENDED_SIZES`).
@@ -266,7 +304,12 @@ impl RandomMapSetupModalState {
             self.options.height = self.options.height.min(NATIVE_MAX_SIZE_OPTION);
             // The options record is shared with offline Skirmish, so a theater
             // only that dialog offers falls back to the first native entry.
-            if self.options.theater >= NATIVE_THEATER_ITEMS as i32 {
+            let theater = self.options.theater;
+            if theater >= 2
+                && !THEATER_ITEMS[..NATIVE_THEATER_ITEMS]
+                    .iter()
+                    .any(|item| item.value == theater)
+            {
                 self.options.theater = 0;
             }
         }
@@ -451,10 +494,39 @@ impl RandomMapSetupModalState {
         rng: &mut impl RandomRanged,
         description: &str,
     ) {
+        #[cfg(not(feature = "ares"))]
         randomize(&mut self.options, settings, rng, description);
+        #[cfg(feature = "ares")]
+        {
+            let values = |combo| {
+                self.combo_items(combo)
+                    .iter()
+                    .map(|item| item.value)
+                    .collect::<Vec<_>>()
+            };
+            let (map_types, theaters) = (values(SetupCombo::MapType), values(SetupCombo::Theater));
+            randomize_from_combos(
+                &mut self.options,
+                settings,
+                rng,
+                description,
+                &map_types,
+                &theaters,
+            );
+        }
         self.generated = false;
         self.generated_preview = None;
         self.open_combo = None;
+    }
+
+    /// Toggle the Ares Urban Areas box (control 5000). The box is
+    /// `RMG::UrbanAreas` itself: Ares copies it in at SyncOptionsFromControls
+    /// (MapSeedClass_DialogFunc_GetData, Ares.dll 1006A940, hook 0x596C81) and
+    /// out at SyncControlsFromOptions (_SetData 1006A980, hook 0x5971EA). A
+    /// click alone neither rerolls nor invalidates the generated map.
+    #[cfg(feature = "ares")]
+    pub fn toggle_urban_areas(&mut self) {
+        self.options.urban_areas = !self.options.urban_areas;
     }
 
     /// Refresh the map-type-derived fields immediately before Generate.
@@ -535,6 +607,11 @@ mod tests {
     impl RandomRanged for MaxRng {
         fn ranged(&mut self, _min: i32, max: i32) -> i32 {
             max
+        }
+
+        #[cfg(feature = "ares")]
+        fn next_u32(&mut self) -> u32 {
+            u32::MAX
         }
     }
 
@@ -632,7 +709,8 @@ mod tests {
                 network.options.width,
                 network.options.theater
             ),
-            (8, 3, 0)
+            // Ares lists Desert (3) in every dialog (hook 0x5970EA).
+            (8, 3, if cfg!(feature = "ares") { 3 } else { 0 })
         );
         assert_eq!(network.combo_items(SetupCombo::Size).len(), 4);
         network.set_num_players(12);
@@ -772,6 +850,8 @@ mod tests {
         }
     }
 
+    // Stock lists; Ares' hooks 0x596FFE/0x5970EA change them.
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn map_type_entries_outside_offline_skirmish_start_at_one_and_omit_archipelago() {
         let items = setup_combo_items(SetupCombo::MapType, false);
@@ -782,6 +862,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn every_map_type_selects_its_entry_once_archipelago_is_listed() {
         let mut state = opened();
@@ -801,6 +882,44 @@ mod tests {
         assert_eq!(state.selected_item_index(SetupCombo::MapType), Some(2));
     }
 
+    /// Ares RMG_EnableArchipelago (hook 0x596FFE) and RMG_EnableDesert (hook
+    /// 0x5970EA): archipelago leads and Desert follows Snow in every dialog;
+    /// Surprise Me draws the map type, then the theater, from those entries
+    /// and takes the Urban Areas box from a raw draw's low bit (hook
+    /// 0x596786).
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_lists_archipelago_and_desert_and_surprise_me_draws_from_them() {
+        let values = |combo, extended| {
+            setup_combo_items(combo, extended)
+                .iter()
+                .map(|item| item.value)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(values(SetupCombo::MapType, false), [0, 1, 2, 3, 4]);
+        assert_eq!(values(SetupCombo::Theater, false), [0, 1, 3]);
+        assert_eq!(values(SetupCombo::Theater, true), [0, 1, 3, 2]);
+
+        let mut network = RandomMapSetupModalState::open(
+            RmgOptions {
+                seed: 1,
+                ..Default::default()
+            },
+            None,
+            false,
+            false,
+        );
+        network.randomize_options(&RmgSettings::default(), &mut MaxRng, "Random Map");
+        assert_eq!(network.options.map_type, 4, "the last map-type entry");
+        assert_eq!(network.options.theater, 3, "the last theater entry");
+        assert!(network.options.urban_areas, "u32::MAX has its low bit set");
+        network.generated = true;
+        network.toggle_urban_areas();
+        assert!(!network.options.urban_areas);
+        assert!(network.generated, "the box alone keeps the generated map");
+    }
+
+    #[cfg(not(feature = "ares"))]
     #[test]
     fn archipelago_and_the_added_theaters_are_listed_after_the_original_entries() {
         let values = |combo, extended| {

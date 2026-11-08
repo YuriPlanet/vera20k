@@ -109,7 +109,7 @@ impl RecalcRock {
     }
 
     /// Only asked for a valid cell.
-    fn get(&self, x: i32, y: i32) -> bool {
+    pub(crate) fn get(&self, x: i32, y: i32) -> bool {
         self.rock[y as usize * self.stride + x as usize]
     }
 }
