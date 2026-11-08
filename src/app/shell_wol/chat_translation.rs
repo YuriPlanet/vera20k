@@ -3,8 +3,6 @@
 //! the hidden lobby, whose service sinks keep writing to it. The settings
 //! belong to the options profile: the page edits a copy, and OK saves it.
 
-use std::time::Instant;
-
 use super::WolPage;
 use crate::app::frontend::{shell_layout, shell_transition::ShellExitThen};
 use crate::app::{App, AppState};
@@ -14,6 +12,7 @@ use crate::ui::shell::combobox::ComboPress;
 use crate::ui::wol_chat_translation::{
     ChatTranslationAction, DIALOG, LANGUAGE, PAGE, WolChatTranslationLayout, WolChatTranslationPage,
 };
+use crate::util::time::Instant;
 
 pub(crate) fn layout(state: &AppState) -> WolChatTranslationLayout {
     let (width, height) = shell_layout::shell_screen_size(state);
