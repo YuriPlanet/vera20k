@@ -157,7 +157,7 @@ impl WolChatTranslationPage {
 
     pub(crate) fn select_row(&mut self, row: usize) {
         if let Some(language) = language_rows().nth(row) {
-            self.settings.language = language;
+            self.settings.set_language(language);
         }
     }
 
@@ -571,9 +571,31 @@ mod tests {
             page.tooltip_key(SAME_ALPHABET),
             Some("VERA:TranslateNoSameAlphabetHelp")
         );
-        assert!(page.settings.same_alphabet, "a later language still has it");
-        page.select_row(1);
+    }
+
+    #[test]
+    fn a_newly_picked_language_starts_same_alphabet_on_unless_it_is_english() {
+        let row = |language: ChatLanguage| {
+            language_rows()
+                .position(|row| row == Some(language))
+                .unwrap()
+        };
+        let line: Vec<u16> = "where is your base".encode_utf16().collect();
+        let mut page = WolChatTranslationPage::open(ChatTranslationSettings::default());
+        page.select_row(row(ChatLanguage::German));
         assert!(page.enabled(SAME_ALPHABET) && page.is_checked(SAME_ALPHABET));
+        assert_eq!(
+            page.settings.target_for(ChatPlace::Lobby, &line),
+            Some(ChatLanguage::German)
+        );
+        page.select_row(row(ChatLanguage::English));
+        assert!(page.enabled(SAME_ALPHABET) && !page.is_checked(SAME_ALPHABET));
+        assert_eq!(page.settings.target_for(ChatPlace::Lobby, &line), None);
+        // Picking the current language again keeps what the player chose.
+        page.select_row(row(ChatLanguage::German));
+        page.toggle(SAME_ALPHABET);
+        page.select_row(row(ChatLanguage::German));
+        assert!(!page.is_checked(SAME_ALPHABET));
     }
 
     #[test]

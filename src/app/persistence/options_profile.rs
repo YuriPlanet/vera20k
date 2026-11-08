@@ -609,7 +609,7 @@ impl RetailOptionsProfile {
             );
             let chat = &mut self.chat_translation;
             if let Some(value) = vera.read_name("TranslateChat", 16) {
-                chat.language = crate::ui::chat_translation::ChatLanguage::from_tag(value);
+                chat.set_language(crate::ui::chat_translation::ChatLanguage::from_tag(value));
             }
             for place in crate::ui::chat_translation::ChatPlace::ALL {
                 chat.set_translates(
@@ -1651,6 +1651,24 @@ ScoreVolume=0.3\nIsScoreShuffle=yes\nSoundLatency=4\nInGameMusic=no\n[VERA]\nZoo
             .chat_translation;
         assert_eq!(chat.language, Some(ChatLanguage::Japanese));
         assert!(chat.reads(ChatLanguage::Korean));
+    }
+
+    /// A language with no saved choice starts as picking it would; a saved
+    /// choice stays.
+    #[test]
+    fn same_alphabet_starts_by_language_until_a_choice_is_saved() {
+        let startup = RetailStartupOptions::default();
+        let same_alphabet = |ini: &[u8]| {
+            load_snapshot(&startup, ini)
+                .retained_profile
+                .chat_translation
+                .same_alphabet
+        };
+        assert!(same_alphabet(b"[VERA]\r\nTranslateChat=de\r\n"));
+        assert!(!same_alphabet(b"[VERA]\r\nTranslateChat=en\r\n"));
+        assert!(!same_alphabet(
+            b"[VERA]\r\nTranslateChat=de\r\nTranslateSameAlphabet=no\r\n"
+        ));
     }
 
     /// A windowed launch opens centred, so the window keys earlier builds

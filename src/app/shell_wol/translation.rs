@@ -30,7 +30,7 @@ pub(crate) fn command(state: &mut AppState, line: &[u16]) -> bool {
         TranslateCommand::Usage => chat_translation::usage(),
         TranslateCommand::Set(language) => {
             let profile = &mut state.persistence.options_profile;
-            profile.chat_translation.language = language;
+            profile.chat_translation.set_language(language);
             if let Some(config) = state.platform.game_config.as_ref()
                 && let Err(error) = profile.commit_chat_translation(config.paths.settings_dir())
             {

@@ -4228,10 +4228,9 @@ impl WolCapture {
     }
 
     /// The Chat Translation page settled: real clicks choose Simplified
-    /// Chinese and Same-Alphabet Languages, then OK.
+    /// Chinese, which turns Same-Alphabet Languages on, then OK.
     fn chat_translation_opened(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
         use crate::app::shell_wol::chat_translation as app_page;
-        use crate::ui::skirmish_shell::checkbox_icon_rect;
         use crate::ui::wol_chat_translation::{OK, SAME_ALPHABET};
         self.options_before = Some((read_settings(state)?, state.frontend.wol_preferences));
         ensure!(!Self::lobby(state)?.shown, "the lobby must hide under the page");
@@ -4245,8 +4244,6 @@ impl WolCapture {
             .popup_geometry(&layout)
             .context("the language list did not open")?;
         welcome_click(state, popup.row_rect(2).context("Simplified Chinese")?);
-        let same = layout.checkbox_rect(SAME_ALPHABET).context("the checkbox")?;
-        welcome_click(state, checkbox_icon_rect(same, layout.page.scale));
         let page = app_page::page(state).context("the page")?;
         ensure!(
             page.settings.language == Some(ChatLanguage::SimplifiedChinese)
@@ -4260,7 +4257,7 @@ impl WolCapture {
             state.frontend.shell_exit.is_some(),
             "the page did not slide out"
         );
-        self.event(frame, "Simplified Chinese, Same-Alphabet Languages, OK");
+        self.event(frame, "Simplified Chinese, OK");
         self.phase = WolPhase::ChatTranslationReturn;
         Ok(())
     }
