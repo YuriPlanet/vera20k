@@ -97,6 +97,11 @@ pub(crate) const SKIP_INTRO_LABEL: &str = "VERA:SkipIntro";
 pub(crate) const SKIP_INTRO_HELP: &str = "VERA:SkipIntroHelp";
 pub(crate) const PERFORMANCE_STATS_LABEL: &str = "VERA:PerformanceStats";
 pub(crate) const PERFORMANCE_STATS_HELP: &str = "VERA:PerformanceStatsHelp";
+/// VERA's developer box: arms Ctrl+Alt+K, which switches every label between
+/// its text and its own string-table key, VERA's own `VERA:` labels included.
+/// Saved in `[VERA] ShowStringKeys=`; a start shows the texts.
+pub(crate) const SHOW_STRING_KEYS_LABEL: &str = "VERA:ShowStringKeys";
+pub(crate) const SHOW_STRING_KEYS_HELP: &str = "VERA:ShowStringKeysHelp";
 /// VERA's end-game switches, the pair of `[EndGameScreens]` presentation
 /// stages. The verdict is what the match shows where it is decided; the score
 /// page is the dialog after it. Each stage owns its picture *and* its music, so
@@ -627,6 +632,10 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's developer box: the next launch skips `Init_Game`'s logo movie
     /// (`0x0052C5E2`); the splash and the first-run intro still play.
     SkipIntro,
+    /// VERA's developer box: arms Ctrl+Alt+K, which switches every label
+    /// between its text and its own string-table key. Saved; a start shows
+    /// the texts until the hotkey asks for keys.
+    ShowStringKeys,
     /// VERA's box: the score page draws the country's own victory or defeat
     /// picture from `[EndGameScreens]` instead of the side's `MP*SCRN` art. On
     /// by default — a rules set that names pictures shows them — and it covers
@@ -695,6 +704,7 @@ pub(crate) enum LauncherOptionsEvent {
     SmoothSidebarChanged(bool),
     HdMapPreviewsChanged(bool),
     PerformanceStatsChanged(bool),
+    ShowStringKeysChanged(bool),
     SkipIntroChanged(bool),
     CustomEndGameBannerChanged(bool),
     CustomEndGameScoreChanged(bool),
@@ -750,6 +760,8 @@ pub(crate) struct LauncherOptionsValues {
     pub(crate) wol_test_service: bool,
     /// The FPS readout's live state when the page opened, then each toggle.
     pub(crate) performance_stats: bool,
+    /// `[VERA] ShowStringKeys=`, the String Keys box, then each toggle.
+    pub(crate) show_string_keys: bool,
     pub(crate) skip_intro: bool,
     /// The country's own end-game picture is allowed; see
     /// [`LauncherCheckboxId::CustomEndGameBanner`].
@@ -802,6 +814,7 @@ impl Default for LauncherOptionsValues {
             terrain_deformation: false,
             wol_test_service: false,
             performance_stats: false,
+            show_string_keys: false,
             skip_intro: false,
             custom_end_game_banner: false,
             custom_end_game_score: false,
@@ -1204,6 +1217,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::SmoothSidebar => &mut self.values.smooth_sidebar,
             LauncherCheckboxId::HdMapPreviews => &mut self.values.hd_map_previews,
             LauncherCheckboxId::PerformanceStats => &mut self.values.performance_stats,
+            LauncherCheckboxId::ShowStringKeys => &mut self.values.show_string_keys,
             LauncherCheckboxId::SkipIntro => &mut self.values.skip_intro,
             LauncherCheckboxId::CustomEndGameBanner => &mut self.values.custom_end_game_banner,
             LauncherCheckboxId::CustomEndGameScore => &mut self.values.custom_end_game_score,
@@ -1260,6 +1274,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::PerformanceStats => self
                 .pending_events
                 .push(LauncherOptionsEvent::PerformanceStatsChanged(checked)),
+            LauncherCheckboxId::ShowStringKeys => self
+                .pending_events
+                .push(LauncherOptionsEvent::ShowStringKeysChanged(checked)),
             LauncherCheckboxId::SkipIntro => self
                 .pending_events
                 .push(LauncherOptionsEvent::SkipIntroChanged(checked)),
@@ -1525,6 +1542,7 @@ impl Category {
             Self::Developer => &[
                 Setting::Checkbox(Check::PerformanceStats),
                 Setting::Checkbox(Check::SkipIntro),
+                Setting::Checkbox(Check::ShowStringKeys),
             ],
         }
     }
@@ -2197,6 +2215,7 @@ mod tests {
                 Check::ShiftQueue,
                 Check::TerrainDeformation,
                 Check::PerformanceStats,
+                Check::ShowStringKeys,
                 Check::SkipIntro,
                 Check::CustomEndGameBanner,
                 Check::CustomEndGameScore,

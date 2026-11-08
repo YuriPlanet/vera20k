@@ -20,9 +20,10 @@ const VK_SPACE: u16 = 0x20;
 const VK_DELETE: u16 = 0x2e;
 
 /// VERA's own commands that come with a key: Performance Stats Ctrl+Alt+F, Lock
-/// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter and Render
-/// Interpolation Ctrl+Alt+I. Retail `KEYBOARDMD.INI` binds none of these keys.
-const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 4] = [
+/// Cursor to Window Ctrl+Alt+L, Full Screen Alt+Enter, Render Interpolation
+/// Ctrl+Alt+I and String Keys Ctrl+Alt+K. Retail `KEYBOARDMD.INI` binds none of
+/// these keys.
+const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 5] = [
     (HotkeyCommand::PerformanceStats, CTRL_BIT | ALT_BIT | 0x46),
     (HotkeyCommand::LockCursor, CTRL_BIT | ALT_BIT | 0x4c),
     (HotkeyCommand::FullScreen, ALT_BIT | 0x0d),
@@ -30,6 +31,7 @@ const VERA_DEFAULT_KEYS: [(HotkeyCommand, u16); 4] = [
         HotkeyCommand::RenderInterpolation,
         CTRL_BIT | ALT_BIT | 0x49,
     ),
+    (HotkeyCommand::StringKeys, CTRL_BIT | ALT_BIT | 0x4b),
 ];
 /// VeraX AutoLoad's Ctrl+D.
 #[cfg(feature = "verax")]
@@ -91,12 +93,16 @@ pub(crate) enum HotkeyCommand {
     ScreenCapture,
     SetView(usize),
     /// VERA's built-in keys in the `vera20k` keyboard category, each with a
-    /// default in [`VERA_DEFAULT_KEYS`]. The first three work on every screen
+    /// default in [`VERA_DEFAULT_KEYS`]. Performance Stats, Lock Cursor, Full
+    /// Screen and String Keys work on every screen
     /// ([`HotkeyBindings::window_command`]); Render Interpolation in a battle.
     PerformanceStats,
     LockCursor,
     FullScreen,
     RenderInterpolation,
+    /// Swap the interface between each label's text and its string-table key
+    /// while the Developer page's String Keys box is ticked.
+    StringKeys,
     /// VeraX: load the selection into nearby transports. Registered in the
     /// `vera20k` keyboard category with the Ctrl+D default.
     AutoLoad,
@@ -451,11 +457,11 @@ impl HotkeyBindings {
             .unwrap_or(HotkeyResolution::Unhandled)
     }
 
-    /// VERA's every-screen commands (Performance Stats, Lock Cursor to Window, Full
-    /// Screen), which the window owner runs before any screen's own keys. A
-    /// binding on a key that types text, held without Ctrl or Alt, is left
-    /// to the battle's hotkey dispatch, which serves the chat edit first, so
-    /// text boxes keep their letters.
+    /// VERA's every-screen commands (Performance Stats, Lock Cursor to Window,
+    /// Full Screen, String Keys), which the window owner runs before any
+    /// screen's own keys. A binding on a key that types text, held without Ctrl
+    /// or Alt, is left to the battle's hotkey dispatch, which serves the chat
+    /// edit first, so text boxes keep their letters.
     pub(crate) fn window_command(
         &self,
         logical_key: &Key,
@@ -465,7 +471,8 @@ impl HotkeyBindings {
         let HotkeyResolution::Command(
             command @ (HotkeyCommand::PerformanceStats
             | HotkeyCommand::LockCursor
-            | HotkeyCommand::FullScreen),
+            | HotkeyCommand::FullScreen
+            | HotkeyCommand::StringKeys),
         ) = self.resolve_event(logical_key, location, modifiers)
         else {
             return None;
@@ -902,8 +909,8 @@ mod tests {
             writeln!(ini, "{}={key}", row["ini_name"].as_str().unwrap()).unwrap();
         }
         let loaded = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
-        // The 87 retail rows, plus VERA's four default keys above 0x256.
-        assert_eq!(loaded.by_key.len(), 91);
+        // The 87 retail rows, plus VERA's five default keys above 0x256.
+        assert_eq!(loaded.by_key.len(), 92);
         for (index, metadata) in catalog::retail_commands().iter().enumerate() {
             assert_eq!(
                 loaded.command_at(0x200 + index as u16),
@@ -912,7 +919,7 @@ mod tests {
         }
         let saved = loaded.to_ini_string();
         ini.push_str(
-            "FullScreen=1037\nPerformanceStats=1606\nRenderInterpolation=1609\nLockCursor=1612\n",
+            "FullScreen=1037\nPerformanceStats=1606\nRenderInterpolation=1609\nStringKeys=1611\nLockCursor=1612\n",
         );
         assert_eq!(saved, ini);
         let reloaded = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
@@ -1021,9 +1028,9 @@ mod tests {
         assert_eq!(startup.first_key(HotkeyCommand::Delete), Some(46));
         let serialized = startup.to_ini_string();
         #[cfg(feature = "verax")]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nPerformanceStats=1606\nRenderInterpolation=1609\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nAutoLoad=580\nFullScreen=1037\nPerformanceStats=1606\nRenderInterpolation=1609\nStringKeys=1611\nLockCursor=1612\n";
         #[cfg(not(feature = "verax"))]
-        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nFullScreen=1037\nPerformanceStats=1606\nRenderInterpolation=1609\nLockCursor=1612\n";
+        let expected = "[Hotkey]\nOptions=27\nCenterOnRadarEvent=32\nDelete=110\nStopObject=83\nFullScreen=1037\nPerformanceStats=1606\nRenderInterpolation=1609\nStringKeys=1611\nLockCursor=1612\n";
         assert_eq!(serialized, expected);
         let mut reloaded = HotkeyBindings::reload_from_ini_bytes(Some(serialized.as_bytes()));
         assert_eq!(reloaded.command_at(46), None);
@@ -1212,6 +1219,7 @@ mod tests {
             (HotkeyCommand::LockCursor, 0x64c),
             (HotkeyCommand::FullScreen, 0x40d),
             (HotkeyCommand::RenderInterpolation, 0x649),
+            (HotkeyCommand::StringKeys, 0x64b),
         ] {
             assert_eq!(bindings.first_key(command), Some(key), "{command:?}");
         }
@@ -1263,6 +1271,10 @@ mod tests {
         assert_eq!(
             bindings.window_command(&character("g"), standard, modifiers(false, false, true)),
             Some(HotkeyCommand::LockCursor)
+        );
+        assert_eq!(
+            bindings.window_command(&character("k"), standard, modifiers(false, true, true)),
+            Some(HotkeyCommand::StringKeys)
         );
         // Render Interpolation is a battle key whatever its binding.
         assert_eq!(

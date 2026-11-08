@@ -47,6 +47,7 @@ pub(crate) fn launcher_values_from_profile(
         terrain_deformation: profile.terrain_deformation,
         wol_test_service: profile.wol_test_service,
         performance_stats: false,
+        show_string_keys: profile.show_string_keys,
         skip_intro: profile.skip_intro,
         custom_end_game_banner: profile.custom_end_game_banner,
         custom_end_game_score: profile.custom_end_game_score,
@@ -133,6 +134,8 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn store_terrain_deformation(&mut self, enabled: bool);
     fn store_wol_test_service(&mut self, wol_test_service: bool);
     fn set_performance_stats(&mut self, shown: bool);
+    /// Show each label's string-table key instead of its text.
+    fn set_show_string_keys(&mut self, shown: bool);
     fn store_skip_intro(&mut self, skip: bool);
     /// Whether a finished match draws the country's own end-game picture.
     fn store_custom_end_game_banner(&mut self, enabled: bool);
@@ -201,6 +204,9 @@ pub(crate) fn dispatch_launcher_preview_event(
         }
         LauncherOptionsEvent::PerformanceStatsChanged(shown) => {
             operations.set_performance_stats(shown)
+        }
+        LauncherOptionsEvent::ShowStringKeysChanged(shown) => {
+            operations.set_show_string_keys(shown)
         }
         LauncherOptionsEvent::SkipIntroChanged(skip) => {
             operations.store_skip_intro(skip);
