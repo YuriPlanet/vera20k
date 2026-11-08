@@ -184,17 +184,31 @@ impl Simulation {
     }
 
     /// The sound and anim a dig effect names: `[AudioVisual] DigSound=` and
-    /// `Dig=`.
-    fn tunnel_dig_effect_types(
+    /// `Dig=`. Ares 3.0 replaces the four stock call sites with
+    /// `PlayDigEffects` (Ares.dll `0x100443E0`; hooks `0x728EF0`, `0x7292CF`,
+    /// `0x7297C4`, `0x7299A9`), which asks the type's `DigInSound`/`DigIn`
+    /// or `DigOutSound`/`DigOut` first.
+    pub(super) fn tunnel_dig_effect_types(
         &self,
-        _entity: &crate::sim::game_entity::GameEntity,
-        _effects: DigEffects,
+        entity: &crate::sim::game_entity::GameEntity,
+        effects: DigEffects,
         rules: &RuleSet,
     ) -> (Option<String>, Option<String>) {
-        (
+        let stock = (
             rules.general.dig_sound.clone(),
             rules.general.dig_anim.clone(),
-        )
+        );
+        #[cfg(feature = "ares")]
+        if let Some(object) = self.object_type(entity.type_ref(), rules) {
+            let [sound, anim] = object.techno_combat().dig_effects(effects.dig_in);
+            return (
+                sound.map_or(stock.0, |sound| sound.map(str::to_owned)),
+                anim.map_or(stock.1, |anim| anim.map(str::to_owned)),
+            );
+        }
+        #[cfg(not(feature = "ares"))]
+        let _ = (entity, effects);
+        stock
     }
 
     /// `ILocomotion::Move_To` (`0x00728AF0`). A refusing owner keeps the

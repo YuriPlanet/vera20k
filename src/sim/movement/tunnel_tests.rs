@@ -198,3 +198,47 @@ fn underground_digger_is_ripple_on_screen_and_hidden_to_sensors() {
         MovementLayer::Underground
     );
 }
+
+/// Ares `PlayDigEffects` (Ares.dll `0x100443E0`): a type's `DigIn` replaces
+/// `[AudioVisual] Dig=` while digging in, `DigOut=none` spawns nothing while
+/// digging out, and an unset `DigInSound`/`DigOutSound` keeps `DigSound`.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_dig_keys_replace_the_audio_visual_effects() {
+    use crate::sim::movement::tunnel_movement::DigEffects;
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[AudioVisual]\nDigSound=DigSnd\nDig=DIGANIM\n[Animations]\n0=DIGANIM\n1=MYDIG\n\
+         [VehicleTypes]\n0=DIGR\n[DIGR]\nDigIn=MYDIG\nDigOut=none\n",
+    ))
+    .expect("Ares dig fixture rules");
+    let (sim, _) = fixture();
+    let entity = sim.substrate.entities.get(DIGGER).unwrap();
+    let names = |effects| sim.tunnel_dig_effect_types(entity, effects, &rules);
+    let dig_sound = rules.general.dig_sound.clone();
+    assert_eq!(
+        names(DigEffects::DIG_IN),
+        (dig_sound.clone(), Some("MYDIG".into()))
+    );
+    assert_eq!(names(DigEffects::DIG_OUT), (dig_sound, None));
+}
+
+/// Ares TunnelLocomotionClass_Turning (Ares.dll `0x1005D500`, hook
+/// `0x0072920C`): PreDigIn with a null Destination ends the dig (DugOut)
+/// instead of turning toward the map origin.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_null_destination_ends_the_dig() {
+    let (mut sim, rules) = fixture();
+    sim.substrate
+        .entities
+        .get_mut(DIGGER)
+        .unwrap()
+        .locomotor
+        .as_mut()
+        .unwrap()
+        .tunnel_runtime_mut()
+        .unwrap()
+        .set_state(TunnelState::PreDigIn);
+    sim.process_tunnel_locomotor(DIGGER, &rules, None, FrameEffects::default());
+    assert_eq!(tunnel_state(&sim), Some(TunnelState::DugOut));
+}
