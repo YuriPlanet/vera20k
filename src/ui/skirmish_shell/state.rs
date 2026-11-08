@@ -38,15 +38,15 @@ pub use opponent_scroll::{
 pub use choose_map::{
     ChooseMapContext, ChooseMapListPress, ChooseMapModalState, ChooseMapPrompt,
     ChooseMapPromptAnswer, ChooseMapPromptButton, ChooseMapPromptKind, ChooseMapSelection,
-    ONLINE_MAPS_ROW,
-    SEARCH_MAX_CHARS, ai_rows_beyond_limit_occupied,
+    ONLINE_MAPS_ROW, SEARCH_MAX_CHARS, ai_rows_beyond_limit_occupied,
 };
 pub(crate) use player_name::CountryMenuCatalog;
 pub use player_name::{
     PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT, PLAYER_NAME_EDIT_LIMIT_BYTES,
     PlayerNameEditState, SkirmishShellDialog, SkirmishShellState, accept_selected_map,
-    blur_player_name_edit, clear_status_help_text, combo_dropdown_open, dismiss_validation_modal,
-    drain_pending_ui_sounds, focus_player_name_edit, handle_player_name_backspace,
+    blur_player_name_edit, clear_status_help_text, close_combo_dropdown, combo_dropdown_open,
+    dismiss_validation_modal, drain_pending_ui_sounds, focus_player_name_edit,
+    handle_player_name_backspace,
     handle_player_name_delete, handle_player_name_end, handle_player_name_home,
     handle_player_name_left, handle_player_name_right, handle_player_name_tab,
     initialize_rows_for_selected_map, insert_player_name_text, player_name_caret_prefix,
@@ -54,8 +54,8 @@ pub use player_name::{
     set_status_help_text, update_player_name_scroll_for_caret,
 };
 pub use random_map_setup::{
-    AcceptOutcome, MainRngRanged, PLAYERS_RANGE, RandomMapSetupModalState, SETUP_COMBO_ROWS,
-    SetupCombo, SetupComboItem, setup_combo_items,
+    ADVANCED_RANGE, AcceptOutcome, MainRngRanged, PLAYERS_RANGE, RandomMapSetupModalState,
+    SETUP_COMBO_ROWS, SetupCombo, SetupComboItem, setup_combo_items,
 };
 pub use saved_seed_browser::{
     SAVED_SEED_DESCRIPTION_MAX_UNITS, SavedSeedBrowserRow, SavedSeedBrowserState,

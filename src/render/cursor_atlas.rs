@@ -148,6 +148,14 @@ pub(crate) enum CursorId {
     PsychicReveal,
     SpyPlane,
     Beacon,
+    /// Ares 3.0: an entry of the `[MouseCursors]` list by index, its main set
+    /// or its radar (`mini`) set ([`crate::rules::ares_mouse_cursor`]). An
+    /// Ares cursor draws every id through the list ([`SoftwareCursor::get`]).
+    #[cfg(feature = "ares")]
+    Ares {
+        index: u16,
+        mini: bool,
+    },
 }
 
 /// All loaded cursor animation sequences from mouse.sha, keyed by CursorId.
@@ -157,6 +165,16 @@ pub(crate) struct SoftwareCursor {
     /// same mouse palette. CPU logical pixels preserve its interleaving with
     /// line/rectangle stores without adding a second asset loader or atlas.
     planning_badges: [Option<PlanningBadge>; 2],
+    /// Built from the Ares cursor list ([`build_ares_software_cursor`]):
+    /// `sequences` holds only [`CursorId::Ares`] keys.
+    #[cfg(feature = "ares")]
+    ares: bool,
+    /// mouse.sha and its palette, for the window system's images
+    /// (`app::input::hardware_cursor`).
+    shp: ShpFile,
+    palette: Palette,
+    /// Tells this load's art from another's.
+    art_id: u64,
 }
 
 pub(crate) struct PlanningBadge {
@@ -172,15 +190,48 @@ impl SoftwareCursor {
     pub(crate) fn planning_badge(&self, frame: usize) -> Option<&PlanningBadge> {
         self.planning_badges.get(frame.checked_sub(433)?)?.as_ref()
     }
+    /// The cursor and frame a planning node shows while hovered:
+    /// PlanMgr63AC41..4E asks row 0 with the small flag, so the static small
+    /// arrow, `Default`'s second packed frame. Through the Ares list it is
+    /// row 0's radar set (`MouseClass_UpdateCursor @ 10007AC0`).
+    pub(crate) fn planning_arrow(&self) -> (CursorId, usize) {
+        #[cfg(feature = "ares")]
+        if self.ares {
+            return (CursorId::DefaultMini, 0);
+        }
+        (CursorId::Default, 1)
+    }
+
+    pub(crate) fn art_id(&self) -> u64 {
+        self.art_id
+    }
+
+    /// `frame` of `id` for the window system, `scale` window pixels to a
+    /// mouse.sha pixel.
+    pub(crate) fn os_image(&self, id: CursorId, frame: usize, scale: f32) -> Option<OsCursorImage> {
+        let sequence = self.get(id)?;
+        let shp_frame = sequence.frames.get(frame)?.shp_frame;
+        let canvas = frame_to_canvas_rgba(&self.shp, shp_frame, &self.palette).ok()?;
+        let size = (u32::from(self.shp.width), u32::from(self.shp.height));
+        Some(os_cursor_image(&canvas, size, sequence.hotspot, scale))
+    }
+
     /// Look up a cursor sequence by id, falling back to Default if not found.
     pub(crate) fn get(&self, id: CursorId) -> Option<&SoftwareCursorSequence> {
+        #[cfg(feature = "ares")]
+        if self.ares {
+            return ares::lookup(&self.sequences, id);
+        }
         self.sequences
             .get(&id)
             .or_else(|| self.sequences.get(&CursorId::Default))
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct SoftwareCursorFrame {
+    /// Its frame of mouse.sha.
+    shp_frame: usize,
     pub(crate) texture: BatchTexture,
     pub(crate) width: f32,
     pub(crate) height: f32,
@@ -191,6 +242,22 @@ pub(crate) struct SoftwareCursorSequence {
     pub(crate) interval_ms: u64,
     pub(crate) hotspot: [f32; 2],
 }
+
+/// A cursor frame as the window system takes it.
+pub(crate) struct OsCursorImage {
+    /// Straight-alpha RGBA, `width * height * 4` bytes.
+    pub(crate) rgba: Vec<u8>,
+    pub(crate) width: u16,
+    pub(crate) height: u16,
+    pub(crate) hotspot: (u16, u16),
+}
+
+/// A number no other mouse.sha load has (`SoftwareCursor::art_id`).
+fn next_art_id() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
 use crate::assets::shp_file::ShpFile;
@@ -198,6 +265,7 @@ use crate::render::batch::{BatchRenderer, BatchTexture};
 use crate::render::gpu::GpuContext;
 use image::RgbaImage;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Hotspot position within the FullWidth × FullHeight canvas.
 /// Matches the near/centre/far sentinels the two hotspot fields of a descriptor
@@ -634,11 +702,9 @@ const CURSOR_DEFS: &[(CursorId, usize, usize, u64, CursorHotspot)] = &[
     ),
 ];
 
-pub(crate) fn build_software_cursor(
-    gpu: &GpuContext,
-    batch: &BatchRenderer,
-    asset_manager: &AssetManager,
-) -> Option<SoftwareCursor> {
+/// MOUSE.SHA and MOUSEPAL.PAL, the one shape and palette every software
+/// cursor draws from.
+fn load_mouse_shape(asset_manager: &AssetManager) -> Option<(ShpFile, Palette)> {
     // Init_Game 0x0052BA60 converts MOUSEPAL.PAL like every palette load.
     let palette = asset_manager
         .get_ref("mousepal.pal")
@@ -654,8 +720,16 @@ pub(crate) fn build_software_cursor(
     if shp.frames.is_empty() {
         return None;
     }
-
     maybe_export_mouse_sheet(&shp, &palette);
+    Some((shp, palette))
+}
+
+pub(crate) fn build_software_cursor(
+    gpu: &GpuContext,
+    batch: &BatchRenderer,
+    asset_manager: &AssetManager,
+) -> Option<SoftwareCursor> {
+    let (shp, palette) = load_mouse_shape(asset_manager)?;
 
     let mut sequences: HashMap<CursorId, SoftwareCursorSequence> = HashMap::new();
     for &(id, start, count, interval_ms, hotspot) in CURSOR_DEFS {
@@ -686,8 +760,20 @@ pub(crate) fn build_software_cursor(
     Some(SoftwareCursor {
         sequences,
         planning_badges,
+        #[cfg(feature = "ares")]
+        ares: false,
+        shp,
+        palette,
+        art_id: next_art_id(),
     })
 }
+
+#[cfg(feature = "ares")]
+pub(crate) use ares::{build_ares_software_cursor, vanilla_row};
+
+#[cfg(feature = "ares")]
+#[path = "cursor_atlas_ares.rs"]
+mod ares;
 
 fn build_cursor_sequence(
     gpu: &GpuContext,
@@ -758,6 +844,7 @@ fn build_cursor_frame(
     let rgba = frame_to_canvas_rgba(shp, frame_idx, palette).ok()?;
     let texture = batch.create_texture(gpu, &rgba, shp.width as u32, shp.height as u32);
     Some(SoftwareCursorFrame {
+        shp_frame: frame_idx,
         texture,
         width: shp.width as f32,
         height: shp.height as f32,
@@ -903,9 +990,63 @@ fn frame_to_canvas_rgba(shp: &ShpFile, frame_idx: usize, palette: &Palette) -> R
     Ok(canvas)
 }
 
+/// `canvas` (`size` pixels) for the window system: resampled as the sprite's
+/// nearest-neighbour sampler does, on an image grown to hold the hotspot. A
+/// far-edge hotspot lies one pixel past the canvas (`hotspot_offset`), and an
+/// OS cursor's must lie inside its image.
+fn os_cursor_image(
+    canvas: &[u8],
+    size: (u32, u32),
+    hotspot: [f32; 2],
+    scale: f32,
+) -> OsCursorImage {
+    let drawn = |length: u32| ((length as f32 * scale).round() as u32).max(1);
+    let (drawn_width, drawn_height) = (drawn(size.0), drawn(size.1));
+    let hotspot = hotspot.map(|offset| (offset * scale).round() as u32);
+    let width = drawn_width.max(hotspot[0] + 1);
+    let height = drawn_height.max(hotspot[1] + 1);
+    let source = |pixel: u32, length: u32| (((pixel as f32 + 0.5) / scale) as u32).min(length - 1);
+    let mut rgba = vec![0; (width * height * 4) as usize];
+    for y in 0..drawn_height {
+        for x in 0..drawn_width {
+            let from = ((source(y, size.1) * size.0 + source(x, size.0)) * 4) as usize;
+            let to = ((y * width + x) * 4) as usize;
+            rgba[to..to + 4].copy_from_slice(&canvas[from..from + 4]);
+        }
+    }
+    OsCursorImage {
+        rgba,
+        width: width as u16,
+        height: height as u16,
+        hotspot: (hotspot[0] as u16, hotspot[1] as u16),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A far-edge hotspot grows the image so the window system accepts it,
+    /// and scaling doubles each pixel as the sprite's sampler does.
+    #[test]
+    fn an_os_cursor_image_holds_its_far_edge_hotspot_and_keeps_hard_pixels() {
+        const RED: [u8; 4] = [255, 0, 0, 255];
+        const BLUE: [u8; 4] = [0, 0, 255, 255];
+        let canvas = [RED, BLUE].concat();
+        let image = os_cursor_image(
+            &canvas,
+            (2, 1),
+            hotspot_offset(CursorHotspot::RightBottom, 2, 1),
+            2.0,
+        );
+        assert_eq!((image.width, image.height, image.hotspot), (5, 3, (4, 2)));
+        let row = |y: usize| &image.rgba[y * 20..y * 20 + 20];
+        assert_eq!(row(0), [RED, RED, BLUE, BLUE, [0; 4]].concat());
+        assert_eq!(row(1), row(0));
+        assert_eq!(row(2), [0; 20], "the hotspot's added row stays transparent");
+        let (width, height, (x, y)) = (image.width, image.height, image.hotspot);
+        assert!(winit::window::CustomCursor::from_rgba(image.rgba, width, height, x, y).is_ok());
+    }
 
     fn row(id: CursorId) -> (usize, usize, u64) {
         CURSOR_DEFS

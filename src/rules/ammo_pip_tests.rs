@@ -121,3 +121,18 @@ fn signed_ammo_readers_keep_current_defaults_through_production_passes() {
         );
     }
 }
+
+/// Ares TechnoTypeClass_GetPipMax_MindControl (1004B910, hook 0x7162B0):
+/// a MindControl pip scale counts the first MindControl weapon's Damage,
+/// here the secondary's, where stock reads the primary's.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_mind_control_pips_take_the_mind_control_weapon() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[InfantryTypes]\n0=PSI\n[PSI]\nPipScale=MindControl\nPrimary=Gun\nSecondary=Mind\n\
+         [Gun]\nDamage=25\nWarhead=AP\n[Mind]\nDamage=3\nWarhead=MC\n\
+         [AP]\nVerses=100%\n[MC]\nMindControl=yes\n",
+    ))
+    .unwrap();
+    assert_eq!(rules.object("PSI").unwrap().pip_max(&rules), 3);
+}

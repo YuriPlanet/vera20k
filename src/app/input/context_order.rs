@@ -843,6 +843,8 @@ pub(crate) fn resolved_unit_in_range(
                 overlay_grid: sim.overlay_grid(),
                 overlay_registry,
                 alliances: Some(sim.house_alliances()),
+                #[cfg(feature = "ares")]
+                buildings: Some(crate::sim::combat::line_of_fire::CellBuildings::of(sim)),
             },
             selection_target,
         );
@@ -3342,6 +3344,7 @@ fn self_deploy_is_blocked(
             && object.passengers > 0
             && !object.is_simple_deployer
             && entity.bunker.link().installed_in().is_none()
+            && !object.no_manual_unload()
             && entity
                 .passenger_role
                 .cargo()
@@ -3575,12 +3578,34 @@ fn self_action(
             entity_id: target.stable_id,
         });
     }
+    // Ares 3.0 `NoManualUnload`: Unit What_Action leaves an unbunkered
+    // transport's self arm with action 0 (1004BEF0, hook 0x740031 ->
+    // 0x740115) ahead of its empty-hold NoDeploy (`self_deploy_is_blocked`),
+    // and Aircraft What_Action its Self (10048A90, hook 0x417DD2 -> 0x417DF4).
+    if obj.is_some_and(|object| {
+        object.no_manual_unload()
+            && match entity.category() {
+                EntityCategory::Unit => object.passengers > 0 && !object.is_simple_deployer,
+                EntityCategory::Aircraft => true,
+                _ => false,
+            }
+    }) {
+        return None;
+    }
     // Building447286..4472E7's gap rung precedes its cargo rungs; its Self
     // click queues Unload443514, which toggles the super-charge. Residual:
     // a type both GapGenerator= and a factory would also take the primary
     // tail4472EC and Event17 (44345F); no retail type is both.
     if let Some(offered) = sim.gap_generator_self_action(target.stable_id, rules) {
         return offered.then_some(Command::UnloadPassengers {
+            transport_id: target.stable_id,
+        });
+    }
+    // Ares 3.0 100173A0 (hook 0x44731C): a tunnel entrance with its
+    // owner's network loaded offers the unload action.
+    #[cfg(feature = "ares")]
+    if sim.ares_tunnel_offers_unload(target.stable_id, rules) {
+        return Some(Command::UnloadPassengers {
             transport_id: target.stable_id,
         });
     }
@@ -3937,7 +3962,8 @@ fn engineer_capture_orders(
                         destination: Some(TargetKind::Entity(hover.stable_id)),
                     });
                 }
-                EngineerBuildingAction::Repair(false) => {}
+                // Ares NoEnter (10025220) gives no order either.
+                EngineerBuildingAction::Repair(false) | EngineerBuildingAction::NoEnter => {}
             }
         }
         false
@@ -4183,7 +4209,9 @@ fn disarm_bomb_engineers(
         .entities()
         .get(target)
         .is_some_and(|entity| entity.bomb.is_some());
-    if !bombed || !sim.bomb_seen_by(target, player) {
+    // Ares InfantryClass_GetActionOnObject2 (10056C00, hook 0x51E488) skips
+    // a bomb that is not `IvanBomb.Detachable`.
+    if !bombed || !sim.bomb_detachable(target, rules) || !sim.bomb_seen_by(target, player) {
         return Vec::new();
     }
     selected
@@ -4416,11 +4444,22 @@ fn shot_is_illegal(
                 .and_then(|object| sim.interner().object_type(object.type_ref(), rules)),
         )
         .is_some_and(|(infantry, building)| {
-            (if infantry.agent {
-                building.spyable
-            } else {
-                building.capturable
-            }) || (infantry.c4 && building.can_c4)
+            // Ares 3.0 100261F0 (hook 0x007004AD): any action of the shared
+            // classification keeps the rung.
+            #[cfg(feature = "ares")]
+            {
+                let _ = (infantry, building);
+                sim.infiltrate_action(actor_id, target_id, rules)
+                    != crate::sim::world::InfiltrateAction::None
+            }
+            #[cfg(not(feature = "ares"))]
+            {
+                (if infantry.agent {
+                    building.spyable
+                } else {
+                    building.capturable
+                }) || (infantry.c4 && building.can_c4)
+            }
         });
     !infiltrate_arm
         && sim.effective_shared_cell_dummy().detached(|| {
@@ -4681,7 +4720,10 @@ fn building_object_release(
     force_move_key: bool,
 ) -> LeftRelease {
     if cursor_owner(sim, rules, current_objects, target_id).is_some_and(|best| {
-        receivers.contains(&best) && building_moves_over_object(sim, rules, best, force_move_key)
+        receivers.contains(&best)
+            && (building_moves_over_object(sim, rules, best, force_move_key)
+                // Ares 3.0 100171B0 (hook 0x44725F): the trench Enter.
+                || ares_trench_enter(sim, rules, best, target_id))
     }) {
         return LeftRelease::Dispatch;
     }
@@ -4733,6 +4775,17 @@ fn building_object_orders(
         else {
             continue;
         };
+        // Ares 3.0 10016F60 (hook 0x443414): a building whose action over
+        // the building is the trench Enter (100171B0, hook 0x44725F) raises
+        // TrenchRedirectClick (0x60, RaiseTrenchRedirectClick 1006A170)
+        // with that building's Cell, and sends nothing else.
+        #[cfg(feature = "ares")]
+        if ares_trench_enter(sim, rules, id, target) {
+            if let Some(record) = sim.encode_ares_trench_redirect_record(id, cell) {
+                orders.push(Command::SynchronizedRecord { record });
+            }
+            continue;
+        }
         if !building_moves_over_object(sim, rules, id, force_move_key) {
             continue;
         }
@@ -4771,6 +4824,27 @@ fn building_object_orders(
         }
     }
     (orders, announce)
+}
+
+/// Ares 3.0 BuildingClass_GetActionOnObject_TargetABuilding (`100171B0`,
+/// hook `0x44725F`): the building `id` answers Enter over the building
+/// `target` when its occupants may traverse there (canTraverseTo
+/// `10011690`). Default builds have no such action.
+fn ares_trench_enter(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    id: u64,
+    target: u64,
+) -> bool {
+    #[cfg(feature = "ares")]
+    {
+        sim.ares_can_traverse_to(id, target, rules)
+    }
+    #[cfg(not(feature = "ares"))]
+    {
+        let _ = (sim, rules, id, target);
+        false
+    }
 }
 
 fn selected_rally_producer_ids(

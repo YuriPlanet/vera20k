@@ -135,7 +135,7 @@ pub(crate) fn dispatch_foot_mission(
                     .try_resolve(entity.type_ref())
                     .and_then(|name| rules.object(name))
                     .is_some_and(|obj| {
-                        obj.deploy_fire && !obj.immune_to_radiation && obj.undeploy_delay < 0
+                        obj.deploy_fire && !deploy_shim_desolator(obj) && obj.undeploy_delay < 0
                     }),
         }
     };
@@ -469,7 +469,8 @@ pub(crate) fn dispatch_foot_mission(
                     )
                 })
                 .is_some_and(|object| {
-                    object.undeploy_delay >= 0 || (object.deploy_fire && object.immune_to_radiation)
+                    object.undeploy_delay >= 0
+                        || (object.deploy_fire && deploy_shim_desolator(object))
                 }) =>
         {
             infantry_guard_handled = true;
@@ -978,6 +979,20 @@ impl MissionHandlerEvaluation {
     }
 }
 
+/// The deploy shim521320's desolator test, `ImmuneToRadiation=` (`+0xD37`)
+/// at `0x0052138C` and `0x005215F9`; Ares 3.0 tests `IsDesolator` there
+/// instead (Ares.dll 100497F0 and 100497C0).
+fn deploy_shim_desolator(object: &crate::rules::object_type::ObjectType) -> bool {
+    #[cfg(feature = "ares")]
+    {
+        object.techno_combat().roles().is_desolator()
+    }
+    #[cfg(not(feature = "ares"))]
+    {
+        object.immune_to_radiation
+    }
+}
+
 /// Undeployed half of Infantry Guard521320, original5214F7..5216B6.
 /// The shared class callers treat only signed-1 as the Foot fallback. Native
 /// executions and stop-before-latch observations: infantry_auto_deploy.json.
@@ -1038,7 +1053,7 @@ fn infantry_automatic_guard_delay(
             return -1;
         }
     }
-    if object.immune_to_radiation {
+    if deploy_shim_desolator(object) {
         return -1;
     }
     let Some(moving) = crate::sim::movement::motion_query::is_moving(actor) else {

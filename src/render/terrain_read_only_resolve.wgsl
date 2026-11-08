@@ -22,7 +22,5 @@ fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
     // Every native RGB565 word reaches zero after six original half operations.
     // The native exhaustive transition corpus proves this bound for all words.
     for (var i = 0u; i < min(shadows, 6u); i += 1u) { word = native_half_word(word); }
-    let encoded = vec3f(f32(RETAIL_FIVE[(word >> 11u) & 31u]),
-        f32(RETAIL_SIX[(word >> 5u) & 63u]), f32(RETAIL_FIVE[word & 31u])) / 255.0;
-    return vec4f(srgb_decode(encoded), 1.0);
+    return vec4f(retail_linear(word), 1.0);
 }

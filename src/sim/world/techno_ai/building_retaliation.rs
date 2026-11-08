@@ -74,12 +74,15 @@ impl Simulation {
     ///
     /// `source` is the source object; one no longer in the store is NULL, as
     /// native detaches a destroyed object (a bullet's source is cleared when
-    /// its firer expires).
+    /// its firer expires). `malicious` is the hit warhead's Ares
+    /// `Malicious=` (BuildingClass_ReceiveDamage_Malicious, hook 0x442974,
+    /// hands it to NotifyUnderAttack); default builds pass true.
     pub(crate) fn building_hit_response(
         &mut self,
         id: u64,
         source: Option<u64>,
         result: DamageState,
+        malicious: bool,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
@@ -99,6 +102,7 @@ impl Simulation {
             ry,
             owner: building.owner(),
             victim_type: building.type_ref(),
+            own_alert: malicious,
         });
         // NotifyUnderAttack (`0x0044297B`) ends with its House Tag raise
         // before `0x00442980` asks the source for its House.

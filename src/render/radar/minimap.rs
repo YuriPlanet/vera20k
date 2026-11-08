@@ -650,7 +650,6 @@ impl MinimapRenderer {
                     self.compositor.set_fallback_base(queue, &self.rgba_scratch);
                 }
                 self.compositor.set_stores(device, queue, &self.stores);
-                self.compositor.request();
             },
         );
         self.last_sim_tick = sim_tick;
@@ -828,6 +827,11 @@ impl MinimapRenderer {
         encoder: &mut wgpu::CommandEncoder,
     ) {
         self.compositor.encode(device, encoder);
+    }
+
+    /// A number that changes whenever [`Self::map_texture`]'s picture does.
+    pub fn picture_generation(&self) -> u64 {
+        self.compositor.generation()
     }
 
     /// The minimap picture for drawing: the HD radar's while it is on. Both

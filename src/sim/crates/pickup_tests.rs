@@ -796,9 +796,10 @@ const ARENA_RULES: &str = "[Countries]\n0=Americans\n1=Russians\n[Sides]\nAllied
              [Powerups]\nMoney=20,MONEY,yes,2000\nUnit=20,<none>,no\nHealBase=10,HEALALL,yes\n";
 
 fn arena() -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
-    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+    let rules = RuleSet::from_ini_with_fixed_art_and_sounds_for_test(
         &IniFile::from_str(ARENA_RULES),
         &IniFile::from_str("[YARD]\nFoundation=4x3\n"),
+        &["HealCrate"],
     )
     .unwrap();
     let mut sim = Simulation::new();
@@ -951,6 +952,32 @@ fn mcv_preempt_grants_the_base_unit_with_bases_on() {
 /// house's Logic members, including buildings.
 #[test]
 fn heal_base_crate_restores_the_owners_buildings() {
+    use crate::sim::world::{FrameEffects, SoundBoundary};
+    use std::cell::{Cell, RefCell};
+
+    struct Heard {
+        actor: u64,
+        building: u64,
+        delivered: Cell<usize>,
+        health_at_sound: RefCell<Vec<(i32, i32)>>,
+    }
+    impl SoundBoundary for Heard {
+        fn consume(&self, sim: &Simulation, _: &RuleSet, events: &[SimSoundEvent]) {
+            for event in &events[self.delivered.get()..] {
+                if matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id.eq_ignore_ascii_case("HealCrate"))
+                {
+                    self.health_at_sound.borrow_mut().push((
+                        sim.entities().get(self.actor).unwrap().health.current(),
+                        sim.entities().get(self.building).unwrap().health.current(),
+                    ));
+                }
+            }
+            self.delivered.set(events.len());
+        }
+        fn delivered(&self) -> usize {
+            self.delivered.get()
+        }
+    }
     let (mut sim, rules, registry, owner, actor) = arena();
     let rival = sim.interner.intern("Russians");
     sim.houses
@@ -969,6 +996,18 @@ fn heal_base_crate_restores_the_owners_buildings() {
             .health
             .set_for_test(400);
     }
+    sim.substrate
+        .entities
+        .get_mut(actor)
+        .unwrap()
+        .health
+        .set_for_test(180);
+    let heard = Heard {
+        actor,
+        building: own,
+        delivered: Cell::new(0),
+        health_at_sound: RefCell::default(),
+    };
     place_registered_crate(&mut sim, &registry, (21, 22), POWERUP_HEAL_BASE as u8);
 
     assert!(pickup_crate(
@@ -977,9 +1016,14 @@ fn heal_base_crate_restores_the_owners_buildings() {
         &registry,
         (21, 22),
         actor,
-        crate::sim::world::FrameEffects::default()
+        FrameEffects::for_sound(&heard)
     ));
 
+    assert_eq!(
+        *heard.health_at_sound.borrow(),
+        vec![(180, 400)],
+        "native HealCrate playback precedes every healing receiver"
+    );
     assert_eq!(
         sim.substrate.entities.get(own).unwrap().health.current(),
         1000
@@ -988,10 +1032,10 @@ fn heal_base_crate_restores_the_owners_buildings() {
         sim.substrate.entities.get(theirs).unwrap().health.current(),
         400
     );
-    // `[CrateRules]` retains the upper-cased name at its data boundary.
+    // The fixed SOUNDMD identity reaches the existing event channel.
     assert_eq!(
         sounds(&sim),
-        vec![("HEALCRATE".to_string(), Some([owner, owner]))]
+        vec![("HealCrate".to_string(), Some([owner, owner]))]
     );
 }
 
@@ -2334,4 +2378,19 @@ fn total_bales(sim: &Simulation, registry: &OverlayTypeRegistry) -> u32 {
         }
     }
     total
+}
+
+/// Ares 3.0 1002C8A0 (hook 0x48248D): the Money crate pays `base +
+/// RandomRanged(0, [CrateRules] RandomCrateMoney)`; 0 pays the base and
+/// draws nothing.
+#[cfg(feature = "ares")]
+#[test]
+fn ares_random_crate_money_bounds_the_top_up() {
+    let rules =
+        RuleSet::from_ini(&IniFile::from_str("[CrateRules]\nRandomCrateMoney=0\n")).unwrap();
+    let mut rng = crate::sim::rng::SimRng::new(7);
+    let before = rng.clone();
+    let base = NativeF64Bits::from_bits(2000.0_f64.to_bits());
+    assert_eq!(effects::money_crate_amount(&mut rng, &rules, 0, base), 2000);
+    assert_eq!(rng.next_u32(), before.clone().next_u32(), "no draw");
 }

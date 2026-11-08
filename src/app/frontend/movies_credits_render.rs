@@ -535,6 +535,7 @@ pub(crate) fn render_movie_list(
             text: &text,
             cursor: software_cursor(state, CURSOR_DEPTH),
             effects: None,
+            smooth_art: false,
         },
     );
     Ok(true)

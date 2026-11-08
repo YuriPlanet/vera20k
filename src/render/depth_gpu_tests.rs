@@ -285,13 +285,18 @@ impl Gpu {
                 )
             } else if let Some(rows) = &layer.palette_rows {
                 self.texture(
-                    wgpu::TextureFormat::Rgba8UnormSrgb,
+                    wgpu::TextureFormat::Rgba8Unorm,
                     rows,
                     [256, (rows.len() / 1024) as u32],
                 )
             } else {
+                // Tile pages are encoded, like production's; RGBA pages are sRGB.
                 self.texture(
-                    wgpu::TextureFormat::Rgba8UnormSrgb,
+                    if matches!(layer.shader, Shader::Terrain) {
+                        wgpu::TextureFormat::Rgba8Unorm
+                    } else {
+                        wgpu::TextureFormat::Rgba8UnormSrgb
+                    },
                     &layer.rgba,
                     layer.source_size,
                 )
@@ -326,18 +331,13 @@ impl Gpu {
             if let Some(bytes) = &layer.palette_override {
                 palette_bytes.clone_from(bytes);
             }
-            let palette = self.texture(
-                wgpu::TextureFormat::Rgba8UnormSrgb,
-                &palette_bytes,
-                [256, 1],
-            );
+            let palette = self.texture(wgpu::TextureFormat::Rgba8Unorm, &palette_bytes, [256, 1]);
             let ramp_bytes = if layer.palette_override.is_some() {
                 palette_bytes[16 * 4..32 * 4].repeat(2)
             } else {
                 [RED.repeat(16), GREEN.repeat(16)].concat()
             };
-            let house_ramp =
-                self.texture(wgpu::TextureFormat::Rgba8UnormSrgb, &ramp_bytes, [16, 2]);
+            let house_ramp = self.texture(wgpu::TextureFormat::Rgba8Unorm, &ramp_bytes, [16, 2]);
             let voxel_palette_group = voxel.then(|| {
                 self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("Depth test indexed VXL palette and house ramp"),
@@ -926,6 +926,7 @@ fn stock_cliff_decoder_and_terrain_instances_occlude_shp_and_indexed_voxels() {
         origin_x: 0.0,
         origin_y: -100.0,
         bridge_middle_tiles: None,
+        deformation_tiles: Vec::new(),
     };
     let lookup = |id, sub, variant| {
         assert_eq!((id, sub, variant), (tile_id, 2, 0));

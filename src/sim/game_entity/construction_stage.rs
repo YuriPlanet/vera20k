@@ -17,6 +17,14 @@ impl GameEntity {
             .expect("building body requires Structure")
             .bind_control(control);
     }
+    /// Ares: the type's sale frame rate, bound beside its control.
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_building_sell_rate(&mut self, rate: i32) {
+        self.building_body
+            .as_mut()
+            .expect("building body requires Structure")
+            .bind_sell_rate(rate);
+    }
     #[cfg(any(test, feature = "test-support"))]
     pub fn install_building_up(&mut self, entry: BuildingUp, now: i32) {
         entry.install(self, now);
@@ -61,10 +69,11 @@ impl GameEntity {
         self.mission_leaf.set_building_ready_latch(0);
     }
     pub(crate) fn begin_building_body(&mut self, mode: BuildingBodyMode, now: i32) {
+        let selling = self.mission.current().known() == Some(MissionType::Selling);
         self.building_body
             .as_mut()
             .expect("building body requires Structure")
-            .begin(mode, &mut self.stage, now);
+            .begin(mode, &mut self.stage, now, selling);
     }
     pub(crate) fn initialize_building_idle_body(&mut self, now: i32) {
         self.building_body
@@ -95,8 +104,9 @@ impl GameEntity {
         }
     }
     pub(crate) fn apply_queued_building_body(&mut self, now: i32, options: &GameOptions) {
+        let selling = self.mission.current().known() == Some(MissionType::Selling);
         if let Some(body) = self.building_body.as_mut() {
-            body.apply_queued(&mut self.stage, now, options);
+            body.apply_queued(&mut self.stage, now, options, selling);
         }
     }
     pub fn building_body_state(&self) -> Option<i32> {

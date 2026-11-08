@@ -32,7 +32,7 @@ mod wall_placement;
 pub use self::factory::{
     CancelOutcome, Factory, FactoryHolder, FactoryRegistry, FactoryView, PRODUCTION_STEPS,
     PendingObject, STEP_RATE_MAX, STEP_RATE_MIN, StepOutcome, TimeToBuildInputs,
-    category_for_object, time_to_build, type_base_build_time,
+    category_for_object, time_to_build, type_base_build_time, type_build_time,
 };
 pub(crate) use self::factory_lifecycle::enqueue_selected;
 pub(crate) use self::factory_lifecycle::suspend_production;
@@ -63,6 +63,10 @@ pub use self::production_repair::{RepairControl, repair_step_cost, toggle_repair
 pub(crate) use self::production_repair::{engineer_repair, update_repair_and_power};
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use self::production_sell::begin_selling;
+#[cfg(feature = "ares")]
+pub use self::production_sell::foot_can_be_sold;
+#[cfg(feature = "ares")]
+pub(crate) use self::production_sell::foot_on_sold;
 pub(crate) use self::production_sell::sell_back;
 #[cfg(any(test, feature = "test-support"))]
 pub use self::production_sell::sell_building_now_for_test;
@@ -85,12 +89,15 @@ pub use self::production_types::*;
 
 // Re-exports for external consumers (files outside production/ that previously
 // imported private submodules directly).
-pub(crate) use self::can_build::{
-    CanBuild, can_build, initialize_factory_primary, toggle_factory_primary,
-};
+#[cfg(feature = "ares")]
+pub(crate) use self::can_build::ares_build_limit_remaining;
 #[cfg(feature = "ares")]
 pub(crate) use self::can_build::owns_prerequisites;
+pub use self::can_build::{CanBuild, can_build};
+#[cfg(feature = "ares")]
+pub(crate) use self::can_build::{RequirementStatus, requirements_met};
 pub use self::can_build::{can_select_factory_primary, find_factory, object_find_factory};
+pub(crate) use self::can_build::{initialize_factory_primary, toggle_factory_primary};
 pub(crate) use self::factory_ai::{
     AiPlacementTimer, detach_all as detach_building_factory, factory_ai,
 };
@@ -117,7 +124,9 @@ mod tests;
 #[cfg(test)]
 mod industrial_plant_retail_tests;
 
-#[cfg(test)]
+// Ares 3.0 10014390 (hook 0x446E9F) gives a non-harvester FreeUnit
+// Area_Guard instead (`production_placement_tests`).
+#[cfg(all(test, not(feature = "ares")))]
 mod free_unit_harvest_retail_tests;
 
 #[cfg(test)]

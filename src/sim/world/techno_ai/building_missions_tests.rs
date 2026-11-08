@@ -1762,6 +1762,9 @@ fn retail_dustbowl_tesla_coil_charges_before_each_shot() {
 ///   `PrismSupportDelay=45` on its rearm timer.
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
+// The stock PrismType support; Ares builds replace it
+// (`techno_ai::ares_prism_forwarding`).
+#[cfg(not(feature = "ares"))]
 fn retail_dustbowl_prism_towers_forward_their_charge() {
     use crate::sim::world::DelayedFire;
     let (mut scenario, master, mcv, (x, y)) =

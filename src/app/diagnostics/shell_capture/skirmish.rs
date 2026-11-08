@@ -23,6 +23,7 @@ pub(crate) enum PresentedShell {
     WolLogin,
     WolLobby,
     WolOptions,
+    WolChatTranslation,
     WolSoundOptions,
     WolAutoLoginQuery,
     WolLocale,

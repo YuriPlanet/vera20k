@@ -968,9 +968,12 @@ fn a_refusing_naval_yard_nearer_than_the_depot_is_the_pick() {
         RadioResponse::Negatory
     );
 
+    // Ares HouseClass_FindRepairBay (1005CB50, hook 0x455E4C) passes over
+    // the yard, of the other Naval kind, and takes the depot.
+    let expected = if cfg!(feature = "ares") { depot } else { yard };
     assert_eq!(
         sim.nearest_unit_repair_station(tank, &rules, FrameEffects::default()),
-        Some(yard)
+        Some(expected)
     );
 
     // Beyond 7240 leptons of both, nothing is chosen.

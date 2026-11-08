@@ -544,6 +544,99 @@ impl Simulation {
         distance > radius && radius.wrapping_shl(2) < distance
     }
 
+    /// `HouseClass::PickRandomCellInZone @ 0x00501AC0` for `owner`: a random
+    /// cell around the house's base, its radius (`+0x5498`) clamped into
+    /// 0x300..0x800 leptons and its base the base cell's GetCoords
+    /// ([`Self::house_base_coordinate`]; an empty base is the empty
+    /// coordinate).
+    /// - Zone 0 (`0x00501B2B..0x00501BB9`): `RandomRanged(0, radius)`, then
+    ///   the base moved that far in a random direction snapped to a cell
+    ///   centre (`0x0049F420`, snap 1).
+    /// - Zones 1..4, north, east, south and west (`0x00501BC0..0x00501F3E`):
+    ///   `RandomRanged(radius, 2 * radius)`, then one raw Next whose low 14
+    ///   bits pick a facing within 0x2000 of the zone's (0x0000, 0x4000,
+    ///   0x8000, 0xC000), and the base moved that far along it with the
+    ///   Walk direction math ([`facing_step_world_xy`]).
+    /// - Any other zone draws nothing and leaves the empty coordinate.
+    ///
+    /// An empty coordinate gives the base cell (zone 0) or zone 0's answer
+    /// (`0x00502040..0x00502082`); any other takes its cell toward zero
+    /// (`0x00413A30`). A cell outside the playfield (`0x00578460`, mode 1) is
+    /// clamped into it (`0x00586E50`). `None` without the House, terrain or
+    /// playfield, before any draw.
+    ///
+    /// [`facing_step_world_xy`]: crate::util::native_trig::facing_step_world_xy
+    pub(crate) fn house_random_cell_in_zone(
+        &mut self,
+        owner: InternedId,
+        zone: i32,
+    ) -> Option<(i32, i32)> {
+        // The first facing of each zone's 0x4000-wide sector.
+        const ZONE_FACING_START: [u16; 4] = [0xE000, 0x2000, 0x6000, 0xA000];
+        let house = self.houses.get(&owner)?;
+        let radius = house.base_radius().clamp(768, 2048);
+        let origin = house.base_origin();
+        let bounds = self.playfield_bounds?;
+        let terrain = self.resolved_terrain.as_ref()?;
+        let native_cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let coord = match zone {
+            0 => {
+                let magnitude = self.scenario_rng.next_range_i32_inclusive(0, radius);
+                let base = self.house_base_coordinate(owner, Some(&native_cells));
+                let (x, y) = crate::sim::combat::inviso_scatter::random_direction_coord(
+                    self.cell_grid(),
+                    &mut self.scenario_rng,
+                    base[0],
+                    base[1],
+                    magnitude,
+                    crate::sim::combat::inviso_scatter::RandomDirectionSnap::CellCenter,
+                );
+                [x, y, base[2]]
+            }
+            1..=4 => {
+                let magnitude = self
+                    .scenario_rng
+                    .next_range_i32_inclusive(radius, radius.wrapping_mul(2));
+                let draw = self.scenario_rng.next_u32() as u16;
+                let facing = (draw & 0x3FFF).wrapping_add(ZONE_FACING_START[(zone - 1) as usize]);
+                let base = self.house_base_coordinate(owner, Some(&native_cells));
+                let [x, y] = crate::util::native_trig::facing_step_world_xy(
+                    [base[0], base[1]],
+                    facing,
+                    magnitude,
+                );
+                [x, y, base[2]]
+            }
+            _ => [0, 0, 0],
+        };
+        let cell = if coord != [0, 0, 0] {
+            (
+                i32::from(crate::util::lepton::lepton_to_cell_packed(coord[0])),
+                i32::from(crate::util::lepton::lepton_to_cell_packed(coord[1])),
+            )
+        } else if zone == 0 {
+            (i32::from(origin.0), i32::from(origin.1))
+        } else {
+            self.house_random_cell_in_zone(owner, 0)?
+        };
+        let terrain = self.resolved_terrain.as_ref()?;
+        let native_cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        if crate::sim::cell_rect::cell_is_in_playfield_height_aware_in_query(
+            cell,
+            Some(bounds),
+            Some(terrain),
+            Some(&native_cells),
+        ) {
+            return Some(cell);
+        }
+        Some(crate::sim::cell_rect::clamp_cell_to_playfield(
+            cell,
+            bounds,
+            Some(terrain),
+            Some(&native_cells),
+        ))
+    }
+
     /// Ordinary Unit/Infantry arm of House500200 (Find_Passable_Cell_Near_Unit)
     /// on `house` for `actor_id`. Callers: Foot Mission_Rescue (`0x004DE143`),
     /// Find_Path's failure arm (`0x004D4189`) and Unit Per_Cell_Process's
@@ -573,52 +666,22 @@ impl Simulation {
         //50025F..5002C9 reads physical Object+9C/+A0, not Should_Be/NavCom or
         //a virtual bridge-height coordinate. OnBridge does not change its zone.
         let current = crate::sim::movement::ground_pose::position_world_coord(&actor.position);
-        let house = self.houses.get(&house)?;
-        let radius = house.base_radius().clamp(768, 2048);
-        let origin = house.base_origin();
-        let terrain = self.resolved_terrain.as_ref()?;
-        let bounds = self.playfield_bounds?;
+        // The House, terrain, playfield, Size and zones are all present before
+        // House501AC0's first draw.
+        if !self.houses.contains_key(&house)
+            || self.resolved_terrain.is_none()
+            || self.playfield_bounds.is_none()
+            || self.zone_grid.is_none()
+        {
+            return None;
+        }
         self.map_size_diamond()?;
+        //5002CF's ground scalar zone query follows 501AC0's playfield
+        //correction; their shared Dummy order is preserved.
+        let seed = self.house_random_cell_in_zone(house, 0)?;
+        let terrain = self.resolved_terrain.as_ref()?;
         let zones = self.zone_grid.as_ref()?;
         let native_cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-
-        //501B2B..501BB9: radius draw FIRST, then retained origin -> ground
-        //Cell486840 (no deck rise), then one raw direction draw with snap1.
-        let magnitude = self.scenario_rng.next_range_i32_inclusive(0, radius);
-        let base = if origin == (0, 0) {
-            DriveCoord { x: 0, y: 0, z: 0 }
-        } else {
-            crate::sim::movement::target_cell_coord(origin.0, origin.1, Some(&native_cells))
-        };
-        let (x, y) = crate::sim::combat::inviso_scatter::random_direction_coord(
-            self.cell_grid(),
-            &mut self.scenario_rng,
-            base.x,
-            base.y,
-            magnitude,
-            crate::sim::combat::inviso_scatter::RandomDirectionSnap::CellCenter,
-        );
-        //Cell-centre snap1 cannot yield NullCoord. 413A30 divides toward zero
-        //before packing: a sampled -128 lepton component becomes cell0.
-        let mut seed = (
-            i32::from(crate::util::lepton::lepton_to_cell_packed(x)),
-            i32::from(crate::util::lepton::lepton_to_cell_packed(y)),
-        );
-        //50209B..5020BF: mode1 membership and conditional correction precede
-        //5002CF's ground scalar zone query. Preserve their shared Dummy order.
-        if !crate::sim::cell_rect::cell_is_in_playfield_height_aware_in_query(
-            seed,
-            Some(bounds),
-            Some(terrain),
-            Some(&native_cells),
-        ) {
-            seed = crate::sim::cell_rect::clamp_cell_to_playfield(
-                seed,
-                bounds,
-                Some(terrain),
-                Some(&native_cells),
-            );
-        }
         let current_cell = (
             i32::from(crate::util::lepton::lepton_to_cell_packed(current.x)),
             i32::from(crate::util::lepton::lepton_to_cell_packed(current.y)),

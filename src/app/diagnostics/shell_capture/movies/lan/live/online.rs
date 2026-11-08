@@ -448,6 +448,7 @@ impl LiveRoundFlow {
                 WolPage::Message { .. } => "message",
                 WolPage::Lobby => "lobby",
                 WolPage::Options(_) => "options",
+                WolPage::ChatTranslation(_) => "chat_translation",
                 WolPage::AutoLoginQuery(_) => "auto_login",
                 WolPage::Locale(_) => "locale",
                 WolPage::MyInformation(_) => "my_information",

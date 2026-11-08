@@ -86,6 +86,11 @@ pub(super) struct FireHit {
     pub damage: i32,
     pub distance: i32,
     pub warhead: InternedId,
+    /// Ares 3.0 ParticleClass_Update_Fire (1005CFA0, hook 0x62CDE8): the
+    /// system's Techno owner (`+0xE0`) is the attacker and its house the
+    /// source.
+    #[cfg(feature = "ares")]
+    pub attacker: Option<u64>,
 }
 
 /// AI_Fire's two calls outside the particle store. Production reads the
@@ -155,6 +160,18 @@ impl FireWorld for LiveFire<'_> {
             ignore_defenses: false,
             arg6: false,
         };
+        #[cfg(feature = "ares")]
+        let (attacker, house) = hit
+            .attacker
+            .and_then(|id| {
+                sim.substrate
+                    .entities
+                    .get(id)
+                    .map(|techno| (id, techno.owner()))
+            })
+            .map_or((RAD_NO_ATTACKER, None), |(id, house)| (id, Some(house)));
+        #[cfg(not(feature = "ares"))]
+        let (attacker, house) = (RAD_NO_ATTACKER, None);
         match hit.receiver {
             CellObjectMember::Entity(id) => {
                 sim.commit_direct_damage_receiver(
@@ -164,8 +181,8 @@ impl FireWorld for LiveFire<'_> {
                         id,
                         hit.damage,
                         hit.distance,
-                        RAD_NO_ATTACKER,
-                        None,
+                        attacker,
+                        house,
                         hit.warhead,
                         flags,
                     ),
@@ -552,6 +569,8 @@ fn damage_cell(
                     damage: pt.damage,
                     distance: distance / 10,
                     warhead,
+                    #[cfg(feature = "ares")]
+                    attacker: owner,
                 },
             );
         }

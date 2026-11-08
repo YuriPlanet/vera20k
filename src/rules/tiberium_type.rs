@@ -154,6 +154,9 @@ pub struct TiberiumType {
     image: TiberiumImageState,
     /// Credit value per harvested density unit.
     pub value: i32,
+    /// `Power=` (`TiberiumClass+0xBC`): constructor 0, ReadInt over the
+    /// current value (`0x00721AE1` block). Only Ares reads it in play.
+    pub power: i32,
     /// Signed `Growth=` timer reload input (`TiberiumClass+0xA8`).
     pub growth: i32,
     /// `GrowthPercentage=` as the native `TiberiumClass+0xB0` double (IEEE
@@ -164,6 +167,9 @@ pub struct TiberiumType {
     pub spread: i32,
     /// `SpreadPercentage=` as the native `TiberiumClass+0xA0` double.
     pub spread_percentage_bits: u64,
+    /// Ares TiberiumExt (`rules::ares_tiberium`).
+    #[cfg(feature = "ares")]
+    ares: crate::rules::ares_tiberium::TiberiumExtRules,
 }
 
 /// Ordered tiberium type registry.
@@ -203,6 +209,10 @@ impl TiberiumTypeRegistry {
             ty.debris = debris.to_vec();
             ty.image = image;
             types.push(ty);
+        }
+        #[cfg(feature = "ares")]
+        for (ty, ext) in types.iter_mut().zip(processed.tiberium_ext_states()) {
+            ty.ares = ext.clone();
         }
         Self { types }
     }
@@ -247,6 +257,12 @@ impl TiberiumType {
         self.image
     }
 
+    /// The Ares TiberiumExt keys of this type.
+    #[cfg(feature = "ares")]
+    pub(crate) fn ares(&self) -> &crate::rules::ares_tiberium::TiberiumExtRules {
+        &self.ares
+    }
+
     /// `TiberiumClass::ReadINI @ 0x00721A50`: every read passes the current
     /// field, which starts at the constructor's value.
     fn from_ini_section(id: TiberiumTypeId, section_name: &str, section: &IniSection) -> Self {
@@ -260,6 +276,7 @@ impl TiberiumType {
             debris: Vec::new(),
             image: TiberiumImageState::default(),
             value: section.read_int("Value", 0),
+            power: section.read_int("Power", 0),
             // ReadInt stores its signed result directly, without a clamp
             // (`0x00721AE1`); original execution: spatial_oracle/ore_queue.md.
             growth: section.read_int("Growth", 0),
@@ -273,6 +290,8 @@ impl TiberiumType {
             spread_percentage_bits: section
                 .read_double("SpreadPercentage", CTOR_PERCENTAGE)
                 .to_bits(),
+            #[cfg(feature = "ares")]
+            ares: Default::default(),
         }
     }
 }

@@ -132,14 +132,7 @@ impl Simulation {
         #[cfg(not(feature = "ares"))]
         {
             let _ = automatic;
-            if selection.is_some()
-                || matches!(
-                    sw.kind,
-                    SuperWeaponKind::GenericWarhead
-                        | SuperWeaponKind::UnitDelivery
-                        | SuperWeaponKind::HunterSeeker
-                )
-            {
+            if selection.is_some() || sw.kind.is_extension() {
                 return false;
             }
         }
@@ -183,9 +176,21 @@ impl Simulation {
         {
             return false;
         }
+        // Ares hook 4FAE72 (10034C90) pairs a handler's PostClick type with
+        // the House's last Super instead of its PreDependent.
+        #[cfg(feature = "ares")]
+        let post_click_source = |sim: &Self| {
+            if sw.kind.has_ares_handler() {
+                super::ares_post_click_source(sim, rules, owner)
+            } else {
+                super::pre_dependent(rules, sw)
+            }
+        };
+        #[cfg(not(feature = "ares"))]
+        let post_click_source = |_: &Self| super::pre_dependent(rules, sw);
         let paired = sw
             .post_click
-            .then(|| super::pre_dependent(rules, sw))
+            .then(|| post_click_source(self))
             .flatten()
             .and_then(|(name, pre)| Some((self.interner.get(name)?, pre)));
         #[cfg(feature = "ares")]
@@ -347,6 +352,20 @@ impl Simulation {
         }
         // `0x004FAEC6..0x004FAEF2`: every house, last to first.
         let houses: Vec<InternedId> = self.houses.order().iter().rev().copied().collect();
+        // Ares 3.0 HouseClass_SWDefendAgainst_Aborted 10034C70 (hook
+        // 0x004FAF2A): a Super still charged (`+0x6F`) did not fire, and no
+        // house is alerted (no draw).
+        #[cfg(feature = "ares")]
+        let houses = if self
+            .super_weapons
+            .get(&owner)
+            .and_then(|supers| supers.get(&sw_type_id))
+            .is_some_and(|instance| instance.is_ready())
+        {
+            Vec::new()
+        } else {
+            houses
+        };
         for house in houses {
             alert_super_weapon_defense(
                 &self.session,
@@ -392,20 +411,44 @@ fn click_fire(
             return false;
         };
         let human = house.is_controlled_by_human(sim.session.game_mode_nonzero());
-        let called_launch = if human {
+        // Ares ClickFire10035130 drops the computer's FirestormActive branch:
+        // every House toggles with the type's GetChargeToDrainRatio.
+        #[cfg(feature = "ares")]
+        let toggles = true;
+        #[cfg(not(feature = "ares"))]
+        let toggles = human;
+        #[cfg(feature = "ares")]
+        let was_draining = super_instance(sim, owner, sw_type_id)
+            .is_some_and(|instance| instance.charge_drain_state() == 2);
+        let called_launch = if toggles {
             let frame = sim.session.binary_frame();
+            let ratio = super::charge_to_drain_ratio(rules, sw);
             let Some(instance) = super_instance(sim, owner, sw_type_id) else {
                 return false;
             };
-            instance.click_charge_drain(sw, frame, rules.general.charge_to_drain_ratio)
+            instance.click_charge_drain(sw, frame, ratio)
         } else {
             // HouseCtor4F573A clears +1FA; no enabled fresh writer has been
             // established. Native6CBA52 tests that byte, without human timer
             // conversion. Do not manufacture a Firestorm effect/toggle here.
+            let _ = human;
             true
         };
+        // 10035130's draining arm calls SWTypeExt::Deactivate after the timer.
+        #[cfg(feature = "ares")]
+        if was_draining && !called_launch {
+            super::deactivate_ares_handler(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                sw,
+                human,
+                frame_effects.with_overlay_registry(overlay_registry),
+            );
+        }
         if called_launch {
-            launch(
+            let effect_launched = launch(
                 sim,
                 rules,
                 owner,
@@ -415,6 +458,24 @@ fn click_fire(
                 overlay_registry,
                 frame_effects,
             );
+            // Launch reaches the common SWTypeExt::Launch10032ED0 for a new
+            // type here too. Its money step never settles: Fire_SW refuses a
+            // charge-drain type with Money.Amount before this click.
+            #[cfg(feature = "ares")]
+            if effect_launched && sw.kind.has_ares_handler() {
+                super::ares_presentation::on_launch(sim, rules, owner, sw_type_id, cell);
+                super::raise_ares_activation_events(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    cell,
+                    overlay_registry,
+                    frame_effects,
+                );
+            }
+            #[cfg(not(feature = "ares"))]
+            let _ = effect_launched;
         }
         return called_launch;
     }
@@ -466,8 +527,13 @@ fn click_fire(
     // Keep one wallet/settlement owner shared with the other extension kinds.
     #[cfg(feature = "ares")]
     if extension_effect && effect_launched {
+        // 10032FDF: skipped when the handler's Flags hold NoMoney.
         if let Some((money_type, money_sw)) = payment
             && money_sw.money_amount != 0
+            && !sw
+                .kind
+                .ares_flags()
+                .has(crate::rules::superweapon_type::AresSuperWeaponFlags::NO_MONEY)
         {
             super::money::transact(
                 &mut sim.sound_events,
@@ -480,6 +546,16 @@ fn click_fire(
         // Common Launch10032FDF..10033242 settles first, then constructs
         // animation/sound and finally removes the queued Ready announcement.
         super::ares_presentation::on_launch(sim, rules, owner, sw_type_id, cell);
+        // Activate10032020 raises its trigger events once Launch returned.
+        super::raise_ares_activation_events(
+            sim,
+            rules,
+            owner,
+            sw_type_id,
+            cell,
+            overlay_registry,
+            frame_effects,
+        );
     }
     #[cfg(not(feature = "ares"))]
     let _ = effect_launched;
@@ -524,10 +600,20 @@ fn click_fire_admission(
     if !instance.click_fire_admits() && !sw.post_click {
         return false;
     }
+    // Installed Ares asks the handler's AbortFire (10072AB0) instead.
+    #[cfg(feature = "ares")]
+    if sw.kind == SuperWeaponKind::LightningStorm {
+        return !super::lightning_storm::ares_abort_fire(sim, owner, sw_type_id);
+    }
     if sw.kind == SuperWeaponKind::LightningStorm && super::lightning_storm::has_deferment(sim) {
         sim.sound_events
             .emit(SimSoundEvent::LightningStormRefused { owner });
         return false;
+    }
+    // Installed Ares asks the handler's AbortFire (10070780) instead.
+    #[cfg(feature = "ares")]
+    if sw.kind == SuperWeaponKind::PsychicDominator {
+        return !super::psychic_dominator::ares_abort_fire(sim, owner, sw_type_id);
     }
     if sw.kind == SuperWeaponKind::PsychicDominator && super::psychic_dominator::active(sim) {
         sim.sound_events
@@ -551,6 +637,78 @@ fn launch(
     frame_effects: FrameEffects<'_>,
 ) -> bool {
     use super::paradrop::ParaDropKind;
+    // Hook 6CC390 (100355C0) -> SWTypeExt::Activate (10032020): a
+    // redirected Type's handler Activate runs first; an accepted one ends
+    // Launch through the common tail, a refused one falls through to the
+    // stock case, which then reports no Ares activation.
+    #[cfg(feature = "ares")]
+    let redirect_refused = if sw.kind.is_ares_redirect() {
+        let activated = match sw.kind {
+            SuperWeaponKind::ChronoSphere => {
+                super::chronosphere::ares_launch_source(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    sw,
+                    (rx, ry),
+                );
+                true
+            }
+            SuperWeaponKind::ChronoWarp => super::chronosphere::ares_launch_warp(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            ),
+            SuperWeaponKind::MultiMissile => {
+                super::nuke::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry))
+            }
+            SuperWeaponKind::PsychicDominator => {
+                super::psychic_dominator::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
+                true
+            }
+            SuperWeaponKind::SpyPlane => {
+                super::spy_plane::ares_launch(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    sw,
+                    (rx, ry),
+                    frame_effects,
+                );
+                true
+            }
+            SuperWeaponKind::LightningStorm => {
+                super::lightning_storm::ares_launch(sim, rules, owner, sw_type_id, sw, (rx, ry))
+            }
+            SuperWeaponKind::GeneticConverter => {
+                super::genetic_converter::ares_launch(
+                    sim,
+                    rules,
+                    owner,
+                    sw_type_id,
+                    sw,
+                    (rx, ry),
+                    overlay_registry,
+                    frame_effects,
+                );
+                true
+            }
+            _ => false,
+        };
+        if activated {
+            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            return true;
+        }
+        true
+    } else {
+        false
+    };
     // Every native stock case except ChronoWarp begins with rawReady+6F
     // (ForceShield6CD072..6CD077; case4 starts6CC4B2 with radar production).
     // Drain ClickFire can reach Launch after Reset retained state1 but cleared
@@ -582,6 +740,23 @@ fn launch(
             }
             return activated;
         }
+        // SW_DropPod::Activate (10070E40) refuses only an empty type list.
+        #[cfg(feature = "ares")]
+        SuperWeaponKind::DropPod => {
+            let activated = super::drop_pod::launch(
+                sim,
+                rules,
+                owner,
+                sw,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
+            if activated {
+                super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            }
+            return activated;
+        }
         #[cfg(feature = "ares")]
         SuperWeaponKind::UnitDelivery => {
             let activated = super::unit_delivery::launch(
@@ -602,7 +777,13 @@ fn launch(
         #[cfg(not(feature = "ares"))]
         SuperWeaponKind::GenericWarhead
         | SuperWeaponKind::UnitDelivery
-        | SuperWeaponKind::HunterSeeker => {}
+        | SuperWeaponKind::HunterSeeker
+        | SuperWeaponKind::Protect
+        | SuperWeaponKind::Battery
+        | SuperWeaponKind::SonarPulse
+        | SuperWeaponKind::EMPulse
+        | SuperWeaponKind::Firestorm
+        | SuperWeaponKind::DropPod => {}
         SuperWeaponKind::MultiMissile => {
             super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
         }
@@ -699,6 +880,71 @@ fn launch(
             }
             return activated;
         }
+        #[cfg(feature = "ares")]
+        SuperWeaponKind::Protect => {
+            super::protect::launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                sw,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
+            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            return true;
+        }
+        #[cfg(feature = "ares")]
+        SuperWeaponKind::SonarPulse => {
+            super::sonar_pulse::launch(sim, rules, owner, sw, (rx, ry));
+            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            return true;
+        }
+        #[cfg(feature = "ares")]
+        SuperWeaponKind::Battery => {
+            super::battery::activate(sim, rules, owner, sw);
+            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            return true;
+        }
+        #[cfg(feature = "ares")]
+        SuperWeaponKind::Firestorm => {
+            // ClickFire's isPlayer (Fire_SW passes `this == PlayerPtr`),
+            // projected as a human-controlled House.
+            let is_player = sim
+                .houses
+                .get(&owner)
+                .is_some_and(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
+            super::firewall::activate(
+                sim,
+                rules,
+                owner,
+                is_player,
+                overlay_registry,
+                frame_effects,
+            );
+            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            return true;
+        }
+        #[cfg(feature = "ares")]
+        SuperWeaponKind::EMPulse => {
+            super::emp_pulse::launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                sw,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
+            super::finish_ares_launch(sim, rules, owner, sw_type_id, (rx, ry));
+            return true;
+        }
+    }
+    #[cfg(feature = "ares")]
+    if redirect_refused {
+        return false;
     }
     true
 }

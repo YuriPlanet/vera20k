@@ -770,6 +770,31 @@ fn a_removed_foot_controller_frees_its_captives() {
     );
 }
 
+/// Ares CaptureManagerClass_DecideUnitFate_BuildingFate (1005C680, hook
+/// 0x47243F): a computer's captured building queues Guard with no fate roll.
+#[cfg(feature = "ares")]
+#[test]
+fn a_computer_building_guards_without_a_fate_roll() {
+    let rules = rules();
+    let mut sim = sim(1);
+    let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
+    let plant = spawn(&mut sim, &rules, "GAPOWR", "Russians", 14, 10);
+    let mut replay = sim.scenario_rng.clone();
+    sim.decide_unit_fate(
+        yuri,
+        plant,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    let entity = sim.substrate.entities.get(plant).unwrap();
+    assert!(
+        entity.mission.queued().known() == Some(MissionType::Guard)
+            || entity.mission.current().known() == Some(MissionType::Guard)
+    );
+    assert_eq!(sim.scenario_rng.next_u32(), replay.next_u32(), "no roll");
+}
+
 /// Original DecideUnitFate `0x004723B0` under Unicorn
 /// (`tools/spatial_oracle/capture_decide_fate.py`): for every row, the
 /// reason table the original read, the arm its choice took (Hunt, grinder,

@@ -39,14 +39,13 @@ pub const RAMP_SIZE: u32 = 16;
 
 /// GPU resources for voxel sprite color resolution.
 pub struct PaletteSet {
-    /// 256×2 Rgba8UnormSrgb texture: row 0 is the theater palette, row 1
+    /// 256×2 Rgba8Unorm texture: row 0 is the theater palette, row 1
     /// is the native global UNITSNO.PAL Convert palette (without house remap).
-    /// sRGB format so the GPU sampler decodes the raw `.pal` display bytes
-    /// (which are sRGB-encoded) into linear RGB on read, matching the
-    /// pre-Phase-1 atlas semantics and the sRGB surface output.
+    /// Unorm so shaders read the raw `.pal` display bytes as the encoded
+    /// colour the shared palette conversion takes.
     pub palette_tex: wgpu::Texture,
     pub palette_view: wgpu::TextureView,
-    /// 16 × HOUSE_RAMP_ROWS Rgba8UnormSrgb texture: house_ramp[house][i] = RGB substitute
+    /// 16 × HOUSE_RAMP_ROWS Rgba8Unorm texture: house_ramp[house][i] = RGB substitute
     /// for palette byte (16 + i). Row 0 is the no-remap fallback — populated
     /// with the theater palette's [16, 32) RGB range, so units with
     /// `HouseColorIndex == NO_REMAP` (civilians, neutrals) render their
@@ -101,7 +100,7 @@ impl PaletteSet {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -137,7 +136,7 @@ impl PaletteSet {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -170,8 +169,8 @@ impl PaletteSet {
             ..Default::default()
         });
 
-        // Binding 0: theater palette (Rgba8UnormSrgb).
-        // Binding 1: per-house RGB ramp (Rgba8UnormSrgb).
+        // Binding 0: theater palette (Rgba8Unorm).
+        // Binding 1: per-house RGB ramp (Rgba8Unorm).
         // Binding 2: point sampler.
         let bind_group_layout: wgpu::BindGroupLayout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

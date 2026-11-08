@@ -468,7 +468,32 @@ pub(super) fn push_random_map_setup_modal_control_instances(
     let chrome = atlas.control_chrome();
     // Rows 0..4 are combos; row 5 is the players trackbar. A collapsed combo
     // occupies only its face, not the dropdown extent the resource reserves.
-    for (row, control) in SETUP_COMBO_ROWS.iter().enumerate() {
+    // VERA: the Advanced view replaces the option rows with its sliders.
+    if modal.advanced {
+        for field in crate::ui::skirmish_shell::AdvancedField::ALL {
+            let rect = layout.advanced_control_rects[field.row()];
+            paint_control(
+                out,
+                &chrome,
+                ControlPaint::Trackbar {
+                    rect,
+                    thumb_left: crate::ui::skirmish_shell::ADVANCED_RANGE.thumb_left_in(
+                        modal.advanced_value(field),
+                        rect,
+                        layout.scale,
+                    ),
+                    plaque: true,
+                    disabled: !modal.is_enabled(RandomMapSetupControl::Advanced(field)),
+                },
+                layout.scale,
+            );
+        }
+    }
+    for (row, control) in SETUP_COMBO_ROWS
+        .iter()
+        .enumerate()
+        .filter(|_| !modal.advanced)
+    {
         let rect = layout.control_rects[row];
         let face = combo_face_rect(rect, layout.scale);
         // Native owner-draw controls preserve their composed background. The
@@ -496,21 +521,23 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         );
     }
     let players = layout.control_rects[PLAYERS_ROW];
-    paint_control(
-        out,
-        &chrome,
-        ControlPaint::Trackbar {
-            rect: players,
-            thumb_left: modal.players_range().thumb_left_in(
-                modal.options.num_players,
-                players,
-                layout.scale,
-            ),
-            plaque: true,
-            disabled: false,
-        },
-        layout.scale,
-    );
+    if !modal.advanced {
+        paint_control(
+            out,
+            &chrome,
+            ControlPaint::Trackbar {
+                rect: players,
+                thumb_left: modal.players_range().thumb_left_in(
+                    modal.options.num_players,
+                    players,
+                    layout.scale,
+                ),
+                plaque: true,
+                disabled: false,
+            },
+            layout.scale,
+        );
+    }
 
     // Surprise Me and Generate are owner-draw type 3 for this dialog, so they
     // take the MNBTTN modal button art rather than the generic PCX slices --
@@ -562,10 +589,12 @@ pub(super) fn push_random_map_setup_modal_control_instances(
         (layout.save, RandomMapSetupControl::Save0x6c3),
         (layout.delete, RandomMapSetupControl::Delete0x6c4),
         (layout.cancel, RandomMapSetupControl::Cancel0x5c0),
+        (layout.advanced, RandomMapSetupControl::AdvancedToggle),
     ]
     .into_iter()
-    .filter(|_| steady)
-    {
+    .filter(|(_, control)| {
+        steady && (*control != RandomMapSetupControl::AdvancedToggle || modal.extended)
+    }) {
         push_right_panel_button_shp(
             out,
             atlas,

@@ -425,7 +425,9 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/world/techno_ai.rs", 1),
                 ("sim/world/techno_ai/mission_handlers.rs", 1),
                 ("sim/world/techno_ai_cloak.rs", 3),
-                ("sim/world/world_commands.rs", 6),
+                // Includes the Ares Guard key's own-actor check (1005CAF0)
+                // in the input producer `area_guard_key_command`.
+                ("sim/world/world_commands.rs", 7),
                 ("sim/world/world_orders.rs", 2),
                 ("sim/world/world_spawn.rs", 1),
                 ("sim/world/world_spawn/construction.rs", 1),
@@ -441,6 +443,7 @@ fn engine_per_client_reads_have_pinned_callers() {
             &[
                 ("sim/scenario_session.rs", 1),
                 ("sim/score.rs", 1),
+                ("sim/superweapon/mod.rs", 1),
                 ("sim/world/house_defeat.rs", 2),
             ],
         ),
@@ -461,6 +464,7 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/capture_manager.rs", 1),
                 ("sim/combat/destruction_effects.rs", 1),
                 ("sim/combat/parasite.rs", 2),
+                ("sim/combat/techno_death.rs", 1),
                 ("sim/combat/world_receiver.rs", 2),
                 ("sim/docking/hospital.rs", 1),
                 ("sim/flashing.rs", 1),
@@ -469,7 +473,8 @@ fn engine_per_client_reads_have_pinned_callers() {
                 ("sim/passenger.rs", 1),
                 ("sim/production/can_build.rs", 1),
                 ("sim/production/production_repair.rs", 1),
-                ("sim/temporal.rs", 1),
+                ("sim/production/production_sell.rs", 1),
+                ("sim/reverse_engineering.rs", 1),
                 ("sim/vehicle_theft.rs", 1),
                 ("sim/world/camera_home.rs", 1),
                 ("sim/world/fly_process.rs", 1),
@@ -867,7 +872,8 @@ fn after_function() { registry_ids(); }
 }
 
 /// `source` without its `#[cfg(test)]` items (attribute plus the following
-/// item, braced or terminated by `;`/`,`), as blanked text: `text` is `source` with
+/// item, braced or terminated by `;`/`,`, or a one-line item on the
+/// attribute's own line), as blanked text: `text` is `source` with
 /// comments and literals blanked. `cfg(all(test, …))` and
 /// `cfg(any(test, feature = "test-support"))` count as test-only;
 /// `cfg(any(test, debug_assertions))` does not. The feature gate is read from
@@ -879,6 +885,7 @@ fn strip_test_items(source: &str, text: &str) -> String {
     let mut awaiting_item = false;
     let mut item_delimiters = Vec::new();
     let mut awaiting_function = false;
+    let ends_item = |line: &str| line.trim_end().ends_with([';', ',']);
     for (line, source_line) in text.lines().zip(source.lines()) {
         let opens = line.bytes().filter(|&b| b == b'{').count() as i64;
         let closes = line.bytes().filter(|&b| b == b'}').count() as i64;
@@ -895,6 +902,8 @@ fn strip_test_items(source: &str, text: &str) -> String {
             if opens > 0 {
                 // Attribute and item share the line.
                 skip_above = Some(depth);
+            } else if !line.trim_end().ends_with(']') && ends_item(line) {
+                // Attribute and a one-line item share the line.
             } else {
                 awaiting_item = true;
                 item_delimiters.clear();
@@ -908,6 +917,11 @@ fn strip_test_items(source: &str, text: &str) -> String {
             } else if opens > 0 {
                 skip_above = Some(depth);
                 awaiting_item = false;
+            } else if closes > 0 {
+                // The enclosing block closes after a last field without its
+                // comma; the brace is production.
+                awaiting_item = false;
+                emit = true;
             } else {
                 // A declaration's `where` clause may contain top-level
                 // commas after its parameter list. It still ends at its
@@ -1057,6 +1071,20 @@ fn segment_is_root(segment: &str, root: &str) -> bool {
                 || rest.starts_with(' ')
         }
         _ => rest.is_empty() || rest.starts_with(':') || rest.starts_with(' '),
+    }
+}
+
+/// A test-only field or struct-literal field ends at its comma, so the
+/// production code after it stays scanned.
+#[test]
+fn test_gated_fields_strip_only_themselves() {
+    let source = "struct Rules {\n    #[cfg(test)]\n    pub max: u8,\n    pub kept: u8,\n}\n\
+                  fn read() -> Rules {\n    Rules {\n        #[cfg(test)]\n        max: f(\n            1,\n        ),\n        kept: registry_ids(),\n    }\n}\n\
+                  #[cfg(test)] use crate::x;\nfn after() {}\n";
+    let production = strip_test_items(source, &blank_comments_and_literals(source));
+    assert!(!production.contains("max"), "{production}");
+    for kept in ["pub kept", "fn read", "registry_ids", "fn after"] {
+        assert!(production.contains(kept), "{kept} stripped:\n{production}");
     }
 }
 

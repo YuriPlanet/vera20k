@@ -71,7 +71,8 @@ pub(super) struct RecruitCandidate {
 /// `Recruit`'s search (`0x006EAB86..0x006EAE19`) over one class array in
 /// order: a candidate in the team's `group` (any with -2), or any for a
 /// `Recruiter=` TeamType, is keyed by its squared XY distance to `origin`
-/// (`0x005F6560`, wrapping) plus `0x3200` outside the group (wrapping); it
+/// (`0x005F6560`, `native_coord::squared_xy_distance`) plus `0x3200` outside
+/// the group (wrapping); it
 /// wins when it passes its own tests, its key is below the best (signed) or
 /// the best is still -1, and `can_add` admits it.
 pub(super) fn recruit_pick(
@@ -87,7 +88,7 @@ pub(super) fn recruit_pick(
         if !(group == -2 || candidate.group == group || recruiter) {
             continue;
         }
-        let mut key = super::team_ai::squared_xy_distance(candidate.xy, origin);
+        let mut key = crate::util::native_coord::squared_xy_distance(candidate.xy, origin);
         if candidate.group != group {
             key = key.wrapping_add(OTHER_GROUP_PENALTY);
         }

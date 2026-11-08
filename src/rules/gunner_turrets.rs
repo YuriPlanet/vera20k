@@ -115,6 +115,9 @@ impl GunnerTurrets {
 
     /// Ares10040020 resizes both extension vectors before numbered weapons;
     ///1003FE10 subsequently grows labels to full WeaponCount for Gunner Units.
+    /// Turret indices from 18 on are the extension table that
+    /// TechnoTypeClass_SetWeaponTurretIndex (100425A0, hook 0x717890) and
+    /// TechnoTypeClass_GetWeaponTurretIndex (10042540, hook 0x7178B0) use.
     #[cfg(feature = "ares")]
     pub(crate) fn prepare_numbered_read(&mut self, weapon_count: i32) {
         let extra = usize::try_from(weapon_count)

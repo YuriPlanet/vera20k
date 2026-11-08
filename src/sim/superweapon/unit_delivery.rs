@@ -24,11 +24,11 @@ use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
 #[cfg(feature = "ares")]
 use crate::sim::mission::{MissionId, MissionType};
-#[cfg(feature = "ares")]
-use crate::util::state_hasher::StateHasher;
 use crate::sim::world::Simulation;
 #[cfg(feature = "ares")]
 use crate::sim::world::{FrameEffects, SimSoundEvent};
+#[cfg(feature = "ares")]
+use crate::util::state_hasher::StateHasher;
 use std::hash::{Hash, Hasher};
 
 #[cfg(all(test, feature = "ares"))]
@@ -241,6 +241,14 @@ fn apply(
     registry: Option<&OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) {
+    // Update10075DE0 prints Message.Activate first. Its firer is the
+    // Super's owner; the request retains the resolved payload owner, which
+    // differs only for a non-invoker Deliver.Owner (colour with FirerColor).
+    sim.sound_events
+        .emit(SimSoundEvent::AresSuperWeaponActivated {
+            owner: request.owner,
+            sw_type: request.sw_type,
+        });
     if !sim.houses.contains_key(&request.owner) {
         return;
     }
@@ -300,6 +308,11 @@ fn place(
     ) else {
         return;
     };
+    // Ares PlaceUnits (10075A60) marks a `Deliver.BaseNormal=no` building
+    // NoBaseNormal before Put, so its Unlimbo reserves no base space.
+    if let Some(entity) = sim.substrate.entities.get_mut(id) {
+        entity.set_unit_delivery_base_normal(request.base_normal);
+    }
     let mut hash = StateHasher::new();
     request.owner.hash(&mut hash);
     request.sw_type.hash(&mut hash);
@@ -380,9 +393,6 @@ fn place(
     if !placed {
         sim.discard_constructed_limbo(id, rules, effects);
         return;
-    }
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.set_unit_delivery_base_normal(request.base_normal);
     }
     let mission = if payload.category == ObjectCategory::Building {
         MissionType::Guard

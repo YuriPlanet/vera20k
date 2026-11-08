@@ -1,9 +1,10 @@
 //! Retail one-shot screenshot completion.
 //!
-//! The app retains the last presented composition immediately before its
-//! software-cursor pass, so a hotkey captures the client pixels already visible
-//! when the input is dispatched without baking the cursor into the image. This
-//! module queues that readback, expands the active RGB565 surface into direct-RGB
+//! The app retains the last presented composition without its software cursor,
+//! so a hotkey captures the client pixels already visible when the input is
+//! dispatched without baking the cursor into the image. A battle frame stays in
+//! the texture it was drawn to and is copied only when something asks for it.
+//! This module queues that readback, expands the active RGB565 surface into direct-RGB
 //! PCX bytes, probes the current working directory, and writes the first unused
 //! `SCRN%04d.pcx`.
 
@@ -91,6 +92,20 @@ struct PresentedFrameCacheState {
     client_height: u32,
     client_format: Option<wgpu::TextureFormat>,
     presented_screen_shake_offset: [i32; 2],
+    staged_in_place: Option<InPlaceComposition>,
+    presented_in_place: Option<InPlaceComposition>,
+}
+
+/// A battle frame's composition, left in the texture it was drawn to. Only
+/// the next battle draw replaces it, so the copy waits for a reader
+/// ([`PresentedFrameCache::retain_presented`]).
+struct InPlaceComposition {
+    texture: wgpu::Texture,
+    format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+    presentation_width: u32,
+    presentation_height: u32,
 }
 
 /// A requested screenshot's composition at the client's size
@@ -156,6 +171,7 @@ impl PresentedFrameCache {
         presentation_height: u32,
     ) {
         let mut state = self.state.borrow_mut();
+        state.staged_in_place = None;
         state.ensure_composition_textures(
             device,
             format,
@@ -189,6 +205,69 @@ impl PresentedFrameCache {
             },
         );
         state.slots.mark_staged();
+    }
+
+    /// [`Self::stage_pre_cursor_composition`] for a battle frame: `current`
+    /// holds the completed composition and the cursor goes over its copies,
+    /// so nothing is copied unless a reader asks.
+    pub(crate) fn stage_in_place_composition(
+        &self,
+        current: &wgpu::Texture,
+        format: wgpu::TextureFormat,
+        width: u32,
+        height: u32,
+        presentation_width: u32,
+        presentation_height: u32,
+    ) {
+        let mut state = self.state.borrow_mut();
+        state.slots.staging_valid = false;
+        state.staged_in_place = Some(InPlaceComposition {
+            texture: current.clone(),
+            format,
+            width,
+            height,
+            presentation_width,
+            presentation_height,
+        });
+    }
+
+    /// Save a presented battle frame into the retained slot. Encode it before
+    /// the next battle draw replaces the frame: a screenshot reads the frame
+    /// presented before its own.
+    pub(crate) fn retain_presented(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+    ) {
+        let mut state = self.state.borrow_mut();
+        let Some(source) = state.presented_in_place.take() else {
+            return;
+        };
+        let shake_offset_px = state.presented_screen_shake_offset;
+        state.ensure_composition_textures(
+            device,
+            source.format,
+            source.width,
+            source.height,
+            source.presentation_width,
+            source.presentation_height,
+        );
+        let staging = state
+            .slots
+            .staging()
+            .expect("retained composition textures were just ensured");
+        encoder.copy_texture_to_texture(
+            source.texture.as_image_copy(),
+            staging.as_image_copy(),
+            wgpu::Extent3d {
+                width: source.width,
+                height: source.height,
+                depth_or_array_layers: 1,
+            },
+        );
+        state.slots.mark_staged();
+        state.slots.commit_presented();
+        state.presented_screen_shake_offset = shake_offset_px;
     }
 
     /// The previously presented cursor-free composition at the client's
@@ -247,11 +326,12 @@ impl PresentedFrameCache {
     /// has been submitted and presented.
     pub(crate) fn commit_presented(&self, shake_offset_px: [i32; 2]) {
         let mut state = self.state.borrow_mut();
-        let has_staged_frame = state.slots.staging_valid;
-        state.slots.commit_presented();
-        if has_staged_frame {
+        let in_place = state.staged_in_place.take();
+        if in_place.is_some() || state.slots.staging_valid {
+            state.presented_in_place = in_place;
             state.presented_screen_shake_offset = shake_offset_px;
         }
+        state.slots.commit_presented();
     }
 
     /// Restore the last presented cursor-free backing for a retained modal
@@ -266,6 +346,7 @@ impl PresentedFrameCache {
         frame: (u32, u32),
         upscale: Option<&crate::render::upscale_pass::UpscalePass>,
     ) -> Result<bool> {
+        self.retain_presented(device, encoder);
         self.state.borrow().encode_previous_composition(
             device,
             encoder,

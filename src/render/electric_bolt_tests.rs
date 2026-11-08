@@ -161,6 +161,7 @@ fn visit_lines(row: &Value, index: usize) -> (Vec<SurfaceLine>, Vec<bool>, Vec<u
                 z_adjust: integer(&bolt["z_adjust"]),
                 phase: integer(&bolt["phase"]),
                 alternate_color: bolt["alternate"].as_bool().unwrap(),
+                colors: [None; 3],
             };
             let admitted = draw.lines(
                 viewport(&row["input"]),
@@ -456,4 +457,40 @@ fn production_electric_bolt_pixels_match_native_with_bounded_edge_residuals() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Ares EBolt_Draw_Colors (Ares.dll 100561F0) and the colour 1/2/3 hooks:
+/// a set `Bolt.ColorN` replaces only its strand's palette word, packed by
+/// PackBoltColor 100560D0. One unsplit piece draws strands 1, 2, 0.
+#[test]
+fn ares_bolt_colors_replace_their_strand_palette_words() {
+    let main: MainRng = SimRng::from_native_state_hex_for_test(
+        native()["draw_cases"][0]["visits"][0]["rng_before"]["main"]
+            .as_str()
+            .unwrap(),
+    )
+    .into();
+    let mut lines = Vec::new();
+    let draw = ElectricBoltDraw {
+        from: ProjectileCoord::new(1280, 1280, 0),
+        to: ProjectileCoord::new(1320, 1280, 0),
+        z_adjust: 0,
+        phase: 0,
+        alternate_color: false,
+        colors: [Some([255, 0, 0]), None, Some([0, 0, 255])],
+    };
+    let input = serde_json::json!({ "camera": [0, 0], "clip": [-10000, -10000, 20000, 20000] });
+    assert!(
+        draw.lines(viewport(&input), palette(), &mut main.draws(), |line| {
+            lines.push(line.blend)
+        })
+    );
+    assert_eq!(
+        lines,
+        [
+            crate::render::surface_line::SurfaceLineBlend::Replace(0xF800),
+            crate::render::surface_line::SurfaceLineBlend::Replace(palette().ordinary),
+            crate::render::surface_line::SurfaceLineBlend::Replace(0x001F),
+        ]
+    );
 }

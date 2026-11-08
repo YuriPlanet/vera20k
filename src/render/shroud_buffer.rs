@@ -974,6 +974,8 @@ pub struct ShroudBuffer {
     last_cam_y: f32,
     /// Cached fog generation for change detection.
     last_fog_gen: u64,
+    /// Advances whenever what the plane shows may change.
+    generation: u64,
     /// The same fog generation can be sampled for a different local viewer.
     last_owner: Option<InternedId>,
     last_fog_options: FogDrawOptions,
@@ -1108,6 +1110,7 @@ impl ShroudBuffer {
             last_cam_x: f32::NAN,
             last_cam_y: f32::NAN,
             last_fog_gen: u64::MAX,
+            generation: 0,
             last_owner: None,
             last_fog_options: FogDrawOptions::default(),
             last_screen_w: screen_w,
@@ -1131,6 +1134,7 @@ impl ShroudBuffer {
         let strength = if enabled { 500 } else { FOG_STRENGTH_MILLI };
         if self.fog_strength_milli != strength {
             self.fog_strength_milli = strength;
+            self.generation += 1;
             self.write_source_uniform(queue);
         }
     }
@@ -1399,6 +1403,7 @@ impl ShroudBuffer {
         encoder: &mut wgpu::CommandEncoder,
         fog_options: FogDrawOptions,
     ) {
+        self.generation += 1;
         self.compose_cells(device, queue, encoder, fog_options, true);
         // `AlphaShapeClass::DrawAll_NoMask @ 0x00421350` follows the cell
         // loop (`0x006D754C`), over the same pass rectangle.
@@ -1449,6 +1454,11 @@ impl ShroudBuffer {
 
     /// Read-only GPU source. The view stays stable until a resize; the uniform
     /// holds the floored world origin from the last rebuild.
+    /// A number that changes whenever what the plane shows may change.
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation
+    }
+
     pub(crate) fn gpu_source(&self) -> (&wgpu::TextureView, &wgpu::Buffer) {
         (&self.view, &self.source_uniform)
     }

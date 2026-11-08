@@ -1434,6 +1434,35 @@ impl Simulation {
         if techno_alive_on_entry {
             self.spatial_threat_after_unlimbo(stable_id, context.rules(), context.terrain());
         }
+        // Ares 3.0 TechnoClass_Put_1/_2 (1004EDE0, hooks 0x6F6D0E and
+        // 0x6F6F20): every successful TechnoClass::Unlimbo, the dead arm
+        // included, gives a `HasSpotlight=` Techno its BuildingLight here;
+        // BuildingClass_Put_DontSpawnSpotlight (1004EA10, hook 0x441163)
+        // skips the building's own construction below.
+        #[cfg(feature = "ares")]
+        self.construct_spotlight(stable_id, context.rules());
+        // Ares 3.0 FootClass_Put_InitialPayload (100491B0, hook 0x4D718C):
+        // FootClass::Unlimbo, once TechnoClass::Unlimbo has answered true
+        // (the dead arm too), makes a Unit's or Aircraft's InitialPayload.
+        #[cfg(feature = "ares")]
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| {
+                matches!(
+                    entity.category(),
+                    EntityCategory::Unit | EntityCategory::Aircraft
+                )
+            })
+        {
+            self.create_ares_initial_payload(
+                stable_id,
+                context.rules(),
+                context.registry(),
+                context.effects(),
+            );
+        }
         // FootClass::Unlimbo @ 0x004D7170 dispatches active Drive/Ship
         // Force_Slope at 0x004D71A9 only after TechnoClass placement succeeds.
         // This precedes display/Logic exposure and must not run on either
@@ -1665,6 +1694,23 @@ impl Simulation {
                 self.freeze_building_in_fog(viewer, stable_id, false, context);
             }
         }
+        // Ares 3.0 BuildingClass_Put_FirestormWall (10014A70, hook
+        // 0x440D01) connects a placed firestorm wall section to its
+        // neighbours (`UpdateFirewallLinks`).
+        #[cfg(feature = "ares")]
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+        {
+            self.ares_update_firewall_links(
+                stable_id,
+                context.rules(),
+                context.registry(),
+                context.effects(),
+            );
+        }
         // Building440D07: recompute from the PRE-append House+68. Failed
         // Mark and the earlier dead arms never reach it.
         if let Some(owner) = self
@@ -1704,6 +1750,7 @@ impl Simulation {
         self.mark_building_base_reservation_with_arg(stable_id, false, context);
         self.light_building_at_unlimbo(stable_id, context);
         self.discover_building_owner_after_unlimbo(stable_id, context);
+        #[cfg(not(feature = "ares"))]
         self.construct_spotlight(stable_id, context.rules());
         // Unlimbo44119C clears this object's retained primary before
         //448070 asks the owning house for another live primary.
@@ -2559,7 +2606,11 @@ impl Simulation {
     fn base_reservation_writer(&self, stable_id: u64) -> Option<(InternedId, CellRect)> {
         let entity = self.substrate.entities.get(stable_id)?;
         let spacing = entity.type_facts.base_reservation_spacing()?;
+        // Ares IsBaseNormal (10011810, hooks 0x00440C08 Unlimbo and
+        // 0x00456370 the neighbour repair): a delivered building marked
+        // NoBaseNormal reserves no base space.
         (entity.category() == EntityCategory::Structure
+            && entity.unit_delivery_provides_base_space()
             && entity.lifecycle.object_alive
             && !entity.lifecycle.in_limbo
             && entity.lifecycle.cell_marked
@@ -2591,7 +2642,10 @@ impl Simulation {
         let Some(spacing) = entity.type_facts.base_reservation_spacing() else {
             return false;
         };
+        // Ares IsBaseNormal at Limbo's test (hook 0x00445A72): NoBaseNormal
+        // skips the clear.
         if entity.category() != EntityCategory::Structure
+            || !entity.unit_delivery_provides_base_space()
             || !entity.lifecycle.cell_marked
             || cell_list_layer_for_entity(
                 entity,
@@ -4029,6 +4083,32 @@ impl Simulation {
         // water state's constructor sentinel (`+0x6E8 = 2`), not prone
         // (`+0x6DB`) and Doing Ready (`+0x6C4`, stored without Do_Action).
         // A boarded man leaves his transport with these.
+        // Ares 3.0 InfantryClass_Remove_Teleport (1005CD50, hook 0x51DF27),
+        // first: a `Teleporter=` man's Teleport locomotor forgets its Marked
+        // coordinate (`+0x28`).
+        #[cfg(feature = "ares")]
+        {
+            let teleporter = self
+                .substrate
+                .entities
+                .get(stable_id)
+                .is_some_and(|entity| {
+                    entity.category() == EntityCategory::Infantry
+                        && self
+                            .object_type(entity.type_ref(), context.rules())
+                            .is_some_and(|object| object.teleporter)
+                });
+            if teleporter
+                && let Some(runtime) = self
+                    .substrate
+                    .entities
+                    .get_mut(stable_id)
+                    .and_then(|entity| entity.locomotor.as_mut())
+                    .and_then(|locomotor| locomotor.teleport_runtime_mut())
+            {
+                runtime.forget_resolved_destination();
+            }
+        }
         if let Some(entity) = self.substrate.entities.get_mut(stable_id)
             && entity.category() == EntityCategory::Infantry
         {
@@ -4117,6 +4197,15 @@ impl Simulation {
         }
         self.substrate
             .release_foot_air_tracker_before_limbo(stable_id);
+        // Ares Remove1004B140 frees the jammer (UnjamAll) and the PoweredBy
+        // source before the attached effects.
+        #[cfg(feature = "ares")]
+        {
+            self.remove_radar_jammer(stable_id);
+            if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+                entity.powered_by = None;
+            }
+        }
         #[cfg(feature = "ares")]
         self.limbo_ares_attach_effects(stable_id, context.rules());
         // Phobos `TechnoClass_Limbo_Wrapper` replaces the Limbo entry
@@ -4186,6 +4275,10 @@ impl Simulation {
             #[cfg(feature = "phobos")]
             self.phobos_tracking_before_limbo(stable_id);
             self.house_removed_from_game(stable_id, context.rules(), context.effects());
+            // Ares BuildingClass_Remove_Academy (hook 0x00445905 ->
+            // 10023690) precedes them: a marked academy leaves its owner's list.
+            #[cfg(feature = "ares")]
+            self.update_ares_academy_membership(stable_id, false, context.rules());
             // BuildingClass::Limbo 0x00445946..0x00445988: an opened
             // Helipad's docks leave its house's AirportDocks.
             let rules = context.rules();
@@ -4240,6 +4333,47 @@ impl Simulation {
             crate::sim::radio::broadcast_break(self, stable_id, context.rules(), context.effects());
         }
         let outcome = self.object_conceal_with_context(stable_id, context);
+        // Ares 3.0 UnitClass_Remove (1005D610, hook 0x7440BD), after a Foot
+        // Limbo that removed the Unit: its Tank Bunker lets it go
+        // (`BuildingClass::ClearBunker @ 0x00459470`).
+        #[cfg(feature = "ares")]
+        if outcome == ConcealOutcome::Concealed
+            && let Some(bunker) = self
+                .substrate
+                .entities
+                .get(stable_id)
+                .filter(|entity| entity.category() == EntityCategory::Unit)
+                .and_then(|entity| entity.bunker.link().installed_in())
+            && self
+                .substrate
+                .entities
+                .get(bunker)
+                .is_some_and(|building| building.category() == EntityCategory::Structure)
+        {
+            crate::sim::docking::bunker_link::clear_bunker(
+                self,
+                bunker,
+                context.rules(),
+                context.effects(),
+            );
+        }
+        // Ares 3.0 BuildingClass_Remove_FirestormWall (10014A70, hook
+        // 0x445DF4) after the base Limbo disconnects a firestorm wall
+        // section from its neighbours (`UpdateFirewallLinks`).
+        #[cfg(feature = "ares")]
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+        {
+            self.ares_update_firewall_links(
+                stable_id,
+                context.rules(),
+                context.registry(),
+                context.effects(),
+            );
+        }
         // Building445DF4..445E14 follows the base Limbo, including the
         // already-limbo branch4458CE. This is one House/category callback,
         // never a global eligibility sweep or a boolean-transition latch.
@@ -4335,6 +4469,13 @@ impl Simulation {
         else {
             return;
         };
+        // Ares BuildingClass_Disappear_PrismForward (10016470, hook
+        // 0x44EBF0) takes a building out of its Prism network first.
+        #[cfg(feature = "ares")]
+        if category == EntityCategory::Structure {
+            self.substrate
+                .ares_prism_remove_from_network(stable_id, true);
+        }
         let allied_with = |sim: &Self, contact: u64| {
             sim.substrate.entities.get(contact).is_some_and(|contact| {
                 crate::sim::combat::combat_weapon::is_ally_by_object(
@@ -5579,7 +5720,7 @@ impl Simulation {
     /// Teleport Process7193CC..7193F4 calls Bullet::LoseTarget468430 on every
     /// matching Bullet in reverse construction order, including non-Logic
     /// bullets. Stable IDs retain that construction order in the store.
-    pub(super) fn lose_projectile_targets(&mut self, target_id: u64, rules: &RuleSet) {
+    pub(crate) fn lose_projectile_targets(&mut self, target_id: u64, rules: &RuleSet) {
         if !self
             .projectiles
             .iter()
@@ -5736,8 +5877,16 @@ impl Simulation {
         // `BombListClass::PointerGotInvalid @ 0x00439150` after its listener
         // loop (0x00725961) whatever the control, so a cloaking planter loses
         // its bombs' credit as a removed one does. No listener reads a planter,
-        // so running it first changes nothing.
-        Self::bomb_planter_expired(&mut self.substrate, &self.bombs, expired_id);
+        // so running it first changes nothing. Ares
+        // AnnounceInvalidPointer_BombCloak (10056750, hook 0x725961) skips it
+        // unless the object is removed: a cloaking planter keeps its credit.
+        #[cfg(feature = "ares")]
+        let announce_to_bombs = control == PointerExpiryControl::Uninit;
+        #[cfg(not(feature = "ares"))]
+        let announce_to_bombs = true;
+        if announce_to_bombs {
+            Self::bomb_planter_expired(&mut self.substrate, &self.bombs, expired_id);
+        }
         // `TeamClass::PointerExpired @ 0x006EAE60`, each team a listener.
         self.team_script_vm
             .pointer_expired(expired_id, control == PointerExpiryControl::Uninit);
@@ -6066,15 +6215,23 @@ impl Simulation {
                 // `+0x2D0 != 0`. This is the only mechanism that drops a
                 // destroyed wing target, so without it a Carrier keeps sending
                 // its Hornets at a corpse. The forward sits OUTSIDE the control
-                // test, so it runs on a cloak dive as well as on UnInit.
-                crate::sim::spawn_manager::notify_pointer_expired(
-                    self,
-                    listener_id,
-                    expired_id,
-                    context.rules(),
-                    context.registry(),
-                    context.effects(),
-                );
+                // test, so it runs on a cloak dive as well as on UnInit. Ares
+                // 3.0 TechnoClass_PointerGotInvalid_SpawnCloakOwner (1004A910,
+                // hook 0x707B19) skips it for the manager's own owner unless
+                // it is removed, so a cloaking carrier keeps its spawns.
+                if !(cfg!(feature = "ares")
+                    && control == PointerExpiryControl::DetachAll
+                    && expired_id == listener_id)
+                {
+                    crate::sim::spawn_manager::notify_pointer_expired(
+                        self,
+                        listener_id,
+                        expired_id,
+                        context.rules(),
+                        context.registry(),
+                        context.effects(),
+                    );
+                }
                 // The CaptureManager forward — `0x00707B14 CALL 0x00471F90` —
                 // sits inside the `if (control != 0)` block opened at
                 // `0x00707AE7`, so a dive leaves mind-control links alone while
@@ -6133,6 +6290,7 @@ impl Simulation {
                 self.foot_parasite_pointer_expired(
                     listener_id,
                     expired_id,
+                    control == PointerExpiryControl::Uninit,
                     context.rules(),
                     context.effects(),
                 );
@@ -6934,6 +7092,12 @@ impl Simulation {
         // this destruction until CellClass::CleanFog486BF0 reveals it.
         self.fog.forget_fogged_live_object(stable_id);
         self.drop_object_custom_sound(stable_id);
+        // Ares TunnelData::InvalidatePointer (100091E0): a Foot leaving play
+        // inside a tunnel drops out of its network.
+        #[cfg(feature = "ares")]
+        if kind == Some(ObjectKind::Entity) {
+            self.ares_tunnels.forget(stable_id);
+        }
         let removed = match kind {
             Some(ObjectKind::Entity) => {
                 let entity = self.substrate.entities.remove(stable_id);

@@ -256,6 +256,9 @@ fn defeated_viewer_fogs_hostile_gap_through_power_cycle_without_shroud() {
         sim.fog.by_owner()[&viewer].shroud_knowledge_raw()[index].gap_counter()
     };
 
+    // The surviving House's unit, which Ares HasBeenDefeated10024990 (hook
+    // 0x4F8EBD) requires behind its nonzero unit total.
+    insert(&mut sim, &rules, 4, alive, "SIGHT", 30, 30);
     defeat_local_viewer(&mut sim, &rules, defeated, alive, gap_owner);
 
     insert(&mut sim, &rules, 1, gap_owner, "GAGAP", 12, 12);
@@ -308,6 +311,9 @@ fn defeat_does_not_reclassify_an_active_hostile_gap() {
     let (mut sim, rules, viewer, alive, gap_owner) = fixture();
     insert(&mut sim, &rules, 1, gap_owner, "GAGAP", 12, 12);
     insert(&mut sim, &rules, 2, gap_owner, "POWER", 16, 12);
+    // The surviving House's unit, which Ares HasBeenDefeated10024990 (hook
+    // 0x4F8EBD) requires behind its nonzero unit total.
+    insert(&mut sim, &rules, 4, alive, "SIGHT", 30, 30);
     power(&mut sim, &rules);
     sim.visit_building_operational(1, &rules, None, FrameEffects::default());
     assert!(!sim.fog.is_cell_gap_fog(viewer, 12, 12));

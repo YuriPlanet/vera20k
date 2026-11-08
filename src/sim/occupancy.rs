@@ -608,6 +608,15 @@ impl AirSlotGrid {
     }
 }
 
+/// The OccupyHeight diagonals, exactly deduplicated. Ares 3.0
+/// MapClass_AddContentAt_Foundation_OccupyHeight 10015420 (hook
+/// `0x00568565`) and _RemoveContentAt_ 100154B0 (hook `0x00568997`) build
+/// them with BuildingExt::GetCoveredCells (sort and unique over the whole
+/// foundation) where gamemd dedupes through a 16x16 bitmap of foundation
+/// offsets, which only a custom foundation of 16 or more cells across could
+/// alias; the foundation is the full list (Ares 10015490 / 10015520, hooks
+/// `0x00568411` / `0x00568841`, lift Place_Down's and Pick_Up's 32-cell
+/// copy), as [`crate::rules::foundation::Foundation::cell_offsets`] is.
 fn hidden_diagonal_cells(
     origin: (u16, u16),
     foundation: &crate::rules::foundation::Foundation,

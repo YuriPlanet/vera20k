@@ -23,6 +23,7 @@ fn generated_tree_color_survives_progress_and_thumbnail_persistence() {
         tiberium: 35,
         vegetation: 30,
         urban_presence: 40,
+        urban_enabled: false,
         seed: 4242,
         ..Default::default()
     };

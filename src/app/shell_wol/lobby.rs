@@ -30,6 +30,7 @@ use super::service::{self, WolServiceEvent, WolServiceRequest};
 use crate::app::frontend::{shell_layout, shell_transition};
 use crate::app::shell_network_setup as setup;
 use crate::app::{App, AppState};
+use crate::ui::chat_translation::ChatPlace;
 use crate::ui::lan_shell::{LanChatLine, LanEditKey};
 use crate::ui::main_menu_dialogs::options::LauncherCue;
 use crate::ui::room_limits::RoomLimitsPress;
@@ -2554,6 +2555,12 @@ fn dispatch(state: &mut AppState, action: WolLobbyAction) {
         WolLobbyAction::Options => {
             App::leave_shell_dialog(state, shell_transition::ShellExitThen::WolOptionsOpen);
         }
+        WolLobbyAction::ChatTranslation => {
+            App::leave_shell_dialog(
+                state,
+                shell_transition::ShellExitThen::WolChatTranslationOpen,
+            );
+        }
         WolLobbyAction::Page => super::page::open_page_dialog(state),
         // 0x0078BF7D: mode 5 with return mode 4; event 6 then ends the
         // runner as Back does, and WOL_Main runs the Buddy List runner.
@@ -3313,10 +3320,18 @@ pub(super) fn message_received(state: &mut AppState, message: ReceivedMessage) {
     let (line, color) = wol_chat::received_line(&sender(&from), &text, private, action);
     crate::app::shell_lan::append_chat_sent_at(state, LanChatLine { text: line, color }, sent_at);
     let (prefix, _) = wol_chat::received_line(&sender(&from), &[], private, action);
+    let place = if private {
+        ChatPlace::Private
+    } else if state.frontend.shell_route.network_setup() {
+        ChatPlace::Room
+    } else {
+        ChatPlace::Lobby
+    };
     super::translation::received(
         state,
         &text,
         super::translation::TranslatedLine::Wol { prefix, color },
+        place,
     );
     state.platform.window.request_redraw();
 }

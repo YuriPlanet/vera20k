@@ -55,7 +55,7 @@ Yuri's Revenge ويثبّت VERA20K في مجلد جديد.
 - **[أسلوب اللعب والقتال](https://github.com/YuriPlanet/vera20k/issues/3830):** سلوك الوحدات والضرر وثبات المناوشات.
 - **[الأداء](https://github.com/YuriPlanet/vera20k/issues/3831):** معدل الإطارات وسرعة الاستجابة في المعارك الكبيرة وعلى الأجهزة القديمة.
 - **[اللعب الجماعي](https://github.com/YuriPlanet/vera20k/issues/3832):** الانضمام إلى المباريات عبر الإنترنت وبدؤها واستمرارها، وموثوقية اللعب التعاوني.
-- **[الواجهة والصوت](https://github.com/YuriPlanet/vera20k/issues/3833):** القوائم والنصوص والترجمات والصوت.
+- **[الواجهة والصوت](https://github.com/YuriPlanet/vera20k/issues/3833):** القوائم والنصوص [والترجمات](src/i18n/README.md) والصوت.
 - **[الحملات](https://github.com/YuriPlanet/vera20k/issues/3834):** يمكن بدء المهام، لكن إكمالها حتى النهاية ما زال يحتاج إلى عمل: الأهداف والمحفزات والانتقالات المبرمجة والحفظ والتحميل والانتقال إلى المهمة التالية.
 - **[التوافق مع التعديلات](https://github.com/YuriPlanet/vera20k/issues/3835):** ميزات Ares وPhobos، دون تغيير الإعدادات الافتراضية للعبة الأصلية.
 - **[الاختبار](https://github.com/YuriPlanet/vera20k/issues?q=is%3Aopen%20label%3Aparity):** العب VERA20K جنبًا إلى جنب مع اللعبة الأصلية وأبلغ عمّا يختلف في اللعب.
@@ -120,6 +120,8 @@ cargo run --release --bin vera20k
 
 تُحفظ إعدادات الصوت والرسوم والتحكم في `VERA.INI`. وتأتي قواعد اللعب من إعدادات الردهة أو التعديلات أو الخرائط.
 
+يشرح [دليل التعديلات](docs/modding.md) كيفية صنع تعديلاتك الخاصة.
+
 ## الدعم
 
 <a href="https://paypal.me/vera20k"><img src="https://img.shields.io/badge/Donate_via_PayPal-FFC439?style=flat&amp;logo=paypal&amp;logoColor=003087" alt="ادعم VERA20K عبر PayPal" height="23"></a>
@@ -144,11 +146,14 @@ Command & Conquer وRed Alert علامتين تجاريتين لشركة Electro
 وأيقونة التطبيق، أي النجمة الحمراء من Red Alert 2، رسومات من اللعبة تملكها Electronic Arts.
 لا يتبع VERA20K شركة Electronic Arts ولا يحظى بتأييدها.
 
+This product includes software developed by the [Ares Contributors](LICENSES/Ares.txt).
+
 **اقرأ [الإشعار القانوني](LEGAL.md) قبل أن تشارك VERA20K أو تبيعه أو تنشئ نسخة متفرعة منه.**
 
 ## التوثيق
 
 - [معاينة WebAssembly](docs/wasm.md): بنية اختيارية للعب الفردي تعمل في المتصفح.
+- [دليل التعديلات](docs/modding.md): ما تستطيع التعديلات فعله وما لا تستطيعه، وكيف يختلف VERA20K عن اللعبة الأصلية.
 - [ملفات تعريف INI](docs/ini-roots.md): اختيار ملفات القواعد والرسوم والذكاء الاصطناعي.
 - [Ares](docs/ares.md) و[Phobos](docs/phobos.md) و[NPatch](docs/npatch.md): دعم الإضافات وحدوده.
 - [نظرة عامة على المحرك](docs/index.md): تنظيم الشيفرة وكيف تترابط أجزاء المحرك.

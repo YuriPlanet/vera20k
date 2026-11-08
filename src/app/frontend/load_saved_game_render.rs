@@ -235,6 +235,7 @@ pub(crate) fn render_load_saved_game_page(
             text: &text,
             cursor: software_cursor(state, CURSOR_DEPTH),
             effects: None,
+            smooth_art: false,
         },
     );
     Ok(true)

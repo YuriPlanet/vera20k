@@ -383,6 +383,7 @@ impl App {
         );
         let profile_screen = options_load.startup_shell_screen;
         let mut options_profile = options_load.retained_profile;
+        personal_rules.set_terrain_deformation(options_profile.terrain_deformation);
         // Before the first CSF load below, which layers this language over it.
         crate::i18n::init(
             game_config
@@ -390,6 +391,9 @@ impl App {
                 .map(|config| config.paths.settings_dir()),
             options_profile.language.as_deref(),
         );
+        // The Developer page's String Keys box arms Ctrl+Alt+K; a saved choice
+        // still opens on the texts until the hotkey asks for keys.
+        crate::i18n::set_show_string_keys(options_profile.show_string_keys);
         options_profile.render_interpolation =
             crate::app::presentation::interpolation::startup_enabled(
                 options_profile.render_interpolation,
@@ -1273,6 +1277,7 @@ impl App {
                 outcome_banner_art,
                 vxl_pose_frame_cache: std::cell::RefCell::new(Default::default()),
                 retail_screenshot_frame_cache: Default::default(),
+                terrain_picture: Default::default(),
             },
             process_assets,
             audio: startup_audio_runtime,

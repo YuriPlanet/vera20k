@@ -308,6 +308,22 @@ impl crate::sim::world::Simulation {
         if actor.category() != crate::map::entities::EntityCategory::Infantry {
             return Ok(false);
         }
+        // Ares InfantryClass_UpdatePanic1004CC80 (hook5200B3): a
+        // Deactivated infantryman only counts its fear down, even Fearless,
+        // and takes none of the stance, refill or Scatter work.
+        #[cfg(feature = "ares")]
+        if actor.deactivated.is_offline() {
+            if let Some(infantry) = self
+                .substrate
+                .entities
+                .get_mut(id)
+                .and_then(|actor| actor.infantry.as_mut())
+                && infantry.fear_level > 0
+            {
+                infantry.fear_level -= 1;
+            }
+            return Ok(false);
+        }
         let infantry = actor
             .infantry
             .as_ref()
@@ -390,7 +406,25 @@ impl crate::sim::world::Simulation {
                         && (actor.navigation.nav_com().is_some()
                             || crate::sim::movement::motion_query::is_moving(actor)
                                 .ok_or("Infantry fear requires active IsMoving state")?);
-                    if !under_way && !fraidycat {
+                    // Ares 3.0 InfantryClass_UpdatePanic_ProneWater 100256F0
+                    // (hook 0x005201CC): no prone Down on a Beach or Water
+                    // cell (GetCell's LandType); the tail at 0x005201DC runs.
+                    #[cfg(feature = "ares")]
+                    let wet = {
+                        use crate::rules::terrain_rules::LandType;
+                        self.resolved_terrain
+                            .as_ref()
+                            .and_then(|terrain| {
+                                terrain.cell(actor.position.rx(), actor.position.ry())
+                            })
+                            .is_some_and(|cell| {
+                                cell.land_type == LandType::Beach.as_index()
+                                    || cell.land_type == LandType::Water.as_index()
+                            })
+                    };
+                    #[cfg(not(feature = "ares"))]
+                    let wet = false;
+                    if !under_way && !fraidycat && !wet {
                         //5201CE..1D6: Crawls and accepted/refused prone/clock
                         // writes belong solely to Infantry51D6F0.
                         let _accepted = self.infantry_do_action(id, 5, false, rules, effects)?;
@@ -457,6 +491,7 @@ const IDLE_FACING_STEP: u8 = crate::util::direction::FACING_UNITS_PER_DIRECTION;
 const IDLE_PANIC_FEAR: u16 = 50;
 /// The one type whose idle roll is biased, by name. gamemd tests the object's
 /// type against this string and, on a second sub-roll, forces the wandering arm.
+#[cfg(not(feature = "ares"))]
 const IDLE_BIASED_TYPE: &str = "COW";
 /// The biased type takes the wander arm when its sub-roll lands under this.
 const IDLE_BIAS_THRESHOLD: u32 = 5;
@@ -560,8 +595,19 @@ fn select_idle_action(
     if object.fraidycat && !controlled_by_human && infantry.fear_level > IDLE_PANIC_FEAR {
         return Ok(IdleTurn::NullSourceScatter);
     }
-    let biased_type = object.id.eq_ignore_ascii_case(IDLE_BIASED_TYPE);
     let mut roll = rng.next_range_u32_inclusive(0, IDLE_ROLL_MAX);
+    // Ares 3.0 InfantryClass_Idle (10049740, hook 0x51CE9A) tests `IsCow`
+    // in place of the ID, and under EMP takes no bias and leaves the roll
+    // register (EDI) holding the frame it loaded at 0x0051CE10.
+    #[cfg(feature = "ares")]
+    let biased_type = if entity.emp_remaining() > 0 {
+        roll = frame;
+        false
+    } else {
+        object.techno_combat().roles().is_cow()
+    };
+    #[cfg(not(feature = "ares"))]
+    let biased_type = object.id.eq_ignore_ascii_case(IDLE_BIASED_TYPE);
     if biased_type && rng.next_range_u32_inclusive(0, IDLE_ROLL_MAX) < IDLE_BIAS_THRESHOLD {
         roll = 8;
     }
@@ -1114,6 +1160,31 @@ mod tests {
             compared += 1;
         }
         assert_eq!(compared, 42);
+    }
+
+    /// Ares 100256F0 (hook 0x5201CC): the native `down_threshold51` control
+    /// goes prone on clear ground, but not standing on a Beach cell.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_panicking_infantry_does_not_go_prone_on_a_beach() {
+        use crate::rules::terrain_rules::LandType;
+        let native = fear_corpus();
+        let row = native["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["input"]["name"] == "down_threshold51")
+            .unwrap();
+        for (land, prone) in [(LandType::Clear, true), (LandType::Beach, false)] {
+            let (mut sim, rules) = fear_fixture(row);
+            let mut terrain = crate::map::resolved_terrain::test_retail_clear_grid(4, 4);
+            terrain.cell_mut_for_test(0, 0).unwrap().land_type = land.as_index();
+            sim.install_resolved_terrain_for_new_map(terrain);
+            sim.infantry_fear_turn(1, &rules, None, crate::sim::world::FrameEffects::default())
+                .unwrap();
+            let infantry = sim.entities().get(1).unwrap().infantry.as_ref().unwrap();
+            assert_eq!(infantry.is_prone, prone, "{land:?}");
+        }
     }
 
     #[test]

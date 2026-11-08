@@ -731,6 +731,12 @@ impl TeamScriptState {
         self.formed
     }
 
+    /// The team's mission target, for cross-module script tests.
+    #[cfg(all(feature = "ares", any(test, feature = "test-support")))]
+    pub(crate) fn mission_target_for_test(&self) -> Option<TeamTarget> {
+        self.mission_target
+    }
+
     pub(crate) const fn created_frame(&self) -> i32 {
         self.created_frame
     }
@@ -999,7 +1005,7 @@ impl TeamScriptVm {
     }
 
     /// The TaskForce of TeamType `team_type_id`, if it resolved.
-    pub(crate) fn task_force_of(
+    pub fn task_force_of(
         &self,
         team_type_id: InternedId,
     ) -> Option<&TeamTaskForceDefinition> {
