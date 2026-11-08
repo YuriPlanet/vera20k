@@ -872,6 +872,7 @@ impl App {
                         &gpu,
                         &batch_renderer,
                         assets,
+                        None,
                     )
                 });
                 let hotkey_bindings = game_config.as_ref().map_or_else(
@@ -926,6 +927,7 @@ impl App {
                     sfx_player,
                     launcher_audio_available,
                     theme_startup_suppressed: false,
+                    last_theme_diag: None,
                     master_groups: Default::default(),
                     restore_muted: false,
                 };

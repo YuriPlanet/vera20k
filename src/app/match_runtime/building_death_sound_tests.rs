@@ -152,6 +152,7 @@ fn audio_runtime(with_device: bool) -> AppAudioRuntime {
         sfx_player: player,
         launcher_audio_available: with_device,
         theme_startup_suppressed: false,
+        last_theme_diag: None,
     }
 }
 

@@ -118,8 +118,9 @@ mod tests {
     #[test]
     fn packed_required_data_allows_install_and_lists_missing_music_only_as_optional() {
         let dir = fixture();
-        // The gameplay playlist requires WAV availability even though the
-        // low-level playback decoder can also read an AUD file.
+        // The shared player accepts both WAV and AUD, and the catalog scan
+        // keeps an AUD-only track in the automatic playlist (MO ships many
+        // YR-era tracks as AUD). An AUD file therefore satisfies the track.
         std::fs::write(dir.path().join("test-song.aud"), b"present").unwrap();
         let report_dir = TestDirectory::new("installer-output");
         let result = crate::app::frontend::launch::try_game_data_check([
@@ -133,12 +134,29 @@ mod tests {
         let required = std::fs::read_to_string(report_dir.path().join("required.txt")).unwrap();
         let optional = std::fs::read_to_string(report_dir.path().join("optional.txt")).unwrap();
         assert!(required.is_empty(), "{required}");
-        assert!(optional.contains("test-song.wav"), "{optional}");
+        assert!(!optional.contains("test-song.wav"), "{optional}");
         assert!(optional.contains("audio.idx / audio.bag"), "{optional}");
         assert_eq!(
             std::fs::read_to_string(report_dir.path().join("language.txt")).unwrap(),
             "0"
         );
+
+        // Without either file the missing WAV is still an optional warning,
+        // never a required installation failure.
+        std::fs::remove_file(dir.path().join("test-song.aud")).unwrap();
+        let absent_dir = TestDirectory::new("installer-output-no-aud");
+        let result = crate::app::frontend::launch::try_game_data_check([
+            "--check-game-data".into(),
+            dir.path().as_os_str().to_owned(),
+            absent_dir.path().as_os_str().to_owned(),
+        ])
+        .unwrap()
+        .unwrap();
+        assert_eq!(result, 0);
+        let required = std::fs::read_to_string(absent_dir.path().join("required.txt")).unwrap();
+        let optional = std::fs::read_to_string(absent_dir.path().join("optional.txt")).unwrap();
+        assert!(required.is_empty(), "{required}");
+        assert!(optional.contains("test-song.wav"), "{optional}");
     }
 
     #[test]

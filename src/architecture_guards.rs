@@ -129,6 +129,10 @@ fn raw_ini_walks_have_pinned_production_callers() {
                 ("asset_tools/verb_ini.rs", 1),
                 // `[Colors]` entries copied into the processed registry.
                 ("rules/native_processing.rs", 1),
+                // Ares `[MouseCursors]`: each row is a seven-field comma list
+                // (`858,10,5,-1,1,Center,Middle`) kept as stored, because no
+                // typed reader can name its positional fields.
+                ("rules/mouse_cursors.rs", 1),
             ],
         ),
         (

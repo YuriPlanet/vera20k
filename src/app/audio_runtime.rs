@@ -85,6 +85,8 @@ pub(crate) struct AppAudioRuntime {
     /// Native has a startup-suppression gate. Current Rust has no non-default
     /// route, so production initializes this false and keeps one explicit seam.
     pub(crate) theme_startup_suppressed: bool,
+    /// Transient MO diagnosis: last logged in-game Theme signature.
+    pub(crate) last_theme_diag: Option<(bool, i32, i32, i32, bool, MusicOutputState)>,
 }
 
 /// The process volume groups that only lifecycle code writes, with the
@@ -443,6 +445,27 @@ impl AppAudioRuntime {
     pub(crate) fn main_tick_theme(&mut self, in_game_music: bool, wall_ms: u64) {
         let gates = self.theme_gates();
         let physical = self.music_output_state();
+        // Transient MO diagnosis: log only on state transitions.
+        let current = self.theme.current_song();
+        let saved = self.theme.saved_slots();
+        let signature = (
+            in_game_music,
+            current,
+            saved[0],
+            saved[1],
+            self.launcher_audio_available,
+            physical,
+        );
+        if self.last_theme_diag != Some(signature) {
+            self.last_theme_diag = Some(signature);
+            log::info!(
+                "Theme state: in_game_music={in_game_music} current={current} retained={} pending={} launcher_audio={} physical={physical:?} entries={}",
+                saved[0],
+                saved[1],
+                self.launcher_audio_available,
+                self.theme.entries().len(),
+            );
+        }
         let action = self.theme.main_tick(in_game_music, gates, physical);
         self.apply_theme_action(action, wall_ms);
     }
@@ -723,6 +746,7 @@ mod tests {
                 sfx_player: None,
                 launcher_audio_available: true,
                 theme_startup_suppressed: false,
+                last_theme_diag: None,
                 master_groups: Default::default(),
                 restore_muted: false,
             };
@@ -763,6 +787,7 @@ mod tests {
             sfx_player: None,
             launcher_audio_available: true,
             theme_startup_suppressed: false,
+            last_theme_diag: None,
             master_groups: Default::default(),
             restore_muted: false,
         };
@@ -804,6 +829,7 @@ mod tests {
             sfx_player: None,
             launcher_audio_available: true,
             theme_startup_suppressed: false,
+            last_theme_diag: None,
             master_groups: Default::default(),
             restore_muted: false,
         };
@@ -893,6 +919,7 @@ mod tests {
             sfx_player: None,
             launcher_audio_available: true,
             theme_startup_suppressed: false,
+            last_theme_diag: None,
             master_groups: Default::default(),
             restore_muted: false,
         };
@@ -931,6 +958,7 @@ mod tests {
             sfx_player: None,
             launcher_audio_available: false,
             theme_startup_suppressed: false,
+            last_theme_diag: None,
             master_groups: Default::default(),
             restore_muted: false,
         };
@@ -968,6 +996,7 @@ mod tests {
             sfx_player: None,
             launcher_audio_available: false,
             theme_startup_suppressed: false,
+            last_theme_diag: None,
             master_groups: Default::default(),
             restore_muted: false,
         };

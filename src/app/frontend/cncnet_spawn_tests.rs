@@ -164,6 +164,60 @@ HouseAllyOne=1
 HouseAllyOne=0
 ";
 
+/// Mental Omega 3.3's CnCNet client writes the full MO option set but never
+/// emits `SpecialHouseIsAlly`. That key is a Spawner extension, so its absence
+/// must read as "off" rather than as the unsupported `Yes`.
+const MO_CLIENT_SPAWN: &str = "\
+[Settings]
+Name=92827
+Scenario=spawnmap.ini
+UIGameMode=常规作战
+UIMapName=(2) 碎骨魔
+PlayerCount=1
+Side=0
+IsSpectator=False
+Color=6
+CustomLoadScreen=Resources/l600s01.pcx
+AIPlayers=0
+Seed=1109830888
+ShortGame=True
+NoGarrisons=False
+MCVRedeploy=False
+BuildOffAlly=True
+Crates=False
+NavalCombat=True
+AlliesAllowed=False
+StolenTech=False
+MentalAI=True
+LimitedMCV=False
+ImmuneDerricks=True
+FreeRadar=False
+NoSpawnPreviews=True
+ConYardStart=True
+NerfEights=False
+UnitCount=0
+GameSpeed=0
+Credits=70000
+TechLevel=10
+FogOfWar=No
+MultiEngineer=Yes
+";
+
+#[test]
+fn mo_client_spawn_without_the_spawner_extension_key_is_admitted() {
+    let request = SpawnRequest::parse(MO_CLIENT_SPAWN).expect("MO client spawn.ini is admitted");
+    let SpawnGame::Skirmish(session) = request.game else {
+        panic!("expected skirmish")
+    };
+    assert_eq!(session.opponents.len(), 0);
+    assert_eq!(
+        session.local_slot().start_position,
+        LaunchStartPosition::Auto
+    );
+    assert_eq!(session.options.starting_credits, 70000);
+    assert!(session.options.build_off_ally);
+}
+
 #[test]
 fn client_skirmish_preserves_roster_options_and_native_indices() {
     let request = SpawnRequest::parse(SKIRMISH).unwrap();

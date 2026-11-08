@@ -90,6 +90,9 @@ pub(crate) fn build_overlay_presentation(
     theater_iso_palette: Option<&Palette>,
     theater_unit_palette: Option<&Palette>,
     theater_tiberium_palette: Option<&Palette>,
+    // Every House colour this match can place a wall with; the atlas bakes
+    // one wall body tile per colour so a segment follows `wall_owner`.
+    wall_house_colors: &[HouseColorIndex],
 ) -> OverlayPresentationAssets {
     let force_tib_remap_enabled: bool = std::env::var("RA2_FORCE_TIB3_TO_TIB01")
         .ok()
@@ -217,6 +220,7 @@ pub(crate) fn build_overlay_presentation(
             rules,
             Some(&rules.smudge_types),
             &rubble_arts,
+            wall_house_colors,
         )
     });
 

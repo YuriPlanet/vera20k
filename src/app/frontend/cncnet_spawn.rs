@@ -466,10 +466,14 @@ fn skirmish(
     player_count: usize,
 ) -> Result<SkirmishLaunchSession> {
     let mode = spawn_mode(settings)?;
-    // The supplied client profile writes No. SpecialHouseIsAlly is a Spawner
-    // extension, not part of the stock offline Session's alliance owner.
+    // SpecialHouseIsAlly is a CnCNet Spawner extension, not part of the stock
+    // offline Session's alliance owner. The VERA client profile writes No.
+    // Clients that omit the key entirely (Mental Omega 3.3's CnCNet client
+    // does) have not enabled the extension, so absence means No, not Yes. An
+    // explicit Yes still asks for the unsupported alliance owner and is
+    // refused below.
     ensure!(
-        !boolean(settings, "SpecialHouseIsAlly", true)?,
+        !boolean(settings, "SpecialHouseIsAlly", false)?,
         "SpecialHouseIsAlly=Yes is unsupported; use the VERA client profile"
     );
     let multiplayer = player_count > 1 || ini.section("Relay").is_some();
