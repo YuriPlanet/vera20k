@@ -647,7 +647,7 @@ pub(super) fn prepare_random_map_generation(
     preparation: RandomMapRulesPreparation<'_>,
     mode_rules_override: Option<&crate::rules::ini_parser::IniFile>,
 ) -> Option<PreparedRandomMapGeneration> {
-    let settings = crate::map::rmg::RmgSettings::load(asset_manager);
+    let mut settings = crate::map::rmg::RmgSettings::load(asset_manager);
     let theater_name = crate::map::rmg::emit::theater_name(options.theater);
     let Some(theater) = crate::map::theater::load_theater(asset_manager, theater_name) else {
         log::warn!("random map: theater {theater_name} unavailable");
@@ -702,6 +702,20 @@ pub(super) fn prepare_random_map_generation(
     } else {
         None
     };
+    // VERA: the theater's civilian buildings, for an opted-in Urban Presence;
+    // the load resolves the same list from the same Rules and art.
+    if options.urban_enabled
+        && let Some((owner, preview)) = native_rules.zip(preview_rules.as_ref())
+    {
+        settings.urban_types = crate::map::rmg::tech_catalog::resolve_urban(
+            &preview.rules,
+            owner.fixed_art(),
+            &tech_types,
+            theater.extension,
+            theater_name,
+            |file| asset_manager.contains(file),
+        );
+    }
     let terrain_rules = preview_rules
         .as_ref()
         .map(|preview| preview.rules.terrain_rules.clone())
@@ -1850,6 +1864,7 @@ mod tests {
             tiberium_layout: 90,
             vegetation: 62,
             urban_presence: 2,
+            urban_enabled: false,
             ..Default::default()
         };
         let prepared = prepare_random_map_generation(
@@ -1914,6 +1929,7 @@ mod tests {
             tiberium: 35,
             vegetation: 30,
             urban_presence: 40,
+            urban_enabled: false,
             seed: 4242,
             ..Default::default()
         };

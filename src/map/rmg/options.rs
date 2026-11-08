@@ -28,6 +28,12 @@ pub struct RmgOptions {
     pub tiberium_layout: i32,
     pub vegetation: i32,
     pub urban_presence: i32,
+    /// VERA extension: the player set Urban Presence (the Advanced Buildings
+    /// slider), so the urban stage places towns for it. The original never
+    /// reads the presence; without this flag neither does VERA, so every
+    /// original seed generates exactly as before. Saved as `VeraUrban=yes`
+    /// only when set.
+    pub urban_enabled: bool,
     pub width: i32,
     pub height: i32,
     pub accessibility: i32,
@@ -37,6 +43,9 @@ pub struct RmgOptions {
     /// units, and used as the random-map row's displayed name.
     pub description: SeedDescription,
 }
+
+/// VERA's `.SED` key for [`RmgOptions::urban_enabled`].
+const VERA_URBAN_KEY: &str = "VeraUrban";
 
 impl Default for RmgOptions {
     /// The original constructor's defaults (`MapSeedClass` ctor `0x00595680`,
@@ -55,6 +64,7 @@ impl Default for RmgOptions {
             tiberium_layout: 0,
             vegetation: 0,
             urban_presence: 0,
+            urban_enabled: false,
             width: 0,
             height: 0,
             accessibility: 0,
@@ -133,6 +143,7 @@ impl RmgOptions {
         read("Vegetation", &mut self.vegetation);
         read("UrbanPresence", &mut self.urban_presence);
         read("Resources", &mut self.resources);
+        self.urban_enabled = section.read_bool(VERA_URBAN_KEY, self.urban_enabled);
     }
 
     /// Serialize to `.SED` bytes, writing every key in the original's order.
@@ -157,6 +168,11 @@ impl RmgOptions {
             ("UrbanPresence", self.urban_presence.to_string()),
             ("Resources", self.resources.to_string()),
         ];
+        // VERA: written only when set, so an original seed's bytes are unchanged.
+        let mut values = values;
+        if self.urban_enabled {
+            values.push((VERA_URBAN_KEY, "yes".to_string()));
+        }
         let pairs: Vec<(&str, &str)> = values
             .iter()
             .map(|(key, value)| (*key, value.as_str()))
@@ -263,6 +279,7 @@ mod tests {
             tiberium_layout: 500,
             vegetation: -3,
             urban_presence: 900,
+            urban_enabled: false,
             width: 9,
             height: 9,
             accessibility: 101,
@@ -341,6 +358,7 @@ mod tests {
             tiberium_layout: 20,
             vegetation: 70,
             urban_presence: 10,
+            urban_enabled: false,
             width: 2,
             height: 3,
             accessibility: 60,

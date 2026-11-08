@@ -310,6 +310,8 @@ impl RandomMapSetupModalState {
             if self.options.theater >= NATIVE_THEATER_ITEMS as i32 {
                 self.options.theater = 0;
             }
+            // VERA's towns are offline-only, like the Advanced view.
+            self.options.urban_enabled = false;
         }
     }
 
@@ -505,6 +507,7 @@ impl RandomMapSetupModalState {
         // VERA: Surprise Me also drops the Advanced values, so the derived
         // fields are random again.
         self.advanced_values = None;
+        self.options.urban_enabled = false;
         randomize(&mut self.options, settings, rng, description);
         self.generated = false;
         self.generated_preview = None;
@@ -538,7 +541,12 @@ impl RandomMapSetupModalState {
     }
 
     /// The value an Advanced slider shows: the player's, else the option's.
+    /// Buildings reads 0 until the player turns the towns on, since the
+    /// presence the map type rolls places nothing by itself.
     pub fn advanced_value(&self, field: AdvancedField) -> i32 {
+        if field == AdvancedField::Buildings && !self.options.urban_enabled {
+            return 0;
+        }
         self.advanced_values.map_or_else(
             || advanced_field(&self.options, field),
             |values| values[field.row()],
@@ -579,12 +587,16 @@ impl RandomMapSetupModalState {
         if self.advanced_value(field) == value {
             return false;
         }
-        let mut values = self.advanced_values.unwrap_or_else(|| {
-            AdvancedField::ALL.map(|field| advanced_field(&self.options, field))
-        });
+        let mut values = self
+            .advanced_values
+            .unwrap_or_else(|| AdvancedField::ALL.map(|field| self.advanced_value(field)));
         values[field.row()] = value;
         self.advanced_values = Some(values);
         *advanced_field_mut(&mut self.options, field) = value;
+        // Moving Buildings above zero turns the towns on (`urban_enabled`).
+        if field == AdvancedField::Buildings {
+            self.options.urban_enabled = value > 0;
+        }
         self.on_option_changed();
         true
     }
@@ -705,6 +717,25 @@ mod tests {
         state.randomize_options(&RmgSettings::default(), &mut MaxRng, "Random Map");
         assert_eq!(state.advanced_values, None);
         assert_ne!(state.advanced_value(AdvancedField::Water), 77);
+    }
+
+    /// VERA: only moving Buildings above zero turns the towns on, and the
+    /// slider reads 0 until then; Surprise Me turns them off again.
+    #[test]
+    fn only_the_buildings_slider_turns_the_towns_on() {
+        let mut state = opened();
+        state.options.urban_presence = 63;
+        assert_eq!(state.advanced_value(AdvancedField::Buildings), 0);
+        state.change_advanced(AdvancedField::Water, 30);
+        assert!(
+            !state.options.urban_enabled,
+            "another slider leaves them off"
+        );
+        assert!(state.change_advanced(AdvancedField::Buildings, 40));
+        assert!(state.options.urban_enabled);
+        assert_eq!(state.options.urban_presence, 40);
+        state.randomize_options(&RmgSettings::default(), &mut MaxRng, "Random Map");
+        assert!(!state.options.urban_enabled);
     }
 
     #[test]
