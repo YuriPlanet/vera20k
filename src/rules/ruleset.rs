@@ -5862,6 +5862,15 @@ impl RuleSet {
                 object.project_infantry_pips(pips);
             }
         }
+        for (name, civilian) in processed.infantry_civilian_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == ObjectCategory::Infantry && object.id == name)
+            {
+                object.civilian = civilian;
+            }
+        }
         for (name, art) in processed.infantry_art_states() {
             if let Some(object) = rules
                 .object_list
@@ -8337,6 +8346,19 @@ impl RuleSet {
         self.general
             .allow_shrouded_subterannean_moves
             .hash(&mut hasher);
+        // InfantryTypeRead52455F retains this byte across missing/invalid
+        // reads; equal current source text may therefore evacuate differently.
+        let mut civilian_types: Vec<_> = self
+            .object_list
+            .iter()
+            .filter(|object| object.category == ObjectCategory::Infantry && object.civilian)
+            .map(|object| object.id.to_ascii_uppercase())
+            .collect();
+        if !civilian_types.is_empty() {
+            civilian_types.sort_unstable();
+            b"infantry-civilian-v1".hash(&mut hasher);
+            civilian_types.hash(&mut hasher);
+        }
         // InfantryType ReadINI5245B8..5245F5 retains both theft bytes across
         // invalid later reads. Flattened text alone cannot identify that state.
         let mut theft_flags: Vec<_> = self

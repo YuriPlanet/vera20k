@@ -1536,6 +1536,10 @@ pub struct ObjectType {
     pub fearless: bool,
     /// `Fraidycat=yes` on InfantryType. First fear hit immediately maxes fear.
     pub fraidycat: bool,
+    /// InfantryType+EC1, retained Civilian ReadINI52455F. The instance
+    /// predicate413CD0 also excludes the separate nominal-survivor byte.
+    /// Its type-CRC524840/report64DEA0 consumer remains a separate residual.
+    pub civilian: bool,
     /// `Crawls=` from ARTMD (InfantryTypeClass `+0xEBD`), the last reached
     /// pass's read ([`InfantryArt`]). Gates Down and the prone speed.
     pub crawls: bool,
@@ -5099,6 +5103,9 @@ impl ObjectType {
             slaved: section.read_bool("Slaved", false),
             fearless: section.read_bool("Fearless", false),
             fraidycat: section.read_bool("Fraidycat", false),
+            // InfantryTypeCtor5237A1; only the ordered retained reader
+            // supplies Civilian, independently of Image or House identity.
+            civilian: false,
             // InfantryTypeClass's constructor sets Crawls (`+0xEBD`) to true
             // (`0x00523788`); the per-pass ART read projects over it
             // ([`InfantryArt`]). Other types have no such field.

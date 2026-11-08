@@ -1157,6 +1157,9 @@ impl Simulation {
             if house.is_to_die() {
                 b"house-flag-to-die-v1".hash(hasher);
             }
+            if house.civilians_evacuated() {
+                b"house-civilians-evacuated-v1".hash(hasher);
+            }
             house.has_won().hash(hasher);
             house.has_lost().hash(hasher);
             // Compatibility fold of the pending view derived from these
