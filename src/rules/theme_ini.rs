@@ -8,7 +8,9 @@
 use crate::assets::asset_manager::AssetManager;
 use crate::rules::ini_parser::{IniFile, IniSection};
 
-const THEME_INI_NAME: &str = "thememd.ini";
+/// VERA MOD-support adaptation: the YR playlist root is `thememd.ini`, MO's
+/// is `thememo.ini`. The selected INI profile owns that choice, so the same
+/// frozen root used for Rules/Art/AI also selects the theme catalog.
 const RA2_THEME_INI_NAME: &str = "theme.ini";
 
 /// One `[Themes]` entry (native 0x290-byte record, ctor inside `0x00720590`,
@@ -47,7 +49,8 @@ impl ThemeCatalog {
     /// ReadINI720590 + Scan7207F0, then the authorized RA2 gameplay append.
     /// Select independently so RA2 cannot replace YR lifecycle sections.
     pub fn select(assets: &AssetManager) -> Self {
-        let mut entries = crate::rules::retail_sources::select_ini(assets, THEME_INI_NAME)
+        let theme_name = assets.ini_roots().theme();
+        let mut entries = crate::rules::retail_sources::select_ini(assets, theme_name)
             .map_or_else(|_| Vec::new(), |selected| catalog_from_ini(&selected.ini));
         scan_catalog_availability(&mut entries, assets);
         if let Ok(selected) = crate::rules::retail_sources::select_ini(assets, RA2_THEME_INI_NAME) {
@@ -75,6 +78,17 @@ impl ThemeCatalog {
         usize::try_from(index)
             .ok()
             .and_then(|index| self.entries.get(index))
+    }
+
+    /// VERA session adaptation: a Play whose file cannot be prepared removes
+    /// the entry from later `Next_Song` draws for the rest of the session, so
+    /// one missing track cannot stall or spam the automatic playlist.
+    pub fn mark_unavailable(&mut self, index: i32) {
+        if let Ok(index) = usize::try_from(index)
+            && let Some(entry) = self.entries.get_mut(index)
+        {
+            entry.available = false;
+        }
     }
 
     /// ThemeClass::From_Name721210, original instruction listing: raw section
@@ -113,7 +127,17 @@ fn scan_catalog_availability(entries: &mut [ThemeEntry], assets: &AssetManager) 
         let wav = (!entry.sound.is_empty())
             .then(|| assets.get_ref(&format!("{}.wav", entry.sound)))
             .flatten();
-        entry.available = wav.is_some();
+        // The shared player (`prepare_track`) accepts both `.wav` and `.aud`.
+        // MO keeps new tracks as WAV in thememo.mix but inherits many YR-era
+        // tracks as AUD from other archives. An AUD-only entry must remain in
+        // the automatic playlist: Theme AI's `is_allowed` drops entries marked
+        // unavailable, and `next_song` then falls back to index 0 (often a
+        // track whose file is missing), so auto-play starts nothing while a
+        // manually chosen track still resolves and plays.
+        let aud = (!entry.sound.is_empty())
+            .then(|| assets.get_shared(&format!("{}.aud", entry.sound)))
+            .flatten();
+        entry.available = wav.is_some() || aud.is_some();
         entry.duration_seconds = wav
             .and_then(crate::assets::wav_file::WavFile::parse)
             .and_then(|wav| wav.native_duration_seconds())
@@ -125,11 +149,12 @@ fn scan_catalog_availability(entries: &mut [ThemeEntry], assets: &AssetManager) 
 /// without initializing an audio device or decoding whole songs.
 pub fn missing_install_music(assets: &AssetManager) -> Vec<String> {
     let mut missing = Vec::new();
-    for name in [THEME_INI_NAME, RA2_THEME_INI_NAME] {
+    let theme_name = assets.ini_roots().theme();
+    for name in [theme_name, RA2_THEME_INI_NAME] {
         let selected = match crate::rules::retail_sources::select_ini(assets, name) {
             Ok(selected) => selected,
             Err(error) => {
-                if name == THEME_INI_NAME {
+                if name == theme_name {
                     missing.push(format!("{name}: {error}"));
                 }
                 continue;
@@ -210,4 +235,60 @@ pub fn catalog_from_ini(ini: &IniFile) -> Vec<ThemeEntry> {
         }
     }
     entries
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::source::test_support::TestDirectory;
+    use crate::util::ini_roots::{IniProfile, IniRootConfig};
+
+    /// MO keeps many YR-era tracks as AUD in other archives. They must stay
+    /// in the automatic playlist even though the native catalog scan only
+    /// reads WAV metadata; `prepare_track` plays either extension.
+    #[test]
+    fn aud_only_tracks_stay_in_the_automatic_playlist() {
+        let dir = TestDirectory::new("theme-aud-availability");
+        dir.write("mosong.aud", b"\x00\x01\x02\x03");
+        let assets = AssetManager::from_loose_root_for_test(dir.path());
+        let mut entries = vec![ThemeEntry {
+            key: "MOSONG".to_owned(),
+            sound: "mosong".to_owned(),
+            name_key: String::new(),
+            duration_seconds: 0,
+            scenario: 0,
+            normal: true,
+            repeat: false,
+            side_name: None,
+            available: false,
+        }];
+        scan_catalog_availability(&mut entries, &assets);
+        assert!(
+            entries[0].available,
+            "an AUD-only MO track must be selectable by Theme AI"
+        );
+    }
+
+    #[test]
+    fn theme_catalog_reads_the_selected_profile_root() {
+        let dir = TestDirectory::new("theme-profile-root");
+        dir.write("thememd.ini", b"[Themes]\n0=YRSONG\n[YRSONG]\nSound=yr\n");
+        dir.write("thememo.ini", b"[Themes]\n0=MOSONG\n[MOSONG]\nSound=mo\n");
+
+        let yr = AssetManager::from_loose_root_for_test(dir.path());
+        let catalog = ThemeCatalog::select(&yr);
+        assert_eq!(catalog.from_name("YRSONG"), 0);
+        assert_eq!(catalog.from_name("MOSONG"), -1);
+
+        let roots = IniRootConfig {
+            profile: IniProfile::Mo,
+            ..Default::default()
+        }
+        .resolve(|_| true)
+        .unwrap();
+        let mo = AssetManager::from_loose_root_for_test(dir.path()).with_selected_ini_roots(roots);
+        let catalog = ThemeCatalog::select(&mo);
+        assert_eq!(catalog.from_name("MOSONG"), 0);
+        assert_eq!(catalog.from_name("YRSONG"), -1);
+    }
 }

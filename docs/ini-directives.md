@@ -1,12 +1,15 @@
 # INI file directives
 
 VERA expands includes in its existing INI source-selection path. Ares
-`[#include]` is compiled in with `--features ares`; Phobos `[$Include]` is
-compiled in with `--features phobos`. The default build treats both as ordinary,
-unused INI content. These are extension directives, not native YR syntax. Files
+`[#include]` and Ares `[CHILD]:[PARENT]` section inheritance are compiled in
+with `--features ares`; Phobos `[$Include]` is compiled in with
+`--features phobos`. The default build treats all of them as ordinary, unused
+INI content. These are extension directives, not native YR syntax. Files
 without directives keep their native parsed representation, duplicate-section
 behavior, content hash and saved encoding. The raw `IniFile` byte parser and
-deserializer never load other files.
+deserializer never load other files; the `[CHILD]:[PARENT]` suffix is retained
+only as skipped parse metadata so the stock lexer and `SaveToPipe` bytes stay
+unchanged.
 
 The `$Inherits` section-copy policy below is the ra2-mono adaptation credited in
 [Source mapping](#source-mapping), not an Ares or Phobos claim; Phobos's own
@@ -34,6 +37,22 @@ Strength=250
   `INIClass::GetKeyName` (`0x00526CC0`). Phobos iterates the section's
   `EntryIndex`, gamemd's CRC lookup index; VERA keeps stored order for it too.
   Numeric-looking keys only provide unique names; they do not reorder reads.
+  MO 3.3.6 writes its `[#include]` entries as `+=name`. All of them share the
+  `+` key, so the name lookup would return one winner for the whole list;
+  VERA instead reads each appended occurrence's own value in file order, still
+  cut and trimmed to the native `0x80` buffer. Other keys keep the name lookup.
+  This is a VERA adaptation of the observed MO packaging, not a DLL trace.
+  The same `+=` append syntax is now applied to the explicit type registries
+  too (`RulesClass::Process`'s `EXPLICIT_RULE_TYPE_FAMILIES`, such as
+  `[VehicleTypes]`, `[InfantryTypes]`, `[Animations]`, `[Warheads]` and
+  `[SuperWeaponTypes]`). `allocate_explicit_family` walks the physical entries
+  and reads each appended occurrence's own stored value with the native
+  32-byte `ReadString` cut and trim, so MO's `gbionrules.ini` registers
+  `GBION`, `LUNR_UR` and all of its custom art. Only Ares/Phobos builds take
+  this path; stock YR still walks unique key names. RESIDUAL: `[WeaponTypes]`
+  and `[Projectiles]` are not explicit registries in VERA (they are allocated
+  by reference), so their `+=` entries are not read as a registry list; game
+  value lists appended with `+=` are still not applied.
 - The current document is read before its included files in both dialects.
   Descendants override their including document, and later list entries
   override earlier ones. Ares documents the same result: root
@@ -53,9 +72,20 @@ Strength=250
   therefore read before a child's own list, and a child entry that reuses a
   parent's key name resolves through the shared section. Matching that needs
   the native same-INI `ReadCCFile` merge, which `IniFile::merge` does not model.
-- Inheritance runs after the complete Include expansion. `$Inherits=A,B` copies
-  only missing keys: child-authored values win, then the first supplying parent.
-  Parent section names remain case-sensitive. Directive keys are not inherited.
+- Ares `[CHILD]:[PARENT]` runs after Include expansion and before `$Inherits`.
+  Ares resolves such a parent while the section is parsed, so the parent must
+  appear earlier in the composed document; a missing or later parent produces a
+  diagnostic and no copy. Child-authored values win, directive keys are not
+  copied, and copies share the `$Inherits` expanded-text budget. RESIDUAL:
+  repeated colon headers for one child and a parent extended by a later include
+  are not modelled. Native copies everything last read for the parent, so
+  duplicate `[PARENT]` sections accumulate; VERA takes the first earlier
+  occurrence as a single physical section instead. Both need the native
+  same-INI parse hook. This is a VERA adaptation of the community-documented
+  Ares behavior, not an Ares DLL trace.
+- `$Inherits=A,B` then copies only missing keys: child-authored values win,
+  then the first supplying parent. Parent section names remain case-sensitive.
+  Directive keys are not inherited.
 - Missing files, callback failures, missing parents, cycles and depth limits
   produce structured diagnostics with the source and reference chain. The
   default policy warns and skips the failed reference; independent references
@@ -111,10 +141,11 @@ does not open Include files again. The saved Rules owner and snapshot header ret
 the build capability; a build with a different capability rejects the save before
 admitting its simulation.
 
-The change does not select `rulesmo.ini`/`artmo.ini`/`aimo.ini` as game roots,
-configure an arbitrary archive stack, port other Ares/Phobos gameplay tags, or
-establish full MO compatibility. Raw metadata helpers without an asset provider
-remain physical readers. It does not load Ares or Phobos DLLs.
+The change does not select `rulesmo.ini`/`artmo.ini`/`aimo.ini` as game roots
+(that is [INI root profiles](ini-roots.md)), configure an arbitrary archive
+stack, port other Ares/Phobos gameplay tags, or establish full MO compatibility.
+Raw metadata helpers without an asset provider remain physical readers. It does
+not load Ares or Phobos DLLs.
 
 ## Read-only probe
 
@@ -155,6 +186,7 @@ commit. This contribution is under VERA's GPLv3; no Ares/Phobos C++ is imported.
 | Ares `INIClass::GetKeyCount` `0x526960`, `GetKeyName` `0x526CC0`, `ReadString` `0x528A10` | `IniSection::physical_entries` walk plus `read_name` with the native `0x80` buffer capacity |
 | Phobos `src/Misc/Hooks.INIInheritance.cpp` (`CCINIClass_Load_Inheritance` `0x474230`) | Phobos dialect: `$Include`, `SavedIncludes` once-per-file, fatal missing file, merge after load |
 | Phobos `src/Phobos.cpp` `-Include` (`0x474200`/`0x474314` restored) | A document's `$Include` takes over from its `[#include]`; selected by `DirectiveOptions::production` |
+| Ares DLL `[CHILD]:[PARENT]` (undocumented; parse-order-sensitive, see [PPM](https://ppmforums.com/topic-61295/how-inheritance-works-in-ares-dll/)) | VERA adaptation in `rules/ini_directives.rs`: suffix kept as skipped parse metadata, earlier-parent lookup, missing-parent diagnostic, shared expanded-text budget |
 | ra2-mono `IniFile.cs` (`InheritFromParent`, `DirectiveTraversal`), `IniDirectiveProcessingOptions.cs` | `$Inherits` policy, structured diagnostics, strict mode and the VERA depth/work limits |
 | `Ra2.Tests/IniDirectiveTests.cs` | `rules/ini_directives_tests.rs`, plus VERA VFS, typed processing, map, hash and restore regressions |
 

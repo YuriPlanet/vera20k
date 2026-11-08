@@ -346,6 +346,43 @@ mod tests {
     use crate::map::source::test_support::TestDirectory;
 
     #[test]
+    fn mo_auto_profile_resolves_its_rules_root_inside_an_expandmo_archive() {
+        let dir = crate::assets::asset_manager::test_support::audio_test_install("mo-auto-root");
+        dir.write_mix(
+            "expandmo99.mix",
+            "rulesmo.ini",
+            b"[General]\nBuildSpeed=.7\n",
+        );
+        dir.write_mix("expandmo98.mix", "artmo.ini", b"[TECH]\nFoundation=2x3\n");
+        dir.write_mix("expandmo97.mix", "aimo.ini", b"[TaskForces]\n0=TF\n");
+        let manager = crate::assets::asset_manager::AssetManager::new(
+            dir.path(),
+            crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .expect("startup archives");
+        let config = crate::util::ini_roots::IniRootConfig {
+            profile: crate::util::ini_roots::IniProfile::Auto,
+            ..Default::default()
+        };
+        let manager = manager
+            .with_ini_roots(&config)
+            .expect("auto selects the complete MO triplet");
+        assert_eq!(manager.ini_roots().rules(), "rulesmo.ini");
+
+        let sources = RetailRulesSources::select(&manager).expect("MO roots selected");
+        assert_eq!(sources.rulesmd.source.source_archive, "expandmo99.mix");
+        assert_eq!(
+            sources
+                .rulesmd
+                .ini
+                .section("General")
+                .unwrap()
+                .get_for_test("BuildSpeed"),
+            Some(".7")
+        );
+    }
+
+    #[test]
     fn include_byte_limit_refuses_sparse_source_before_retaining_a_snapshot() {
         let directory = TestDirectory::new("include-sparse-limit");
         directory.write("root.ini", b"[#include]\n0=child.ini\n");

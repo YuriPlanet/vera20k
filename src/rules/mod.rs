@@ -124,6 +124,7 @@ pub mod attach_effect;
 pub mod building_select_bracket;
 pub mod digital_display;
 pub mod insignia_type;
+pub mod mouse_cursors;
 #[cfg(feature = "phobos")]
 pub mod invulnerability_rules;
 pub mod phobos_parallel_ai_queues;

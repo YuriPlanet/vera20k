@@ -408,6 +408,23 @@ const KNOWN_NESTED_MIX_NAMES: &[&str] = &[
 /// Active Yuri's Revenge requires both masters, in this order.
 pub const MASTER_ARCHIVES: [&str; 2] = ["ra2md.mix", "ra2.mix"];
 
+/// Mental Omega 3.3 (YR 1.001 + Ares 3.0) keeps its Rules/Art/AI roots as
+/// loose `rulesmo.ini`, `artmo.ini`, `aimo.ini` beside `gamemd.exe`, but its
+/// art, audio, maps and much of the rest ship in `expandmo##.mix` (3.3.6
+/// requires `expandmo95/96`, the language packs use `expandmo98`, and
+/// `expandmo99` is the usual modder override). Its soundtrack ships in
+/// `thememo.mix` / `expandmo94.mix`. None of these names appear in gamemd's
+/// `Init_Base_Mix_Files`, so a stock VERA stack can select the MO roots but
+/// cannot resolve any of the MOD's art and audio behind them.
+///
+/// This is a VERA mod-support adaptation, not a gamemd-derived archive order:
+/// probe the MO slots before the retail `expandmd##.mix` slots so a MOD entry
+/// wins the first-match VFS. A stock YR install has none of these files, so no
+/// archive is added and the native registration order is unchanged. A loose
+/// MO root still wins over an archived copy through the normal VFS order.
+const MO_EXPAND_ARCHIVE_PREFIX: &str = "expandmo";
+const MO_THEME_ARCHIVE: &str = "thememo.mix";
+
 /// One startup archive that an install inspection could not mount.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveIssue {
@@ -523,6 +540,19 @@ impl AssetManager {
         manager.mount_startup_archive("langmd.mix", false, &mut policy)?;
         manager.mount_startup_archive("language.mix", false, &mut policy)?;
 
+        // VERA MOD-support adaptation: Mental Omega's own numbered expansion
+        // archives occupy the same slot family as expandmd##.mix, one priority
+        // step ahead of it. Higher numbers stay higher priority, matching the
+        // retail descending probe and MO's expandmo99 override convention.
+        // Absent in a stock YR install: nothing is registered or reordered.
+        for index in (0..=99).rev() {
+            manager.mount_startup_archive(
+                &format!("{MO_EXPAND_ARCHIVE_PREFIX}{index:02}.mix"),
+                false,
+                &mut policy,
+            )?;
+        }
+
         // Init_Base_Mix_Files probes all expansion slots in descending order.
         for index in (0..=99).rev() {
             manager.mount_startup_archive(
@@ -562,6 +592,9 @@ impl AssetManager {
 
         manager.mount_startup_map_media(media_mode, &mut policy)?;
         manager.mount_reported_archive("multimd.mix", &mut policy)?;
+        // MO's optional soundtrack archive precedes the YR theme archive so a
+        // MOD song wins the first-match lookup. Absent in stock YR.
+        manager.mount_startup_archive(MO_THEME_ARCHIVE, false, &mut policy)?;
         manager.mount_startup_archive("thememd.mix", false, &mut policy)?;
         // VERA presentation extension: native YR mounts THEME.MIX only when
         // THEMEMD.MIX is absent. Keep MD first, then make original RA2 music
@@ -1829,6 +1862,60 @@ mod tests {
         TestDirectory, audio_test_install, make_new_format_mix_bytes, write_audio_archive,
     };
     use super::*;
+
+    #[test]
+    fn mo_expansion_archive_precedes_the_retail_expandmd_slot() {
+        let dir = audio_test_install("mo-expand");
+        dir.write_mix("expandmo99.mix", "rulesmo.ini", b"MO rules");
+        dir.write_mix("expandmd99.mix", "rulesmo.ini", b"YR rules");
+        dir.write_mix("expandmd98.mix", "retail.bin", b"retail asset");
+        let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+
+        let selected = manager
+            .resolve_ref("rulesmo.ini")
+            .expect("MO rules root is visible from the startup stack");
+        assert_eq!(selected.bytes, b"MO rules");
+        assert_eq!(selected.source_archive, "expandmo99.mix");
+        assert_eq!(
+            manager.resolve_ref("retail.bin").unwrap().bytes,
+            b"retail asset",
+            "the retail expandmd slots stay mounted"
+        );
+        assert!(
+            manager
+                .registered_archive_names()
+                .iter()
+                .any(|name| name == "expandmo99.mix")
+        );
+    }
+
+    #[test]
+    fn stock_yr_install_registers_no_mo_archives() {
+        let dir = audio_test_install("stock-no-mo");
+        dir.write_mix("expandmd99.mix", "retail.bin", b"retail asset");
+        let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+
+        let names = manager.registered_archive_names();
+        assert!(!names.iter().any(|name| name.starts_with("expandmo")));
+        assert!(!names.iter().any(|name| name == MO_THEME_ARCHIVE));
+        assert_eq!(
+            manager.resolve_ref("retail.bin").unwrap().bytes,
+            b"retail asset",
+            "the native expansion slot still wins when no MOD archive exists"
+        );
+    }
+
+    #[test]
+    fn mo_theme_archive_precedes_the_yr_theme_archive() {
+        let dir = audio_test_install("mo-theme");
+        dir.write_mix(MO_THEME_ARCHIVE, "shared.wav", b"MO music");
+        dir.write_mix("thememd.mix", "shared.wav", b"YR music");
+        let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+
+        let selected = manager.resolve_ref("shared.wav").expect("theme song");
+        assert_eq!(selected.bytes, b"MO music");
+        assert_eq!(selected.source_archive, MO_THEME_ARCHIVE);
+    }
 
     fn empty_manager(ra2_dir: &Path) -> AssetManager {
         AssetManager {

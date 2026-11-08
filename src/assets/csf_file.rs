@@ -360,6 +360,16 @@ fn localized(key: &str, value: &str) -> CsfText {
 /// internal/debug name. Without loaded CSF assets, retain the authored key.
 pub fn type_ui_name(ui_name: Option<&str>, csf: Option<&CsfFile>) -> String {
     ui_name.map_or_else(String::new, |key| {
+        // Ares 3.0 `NOSTR:` prefix: `UIName=NOSTR:Sonar Pulse` displays the
+        // literal suffix without a CSF label. `UIName` is already read through
+        // the native 0x20-byte buffer (`AbstractTypeClass::ReadINI`
+        // `0x00410AFB`), so Ares' documented 31-character limit including the
+        // prefix applies at the reader. Compiled in with `ares`; stock YR
+        // keeps the unchanged CSF lookup and its MISSING:'...' diagnostic.
+        #[cfg(feature = "ares")]
+        if let Some(literal) = key.strip_prefix("NOSTR:") {
+            return literal.to_owned();
+        }
         csf.map_or_else(|| key.to_string(), |csf| csf.text(key).into_owned())
     })
 }
@@ -667,6 +677,43 @@ mod tests {
     use super::*;
     #[cfg(feature = "ares")]
     use std::collections::HashMap;
+
+    /// A valid header with one declared label but no records behind it.
+    fn empty_table() -> CsfFile {
+        let mut data = vec![0u8; MIN_FILE_SIZE];
+        data[0..4].copy_from_slice(&HEADER_MAGIC.to_le_bytes());
+        data[4..8].copy_from_slice(&3u32.to_le_bytes());
+        data[8..12].copy_from_slice(&1u32.to_le_bytes());
+        data[12..16].copy_from_slice(&1u32.to_le_bytes());
+        CsfFile::from_bytes(&data).expect("valid CSF header")
+    }
+
+    #[cfg(not(feature = "ares"))]
+    #[test]
+    fn nostr_prefix_stays_a_csf_label_in_a_stock_build() {
+        let mut csf = empty_table();
+        csf.set_fallback("NOSTR:Sonar Pulse", "from table");
+        assert_eq!(
+            type_ui_name(Some("NOSTR:Sonar Pulse"), Some(&csf)),
+            "from table"
+        );
+    }
+
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_nostr_prefix_bypasses_the_csf_table() {
+        let mut csf = empty_table();
+        csf.set_fallback("NOSTR:Sonar Pulse", "from table");
+        assert_eq!(
+            type_ui_name(Some("NOSTR:Sonar Pulse"), Some(&csf)),
+            "Sonar Pulse"
+        );
+        assert_eq!(type_ui_name(Some("NOSTR:"), Some(&csf)), "");
+        assert_eq!(
+            type_ui_name(Some("TXT_REAL"), Some(&csf)),
+            "MISSING:'TXT_REAL'"
+        );
+    }
 
     #[test]
     fn a_huge_header_label_count_cannot_steer_the_map_reservation() {

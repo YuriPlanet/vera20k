@@ -51,6 +51,14 @@ Supported extensions:
 - [Custom armor](ares-custom-armor.md)
 - [Supplemental string tables](../tools/rules_oracle/ares_csf.md), shared by
   game loading and default `asset csf-get` / `csf-grep` queries.
+- `NOSTR:` UIName literals: `UIName=NOSTR:Sonar Pulse` bypasses the CSF table
+  and displays the suffix. `UIName` already uses the native `0x20` buffer
+  (`AbstractTypeClass::ReadINI 0x00410AFB`), so Ares' 31-character limit
+  including the prefix applies at the reader; see
+  [`CsfFile::type_ui_name`](../src/assets/csf_file.rs).
+- [Ares `[CHILD]:[PARENT]` section inheritance](ini-directives.md): the
+  undocumented, parse-order-sensitive form. VERA resolves it at the INI source
+  boundary before `$Inherits`; see the residual notes there.
 - [Per-type SHP building palettes](ares-building-palettes.md)
 - [PCX sidebar icons](ares-pcx-cameos.md) (`CameoPCX`, `AltCameoPCX`, `SidebarPCX`)
 - [EVA voice tags and Side selection](ares-eva.md)
@@ -67,6 +75,14 @@ Supported extensions:
   ([reader](../src/rules/ares_warhead.rs), installed Ares
   `TechnoClass_ReceiveDamage_Abilities 0x1004A950`, `CanTargetHouse
   0x10051B70`).
+- `Sight` beyond the retail cap of 10: retail `TechnoType::Sight` is truncated
+  to 10 by a lookup table, but Ares replaces it with a `CellSpreadEnumerator`
+  capped at 0x100 and reveals an octagonal field for any `Sight > 10`
+  ([`vision::REVEAL_RADIUS_MAX`](../src/sim/vision/mod.rs)). A radius-30
+  source (MO's `[GBION]`) therefore lights ~2521 cells instead of the retail
+  309. Reveal admission, source/aircraft/Techno walks and the fog buffer all
+  clamp to `REVEAL_RADIUS_MAX` instead of 10 in Ares builds; default builds
+  keep the retail 10.
 - [Fourth and later Side defaults](ares-side-defaults.md): crew, engineer,
   technician, disguise, survivor divisor, AI base defences and counts,
   paradrop lists/plane, parachute animation, tooltip and message colors, and
@@ -120,6 +136,36 @@ Supported extensions:
 - [HunterSeeker launch and initial target acquisition](ares-hunter-seeker.md)
 - [House survival](ares-house-survival.md)
 - [Superweapon building gates](ares-superweapon-building-gates.md)
+- [`+=` type registry appends](ini-directives.md): Ares/Phobos builds walk the
+  physical entries of the explicit type registries, so MO's `gbionrules.ini`
+  registers appended vehicles, infantry, animations, warheads and
+  superweapons before their own sections are read.
+- [Vehicle cloning](https://ares-developers.github.io/Ares-docs/new/buildings/factoriesandcloning.html):
+  `CloningFacility=yes` yards produce one free copy of each cloneable vehicle
+  built by an ordinary yard of the same House and `Naval=` setting.
+  `Cloneable=no` suppresses both these yards and the retail `Cloning=yes`
+  infantry vats, and `ClonedAs=` overrides the copy's type. `ClonedAt=` lists
+  and the `Factory=` exclusion remain unmodelled.
+- `InitialPayload.Types` / `InitialPayload.Nums`: paired lists create a
+  TechnoType's free passengers straight into its cargo hold at construction;
+  a missing `Nums` entry means one passenger. `NoManualUnload`,
+  `NoManualEnter` and `Passengers.Allowed` admission remain unmodelled.
+
+## MO DynamicPatcher `Script=` skeleton (not an Ares feature)
+
+DynamicPatcher is a .NET/Roslyn injector: `Script=<name>` on a TechnoType binds
+to a C# class compiled from `DynamicPatcher/Scripts/<name>.cs`, and those
+scripts call hard-coded `gamemd.exe` addresses. VERA cannot execute them. The
+INI-facing half is retained as an extensible skeleton: `Script=` is read into
+`ObjectType::script` in Ares/Phobos builds, parsed into a known/unknown binding
+by `sim::world::world_spawn::techno_script`, and offered a `Constructed` event
+at the spawn funnel. `Update`, `Fire` and `Destroyed` are reserved hook points.
+
+No handlers are installed, so every dispatch answers `Unimplemented` and leaves
+`Simulation` untouched — no per-entity script state enters saves or state
+hashes. `techno_script::install` is the extension point for adding a native
+implementation of one script at a time. `GBIONIonShowScript` (MO's
+`[GBION] Script=GBIONIonShowScript`) is the first registered binding.
 - [Superweapon money](ares-superweapon-money.md)
 - [UnitDelivery](ares-unit-delivery.md)
 - [Weapon beam, bolt and wave visuals](ares-weapon-visuals.md): `Beam.*`,
@@ -294,6 +340,37 @@ the merged pull requests that carried each chain:
   last ExtData keys, and the combat, building, tunnel, DropPod,
   reverse-engineering, transport, refinery-storage, Secret Lab,
   prerequisite-list and sidebar chains.
+
+## MO playtest corrections (2026-11-06)
+
+Fixes driven by a real `D:\GAMES\Mental Omega` CnCNet session. Every change is
+Ares/Phobos-gated or detected from the rules data shape; stock YR behaviour is
+unchanged.
+
+- `CloningFacility=yes` buildings now satisfy `ObjectType::has_rally_line()`.
+  Ares omits `Factory=` on them (Ares bug 1616741), so MO's `[GAWEAP2]` could
+  clone vehicles but the rally-point UI, cursor and line were all suppressed.
+- `NoManualUnload=` / `NoManualEnter=` are read into `ObjectType` and gate
+  `can_deploy_slash_unload` plus `is_vehicle_transport_type`. MO's `[AHVYBOT]`
+  Future Tank X-0 uses `Passengers=4` + `InitialPayload` as hidden crew; it no
+  longer offers a Deploy/Unload command. `Passengers.Allowed` is still
+  unmodelled.
+- `NeedsEngineer=yes` neutral tech buildings skip the MultiEngineer C4 damage
+  branch in `infantry_per_cell_building_entry`, so an Engineer changes owner
+  on first entry instead of wearing the building down and being consumed. The
+  capture branch also resyncs building damage art.
+- `SkirmishColorMode::MENTAL_OMEGA` is selected when the rules `[Colors]`
+  table has MO's shape (Teal / LightGrey Flash / NeonBlue). The 13 `[MPColors]`
+  ids then address `[Colors]` directly, skipping the non-selectable Flash
+  entry: lobby id 6 (Blue) resolves to NeonBlue instead of the stock priority
+  LUT's Orange. This is an index mapping issue, not an RGB/BGR swap.
+- `ThemeCatalog` availability now accepts `.aud` as well as `.wav`, matching
+  `prepare_track`. MO stores many YR-era tracks as AUD; marking them
+  unavailable made Theme AI fall back to a missing index-0 track.
+- Custom Phobos insignia instances keep the default `PaletteLight`. Their SHP
+  is already decoded to RGBA with `palette.pal` (verified against
+  `expandmo93.mix`'s `usflag*.shp`); the stock PIPS N53 Convert must not be
+  applied a second time.
 
 ## Original project and authors
 

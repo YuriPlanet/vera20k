@@ -201,6 +201,50 @@ fn ini_directives_include_list_keeps_stored_entry_order() {
 }
 
 #[test]
+fn ini_directives_ares_append_entries_load_each_own_file_in_order() {
+    // MO 3.3.6 rulesmo.ini writes every `[#include]` entry as `+=name`. All
+    // four share the `+` key, so a CRC name lookup used to return only the
+    // final name and drop the other three files.
+    let root = "[#include]\n+=ai.ini\n+=gbionrules.ini\n+=hidden.ini\n+=health.ini\n";
+    let mut reads = Vec::new();
+    let result = process_directives(
+        IniFile::from_str(root),
+        "root.ini",
+        |name| {
+            reads.push(name.to_owned());
+            Ok(Some(IniFile::from_str(&format!("[Unit]\n{name}=yes\n"))))
+        },
+        DirectiveOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        reads,
+        ["ai.ini", "gbionrules.ini", "hidden.ini", "health.ini"]
+    );
+    for name in ["ai.ini", "gbionrules.ini", "hidden.ini", "health.ini"] {
+        assert_eq!(text(&result.ini, "Unit", name).as_deref(), Some("yes"));
+    }
+    assert!(result.diagnostics.is_empty());
+}
+
+#[test]
+fn ini_directives_ares_append_entries_share_the_read_once_record() {
+    let root = "[#include]\n+=left.ini\n+=right.ini\n+=left.ini\n";
+    let mut reads = Vec::new();
+    process_directives(
+        IniFile::from_str(root),
+        "root.ini",
+        |name| {
+            reads.push(name.to_owned());
+            Ok(Some(IniFile::from_str("[Unit]\nValue=yes\n")))
+        },
+        DirectiveOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(reads, ["left.ini", "right.ini"]);
+}
+
+#[test]
 fn ini_directives_ares_reads_a_shared_child_once_per_root_load() {
     // Ares.dll CCINIClass_ReadCCFile1 (hook 0x474200) records every file read
     // and CCINIClass_ReadCCFile2 (0x474314) skips a recorded name, clearing the

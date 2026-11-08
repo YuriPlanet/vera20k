@@ -116,6 +116,18 @@ impl IniRoots {
         &self.eva
     }
 
+    /// Theme playlist root. MO ships `thememo.ini` with `thememo.mix`; YR and
+    /// custom keep `thememd.ini`. Like SOUNDMD/EVAMD this is a presentation
+    /// reader: it is not part of the rules/art/AI triplet, its completeness
+    /// gate or the multiplayer rules hash. Auto has already resolved to one
+    /// concrete preset before any consumer asks for this name.
+    pub fn theme(&self) -> &'static str {
+        match self.profile {
+            IniProfile::Mo => "thememo.ini",
+            _ => "thememd.ini",
+        }
+    }
+
     pub fn names(&self) -> [&str; 3] {
         [self.rules(), self.art(), self.ai()]
     }
@@ -326,6 +338,41 @@ mod tests {
     }
 
     #[test]
+    fn theme_root_follows_the_selected_ini_profile() {
+        let yr = IniRootConfig::default()
+            .resolve(|_| panic!("legacy YR must not probe"))
+            .unwrap();
+        assert_eq!(yr.theme(), "thememd.ini");
+
+        let mo = IniRootConfig {
+            profile: IniProfile::Mo,
+            ..Default::default()
+        }
+        .resolve(|_| true)
+        .unwrap();
+        assert_eq!(mo.theme(), "thememo.ini");
+
+        let auto_mo = IniRootConfig {
+            profile: IniProfile::Auto,
+            ..Default::default()
+        }
+        .resolve(|name| matches!(name, "rulesmo.ini" | "artmo.ini" | "aimo.ini"))
+        .unwrap();
+        assert_eq!(auto_mo.theme(), "thememo.ini");
+
+        let custom = IniRootConfig {
+            profile: IniProfile::Custom,
+            rules: Some("r.ini".into()),
+            art: Some("a.ini".into()),
+            ai: Some("i.ini".into()),
+            ..Default::default()
+        }
+        .resolve(|_| true)
+        .unwrap();
+        assert_eq!(custom.theme(), "thememd.ini");
+    }
+
+    #[test]
     fn ini_roots_custom_requires_a_whole_explicit_basename_triplet() {
         let mut request = IniRootConfig {
             profile: IniProfile::Custom,
@@ -398,7 +445,10 @@ mod tests {
         .resolve(|name| matches!(name, "rulesmo.ini" | "artmo.ini" | "aimo.ini"))
         .unwrap();
         assert_eq!(auto_mo.profile(), IniProfile::Mo);
-        assert_eq!((auto_mo.sound(), auto_mo.eva()), ("soundmo.ini", "evamo.ini"));
+        assert_eq!(
+            (auto_mo.sound(), auto_mo.eva()),
+            ("soundmo.ini", "evamo.ini")
+        );
 
         let auto = IniRootConfig {
             profile: IniProfile::Auto,

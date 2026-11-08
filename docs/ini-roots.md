@@ -100,11 +100,25 @@ remain YR and never reread an unrelated cwd configuration.
 
 ## Scope and source
 
-This is root selection only. Theme, mode/campaign catalogs, UI (UIMD),
-localization, arbitrary MOD archives and Ares/Phobos gameplay tags are not
-retargeted. A directory missing required retail archives still cannot enter the
-normal game bootstrap. Selecting the MO triplet does not certify that every MO
-definition, asset or gameplay mechanism is supported.
+This is root selection plus the two MO resource hooks described below. Mode and
+campaign catalogs, UI (UIMD), localization and arbitrary MOD archives are still
+not retargeted, and Ares/Phobos gameplay tags are selected by build features,
+never by an INI profile. A directory missing required retail archives still
+cannot enter the normal game bootstrap. Selecting the MO triplet does not
+certify that every MO definition, asset or gameplay mechanism is supported.
+
+For MO sessions the startup archive stack additionally probes the named MO
+family `expandmo00.mix`..`expandmo99.mix` (descending, ahead of the retail
+`expandmd##.mix` slots) and `thememo.mix` (ahead of `thememd.mix`). A MO 3.3.6
+install keeps `rulesmo.ini`/`artmo.ini`/`aimo.ini` as loose files in the game
+folder, so `mo` and `auto` can already select them; these archives carry the
+art, audio, maps and soundtrack behind those roots, and without them almost
+every type resolves to missing assets. `thememo.mix` also carries MO's music.
+A stock YR directory has none of those files, so no archive is registered or
+reordered, and a loose MO root still wins over an archived copy. The Theme
+catalog also follows the selected profile: `thememo.ini` for MO, `thememd.ini`
+otherwise. Both are VERA MOD-support adaptations of MO packaging, not
+gamemd-derived archive orders.
 
 [Include and inheritance](ini-directives.md) expand at the selected source
 boundary only in gameplay builds with `--features ares`. Root selection itself

@@ -49,17 +49,48 @@ use crate::rules::ini_parser::IniFile;
 )]
 pub struct SkirmishColorMode {
     unlimited: bool,
+    /// Mental Omega's `[Colors]` layout: the 13 `[MPColors]` ids address
+    /// entries directly, skipping the non-selectable `LightGrey` Flash entry
+    /// at index 2. Detected from the rules INI rather than a feature flag.
+    #[serde(default)]
+    mo_color_order: bool,
 }
 
 impl SkirmishColorMode {
     /// YR's eight-priority conversion (`PRIORITY_TO_SCHEME_INDEX`).
-    pub const VANILLA: Self = Self { unlimited: false };
+    pub const VANILLA: Self = Self {
+        unlimited: false,
+        mo_color_order: false,
+    };
 
     /// Phobos `SkirmishUnlimitedColors=true`.
-    pub const UNLIMITED: Self = Self { unlimited: true };
+    pub const UNLIMITED: Self = Self {
+        unlimited: true,
+        mo_color_order: false,
+    };
+
+    /// Mental Omega / MO-derived `[Colors]` with 13 `[MPColors]` entries.
+    pub const MENTAL_OMEGA: Self = Self {
+        unlimited: false,
+        mo_color_order: true,
+    };
 
     pub fn unlimited(self) -> bool {
         self.unlimited
+    }
+
+    pub fn mo_color_order(self) -> bool {
+        self.mo_color_order
+    }
+
+    /// MO's `[MPColors]` ids 0..12 (Resources/GameOptions.ini) select the
+    /// `[Colors]` entries in `rulesmo.ini`, whose third entry `LightGrey` is a
+    /// Flash/White scheme that is not offered in the lobby. Id 6 (Blue) is
+    /// therefore `NeonBlue` at entry 7, not `Gold` at entry 6 (Phobos
+    /// UNLIMITED) or `Orange` at entry 8 (the stock priority LUT).
+    fn mo_entry(priority: i32) -> usize {
+        let index = priority.max(0) as usize;
+        index + usize::from(index >= 2)
     }
 
     /// Native `Game_GetLinkedColor` (`0x0069A310`) as the active build leaves
@@ -72,7 +103,9 @@ impl SkirmishColorMode {
     /// for it, which addresses no `[Colors]` entry, so VERA clamps it to the
     /// first entry.
     pub fn scheme_index_for_priority(self, priority: i32) -> usize {
-        if self.unlimited {
+        if self.mo_color_order {
+            Self::mo_entry(priority) * 2 + 1
+        } else if self.unlimited {
             crate::rules::color_scheme::linked_color_tail(priority.wrapping_mul(2).wrapping_add(1))
         } else {
             crate::rules::color_scheme::scheme_index_for_priority(priority)
@@ -84,7 +117,9 @@ impl SkirmishColorMode {
     /// The vanilla answer stays owned by
     /// [`crate::rules::color_scheme::scheme_entry_for_priority`].
     pub fn entry_for_priority(self, priority: i32) -> usize {
-        if self.unlimited {
+        if self.mo_color_order {
+            Self::mo_entry(priority)
+        } else if self.unlimited {
             self.scheme_index_for_priority(priority) / 2
         } else {
             crate::rules::color_scheme::scheme_entry_for_priority(priority)
@@ -94,21 +129,77 @@ impl SkirmishColorMode {
     #[cfg(feature = "phobos")]
     pub(crate) fn from_ini(ini: &IniFile) -> Self {
         // Phobos reads the key with the native ReadBool semantics and its
-        // constructor default of false.
+        // constructor default of false. MO's rulesmo.ini does not set it, so
+        // without the `[Colors]` shape check below a MO lobby colour would be
+        // resolved through the stock 8-priority LUT (Blue -> Orange).
         let enabled = ini
             .section_or_empty("General")
             .read_bool("SkirmishUnlimitedColors", false);
         if enabled {
-            Self::UNLIMITED
-        } else {
-            Self::VANILLA
+            return Self::UNLIMITED;
         }
+        if Self::is_mo_color_table(ini) {
+            return Self::MENTAL_OMEGA;
+        }
+        Self::VANILLA
+    }
+
+    /// Recognise MO's exact multiplayer colour table: Teal/Red at the head,
+    /// a non-selectable LightGrey Flash scheme at index 2, NeonBlue (Blue) at
+    /// index 7. Stock YR's `[Colors]` never has this shape, so its lobby
+    /// priority table stays untouched.
+    #[cfg(feature = "phobos")]
+    fn is_mo_color_table(ini: &IniFile) -> bool {
+        let schemes = crate::rules::color_scheme::parse_color_schemes(ini);
+        schemes.len() >= 14
+            && schemes[0].name.eq_ignore_ascii_case("Teal")
+            && schemes[2].name.eq_ignore_ascii_case("LightGrey")
+            && schemes[7].name.eq_ignore_ascii_case("NeonBlue")
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// MO's lobby `[MPColors]` id 6 is Blue; `rulesmo.ini [Colors]` stores it
+    /// as NeonBlue at entry 7 because entry 2 is the non-selectable LightGrey
+    /// Flash scheme. The stock priority LUT would answer entry 8 (Orange).
+    #[test]
+    fn mo_color_order_maps_lobby_blue_to_neon_blue() {
+        let mode = SkirmishColorMode::MENTAL_OMEGA;
+        assert!(mode.mo_color_order());
+        assert_eq!(mode.entry_for_priority(0), 0, "Teal");
+        assert_eq!(mode.entry_for_priority(1), 1, "Red");
+        assert_eq!(mode.entry_for_priority(2), 3, "LightBlue skips LightGrey");
+        assert_eq!(mode.entry_for_priority(6), 7, "Blue -> NeonBlue");
+        assert_eq!(mode.entry_for_priority(7), 8, "Orange");
+        assert_eq!(mode.scheme_index_for_priority(6), 15);
+        assert_eq!(SkirmishColorMode::VANILLA.entry_for_priority(6), 8);
+    }
+
+    #[cfg(feature = "phobos")]
+    #[test]
+    fn mo_rules_select_the_mental_omega_color_mode() {
+        use crate::rules::ini_parser::IniFile;
+
+        let mo = IniFile::from_str(
+            "[Colors]\nTeal=128,255,128\nRed=0,255,255\nLightGrey=0,0,255\n\
+             LightBlue=128,255,255\nGreen=85,255,255\nPurple=190,135,170\n\
+             Gold=35,255,255\nNeonBlue=150,255,255\nOrange=20,255,255\n\
+             Magenta=210,255,255\nRusset=20,205,160\nDarkGreen=60,200,180\n\
+             Crimson=240,255,175\nSky=155,155,255\n",
+        );
+        assert_eq!(
+            SkirmishColorMode::from_ini(&mo),
+            SkirmishColorMode::MENTAL_OMEGA
+        );
+
+        let yr = IniFile::from_str(
+            "[Colors]\nGold=35,255,255\nRed=0,255,255\nBlue=150,255,255\nGreen=85,255,255\n",
+        );
+        assert_eq!(SkirmishColorMode::from_ini(&yr), SkirmishColorMode::VANILLA);
+    }
 
     #[test]
     fn unlimited_mode_runs_the_native_tail_after_the_patch() {

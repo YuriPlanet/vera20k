@@ -77,6 +77,13 @@ pub struct IniSection {
     /// mutable index/cache. The physical payload remains in the fields above.
     #[serde(skip)]
     fresh_index: Option<Vec<(i32, PhysicalEntry)>>,
+    /// Ares `[CHILD]:[PARENT]` header annotation. The native lexer keeps only
+    /// `CHILD` as the section name and ignores the tail; VERA retains the
+    /// suffix as opt-in parse metadata for `ini_directives`. It is not
+    /// serialized, not part of physical-payload equality, and never reaches
+    /// `SaveToPipe`, so stock YR parses and hashes exactly as before.
+    #[serde(skip)]
+    header_parent: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -128,6 +135,7 @@ impl<'de> serde::Deserialize<'de> for IniSection {
             projected_values: saved.projected_values,
             duplicate_entries: Vec::new(),
             fresh_index: None,
+            header_parent: None,
         })
     }
 }
@@ -141,6 +149,7 @@ impl IniSection {
             projected_values: HashMap::new(),
             duplicate_entries: Vec::new(),
             fresh_index: None,
+            header_parent: None,
         }
     }
 
@@ -255,7 +264,9 @@ impl IniSection {
     }
 
     /// Every loaded entry in file order, without resolving lookup winners.
-    fn physical_entries(&self) -> impl Iterator<Item = (&str, &str)> {
+    /// Registry readers need the stored value of each appended `+` occurrence,
+    /// which a name lookup cannot distinguish.
+    pub(crate) fn physical_entries(&self) -> impl Iterator<Item = (&str, &str)> {
         self.physical_slots().map(|slot| self.physical_entry(slot))
     }
 
@@ -500,6 +511,17 @@ impl IniFile {
         }
     }
 
+    /// Parse the Ares `[CHILD]:[PARENT]` tail that the native lexer discards.
+    /// Only an exact `:[PARENT]` annotation is retained; anything else (a
+    /// trailing comment, a second `=`-style tail) leaves the section inert.
+    fn ares_header_parent(tail: &str) -> Option<String> {
+        let tail = strtrim_ascii(tail);
+        let inside = strtrim_ascii(tail.strip_prefix(':')?).strip_prefix('[')?;
+        let end = inside.find(']')?;
+        let parent = strtrim_ascii(&inside[..end]);
+        (!parent.is_empty()).then(|| parent.to_owned())
+    }
+
     fn parse_line(ini: &mut Self, current_section: &mut Option<usize>, raw_line: &str) {
         let line = strtrim_ascii(raw_line);
         if line.is_empty() {
@@ -510,8 +532,16 @@ impl IniFile {
             && let Some(end) = line.find(']')
         {
             let name = &line[1..end];
+            // `INIClass__LoadFromStraw` @ `0x00525A60` keeps only the text up
+            // to the first `]`. Ares' `[CHILD]:[PARENT]` extension is resolved
+            // from the tail while the section is parsed; VERA stores that tail
+            // for the opted-in directive pass without changing the section
+            // name, lookup index or physical payload.
+            let header_parent = Self::ares_header_parent(&line[end + 1..]);
             let index = ini.sections.len();
-            ini.sections.push(IniSection::new(name.to_string()));
+            let mut section = IniSection::new(name.to_string());
+            section.header_parent = header_parent;
+            ini.sections.push(section);
             ini.first_section.entry(name.to_string()).or_insert(index);
             *current_section = Some(index);
             return;

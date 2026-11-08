@@ -1238,6 +1238,12 @@ pub struct ObjectType {
     convert_water: Option<crate::rules::superweapon_type::DeliveryType>,
     #[cfg(feature = "ares")]
     convert_land: Option<crate::rules::superweapon_type::DeliveryType>,
+    /// Ares 2.0 `UnitTypeExt::Convert.Deploy`: the same-class type an
+    /// `IsSimpleDeployer=yes` Unit converts into AFTER its deployment (and
+    /// optional `DeployingAnim`) finishes. MO's `[BASS]`/`[BASS2]` pair uses
+    /// it for the Athena Cannon's two firing modes.
+    #[cfg(feature = "ares")]
+    convert_deploy: Option<crate::rules::superweapon_type::DeliveryType>,
     #[cfg(feature = "ares")]
     turret_rot_override: Option<i32>,
     #[cfg(feature = "ares")]
@@ -1478,6 +1484,14 @@ pub struct ObjectType {
     /// TechnoType+680, ReadINI71474C (InitialAmmo); -1 selects Ammo at
     /// Aircraft InitFromType414033..41404B. Other signed values are retained.
     pub initial_ammo: i32,
+    /// Ares 0.C `TechnoTypeExt::NoAmmoWeapon` (Valueable<int>, default -1):
+    /// the weapon-array index selected while `TechnoClass+0x2FC Ammo` is at or
+    /// below `NoAmmoAmount`. Read by Ares' `What_Weapon_Should_I_Use` hook,
+    /// which overrides the ordinary ladder entirely. MO's `[ABRM]` uses
+    /// `NoAmmoWeapon=1` with `Ammo=1` and a 0-cost `AbramsLaser` secondary.
+    no_ammo_weapon: i32,
+    /// Ares 0.C `NoAmmoAmount` (Valueable<int>, default 0), inclusive bound.
+    no_ammo_amount: i32,
     /// TechnoType+698, raw signed frames. Constructor711122 seeds0;
     /// ReadINI71486A..71487E retains the current value as ReadInt's default.
     pub reload: i32,
@@ -1628,6 +1642,10 @@ pub struct ObjectType {
     pub hover_attack: bool,
     /// Whether this unit stays airborne by default / doesn't land (BalloonHover=).
     pub balloon_hover: bool,
+    /// Ares `Cursor.Deploy=`: a named `[MouseCursors]` row shown instead of
+    /// the stock Deploy cursor. MO's two-mode vehicles use `ModeI`/`ModeII`.
+    /// Absent keeps the native Deploy cursor.
+    pub cursor_deploy: Option<String>,
     /// `TargetLaser=` (TechnoType+0xC90; the constructor stores 0 at
     /// `0x0071139B`, ReadINI `0x00714C8D..0x00714CA1` reads the key string at
     /// `0x00843898`). A human player's shot starts the firer's 15-frame laser
@@ -1855,6 +1873,25 @@ pub struct ObjectType {
     /// Whether this building clones produced infantry (Cloning=yes in rules.ini).
     pub cloning: bool,
 
+    /// Ares `CloningFacility=` (`BuildingType`): the VehicleType version of the
+    /// Cloning Vats. Every such yard of the same House, with the same `Naval=`
+    /// setting as the producing yard, kicks out one free copy of a produced
+    /// cloneable vehicle. Stock YR never reads the key.
+    pub cloning_facility: bool,
+
+    /// Ares `Cloneable=` on Infantry/Vehicle types, default yes; shared by
+    /// `Cloning=yes` and `CloningFacility=yes`. Stock YR keeps `true`.
+    pub cloneable: bool,
+
+    /// Ares `ClonedAs=`: create the clone as this TechnoType instead of the
+    /// produced type. Only VehicleTypes may be cloned as vehicles.
+    pub cloned_as: Option<String>,
+
+    /// DynamicPatcher `Script=` name bound to this TechnoType. VERA retains
+    /// the binding only (see `sim::world::world_spawn::techno_script`); it does
+    /// not run the C# script. Stock builds leave it unset.
+    pub script: Option<String>,
+
     /// Exit coordinate for produced units, in leptons relative to building origin.
     /// Parsed from `ExitCoord=X,Y,Z` in rules.ini. 256 leptons = 1 cell.
     /// Used by spawn logic to place newly built units near the correct factory exit.
@@ -1990,6 +2027,22 @@ pub struct ObjectType {
     /// Whether this transport is open-topped — passengers can fire from inside.
     /// Parsed from `OpenTopped=yes` in rules.ini.
     pub open_topped: bool,
+
+    /// Ares `InitialPayload.Types` / `InitialPayload.Nums`: passengers created
+    /// together with this type and placed straight into its cargo hold, as
+    /// `(type name, count)` in list order. Stock YR keeps an empty list.
+    pub initial_payload: Vec<(String, i32)>,
+
+    /// Ares `NoManualUnload=yes`: the type's passengers are internal (MO's
+    /// `[AHVYBOT]` Future Tank X-0 fills `Passengers=4` with `InitialPayload`
+    /// and sets both admission keys). Without this gate VERA exposes a
+    /// Deploy/Unload command purely because `Passengers > 0`, letting the
+    /// player release crew that is meant to stay hidden.
+    pub no_manual_unload: bool,
+
+    /// Ares `NoManualEnter=yes`: players cannot order infantry to enter this
+    /// transport. Read alongside `NoManualUnload`; stock YR keeps both false.
+    pub no_manual_enter: bool,
 
     /// Whether this transport uses the Gunner system (IFV weapon swap).
     /// Parsed from `Gunner=yes` in rules.ini. When a passenger enters, the
@@ -3074,6 +3127,16 @@ impl ObjectType {
         self.convert_script = target.cloned();
     }
 
+    /// Ares 0.C `TechnoClass_WhatWeaponShouldIUse` override: with a live Ammo
+    /// count at or below `NoAmmoAmount` the sole permitted slot is
+    /// `NoAmmoWeapon`. The class-level `DeployFireWeapon` arms of
+    /// `0x005218E0`/`0x00746CD0` run ahead of the ladder and win, as Ares
+    /// documents that this tag cannot override them.
+    #[cfg(feature = "ares")]
+    pub(crate) fn no_ammo_weapon_index(&self, ammo: i32) -> Option<i32> {
+        (self.no_ammo_weapon >= 0 && ammo <= self.no_ammo_amount).then_some(self.no_ammo_weapon)
+    }
+
     #[cfg(feature = "ares")]
     pub(crate) fn bind_super_weapon_techno_rules(
         &mut self,
@@ -3126,6 +3189,21 @@ impl ObjectType {
     ) {
         self.convert_water = water.cloned();
         self.convert_land = land.cloned();
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn deploy_conversion(
+        &self,
+    ) -> Option<&crate::rules::superweapon_type::DeliveryType> {
+        self.convert_deploy.as_ref()
+    }
+
+    #[cfg(feature = "ares")]
+    pub(crate) fn bind_deploy_conversion(
+        &mut self,
+        target: Option<&crate::rules::superweapon_type::DeliveryType>,
+    ) {
+        self.convert_deploy = target.cloned();
     }
 
     /// Retained TechnoType+C9E; building crew admission reads this input
@@ -4397,26 +4475,20 @@ impl ObjectType {
     /// `BuildingClass` vt+0x284 (`0x00455DA0`, HasRallyPoint): a
     /// Factory=UnitType or InfantryType, UnitRepair or Cloning building. The
     /// rally click archives only on these, and their rally lines draw.
+    ///
+    /// Ares `CloningFacility=yes` buildings are the vehicle-side equivalent of
+    /// `Cloning=yes`, but Ares deliberately omits `Factory=` on them (Ares bug
+    /// 1616741: "Cloning ignores buildings with Factory="), so MO's `[GAWEAP2]`
+    /// family has no `Factory=` key at all. Include the Ares flag explicitly,
+    /// otherwise a working cloning facility can produce units but the player
+    /// can never set its rally point.
     pub fn has_rally_line(&self) -> bool {
         matches!(
             self.factory_type(),
             Some(FactoryType::InfantryType | FactoryType::UnitType)
         ) || self.unit_repair
             || self.cloning
-            || self.ares_cloning_facility()
-    }
-
-    /// Ares BuildingClass_IsFactory_CloningFacility (hook `0x00455DA0` ->
-    /// `10041560`): a `CloningFacility=` building answers true.
-    fn ares_cloning_facility(&self) -> bool {
-        #[cfg(feature = "ares")]
-        {
-            self.production.cloning_facility()
-        }
-        #[cfg(not(feature = "ares"))]
-        {
-            false
-        }
+            || self.cloning_facility
     }
 
     /// Parse an ObjectType from a rules.ini section.
@@ -4427,6 +4499,35 @@ impl ObjectType {
     /// owner (`native_processing`) reads keep their constructor values here;
     /// `RuleSet::from_processed_rules` publishes that owner's retained result.
     pub fn from_ini_section(id: &str, section: &IniSection, category: ObjectCategory) -> Self {
+        // Ares `InitialPayload.Types/Nums`: the two lists align by index. A
+        // missing or shorter Nums entry means one passenger, and a count that
+        // does not parse or is non-positive contributes no passenger. MO ships
+        // these in pairs, often alongside NoManualUnload/NoManualEnter.
+        let initial_payload = if crate::rules::ARES_ENABLED {
+            let types = section
+                .read_list("InitialPayload.Types", 0x800)
+                .unwrap_or_default();
+            let nums = section
+                .read_list("InitialPayload.Nums", 0x800)
+                .unwrap_or_default();
+            types
+                .iter()
+                .enumerate()
+                .filter_map(|(index, name)| {
+                    let name = name.trim();
+                    if name.is_empty() {
+                        return None;
+                    }
+                    let count = nums
+                        .get(index)
+                        .and_then(|raw| raw.trim().parse::<i32>().ok())
+                        .unwrap_or(1);
+                    (count > 0).then(|| (name.to_owned(), count))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         let armor = section.read_string("Armor", "none", 0x80);
         // BuildingType45FE50: Hospital, Armory460B03, then the three
         // barracks readers460B1D/37/51. Each starts at constructor0 and folds
@@ -4986,6 +5087,8 @@ impl ObjectType {
             #[cfg(feature = "ares")]
             convert_land: None,
             #[cfg(feature = "ares")]
+            convert_deploy: None,
+            #[cfg(feature = "ares")]
             turret_rot_override: None,
             #[cfg(feature = "ares")]
             spotlight: Default::default(),
@@ -5075,6 +5178,9 @@ impl ObjectType {
             deploying_anim: None,
             ammo: section.read_int("Ammo", -1),
             initial_ammo: section.read_int("InitialAmmo", -1),
+            // Ares 0.C TypeExt Valueable<int> readers: absent/invalid retains.
+            no_ammo_weapon: section.read_ares_int("NoAmmoWeapon", -1),
+            no_ammo_amount: section.read_ares_int("NoAmmoAmount", 0),
             // TechnoTypeClass::ReadINI71486A..7148B2, raw signed frames.
             // The retained section folds each reached pass with its current
             // member as the next default; no time conversion or clamp.
@@ -5182,6 +5288,9 @@ impl ObjectType {
             balloon_hover: section.read_bool("BalloonHover", false),
             target_laser: section.read_bool("TargetLaser", false),
             is_simple_deployer: section.read_bool("IsSimpleDeployer", false),
+            cursor_deploy: section
+                .read_name("Cursor.Deploy", 0x40)
+                .map(str::to_string),
             small_visceroid: category == ObjectCategory::Vehicle
                 && section.read_bool("SmallVisceroid", false),
             large_visceroid: category == ObjectCategory::Vehicle
@@ -5302,6 +5411,24 @@ impl ObjectType {
             nod_barracks,
             yuri_barracks,
             cloning: section.read_bool("Cloning", false),
+            cloning_facility: crate::rules::ARES_ENABLED
+                && category == ObjectCategory::Building
+                && section.read_bool("CloningFacility", false),
+            cloneable: if crate::rules::ARES_ENABLED {
+                section.read_bool("Cloneable", true)
+            } else {
+                true
+            },
+            cloned_as: if crate::rules::ARES_ENABLED {
+                section.read_name("ClonedAs", 0x20).map(str::to_owned)
+            } else {
+                None
+            },
+            script: if crate::rules::ARES_ENABLED || crate::rules::PHOBOS_ENABLED {
+                section.read_name("Script", 0x40).map(str::to_owned)
+            } else {
+                None
+            },
             // Read3Int (`0x00460FCD`).
             exit_coord: section
                 .read_coord3_value("ExitCoord")
@@ -5345,6 +5472,11 @@ impl ObjectType {
             size: section.read_double("Size", 1.0),
             size_limit: section.read_double("SizeLimit", 0.0),
             open_topped: section.read_bool("OpenTopped", false),
+            initial_payload,
+            no_manual_unload: crate::rules::ARES_ENABLED
+                && section.read_bool("NoManualUnload", false),
+            no_manual_enter: crate::rules::ARES_ENABLED
+                && section.read_bool("NoManualEnter", false),
             gunner: false, // Constructor byte; retained reader binds GunnerTurrets::is_gunner.
             ifv_mode: section.read_int("IFVMode", 0),
             // Constructor table; only the ordered Process owner reads it.
@@ -5785,6 +5917,23 @@ mod absorber_pip_tests;
 
 #[cfg(test)]
 mod tests {
+    /// Ares `CloningFacility=yes` buildings intentionally carry no `Factory=`
+    /// (Ares bug 1616741). They still need the rally-point UI, cursor and line;
+    /// MO's `[GAWEAP2]` family is exactly this shape.
+    #[cfg(feature = "ares")]
+    #[test]
+    fn ares_cloning_facility_has_a_rally_line_without_factory() {
+        use super::{ObjectCategory, ObjectType};
+        use crate::rules::ini_parser::IniFile;
+
+        let ini = IniFile::from_str("[GAWEAP2]\nWeaponsFactory=yes\nCloningFacility=yes\n");
+        let section = ini.section("GAWEAP2").expect("cloning facility section");
+        let object = ObjectType::from_ini_section("GAWEAP2", section, ObjectCategory::Building);
+        assert!(object.cloning_facility);
+        assert_eq!(object.factory_type(), None, "Ares omits Factory=");
+        assert!(object.has_rally_line());
+    }
+
     #[test]
     fn fly_bank_rules_read_stock_values_and_keep_each_pass_sentinels() {
         use crate::rules::ini_parser::IniFile;

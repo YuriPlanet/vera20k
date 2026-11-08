@@ -10,9 +10,11 @@ ra2_dir = "C:/Westwood/RA2"
 # settings_dir = "."
 
 [ini]
-# Root-file selection only, not full MOD gameplay or a different MIX mount policy.
-# Default yr preserves the normal Yuri's Revenge path. mo requires all three MO
-# roots; auto accepts exactly one complete set with no partial alternate set.
+# Root-file selection plus MO's named expandmo##.mix / thememo.mix archives
+# (see docs/ini-roots.md). Not full MOD gameplay: Ares/Phobos behavior is a
+# build feature, not an INI setting. Default yr preserves the normal Yuri's
+# Revenge path. mo requires all three MO roots; auto accepts exactly one
+# complete set with no partial alternate set.
 profile = "yr" # yr | mo | auto | custom
 # With profile = "custom", specify all three logical INI basenames:
 # rules = "my-rules.ini"

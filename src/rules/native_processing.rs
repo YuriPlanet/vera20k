@@ -5634,6 +5634,11 @@ pub(crate) struct TechnoTypeReferences {
     #[cfg(feature = "ares")]
     #[serde(default)]
     convert_land: Option<crate::rules::superweapon_type::DeliveryType>,
+    /// Ares 2.0 UnitTypeExt::Convert.Deploy; same lookup-only pointer reader
+    /// (1003FA40/1003C650) as Convert.Water/Land, but on the Unit subclass.
+    #[cfg(feature = "ares")]
+    #[serde(default)]
+    convert_deploy: Option<crate::rules::superweapon_type::DeliveryType>,
 }
 
 impl TechnoTypeReferences {
@@ -5668,6 +5673,8 @@ impl TechnoTypeReferences {
             convert_water: None,
             #[cfg(feature = "ares")]
             convert_land: None,
+            #[cfg(feature = "ares")]
+            convert_deploy: None,
         }
     }
 
@@ -5711,6 +5718,8 @@ impl TechnoTypeReferences {
         object.bind_script_conversion(self.convert_script.as_ref());
         #[cfg(feature = "ares")]
         object.bind_surface_conversions(self.convert_water.as_ref(), self.convert_land.as_ref());
+        #[cfg(feature = "ares")]
+        object.bind_deploy_conversion(self.convert_deploy.as_ref());
     }
 }
 
@@ -6652,6 +6661,34 @@ impl RulesPassProcessor {
         let Some(section) = pass.section(registry) else {
             return;
         };
+        // Ares/Phobos `+=name` list-append syntax stores every appended entry
+        // under the same `+` key. RulesClass::Process walks the stored entry
+        // list with GetKeyName and reads each value through ReadString's
+        // 32-byte buffer; a name lookup returns one winner for the whole list,
+        // so each appended occurrence takes its own stored value with the same
+        // cut and trim. Other keys keep the native name lookup. MO's
+        // gbionrules.ini registers all of its custom vehicles, infantry,
+        // animations, warheads and superweapons this way. Stock YR has no such
+        // lists, so the gate leaves its registry walk byte-for-byte unchanged.
+        if crate::rules::ARES_ENABLED || crate::rules::PHOBOS_ENABLED {
+            for (key, value) in section.physical_entries() {
+                let identity = if key == "+" {
+                    let cut = crate::rules::ini_value::strtrim_ascii(
+                        crate::rules::ini_value::truncate_native_bytes(value, 31),
+                    );
+                    if cut.is_empty() {
+                        continue;
+                    }
+                    cut.to_owned()
+                } else {
+                    section.read_string(key, "", 32)
+                };
+                if !identity.is_empty() {
+                    self.find_or_allocate(family, &identity);
+                }
+            }
+            return;
+        }
         for key in section.keys() {
             let identity = section.read_string(key, "", 32);
             if !identity.is_empty() {
@@ -9052,6 +9089,18 @@ impl RulesPassProcessor {
                         trailer.apply_read(animation, spawn_delay);
                     }
                     RulesTypeFamily::Vehicle => {
+                        // Ares 2.0 UnitTypeExt reader: Convert.Deploy points
+                        // at an existing same-class TechnoType. MO's Athena
+                        // Cannon, Siren, Aeroflyer and similar two-mode tanks
+                        // register their alternate mode as a VehicleType.
+                        #[cfg(feature = "ares")]
+                        if let Some(target) =
+                            self.resolve_existing_techno_type_from(&raw, "Convert.Deploy")
+                        {
+                            self.family_mut(family)[index]
+                                .techno_references
+                                .convert_deploy = target;
+                        }
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
                         member.unit_speed_type = member
                             .unit_speed_type

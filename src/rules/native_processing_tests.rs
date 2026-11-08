@@ -1922,6 +1922,98 @@ fn map_overrides_union_type_registries_by_value() {
     );
 }
 
+/// Ares/Phobos `+=name` registry appends: every physical `+` occurrence
+/// allocates its own type in file order, next to numbered entries. MO's
+/// gbionrules.ini registers GBION, LUNR_UR and all of its custom art this way.
+#[cfg(any(feature = "ares", feature = "phobos"))]
+#[test]
+fn append_key_registers_every_ares_list_entry() {
+    let root = IniFile::from_str(
+        "[VehicleTypes]\n0=MTNK\n+=GBION\n+=SECOND\n\
+         [InfantryTypes]\n0=E1\n+=LUNR_UR\n\
+         [Animations]\n+=GBIONP\n+=GBIONWHA\n\
+         [Warheads]\n+=GBIONWaveWH\n\
+         [SuperWeaponTypes]\n+=GBIONBlueLight\n\
+         [MTNK]\nStrength=100\n[GBION]\nStrength=3500\n[SECOND]\nStrength=200\n\
+         [E1]\nStrength=100\n[LUNR_UR]\nStrength=100\n",
+    );
+    let rules = RulesLayerStack::new(root)
+        .process()
+        .unwrap()
+        .into_projection_discarding_native_receipt();
+    assert_eq!(
+        rules.section("VehicleTypes").unwrap().registry_ids(),
+        vec!["MTNK", "GBION", "SECOND"]
+    );
+    assert_eq!(
+        rules.section("InfantryTypes").unwrap().registry_ids(),
+        vec!["E1", "LUNR_UR"]
+    );
+    assert_eq!(
+        rules.section("Animations").unwrap().registry_ids(),
+        vec!["GBIONP", "GBIONWHA"]
+    );
+    assert_eq!(
+        rules.section("Warheads").unwrap().registry_ids(),
+        vec!["GBIONWaveWH"]
+    );
+    assert_eq!(
+        rules.section("SuperWeaponTypes").unwrap().registry_ids(),
+        vec!["GBIONBlueLight"]
+    );
+}
+
+/// Without Ares/Phobos the native walk still sees a single `+` key, so the
+/// stock YR registry is unchanged.
+#[cfg(not(any(feature = "ares", feature = "phobos")))]
+#[test]
+fn append_key_is_inert_for_stock_registry_walk() {
+    let root = IniFile::from_str("[VehicleTypes]\n0=MTNK\n+=GBION\n+=SECOND\n");
+    let rules = RulesLayerStack::new(root)
+        .process()
+        .unwrap()
+        .into_projection_discarding_native_receipt();
+    assert_eq!(
+        rules.section("VehicleTypes").unwrap().registry_ids().len(),
+        2,
+        "native GetKeyName walk sees only the unique 0 and + keys"
+    );
+}
+
+/// MO's non-official `gbionrules.ini` registers its custom types with `+=`
+/// and then relies on Ares/Phobos per-type keys being read for them. Before
+/// the append-key fix none of these sections reached a type reader at all.
+#[cfg(feature = "ares")]
+#[test]
+fn appended_mo_type_reads_ares_and_phobos_extensions() {
+    let root = IniFile::from_str(
+        "[VehicleTypes]\n+=GBION\n[InfantryTypes]\n+=LUNR_UR\n\
+         [BuildingTypes]\n+=GAWEAP2\n\
+         [GBION]\nPassengers=3\nSizeLimit=1\nOpenTopped=yes\n\
+         InitialPayload.Types=LUNR_UR\nInitialPayload.Nums=3\n\
+         Insignia.Rookie=USFLAG\nInsignia.Veteran=USFLAG1\nInsignia.Elite=USFLAG2\n\
+         Cloneable=no\n\
+         [GAWEAP2]\nCloningFacility=yes\n\
+         [LUNR_UR]\nStrength=100\n",
+    );
+    let processed = RulesLayerStack::new(root).process().unwrap();
+    let rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let gbion = rules.object("GBION").expect("+= registered vehicle");
+    assert_eq!(gbion.initial_payload, vec![("LUNR_UR".to_owned(), 3)]);
+    assert_eq!(gbion.passengers, 3);
+    assert!(gbion.open_topped);
+    assert!(!gbion.cloneable, "Cloneable=no is read");
+    let facility = rules.object("GAWEAP2").expect("+= registered building");
+    assert!(facility.cloning_facility);
+    assert!(facility.cloneable, "Cloneable defaults to yes");
+    #[cfg(feature = "phobos")]
+    {
+        assert_eq!(gbion.phobos_insignia.base.images[0], ["USFLAG.shp"]);
+        assert_eq!(gbion.phobos_insignia.base.images[1], ["USFLAG1.shp"]);
+        assert_eq!(gbion.phobos_insignia.base.images[2], ["USFLAG2.shp"]);
+    }
+}
+
 fn process_rules_passes(root: &str, later: &str) -> ProcessedRulesLayers {
     let mut layers = RulesLayerStack::new(IniFile::from_str(root));
     layers.push(RulesLayerKind::Scenario, IniFile::from_str(later));

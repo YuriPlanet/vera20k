@@ -44,11 +44,15 @@
 //! inheriting one parent into many children.
 
 use super::IniFile;
+use super::ini_value::{strtrim_ascii, truncate_native_bytes};
 use std::collections::HashSet;
 
 const ARES: &str = "#include";
 const PHOBOS: &str = "$Include";
 const INHERITS: &str = "$Inherits";
+/// Phobos/Ares `+=name` list-append syntax stores every appended entry under
+/// this one key. MO 3.3.6 writes all of its `[#include]` entries this way.
+const APPEND_KEY: &str = "+";
 /// Ares `CCINIClass_ReadCCFile2` reads each include name through `ReadString`
 /// `0x00528A10` into a `0x80`-byte buffer, so longer names keep 127 bytes.
 const ARES_INCLUDE_NAME_CAPACITY: usize = 0x80;
@@ -378,7 +382,15 @@ pub fn process_directives(
         .sections
         .iter()
         .any(|section| section.is_present(INHERITS));
-    if dialect.is_none() && !inheritance {
+    // Ares `[CHILD]:[PARENT]` annotations live in parse metadata, not in a
+    // directive key. Check them here so an Ares-capable load still expands a
+    // document that has no include list and no `$Inherits`.
+    let ares_section_inheritance = options.ares
+        && ini
+            .sections
+            .iter()
+            .any(|section| section.header_parent.is_some());
+    if dialect.is_none() && !inheritance && !ares_section_inheritance {
         return Ok(ExpandedIni {
             ini,
             diagnostics: Vec::new(),
@@ -408,6 +420,17 @@ pub fn process_directives(
         traversal.exit();
     }
     traversal.text_budget = inherited_text_budget(&ini);
+    // Ares resolves `[CHILD]:[PARENT]` while each section is parsed, before
+    // any post-load inheritance. Run it first so an explicit `$Inherits`
+    // parent only fills keys the colon parent did not already supply.
+    if options.ares
+        && ini
+            .sections
+            .iter()
+            .any(|section| section.header_parent.is_some())
+    {
+        apply_ares_section_inheritance(&mut ini, &mut traversal)?;
+    }
     let mut completed = HashSet::new();
     // Preserve the host's physical section occurrences, first-section lookup
     // and native parsing. A document without directives is byte-parser exact.
@@ -436,10 +459,21 @@ fn expand_includes(
         // `ReadString` looks each key up through the native CRC index.
         IncludeDialect::Ares => section
             .physical_entries()
-            .filter_map(|(key, _)| {
-                section
-                    .read_name(key, ARES_INCLUDE_NAME_CAPACITY)
-                    .map(|name| (key.to_owned(), name.to_owned()))
+            .filter_map(|(key, value)| {
+                // `+=name` appends each entry under the same `+` key. A name
+                // lookup through the native CRC index returns one winner for
+                // all of them, so MO 3.3.6 would load only its final include.
+                // For an appended entry take this occurrence's own stored
+                // value instead, with ReadString's 0x80 cut and trim. Other
+                // keys keep the unchanged name lookup.
+                let name = if key == APPEND_KEY {
+                    let payload = ARES_INCLUDE_NAME_CAPACITY.checked_sub(1)?;
+                    let cut = strtrim_ascii(truncate_native_bytes(value, payload));
+                    (!cut.is_empty()).then_some(cut)?
+                } else {
+                    section.read_name(key, ARES_INCLUDE_NAME_CAPACITY)?
+                };
+                Some((key.to_owned(), name.to_owned()))
             })
             .take(remaining + 1)
             .collect(),
@@ -523,6 +557,76 @@ fn expand_includes(
     Ok(merged)
 }
 
+/// Ares' undocumented `[CHILD]:[PARENT]` section inheritance.
+///
+/// Ares DLL resolves the parent while the section is parsed, so the parent
+/// must already have been read; a missing or later parent produces a developer
+/// warning and no copy. Child-authored values win, directive keys are never
+/// copied, and copies are charged against the same aggregate expanded-text
+/// budget as `$Inherits`. VERA applies this after include expansion and before
+/// the `$Inherits` post-pass, keeping each layer as its own `IniFile`.
+///
+/// RESIDUAL: repeated `[CHILD]:[PARENT]` headers for one child and a parent
+/// body extended by a later include are not modelled. Native copies everything
+/// last read for the parent, so duplicate `[PARENT]` sections accumulate; VERA
+/// takes the first earlier occurrence as one physical section. Both need the
+/// native same-INI parse hook. This is a VERA adaptation of the
+/// community-documented behavior, not an Ares DLL trace.
+fn apply_ares_section_inheritance(
+    ini: &mut IniFile,
+    traversal: &mut Traversal<'_>,
+) -> Result<(), DirectiveDiagnostic> {
+    let annotated: Vec<(usize, String)> = ini
+        .sections
+        .iter()
+        .enumerate()
+        .filter_map(|(index, section)| {
+            section
+                .header_parent
+                .as_ref()
+                .map(|parent| (index, parent.clone()))
+        })
+        .collect();
+    for (child_index, parent_name) in annotated {
+        // Ares only sees sections parsed before the child. A parent supplied
+        // by a later include or declared below it is not yet available.
+        let parent_index = ini
+            .sections
+            .iter()
+            .take(child_index)
+            .position(|section| section.name == parent_name);
+        let Some(parent_index) = parent_index else {
+            traversal.report(
+                DiagnosticKind::InheritanceParentMissing,
+                Some(&parent_name),
+                format!("Parent section '{parent_name}' is missing or has not been parsed yet"),
+            )?;
+            continue;
+        };
+        let (keys, copied) = {
+            let parent = &ini.sections[parent_index];
+            let child = &ini.sections[child_index];
+            let mut keys = Vec::new();
+            let mut copied = 0;
+            for key in &parent.key_order {
+                if matches!(key.as_str(), INHERITS | PHOBOS | ARES) || child.is_present(key) {
+                    continue;
+                }
+                copied += key.len() + parent.entries[key].len();
+                keys.push(key.clone());
+            }
+            (keys, copied)
+        };
+        traversal.reserve_inherited_text(copied)?;
+        let parent = ini.sections[parent_index].clone();
+        let child = &mut ini.sections[child_index];
+        for key in keys {
+            child.set(&key, &parent.entries[&key]);
+        }
+    }
+    Ok(())
+}
+
 fn inherit(
     ini: &mut IniFile,
     name: &str,
@@ -594,3 +698,96 @@ fn inherit(
 #[cfg(test)]
 #[path = "ini_directives_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod ares_section_inheritance_tests {
+    use super::*;
+
+    fn expand(text: &str, options: DirectiveOptions) -> ExpandedIni {
+        process_directives(IniFile::from_str(text), "root.ini", |_| Ok(None), options)
+            .expect("directive expansion")
+    }
+
+    fn ares_only() -> DirectiveOptions {
+        DirectiveOptions {
+            ares: true,
+            phobos: false,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn colon_inheritance_copies_missing_keys_and_keeps_child_values() {
+        let expanded = expand(
+            "[PARENT]\nStrength=100\nName=Base\n[CHILD]:[PARENT]\nStrength=250\n",
+            ares_only(),
+        );
+        let child = expanded.ini.section("CHILD").unwrap();
+        assert_eq!(child.get_for_test("Strength"), Some("250"));
+        assert_eq!(child.get_for_test("Name"), Some("Base"));
+        assert!(expanded.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn colon_parent_must_be_parsed_before_the_child() {
+        let expanded = expand(
+            "[CHILD]:[PARENT]\nStrength=250\n[PARENT]\nStrength=100\nName=Base\n",
+            ares_only(),
+        );
+        assert_eq!(
+            expanded.ini.section("CHILD").unwrap().get_for_test("Name"),
+            None,
+            "Ares warns instead of inheriting from a later section"
+        );
+        assert!(
+            expanded
+                .diagnostics
+                .iter()
+                .any(|item| item.kind == DiagnosticKind::InheritanceParentMissing)
+        );
+    }
+
+    #[test]
+    fn colon_suffix_is_inert_without_the_ares_capability() {
+        let expanded = expand(
+            "[PARENT]\nStrength=100\nName=Base\n[CHILD]:[PARENT]\nStrength=250\n",
+            DirectiveOptions {
+                ares: false,
+                phobos: false,
+                ..Default::default()
+            },
+        );
+        let child = expanded.ini.section("CHILD").unwrap();
+        assert_eq!(child.get_for_test("Strength"), Some("250"));
+        assert_eq!(child.get_for_test("Name"), None);
+        assert!(expanded.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn explicit_inherits_fills_keys_the_colon_parent_did_not_supply() {
+        let expanded = expand(
+            "[PARENT]\nStrength=100\nName=Base\n[EXTRA]\nArmor=steel\n\
+             [CHILD]:[PARENT]\n$Inherits=EXTRA\nStrength=250\n",
+            ares_only(),
+        );
+        let child = expanded.ini.section("CHILD").unwrap();
+        assert_eq!(child.get_for_test("Strength"), Some("250"));
+        assert_eq!(child.get_for_test("Name"), Some("Base"));
+        assert_eq!(child.get_for_test("Armor"), Some("steel"));
+        assert!(expanded.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn parser_keeps_the_native_section_name_and_ignores_other_tails() {
+        let ini = IniFile::from_str("[CHILD]:[PARENT]\nStrength=250\n[PLAIN] ; note\nSpeed=4\n");
+        assert_eq!(ini.section_names(), vec!["CHILD", "PLAIN"]);
+        assert_eq!(
+            ini.section("CHILD").unwrap().get_for_test("Strength"),
+            Some("250")
+        );
+        assert_eq!(
+            ini.section("PLAIN").unwrap().get_for_test("Speed"),
+            Some("4")
+        );
+    }
+}
