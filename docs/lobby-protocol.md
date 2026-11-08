@@ -349,12 +349,15 @@ earlier chunks the service re-reads to check a finished upload.
 Canonical options are limited to 24 KiB, choice objects use the exact canonical
 slot schema, and unknown request/option fields are rejected. The actor also caps
 pending requests/parsed bodies at 128/4 MiB and individual events at 64 KiB. Active
-sessions, guest profiles and public-room membership are capped at 256. Per-address
-limits key on the client's network: an IPv4 address, or an IPv6 /64, with the
-enclosing /48 as the range. New guest entries are limited to 40/hour per address,
-64/hour per range and 256/hour globally, and one range holds at most 64 active
-sessions (503 `network_full`), with the existing sign-in and ingress limits also
-applied. One name can be taken 30 times in 5 minutes; refused entries do not count. These are service admission limits, not gameplay timers.
+sessions, guest profiles and public-room membership are capped at 256, of which
+guests hold at most 192 so that accounts always fit. When guests hold them all, a
+new guest from a smaller range replaces the longest-silent guest of the largest
+range, unless that guest is in a match, and is otherwise refused (503
+`service_full`). Per-address limits key on the client's network: an IPv4 address,
+or an IPv6 /64, with the enclosing /48 as the range. New guest entries are limited
+to 40/hour per address, 64/hour per range and 512/hour globally, and one range holds
+at most 32 active sessions (503 `network_full`), with the existing sign-in and
+ingress limits also applied. One name can be taken 30 times in 5 minutes; refused entries do not count. These are service admission limits, not gameplay timers.
 Clients verify and install into a
 local cache, preserve existing installed maps, and still require user readiness.
 Generated maps transfer the `.SED` bytes as the map and the separate native PCX
