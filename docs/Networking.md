@@ -34,8 +34,9 @@ Typing `/translate zh` (or `en`, `zh-tw`, `ja`, `ko`, `de`, `fr`, `es`, `pt`, `r
 the same languages or Off. Received lobby, room and match chat in another script is
 sent to the lobby's translation service: for a Latin-script language a line with any
 letter outside it, for any other language a line with none of its letters. The original
-stays; its translation follows as a line from the same sender marked `»`, unless it
-only repeats the original.
+stays; its translation follows as a line from the same sender marked `»`, starting
+with a bracketed note in the reader's language that names the source language, unless
+it only repeats the original.
 
 The app services reliable messages and intermediate progress while loading, and
 continues servicing transport during frame waits. Gameplay uses the same
