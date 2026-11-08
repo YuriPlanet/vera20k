@@ -1096,6 +1096,13 @@ pub(in crate::sim) fn update_factory_queue(
     category: ProductionCategory,
     effects: FrameEffects<'_>,
 ) {
+    // Ares 3.0 HouseClass_Update_Factories_Queues 10025100 (hook 0x00509140)
+    // first runs the BuildingType/DontCare call again for BuildCat::Combat,
+    // so the defense strip's queue follows its construction yards too.
+    #[cfg(feature = "ares")]
+    if category == ProductionCategory::Building {
+        update_factory_queue(sim, rules, owner, ProductionCategory::Defense, effects);
+    }
     let queued: Vec<_> = sim
         .production
         .factories()
