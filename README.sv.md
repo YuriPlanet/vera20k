@@ -152,6 +152,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## Dokumentation
 
 - [WebAssembly-förhandsversion](docs/wasm.md): ett valfritt enspelarbygge som körs i webbläsaren.
+- [Moddningsguide](docs/modding.md): vad moddar kan och inte kan göra och hur VERA20K skiljer sig från originalspelet.
 - [INI-profiler](docs/ini-roots.md): välja regel-, grafik- och AI-filer.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) och [NPatch](docs/npatch.md): stöd för tilläggen och deras begränsningar.
 - [Motoröversikt](docs/index.md): kodens upplägg och hur motorns delar hänger ihop.

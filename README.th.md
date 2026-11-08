@@ -142,6 +142,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## เอกสาร
 
 - [รุ่นทดลอง WebAssembly](docs/wasm.md): บิลด์สำหรับผู้เล่นคนเดียวแบบเลือกใช้ได้ ซึ่งทำงานในเบราว์เซอร์
+- [คู่มือการทำม็อด](docs/modding.md): สิ่งที่ม็อดทำได้และทำไม่ได้ และ VERA20K แตกต่างจากเกมต้นฉบับอย่างไร
 - [โปรไฟล์ INI](docs/ini-roots.md): การเลือกไฟล์กฎ ไฟล์ art และไฟล์ AI
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) และ [NPatch](docs/npatch.md): การรองรับส่วนขยายและข้อจำกัด
 - [ภาพรวมของเอนจิน](docs/index.md): โครงสร้างโค้ดและการทำงานร่วมกันของส่วนต่าง ๆ ในเอนจิน

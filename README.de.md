@@ -155,6 +155,7 @@ This product includes software developed by the [Ares Contributors](LICENSES/Are
 ## Dokumentation
 
 - [WebAssembly-Vorschau](docs/wasm.md): ein optionaler Einzelspieler-Build, der im Browser läuft.
+- [Modding-Anleitung](docs/modding.md): was Mods können und was nicht und worin sich VERA20K vom Originalspiel unterscheidet.
 - [INI-Profile](docs/ini-roots.md): Regel-, Grafik- und KI-Dateien auswählen.
 - [Ares](docs/ares.md), [Phobos](docs/phobos.md) und [NPatch](docs/npatch.md): Unterstützung der Erweiterungen und ihre Grenzen.
 - [Engine-Überblick](docs/index.md): Aufbau des Codes und wie die Teile der Engine zusammenspielen.
