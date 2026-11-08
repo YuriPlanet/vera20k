@@ -784,10 +784,14 @@ pub(crate) fn compute_type_select_tap_with_playfield(
         }
     }
     if seeds.is_empty() {
+        // `TypeSelectCommand::ExecuteTap @ 0x00732950` has no seedless return:
+        // no screen object matches, so the scope byte B0FE64 turns to the map
+        // (0x00732AAD), and a held-T click or band that follows selects across
+        // the map (`TypeSelect__SelectExactTypeBatch` reads it at 0x007327D3).
         return TypeSelectTapResult {
             mutation,
             outcome: crate::app::types::TypeSelectOutcome::Empty,
-            across_map: false,
+            across_map: true,
         };
     }
 
@@ -1914,6 +1918,45 @@ mod tests {
     /// beyond the ellipse, ahead of the building whose foundation it stands
     /// on (AddContent `0x0047E8A0` prepends it), or a Terrain object, which
     /// only the object pick returns.
+    /// An empty selection, or a lone enemy the tap drops, leaves no seed, and
+    /// the seedless tap turns the scope to the map (0x00732AAD).
+    #[test]
+    fn a_seedless_type_select_tap_turns_the_scope_to_the_map() {
+        use crate::sim::world::Simulation;
+
+        let mut sim = Simulation::new();
+        let me = sim.intern("me");
+        let enemy = sim.intern("enemy");
+        let tank = sim.intern("HTNK");
+        for (id, owner) in [(1, me), (2, enemy)] {
+            sim.entities_mut_for_test().insert(item83_entity(
+                id,
+                10 + id as u16,
+                10,
+                owner,
+                tank,
+                EntityCategory::Unit,
+                false,
+            ));
+        }
+        for selection in [&[][..], &[2]] {
+            let tap = compute_type_select_tap_with_playfield(
+                sim.entities(),
+                &[1, 2],
+                &[1, 2],
+                selection,
+                None,
+                Some("me"),
+                None,
+                Some(sim.interner()),
+                false,
+                false,
+            );
+            assert_eq!(tap.outcome, crate::app::types::TypeSelectOutcome::Empty);
+            assert!(tap.across_map, "selection {selection:?}");
+        }
+    }
+
     #[test]
     fn the_point_pick_falls_back_to_the_clicked_cells_ground_list_head() {
         use crate::sim::movement::locomotor::MovementLayer;
