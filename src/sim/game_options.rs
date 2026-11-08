@@ -17,6 +17,28 @@ const NORMALIZED_DELAY_SHORT: [[u16; 8]; 4] = [
 /// Highest stored value emitted by the retail in-game speed trackbar.
 pub const IN_GAME_OPTIONS_MAX_SPEED: u8 = 6;
 
+/// VERA's 90-tick preset. Keep 0..=7 available for their original meanings in
+/// rules, saves and replays; 7 is still the native SpeedNormalize table column.
+pub const GAME_SPEED_90_TPS: u8 = 8;
+
+pub const fn is_selectable_game_speed(speed: u8) -> bool {
+    speed <= IN_GAME_OPTIONS_MAX_SPEED || speed == GAME_SPEED_90_TPS
+}
+
+/// Bound a raw setting for the dialog and wall-clock consumers, preserving
+/// VERA's extra preset as well as every existing selectable stored value.
+pub const fn clamp_game_speed(speed: i32) -> u8 {
+    if speed == GAME_SPEED_90_TPS as i32 {
+        GAME_SPEED_90_TPS
+    } else if speed < 0 {
+        0
+    } else if speed > IN_GAME_OPTIONS_MAX_SPEED as i32 {
+        IN_GAME_OPTIONS_MAX_SPEED
+    } else {
+        speed as u8
+    }
+}
+
 /// Per-match game settings from the lobby / `[MultiplayerDialogSettings]`.
 ///
 /// Set once at game start except for the synchronized offline game-speed
@@ -69,7 +91,7 @@ pub struct GameOptions {
     pub unit_count: i32,
     /// Maximum tech level for this match. Rules+0x149C.
     pub tech_level: i32,
-    /// Stored game-speed index. Retail gameplay uses 0 through 7.
+    /// Stored game-speed index. Retail uses 0 through 7; VERA adds 8 (90 ticks/s).
     pub game_speed: i32,
     /// Rules-owned default AI difficulty in the native HouseClass convention:
     /// 0=Hard, 1=Normal, 2=Easy. Offline lobby rows copy their own selected
@@ -167,9 +189,10 @@ impl GameOptions {
     /// store that value before the next `Main_Tick`; active network modes use
     /// EventClass opcode 0x0D at the tail instead. VERA currently implements
     /// only the offline ingress timing and rejects values the dialog cannot
-    /// emit rather than fabricating a clamp.
+    /// emit rather than fabricating a clamp. VERA additionally admits its
+    /// 90-tick preset through this same command owner.
     pub(crate) fn apply_in_game_speed(&mut self, speed: u8) -> bool {
-        if speed > IN_GAME_OPTIONS_MAX_SPEED {
+        if !is_selectable_game_speed(speed) {
             return false;
         }
         self.game_speed = i32::from(speed);
@@ -186,7 +209,7 @@ impl GameOptions {
     /// table at `0x00832CEC` (`[value*8 + speed]`); otherwise
     /// `(value << 3) / (speed + 1)` (`0x005FB2FC..0x005FB301`, signed IDIV).
     ///
-    /// The frame pacer admits one sim tick per `stored_speed * 16 ms` bucket
+    /// For native presets the pacer admits one sim tick per `stored_speed * 16 ms` bucket
     /// (`app::types::tps_for_game_speed`), the same clock native's
     /// `FrameTimer` runs on, so dividing a frame count by `speed + 1` here
     /// reproduces native wall-clock cadence at every stored index.
@@ -194,7 +217,14 @@ impl GameOptions {
         if value == 0 {
             return 0;
         }
-        let speed = usize::try_from(self.game_speed)
+        // VERA's extra wall-clock preset keeps the fastest capped preset's
+        // deterministic animation delays; only frame admission speeds up.
+        let stored_speed = if self.game_speed == i32::from(GAME_SPEED_90_TPS) {
+            1
+        } else {
+            self.game_speed
+        };
+        let speed = usize::try_from(stored_speed)
             .ok()
             .filter(|speed| *speed < 8)
             .expect("stored game speed must be in 0..=7");
@@ -294,6 +324,23 @@ mod tests {
         assert_eq!(options.game_speed, 6);
         assert!(!options.apply_in_game_speed(7));
         assert_eq!(options.game_speed, 6);
+    }
+
+    #[test]
+    fn extra_speed_keeps_capped_fast_animation_delays() {
+        let fastest_capped = GameOptions::default();
+        let mut options = fastest_capped.clone();
+        assert!(options.apply_in_game_speed(super::GAME_SPEED_90_TPS));
+        assert_eq!(options.game_speed, 8);
+        assert_eq!(
+            options.normalized_anim_delay(4),
+            fastest_capped.normalized_anim_delay(4)
+        );
+        assert_eq!(
+            options.speed_normalize(8),
+            fastest_capped.speed_normalize(8)
+        );
+        assert!(!options.apply_in_game_speed(9));
     }
 
     #[test]

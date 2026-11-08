@@ -104,12 +104,9 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
             })
             .map(|name| bounded_text(name, TELEMETRY_MAX_NAME_BYTES));
     }
-    let speed = runtime
-        .simulation
-        .session()
-        .game_options()
-        .game_speed
-        .clamp(0, 6) as u8;
+    let speed = crate::sim::game_options::clamp_game_speed(
+        runtime.simulation.session().game_options().game_speed,
+    );
     let mut timing =
         state
             .match_state

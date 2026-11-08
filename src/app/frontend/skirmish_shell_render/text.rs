@@ -26,7 +26,7 @@ use crate::ui::skirmish_shell::{
     SkirmishShellState, SkirmishTrackbarId, checkbox_text_rect, combo_dropdown_content_rect,
     combo_dropdown_rect, combo_dropdown_visible_row_count, combo_enabled, combo_items,
     combo_text_rect, player_name_edit_text_rect, player_row_visible,
-    random_map_setup_dropdown_rect, trackbar_visual_value,
+    random_map_setup_dropdown_rect,
 };
 
 use super::controls::trackbar_rect_for_id;
@@ -131,7 +131,9 @@ pub(super) fn country_label(state: &AppState, country: LaunchCountry) -> String 
 
 pub(super) fn trackbar_display_value(shell: &SkirmishShellState, id: SkirmishTrackbarId) -> String {
     match id {
-        SkirmishTrackbarId::GameSpeed0x529 => trackbar_visual_value(shell, id).to_string(),
+        SkirmishTrackbarId::GameSpeed0x529 => {
+            crate::ui::shell::game_speed::SpeedContext::Offline.value_text(shell.game_speed)
+        }
         SkirmishTrackbarId::Credits0x511 => shell.credits().to_string(),
         SkirmishTrackbarId::UnitCount0x50c => shell.unit_count.to_string(),
     }

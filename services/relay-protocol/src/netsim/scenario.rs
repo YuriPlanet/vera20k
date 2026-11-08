@@ -296,7 +296,7 @@ impl Scenario {
             return Err("players must be 2..=30".into());
         }
         if !crate::paced_rates(scenario.tick_hz).contains(&scenario.tick_hz) {
-            return Err("tick_hz must be 60, 45, 30, 20, 15, 12 or 10".into());
+            return Err("tick_hz must be 90, 60, 45, 30, 20, 15, 12 or 10".into());
         }
         if scenario.command_bytes == 0 || scenario.command_bytes > crate::ORDERING_BATCH_CAPACITY {
             return Err("command_bytes must be 1..=512".into());
